@@ -296,13 +296,13 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      reads=("mission", "nodeContext", "catalog"),
                      # The external lane used to dead-end: it could NAME a
                      # portal dataset and nothing could act on it, so the only
-                     # move was the Node Builder handoff. The three lake
+                     # move was the Node Builder handoff. The three discovery
                      # contracts make it actionable - roster, live search, and
                      # a reviewed download. node-builder stays in delegates_to
                      # because a source no provider covers is still real; it
                      # just stops being the only answer.
-                     tools=("catalog.search", "datalake.sources", "datalake.search",
-                            "datalake.acquire", "dataset.install", "dataflow.read"),
+                     tools=("catalog.search", "discovery.sources", "discovery.search",
+                            "discovery.acquire", "dataset.install", "dataflow.read"),
                      delegates_to=("agent.node-builder",
                                    ("agent.dataflow-reader", ("workflow.suggest",)),
                                    ("agent.dataflow-planner", ("workflow.keyword.bind",)),

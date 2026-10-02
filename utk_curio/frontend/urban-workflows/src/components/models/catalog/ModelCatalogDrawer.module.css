@@ -1,0 +1,14 @@
+/*
+ * Canvas slide-over Model Catalog drawer: what is specific to this drawer.
+ *
+ * The panel itself is the shared
+ * ../../packages/publishing/CatalogDrawerShell.module.css, as for the Node and
+ * Data drawers; header and search row are the shared packages/publishing
+ * components.
+ */
+
+/* The Data drawer's tier: like it, this drawer opens a details modal on top of
+   itself, and the two are never open together. */
+.overlayRoot {
+  --curio-drawer-z: var(--curio-z-dataset-drawer);
+}

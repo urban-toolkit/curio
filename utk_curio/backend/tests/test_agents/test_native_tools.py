@@ -184,7 +184,7 @@ class TestTheToolsOffered:
 
 class TestTheSystemTurn:
     def test_the_native_tail_drops_only_the_tool_list_and_its_syntax(self):
-        grants = tools.grant_descriptions(["catalog.search", "datalake.search"])
+        grants = tools.grant_descriptions(["catalog.search", "discovery.search"])
         native = content.tail_instruction(grants, native_tools=True)
         fenced = content.tail_instruction(grants)
         assert native.startswith(content.TAIL_INSTRUCTION)
@@ -192,7 +192,7 @@ class TestTheSystemTurn:
         assert '"toolRequest"' in fenced and '"toolRequest"' not in native
         assert "- catalog.search:" in fenced and "- catalog.search:" not in native
         # The candidates block is no tool call, so both protocols keep its schema.
-        assert content.CANDIDATES_INSTRUCTION in native and content.CANDIDATES_LAKE_ADDENDUM in native
+        assert content.CANDIDATES_INSTRUCTION in native and content.CANDIDATES_DISCOVERY_ADDENDUM in native
 
     def test_the_native_delegation_paragraph_names_the_delegate_tool(self):
         entries = [("node.content.generate", "Node Content Builder")]

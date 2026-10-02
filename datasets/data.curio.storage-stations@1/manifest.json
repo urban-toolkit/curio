@@ -21,9 +21,9 @@
   "rowCount": 3,
   "featureCount": null,
   "schema": null,
-  "lakeSource": {
-    "lakeId": "lake.curio.example-storage@1",
-    "lakeName": "Example storage",
+  "discoverySource": {
+    "sourceId": "source.curio.example-storage@1",
+    "sourceName": "Example storage",
     "resourceId": "stations",
     "sourcePath": "air-quality/stations.csv",
     "fileCount": 1,

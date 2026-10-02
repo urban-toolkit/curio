@@ -8,7 +8,7 @@
  * bounded and scheme-allowlisted server-side, sanitized again at render. */
 export interface AgentDatasetCandidateRow {
   name: string;
-  sourceType: "api" | "endpoint" | "portal" | "catalog" | "document" | "database" | "lake";
+  sourceType: "api" | "endpoint" | "portal" | "catalog" | "document" | "database" | "discovery";
   url?: string;
   provider?: string;
   format?: string;
@@ -30,7 +30,7 @@ export interface AgentDatasetCandidateRow {
   /** dev/132: a catalog row the user imported themselves after the card was
    * minted — its file is here, so nothing needs installing first. */
   imported?: boolean;
-  /** External lane only: the portal coordinate a datalake.acquire proposal
+  /** External lane only: the portal coordinate a discovery.acquire proposal
    *  references. Both or neither - half a coordinate is dropped server-side. */
   sourceId?: string;
   resourceId?: string;
@@ -40,7 +40,7 @@ export interface AgentDatasetCandidateRow {
    *  downloads offers only that, never the portal steps. */
   acquirable?: boolean;
   /** A confirmed pick Curio downloaded, or is downloading: where it came from. */
-  lakeSource?: { sourceId?: string; resourceId?: string };
+  discoverySource?: { sourceId?: string; resourceId?: string };
   /** A confirmed pick whose download is still running. */
   acquiring?: { jobId: string };
   /** Why a confirmed row's download failed. */
@@ -130,7 +130,7 @@ export interface AgentDatasetSelection {
     sources?: string[];
     jobIds?: string[];
   };
-  /** The Data Lake downloads the confirmation started, one per acquirable row. */
+  /** The Discovery Catalog downloads the confirmation started, one per acquirable row. */
   acquisitions?: {
     name?: string;
     sourceId: string;

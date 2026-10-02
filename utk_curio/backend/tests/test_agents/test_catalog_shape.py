@@ -126,15 +126,15 @@ class TestErrorDecorator:
         assert status == 404
         assert body.get_json() == {"error": "Dataflow not found"}
 
-    def test_unconfigured_provider_is_400_naming_ai_settings(self, app):
+    def test_unconfigured_provider_is_400_naming_api_settings(self, app):
         @agents_routes._map_agent_errors
         def handler():
-            raise ProviderConfigError("No AI provider is configured. Set one up in AI Settings.")
+            raise ProviderConfigError("No AI provider is configured. Set one up in API Settings.")
 
         with app.test_request_context():
             body, status = handler()
         assert status == 400
-        assert "AI Settings" in body.get_json()["error"]
+        assert "API Settings" in body.get_json()["error"]
 
     def test_a_clean_return_passes_straight_through(self, app):
         @agents_routes._map_agent_errors

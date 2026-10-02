@@ -53,7 +53,7 @@ TRAINED_AGENT = "agent.dataflow-builder"
 
 def _training_config(user, user_key: str, config_id: str | None):
     """The configuration a fine-tune runs on: *config_id*, else the one the
-    Dataflow Builder runs on (its choice in AI Settings, else the account's
+    Dataflow Builder runs on (its choice in API Settings, else the account's
     default). It must hold the user's own key, so training never spends this
     Curio install's key or a guest's."""
     from utk_curio.backend.app.agents.infrastructure import llm_configs
@@ -443,7 +443,7 @@ def activate(user, user_key: str, job_id: str) -> dict:
     if source is None:
         raise TrainingServiceError(
             "the LLM configuration this job trained on is gone, so there is no "
-            "endpoint to give the trained model; add one for it in AI Settings",
+            "endpoint to give the trained model; add one for it in API Settings",
             409,
         )
     fixtures = load_fixtures()
@@ -486,7 +486,7 @@ def activate(user, user_key: str, job_id: str) -> dict:
 def rollback(user, user_key: str, job_id: str) -> dict:
     """Restore the Dataflow Builder's choice this activation replaced. Refused
     once that choice has been changed by hand since, because rolling back would
-    undo the change. The trained configuration stays, to use or remove in AI
+    undo the change. The trained configuration stays, to use or remove in API
     Settings."""
     from utk_curio.backend.app.agents.infrastructure import llm_configs
     from utk_curio.backend.app.agents.infrastructure.provider_config import deployment_config
@@ -505,7 +505,7 @@ def rollback(user, user_key: str, job_id: str) -> dict:
         if store.choices(user_key).get(agent_id) != record.activation.get("configId"):
             raise TrainingServiceError(
                 "the Dataflow Builder's LLM configuration has changed since this model "
-                "was activated; choose it in AI Settings instead",
+                "was activated; choose it in API Settings instead",
                 409,
             )
         previous = record.activation.get("previousChoice")

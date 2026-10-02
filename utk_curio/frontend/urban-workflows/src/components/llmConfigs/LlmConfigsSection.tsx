@@ -20,7 +20,7 @@ function deploymentProviderLabel(apiType: string | null): string {
 }
 
 /**
- * AI Settings → LLM configurations. Each configuration is an endpoint and a
+ * API Settings → LLM configurations. Each configuration is an endpoint and a
  * model; the default answers an attached agent with no choice of its own. Keys
  * are write-only: the table says whether one is saved, never what it is. The
  * Deployment default is this Curio's own configuration, read-only here, and

@@ -94,7 +94,7 @@ def _run_node_events(
 
     from utk_curio.backend.app.execution import runner
 
-    from utk_curio.backend.app.datalakes.application.exec_collections import (
+    from utk_curio.backend.app.discovery.application.exec_collections import (
         resolve_spec_collections,
     )
 

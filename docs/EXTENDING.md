@@ -1,8 +1,8 @@
 # Extending Curio with new node packages
 
-Curio nodes are defined by **packages**, not by code. A package is a directory under [`packages/`](../packages/) that ships a `manifest.json` declaring one or more node *templates*. Each template references a **behavior key** that resolves to a React hook implementing the node's behaviour. Optionally, a package can ship a backend Flask blueprint for endpoints the behavior hook calls.
+Curio nodes are defined by **packages**, not by code. A package is a directory under [`packages/`](../packages/) that ships a `manifest.json` declaring one or more node *templates*. Each template references a **behavior key** that resolves to a React hook implementing the node's behaviour. Optionally, a behavior hook calls a backend route in Curio for work the browser and the sandbox cannot do.
 
-This guide walks through adding a new node package end-to-end, using the [`curio.streetvision@1`](../packages/curio.streetvision@1/) package, which adds three CV nodes plus a generic Spatial Join, as the worked example. It is a fairly involved case: it spans the manifest, four behavior hooks, a Flask blueprint with eight endpoints, per-package Python dependencies declared in `manifest.dependencies.python`, and a user-facing docs example. Easier packages can skip several of the steps below.
+This guide walks through adding a new node package end-to-end. Its examples are code in this repository: [`curio.example-ui@1`](../packages/curio.example-ui@1/) for a node with its own React interface (manifest, behavior hook, `behaviorScript` bundle), [`curio.streetvision@1`](../packages/curio.streetvision@1/) for a code node with a Python dependency declared in `manifest.dependencies.python` and sandbox helpers, the built-in Spatial Join for a node that calls a backend route, and the [Discovery Catalog](DISCOVERY-CATALOG.md) for third-party APIs, per-account keys and long downloads. Easier packages can skip several of the steps below.
 
 > [!TIP]
 > **Writing your first package?** Start with [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md), a task-ordered walkthrough from `git clone` to a working node, including the edit → rebuild → reload loop. Scaffold with `python scripts/new_package.py <id> [--with-ui]`, and read [`packages/curio.example-ui@1`](../packages/curio.example-ui@1/) for a minimal custom-UI node with no API keys or heavy dependencies. Come back here for the reference detail: backend blueprints, external services, dependency declaration, and the manifest's finer points.
@@ -37,60 +37,62 @@ Three patterns cover essentially every node Curio ships:
 
 | Pattern | Examples | Backend? |
 |---|---|---|
-| **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-grammar` | None. The behavior hook does its work in the browser. |
-| **Sandbox-Python** | `data-loading`, `data-transformation`, `computation-analysis`, `data-summary` | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` behavior. User-provided Python runs out-of-process. |
-| **Custom blueprint** | `streetvision` (calls Google Street View + HuggingFace + runs `torch` inference), `spatial-join` (shapely STRtree) | A new Flask blueprint under [`utk_curio/backend/app/<feature>/`](../utk_curio/backend/app/). Right call when the node needs external APIs, long-running jobs, persistent state, or heavy native dependencies that the sandbox can't reasonably ship. |
+| **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-grammar`, `column-filter` (`curio.example-ui@1`) | None. The behavior hook does its work in the browser. |
+| **Sandbox-Python** | `data-loading`, `data-transformation`, `computation-analysis`, `data-summary`, `image-segmentation` (`curio.streetvision@1`) | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` behavior. User-provided Python runs out-of-process. A package template does the same with its own starter file and Python dependencies (§4.2). |
+| **Backend route** | `spatial-join` (shapely STRtree) | A route in Curio's backend that the behavior hook calls: Spatial Join's is one handler in [`api/routes.py`](../utk_curio/backend/app/api/routes.py) over a helper in [`common/spatial.py`](../utk_curio/backend/app/common/spatial.py). A feature with several routes gets its own Flask blueprint under [`utk_curio/backend/app/<feature>/`](../utk_curio/backend/app/) (§5). Right call when the node needs server-side work the sandbox can't reasonably do. |
 
-Pure-frontend is the right default; reach for the sandbox before a blueprint, and only stand up a blueprint when neither covers it.
+Pure-frontend is the right default; reach for the sandbox before a blueprint, and only stand up a blueprint when neither covers it. Third-party data and models come in through the Discovery Catalog (§3), and a node reads them from the Data or Model Catalog.
 
 ## 3. Connecting to external services
 
-Most non-trivial node packages need to call a third-party API. The Street Vision package touches three: HuggingFace Hub (model search), Nominatim (geocoding), and Google Street View (imagery, behind an API key). The patterns below are the conventions the merged code follows, all in [`utk_curio/backend/app/streetvision/services/`](../utk_curio/backend/app/streetvision/services/).
+A third-party API reaches Curio as a **source** in the [Discovery Catalog](DISCOVERY-CATALOG.md): a manifest at `discovery/<sourceId>@<major>/manifest.json` names the host, the key it sends and what it offers, and a provider module under [`utk_curio/backend/app/discovery/providers/`](../utk_curio/backend/app/discovery/providers/) speaks the API. Street-level photos arrive this way, from [`source.mapillary.imagery@1`](../discovery/source.mapillary.imagery@1/manifest.json) ([`providers/mapillary.py`](../utk_curio/backend/app/discovery/providers/mapillary.py)) and [`source.google.street-view@1`](../discovery/source.google.street-view@1/manifest.json) ([`providers/google_streetview.py`](../utk_curio/backend/app/discovery/providers/google_streetview.py)), and image segmentation models from [`source.huggingface.models@1`](../discovery/source.huggingface.models@1/manifest.json) ([`providers/huggingface_models.py`](../utk_curio/backend/app/discovery/providers/huggingface_models.py)). A download lands in the Data Catalog (a model, in the Model Catalog), and a node reads it from there with `curio_collection("<id>")`, `curio_dataset_path("<id>")` or `curio_model("<id>")`. The patterns below are the conventions that code follows; [ARCHITECTURE.md, Providers](ARCHITECTURE.md#providers) lists the steps to add a provider.
 
 ### 3.1 Always proxy through the backend
 
-Never call third-party APIs from the behavior hook directly:
+Never call third-party APIs from the browser directly:
 
 1. **API keys leak.** Anything built into the frontend bundle, even read-at-runtime values, is visible in DevTools' network tab.
 2. **CORS.** Most public APIs (Google, Nominatim) reject browser-origin requests.
 3. **Rate-limit hygiene.** Centralising in the backend lets you add caching, retries, and per-user quota in one place.
 
-The behavior hook hits `${BACKEND_URL}/api/<feature>/...`; the Flask handler in turn calls the upstream service. See [`streetvision/routes.py`](../utk_curio/backend/app/streetvision/routes.py) for the pattern.
+Every Discovery request leaves the backend through one transport, [`discovery/infrastructure/transport.py`](../utk_curio/backend/app/discovery/infrastructure/transport.py): `HttpDiscoveryTransport` sends it under the egress policy with a timeout (`METADATA_TIMEOUT_S`) and a size bound, and refuses an answer that is not a 2xx. A source's `limits.requestsPerMinute` bounds each account's requests to it. A behavior hook that needs the backend calls a Curio route, as [`spatialJoinBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinBehavior.tsx) posts to `${backendUrl()}/spatial_join`.
 
-### 3.2 API keys: per-session input on the node (preferred) vs env vars
+### 3.2 API keys: a row in API Settings
 
-Curio supports two patterns for third-party API keys; pick by who the key belongs to:
+Pick the pattern by who the key belongs to:
 
-- **Per-user secrets** (Google Maps, Mapbox, OpenAI personal keys, …) → make it a **text input on the node itself**, held in React state for the session. The behavior hook passes it to the backend as a request-body field. Never persist to the dataflow spec (it would leak when shared) or to `localStorage` (it would survive logout). The Street View Fetcher node is the worked example; see [`streetViewFetcherBehavior.tsx`](../packages/curio.streetvision@1/sources/streetViewFetcherBehavior.tsx) and the `api_key` body field in [`streetvision/routes.py`](../utk_curio/backend/app/streetvision/routes.py).
+- **Per-account keys** (a Mapillary access token, a Google Maps API key, a Hugging Face token) are rows in **API Settings**, never a node input, a line of node code or a field of the dataflow spec. Each is a `KeySlot` in `SLOTS` ([`discovery/infrastructure/credentials.py`](../utk_curio/backend/app/discovery/infrastructure/credentials.py)): the `User` column that holds it, a label, a help link, a placeholder, an optional note, and an optional deployment-wide fallback (`default_env`) that a user's own key overrides. A source names its slot in `auth.secretId`, and a manifest naming a slot Curio does not hold fails to load. Adding a slot is a `User` column, a migration, a field in `PATCH /api/auth/me` ([`users/routes.py`](../utk_curio/backend/app/users/routes.py)), an entry in `SLOTS` and its id in `KNOWN_SECRET_SLOTS` ([`discovery/domain/manifest.py`](../utk_curio/backend/app/discovery/domain/manifest.py)). API Settings draws one row per slot.
 
-- **Per-account credentials that outlive a session** -> edit them in **AI Settings**. One token per account (a HuggingFace token) is a column on the user row. Several named secrets per account (connection keys, LLM configurations) go in an owner-only per-user file written through [`common/owner_only_file.py`](../utk_curio/backend/app/common/owner_only_file.py), as [`users/connection_keys.py`](../utk_curio/backend/app/users/connection_keys.py) and [`agents/llm_configs.py`](../utk_curio/backend/app/agents/llm_configs.py) do. The HuggingFace token is the worked example of the first: gated models are unlocked per HuggingFace account by accepting a licence, so a single operator token could not represent what each user is entitled to download. It resolves as *the caller's own token* in [`streetvision/services/huggingface.py`](../utk_curio/backend/app/streetvision/services/huggingface.py)::`resolve_hf_token`.
+- **Several named secrets per account** (connection keys, LLM configurations) go in an owner-only per-user file written through [`common/owner_only_file.py`](../utk_curio/backend/app/common/owner_only_file.py), as [`users/connection_keys.py`](../utk_curio/backend/app/users/connection_keys.py) and [`agents/infrastructure/llm_configs.py`](../utk_curio/backend/app/agents/infrastructure/llm_configs.py) do.
 
 - **Genuinely operator-wide secrets** that no user should override (an internal data-source token) -> `os.environ.get(...)` at the backend, read at request time so editing `.env` + restart picks it up without rebuilding. Prefer a documented `curio.py start` flag that names the variable, so the knob is discoverable.
 
-Two rules the per-account pattern has to follow:
+Three rules the per-account pattern follows:
 
-**Resolve in the request, use it downstream.** Street Vision runs inference on a
-detached worker thread, where `g` is gone. The route resolves the token and
-passes it into the job; resolving it inside the worker would silently find no
-token.
+**The key goes only to its source's host.** `_transport_for` in
+[`discovery/service.py`](../utk_curio/backend/app/discovery/service.py) wraps
+the transport in `CredentialedTransport` with the host of the source's
+`provider.baseUrl`; a request to any other host, such as a Mapillary photo on
+its CDN, goes without the key. `credential_header` turns the slot into a header
+(`auth.headerName` plus `auth.valuePrefix`) or, for `auth.scheme: "query"`, a
+query parameter (`auth.paramName`). The transport is the only code that adds
+it: providers never see the value, and a query key is taken out of every URL
+and message the transport hands back (`_keyed`, `_redact`).
 
-**Put the credential in any cache key it affects.** The model cache is keyed on
-`(model_id, token fingerprint)`, hashed rather than raw so the token is not
-sitting where a traceback could print it. Keyed on `model_id` alone, the first
-user to download a gated model would seed an entry every later caller hit for
-free, including one whose account had never accepted that licence.
+**A worker thread loads the user itself.** A download runs on a worker thread,
+where `g` is gone. `start_acquire` hands the worker the user's id, never the ORM
+row, and the worker loads the user in its own app context before any key is
+resolved. A storage scan's transport, key included, is built on the request
+thread (`_storage_builder`) and only called from the scan thread.
 
-Surface presence, never the value, in `/health` so the frontend can warn before
-an action that needs the credential:
+**What a key fetches stays with its account.** A storage source's listing is
+shared by every user when the source sends no key, and kept per account when it
+does (`_listing_scope`).
 
-```python
-@bp.get("/health")
-def health():
-    from .services import huggingface as hf_svc
-
-    # True when a token resolves for THIS caller: their own, or the fallback.
-    return jsonify({"status": "healthy", "has_huggingface_token": bool(hf_svc.resolve_hf_token())})
-```
+Report presence, never the value. `GET /api/discovery/keys` (`key_rows`) lists
+every slot with booleans only: `present` (this account saved one) and
+`inherited` (the deployment supplies one). The user payload carries a
+`has_<column>` flag per slot (`SLOT_FLAGS`).
 
 A package whose backend needs to know *who* is calling must send the bearer
 token: read `window.curio.getAuthToken()` (a getter, because a package bundle
@@ -99,68 +101,72 @@ header. Never check secrets into git.
 
 ### 3.3 Public APIs without auth
 
-HuggingFace Hub's model search and Nominatim's geocoder are free and public, so plain `requests` is enough:
+Nominatim, OpenStreetMap's geocoder, is free and public; it answers the place search of every source's area field. [`discovery/application/places.py`](../utk_curio/backend/app/discovery/application/places.py) follows its usage policy: a `User-Agent` that names Curio, at most one request a second from the server (`MIN_INTERVAL_S`), and answers kept for a day (`CACHE_TTL_S`):
 
 ```python
-# huggingface.py
-from huggingface_hub import HfApi
-def search_models(task: str, query: str, limit: int = 20):
-    api = HfApi()
-    return [...]  # api.list_models(filter=task, search=query, sort='downloads', limit=limit)
+# places.py
+with _lock:
+    hit = _cache.get(key)
+    if hit is not None and now - hit[0] < CACHE_TTL_S:
+        return hit[1]
+    _wait_for_slot()
+    try:
+        payload = transport.json_get(
+            search_url(text),
+            headers={"User-Agent": USER_AGENT, "Accept-Language": "en"},
+        )
+    finally:
+        _last_request = time.monotonic()
 ```
 
-Always set a **timeout** (`requests`'s default is "wait forever"). Always check the response status. Nominatim has a strict 1 req/sec rate limit and requires a `User-Agent` header that identifies your app. Read their usage policy before shipping a node that hits them in a tight loop, and **cache aggressively** (a single user might re-search the same place a dozen times in one session).
+Read a public API's usage policy before shipping a source that calls it in a loop, and **cache aggressively** (a single user might re-search the same place a dozen times in one session). Code that calls `requests` itself sets a **timeout** (`requests`'s default is "wait forever") and checks the response status; the Discovery transport does both.
 
 ### 3.4 APIs with API keys
 
-For per-user keys (the recommended pattern, see 3.2), take the key as a body field and treat it as required:
+A source declares its key in the manifest's `auth` block, naming an API Settings slot (§3.2). Mapillary sends its token as a header:
 
-```python
-# routes.py
-@bp.post("/data/streetview/coverage")
-def streetview_coverage():
-    body = request.get_json(silent=True) or {}
-    api_key = (body.get("api_key") or "").strip()
-    if not api_key:
-        return jsonify({
-            "error": "Google Maps API key required",
-            "hint": "Enter your Google Maps API key in the Street View Fetcher node",
-        }), 400
-    # ... call streetview.fetch_panorama(..., api_key=api_key)
+```json
+"auth": {
+  "mode": "required-token",
+  "secretId": "mapillary.token",
+  "headerName": "Authorization",
+  "valuePrefix": "OAuth ",
+  "helpUrl": "https://www.mapillary.com/dashboard/developers"
+}
 ```
 
-The behavior hook holds the key in React state and sends it in the request body:
+Google Street View sends its key as a query parameter:
 
-```tsx
-// streetViewFetcherBehavior.tsx
-const [apiKey, setApiKey] = useState('');
-// ... <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} />
-fetch(`${API_BASE}/data/streetview/coverage`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ bbox, api_key: apiKey }),
-});
+```json
+"auth": {
+  "mode": "required-token",
+  "secretId": "google.maps-key",
+  "scheme": "query",
+  "paramName": "key",
+  "helpUrl": "https://developers.google.com/maps/documentation/streetview/get-api-key"
+}
 ```
 
-Endpoints that need the key should return a **400 / 503 with a hint** when it's missing, rather than crashing with a stacktrace. The frontend renders that hint inline so the user knows exactly what to do.
+An `optional-token` source (Hugging Face models) sends the key when the account has one and asks without it otherwise. A `required-token` source the account holds no key for is refused before any job exists: `start_acquire` raises `CredentialRequired` (a `428`) naming the slot and the help link, and a search leg reports `needs-token`. A missing key is a message naming what to do, never a stacktrace.
 
 ### 3.5 Long-running calls and job-id polling
 
-Inference, batch downloads, or any external call that takes more than a few seconds shouldn't hold a connection open. The streetvision pattern, in [`streetvision/jobs.py`](../utk_curio/backend/app/streetvision/jobs.py):
+A batch download, or any external call that takes more than a few seconds, shouldn't hold a connection open. It runs as a Discovery job ([`discovery/application/jobs.py`](../utk_curio/backend/app/discovery/application/jobs.py)):
 
-1. `POST /inference/run` returns `{ job_id }` immediately and spawns a `threading.Thread` that does the work and writes progress into a module-level dict guarded by a lock.
-2. The frontend polls `GET /inference/results/<job_id>` every ~2 s, reads `{ status, processed, total_images, results }`, and renders a progress bar.
-3. On `status === "completed"`, the behavior hook pulls the results and pushes them downstream via `data.outputCallback(...)`.
+1. `POST /api/discovery/sources/<source>/resources/<id>/acquire` answers `202` with the job's row (`jobId`, `status`) at once, and starts a daemon thread (`run_in_background`) that does the work and writes its progress onto the job (`bytes_read`, `total_bytes`, `items_done`, `items_total`, `stage_message`). When the account already holds what was asked for, it answers `200` with that and starts no job.
+2. The page polls `GET /api/discovery/jobs/<job_id>` and renders `bytesRead`, `totalBytes`, `itemsDone`, `itemsTotal` and `stageMessage` as progress.
+3. `DELETE /api/discovery/jobs/<job_id>` asks the job to stop; the worker checks `job.cancelled` between chunks.
+4. A job ends in one of the `TERMINAL` states (`completed`, `failed`, `refused`, `cancelled`), carrying the dataset (`dataset`, `datasetId`) or the model (`model`) on success and `error` otherwise.
 
-The job store is in-memory. Restarting Curio loses any in-flight jobs. That is fine for typical interactive use; document it in the package README. If you genuinely need durability (multi-hour jobs, multi-process workers), reach for SQLite or Redis, but most node packages don't.
+The store (`JobStore`) is keyed by `(user, job)`, so another account's job id reads as unknown, and a finished job is swept `TTL_SECONDS` (15 minutes) after it ends. It is in memory: restarting Curio loses any job in flight.
 
 ### 3.6 Caching expensive responses
 
-[`streetvision/services/cache.py`](../utk_curio/backend/app/streetvision/services/cache.py) stores fetched Street View images under `.curio/users/<user-key>/streetvision/images/` (overlays alongside, under `overlays/`) so re-running with the same bbox doesn't re-hit Google (and re-bill the user). Pattern:
+The Discovery Catalog's patterns:
 
-- Cache key = hash of the request inputs (e.g., `pano_id + size`).
-- TTL: forever for immutable content (an image at a coordinate); a few hours for content that changes (model lists).
-- **Store per user**, under `.curio/users/<user-key>/<package>/`, resolved through the same guard `cache.user_root` uses so a bogus key cannot escape the store. Serve the cache from a route with `@require_auth` that resolves the caller's own directory, as Street Vision's overlay route does.
+- **Key the cache on the request's inputs.** A download already held, by `(sourceId, resourceId, format, parametersHash)`, answers `200` and contacts no portal; the place search keys on the query text.
+- **Expire what changes.** A downloaded file stays until its dataset is deleted; a place answer lasts a day (`CACHE_TTL_S` in `places.py`), and a WFS server's capabilities document 15 minutes (`CAPABILITIES_TTL_S` in `providers/wfs.py`).
+- **Store per user, serve by id.** A bucket collection's files are cached under the account's own media directory (`media_work_root` in [`discovery/infrastructure/media_dirs.py`](../utk_curio/backend/app/discovery/infrastructure/media_dirs.py)) by [`application/cache_collection.py`](../utk_curio/backend/app/discovery/application/cache_collection.py), capped by `CURIO_MEDIA_CACHE_MAX_GB`, and the files a node derives with `curio_derived_file` go beside them. Both are served by id from `@require_auth` routes in [`discovery/media_routes.py`](../utk_curio/backend/app/discovery/media_routes.py) (`/api/datasets/<dataset_id>/media/<file_id>`), which look the file up in the caller's own dataset and never take a path from the request.
 
 ### 3.7 The error contract back to the frontend
 
@@ -182,7 +188,7 @@ Always return JSON bodies with `{ "error": "...", "hint": "..." }` for non-200 r
 
 ### 3.8 Per-package Python dependencies
 
-Curio's `requirements.txt` / `pyproject.toml::dependencies` carries **only** the framework: what the backend and sandbox Flask apps need at module load (Flask, SQLAlchemy, requests, the LLM SDKs, etc.). **Every node package** ships its own data-ops libs in its manifest's `dependencies.python`, including the bundled `curio.builtin@1` (pandas, geopandas, etc.) and optional packages like `curio.weather@1` (rasterio, pythermalcomfort, rasterstats) and `curio.streetvision@1` (torch, transformers, ...). The `curio start` launcher walks every installed manifest at startup, merges them into a single conflict-aware union, and pip-installs the result before booting the subprocesses. See [`main.py::install_manifest_dependencies`](../utk_curio/main.py) for the walker.
+Curio's `requirements.txt` / `pyproject.toml::dependencies` carries **only** the framework: what the backend and sandbox Flask apps need at module load (Flask, SQLAlchemy, requests, the LLM SDKs, etc.). **Every node package** ships its own data-ops libs in its manifest's `dependencies.python`, including the bundled `curio.builtin@1` (pandas, geopandas, etc.) and optional packages like `curio.weather@1` (rasterio, pythermalcomfort, rasterstats) and `curio.streetvision@1` (onnxruntime). The `curio start` launcher walks every installed manifest at startup, merges them into a single conflict-aware union, and pip-installs the result before booting the subprocesses. See [`main.py::install_manifest_dependencies`](../utk_curio/main.py) for the walker.
 
 Declare your package's deps in `manifest.dependencies.python`:
 
@@ -190,19 +196,18 @@ Declare your package's deps in `manifest.dependencies.python`:
 {
   "id": "curio.streetvision",
   "dependencies": {
-    "python": {
-      "torch": ">=2.0",
-      "transformers": ">=4.30",
-      "ultralytics": ">=8.0",
-      "huggingface_hub": ">=0.20"
-    },
     "js": {},
-    "packages": {}
+    "packages": {},
+    "python": {
+      "onnxruntime": ">=1.17"
+    }
   }
 }
 ```
 
 Accepted spec syntax: PEP 440 comparators (`>=2.0`, `~=4.30`, `==1.5.0`, `!=2.0`), bare versions (`1.2.3` → treated as `==1.2.3`), npm-style carets (`^0.14` → rewritten to `~=0.14`), or empty string for "latest".
+
+A model in the Model Catalog declares its runtime's libraries the same way, in its own manifest's `dependencies.python`, and they install when the model is added (`install_dependencies` in [`model_catalog/service.py`](../utk_curio/backend/app/model_catalog/service.py)). A Transformers model brings `torch`, `transformers` and `safetensors` (`RUNTIME_DEPS` in [`discovery/application/model_acquire.py`](../utk_curio/backend/app/discovery/application/model_acquire.py)); an ONNX model runs on the Street Vision package's `onnxruntime`.
 
 #### How the install/uninstall flow handles them
 
@@ -212,39 +217,79 @@ Accepted spec syntax: PEP 440 comparators (`>=2.0`, `~=4.30`, `==1.5.0`, `!=2.0`
 
 #### When to still lazy-import
 
-Even though deps are installed up front, lazy-import expensive libraries inside the route handler that needs them so a broken install fails per-request with a clean 503 instead of crashing the backend on startup:
+Even though deps are installed up front, lazy-import expensive libraries inside the route handler that needs them so a broken install fails per-request with a clean 503 instead of crashing the backend on startup. The Spatial Join route imports its shapely helpers inside the handler:
 
 ```python
-@bp.post("/inference/run")
-def inference_run():
+# api/routes.py
+@bp.route('/spatial_join', methods=['POST'])
+def spatial_join():
+    # ...
     try:
-        from .services.inference import run_batch  # lazy import
+        from utk_curio.backend.app.common.spatial import (
+            enrich_points_with_polygons,
+            polygons_with_counts,
+        )
+        enriched, aggregates, tag_column = enrich_points_with_polygons(
+            points=point_dicts,
+            polygon_fc=polygons_fc,
+            name_property=name_property,
+            warnings=warnings,
+        )
     except ImportError as e:
         return jsonify({
-            "error": f"streetvision dependency unavailable: {e}",
-            "hint": "Reinstall the Street Vision package from /catalog",
+            "error": "spatial extras not installed (shapely required)",
+            "hint": "pip install shapely",
+            "detail": str(e),
         }), 503
     # ...
 ```
 
-## 4. Walked example: the Street Vision package
+Sandbox helpers follow the same rule: `curio_segment` imports `onnxruntime`, or `torch` and `transformers`, only when it loads a model of that runtime, and a missing library stops that node's run with a `RuntimeError` saying which runtime is missing (`_OnnxRunner` and `_TransformersRunner` in [`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)).
 
-The package's parts:
+## 4. Walked example: three nodes
 
-### 4.1 Two templates in [`packages/curio.streetvision@1/manifest.json`](../packages/curio.streetvision@1/manifest.json)
+One node per pattern in §2: Column Filter (`curio.example-ui@1`) renders its own interface, Image Segmentation (`curio.streetvision@1`) is a code node in a package, and Spatial Join (`curio.builtin@1`) calls a backend route.
+
+### 4.1 A custom-UI template in [`packages/curio.example-ui@1/manifest.json`](../packages/curio.example-ui@1/manifest.json)
 
 ```jsonc
+"behaviorScript": "scripts/behaviors.js",
 "templates": [
-  { "id": "street-view-fetcher", "behavior": "street-view-fetcher",
-    "inputPorts": [],                                                  "outputPorts": [{"types":["GEODATAFRAME"]}] },
-  { "id": "hf-cv-inference",     "behavior": "hf-cv-inference",
-    "inputPorts": [{"types":["GEODATAFRAME","JSON"]}],                 "outputPorts": [{"types":["GEODATAFRAME"]}] }
+  { "id": "column-filter", "behavior": "column-filter", "editor": "none",
+    "inputPorts":  [{"cardinality":"1","types":["DATAFRAME"]}],
+    "outputPorts": [{"cardinality":"1","types":["DATAFRAME"]}] }
 ]
 ```
 
-Each entry names a *behavior key* (a string), not a JS module path. The same key can be implemented by an entirely different package and still work, which is how forks and overrides happen.
+Each entry names a *behavior key* (a string), not a JS module path. The same key can be implemented by an entirely different package and still work, which is how forks and overrides happen. `behaviorScript` names the bundle that registers the key (§4.7).
 
-### 4.2 Plus a fourth template in [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json)
+### 4.2 A code template in [`packages/curio.streetvision@1/manifest.json`](../packages/curio.streetvision@1/manifest.json)
+
+```jsonc
+"dependencies": { "js": {}, "packages": {}, "python": { "onnxruntime": ">=1.17" } },
+"templates": [
+  { "id": "image-segmentation", "behavior": "code", "editor": "code", "engine": "python",
+    "source": "sources/image-segmentation.py",
+    "inputPorts":  [{"cardinality":"1","types":["GEODATAFRAME","DATAFRAME"]}],
+    "outputPorts": [{"cardinality":"1","types":["GEODATAFRAME"]}] }
+]
+```
+
+The template reuses the built-in `code` behavior, so the package ships no JavaScript and no `behaviorScript`. `source` is the starter a new node opens with, [`sources/image-segmentation.py`](../packages/curio.streetvision@1/sources/image-segmentation.py):
+
+```python
+model = curio_model("model.curio.ddrnet23-slim")
+classes = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
+
+return curio_segment(arg, model, classes)
+```
+
+Both helpers are in the sandbox's namespace for every Python node:
+
+- `curio_model("<model id>")` ([`sandbox/util/models.py`](../utk_curio/sandbox/util/models.py)) returns the folder of a model in the account's **Model Catalog** ([`utk_curio/backend/app/model_catalog/`](../utk_curio/backend/app/model_catalog/)); the backend resolves every id a node's code names before the run (`resolve_exec_models` in `model_catalog/service.py`). Models ship under [`models/`](../models/), as [`model.curio.ddrnet23-slim@1`](../models/model.curio.ddrnet23-slim@1/manifest.json) does, or are added from the Discovery Catalog's Hugging Face models source (§3).
+- `curio_segment(images, model_dir, classes)` ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) runs the model its folder's manifest describes (a `runtime` of `onnx` on onnxruntime, `transformers` on Transformers) over every row's `path`, and returns the rows with `dominant_class`, `dominant_pct`, a `<class>_pct` per class, `overlay_url` and `segment_error` first. Each overlay is written with `curio_derived_file` (kind `"image"`, [`sandbox/util/collections.py`](../utk_curio/sandbox/util/collections.py)) and served back by the media route (§3.6).
+
+### 4.3 A built-in template in [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json)
 
 A generic Spatial Join that takes points + polygons and tags each point with a column of the containing polygon (or emits the polygons with a count of points inside each):
 
@@ -262,64 +307,48 @@ This one belongs in `curio.builtin@1`, not `curio.streetvision@1`, because it's 
 
 The agents' shared preamble describes every `curio.builtin@1` template from this manifest: its label, description, control, port types, how many connections its inputs accept, and interaction support. After adding or changing a built-in template, run `python scripts/generate_contracts.py` and commit the regenerated `utk_curio/llm-prompts/default_preamble.txt` with the manifest; the backend suite fails until you do (see [CONTRIBUTING.md, Generated Files](CONTRIBUTING.md#generated-files)).
 
-### 4.3 Three behavior hooks
+### 4.4 Behavior hooks
 
-The two Street Vision hooks ship inside the package itself, at [`packages/curio.streetvision@1/sources/`](../packages/curio.streetvision@1/sources/); the generic one lives with the built-ins in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/).
+Column Filter's hook ships inside its package, at [`packages/curio.example-ui@1/sources/`](../packages/curio.example-ui@1/sources/); Spatial Join's lives with the built-ins in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/). Image Segmentation runs on the built-in `code` behavior and needs no hook of its own.
 
-- [`streetViewFetcherBehavior.tsx`](../packages/curio.streetvision@1/sources/streetViewFetcherBehavior.tsx): place picker, bbox preview, and fetch button. Hits `/api/streetvision/data/streetview/{search_place,coverage,fetch}`, emits a GEODATAFRAME via `data.outputCallback`.
-- [`hfCvInferenceBehavior.tsx`](../packages/curio.streetvision@1/sources/hfCvInferenceBehavior.tsx): reads upstream image points from `data.input`, runs an inference job, polls `/api/streetvision/inference/results/<id>`. Demonstrates the long-running job pattern from §3.5. Converts the finished run into a GEODATAFRAME with [`resultsToFeatureCollection.ts`](../packages/curio.streetvision@1/sources/resultsToFeatureCollection.ts), kept as a separate pure module so the shape every downstream node depends on can be tested without React.
-- [`spatialJoinBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinBehavior.tsx): the only node here with two distinct input handles, declared with `handlesOverride`. Worth reading if you ever need a 2-input node.
+- [`columnFilterBehavior.tsx`](../packages/curio.example-ui@1/sources/columnFilterBehavior.tsx): reads `data.input` with `resolveInput`, which fetches a sandbox artifact reference and passes an inline payload through; keeps the column, comparison and threshold in `useState`; sends the matching rows downstream with `data.outputCallback` and reports through `nodeState.setOutput`. It returns only `contentComponent`.
+- [`spatialJoinBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinBehavior.tsx): the only node here with two distinct input handles, declared with `handlesOverride`. Posts both inputs to `/spatial_join` (§4.5). Worth reading if you ever need a 2-input node.
 
-Each is registered as a global behavior key in [`registry/builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts):
+The package's hook registers from its bundle entry point, [`sources/index.tsx`](../packages/curio.example-ui@1/sources/index.tsx), through `window.curio`:
+
+```tsx
+function registerAll(curio: CurioGlobal) {
+  curio.registerBehavior('column-filter', useColumnFilterBehavior);
+}
+```
+
+The built-in one registers in [`registry/builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts):
 
 ```typescript
-registerBehavior('street-view-fetcher', useStreetViewFetcherBehavior);
-registerBehavior('hf-cv-inference',     useHfCvInferenceBehavior);
-registerBehavior('spatial-join',        useSpatialJoinBehavior);
+registerBehavior('spatial-join', useSpatialJoinBehavior);
 ```
 
-Even though two of those templates live in a separate (non-built-in) package, their behavior hooks are registered globally; packages reference behavior keys by name, not by import.
+Both land in one global registry; packages reference behavior keys by name, not by import.
 
-### 4.4 The backend Flask blueprint at [`utk_curio/backend/app/streetvision/`](../utk_curio/backend/app/streetvision/)
+### 4.5 The backend route
 
-```
-streetvision/
-├── __init__.py     # bp = Blueprint("streetvision", __name__)
-├── routes.py       # 8 endpoints (health, models/search, search_place,
-│                   #              coverage, fetch, inference/run,
-│                   #              inference/results, inference/overlay)
-├── jobs.py         # threading-based job store (§3.5)
-└── services/
-    ├── huggingface.py   # search_models + lazy load_model
-    ├── streetview.py    # Google API client (§3.4)
-    ├── inference.py     # torch + transformers (lazy-imported)
-    └── cache.py         # on-disk image cache (§3.6)
-```
+Spatial Join's route is a single handler at the end of [`api/routes.py`](../utk_curio/backend/app/api/routes.py) (`POST /spatial_join`) that calls generic helpers at [`utk_curio/backend/app/common/spatial.py`](../utk_curio/backend/app/common/spatial.py) (`enrich_points_with_polygons`, `polygons_with_counts`). Reusable utilities like that belong under `common/`, not in any specific blueprint. Image Segmentation has no route of its own: its work runs in the sandbox.
 
-Registered next to the other blueprints in [`utk_curio/backend/app/__init__.py`](../utk_curio/backend/app/__init__.py):
+### 4.6 Shipping the package
 
-```python
-from utk_curio.backend.app.streetvision import bp as streetvision_bp
-app.register_blueprint(streetvision_bp, url_prefix="/api/streetvision")
-```
+The three packages are bundled in-repo under [`packages/`](../packages/). Seeding covers `curio.builtin@1` plus, when Curio starts with `--with-examples`, whatever the shipped example dataflows declare as dependencies (`example_dep_package_ids` in [`backend/app/packages/application/seeding.py`](../utk_curio/backend/app/packages/application/seeding.py)). Example 10 declares `curio.streetvision@1`, so Street Vision is installed with the examples. `curio.example-ui@1` is in neither set: users opt in by clicking **Add to project** in the catalog. Generally:
 
-Spatial Join is simpler: a single handler at the end of [`api/routes.py`](../utk_curio/backend/app/api/routes.py) (`POST /spatial_join`) that calls a generic helper at [`utk_curio/backend/app/common/spatial.py`](../utk_curio/backend/app/common/spatial.py). Reusable utilities like that belong under `common/`, not in any specific blueprint.
-
-### 4.5 Shipping the package
-
-The Street Vision package is bundled in-repo under [`packages/`](../packages/) but **not auto-installed**: seeding covers `curio.builtin@1` plus whatever the shipped example dataflows declare as dependencies (`example_dep_package_ids` in [`backend/app/packages/application/seeding.py`](../utk_curio/backend/app/packages/application/seeding.py)), and Street Vision is in neither set. Users opt in by clicking **Add to project** in the catalog. Generally:
-
-- **Bundled-and-auto-installed** → only for `curio.builtin@1`. Anything every user must have.
-- **Bundled-and-installable** → optional first-party packages like `curio.streetvision@1`, `ai.utk.uhvi@1`. Visible in the catalog without a remote registry roundtrip.
+- **Bundled-and-auto-installed** → `curio.builtin@1`, which every user must have, and, with `--with-examples`, the packages a shipped example declares (`curio.streetvision@1`, `curio.weather@1`).
+- **Bundled-and-installable** → optional first-party packages like `curio.example-ui@1`, `ai.utk.uhvi@1`. Visible in the catalog without a remote registry roundtrip.
 - **Remote** → publishing through Curio's catalog endpoint, for third-party packages. Same manifest schema.
 
-### 4.6 How behavior distribution works (and why)
+### 4.7 How behavior distribution works (and why)
 
 When you install a package that ships its own custom node UIs, Curio needs to find a way to load the behavior JavaScript without rebuilding the main app. The mechanism in place today:
 
 1. **The package directory contains both the manifest *and* a pre-built `scripts/behaviors.js`.** For first-party packages (in-repo), `npm run build` produces that JS via [`webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js). Third-party authors compile their own. The bundle lives under `scripts/` because that subdirectory is one of the archive validator's allowed top-level dirs (see [`archive.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/repositories/archive.py)), so the bundle survives the catalog install round-trip.
 2. **The manifest declares the bundle via `behaviorScript: "scripts/behaviors.js"`** (a top-level field, not per-template). The path is relative to the package directory; any allowed-subdirectory location works.
-3. **At app boot, the frontend's `loadInstalledPackages` fetches `/api/packages/<dirName>/file/scripts/behaviors.js` with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors**. (A plain `<script src>` can't carry an `Authorization` header, so Firefox's OpaqueResponseBlocking would reject the `require_auth` 401 response, and the inline-injection path bypasses that.) The bundle's top-level side-effect calls `window.curio.registerBehavior(...)` for each behavior hook it ships. By the time `buildDescriptor` looks up `getBehavior('street-view-fetcher')`, the key is registered.
+3. **At app boot, the frontend's `loadInstalledPackages` fetches `/api/packages/<dirName>/file/scripts/behaviors.js` with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors**. (A plain `<script src>` can't carry an `Authorization` header, so Firefox's OpaqueResponseBlocking would reject the `require_auth` 401 response, and the inline-injection path bypasses that.) The bundle's top-level side-effect calls `window.curio.registerBehavior(...)` for each behavior hook it ships. By the time `buildDescriptor` looks up `getBehavior('column-filter')`, the key is registered.
 
    The bundle reads its backend URL at runtime from `window.curio.backendUrl` (exposed by Curio's main bundle in [`src/registry/index.ts`](../utk_curio/frontend/urban-workflows/src/registry/index.ts)) instead of relying on a build-time `process.env.BACKEND_URL`. This keeps catalog-published bundles portable across deployments, because the published bundle doesn't bake in the build host's URL.
 4. **The behavior bundle externalises React, ReactDOM, ReactFlow, and `registerBehavior`** so it shares Curio's instances at runtime. Curio's main bundle exposes them as `window.React`, `window.ReactDOM`, `window.ReactFlow`, `window.curio.registerBehavior` ([`src/registry/index.ts`](../utk_curio/frontend/urban-workflows/src/registry/index.ts)). Without this, distinct React copies would break rules-of-hooks.
@@ -331,7 +360,7 @@ The behaviors in `curio.builtin@1` (`code`, `vega`, `merge-flow`, `spatial-join`
 
 ## 5. Recipe: add a Flask blueprint
 
-When your node needs server-side capabilities the sandbox can't provide (external APIs, long-running jobs, persistent state, native deps), add a blueprint under `utk_curio/backend/app/<feature>/`. The streetvision blueprint (§4.4) is the canonical example.
+When your node needs server-side capabilities the sandbox can't provide, add a route. A single route can join an existing blueprint, as Spatial Join's joins the `api` blueprint (§4.5). A feature with several routes gets its own blueprint under `utk_curio/backend/app/<feature>/`, as the Model Catalog does ([`model_catalog/routes.py`](../utk_curio/backend/app/model_catalog/routes.py): `models_bp`, under `/api/models`). Third-party APIs and long downloads are Discovery Catalog sources and jobs (§3).
 
 1. **Create the directory + entry-point.** `utk_curio/backend/app/<feature>/__init__.py`:
    ```python
@@ -505,7 +534,7 @@ The smallest possible package adds one template plus its behavior hook. Use this
    Windows a package committed from a Unix machine reports every file as
    changed. Expected, and harmless.)
 
-9. **Write `README.md`** in the package directory. The catalog UI shows it inline when users browse for packages to install. Cover Python deps the catalog install will auto-fetch from `manifest.dependencies.python` (size, GPU recommendation, etc.), any env vars / API keys the node UI needs at runtime, costs (paid APIs), and limitations.
+9. **Write `README.md`** in the package directory. The catalog UI shows it inline when users browse for packages to install. Cover Python deps the catalog install will auto-fetch from `manifest.dependencies.python` (size, GPU recommendation, etc.), any env vars or API Settings keys the node needs at runtime (§3.2), costs (paid APIs), and limitations.
 
 10. **Validate end-to-end** by booting Curio and checking that:
    - The package shows up in `/catalog` for installation.

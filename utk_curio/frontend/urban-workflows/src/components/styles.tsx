@@ -79,6 +79,12 @@ import {
     hasDatasetDrag,
     readDatasetDragPayload,
 } from "../services/datasetCatalog";
+import {
+    applyModelToNodeData,
+    canApplyModelToNode,
+    hasModelDrag,
+    readModelDragPayload,
+} from "../services/modelCatalog";
 import "./styles.css";
 import { useStarterContext } from "../providers/StarterProvider";
 import { useCode } from "../hook/useCode";
@@ -505,12 +511,46 @@ export const NodeContainer = ({
     const canApplyRef = useRef(false);
     canApplyRef.current = canApplyDatasetToNode(data);
 
+    // --- Model drag-and-drop, through the same capture-phase listeners ---
+    // A model goes only onto a node whose code calls `curio_model("...")`. Every
+    // other node still takes the drop, so it can say why nothing changed rather
+    // than letting the drop fall through to the canvas, where it does nothing.
+    const modelDropHandlerRef = useRef<(e: DragEvent) => void>(() => {});
+    modelDropHandlerRef.current = (e: DragEvent) => {
+        if (!e.dataTransfer) return;
+        const model = readModelDragPayload(e.dataTransfer);
+        if (!model) return;
+        e.preventDefault();
+        e.stopPropagation();
+        // The editor's live text, which can be ahead of `data.code`.
+        const live = { ...data, code: code ?? data.code ?? data.defaultCode };
+        if (!canApplyModelToNode(live)) {
+            showToast("This node does not run a model", "warning");
+            return;
+        }
+        const applied = applyModelToNodeData(live, model);
+        updateDataNode(nodeId, applied);
+        updateDefaultCode(nodeId, applied.code);
+        sendCodeToWidgets?.(applied.code);
+        markDirty();
+        showToast(`Model set to ${model.name}`, "success");
+    };
+
     useEffect(() => {
         const el = resizableRef.current;
         if (!el) return;
 
         const handleDragOver = (e: DragEvent) => {
-            if (!e.dataTransfer || !hasDatasetDrag(e.dataTransfer)) return;
+            if (!e.dataTransfer) return;
+            // Accepted on every node, eligible or not: a refused dragover
+            // cancels the drop, and the drop is what explains the refusal.
+            if (hasModelDrag(e.dataTransfer)) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = "copy";
+                return;
+            }
+            if (!hasDatasetDrag(e.dataTransfer)) return;
             if (!canApplyRef.current) return;
             e.preventDefault();
             e.stopPropagation();
@@ -518,6 +558,10 @@ export const NodeContainer = ({
         };
 
         const handleDrop = (e: DragEvent) => {
+            if (e.dataTransfer && hasModelDrag(e.dataTransfer)) {
+                modelDropHandlerRef.current(e);
+                return;
+            }
             datasetDropHandlerRef.current(e);
         };
 
@@ -533,6 +577,12 @@ export const NodeContainer = ({
     // Keep React synthetic handlers as pass-throughs so the browser still
     // sees preventDefault() called (belt-and-suspenders).
     const onDatasetDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+        if (hasModelDrag(event.dataTransfer)) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.dataTransfer.dropEffect = "copy";
+            return;
+        }
         if (!hasDatasetDrag(event.dataTransfer)) return;
         if (!canApplyDatasetToNode(data)) return;
         event.preventDefault();
@@ -543,9 +593,9 @@ export const NodeContainer = ({
     const onDatasetDrop = (event: React.DragEvent<HTMLDivElement>) => {
         // Primary handling is done by the capture-phase native listener above.
         // This synthetic handler is kept only to prevent browser default actions
-        // (e.g. Monaco opening dropped file as text) for dataset drags that the
-        // native listener already handled.
-        if (!hasDatasetDrag(event.dataTransfer)) return;
+        // (e.g. Monaco opening dropped file as text) for dataset and model drags
+        // that the native listener already handled.
+        if (!hasDatasetDrag(event.dataTransfer) && !hasModelDrag(event.dataTransfer)) return;
         event.preventDefault();
         event.stopPropagation();
     };

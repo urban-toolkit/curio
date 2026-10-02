@@ -21,9 +21,9 @@
   "rowCount": 36,
   "featureCount": null,
   "schema": null,
-  "lakeSource": {
-    "lakeId": "lake.curio.example-storage@1",
-    "lakeName": "Example storage",
+  "discoverySource": {
+    "sourceId": "source.curio.example-storage@1",
+    "sourceName": "Example storage",
     "resourceId": "air-quality",
     "fileCount": 9,
     "fields": "sensor,day",

@@ -68,8 +68,8 @@ class TestClassifyAccess:
 
 
 class TestAnArchiveIsAManualDownload:
-    """The Data Lake refuses archives before reading a body
-    (``datalakes/domain/formats.py``), so a probe must not call one data a
+    """The Discovery Catalog refuses archives before reading a body
+    (``discovery/domain/formats.py``), so a probe must not call one data a
     loader can read. A person unpacks it and imports the file."""
 
     def test_an_archive_content_type_is_a_manual_download(self):

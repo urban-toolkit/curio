@@ -21,7 +21,7 @@ import {
  *
  * Five states, and the blocked one carries the requirement the owner named: a
  * model configured by `curio.py start --llm-model` is as real as one typed
- * into AI Settings, so the panel reports WHICH of the two supplied it and
+ * into API Settings, so the panel reports WHICH of the two supplied it and
  * never tells an operator who passed the flag that they configured nothing.
  *
  * The body mounts only while the disclosure is open (the dev/116 pattern), and

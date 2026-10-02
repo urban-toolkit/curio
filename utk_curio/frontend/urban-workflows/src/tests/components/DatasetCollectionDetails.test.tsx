@@ -43,7 +43,7 @@ const { apiFetch } = require("../../utils/authApi") as { apiFetch: jest.Mock };
 
 const block = {
   kind: "images" as const,
-  sourceId: "lake.example.bucket@1",
+  sourceId: "source.example.bucket@1",
   sourceName: "Bucket",
   provider: "s3",
   resourceId: "pics",
@@ -71,7 +71,7 @@ function item(over: Partial<DatasetCatalogItem> = {}): DatasetCatalogItem {
     updatedAt: new Date().toISOString(),
     tags: [],
     collection: block,
-    lakeSource: { lakeId: "lake.example.bucket@1", lakeName: "Bucket", resourceId: "pics", fileCount: 2 },
+    discoverySource: { sourceId: "source.example.bucket@1", sourceName: "Bucket", resourceId: "pics", fileCount: 2 },
     ...over,
   };
 }
@@ -112,7 +112,7 @@ describe("a collection's details", () => {
     expect(screen.getByText("Collection", { selector: "p" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Bucket" })).toHaveAttribute(
       "href",
-      "/catalog/lakes/lake.example.bucket%401",
+      "/catalog/discovery/source.example.bucket%401",
     );
     expect(screen.getByText("2 images")).toBeInTheDocument();
     expect(screen.queryByText("Downloaded from")).not.toBeInTheDocument();
@@ -163,7 +163,7 @@ describe("a collection's details", () => {
         if (path.endsWith("/cache") && opts?.method === "POST") {
           return Promise.resolve({ jobId: "j1", status: "queued", itemsDone: 0, itemsTotal: 2 });
         }
-        if (path.startsWith("/api/datalakes/jobs/")) {
+        if (path.startsWith("/api/discovery/jobs/")) {
           return new Promise((resolve) => {
             answer = resolve;
           });
@@ -184,7 +184,7 @@ describe("a collection's details", () => {
       await act(async () => {
         jest.advanceTimersByTime(1000);
       });
-      const polls = () => apiFetch.mock.calls.filter(([path]) => String(path).startsWith("/api/datalakes/jobs/")).length;
+      const polls = () => apiFetch.mock.calls.filter(([path]) => String(path).startsWith("/api/discovery/jobs/")).length;
       expect(polls()).toBe(1);
       view!.unmount();
       await act(async () => {
@@ -212,7 +212,7 @@ describe("a collection's details", () => {
       screen.getByRole("button", { name: "Cache files" }).click();
     });
     expect(apiFetch).toHaveBeenCalledWith(
-      "/api/datalakes/collections/imported.xc1%401/cache",
+      "/api/discovery/collections/imported.xc1%401/cache",
       { method: "POST" },
     );
     await waitFor(() => expect(screen.getByRole("button", { name: "Caching…" })).toBeDisabled());
@@ -232,9 +232,9 @@ describe("a table added from a storage source", () => {
       item({
         format: "parquet",
         collection: null,
-        lakeSource: {
-          lakeId: "lake.curio.example-storage@1",
-          lakeName: "Example storage",
+        discoverySource: {
+          sourceId: "source.curio.example-storage@1",
+          sourceName: "Example storage",
           resourceId: "air-quality",
           fileCount: 9,
           fetchedAt: new Date().toISOString(),

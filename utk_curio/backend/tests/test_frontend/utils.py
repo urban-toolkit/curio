@@ -657,6 +657,7 @@ def _catalog_resolution(code: str, username: str | None = None) -> dict:
         "paths": resolved,
         "collections": answer.get("collections") or {},
         "mediaDir": answer.get("mediaDir"),
+        "models": answer.get("models") or {},
     }
 
 
@@ -727,6 +728,7 @@ def execute_workflow_programmatically(
                 "dataset_paths": resolution["paths"],
                 "collections": resolution["collections"],
                 "media_dir": resolution["mediaDir"],
+                "models": resolution["models"],
             },
             headers=sandbox_auth_header(),
             timeout=120,
@@ -2590,6 +2592,7 @@ _TOOLS_PALETTES = {
     "packages": ("#packages-palette", "Open node package palette", "Package templates"),
     "datasets": ("#datasets-palette", "Open dataset palette", "Dataset palette"),
     "agents": ("#agents-palette", "Open agent palette", "Agent palette"),
+    "models": ("#models-palette", "Open model palette", "Model palette"),
 }
 
 
@@ -3509,6 +3512,8 @@ _HEAVY_NODE_TYPES = {
     "DATA_LOADING",
     "DATA_TRANSFORMATION",
     "COMPUTATION_ANALYSIS",
+    # A model over every image of a collection: example 10's 40 photos.
+    "IMAGE_SEGMENTATION",
 }
 
 
@@ -4321,7 +4326,7 @@ SCRIPTED_LABEL = "Scripted"
 def use_scripted_llm(backend_url: str, token: str) -> dict:
     """Make a scripted LLM configuration this user's default, and return it.
 
-    Goes through the real AI Settings routes (``/api/agents/llm``) rather than a
+    Goes through the real API Settings routes (``/api/agents/llm``) rather than a
     test-only shortcut, so the resolution path under test is the production one.
     """
     listing = api_json(f"{backend_url}/api/agents/llm", token)

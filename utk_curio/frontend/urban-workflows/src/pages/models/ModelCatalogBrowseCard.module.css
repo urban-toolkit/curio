@@ -1,0 +1,19 @@
+/*
+ * The parts of the model browse card keyed off its kind.
+ *
+ * The layout is ../catalog/CatalogBrowseLayout.module.css, shared with the
+ * other four browse pages; only kind-keyed rules live here, the split
+ * DiscoverySourceCard.module.css uses.
+ *
+ * ONE key, not one per runtime: on this page every card is a model, so a
+ * per-runtime colour would carry no information. The runtime is a neutral
+ * badge instead. See --curio-kind-model-fg.
+ */
+
+.strip_model { background: var(--curio-kind-model-fg); }
+
+/* Declared here so `.cardActive.card_model` is a valid compound WITHIN this
+   module: CSS modules hash per file, so the shared `.cardActive` cannot
+   satisfy it. Both classes are applied together and agree. */
+.cardActive { box-shadow: var(--curio-shadow-browse-card-raised); }
+.cardActive.card_model { border-color: var(--curio-kind-model-fg); }

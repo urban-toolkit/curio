@@ -1,0 +1,24 @@
+{
+  "id": "model.curio.ddrnet23-slim",
+  "name": "DDRNet23-Slim (street scenes)",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "Labels every pixel of a street photo with one of the 19 Cityscapes classes: road, sidewalk, building, vegetation, terrain, sky, cars, people and more. Small and fast: it runs on a CPU with onnxruntime, about a fifth of a second per image, and needs no download.",
+  "publisher": "DDRNet authors; ONNX export by Qualcomm AI Hub Models (v0.63.0, w8a8)",
+  "homepage": "https://huggingface.co/qualcomm/DDRNet23-Slim",
+  "license": "MIT; trained on Cityscapes",
+  "licenseFile": "LICENSE",
+  "runtime": "onnx",
+  "task": "semantic-segmentation",
+  "entry": "files/ddrnet23_slim.onnx",
+  "input": { "width": 2048, "height": 1024, "dtype": "uint8", "layout": "NCHW", "scale": 1.0 },
+  "labels": [
+    "road", "sidewalk", "building", "wall", "fence", "pole", "traffic light", "traffic sign",
+    "vegetation", "terrain", "sky", "person", "rider", "car", "truck", "bus", "train",
+    "motorcycle", "bicycle"
+  ],
+  "tags": ["segmentation", "street", "cityscapes", "onnx"],
+  "sizeBytes": 23076949,
+  "createdAt": "2026-10-01T00:00:00Z",
+  "updatedAt": "2026-10-01T00:00:00Z"
+}

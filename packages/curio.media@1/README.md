@@ -1,6 +1,6 @@
 # `curio.media@1`: Media
 
-Nodes for the collections the Data Lake Catalog adds from a folder, a bucket
+Nodes for the collections the Discovery Catalog adds from a folder, a bucket
 or a Hugging Face dataset repository: videos, recordings and raster tiles.
 Each node takes the
 rows a Data Loading node returns for a collection (`curio_collection(...)`) and

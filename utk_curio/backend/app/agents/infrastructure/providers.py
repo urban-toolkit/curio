@@ -856,7 +856,7 @@ def probe_native_tools(config: ProviderConfig, usage_out: dict | None = None) ->
 class ModelListingUnavailable(RuntimeError):
     """The endpoint could not be asked what it serves.
 
-    Carries the reason so AI Settings can say *why* the list is missing rather
+    Carries the reason so API Settings can say *why* the list is missing rather
     than only that it is: a rejected key, an unreachable host and an endpoint
     with no listing route are three different things for the user to fix.
     """
@@ -939,7 +939,7 @@ def list_provider_models(config: ProviderConfig) -> list[str]:
 #
 # These calls do not pass through ``agents/egress.py``, for the same reason no
 # other provider call does: that chokepoint polices URLs a MODEL chose, while
-# this host is one the account holder typed into AI Settings. It is also the
+# this host is one the account holder typed into API Settings. It is also the
 # only option — ``egress.fetch`` has no request body and caps responses, so it
 # cannot express a training-file upload.
 

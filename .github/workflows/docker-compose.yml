@@ -1055,7 +1055,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           timeout: "420"
           seed: |
-            mkdir -p .curio/data .curio/users/some-other-user .curio/datalakes instance datasets
+            mkdir -p .curio/data .curio/users/some-other-user .curio/discovery instance datasets
             echo "another user's private dataset" > .curio/users/some-other-user/canary.txt
 
       - name: 🐍 Set up Python

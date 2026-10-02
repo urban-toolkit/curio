@@ -130,7 +130,7 @@ def _js_top_level_specifier(spec: str) -> str | None:
     user in the install dialog, and feed the cross-package dep resolver a
     specifier no registry can satisfy. Mirrors the sandbox's own import
     rewriter, which likewise refuses any specifier containing ``:``
-    (``worker.py`` ``resolve_pkg_entry_url``).
+    (``node_runtime.py`` ``resolve_pkg_entry_url``).
     """
     s = spec.strip()
     if not s or s.startswith(".") or s.startswith("/") or ":" in s:
