@@ -321,9 +321,11 @@ def _refresh_decision(
     * a copy the catalog wrote and something changed since, or a copy holding
       the user's own content, is the user's and is left alone. **Update**
       replaces it with the catalog's copy and puts it back on this track;
-    * a copy with no origin on record predates the record. It keeps the old
-      rule, which reverted every difference on every listing, so a difference
-      it still has is the catalog's.
+    * a copy with no origin on record predates the record, or lost it (a
+      corrupt or missing state file, a failed write). It is refreshed only
+      when it is provably an untouched catalog copy from an earlier release
+      (:func:`_is_untouched_catalog_copy`). Anything else may hold the user's
+      work, so it is kept (``unrecorded-kept``) and recorded as theirs.
     """
     rec = record or seed_state.PackageSeedRecord()
     if rec.catalog_copy is not None:
@@ -334,10 +336,35 @@ def _refresh_decision(
         return False, "user-content"
     stale = _store_copy_is_stale(src, dest, fixture_mtime)
     if stale:
+        if rec.catalog_copy is None and not _is_untouched_catalog_copy(src.name, dest):
+            return False, "unrecorded-kept"
         return True, "catalog-content-advanced"
     if rec.catalog_copy is None:
         return False, "unrecorded-content-identical"
     return False, "content-identical"
+
+
+def _is_untouched_catalog_copy(dir_name: str, dest: Path) -> bool:
+    """True when an unrecorded store copy is byte for byte an older catalog copy.
+
+    Two things must hold. Its ``integrity.json`` map is one the catalog has
+    shipped for this package (:func:`seed_state.legacy_catalog_digests`), so
+    no install path wrote it from the user's content. And its files still
+    hash to that map, so nothing was edited in place after the copy was made:
+    a metadata edit before #564 rewrote the manifest without touching
+    ``integrity.json``, and only this second check sees it.
+    """
+    installed = _integrity_map(dest)
+    if installed is None:
+        return False
+    known = seed_state.legacy_catalog_digests().get(dir_name, frozenset())
+    if seed_state.copy_digest(installed) not in known:
+        return False
+    try:
+        return _build_integrity(dest) == installed
+    except Exception:  # noqa: BLE001 — a copy we cannot hash is not provably untouched
+        log.warning("Could not hash store package %s", dest, exc_info=True)
+        return False
 
 
 def _sweep_seed_staging(dest_base: Path) -> None:
@@ -572,6 +599,12 @@ def _seed_locked(user_key: str, dest_base: Path, plan: _SeedPlan) -> list[str]:
                     seed_state.mark_catalog_copy(
                         user_key, src.name, seed_state.copy_digest(installed),
                     )
+            elif reason == "unrecorded-kept":
+                # Differs from the catalog and is not provably a catalog copy:
+                # record it as the user's, so later passes keep it without
+                # hashing it again and **Update** is the way back.
+                seed_state.mark_installed(user_key, src.name, catalog_copy=None)
+                log.info("Kept unrecorded store package %s as the user's copy", src.name)
         elif is_builtin and not dest.exists():
             # The user cannot opt out of the default node kinds, so a
             # tombstone must never suppress the built-in. (Nothing can
