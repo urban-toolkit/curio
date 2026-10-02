@@ -190,6 +190,25 @@ class TestRunPreview:
         assert payload["screenshots"]["note-kind/success"]["bytes"] > 0
         json.dumps(payload)  # provenance/review-card safe
 
+    def test_the_runner_starts_without_address_space_or_process_bounds(self, runner, monkeypatch):
+        """A headless browser cannot start under the default worker bounds on
+        Linux; the preview worker leaves those two out and keeps the rest."""
+        from utk_curio.backend.app.packages.builder import preview as preview_module
+
+        seen = []
+        real = preview_module.run_worker
+
+        def recording(workspace, argv, *, limits, **kwargs):
+            seen.append(limits)
+            return real(workspace, argv, limits=limits, **kwargs)
+
+        monkeypatch.setattr(preview_module, "run_worker", recording)
+        result = _preview(_request(), b"//A", runner)
+        assert result.status == "ok", result.reasons
+        assert [(l.memory_bytes, l.max_processes) for l in seen] == [(0, 0)]
+        assert seen[0].cpu_seconds > 0 and seen[0].wall_time_seconds > 0
+        assert seen[0].max_open_files > 0 and seen[0].max_file_bytes > 0
+
     def test_multiple_templates(self, runner):
         request = _request(
             preview_templates=("note-kind", "card-kind"),

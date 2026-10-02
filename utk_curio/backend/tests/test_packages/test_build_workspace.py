@@ -211,6 +211,20 @@ class TestBounds:
         assert result.status == "ok"
         assert "7" in result.stdout_tail
 
+    @pytest.mark.skipif(not sys.platform.startswith("linux"),
+                        reason="the address-space and process bounds are Linux-only on POSIX")
+    def test_a_memory_or_process_bound_of_zero_is_not_applied(self, workspace):
+        # Not a ceiling of zero, which no process could start under.
+        result = _run(
+            workspace,
+            "print('worker ran')",
+            limits=WorkerLimits(wall_time_seconds=20.0, memory_bytes=0, max_processes=0),
+        )
+        assert result.status == "ok", result.stderr_tail
+        assert "worker ran" in result.stdout_tail
+        assert "as" not in result.limits_applied and "nproc" not in result.limits_applied
+        assert "cpu" in result.limits_applied
+
     def test_cancellation_kills_promptly(self, workspace):
         cancel = threading.Event()
         threading.Timer(0.3, cancel.set).start()
