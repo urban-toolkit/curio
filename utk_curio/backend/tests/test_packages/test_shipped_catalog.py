@@ -11,7 +11,8 @@ here is a package that silently vanishes from every user's Browse tab.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import re
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -156,3 +157,33 @@ def test_sources_do_not_read_the_examples_data_directory(package_root: Path):
         f"{package_root.name}: {offenders} read from docs/examples/data; "
         f'resolve the file through curio_dataset_path("<id>") instead'
     )
+
+
+# ---------------------------------------------------------------------------
+# ai.utk.uhvi@1 loader defaults (#585)
+# ---------------------------------------------------------------------------
+
+UHVI_DIR = CATALOG / "ai.utk.uhvi@1"
+_INPUT_TEXT_DEFAULT_RE = re.compile(r"\[!!\s*\w+\$INPUT_TEXT\$(.+?)\s*!!\]")
+
+
+def _input_text_default(source: Path) -> str:
+    """The default of the one ``[!! name$INPUT_TEXT$default !!]`` marker in *source*."""
+    (default,) = _INPUT_TEXT_DEFAULT_RE.findall(source.read_text(encoding="utf-8"))
+    return default
+
+
+def test_uhvi_loader_defaults_share_one_folder_and_match_the_readme():
+    """The raster and zones loaders default to the Milan files the README names.
+
+    The README puts both files under ``./milan/``. The zones loader followed it
+    and the raster loader did not, so a workspace laid out as the README says
+    left the raster loader pointing at a file that is not there.
+    """
+    raster = _input_text_default(UHVI_DIR / "sources" / "uhvi-load.py")
+    zones = _input_text_default(UHVI_DIR / "sources" / "uhvi-zones.py")
+    assert PurePosixPath(raster).parent == PurePosixPath(zones).parent, (raster, zones)
+
+    readme = (UHVI_DIR / "README.md").read_text(encoding="utf-8")
+    for default in (raster, zones):
+        assert f"`{default}`" in readme, f"README.md does not give the loader default {default}"
