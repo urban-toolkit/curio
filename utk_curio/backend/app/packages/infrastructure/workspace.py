@@ -74,8 +74,8 @@ class WorkerLimits:
 
     wall_time_seconds: float = 120.0
     cpu_seconds: int = 60
-    memory_bytes: int = 1024 * 1024 * 1024
-    max_processes: int = 32
+    memory_bytes: int = 1024 * 1024 * 1024  # 0: the address space is not bounded
+    max_processes: int = 32  # 0: the process count is not bounded
     max_open_files: int = 256
     max_file_bytes: int = 64 * 1024 * 1024  # RLIMIT_FSIZE — biggest file a worker may write
     max_output_bytes: int = 2 * 1024 * 1024  # captured stdout+stderr cap
@@ -477,7 +477,8 @@ def _apply_rlimits(limits: WorkerLimits) -> tuple[list[str], object]:
     make a low bound kill unrelated processes' forks. Windows gets both through
     the job, and loses file-size and open-file bounds, which have no Job Object
     equivalent. What actually applied is recorded on the result - never
-    silently assumed, and never claimed to be parity.
+    silently assumed, and never claimed to be parity. A memory or process
+    bound of 0 is not applied, on Linux as in the job.
     """
     if not _IS_POSIX:
         return _create_win_job(limits)
@@ -489,8 +490,10 @@ def _apply_rlimits(limits: WorkerLimits) -> tuple[list[str], object]:
         ("nofile", resource.RLIMIT_NOFILE, limits.max_open_files),
     ]
     if sys.platform.startswith("linux"):
-        plan.append(("as", resource.RLIMIT_AS, limits.memory_bytes))
-        plan.append(("nproc", resource.RLIMIT_NPROC, limits.max_processes))
+        if limits.memory_bytes > 0:
+            plan.append(("as", resource.RLIMIT_AS, limits.memory_bytes))
+        if limits.max_processes > 0:
+            plan.append(("nproc", resource.RLIMIT_NPROC, limits.max_processes))
 
     return [name for name, _, _ in plan], {
         "rlimits": [[key, value] for _, key, value in plan],

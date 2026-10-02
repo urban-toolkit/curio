@@ -64,6 +64,13 @@ MAX_RENDER_PX = 4000
 _MAX_SCREENSHOT_BYTES = 4 * 1024 * 1024
 _REPORT_PATH = "preview/report.json"
 
+#: The preview worker's bounds. A headless browser reserves far more address
+#: space than it touches, and starts a process per renderer, which Linux counts
+#: against every process of the same user: under the default address-space and
+#: process-count bounds Chromium cannot start. CPU, wall time, file size and
+#: open files bound it as they bound every worker.
+PREVIEW_LIMITS = WorkerLimits(memory_bytes=0, max_processes=0)
+
 
 class PreviewError(ValueError):
     """Raised on preview-runner misuse (bad arguments, malformed plans)."""
@@ -399,7 +406,7 @@ def run_preview(
 
     worker = run_worker(
         workspace, [runner.runner_path, str(plan_path)],
-        limits=limits or WorkerLimits(),
+        limits=limits or PREVIEW_LIMITS,
         cancel=cancel,
     )
     if worker.status != "ok":

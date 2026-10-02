@@ -13,24 +13,26 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from utk_curio.backend.app.packages.builder import preview as builder_preview
 from utk_curio.backend.app.packages.builder.models import parse_build_request
 from utk_curio.backend.app.packages.builder.preview import (
     run_preview,
     runner_from_env,
 )
 from utk_curio.backend.app.packages.infrastructure.workspace import (
-    WorkerLimits,
     create_workspace,
     destroy_workspace,
 )
 from utk_curio.tools import install_preview_runner as installer
 
-#: Chromium startup dominates; generous wall, honest CPU.
-PREVIEW_LIMITS = WorkerLimits(wall_time_seconds=90.0, cpu_seconds=60)
+#: The preview worker's own bounds. Chromium startup dominates; generous wall,
+#: honest CPU.
+PREVIEW_LIMITS = replace(builder_preview.PREVIEW_LIMITS, wall_time_seconds=90.0, cpu_seconds=60)
 
 
 def _missing(reason: str) -> None:
