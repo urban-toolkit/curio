@@ -247,6 +247,8 @@ def _apply_rlimits(limits):
         _set(resource.RLIMIT_AS,
              baseline + budget if baseline is not None else None,
              "RLIMIT_AS")
+        if baseline is not None:
+            _cap_malloc_arenas(memory_mb)
 
     cpu_seconds = limits.get("cpu_seconds")
     _set(resource.RLIMIT_CPU, cpu_seconds, "RLIMIT_CPU")
