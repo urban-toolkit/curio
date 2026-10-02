@@ -266,31 +266,27 @@ _BARS_JS = """(id) => {
     return null;
 }"""
 
-# Red points in a scatterplot: connected patches of red, big enough to be a point.
+# Red points in the scatterplot, counted by where they sit across: every row
+# has its own `value`, so each point takes its own band of columns. A brush
+# edge drawn over a point splits its pixels, never its columns, and a gap of a
+# few columns (a vertical edge) is bridged.
 _RED_POINTS_JS = """(id) => {
     const c = document.querySelector('#vega' + id + ' canvas');
     if (!c || !c.width || !c.height) return -1;
     const w = c.width, h = c.height;
     const px = c.getContext('2d').getImageData(0, 0, w, h).data;
-    const red = (p) => px[p * 4] > 200 && px[p * 4 + 1] < 60 && px[p * 4 + 2] < 60 && px[p * 4 + 3] > 200;
-    const seen = new Uint8Array(w * h);
-    let points = 0;
-    for (let p = 0; p < w * h; p++) {
-        if (seen[p] || !red(p)) continue;
-        seen[p] = 1;
-        const stack = [p];
-        let size = 0;
-        while (stack.length) {
-            const q = stack.pop();
-            size += 1;
-            const x = q % w, y = (q - x) / w;
-            for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
-                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-                const n = ny * w + nx;
-                if (!seen[n] && red(n)) { seen[n] = 1; stack.push(n); }
-            }
+    const redInColumn = new Array(w).fill(0);
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const i = (y * w + x) * 4;
+            if (px[i] > 200 && px[i + 1] < 60 && px[i + 2] < 60 && px[i + 3] > 200) redInColumn[x] += 1;
         }
-        if (size >= 20) points += 1;
+    }
+    let points = 0, last = -100;
+    for (let x = 0; x < w; x++) {
+        if (redInColumn[x] < 2) continue;
+        if (x - last > 4) points += 1;
+        last = x;
     }
     return points;
 }"""
@@ -423,14 +419,18 @@ def test_merge_or_in_the_pool_keeps_both_charts_selections(
     assert between.input_value() == "MERGE_OR"
 
     # First the scatterplot: a brush over its two leftmost points, Bob (10, 9)
-    # and Dave (20, 7). It starts between the points and runs up and left past
-    # them, where the brush stops at the plot's edge.
+    # and Dave (20, 7). It starts between the points and runs up and left to
+    # the canvas's corner, past the plot's edge, where the brush stops. The
+    # corner is inside the canvas, where the node corrects the pointer's
+    # position for the canvas zoom; outside it, Vega would misplace the brush.
     grey_before = page.evaluate(_BRUSH_GREY_JS, SCATTER_ID)
     area = brush_area(page, f"#vega{SCATTER_ID} canvas")
     assert area, "the scatterplot drew no points to brush"
+    canvas = page.locator(f"#vega{SCATTER_ID} canvas").first.bounding_box()
+    assert canvas, "the scatterplot has no canvas box"
     page.mouse.move(*at_fraction(area, (0.35, 0.5)))
     page.mouse.down()
-    page.mouse.move(*at_fraction(area, (-0.1, -0.1)), steps=8)
+    page.mouse.move(canvas["x"] + 3, canvas["y"] + 3, steps=8)
     page.mouse.up()
     bars = _red_bars_once(page, 2)
     grey_brushed = page.evaluate(_BRUSH_GREY_JS, SCATTER_ID)
