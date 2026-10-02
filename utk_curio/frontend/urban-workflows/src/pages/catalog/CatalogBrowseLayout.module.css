@@ -272,19 +272,22 @@
   flex-shrink: 0;
 }
 
-/* Search and the page's actions, at the end of the title row. */
+/* Search and the page's actions, at the end of the title row. It takes all
+   the width the title leaves and never wraps: the search box gives up width
+   instead, so the buttons stay on the title's line. */
 .headerTools {
-  margin-left: auto;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
 }
 
 .hubSearch {
   flex: 0 1 240px;
-  min-width: 140px;
+  min-width: 120px;
   max-width: 300px;
   height: 34px;
   border: 1px solid var(--curio-border);
@@ -379,6 +382,11 @@
   overflow-x: hidden;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--catalogBrowseCardMinWidth, 220px), 1fr));
+  /* A row is as tall as its tallest card, never less. The cards clip their
+     overflow, which gives them no automatic minimum height, so in a grid of
+     fixed height (this one scrolls) `auto` rows would share that height out
+     and crush every card to a strip and half a title. */
+  grid-auto-rows: max-content;
   gap: var(--catalogBrowseCardGridGap, 16px);
   padding: var(--catalogBrowseCardGridPadding, 16px);
   /* Pack rows to the top so a short filtered list does not stretch rows to fill the viewport */
@@ -639,6 +647,21 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+/* A card's state ("In all projects", "Link only"), at the start of its
+   actions row: the strip says what the item is, this says where it stands,
+   the link beside it says what you can do. It rode at the end of the strip
+   until the cards narrowed, where it ran over the format or category pill. */
+.cardStatus {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--curio-role-installed-fg);
+  white-space: nowrap;
+}
+
+.cardStatusMuted {
+  color: var(--curio-text-meta);
 }
 
 .cardActionsRight {
@@ -1134,6 +1157,7 @@
 @media (max-width: 1100px) {
   .page { grid-template-columns: 188px minmax(0, 1fr); }
   .browseDrawerColumn { display: none; }
+  .headerTools { flex-wrap: wrap; }
 }
 
 /* One column of everything, and the page scrolls as a whole: the rail sits
@@ -1143,7 +1167,7 @@
   .categoryRail { border-right: 0; border-bottom: 1px solid var(--curio-border); }
   .browseMain { overflow: visible; }
   .cardGrid { overflow: visible; }
-  .headerTools { margin-left: 0; width: 100%; justify-content: flex-start; }
+  .headerTools { flex: 1 1 100%; justify-content: flex-start; }
   .hubSearch { max-width: none; flex: 1 1 100%; }
 }
 

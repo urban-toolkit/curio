@@ -89,14 +89,18 @@ export const CatalogKindIcon: React.FC<CatalogKindIconProps> = ({
 export interface CatalogItemStripHeaderProps {
   kind: CatalogItemKind;
   badge?: React.ReactNode;
-  trailing?: React.ReactNode;
 }
 
-/** Top strip content for catalog browse cards — type icon + kind label + optional badge. */
+/**
+ * Top strip content for catalog browse cards: type icon + kind label + optional badge.
+ *
+ * Identity only. A card's state ("In all projects", "Link only") sits at the
+ * start of its actions row: on a card a grid column wide it ran over the badge
+ * when it shared this strip.
+ */
 export const CatalogItemStripHeader: React.FC<CatalogItemStripHeaderProps> = ({
   kind,
   badge,
-  trailing,
 }) => {
   const meta = CATALOG_KIND_META[kind];
   return (
@@ -113,7 +117,6 @@ export const CatalogItemStripHeader: React.FC<CatalogItemStripHeaderProps> = ({
           </>
         ) : null}
       </div>
-      {trailing ? <div className={styles.stripTrailing}>{trailing}</div> : null}
     </div>
   );
 };

@@ -79,11 +79,6 @@ export function DataLakeSourceCard({
               {LAKE_PROVIDER_LABEL[source.provider] ?? source.provider}
             </span>
           }
-          trailing={
-            capabilities.search ? null : (
-              <span className={styles.stripBadgePopular}>Link only</span>
-            )
-          }
         />
       </div>
 
@@ -136,7 +131,11 @@ export function DataLakeSourceCard({
             peer cards leave to their drawers. It is offered where the drawer
             offers it, and a source that cannot be browsed says why in its
             details instead: a link-only portal, or one missing its token. */}
-        <div className={styles.cardActionsLeft} />
+        <div className={styles.cardActionsLeft}>
+          {capabilities.search ? null : (
+            <span className={`${styles.cardStatus} ${styles.cardStatusMuted}`}>Link only</span>
+          )}
+        </div>
         <div className={styles.cardActionsRight}>
           <button
             className={styles.linkButton}
