@@ -216,7 +216,24 @@ class DashboardPayload:
         return sum(weight.bytes for weight in self.weights)
 
     def to_dict(self) -> dict:
-        return {"meta": self.meta, "spec": self.spec, "outputs": self.outputs}
+        return {
+            "meta": self.meta,
+            "spec": self.spec,
+            "outputs": self.outputs,
+            # The same refs the project load hands the page, narrowed to what
+            # actually travelled. The page restores a node's output by node id,
+            # and the map above is keyed by filename because that is how a tile
+            # looks its rows up; carrying both beats making the page re-derive
+            # one from the other against the spec.
+            "outputRefs": [
+                {
+                    "node_id": weight.node_id,
+                    "filename": weight.filename,
+                    "data_type": weight.data_type,
+                }
+                for weight in self.weights
+            ],
+        }
 
 
 def build_dashboard_payload(

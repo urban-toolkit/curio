@@ -7,6 +7,7 @@
 
 import { loadInstalledPackages } from './packagesClient';
 import { getToken } from '../utils/authApi';
+import { isStandaloneDashboard } from '../standalone/dashboardPayload';
 
 function notifyTemplatesAfterPackageRefresh(): void {
   const w = window as unknown as { curio?: { fetchStarters?: () => void | Promise<void> } };
@@ -66,7 +67,13 @@ export function refreshPackageRegistry(): Promise<void> {
   // sign-up page, the first screen a new user sees. Callers that matter run
   // after sign-in anyway: ``UserProvider.applyUser`` refreshes as soon as a
   // user resolves, and ``ToolsMenu`` refreshes again when ``user.id`` appears.
-  if (!getToken()) return Promise.resolve();
+  //
+  // A standalone dashboard is the exception: it has no session and never will,
+  // but it was served with the descriptors inside it, so there IS a real load
+  // to do. Returning early here would leave `completedRealLoad` false, and
+  // `UnresolvedNode` would show "Loading node..." on every tile forever rather
+  // than render the page the viewer was sent.
+  if (!getToken() && !isStandaloneDashboard()) return Promise.resolve();
   inFlight += 1;
   emitReadyChange();
   return loadInstalledPackages()

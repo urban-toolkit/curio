@@ -1,5 +1,6 @@
 import { getToken } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
+import { embeddedArtifact, EmbeddedEnvelope } from "../standalone/dashboardPayload";
 
 export const ARROW_IPC_MIME = "application/vnd.apache.arrow.stream";
 
@@ -65,7 +66,60 @@ async function fetchArtifactAsArrow(url: string, token: string | null | undefine
     return tableToEnvelope(table, headers);
 }
 
+/** What the preview endpoint sends back for a frame it had to cut down. */
+const PREVIEW_ROWS = 100;
+
+/**
+ * The first `PREVIEW_ROWS` of an embedded artifact, shaped like the preview
+ * endpoint's answer.
+ *
+ * The sandbox previews by taking `raw.head(max_rows)` and then serialising, so
+ * a dataframe comes back as its columns cut to length and a geodataframe as its
+ * first features. Anything that is not a frame it sends whole, with no preview
+ * keys at all, and so does this.
+ */
+function previewOfEmbedded(fileName: string, envelope: EmbeddedEnvelope) {
+    const body: any = { ...envelope, filename: fileName };
+    const data: any = envelope.data;
+
+    if (envelope.dataType === "geodataframe" && data && Array.isArray(data.features)) {
+        const total = data.features.length;
+        if (total <= PREVIEW_ROWS) return body;
+        body.data = { ...data, features: data.features.slice(0, PREVIEW_ROWS) };
+        body.preview = true;
+        body.previewRows = PREVIEW_ROWS;
+        body.totalRows = total;
+        return body;
+    }
+
+    if (envelope.dataType === "dataframe" && data && typeof data === "object") {
+        const columns = Object.keys(data);
+        const first = columns.length ? data[columns[0]] : null;
+        if (!Array.isArray(first) || first.length <= PREVIEW_ROWS) return body;
+        const cut: Record<string, unknown> = {};
+        for (const name of columns) {
+            const column = data[name];
+            cut[name] = Array.isArray(column) ? column.slice(0, PREVIEW_ROWS) : column;
+        }
+        body.data = cut;
+        body.preview = true;
+        body.previewRows = PREVIEW_ROWS;
+        body.totalRows = first.length;
+        return body;
+    }
+
+    // A dict, a list, a raster: the endpoint sends these whole.
+    return body;
+}
+
 export async function fetchData(fileName: string) {
+    // A standalone dashboard was served with its rows inside it. Checked before
+    // the request rather than after a failure, because the whole point is that
+    // the page never reaches the network.
+    const embedded = embeddedArtifact(fileName);
+    if (embedded) {
+        return { ...embedded, filename: fileName };
+    }
     try {
         const url = `${backendUrl()}/get?fileName=${encodeURIComponent(fileName)}`;
         console.log(`Fetching ${url}`);
@@ -115,6 +169,13 @@ export async function fetchData(fileName: string) {
  * @returns The preview data with metadata about row counts
  */
 export async function fetchPreviewData(fileName: string) {
+    // The Data Pool tile reads its preview through here rather than through
+    // `fetchData`, so a standalone page has to answer here too or a pool tile
+    // is the one thing on it that still calls out.
+    const embedded = embeddedArtifact(fileName);
+    if (embedded) {
+        return previewOfEmbedded(fileName, embedded);
+    }
     try {
         // Use the correct backend URL
         const base = backendUrl() || 'http://localhost:5002';

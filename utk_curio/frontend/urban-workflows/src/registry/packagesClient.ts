@@ -37,6 +37,10 @@ import {
 } from '../adapters/node';
 import { packagesApi } from '../services/packages';
 import { getToken } from '../utils/authApi';
+import {
+  getEmbeddedDashboard,
+  isStandaloneDashboard,
+} from '../standalone/dashboardPayload';
 
 import { getBehavior } from './behaviorRegistry';
 import { resolveIconRef } from './iconRegistry';
@@ -335,6 +339,12 @@ export function registerPackageTemplates(packages: RawPackage[]): NodeDescriptor
 const inFlightBehaviorScripts = new Map<string, Promise<void>>();
 
 async function loadPackageBehaviorScripts(packages: RawPackage[]): Promise<void> {
+  // A standalone dashboard has no backend to ask. Builtin templates carry no
+  // behaviorScript, so a dashboard of builtin tiles is unaffected; a tile from a
+  // package with a custom behaviour falls back to the generic editor, which is
+  // the same thing that happens today when the script fails to load. Embedding
+  // the script text is the next step, not a silent hang here.
+  if (isStandaloneDashboard()) return;
   const base = backendUrl();
   const targets = packages.filter((p) => p.behaviorScript && p.dirName);
   if (targets.length === 0) return;
@@ -440,7 +450,16 @@ let appliedLoad = 0;
 export async function loadInstalledPackages(): Promise<NodeDescriptor[]> {
   const load = ++startedLoads;
   try {
-    const { packages } = await packagesApi.listInstalled();
+    // A standalone dashboard was served with the descriptors inside it. Taken
+    // here rather than further down so everything after this point is the
+    // ordinary path: the same scoping, the same descriptor build, the same
+    // registry replace. Curio bundles node implementations but not node
+    // descriptors, so without these a page with every row it needs still shows
+    // "Loading node..." on every tile.
+    const embedded = getEmbeddedDashboard();
+    const { packages } = embedded?.registry?.packages
+      ? { packages: embedded.registry.packages }
+      : await packagesApi.listInstalled();
     const filtered = packages ?? [];
     const scope = getCurrentProjectPackages();
     const scoped =
