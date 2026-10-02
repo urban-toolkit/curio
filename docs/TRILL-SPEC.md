@@ -48,6 +48,11 @@ supply either.
 it. It is written only when non-blank; without it the header shows the
 template's label.
 
+`metadata.dataPool` holds a Data Pool's two conflict modes,
+`{insideChart, betweenCharts}`, each `OVERWRITE`, `MERGE_AND` or `MERGE_OR`.
+Only a mode other than `OVERWRITE` is written; an absent member, or an absent
+`dataPool`, means `OVERWRITE`.
+
 `metadata.comments` carries the node's discussion, written only when non-empty.
 Each entry is `{id, text, author, authorName, createdAt, resolved}`. The author's
 avatar is not stored, because `profile_image` may be a full data URL; `canDelete`

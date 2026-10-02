@@ -12,6 +12,7 @@
  * `loadTrill` in `hook/useCode.ts` is the matching reader.
  */
 import type { HandCategories } from "./utils/dataflowCategories";
+import { savedDataPoolModes } from "./utils/dataPoolModes";
 
 export class TrillGenerator {
 
@@ -313,6 +314,17 @@ export class TrillGenerator {
                     trill_node.metadata = {};
 
                 trill_node.metadata.packageTemplateLabel = node.data.packageTemplateLabel.trim();
+            }
+
+            // #581: a Data Pool's conflict modes persist at metadata.dataPool,
+            // only those that are not Overwrite, so an untouched pool
+            // serializes as it did before.
+            const dataPool = savedDataPoolModes(node.data.dataPool);
+            if(dataPool){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.dataPool = dataPool;
             }
 
             if(typeof node.data.title === "string" && node.data.title)

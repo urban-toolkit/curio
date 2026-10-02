@@ -31,13 +31,40 @@ export interface SelectionRows {
   value(index: number, column: string): unknown;
 }
 
-type Resolved = { priority: number | undefined; indices: number[] };
+type Resolved = { priority: number | undefined; indices: number[]; active?: boolean };
 
 const KNOWN_TYPES = new Set<string>([
   VisInteractionType.POINT,
   VisInteractionType.INTERVAL,
   VisInteractionType.UNDETERMINED,
 ]);
+
+/**
+ * Does this select hold a selection? A point selection names rows; an
+ * interval names at least one column. A select that has not been used, or
+ * was cleared, holds none.
+ */
+export function isActiveSelect(detail: SelectDetail | undefined): boolean {
+  if (!detail) return false;
+  if (detail.type === VisInteractionType.POINT) return (detail.data?.length ?? 0) > 0;
+  if (detail.type === VisInteractionType.INTERVAL) return Object.keys(detail.data ?? {}).length > 0;
+  return false;
+}
+
+/** The entries MERGE_AND intersects: only those holding a selection. */
+function forMode(entries: Resolved[], mode: string): Resolved[] {
+  return mode === ResolutionType.MERGE_AND ? entries.filter((entry) => entry.active !== false) : entries;
+}
+
+/** Whether what `resolveIndices(entries, mode)` returns came from a selection. */
+function resolvedActive(entries: Resolved[], mode: string): boolean {
+  if (mode === ResolutionType.OVERWRITE) {
+    let chosen: Resolved | undefined;
+    for (const entry of entries) if (entry.priority === 1) chosen = entry;
+    return chosen !== undefined && chosen.active !== false;
+  }
+  return entries.some((entry) => entry.active !== false);
+}
 
 /** Row positions one select covers. */
 export function selectIndices(detail: SelectDetail, rows: SelectionRows): number[] {
@@ -99,6 +126,11 @@ export function resolveIndices(entries: Resolved[], mode: string): number[] {
 /**
  * The row positions a set of incoming selections picks out: each source's
  * selects are resolved by `plot`, then the sources by `between`.
+ *
+ * MERGE_AND intersects the selections that are active: a select nobody has
+ * used, or one that was cleared, takes no part, so one chart's brush still
+ * shows while the other charts have nothing selected. A selection that is
+ * active and covers no row does take part, and leaves nothing.
  */
 export function matchSelections(
   selections: IncomingSelection[],
@@ -115,10 +147,15 @@ export function matchSelections(
       .map((select) => ({
         priority: details[select].priority,
         indices: selectIndices(details[select], rows),
+        active: isActiveSelect(details[select]),
       }));
-    perSource.push({ priority: selection?.priority, indices: resolveIndices(perSelect, plot) });
+    perSource.push({
+      priority: selection?.priority,
+      indices: resolveIndices(forMode(perSelect, plot), plot),
+      active: resolvedActive(perSelect, plot),
+    });
   }
-  return resolveIndices(perSource, between);
+  return resolveIndices(forMode(perSource, between), between);
 }
 
 /** Rows of a column-major frame, `{col: [...]}` or `{col: {"0": ...}}`. */

@@ -13,6 +13,7 @@ import { DatasetNodeSource } from "../services/datasetCatalog";
 import { deoverlapNodes } from "../utils/deoverlapLayout";
 import { rekeyNodeProvenance } from "../utils/nodeProvenanceKeys";
 import type { SelectionEchoOptions } from "../utils/selectionEcho";
+import { savedDataPoolModes } from "../utils/dataPoolModes";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -65,6 +66,8 @@ type CreateCodeNodeOptions = {
     // #412: a renamed node header (metadata.packageTemplateLabel), which the
     // header reads through resolveNodeDisplayLabel.
     packageTemplateLabel?: string;
+    // #581: a Data Pool's conflict modes (metadata.dataPool).
+    dataPool?: { insideChart?: string; betweenCharts?: string };
     // #407: a node whose saved output a project load restored mounts as having
     // run: the output it shows, and the source that produced it.
     output?: { code: string; content: string };
@@ -232,6 +235,10 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && typeof node.metadata.packageTemplateLabel === "string")
                 nodeMeta.packageTemplateLabel = node.metadata.packageTemplateLabel;
 
+            // #581: and so do a Data Pool's conflict modes, the valid ones.
+            if(node.metadata != undefined && node.metadata.dataPool != undefined)
+                nodeMeta.dataPool = savedDataPoolModes(node.metadata.dataPool);
+
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
 
@@ -389,6 +396,7 @@ export function useCode(): IUseCode {
             spatialJoin = undefined,
             simpleVis = undefined,
             packageTemplateLabel = undefined,
+            dataPool = undefined,
             output = undefined,
             executedCode = undefined,
         } = options;
@@ -435,6 +443,7 @@ export function useCode(): IUseCode {
                 spatialJoin,
                 simpleVis,
                 packageTemplateLabel,
+                dataPool,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset
