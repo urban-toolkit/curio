@@ -117,11 +117,11 @@ that renders JSX inside the node body, reads upstream data, and pushes results
 downstream.
 
 > [!IMPORTANT]
-> **Save as package node cannot do this.** The archive it builds carries
-> `manifest.json`, `sources/`, `README.md` and `LICENSE`, but never the
-> compiled bundle a custom UI needs. So the in-canvas flow always produces a
-> code-editor node, and forking a custom-UI package that way silently loses its
-> interface. Tier 2 has to be authored from files.
+> **Save as package node cannot do this.** A new package it builds carries
+> `manifest.json` and `sources/`, never the compiled bundle a custom UI needs.
+> So the in-canvas flow always produces a code-editor node, and forking a
+> custom-UI package that way loses its interface. Saving into an existing
+> package keeps its bundle. Tier 2 has to be authored from files.
 
 ### The loop
 

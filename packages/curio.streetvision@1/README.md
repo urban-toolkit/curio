@@ -1,43 +1,34 @@
 # Street Vision (curio.streetvision@1)
 
-Two nodes for street-level computer vision pipelines in Curio:
+One node for street-level computer vision in Curio:
 
-- **Street View Fetcher.** Geocode a place name, sample Google Street View imagery in its bounding box, emit a GEODATAFRAME of image points (each feature carrying `image_url`, `pano_id`, `latitude`, `longitude`).
-- **HF CV Inference.** Run HuggingFace segmentation or detection models on the image points. Pluggable input: works with the Street View Fetcher *or* any node that emits a GEODATAFRAME with an `image_url` property. Emits a GEODATAFRAME of the same points, with each detected class flattened into its own column plus `dominant_class`, `dominant_pct` and an `overlay_url`, ready for Spatial Join, Vega-Lite or AUTK Map.
+- **Image Segmentation.** Labels every pixel of each image with a model from the Model Catalog. Each row gains the share of its pixels every class covers (`<class>_pct`, in percent), the class covering most (`dominant_class`, `dominant_pct`), and an `overlay_url` that shows the image tinted by class. The input is a collection's rows, as a Data Loading node gives them with `curio_collection(...)`: images from the Data Catalog, or added from the Discovery Catalog (Mapillary, Google Street View, a storage folder). Every input column is kept, so the output goes straight to Spatial Join, Vega-Lite or Simple View.
 
 A typical pipeline:
 
 ```
-Street View Fetcher → HF CV Inference → Spatial Join → Vega-Lite
-                            │                ↑
-                            │   Data Loading (neighborhood polygons)
-                            └─→ Simple View (the images, with their overlays)
+Data Loading (photos) → Image Segmentation → Simple View → Spatial Join → Vega-Lite
+                                                                ↑
+                                          Data Loading (neighborhood polygons)
 ```
 
 See [`docs/examples/10-street-vision-cv-analysis.md`](../../docs/examples/10-street-vision-cv-analysis.md) for a worked walkthrough.
 
+## Models
+
+A new node runs **DDRNet23-Slim**, which ships with Curio. It labels street scenes with the 19 Cityscapes classes: road, sidewalk, building, wall, fence, pole, traffic light, traffic sign, vegetation, terrain, sky, person, rider, car, truck, bus, train, motorcycle and bicycle.
+
+To use another model:
+
+1. Open the **Discovery Catalog**, choose **Hugging Face models**, and add one. It lands in the **Model Catalog**.
+2. Drag it from the Model Catalog onto the node. The node's code now names it in `curio_model("<model id>")`.
+3. Set `classes` in the code to the labels to report, or `None` for every label the model names. The model's page in the Model Catalog lists its labels.
+
 ## Setup
 
-1. **Add the package**: open `/catalog` in Curio and click **Add to all projects** on Street Vision. The first add pip-installs the package's Python deps (`torch`, `transformers`, `ultralytics`, `huggingface_hub`) declared in `manifest.dependencies.python`, about 3 GB on a cold conda env, possibly minutes on a slow connection. The button stays in its busy state until pip finishes. Adding the same package again is near-instant because the deps are already satisfied.
+Open `/catalog` in Curio and click **Add to all projects** on Street Vision. The first add installs `onnxruntime`. A model that runs on Transformers brings `torch`, `transformers` and `safetensors`, installed when you add it to the Model Catalog.
 
-2. **Have a Google Maps API key handy.** You paste it directly into the Street View Fetcher node, where it lives for the current session, never written to the backend env or saved with the dataflow, so a shared dataflow won't leak your key.
-
-   The Street View Static API is paid past Google's free tier, so the Fetcher node defaults to a 20-image limit per run; raise it with care.
-
-3. **(Optional) HuggingFace token**, only needed for gated models: ones you
-   unlock by accepting a licence on your own HuggingFace account. Public
-   models need none.
-
-   Set your own in **API Settings** in the Curio header. Each account sets its
-   own.
-
-A GPU is *not* required, but with one you'll see roughly 10× faster inference.
-
-## Limitations
-
-- **Jobs don't survive backend restart.** Inference state lives in-process; restarting Curio mid-job loses progress. Re-run.
-- **No basemap is bundled.** Spatial enrichment uses the generic **Spatial Join** node (in `curio.builtin@1`), which accepts any polygons FeatureCollection you provide.
-- **Demo cap.** The frontend's Fetcher node caps panorama requests at 200; the default is 20 to keep Google API costs bounded on first try.
+Models run on the CPU.
 
 ## Origin
 

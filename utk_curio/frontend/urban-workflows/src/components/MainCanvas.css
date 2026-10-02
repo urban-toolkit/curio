@@ -2,8 +2,10 @@ html, body {
     overflow: hidden;
 }
 
-/* Promote the panning layer to a GPU compositor layer in Firefox */
-.react-flow__viewport {
+/* Promote the panning layer to a GPU compositor layer while the user pans or
+   zooms it (useViewportMotionHint). At rest it is painted at the zoom it shows.
+   The child combinators keep the rule off a flow drawn inside a node. */
+.react-flow.curio-viewport-moving > .react-flow__renderer > .react-flow__pane > .react-flow__viewport {
     will-change: transform;
 }
 

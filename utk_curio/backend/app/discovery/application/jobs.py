@@ -4,11 +4,10 @@ A download is a job rather than a request because a 64 MiB file from a
 municipal portal can outlast any comfortable request timeout, and because the
 page wants a progress bar rather than a spinner.
 
-Modelled on ``streetvision/jobs.py``, which is the existing precedent, with
-three things that store does not have and this one needs:
+Three things it holds to:
 
 - **records are keyed by (user, job)**, and ``get`` returns nothing for a
-  foreign job. ``streetvision``'s ``get_job(job_id)`` returns anyone's;
+  foreign job, so guessing an id reaches nothing;
 - **cancellation**, checked between chunks, so a user who started a download of
   something enormous is not stuck watching it;
 - **a TTL sweep**, so finished records do not accumulate for the life of the
@@ -56,6 +55,11 @@ class DownloadJob:
     error: str | None = None
     dataset_id: str | None = None
     dataset: dict[str, Any] | None = None
+    #: A model source's add lands in the Model Catalog: the model, not a dataset.
+    model: dict[str, Any] | None = None
+    #: What installing a model's runtime libraries reported: ``importErrors``,
+    #: and ``dependencyError`` when pip failed.
+    dependencies: dict[str, Any] | None = None
     already_present: bool = False
     unchanged: bool = False
     created_at: float = field(default_factory=time.monotonic)
@@ -78,6 +82,8 @@ class DownloadJob:
             "error": self.error,
             "datasetId": self.dataset_id,
             "dataset": self.dataset,
+            "model": self.model,
+            "dependencies": self.dependencies,
             "alreadyPresent": self.already_present,
             "unchanged": self.unchanged,
             "sourceId": self.source_dir,

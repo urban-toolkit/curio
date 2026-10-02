@@ -1,92 +1,90 @@
 # Example: Street-level computer vision
 
-This example pulls Google Street View imagery for a chosen neighborhood, runs a HuggingFace segmentation model on every panorama, tags each result with the city neighborhood it falls in via a spatial join, and renders the output as a polygon-shaded map + a per-neighborhood bar chart. The use case is *urban greenery audits*, showing which neighborhoods are visually leafy and which are paved, but the same pipeline works for any per-pixel class you can find a model for: sidewalks, traffic signs, advertising, building facade material, and so on.
+This example labels every pixel of 40 Mapillary street photos taken around Lincoln Park in Chicago, tags each photo with the neighborhood it was taken in, and draws what dominates each neighborhood's streets as a map of the photos and a bar chart. The use case is *urban greenery audits*, showing which streets are leafy and which are paved, but the same pipeline works for any class a segmentation model labels: sidewalks, traffic signs, building facades, and so on.
 
-This example doubles as the worked example in [EXTENDING.md](../EXTENDING.md). If you're a developer reading code, the manifest entries, behavior hooks, and Flask blueprint that ship these nodes are walked through there.
+It runs two routes over the same photos. Route 1 uses **DDRNet23-Slim**, the model that ships with Curio, and needs no network. Route 2 uses a model you add from Hugging Face.
 
 > [!NOTE]
 > **Setup required**
-> Install the **Street Vision** package from Curio's `/catalog` page, or click
-> **Install Street Vision** on either of the two package nodes, which say what they are
-> missing until you do; the first install pip-installs the package's ML stack (`torch`, `transformers`, `ultralytics`, `huggingface_hub`) declared in its manifest, roughly a 3 GB download on a cold env. Have a Google Maps API key ready to paste into the Street View Fetcher node (the key lives in the node UI for the current session only, and is never written to disk or saved with the dataflow). The Spatial Join and Simple View nodes are built-in and need no separate install.
+> The example declares the **Street Vision** package, which Curio installs when you open it; the package brings `onnxruntime`. The photos and DDRNet23-Slim ship with Curio, so route 1 runs as it opens. Route 2 needs a model from the Discovery Catalog: see [Step 6](#step-6-a-second-model-from-hugging-face).
 
 ## Pipeline overview
 
 ```mermaid
 flowchart LR
-  F[Street View Fetcher<br/>place → image points]
-  I[HF CV Inference<br/>segmentation per image]
-  G[`Simple View`<br/>the images, with their overlays]
+  P[`Data Loading`<br/>Mapillary photos]
+  S1[Image Segmentation<br/>DDRNet23-Slim]
+  G1[`Simple View`<br/>photos and overlays]
   L[`Data Loading`<br/>neighborhood polygons]
+  T[`Data Transformation`<br/>rename pri_neigh to name]
+  S2[Image Segmentation<br/>a Hugging Face model]
+  G2[`Simple View`<br/>the second model's overlays]
 
-  F --> I --> G --> SJ[Spatial Join]
+  P --> S1 --> G1 --> SJ1[Spatial Join]
   %% Simple View passes its input straight through, so the join sees the same frame.
-  L --> T[`Data Transformation`<br/>rename pri_neigh to name] --> SJ
-  SJ --> V1[`Vega-Lite`<br/>polygon map]
-  SJ --> V2[`Vega-Lite`<br/>per-neighborhood bar]
+  L --> T --> SJ1
+  SJ1 --> V1[`Vega-Lite`<br/>photo map]
+  SJ1 --> V2[`Vega-Lite`<br/>per-neighborhood bar]
+  P --> S2 --> G2 --> SJ2[Spatial Join]
+  T --> SJ2
+  SJ2 --> V3[`Vega-Lite`<br/>per-neighborhood bar]
 ```
-
-Six nodes do the work plus two `Vega-Lite` views consume the output. Each node is independently useful (Spatial Join works for any spatial workflow, not just CV; Simple View displays images from any frame, not just this one), and the imagery + inference are decoupled so you can swap one without touching the other.
 
 ## Origin
 
-Originally contributed by [@ManeeshJupalle](https://github.com/ManeeshJupalle) in [PR #120](https://github.com/urban-toolkit/curio/pull/120) as a CS 524 university project.
+Originally contributed by [@ManeeshJupalle](https://github.com/ManeeshJupalle) in [PR #120](https://github.com/urban-toolkit/curio/pull/120) as a CS 524 university project, which audited greenery in the same Lincoln Park box, `[-87.66, 41.91, -87.62, 41.94]`.
 
-The defaults baked into [`10-street-vision-cv-analysis.json`](10-street-vision-cv-analysis.json) (bbox, recommended model, class list) reproduce the **Chicago Greenery case study** from the original project's evaluation:
-- bbox: `[-87.66, 41.91, -87.62, 41.94]` (Lincoln Park)
-- model: `nvidia/segformer-b2-finetuned-cityscapes-1024-1024`
-- classes: `vegetation, road, building, sidewalk, sky`
+## Step 1: Load the photos (`Data Loading`)
 
-## Step 1: Fetch Street View imagery (`Street View Fetcher`)
+The Data Catalog ships 40 Mapillary panoramas from that box as `data.curio.mapillary-sample`, each with its photographer (`creator`), capture time, heading and place. Mapillary photos are licensed CC BY-SA 4.0, so a figure made from them credits each photo's `creator`.
 
-Type a place name and click **Verify Coverage** to geocode it and ask Google how many panoramas exist in the bounding box. Adjust the limit (default 20, max 200), then click **Fetch Images**. The node emits a GEODATAFRAME of point features:
+```python
+photos = curio_collection("data.curio.mapillary-sample")
 
-```json
-{
-  "type": "FeatureCollection",
-  "features": [
-    {
-      "type": "Feature",
-      "geometry": {"type": "Point", "coordinates": [-87.6478, 41.9211]},
-      "properties": {
-        "image_id": "CAoSL...",
-        "pano_id":  "CAoSL...",
-        "image_url": "https://maps.googleapis.com/maps/api/streetview?...",
-        "latitude": 41.9211,
-        "longitude": -87.6478
-      }
-    },
-    ...
-  ]
-}
+return photos
 ```
 
-Suggested place for first-run: `Lincoln Park, Chicago`.
+`curio_collection` gives one row per photo, with a `path` the next node reads and a `thumbnail` that Simple View draws.
 
-## Step 2: Run segmentation (`HF CV Inference`)
+## Step 2: Label every pixel (`Image Segmentation`)
 
-Wire the Fetcher's output into the Inference node. Inside the node:
+The node comes from the Street Vision package. Its code names a model in the Model Catalog and the classes to report:
 
-1. **Task.** Pick `Segmentation` (or `Detection` for YOLO).
-2. **Model.** The search defaults to `cityscapes`; leave "auto-pick top match" enabled or click a specific entry. For greenery audits a SegFormer-Cityscapes checkpoint works well (e.g. `nvidia/segformer-b0-finetuned-cityscapes-512-1024`).
-3. **Target Classes.** Click `vegetation` (and optionally `building`, `road`, `sky`). You can also drop a CSV via the `+ Import CSV` link.
-4. Click **Run Inference**. Progress is polled every 2 seconds; expect 10 to 60 seconds per image on CPU, faster with a GPU.
+```python
+"""Label every pixel of each image with a Model Catalog model.
 
-The node's summary names the classes it found and how many images carried coordinates. Its output is a GEODATAFRAME of the same image points: one column per detected class (as a percentage for segmentation, a count for detection), plus `dominant_class`, `dominant_pct`, `image_url` and, for a segmentation run, an `overlay_url` pointing at that image's segmentation mask.
+The input is a collection's rows, each with a ``path``, as a Data Loading
+node gives them for street-level images from the Data or Discovery Catalog.
+To use another model, drag it from the Model Catalog onto this node.
+
+``classes`` are the model's labels to report; each becomes a
+``<class>_pct`` column, its share of the image's pixels in percent. ``None``
+reports every label.
+``dominant_class`` and ``dominant_pct`` name the one of them covering most,
+and ``overlay_url`` shows the image tinted by class.
+"""
+
+model = curio_model("model.curio.ddrnet23-slim")
+classes = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
+
+return curio_segment(arg, model, classes)
+```
+
+Each row comes back with the results first: `dominant_class` and `dominant_pct`, then `vegetation_pct`, `terrain_pct` and the other classes asked for, each as a share of all the photo's pixels, then `overlay_url` and `segment_error` (empty unless the photo could not be read). Every input column follows, so the photo keeps its place and its credit.
+
+DDRNet23-Slim labels the 19 Cityscapes classes; the Model Catalog's page for it lists them. A class the model does not label stops the node with a message naming the ones it has.
 
 ## Step 3: Inspect results (`Simple View`)
 
-Wire Inference → `Simple View`. It is a built-in node with no configuration: a frame carrying an image column renders as one card per row, showing the image above that row's other values. Here that means each panorama beside its segmentation overlay, captioned with the dominant class and its percentage.
+Wire Image Segmentation → `Simple View`. It is a built-in node with no configuration: each photo is a card showing the photo beside its overlay, captioned with the dominant class and the first class shares.
 
-`Simple View` picks the image columns itself. It looks for the familiar names first (`image_url`, `overlay_url`, `image_content`, `image`, `thumbnail`) and otherwise sniffs the values, so any frame with pictures in it displays without being told which column holds them. When a frame has more than one image column, an **Image column** selector appears; leave it on `all` to compare source against overlay, or pin a second `Simple View` to `overlay_url` to study the masks on their own.
+`Simple View` picks the image columns itself. It looks for the familiar names first (`image_url`, `overlay_url`, `image_content`, `image`, `thumbnail`) and otherwise sniffs the values, so any frame with pictures in it displays without being told which column holds them. When a frame has more than one image column, an **Image column** selector appears; leave it on `all` to compare photo against overlay, or pin it to `overlay_url` to study the masks on their own.
 
-Overlays are served per user, so `Simple View` fetches them with your session rather than through a plain image tag. Clicking a card emits its row index as a selection, which a connected `Data Pool` picks up.
+Clicking a card emits its row index as a selection, which a connected `Data Pool` picks up. `Simple View` passes its input straight through, so the Spatial Join downstream receives the same frame Image Segmentation emitted.
 
-`Simple View` passes its input straight through, so the Spatial Join downstream receives the same GEODATAFRAME the Inference node emitted.
+## Step 4: Load and prepare neighborhood polygons (`Data Loading`, `Data Transformation`)
 
-## Step 4: Load neighborhood polygons (`Data Loading`)
-
-The Data Catalog ships Chicago's [Boundaries, Neighborhoods](https://data.cityofchicago.org/d/y6yq-dbs2) layer as `data.cityofchicago.neighborhoods` (98 polygons named in `pri_neigh`), so this step runs offline. Any FeatureCollection works as long as each Polygon feature carries a string property to use as the tag.
+The Data Catalog ships Chicago's [Boundaries, Neighborhoods](https://data.cityofchicago.org/d/y6yq-dbs2) layer as `data.cityofchicago.neighborhoods` (98 polygons named in `pri_neigh`). Any FeatureCollection works as long as each Polygon feature carries a string property to use as the tag.
 
 ```python
 import geopandas as gpd
@@ -106,19 +104,15 @@ gdf.__dict__["metadata"] = {"name": "chicago_neighborhoods"}
 return gdf
 ```
 
-## Step 5: Tag each image with its neighborhood (`Spatial Join`)
-
-The Spatial Join node (built-in, in `curio.builtin@1`) has a small body with its two settings and two input handles on the left edge, each a hollow ring that fills in once wired: **points** (the upper, blue one) and **polygons** (the lower, green one). Wire the `Simple View` output to the points handle and the polygons output (from Step 4) to the polygons handle.
-
-The node tags with the polygon column you pick in its body, `name` by default. The Chicago neighborhoods file calls it `pri_neigh` and the NYC boroughs file `BoroName`; this example keeps the default and renames the column upstream with a `Data Transformation` node, so the tag lands in a column called `name`:
+The Spatial Join node tags each point with the polygon column you pick in its body. The Chicago neighborhoods file calls it `pri_neigh`; this example renames it to `neighborhood` with a `Data Transformation` node, and both Spatial Join nodes tag with `neighborhood`. Not `name`: every photo row already has one, its file name, and the join never overwrites a column the points carry.
 
 ```python
-# Spatial Join hardcodes the polygon tag column to `name`. Chicago's file uses
-# `pri_neigh`, so rename it here. For NYC boroughs use `BoroName` -> `name`,
-# for OSM admin polygons use `name` directly (this step becomes a no-op).
+# Spatial Join tags each photo with the polygon column its body names,
+# `neighborhood` here. Chicago's file calls it `pri_neigh`. Not `name`: a
+# photo already has one, its file name.
 import geopandas as gpd
 
-gdf = arg.rename(columns={"pri_neigh": "name"})
+gdf = arg.rename(columns={"pri_neigh": "neighborhood"})
 # __dict__, not plain assignment: pandas warns about creating a column via
 # a new attribute name, and that warning lands in this node's output with
 # an absolute site-packages path. NOT gdf.attrs, and do not just delete the
@@ -128,15 +122,17 @@ gdf.__dict__["metadata"] = {"name": "chicago_neighborhoods"}
 return gdf
 ```
 
+## Step 5: Tag each photo and chart it (`Spatial Join`, `Vega-Lite`)
+
+The Spatial Join node (built-in, in `curio.builtin@1`) has two input handles on its left edge, each a hollow ring that fills in once wired: **points** (the upper, blue one) and **polygons** (the lower, green one). Wire the `Simple View` output to the points handle and the `Data Transformation` output to the polygons handle, and type `neighborhood` in its **Tag each point with this polygon column** field.
+
 The node emits the input points augmented with:
 
-- `name`: the matching polygon's `name`, or null for points outside every polygon. The tag column takes the polygon column's own name; this example keeps the node's default, `name`, which is why the transformation above renames `pri_neigh`.
-- `name_point_count`: how many images fell in the same neighborhood.
-- `name_dominant_class` / `name_dominant_pct`: per-neighborhood roll-ups of the images' dominant class, projected back onto every member point so a Vega-Lite spec can colour by them directly.
+- `neighborhood`: the matching polygon's `neighborhood`, or null for points outside every polygon.
+- `neighborhood_point_count`: how many photos fell in the same neighborhood.
+- `neighborhood_dominant_class` / `neighborhood_dominant_pct`: per-neighborhood roll-ups of the photos' dominant class, projected back onto every member point so a Vega-Lite spec can colour by them directly.
 
-## Step 6: Map view (`Vega-Lite`)
-
-Wire Spatial Join → a `Vega-Lite` node and paste this spec. Mercator projection, polygons colored by their dominant detected class, points overlaid as a sanity check.
+A `Vega-Lite` node wired to the join maps the photos, each colored by the dominant class of its neighborhood:
 
 ```json
 {
@@ -150,7 +146,7 @@ Wire Spatial Join → a `Vega-Lite` node and paste this spec. Mercator projectio
       "mark": {"type": "geoshape", "stroke": "#888", "strokeWidth": 0.4},
       "encoding": {
         "color": {
-          "field": "name_dominant_class",
+          "field": "neighborhood_dominant_class",
           "type": "nominal",
           "scale": {
             "domain": ["road","sidewalk","building","vegetation","sky","car"],
@@ -159,9 +155,9 @@ Wire Spatial Join → a `Vega-Lite` node and paste this spec. Mercator projectio
           "legend": {"title": "Dominant class"}
         },
         "tooltip": [
-          {"field": "name", "title": "neighborhood"},
-          {"field": "name_dominant_class", "title": "dominant"},
-          {"field": "name_dominant_pct",   "title": "avg %"}
+          {"field": "neighborhood", "title": "neighborhood"},
+          {"field": "neighborhood_dominant_class", "title": "dominant"},
+          {"field": "neighborhood_dominant_pct",   "title": "avg %"}
         ]
       }
     }
@@ -169,9 +165,7 @@ Wire Spatial Join → a `Vega-Lite` node and paste this spec. Mercator projectio
 }
 ```
 
-## Step 7: Per-neighborhood bar chart (`Vega-Lite`)
-
-A second `Vega-Lite` wired off the same Spatial Join output:
+A second `Vega-Lite` off the same join counts photos per neighborhood, each bar split by dominant class:
 
 ```json
 {
@@ -179,15 +173,15 @@ A second `Vega-Lite` wired off the same Spatial Join output:
   "width": 400,
   "height": {"step": 16},
   "transform": [
-    {"filter": "datum.name != null"},
+    {"filter": "datum.neighborhood != null"},
     {
       "aggregate": [{"op": "count", "as": "image_count"}],
-      "groupby": ["name", "dominant_class"]
+      "groupby": ["neighborhood", "dominant_class"]
     }
   ],
   "mark": "bar",
   "encoding": {
-    "y": {"field": "name", "type": "nominal", "sort": "-x", "title": null},
+    "y": {"field": "neighborhood", "type": "nominal", "sort": "-x", "title": null},
     "x": {"field": "image_count", "type": "quantitative", "title": "images"},
     "color": {
       "field": "dominant_class",
@@ -201,13 +195,50 @@ A second `Vega-Lite` wired off the same Spatial Join output:
 }
 ```
 
+## Step 6: A second model from Hugging Face
+
+The second Image Segmentation node runs on the same photos and reports every class its model names:
+
+```python
+"""The same photos, with a model from Hugging Face.
+
+Add one in the Discovery Catalog (Hugging Face models, for example
+openmmlab/upernet-convnext-tiny), then drag it from the Model Catalog onto
+this node. Until then it runs DDRNet23-Slim, the model that ships with Curio.
+"""
+
+model = curio_model("model.curio.ddrnet23-slim")
+classes = None  # every class the model names
+
+return curio_segment(arg, model, classes)
+```
+
+To give it a model of its own:
+
+1. Open the **Discovery Catalog** and choose **Hugging Face models**. It lists image segmentation models Curio can run.
+2. Find a model, for example `openmmlab/upernet-convnext-tiny` (ADE20K's 150 classes, MIT license), and click **Add to Model Catalog**. Curio downloads it, and installs `torch` and `transformers` when the model needs them.
+3. Back on the canvas, open **Models** in the left rail and drag the model onto this node. Its `curio_model(...)` line now names the new model.
+4. Run the node. The `Simple View`, Spatial Join and bar chart after it show the new model's classes.
+
+The bar chart for this route names no colours, so it draws whatever classes the model reports. A model trained on other scenes labels other things: ADE20K says `tree` and `grass` where Cityscapes says `vegetation`.
+
+## Use your own area
+
+The sample is a fixed set of photos. To take photos of another place from Mapillary:
+
+1. Get a Mapillary access token: sign in at [mapillary.com/dashboard/developers](https://www.mapillary.com/dashboard/developers), register an application, and copy its **Client Token** (it starts with `MLY|`).
+2. Open **API Settings** in the page header. Under **Discovery Catalog**, find the **Mapillary access token** row, paste the token, and click **Save**. The row then reads *(saved - leave blank to keep)*, and the Mapillary card in the Discovery Catalog reads **Token set**.
+3. Open the **Discovery Catalog**, choose **Mapillary**, and open **Street-level images**.
+4. Draw the box to take photos from (at most 25 km²), and choose how many photos and how large. Photos are spread across the box, newest first.
+5. Click **Add to Data Catalog**. The photos land in the Data Catalog as a collection of their own, each with its creator.
+6. In the example's first node, replace `data.curio.mapillary-sample` with the new collection's id (drag the collection from the Data Catalog onto the node to do it), and run the dataflow.
+
+For another city, swap the neighborhood polygons in Step 4 for that city's, and rename its name column to `neighborhood` in the `Data Transformation`: NYC's boroughs file calls it `BoroName`.
+
 ## Expected output
 
-For a Lincoln Park run with the SegFormer-Cityscapes model and `vegetation` as the target class, the map polygon for Lincoln Park is colored vegetation-yellow (about 25 to 35% average vegetation pixels), while a denser downtown neighborhood like the Loop comes in road-blue or building-green. The bar chart shows image counts per neighborhood with each bar segmented by the modal dominant class.
+On the sample, route 1 finds road the dominant class in the most photos, then sky, building and vegetation. Vegetation covers about 15% of a photo's pixels on average and up to about 35%, most in Sheffield & DePaul. Most photos fall in Lincoln Park (27), the rest in Sheffield & DePaul, Lake View and Old Town, so the bar chart has four bars with Lincoln Park's the longest.
 
 ## Limitations
 
-- **Jobs don't survive a backend restart.** Inference state is in-memory; restart loses any in-flight job. Re-run.
-- **Cost.** Street View Static API requests are billed past Google's free tier. The Fetcher node caps requests at 200; default 20.
-- **CPU inference is slow.** A single SegFormer pass per panorama takes a few seconds on CPU; a 20-image run lands around 1 to 2 minutes. With a GPU it's near-realtime.
-- **The neighborhood `name` column is per-dataset.** Chicago uses `pri_neigh`, NYC uses `BoroName`, a generic FeatureCollection uses `name`. Set this in the Spatial Join node's "Polygon name property" field; default is `name`.
+- **Models run on the CPU.** DDRNet23-Slim takes a fraction of a second per photo; a large Hugging Face model can take several seconds.

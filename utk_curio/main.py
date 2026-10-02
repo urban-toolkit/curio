@@ -1802,7 +1802,7 @@ def main():
     )
     # There is deliberately no --llm-api-key. A key passed as an argument is
     # visible in the process list to every user on the host; set
-    # CURIO_DEFAULT_LLM_API_KEY (or AICONN_API_KEY) in the environment instead.
+    # CURIO_DEFAULT_LLM_API_KEY in the environment instead.
     parser.add_argument(
         "--guest-llm-api-key", default=None, metavar="KEY",
         help=(

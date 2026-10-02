@@ -17,6 +17,7 @@ import styles from "./UpMenu.module.css";
 import clsx from "clsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
+    faBrain,
     faCubes,
     faDatabase,
     faFileImport,
@@ -38,6 +39,7 @@ import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { useAgentCatalogDrawerControls } from "../../../providers/AgentCatalogDrawerProvider";
 import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
+import { useModelCatalogDrawer } from "../../../providers/modelCatalog";
 import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
 import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
 import {
@@ -116,6 +118,7 @@ export default function UpMenu() {
     const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
     const { openAgentCatalogDrawer } = useAgentCatalogDrawerControls();
     const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
+    const { openModelCatalogDrawer } = useModelCatalogDrawer();
 
     const toggleMenu = (menu: string) => {
         setActiveMenu((prev) => (prev === menu ? null : menu));
@@ -537,6 +540,16 @@ export default function UpMenu() {
                             >
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faDatabase} />
                                 <button className={styles.noStyleButton}>Data Catalog</button>
+                            </div>
+                            <div
+                                className={styles.dropDownRow}
+                                onClick={() => {
+                                    openModelCatalogDrawer();
+                                    setActiveMenu(null);
+                                }}
+                            >
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faBrain} />
+                                <button className={styles.noStyleButton}>Model Catalog</button>
                             </div>
                             <div
                                 className={styles.dropDownRow}

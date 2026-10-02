@@ -229,3 +229,96 @@ class TestTheCorpusAnswersWhatTheAppAsks:
                 f"no recorded search carries {spelling!r} - a portal's search is "
                 "recorded at a page size the app never requests"
             )
+
+
+class _Wire:
+    """``requests.request`` for the real transport: answers by URL, records
+    what each hop sent. No socket is opened."""
+
+    def __init__(self, routes):
+        self.routes = routes
+        self.sent = []
+
+    def __call__(self, method, url, **kwargs):
+        self.sent.append((url, dict(kwargs.get("headers") or {})))
+        status, headers, body = self.routes[url]
+        return _FakeResponse(status, headers, body)
+
+
+class _FakeResponse:
+    def __init__(self, status, headers, body):
+        self.status_code = status
+        self.headers = dict(headers)
+        self._body = body
+
+    def iter_content(self, chunk_size=8192):
+        yield self._body
+
+    def close(self):
+        pass
+
+
+@pytest.fixture()
+def wire(monkeypatch):
+    import requests
+
+    from utk_curio.backend.app.common import egress_policy
+
+    monkeypatch.setattr(egress_policy, "_default_resolver", lambda host: ["93.184.216.34"])
+
+    def _install(routes):
+        fake = _Wire(routes)
+        monkeypatch.setattr(requests, "request", fake)
+        return fake
+
+    return _install
+
+
+class TestTheRealTransport:
+    KEY = "X-App-Token:s3cr3t-value-0123"
+
+    def test_a_listing_page_returns_the_servers_headers(self, wire):
+        """The Hugging Face listing follows ``Link: rel="next"``; reading the
+        request's own headers instead stopped every listing after page one."""
+        link = '<https://portal.example/api/tree?cursor=2>; rel="next"'
+        wire({"https://portal.example/api/tree": (200, {"Link": link}, b"[]")})
+        body, headers = T.HttpDiscoveryTransport().get_page(
+            "https://portal.example/api/tree", credential=self.KEY
+        )
+        assert body == "[]"
+        assert headers["Link"] == link
+        assert "s3cr3t-value-0123" not in json.dumps(headers)
+
+    def test_a_listing_redirected_elsewhere_carries_no_key(self, wire):
+        fake = wire({
+            "https://portal.example/api/x": (302, {"Location": "https://cdn.example/x"}, b""),
+            "https://cdn.example/x": (200, {}, b"{}"),
+        })
+        T.HttpDiscoveryTransport().get_page("https://portal.example/api/x", credential=self.KEY)
+        assert fake.sent[0][1]["X-App-Token"] == "s3cr3t-value-0123"
+        assert "X-App-Token" not in fake.sent[1][1]
+
+    @pytest.mark.parametrize("status", [401, 403, 404, 500])
+    def test_a_download_that_answers_an_error_is_refused(self, wire, status):
+        """As the recorded transport refuses one. Returned as a result instead,
+        an error page was the file: a portal's JSON error installed as a JSON
+        dataset, a CDN's 403 kept as an image."""
+        wire({"https://portal.example/file.json": (status, {"Content-Type": "application/json"},
+                                                   b'{"error": "not found"}')})
+        with pytest.raises(T.DiscoveryTransportError, match=f"answered {status}"):
+            T.HttpDiscoveryTransport().download(
+                "https://portal.example/file.json", lambda b: None, max_bytes=100
+            )
+
+    def test_a_download_redirected_elsewhere_carries_no_key(self, wire):
+        fake = wire({
+            "https://portal.example/file.csv": (302, {"Location": "https://cdn.example/signed"}, b""),
+            "https://cdn.example/signed": (200, {"Content-Length": "8"}, b"a,b\n1,2\n"),
+        })
+        out = []
+        T.HttpDiscoveryTransport().download(
+            "https://portal.example/file.csv", out.append, max_bytes=100, credential=self.KEY
+        )
+        assert b"".join(out) == b"a,b\n1,2\n"
+        assert fake.sent[0][1]["X-App-Token"] == "s3cr3t-value-0123"
+        assert "X-App-Token" not in fake.sent[1][1]

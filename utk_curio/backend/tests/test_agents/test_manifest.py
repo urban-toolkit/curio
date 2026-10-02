@@ -95,6 +95,13 @@ class TestValidManifest:
 
 
 class TestAgentId:
+    def test_a_manifest_without_a_name_is_refused(self):
+        # #482: agent-package.v1.json requires "name"; the parser used the id.
+        raw = _valid_manifest()
+        del raw["name"]
+        with pytest.raises(AgentManifestError, match="name"):
+            parse_agent_manifest(raw)
+
     def test_missing_agent_prefix_rejected(self):
         raw = _valid_manifest()
         raw["id"] = "curio.my-explainer"

@@ -52,6 +52,8 @@ export interface DiscoveryResourceRowProps {
   /** A service source's row: downloaded once its questions are answered, and
    *  named after the place unless the person names it. */
   service?: boolean;
+  /** Opens a model a model source's row was added as, in the Model Catalog. */
+  onViewModel?: (modelId: string) => void;
 }
 
 const SampleThumb: React.FC<{ path: string; name: string }> = ({ path, name }) => {
@@ -82,6 +84,7 @@ export function DiscoveryResourceRow({
   onViewDataset,
   storage,
   service = false,
+  onViewModel,
 }: DiscoveryResourceRowProps) {
   const [format, setFormat] = React.useState<string>(resource.formats[0] ?? "");
   const [adding, setAdding] = React.useState(false);
@@ -95,10 +98,14 @@ export function DiscoveryResourceRow({
   // A portal row is held one format at a time: holding the CSV is not holding
   // the GeoJSON, so the row offers the format picked and not yet held. A
   // storage row has one format, and is held as a whole.
+  // A model row is added whole, to the Model Catalog.
+  const modelRow = resource.kind === "model";
   const heldFormats = resource.heldFormats ?? {};
-  const heldId = storage ? resource.alreadyHeldDatasetId : heldFormats[format] ?? null;
+  const heldId = modelRow
+    ? resource.alreadyHeldModelId ?? null
+    : storage ? resource.alreadyHeldDatasetId : heldFormats[format] ?? null;
   const held = Boolean(heldId);
-  const heldList = storage
+  const heldList = storage || modelRow
     ? []
     : resource.formats.filter((f) => heldFormats[f]).map((f) => f.toUpperCase());
   const running = job != null && (job.status === "queued" || job.status === "running");
@@ -112,7 +119,7 @@ export function DiscoveryResourceRow({
   const finished =
     job?.status === "completed" && !narrowedJob && (Boolean(storage) || !jobFormat || jobFormat === format);
   const failed = job != null && (job.status === "failed" || job.status === "refused");
-  const landedAt = (finished ? job?.datasetId : null) ?? heldId;
+  const landedAt = (finished ? (modelRow ? job?.model?.id : job?.datasetId) : null) ?? heldId;
   const kind = resource.kind ?? null;
   const splitBy = storage?.declared?.splitBy ?? [];
   const perFile = storage?.declared?.datasets === "per-file";
@@ -151,10 +158,14 @@ export function DiscoveryResourceRow({
             </span>
           ) : null}
           {kind ? <span className={styles.kind}>{DISCOVERY_RESOURCE_KIND_LABEL[kind] ?? kind}</span> : null}
-          {resource.formats.map((f) => (
-            <CatalogFormatBadge key={f} label={f.toUpperCase()} formatKey={f} />
-          ))}
-          {storage ? (
+          {modelRow
+            ? null
+            : resource.formats.map((f) => (
+                <CatalogFormatBadge key={f} label={f.toUpperCase()} formatKey={f} />
+              ))}
+          {modelRow ? (
+            held ? <span className={styles.held}>In your Model Catalog</span> : null
+          ) : storage ? (
             held ? <span className={styles.held}>In your Data Catalog</span> : null
           ) : heldList.length > 0 ? (
             <span className={styles.held}>In your Data Catalog as {heldList.join(", ")}</span>
@@ -166,7 +177,7 @@ export function DiscoveryResourceRow({
               target="_blank"
               rel="noreferrer noopener"
             >
-              View on the portal ↗
+              {modelRow ? "View the model's page ↗" : "View on the portal ↗"}
             </a>
           ) : null}
         </div>
@@ -212,7 +223,15 @@ export function DiscoveryResourceRow({
                 ))}
               </select>
             ) : null}
-            {(finished || held) && landedAt && onViewDataset ? (
+            {modelRow && (finished || held) && landedAt && onViewModel ? (
+              <button
+                type="button"
+                className={styles.viewDataset}
+                onClick={() => onViewModel(landedAt)}
+              >
+                View model
+              </button>
+            ) : (finished || held) && landedAt && onViewDataset && !modelRow ? (
               <>
                 {storage ? (
                   <button
@@ -260,7 +279,7 @@ export function DiscoveryResourceRow({
                   title={onDownload ? undefined : "Downloading is not available here"}
                   onClick={() => (mustAsk ? setNarrowing(true) : onDownload?.(resource, format))}
                 >
-                  Download
+                  {modelRow ? "Add to Model Catalog" : "Download"}
                 </button>
               </>
             )}

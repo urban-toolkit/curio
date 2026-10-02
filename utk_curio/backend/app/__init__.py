@@ -106,6 +106,9 @@ def create_app(config_class=config_class):
     from utk_curio.backend.app.discovery import discovery_bp, media_bp
     app.register_blueprint(discovery_bp)
     app.register_blueprint(media_bp)
+
+    from utk_curio.backend.app.model_catalog import models_bp
+    app.register_blueprint(models_bp)
     try:
         from utk_curio.backend.app.discovery.infrastructure.storage import audit_folder_roots
 
@@ -118,9 +121,6 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.monitor.routes import monitor_bp
     app.register_blueprint(monitor_bp)
-
-    from utk_curio.backend.app.streetvision import bp as streetvision_bp
-    app.register_blueprint(streetvision_bp, url_prefix="/api/streetvision")
 
     # Non-prod DB stub endpoints for Playwright E2E tests.
     # Lets Playwright seed users / projects directly without the signup form.

@@ -27,6 +27,8 @@ _FILE_ID_RE = re.compile(r"^[0-9a-f]{16}$")
 DERIVED = {
     "video": ("frames", "jpg", "frame"),
     "audio": ("clips", "wav", "audio"),
+    # A segmentation's overlay of a photo.
+    "image": ("overlays", "png", "image"),
 }
 
 
@@ -113,7 +115,7 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
         return frame[[c for c in frame.columns if c not in last] + last]
 
     def curio_derived_file(dataset_id, file_id, t_ms, ext=None, *, kind="video"):
-        """Where to write the frame (or clip) at *t_ms* of one file, and its row.
+        """Where to write the frame (or clip, or overlay) at *t_ms* of one file, and its row.
 
         Returns ``{"file_id", "path", "thumbnail", "image_url"|"audio_url"}``.
         The directory exists when this returns; write the bytes to ``path``.

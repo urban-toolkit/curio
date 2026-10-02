@@ -51,8 +51,9 @@ The three directories you created, `instance/`, `datasets/` and `.curio/`, are b
 
 `packages/` is **not** mounted: the node catalog is baked into the image, so it
 always matches the deployed commit. Neither is `discovery/`, whose shipped
-sources match the deployed commit too. Set `CURIO_DISCOVERY_ROOT` if you need
-them elsewhere. Sources of your own go in `.curio/discovery/`; see
+sources match the deployed commit too, nor `models/`, the Model Catalog's
+shipped models. Set `CURIO_DISCOVERY_ROOT` or `CURIO_MODELS_ROOT` if you need
+them elsewhere. Models your users add live in their stores under `.curio/`. Sources of your own go in `.curio/discovery/`; see
 [Storage sources](#storage-sources).
 
 ### Outbound requests
@@ -75,6 +76,13 @@ Two things a deployment should know:
   too**: the request line and headers are on the wire before the peer can be
   confirmed, so a blind request to an internal service is not *prevented*, only
   its response is withheld. Closing that needs connection-factory work.
+- **A user's key goes only to its source.** A key sent in a header goes to the
+  host of the source's `baseUrl` and to nothing else: not to the image hosts
+  Mapillary's photos come from, and not on a redirect to another origin. Google
+  Street View's key, a query parameter, is added when each request is sent; the
+  URLs a dataset, a job or the audit log records never hold it.
+- **Hugging Face models** download up to 2 GB each, from the Hub's file
+  storage after a redirect, through the same policy.
 
 Two sources reach OpenStreetMap:
 
@@ -313,6 +321,8 @@ docker compose -p curio-dev up -d --force-recreate
 
 The `-p curio-dev` flag isolates this stack's Compose project so it doesn't conflict with stable.
 
+**Every dev deploy starts the dev stack empty.** When [`deploy.yml`](#optional-cicd-with-github-actions--tailscale) deploys to `/srv/curio-dev`, it deletes `instance/`, `.curio/` and the datasets accounts published into `datasets/`. Accounts, projects and every stored file are gone after each deploy. The stable deploy keeps all three.
+
 ## Optional: CI/CD with GitHub Actions + Tailscale
 
 The repo includes [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) for push-to-deploy via Tailscale, so the GitHub Actions runner can reach your server without exposing public SSH. This is overkill for a one-person deployment but useful when multiple people merge to `main` and you want each merge automatically reflected on the dev stack.
@@ -417,7 +427,7 @@ flooding it cannot push real errors out of the log.
 - **Verify auth is on**: `docker compose logs curio | grep CURIO_NO_AUTH` must print `CURIO_NO_AUTH=0`. If it prints `1`, you started without the `docker-compose.deploy.yml` overlay and the instance is open to anyone.
 - Set a real `SECRET_KEY`. Auth is on for any real deployment, so this is not optional.
 - Keep `--no-allow-publish` (the overlay supplies it). Without it, any signed-in user can publish into the shared node catalog, including over a package already there. See [NODE-CATALOG.md § Operator notes](NODE-CATALOG.md#operator-notes).
-- `--no-allow-publish` also hides dataset publishing, but the dataset API does not check it: any signed-in user can still publish into the shared Data Catalog, and only the original publisher can unpublish or delete. See [DATA-CATALOG.md](DATA-CATALOG.md#operator-notes).
+- `--no-allow-publish` covers the shared Data Catalog too. Without it, any signed-in user other than a guest can publish a dataset there; only the original publisher can unpublish or delete it. See [DATA-CATALOG.md](DATA-CATALOG.md#operator-notes).
 - **Library installs are on, and scoped per user.** With isolation on (below), an install goes to `.curio/exec-overlays/users/<key>/` rather than the interpreter every user's nodes share. Three limits: a user's tree is readable by other users' node code (the execution account is shared), there is no size quota, so disk is the operator's to watch, and the shared guest cannot install at all.
 - **A deployment that cannot isolate does not start.** `--deploy` needs Linux, fork, setrlimit, pyseccomp and the `curio-exec` account; without them it exits with what is missing instead of serving accounts that share one interpreter. Run the Docker image, which has all of it, or drop `--deploy` and run Curio as the single-user tool it then is.
 - **Verify the sandbox is not exposed**: `docker compose ps` must not list a published port for 2000. The sandbox executes arbitrary node code; only the backend inside the container should reach it. The image binds it to `127.0.0.1` and publishes nothing, so a published 2000 means a local override added one.

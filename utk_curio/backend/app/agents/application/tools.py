@@ -852,8 +852,8 @@ def _discovery_service():
 def _portal_rows(sources) -> list[dict]:
     """The portals among *sources*. Storage and service sources are added from
     the Discovery Catalog page, where a row can be narrowed and a service's area
-    is set, so no agent tool offers them."""
-    return [s for s in sources or [] if s.get("kind") not in ("storage", "service")]
+    is set, so no agent tool offers them; a model source adds models, not data."""
+    return [s for s in sources or [] if s.get("kind") not in ("storage", "service", "model")]
 
 
 def _discovery_source_rows() -> list[dict]:
@@ -895,7 +895,7 @@ def _discovery_search_rows(params: dict) -> list[dict]:
 
         try:
             manifest = service.get_manifest(source_id)
-            storage = manifest.is_storage or manifest.is_service
+            storage = manifest.is_storage or manifest.is_service or manifest.is_model
         except DiscoveryError:
             storage = False
         if storage:

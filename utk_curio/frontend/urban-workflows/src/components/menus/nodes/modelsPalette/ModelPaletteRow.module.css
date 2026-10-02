@@ -1,0 +1,46 @@
+/* Model-row specifics layered over the shared packageKind* row structure
+   (ToolsMenuPackagePalette.module.css), the way AgentPaletteRow.module.css
+   layers the agent row: a tinted avatar, a monospace id subtitle, and chips.
+   One colour for every model, mixed from --curio-kind-model-fg and the on-dark
+   text token the way the agent rows mix theirs, because this is a dark
+   surface. */
+
+.avatarIcon {
+  /* Inherit the avatar's colour (packageKindDragIcon pins a fixed light one). */
+  font-size: 1.4em;
+  color: inherit;
+}
+
+.avatar_model {
+  color: color-mix(in srgb, var(--curio-kind-model-fg) 45%, var(--curio-text-on-dark));
+  background: color-mix(in srgb, var(--curio-kind-model-fg) 22%, transparent);
+  border-color: color-mix(in srgb, var(--curio-kind-model-fg) 50%, transparent);
+}
+
+.chip_model {
+  background: color-mix(in srgb, var(--curio-kind-model-fg) 28%, transparent);
+  color: color-mix(in srgb, var(--curio-kind-model-fg) 45%, var(--curio-text-on-dark));
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.modelId {
+  font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 9px;
+  color: color-mix(in srgb, var(--curio-text-on-dark) 55%, transparent);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.detailsButton {
+  flex-shrink: 0;
+  align-self: center;
+  margin-left: auto;
+}

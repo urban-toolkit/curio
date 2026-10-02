@@ -88,7 +88,7 @@ def import_agent(user_key: str, coord: str, *, user=None) -> dict:
     """
     _refuse_internal(coord)
     agents_catalog._require_definition(user_key, coord)
-    agents_catalog._materialize_builtin(user_key, coord)
+    agents_catalog._materialize_definition(user_key, coord)
     imports.add_imported_agent(user_key, coord)
     projects = _fan_out_imports(user, user_key, coord, install=True)
     return {"coord": coord, "imported": True, "projects": projects}
@@ -155,7 +155,7 @@ def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
     if spec is None:
         raise AgentServiceError(f"project {project_id!r} has no spec", 404)
     for c in [coord, *required]:
-        agents_catalog._materialize_builtin(user_key, c)
+        agents_catalog._materialize_definition(user_key, c)
     current = project_agents.project_agents(spec)
     added: list[str] = []
     for c in [coord, *required]:
@@ -298,6 +298,10 @@ def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
     }
 
 
+NOT_THE_PUBLISHER_MESSAGE = "only the owning account can unpublish this definition"
+NOT_THE_PUBLISHER_REPLACE_MESSAGE = "only the account that published this definition can replace it"
+
+
 def publish_agent(user_key: str, coord: str) -> dict:
     """Publish an owned imported definition to the Global Catalog.
 
@@ -315,13 +319,22 @@ def publish_agent(user_key: str, coord: str) -> dict:
         )
     if coord not in imports.load_imported_agents(user_key):
         raise AgentServiceError("import the definition before publishing it", 400)
+    # A republish replaces what is there, so it follows unpublish's rule.
+    if publications.is_published(coord) and not publications.is_publisher(coord, user_key):
+        raise AgentServiceError(NOT_THE_PUBLISHER_REPLACE_MESSAGE, 403)
     publications.publish_from_dir(storage.agent_definition_dir(user_key, coord), coord)
+    publications.record_publisher(coord, user_key)
     return {"coord": coord, "published": True}
 
 
 def unpublish_agent(user_key: str, coord: str) -> dict:
-    """Remove an owned definition from the Global Catalog (only its owner may)."""
-    if storage.load_installed_agent_definition(user_key, coord) is None:
-        raise AgentServiceError("only the owning account can unpublish this definition", 403)
+    """Remove a published definition from the Global Catalog (only its publisher may).
+
+    The publisher record decides, not a store copy: every account that added
+    the agent holds one (#438). A publication with no record (published before
+    the record existed) fails closed, as a node package does.
+    """
+    if publications.is_published(coord) and not publications.is_publisher(coord, user_key):
+        raise AgentServiceError(NOT_THE_PUBLISHER_MESSAGE, 403)
     publications.unpublish(coord)
     return {"coord": coord, "published": False}

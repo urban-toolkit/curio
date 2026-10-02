@@ -217,13 +217,14 @@ def node_overlay_import_failures(user_key: str, deps) -> dict[str, str]:
 
 
 def assert_may_install() -> None:
-    """Refuse the caller if this instance must not run pip for them (#332).
+    """Refuse the caller if this instance must not install packages for them (#332).
 
-    Placed at the funnel rather than on each route on purpose. Eight routes
-    reach pip and only the two ``/libraries`` ones were gated; a gate per route
-    is a gate a ninth route will be added without. Everything that installs goes
-    through :func:`provision_python_deps`, so this is the one place that cannot
-    be bypassed by adding an endpoint.
+    Called before anything lands in the store: by every use case that copies a
+    package in (:func:`_ensure_user_store_install`, ``install_to_store``,
+    ``install_from_catalog``, ``install_draft``, ``promote``) and by the upload
+    route, and again by :func:`provision_declared_deps`. Not from
+    :func:`provision_python_deps`: by then the files are installed, so a refusal
+    there leaves the package behind for the next request to find (#451).
 
     The caller comes from the request context rather than a parameter, because
     the functions here take a ``user_key`` string and the predicate needs the

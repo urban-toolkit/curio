@@ -323,18 +323,30 @@ class TestDirect:
 
 class TestTheRegistry:
     def test_every_manifest_provider_type_can_be_built(self):
-        from utk_curio.backend.app.discovery.providers import build_service, build_storage
+        from utk_curio.backend.app.discovery.providers import (
+            build_model_provider, build_service, build_storage,
+        )
 
         for dir_name in sorted(p.name for p in SHIPPED_ROOT.iterdir() if p.is_dir()):
             manifest = load_source_manifest(SHIPPED_ROOT / dir_name)
             if manifest.is_service:
-                # A service sends its own requests (autk-db, from Node), so it
-                # takes no transport.
-                provider = build_service(manifest)
+                # OpenStreetMap sends its own requests (autk-db, from Node) and
+                # ignores the transport; Mapillary is asked over it.
+                provider = build_service(manifest, FixtureDiscoveryTransport(FIXTURES))
+            elif manifest.is_model:
+                provider = build_model_provider(manifest, FixtureDiscoveryTransport(FIXTURES))
             else:
                 build = build_storage if manifest.is_storage else build_provider
                 provider = build(manifest, FixtureDiscoveryTransport(FIXTURES))
             assert provider.type == manifest.provider.type
+
+    def test_an_http_service_refuses_to_be_built_without_a_transport(self):
+        from utk_curio.backend.app.discovery.domain.errors import CapabilityUnsupported
+        from utk_curio.backend.app.discovery.providers import build_service
+
+        manifest = load_source_manifest(SHIPPED_ROOT / "source.mapillary.imagery@1")
+        with pytest.raises(CapabilityUnsupported):
+            build_service(manifest)
 
     def test_a_transport_is_required_not_defaulted(self):
         """Forgetting to inject a fake must be a TypeError at construction,

@@ -173,3 +173,72 @@ def test_a_hugging_face_tree_still_lists_files_with_paths_and_sizes():
     if not files:
         pytest.skip("the folder listed no files today")
     assert "path" in files[0] and "size" in files[0]
+
+
+# ── Keyed services: checked only with a key the person running them holds ──
+#
+# No key is in the repository or in CI, so these skip there. With your own key
+# in the environment they check Mapillary's and Google's answers have the
+# shape the providers read. The key goes in a header or a parameter of the
+# request only; no message here prints it.
+
+
+def _keyed_probe_json(url: str, *, key: str, **kwargs):
+    try:
+        result = egress.fetch(url, max_bytes=T.MAX_METADATA_BYTES, **kwargs)
+    except Exception as exc:  # DNS, TLS, timeout, refused, policy
+        pytest.skip(f"{url} unreachable: {type(exc).__name__}: {str(exc).replace(key, '<key>')}")
+    if not (200 <= result.status < 300):
+        pytest.skip(f"{url} answered {result.status}")
+    try:
+        return json.loads(result.body)
+    except ValueError:
+        pytest.skip(f"{url} did not answer JSON")
+
+
+def _key(name: str) -> str:
+    import os
+
+    key = os.environ.get(name)
+    if not key:
+        pytest.skip(f"set {name} to your own key to check this service")
+    return key
+
+
+def test_a_mapillary_search_still_carries_what_the_rows_read():
+    from utk_curio.backend.app.discovery.providers import mapillary
+
+    token = _key("CURIO_MAPILLARY_TOKEN")
+    payload = _keyed_probe_json(
+        "https://graph.mapillary.com/images?bbox=-87.642,41.918,-87.639,41.92"
+        f"&fields={mapillary.IMAGE_FIELDS}&limit=5",
+        key=token, headers={"Authorization": f"OAuth {token}"},
+    )
+    data = payload.get("data")
+    if not isinstance(data, list) or not data:
+        pytest.skip("Mapillary answered no images for the box this time")
+    image = data[0]
+    assert "id" in image and isinstance(image.get("captured_at"), (int, float))
+    assert mapillary._point(image) is not None, "neither computed_geometry nor geometry has coordinates"
+    assert isinstance(image.get("creator"), dict) and "username" in image["creator"]
+    thumbs = _keyed_probe_json(
+        f"https://graph.mapillary.com/images?image_ids={image['id']}&fields=id,thumb_256_url",
+        key=token, headers={"Authorization": f"OAuth {token}"},
+    )
+    url = (thumbs.get("data") or [{}])[0].get("thumb_256_url")
+    assert url and mapillary.host_allowed(url, ("fbcdn.net",)), "thumbnails left the listed hosts"
+
+
+def test_google_street_view_metadata_still_carries_what_the_rows_read():
+    key = _key("CURIO_GOOGLE_MAPS_KEY")
+    payload = _keyed_probe_json(
+        "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.8789,-87.6359&radius=50",
+        key=key, params={"key": key},
+    )
+    status = payload.get("status")
+    if status == "ZERO_RESULTS":
+        pytest.skip("Google has no panorama at the point today")
+    assert status == "OK", f"the metadata answered {status}: {payload.get('error_message')}"
+    assert payload.get("pano_id")
+    assert isinstance(payload.get("location"), dict) and {"lat", "lng"} <= set(payload["location"])
+    assert "date" in payload

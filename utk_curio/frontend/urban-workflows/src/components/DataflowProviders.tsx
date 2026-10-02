@@ -7,6 +7,7 @@ import DialogProvider from "../providers/DialogProvider";
 import { NodeCatalogDrawerProvider } from "../providers/packages";
 import { AgentCatalogDrawerProvider } from "../providers/AgentCatalogDrawerProvider";
 import { DatasetCatalogDrawerProvider } from "../providers/datasetCatalog";
+import { ModelCatalogDrawerProvider } from "../providers/modelCatalog";
 import { PackagePaletteProvider } from "../providers/packages";
 import { DatasetPaletteProvider } from "../providers/DatasetPaletteContext";
 import { ProjectLoader } from "./ProjectLoader";
@@ -48,13 +49,17 @@ export const DataflowProviders: React.FC<{
       <NodeCatalogDrawerProvider>
         <DatasetCatalogDrawerProvider>
           <AgentCatalogDrawerProvider>
-            <StarterProvider>
-              <ProjectLoader presentation={presentation}>
-                <PackagePaletteProvider>
-                  <DatasetPaletteProvider>{children}</DatasetPaletteProvider>
-                </PackagePaletteProvider>
-              </ProjectLoader>
-            </StarterProvider>
+            {/* Inside FlowProvider like its peers: a model's details ask
+                before a link leaves a dataflow with unsaved changes. */}
+            <ModelCatalogDrawerProvider>
+              <StarterProvider>
+                <ProjectLoader presentation={presentation}>
+                  <PackagePaletteProvider>
+                    <DatasetPaletteProvider>{children}</DatasetPaletteProvider>
+                  </PackagePaletteProvider>
+                </ProjectLoader>
+              </StarterProvider>
+            </ModelCatalogDrawerProvider>
           </AgentCatalogDrawerProvider>
         </DatasetCatalogDrawerProvider>
       </NodeCatalogDrawerProvider>

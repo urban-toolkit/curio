@@ -12,6 +12,8 @@ from utk_curio.backend.app.datasets.schemas.requests import (
     parse_live_outputs,
 )
 from utk_curio.backend.app.datasets.service import DatasetCatalogError, DatasetCatalogService
+# The operator's publish switch, read where every catalog gate reads it.
+from utk_curio.backend.app.packages.routes import common as packages_routes_common
 from utk_curio.backend.app.projects.repositories import NotFoundError
 from utk_curio.backend.app.projects.services import ProjectError
 from utk_curio.backend.app.users.dependencies import require_auth
@@ -218,6 +220,8 @@ def _parse_source_updated_at(raw: str | None) -> str | None:
 @require_auth
 @_map_catalog_errors
 def publish_dataset():
+    if not packages_routes_common.CURIO_ALLOW_FACTORY_CATALOG_PUBLISH:
+        return packages_routes_common.catalog_publish_disabled()
     body = request.get_json(silent=True) or {}
     dataset_id = body.get("datasetId")
     if not dataset_id:
@@ -235,6 +239,10 @@ def publish_dataset():
 @require_auth
 @_map_catalog_errors
 def unpublish_dataset(dataset_id: str):
+    # The route, not the service: deleting a dataset unpublishes it through
+    # the service, and the switch must not strand a user's own dataset.
+    if not packages_routes_common.CURIO_ALLOW_FACTORY_CATALOG_PUBLISH:
+        return packages_routes_common.catalog_publish_disabled()
     payload = _service().unpublish_dataset(
         dataset_id,
         dataflow_id=_dataflow_id_from_request(),

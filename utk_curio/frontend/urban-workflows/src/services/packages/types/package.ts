@@ -113,6 +113,8 @@ export interface PackagePayload {
   readme?: string;
   /** When the manifest's package is read-only (e.g. ``curio.builtin@1``). */
   readOnly?: boolean;
+  /** The package's own interface bundle (``scripts/behaviors.js``), when it ships one. */
+  behaviorScript?: string;
   /**
    * Catalog endpoint only - whether THIS user published it, and may therefore
    * withdraw it. The peer of `AgentCard.publishable`.

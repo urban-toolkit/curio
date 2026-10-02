@@ -253,6 +253,53 @@
             "imageColumn": { "type": "string", "minLength": 1 }
           }
         },
+        "packageTemplateLabel": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The node's renamed header (#412). Absent means the header shows its template's label."
+        },
+        "packageTemplateConfig": {
+          "type": "object",
+          "description": "What the node settings modal saved for this node (#412): its title, description, editor mode, engine, which editor tabs it shows, and its ports. Absent until the modal saves. It does not repeat the node's code, which is 'content', and its ports carry no ids.",
+          "additionalProperties": false,
+          "properties": {
+            "label": { "type": "string" },
+            "category": {
+              "type": "string",
+              "enum": ["data", "computation", "vis_grammar", "vis_simple", "flow"]
+            },
+            "engine": { "type": "string", "enum": ["python", "javascript"] },
+            "editor": { "type": "string", "enum": ["code", "widgets", "grammar", "none"] },
+            "description": { "type": "string" },
+            "hasCode": { "type": "boolean" },
+            "hasWidgets": { "type": "boolean" },
+            "hasGrammar": { "type": "boolean" },
+            "hasProvenance": { "type": "boolean" },
+            "inputPorts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "types": { "type": "array", "items": { "type": "string" } },
+                  "cardinality": { "type": "string" }
+                }
+              }
+            },
+            "outputPorts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "types": { "type": "array", "items": { "type": "string" } },
+                  "cardinality": { "type": "string" }
+                }
+              }
+            },
+            "sourceFilename": { "type": "string" }
+          }
+        },
         "comments": {
           "type": "array",
           "items": { "$ref": "#/$defs/comment" },

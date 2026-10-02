@@ -1,9 +1,7 @@
 """The download job store.
 
-Three of these pin things ``streetvision/jobs.py`` - the store this one is
-modelled on - does not do: jobs are per user, they can be cancelled, and
-finished ones are swept. The isolation one matters most: that store's
-``get_job(job_id)`` returns anyone's job to anyone who guesses an id.
+Jobs are per user, they can be cancelled, and finished ones are swept. The
+isolation one matters most: guessing another user's job id gets nothing.
 """
 
 from __future__ import annotations

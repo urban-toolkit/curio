@@ -60,6 +60,17 @@ def _draft():
     }
 
 
+def _install_and_publish(client, token) -> int:
+    """Save the draft into the caller's store, then publish that copy."""
+    installed = client.post("/api/packages/factory/install", json=_draft(), headers=_auth(token))
+    assert installed.status_code == 201, installed.get_data(as_text=True)
+    return client.post(
+        "/api/packages/factory/publish-catalog",
+        json={"dirName": "ai.test.relocatable@1"},
+        headers=_auth(token),
+    ).status_code
+
+
 def test_the_default_is_the_committed_catalog(monkeypatch):
     """Unset means the repo, so a developer's publish still lands there."""
     monkeypatch.delenv("CURIO_PACKAGES_ROOT", raising=False)
@@ -93,12 +104,7 @@ def test_a_publish_goes_where_the_override_points(
     catalog.mkdir()
     monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(catalog))
 
-    resp = client.post(
-        "/api/packages/factory/publish-catalog",
-        json=_draft(),
-        headers=_auth(token),
-    )
-    assert resp.status_code == 201, resp.get_data(as_text=True)
+    assert _install_and_publish(client, token) == 201
 
     published = catalog / "ai.test.relocatable@1"
     assert published.is_dir(), f"published nothing into {catalog}"
@@ -118,10 +124,7 @@ def test_a_publish_is_invisible_to_a_differently_rooted_catalog(
     _, token = user_and_token
 
     monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(mine))
-    assert client.post(
-        "/api/packages/factory/publish-catalog",
-        json=_draft(), headers=_auth(token),
-    ).status_code == 201
+    assert _install_and_publish(client, token) == 201
 
     monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(theirs))
     listed = client.get("/api/packages/catalog", headers=_auth(token)).get_json()

@@ -309,10 +309,12 @@ class TestDev118NotExecutableTarget:
         from utk_curio.backend.app.execution.workflow_spec import is_executable_kind
 
         for kind in ("curio.builtin/data-loading", "curio.builtin/computation-analysis@1",
-                     "curio.builtin/js-computation", "DATA_LOADING", "curio.builtin/data-export@1"):
+                     "curio.builtin/js-computation", "DATA_LOADING"):
             assert is_executable_kind(kind) is True, kind
+        # Data Export is one Download button with no code (#226).
         for kind in ("curio.builtin/vis-vega", "curio.builtin/autk-grammar@1", "curio.builtin/data-pool",
-                     "curio.builtin/merge-flow", "curio.builtin/vis-simple", "some.pkg/custom-node@1", "", None):
+                     "curio.builtin/merge-flow", "curio.builtin/vis-simple", "curio.builtin/data-export@1",
+                     "some.pkg/custom-node@1", "", None):
             assert is_executable_kind(kind) is False, kind
 
     def test_a_browser_rendered_target_is_refused_before_anything_runs(self, tmp_curio):

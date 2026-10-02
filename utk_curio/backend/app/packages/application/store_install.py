@@ -44,6 +44,7 @@ from utk_curio.backend.app.packages.repositories.store import (
     user_packages_dir,
 )
 from utk_curio.backend.app.packages.infrastructure import backend_runtime as packages_backend_runtime
+from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.infrastructure.pip_runner import PipInstallError
 from utk_curio.backend.app.packages.application import (
     provisioning as packages_provisioning,
@@ -150,6 +151,7 @@ def install_package_from_archive(
     archive: bytes | IO[bytes],
     *,
     replace: bool = False,
+    from_catalog: bool = False,
 ) -> InstallResult:
     """Install (or replace) a ``.curio.zip`` archive for *user_key*.
 
@@ -179,6 +181,10 @@ def install_package_from_archive(
         When ``True``, an existing ``<packageId>@<major>`` directory for
         *user_key* is removed first. Default ``False`` — repeat installs
         of the same coordinate raise.
+    from_catalog:
+        ``True`` when the archive is the shared catalog's copy, which keeps
+        the store copy on the catalog's refresh track (#194). Everything
+        else is the user's own content, and the seeder leaves it alone (#564).
 
     Returns
     -------
@@ -244,35 +250,40 @@ def install_package_from_archive(
                 )
 
             final_dest = package_dir(user_key, dir_name)
-            replaced = False
-            if final_dest.exists():
-                if not replace:
-                    raise InstallerError(
-                        f"package {dir_name} already installed; pass replace=True "
-                        f"to overwrite"
-                    )
-                shutil.rmtree(final_dest)
-                replaced = True
-
             merge_missing_manifest_created_at(staging_root)
             integrity = _build_integrity(staging_root)
             (staging_root / "integrity.json").write_text(
                 json.dumps({"sha256": integrity}, indent=2, sort_keys=True),
                 encoding="utf-8",
             )
-            staging_root.replace(final_dest)
-            _touch_manifest_for_install_recency(final_dest)
-            merged_manifest = load_package_manifest(final_dest)
-            # An explicit (re)install supersedes any prior uninstall
-            # tombstone the dev seeder might otherwise honour — the user
-            # just asked for this package to be present, so its seed-state
-            # record gets refreshed below by mark_seeded only if the
-            # caller is the seeder; here we just clear the tombstone so
-            # subsequent restarts don't blow up the manifest cross-check.
-            try:
-                seed_state.clear(user_key, dir_name)
-            except Exception:  # noqa: BLE001 — bookkeeping is best-effort
-                log.exception("Failed to clear uninstall tombstone for %s/%s", user_key, dir_name)
+            # Replace and record under the store lock (memo dev/99), the one
+            # the seeder swaps under: a reader never sees the package missing
+            # between the rmtree and the move, and a seeding pass cannot decide
+            # to refresh the old copy and then swap it in over this one.
+            with package_seed_lock(user_key):
+                replaced = False
+                if final_dest.exists():
+                    if not replace:
+                        raise InstallerError(
+                            f"package {dir_name} already installed; pass replace=True "
+                            f"to overwrite"
+                        )
+                    shutil.rmtree(final_dest)
+                    replaced = True
+                staging_root.replace(final_dest)
+                _touch_manifest_for_install_recency(final_dest)
+                merged_manifest = load_package_manifest(final_dest)
+                # An explicit (re)install supersedes any prior uninstall
+                # tombstone the dev seeder might otherwise honour, and says where
+                # this copy came from: the seeder refreshes a catalog copy nobody
+                # has changed, and never the user's own content (#564).
+                try:
+                    seed_state.mark_installed(
+                        user_key, dir_name,
+                        catalog_copy=seed_state.copy_digest(integrity) if from_catalog else None,
+                    )
+                except Exception:  # noqa: BLE001: bookkeeping is best-effort
+                    log.exception("Failed to record the install of %s/%s", user_key, dir_name)
 
             return InstallResult(
                 manifest=merged_manifest,
@@ -293,13 +304,14 @@ def uninstall_package(user_key: str, dir_name: str) -> bool:
     regression this side-effect exists to prevent.
     """
     target = package_dir(user_key, dir_name)
-    if not target.exists():
-        return False
-    shutil.rmtree(target)
-    try:
-        seed_state.mark_uninstalled(user_key, dir_name)
-    except Exception:  # noqa: BLE001 — never block uninstall on bookkeeping
-        log.exception("Failed to record uninstall tombstone for %s/%s", user_key, dir_name)
+    with package_seed_lock(user_key):  # memo dev/99: the seeder's lock
+        if not target.exists():
+            return False
+        shutil.rmtree(target)
+        try:
+            seed_state.mark_uninstalled(user_key, dir_name)
+        except Exception:  # noqa: BLE001: never block uninstall on bookkeeping
+            log.exception("Failed to record uninstall tombstone for %s/%s", user_key, dir_name)
     return True
 
 
@@ -323,7 +335,9 @@ def install_package_from_directory(
     """
     if not source_dir.is_dir():
         raise InstallerError(f"catalog source {source_dir} is not a directory")
-    return install_package_from_archive(user_key, zip_package_tree(source_dir), replace=replace)
+    return install_package_from_archive(
+        user_key, zip_package_tree(source_dir), replace=replace, from_catalog=True,
+    )
 
 
 def export_package_archive(
@@ -379,6 +393,9 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
             copied=False,
             import_errors=packages_provisioning._declared_import_failures(user_key, dir_name),
         )
+    # Before the copy, not in provision_python_deps: a refusal there leaves
+    # the files in the store, and the next call takes the branch above (#451).
+    packages_provisioning.assert_may_install()
     src = packages_catalog_dir.catalog_root() / dir_name
     if not src.is_dir():
         raise PackageServiceError(
@@ -408,6 +425,7 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
         try:
             shutil.rmtree(package_dir(user_key, dir_name), ignore_errors=True)
             packages_backend_runtime.remove_backend_residue(user_key, dir_name)
+            seed_state.clear(user_key, dir_name)
         except Exception:  # noqa: BLE001
             log.warning("Failed to roll back %s after dep failure", dir_name, exc_info=True)
         raise PackageServiceError(
@@ -462,10 +480,15 @@ def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> Inst
     user's store through the same validator, size caps and integrity writer the
     sideload uses; ``InstallerError`` propagates. A missing catalog entry is a
     :class:`PackageServiceError` 404."""
+    packages_provisioning.assert_may_install()
     src = packages_catalog_dir.catalog_root() / dir_name
     if not src.is_dir():
         raise PackageServiceError(f"catalog has no package {dir_name}", 404)
-    return install_package_from_directory(user_key, src, replace=replace)
+    result = install_package_from_directory(user_key, src, replace=replace)
+    # Same as the first copy in _ensure_user_store_install: a replaced backend
+    # entry keeps its old pin otherwise, and every invocation is refused.
+    packages_backend_runtime.record_entry_pin(user_key, dir_name)
+    return result
 
 
 def remove_package(user_key: str, dir_name: str) -> None:

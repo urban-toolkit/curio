@@ -2,7 +2,7 @@
 
 The Agent Catalog is where Curio's **hookable agents** live: the assistants you attach to a node, a connection, or the whole canvas.
 
-Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the Agent Catalog the assistants you attach to them, and the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals and storage you take datasets from.
+Curio has five catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the Agent Catalog the assistants you attach to them, and the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from.
 
 This guide is in seven parts, plus operator notes:
 
@@ -63,7 +63,7 @@ Agent state lives in files under `.curio/` and inside each project's spec. Knowi
 | Layer | On disk | Written by |
 |---|---|---|
 | **Shared catalog**, published agents | `.curio/agents-catalog/<agentId>@<version>/` | **Publish** adds one; **Unpublish** removes it. |
-| **Definition store**, the agents themselves | `.curio/users/<user-key>/agents/<agentId>@<version>/` (`manifest.json` and `prompts/`) | **Import agent** adds one; adding a built-in agent copies it here. |
+| **Definition store**, the agents themselves | `.curio/users/<user-key>/agents/<agentId>@<version>/` (`manifest.json` and `prompts/`) | **Import agent** adds one; adding a built-in or published agent copies it here. |
 | **Per-user list**, the agents in all your projects | `.curio/users/<user-key>/imported-agents.json` | **Add to all projects** and **Import agent** add an entry; **Remove from all projects** drops it. |
 | **Catalog settings**, values you own | `.curio/users/<user-key>/catalog-settings.json` | **Settings** on `/catalog/agents` saves a setting you changed; **Restore default** removes it. See [Catalog settings](#catalog-settings). |
 | **Per-dataflow lockfile**, the agents one dataflow has | `dataflow.agents` in the project's `spec.trill.json` | **Add to project** and **Remove from project** in the drawer. **Add to all projects** and **Remove from all projects** change every project. |
@@ -97,7 +97,7 @@ There are three places you work with agents, and as with the Data Catalog they a
 | **Remove from all projects** | `/catalog/agents`, in the right-hand drawer or the right-click menu | Your per-user list, every project's lockfile, and the agent's attachments | The agent and its attachments leave every dataflow. The definition stays on disk. |
 | **Import agent** | Drawer footer, or the `/catalog/agents` header | Definition store and your per-user list | Your own `manifest.json` and prompt files are registered as a definition. It is not added to your existing dataflows and not published. |
 | **Publish** | `/catalog/agents` drawer, for your own imports only | Shared catalog | Every user on this install can browse the agent. |
-| **Unpublish** | `/catalog/agents` drawer | Shared catalog | It leaves the shared catalog. Other users who added it lose access to it. |
+| **Unpublish** | `/catalog/agents` drawer | Shared catalog | It leaves the shared catalog. Other users who added it keep their copy. |
 | **Attach** | Drag a palette row onto a node, a connection, or the canvas | Attachments | A private instance with its own chat panel. The agent must be added first. |
 | **Detach** | The attachment's own control | Attachments | The instance and its transcript are deleted. The agent stays added. |
 
@@ -260,7 +260,7 @@ Training uses only Curio's shipped examples, and the endpoint does the training:
 
 **Import agent**, in the drawer's footer or the `/catalog/agents` header, takes a `manifest.json` and its `.txt` prompt files, not an archive. The prompt files must match what the manifest references, size limits apply, and a definition whose id and version you already have is refused: a change is a new version.
 
-**Publish**, on `/catalog/agents`, copies one of your own imported definitions into the shared catalog, where every user on the install can browse it. Built-in agents cannot be published. **Unpublish** removes it from the shared catalog, and only the publisher can do it. Other users who added the agent lose access to it.
+**Publish**, on `/catalog/agents`, copies one of your own imported definitions into the shared catalog, where every user on the install can browse it. Built-in agents cannot be published. **Unpublish** removes it from the shared catalog, and only the publisher can do it; only the publisher can publish over it, too. Other users who added the agent keep their copy and keep running it.
 
 ---
 

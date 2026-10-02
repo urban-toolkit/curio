@@ -142,6 +142,23 @@ class TestResolvesTheCommittedCatalog:
         assert paths == {}
 
 
+class TestResolvesModels:
+    def test_a_shipped_model_resolves_as_execution_resolves_it(self, client):
+        """Example 10's nodes call ``curio_model``: without the folder the
+        harness's ``/exec`` ran them with no model, and the node failed."""
+        from utk_curio.backend.app.api.routes import _resolve_exec_models
+
+        code = 'model = curio_model("model.curio.ddrnet23-slim")'
+        models = _post(client, {"code": code}).get_json()["models"]
+        assert set(models) == {"model.curio.ddrnet23-slim"}
+        assert (Path(models["model.curio.ddrnet23-slim"]) / "manifest.json").is_file()
+        with client.application.test_request_context():
+            assert models == _resolve_exec_models(code)
+
+    def test_code_naming_no_model_resolves_none(self, client):
+        assert _post(client, {"code": _loader_code()}).get_json()["models"] == {}
+
+
 class TestTheRouteIsGatedLikeItsSiblings:
     def test_refused_when_curio_testing_is_unset(self, client, monkeypatch):
         monkeypatch.setattr(testing_routes, "_is_testing", lambda: False)

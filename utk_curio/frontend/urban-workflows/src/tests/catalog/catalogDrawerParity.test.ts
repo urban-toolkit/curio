@@ -39,8 +39,16 @@ const DRAWERS = [
  * assertions about layout and shared components still apply to it, which is
  * what this list is for; forcing a publish pill onto it to satisfy a loop
  * would be inventing a control to pass a test.
+ *
+ * A model is absent for the same reason: shipped models come with Curio and
+ * downloaded ones from the Discovery Catalog, and neither is published back
+ * into a shared catalog.
  */
-const ALL_DRAWERS = [...DRAWERS, "pages/discovery/DiscoveryCatalogBrowseDrawer.tsx"];
+const ALL_DRAWERS = [
+  ...DRAWERS,
+  "pages/discovery/DiscoveryCatalogBrowseDrawer.tsx",
+  "pages/models/ModelCatalogBrowseDrawer.tsx",
+];
 
 describe("catalog drawer parity", () => {
   test("every browse drawer is built from the shared drawer body", () => {

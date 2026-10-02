@@ -12,9 +12,9 @@
  * The catalogs differ in their primary action, which is why this is one
  * function each rather than one for all: a dataset is added to every project or
  * detached from it, an agent is imported or un-imported, a package is installed
- * and can then be updated, and a Discovery Catalog source is browsed. Each builder
- * takes the state its drawer already computes, so neither surface decides
- * anything the other cannot see.
+ * and can then be updated, a Discovery Catalog source is browsed, and a
+ * downloaded model can be deleted. Each builder takes the state its drawer
+ * already computes, so neither surface decides anything the other cannot see.
  *
  * Publish and Unpublish are deliberately absent. They are not plain buttons in
  * the drawer: `CatalogPublishPill` puts a confirmation in front of each,
@@ -22,10 +22,11 @@
  * handler directly would be a second, laxer path to the same write - so the
  * pill stays the only way to reach it.
  *
- * Nothing here is `destructive` either. The drawers paint "Remove from all
- * projects" in the light way-out style rather than danger red - it detaches an
- * item and leaves the catalog copy alone. Red means a real deletion, and no
- * browse card offers one.
+ * "Remove from all projects" is not `destructive`. The drawers paint it in the
+ * light way-out style rather than danger red: it detaches an item and leaves
+ * the catalog copy alone. Red means a real deletion, and the one browse card
+ * that offers one is a downloaded model's: Delete removes its files from the
+ * account, and its drawer asks first, as the menu row does.
  */
 
 export type CatalogCardActionId =
@@ -34,6 +35,7 @@ export type CatalogCardActionId =
   | "update-all-projects"
   | "browse-datasets"
   | "add-by-link"
+  | "delete"
   | "view-details";
 
 export interface CatalogCardAction {
@@ -103,5 +105,18 @@ export function discoverySourceCardActions(state: {
     : state.browsable
       ? [{ id: "browse-datasets", label: "Browse datasets" }]
       : [];
+  return [...primary, VIEW_DETAILS];
+}
+
+export function modelCardActions(state: {
+  /** Downloaded into this account; a shipped model cannot be deleted. */
+  deletable: boolean;
+}): CatalogCardAction[] {
+  // A shipped model has no action at all, so the menu offers only its details,
+  // as for an installed, current package. A downloaded one can be deleted,
+  // which is a real deletion and is painted as one.
+  const primary: CatalogCardAction[] = state.deletable
+    ? [{ id: "delete", label: "Delete", destructive: true }]
+    : [];
   return [...primary, VIEW_DETAILS];
 }
