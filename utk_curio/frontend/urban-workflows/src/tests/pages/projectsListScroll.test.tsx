@@ -80,6 +80,13 @@ const SHELL_CSS = fs.readFileSync(
   'utf8'
 );
 
+// So is the main column: every browse page uses the catalog layout's
+// `.browseMain`, which owns no scroll of its own on any of them.
+const BROWSE_CSS = fs.readFileSync(
+  path.resolve(__dirname, '../../pages/catalog/CatalogBrowseLayout.module.css'),
+  'utf8'
+);
+
 /** The declarations inside one rule of a stylesheet (the layout by default). */
 function rule(selector: string, css: string = LAYOUT_CSS): string {
   const match = css.match(new RegExp('\\.' + selector + '\\s*\\{([^}]*)\\}'));
@@ -131,10 +138,13 @@ describe('ProjectsList scroll ownership', () => {
     expect(cardScroll).toMatch(/flex:\s*1/);
   });
 
-  test('the column around it does not scroll instead', () => {
+  test('the column around it does not scroll instead', async () => {
     // Two scrollbars, or the header scrolling away with the cards, both come
     // from the main column also being scrollable.
-    const main = rule('main');
+    const { container } = await renderSettled();
+    expect(container.querySelector('main')).toHaveClass('browseMain');
+
+    const main = rule('browseMain', BROWSE_CSS);
     expect(main).toMatch(/overflow:\s*hidden/);
     expect(main).toMatch(/min-width:\s*0/);
   });
