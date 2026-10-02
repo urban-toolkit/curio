@@ -65,6 +65,7 @@ A model's details show its **Identifier**, **Version**, **Runtime**, **Input**, 
 | **View details** | A card, the drawer, or the canvas drawer | Nothing | The model's details. |
 | **View license** | The details | Nothing | The model's license text. |
 | **Drag onto a node** | The **Models** dropdown or the canvas drawer | The node's code | The node's `curio_model(...)` line names the model. A node whose code calls no `curio_model` says *This node does not run a model*. |
+| **Drag onto the canvas** | The **Models** dropdown or the canvas drawer | The dataflow | A new **Image Segmentation** node where you drop it, its `curio_model(...)` line naming the model. When no node in the dataflow runs a model, nothing is added and a message names the package to add from the Node Catalog. |
 | **Delete** | A model you added: its card or the drawer | Your Model Catalog loses the model | A confirmation first; nodes that name it fail the next time they run. A shipped model offers no **Delete**. |
 | **Add to Model Catalog** | A **Hugging Face models** row, in the Discovery Catalog | Your Model Catalog gains a model | A progress bar, then *"Added `<name>` to your Model Catalog."* with **View model**. |
 

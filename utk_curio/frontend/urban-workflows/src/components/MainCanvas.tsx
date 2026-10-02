@@ -49,6 +49,16 @@ import {
     readDatasetDragPayload,
 } from "../services/datasetCatalog";
 import {
+    hasModelDrag,
+    modelNodeForCanvas,
+    readModelDragPayload,
+    type ModelDropTemplate,
+} from "../services/modelCatalog";
+import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
+import { useStarterContext } from "../providers/StarterProvider";
+import { getAllNodeTypes, getPaletteNodeTypes } from "../registry/nodeRegistry";
+import type { NodeDescriptor } from "../registry/types";
+import {
   agentsApi,
   readAgentDragCoord,
   notifyAgentDockRefresh,
@@ -231,12 +241,14 @@ export function MainCanvas() {
 
     const handleDragOver = useCallback((event: React.DragEvent) => {
         event.preventDefault();
-        // Dataset AND agent drags use effectAllowed="copy"; a "move" dropEffect is
-        // an incompatible pair, so the browser cancels the drop (handleDrop never
-        // fires and the agent silently fails to attach). Node-creation drags keep
-        // "move".
+        // Dataset, model AND agent drags use effectAllowed="copy"; a "move"
+        // dropEffect is an incompatible pair, so the browser cancels the drop
+        // (handleDrop never fires and the agent silently fails to attach).
+        // Node-creation drags keep "move".
         const wantsCopy =
-            hasDatasetDrag(event.dataTransfer) || hasAgentDrag(event.dataTransfer);
+            hasDatasetDrag(event.dataTransfer) ||
+            hasModelDrag(event.dataTransfer) ||
+            hasAgentDrag(event.dataTransfer);
         event.dataTransfer.dropEffect = wantsCopy ? "copy" : "move";
 
         // Tell the edges which connection would receive this drop (#296). Only
@@ -303,9 +315,47 @@ export function MainCanvas() {
         }
     }, [screenToFlowPosition, createCodeNode, markDirty, showToast, openDatasetDetails]);
 
+    // A model dropped on the empty canvas becomes a node that runs it, as a
+    // dataset becomes a Data Loading node. A drop on a node never gets here:
+    // the node's own listener takes it (styles.tsx).
+    const { getStarters } = useStarterContext();
+    const handleModelCanvasDrop = useCallback((event: React.DragEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const model = readModelDragPayload(event.dataTransfer);
+        if (!model) return;
+        const templates = (descriptors: NodeDescriptor[]): ModelDropTemplate[] =>
+            descriptors.map((d) => ({
+                nodeType: String(d.id),
+                label: d.label,
+                code: packageStarterCode(d, getStarters),
+                packageName: d.package?.name,
+            }));
+        const node = modelNodeForCanvas(templates(getPaletteNodeTypes()), model);
+        if (!node) {
+            const elsewhere = modelNodeForCanvas(templates(getAllNodeTypes()), model);
+            showToast(
+                elsewhere?.packageName
+                    ? `${model.name} needs a node that runs models: add ${elsewhere.packageName} to this project from the Node Catalog.`
+                    : "No installed node runs a model.",
+                "warning",
+            );
+            return;
+        }
+        const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+        createCodeNode(node.nodeType, { position, code: node.code, modelRefs: node.modelRefs });
+        const article = /^[aeiou]/i.test(node.label) ? "an" : "a";
+        showToast(`Created ${article} ${node.label} node for ${model.name}.`, "success");
+        markDirty();
+    }, [getStarters, screenToFlowPosition, createCodeNode, markDirty, showToast]);
+
     const handleDrop = useCallback((event: React.DragEvent) => {
         if (hasDatasetDrag(event.dataTransfer)) {
             handleCanvasDrop(event);
+            return;
+        }
+        if (hasModelDrag(event.dataTransfer)) {
+            handleModelCanvasDrop(event);
             return;
         }
         const agentCoord = readAgentDragCoord(event.dataTransfer);
@@ -354,7 +404,7 @@ export function MainCanvas() {
         const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
         createCodeNode(type, { position });
         markDirty();
-    }, [screenToFlowPosition, createCodeNode, markDirty, handleCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
+    }, [screenToFlowPosition, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then
