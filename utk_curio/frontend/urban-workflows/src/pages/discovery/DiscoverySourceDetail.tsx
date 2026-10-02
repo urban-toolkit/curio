@@ -2,11 +2,7 @@ import React from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { CatalogDetailHeader } from "../../components/catalog/CatalogDetailHeader";
-import {
-  useDatasetDetails,
-  viewDatasetDetailsToast,
-} from "../../components/datasets/catalog/datasetDetailsContext";
-import { useToastContext } from "../../providers/ToastProvider";
+import { useDatasetDetails } from "../../components/datasets/catalog/datasetDetailsContext";
 import {
   DISCOVERY_AUTH_LABEL,
   DISCOVERY_PROVIDER_LABEL,
@@ -17,17 +13,15 @@ import {
   isLinkSource,
   isServiceSource,
   isStorageSource,
-  notifyDatasetCatalogRefresh,
   unsearchableReason,
-  useDiscoveryAcquire,
   useDiscoverySearch,
   useStorageListing,
   type DiscoverySourceRow,
 } from "../../services/discoveryCatalog";
-import { notifyModelCatalogRefresh } from "../../services/modelCatalog";
 import { DiscoveryLinkForm } from "./DiscoveryLinkForm";
 import { DiscoveryResourceRow } from "./DiscoveryResourceRow";
 import { DiscoverySourceIcon } from "./DiscoverySourceIcon";
+import { useDiscoveryAcquisition } from "./useDiscoveryAcquisition";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 import detailStyles from "./DiscoverySourceDetail.module.css";
 
@@ -46,16 +40,52 @@ import detailStyles from "./DiscoverySourceDetail.module.css";
 export const DiscoverySourceDetail: React.FC = () => {
   const navigate = useNavigate();
   const { sourceDir = "" } = useParams<{ sourceDir: string }>();
-  const decoded = sourceDir ? decodeURIComponent(sourceDir) : "";
   const [params, setParams] = useSearchParams();
-  const q = params.get("q") ?? "";
 
+  const setQuery = (next: string) => {
+    const updated = new URLSearchParams(params);
+    if (next) updated.set("q", next);
+    else updated.delete("q");
+    setParams(updated, { replace: true });
+  };
+
+  return (
+    <DiscoverySourceBody
+      sourceDir={sourceDir ? decodeURIComponent(sourceDir) : ""}
+      q={params.get("q") ?? ""}
+      onQueryChange={setQuery}
+      onAllPortals={() => navigate("/catalog/discovery")}
+      onViewModel={(modelId) => navigate(`/catalog/models/${encodeURIComponent(modelId)}`)}
+    />
+  );
+};
+
+export interface DiscoverySourceBodyProps {
+  /** The source's versioned directory name, `<id>@<major>`. */
+  sourceDir: string;
+  q: string;
+  onQueryChange: (q: string) => void;
+  /** Back to every source. */
+  onAllPortals: () => void;
+  onViewModel: (modelId: string) => void;
+  className?: string;
+}
+
+/**
+ * Everything one source shows, with its query and its way back handed in:
+ * the page above keeps them in the URL, the canvas drawer in its own state.
+ */
+export const DiscoverySourceBody: React.FC<DiscoverySourceBodyProps> = ({
+  sourceDir: decoded,
+  q,
+  onQueryChange: setQuery,
+  onAllPortals,
+  onViewModel: viewModel,
+  className = styles.detailPage,
+}) => {
   const [source, setSource] = React.useState<DiscoverySourceRow | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
-  // The same details modal the Data Catalog opens, over this page, so the
-  // search that found the resource is still there when it closes.
   const { openDatasetDetails } = useDatasetDetails();
-  const { showToast } = useToastContext();
 
   React.useEffect(() => {
     let cancelled = false;
@@ -72,49 +102,7 @@ export const DiscoverySourceDetail: React.FC = () => {
   }, [decoded]);
 
   const storage = source ? isStorageSource(source) : false;
-
-  // A finished download is a new Data Catalog dataset, so every surface that
-  // lists datasets - in this tab and in any other - has to be told. Skipping
-  // this is how the download succeeds and the dataset appears to be missing.
-  const viewModel = (modelId: string) => navigate(`/catalog/models/${encodeURIComponent(modelId)}`);
-  const acquisition = useDiscoveryAcquire((job) => {
-    // A model source's add lands in the Model Catalog, which is told instead.
-    if (job.model?.id) {
-      notifyModelCatalogRefresh();
-      const name = job.model.name || job.model.id;
-      const view = { action: { label: "View model", onClick: () => viewModel(job.model!.id) } };
-      if (job.alreadyPresent) {
-        showToast(`${name} is already in your Model Catalog.`, "info", view);
-      } else if (job.dependencies?.dependencyError) {
-        showToast(
-          `Added ${name} to your Model Catalog, but its libraries did not install: ${job.dependencies.dependencyError}`,
-          "warning",
-          view,
-        );
-      } else {
-        showToast(`Added ${name} to your Model Catalog.`, "success", view);
-      }
-      return;
-    }
-    notifyDatasetCatalogRefresh();
-    // Reported like an import into the Data Catalog, which is what it is.
-    if (job.datasetId) {
-      const title = typeof job.dataset?.title === "string" ? job.dataset.title : "The dataset";
-      if (job.alreadyPresent && job.unchanged) {
-        showToast(
-          `Nothing has changed in ${title} since it was added.`,
-          "info",
-          viewDatasetDetailsToast(openDatasetDetails, job.datasetId),
-        );
-        return;
-      }
-      showToast(
-        `${storage ? "Added" : "Downloaded"} ${title} to your Data Catalog.`,
-        "success",
-        viewDatasetDetailsToast(openDatasetDetails, job.datasetId),
-      );
-    }
-  });
+  const acquisition = useDiscoveryAcquisition({ isStorage: () => storage, onViewModel: viewModel });
 
   const blocked = source ? unsearchableReason(source) : null;
   const portalSearch = useDiscoverySearch({
@@ -130,28 +118,21 @@ export const DiscoverySourceDetail: React.FC = () => {
 
   if (loadError) {
     return (
-      <div className={styles.detailPage}>
+      <div className={className}>
         <div className={styles.error}>{loadError}</div>
       </div>
     );
   }
   if (!source) {
     return (
-      <div className={styles.detailPage}>
+      <div className={className}>
         <div className={styles.empty}>Loading…</div>
       </div>
     );
   }
 
-  const setQuery = (next: string) => {
-    const updated = new URLSearchParams(params);
-    if (next) updated.set("q", next);
-    else updated.delete("q");
-    setParams(updated, { replace: true });
-  };
-
   return (
-    <div className={styles.detailPage}>
+    <div className={className}>
       <CatalogDetailHeader
         kind="source"
         title={source.name}
@@ -166,7 +147,7 @@ export const DiscoverySourceDetail: React.FC = () => {
           <button
             type="button"
             className={styles.publishButton}
-            onClick={() => navigate("/catalog/discovery")}
+            onClick={onAllPortals}
           >
             All portals
           </button>

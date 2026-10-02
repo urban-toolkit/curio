@@ -393,6 +393,41 @@ def test_a_second_download_offers_the_dataset_instead_of_a_copy(
     expect(row.get_by_role("button", name="Download")).to_have_count(0)
 
 
+def test_the_canvas_opens_the_discovery_catalog_and_downloads_from_it(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """From the canvas's Data menu, as the other catalogs are, and without
+    leaving the dataflow: a source opened in the drawer is searched and
+    downloaded from there, and the dataset lands in the Data Catalog."""
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, username="discoverycanvas", project="Discovery Canvas")
+    canvas_url = page.url
+
+    page.get_by_role("button", name="Data menu").click()
+    page.get_by_role("button", name="Discovery Catalog", exact=True).click()
+    drawer = page.locator('[data-curio-discovery-catalog-drawer="true"][aria-hidden="false"]')
+    expect(drawer).to_be_visible(timeout=15000)
+
+    card = drawer.locator(f'[data-discovery-source="{CHICAGO}"]')
+    expect(card).to_be_visible(timeout=30000)
+    card.get_by_role("button", name="Browse datasets").click()
+    drawer.get_by_role("searchbox", name="Search City of Chicago Data Portal").fill(CHICAGO_QUERY)
+
+    row = drawer.locator('[data-discovery-resource="ijzp-q8t2"]')
+    expect(row).to_be_visible(timeout=30000)
+    row.get_by_role("button", name="Download").click()
+    expect(row.get_by_role("button", name="View dataset")).to_be_visible(timeout=60000)
+    expect(
+        page.get_by_text("Downloaded Crimes - 2001 to Present to your Data Catalog.")
+    ).to_be_visible(timeout=15000)
+    assert page.url == canvas_url, "the drawer left the dataflow"
+
+    # Back to every source, as the page's "All portals" goes back to the page.
+    drawer.get_by_role("button", name="All portals").click()
+    expect(drawer.locator(f'[data-discovery-source="{CHICAGO}"]')).to_be_visible(timeout=15000)
+
+
 # ── Storage sources ────────────────────────────────────────────────────────
 
 EXAMPLE_STORAGE = "source.curio.example-storage@1"
