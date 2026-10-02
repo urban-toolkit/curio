@@ -85,7 +85,7 @@ class TestHuggingFaceToken:
     accepting a licence, so one shared deployment token could not represent
     what each user is entitled to download. It used to be read from a bare
     ``HUGGINGFACE_TOKEN`` env var and was invisible to the people it applied
-    to; it is now edited in AI Settings, and nothing else supplies one.
+    to; it is now edited in API Settings, and nothing else supplies one.
     """
 
     def _patch(self, client, token, body):
@@ -128,7 +128,7 @@ class TestHuggingFaceToken:
         ] is False
 
     def test_the_local_guest_saves_its_own(self, client, monkeypatch):
-        # Without --deploy the shared guest is the one local user, so AI
+        # Without --deploy the shared guest is the one local user, so API
         # Settings is where it sets the token.
         from utk_curio.backend import config
 
@@ -140,7 +140,7 @@ class TestHuggingFaceToken:
         assert r.get_json()["has_huggingface_token"] is True
 
     def test_omitting_it_leaves_it_alone(self, client):
-        # AI Settings sends the field only when the user typed something, so a
+        # API Settings sends the field only when the user typed something, so a
         # save that changes another field must not wipe a stored token.
         token = _signup(client).get_json()["token"]
         self._patch(client, token, {"huggingface_token": "hf_secret"})

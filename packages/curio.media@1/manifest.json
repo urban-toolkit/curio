@@ -13,7 +13,7 @@
       "rasterio": ">=1.4"
     }
   },
-  "description": "Nodes for collections of images, video, audio and rasters added from the Data Lake Catalog: sample a video's frames, split recordings into windows with their levels, and mosaic raster tiles into one raster. Each takes the rows Data Loading returns for a collection and returns rows or a raster the other nodes already read.",
+  "description": "Nodes for collections of images, video, audio and rasters added from the Discovery Catalog: sample a video's frames, split recordings into windows with their levels, and mosaic raster tiles into one raster. Each takes the rows Data Loading returns for a collection and returns rows or a raster the other nodes already read.",
   "id": "curio.media",
   "license": "MIT",
   "name": "Media",

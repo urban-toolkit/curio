@@ -21,9 +21,9 @@
   "rowCount": 3,
   "featureCount": null,
   "schema": null,
-  "lakeSource": {
-    "lakeId": "lake.curio.example-storage@1",
-    "lakeName": "Example storage",
+  "discoverySource": {
+    "sourceId": "source.curio.example-storage@1",
+    "sourceName": "Example storage",
     "resourceId": "noise",
     "fileCount": 3,
     "fields": "sensor,recorded",
@@ -32,7 +32,7 @@
   },
   "collection": {
     "kind": "audio",
-    "sourceId": "lake.curio.example-storage@1",
+    "sourceId": "source.curio.example-storage@1",
     "sourceName": "Example storage",
     "provider": "folder",
     "resourceId": "noise",

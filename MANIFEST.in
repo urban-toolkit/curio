@@ -3,7 +3,8 @@ include pyproject.toml
 include LICENSE
 recursive-include packages *
 recursive-include datasets *
-recursive-include datalakes *
+recursive-include discovery *
+recursive-include models *
 recursive-include tests *
 
 recursive-include utk_curio/backend *

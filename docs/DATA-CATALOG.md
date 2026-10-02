@@ -2,7 +2,7 @@
 
 The Data Catalog is where Curio's **datasets** live: files shipped with your deployment, files you import from your machine, and the outputs your own dataflows compute.
 
-Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the Data Catalog the datasets they read, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the [Data Lake Catalog](DATA-LAKE-CATALOG.md) the portals and storage you take datasets from.
+Curio has five catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the Data Catalog the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from.
 
 This guide is in seven parts, plus operator notes:
 
@@ -39,7 +39,7 @@ data.utk.chicago-boundary@1/
 
 ### What ships with Curio
 
-Twenty datasets ship in the shared catalog at `<repo_root>/datasets/`: six under `data.utk.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), one under `data.projectsidewalk.*` (Chicago accessibility labels), and eight under `data.curio.storage-*`: the tables and collections the storage examples read, added from the Data Lake Catalog's **Example storage** source.
+Twenty datasets ship in the shared catalog at `<repo_root>/datasets/`: six under `data.utk.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), one under `data.projectsidewalk.*` (Chicago accessibility labels), and eight under `data.curio.storage-*`: the tables and collections the storage examples read, added from the Discovery Catalog's **Example storage** source.
 
 ### Origins
 
@@ -48,7 +48,7 @@ Every dataset carries an `origin`, which the browse filters and provenance chips
 | Origin | Meaning |
 |---|---|
 | `hub` | Published into the shared catalog and browsable by every user on this install. |
-| `imported` | A file you uploaded from your machine, or a dataset downloaded or added from the [Data Lake Catalog](DATA-LAKE-CATALOG.md). |
+| `imported` | A file you uploaded from your machine, or a dataset downloaded or added from the [Discovery Catalog](DISCOVERY-CATALOG.md). |
 | `computed` | The output of a node in one of your dataflows, saved when it ran. |
 
 The UI groups `hub` and `imported` under one **Imported** label, leaving **Computed** as the distinction to filter on.
@@ -71,7 +71,7 @@ Dataset state lives in four places. Knowing which one an action writes is the ke
 | Layer | On disk | Written by |
 |---|---|---|
 | **Shared catalog**, what every user browses | `<repo_root>/datasets/<datasetId>@<major>/`, or `$CURIO_CATALOG_ROOT` when set | **Publish** adds a dataset; **Unpublish** removes it. Read-only otherwise. |
-| **Per-user dataset store**, the bytes you can read | `<CURIO_LAUNCH_CWD>/.curio/users/<user-key>/datasets/<datasetId>@<major>/` | **Import**, a Data Lake download, **Add to project** (which copies a shared dataset in), and saved node outputs. **Delete** removes a dataset permanently, and so does removing your own upload from the last dataflow that uses it. |
+| **Per-user dataset store**, the bytes you can read | `<CURIO_LAUNCH_CWD>/.curio/users/<user-key>/datasets/<datasetId>@<major>/` | **Import**, a Discovery Catalog download, **Add to project** (which copies a shared dataset in), and saved node outputs. **Delete** removes a dataset permanently, and so does removing your own upload from the last dataflow that uses it. |
 | **Per-user defaults**, what new projects start with | `.curio/users/<user-key>/default-datasets.json` | **Add to all projects** adds an entry; **Remove from all projects** drops it. |
 | **Per-dataflow refs**, what one dataflow declares it needs | `dataflow.datasets` in the project's `spec.trill.json` | **Add to project** and **Remove from project** in the drawer. **Add to all projects** and **Remove from all projects** change every project. The shipped examples carry theirs already. |
 
@@ -109,7 +109,7 @@ There are three places you work with datasets, and they are **not** interchangea
 
 **I want to use a file from my computer.** Open the drawer and click **Import dataset** in the footer. Pick the file (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.shp`, `.pbf`, `.gpkg`). Import only registers the dataset in your account: click **Add to project** on it to add it to the open dataflow.
 
-**I want a dataset from an open data portal.** Download it from the [Data Lake Catalog](DATA-LAKE-CATALOG.md). It lands here as an imported dataset.
+**I want a dataset from an open data portal.** Download it from the [Discovery Catalog](DISCOVERY-CATALOG.md). It lands here as an imported dataset.
 
 **I want a dataset in all my projects, present and future.** On `/catalog/data`, click the dataset's card and then **Add to all projects** in the drawer. It is added to every dataflow you have, and every project you create from then on starts with it. **Remove from all projects** undoes it and keeps the dataset.
 
@@ -151,7 +151,7 @@ A node tied to a dataset shows a pill on its title bar: **DATASET** when it read
 
 ### Collections
 
-A **collection** is a dataset made of many files that stay where they are: a folder of orthoimagery, video frames, photos and videos, or audio recordings, added from a storage source in the [Data Lake Catalog](DATA-LAKE-CATALOG.md). Its data file is an index with one row per file. `curio_collection("<datasetId>")` returns those rows with a way to reach each file:
+A **collection** is a dataset made of many files that stay where they are: a folder of orthoimagery, video frames, photos and videos, or audio recordings, added from a storage source in the [Discovery Catalog](DISCOVERY-CATALOG.md). Its data file is an index with one row per file. `curio_collection("<datasetId>")` returns those rows with a way to reach each file:
 
 | Column | Holds |
 |---|---|
@@ -262,7 +262,7 @@ A dataset's details have four tabs: **Overview**, **Schema**, **Table Preview**,
 
 Anything else is rejected with *"Unsupported dataset format"*.
 
-A `.tif` or `.tiff` file that is not a TIFF is refused: *"roads.tif is not a TIFF file, so it cannot be imported as a GeoTIFF."* A GeoTIFF downloaded from the [Data Lake Catalog](DATA-LAKE-CATALOG.md) is checked the same way.
+A `.tif` or `.tiff` file that is not a TIFF is refused: *"roads.tif is not a TIFF file, so it cannot be imported as a GeoTIFF."* A GeoTIFF downloaded from the [Discovery Catalog](DISCOVERY-CATALOG.md) is checked the same way.
 
 ### Text imports are stored as UTF-8
 
@@ -272,7 +272,7 @@ A `.tif` or `.tiff` file that is not a TIFF is refused: *"roads.tif is not a TIF
 - A file whose accented letters each stand alone between plain ones, like `São Paulo`, is read one byte per character: as Windows-1252, unless its words point to another encoding.
 - A byte order mark at the start of a file read in another encoding is dropped.
 
-Downloads and files added from the [Data Lake Catalog](DATA-LAKE-CATALOG.md) are stored the same way.
+Downloads and files added from the [Discovery Catalog](DISCOVERY-CATALOG.md) are stored the same way.
 
 ### Multi-layer imports: OSM PBF and GeoPackage
 
@@ -295,7 +295,7 @@ For a bundle, **Publish** copies the whole `data/` tree, not just the index.
 
 **Delete** removes a dataset from your account: it deletes the stored copy and strips its references from every one of your dataflows. It is offered on computed datasets and on your own imports, never on a dataset from the shared catalog. Deleting a collection deletes its index, thumbnails and cached files, never the files in its source.
 
-A collection cannot be published: its files are in its lake source, not in the Data Catalog.
+A collection cannot be published: its files are in its source, not in the Data Catalog.
 
 Only the dataset's publisher may unpublish or delete it.
 
@@ -321,7 +321,7 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 | `sourceLabel` | | Short provenance label; falls back to `publisher`. |
 | `createdAt` / `updatedAt` | | ISO timestamps for the Curio *record*. |
 | `sourceUpdatedAt` | | Last-modified date of the *original file* at import time. |
-| `lakeSource` | | Where a Data Lake download came from: the source (`lakeId`, `lakeName`), `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt`, and the bytes' `contentSha256`. From a storage source: `sourcePath` for one file, `fileCount` and `fields` for several, and `narrowed` when only some of a row's files were added. A file downloaded by hand from a Dataset Finder row records its link as `resourceUrl`, `fetchedAt`, `contentSha256` and `manual: true`. See [DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md). |
+| `discoverySource` | | Where a Discovery Catalog download came from: the source (`sourceId`, `sourceName`), `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt`, and the bytes' `contentSha256`. A download narrowed by its answers, such as an area, records them as `parameters`, with their `parametersHash`. From a storage source: `sourcePath` for one file, `fileCount` and `fields` for several, and `narrowed` when only some of a row's files were added. A file downloaded by hand from a Dataset Finder row records its link as `resourceUrl`, `fetchedAt`, `contentSha256` and `manual: true`. See [DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md). |
 | `collection` | For `collection` | The source and resource its files belong to (`sourceId`, `resource`, `resourceId`, `path`), its `kind`, the path `fields`, `counts` per kind, `fileCount`, `totalBytes`, `hasGps`, when it was indexed, and what an add narrowed it to. |
 | `featureCount` / `rowCount` | | Counts for geo and tabular data. |
 | `schema` | | Object describing the fields; inferred from a preview when absent. |
@@ -350,7 +350,7 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 
 - [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the node package catalog, whose storage and publish model this one mirrors.
 - [`docs/AGENT-CATALOG.md`](AGENT-CATALOG.md): the agents, including the Dataset Finder.
-- [`docs/DATA-LAKE-CATALOG.md`](DATA-LAKE-CATALOG.md): the data portals you download datasets from.
+- [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md): the data portals you download datasets from.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#dataset-routes): the dataset routes and backend layout.
 - [`docs/USAGE.md`](USAGE.md): installation, launcher flags, and the environment variables.
 - [`utk_curio/backend/app/datasets/`](../utk_curio/backend/app/datasets/): the implementation, where [`domain/manifest.py`](../utk_curio/backend/app/datasets/domain/manifest.py) is the manifest contract.

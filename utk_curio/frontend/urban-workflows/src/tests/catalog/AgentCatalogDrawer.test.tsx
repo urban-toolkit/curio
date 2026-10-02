@@ -75,14 +75,14 @@ beforeEach(() => {
   api.publish.mockResolvedValue({ coord: "x", published: true } as any);
 });
 
-// AI Settings reads UserProvider, which reaches the package registry and
+// API Settings reads UserProvider, which reaches the package registry and
 // through it vega (ESM, unloadable under jest). projectsPageChrome and
 // projectsListScroll mock it for the same reason. What this file asserts is
 // that the cog opens it - not what it contains.
-jest.mock("../../components/AiSettingsModal", () => ({
+jest.mock("../../components/ApiSettingsModal", () => ({
   __esModule: true,
   default: ({ isOpen }: { isOpen: boolean }) =>
-    isOpen ? <div data-testid="ai-settings-modal">AI Settings</div> : null,
+    isOpen ? <div data-testid="api-settings-modal">API Settings</div> : null,
 }));
 
 describe("AgentCatalogDrawer", () => {
@@ -425,7 +425,7 @@ describe("AgentCatalogDrawer", () => {
     for (const tab of ["In project"]) {
       fireEvent.click(screen.getByText(tab));
       await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
-      // Scoped to the card: the drawer header keeps its own AI Settings
+      // Scoped to the card: the drawer header keeps its own API Settings
       // button, which is the provider, not a per-agent policy.
       const row = screen.getByText("chat-agent").closest("article")!;
       expect(
@@ -434,17 +434,17 @@ describe("AgentCatalogDrawer", () => {
     }
   });
 
-  it("the header cog opens AI Settings, which owns the account scope", async () => {
-    // The account policy moved into AI Settings, on its "Agent limits" tab,
+  it("the header cog opens API Settings, which owns the account scope", async () => {
+    // The account policy moved into API Settings, on its "Agent limits" tab,
     // beside the provider those limits apply to. The drawer opens that one
-    // surface instead of a second modal holding half the answer. AI Settings
+    // surface instead of a second modal holding half the answer. API Settings
     // is loaded lazily here (a static import would pull UserProvider, the
     // package registry and vega into every canvas), so the assertion waits.
     render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("my-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /ai settings/i }));
+    fireEvent.click(screen.getByRole("button", { name: /api settings/i }));
     await waitFor(() =>
-      expect(screen.getByTestId("ai-settings-modal")).toBeInTheDocument(),
+      expect(screen.getByTestId("api-settings-modal")).toBeInTheDocument(),
     );
   });
 

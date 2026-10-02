@@ -340,6 +340,7 @@ def build_exec_request(
     secrets=None,
     collections=None,
     media_dir=None,
+    models=None,
 ):
     """Assemble the request the parent hands to the zygote.
 
@@ -376,6 +377,8 @@ def build_exec_request(
         "overlay_dir": str(overlay_dir) if overlay_dir else None,
         "input": input_spec,
         "dataset_paths": dict(dataset_paths or {}),
+        # {modelId: staged folder name}, relative to scratch_dir.
+        "models": dict(models or {}),
         "collections": dict(collections or {}),
         "media_dir": str(media_dir) if media_dir else None,
         "session_imports": list(session_imports or []),

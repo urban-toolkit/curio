@@ -214,16 +214,18 @@ def dataset_paths():
       * ``dataflow_id`` – optional, forwarded to the catalog listing.
 
     Response: ``{"paths": {"<id>": "<absolute path>"}, "collections": {...},
-    "mediaDir": ...}``, the last two as ``_resolve_exec_collections`` gives
-    them for ``curio_collection`` calls, as that user or the shared guest. Ids
-    that do not resolve are simply absent, matching production's fail-open
-    behaviour.
+    "mediaDir": ..., "models": {...}}``: ``collections`` and ``mediaDir`` as
+    ``_resolve_exec_collections`` gives them for ``curio_collection`` calls,
+    ``models`` as ``_resolve_exec_models`` does for ``curio_model`` calls, as
+    that user or the shared guest. Ids that do not resolve are simply absent,
+    matching production's fail-open behaviour.
     """
     from flask import g
 
     from utk_curio.backend.app.api.routes import (
         _resolve_exec_collections,
         _resolve_exec_dataset_paths,
+        _resolve_exec_models,
     )
     from utk_curio.backend.app.common.user_storage import GUEST_KEY
     from utk_curio.backend.app.projects.services import _user_dir_key
@@ -243,7 +245,10 @@ def dataset_paths():
     paths = _resolve_exec_dataset_paths(code, body.get("dataflow_id"))
     user_key = _user_dir_key(g.user) if g.user is not None else GUEST_KEY
     collections, media_dir = _resolve_exec_collections(code, user_key)
-    return jsonify({"paths": paths, "collections": collections, "mediaDir": media_dir}), 200
+    models = _resolve_exec_models(code)
+    return jsonify({
+        "paths": paths, "collections": collections, "mediaDir": media_dir, "models": models,
+    }), 200
 
 
 def _clear_test_user_stores() -> list[str]:

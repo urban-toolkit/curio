@@ -185,7 +185,7 @@ def _available_template(user_key: str, project_id: str, node_type: object) -> tu
 
 
 class _LazyRoster:
-    """The Data Lake sources this deployment has, by ``dirName``, read off disk
+    """The Discovery Catalog sources this deployment has, by ``dirName``, read off disk
     on first use, so a pass with no coordinate never touches the roster and
     costs no web budget. An unreadable roster is an empty one."""
 
@@ -196,11 +196,11 @@ class _LazyRoster:
         if self._sources is None:
             self._sources = {}
             try:
-                from utk_curio.backend.app.datalakes.service import DataLakeService
+                from utk_curio.backend.app.discovery.service import DiscoveryService
 
-                listing = DataLakeService().list_catalog()
+                listing = DiscoveryService().list_catalog()
             except Exception:  # noqa: BLE001 - an unreadable roster means "not actionable"
-                log.warning("Could not read the Data Lake roster", exc_info=True)
+                log.warning("Could not read the Discovery Catalog roster", exc_info=True)
                 listing = {}
             for source in listing.get("sources") or []:
                 if source.get("dirName"):

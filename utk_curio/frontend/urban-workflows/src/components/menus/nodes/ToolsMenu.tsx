@@ -17,6 +17,7 @@ import {
 } from "./toolsMenuPackagePalette";
 import { DatasetsPaletteDropdown } from "./datasetPalette";
 import { AgentsPaletteDropdown } from "./agentsPalette";
+import { ModelsPaletteDropdown } from "./modelsPalette";
 import styles from "./ToolsMenu.module.css";
 
 /** The DOM id of a built-in palette tile: `curio.builtin/data-loading@1` is `tile-data-loading`. */
@@ -134,7 +135,7 @@ const ToolsMenu = memo(function ToolsMenu() {
     // trigger takes the strip) - outside clicks and Escape deliberately leave
     // it open.
     const [activePalette, setActivePalette] = useState<
-        "datasets" | "packages" | "agents" | null
+        "datasets" | "packages" | "agents" | "models" | null
     >(null);
     const setDatasetsOpen = useCallback((value: boolean) => {
         setActivePalette((prev) => (value ? "datasets" : prev === "datasets" ? null : prev));
@@ -144,6 +145,9 @@ const ToolsMenu = memo(function ToolsMenu() {
     }, []);
     const setAgentsOpen = useCallback((value: boolean) => {
         setActivePalette((prev) => (value ? "agents" : prev === "agents" ? null : prev));
+    }, []);
+    const setModelsOpen = useCallback((value: boolean) => {
+        setActivePalette((prev) => (value ? "models" : prev === "models" ? null : prev));
     }, []);
 
     return (
@@ -165,6 +169,7 @@ const ToolsMenu = memo(function ToolsMenu() {
                 />
                 <DatasetsPaletteDropdown open={activePalette === "datasets"} setOpen={setDatasetsOpen} />
                 <AgentsPaletteDropdown open={activePalette === "agents"} setOpen={setAgentsOpen} />
+                <ModelsPaletteDropdown open={activePalette === "models"} setOpen={setModelsOpen} />
                 <div className={styles.playAllRow}>
                     {/* One button, two states: while a run is in flight it cancels
                         it. The guard used to be invisible, so the only sign a run

@@ -2,7 +2,7 @@ import { apiFetch } from "../utils/authApi";
 
 /**
  * REST client for the account's LLM configurations (`/api/agents/llm`), the
- * configuration chosen per agent, and the model listing AI Settings offers
+ * configuration chosen per agent, and the model listing API Settings offers
  * while one is edited. Kept apart from `agentsApi` so the settings screen
  * does not pull in the agents bundle.
  *

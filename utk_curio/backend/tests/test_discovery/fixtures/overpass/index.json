@@ -1,0 +1,86 @@
+{
+  "GET https://overpass-api.de/api/status": {
+    "file": "5f7fbb4f0d0ad96a.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "text/plain; charset=utf-8"
+    }
+  },
+  "POST https://overpass-api.de/api/interpreter 1a2adfdf81de8f25": {
+    "file": "a9862d1e15156c7e.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    }
+  },
+  "POST https://overpass-api.de/api/interpreter ef7137b24dc41e89": {
+    "file": "5893654e0e29736c.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    }
+  },
+  "POST https://overpass-api.de/api/interpreter 9b12f237c4902041": {
+    "file": "573236ae99fb517b.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    }
+  },
+  "POST https://overpass-api.de/api/interpreter c96f6f0a082ebd4d": {
+    "file": "6191ba7b1fd3a5be.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    }
+  },
+  "POST https://overpass-api.de/api/interpreter 2ce1b5a34bd7f7d5": {
+    "file": "be0387c47046f020.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    }
+  },
+  "POST https://overpass-api.de/api/interpreter fd6ea802bf854183": {
+    "file": "179085a480eb8f99.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    }
+  },
+  "POST https://overpass-api.de/api/interpreter 418acd5f1ee821c5": {
+    "file": "63bd2588550e1c27.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    }
+  },
+  "POST https://overpass-api.de/api/interpreter e3811bf956f53b9b": {
+    "file": "f2c7f0d8b0a6f5e5.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    }
+  },
+  "POST https://overpass-api.de/api/interpreter 1f33ee223a2ca540": {
+    "file": "3ae7b8cca9b68560.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    }
+  },
+  "POST https://overpass-api.de/api/interpreter 81979ed60071006a": {
+    "file": "3efb6b82be584079.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    }
+  },
+  "POST https://overpass-api.de/api/interpreter 6fe49be35ca5a2fe": {
+    "file": "e375337b49f518e7.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    }
+  }
+}

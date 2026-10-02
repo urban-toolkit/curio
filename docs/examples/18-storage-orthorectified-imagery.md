@@ -8,7 +8,7 @@ orthos/
   2024/  tile_0001.tif  tile_0002.tif
 ```
 
-The example storage source declares it as one resource, and the Data Lake
+The example storage source declares it as one resource, and the Discovery Catalog
 Catalog adds it to the Data Catalog as one collection: an index with a row per
 tile, while the tiles stay where they are.
 

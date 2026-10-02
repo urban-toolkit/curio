@@ -466,7 +466,7 @@ class TestDatasetFinderComposite:
             # The external lane used to dead-end: it could name a portal
             # dataset and nothing could act on it. These three make it
             # actionable - roster, live search, reviewed download.
-            "datalake.sources", "datalake.search", "datalake.acquire",
+            "discovery.sources", "discovery.search", "discovery.acquire",
             "dataset.install", "dataflow.read",
         ]
         assert m.provenance.trust == "built-in"

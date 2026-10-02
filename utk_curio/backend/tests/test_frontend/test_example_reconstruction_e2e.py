@@ -462,13 +462,13 @@ class TestSolveProgressAndReconnection:
             )
 
 
-class TestEvaluationModeRunsFromAiSettings:
+class TestEvaluationModeRunsFromApiSettings:
     """Mode 5, added by dev/123: the evaluation itself is a product action.
 
     The four cases above drive a reconstruction the way a person builds a
     dataflow -- chat, review, Apply, Solve -- and that is still what is being
     measured. This one covers the surface that *asks for* a measurement:
-    AI Settings -> Evaluation mode. It is deliberately one case, because the
+    API Settings -> Evaluation mode. It is deliberately one case, because the
     orchestration behind the panel is already covered offline in
     ``tests/test_agents/test_evaluation_service.py`` through the same routes;
     what only a browser can show is that the panel names the model that will
@@ -499,9 +499,9 @@ class TestEvaluationModeRunsFromAiSettings:
         page.goto(f"{session['frontend']}/projects")
         page.wait_for_load_state("domcontentloaded")
         wait_for_projects_page(page, timeout=20000)
-        page.get_by_role("button", name="AI Settings", exact=True).first.click()
+        page.get_by_role("button", name="API Settings", exact=True).first.click()
         expect(
-            page.get_by_role("heading", name="AI Settings", level=2)
+            page.get_by_role("heading", name="API Settings", level=2)
         ).to_be_visible(timeout=20000)
 
         section = page.locator('[data-testid="evaluation-mode-section"]')

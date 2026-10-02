@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 
 /**
- * AI Settings → Agent models: the configuration each agent runs on, chosen
+ * API Settings → Agent models: the configuration each agent runs on, chosen
  * from the account's configurations, the Deployment default, or Default
  * (follow the default configuration). Saved on change; the configurations
  * table says which agents each one is chosen for, and removing one names the

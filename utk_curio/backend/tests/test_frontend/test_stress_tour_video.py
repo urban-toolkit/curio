@@ -193,9 +193,7 @@ PACKAGE_DEPS: dict[str, tuple[str, ...]] = {
     "curio.example-ui@1": (),
     "curio.weather@1": ("pythermalcomfort", "rasterio", "rasterstats"),
     "ai.utk.uhvi@1": ("rasterio",),
-    "curio.streetvision@1": (
-        "torch", "transformers", "ultralytics", "huggingface_hub",
-    ),
+    "curio.streetvision@1": ("onnxruntime",),
 }
 
 
@@ -1230,8 +1228,8 @@ def chapter_nodes(run: StressRun) -> None:
             page.wait_for_timeout(800)
 
     # Install every catalog package for real. curio.weather, ai.utk.uhvi and
-    # curio.streetvision each shell out to pip (rasterio / geopandas / torch), so
-    # the response wait is generous by design rather than optimistic.
+    # curio.streetvision each shell out to pip (rasterio / geopandas /
+    # onnxruntime), so the response wait is generous by design rather than optimistic.
     installable = [
         pkg for pkg in catalog
         if not pkg.get("installed") and "builtin" not in (pkg.get("dirName") or "")
@@ -1265,7 +1263,7 @@ def chapter_nodes(run: StressRun) -> None:
                     "button", name=re.compile("^Add to project")
                 ).first.click()
             # pip runs synchronously inside the request for the heavy packages
-            # (torch, rasterio, geopandas), capped at 30 minutes server-side.
+            # (rasterio, geopandas), capped at 30 minutes server-side.
             expect(
                 card.first.get_by_role("button", name=re.compile("Remove from project"))
             ).to_be_visible(timeout=1_900_000)
@@ -2035,7 +2033,7 @@ def _shapefile_bundle() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Chapter 05 - agents: AI settings, every built-in agent, live turns
+# Chapter 05 - agents: API settings, every built-in agent, live turns
 # ---------------------------------------------------------------------------
 
 
@@ -2057,15 +2055,15 @@ def chapter_agents(run: StressRun) -> None:
         run.state.update(loader=loader, transform=transform)
         fit_view(page)
 
-    with run.step("AI Settings from the Agent Catalog drawer"):
+    with run.step("API Settings from the Agent Catalog drawer"):
         drawer = open_agent_drawer(run)
-        cog = drawer.get_by_role("button", name=re.compile("AI Settings"))
-        assert cog.count(), "the Agent Catalog drawer has no AI Settings control"
+        cog = drawer.get_by_role("button", name=re.compile("API Settings"))
+        assert cog.count(), "the Agent Catalog drawer has no API Settings control"
         tour.click(cog.first)
         expect(
-            page.get_by_role("heading", name="AI Settings", level=2)
+            page.get_by_role("heading", name="API Settings", level=2)
         ).to_be_visible(timeout=20000)
-        run.snap("ai-settings")
+        run.snap("api-settings")
 
     with run.step("Add an LLM configuration"):
         page.get_by_test_id("llm-configs-section").get_by_role(
@@ -2075,7 +2073,7 @@ def chapter_agents(run: StressRun) -> None:
 
     editor = page.get_by_test_id("llm-config-editor")
     for provider in ("OpenAI", "Anthropic", "Gemini", "Custom"):
-        with run.step(f"AI Settings provider tab: {provider}", may_fail=True):
+        with run.step(f"API Settings provider tab: {provider}", may_fail=True):
             tab = editor.get_by_role("button", name=provider, exact=True)
             tab.first.click()
             page.wait_for_timeout(900)
@@ -2091,14 +2089,14 @@ def chapter_agents(run: StressRun) -> None:
             run.note("no provider key configured; the live turns will be skipped",
                      step="Configure the live provider", severity="warning")
         ai_field(page, "Model").fill(LLM_MODEL)
-        run.snap("ai-settings-filled")
+        run.snap("api-settings-filled")
 
     with run.step("Ask the provider for its model list", may_fail=True):
         fetch = editor.get_by_role("button", name=re.compile("(Fetch|Refresh) models", re.I))
         if fetch.count():
             fetch.first.click()
             page.wait_for_timeout(9000)
-            run.snap("ai-settings-models")
+            run.snap("api-settings-models")
 
     with run.step("Save the configuration as the default"):
         expect(editor.get_by_label("Make this my default")).to_be_checked()
@@ -2369,17 +2367,17 @@ def chapter_agents(run: StressRun) -> None:
         page.wait_for_timeout(1800)
         run.snap("catalog-agents-page")
 
-    with run.step("AI Settings from the global header"):
-        button = page.get_by_role("button", name="AI Settings", exact=True)
-        assert button.count(), "the catalog header has no AI Settings button"
+    with run.step("API Settings from the global header"):
+        button = page.get_by_role("button", name="API Settings", exact=True)
+        assert button.count(), "the catalog header has no API Settings button"
         tour.click(button.first)
         expect(
-            page.get_by_role("heading", name="AI Settings", level=2)
+            page.get_by_role("heading", name="API Settings", level=2)
         ).to_be_visible(timeout=20000)
         hf = ai_field(page, "HuggingFace token")
         if hf.count():
             hf.fill("hf_stress_placeholder")
-        run.snap("ai-settings-header")
+        run.snap("api-settings-header")
         page.get_by_role("button", name="Close", exact=True).last.click()
         page.wait_for_timeout(900)
 
@@ -2448,9 +2446,8 @@ EXAMPLE_RUNS: tuple[tuple[str, int, bool], ...] = (
     ("07-autark-gpu-shader.json", 5, True),
     ("08-autark-spatial-join-regression.json", 8, True),
     ("11-autark-pbf-loading.json", 2, True),
-    # Needs curio.streetvision, which the `nodes` chapter installs, and a
-    # HuggingFace token for its gated model.
-    ("10-street-vision-cv-analysis.json", 8, False),
+    # Needs curio.streetvision, which the `nodes` chapter installs.
+    ("10-street-vision-cv-analysis.json", 12, False),
 )
 
 

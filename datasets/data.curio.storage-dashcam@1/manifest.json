@@ -21,9 +21,9 @@
   "rowCount": 10,
   "featureCount": null,
   "schema": null,
-  "lakeSource": {
-    "lakeId": "lake.curio.example-storage@1",
-    "lakeName": "Example storage",
+  "discoverySource": {
+    "sourceId": "source.curio.example-storage@1",
+    "sourceName": "Example storage",
     "resourceId": "dashcam",
     "fileCount": 10,
     "fields": "date,sequence,frame",
@@ -32,7 +32,7 @@
   },
   "collection": {
     "kind": "frames",
-    "sourceId": "lake.curio.example-storage@1",
+    "sourceId": "source.curio.example-storage@1",
     "sourceName": "Example storage",
     "provider": "folder",
     "resourceId": "dashcam",

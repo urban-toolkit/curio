@@ -79,7 +79,7 @@ class TestTheHelpers(unittest.TestCase):
         self.assertIsInstance(frame, gpd.GeoDataFrame)
 
     def test_an_unresolved_collection_says_what_to_do(self):
-        with self.assertRaisesRegex(RuntimeError, "Data Lake Catalog"):
+        with self.assertRaisesRegex(RuntimeError, "Discovery Catalog"):
             self.helpers({})["curio_collection"]("missing")
 
     def test_a_derived_file_is_named_and_its_folder_made(self):

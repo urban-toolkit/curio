@@ -105,7 +105,7 @@ def _delegate_capabilities(nodes) -> list[str]:
 def _check_delegate_llms(user_key: str, project_id: str, manifest, config: ProviderConfig,
                          capabilities: list[str]) -> None:
     """Resolve the LLM configuration of each delegate a run always relies on,
-    BEFORE anything is written, so a broken choice in AI Settings refuses the
+    BEFORE anything is written, so a broken choice in API Settings refuses the
     run once, with its remedy, instead of failing every node. Raises
     ``ProviderConfigError``. A delegate that does not resolve at all is left
     to the run, which reports a missing specialist its own way."""
@@ -282,7 +282,7 @@ def solve_attachment_stream(
         if verify else {}
     )
     # dev/126: and the Data Catalog rows the discovery delegate is handed.
-    agents_acquire._settle_lake_acquisitions(user_key, project_id)
+    agents_acquire._settle_discovery_acquisitions(user_key, project_id)
     solve_catalog_rows = agents_grounding._catalog_rows_for_discovery(user_key, project_id)
     # dev/132 (closes dev/131 F4): the acting user, so a dataset that arrives
     # DURING the session can still be resolved to a sandbox path.

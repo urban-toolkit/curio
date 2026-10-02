@@ -113,12 +113,6 @@ WORKFLOW_FILES = [
     "docs/examples/07-autark-gpu-shader.json",
     "docs/examples/08-autark-spatial-join-regression.json",
     "docs/examples/09-heterogeneous-data-linked-views.json",
-    # Example 10 depends on external services (HuggingFace CV inference +
-    # street-view APIs) and the non-builtin curio.streetvision package, so it
-    # can't run offline/deterministically. It is listed here (so it stays
-    # selectable via CURIO_E2E_WORKFLOWS) but the ``loaded_workflow`` fixture
-    # skips it with a reason unless CURIO_E2E_EXTERNAL=1 — a visible, reasoned
-    # skip rather than a silent omission.
     "docs/examples/10-street-vision-cv-analysis.json",
     "docs/examples/11-autark-pbf-loading.json",
     "docs/examples/12-vega-lite-geodataframe-maps.json",
@@ -199,13 +193,6 @@ def pytest_generate_tests(metafunc):
     """
     if "loaded_workflow" in metafunc.fixturenames:
         files = load_workflow_files_from_folder()
-        # Example 10 (street-vision) drives external services — HuggingFace CV
-        # inference + street-view APIs via the non-builtin curio.streetvision
-        # package — so it can't run offline/deterministically. Skip it at
-        # collection time (before any browser/server fixture setup) with a
-        # visible reason unless CURIO_E2E_EXTERNAL=1, rather than silently
-        # dropping it from the matrix.
-        external = os.environ.get("CURIO_E2E_EXTERNAL") == "1"
         params = []
         for f in files:
             basename = os.path.basename(f)
@@ -215,12 +202,6 @@ def pytest_generate_tests(metafunc):
             # independent, so ``--dist loadgroup`` can spread the ~30 groups
             # across workers instead of pinning the whole file to one.
             marks = [pytest.mark.xdist_group(f"wf-{basename}")]
-            if basename.startswith("10-") and not external:
-                marks.append(pytest.mark.skip(reason=(
-                    "example 10 (street-vision) needs external HuggingFace "
-                    "inference + street-view APIs and the curio.streetvision "
-                    "package; set CURIO_E2E_EXTERNAL=1 to run it"
-                )))
             params.append(pytest.param(f, marks=marks, id=basename))
         metafunc.parametrize("loaded_workflow", params, indirect=True)
 

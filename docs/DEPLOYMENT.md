@@ -46,18 +46,19 @@ The three directories you created, `instance/`, `datasets/` and `.curio/`, are b
 |---|---|---|
 | `instance/` | The SQLite DB: users, projects, sessions | **Yes** |
 | `datasets/` | The shared Data Catalog: every dataset your users publish | **Yes** |
-| `datalakes/` | The Data Lake Catalog's shipped sources: one manifest per portal or storage source. Ships with the image | No |
-| `.curio/` | Per-user stores, logs, sandbox artifacts, each account's agent imports, catalog settings and LLM configurations, and your own lake sources in `.curio/datalakes/` | Yes, if users' imported datasets, computed outputs and settings matter |
+| `discovery/` | The Discovery Catalog's shipped sources: one manifest per portal or storage source. Ships with the image | No |
+| `.curio/` | Per-user stores, logs, sandbox artifacts, each account's agent imports, catalog settings and LLM configurations, and your own sources in `.curio/discovery/` | Yes, if users' imported datasets, computed outputs and settings matter |
 
 `packages/` is **not** mounted: the node catalog is baked into the image, so it
-always matches the deployed commit. Neither is `datalakes/`, whose shipped
-sources match the deployed commit too. Set `CURIO_DATALAKE_ROOT` if you need
-them elsewhere. Sources of your own go in `.curio/datalakes/`; see
+always matches the deployed commit. Neither is `discovery/`, whose shipped
+sources match the deployed commit too, nor `models/`, the Model Catalog's
+shipped models. Set `CURIO_DISCOVERY_ROOT` or `CURIO_MODELS_ROOT` if you need
+them elsewhere. Models your users add live in their stores under `.curio/`. Sources of your own go in `.curio/discovery/`; see
 [Storage sources](#storage-sources).
 
 ### Outbound requests
 
-The Data Lake Catalog is the one feature that makes outbound requests on a
+The Discovery Catalog is the one feature that makes outbound requests on a
 user's behalf, so it is worth knowing what bounds them. Every URL - search,
 describe, download, and each redirect hop - passes the same default-deny
 address policy the agent tools use: https/http only, private, loopback,
@@ -75,16 +76,37 @@ Two things a deployment should know:
   too**: the request line and headers are on the wire before the peer can be
   confirmed, so a blind request to an internal service is not *prevented*, only
   its response is withheld. Closing that needs connection-factory work.
+- **A user's key goes only to its source.** A key sent in a header goes to the
+  host of the source's `baseUrl` and to nothing else: not to the image hosts
+  Mapillary's photos come from, and not on a redirect to another origin. Google
+  Street View's key, a query parameter, is added when each request is sent; the
+  URLs a dataset, a job or the audit log records never hold it.
+- **Hugging Face models** download up to 2 GB each, from the Hub's file
+  storage after a redirect, through the same policy.
 
-Rate limiting is per user, per portal, and **in-process**; requests to buckets
-and repositories are not counted. Under several
+Two sources reach OpenStreetMap:
+
+- **Place search**, for the area of a download, asks Nominatim
+  (`https://nominatim.openstreetmap.org`) through the same policy: at most one
+  request a second for the whole server, each answer kept for a day, with a
+  User-Agent naming Curio.
+- **OpenStreetMap downloads** run Node.js from the backend, with autk-db from
+  the repo-root `node_modules`, and autk-db sends its requests to
+  `https://overpass-api.de` itself. They do not pass the address policy above.
+  No value a user types becomes part of a URL: the area and the layers go in the
+  request body, and a name with a quote, bracket, backslash or line break is
+  refused. One
+  download runs for at most 15 minutes and writes at most 512 MiB.
+
+Rate limiting is per user, per source, and **in-process**; requests to buckets
+and repositories are not counted, and an OpenStreetMap download counts once. Under several
 workers the effective rate is the configured rate times the worker count. It is
 a politeness mechanism toward portals you do not own and a brake on accidental
 loops, not a guarantee you can make to a third party.
 
 ### LLM configurations
 
-Curio ships no LLM endpoint. Users add their own LLM configurations in AI
+Curio ships no LLM endpoint. Users add their own LLM configurations in API
 Settings; the deployment can offer its own on top, through environment
 variables the backend reads at start:
 
@@ -97,7 +119,7 @@ variables the backend reads at start:
 | `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_API_KEY`, `GUEST_LLM_MODEL` | The **guest configuration**, which every guest answers with. Each one that is unset takes the matching `CURIO_DEFAULT_LLM_*` value, and the configuration needs a key and a model. |
 
 With a model and an endpoint or a key set, the Deployment default is a
-read-only row in every user's AI Settings, and it answers for any user who has not chosen a default of their
+read-only row in every user's API Settings, and it answers for any user who has not chosen a default of their
 own. With an endpoint or a key set, users are also offered **This Curio
 install**: a configuration of their own that runs on the deployment's endpoint
 with its key and a model they choose. The key never reaches a browser.
@@ -118,11 +140,11 @@ keys are not encrypted at rest, and the file is backed up with `.curio/`.
 ### Storage sources
 
 A storage source lists a folder, a public S3 bucket or a Hugging Face dataset
-repository in the Data Lake Catalog. The manifest format is in
-[DATA-LAKE-CATALOG.md § The manifest](DATA-LAKE-CATALOG.md#8-the-manifest).
+repository in the Discovery Catalog. The manifest format is in
+[DISCOVERY-CATALOG.md § The manifest](DISCOVERY-CATALOG.md#8-the-manifest).
 
 - **Your own sources** go in
-  `.curio/datalakes/<sourceId>@<major>/manifest.json`, which the `./.curio`
+  `.curio/discovery/<sourceId>@<major>/manifest.json`, which the `./.curio`
   mount keeps across image rebuilds. A source whose folder name a shipped one
   uses is not listed, and the log says so. A `folder` source's `root` must be
   absolute. Under `--deploy`, node code cannot write to this directory.
@@ -153,7 +175,7 @@ repository in the Data Lake Catalog. The manifest format is in
   `.curio/users/<key>/media/objects/` without. `CURIO_MEDIA_CACHE_MAX_GB`
   (default 20) caps each account. Thumbnails, posters and spectrograms are
   cached under `.curio/users/<key>/media-cache/`, and a storage row's sample
-  thumbnails under `.curio/datalakes-cache/`. Deleting a collection removes
+  thumbnails under `.curio/discovery-cache/`. Deleting a collection removes
   its caches, never the source's files. With isolation on, the cached files
   and the frames, clips and mosaics nodes derive are in the account's work
   directory, which other accounts' node code can read: the execution account
@@ -424,9 +446,9 @@ flooding it cannot push real errors out of the log.
 - **To turn it off** (an incident, or a host where it cannot work), set `CURIO_ISOLATION=off` in `docker-compose.deploy.yml`'s environment and redeploy. Remove the `CURIO_ISOLATION=fork` line at the same time, or the fail-closed setting will keep winning. The permission changes above are not reverted by that; `chmod` them back by hand if something else needs them.
 - `docker-compose.site.yml` is gitignored, but verify with `git status` after creating it.
 - Back up `instance/urban_workflow.db`, `datasets/`, and `.curio/` regularly.
-  `datalakes/` ships with the image and holds no user data, so it needs none;
-  your own sources are in `.curio/datalakes/`, and a folder source's files are
+  `discovery/` ships with the image and holds no user data, so it needs none;
+  your own sources are in `.curio/discovery/`, and a folder source's files are
   wherever you mounted them from.
-- **A folder source is readable by every signed-in user**, through its lake
+- **A folder source is readable by every signed-in user**, through its source
   rows and the collections they add. Mount only what all of them may see.
 

@@ -9,7 +9,7 @@ import {
   DatasetCatalogItem,
   DatasetCatalogQuery,
   DatasetCatalogResponse,
-  DatasetLakeSourceInput,
+  DatasetDiscoverySourceInput,
 } from "./datasetCatalogTypes";
 import { resolveComputedInstallTitle } from "../../utils/palettePackageFactoryDraft";
 
@@ -215,7 +215,7 @@ export function useDatasetCatalog(query: UseDatasetCatalogOptions = {}) {
   );
 
   const importDataset = useCallback(
-    async (file: File, opts: { lakeSource?: DatasetLakeSourceInput } = {}) => {
+    async (file: File, opts: { discoverySource?: DatasetDiscoverySourceInput } = {}) => {
       // Register-only: importing adds a standalone account-level catalog item
       // and is not attached to any dataflow, so we no longer pass dataflowId.
       // A node/dataflow link is created only on explicit install.

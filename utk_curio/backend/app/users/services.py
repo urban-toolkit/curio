@@ -43,6 +43,8 @@ def _user_out(u: User) -> UserOut:
         is_guest=u.is_guest,
         has_huggingface_token=bool(u.huggingface_token),
         has_socrata_app_token=bool(u.socrata_app_token),
+        has_google_maps_api_key=bool(u.google_maps_api_key),
+        has_mapillary_access_token=bool(u.mapillary_access_token),
     )
 
 
@@ -171,6 +173,8 @@ def _apply_profile_patch(user: User, data: UserPatchIn) -> None:
     for field, noun in (
         ("socrata_app_token", "a portal token"),
         ("huggingface_token", "a HuggingFace token"),
+        ("google_maps_api_key", "a Google Maps key"),
+        ("mapillary_access_token", "a Mapillary token"),
     ):
         value = getattr(data, field)
         if value is None:

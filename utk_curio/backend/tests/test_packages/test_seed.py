@@ -179,7 +179,7 @@ def test_example_dep_package_ids_derived_from_lockfiles():
     assert "curio.builtin" not in ids  # always-installed, never an example dep
 
 
-def test_install_on_demand_packages_are_excluded_even_when_declared():
+def test_install_on_demand_packages_are_excluded_even_when_declared(monkeypatch):
     """A heavy package stays out of the boot install *explicitly*.
 
     It used to stay out by accident: nothing pip-installed curio.streetvision
@@ -189,17 +189,15 @@ def test_install_on_demand_packages_are_excluded_even_when_declared():
     unversioned, the backend's backfill had no way to name the package the
     dataflow needed, so its nodes rendered "Loading node…" forever.
 
-    Example 10 now declares it, and the exclusion is stated here instead. This
-    asserts the declaration exists AND that it still does not reach the
-    launcher's pip walk - the whole point of separating the two.
+    Example 10 declares it. Street Vision needs only onnxruntime now, so it is
+    no longer on the install-on-demand list and the boot install brings it.
+    The exclusion itself is still asserted, with a heavy package put on the
+    list for the test.
     """
     import json
     from pathlib import Path
 
-    from utk_curio.backend.app.packages.application.seeding import (
-        INSTALL_ON_DEMAND_PACKAGE_IDS,
-        example_dep_package_ids,
-    )
+    from utk_curio.backend.app.packages.application import seeding
 
     repo_root = Path(__file__).resolve().parents[4]
     example = repo_root / "docs" / "examples" / "10-street-vision-cv-analysis.json"
@@ -209,10 +207,16 @@ def test_install_on_demand_packages_are_excluded_even_when_declared():
         "resolve them (#233)"
     )
 
-    assert "curio.streetvision" in INSTALL_ON_DEMAND_PACKAGE_IDS
-    assert "curio.streetvision" not in example_dep_package_ids(), (
-        "declaring a heavy package must not put it in the boot install - that "
-        "is a ~3 GB torch download on every --with-examples start"
+    streetvision = json.loads(
+        (repo_root / "packages" / "curio.streetvision@1" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert set(streetvision["dependencies"]["python"]) == {"onnxruntime"}
+    assert "curio.streetvision" not in seeding.INSTALL_ON_DEMAND_PACKAGE_IDS
+    assert "curio.streetvision" in seeding.example_dep_package_ids()
+
+    monkeypatch.setattr(seeding, "INSTALL_ON_DEMAND_PACKAGE_IDS", frozenset({"curio.streetvision"}))
+    assert "curio.streetvision" not in seeding.example_dep_package_ids(), (
+        "a package on the install-on-demand list must not reach the boot install"
     )
 
 

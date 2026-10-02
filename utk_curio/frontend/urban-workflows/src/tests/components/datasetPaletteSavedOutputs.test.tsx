@@ -47,9 +47,16 @@ jest.mock("../../components/datasets/catalog/datasetDetailsContext", () => ({
   useDatasetDetails: () => ({ openDatasetDetails: mockOpenDetails }),
 }));
 let mockItems: Array<Record<string, unknown>> = [];
+let mockLoading = false;
+let mockRefreshing = false;
 jest.mock("../../services/datasetCatalog", () => ({
   DATASET_CATALOG_REFRESH_EVENT: "curio:dataset-catalog-refresh",
-  useDatasetCatalog: () => ({ items: mockItems, loading: false, refreshing: false, reload: jest.fn() }),
+  useDatasetCatalog: () => ({
+    items: mockItems,
+    loading: mockLoading,
+    refreshing: mockRefreshing,
+    reload: jest.fn(),
+  }),
   prefetchDatasetCatalog: jest.fn(),
   groupDatasetsForPalette: (rows: unknown[]) => rows.map((dataset) => ({ kind: "dataset", dataset })),
   isInThisDataflow: (item: { installed?: boolean }) => item.installed === true,
@@ -108,6 +115,8 @@ beforeEach(() => {
   mockPending = [];
   mockRevealId = null;
   mockItems = [IN_PROJECT, SAVED_HERE, SAVED_ELSEWHERE, UNSAVED];
+  mockLoading = false;
+  mockRefreshing = false;
   jest.clearAllMocks();
 });
 
@@ -126,6 +135,23 @@ test("the badge counts both groups", () => {
   const trigger = screen.getByTitle("Close dataset palette");
   expect(trigger.textContent).toContain("2");
 });
+
+// The e2e captures wait for the count to settle after a save (#584): the
+// listing is fetched again then, and the badge says so while it is.
+test.each([
+  { loading: false, refreshing: false, busy: "false" },
+  { loading: true, refreshing: false, busy: "true" },
+  { loading: false, refreshing: true, busy: "true" },
+])(
+  "the badge is busy only while its count is being fetched (loading $loading, refreshing $refreshing)",
+  ({ loading, refreshing, busy }) => {
+    mockLoading = loading;
+    mockRefreshing = refreshing;
+    renderOpen();
+    const trigger = screen.getByTitle("Close dataset palette");
+    expect(trigger.getAttribute("aria-busy")).toBe(busy);
+  },
+);
 
 test("a run's placeholder is replaced by its saved output's row", () => {
   mockPending = [{ key: "n1", producerNodeId: "n1", label: "Python Computation", startedAt: 0 }];

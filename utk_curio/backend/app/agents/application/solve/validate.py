@@ -52,7 +52,7 @@ def validate_node_stream(
     nothing and leaves the node's state untouched.
     """
 
-    agents_acquire._settle_lake_acquisitions(user_key, project_id)
+    agents_acquire._settle_discovery_acquisitions(user_key, project_id)
     spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     session = record.get("builderSession") or {}
