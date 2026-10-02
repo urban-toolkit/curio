@@ -126,8 +126,9 @@ describe("the browse cards are informational, and the drawer acts", () => {
     // button left names the label it removed.
     expect(/>\s*Add to all projects\s*</.test(card)).toBe(false);
     expect(card).not.toContain("onInstall");
-    // It says where it is, once, in the strip - not again down in the actions.
-    expect(card).toContain("In all projects");
+    // It says where it is, once, as the card's status at the start of the
+    // actions row - not again in the strip or under another name.
+    expect(card.match(/✓ In all projects/g) ?? []).toHaveLength(1);
     expect(/>\s*In defaults\s*</.test(card)).toBe(false);
   });
 
@@ -145,7 +146,10 @@ describe("the browse cards are informational, and the drawer acts", () => {
   ])("the %s card offers View details and a status, the same shape", (_kind, rel) => {
     const src = read(rel);
     expect(src).toContain("View details");
-    expect(src).toMatch(/stripBadgePopular/);
+    // One status slot, the shared one, and no longer in the strip: on a card a
+    // grid column wide the strip's status ran over its format or category pill.
+    expect(src).toMatch(/[sS]tyles\.cardStatus\b/);
+    expect(src).not.toContain("trailing=");
   });
 });
 

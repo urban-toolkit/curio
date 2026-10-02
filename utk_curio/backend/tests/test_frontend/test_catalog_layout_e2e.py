@@ -11,7 +11,10 @@ Two things the owner saw on the catalog pages:
 
 So this measures, on every page, at the default 1280x720 viewport with the
 details drawer open: each divider is painted, the grid lays out at least three
-columns, and the first card starts high enough to leave two rows in view.
+columns, the first card starts high enough to leave two rows in view, and no
+card in view is cut short. That last one is the price of the others: a grid of
+fixed height may squeeze its rows, and the first version of this layout did,
+down to a strip and half a title per card, while passing the other three.
 
 Run::
 
@@ -63,9 +66,16 @@ _MEASURE = """([cardSelector]) => {
   const columns = grid
     ? getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length
     : 0;
+  // A card that clips its content (they all hide overflow) is taller inside
+  // than it is drawn. Only the cards whose top is in view.
+  const clipped = Array.from(document.querySelectorAll('main ' + cardSelector))
+    .filter((c) => c.getBoundingClientRect().top < window.innerHeight)
+    .filter((c) => c.scrollHeight > c.clientHeight + 1)
+    .map((c) => c.clientHeight + '<' + c.scrollHeight);
   return {
     dividers,
     columns,
+    clipped,
     firstCardTop: card ? Math.round(card.getBoundingClientRect().top) : null,
     mainRight: Math.round(document.querySelector('main').getBoundingClientRect().right),
   };
@@ -118,6 +128,11 @@ def test_every_browse_page_paints_its_rail_and_fits_three_columns(
             failures.append(
                 f"{path}: the grid lays out {m['columns']} columns with the "
                 f"drawer open, fewer than {MIN_COLUMNS}"
+            )
+        if m["clipped"]:
+            failures.append(
+                f"{path}: {len(m['clipped'])} cards in view are cut short "
+                f"(drawn < content heights: {m['clipped']})"
             )
         if m["firstCardTop"] is None or m["firstCardTop"] > FIRST_CARD_MAX_TOP:
             failures.append(
