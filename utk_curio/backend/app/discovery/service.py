@@ -441,7 +441,10 @@ class DiscoveryService:
         return DiscoveryResourceDetail(
             resource=self._service_for(manifest).row(spec),
             license=manifest.license,
-            extra={"kind": spec.kind, **({"layers": list(spec.options["layers"])} if "layers" in spec.options else {})},
+            extra={
+                "kind": spec.kind,
+                **{key: list(spec.options[key]) for key in ("layers", "tags") if key in spec.options},
+            },
         )
 
     def _install_bytes(self, blob, filename, fmt, **kwargs):

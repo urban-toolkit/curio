@@ -3,7 +3,7 @@
   "name": "OpenStreetMap",
   "version": "1.0.0",
   "compatibility": { "major": 1 },
-  "description": "Buildings, roads, parks, water and land surface from OpenStreetMap, loaded through Autark for a box or for named areas. Each building, road, park and water row is one OpenStreetMap way or relation, with its tags and its id; heights, widths, speeds and counts are numbers.",
+  "description": "Buildings, roads, parks, water, land surface, points of interest and features by tag from OpenStreetMap, loaded through Autark for a box or for named areas. Each row but the surface's is one OpenStreetMap node, way or relation, with its tags and its id; heights, widths, speeds and counts are numbers.",
   "publisher": "OpenStreetMap contributors",
   "homepage": "https://www.openstreetmap.org",
   "license": "ODbL 1.0",
@@ -47,6 +47,23 @@
       "id": "surface", "name": "Surface", "kind": "table", "format": "geojson",
       "description": "The land inside the area: the box, or the named areas' outline.",
       "options": { "layers": ["surface"] }
+    },
+    {
+      "id": "points-of-interest", "name": "Points of interest", "kind": "table", "format": "geojson",
+      "description": "Places people visit: amenities, shops, tourism, leisure, offices, crafts, healthcare and historic sites, as points, lines and polygons.",
+      "options": { "tags": ["amenity=*", "craft=*", "healthcare=*", "historic=*", "leisure=*", "office=*", "shop=*", "tourism=*"] }
+    },
+    {
+      "id": "features-by-tag", "name": "Features by tag", "kind": "table", "format": "geojson",
+      "description": "The nodes, ways and multipolygons with any of the tags you enter, as points, lines and polygons.",
+      "options": {},
+      "parameters": [
+        {
+          "id": "tags", "type": "tags", "label": "Tags", "required": true,
+          "description": "Tags as key=value, such as amenity=school, or key=* for any value.",
+          "suggestions": ["amenity", "shop", "tourism", "leisure", "office", "craft", "healthcare", "historic", "highway", "railway", "public_transport", "building", "natural", "landuse", "waterway", "power", "man_made", "emergency", "sport", "cuisine"]
+        }
+      ]
     },
     {
       "id": "all-layers", "name": "All layers", "kind": "table", "format": "geojson",

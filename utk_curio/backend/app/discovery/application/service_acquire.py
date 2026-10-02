@@ -176,7 +176,12 @@ class ServiceAcquire:
             )
             filled = [layer for layer in layers if layer.features > 0]
             place = place_label(values)
+            tags = spec.tag_entries(values)
+            # Tags a person entered, rather than a resource's preset.
+            entered = tags is not None and "tags" not in spec.options
             if not filled:
+                if entered:
+                    raise DiscoveryError(f"{manifest.name} has no features tagged {P.tags_label(tags)} in {place}")
                 raise DiscoveryError(f"{manifest.name} has no {spec.name.lower()} in {place}")
             if stage is not None:
                 stage("Adding to your Data Catalog…")
@@ -189,12 +194,18 @@ class ServiceAcquire:
                 "parametersHash": values_hash,
             }
             several = len(spec.options.get("layers") or ()) > 1
-            prefix = (title or "").strip() or (
-                f"{manifest.name}, {place}" if several else f"{spec.name}, {place}"
-            )
+            if entered:
+                default_prefix = f"Features tagged {P.tags_label(tags)}, {place}"
+            elif several:
+                default_prefix = f"{manifest.name}, {place}"
+            else:
+                default_prefix = f"{spec.name}, {place}"
+            prefix = (title or "").strip() or default_prefix
             # One unique group per download, as a .pbf import has, so the same
             # area downloaded again forms its own group.
             group_id = f"osm.x{uuid.uuid4().hex[:8]}" if len(filled) > 1 else None
+            # A tag resource's dataset names its geometry, even when it is the only one.
+            suffixed = group_id is not None or tags is not None
             items = []
             for layer in filled:
                 collection = json.loads(layer.path.read_text(encoding="utf-8"))
@@ -207,7 +218,7 @@ class ServiceAcquire:
                         blob,
                         f"osm_{layer.layer}.geojson",
                         "geojson",
-                        title=f"{prefix} ({layer.layer})" if group_id else prefix,
+                        title=f"{prefix} ({layer.layer})" if suffixed else prefix,
                         feature_count_override=layer.features,
                         group_id=group_id,
                         layer_name=layer.layer,

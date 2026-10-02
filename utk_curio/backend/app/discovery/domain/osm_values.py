@@ -31,6 +31,7 @@ COUNT_KEYS = frozenset({
     "roof:levels", "levels", "min_level",
     "lanes", "lanes:forward", "lanes:backward", "lanes:both_ways",
     "layer",
+    "capacity", "seats", "beds", "rooms", "building:flats",
 })
 NUMERIC_KEYS = LENGTH_KEYS | SPEED_KEYS | COUNT_KEYS
 

@@ -31,7 +31,7 @@ from typing import Any
 
 from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
 
-PARAMETER_TYPES = ("area", "dateRange", "choice", "number", "integer", "boolean", "text", "url")
+PARAMETER_TYPES = ("area", "dateRange", "choice", "number", "integer", "boolean", "text", "url", "tags")
 AREA_FORMS = ("box", "names")
 
 MAX_PARAMETERS = 16
@@ -48,6 +48,15 @@ _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 #: A named area goes into an Overpass query as ``area["name"="..."]``, so a
 #: quote, a bracket or a backslash in it would change the query.
 _NAME_FORBIDDEN = re.compile(r'["\[\]\\\n\r\t]')
+
+#: A ``tags`` answer lists at most this many entries.
+MAX_TAGS = 16
+#: An OpenStreetMap key, as autk-db's tag sets take one.
+TAG_KEY_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_:.\-]{0,63}"
+TAG_KEY_RE = re.compile(rf"^{TAG_KEY_PATTERN}$")
+#: One tag entry: ``key=value``, or ``key=*`` for the key with any value. The
+#: value has no quote, bracket, backslash or control character.
+TAG_ENTRY_RE = re.compile(rf'^({TAG_KEY_PATTERN})=(\*|[^"\\\[\]\x00-\x1f\x7f]{{1,255}})$')
 _EARTH_RADIUS_KM = 6371.0088
 
 
@@ -86,6 +95,7 @@ class ParameterSpec:
     max_area_km2: float | None = None
     min_date: str | None = None
     max_date: str | None = None
+    suggestions: tuple[str, ...] = ()
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -206,11 +216,24 @@ def _parse_one(raw: object, *, where: str) -> ParameterSpec:
     elif min_date is not None or max_date is not None:
         raise ManifestParameterError(f"{where}.minDate and maxDate apply to a date range only")
 
+    suggestions: tuple[str, ...] = ()
+    if "suggestions" in raw:
+        raw_suggestions = raw["suggestions"]
+        if kind != "tags":
+            raise ManifestParameterError(f"{where}.suggestions apply to tags only")
+        if (
+            not isinstance(raw_suggestions, list) or len(raw_suggestions) > MAX_OPTIONS
+            or any(not isinstance(key, str) or not TAG_KEY_RE.match(key) for key in raw_suggestions)
+            or len(set(raw_suggestions)) != len(raw_suggestions)
+        ):
+            raise ManifestParameterError(f"{where}.suggestions must list up to {MAX_OPTIONS} different OpenStreetMap keys")
+        suggestions = tuple(raw_suggestions)
+
     spec = ParameterSpec(
         id=pid, type=kind, label=label.strip(), description=description, required=required,
         minimum=minimum, maximum=maximum, step=step, unit=unit, options=options,
         multiple=multiple, pattern=pattern, accepts=accepts, max_area_km2=max_area,
-        min_date=min_date, max_date=max_date,
+        min_date=min_date, max_date=max_date, suggestions=suggestions,
     )
     default = raw.get("default")
     if default is not None:
@@ -312,7 +335,51 @@ def _check(spec: ParameterSpec, value: object) -> Any:
         if len(link) > MAX_URL_LENGTH or any(c.isspace() for c in link):
             raise ParameterError(f"{spec.label} is not a link")
         return link
+    if kind == "tags":
+        if not isinstance(value, list) or not value:
+            raise ParameterError(f"{spec.label} takes one or more tags, as key=value or key=*")
+        if len(value) > MAX_TAGS:
+            raise ParameterError(f"{spec.label} takes at most {MAX_TAGS} tags")
+        try:
+            return normalize_tags(value)
+        except ParameterError as exc:
+            raise ParameterError(f"{spec.label}: {exc}") from exc
     raise ParameterError(f"{spec.label} has an unknown type")  # pragma: no cover
+
+
+def parse_tag_entry(entry: object) -> tuple[str, str | None]:
+    """``(key, value)`` for ``key=value``, ``(key, None)`` for ``key=*``.
+
+    Spaces around the key and the value are dropped.
+
+    :raises ParameterError: For anything else.
+    """
+    if not isinstance(entry, str) or "=" not in entry:
+        raise ParameterError(f"{str(entry)[:60]!r} is not a tag: write key=value or key=*")
+    key, value = (part.strip() for part in entry.split("=", 1))
+    match = TAG_ENTRY_RE.match(f"{key}={value}")
+    if not match:
+        raise ParameterError(f"{entry[:60]!r} is not a tag: write key=value or key=*")
+    return key, None if value == "*" else value
+
+
+def normalize_tags(entries: list[object]) -> list[str]:
+    """Tag entries as ``key=value``/``key=*``, without repeats, sorted.
+
+    A ``key=*`` entry covers the ``key=value`` entries for its key, which are dropped.
+    """
+    parsed = [parse_tag_entry(entry) for entry in entries]
+    any_value = {key for key, value in parsed if value is None}
+    kept = {f"{key}=*" if value is None else f"{key}={value}"
+            for key, value in parsed if value is None or key not in any_value}
+    return sorted(kept)
+
+
+def tags_label(entries: list[str]) -> str:
+    """The tags for a title: at most three, each at most 40 characters, then how many more."""
+    shown = [entry if len(entry) <= 40 else entry[:39] + "…" for entry in entries[:3]]
+    more = len(entries) - len(shown)
+    return ", ".join(shown) + (f" or {more} more" if more else "")
 
 
 def _fmt(number: float) -> str:
@@ -434,6 +501,8 @@ def parameter_row(spec: ParameterSpec) -> dict[str, Any]:
         row["accepts"] = list(spec.accepts)
         if spec.max_area_km2 is not None:
             row["maxAreaKm2"] = spec.max_area_km2
+    if spec.type == "tags":
+        row["suggestions"] = list(spec.suggestions)
     return row
 
 

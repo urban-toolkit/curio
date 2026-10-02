@@ -66,7 +66,7 @@ PROVIDER_TYPES = (
 PROVIDER_PARAMETER_IDS: dict[str, tuple[str, ...]] = {
     "socrata": ("area",),
     "wfs": ("area",),
-    "autark-osm": ("area",),
+    "autark-osm": ("area", "tags"),
     "mapillary": ("area", "captured", "imageType", "size", "maxImages"),
     "google-streetview": ("area", "spacing", "headings", "fov", "pitch", "size", "outdoorOnly", "maxImages"),
 }
@@ -287,6 +287,16 @@ class ResourceSpec:
     @property
     def dataset_format(self) -> str:
         return "collection" if self.is_collection else str(self.format)
+
+    def tag_entries(self, values: dict[str, Any]) -> list[str] | None:
+        """An Autark resource's tags: its preset ``options.tags``, or the ``tags``
+        answer; None for a resource that loads layers."""
+        preset = self.options.get("tags")
+        if preset is not None:
+            return list(preset)
+        if any(spec.id == "tags" for spec in self.parameters):
+            return list(values.get("tags") or [])
+        return None
 
 
 @dataclass(frozen=True)
@@ -651,8 +661,37 @@ def _parse_service_resource(raw: object, *, where: str, provider_type: str) -> R
         raise ManifestError(
             f"manifest.{where}.options.endpoint must be {MAPILLARY_ENDPOINTS[kind]!r} for {kind}"
         )
+    parameters = _parse_parameters(raw.get("parameters"), where=f"manifest.{where}.parameters")
+    options = dict(options)
     if provider_type == "autark-osm":
-        layers = options.get("layers")
+        _check_autark_osm_resource(options, parameters, where)
+    return ResourceSpec(
+        id=resource_id,
+        name=_require_str(raw.get("name"), f"{where}.name"),
+        kind=kind,
+        description=str(raw.get("description") or ""),
+        format=fmt,
+        options=options,
+        parameters=parameters,
+    )
+
+
+def _check_autark_osm_resource(options: dict[str, Any], parameters, where: str) -> None:
+    """An Autark resource asks for one thing: Autark layers, preset tags, or
+    the tags a person enters. Preset tags are stored normalized."""
+    tags_parameter = next((spec for spec in parameters if spec.id == "tags"), None)
+    declared = [name for name, present in (
+        ("options.layers", "layers" in options),
+        ("options.tags", "tags" in options),
+        ("a tags parameter", tags_parameter is not None),
+    ) if present]
+    if len(declared) != 1:
+        raise ManifestError(
+            f"manifest.{where} must declare one of options.layers, options.tags or a tags parameter"
+            + (f"; it declares {' and '.join(declared)}" if declared else "")
+        )
+    if "layers" in options:
+        layers = options["layers"]
         if (
             not isinstance(layers, list)
             or not layers
@@ -663,15 +702,16 @@ def _parse_service_resource(raw: object, *, where: str, provider_type: str) -> R
                 f"manifest.{where}.options.layers must list Autark layers without repeats, "
                 f"from {list(AUTARK_OSM_LAYERS)}"
             )
-    return ResourceSpec(
-        id=resource_id,
-        name=_require_str(raw.get("name"), f"{where}.name"),
-        kind=kind,
-        description=str(raw.get("description") or ""),
-        format=fmt,
-        options=dict(options),
-        parameters=_parse_parameters(raw.get("parameters"), where=f"manifest.{where}.parameters"),
-    )
+    elif "tags" in options:
+        preset = options["tags"]
+        if not isinstance(preset, list) or not preset or len(preset) > P.MAX_TAGS:
+            raise ManifestError(f"manifest.{where}.options.tags must list 1 to {P.MAX_TAGS} tags")
+        try:
+            options["tags"] = P.normalize_tags(preset)
+        except P.ParameterError as exc:
+            raise ManifestError(f"manifest.{where}.options.tags: {exc}") from exc
+    elif tags_parameter.type != "tags" or not tags_parameter.required:
+        raise ManifestError(f"manifest.{where}.parameters: tags must be a required parameter of type tags")
 
 
 def _parse_resource(raw: object, *, where: str) -> ResourceSpec:
@@ -896,6 +936,8 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DiscoverySourceManife
     resources = _parse_resources(raw.get("resources"), provider=provider)
     source_parameters = _parse_parameters(raw.get("parameters"), where="manifest.parameters")
     _check_parameter_ids(provider.type, source_parameters, "manifest.parameters")
+    if any(spec.id == "tags" for spec in source_parameters):
+        raise ManifestError("manifest.parameters: tags is declared on the resource that asks for it")
     for spec in resources:
         _check_parameter_ids(provider.type, spec.parameters, f"manifest.resources[{spec.id}].parameters")
     if provider.is_storage or provider.is_service:

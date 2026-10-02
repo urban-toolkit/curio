@@ -158,7 +158,8 @@ export type DiscoveryParameterType =
   | "integer"
   | "boolean"
   | "text"
-  | "url";
+  | "url"
+  | "tags";
 
 /** One question a source asks before an add (`domain/parameters.py`). */
 export interface DiscoveryParameter {
@@ -179,6 +180,8 @@ export interface DiscoveryParameter {
   /** area: `box` is [west, south, east, north]; `names` is named OSM areas. */
   accepts?: ("box" | "names")[];
   maxAreaKm2?: number;
+  /** tags: OpenStreetMap keys the field suggests. */
+  suggestions?: string[];
 }
 
 /** One answer of the place search: its box, and its own OSM name. */

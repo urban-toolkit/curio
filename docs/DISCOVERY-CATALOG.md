@@ -54,7 +54,7 @@ discovery/
 | ArcGIS Hub Open Data | ArcGIS | Public |
 | GeoSampa (São Paulo) | OGC WFS | Public |
 | Direct URL | none | Public. Nothing to browse: it downloads one file from an https link |
-| OpenStreetMap | OpenStreetMap (Autark) | Public. Buildings, roads, parks, water and land surface for a box or for named areas, loaded by Autark |
+| OpenStreetMap | OpenStreetMap (Autark) | Public. Buildings, roads, parks, water, land surface, points of interest and features by tag for a box or for named areas, loaded by Autark |
 | Example storage | Folder | Public. A small instance of each way storage is organized, which the storage examples read |
 | Sentinel-2 over Chicago | S3 bucket | Public. True-color previews and thumbnails of one month's scenes |
 | Hugging Face documentation images | Hugging Face | Public; a token raises the rate limit |
@@ -122,6 +122,8 @@ A storage source is read when it is first opened, and again when its listing is 
 **I want only the rows inside an area.** On a Chicago Data Portal or GeoSampa row, click **Narrow…**, set the **Area**, and click **Download**. A dataset with no location column offers no **Narrow…**.
 
 **I want OpenStreetMap buildings for a neighbourhood.** Open the OpenStreetMap card's page and click **Download** on **Buildings**. Set the **Area**: a place, coordinates or a dataset's extent give a box; **Named areas** takes a place and the boundaries inside it, as OpenStreetMap names them. **Download** loads them through Autark, and the dataset is named after the area: one row per building or building part, with its tags, its `osm_id`, and a `building_id` naming the building it belongs to. **All layers** adds buildings, roads, parks, water and surface as one group.
+
+**I want the cafés in a neighbourhood.** Open the OpenStreetMap card's page and click **Download** on **Features by tag**. Set the **Area**, type `amenity=cafe` in **Tags** and press Enter, and click **Download**. The cafés land as one group named after the tags and the area: a points dataset for cafés mapped as a point, and a polygons dataset for those mapped as a building or an area. **Points of interest** does the same for amenities, shops, tourism, leisure, offices, crafts, healthcare and historic sites, with no tags to type.
 
 **I want street-level photos of an area.** Set your Mapillary access token ([part 5](#5-api-tokens)), open the Mapillary card's page, and click **Download** on **Street-level images**. Set the **Area**, and if you like **Taken between**, **Images** (all, panoramas only, or no panoramas), **Size** and **Most images**. The photos land as one collection of images, each row with its photographer (`creator`), `captured_at`, `compass_angle`, `is_pano`, `sequence` and position. **Map features** downloads the signs and objects Mapillary detected in a box, as a table of points. [Example 10](examples/10-street-vision-cv-analysis.md) segments a set of these photos.
 
@@ -193,10 +195,11 @@ When a download fails, the row says why in the server's own words, for example t
 
 ### Downloading from OpenStreetMap
 
-- **Autark loads it.** Each resource is one of Autark's layers, loaded with the same code an Autark map uses: **Buildings**, **Roads**, **Parks**, **Water** and **Surface** (the land inside the area). One layer lands as one GeoJSON dataset, in EPSG:4326. **All layers** lands as one group, a dataset for each layer the area has features in, as an uploaded `.osm.pbf` lands as a group. An uploaded `.pbf` gives GDAL's layers (points, lines, multipolygons); a download gives Autark's.
-- **What a row is.** Each row of **Buildings**, **Roads**, **Parks** and **Water** is one OpenStreetMap way or relation. Every tag it has is a column, named as OpenStreetMap names it (`name`, `building:levels`, `highway`), and `osm_type` (`way` or `relation`) and `osm_id` name it on openstreetmap.org. A building of several parts is one row per part, and `building_id` names the building each belongs to: parts and buildings that touch share one, as an Autark map draws them as one building. **Surface** rows have no tags and no `osm_id`.
-- **Numbers.** These tags are numbers, in metres for a length and kilometres per hour for a speed: `height`, `min_height`, `roof:height`, `building:height`, `width`, `est_width`, `maxheight`, `maxwidth`, `maxlength`, `ele` and `depth` (metres); `maxspeed`, `maxspeed:forward`, `maxspeed:backward` and `minspeed` (km/h); and the counts `building:levels`, `building:min_level`, `building:levels:underground`, `roof:levels`, `levels`, `min_level`, `lanes`, `lanes:forward`, `lanes:backward`, `lanes:both_ways` and `layer`. A unit written in OpenStreetMap is converted: `40 ft` is 12.19, `12'6"` is 3.81, `30 mph` is 48.28. A value that is not one number, such as `maxspeed=none` or `building:levels=3;4`, is empty. Every other tag is text, as OpenStreetMap has it.
-- **The area.** A box of at most 25 km², or named areas: the names must match OpenStreetMap's boundary names exactly, and a name with no boundary fails with a message naming it. Parks and water are cut at the box around the area. When **Surface** is loaded with them, as in **All layers**, roads, parks and water are also cut at the area's own outline, and a building outside it is left out. A building that crosses the edge is kept whole, and so is a road when **Surface** is not loaded.
+- **Autark loads it,** with the same code an Autark map uses. **Buildings**, **Roads**, **Parks**, **Water** and **Surface** (the land inside the area) are Autark's layers. One layer lands as one GeoJSON dataset, in EPSG:4326. **All layers** lands as one group, a dataset for each layer the area has features in, as an uploaded `.osm.pbf` lands as a group. An uploaded `.pbf` gives GDAL's layers (points, lines, multipolygons); a download gives Autark's.
+- **Points of interest and Features by tag.** They load the nodes, ways and multipolygon relations with any of their tags: for **Points of interest**, `amenity`, `shop`, `tourism`, `leisure`, `office`, `craft`, `healthcare` or `historic`, with any value; for **Features by tag**, the tags you enter in **Tags**, each `key=value`, or `key=*` for the key with any value. They land as one group of up to three datasets, **points**, **polylines** and **polygons**, a dataset for each that has features.
+- **What a row is.** Each row but the surface's is one OpenStreetMap node, way or relation. Every tag it has is a column, named as OpenStreetMap names it (`name`, `building:levels`, `highway`), and `osm_type` (`node`, `way` or `relation`) and `osm_id` name it on openstreetmap.org. A points row is a node; a polylines or polygons row is a way or a multipolygon relation. A building of several parts is one row per part, and `building_id` names the building each belongs to: parts and buildings that touch share one, as an Autark map draws them as one building. **Surface** rows have no tags and no `osm_id`.
+- **Numbers.** These tags are numbers, in metres for a length and kilometres per hour for a speed: `height`, `min_height`, `roof:height`, `building:height`, `width`, `est_width`, `maxheight`, `maxwidth`, `maxlength`, `ele` and `depth` (metres); `maxspeed`, `maxspeed:forward`, `maxspeed:backward` and `minspeed` (km/h); and the counts `building:levels`, `building:min_level`, `building:levels:underground`, `roof:levels`, `levels`, `min_level`, `lanes`, `lanes:forward`, `lanes:backward`, `lanes:both_ways`, `layer`, `capacity`, `seats`, `beds`, `rooms` and `building:flats`. A unit written in OpenStreetMap is converted: `40 ft` is 12.19, `12'6"` is 3.81, `30 mph` is 48.28. A value that is not one number, such as `maxspeed=none` or `building:levels=3;4`, is empty. Every other tag is text, as OpenStreetMap has it.
+- **The area.** A box of at most 25 km², or named areas: the names must match OpenStreetMap's boundary names exactly, and a name with no boundary fails with a message naming it. Parks and water are cut at the box around the area. When **Surface** is loaded with them, as in **All layers**, roads, parks and water are also cut at the area's own outline, and a building outside it is left out. A building that crosses the edge is kept whole, and so is a road when **Surface** is not loaded. **Points of interest** and **Features by tag** are never cut: each feature is whole.
 - **Time.** A download can take minutes: Autark waits for a free slot on OpenStreetMap's Overpass service before each request, pauses between requests, and fetches buildings in four parts. A download that takes more than 15 minutes, or comes to more than 512 MiB of GeoJSON, is stopped and says so.
 - **On an Autark map.** The Data Loading node a layer makes on the canvas names the layer (`gdf.metadata = {"layerType": "buildings"}`), so an Autark map it feeds draws **Buildings** as buildings, raised to their height, and **Roads**, **Parks**, **Water** and **Surface** in their own colours.
 
@@ -209,8 +212,10 @@ What each layer holds:
 | **Parks** | Ways and relations tagged `leisure` park, playground, dog park or recreation ground; `landuse` wood, grass, forest, orchard, village green, vineyard, cemetery or meadow; or `natural` wood, grass, grassland, forest, scrub, heath or meadow | Areas |
 | **Water** | Ways and relations tagged `natural` water, wetland, strait or spring, or `water` pond, reservoir, lagoon, stream pool, lake, pool, canal or river | Areas |
 | **Surface** | The land inside the box, or inside the named areas' outline | Areas |
+| **Points of interest** | Nodes, ways and multipolygon relations tagged `amenity`, `shop`, `tourism`, `leisure`, `office`, `craft`, `healthcare` or `historic` | Points, lines and areas |
+| **Features by tag** | Nodes, ways and multipolygon relations with any of the tags entered | Points, lines and areas |
 
-A way that is tagged as an area but does not close is a line.
+A way that is tagged as an area but does not close is a line. In **Points of interest** and **Features by tag**, a way that closes is an area unless it is tagged `area=no`, or is a `highway`, `barrier`, `railway` or `waterway` without `area=yes`; then it is a line.
 
 ### Downloading street-level images
 
@@ -332,19 +337,20 @@ Each entry of `parameters` is one question the **Download** dialog asks, and the
 
 | Field | What it declares |
 |---|---|
-| `id` | What the answer is called. A source may declare only the ids its provider reads: `area` for `socrata`, `wfs` and `autark-osm`; `area`, `captured`, `imageType`, `size` and `maxImages` for `mapillary`; `area`, `spacing`, `headings`, `fov`, `pitch`, `size`, `outdoorOnly` and `maxImages` for `google-streetview`; none for the others. |
-| `type` | `area`, `dateRange`, `choice` (one, or several with `multiple`), `number`, `integer`, `boolean`, `text` (with a `pattern`), or `url` (https). |
+| `id` | What the answer is called. A source may declare only the ids its provider reads: `area` for `socrata`, `wfs` and `autark-osm`, and `tags` for one `autark-osm` resource at a time, declared on that resource and required; `area`, `captured`, `imageType`, `size` and `maxImages` for `mapillary`; `area`, `spacing`, `headings`, `fov`, `pitch`, `size`, `outdoorOnly` and `maxImages` for `google-streetview`; none for the others. |
+| `type` | `area`, `dateRange`, `choice` (one, or several with `multiple`), `number`, `integer`, `boolean`, `text` (with a `pattern`), `url` (https), or `tags` (1 to 16 OpenStreetMap tags, each `key=value` or `key=*`, in any order). |
 | `label`, `description` | What the dialog says. |
 | `required` | Whether the download needs an answer. |
 | `default`, `min`, `max`, `step`, `unit`, `options` | A number's range and a choice's options. |
 | `accepts` | For an `area`: `box`, `names`, or both. `socrata`, `wfs`, `mapillary` and `google-streetview` take a box; `autark-osm` takes both. |
 | `maxAreaKm2` | For an `area`: the largest box, in km². |
+| `suggestions` | For `tags`: OpenStreetMap keys the field offers as you type, such as `amenity` or `shop`. |
 
 A Socrata dataset takes an area when it has a point, location, line or polygon column, and keeps the rows inside the box. A WFS layer takes it as its `bbox`.
 
 ### Resources
 
-A service's `resources` say what it can be asked for: each has an `id`, a `name` and `description`, and a `kind`. A `table` resource has `format` `geojson`; an `images` resource lands as a collection. For `autark-osm`, `options.layers` names the Autark layers it loads (`buildings`, `roads`, `parks`, `water`, `surface`). For `mapillary`, `options.endpoint` is `images` for an `images` resource and `map_features` for a table. A service resource has no `path`. A model source declares no resources: its models are found by searching it.
+A service's `resources` say what it can be asked for: each has an `id`, a `name` and `description`, and a `kind`. A `table` resource has `format` `geojson`; an `images` resource lands as a collection. For `autark-osm`, each has one of: `options.layers`, the Autark layers it loads (`buildings`, `roads`, `parks`, `water`, `surface`); `options.tags`, the tags whose features it loads, each `key=value` or `key=*`; or a required `tags` parameter, the tags a person enters. For `mapillary`, `options.endpoint` is `images` for an `images` resource and `map_features` for a table. A service resource has no `path`. A model source declares no resources: its models are found by searching it.
 
 A storage source's `resources` say how its files are organized. `provider` says where they are.
 

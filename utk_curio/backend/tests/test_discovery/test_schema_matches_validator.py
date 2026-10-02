@@ -175,6 +175,13 @@ class TestParameters:
         assert schema["properties"]["parameters"]["maxItems"] == P.MAX_PARAMETERS
         assert self._parameter(schema)["properties"]["options"]["maxItems"] == P.MAX_OPTIONS
 
+    def test_the_tag_keys_are_the_validators(self, schema):
+        from utk_curio.backend.app.discovery.domain import parameters as P
+
+        suggestions = self._parameter(schema)["properties"]["suggestions"]
+        assert suggestions["items"]["pattern"] == P.TAG_KEY_RE.pattern
+        assert suggestions["maxItems"] == P.MAX_OPTIONS
+
     def test_every_key_the_validator_writes_is_declared(self, schema):
         """Derived, not restated: one maximal declaration of each type, read
         and written back by the validator, names every key it knows."""
@@ -188,6 +195,7 @@ class TestParameters:
              "multiple": True, "default": ["x"]},
             {"id": "d", "type": "number", "label": "D", "min": 0, "max": 9, "step": 1, "unit": "m"},
             {"id": "e", "type": "text", "label": "E", "pattern": "[a-z]+"},
+            {"id": "f", "type": "tags", "label": "F", "suggestions": ["amenity"], "default": ["amenity=*"]},
         ]
         written: set[str] = set()
         for spec in P.parse_parameters(maximal, where="parameters"):

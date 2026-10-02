@@ -57,8 +57,10 @@ LAYER_GROUP_ID_PREFIXES = {
 OSM_LAYER_ORDER = {
     "points": 0,
     "lines": 1,
+    "polylines": 1,
     "multilinestrings": 2,
     "multipolygons": 3,
+    "polygons": 3,
     "other_relations": 4,
 }
 
