@@ -27,6 +27,8 @@ _FILE_ID_RE = re.compile(r"^[0-9a-f]{16}$")
 DERIVED = {
     "video": ("frames", "jpg", "frame"),
     "audio": ("clips", "wav", "audio"),
+    # A segmentation's overlay of a photo.
+    "image": ("overlays", "png", "image"),
 }
 
 

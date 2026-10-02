@@ -568,6 +568,10 @@ def run_node(request, namespace_factory):
                 output_dir=scratch_dir,
             ))
 
+            from utk_curio.sandbox.util.vision import make_curio_segment
+
+            namespace["curio_segment"] = make_curio_segment(namespace.get("curio_derived_file"))
+
             # Replay this session's earlier imports so an upstream node's
             # `import numpy as np` is visible here, matching the in-process
             # behaviour (#158). A statement that no longer resolves is skipped:

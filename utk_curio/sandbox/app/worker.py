@@ -541,8 +541,10 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                     ns['curio_dataset_path'], collections, media_dir
                 ))
                 from utk_curio.sandbox.util.models import make_curio_model
+                from utk_curio.sandbox.util.vision import make_curio_segment
 
                 ns['curio_model'] = make_curio_model(models)
+                ns['curio_segment'] = make_curio_segment(ns.get('curio_derived_file'))
                 # Hoist this node's own top-level imports before defining userCode,
                 # so they are recorded for later nodes in the same session. The
                 # statements stay in the function body too - re-importing is a
