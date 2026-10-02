@@ -8,6 +8,7 @@ import {
   datasetProvenanceLabel,
   isDatasetInstalledFromCatalog,
   isDatasetPublishedToCatalog,
+  isLayerGroupId,
   notifyDatasetCatalogRefresh,
 } from "../../../services/datasetCatalog";
 import { DatasetDataflowUsageSection, useDatasetDataflowUsage } from "./DatasetDataflowUsage";
@@ -379,10 +380,13 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     : lineage;
   const { consumingNodes } = effectiveLineage.downstream;
   const published = isDatasetPublishedToCatalog(dataset);
-  // Neither a multi-part bundle, an OSM group nor a collection (an index of
-  // files kept where they are) is a single exportable file.
+  // Neither a multi-part bundle, a layer group (whatever format it shows) nor a
+  // collection (an index of files kept where they are) is a single exportable file.
   const canExport =
-    dataset.format !== "bundle" && dataset.format !== "osm" && dataset.format !== "collection";
+    dataset.format !== "bundle" &&
+    dataset.format !== "osm" &&
+    dataset.format !== "collection" &&
+    !isLayerGroupId(dataset.id);
   const discovered = dataset.discoverySource;
   // A storage source's resource is a folder or a bucket, not a portal page.
   // Which words describe where the bytes came from: a file the person

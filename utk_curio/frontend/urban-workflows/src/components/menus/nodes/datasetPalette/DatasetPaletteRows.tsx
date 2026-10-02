@@ -9,7 +9,7 @@ import {
   endDatasetDrag,
   writeDatasetDragData,
   DATASET_FORMAT_LABEL,
-  layerGroupKind,
+  layerGroupFormat,
   DatasetCatalogItem,
   datasetDisplayTitle,
   datasetSubtitle,
@@ -156,8 +156,9 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
   const [open, setOpen] = useState(false);
   const layerCount = group.members.length;
   const time = relativeTime(group.updatedAt);
-  // A multilayer group is an OSM PBF or a GeoPackage import; its id says which.
-  const groupFormat = layerGroupKind(group.groupId);
+  // An OSM PBF or a GeoPackage import, as its id says, or the layers of one
+  // Discovery download, which say their own format.
+  const groupFormat = layerGroupFormat(group);
   const formatLabel = DATASET_FORMAT_LABEL[groupFormat];
   const formatChipClass = rowStyles[`chip_${groupFormat}`] ?? rowStyles.formatChip;
   // Dragging the parent creates one node loading ALL layers (the full import).

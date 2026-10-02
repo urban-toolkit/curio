@@ -1,6 +1,7 @@
 import type {
   DatasetCatalogItem,
   DatasetDragPayload,
+  DatasetFormat,
   DatasetGroupLayerRef,
 } from "./datasetCatalogTypes";
 import { layerGroupKind } from "./datasetCatalogTypes";
@@ -147,12 +148,25 @@ export function osmGroupLayerRefs(
 }
 
 /**
+ * The format a layer group shows and drops as. Layers that were all downloaded
+ * from the Discovery Catalog show their own format, as each layer's row does
+ * (#586); an import shows its file's, which its id says. Mirrors the backend
+ * ``build_layer_group_item``.
+ */
+export function layerGroupFormat(group: DatasetPaletteGroup): DatasetFormat {
+  const [first] = group.members;
+  if (first && group.members.every((m) => m.discoverySource)) return first.format;
+  return layerGroupKind(group.groupId);
+}
+
+/**
  * Drag payload for a multilayer group parent (an OSM PBF or a GeoPackage
- * import). Dropping it creates a single node representing the *whole* import:
- * the loader reads every layer, and the node references the real per-layer
- * dataset ids (via ``groupLayers``) so the saved spec never carries the
- * synthetic group id. The group id is kept only as the drag's identity/linkage
- * marker, and its prefix gives the payload's format and ``curio://`` scheme.
+ * import, or the layers of one Discovery download). Dropping it creates a
+ * single node representing the *whole* group: the loader reads every layer, and
+ * the node references the real per-layer dataset ids (via ``groupLayers``) so
+ * the saved spec never carries the synthetic group id. The group id is kept only
+ * as the drag's identity/linkage marker, and its prefix gives the ``curio://``
+ * scheme.
  */
 export function createOsmGroupDragPayload(
   group: DatasetPaletteGroup,
@@ -164,7 +178,7 @@ export function createOsmGroupDragPayload(
     title: group.title,
     uri: `curio://${kind}/${group.groupId}`,
     path: null,
-    format: kind,
+    format: layerGroupFormat(group),
     origin: "imported",
     loaderSnippet: osmGroupLoaderSnippet(layers),
     groupLayers: layers,

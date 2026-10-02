@@ -62,7 +62,7 @@ Ids are 2 to 6 dot-separated lowercase segments (`[a-z][a-z0-9-]*`, at most 63 c
 | Shipped | `data.utk.chicago-boundary` | Written by hand in the manifest. |
 | Imported | `imported.x<uuid12>` | New for every import: uploading the same bytes twice creates **two** datasets. |
 | Computed | `computed.<dataflowId>.<nodeId>` | One per node per dataflow, so the same node id in two dataflows never collides. |
-| OSM PBF group | `osm.x<uuid8>` | The parent of one import's layers. |
+| OSM group | `osm.x<uuid8>` | The parent of the layers of one `.pbf` import or one OpenStreetMap download. |
 
 ### Storage layers
 
@@ -241,7 +241,7 @@ A dataset's details have four tabs: **Overview**, **Schema**, **Table Preview**,
 | `shp` | Not previewable. |
 | `collection` | The index, one row per file, below a strip of its first files. |
 
-**Export**, in the details, downloads the dataset as a file. A Parquet dataset is exported as **GeoJSON** for geo data or **CSV** for a plain table, matching what the preview showed. Bundles, OSM groups and collections cannot be exported.
+**Export**, in the details, downloads the dataset as a file. A Parquet dataset is exported as **GeoJSON** for geo data or **CSV** for a plain table, matching what the preview showed. Bundles, multi-layer groups and collections cannot be exported.
 
 ---
 
@@ -286,6 +286,8 @@ A `.gpkg` is handled the same way, since a GeoPackage can hold any number of lay
 - **Attribute-only tables.** A table with no geometry is kept, as plain parquet.
 
 A GeoPackage holding exactly one layer is imported as an ordinary parquet dataset with no group. GeoPackage import needs the same geospatial extras, plus GDAL's GPKG driver.
+
+A group whose layers all came from the Discovery Catalog, such as an OpenStreetMap download of several layers, reads as each of its layers does: their format, their tags, and the **Downloaded from** section naming the source.
 
 ### Publish, unpublish, delete
 

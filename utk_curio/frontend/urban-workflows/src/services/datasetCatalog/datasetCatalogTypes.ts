@@ -333,7 +333,7 @@ export interface DatasetCatalogItem {
    * files; N for an OSM PBF, which registers one dataset per layer (this item is
    * the first — the rest appear via the catalog listing on refresh). */
   importedDatasetCount?: number;
-  /** On a synthetic OSM group entry (``format: "osm"``, id = group id): the
+  /** On a synthetic layer group entry (id = group id, see `isLayerGroupId`): the
    * real per-layer dataset ids, so the client installs/uninstalls each member. */
   groupLayerIds?: string[];
 }
