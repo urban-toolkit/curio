@@ -604,8 +604,10 @@ repo's build list:
    `CURIO_BUILD_PREVIEW_POLICY=skip` remains the fallback it was meant to be -
    for deployments that genuinely cannot run a browser, the draft reaches review unpreviewed
    with the skip recorded in its provenance and stated verbatim on the review card. Drop the
-   stale skip once a runner is configured. The preview worker is bounded in CPU time, wall
-   time, file size and open files, and not in address space or process count.
+   stale skip once a runner is configured. Every package worker (the compiler, the preview,
+   a backend probe or call) is bounded in CPU time, wall time, file size and open files, and
+   on Windows in process count. On Linux all but the preview are also bounded in address
+   space.
 4. The user reviews the diff, dependencies, and preview; Apply promotes the **exact reviewed
    artifact digest** through the normal installer (backup held, journaled, rollback honest).
 

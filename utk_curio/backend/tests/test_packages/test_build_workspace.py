@@ -212,18 +212,34 @@ class TestBounds:
         assert "7" in result.stdout_tail
 
     @pytest.mark.skipif(not sys.platform.startswith("linux"),
-                        reason="the address-space and process bounds are Linux-only on POSIX")
-    def test_a_memory_or_process_bound_of_zero_is_not_applied(self, workspace):
+                        reason="the address-space bound is Linux-only on POSIX")
+    def test_an_address_space_bound_of_zero_is_not_applied(self, workspace):
         # Not a ceiling of zero, which no process could start under.
         result = _run(
             workspace,
             "print('worker ran')",
-            limits=WorkerLimits(wall_time_seconds=20.0, memory_bytes=0, max_processes=0),
+            limits=WorkerLimits(wall_time_seconds=20.0, memory_bytes=0),
         )
         assert result.status == "ok", result.stderr_tail
         assert "worker ran" in result.stdout_tail
-        assert "as" not in result.limits_applied and "nproc" not in result.limits_applied
-        assert "cpu" in result.limits_applied
+        assert "as" not in result.limits_applied and "cpu" in result.limits_applied
+
+    @pytest.mark.skipif(os.name == "nt", reason="the Windows job bounds the process count")
+    def test_a_worker_starts_threads_and_children_however_many_its_user_runs(self, workspace):
+        # RLIMIT_NPROC counts every process and thread of the user, so a worker
+        # of a user who already runs 32 could start none: it is not applied.
+        result = _run(
+            workspace,
+            "import subprocess, sys, threading\n"
+            "thread = threading.Thread(target=lambda: None)\n"
+            "thread.start(); thread.join()\n"
+            "subprocess.run([sys.executable, '-c', 'pass'], check=True)\n"
+            "print('started both')",
+            limits=WorkerLimits(wall_time_seconds=30.0),
+        )
+        assert result.status == "ok", result.stderr_tail
+        assert "started both" in result.stdout_tail
+        assert "nproc" not in result.limits_applied
 
     def test_cancellation_kills_promptly(self, workspace):
         cancel = threading.Event()

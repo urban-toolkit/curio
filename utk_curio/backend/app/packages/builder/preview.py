@@ -64,12 +64,12 @@ MAX_RENDER_PX = 4000
 _MAX_SCREENSHOT_BYTES = 4 * 1024 * 1024
 _REPORT_PATH = "preview/report.json"
 
-#: The preview worker's bounds. A headless browser reserves far more address
-#: space than it touches, and starts a process per renderer, which Linux counts
-#: against every process of the same user: under the default address-space and
-#: process-count bounds Chromium cannot start. CPU, wall time, file size and
-#: open files bound it as they bound every worker.
-PREVIEW_LIMITS = WorkerLimits(memory_bytes=0, max_processes=0)
+#: The preview worker's bounds. Playwright's Node driver and Chromium reserve
+#: far more address space than they touch: under the default 1 GiB bound V8
+#: fails to reserve its code range and the driver aborts before a browser
+#: starts. CPU, wall time, file size and open files bound it as they bound
+#: every worker.
+PREVIEW_LIMITS = WorkerLimits(memory_bytes=0)
 
 
 class PreviewError(ValueError):
