@@ -3,7 +3,7 @@
   "name": "OpenStreetMap",
   "version": "1.0.0",
   "compatibility": { "major": 1 },
-  "description": "Buildings, roads, parks, water and land surface from OpenStreetMap, loaded through Autark for a box or for named areas. Each layer arrives as the features an Autark map draws.",
+  "description": "Buildings, roads, parks, water and land surface from OpenStreetMap, loaded through Autark for a box or for named areas. Each building, road, park and water row is one OpenStreetMap way or relation, with its tags and its id; heights, widths, speeds and counts are numbers.",
   "publisher": "OpenStreetMap contributors",
   "homepage": "https://www.openstreetmap.org",
   "license": "ODbL 1.0",
@@ -25,27 +25,27 @@
   "resources": [
     {
       "id": "buildings", "name": "Buildings", "kind": "table", "format": "geojson",
-      "description": "Building footprints, a building of several parts as one feature.",
+      "description": "Buildings and building parts, one row each; building_id names the building each belongs to. Sheds, garages, carports and other small structures are left out.",
       "options": { "layers": ["buildings"] }
     },
     {
       "id": "roads", "name": "Roads", "kind": "table", "format": "geojson",
-      "description": "Streets and paths, as lines.",
+      "description": "Streets, roads, tracks and paths, as lines, without footways, cycleways, steps or pedestrian streets.",
       "options": { "layers": ["roads"] }
     },
     {
       "id": "parks", "name": "Parks", "kind": "table", "format": "geojson",
-      "description": "Parks, gardens, woods and other green space.",
+      "description": "Parks, playgrounds, woods, grass, cemeteries and other green space.",
       "options": { "layers": ["parks"] }
     },
     {
       "id": "water", "name": "Water", "kind": "table", "format": "geojson",
-      "description": "Lakes, rivers and other water.",
+      "description": "Lakes, ponds, reservoirs, river areas and wetlands.",
       "options": { "layers": ["water"] }
     },
     {
       "id": "surface", "name": "Surface", "kind": "table", "format": "geojson",
-      "description": "The land inside the area's boundary.",
+      "description": "The land inside the area: the box, or the named areas' outline.",
       "options": { "layers": ["surface"] }
     },
     {

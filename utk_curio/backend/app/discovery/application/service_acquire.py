@@ -2,11 +2,12 @@
 
 A service is told where and what, and answers once. OpenStreetMap is the one
 so far: autk-db's ``loadOsm``, run in Node by ``providers/autark_osm.py``,
-writes one GeoJSON file per Autark layer, in autk-db's workspace CRS
-(EPSG:3395). Here each layer is moved to WGS84, as GeoJSON requires, with its
-features and properties as Autark built them, and installed: one layer as an
-ordinary dataset, several as one ``osm.x`` layer group, the group an uploaded
-``.pbf`` forms.
+writes one GeoJSON file per Autark layer, one feature per OpenStreetMap way or
+relation, in autk-db's workspace CRS (EPSG:3395). Here each layer is moved to
+WGS84, as GeoJSON requires, with its features and properties as Autark built
+them, its numeric tags written as numbers (``domain/osm_values.py``), and
+installed: one layer as an ordinary dataset, several as one ``osm.x`` layer
+group, the group an uploaded ``.pbf`` forms.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from utk_curio.backend.app.common.user_storage import user_key_segment, users_ba
 from utk_curio.backend.app.discovery.domain import parameters as P
 from utk_curio.backend.app.discovery.domain.errors import DiscoveryError, ResourceNotFound
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest
+from utk_curio.backend.app.discovery.domain.osm_values import with_numbers
 from utk_curio.backend.app.discovery.infrastructure import ratelimit
 
 #: autk-db keeps every layer in this CRS (World Mercator).
@@ -67,8 +69,8 @@ def place_label(values: dict[str, Any]) -> str:
 def to_wgs84(collection: dict[str, Any]) -> dict[str, Any]:
     """*collection* with every position moved from autk-db's CRS to WGS84.
 
-    Only positions change: each feature keeps its geometry type (a building of
-    several parts stays a GeometryCollection) and its properties exactly.
+    Only positions change: each feature keeps its geometry type (a park cut at
+    the area's edge may be a GeometryCollection) and its properties exactly.
     autk-db's own keys on the collection (``bbox`` in its CRS, ``__autk_layer``)
     are dropped, as they describe the workspace rather than the data.
     """
@@ -198,6 +200,7 @@ class ServiceAcquire:
                 collection = json.loads(layer.path.read_text(encoding="utf-8"))
                 if not in_wgs84:
                     collection = to_wgs84(collection)
+                collection = with_numbers(collection)
                 blob = json.dumps(collection, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
                 items.append(
                     self._install_bytes(

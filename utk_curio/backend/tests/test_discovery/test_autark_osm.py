@@ -12,7 +12,9 @@ small shell script where ``node`` would be.
 """
 from __future__ import annotations
 
+import gzip
 import json
+import re
 import shutil
 import stat
 import time
@@ -33,6 +35,9 @@ GOLF = {"names": {"geocodeArea": "Illinois", "areas": ["Golf"]}}
 # A box inside Golf, [west, south, east, north]: about 1.8 km2.
 GOLF_BOX = {"box": [-87.8, 42.05, -87.78, 42.06], "label": "Golf"}
 NOWHERE = {"names": {"geocodeArea": "Illinois", "areas": ["Nowhere Land"]}}
+# A box across Chicago's Loop to Lake Shore Drive, about 0.27 km2: roads with
+# speeds, lane counts and clearances.
+LOOP_BOX = {"box": [-87.6295, 41.8805, -87.615, 41.8825], "label": "The Loop"}
 
 ROOT_AUTK_DB = Path(__file__).resolve().parents[4] / "node_modules" / "@urban-toolkit" / "autk-db"
 needs_node = pytest.mark.skipif(
@@ -270,6 +275,88 @@ class TestItBecomesDatasets:
         assert sorted(d.get("layerName") for d in members) == sorted(M.AUTARK_OSM_LAYERS)
         assert {d["title"] for d in members} >= {"OpenStreetMap, Golf (Illinois) (buildings)"}
 
+    def test_buildings_are_one_row_per_osm_element(self, client, auth, live):
+        """Golf's buildings by name, with nothing cut: each building way or
+        relation of the recorded answers is one row, none merged, none lost."""
+        job = wait_for(client, auth, acquire(client, auth, OSM, "buildings", parameters={"area": GOLF})
+                       .get_json()["jobId"], timeout=180)
+        assert job["status"] == "completed", job
+        dataset = job["dataset"]
+        features = json.loads(Path(dataset["path"]).read_text())["features"]
+        elements = [(f["properties"]["osm_type"], f["properties"]["osm_id"]) for f in features]
+        assert len(elements) == len(set(elements))
+        recorded = _recorded_buildings()
+        assert set(elements) == set(recorded)
+        assert dataset["featureCount"] == len(features)
+        for feature in features:
+            properties = feature["properties"]
+            assert feature["geometry"]["type"] in ("Polygon", "MultiPolygon")
+            assert "parts" not in properties and "__autk_layer" not in properties
+            assert isinstance(properties["building_id"], int)
+            tags = recorded[(properties["osm_type"], properties["osm_id"])]
+            assert set(tags) <= set(properties)
+            assert properties["building"] == tags["building"]
+
+    def test_every_feature_names_its_osm_element(self, client, auth, live):
+        job = wait_for(client, auth, acquire(client, auth, OSM, "all-layers", parameters={"area": GOLF})
+                       .get_json()["jobId"], timeout=180)
+        assert job["status"] == "completed", job
+        listing = client.get("/api/datasets/catalog", headers=auth).get_json()["items"]
+        members = {d["layerName"]: d for d in listing
+                   if (d.get("discoverySource") or {}).get("resourceId") == "all-layers"}
+        recorded = {(e["type"], e["id"]) for answer in _recorded_answers() for e in answer}
+        for layer, dataset in members.items():
+            features = json.loads(Path(dataset["path"]).read_text())["features"]
+            assert features, layer
+            if layer == "surface":
+                # The land inside the boundary: no OpenStreetMap element, and no tag, is behind it.
+                assert all(not f["properties"] for f in features)
+                continue
+            elements = [(f["properties"]["osm_type"], f["properties"]["osm_id"]) for f in features]
+            assert len(elements) == len(set(elements)), layer
+            assert set(elements) <= recorded, layer
+            if layer == "roads":
+                assert {kind for kind, _ in elements} == {"way"}
+        parks = json.loads(Path(members["parks"]["path"]).read_text())["features"]
+        assert {f["properties"]["osm_type"] for f in parks} == {"way", "relation"}
+
+    def test_numeric_tags_are_numbers(self, client, auth, live):
+        """Roads across the Loop: the speeds, lane counts and clearances its
+        ways carry land as numbers, in km/h and metres, and read as numeric
+        columns; other tags stay text."""
+        gpd = pytest.importorskip("geopandas")
+        import pandas as pd
+
+        job = wait_for(client, auth, acquire(client, auth, OSM, "roads", parameters={"area": LOOP_BOX})
+                       .get_json()["jobId"], timeout=120)
+        assert job["status"] == "completed", job
+        frame = gpd.read_file(job["dataset"]["path"])
+        for column in ("maxspeed", "lanes", "lanes:forward", "lanes:backward", "maxheight", "layer", "width"):
+            assert pd.api.types.is_numeric_dtype(frame[column]), column
+        assert set(frame["ref"].dropna()) == {"US 41"}
+
+        rows = frame.set_index("osm_id")
+        tags = {e["id"]: e["tags"] for answer in _recorded_answers() for e in answer
+                if e["type"] == "way" and e["id"] in rows.index}
+        assert len(tags) == len(rows)
+        checked = 0
+        for osm_id, way in tags.items():
+            if way.get("maxspeed", "").endswith(" mph"):
+                assert rows.at[osm_id, "maxspeed"] == round(int(way["maxspeed"].split()[0]) * 1.609344, 2)
+                checked += 1
+            if "lanes" in way:
+                assert rows.at[osm_id, "lanes"] == int(way["lanes"])
+                checked += 1
+            if "maxheight" in way:
+                feet_inches = re.fullmatch(r"(\d+)'(\d+)\"", way["maxheight"])
+                if feet_inches:
+                    feet, inches = map(int, feet_inches.groups())
+                    assert rows.at[osm_id, "maxheight"] == round(feet * 0.3048 + inches * 0.0254, 2)
+                else:
+                    assert pd.isna(rows.at[osm_id, "maxheight"]), way["maxheight"]
+                checked += 1
+        assert checked >= 20
+
     def test_the_same_add_again_runs_nothing(self, client, auth, live, monkeypatch):
         first = wait_for(client, auth, acquire(client, auth, OSM, "parks", parameters={"area": GOLF})
                          .get_json()["jobId"], timeout=120)
@@ -484,6 +571,37 @@ def _positions(geometry):
                 yield from walk(part)
 
     return list(walk(geometry["coordinates"]))
+
+
+def _recorded_answers():
+    """Each recorded Overpass interpreter answer, as its element list."""
+    root = FIXTURES / "overpass"
+    for key, entry in json.loads((root / "index.json").read_text()).items():
+        if key.startswith("POST "):
+            yield json.loads(gzip.decompress((root / entry["file"]).read_bytes())).get("elements", [])
+
+
+#: autk-db's building values it leaves out (autk-db ``consts.ts``).
+EXCLUDED_BUILDINGS = {"shed", "garage", "garages", "carport", "hut", "kiosk", "toilets", "service",
+                      "transformer_tower", "sty", "container"}
+
+
+def _recorded_buildings() -> dict[tuple[str, int], dict[str, str]]:
+    """The building ways and relations of Golf's recorded tiles, by autk-db's
+    rule (``process-osm/pipeline.ts``), each once: ``{(type, id): tags}``."""
+    def building(tags):
+        def kept(key):
+            return key in tags and tags[key] not in EXCLUDED_BUILDINGS
+        return kept("building") or kept("building:part") or tags.get("type") == "building"
+
+    tiles = [a for a in _recorded_answers() if any("building" in (e.get("tags") or {}) for e in a)]
+    # autk-db asks for buildings in a 2x2 grid of tiles; the corpus holds Golf's.
+    assert len(tiles) == 4, "the corpus should hold one buildings download: Golf's four tiles"
+    return {
+        (e["type"], e["id"]): e["tags"]
+        for tile in tiles for e in tile
+        if e["type"] in ("way", "relation") and building(e.get("tags") or {})
+    }
 
 
 def test_the_recorded_corpus_is_where_the_tests_look():
