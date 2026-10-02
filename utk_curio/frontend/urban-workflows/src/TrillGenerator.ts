@@ -260,6 +260,15 @@ export class TrillGenerator {
                 trill_node.metadata.datasetSource = node.data.datasetSource;
             }
 
+            // The model a Model Catalog drop set, beside datasetRefs, so the
+            // saved dataflow says which model a node runs.
+            if(Array.isArray(node.data.modelRefs) && node.data.modelRefs.length > 0){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.modelRefs = node.data.modelRefs;
+            }
+
             // dev/89: per-node appearance persists at the canonical
             // metadata.appearance shape — without this, a recolored post-it
             // would lose its color on the next canvas save.
@@ -303,6 +312,16 @@ export class TrillGenerator {
                     trill_node.metadata = {};
 
                 trill_node.metadata.simpleVis = { imageColumn: node.data.simpleVis.imageColumn };
+            }
+
+            // #412: a renamed node header (the header's rename and the config
+            // modal both write data.packageTemplateLabel) persists at
+            // metadata.packageTemplateLabel.
+            if(typeof node.data.packageTemplateLabel === "string" && node.data.packageTemplateLabel.trim()){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.packageTemplateLabel = node.data.packageTemplateLabel.trim();
             }
 
             if(typeof node.data.title === "string" && node.data.title)

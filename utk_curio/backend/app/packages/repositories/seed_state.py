@@ -18,6 +18,17 @@ carry the ``fixtureMtime`` they were observed at, so:
   the bumped ``fixtureMtime`` overrides the tombstone and the seeder
   re-seeds — the dev still wants their fixture refresh to surface.
 
+It also remembers where each store copy came from (#564), because the
+seeder refreshes an installed package from the catalog when the two differ
+(#194) and must not do that to a copy the user changed:
+
+* ``catalogCopy`` is the digest of the copy's ``integrity.json`` map at the
+  moment the catalog wrote it (a catalog install or a seeder swap). While the
+  copy's map still has that digest, nobody has changed it since.
+* ``installedAt`` without ``catalogCopy`` is a copy holding the user's own
+  content: an upload, a factory install, a promotion, a metadata edit.
+* A record with neither predates this rule.
+
 The schema is intentionally tiny and forward-compatible: unknown keys
 on a per-package record are preserved on rewrite, and a corrupt or
 missing file is treated as "no recorded state" rather than raising.
@@ -25,6 +36,8 @@ missing file is treated as "no recorded state" rather than raising.
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
 import json
 import logging
 import os
@@ -48,6 +61,8 @@ class PackageSeedRecord:
     seeded_at: Optional[float] = None
     uninstalled_at: Optional[float] = None
     fixture_mtime: Optional[float] = None
+    installed_at: Optional[float] = None
+    catalog_copy: Optional[str] = None
 
     @property
     def is_uninstalled(self) -> bool:
@@ -60,10 +75,13 @@ class PackageSeedRecord:
         def _num(key: str) -> Optional[float]:
             v = raw.get(key)
             return float(v) if isinstance(v, (int, float)) else None
+        copy = raw.get("catalogCopy")
         return cls(
             seeded_at=_num("seededAt"),
             uninstalled_at=_num("uninstalledAt"),
             fixture_mtime=_num("fixtureMtime"),
+            installed_at=_num("installedAt"),
+            catalog_copy=copy if isinstance(copy, str) and copy else None,
         )
 
     def to_json(self) -> dict:
@@ -74,7 +92,17 @@ class PackageSeedRecord:
             out["uninstalledAt"] = self.uninstalled_at
         if self.fixture_mtime is not None:
             out["fixtureMtime"] = self.fixture_mtime
+        if self.installed_at is not None:
+            out["installedAt"] = self.installed_at
+        if self.catalog_copy is not None:
+            out["catalogCopy"] = self.catalog_copy
         return out
+
+
+def copy_digest(integrity: dict[str, str]) -> str:
+    """One digest for a package copy's ``integrity.json`` map."""
+    body = json.dumps(integrity, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
 def _state_path(user_key: str) -> Path:
@@ -144,14 +172,42 @@ def save(user_key: str, records: dict[str, PackageSeedRecord]) -> None:
     _atomic_write(path, json.dumps(payload, indent=2, sort_keys=True))
 
 
-def mark_seeded(user_key: str, dir_name: str, fixture_mtime: float) -> None:
-    """Record that ``dir_name`` was just (re-)seeded for ``user_key``."""
+def mark_seeded(
+    user_key: str, dir_name: str, fixture_mtime: float, *, catalog_copy: str | None = None,
+) -> None:
+    """Record that ``dir_name`` was just (re-)seeded for ``user_key``.
+
+    *catalog_copy* is the digest of the copy the swap left (see
+    :func:`copy_digest`).
+    """
     records = load(user_key)
     records[dir_name] = PackageSeedRecord(
         seeded_at=time.time(),
         uninstalled_at=None,
         fixture_mtime=float(fixture_mtime),
+        catalog_copy=catalog_copy,
     )
+    save(user_key, records)
+
+
+def mark_installed(user_key: str, dir_name: str, *, catalog_copy: str | None) -> None:
+    """Record an install into the store, replacing any earlier record.
+
+    *catalog_copy* is the digest of the copy the catalog just wrote, or
+    ``None`` for a copy holding the user's own content. Replacing the record
+    also drops an uninstall tombstone: the user just asked for the package.
+    """
+    records = load(user_key)
+    records[dir_name] = PackageSeedRecord(installed_at=time.time(), catalog_copy=catalog_copy)
+    save(user_key, records)
+
+
+def mark_catalog_copy(user_key: str, dir_name: str, catalog_copy: str) -> None:
+    """Record that the copy in the store is the catalog's, keeping the rest of
+    the record (the seeder's adoption of a copy that predates the digest)."""
+    records = load(user_key)
+    prev = records.get(dir_name) or PackageSeedRecord()
+    records[dir_name] = dataclasses.replace(prev, catalog_copy=catalog_copy)
     save(user_key, records)
 
 
@@ -168,6 +224,18 @@ def mark_uninstalled(user_key: str, dir_name: str) -> None:
         uninstalled_at=time.time(),
         fixture_mtime=prev.fixture_mtime,
     )
+    save(user_key, records)
+
+
+def put(user_key: str, dir_name: str, raw: object) -> None:
+    """Write back a record :meth:`PackageSeedRecord.to_json` produced earlier,
+    or drop the entry when it holds nothing (a restore after a rollback)."""
+    records = load(user_key)
+    record = PackageSeedRecord.from_json(raw)
+    if record.to_json():
+        records[dir_name] = record
+    else:
+        records.pop(dir_name, None)
     save(user_key, records)
 
 

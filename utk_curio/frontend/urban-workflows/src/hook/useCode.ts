@@ -11,6 +11,7 @@ import { usePosition } from "./usePosition";
 import { AccessLevelType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 import { DatasetNodeSource } from "../services/datasetCatalog";
 import { deoverlapNodes } from "../utils/deoverlapLayout";
+import { rekeyNodeProvenance } from "../utils/nodeProvenanceKeys";
 import type { SelectionEchoOptions } from "../utils/selectionEcho";
 
 // Module-level singletons so every node shares the same interpreter
@@ -45,6 +46,8 @@ type CreateCodeNodeOptions = {
     datasetRefs?: string[];
     appliedDatasets?: Record<string, unknown>;
     datasetSource?: DatasetNodeSource;
+    // The model a Model Catalog drop set (canonical shape metadata.modelRefs).
+    modelRefs?: { id: string; name: string }[];
     saveOutputDataset?: boolean;
     // dev/89: per-node appearance (canonical spec shape metadata.appearance;
     // normalized values only — validation is utils/nodeAppearance's job).
@@ -61,6 +64,9 @@ type CreateCodeNodeOptions = {
     // list: the setting survived a save and never a load.
     spatialJoin?: { nameProperty?: string; output?: "points" | "polygons" };
     simpleVis?: { imageColumn?: string };
+    // #412: a renamed node header (metadata.packageTemplateLabel), which the
+    // header reads through resolveNodeDisplayLabel.
+    packageTemplateLabel?: string;
     // #407: a node whose saved output a project load restored mounts as having
     // run: the output it shows, and the source that produced it.
     output?: { code: string; content: string };
@@ -205,6 +211,9 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && node.metadata.datasetSource != undefined)
                 nodeMeta.datasetSource = node.metadata.datasetSource;
 
+            if(node.metadata != undefined && Array.isArray(node.metadata.modelRefs))
+                nodeMeta.modelRefs = node.metadata.modelRefs;
+
             // dev/89: the canonical per-node appearance round-trips into live
             // data (rendered via utils/nodeAppearance — invalid legacy values
             // fall back at render, never here).
@@ -223,6 +232,10 @@ export function useCode(): IUseCode {
             // #276: the Simple View's chosen image column round-trips too.
             if(node.metadata != undefined && node.metadata.simpleVis != undefined)
                 nodeMeta.simpleVis = node.metadata.simpleVis;
+
+            // #412: and so does a renamed node header.
+            if(node.metadata != undefined && typeof node.metadata.packageTemplateLabel === "string")
+                nodeMeta.packageTemplateLabel = node.metadata.packageTemplateLabel;
 
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
@@ -339,7 +352,7 @@ export function useCode(): IUseCode {
             markDirty();
         } else if(suggestionType == undefined) {
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {});
-            if (trill.nodeProvenance) loadNodeProvenance(trill.nodeProvenance);
+            if (trill.nodeProvenance) loadNodeProvenance(rekeyNodeProvenance(trill.nodeProvenance, nodes.map((n) => n.id)));
             if (trill.dataflowProvenance) TrillGenerator.loadDataflowProvenance(trill.dataflowProvenance);
         } else {
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true, undefined, trill.dataflow.description || "", trill.dataflow.datasets || []);
@@ -374,12 +387,14 @@ export function useCode(): IUseCode {
             datasetRefs = undefined,
             appliedDatasets = undefined,
             datasetSource = undefined,
+            modelRefs = undefined,
             saveOutputDataset = undefined,
             appearance = undefined,
             title = undefined,
             comments = undefined,
             spatialJoin = undefined,
             simpleVis = undefined,
+            packageTemplateLabel = undefined,
             output = undefined,
             executedCode = undefined,
         } = options;
@@ -425,6 +440,7 @@ export function useCode(): IUseCode {
                 comments,
                 spatialJoin,
                 simpleVis,
+                packageTemplateLabel,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset
@@ -437,6 +453,7 @@ export function useCode(): IUseCode {
                 propagationCallback: applyNewPropagation,
                 ...(output !== undefined ? { output } : {}),
                 ...(executedCode !== undefined ? { executedCode } : {}),
+                ...(modelRefs !== undefined ? { modelRefs } : {}),
             },
         };
 

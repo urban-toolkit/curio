@@ -388,7 +388,7 @@ def _selected(selection: Selection, found: MatchedFile) -> bool:
 def field_summary(spec: ResourceSpec, files: list[MatchedFile]) -> list[dict[str, Any]]:
     """The values each capture took across *files*."""
     out = []
-    for capture in spec.template.captures:
+    for capture in (spec.template.captures if spec.template else ()):
         values = sorted({f.values[capture.name] for f in files}, key=lambda v: (str(type(v)), v))
         row: dict[str, Any] = {"name": capture.name, "type": capture.type, "distinct": len(values)}
         if len(values) <= MAX_LISTED_VALUES:

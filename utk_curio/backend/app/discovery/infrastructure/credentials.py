@@ -15,8 +15,7 @@ invent a credential slot would let it invent somewhere for a secret to go.
 
 Adding a slot is a column plus a migration plus one line here - deliberately
 the same cost as adding any other account credential, because that is what it
-is. A slot may also name a column that already holds the account's token for
-another feature, as ``huggingface.token`` does.
+is.
 """
 
 from __future__ import annotations
@@ -44,8 +43,6 @@ class KeySlot:
     #: A user's own key always wins; this is what everyone else inherits,
     #: exactly as ``DEFAULT_LLM_API_KEY`` works.
     default_env: str | None = None
-    #: Other parts of Curio that read the same column, named for a person.
-    also_used_by: tuple[str, ...] = ()
 
 
 #: manifest ``auth.secretId`` -> the slot. API Settings draws one row per
@@ -59,14 +56,11 @@ SLOTS: dict[str, KeySlot] = {
         note="Socrata portals answer without one; a token raises the rate limit.",
         default_env="CURIO_DEFAULT_SOCRATA_APP_TOKEN",
     ),
-    # The same column Street Vision reads for gated models: one Hugging Face
-    # token per account, whichever part of Curio asks for it.
     "huggingface.token": KeySlot(
         column="huggingface_token",
         label="Hugging Face token",
         help_url="https://huggingface.co/settings/tokens",
         placeholder="hf_...",
-        also_used_by=("Street Vision's gated models",),
     ),
     "google.maps-key": KeySlot(
         column="google_maps_api_key",
@@ -144,17 +138,25 @@ def has_token(user, secret_id: str | None) -> bool:
 
 
 def credential_header(user, manifest: DiscoverySourceManifest) -> str | None:
-    """``"<Header-Name>:<token>"`` for *manifest*, or None.
+    """``"<Header-Name>:<token>"`` for *manifest*, ``"?<param>=<token>"`` for a
+    ``query`` key, or None.
 
     The transport is the only caller, and the only code that turns this into a
-    request header. Providers are handed the header NAME and the slot; they
-    never see what is in it.
-
-    Header-only by construction: ``auth.scheme`` accepts nothing else, which is
-    what keeps a secret out of every URL, audit record and error message.
+    request header or a query parameter. Providers are handed the name and the
+    slot; they never see what is in it, so no URL a provider builds, and no
+    audit record, refusal or job record made from one, holds a key.
     """
     auth = manifest.auth
-    if not auth.uses_token or not auth.header_name:
+    if not auth.uses_token:
+        return None
+    if auth.scheme == "query":
+        if not auth.param_name:
+            return None
+        token = token_for_slot(user, auth.secret_id)
+        # ``?name=value``: the transport adds it to the URL it sends and to
+        # nothing it returns or records.
+        return f"?{auth.param_name}={token}" if token else None
+    if not auth.header_name:
         return None
     token = token_for_slot(user, auth.secret_id)
     if not token:
@@ -185,6 +187,5 @@ def key_rows(user, manifests: Iterable[DiscoverySourceManifest]) -> list[dict[st
             "present": own_token(user, slot) is not None,
             "inherited": bool(spec.default_env and os.environ.get(spec.default_env)),
             "sources": sources,
-            "alsoUsedBy": list(spec.also_used_by),
         })
     return rows

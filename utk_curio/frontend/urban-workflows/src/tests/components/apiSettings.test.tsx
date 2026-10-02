@@ -66,7 +66,12 @@ type Row = Record<string, unknown>;
 const HF_ROW = (over: Row = {}): Row => ({
   slot: "huggingface.token", label: "Hugging Face token", field: "huggingface_token",
   helpUrl: "https://huggingface.co/settings/tokens", placeholder: "hf_...", note: null,
-  present: false, inherited: false, sources: [], alsoUsedBy: ["Street Vision's gated models"], ...over,
+  present: false, inherited: false,
+  sources: [
+    { name: "Hugging Face documentation images", dirName: "source.huggingface.documentation-images@1" },
+    { name: "Hugging Face models", dirName: "source.huggingface.models@1" },
+  ],
+  ...over,
 });
 const SOCRATA_ROW = (over: Row = {}): Row => ({
   slot: "socrata.app-token", label: "Socrata app token", field: "socrata_app_token",
@@ -74,7 +79,7 @@ const SOCRATA_ROW = (over: Row = {}): Row => ({
   note: "Socrata portals answer without one; a token raises the rate limit.",
   present: false, inherited: false,
   sources: [{ name: "City of Chicago Data Portal", dirName: "source.cityofchicago.data-portal@1" }],
-  alsoUsedBy: [], ...over,
+  ...over,
 });
 let mockKeyRows: Row[] = [];
 const mockListKeys = jest.fn(() => Promise.resolve({ keys: mockKeyRows }));
@@ -411,8 +416,7 @@ describe("API Settings: the Discovery Catalog's keys", () => {
       HF_ROW(),
       { slot: "mapillary.token", label: "Mapillary client token", field: "mapillary_access_token",
         helpUrl: "https://www.mapillary.com/dashboard/developers", placeholder: "MLY|...", note: null,
-        present: false, inherited: false, sources: [{ name: "Mapillary", dirName: "source.mapillary.imagery@1" }],
-        alsoUsedBy: [] },
+        present: false, inherited: false, sources: [{ name: "Mapillary", dirName: "source.mapillary.imagery@1" }] },
     ];
     open();
     const field = await waitFor(() => {
@@ -425,10 +429,12 @@ describe("API Settings: the Discovery Catalog's keys", () => {
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ mapillary_access_token: "MLY|abc" }));
   });
 
-  it("says which sources and features send each key", async () => {
+  it("says which sources send each key", async () => {
     open();
     expect(await (await findRow("socrata.app-token")).findByText(/Used by City of Chicago Data Portal\./)).toBeInTheDocument();
-    expect(rowOf("huggingface.token").getByText(/Used by Street Vision's gated models\./)).toBeInTheDocument();
+    expect(rowOf("huggingface.token").getByText(
+      /Used by Hugging Face documentation images and Hugging Face models\./,
+    )).toBeInTheDocument();
   });
 
   it("a source's key link opens on that key's row", async () => {

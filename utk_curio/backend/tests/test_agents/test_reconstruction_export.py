@@ -230,14 +230,33 @@ class TestLiveRunnerRefusals:
             report=live_mod.RunReport(run_id="r"),
             include_external=False,
         )
-        streetvision = next(
-            f for f in FIXTURES if f.fixture_id == "10-street-vision-cv-analysis"
-        )
-        skips = run.skip_reasons(streetvision)
-        assert skips, "example 10's external-service skip must be visible"
-        assert all(entry["reason"] for entry in skips)
         opted_in = replace(run, include_external=True)
-        assert not opted_in.skip_reasons(streetvision)
+        # Hardware is not an opt-in: example 06's GPU skip stays either way.
+        gpu = next(
+            f for f in FIXTURES if f.fixture_id == "06-autark-what-if-shadow-study"
+        )
+        skips = run.skip_reasons(gpu)
+        assert skips, "example 06's GPU skip must be visible"
+        assert all(entry["reason"] for entry in skips)
+        assert opted_in.skip_reasons(gpu) == skips
+        # An external-service skip lifts when the run opts in. No shipped
+        # fixture carries one since example 10 runs on committed photos and a
+        # committed model, so this one is made here.
+        external = replace(FIXTURES[0], data={
+            **FIXTURES[0].data,
+            "capability": {
+                "tier": "T3",
+                "needs": ["external-network"],
+                "skip": [{
+                    "when": f"!{live_mod.EXTERNAL_ENV_FLAG}",
+                    "reason": "Calls a hosted service, so execution is opt-in.",
+                    "scope": "execution",
+                }],
+            },
+        })
+        skips = run.skip_reasons(external)
+        assert skips and all(entry["reason"] for entry in skips)
+        assert not opted_in.skip_reasons(external)
 
 
 class TestTheCli:

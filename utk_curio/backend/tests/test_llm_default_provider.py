@@ -7,9 +7,39 @@ resolves against them is ``test_agents/test_provider_config.py``.
 
 from __future__ import annotations
 
+import importlib
 import os
+from unittest import mock
 
 import utk_curio.backend.config as cfg
+
+
+def _default_key_under(**env) -> str:
+    """``DEFAULT_LLM_API_KEY`` as config.py resolves it under this environment.
+
+    config.py reads its settings at import, so it is reloaded inside the
+    patched environment and restored afterwards.
+    """
+    with mock.patch.dict(os.environ, env, clear=False):
+        for name in ("CURIO_DEFAULT_LLM_API_KEY", "AICONN_API_KEY"):
+            if name not in env:
+                os.environ.pop(name, None)
+        importlib.reload(cfg)
+        try:
+            return cfg.DEFAULT_LLM_API_KEY
+        finally:
+            importlib.reload(cfg)
+
+
+class TestTheDeploymentKey:
+    """#480: the key comes from ``CURIO_DEFAULT_LLM_API_KEY`` alone, the one
+    variable DEPLOYMENT.md and AGENT-CATALOG.md document."""
+
+    def test_the_documented_variable_sets_it(self):
+        assert _default_key_under(CURIO_DEFAULT_LLM_API_KEY="sk-documented") == "sk-documented"
+
+    def test_the_old_aiconn_name_does_not(self):
+        assert _default_key_under(AICONN_API_KEY="sk-undocumented") == ""
 
 
 class TestConfigDefaults:

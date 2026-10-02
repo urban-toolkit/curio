@@ -169,6 +169,24 @@ describe("renameDataflow", () => {
   });
 });
 
+describe("discardProject (#428)", () => {
+  it("puts the dataflow name back to the default", async () => {
+    // File > New discards the project and clears the canvas. FlowProvider
+    // stays mounted across /dataflow/<id> -> /dataflow/new, so a name the
+    // discard leaves behind is what the new dataflow's first save sends.
+    const deps = makeDeps();
+    const { result } = renderHook(() => useWorkflowOperations(deps));
+    await loadedProject(result, "Autark PBF loading");
+    deps.workflowNameRef.current = "Autark PBF loading";
+
+    act(() => {
+      result.current.discardProject();
+    });
+
+    expect(deps.workflowNameRef.current).toBe("DefaultDataflow");
+  });
+});
+
 describe("saveCurrentProject", () => {
   it("re-pins the client's name to whatever the server stored", async () => {
     // The create branch always did this; the update branch could only drift.

@@ -65,6 +65,24 @@ function group(): DatasetPaletteGroup {
 describe("DatasetGroupRow", () => {
   beforeEach(() => focusLinkedNodesMock.mockClear());
 
+  test("a GeoPackage import says GeoPackage, not OSM PBF (#440)", async () => {
+    const gpkg: DatasetPaletteGroup = {
+      ...group(),
+      groupId: "gpkg.x1",
+      title: "parcels",
+      members: group().members.map((m) => ({ ...m, groupId: "gpkg.x1" })),
+    };
+    const { container } = render(<DatasetGroupRow group={gpkg} />);
+    expect(screen.getByText("GeoPackage")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Expand parcels: GeoPackage import with 3 layers" }),
+    ).toBeInTheDocument();
+    await userEvent.hover(screen.getByText("parcels"));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("parcels · GeoPackage · 3 layers");
+    expect(container.textContent).not.toContain("OSM PBF");
+    expect(container.querySelector(".chip_osm")).toBeNull();
+  });
+
   test("collapsed by default: shows the OSM PBF parent, hides members", () => {
     render(<DatasetGroupRow group={group()} />);
     expect(screen.getByText("chicago_loop")).toBeInTheDocument();

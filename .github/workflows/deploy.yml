@@ -160,7 +160,13 @@ jobs:
           # via restart:unless-stopped and can hold the published ports, so a
           # freshly built image never actually serves. Force-remove it by name.
           docker rm -f curio-dev 2>/dev/null || true
-          docker run --rm -v "$PWD:/work" -w /work alpine rm -rf .curio
+          # curio-dev starts empty on every deploy, so no database row outlives
+          # its files: accounts and projects (instance/), every account's stores
+          # (.curio/), and the datasets accounts published into the shared
+          # catalog (datasets/ entries git does not track; the shipped ones are
+          # tracked). The container wrote them as root, hence the alpine rm.
+          published="$(git ls-files --others --directory -- datasets)"
+          docker run --rm -v "$PWD:/work" -w /work alpine rm -rf instance .curio $published
           mkdir -p instance .curio
           docker compose -p curio-dev build --no-cache
           docker compose -p curio-dev up -d --force-recreate --remove-orphans

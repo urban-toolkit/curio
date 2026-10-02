@@ -178,6 +178,7 @@ GOLDEN: dict[str, dict | list | None] = {
                       'error',
                       'lockfileAdded',
                       'priorDigest',
+                      'priorSeedRecord',
                       'projectId',
                       'rollback',
                       'status',

@@ -4,6 +4,7 @@ include LICENSE
 recursive-include packages *
 recursive-include datasets *
 recursive-include discovery *
+recursive-include models *
 recursive-include tests *
 
 recursive-include utk_curio/backend *

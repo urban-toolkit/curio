@@ -134,7 +134,7 @@ export class PythonInterpreter {
                     startTime,
                     endTime,
                     workflow_name,
-                    nodeType + "-" + nodeId,
+                    nodeId,
                     mapTypes(typesInput),
                     mapTypes(typesOuput),
                     unresolvedUserCode

@@ -111,6 +111,8 @@ def test_computed_output_title_precedence():
     dataflow = {
         "nodes": [
             {"id": "n1", "type": "curio.builtin/autk-grammar", "data": {"packageTemplateLabel": "My Step"}},
+            # Where the frontend saves a renamed header (#412).
+            {"id": "n4", "type": "curio.builtin/autk-grammar", "metadata": {"packageTemplateLabel": "Renamed"}},
             {"id": "n2", "type": "curio.builtin/autk-grammar", "data": {}},
             {"id": "n3", "type": "curio.builtin/autk-grammar", "data": {}},
         ]
@@ -121,6 +123,7 @@ def test_computed_output_title_precedence():
     ) == "Knowledge Graph"
     # 2. spec node's custom label
     assert _computed_output_title(OutputRef(node_id="n1", filename="x.json"), dataflow) == "My Step"
+    assert _computed_output_title(OutputRef(node_id="n4", filename="x.json"), dataflow) == "Renamed"
     # 3. humanized node type
     assert _computed_output_title(OutputRef(node_id="n3", filename="x.json"), dataflow) == "Autk Grammar"
     # 4. unknown node → None (installer then derives a filename title; UI shows dirName)

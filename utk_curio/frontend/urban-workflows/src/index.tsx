@@ -84,6 +84,7 @@ import DataCatalogBrowse from "./pages/dataCatalog/DataCatalogBrowse";
 import AgentCatalogBrowse from "./pages/agents/AgentCatalogBrowse";
 import DiscoveryCatalogBrowse from "./pages/discovery/DiscoveryCatalogBrowse";
 import DiscoverySourceDetail from "./pages/discovery/DiscoverySourceDetail";
+import ModelCatalogBrowse from "./pages/models/ModelCatalogBrowse";
 import { DataflowProviders } from "./components/DataflowProviders";
 import DashboardPage from "./pages/dashboard/DashboardPage";
 import { SHARE_UUID_RE } from "./utils/shareLinks";
@@ -198,6 +199,9 @@ const App: React.FC = () => {
                         path="discovery/:sourceDir"
                         element={<DiscoverySourceDetail />}
                       />
+                      {/* One page for both, as for datasets: a model's link
+                          opens that model's details over the Model Catalog. */}
+                      <Route path="models/:modelId?" element={<ModelCatalogBrowse />} />
                     </Route>
                     {/* Deliberately outside RequireAuth: the monitor is
                         public, so whoever is hitting a problem can read it and

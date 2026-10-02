@@ -26,6 +26,7 @@ from utk_curio.backend.app.agents.domain.manifest import (
     load_agent_manifest,
 )
 from utk_curio.backend.app.agents.repositories.storage import AGENT_DIR_RE
+from utk_curio.backend.app.packages.repositories import publisher_record
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +73,18 @@ def unpublish(dir_name: str) -> bool:
         shutil.rmtree(target)
         return True
     return False
+
+
+def record_publisher(dir_name: str, user_key: str) -> None:
+    """Record who published *dir_name*, beside it, the way the node-package
+    catalog does: every account that added the agent holds a copy of it, so a
+    store copy cannot stand for ownership (#438)."""
+    publisher_record.record_publisher(_catalog_base(), dir_name, user_key)
+
+
+def is_publisher(dir_name: str, user_key: str) -> bool:
+    """True only for the recorded publisher; False for a publication with no record."""
+    return publisher_record.is_publisher(_catalog_base(), dir_name, user_key)
 
 
 def get_published_manifest(dir_name: str) -> AgentManifest | None:

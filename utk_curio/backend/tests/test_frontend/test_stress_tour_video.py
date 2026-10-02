@@ -193,9 +193,7 @@ PACKAGE_DEPS: dict[str, tuple[str, ...]] = {
     "curio.example-ui@1": (),
     "curio.weather@1": ("pythermalcomfort", "rasterio", "rasterstats"),
     "ai.utk.uhvi@1": ("rasterio",),
-    "curio.streetvision@1": (
-        "torch", "transformers", "ultralytics", "huggingface_hub",
-    ),
+    "curio.streetvision@1": ("onnxruntime",),
 }
 
 
@@ -1230,8 +1228,8 @@ def chapter_nodes(run: StressRun) -> None:
             page.wait_for_timeout(800)
 
     # Install every catalog package for real. curio.weather, ai.utk.uhvi and
-    # curio.streetvision each shell out to pip (rasterio / geopandas / torch), so
-    # the response wait is generous by design rather than optimistic.
+    # curio.streetvision each shell out to pip (rasterio / geopandas /
+    # onnxruntime), so the response wait is generous by design rather than optimistic.
     installable = [
         pkg for pkg in catalog
         if not pkg.get("installed") and "builtin" not in (pkg.get("dirName") or "")
@@ -1265,7 +1263,7 @@ def chapter_nodes(run: StressRun) -> None:
                     "button", name=re.compile("^Add to project")
                 ).first.click()
             # pip runs synchronously inside the request for the heavy packages
-            # (torch, rasterio, geopandas), capped at 30 minutes server-side.
+            # (rasterio, geopandas), capped at 30 minutes server-side.
             expect(
                 card.first.get_by_role("button", name=re.compile("Remove from project"))
             ).to_be_visible(timeout=1_900_000)
@@ -2448,9 +2446,8 @@ EXAMPLE_RUNS: tuple[tuple[str, int, bool], ...] = (
     ("07-autark-gpu-shader.json", 5, True),
     ("08-autark-spatial-join-regression.json", 8, True),
     ("11-autark-pbf-loading.json", 2, True),
-    # Needs curio.streetvision, which the `nodes` chapter installs, and a
-    # HuggingFace token for its gated model.
-    ("10-street-vision-cv-analysis.json", 8, False),
+    # Needs curio.streetvision, which the `nodes` chapter installs.
+    ("10-street-vision-cv-analysis.json", 12, False),
 )
 
 

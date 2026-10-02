@@ -76,7 +76,12 @@ export const DatasetSchemaPanel: React.FC<DatasetSchemaPanelProps> = ({ schema }
                 ) : null}
               </div>
               <span className={styles.typeCell}>{normalizeFieldType(field.type)}</span>
-              <span className={styles.nullCell}>{field.nullable ? "null" : ""}</span>
+              <span
+                className={styles.nullCell}
+                title={field.nullable === undefined ? "Not known: no nulls in the rows read" : undefined}
+              >
+                {field.nullable ? "null" : ""}
+              </span>
             </div>
           );
         })}

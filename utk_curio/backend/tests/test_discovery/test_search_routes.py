@@ -47,7 +47,7 @@ class TestScopedSearch:
             "sourceId", "sourceName", "resourceId", "name", "description",
             "publisher", "formats", "updatedAt", "landingUrl", "sizeHint",
             "acquirable", "alreadyHeldDatasetId", "heldFormats", "parameters", "kind",
-            "fileCount", "fieldValues", "samples",
+            "fileCount", "fieldValues", "samples", "alreadyHeldModelId",
         }
 
     def test_a_source_that_cannot_search_says_so(self, client, auth, live):

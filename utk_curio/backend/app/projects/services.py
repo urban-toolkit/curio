@@ -239,7 +239,8 @@ def _computed_output_title(
     generated filename:
 
       1. the producing node's client-resolved display label (``ref.node_name``);
-      2. the node's custom label in the spec (``data.packageTemplateLabel``);
+      2. the node's custom label in the spec (``metadata.packageTemplateLabel``,
+         or the older ``data.packageTemplateLabel``);
       3. a friendly name derived from the node type;
       4. ``None`` — the installer then derives a filename-based title, which the
          frontend renders as ``dirName`` via ``datasetDisplayTitle``.
@@ -253,7 +254,10 @@ def _computed_output_title(
         if not isinstance(node, dict) or node.get("id") != ref.node_id:
             continue
         data = node.get("data") if isinstance(node.get("data"), dict) else {}
-        label = (data.get("packageTemplateLabel") or "").strip()
+        metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
+        label = (
+            metadata.get("packageTemplateLabel") or data.get("packageTemplateLabel") or ""
+        ).strip()
         if label:
             return label
         return _humanize_node_type(node.get("type") or data.get("nodeType"))

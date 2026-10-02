@@ -25,11 +25,11 @@ describe('resolveImageSource', () => {
   });
 
   it('routes a same-origin /api path through an authenticated fetch', () => {
-    // The overlay route reads WHICH user is asking from the bearer token, so a
+    // The media route reads WHICH user is asking from the bearer token, so a
     // bare <img src> would resolve to the shared guest and 404.
-    expect(resolveImageSource('/api/streetvision/inference/overlay/pano.jpg')).toEqual({
+    expect(resolveImageSource('/api/datasets/data.curio.mapillary-sample/media/pano.jpg')).toEqual({
       kind: 'authed',
-      path: '/api/streetvision/inference/overlay/pano.jpg',
+      path: '/api/datasets/data.curio.mapillary-sample/media/pano.jpg',
     });
   });
 
@@ -76,7 +76,7 @@ describe('resolveImageColumns', () => {
   it('returns every recognized column, in RECOGNIZED_COLUMNS order', () => {
     const rows = [
       {
-        overlay_url: '/api/streetvision/inference/overlay/a.jpg',
+        overlay_url: '/api/datasets/data.curio.mapillary-sample/media/a.jpg',
         image_url: 'https://example.test/a?size=640',
         dominant_class: 'road',
       },

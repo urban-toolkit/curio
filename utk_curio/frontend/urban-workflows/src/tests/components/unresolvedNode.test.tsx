@@ -38,7 +38,7 @@ import {
   packageIdFromNodeType,
 } from "../../components/UnresolvedNode";
 
-const STREETVISION = "curio.streetvision/street-view-fetcher";
+const STREETVISION = "curio.streetvision/image-segmentation";
 
 beforeEach(() => {
   mockEdges = [];
@@ -154,8 +154,8 @@ describe("UnresolvedNode", () => {
   });
 
   it("opens the catalog drawer on the package it needs", () => {
-    // Install stays the user's click - Street Vision pulls ~3 GB of torch, so
-    // this hands them the decision rather than making it.
+    // Install stays the user's click - a package can pull large dependencies,
+    // so this hands them the decision rather than making it.
     render(
       <UnresolvedNode nodeId="n1" nodeType={STREETVISION} registryReady />,
     );

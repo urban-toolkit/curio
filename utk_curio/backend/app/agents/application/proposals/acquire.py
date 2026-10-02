@@ -214,6 +214,12 @@ def _mint_discovery_acquire(
             "Discovery Catalog",
             None,
         )
+    if manifest.is_model:
+        return (
+            "refused",
+            f"{manifest.name} adds models to the Model Catalog, not datasets",
+            None,
+        )
 
     held = service._acquire.already_held(manifest, resource_id, fmt)
     if held is not None:
@@ -417,7 +423,7 @@ def _acquirable(row: dict, roster: "_LazyRoster") -> bool:
     # A storage source (a folder, a bucket, a dataset repository) is added from
     # the Discovery Catalog page, and a service downloads for an area set there:
     # neither is offered to agents.
-    if (source or {}).get("kind") in ("storage", "service"):
+    if (source or {}).get("kind") in ("storage", "service", "model"):
         return False
     capabilities = (source or {}).get("capabilities") or {}
     if not capabilities.get("download"):

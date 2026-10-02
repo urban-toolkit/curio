@@ -24,7 +24,7 @@ import {
 } from "reactflow";
 import { ConnectionValidator } from "../ConnectionValidator";
 import type { InstallSyncOutcome, PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
-import { NodeType, EdgeType } from "../constants";
+import { NodeType, EdgeType, DEFAULT_WORKFLOW_NAME } from "../constants";
 import { getUnversionedFlowNodeType } from "../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../TrillGenerator";
 import { dashboardSourceNodeIds } from "../utils/dashboardLayout";
@@ -466,7 +466,7 @@ const FlowProvider = ({
     const reactFlow = useReactFlow();
     const [loading, setLoading] = useState<boolean>(false);
 
-    const [workflowName, _setWorkflowName] = useState<string>("DefaultDataflow");
+    const [workflowName, _setWorkflowName] = useState<string>(DEFAULT_WORKFLOW_NAME);
     const workflowNameRef = React.useRef(workflowName);
     const setWorkflowName = useCallback((data: any) => {
         workflowNameRef.current = data;

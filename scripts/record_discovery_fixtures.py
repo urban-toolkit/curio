@@ -86,6 +86,26 @@ SYNTHETIC_HEADS = {
 #: What the index probes with, restated here only to spell the fixture key.
 PROBE_RANGE = "bytes=0-65535"
 
+#: Services asked over HTTP: each request is recorded as the service sends it,
+#: with the answers a person gives, normalized as the app normalizes them.
+#: Images are not: each image URL is indexed to the synthetic JPEG, so the
+#: corpus holds Mapillary's answers and none of its photos. Needs the
+#: recorder's own token in CURIO_MAPILLARY_TOKEN; it is sent as a header and
+#: appears in no recorded URL or body.
+LINCOLN_PARK = [-87.642, 41.918, -87.639, 41.92]
+SERVICE_PLAN = {
+    "source.mapillary.imagery@1": {
+        "slug": "mapillary",
+        "token_env": "CURIO_MAPILLARY_TOKEN",
+        "asks": [
+            ("images", {"area": {"box": LINCOLN_PARK, "label": "Lincoln Park"}, "size": "256", "maxImages": 6}),
+            ("images", {"area": {"box": LINCOLN_PARK, "label": "Lincoln Park"}, "size": "256", "maxImages": 6,
+                        "imageType": "panoramas", "captured": {"start": "2023-01-01"}}),
+            ("map-features", {"area": {"box": LINCOLN_PARK, "label": "Lincoln Park"}}),
+        ],
+    },
+}
+
 
 class RecordingTransport:
     """Wraps the real transport and writes what it sees."""
@@ -164,6 +184,151 @@ def record_storage(slug_filter: str | None, index: dict) -> None:
                 }
 
 
+#: Model sources: their searches, their repos' file lists and their small JSON
+#: files are recorded as they are. Weights are not: each is indexed to a
+#: synthetic stand-in (``make_synthetic_segmentation_onnx.py`` writes the ONNX
+#: one), so the corpus holds the Hub's answers and none of anyone's weights.
+MODEL_PLAN = {
+    "source.huggingface.models@1": {
+        "slug": "huggingface-models",
+        "searches": ["segformer", "upernet"],
+        # An ONNX export, a Transformers checkpoint with safetensors, and one
+        # whose only weights are a pickle (refused).
+        "repos": [
+            "Xenova/segformer-b0-finetuned-ade-512-512",
+            "openmmlab/upernet-convnext-tiny",
+            "openmmlab/upernet-convnext-small",
+        ],
+    },
+}
+SYNTHETIC_WEIGHTS = {
+    ".onnx": "huggingface-models/synthetic-segmentation.onnx",
+    ".safetensors": "huggingface-models/synthetic.safetensors",
+    ".onnx_data": "huggingface-models/synthetic.onnx_data",
+}
+
+
+class ModelRecordingTransport(RecordingTransport):
+    """Records a model source's answers; a weights file is indexed to its
+    synthetic stand-in, a small JSON file is fetched and kept."""
+
+    def download(self, url, sink, *, max_bytes, credential=None, headers=None, progress=None,
+                 ceiling=None):
+        from urllib.parse import unquote, urlsplit
+
+        from utk_curio.backend.app.agents.infrastructure import egress
+
+        path = unquote(urlsplit(url).path)
+        stand_in = next((f for suffix, f in SYNTHETIC_WEIGHTS.items() if path.endswith(suffix)), None)
+        if stand_in is not None:
+            blob = (FIXTURES / stand_in).read_bytes()
+            name = stand_in
+        else:
+            chunks: list[bytes] = []
+            self.inner.download(url, chunks.append, max_bytes=max_bytes, credential=credential,
+                                headers=headers, ceiling=ceiling)
+            blob = b"".join(chunks)
+            self.seq += 1
+            name = f"{self.slug}/{self.seq:02d}-{path.rsplit('/', 1)[-1]}"
+            (FIXTURES / name).parent.mkdir(parents=True, exist_ok=True)
+            (FIXTURES / name).write_bytes(blob)
+        self.index[url] = {
+            "file": name,
+            "status": 200,
+            "headers": {"Content-Type": "application/octet-stream", "Content-Length": str(len(blob))},
+        }
+        print(f"    {len(blob):>8}B  {name}  <- {url[:96]}")
+        sink(blob)
+        return egress.DownloadResult(url=url, final_url=url, status=200, content_type="application/octet-stream",
+                                     bytes_written=len(blob), sha256="", headers={})
+
+
+def record_models(slug_filter: str | None, index: dict) -> None:
+    from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
+    from utk_curio.backend.app.discovery.providers import build_model_provider
+
+    for dir_name, plan in MODEL_PLAN.items():
+        if slug_filter and plan["slug"] != slug_filter:
+            continue
+        manifest = load_source_manifest(REPO / "discovery" / dir_name)
+        print(f"\n==  {manifest.name}  ({plan['slug']})")
+        synthetic = FIXTURES / SYNTHETIC_WEIGHTS[".safetensors"]
+        synthetic.parent.mkdir(parents=True, exist_ok=True)
+        # The smallest file a safetensors reader accepts: an empty header.
+        synthetic.write_bytes(len(b"{}").to_bytes(8, "little") + b"{}")
+        (FIXTURES / SYNTHETIC_WEIGHTS[".onnx_data"]).write_bytes(b"\0" * 16)
+        transport = ModelRecordingTransport(plan["slug"], index)
+        provider = build_model_provider(manifest, transport)
+        for text in plan["searches"]:
+            page = provider.search(SearchQuery(text=text, limit=DEFAULT_SEARCH_LIMIT))
+            print(f"    search {text!r}: {len(page.resources)} rows")
+        for repo in plan["repos"]:
+            try:
+                model_plan = provider.plan(repo)
+            except DiscoveryError as exc:
+                print(f"    {repo}: refused ({exc})")
+                continue
+            for path, _size in model_plan.files:
+                provider.transport.download(provider.file_url(model_plan, path), lambda _b: None,
+                                            max_bytes=_size + 1024 * 1024, ceiling=2 * 1024 ** 3)
+            print(f"    {repo}: {model_plan.runtime}, {len(model_plan.files)} files")
+
+
+class ServiceRecordingTransport(RecordingTransport):
+    """Records a service's API answers; indexes each image it downloads to the
+    synthetic JPEG instead of fetching it."""
+
+    def download(self, url, sink, *, max_bytes, credential=None, headers=None, progress=None,
+                 ceiling=None):
+        from utk_curio.backend.app.agents.infrastructure import egress
+
+        blob = (FIXTURES / SYNTHETIC_HEADS["jpg"]).read_bytes()
+        self.index[url] = {
+            "file": SYNTHETIC_HEADS["jpg"],
+            "status": 200,
+            "headers": {"Content-Type": "image/jpeg", "Content-Length": str(len(blob))},
+        }
+        sink(blob)
+        return egress.DownloadResult(
+            url=url, final_url=url, status=200, content_type="image/jpeg",
+            bytes_written=len(blob), sha256="", headers={},
+        )
+
+
+def record_services(slug_filter: str | None, index: dict) -> None:
+    import os
+    import tempfile
+    from urllib.parse import urlsplit
+
+    from utk_curio.backend.app.discovery.domain import parameters as P
+    from utk_curio.backend.app.discovery.infrastructure.transport import CredentialedTransport
+    from utk_curio.backend.app.discovery.providers import build_service
+
+    for dir_name, plan in SERVICE_PLAN.items():
+        if slug_filter and plan["slug"] != slug_filter:
+            continue
+        manifest = load_source_manifest(REPO / "discovery" / dir_name)
+        token = os.environ.get(plan["token_env"])
+        if not token:
+            print(f"!!  {manifest.name}: set {plan['token_env']} to record it - skipped")
+            continue
+        print(f"\n==  {manifest.name}  ({plan['slug']})")
+        credential = f"{manifest.auth.header_name}:{manifest.auth.value_prefix or ''}{token}"
+        transport = CredentialedTransport(
+            ServiceRecordingTransport(plan["slug"], index), credential,
+            hosts=(urlsplit(manifest.provider.base_url).hostname,),
+        )
+        service = build_service(manifest, transport)
+        for resource_id, raw in plan["asks"]:
+            values = P.validate_values(manifest.declared_parameters(resource_id), raw)
+            with tempfile.TemporaryDirectory() as tmp:
+                answer = service.load(manifest.resource(resource_id), values, Path(tmp))
+            count = len(answer.images) if hasattr(answer, "images") else sum(layer.features for layer in answer)
+            print(f"    {resource_id}: {count} recorded")
+        for entry in index.values():
+            assert token not in json.dumps(entry), "a recorded entry holds the token"
+
+
 def record(slug_filter: str | None) -> None:
     index_path = FIXTURES / "index.json"
     index = json.loads(index_path.read_text(encoding="utf-8")) if index_path.is_file() else {}
@@ -199,6 +364,8 @@ def record(slug_filter: str | None) -> None:
                 print(f"    describe failed: {type(exc).__name__}: {exc}")
 
     record_storage(slug_filter, index)
+    record_services(slug_filter, index)
+    record_models(slug_filter, index)
 
     FIXTURES.mkdir(parents=True, exist_ok=True)
     index_path.write_text(json.dumps(index, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -208,6 +375,7 @@ def record(slug_filter: str | None) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--only", help="record one provider slug (socrata, ckan, arcgis, wfs, s3, huggingface)"
+        "--only",
+        help="record one provider slug (socrata, ckan, arcgis, wfs, s3, huggingface, mapillary, huggingface-models)",
     )
     record(parser.parse_args().only)

@@ -78,7 +78,10 @@
             "ckan",
             "direct",
             "folder",
+            "google-streetview",
             "huggingface",
+            "huggingface-models",
+            "mapillary",
             "s3",
             "socrata",
             "wfs"
@@ -90,7 +93,7 @@
         },
         "options": {
           "type": "object",
-          "description": "Provider-specific wiring. Never served to clients. 's3': prefix (a key prefix). 'huggingface': repo (owner/name) and revision (default main)."
+          "description": "Provider-specific wiring. Never served to clients. 's3': prefix (a key prefix). 'huggingface': repo (owner/name) and revision (default main). 'mapillary': imageHosts, the hosts its images come from (a parent domain covers its subdomains). 'huggingface-models': pipelineTag, the Hub task searched (default image-segmentation)."
         },
         "root": {
           "type": "string",
@@ -149,6 +152,9 @@
                   "arcgis",
                   "autark-osm",
                   "ckan",
+                  "google-streetview",
+                  "huggingface-models",
+                  "mapillary",
                   "s3",
                   "socrata",
                   "wfs"
@@ -163,6 +169,62 @@
             "required": [
               "baseUrl"
             ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "google-streetview"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "baseUrl": {
+                "const": "https://maps.googleapis.com"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "mapillary"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "options"
+            ],
+            "properties": {
+              "baseUrl": {
+                "const": "https://graph.mapillary.com"
+              },
+              "options": {
+                "required": [
+                  "imageHosts"
+                ],
+                "properties": {
+                  "imageHosts": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         {
@@ -207,9 +269,15 @@
         },
         "scheme": {
           "enum": [
-            "header"
+            "header",
+            "query"
           ],
-          "description": "header only in v1. That single constraint means no secret ever enters a URL, which is what makes the egress audit record, refusal messages and job records safe to store verbatim."
+          "description": "How the key is sent. 'header' (the default) keeps it out of every URL. 'query', for an API that documents no other way, adds paramName=<key> to the request at send time only: the URL a dataset records, the audit record, refusals and job records never hold it."
+        },
+        "paramName": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]{0,31}$",
+          "description": "The query parameter a 'query' key is sent as, e.g. 'key'."
         },
         "headerName": {
           "type": [
@@ -249,9 +317,66 @@
           },
           "then": {
             "required": [
-              "secretId",
-              "headerName"
+              "secretId"
             ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "enum": [
+                  "optional-token",
+                  "required-token"
+                ]
+              },
+              "scheme": {
+                "const": "query"
+              }
+            },
+            "required": [
+              "mode",
+              "scheme"
+            ]
+          },
+          "then": {
+            "required": [
+              "paramName"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "headerName"
+                  ]
+                },
+                {
+                  "required": [
+                    "valuePrefix"
+                  ]
+                }
+              ]
+            }
+          },
+          "else": {
+            "if": {
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "optional-token",
+                    "required-token"
+                  ]
+                }
+              },
+              "required": [
+                "mode"
+              ]
+            },
+            "then": {
+              "required": [
+                "headerName"
+              ]
+            }
           }
         }
       ]
@@ -333,7 +458,7 @@
       "type": "array",
       "minItems": 1,
       "maxItems": 64,
-      "description": "What a storage or service source offers. Required for 'folder', 's3', 'huggingface' and 'autark-osm'; refused for a portal. A storage resource's path is a template relative to the root whose captures become columns; a service resource has no path, and names what to ask for in its options.",
+      "description": "What a storage or service source offers. Required for 'folder', 's3', 'huggingface', 'autark-osm', 'mapillary' and 'google-streetview'; refused for a portal. A storage resource's path is a template relative to the root whose captures become columns; a service resource has no path, and names what to ask for in its options.",
       "items": {
         "type": "object",
         "required": [
@@ -425,8 +550,14 @@
           },
           "options": {
             "type": "object",
-            "description": "For a csv table: delimiter and header. A table read with them lands in the Data Catalog as Parquet. For an 'autark-osm' resource: layers, the Autark layers it loads, or tags, the OpenStreetMap tags whose features it loads.",
+            "description": "For a csv table: delimiter and header. A table read with them lands in the Data Catalog as Parquet. For an 'autark-osm' resource: layers, the Autark layers it loads, or tags, the OpenStreetMap tags whose features it loads. For a 'mapillary' resource: endpoint, 'images' for an images resource and 'map_features' for a table.",
             "properties": {
+              "endpoint": {
+                "enum": [
+                  "images",
+                  "map_features"
+                ]
+              },
               "layers": {
                 "type": "array",
                 "minItems": 1,
@@ -589,6 +720,109 @@
                   }
                 }
               ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "provider": {
+            "properties": {
+              "type": {
+                "const": "mapillary"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "then": {
+        "required": [
+          "resources"
+        ],
+        "properties": {
+          "resources": {
+            "items": {
+              "required": [
+                "options"
+              ],
+              "not": {
+                "required": [
+                  "path"
+                ]
+              },
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "images",
+                    "table"
+                  ]
+                },
+                "format": {
+                  "const": "geojson"
+                },
+                "options": {
+                  "required": [
+                    "endpoint"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "provider": {
+            "properties": {
+              "type": {
+                "const": "google-streetview"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        },
+        "required": [
+          "provider"
+        ]
+      },
+      "then": {
+        "required": [
+          "resources"
+        ],
+        "properties": {
+          "resources": {
+            "items": {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "path"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "format"
+                    ]
+                  }
+                ]
+              },
+              "properties": {
+                "kind": {
+                  "const": "images"
+                }
+              }
             }
           }
         }

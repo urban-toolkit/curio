@@ -280,7 +280,8 @@ class TestRoles:
         assert TEMPLATES[LOADER].executable is True
         assert TEMPLATES[VEGA].executable is False  # grammar, no code
         assert TEMPLATES["curio.builtin/js-computation"].executable is True  # javascript
-        assert TEMPLATES["curio.streetvision/hf-cv-inference"].executable is False
+        assert TEMPLATES["curio.example-ui/column-filter"].executable is False  # package, no code
+        assert TEMPLATES["curio.streetvision/image-segmentation"].executable is True  # package, python
 
 
 class TestDependencies:
@@ -296,7 +297,7 @@ class TestDependencies:
         assert deps.packages == ("curio.weather@1",)
 
     def test_a_package_template_used_but_not_declared_is_undeclared(self):
-        spec = _spec([_node("a", "curio.streetvision/cv-gallery", content="")], [], packages=[])
+        spec = _spec([_node("a", "curio.streetvision/image-segmentation", content="")], [], packages=[])
         deps = declared_dependencies(spec, installed_majors_by_pkg={"curio.streetvision": [1]})
         assert deps.undeclared_packages == ("curio.streetvision@1",)
 

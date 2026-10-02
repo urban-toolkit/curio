@@ -602,6 +602,12 @@ def exec():
         if isinstance(value, dict)
     }
     media_dir = request.json.get('media_dir') or None
+    # {modelId: folder} for the code's curio_model("<id>") calls, resolved by
+    # the backend from the account's Model Catalog, like dataset_paths.
+    models = request.json.get('models') or {}
+    if not isinstance(models, dict):
+        models = {}
+    models = {str(key): str(value) for key, value in list(models.items())[:8] if value}
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
@@ -616,13 +622,14 @@ def exec():
             code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset),
             dataset_paths=dataset_paths, user_key=user_key, config=config,
-            secrets=secrets, collections=collections, media_dir=media_dir,
+            secrets=secrets, collections=collections, media_dir=media_dir, models=models,
         )
     else:
         result = execute_code(
             code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset),
             dataset_paths=dataset_paths, secrets=secrets, collections=collections, media_dir=media_dir,
+            models=models,
         )
 
     print(f"[sandbox /exec] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)

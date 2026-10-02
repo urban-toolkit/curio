@@ -1,0 +1,68 @@
+DDRNet23-Slim, semantic segmentation of street scenes (Cityscapes classes)
+
+Files in this folder:
+  files/ddrnet23_slim.onnx and files/ddrnet23_slim.data are the w8a8 ONNX
+  export published by Qualcomm AI Hub Models, release v0.63.0
+  (https://huggingface.co/qualcomm/DDRNet23-Slim, licensed MIT on that page,
+  whose LICENSE file reads: "The license of the original trained model can be
+  found at https://github.com/chenjun2hao/DDRNet.pytorch/blob/main/LICENSE.").
+  The weights are the DDRNet-23-slim Cityscapes weights of the original
+  authors (https://github.com/ydhongHIT/DDRNet, MIT).
+
+The model was trained on Cityscapes (https://www.cityscapes-dataset.com/).
+Its terms state: "It is permissible to distribute derivative works in as far
+as they are abstract representations of this dataset (such as models trained
+on it or additional annotations that do not directly include any of our data)".
+Cite Cityscapes (Cordts et al., CVPR 2016) and DDRNet (Hong et al., 2021,
+"Deep Dual-resolution Networks for Real-time and Accurate Semantic
+Segmentation of Road Scenes") when you publish results made with it.
+
+-------------------------------------------------------------------------------
+https://github.com/ydhongHIT/DDRNet/blob/main/LICENSE
+-------------------------------------------------------------------------------
+MIT License
+
+Copyright (c) 2020 xingkong
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+https://github.com/chenjun2hao/DDRNet.pytorch/blob/main/LICENSE
+-------------------------------------------------------------------------------
+MIT License
+
+Copyright (c) [2019] [Microsoft]
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

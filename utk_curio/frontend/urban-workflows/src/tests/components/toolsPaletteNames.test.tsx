@@ -26,6 +26,9 @@ jest.mock("../../components/menus/nodes/datasetPalette", () => ({
 jest.mock("../../components/menus/nodes/agentsPalette", () => ({
     AgentsPaletteDropdown: paletteStub("agents"),
 }));
+jest.mock("../../components/menus/nodes/modelsPalette", () => ({
+    ModelsPaletteDropdown: paletteStub("models"),
+}));
 jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
     PackagesPaletteDropdown: paletteStub("packages"),
     groupPalettePackages: () => [],

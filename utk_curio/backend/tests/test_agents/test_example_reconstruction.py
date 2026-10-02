@@ -423,7 +423,7 @@ class TestResolutionModePackageTemplates:
             account_only_packages=["curio.streetvision@1"],
         )
         assert result.turn.refused, "a plan naming an unenlisted template must not mint"
-        assert "curio.streetvision/street-view-fetcher" not in driver.roster_ids()
+        assert "curio.streetvision/image-segmentation" not in driver.roster_ids()
         # The runtime's correction round is what the model actually gets told.
         correction = str(driver.calls[-1][-1]["content"])
         assert "[plan validation]" in correction
@@ -438,7 +438,7 @@ class TestResolutionModePackageTemplates:
                 driver.user_key, driver.project_id
             )
         }
-        assert "curio.streetvision/street-view-fetcher" in not_enlisted
+        assert "curio.streetvision/image-segmentation" in not_enlisted
 
     def test_the_reviewed_enlist_resolves_it_and_authors_no_package(
         self, client, user_and_token, tmp_curio, monkeypatch
@@ -468,7 +468,7 @@ class TestResolutionModePackageTemplates:
                     "tool": "package.install",
                     "params": {
                         "dirName": "curio.streetvision@1",
-                        "reason": "its street-view and inference templates",
+                        "reason": "its image segmentation template",
                     },
                 }
             })
@@ -494,7 +494,7 @@ class TestResolutionModePackageTemplates:
         # package.install, the Dataflow Builder does not (builtin.py).
         dfb = driver.with_attachment(researcher)
         first = driver.run_turn(
-            "the street view templates are installed on my account but not in this project"
+            "the image segmentation template is installed on my account but not in this project"
         )
         install = first.proposal_of("package.install")
         assert install, [p.get("tool") for p in first.proposals]
@@ -507,11 +507,10 @@ class TestResolutionModePackageTemplates:
             "a lockfile-changing apply must tell the frontend to refresh its "
             "registries (dev/105)"
         )
-        # The enlist put the package's templates on the roster. Named one by
-        # one rather than by count: the point is that THESE arrived.
+        # The enlist put the package's template on the roster. Named rather
+        # than counted: the point is that THIS one arrived.
         roster = driver.roster_ids()
-        assert "curio.streetvision/street-view-fetcher" in roster
-        assert "curio.streetvision/hf-cv-inference" in roster
+        assert "curio.streetvision/image-segmentation" in roster
 
         phase["name"] = "plan"
         driver.with_attachment(dfb)
@@ -523,7 +522,7 @@ class TestResolutionModePackageTemplates:
         built = {
             node.get("type") for node in attempt_mod.spec_nodes(spec)
         }
-        assert "curio.streetvision/street-view-fetcher" in built
+        assert "curio.streetvision/image-segmentation" in built
         assert "package.draft.apply" not in driver.applied
 
 
