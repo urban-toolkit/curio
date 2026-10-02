@@ -13,6 +13,8 @@ draft that fails the same way.
 
 from __future__ import annotations
 
+import pytest
+
 from utk_curio.backend.app.agents.application.solve import budgets
 from utk_curio.backend.app.agents.application.solve import rounds
 
@@ -192,3 +194,56 @@ class TestASessionPassCarriesTheErrorForward:
         repeat_passes = sum(1 for k in kinds if k == "repeated-attempt")
         assert repeat_passes <= 3 * budgets._MAX_WEAK_PASSES
         assert helper._node_content(ctx, ctx["load"]) == ""  # nothing failing was written
+
+
+def _outlive_the_session(batch):
+    """The pass took longer than the whole session budget."""
+    batch.started -= batch.session_deadline_s + 1
+
+
+def _press_stop(batch):
+    """The user pressed Stop while the pass ran."""
+    batch.stop.set()
+
+
+class TestTheSessionReportsThePassesItRan:
+    """``passes`` in the done payload is how many passes ran. The loop numbers
+    its next turn before it checks the stop, the session budget and whether
+    anything is left, so the payload used to say 2 for a session that made one
+    pass, whichever way it ended (issue #583)."""
+
+    @pytest.mark.parametrize("after_pass, ended_by, failing", [
+        (_outlive_the_session, "budget", True),
+        (_press_stop, "stopped", True),
+        (None, "complete", False),
+    ], ids=["budget", "stopped", "complete"])
+    def test_one_pass_is_reported_as_one(
+        self, client, user_and_token, tmp_curio, monkeypatch, after_pass, ended_by, failing
+    ):
+        import utk_curio.backend.tests.test_agents.test_verified_rounds as vr
+        from utk_curio.backend.app.agents.application.solve.batch import SolveBatch
+
+        helper = vr.TestVerifiedSolve()
+        user, token = user_and_token
+        # A budget no machine spends on its own, so only ``after_pass`` ends
+        # the session early, whatever the runner's speed.
+        monkeypatch.setenv("CURIO_SOLVE_SESSION_DEADLINE", "900")
+        loader = vr.TestVerifiedSolve.LOADER
+        ctx = helper._setup(
+            client, user, token, monkeypatch, with_stats=False,
+            dl_replies=[loader.replace("return df", "always_bad()\nreturn df") if failing else loader],
+            exec_outcomes={"always_bad": "Traceback: NameError: always_bad"},
+        )
+        if after_pass is not None:
+            run_pass = SolveBatch._run_pass
+
+            def _run_pass_then(self, *args, **kwargs):
+                yield from run_pass(self, *args, **kwargs)
+                after_pass(self)
+
+            monkeypatch.setattr(SolveBatch, "_run_pass", _run_pass_then)
+        events = helper._stream(client, token, ctx)
+        done = events[-1][1]
+        assert done["endedBy"] == ended_by
+        assert [name for name, _ in events if name == "solve_pass"] == ["solve_pass"]
+        assert done["passes"] == 1
