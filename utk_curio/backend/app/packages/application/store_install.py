@@ -44,6 +44,7 @@ from utk_curio.backend.app.packages.repositories.store import (
     user_packages_dir,
 )
 from utk_curio.backend.app.packages.infrastructure import backend_runtime as packages_backend_runtime
+from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.infrastructure.pip_runner import PipInstallError
 from utk_curio.backend.app.packages.application import (
     provisioning as packages_provisioning,
@@ -249,36 +250,40 @@ def install_package_from_archive(
                 )
 
             final_dest = package_dir(user_key, dir_name)
-            replaced = False
-            if final_dest.exists():
-                if not replace:
-                    raise InstallerError(
-                        f"package {dir_name} already installed; pass replace=True "
-                        f"to overwrite"
-                    )
-                shutil.rmtree(final_dest)
-                replaced = True
-
             merge_missing_manifest_created_at(staging_root)
             integrity = _build_integrity(staging_root)
             (staging_root / "integrity.json").write_text(
                 json.dumps({"sha256": integrity}, indent=2, sort_keys=True),
                 encoding="utf-8",
             )
-            staging_root.replace(final_dest)
-            _touch_manifest_for_install_recency(final_dest)
-            merged_manifest = load_package_manifest(final_dest)
-            # An explicit (re)install supersedes any prior uninstall
-            # tombstone the dev seeder might otherwise honour, and says where
-            # this copy came from: the seeder refreshes a catalog copy nobody
-            # has changed, and never the user's own content (#564).
-            try:
-                seed_state.mark_installed(
-                    user_key, dir_name,
-                    catalog_copy=seed_state.copy_digest(integrity) if from_catalog else None,
-                )
-            except Exception:  # noqa: BLE001 — bookkeeping is best-effort
-                log.exception("Failed to record the install of %s/%s", user_key, dir_name)
+            # Replace and record under the store lock (memo dev/99), the one
+            # the seeder swaps under: a reader never sees the package missing
+            # between the rmtree and the move, and a seeding pass cannot decide
+            # to refresh the old copy and then swap it in over this one.
+            with package_seed_lock(user_key):
+                replaced = False
+                if final_dest.exists():
+                    if not replace:
+                        raise InstallerError(
+                            f"package {dir_name} already installed; pass replace=True "
+                            f"to overwrite"
+                        )
+                    shutil.rmtree(final_dest)
+                    replaced = True
+                staging_root.replace(final_dest)
+                _touch_manifest_for_install_recency(final_dest)
+                merged_manifest = load_package_manifest(final_dest)
+                # An explicit (re)install supersedes any prior uninstall
+                # tombstone the dev seeder might otherwise honour, and says where
+                # this copy came from: the seeder refreshes a catalog copy nobody
+                # has changed, and never the user's own content (#564).
+                try:
+                    seed_state.mark_installed(
+                        user_key, dir_name,
+                        catalog_copy=seed_state.copy_digest(integrity) if from_catalog else None,
+                    )
+                except Exception:  # noqa: BLE001 — bookkeeping is best-effort
+                    log.exception("Failed to record the install of %s/%s", user_key, dir_name)
 
             return InstallResult(
                 manifest=merged_manifest,
@@ -299,13 +304,14 @@ def uninstall_package(user_key: str, dir_name: str) -> bool:
     regression this side-effect exists to prevent.
     """
     target = package_dir(user_key, dir_name)
-    if not target.exists():
-        return False
-    shutil.rmtree(target)
-    try:
-        seed_state.mark_uninstalled(user_key, dir_name)
-    except Exception:  # noqa: BLE001 — never block uninstall on bookkeeping
-        log.exception("Failed to record uninstall tombstone for %s/%s", user_key, dir_name)
+    with package_seed_lock(user_key):  # memo dev/99: the seeder's lock
+        if not target.exists():
+            return False
+        shutil.rmtree(target)
+        try:
+            seed_state.mark_uninstalled(user_key, dir_name)
+        except Exception:  # noqa: BLE001 — never block uninstall on bookkeeping
+            log.exception("Failed to record uninstall tombstone for %s/%s", user_key, dir_name)
     return True
 
 

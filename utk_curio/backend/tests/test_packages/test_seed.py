@@ -898,6 +898,54 @@ def test_the_shipped_catalog_digest_history_is_well_formed():
         assert all(re.fullmatch(r"[0-9a-f]{64}", d) for d in history[dir_name])
 
 
+@pytest.mark.parametrize("writer", ["install", "uninstall", "metadata-edit"])
+def test_store_writers_wait_for_the_store_lock(tmp_curio, real_fixtures_root, writer):
+    """Installs, uninstalls and metadata edits change the store under the lock
+    the seeder swaps under (memo dev/99). Without it, a seeding pass could
+    decide to refresh a copy and then swap the catalog's over a change that
+    landed in between, and a reader could see the package missing."""
+    from utk_curio.backend.app.packages.application.metadata import patch_package_metadata
+    from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
+
+    if writer != "install":
+        install_package_from_directory("guest", real_fixtures_root / PROBE_DIR)
+    run = {
+        "install": lambda: install_package_from_directory("guest", real_fixtures_root / PROBE_DIR),
+        "uninstall": lambda: uninstall_package("guest", PROBE_DIR),
+        "metadata-edit": lambda: patch_package_metadata("guest", PROBE_DIR, {"description": "mine"}),
+    }[writer]
+    done = threading.Event()
+    errors: list[BaseException] = []
+
+    def _snapshot() -> list[tuple[str, int, int]]:
+        base = user_packages_dir("guest")
+        return sorted(
+            (str(p.relative_to(base)), p.stat().st_mtime_ns, p.stat().st_size)
+            for p in base.rglob("*") if p.is_file() and p.name != ".seed.lock"
+        )
+
+    def _write():
+        try:
+            run()
+        except BaseException as exc:  # noqa: BLE001 - reported below
+            errors.append(exc)
+        finally:
+            done.set()
+
+    with package_seed_lock("guest"):
+        before = _snapshot()
+        worker = threading.Thread(target=_write)
+        worker.start()
+        finished_early = done.wait(2.0)
+        during = _snapshot()
+    worker.join(60)
+
+    assert not errors, errors
+    assert not finished_early, f"the {writer} finished while the store lock was held"
+    assert during == before, f"the {writer} changed the store while the lock was held"
+    assert done.is_set()
+
+
 def test_a_copy_from_before_the_record_that_matches_the_catalog_is_adopted(
     tmp_curio, real_fixtures_root,
 ):
