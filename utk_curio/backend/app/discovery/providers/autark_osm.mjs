@@ -19,9 +19,10 @@
 //   __CURIO_OSM_RESULT__ <json>       last: {ok, layers: [{layer, file, features}]} or {ok: false, error}
 //
 // With `fixtures` set (tests only), fetch answers from recorded Overpass
-// responses instead of the network, and autk-db's pauses between requests
-// are skipped. With `record` set, the network answers and each answer is
-// filed under the same key, which is how those fixtures are made.
+// responses instead of the network, else from the mock answers beside them
+// (`mock.json`, matched by what a query asks for), and autk-db's pauses
+// between requests are skipped. With `record` set, the network answers and
+// each answer is filed under the same key, which is how recordings are made.
 
 import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -49,14 +50,35 @@ export function fixtureKey(method, url, body) {
   return `${method.toUpperCase()} ${url}${hash}`;
 }
 
+/** The mock answers beside the recorded ones (tests only), or none. */
+async function mockAnswers(root) {
+  try {
+    return JSON.parse(await readFile(path.join(root, 'mock.json'), 'utf8')).answers ?? [];
+  } catch (error) {
+    if (error?.code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
 async function fixtureFetch(root) {
   const index = JSON.parse(await readFile(path.join(root, 'index.json'), 'utf8'));
+  const mocks = await mockAnswers(root);
   return async (input, opts = {}) => {
     const url = typeof input === 'string' ? input : input.url;
     const key = fixtureKey(opts.method || 'GET', url, opts.body);
     const entry = index[key];
     if (!entry) {
-      throw new Error(`no recorded Overpass answer for ${key}; record it with this script's record mode (ARCHITECTURE.md, Services)`);
+      // A query with no recorded answer is answered by the first mock whose
+      // texts it all contains, as autk-db's own tests stub Overpass.
+      const query = opts.body ? decodeURIComponent(String(opts.body).replace(/^data=/, '')) : '';
+      const mock = query && mocks.find((answer) => answer.when.every((text) => query.includes(text)));
+      if (mock) {
+        return new Response(JSON.stringify({ elements: mock.elements }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      throw new Error(`no recorded Overpass answer for ${key}, and no mock answer; record it with this script's record mode, or add a mock (ARCHITECTURE.md, Services)`);
     }
     // Filed gzipped: an Overpass answer is JSON and shrinks tenfold.
     const body = gunzipSync(await readFile(path.join(root, entry.file)));

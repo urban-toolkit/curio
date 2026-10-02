@@ -1,0 +1,596 @@
+{
+ "note": "Made-up Overpass answers for tests, written by overpass_mock.py. Not OpenStreetMap data.",
+ "answers": [
+  {
+   "when": [
+    "->.boundaryWays1",
+    "relation[\"name\"=\"Golf\"]"
+   ],
+   "elements": [
+    {
+     "type": "relation",
+     "id": 9001,
+     "members": [
+      {
+       "type": "way",
+       "ref": 9002,
+       "role": "outer"
+      }
+     ],
+     "tags": {
+      "type": "boundary",
+      "boundary": "administrative",
+      "admin_level": "8",
+      "name": "Golf"
+     }
+    },
+    {
+     "type": "way",
+     "id": 9002,
+     "nodes": [
+      90000,
+      90001,
+      90002,
+      90003,
+      90000
+     ],
+     "geometry": [
+      {
+       "lat": 42.05,
+       "lon": -87.8
+      },
+      {
+       "lat": 42.05,
+       "lon": -87.78
+      },
+      {
+       "lat": 42.062,
+       "lon": -87.78
+      },
+      {
+       "lat": 42.062,
+       "lon": -87.8
+      },
+      {
+       "lat": 42.05,
+       "lon": -87.8
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "when": [
+    "\"leisure\"",
+    "relation[\"name\"=\"Golf\"]"
+   ],
+   "elements": [
+    {
+     "type": "way",
+     "id": 101,
+     "nodes": [
+      1010,
+      1011,
+      1012,
+      1013,
+      1010
+     ],
+     "geometry": [
+      {
+       "lat": 42.052,
+       "lon": -87.798
+      },
+      {
+       "lat": 42.052,
+       "lon": -87.795
+      },
+      {
+       "lat": 42.054,
+       "lon": -87.795
+      },
+      {
+       "lat": 42.054,
+       "lon": -87.798
+      },
+      {
+       "lat": 42.052,
+       "lon": -87.798
+      }
+     ],
+     "tags": {
+      "leisure": "park",
+      "name": "Golf Park"
+     }
+    },
+    {
+     "type": "way",
+     "id": 102,
+     "nodes": [
+      1020,
+      1021,
+      1022,
+      1023,
+      1020
+     ],
+     "geometry": [
+      {
+       "lat": 42.052,
+       "lon": -87.794
+      },
+      {
+       "lat": 42.052,
+       "lon": -87.792
+      },
+      {
+       "lat": 42.054,
+       "lon": -87.792
+      },
+      {
+       "lat": 42.054,
+       "lon": -87.794
+      },
+      {
+       "lat": 42.052,
+       "lon": -87.794
+      }
+     ],
+     "tags": {
+      "landuse": "grass"
+     }
+    },
+    {
+     "type": "way",
+     "id": 103,
+     "nodes": [
+      1030,
+      1031,
+      1032,
+      1033,
+      1030
+     ],
+     "geometry": [
+      {
+       "lat": 42.052,
+       "lon": -87.791
+      },
+      {
+       "lat": 42.052,
+       "lon": -87.79
+      },
+      {
+       "lat": 42.053,
+       "lon": -87.79
+      },
+      {
+       "lat": 42.053,
+       "lon": -87.791
+      },
+      {
+       "lat": 42.052,
+       "lon": -87.791
+      }
+     ],
+     "tags": {
+      "leisure": "playground"
+     }
+    },
+    {
+     "type": "relation",
+     "id": 104,
+     "members": [
+      {
+       "type": "way",
+       "ref": 105,
+       "role": "outer"
+      }
+     ],
+     "tags": {
+      "type": "multipolygon",
+      "natural": "wood",
+      "name": "Golf Woods"
+     }
+    },
+    {
+     "type": "way",
+     "id": 105,
+     "nodes": [
+      1050,
+      1051,
+      1052,
+      1053,
+      1050
+     ],
+     "geometry": [
+      {
+       "lat": 42.052,
+       "lon": -87.789
+      },
+      {
+       "lat": 42.052,
+       "lon": -87.786
+      },
+      {
+       "lat": 42.055,
+       "lon": -87.786
+      },
+      {
+       "lat": 42.055,
+       "lon": -87.789
+      },
+      {
+       "lat": 42.052,
+       "lon": -87.789
+      }
+     ]
+    },
+    {
+     "type": "way",
+     "id": 106,
+     "nodes": [
+      1060,
+      1061,
+      1062,
+      1063,
+      1060
+     ],
+     "geometry": [
+      {
+       "lat": 42.052,
+       "lon": -87.785
+      },
+      {
+       "lat": 42.052,
+       "lon": -87.783
+      },
+      {
+       "lat": 42.054,
+       "lon": -87.783
+      },
+      {
+       "lat": 42.054,
+       "lon": -87.785
+      },
+      {
+       "lat": 42.052,
+       "lon": -87.785
+      }
+     ],
+     "tags": {
+      "natural": "water",
+      "name": "Golf Pond"
+     }
+    }
+   ]
+  },
+  {
+   "when": [
+    "way[\"highway\"][\"area\"!=\"yes\"]",
+    "relation[\"name\"=\"Golf\"]"
+   ],
+   "elements": [
+    {
+     "type": "way",
+     "id": 201,
+     "nodes": [
+      2010,
+      2011,
+      2012
+     ],
+     "geometry": [
+      {
+       "lat": 42.056,
+       "lon": -87.799
+      },
+      {
+       "lat": 42.0562,
+       "lon": -87.79
+      },
+      {
+       "lat": 42.056,
+       "lon": -87.781
+      }
+     ],
+     "tags": {
+      "highway": "residential",
+      "name": "Golf Road",
+      "maxspeed": "25 mph",
+      "lanes": "2"
+     }
+    },
+    {
+     "type": "way",
+     "id": 202,
+     "nodes": [
+      2020,
+      2021
+     ],
+     "geometry": [
+      {
+       "lat": 42.051,
+       "lon": -87.79
+      },
+      {
+       "lat": 42.061,
+       "lon": -87.7902
+      }
+     ],
+     "tags": {
+      "highway": "secondary",
+      "name": "Harms Road",
+      "maxspeed": "35 mph",
+      "lanes": "4"
+     }
+    },
+    {
+     "type": "way",
+     "id": 203,
+     "nodes": [
+      2030,
+      2031
+     ],
+     "geometry": [
+      {
+       "lat": 42.059,
+       "lon": -87.797
+      },
+      {
+       "lat": 42.0595,
+       "lon": -87.795
+      }
+     ],
+     "tags": {
+      "highway": "service"
+     }
+    }
+   ]
+  },
+  {
+   "when": [
+    "way[\"building\"]",
+    "relation[\"name\"=\"Golf\"]"
+   ],
+   "elements": [
+    {
+     "type": "way",
+     "id": 301,
+     "nodes": [
+      3010,
+      3011,
+      3012,
+      3013,
+      3010
+     ],
+     "geometry": [
+      {
+       "lat": 42.0575,
+       "lon": -87.7985
+      },
+      {
+       "lat": 42.0575,
+       "lon": -87.798
+      },
+      {
+       "lat": 42.0578,
+       "lon": -87.798
+      },
+      {
+       "lat": 42.0578,
+       "lon": -87.7985
+      },
+      {
+       "lat": 42.0575,
+       "lon": -87.7985
+      }
+     ],
+     "tags": {
+      "building": "house",
+      "height": "8"
+     }
+    },
+    {
+     "type": "way",
+     "id": 302,
+     "nodes": [
+      3020,
+      3021,
+      3022,
+      3023,
+      3020
+     ],
+     "geometry": [
+      {
+       "lat": 42.0575,
+       "lon": -87.7975
+      },
+      {
+       "lat": 42.0575,
+       "lon": -87.7972
+      },
+      {
+       "lat": 42.0577,
+       "lon": -87.7972
+      },
+      {
+       "lat": 42.0577,
+       "lon": -87.7975
+      },
+      {
+       "lat": 42.0575,
+       "lon": -87.7975
+      }
+     ],
+     "tags": {
+      "building": "garage"
+     }
+    },
+    {
+     "type": "way",
+     "id": 303,
+     "nodes": [
+      3030,
+      3031,
+      3032,
+      3033,
+      3030
+     ],
+     "geometry": [
+      {
+       "lat": 42.0575,
+       "lon": -87.7965
+      },
+      {
+       "lat": 42.0575,
+       "lon": -87.796
+      },
+      {
+       "lat": 42.0578,
+       "lon": -87.796
+      },
+      {
+       "lat": 42.0578,
+       "lon": -87.7965
+      },
+      {
+       "lat": 42.0575,
+       "lon": -87.7965
+      }
+     ],
+     "tags": {
+      "building": "yes",
+      "building:levels": "2"
+     }
+    },
+    {
+     "type": "way",
+     "id": 304,
+     "nodes": [
+      3031,
+      3041,
+      3042,
+      3032,
+      3031
+     ],
+     "geometry": [
+      {
+       "lat": 42.0575,
+       "lon": -87.796
+      },
+      {
+       "lat": 42.0575,
+       "lon": -87.7957
+      },
+      {
+       "lat": 42.0578,
+       "lon": -87.7957
+      },
+      {
+       "lat": 42.0578,
+       "lon": -87.796
+      },
+      {
+       "lat": 42.0575,
+       "lon": -87.796
+      }
+     ],
+     "tags": {
+      "building:part": "yes",
+      "height": "5"
+     }
+    },
+    {
+     "type": "way",
+     "id": 305,
+     "nodes": [
+      3050,
+      3051,
+      3052,
+      3053,
+      3050
+     ],
+     "geometry": [
+      {
+       "lat": 42.0585,
+       "lon": -87.792
+      },
+      {
+       "lat": 42.0585,
+       "lon": -87.7915
+      },
+      {
+       "lat": 42.059,
+       "lon": -87.7915
+      },
+      {
+       "lat": 42.059,
+       "lon": -87.792
+      },
+      {
+       "lat": 42.0585,
+       "lon": -87.792
+      }
+     ],
+     "tags": {
+      "building": "church",
+      "name": "St. Golf",
+      "building:levels": "1"
+     }
+    },
+    {
+     "type": "relation",
+     "id": 306,
+     "members": [
+      {
+       "type": "way",
+       "ref": 307,
+       "role": "outer"
+      }
+     ],
+     "tags": {
+      "type": "multipolygon",
+      "building": "school",
+      "name": "Golf School"
+     }
+    },
+    {
+     "type": "way",
+     "id": 307,
+     "nodes": [
+      3070,
+      3071,
+      3072,
+      3073,
+      3070
+     ],
+     "geometry": [
+      {
+       "lat": 42.058,
+       "lon": -87.786
+      },
+      {
+       "lat": 42.058,
+       "lon": -87.784
+      },
+      {
+       "lat": 42.0595,
+       "lon": -87.784
+      },
+      {
+       "lat": 42.0595,
+       "lon": -87.786
+      },
+      {
+       "lat": 42.058,
+       "lon": -87.786
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "when": [
+    "\"Nowhere Land\""
+   ],
+   "elements": []
+  }
+ ]
+}

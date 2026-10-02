@@ -1,11 +1,11 @@
 """OpenStreetMap through Autark: the service source, end to end.
 
 The downloads run autk-db's own ``loadOsm`` in Node, as the source does in
-production, against Overpass answers recorded for the Village of Golf,
-Illinois, by name and for a box inside it (``fixtures/overpass``, made with
-the loader's ``record`` mode). No
-test opens a socket: the loader's fetch answers from that corpus, and a miss
-fails naming the request.
+production; only its requests to Overpass are answered for it
+(``fixtures/overpass``). Golf, Illinois, by name gets the made-up answers of
+``overpass_mock.py``, matched by what each query asks for; a box in Golf and a
+box across Chicago's Loop get answers recorded with the loader's ``record``
+mode. No test opens a socket, and a request with neither fails naming it.
 
 The contract tests (what the loader is sent, Cancel, the time limit) put a
 small shell script where ``node`` would be.
@@ -24,9 +24,11 @@ import pytest
 
 from utk_curio.backend.app.discovery.application.service_acquire import place_label, to_wgs84
 from utk_curio.backend.app.discovery.domain import manifest as M
+from utk_curio.backend.app.discovery.domain import osm_values
 from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
 from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
 from utk_curio.backend.app.discovery.providers import autark_osm, build_service
+from utk_curio.backend.tests.test_discovery import overpass_mock
 from utk_curio.backend.tests.test_discovery.conftest import FIXTURES, SHIPPED_ROOT, a_manifest
 from utk_curio.backend.tests.test_discovery.test_acquire import acquire, wait_for
 
@@ -217,7 +219,7 @@ class TestItBecomesDatasets:
         dataset = job["dataset"]
         assert dataset["format"] == "geojson"
         assert dataset["title"] == "Parks, Golf (Illinois)"
-        assert dataset["featureCount"] == 11
+        assert dataset["featureCount"] == len(_mock_parks())
         assert not dataset.get("groupId")
         collection = json.loads(Path(dataset["path"]).read_text())
         lons = [p[0] for f in collection["features"] for p in _positions(f["geometry"])]
@@ -263,7 +265,7 @@ class TestItBecomesDatasets:
 
     def test_buildings_are_one_row_per_osm_element(self, client, auth, live):
         """Golf's buildings by name, with nothing cut: each building way or
-        relation of the recorded answers is one row, none merged, none lost."""
+        relation of the answer is one row, none merged, none lost."""
         job = wait_for(client, auth, acquire(client, auth, OSM, "buildings", parameters={"area": GOLF})
                        .get_json()["jobId"], timeout=180)
         assert job["status"] == "completed", job
@@ -271,17 +273,23 @@ class TestItBecomesDatasets:
         features = json.loads(Path(dataset["path"]).read_text())["features"]
         elements = [(f["properties"]["osm_type"], f["properties"]["osm_id"]) for f in features]
         assert len(elements) == len(set(elements))
-        recorded = _recorded_buildings()
-        assert set(elements) == set(recorded)
+        expected = _mock_buildings()
+        assert set(elements) == set(expected)
         assert dataset["featureCount"] == len(features)
+        by_element = {(f["properties"]["osm_type"], f["properties"]["osm_id"]): f["properties"] for f in features}
         for feature in features:
             properties = feature["properties"]
             assert feature["geometry"]["type"] in ("Polygon", "MultiPolygon")
             assert "parts" not in properties and "__autk_layer" not in properties
             assert isinstance(properties["building_id"], int)
-            tags = recorded[(properties["osm_type"], properties["osm_id"])]
-            assert set(tags) <= set(properties)
-            assert properties["building"] == tags["building"]
+            tags = expected[(properties["osm_type"], properties["osm_id"])]
+            assert {key: properties[key] for key in tags} == {
+                key: osm_values.number(key, value) if key in osm_values.NUMERIC_KEYS else value
+                for key, value in tags.items()
+            }
+        # The house and the part that shares its wall belong to one Autark building.
+        assert by_element[("way", 303)]["building_id"] == by_element[("way", 304)]["building_id"]
+        assert by_element[("way", 303)]["building_id"] != by_element[("way", 301)]["building_id"]
 
     def test_every_feature_names_its_osm_element(self, client, auth, live):
         job = wait_for(client, auth, acquire(client, auth, OSM, "all-layers", parameters={"area": GOLF})
@@ -290,7 +298,7 @@ class TestItBecomesDatasets:
         listing = client.get("/api/datasets/catalog", headers=auth).get_json()["items"]
         members = {d["layerName"]: d for d in listing
                    if (d.get("discoverySource") or {}).get("resourceId") == "all-layers"}
-        recorded = {(e["type"], e["id"]) for answer in _recorded_answers() for e in answer}
+        recorded = {(e["type"], e["id"]) for answer in _answers() for e in answer}
         for layer, dataset in members.items():
             features = json.loads(Path(dataset["path"]).read_text())["features"]
             assert features, layer
@@ -322,7 +330,7 @@ class TestItBecomesDatasets:
         assert set(frame["ref"].dropna()) == {"US 41"}
 
         rows = frame.set_index("osm_id")
-        tags = {e["id"]: e["tags"] for answer in _recorded_answers() for e in answer
+        tags = {e["id"]: e["tags"] for answer in _answers() for e in answer
                 if e["type"] == "way" and e["id"] in rows.index}
         assert len(tags) == len(rows)
         checked = 0
@@ -559,35 +567,48 @@ def _positions(geometry):
     return list(walk(geometry["coordinates"]))
 
 
-def _recorded_answers():
-    """Each recorded Overpass interpreter answer, as its element list."""
+def _answers():
+    """Each Overpass answer the loader can get here, recorded or mock, as its element list."""
     root = FIXTURES / "overpass"
     for key, entry in json.loads((root / "index.json").read_text()).items():
         if key.startswith("POST "):
             yield json.loads(gzip.decompress((root / entry["file"]).read_bytes())).get("elements", [])
+    for rule in overpass_mock.RULES:
+        yield rule["elements"]
 
 
-#: autk-db's building values it leaves out (autk-db ``consts.ts``).
+#: autk-db's building values it leaves out, and its park values (autk-db ``consts.ts``).
 EXCLUDED_BUILDINGS = {"shed", "garage", "garages", "carport", "hut", "kiosk", "toilets", "service",
                       "transformer_tower", "sty", "container"}
+PARKS = {
+    "leisure": {"dog_park", "park", "playground", "recreation_ground"},
+    "landuse": {"wood", "grass", "forest", "orchard", "village_green", "vineyard", "cemetery", "meadow"},
+    "natural": {"wood", "grass", "grassland", "forest", "scrub", "heath", "meadow"},
+}
 
 
-def _recorded_buildings() -> dict[tuple[str, int], dict[str, str]]:
-    """The building ways and relations of Golf's recorded tiles, by autk-db's
-    rule (``process-osm/pipeline.ts``), each once: ``{(type, id): tags}``."""
+def _mock_elements(rule: str, keep) -> dict[tuple[str, int], dict[str, str]]:
+    """The tagged ways and relations of a mock answer that ``keep`` takes: ``{(type, id): tags}``."""
+    return {
+        (e["type"], e["id"]): e["tags"]
+        for e in overpass_mock.rule(rule)["elements"]
+        if e["type"] in ("way", "relation") and e.get("tags") and keep(e["tags"])
+    }
+
+
+def _mock_buildings() -> dict[tuple[str, int], dict[str, str]]:
+    """Golf's mock buildings that autk-db keeps (``process-osm/pipeline.ts``)."""
     def building(tags):
         def kept(key):
             return key in tags and tags[key] not in EXCLUDED_BUILDINGS
         return kept("building") or kept("building:part") or tags.get("type") == "building"
 
-    tiles = [a for a in _recorded_answers() if any("building" in (e.get("tags") or {}) for e in a)]
-    # autk-db asks for buildings in a 2x2 grid of tiles; the corpus holds Golf's.
-    assert len(tiles) == 4, "the corpus should hold one buildings download: Golf's four tiles"
-    return {
-        (e["type"], e["id"]): e["tags"]
-        for tile in tiles for e in tile
-        if e["type"] in ("way", "relation") and building(e.get("tags") or {})
-    }
+    return _mock_elements("golf-buildings", building)
+
+
+def _mock_parks() -> dict[tuple[str, int], dict[str, str]]:
+    """Golf's mock parks, by autk-db's park values."""
+    return _mock_elements("golf-parks-and-water", lambda tags: any(tags.get(k) in v for k, v in PARKS.items()))
 
 
 def test_the_recorded_corpus_is_where_the_tests_look():
@@ -596,3 +617,8 @@ def test_the_recorded_corpus_is_where_the_tests_look():
     assert "GET https://overpass-api.de/api/status" in index
     for entry in index.values():
         assert (FIXTURES / "overpass" / entry["file"]).is_file()
+
+
+def test_the_mock_answers_are_written_from_their_module():
+    """``fixtures/overpass/mock.json`` is what ``overpass_mock.py`` writes."""
+    assert json.loads(overpass_mock.MOCK_FILE.read_text()) == overpass_mock.mock_document()
