@@ -375,6 +375,50 @@ def test_openstreetmap_asks_for_an_area_and_lands_autarks_layer(
     for column in ("osm_type", "osm_id"):
         expect(schema.get_by_text(column, exact=True)).to_be_visible(timeout=15000)
 
+
+#: The box across Chicago's Loop that the mock Overpass answers cover
+#: (``test_discovery/overpass_mock.py``).
+LOOP_BOX = (-87.6295, 41.8805, -87.615, 41.8825)
+
+
+def test_openstreetmap_points_of_interest_land_as_their_geometries(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """Points of interest for a box: autk-db's own loader runs in Node, its
+    Overpass requests answered by the mock answers, and the points, lines and
+    polygons land as one group named after the area."""
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, username="discoverypoi", project="Discovery POI")
+    _goto_discovery(page, app_frontend, f"/catalog/discovery/{OSM}")
+
+    row = page.locator('[data-discovery-resource="points-of-interest"]')
+    expect(row).to_be_visible(timeout=30000)
+    row.get_by_role("button", name="Download").click()
+
+    dialog = page.get_by_role("dialog", name="Download Points of interest")
+    expect(dialog).to_be_visible(timeout=15000)
+    dialog.get_by_role("tab", name="Coordinates").click()
+    for label, value in zip(("West", "South", "East", "North"), LOOP_BOX):
+        dialog.get_by_label(label, exact=True).fill(str(value))
+    expect(dialog.get_by_text("Area is needed.")).to_have_count(0)
+    dialog.get_by_role("button", name="Download").click()
+    expect(dialog).to_have_count(0)
+
+    view = row.get_by_role("button", name="View dataset")
+    expect(view).to_be_visible(timeout=120000)
+    view.click()
+    details = page.get_by_role("dialog", name="Dataset details")
+    expect(details).to_be_visible(timeout=30000)
+    # The area as the title shows a box with no place name (``place_label``).
+    west, south, east, north = LOOP_BOX
+    place = f"{west:.4f}, {south:.4f} to {east:.4f}, {north:.4f}"
+    expect(details.get_by_role("heading", name=f"Points of interest, {place} (points)")).to_be_visible(timeout=30000)
+    schema = details.get_by_role("region", name="Schema")
+    for column in ("osm_type", "osm_id", "amenity"):
+        expect(schema.get_by_text(column, exact=True)).to_be_visible(timeout=15000)
+
+
 def test_a_second_download_offers_the_dataset_instead_of_a_copy(
     app_frontend: "FrontendPage", current_server: str, page
 ):
