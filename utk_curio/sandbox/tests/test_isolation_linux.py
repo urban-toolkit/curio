@@ -760,10 +760,30 @@ def test_the_writer_is_configured_for_a_capped_child(isolated):
     )
 
 
-#: glibc's own arena limit on a 64-core host, eight per core. Set for the
+#: glibc's own arena limit on a 64-core host, eight per core. Handed to the
 #: zygote, which the children inherit it from, so a four-core runner allows
-#: what a deployment's host does.
+#: what a deployment's host does; ``lifecycle.zygote_environment`` lowers it
+#: to the budget's cap.
 MANY_CORE_ARENA_MAX = 8 * 64
+
+
+def test_the_zygote_starts_with_the_budgets_arena_cap():
+    """The cap is in the zygote's environment, where glibc reads it first.
+
+    16 arenas at the default 4096 MB, a quarter of the budget at 64 MiB each;
+    an operator's lower ``MALLOC_ARENA_MAX`` stands, and with no memory cap
+    the environment is left as it is.
+    """
+    from utk_curio.sandbox.isolation import lifecycle
+
+    assert lifecycle.zygote_environment({"memory_mb": 4096}, {})["MALLOC_ARENA_MAX"] == "16"
+    assert lifecycle.zygote_environment({"memory_mb": 256}, {})["MALLOC_ARENA_MAX"] == "2"
+    many = {"MALLOC_ARENA_MAX": str(MANY_CORE_ARENA_MAX), "PATH": "/bin"}
+    env = lifecycle.zygote_environment({"memory_mb": 4096}, many)
+    assert env == {"MALLOC_ARENA_MAX": "16", "PATH": "/bin"}
+    lower = lifecycle.zygote_environment({"memory_mb": 4096}, {"MALLOC_ARENA_MAX": "4"})
+    assert lower["MALLOC_ARENA_MAX"] == "4"
+    assert lifecycle.zygote_environment({"memory_mb": None}, {"PATH": "/bin"}) == {"PATH": "/bin"}
 
 
 @pytest.fixture
@@ -833,10 +853,10 @@ def test_threads_share_a_bounded_number_of_malloc_arenas(isolated_deployed):
     Counted from glibc's own ``malloc_info`` rather than inferred from VmSize,
     with twice the cap's threads alive at once.
     """
-    from utk_curio.sandbox.isolation import child
+    from utk_curio.sandbox.isolation import lifecycle
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
-    cap = child.malloc_arena_cap(isolated_deployed.limits["memory_mb"])
+    cap = lifecycle.malloc_arena_cap(isolated_deployed.limits["memory_mb"])
     threads = max(64, 2 * cap)
     result = run_isolated(
         isolated_deployed, _COUNT_MALLOC_ARENAS.replace("THREADS", str(threads))
