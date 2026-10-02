@@ -4,7 +4,7 @@ Curio installs these four Autark packages from the tarballs in this folder inste
 
 | Package | Version | Integrity |
 |---|---|---|
-| `@urban-toolkit/autk-db` | `3.0.2-curio.4` | `sha512-dKEMi7AoVGdjeBOzmmDSyhb3sfXA86Qa7t4b3DAEC/oFfb7pgu3ZZMe8LdIUYdNVYlqc5Q+vwHU3OXBzPZaX+Q==` |
+| `@urban-toolkit/autk-db` | `3.0.2-curio.5` | `sha512-fHh1sDsLzfASGDqtJ2ok0A+DxnwKwIMI5OzZ/eROXyPyQzQm/mgU3gfUbi8I1INZETRjxSvVsY6AGinhyq9dRw==` |
 | `@urban-toolkit/autk-compute` | `3.0.1-curio.1` | `sha512-+8OLfGZgFqd7Mr3TevACdecWyThJScc+tNjarmvqjBLKMcBEHtlmKqqWJ6nEo2pS8xZ7JLRdlYHKzwoHRzfxBQ==` |
 | `@urban-toolkit/autk-map` | `3.0.1-curio.1` | `sha512-KPX2vUufmpN6k3p3yAZaAm31zchtEUhK4eYcQZxqOlGv+eyxzhjyxqecB9AXvVyG8557kP11YC3hOG0Wh1e33g==` |
 | `@urban-toolkit/autk-plot` | `3.0.1-curio.1` | `sha512-9dq1WqP4CAi7XlPggFdSFd4Rgq4WY32Ffg6mXp8E7deU3WOAUXKpIw5ypS+DT5YJ0N7TwQdyFRXpPS2+wKqH1g==` |
@@ -24,14 +24,14 @@ Autark `main` at `77c8b32108c90d4f949519771540d152dfda83a6`, with these pull req
 | #107 `feat/osm-bbox-query-area` | `c647f64f0229acbe4119e919f4192efda2f1d0a1` | autk-db | `loadOsm` takes a WGS84 bounding box as well as named areas: no boundaries request, the box is the boundary, and every layer query is constrained to it. |
 | #108 `feat/get-layer-osm-elements` | `1c4e0f293fbbadc8f2238155341e39f3231fd6b2` | autk-db | `getLayer(name, { osmElements: true })` exports an OSM layer one feature per way or relation, with `osm_type` and `osm_id`, and buildings unmerged, each with its `building_id`. Without the option, `getLayer` is unchanged. |
 | #110 `fix/osm-named-area-scope` | `6a8ab46311f0392abd458d5cb746f1e3d0fb9198` | autk-db | A named area's layer queries use the boundary relation found by name inside the geocode area, so they no longer match every area of that name. |
-| #111 `feat/osm-tag-sets` | `67aa019a22100625a70a8a577f83c71799f1b69b` | autk-db | `loadOsm` takes `tagSets`: nodes, ways and multipolygon relations matching any of a set's tags load as points, polylines and polygons layers, whole elements with `osm_type`; nodes keep their tags. |
+| #111 `feat/osm-tag-sets` | `7f8427828034c44f4aa233dfea88ab36433c3295` | autk-db | `loadOsm` takes `tagSets`: nodes, ways and multipolygon relations matching any of a set's tags load as points, polylines and polygons layers, whole elements with `osm_type`; nodes keep their tags. |
 
 ## How the tarballs were built
 
 In a clone of Autark at the commits above:
 
 1. `npm install` (Autark keeps no lockfile), then `make build`, `make typecheck`, `make package-validate` and the vitest suite.
-2. `npm version --no-git-tag-version 3.0.2-curio.4` in `autk-db` (from #101, #102, #103, #107, #108, #110 and #111), and `3.0.1-curio.1` in `autk-compute`, `autk-map` and `autk-plot`. The distinct versions keep webpack's cache from serving a published build under the same version.
+2. `npm version --no-git-tag-version 3.0.2-curio.5` in `autk-db` (from #101, #102, #103, #107, #108, #110 and #111), and `3.0.1-curio.1` in `autk-compute`, `autk-map` and `autk-plot`. The distinct versions keep webpack's cache from serving a published build under the same version.
 3. `npm pack` in each of the four packages.
 
 ## How Curio uses them
