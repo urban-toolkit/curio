@@ -117,6 +117,39 @@ export function applyModelToNodeData(data: any, model: ModelLike): any {
   };
 }
 
+/** A node template, as far as a model dropped on the canvas asks about it. */
+export interface ModelDropTemplate {
+  nodeType: string;
+  label: string;
+  /** The code a fresh node of it opens with, when it has any. */
+  code: string | undefined;
+  packageName?: string;
+}
+
+/** The node a model dropped on the canvas becomes. */
+export interface ModelCanvasNode extends ModelDropTemplate {
+  code: string;
+  modelRefs: ModelRef[];
+}
+
+/**
+ * What a model dropped on the empty canvas becomes, as a dataset dropped there
+ * becomes a Data Loading node: a node of the first of *templates* whose code
+ * calls `curio_model("...")`, with that call naming *model*. `null` when none
+ * of them runs a model. Pure, like `applyModelToNodeData`, which it goes through.
+ */
+export function modelNodeForCanvas(
+  templates: ModelDropTemplate[],
+  model: ModelLike,
+): ModelCanvasNode | null {
+  for (const template of templates) {
+    const applied = applyModelToNodeData({ code: template.code }, model);
+    if (!applied.modelRefs) continue;
+    return { ...template, code: applied.code, modelRefs: applied.modelRefs };
+  }
+  return null;
+}
+
 /**
  * Every model id a canvas node is linked to: the `modelRefs` a drop wrote, and
  * every literal call in its code and its template's. Mirrors

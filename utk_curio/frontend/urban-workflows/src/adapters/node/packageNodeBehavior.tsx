@@ -34,9 +34,9 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { useStarterContext } from '../../providers/StarterProvider';
+import { useStarterContext, type Starter } from '../../providers/StarterProvider';
 import { tryGetNodeDescriptor } from '../../registry/nodeRegistry';
-import type { NodeBehaviorHook } from '../../registry/types';
+import type { NodeBehaviorHook, NodeDescriptor } from '../../registry/types';
 
 function sourceDisplayName(sourcePath: string | undefined): string | undefined {
   if (!sourcePath) return undefined;
@@ -46,6 +46,22 @@ function sourceDisplayName(sourcePath: string | undefined): string | undefined {
   // backend walker in `utk_curio/backend/app/packages/templates.py`).
   const stem = basename.replace(/\.[^.]+$/u, '');
   return stem.replace(/_/g, ' ');
+}
+
+/**
+ * The code a freshly dropped node of *descriptor* opens with: its manifest's
+ * `source` starter, from the starters feed. `undefined` for a template without
+ * one, and until the feed has it.
+ */
+export function packageStarterCode(
+  descriptor: NodeDescriptor | undefined,
+  getStarters: (type: string, custom: boolean) => Starter[],
+): string | undefined {
+  if (!descriptor || descriptor.source !== 'package') return undefined;
+  const wantedName = sourceDisplayName(descriptor.package?.source);
+  if (!wantedName) return undefined;
+  const hit = getStarters(descriptor.id, false).find((t) => t.name === wantedName);
+  return hit?.code || undefined;
 }
 
 export const usePackageNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
