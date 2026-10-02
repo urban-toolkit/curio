@@ -24,9 +24,9 @@ import shutil
 import tempfile
 import unittest
 
-from utk_curio.sandbox.app.worker import (
+from utk_curio.sandbox.app.worker import execute_js_code
+from utk_curio.sandbox.util.node_runtime import (
     _pick_export_entry,
-    execute_js_code,
     resolve_pkg_entry_url,
 )
 

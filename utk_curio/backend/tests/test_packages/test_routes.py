@@ -1851,6 +1851,131 @@ def test_update_puts_a_changed_copy_back_on_the_catalogs_track(
     assert "fixed" in served
 
 
+# A copy with no origin on record: one from before #564, or one whose record
+# was lost. Listing used to replace it whenever it differed from the catalog,
+# which threw away the user's change (the audit of #570). It is now replaced
+# only when it is provably an untouched earlier catalog copy.
+
+def _seed_state_file(user):
+    from utk_curio.backend.app.packages.repositories import seed_state
+    from utk_curio.backend.app.packages.repositories.store import user_packages_dir
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    return user_packages_dir(_user_dir_key(user)) / seed_state.STATE_FILENAME
+
+
+@pytest.mark.parametrize("listing", _LISTINGS)
+@pytest.mark.parametrize("lost", ["corrupt", "deleted"])
+def test_a_saved_change_survives_a_lost_seed_record(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict, listing, lost,
+):
+    user, token = user_and_token
+    dir_name = _shared_catalog_package(fake_catalog, manifest_dict)
+    _install_from_catalog(client, token, dir_name)
+    _save_as_into_shared(client, token)
+
+    state = _seed_state_file(user)
+    if lost == "corrupt":
+        state.write_text("{not valid json", encoding="utf-8")
+    else:
+        state.unlink()
+
+    assert client.get(listing, headers=_auth(token)).status_code == 200
+    assert _store_templates(user, dir_name) == ["one", "two"], (
+        f"GET {listing} replaced the user's save once its record was {lost}"
+    )
+
+
+@pytest.mark.parametrize("listing", _LISTINGS)
+def test_an_upload_survives_when_its_record_was_never_written(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict, monkeypatch, listing,
+):
+    """The install's record write is best-effort, so a failure leaves the
+    user's copy with no origin on record."""
+    from utk_curio.backend.app.packages.repositories import seed_state
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    dir_name = _shared_catalog_package(fake_catalog, manifest_dict)
+    draft = _draft()
+    draft["manifest"]["id"] = "ai.test.shared"
+    draft["manifest"]["templates"] = [_code_template("two")]
+    draft["sources"] = {"two": {"filename": "two.py", "code": "def run():\n    return 'two'\n"}}
+
+    def _disk_full(*_a, **_kw):
+        raise OSError("No space left on device")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(seed_state, "mark_installed", _disk_full)
+        resp = client.post(
+            "/api/packages/upload?replace=true",
+            data={"file": (io.BytesIO(_archive_from_draft(draft)), "shared.curio.zip")},
+            headers=_multipart_auth(token),
+            content_type="multipart/form-data",
+        )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    assert dir_name not in seed_state.load(_user_dir_key(user))
+
+    assert client.get(listing, headers=_auth(token)).status_code == 200
+    assert _store_templates(user, dir_name) == ["two"]
+
+
+@pytest.mark.parametrize("listing", _LISTINGS)
+def test_a_metadata_edit_from_before_the_record_survives_the_catalog_moving(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict, monkeypatch, listing,
+):
+    """Before #564 a metadata edit rewrote ``manifest.json`` and left
+    ``integrity.json`` quoting the catalog's map, with no origin on record."""
+    from utk_curio.backend.app.packages.repositories import seed_state
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    dir_name = _shared_catalog_package(fake_catalog, manifest_dict)
+    _install_from_catalog(client, token, dir_name)
+    store = package_dir(_user_dir_key(user), dir_name)
+    shipped = json.loads((store / "integrity.json").read_text(encoding="utf-8"))["sha256"]
+    known = {**seed_state.legacy_catalog_digests(), dir_name: frozenset({seed_state.copy_digest(shipped)})}
+    monkeypatch.setattr(seed_state, "legacy_catalog_digests", lambda: known)
+
+    manifest = _store_manifest(user, dir_name)
+    manifest["description"] = "My own notes"
+    (store / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    seed_state.clear(_user_dir_key(user), dir_name)
+
+    _move_the_catalog(fake_catalog, dir_name)
+    assert client.get(listing, headers=_auth(token)).status_code == 200
+
+    assert _store_manifest(user, dir_name)["description"] == "My own notes"
+
+
+def test_an_untouched_copy_from_before_the_record_still_follows_the_catalog(
+    client, user_and_token, tmp_curio, fake_catalog, manifest_dict, monkeypatch,
+):
+    """#194 for the copies a release finds with no origin on record: one that
+    is byte for byte an earlier catalog copy is refreshed."""
+    from utk_curio.backend.app.packages.repositories import seed_state
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    dir_name = _shared_catalog_package(fake_catalog, manifest_dict)
+    _install_from_catalog(client, token, dir_name)
+    store = package_dir(_user_dir_key(user), dir_name)
+    shipped = json.loads((store / "integrity.json").read_text(encoding="utf-8"))["sha256"]
+    known = {**seed_state.legacy_catalog_digests(), dir_name: frozenset({seed_state.copy_digest(shipped)})}
+    monkeypatch.setattr(seed_state, "legacy_catalog_digests", lambda: known)
+    seed_state.clear(_user_dir_key(user), dir_name)
+
+    _move_the_catalog(fake_catalog, dir_name)
+    client.get("/api/packages", headers=_auth(token))
+
+    served = client.get(
+        f"/api/packages/{dir_name}/file/sources/one.py", headers=_auth(token),
+    ).get_data(as_text=True)
+    assert "fixed" in served
+
+
 # ---------------------------------------------------------------------------
 # GET /api/packages/<dir>/archive for a package this account never installed
 # ---------------------------------------------------------------------------

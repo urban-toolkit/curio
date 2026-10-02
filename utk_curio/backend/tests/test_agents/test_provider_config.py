@@ -9,7 +9,7 @@ configurations (``agents/llm_configs.py``) and the deployment
 - any other agent on the configuration chosen for it;
 - with no choice, a delegated agent on its caller's, and an attached one on
   the default configuration, else the deployment default, else a refusal whose
-  remedy opens AI Settings;
+  remedy opens API Settings;
 - a reference that does not resolve is refused, never replaced.
 
 Two regressions are pinned: a user's key never goes to the deployment's host,
@@ -74,7 +74,7 @@ class TestTheFallbackOrder:
         monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "")
         with pytest.raises(pc.ProviderConfigError) as refused:
             pc.resolve_llm(USER, "agent.chat-agent")
-        assert "AI Settings" in str(refused.value)
+        assert "API Settings" in str(refused.value)
         assert refused.value.remedy == {"kind": "llm-config", "agentId": "agent.chat-agent"}
 
     def test_an_unchosen_delegate_answers_with_its_callers(self, deployment):

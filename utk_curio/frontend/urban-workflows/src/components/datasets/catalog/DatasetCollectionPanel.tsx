@@ -6,12 +6,12 @@ import {
   type DatasetCollection,
 } from "../../../services/datasetCatalog";
 import {
-  dataLakeCatalogApi,
+  discoveryCatalogApi,
   isTerminal,
   jobProgressLabel,
-  type LakeAcquireJob,
-  type LakeCollectionStatus,
-} from "../../../services/dataLakeCatalog";
+  type DiscoveryAcquireJob,
+  type DiscoveryCollectionStatus,
+} from "../../../services/discoveryCatalog";
 import { useAuthedObjectUrl } from "../../../utils/useAuthedObjectUrl";
 import { DetailLink } from "./DetailLink";
 import { absoluteDate, formatBytes } from "./datasetDetailHelpers";
@@ -23,7 +23,7 @@ import stripStyles from "./DatasetCollectionPanel.module.css";
  * index preview, and a Collection section saying where the files are and what
  * they are.
  *
- * The index is the dataset; the files stay where the lake source keeps them.
+ * The index is the dataset; the files stay where the source keeps them.
  * A bucket's files are read once cached, so the section offers Cache files.
  */
 
@@ -81,9 +81,9 @@ const POLL_MS = 1000;
 
 /** The collection's status, and a Cache files job that refreshes it. */
 export function useCollectionStatus(datasetId: string | undefined) {
-  const [status, setStatus] = useState<LakeCollectionStatus | null>(null);
+  const [status, setStatus] = useState<DiscoveryCollectionStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [job, setJob] = useState<LakeAcquireJob | null>(null);
+  const [job, setJob] = useState<DiscoveryAcquireJob | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // The collection this panel shows now. An answer for another one, or for a
   // closed panel, is dropped, and never schedules another poll.
@@ -91,7 +91,7 @@ export function useCollectionStatus(datasetId: string | undefined) {
 
   const load = useCallback(() => {
     if (!datasetId) return;
-    dataLakeCatalogApi
+    discoveryCatalogApi
       .getCollection(datasetId)
       .then((s) => {
         if (current.current !== datasetId) return;
@@ -117,7 +117,7 @@ export function useCollectionStatus(datasetId: string | undefined) {
   const follow = useCallback(
     (jobId: string) => {
       timer.current = setTimeout(() => {
-        dataLakeCatalogApi
+        discoveryCatalogApi
           .getJob(jobId)
           .then((next) => {
             if (current.current !== datasetId) return;
@@ -135,7 +135,7 @@ export function useCollectionStatus(datasetId: string | undefined) {
 
   const cacheFiles = useCallback(() => {
     if (!datasetId) return;
-    dataLakeCatalogApi
+    discoveryCatalogApi
       .cacheCollection(datasetId)
       .then((started) => {
         if (current.current !== datasetId) return;
@@ -169,7 +169,7 @@ const StripThumb: React.FC<{ datasetId: string; fileId: string; name: string }> 
 };
 
 /** The first files of the collection, above its index preview. */
-export const CollectionStrip: React.FC<{ status: LakeCollectionStatus | null }> = ({ status }) => {
+export const CollectionStrip: React.FC<{ status: DiscoveryCollectionStatus | null }> = ({ status }) => {
   if (!status || status.samples.length === 0) return null;
   return (
     <div className={stripStyles.strip} role="group" aria-label="Files in this collection">
@@ -188,9 +188,9 @@ export const CollectionStrip: React.FC<{ status: LakeCollectionStatus | null }> 
 /** The Collection section of the info column. */
 export const CollectionInfoSection: React.FC<{
   dataset: DatasetCatalogItem;
-  status: LakeCollectionStatus | null;
+  status: DiscoveryCollectionStatus | null;
   error: string | null;
-  job: LakeAcquireJob | null;
+  job: DiscoveryAcquireJob | null;
   onCacheFiles: () => void;
   onFollowLink?: (to: string) => void;
 }> = ({ dataset, status, error, job, onCacheFiles, onFollowLink }) => {
@@ -214,7 +214,7 @@ export const CollectionInfoSection: React.FC<{
           <dt>Indexed from</dt>
           <dd>
             <DetailLink
-              to={`/catalog/lakes/${encodeURIComponent(block.sourceId)}`}
+              to={`/catalog/discovery/${encodeURIComponent(block.sourceId)}`}
               onFollow={onFollowLink}
             >
               {block.sourceName}

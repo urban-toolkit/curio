@@ -142,7 +142,7 @@ describe('Simple View image modes', () => {
     const input = geoFrame([
       {
         image_url: 'https://example.test/a?size=640',
-        overlay_url: '/api/streetvision/inference/overlay/a.jpg',
+        overlay_url: '/api/datasets/data.curio.mapillary-sample/media/a.jpg',
         image_id: 'CAoSL1',
       },
     ]);

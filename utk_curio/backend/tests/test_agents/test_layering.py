@@ -43,9 +43,9 @@ AGENTS = layering.LayeredPackage(
         "infrastructure": {"domain", "repositories", "infrastructure"},
         "application": {"domain", "repositories", "infrastructure", "application"},
     },
-    # the app factory, a project's seeding, the monitor's LLM check and streetvision's egress: the
-    # four cross-feature boundaries that import agents lazily on purpose
-    lazy_allowed_outside={"__init__.py", "projects/services.py", "monitor/routes.py", "streetvision/jobs.py"},
+    # the app factory, a project's seeding and the monitor's LLM check: the
+    # three cross-feature boundaries that import agents lazily on purpose
+    lazy_allowed_outside={"__init__.py", "projects/services.py", "monitor/routes.py"},
     lazy_allowed_inside={"utk_curio.backend.app.agents.domain", "utk_curio.backend.app.agents.repositories",
                          "utk_curio.backend.app.agents.infrastructure", 'utk_curio.backend.app.agents.routes.',
                          "utk_curio.backend.app.agents.evaluation", "utk_curio.backend.app.agents.training",

@@ -1,4 +1,4 @@
-/* AI Settings: LLM configurations and their editor. The field, button and
+/* API Settings: LLM configurations and their editor. The field, button and
    footer vocabulary is ../modal-content.module.css. */
 
 .section {
@@ -231,7 +231,7 @@
   color: var(--curio-text-secondary);
 }
 
-/* The Agent models row a card asked AI Settings to open on. */
+/* The Agent models row a card asked API Settings to open on. */
 .focusedRow td {
   background: var(--curio-page-bg);
 }

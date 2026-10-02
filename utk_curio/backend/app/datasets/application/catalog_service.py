@@ -72,6 +72,9 @@ class DatasetCatalogService:
     def download_target(self, *args: Any, **kwargs: Any) -> Any:
         return self._listing.download_target(*args, **kwargs)
 
+    def extent(self, *args: Any, **kwargs: Any) -> Any:
+        return self._listing.extent(*args, **kwargs)
+
     def dataset_usage(self, *args: Any, **kwargs: Any) -> Any:
         return self._listing.dataset_usage(*args, **kwargs)
 

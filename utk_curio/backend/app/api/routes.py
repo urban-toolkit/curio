@@ -399,7 +399,7 @@ def get_file_preview():
 # execution path cannot drift: a dataset referenced only in code used to be
 # resolvable here and invisible to the catalog's usage helper (#250). The names
 # stay re-exported because tests and callers import them from this module.
-from utk_curio.backend.app.datalakes.application.exec_collections import (  # noqa: E402
+from utk_curio.backend.app.discovery.application.exec_collections import (  # noqa: E402
     resolve_exec_collections,
 )
 from utk_curio.backend.app.datasets.domain.code_refs import (  # noqa: E402
@@ -428,6 +428,15 @@ def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
     except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
         print(f"[processPythonCode] dataset path resolution failed: {e}", flush=True)
         return {}
+
+
+def _resolve_exec_models(code: str) -> dict:
+    """The Model Catalog folders of the models *code* runs as
+    ``curio_model("<id>")``, for this account. Fail-open like dataset paths:
+    the sandbox's ``curio_model`` names a model that is not there."""
+    from utk_curio.backend.app.model_catalog.service import resolve_exec_models
+
+    return resolve_exec_models(code, getattr(g, "user", None))
 
 
 def _resolve_exec_collections(code: str, user_key: str | None) -> tuple[dict, str | None]:
@@ -506,6 +515,7 @@ def process_python_code():
     exec_user_key = _exec_user_key()
     collections, media_dir = _resolve_exec_collections(code, exec_user_key)
     exec_secrets = _resolve_exec_secrets(code)
+    exec_models = _resolve_exec_models(code)
     t1 = _time.perf_counter()
     # The gauge wraps only the sandbox round trip, which is where a node
     # actually spends its time. Counting the surrounding parse and JSON work
@@ -528,6 +538,8 @@ def process_python_code():
                 # dev/116: present only when the code names a saved key — the
                 # request body is otherwise byte-identical to before.
                 **({"secrets": exec_secrets} if exec_secrets else {}),
+                # Likewise only when the code runs a model.
+                **({"models": exec_models} if exec_models else {}),
             }),
             headers={"Content-Type": "application/json"},
         )

@@ -46,6 +46,7 @@ from .utils import (
     park_pointer,
     save_interaction_frame,
     save_node_closeup,
+    save_dataflow_and_settle_header,
     save_workflow_test_screenshot,
     assert_vega_canvas_rendered,
     assert_vega_node_empty_state,
@@ -283,9 +284,16 @@ class TestWorkflowCanvas:
 
         The browser log is the only window into autk's caught exceptions
         (autkBehaviorFactory swallows them into React state without ever
-        calling ``console.error``), so we always write it — not just on
-        failure — while we're debugging the rendering issue.
+        calling ``console.error``), so we always write it, not just on
+        failure, while we're debugging the rendering issue.
+
+        The dataflow is saved first, once no node is running, and the frame
+        waits for the header to show that save: the save icon, the automatic
+        category chips and the Data Catalog count only change when a save
+        lands (issue #584).
         """
+        _wait_for_no_node_running(self.page)
+        save_dataflow_and_settle_header(self.page)
         save_workflow_test_screenshot(
             self.page,
             self.spec.filepath,

@@ -86,7 +86,7 @@ describe('ImageCardGrid', () => {
     (global as any).URL.createObjectURL = createObjectURL;
     (global as any).URL.revokeObjectURL = revokeObjectURL;
 
-    const authed = [{ overlay_url: '/api/streetvision/inference/overlay/a.jpg', image_id: 'a' }];
+    const authed = [{ overlay_url: '/api/datasets/data.curio.mapillary-sample/media/a.jpg', image_id: 'a' }];
     let view: any;
     await act(async () => {
       view = render(
@@ -100,7 +100,7 @@ describe('ImageCardGrid', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://backend.test/api/streetvision/inference/overlay/a.jpg',
+      'http://backend.test/api/datasets/data.curio.mapillary-sample/media/a.jpg',
       { headers: { Authorization: 'Bearer tok-123' }, signal: expect.any(AbortSignal) },
     );
     await waitFor(() => {
@@ -117,7 +117,7 @@ describe('ImageCardGrid', () => {
 
   it('holds the slot instead of throwing when an authed image fails', async () => {
     (global as any).fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 });
-    const authed = [{ overlay_url: '/api/streetvision/inference/overlay/missing.jpg' }];
+    const authed = [{ overlay_url: '/api/datasets/data.curio.mapillary-sample/media/missing.jpg' }];
     await act(async () => {
       render(
         <ImageCardGrid

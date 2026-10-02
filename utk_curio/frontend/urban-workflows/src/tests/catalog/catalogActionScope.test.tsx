@@ -142,7 +142,8 @@ describe("the browse cards are informational, and the drawer acts", () => {
     ["data", "pages/dataCatalog/DataCatalogBrowseCard.tsx"],
     ["node", "pages/catalog/PackageBrowseCard.tsx"],
     ["agent", "pages/agents/AgentCatalogBrowseCard.tsx"],
-    ["data lake", "pages/dataLakes/DataLakeSourceCard.tsx"],
+    ["Discovery Catalog", "pages/discovery/DiscoverySourceCard.tsx"],
+    ["model", "pages/models/ModelCatalogBrowseCard.tsx"],
   ])("the %s card offers View details and a status, the same shape", (_kind, rel) => {
     const src = read(rel);
     expect(src).toContain("View details");
@@ -474,7 +475,8 @@ describe("all four catalogs have a details view, and it is the same shape", () =
     ["dataset", "components/datasets/catalog/DatasetDetailModal.tsx"],
     ["agent", "components/agents/catalog/AgentDetailModal.tsx"],
     ["package", "components/packages/publishing/PackageDetailModal.tsx"],
-    ["data lake", "pages/dataLakes/DataLakeSourceDetailModal.tsx"],
+    ["Discovery Catalog", "pages/discovery/DiscoverySourceDetailModal.tsx"],
+    ["model", "components/models/catalog/ModelDetailModal.tsx"],
   ];
 
   test.each(MODALS)("the %s details view fills the panel, not a small box", (_k, rel) => {
@@ -505,25 +507,44 @@ describe("all four catalogs have a details view, and it is the same shape", () =
     expect(page).toContain("catalogByDir.get(detailDirName)");
   });
 
-  test("the Data Lake catalog has a details view at all", () => {
+  test("the Discovery Catalog has a details view at all", () => {
     // It was the last one with none: a source's facts lived in the drawer
     // alone, which CatalogBrowseLayout hides below 1100px. And it has its own
     // state, not the drawer's setter (#189).
-    const page = read("pages/dataLakes/DataLakeCatalogBrowse.tsx");
-    expect(page).toContain("DataLakeSourceDetailModal");
+    const page = read("pages/discovery/DiscoveryCatalogBrowse.tsx");
+    expect(page).toContain("DiscoverySourceDetailModal");
     expect(page).toContain("const [detailDir");
     expect(page).toContain("onViewDetails={() => setDetailDir(source.dirName)}");
-    expect(read("pages/dataLakes/DataLakeSourceDetailModal.tsx")).toContain("ModalShell");
+    expect(read("pages/discovery/DiscoverySourceDetailModal.tsx")).toContain("ModalShell");
   });
 
-  test("the lake drawer and its details view read the same facts", () => {
+  test("the Model Catalog has a details view of its own state", () => {
+    // Born with one, and not wired to the drawer's setter (#189): the card's
+    // View details opens the modal even on a card whose drawer is open.
+    const page = read("pages/models/ModelCatalogBrowse.tsx");
+    expect(page).toContain("ModelDetailModal");
+    expect(page).toContain("const [detailId");
+    expect(page).toContain("onViewDetails={() => setDetailId(model.id)}");
+    expect(read("components/models/catalog/ModelDetailModal.tsx")).toContain("ModalShell");
+  });
+
+  test("the model drawer and its details view read the same facts", () => {
     for (const rel of [
-      "pages/dataLakes/DataLakeCatalogBrowseDrawer.tsx",
-      "pages/dataLakes/DataLakeSourceDetailModal.tsx",
+      "pages/models/ModelCatalogBrowseDrawer.tsx",
+      "components/models/catalog/ModelDetailModal.tsx",
+    ]) {
+      expect(read(rel)).toContain("modelInfoRows(model)");
+    }
+  });
+
+  test("the source drawer and its details view read the same facts", () => {
+    for (const rel of [
+      "pages/discovery/DiscoveryCatalogBrowseDrawer.tsx",
+      "pages/discovery/DiscoverySourceDetailModal.tsx",
     ]) {
       const src = read(rel);
-      expect(src).toContain("lakeSourceInfoRows(source)");
-      expect(src).toContain("lakeSourceAccessItems(source)");
+      expect(src).toContain("discoverySourceInfoRows(source)");
+      expect(src).toContain("discoverySourceAccessItems(source)");
     }
   });
 
@@ -651,6 +672,7 @@ describe("every details view opens with the same header", () => {
     ["dataset", "components/datasets/catalog/DatasetDetailPanel.tsx"],
     ["agent", "components/agents/catalog/AgentDetailModal.tsx"],
     ["package", "components/packages/publishing/PackageDetailModal.tsx"],
+    ["model", "components/models/catalog/ModelDetailModal.tsx"],
   ];
 
   test.each(VIEWS)("the %s view renders the shared header", (_k, rel) => {
@@ -726,10 +748,11 @@ describe("every catalog page's rail opens with the same section", () => {
     ["data", "pages/dataCatalog/DataCatalogBrowse.tsx"],
   ];
 
-  /** Every browse page, Projects and the Data Lake included. */
+  /** Every browse page, Projects, Discovery and Models included. */
   const BROWSE_PAGES: [string, string][] = [
     ...PAGES,
-    ["lake", "pages/dataLakes/DataLakeCatalogBrowse.tsx"],
+    ["discovery", "pages/discovery/DiscoveryCatalogBrowse.tsx"],
+    ["model", "pages/models/ModelCatalogBrowse.tsx"],
     ["projects", "pages/projects/ProjectsList.tsx"],
   ];
 
@@ -856,6 +879,7 @@ describe("the three palettes are one design", () => {
     ["data", "components/menus/nodes/datasetPalette/DatasetsPaletteDropdown.tsx"],
     ["agent", "components/menus/nodes/agentsPalette/AgentsPaletteDropdown.tsx"],
     ["node", "components/menus/nodes/toolsMenuPackagePalette/PackagesPaletteDropdown.tsx"],
+    ["model", "components/menus/nodes/modelsPalette/ModelsPaletteDropdown.tsx"],
   ];
 
   test.each(PALETTES)("the %s palette tells you the rows are draggable", (_k, rel) => {
@@ -1024,15 +1048,25 @@ describe("the palette hint is accurate per kind, not merely uniform", () => {
     for (const rel of [
       "components/menus/nodes/datasetPalette/DatasetsPaletteDropdown.tsx",
       "components/menus/nodes/toolsMenuPackagePalette/PackagesPaletteDropdown.tsx",
+      "components/menus/nodes/modelsPalette/ModelsPaletteDropdown.tsx",
     ]) {
       expect(read(rel)).not.toContain("attachesToNode");
     }
+  });
+
+  test("a model is described as going onto a node, and only there", () => {
+    // It sets the model a node's code runs; dropped on the canvas it makes
+    // nothing, so neither the agent wording nor the canvas one is true of it.
+    expect(read("components/menus/nodes/modelsPalette/ModelsPaletteDropdown.tsx")).toContain(
+      "ontoNodeOnly",
+    );
   });
 
   test("both wordings live in the one component", () => {
     const hint = read("components/menus/nodes/PaletteDragHint.tsx");
     expect(hint).toContain("onto a node or the canvas to attach it");
     expect(hint).toContain("onto the canvas to add it");
+    expect(hint).toContain("onto a node to use it");
   });
 });
 
@@ -1202,6 +1236,15 @@ describe("user-facing catalog copy uses sentences, not dashes", () => {
     "components/agents/catalog/AgentCatalogDrawer.tsx",
     "components/datasets/catalog/DatasetCatalogDrawer.tsx",
     "components/menus/nodes/PaletteDragHint.tsx",
+    "components/models/catalog/ModelCard.tsx",
+    "components/models/catalog/ModelCatalogDrawer.tsx",
+    "components/models/catalog/ModelDetailModal.tsx",
+    "components/models/catalog/useModelDelete.ts",
+    "components/menus/nodes/modelsPalette/ModelsPaletteDropdown.tsx",
+    "components/menus/nodes/modelsPalette/ModelPaletteRow.tsx",
+    "pages/models/ModelCatalogBrowse.tsx",
+    "pages/models/ModelCatalogBrowseCard.tsx",
+    "pages/models/ModelCatalogBrowseDrawer.tsx",
   ];
 
   test.each(SURFACES)("%s has no dash inside a quoted tooltip or label", (rel) => {
@@ -1230,9 +1273,13 @@ describe("the four browse pages introduce themselves the same way", () => {
     expect(read(rel)).toContain(opening);
   });
 
-  test.each(INTROS)("the %s page uses the project vocabulary, not dataflow", (_k, rel) => {
+  test.each(INTROS)("the %s page uses the project vocabulary, not dataflow", (_k, rel, opening) => {
+    // The intro is the shared header's `intro` prop, which every page passes
+    // just before its `viewTools`. The slice must hold the intro itself, or
+    // this would pass on an empty string.
     const src = read(rel);
-    const intro = src.slice(src.indexOf("pageIntro"), src.indexOf("headerTools"));
+    const intro = src.slice(src.indexOf("intro="), src.indexOf("viewTools="));
+    expect(intro).toContain(opening);
     expect(intro).not.toMatch(/dataflow/i);
   });
 

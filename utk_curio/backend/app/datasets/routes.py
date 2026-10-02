@@ -119,6 +119,15 @@ def preview_dataset(dataset_id: str):
     return jsonify(payload), 200
 
 
+@datasets_bp.route("/datasets/<dataset_id>/extent", methods=["GET"])
+@require_auth
+@_map_catalog_errors
+def dataset_extent(dataset_id: str):
+    """``{datasetId, title, box}``: the WGS84 box the dataset covers, or a null
+    box when it has no geometry."""
+    return jsonify(_service().extent(dataset_id)), 200
+
+
 @datasets_bp.route("/datasets/<dataset_id>/usage", methods=["GET"])
 @require_auth
 @_map_catalog_errors
@@ -168,12 +177,12 @@ def import_dataset():
         dataflow_id=request.form.get("dataflowId") or request.form.get("projectId"),
         title=request.form.get("title") or None,
         source_updated_at=_parse_source_updated_at(request.form.get("sourceUpdatedAt")),
-        lake_source=_parse_lake_source(request.form.get("lakeSource")),
+        discovery_source=_parse_discovery_source(request.form.get("discoverySource")),
     )
     return jsonify(payload), 200 if payload.get("alreadyPresent") else 201
 
 
-def _parse_lake_source(raw: str | None) -> dict | None:
+def _parse_discovery_source(raw: str | None) -> dict | None:
     """Where a file the person downloaded themselves came from, as JSON. An
     unreadable value is no provenance, never a failed import."""
     if not raw or not raw.strip():

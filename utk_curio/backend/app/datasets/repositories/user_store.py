@@ -66,30 +66,39 @@ class UserDatasetRepository:
     def __init__(self, user: Any | None):
         self.user = user
 
-    def find_by_lake_resource(
-        self, lake_id: str, resource_id: str, fmt: str | None = None
+    def find_by_discovery_resource(
+        self,
+        source_id: str,
+        resource_id: str,
+        fmt: str | None = None,
+        parameters_hash: str | None = None,
     ) -> dict[str, Any] | None:
         """A dataset this account already downloaded from that portal resource.
 
         What makes "do I already hold this?" answerable without a network call,
         and so what stops the same file arriving twice under two generated ids.
-        Matched on the ``lakeSource`` block rather than on content, because the
+        Matched on the ``discoverySource`` block rather than on content, because the
         point is to answer BEFORE downloading anything.
 
         ``fmt`` narrows it: the same resource downloaded as CSV and as GeoJSON
-        is two datasets, and holding one is not holding the other.
+        is two datasets, and holding one is not holding the other. So does
+        ``parameters_hash``: the same resource for another area or other dates
+        is another dataset, and a download with no parameters matches only one
+        that had none.
         """
-        if self.user is None or not lake_id or not resource_id:
+        if self.user is None or not source_id or not resource_id:
             return None
         found = None
         for item in self.list_items():
-            lake = item.get("lakeSource") or {}
-            if lake.get("lakeId") != lake_id or lake.get("resourceId") != resource_id:
+            discovered = item.get("discoverySource") or {}
+            if discovered.get("sourceId") != source_id or discovered.get("resourceId") != resource_id:
                 continue
             # Part of a storage row, picked when it was added: not the row.
-            if lake.get("narrowed"):
+            if discovered.get("narrowed"):
                 continue
             if fmt and item.get("format") != fmt:
+                continue
+            if (discovered.get("parametersHash") or None) != (parameters_hash or None):
                 continue
             # Added again after the source changed: the latest one is held.
             if found is None or _added_at(item) > _added_at(found):
@@ -100,31 +109,31 @@ class UserDatasetRepository:
         """A dataset from a remote origin whose bytes are exactly these.
 
         The other half of "do I already hold this?": a file a person downloaded
-        by hand and one the Data Lake fetched are the same dataset when their
+        by hand and one the Discovery Catalog fetched are the same dataset when their
         bytes are, whichever arrived first.
         """
         if self.user is None or not content_sha256:
             return None
         for item in self.list_items():
-            lake = item.get("lakeSource") or {}
+            discovered = item.get("discoverySource") or {}
             # Part of a storage row, picked when it was added: not the row.
-            if lake.get("narrowed"):
+            if discovered.get("narrowed"):
                 continue
-            if lake.get("contentSha256") == content_sha256:
+            if discovered.get("contentSha256") == content_sha256:
                 return item
         return None
 
-    def lake_resource_index(self) -> dict[tuple[str, str], str]:
+    def discovery_resource_index(self) -> dict[tuple[str, str], str]:
         """Everything this account holds from a portal, keyed by what it came from.
 
-        The batch form of :meth:`find_by_lake_resource`, and the reason it
+        The batch form of :meth:`find_by_discovery_resource`, and the reason it
         exists: a page of search results asks "do I already hold this?" once
         per row, and answering each with its own call walks the whole store
         again - twenty passes to render twenty rows. This walks it once.
 
-        Keyed on ``(lakeId, resourceId)`` and not on the format, because a
+        Keyed on ``(sourceId, resourceId)`` and not on the format, because a
         search row has not chosen one yet: it offers every format the portal
-        does. That is the same question :meth:`find_by_lake_resource` answers
+        does. That is the same question :meth:`find_by_discovery_resource` answers
         with ``fmt=None``. The acquire path still asks with a format, where the
         distinction matters - the same resource as CSV and as GeoJSON is two
         datasets, and holding one is not holding the other.
@@ -133,14 +142,38 @@ class UserDatasetRepository:
         if self.user is None:
             return {}
         for item in self.list_items():
-            lake = item.get("lakeSource") or {}
-            lake_id, resource_id = lake.get("lakeId"), lake.get("resourceId")
-            if not lake_id or not resource_id or lake.get("narrowed"):
+            discovered = item.get("discoverySource") or {}
+            source_id, resource_id = discovered.get("sourceId"), discovered.get("resourceId")
+            if not source_id or not resource_id or not _whole(discovered):
                 continue
-            held = latest.get((lake_id, resource_id))
+            held = latest.get((source_id, resource_id))
             if held is None or _added_at(item) > _added_at(held):
-                latest[(lake_id, resource_id)] = item
+                latest[(source_id, resource_id)] = item
         return {key: item["id"] for key, item in latest.items()}
+
+    def discovery_resource_formats(self) -> dict[tuple[str, str], dict[str, str]]:
+        """The same walk, by format: ``(sourceId, resourceId) -> {format: datasetId}``.
+
+        What a row needs to say "you hold the CSV" while still offering the
+        GeoJSON: holding one format is not holding the other.
+        """
+        latest: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+        if self.user is None:
+            return {}
+        for item in self.list_items():
+            discovered = item.get("discoverySource") or {}
+            source_id, resource_id = discovered.get("sourceId"), discovered.get("resourceId")
+            fmt = item.get("format")
+            if not source_id or not resource_id or not fmt or not _whole(discovered):
+                continue
+            by_format = latest.setdefault((source_id, resource_id), {})
+            held = by_format.get(fmt)
+            if held is None or _added_at(item) > _added_at(held):
+                by_format[fmt] = item
+        return {
+            key: {fmt: item["id"] for fmt, item in by_format.items()}
+            for key, by_format in latest.items()
+        }
 
     def list_items(self) -> list[dict[str, Any]]:
         if self.user is None:
@@ -212,6 +245,12 @@ class UserDatasetRepository:
         return items
 
 
+def _whole(discovered: dict[str, Any]) -> bool:
+    """Whether a download is the resource itself, rather than a pick from it:
+    part of a storage row, or the answers to a source's parameters."""
+    return not discovered.get("narrowed") and not discovered.get("parametersHash")
+
+
 def _added_at(item: dict[str, Any]) -> str:
-    """When a lake dataset was added, as its ISO time, which sorts as text."""
-    return str((item.get("lakeSource") or {}).get("fetchedAt") or "")
+    """When a discovered dataset was added, as its ISO time, which sorts as text."""
+    return str((item.get("discoverySource") or {}).get("fetchedAt") or "")

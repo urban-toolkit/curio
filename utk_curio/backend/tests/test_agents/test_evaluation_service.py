@@ -200,7 +200,7 @@ class TestReadiness:
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         """The owner's requirement: a model configured by `curio.py start
-        --llm-model` is as real as one typed into AI Settings, so the panel
+        --llm-model` is as real as one typed into API Settings, so the panel
         must not tell an operator who passed the flag that they configured
         nothing."""
         user, token = user_and_token
@@ -625,7 +625,7 @@ class TestTheRun:
             headers=_auth(token),
         )
         assert response.status_code == 400
-        assert "AI Settings" in response.get_json()["error"]
+        assert "API Settings" in response.get_json()["error"]
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         assert records_mod.list_records(_user_dir_key(user)) == []

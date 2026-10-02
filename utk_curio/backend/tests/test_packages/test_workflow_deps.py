@@ -58,15 +58,20 @@ def test_check_flags_declared_package_not_in_store(client, user_and_token, tmp_c
     assert resp.get_json()["packages"] == ["curio.weather@1"]
 
 
-def test_check_defers_install_on_demand_packages(client, user_and_token, tmp_curio):
+def test_check_defers_install_on_demand_packages(client, user_and_token, tmp_curio, monkeypatch):
     """A heavy package is reported missing, but flagged not-to-be-installed.
 
     Both halves matter and they used to be in tension (#233). The canvas has to
     be able to SAY which package a node needs - saying nothing is what left
     three nodes on "Loading node…" with no explanation. But opening a dataflow
-    must not start a ~3 GB torch download on the user's behalf, so the same
+    must not start a multi-gigabyte download on the user's behalf, so the same
     response marks it deferred and the auto-installer skips it.
+
+    No shipped package is that heavy now, so one is made so here.
     """
+    from utk_curio.backend.app.packages.application import seeding
+
+    monkeypatch.setattr(seeding, "INSTALL_ON_DEMAND_PACKAGE_IDS", frozenset({"curio.streetvision"}))
     _, token = user_and_token
     resp = _check(client, token, ["curio.streetvision@1", "curio.weather@1"])
     assert resp.status_code == 200
@@ -76,6 +81,13 @@ def test_check_defers_install_on_demand_packages(client, user_and_token, tmp_cur
     assert "curio.weather@1" in body["packages"]
     # ...but only the heavy one is held back.
     assert body["deferred"] == ["curio.streetvision@1"]
+
+
+def test_street_vision_installs_with_the_dataflow_that_declares_it(client, user_and_token, tmp_curio):
+    """It needs only onnxruntime, so opening example 10 installs it."""
+    _, token = user_and_token
+    body = _check(client, token, ["curio.streetvision@1"]).get_json()
+    assert body["packages"] == ["curio.streetvision@1"] and body["deferred"] == []
 
 
 def test_check_reports_no_deferrals_for_ordinary_packages(

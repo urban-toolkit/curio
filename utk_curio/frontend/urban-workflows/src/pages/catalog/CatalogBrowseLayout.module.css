@@ -1,9 +1,9 @@
 /* ─────────────────────────────────────────────────────────────
-   Shared 3-column browse layout, used by all five browse pages: the Node,
-   Data, Agent and Data Lake Catalogs, and the project list (which imports the
+   Shared 3-column browse layout, used by every browse page: the Node, Data,
+   Agent, Discovery and Model Catalogs, and the project list (which imports the
    rail, header band and drawer from here and adds only its own card styles in
    pages/projects/ProjectsBrowseLayout.module.css). The rail is CatalogRail.tsx
-   and the header band CatalogPageHeader.tsx, so the five cannot drift apart.
+   and the header band CatalogPageHeader.tsx, so the pages cannot drift apart.
 
    Colours, type and geometry come from ../../styles/curioTokens.css. Format
    and category colours in particular are tokens, not literals: they are shown

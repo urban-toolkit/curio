@@ -205,6 +205,72 @@ describe("TrillGenerator node header (#412)", () => {
     expect(byId["renamed-1"].metadata.packageTemplateLabel).toBe("Clean the parcels");
     expect(byId["blank-1"].metadata).toBeUndefined();
   });
+
+  test("persists the node settings config at metadata.packageTemplateConfig, without the code copy or port ids", () => {
+    // The node settings modal writes its whole config to
+    // data.packageTemplateConfig, and the editor tabs read it back. Only the
+    // label was serialized, so every other setting lasted until a reload.
+    const config = {
+      label: "Clean the parcels",
+      category: "computation",
+      engine: "python",
+      editor: "code",
+      description: "Drops parcels without a zoning code",
+      hasCode: true,
+      hasWidgets: false,
+      hasGrammar: false,
+      hasProvenance: false,
+      inputPorts: [{ id: "k3j9x0a1", types: ["DATAFRAME"], cardinality: "1" }],
+      outputPorts: [{ id: "p0q8w2e4", types: ["DATAFRAME", "JSON"], cardinality: "[1,n]" }],
+      sourceFilename: "clean.py",
+      sourceCode: "return arg.dropna()",
+    };
+    const spec = TrillGenerator.generateTrill(
+      [
+        {
+          type: "CURIO_UNIVERSAL_NODE",
+          position: { x: 0, y: 0 },
+          data: {
+            nodeId: "configured-1",
+            nodeType: "curio.builtin/computation-analysis",
+            code: "return arg.dropna()",
+            packageTemplateLabel: "Clean the parcels",
+            packageTemplateConfig: config,
+          },
+        },
+        {
+          // Never opened the modal: nothing is written.
+          type: "CURIO_UNIVERSAL_NODE",
+          position: { x: 5, y: 5 },
+          data: { nodeId: "plain-1", nodeType: "curio.builtin/computation-analysis" },
+        },
+      ],
+      [],
+      "Imported Workflow"
+    );
+
+    const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
+    expect(byId["configured-1"].metadata.packageTemplateConfig).toEqual({
+      label: "Clean the parcels",
+      category: "computation",
+      engine: "python",
+      editor: "code",
+      description: "Drops parcels without a zoning code",
+      hasCode: true,
+      hasWidgets: false,
+      hasGrammar: false,
+      hasProvenance: false,
+      inputPorts: [{ types: ["DATAFRAME"], cardinality: "1" }],
+      outputPorts: [{ types: ["DATAFRAME", "JSON"], cardinality: "[1,n]" }],
+      sourceFilename: "clean.py",
+    });
+    // The code is the node's content, once.
+    expect(byId["configured-1"].content).toBe("return arg.dropna()");
+    // The live node keeps its own copy untouched.
+    expect(config.sourceCode).toBe("return arg.dropna()");
+    expect(config.inputPorts[0].id).toBe("k3j9x0a1");
+    expect(byId["plain-1"].metadata).toBeUndefined();
+  });
 });
 
 describe("TrillGenerator node comments (#237)", () => {
@@ -417,5 +483,38 @@ describe("TrillGenerator Spatial Join settings (#262)", () => {
     const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
     expect(byId["sj-1"].metadata.spatialJoin).toEqual({ nameProperty: "pri_neigh" });
     expect(byId["sj-2"].metadata).toBeUndefined();
+  });
+});
+
+describe("TrillGenerator Data Pool conflict modes (#581)", () => {
+  beforeEach(() => {
+    TrillGenerator.reset();
+  });
+
+  test("persists the chosen modes at metadata.dataPool, and only a mode that is not Overwrite", () => {
+    const pool = (nodeId: string, dataPool?: unknown) => ({
+      type: "CURIO_UNIVERSAL_NODE",
+      position: { x: 0, y: 0 },
+      data: { nodeId, nodeType: "curio.builtin/data-pool", ...(dataPool ? { dataPool } : {}) },
+    });
+    const spec = TrillGenerator.generateTrill(
+      [
+        pool("both", { insideChart: "MERGE_AND", betweenCharts: "MERGE_OR" }),
+        pool("between", { insideChart: "OVERWRITE", betweenCharts: "MERGE_AND" }),
+        // The defaults, an untouched pool, and a value that is no mode.
+        pool("defaults", { insideChart: "OVERWRITE", betweenCharts: "OVERWRITE" }),
+        pool("untouched"),
+        pool("junk", { betweenCharts: "MERGE_(AND)" }),
+      ],
+      [],
+      "Imported Workflow"
+    );
+
+    const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
+    expect(byId["both"].metadata.dataPool).toEqual({ insideChart: "MERGE_AND", betweenCharts: "MERGE_OR" });
+    expect(byId["between"].metadata.dataPool).toEqual({ betweenCharts: "MERGE_AND" });
+    expect(byId["defaults"].metadata).toBeUndefined();
+    expect(byId["untouched"].metadata).toBeUndefined();
+    expect(byId["junk"].metadata).toBeUndefined();
   });
 });

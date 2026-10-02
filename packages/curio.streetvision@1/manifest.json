@@ -9,16 +9,12 @@
     "js": {},
     "packages": {},
     "python": {
-      "torch": ">=2.0",
-      "transformers": ">=4.30",
-      "ultralytics": ">=8.0",
-      "huggingface_hub": ">=0.20"
+      "onnxruntime": ">=1.17"
     }
   },
-  "description": "Street-level computer vision nodes: fetch Google Street View imagery, run HuggingFace segmentation/detection models on the panoramas. The catalog install will pip-install torch/transformers/ultralytics on first install. Users paste their Google Maps API key directly into the Street View Fetcher node.",
+  "description": "Street-level computer vision: the Image Segmentation node labels every pixel of street photos with a model from the Model Catalog, and reports each class's share of every image. Images come from the Data or Discovery Catalog (Mapillary, Google Street View); models from the Model Catalog, where DDRNet23-Slim ships with Curio and Hugging Face models are added from the Discovery Catalog.",
   "id": "curio.streetvision",
   "license": "MIT",
-  "behaviorScript": "scripts/behaviors.js",
   "name": "Street Vision",
   "permissions": [],
   "publisher": "Curio",
@@ -26,51 +22,31 @@
   "templates": [
     {
       "category": "computation",
-      "description": "Geocode a place name, sample Google Street View imagery inside its bounding box, and emit a GEODATAFRAME of image points (each feature carrying image_url + lat/lon). Reusable for anyone needing Street View panoramas without inference.",
-      "editor": "none",
+      "description": "Label every pixel of each image with a Model Catalog model: drag a model onto the node to choose it. Input: a collection's rows, each with a path (Data Loading on street-level images). Output: the same rows with one column per class asked for (its share of the image's pixels, in percent), dominant_class, dominant_pct and an overlay_url a Simple View shows.",
+      "editor": "code",
       "engine": "python",
-      "hasCode": false,
-      "hasGrammar": false,
-      "hasWidgets": false,
-      "iconRef": "fa-solid:street-view",
-      "id": "street-view-fetcher",
-      "inputPorts": [],
-      "label": "Street View Fetcher",
-      "behavior": "street-view-fetcher",
-      "outputPorts": [
-        {
-          "cardinality": "1",
-          "types": ["GEODATAFRAME"]
-        }
-      ],
-      "paletteOrder": 0
-    },
-    {
-      "category": "computation",
-      "description": "Run HuggingFace segmentation or detection models on a collection of image points. Input: a GEODATAFRAME whose features carry image_url (any source works — Street View Fetcher, Data Loading, or a custom Python node). Output: a GEODATAFRAME of the same image points, with each detected class flattened into its own column plus dominant_class, dominant_pct and an overlay_url a Simple View can display.",
-      "editor": "none",
-      "engine": "python",
-      "hasCode": false,
+      "hasCode": true,
       "hasGrammar": false,
       "hasWidgets": false,
       "iconRef": "fa-solid:wand-magic-sparkles",
-      "id": "hf-cv-inference",
+      "id": "image-segmentation",
       "inputPorts": [
         {
           "cardinality": "1",
-          "types": ["GEODATAFRAME", "JSON"]
+          "types": ["GEODATAFRAME", "DATAFRAME"]
         }
       ],
-      "label": "HF CV Inference",
-      "behavior": "hf-cv-inference",
+      "label": "Image Segmentation",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "1",
           "types": ["GEODATAFRAME"]
         }
       ],
-      "paletteOrder": 1
+      "source": "sources/image-segmentation.py",
+      "paletteOrder": 0
     }
   ],
-  "version": "1.1.0"
+  "version": "1.2.0"
 }

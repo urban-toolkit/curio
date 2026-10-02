@@ -1,0 +1,59 @@
+{
+  "id": "source.osm.openstreetmap",
+  "name": "OpenStreetMap",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "Buildings, roads, parks, water and land surface from OpenStreetMap, loaded through Autark for a box or for named areas. Each layer arrives as the features an Autark map draws.",
+  "publisher": "OpenStreetMap contributors",
+  "homepage": "https://www.openstreetmap.org",
+  "license": "ODbL 1.0",
+  "tags": ["openstreetmap", "osm", "buildings", "roads", "autark"],
+  "provider": {
+    "type": "autark-osm",
+    "baseUrl": "https://overpass-api.de",
+    "options": {}
+  },
+  "auth": { "mode": "public" },
+  "limits": { "requestsPerMinute": 2 },
+  "parameters": [
+    {
+      "id": "area", "type": "area", "label": "Area", "required": true, "accepts": ["box", "names"],
+      "maxAreaKm2": 25,
+      "description": "A box, or the areas inside a place as OpenStreetMap names their boundaries."
+    }
+  ],
+  "resources": [
+    {
+      "id": "buildings", "name": "Buildings", "kind": "table", "format": "geojson",
+      "description": "Building footprints, a building of several parts as one feature.",
+      "options": { "layers": ["buildings"] }
+    },
+    {
+      "id": "roads", "name": "Roads", "kind": "table", "format": "geojson",
+      "description": "Streets and paths, as lines.",
+      "options": { "layers": ["roads"] }
+    },
+    {
+      "id": "parks", "name": "Parks", "kind": "table", "format": "geojson",
+      "description": "Parks, gardens, woods and other green space.",
+      "options": { "layers": ["parks"] }
+    },
+    {
+      "id": "water", "name": "Water", "kind": "table", "format": "geojson",
+      "description": "Lakes, rivers and other water.",
+      "options": { "layers": ["water"] }
+    },
+    {
+      "id": "surface", "name": "Surface", "kind": "table", "format": "geojson",
+      "description": "The land inside the area's boundary.",
+      "options": { "layers": ["surface"] }
+    },
+    {
+      "id": "all-layers", "name": "All layers", "kind": "table", "format": "geojson",
+      "description": "Buildings, roads, parks, water and surface, as one group of five datasets.",
+      "options": { "layers": ["buildings", "roads", "parks", "water", "surface"] }
+    }
+  ],
+  "createdAt": "2026-10-01T00:00:00Z",
+  "updatedAt": "2026-10-01T00:00:00Z"
+}

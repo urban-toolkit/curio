@@ -1,0 +1,71 @@
+{
+  "id": "data.curio.mapillary-sample",
+  "name": "Mapillary street photos, Lincoln Park",
+  "version": "1.0.0",
+  "format": "collection",
+  "description": "Street-level photos around Lincoln Park, Chicago, from Mapillary, with each photographer, capture time and place.",
+  "publisher": "Mapillary contributors",
+  "license": "CC-BY-SA-4.0",
+  "tags": [
+    "example",
+    "mapillary",
+    "street-level",
+    "images"
+  ],
+  "dataFile": "data/index.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Mapillary (sample)",
+  "createdAt": "2024-05-01T00:00:00Z",
+  "updatedAt": "2024-05-01T00:00:00Z",
+  "rowCount": 40,
+  "featureCount": null,
+  "schema": null,
+  "discoverySource": {
+    "sourceId": "source.curio.example-storage@1",
+    "sourceName": "Example storage",
+    "resourceId": "mapillary",
+    "fileCount": 40,
+    "fields": "image_id",
+    "fetchedAt": "2024-05-01T00:00:00Z",
+    "fingerprint": "f63f408f20d87469bbbff9a48771e9113b99645ae1254671eaca5d403ba36331"
+  },
+  "collection": {
+    "kind": "images",
+    "sourceId": "source.curio.example-storage@1",
+    "sourceName": "Example storage",
+    "provider": "folder",
+    "resourceId": "mapillary",
+    "resource": "mapillary",
+    "resourceName": "Mapillary street photos",
+    "path": "mapillary/{image_id}.jpg",
+    "fields": [
+      "image_id"
+    ],
+    "fieldValues": [
+      {
+        "name": "image_id",
+        "type": "str",
+        "distinct": 40,
+        "min": "1000586504620407",
+        "max": "988325259964949"
+      }
+    ],
+    "counts": {
+      "image": 40
+    },
+    "fileCount": 40,
+    "totalBytes": 3226501,
+    "hasGps": true,
+    "probeErrors": 0,
+    "indexedAt": "2024-05-01T00:00:00Z",
+    "fingerprint": "f63f408f20d87469bbbff9a48771e9113b99645ae1254671eaca5d403ba36331",
+    "bounds": [
+      -87.656563,
+      41.91369,
+      -87.630049,
+      41.939802
+    ]
+  }
+}

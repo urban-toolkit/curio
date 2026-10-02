@@ -9,7 +9,7 @@ request. The fallback order:
   shares that account, so it never opens a configurations file.
 - An **internal** agent (a built-in that runs only as a delegate) always runs
   on its caller's configuration.
-- Any other agent runs on the configuration **chosen for it** in AI Settings.
+- Any other agent runs on the configuration **chosen for it** in API Settings.
 - With no choice, a **delegated** agent (``caller`` given) runs on its
   caller's configuration, and an attached one on the account's **default
   configuration**, else the **Deployment default** (``CURIO_DEFAULT_LLM_*``,
@@ -45,7 +45,7 @@ GUEST_LABEL = "Guest configuration"
 
 
 class ProviderConfigError(ValueError):
-    """No LLM configuration answers this caller: a 400 whose remedy opens AI Settings."""
+    """No LLM configuration answers this caller: a 400 whose remedy opens API Settings."""
 
     def __init__(self, message: str, *, agent_id: str | None = None):
         super().__init__(message)
@@ -114,7 +114,7 @@ def build_config(user_key: str, config_id: str, record: dict, *, source: str,
         if endpoint is None:
             raise ProviderConfigError(
                 f"The configuration {label!r} uses this Curio install's endpoint, which it no "
-                "longer offers. Choose another configuration in AI Settings.",
+                "longer offers. Choose another configuration in API Settings.",
                 agent_id=agent_id,
             )
         api_type, base_url, api_key = endpoint
@@ -153,14 +153,14 @@ def resolve_llm(user_key: str, agent_id: str | None = None, *,
     try:
         doc = llm_configs.default_store().read(user_key)
     except llm_configs.LlmConfigError as exc:
-        raise ProviderConfigError(f"{exc}. Fix it in AI Settings.", agent_id=agent_id) from exc
+        raise ProviderConfigError(f"{exc}. Fix it in API Settings.", agent_id=agent_id) from exc
     chosen = doc["agents"].get(agent_id) if agent_id and not internal else None
     if chosen == llm_configs.CHOICE_DEPLOYMENT:
         config = deployment_config(user_key, guest=guest)
         if config is None:
             raise ProviderConfigError(
                 f"{agent_id} is set to the Deployment default, which this Curio no longer "
-                "offers. Choose another configuration for it in AI Settings.",
+                "offers. Choose another configuration for it in API Settings.",
                 agent_id=agent_id,
             )
         return replace(config, source=SOURCE_ASSIGNED)
@@ -169,7 +169,7 @@ def resolve_llm(user_key: str, agent_id: str | None = None, *,
         if record is None:
             raise ProviderConfigError(
                 f"The LLM configuration chosen for {agent_id} no longer exists. Choose "
-                "another in AI Settings.",
+                "another in API Settings.",
                 agent_id=agent_id,
             )
         return build_config(user_key, chosen, record, source=SOURCE_ASSIGNED,
@@ -181,7 +181,7 @@ def resolve_llm(user_key: str, agent_id: str | None = None, *,
         record = doc["configs"].get(default_id)
         if record is None:
             raise ProviderConfigError(
-                "Your default LLM configuration no longer exists. Choose another in AI Settings.",
+                "Your default LLM configuration no longer exists. Choose another in API Settings.",
                 agent_id=agent_id,
             )
         return build_config(user_key, default_id, record, source=SOURCE_DEFAULT,
@@ -189,7 +189,7 @@ def resolve_llm(user_key: str, agent_id: str | None = None, *,
     config = deployment_config(user_key, guest=guest)
     if config is None:
         raise ProviderConfigError(
-            "No LLM configuration answers this run. Add one in AI Settings, or ask your "
+            "No LLM configuration answers this run. Add one in API Settings, or ask your "
             "Curio operator to configure a default.",
             agent_id=agent_id,
         )

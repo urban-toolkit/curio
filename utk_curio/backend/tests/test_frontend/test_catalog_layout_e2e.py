@@ -1,4 +1,4 @@
-"""The five browse pages share one layout, and it leaves room for the cards.
+"""The browse pages share one layout, and it leaves room for the cards.
 
 Two things the owner saw on the catalog pages:
 
@@ -43,7 +43,8 @@ PAGES = (
     ("/catalog/nodes", "Node Catalog", "article"),
     ("/catalog/data", "Data Catalog", "article"),
     ("/catalog/agents", "Agent Catalog", "article"),
-    ("/catalog/lakes", "Data Lake Catalog", "article"),
+    ("/catalog/discovery", "Discovery Catalog", "article"),
+    ("/catalog/models", "Model Catalog", "article"),
 )
 
 #: The details drawer is 320px wide; with it open, <main> ends left of this.

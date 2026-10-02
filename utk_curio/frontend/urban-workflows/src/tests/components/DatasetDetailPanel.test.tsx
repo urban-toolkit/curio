@@ -36,7 +36,11 @@ jest.mock("../../components/datasets/catalog/DatasetDataflowUsage", () => ({
   DatasetDataflowUsageSection: () => null,
 }));
 
-import { DatasetDetailPanel } from "../../components/datasets/catalog/DatasetDetailPanel";
+import {
+  DatasetDetailPanel,
+  parameterLabel,
+  parameterText,
+} from "../../components/datasets/catalog/DatasetDetailPanel";
 import { useDatasetLineage } from "../../services/datasetLineage/useDatasetLineage";
 import type { DatasetCatalogItem } from "../../services/datasetCatalog";
 import type {
@@ -460,9 +464,9 @@ describe("DatasetDetailPanel provenance for a portal download", () => {
     mockUseDatasetLineage.mockReset();
   });
 
-  const lakeSource = {
-    lakeId: "lake.cityofchicago.data-portal@1",
-    lakeName: "City of Chicago Data Portal",
+  const discoverySource = {
+    sourceId: "source.cityofchicago.data-portal@1",
+    sourceName: "City of Chicago Data Portal",
     resourceId: "ijzp-q8t2",
     resourceUrl: "https://data.cityofchicago.org/resource/ijzp-q8t2.csv",
     fetchedAt: new Date().toISOString(),
@@ -481,21 +485,21 @@ describe("DatasetDetailPanel provenance for a portal download", () => {
     // The dataset is `origin: "imported"` like any upload, so without this
     // block nothing on the page says it came from a portal at all - which was
     // the state a full-stack run found it in.
-    renderWithRouter(catalogItem({ origin: "imported", lakeSource }));
+    renderWithRouter(catalogItem({ origin: "imported", discoverySource }));
 
     const portal = screen.getByRole("link", { name: "City of Chicago Data Portal" });
     expect(portal).toHaveAttribute(
       "href",
-      "/catalog/lakes/lake.cityofchicago.data-portal%401",
+      "/catalog/discovery/source.cityofchicago.data-portal%401",
     );
   });
 
   it("links the resource out to the portal's own page", () => {
-    renderWithRouter(catalogItem({ origin: "imported", lakeSource }));
+    renderWithRouter(catalogItem({ origin: "imported", discoverySource }));
 
     // With the arrow every link that opens a new tab carries.
     const resource = screen.getByRole("link", { name: "ijzp-q8t2 ↗" });
-    expect(resource).toHaveAttribute("href", lakeSource.resourceUrl);
+    expect(resource).toHaveAttribute("href", discoverySource.resourceUrl);
     // An outbound link to a third party: no window handle back to this tab.
     expect(resource).toHaveAttribute("rel", expect.stringContaining("noopener"));
   });
@@ -503,7 +507,7 @@ describe("DatasetDetailPanel provenance for a portal download", () => {
   it("says a hand download came by hand, from its link", () => {
     renderWithRouter(catalogItem({
       origin: "imported",
-      lakeSource: {
+      discoverySource: {
         resourceUrl: "https://data.example.org/cities.csv",
         manual: true,
         fetchedAt: new Date().toISOString(),
@@ -521,5 +525,41 @@ describe("DatasetDetailPanel provenance for a portal download", () => {
     renderWithRouter(catalogItem({ origin: "imported" }));
 
     expect(screen.queryByText("Downloaded from")).not.toBeInTheDocument();
+  });
+
+  it("lists what a narrowed download was narrowed by", () => {
+    renderWithRouter(catalogItem({
+      origin: "imported",
+      discoverySource: {
+        ...discoverySource,
+        parameters: {
+          area: { box: [-87.64, 41.875, -87.62, 41.89], label: "The Loop" },
+          maxImages: 20,
+        },
+        parametersHash: "0123456789abcdef",
+      },
+    }));
+
+    expect(screen.getByText("Area")).toBeInTheDocument();
+    expect(screen.getByText("The Loop (-87.6400, 41.8750, -87.6200, 41.8900)")).toBeInTheDocument();
+    expect(screen.getByText("Max images")).toBeInTheDocument();
+    expect(screen.getByText("20")).toBeInTheDocument();
+  });
+});
+
+describe("what a dataset says it was narrowed by, as text", () => {
+  it("reads a parameter id as a label", () => {
+    expect(parameterLabel("area")).toBe("Area");
+    expect(parameterLabel("maxImages")).toBe("Max images");
+  });
+
+  it("reads a box, named areas, dates and values", () => {
+    expect(parameterText({ box: [-87.64, 41.875, -87.62, 41.89] })).toBe("-87.6400, 41.8750, -87.6200, 41.8900");
+    expect(parameterText({ names: { geocodeArea: "Chicago", areas: ["Loop", "Near North Side"] } }))
+      .toBe("Loop, Near North Side in Chicago");
+    expect(parameterText({ start: "2024-01-01", end: "2024-06-30" })).toBe("2024-01-01 to 2024-06-30");
+    expect(parameterText(["0", "90"])).toBe("0, 90");
+    expect(parameterText(true)).toBe("Yes");
+    expect(parameterText(false)).toBe("No");
   });
 });

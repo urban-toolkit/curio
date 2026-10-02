@@ -255,6 +255,27 @@ def _content_type(headers: dict) -> str:
     return str(headers.get("Content-Type") or headers.get("content-type") or "")
 
 
+def _origin(url: str) -> tuple[str, str, int | None]:
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    return parts.scheme.lower(), (parts.hostname or "").lower(), parts.port
+
+
+def _hop_headers(headers: dict | None, secret_headers: dict | None, current: str, first: str) -> dict:
+    """What one hop sends: *headers* always, *secret_headers* only while the
+    hop is on the origin the request started at.
+
+    A redirect to another host (a CDN, a signed-URL bucket) never needs the
+    source's key and must not receive it, as a browser drops ``Authorization``
+    on a cross-origin redirect.
+    """
+    sent = dict(headers or {})
+    if secret_headers and _origin(current) == _origin(first):
+        sent.update(secret_headers)
+    return sent
+
+
 def fetch(
     url: str,
     *,
@@ -267,6 +288,7 @@ def fetch(
     headers: dict | None = None,
     params: dict | None = None,
     max_bytes: int = MAX_BODY_BYTES,
+    secret_headers: dict | None = None,
 ) -> EgressResult:
     """Fetch one URL under the full policy. Raises :class:`EgressRefused` on
     a policy violation (any hop); transport errors propagate (the caller maps
@@ -280,6 +302,9 @@ def fetch(
     is unchanged. A caller whose result is not going into a prompt may raise
     it - a portal's ``package_search`` page routinely exceeds 256 KiB - and
     doing so loosens nothing about *who* may be contacted.
+
+    ``secret_headers`` (a source's key) go only to hops on the origin *url*
+    starts at; a redirect elsewhere gets ``headers`` alone.
     """
     request_fn = request_fn or _default_request
     started = time.monotonic()
@@ -297,8 +322,9 @@ def fetch(
         # request_fn declares are passed, so every two-argument test double
         # keeps working unchanged.
         candidates = {"trusted_host": trusted_host, "max_bytes": max_bytes}
-        if headers:
-            candidates["headers"] = dict(headers)
+        hop_headers = _hop_headers(headers, secret_headers, current, url)
+        if hop_headers:
+            candidates["headers"] = hop_headers
         extra = _accepted_kwargs(request_fn, candidates)
         # Unpacked as ``resp_headers``: ``headers`` is this call's REQUEST
         # headers, and rebinding it here would send the previous response's
@@ -322,7 +348,7 @@ def fetch(
             truncated=truncated,
             redirects=redirects,
             elapsed_ms=int((time.monotonic() - started) * 1000),
-            headers=dict(headers or {}),
+            headers=dict(resp_headers or {}),
         )
         result.audit = {
             "url": url,
@@ -349,6 +375,7 @@ def download(
     headers: dict | None = None,
     timeout_s: int = DOWNLOAD_TIMEOUT_S,
     progress=None,
+    secret_headers: dict | None = None,
 ) -> DownloadResult:
     """Stream one URL to *sink* under the same policy :func:`fetch` uses.
 
@@ -367,6 +394,8 @@ def download(
     - the stream exceeds it anyway (a lying or absent ``Content-Length``) -
       refused at the chunk that would cross the line, so the sink never
       receives more than the bound.
+
+    ``secret_headers`` go only to hops on *url*'s origin, as in :func:`fetch`.
     """
     request_fn = request_fn or _default_stream_request
     started = time.monotonic()
@@ -375,7 +404,8 @@ def download(
     while True:
         _policy_hop(current, resolver=resolver, trusted_host=trusted_host, budget=budget)
         status, response_headers, location, chunks = request_fn(
-            method, current, trusted_host=trusted_host, headers=headers, timeout_s=timeout_s
+            method, current, trusted_host=trusted_host,
+            headers=_hop_headers(headers, secret_headers, current, url), timeout_s=timeout_s,
         )
         following = _next_redirect(status, location, current, redirects)
         if following is not None:

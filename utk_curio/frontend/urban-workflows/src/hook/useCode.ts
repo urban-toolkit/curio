@@ -13,6 +13,9 @@ import { DatasetNodeSource } from "../services/datasetCatalog";
 import { deoverlapNodes } from "../utils/deoverlapLayout";
 import { rekeyNodeProvenance } from "../utils/nodeProvenanceKeys";
 import type { SelectionEchoOptions } from "../utils/selectionEcho";
+import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
+import { canvasTemplateConfigFromSpec } from "../utils/canvasTemplateConfigSpec";
+import { dataPoolFromSpec } from "../utils/dataPoolSpec";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -46,6 +49,8 @@ type CreateCodeNodeOptions = {
     datasetRefs?: string[];
     appliedDatasets?: Record<string, unknown>;
     datasetSource?: DatasetNodeSource;
+    // The model a Model Catalog drop set (canonical shape metadata.modelRefs).
+    modelRefs?: { id: string; name: string }[];
     saveOutputDataset?: boolean;
     // dev/89: per-node appearance (canonical spec shape metadata.appearance;
     // normalized values only — validation is utils/nodeAppearance's job).
@@ -65,6 +70,11 @@ type CreateCodeNodeOptions = {
     // #412: a renamed node header (metadata.packageTemplateLabel), which the
     // header reads through resolveNodeDisplayLabel.
     packageTemplateLabel?: string;
+    // #412: the rest of what the node settings modal saved
+    // (metadata.packageTemplateConfig), which the editor tabs read.
+    packageTemplateConfig?: Partial<CanvasTemplateConfig>;
+    // #581: a Data Pool's conflict modes (metadata.dataPool).
+    dataPool?: { insideChart?: string; betweenCharts?: string };
     // #407: a node whose saved output a project load restored mounts as having
     // run: the output it shows, and the source that produced it.
     output?: { code: string; content: string };
@@ -209,6 +219,9 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && node.metadata.datasetSource != undefined)
                 nodeMeta.datasetSource = node.metadata.datasetSource;
 
+            if(node.metadata != undefined && Array.isArray(node.metadata.modelRefs))
+                nodeMeta.modelRefs = node.metadata.modelRefs;
+
             // dev/89: the canonical per-node appearance round-trips into live
             // data (rendered via utils/nodeAppearance — invalid legacy values
             // fall back at render, never here).
@@ -231,6 +244,14 @@ export function useCode(): IUseCode {
             // #412: and so does a renamed node header.
             if(node.metadata != undefined && typeof node.metadata.packageTemplateLabel === "string")
                 nodeMeta.packageTemplateLabel = node.metadata.packageTemplateLabel;
+
+            // #412: and the rest of the node settings config, with fresh port ids.
+            if(node.metadata != undefined && node.metadata.packageTemplateConfig != undefined)
+                nodeMeta.packageTemplateConfig = canvasTemplateConfigFromSpec(node.metadata.packageTemplateConfig);
+
+            // #581: and a Data Pool's conflict modes, the ones that name a mode.
+            if(node.metadata != undefined && node.metadata.dataPool != undefined)
+                nodeMeta.dataPool = dataPoolFromSpec(node.metadata.dataPool);
 
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
@@ -382,6 +403,7 @@ export function useCode(): IUseCode {
             datasetRefs = undefined,
             appliedDatasets = undefined,
             datasetSource = undefined,
+            modelRefs = undefined,
             saveOutputDataset = undefined,
             appearance = undefined,
             title = undefined,
@@ -389,6 +411,8 @@ export function useCode(): IUseCode {
             spatialJoin = undefined,
             simpleVis = undefined,
             packageTemplateLabel = undefined,
+            packageTemplateConfig = undefined,
+            dataPool = undefined,
             output = undefined,
             executedCode = undefined,
         } = options;
@@ -435,6 +459,8 @@ export function useCode(): IUseCode {
                 spatialJoin,
                 simpleVis,
                 packageTemplateLabel,
+                packageTemplateConfig,
+                dataPool,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset
@@ -447,6 +473,7 @@ export function useCode(): IUseCode {
                 propagationCallback: applyNewPropagation,
                 ...(output !== undefined ? { output } : {}),
                 ...(executedCode !== undefined ? { executedCode } : {}),
+                ...(modelRefs !== undefined ? { modelRefs } : {}),
             },
         };
 

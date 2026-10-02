@@ -35,7 +35,8 @@ This document describes the internal architecture of Curio for contributors who 
 * [LLM Configurations and Resolution](#llm-configurations-and-resolution)
 * [Agent Runtime](#agent-runtime)
 * [Python Dependencies](#python-dependencies)
-* [Data Lake Catalog](#data-lake-catalog)
+* [Discovery Catalog](#discovery-catalog)
+* [Model Catalog](#model-catalog)
 * [Backend API Reference](#backend-api-reference)
 * [Key Files at a Glance](#key-files-at-a-glance)
 
@@ -169,10 +170,14 @@ packages/
   curio.builtin@1/        # always-on baseline (data, computation, autk, vis, flow nodes)
     manifest.json
     integrity.json        # SHA-256 of every file (written on install, not verified)
-  curio.streetvision@1/   # optional package, install from /catalog
+  curio.example-ui@1/     # optional package, install from /catalog
     manifest.json
-    sources/*.tsx         # custom behavior hooks (Street View Fetcher, …)
-    scripts/behaviors.js # pre-built bundle that registers those hooks at boot
+    sources/*.tsx         # custom behavior hook (Column Filter) and its bundle entry
+    scripts/behaviors.js  # pre-built bundle that registers that hook at boot
+    integrity.json
+  curio.streetvision@1/   # optional package: one Python code template, no bundle
+    manifest.json
+    sources/image-segmentation.py
     integrity.json
 ```
 
@@ -202,7 +207,7 @@ Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 | Grammar (Autark) | `autk-grammar`, one node whose UrbanSpec unifies OSM/PBF loading, GPU `compute`, and `map` + `plot` rendering |
 | Chart/table visualization | `vis-vega`, `vis-simple` (a table, or a card per row when the frame carries images) |
 
-Third-party packages (or first-party optional ones, like `curio.streetvision@1`) install via the **catalog drawer** in the canvas, which copies the package directory into the user's store at `.curio/users/<user>/packages/`.
+Third-party packages (or first-party optional ones, like `curio.example-ui@1`) install via the **catalog drawer** in the canvas, which copies the package directory into the user's store at `.curio/users/<user>/packages/`.
 
 ### NodeDescriptor: Static Metadata
 
@@ -241,7 +246,7 @@ interface NodeAdapter {
 
 ### Behavior Hooks
 
-Every template in a manifest references a **behavior key** (the `behavior` field, holding values such as `"code"`, `"vega"`, `"data-pool"`, or `"street-view-fetcher"`). A behavior is a React custom hook that runs inside `UniversalNode` and controls the node's behaviour:
+Every template in a manifest references a **behavior key** (the `behavior` field, holding values such as `"code"`, `"vega"`, `"data-pool"`, or `"column-filter"`). A behavior is a React custom hook that runs inside `UniversalNode` and controls the node's behaviour:
 
 ```typescript
 type NodeBehaviorHook = (
@@ -265,14 +270,13 @@ Behaviors register against a single global registry, [`behaviorRegistry.ts::regi
 
 **2. Per-package (dynamic, loaded at boot).** A package whose templates need custom UI can declare `"behaviorScript": "scripts/behaviors.js"` in its manifest and ship a pre-built JS bundle alongside the manifest. At boot, [`packagesClient.ts::loadPackageBehaviorScripts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) fetches each installed package's bundle with the user's Bearer token and injects the response body as an inline `<script>` *before* descriptors are built. The bundle's top-level side-effect calls `window.curio.registerBehavior(...)` for each hook it ships.
 
-**Worked example: `curio.streetvision@1`** ships two custom behaviors:
+**Worked example: `curio.example-ui@1`** ships one custom behavior:
 
 | Behavior key | Hook | Purpose |
 |---|---|---|
-| `street-view-fetcher` | `useStreetViewFetcherBehavior` | Place geocoding, bbox preview, Google Street View image batch fetch |
-| `hf-cv-inference` | `useHfCvInferenceBehavior` | HuggingFace model picker + segmentation/detection job polling, emitting a GEODATAFRAME |
+| `column-filter` | `useColumnFilterBehavior` | Column, comparison and threshold controls in the node body; sends the matching rows downstream as a DATAFRAME |
 
-Each sits in `packages/curio.streetvision@1/sources/*.tsx`, webpack-bundles them into `scripts/behaviors.js` (UMD + React/ReactFlow externalized to share Curio's instances at runtime), and the manifest's `behavior` field maps each template to one. The catalog install copies the package directory; boot loads the bundle; the user gets two custom-rendered nodes without rebuilding Curio. See [EXTENDING.md §4](EXTENDING.md) for the recipe.
+The hook sits in `packages/curio.example-ui@1/sources/columnFilterBehavior.tsx` and `sources/index.tsx` registers it; webpack bundles them into `scripts/behaviors.js` (UMD + React/ReactFlow externalized to share Curio's instances at runtime), and the manifest's `behavior` field maps the template to it. The catalog install copies the package directory; boot loads the bundle; the user gets a custom-rendered node without rebuilding Curio. See [EXTENDING.md §4](EXTENDING.md) for the recipe.
 
 #### Adding a built-in behavior, icon, or grammar adapter
 
@@ -784,13 +788,22 @@ Interactions are stored in `FlowProvider.interactions[]` and passed down to node
 
 ### Propagation Strategies
 
-When multiple interactions reach the same node, the node resolves them using a strategy:
+A Data Pool resolves the selections that reach it with two modes, chosen in the two selects at the top of its body and saved with the node (`metadata.dataPool`):
 
-| Strategy | Semantics |
+- **Conflict inside visualization** (`insideChart`) combines the selects of one chart, such as a Vega chart with two params.
+- **Conflict between visualizations** (`betweenCharts`) combines the charts linked to the pool by an interaction edge.
+
+| Mode | Semantics |
 |---|---|
-| `OVERWRITE` | Only the most recent interaction applies |
-| `MERGE_AND` | Row must satisfy all active interactions |
-| `MERGE_OR` | Row must satisfy at least one active interaction |
+| `OVERWRITE` (default) | Only the most recent selection applies |
+| `MERGE_AND` | A row must be picked by every active selection |
+| `MERGE_OR` | A row must be picked by at least one active selection |
+
+A selection is active when it picks something: a point selection with rows, or an interval over at least one column. A select nobody has used, or one that was cleared, takes no part in `MERGE_AND`.
+
+`FlowProvider.applyNewInteractions` hands a pool only the chart that just selected. The pool keeps each linked chart's latest selection itself, keyed by the chart's node id (`dataPoolBehavior`): the newest is priority 1, the others 0, and `utils/selectionMatch.matchSelections` resolves them. `OVERWRITE` resolves the priority-1 entry alone. A chart whose interaction edge to the pool is removed leaves that map. Choosing another mode resolves the selections the pool holds again.
+
+The pool writes its `interacted` flags into a copy of its output (`utils/poolFlagCopy`), never into its input or into an output it already sent, which the charts downstream still hold. Its echo names the chart that just selected (`selectionSource`, see `utils/selectionEcho`) under every mode. An Autark node skips an echo of its own selection, so a plot keeps its brush; a Vega chart applies it, which only recolours rows. Every other chart shows the resolved rows, and an Autark plot shows them as its selection in place of its own brush.
 
 The propagation counter (`INodeData.propagation`) is incremented each time an interaction change needs to trigger a re-execution, allowing nodes to detect when they need to re-run without comparing the full interaction payload.
 
@@ -1013,10 +1026,10 @@ Every external row also says what the user can do with it, read from the same pr
 | The row's access | What the card offers |
 |---|---|
 | **fetchable**: the data URL answered with data Curio does not download itself (an XML API, or a plain http link) | Confirming it starts the node's own builder on it at once. The loader is written, verified and lands as ordinary reviewed content. |
-| **manual-download**: the data URL answered with a page, gated it (401/403/451), or served an archive | The card carries the portal's download steps (its URL, the page as it answered, the file format, the row's stated requirement) and an **Import dataset** button, the same Data Catalog import as the drawer footer. After the import, that dataset becomes the node's source and the builder starts on it, by id. The imported file records the row's link as its `lakeSource`, and a file already held is not registered twice. |
+| **manual-download**: the data URL answered with a page, gated it (401/403/451), or served an archive | The card carries the portal's download steps (its URL, the page as it answered, the file format, the row's stated requirement) and an **Import dataset** button, the same Data Catalog import as the drawer footer. After the import, that dataset becomes the node's source and the builder starts on it, by id. The imported file records the row's link as its `discoverySource`, and a file already held is not registered twice. |
 | **unknown**: nothing was probed, the policy refused the URL, or the answer was neither | The row says so, and nothing upgrades it. |
 
-A row marked **Downloadable** is one Curio fetches itself (see [Agent tools](#agent-tools)). Its **Download** runs the Data Lake Catalog's own download job, and the dataset it lands becomes the node's source. Confirming the row does the same: a small file lands before the confirmation answers and the builder starts on it, and a larger one keeps the node waiting until the next Solve finds it landed. A downloadable row carries no portal steps and no fetch code.
+A row marked **Downloadable** is one Curio fetches itself (see [Agent tools](#agent-tools)). Its **Download** runs the Discovery Catalog's own download job, and the dataset it lands becomes the node's source. Confirming the row does the same: a small file lands before the confirmation answers and the builder starts on it, and a larger one keeps the node waiting until the next Solve finds it landed. A downloadable row carries no portal steps and no fetch code.
 
 The download steps are the portal's: when a page title is all the portal gave, the step says the portal describes the click path. Curio does not script a click-through portal's download.
 
@@ -1075,7 +1088,7 @@ Solve runs from the Dataflow Builder's **Solve** over an applied plan, or from *
 
 ### Connection keys
 
-A key must never be a literal in node code: the code is saved into the dataflow, replayed in every proposal preview, recorded by the runtime journal on every run and exported with the project. A **connection key** is saved once under a name bound to a host, in **AI Settings → Connection keys**, through a masked field that never reads the value back, and node code reaches it only as `curio_secret("<name>")`.
+A key must never be a literal in node code: the code is saved into the dataflow, replayed in every proposal preview, recorded by the runtime journal on every run and exported with the project. A **connection key** is saved once under a name bound to a host, in **API Settings → Connection keys**, through a masked field that never reads the value back, and node code reaches it only as `curio_secret("<name>")`.
 
 - **At run time.** The runtime resolves the names the code uses, for Play and for Solve alike, and hands the values to the sandbox inside the execution request, where they exist only as that callable in the node's namespace: never an environment variable, never a file, never a log line. A key a node prints is redacted before the output leaves the sandbox. The saved dataflow, the journal, the proposals and the chat carry the name only.
 - **For agents.** A content builder's grounded inputs list `availableSecrets` with the line to copy and how the API expects the key (`query:<param>`, `header:<Name>`, or in the code). The grounding gate accepts `curio_secret("<name>")` for a saved name (the Source block reads *Connection key · census · api.census.gov*), refuses an unknown name listing the saved ones, and refuses a credential-shaped literal before anything runs. When a saved key is bound to the host a failing request targets, Solve probes that request with the key and tells the correction what the keyed request answered, redacted. When no key exists, the content builder declines in one line and the node's failure ends with **Add key for** and the host, which opens the settings section with the host filled in.
@@ -1148,8 +1161,7 @@ Curio's Python deps live in two places:
 // packages/curio.streetvision@1/manifest.json
 "dependencies": {
   "python": {
-    "torch": ">=2.0", "transformers": ">=4.30",
-    "ultralytics": ">=8.0", "huggingface_hub": ">=0.20"
+    "onnxruntime": ">=1.17"
   }
 }
 ```
@@ -1166,7 +1178,7 @@ Spec syntax accepts PEP 440 comparators (`>=2.0`, `~=4.30`, `==1.5.0`), bare ver
 
 ### Framework requirements and standalone libraries
 
-The framework needs to boot before any manifests can be walked, so `pip install -r requirements.txt` (or `pip install utk-curio`) seeds enough of an env that the launcher can read `manifest.dependencies.python` and continue. A package's heavy libraries are not in the framework requirements: Street Vision's `torch` installs when the user clicks Install in the catalog.
+The framework needs to boot before any manifests can be walked, so `pip install -r requirements.txt` (or `pip install utk-curio`) seeds enough of an env that the launcher can read `manifest.dependencies.python` and continue. A package's heavy libraries are not in the framework requirements: they install when the user clicks Install in the catalog, and a Transformers model's `torch` installs when the model is added to the Model Catalog.
 
 Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING.md) (canvas → Data → Installed libraries) sit in a third bucket, per-user JSON at `.curio/users/<u>/installed-libraries.json`, and pip-install through the same `pip_runner`, with ref-counted uninstall against every installed package's manifest.
 
@@ -1174,18 +1186,19 @@ The same route is reachable without opening that modal: when a node run ends in 
 
 ---
 
-## Data Lake Catalog
+## Discovery Catalog
 
-The user-facing model is in [DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md) and the routes are in [Data Lake Routes](#data-lake-routes). The backend is `backend/app/datalakes/`: `domain/` (manifest, source ids, formats, path templates), `application/` (catalog, browse, acquire, jobs, and for storage sources scan, storage acquire, combine, index, cache and media), `infrastructure/` (credentials, rate limits, storage, transport, media directories) and `providers/` (one module per portal software, and one per storage type). Every outbound request passes the egress policy described in [DEPLOYMENT.md § Outbound requests](DEPLOYMENT.md#outbound-requests).
+The user-facing model is in [DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md) and the routes are in [Discovery Catalog Routes](#discovery-catalog-routes). The backend is `backend/app/discovery/`: `domain/` (manifest, parameters, source ids, formats, path templates), `application/` (catalog, browse, acquire, jobs, places, for storage sources scan, storage acquire, combine, index, cache and media, and service acquire), `infrastructure/` (credentials, rate limits, storage, transport, media directories) and `providers/` (one module per portal software, one per storage type, and one per service). Every outbound request from Python passes the egress policy described in [DEPLOYMENT.md § Outbound requests](DEPLOYMENT.md#outbound-requests); an OpenStreetMap download's requests leave from autk-db in Node ([Services](#services)).
 
 ### Sources and manifests
 
-A source describes one portal or one storage source in `datalakes/<sourceId>@<major>/manifest.json`, under `CURIO_DATALAKE_ROOT` when that is set. `infrastructure/storage.py` also reads an instance root, `.curio/datalakes/` (`instance_root()`), for an operator's own sources: shipped sources are listed first, and an instance source whose id a shipped one uses is skipped with a log line. Only a shipped `folder` source may give a relative `root`, resolved against the repository. `.curio/datalakes` is in `hardening.SENSITIVE_PATHS`, so a node running as `curio-exec` cannot add a folder for the backend to serve. Neither root is created eagerly. [`domain/manifest.py`](../utk_curio/backend/app/datalakes/domain/manifest.py) validates a manifest, [`docs/schemas/data-lake-source.v1.json`](schemas/data-lake-source.v1.json) publishes the same contract, and `tests/test_datalakes/test_schema_matches_validator.py` derives its assertions from the validator, so the two cannot drift.
+A source describes one portal or one storage source in `discovery/<sourceId>@<major>/manifest.json`, under `CURIO_DISCOVERY_ROOT` when that is set. `infrastructure/storage.py` also reads an instance root, `.curio/discovery/` (`instance_root()`), for an operator's own sources: shipped sources are listed first, and an instance source whose id a shipped one uses is skipped with a log line. Only a shipped `folder` source may give a relative `root`, resolved against the repository. `.curio/discovery` is in `hardening.SENSITIVE_PATHS`, so a node running as `curio-exec` cannot add a folder for the backend to serve. Neither root is created eagerly. [`domain/manifest.py`](../utk_curio/backend/app/discovery/domain/manifest.py) validates a manifest, [`docs/schemas/discovery-source.v1.json`](schemas/discovery-source.v1.json) publishes the same contract, and `tests/test_discovery/test_schema_matches_validator.py` derives its assertions from the validator, so the two cannot drift.
 
-- **Ids** (`domain/source_id.py`) are three to six dot-separated lowercase segments, the first always `lake`. They name the publisher, never the software: `provider.type` can change when a portal migrates, and an id cannot.
-- **`provider.type`** is one of `PROVIDER_TYPES`: the `PORTAL_PROVIDER_TYPES`, which must equal the keys of `PROVIDERS` in `providers/__init__.py`, and the `STORAGE_PROVIDER_TYPES` (`folder`, `s3`, `huggingface`), which must equal the keys of `STORAGE_PROVIDERS`. Asserts check both at import time.
-- **Resources** (`_parse_resources`) are a storage source's declared contents, at most `MAX_RESOURCES` (64). Each `path` compiles through [`domain/templates.py`](../utk_curio/backend/app/datalakes/domain/templates.py) into a regex with typed captures (`str`, `int`, ISO `date`, or a strftime `datetime`) and a literal prefix, which a bucket lists under. A capture may not take a name a collection index uses for its own columns (`RESERVED_NAMES`), or `source_file` for a table. A storage source's `capabilities.formats` is derived from its resources, and a manifest that declares it is refused.
-- **Formats.** `capabilities.formats` is an upper bound, intersected at download time with `LAKE_ACQUIRABLE_FORMATS` (`csv`, `geojson`, `json`, `parquet`, `geotiff`). That set is narrower than the Data Catalog's: a `shp` needs sibling files a single download cannot bring, and a `bundle` is a node output.
+- **Ids** (`domain/source_id.py`) are three to six dot-separated lowercase segments, the first always `source`. They name the publisher, never the software: `provider.type` can change when a portal migrates, and an id cannot.
+- **`provider.type`** is one of `PROVIDER_TYPES`: the `PORTAL_PROVIDER_TYPES`, which must equal the keys of `PROVIDERS` in `providers/__init__.py`, the `STORAGE_PROVIDER_TYPES` (`folder`, `s3`, `huggingface`), which must equal the keys of `STORAGE_PROVIDERS`, the `SERVICE_PROVIDER_TYPES` (`autark-osm`, `mapillary`, `google-streetview`), which must equal the keys of `SERVICE_PROVIDERS`, and the `MODEL_PROVIDER_TYPES` (`huggingface-models`), which must equal the keys of `MODEL_PROVIDERS`. Asserts check all four at import time, and that each provider module's `PARAMETER_IDS` agrees with `PROVIDER_PARAMETER_IDS`, the ids a manifest may declare for it.
+- **Parameters** ([`domain/parameters.py`](../utk_curio/backend/app/discovery/domain/parameters.py)) are what a download asks: `parse_parameters` reads a source's and a resource's lists, `merge` lets a resource's entry replace the source's by `id`, `validate_values` checks a request's answers on the server (unknown ids, ranges, a box against `maxAreaKm2`, a name holding a quote, bracket, backslash or line break), and `values_hash` keys them, ignoring a box's label. A manifest may declare only the ids its provider reads (`PROVIDER_PARAMETER_IDS`) and only the area forms it can send (`PROVIDER_AREA_FORMS`), and `providers/__init__.py` asserts each module's `PARAMETER_IDS` agrees.
+- **Resources** (`_parse_resources`) are a storage or service source's declared contents, at most `MAX_RESOURCES` (64). A service resource (`_parse_service_resource`) has no `path`: it names its `kind`, its `format`, and what to ask for in `options`, `layers` for `autark-osm`. Each `path` compiles through [`domain/templates.py`](../utk_curio/backend/app/discovery/domain/templates.py) into a regex with typed captures (`str`, `int`, ISO `date`, or a strftime `datetime`) and a literal prefix, which a bucket lists under. A capture may not take a name a collection index uses for its own columns (`RESERVED_NAMES`), or `source_file` for a table. A storage source's `capabilities.formats` is derived from its resources, and a manifest that declares it is refused.
+- **Formats.** `capabilities.formats` is an upper bound, intersected at download time with `DISCOVERY_ACQUIRABLE_FORMATS` (`csv`, `geojson`, `json`, `parquet`, `geotiff`). That set is narrower than the Data Catalog's: a `shp` needs sibling files a single download cannot bring, and a `bundle` is a node output.
 - **Size.** `capabilities.maxDownloadBytes` may lower the 64 MiB ceiling (`DEFAULT_MAX_DOWNLOAD_BYTES`), never raise it.
 - **`provider.options`** is provider wiring and is never sent to a client.
 - **`auth.secretId`** must name a slot in `SLOT_COLUMNS` (see [Credentials](#credentials)), or the manifest fails to load.
@@ -1195,7 +1208,7 @@ Sources have no import route. A manifest names a host the server calls on a user
 
 ### Search
 
-[`application/browse.py`](../utk_curio/backend/app/datalakes/application/browse.py) runs a federated search as one request per searchable source, at most `MAX_FANOUT_WORKERS` (4) at a time.
+[`application/browse.py`](../utk_curio/backend/app/discovery/application/browse.py) runs a federated search as one request per searchable source, at most `MAX_FANOUT_WORKERS` (4) at a time.
 
 - Each portal leg takes its own source's rate limit (`limits.requestsPerMinute`, default 30, per user and per portal, in process), so a fan-out cannot multiply one user's rate against a portal. A storage leg answers from its listing and spends none.
 - Each leg reports a status from `LEG_STATUSES`: `ok`, `failed`, `refused`, `rate-limited`, `unsupported`, `needs-token`, or `scanning` for a storage source on its first scan. The response is a 200 either way. The page names the portals that did not answer, names the storage sources still being scanned on a line of their own and asks again until they answer, and ignores `unsupported`, which a link-only source reports on every search.
@@ -1206,48 +1219,74 @@ The roster is read from disk on every request, and search results are never cach
 
 ### Downloads
 
-[`application/acquire.py`](../utk_curio/backend/app/datalakes/application/acquire.py) fetches the bytes server-side and hands them to the Data Catalog's own importer, so the result is an ordinary `imported.x<uuid>` dataset.
+[`application/acquire.py`](../utk_curio/backend/app/discovery/application/acquire.py) fetches the bytes server-side and hands them to the Data Catalog's own importer, so the result is an ordinary `imported.x<uuid>` dataset.
 
-- **Jobs** ([`application/jobs.py`](../utk_curio/backend/app/datalakes/application/jobs.py)) are per account, process-local (a restart loses them), and swept `TTL_SECONDS` (15 minutes) after they finish. A job id owned by another account reads as unknown. Cancel is checked between chunks.
+- **Jobs** ([`application/jobs.py`](../utk_curio/backend/app/discovery/application/jobs.py)) are per account, process-local (a restart loses them), and swept `TTL_SECONDS` (15 minutes) after they finish. A job id owned by another account reads as unknown. Cancel is checked between chunks.
 - **Concurrency.** `MAX_CONCURRENT_DOWNLOADS` (2) per account, in `infrastructure/ratelimit.py`, shared by downloads, storage adds and **Cache files**. A job's worker is built inside its `try`, so a worker that cannot start still ends its job and gives its slot back.
-- **Provenance and idempotency.** A download writes a `lakeSource` block (`lakeId`, `lakeName`, `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt`, `contentSha256`) on the dataset manifest, and `dataset_index_entry` mirrors it: a manifest field missing from the index vanishes from every listing. A request for a `(lakeId, resourceId, format)` already held answers 200 with that dataset and contacts no portal. Search rows carry `alreadyHeldDatasetId`, from one `UserDatasetRepository.lake_resource_index()` walk per page. A file imported by hand from a Dataset Finder row writes a `lakeSource` too, with `manual: true`, its link as `resourceUrl`, `fetchedAt` and `contentSha256`; a download and a hand import of the same bytes are one dataset, whichever arrived first.
-- **`refresh: true`** fetches anyway. Identical bytes (by hash) mint nothing; different bytes mint a new dataset and leave the old one alone, since a saved dataflow loads a dataset by id. A storage row compares its listing's fingerprint first (each file's path, size, time and tag, and a shapefile's parts), which `lakeSource.fingerprint` or the `collection` block records, and a single file then its content sha. When a row is held twice, the lookups take the latest `fetchedAt`.
+- **Provenance and idempotency.** A download writes a `discoverySource` block (`sourceId`, `sourceName`, `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt`, `contentSha256`, and for a narrowed download `parameters` and `parametersHash`) on the dataset manifest, and `dataset_index_entry` mirrors it: a manifest field missing from the index vanishes from every listing. A request for a `(sourceId, resourceId, format, parametersHash)` already held answers 200 with that dataset and contacts no portal. Search rows carry `heldFormats`, the whole (not narrowed) datasets held by format, and `alreadyHeldDatasetId`, from one `UserDatasetRepository.discovery_resource_formats()` walk per page. A file imported by hand from a Dataset Finder row writes a `discoverySource` too, with `manual: true`, its link as `resourceUrl`, `fetchedAt` and `contentSha256`; a download and a hand import of the same bytes are one dataset, whichever arrived first.
+- **`refresh: true`** fetches anyway. Identical bytes (by hash) mint nothing; different bytes mint a new dataset and leave the old one alone, since a saved dataflow loads a dataset by id. A storage row compares its listing's fingerprint first (each file's path, size, time and tag, and a shapefile's parts), which `discoverySource.fingerprint` or the `collection` block records, and a single file then its content sha. When a row is held twice, the lookups take the latest `fetchedAt`.
 - **Format detection** (`domain/formats.py`), most trusted first: the format the provider put in the URL; the final URL's suffix after redirects; the `Content-Disposition` filename; the `Content-Type`; the first bytes (`PAR1` for Parquet, the TIFF magic, and a JSON probe that tells GeoJSON from JSON by looking for a geometry type). The result is checked against the source's formats, and anything unidentified is an error.
-- **Bounds.** A `Content-Length` over the bound is refused before any body byte is read, and the stream is capped again while writing. Archives are refused by content type and by suffix (`ARCHIVE_CONTENT_TYPES`, `ARCHIVE_SUFFIXES` in [`domain/formats.py`](../utk_curio/backend/app/datalakes/domain/formats.py)); nothing is unpacked. The Dataset Finder reads the same list, so it offers an archive as a manual download, never as data.
+- **Bounds.** A `Content-Length` over the bound is refused before any body byte is read, and the stream is capped again while writing. Archives are refused by content type and by suffix (`ARCHIVE_CONTENT_TYPES`, `ARCHIVE_SUFFIXES` in [`domain/formats.py`](../utk_curio/backend/app/discovery/domain/formats.py)); nothing is unpacked. The Dataset Finder reads the same list, so it offers an archive as a manual download, never as data.
 - **Files.** Bytes are staged under the user's `.curio/users/<id>/` tree. Remote filenames are sanitised, and the importer mints the dataset directory name, so no remote input reaches the filesystem path.
 - **Errors** carry the server's reason ("that resource is a application/zip archive"), which the page shows as is.
 
 ### Storage sources
 
-A storage source is read through a `StorageProvider` ([`providers/storage_base.py`](../utk_curio/backend/app/datalakes/providers/storage_base.py)): `scan(prefix)` yields a `FileEntry` (relpath, size, mtime, etag) per file, `open(relpath, byte_range=None)` returns one (a bucket's is read into memory, up to the download ceiling, and `stream()` writes one to a sink as it arrives), and `local_path(relpath)` is its path when it is on this machine. Hidden and system files are never yielded, and every relpath passes `validate_relpath` before it is used.
+A storage source is read through a `StorageProvider` ([`providers/storage_base.py`](../utk_curio/backend/app/discovery/providers/storage_base.py)): `scan(prefix)` yields a `FileEntry` (relpath, size, mtime, etag) per file, `open(relpath, byte_range=None)` returns one (a bucket's is read into memory, up to the download ceiling, and `stream()` writes one to a sink as it arrives), and `local_path(relpath)` is its path when it is on this machine. Hidden and system files are never yielded, and every relpath passes `validate_relpath` before it is used.
 
 - **`folder`** resolves its root once and checks `is_within` on every real path, so a symlink out of the root is skipped. It never writes. `audit_folder_roots()` runs at boot and logs each folder root `curio-exec` cannot read, with the folder or file that stops it (`unreadable_part`), from the root and a sample of its files.
 - **`s3`** lists with ListObjectsV2 under the resources' common prefix, parsing the XML with the standard library within the metadata cap, and follows continuation tokens. It reads objects with plain GETs, and a `Range` header for probes. Public buckets only.
 - **`huggingface`** lists a dataset repository with its tree API and reads through `resolve/`. The listing gives no file times, so a file's `oid` is what tells a change. It follows the `Link` pagination header only when it points at `baseUrl`. The `huggingface.token` credential is sent with `auth.valuePrefix` (`Bearer `).
 
-**Listing.** [`application/scan.py`](../utk_curio/backend/app/datalakes/application/scan.py) walks a source once, matches each file against every resource's template, and groups the matches into rows: a resource, one value of `per:<field>`, or one file for `per-file`. Files a metadata template names are attached, and the rest are counted as unmatched. The summary lives in `ListingCache` (`listings`), one per source shared by every user, or one per user for a source that sends a token. A request waits up to `LISTING_WAIT_SECONDS` (2) for a scan it starts, and otherwise answers with a `scanning` leg; the federated search does not wait. A summary older than `SUMMARY_TTL_SECONDS` (15 minutes) is rescanned in the background while the last one is served, and `?rescan=1` rescans at once. A walk stops at `limits.maxFiles` matched files and marks the summary truncated. For a shapefile resource the walk keeps the sidecars, so each `.shp` carries its parts, found in any letter case. The cache keeps each row's matched files, which the Files list pages through and the row thumbnails are drawn from by position, so no path ever comes from a client.
+**Listing.** [`application/scan.py`](../utk_curio/backend/app/discovery/application/scan.py) walks a source once, matches each file against every resource's template, and groups the matches into rows: a resource, one value of `per:<field>`, or one file for `per-file`. Files a metadata template names are attached, and the rest are counted as unmatched. The summary lives in `ListingCache` (`listings`), one per source shared by every user, or one per user for a source that sends a token. A request waits up to `LISTING_WAIT_SECONDS` (2) for a scan it starts, and otherwise answers with a `scanning` leg; the federated search does not wait. A summary older than `SUMMARY_TTL_SECONDS` (15 minutes) is rescanned in the background while the last one is served, and `?rescan=1` rescans at once. A walk stops at `limits.maxFiles` matched files and marks the summary truncated. For a shapefile resource the walk keeps the sidecars, so each `.shp` carries its parts, found in any letter case. The cache keeps each row's matched files, which the Files list pages through and the row thumbnails are drawn from by position, so no path ever comes from a client.
 
-**Resource ids.** A row's id is `<resource>`, `<resource>@<field>=<value>[;...]` for a split row (a `;` or `%` in a value is written `%3B` or `%25`), or `<resource>/<relpath>` for one file. The routes take a storage id as the client sent it; a portal id is decoded once more. `parse_resource_id` turns it back into a `Selection`, and `narrow()` adds the acquire body's `filters` (values, or `{min, max}` typed like the capture) and `files` (relpaths, validated). A narrowed add skips the held lookup and writes `lakeSource.narrowed`, which `find_by_lake_resource` and `lake_resource_index` ignore.
+**Resource ids.** A row's id is `<resource>`, `<resource>@<field>=<value>[;...]` for a split row (a `;` or `%` in a value is written `%3B` or `%25`), or `<resource>/<relpath>` for one file. The routes take a storage id as the client sent it; a portal id is decoded once more. `parse_resource_id` turns it back into a `Selection`, and `narrow()` adds the acquire body's `filters` (values, or `{min, max}` typed like the capture) and `files` (relpaths, validated). A narrowed add skips the held lookup and writes `discoverySource.narrowed`, which `find_by_discovery_resource` and `discovery_resource_index` ignore.
 
-**Adding.** [`application/storage_acquire.py`](../utk_curio/backend/app/datalakes/application/storage_acquire.py) scans the one resource again and adds what it finds. A scan that stops at `limits.maxFiles` refuses the add rather than adding part of it.
+**Adding.** [`application/storage_acquire.py`](../utk_curio/backend/app/discovery/application/storage_acquire.py) scans the one resource again and adds what it finds. A scan that stops at `limits.maxFiles` refuses the add rather than adding part of it.
 
 - **One table file** streams into staging, capped at 4 GiB from a folder and at the download ceiling from a bucket, and goes through `install_imported_path()` ([`datasets/install/installer.py`](../utk_curio/backend/app/datasets/install/installer.py)), which moves it into the dataset folder with `os.replace` and transcodes text to UTF-8 as a stream (`transcode_file_to_utf8`). Portal downloads install through the same seam. A shapefile's parts are staged beside it as `data.*`, their sha taken together, and the whole converts to GeoParquet; a GeoPackage or PBF goes through the multi-layer importer. A CSV declared with `options` goes through the combine path, to be read with them.
-- **Several table files** go through [`application/combine_tables.py`](../utk_curio/backend/app/datalakes/application/combine_tables.py): DuckDB reads them with `union_by_name`, numbers each file's rows as they are scanned, joins the captured fields and `source_file`, and writes Parquet ordered by file and row. The file name and row number are named `__curio_file` and `__curio_row` while they are needed. A capture, or `source_file`, whose name a file's column already uses, compared without case, gets a `_from_path` suffix. Geographic formats combine with GeoPandas into GeoParquet in EPSG:4326, refusing files whose CRS differ. Bounds: `MAX_COMBINED_FILES` (10,000) and 16 GiB local or 2 GiB remote.
-- **A collection** goes through [`application/index_collection.py`](../utk_curio/backend/app/datalakes/application/index_collection.py): a pool of four probes each file with Pillow (size, EXIF time, GPS IFD), PyAV (video and audio streams, BWF origination time) or rasterio (CRS, transform, footprint in EPSG:4326). A remote image or raster is probed from one 64 KiB `Range` read; a remote video or recording is not read. Frames are ordered by sequence and frame and get `t_s`, the frame number over `fps`; a `time` capture fills `taken_at` or `recorded_at`; and `metadata` joins a CSV, Parquet or JSON table, from the folder or the bucket, by `file_name`, `frame` or a capture. A file that fails to probe keeps its row, with `probe_error`. The index is written as `data/index.parquet`, GeoParquet when rows have positions, and installed as format `collection` with the `collection` block, which `dataset_index_entry.collection_json` mirrors.
+- **Several table files** go through [`application/combine_tables.py`](../utk_curio/backend/app/discovery/application/combine_tables.py): DuckDB reads them with `union_by_name`, numbers each file's rows as they are scanned, joins the captured fields and `source_file`, and writes Parquet ordered by file and row. The file name and row number are named `__curio_file` and `__curio_row` while they are needed. A capture, or `source_file`, whose name a file's column already uses, compared without case, gets a `_from_path` suffix. Geographic formats combine with GeoPandas into GeoParquet in EPSG:4326, refusing files whose CRS differ. Bounds: `MAX_COMBINED_FILES` (10,000) and 16 GiB local or 2 GiB remote.
+- **A collection** goes through [`application/index_collection.py`](../utk_curio/backend/app/discovery/application/index_collection.py): a pool of four probes each file with Pillow (size, EXIF time, GPS IFD), PyAV (video and audio streams, BWF origination time) or rasterio (CRS, transform, footprint in EPSG:4326). A remote image or raster is probed from one 64 KiB `Range` read; a remote video or recording is not read. Frames are ordered by sequence and frame and get `t_s`, the frame number over `fps`; a `time` capture fills `taken_at` or `recorded_at`; and `metadata` joins a CSV, Parquet or JSON table, from the folder or the bucket, by `file_name`, `frame` or a capture. A file that fails to probe keeps its row, with `probe_error`. The index is written as `data/index.parquet`, GeoParquet when rows have positions, and installed as format `collection` with the `collection` block, which `dataset_index_entry.collection_json` mirrors.
 
 `av` and `rasterio` are declared in `curio.builtin@1`, because the backend probes and draws thumbnails and, under fork isolation, a user's package overlay is not importable by the backend.
 
-**Caching a bucket's files.** [`application/cache_collection.py`](../utk_curio/backend/app/datalakes/application/cache_collection.py) streams a bucket collection's objects to `media_work_root(user)/objects/<datasetId>/`, as a job, capped at 4 GiB per object and at `CURIO_MEDIA_CACHE_MAX_GB` (default 20) per account, checked before any byte is fetched.
+**Caching a bucket's files.** [`application/cache_collection.py`](../utk_curio/backend/app/discovery/application/cache_collection.py) streams a bucket collection's objects to `media_work_root(user)/objects/<datasetId>/`, as a job, capped at 4 GiB per object and at `CURIO_MEDIA_CACHE_MAX_GB` (default 20) per account, checked before any byte is fetched.
+
+### Services
+
+A service is told where and what, and answers with one download. Its rows are its manifest's resources, with no network ([`providers/autark_osm.py`](../utk_curio/backend/app/discovery/providers/autark_osm.py) `rows()`), so they join a federated search the way storage rows do.
+
+- **OpenStreetMap** (`autark-osm`) runs [`providers/autark_osm.mjs`](../utk_curio/backend/app/discovery/providers/autark_osm.mjs) as `node`, from the backend's process tree, with the request on stdin. The script imports the repo-root autk-db (resolved by [`sandbox/util/node_runtime.py`](../utk_curio/sandbox/util/node_runtime.py), which the sandbox's JS nodes use too) and calls `db.loadOsm` with the area as `{geocodeArea, areas}` or `{bbox}` and the resource's layers. autk-db's progress phases come back as stage lines, and each layer as autk-db's `getLayer` GeoJSON, in its workspace CRS (EPSG:3395).
+- **Ceilings.** `MAX_SECONDS` (15 minutes) and `MAX_OUTPUT_BYTES` (512 MiB), each refused with a message naming it. The child runs in its own process group, so Cancel and the time limit kill everything it started.
+- **Into the Data Catalog.** [`application/service_acquire.py`](../utk_curio/backend/app/discovery/application/service_acquire.py) moves every position to WGS84 with pyproj (`to_wgs84`), keeping each feature's geometry type and properties, and installs each non-empty layer as GeoJSON through `_install_imported_bytes`: one layer as an ordinary dataset, several under one `osm.x<hex>` group, the group a `.pbf` upload forms. The title names the area (`place_label`). A download counts once against the source's rate limit.
+- **Its requests** go from Node to autk-db's fixed Overpass endpoint with `OVERPASS_USER_AGENT`, not through the Python transport. Under `CURIO_DISCOVERY_FIXTURES`, behind the same gate as the transport (`fixture_root()`), the script's `fetch` answers from `tests/test_discovery/fixtures/overpass/`, keyed by method, URL and a hash of the body, and skips autk-db's pauses; its `record` mode files live answers there.
+- **Mapillary** (`mapillary`) and **Google Street View** (`google-streetview`) are asked over HTTP, so `build_service` hands them the catalog's transport. Each answers an `ImageSet` of files it downloaded into a work folder; `service_acquire` indexes them with the storage collections' own `build_rows`, `write_index` and `collection_block`, writes the collection, and moves the files by rename into `media_work_root(user)/objects/<datasetId>/<file_id>.<ext>`, where `curio_collection` reads a downloaded collection's files (and `grant_to_child` opens each to the isolated child).
+- **Mapillary** tiles the box under 0.0099 square degrees, the API's limit, splits a tile that answers its 2000 maximum in four (at most three times), takes images from every tile in turn, newest first, and looks thumbnails up afterwards by `image_ids`, fifty at a time, since a search that names them answers over the metadata ceiling. Thumbnails are fetched only from `options.imageHosts`, matched by host suffix after the address policy.
+- **Google Street View** asks the metadata endpoint at points of a grid with the answer's `spacing`, in a fixed shuffled order, keeps each panorama once, stops when it has enough, asks at most `MAX_POINTS`, then downloads one image per panorama and heading and drops Google's grey placeholder.
+- **A service that needs a token** is refused with 428 before any job when none is set, naming the slot and its help link, as a portal search is.
+
+### Models from the Discovery Catalog
+
+The model family (`huggingface-models`) is searched like a portal and added like a storage row, but lands in the [Model Catalog](#model-catalog).
+
+- **Search** ([`providers/huggingface_models.py`](../utk_curio/backend/app/discovery/providers/huggingface_models.py)) asks `/api/models?pipeline_tag=<options.pipelineTag>` and keeps repos tagged `onnx` or `safetensors`; a next page is the `Link: rel="next"` cursor.
+- **`plan(repo)`** reads `/api/models/<repo>?blobs=true` and pins the commit it names. An ONNX export fetches its graph (`model.onnx` first), the external data it names and the two configs; a `...ForSemanticSegmentation` checkpoint fetches its configs and safetensors shards. Pickle-only weights, other architectures, no labels and more than `MAX_MODEL_BYTES` (2 GiB) are refused with `CapabilityUnsupported` or `DownloadTooLarge`.
+- **Adding** ([`application/model_acquire.py`](../utk_curio/backend/app/discovery/application/model_acquire.py)) checks `install_refusal()` first when the runtime needs libraries (`RUNTIME_DEPS`), streams each file from `/<repo>/resolve/<commit>/<path>` through the transport, writes the manifest (`labels_of` from `config.json`, `onnx_input` from `preprocessor_config.json`), and calls `install_downloaded`, then `install_dependencies`. A job's `model` and `dependencies` say what landed; its `dataset` is null. `already_held` finds a model added before from the same source and repo, so the same add again fetches nothing.
+- A 401 or 403 from the Hub is `CredentialRequired`, so a gated model asks for the Hugging Face token like any source.
+
+### Place search
+
+[`application/places.py`](../utk_curio/backend/app/discovery/application/places.py) answers the area field's place search, `GET /api/discovery/places?q=`, from Nominatim through the catalog's transport: one request a second for the whole process (`MIN_INTERVAL_S`), an in-memory cache of a day (`CACHE_TTL_S`), and a User-Agent naming Curio. Each place has its name, its label, its box, and whether it is an administrative boundary, which the named-areas field offers.
 
 ### Collection media
 
-[`infrastructure/media_dirs.py`](../utk_curio/backend/app/datalakes/infrastructure/media_dirs.py) names the directories: `media_cache_dir` (`.curio/users/<key>/media-cache/<datasetId>/`, thumbnails the backend draws) and `media_work_root`, which the backend and a node both use: `.curio/users/<key>/media/` with isolation off, and `.curio/exec-scratch/users/<key>/media/` under fork isolation, where `curio-exec` can write. `forget_media` removes a dataset's thumbnails, cached objects and derived frames and clips when the dataset is deleted; the source's files are never touched.
+[`infrastructure/media_dirs.py`](../utk_curio/backend/app/discovery/infrastructure/media_dirs.py) names the directories: `media_cache_dir` (`.curio/users/<key>/media-cache/<datasetId>/`, thumbnails the backend draws) and `media_work_root`, which the backend and a node both use: `.curio/users/<key>/media/` with isolation off, and `.curio/exec-scratch/users/<key>/media/` under fork isolation, where `curio-exec` can write. `forget_media` removes a dataset's thumbnails, cached objects and derived frames and clips when the dataset is deleted; the source's files are never touched.
 
-[`application/media.py`](../utk_curio/backend/app/datalakes/application/media.py) and [`media_routes.py`](../utk_curio/backend/app/datalakes/media_routes.py) serve a collection's files by id:
+[`application/media.py`](../utk_curio/backend/app/discovery/application/media.py) and [`media_routes.py`](../utk_curio/backend/app/discovery/media_routes.py) serve a collection's files by id:
 
 - **Lookup.** `locate()` resolves `<file_id>` through the index (cached per index file and mtime), or `<file_id>@<t_ms>` to a frame or clip `curio_derived_file` wrote, and never takes a path from the request.
 - **Serving.** `original` sniffs the first bytes against `BROWSER_TYPES` (images, video and audio a browser plays) and serves that mimetype with `nosniff`, `Content-Disposition: inline`, and Range. SVG and HTML are never served.
-- **Thumbnails.** Pillow for images and frames, rasterio with a 2 to 98 percentile stretch for rasters, a PyAV poster frame for video, and a numpy STFT spectrogram for audio, cached as JPEG and keyed on the file's size and mtime. A bucket's image or raster up to 64 MiB is fetched to draw one; anything else is drawn once cached. A storage row's thumbnails are drawn the same way into a per-source cache under `.curio/datalakes-cache/`, or into the account's own media cache for a source that sends a token.
+- **Thumbnails.** Pillow for images and frames, rasterio with a 2 to 98 percentile stretch for rasters, a PyAV poster frame for video, and a numpy STFT spectrogram for audio, cached as JPEG and keyed on the file's size and mtime. A bucket's image or raster up to 64 MiB is fetched to draw one; anything else is drawn once cached. A storage row's thumbnails are drawn the same way into a per-source cache under `.curio/discovery-cache/`, or into the account's own media cache for a source that sends a token.
 - **Signed links.** `<video>` and `<audio>` cannot send the bearer token, so `POST .../link` signs `{user, key, dataset, file}` with itsdangerous under a key kept in `.curio/media-link.key`, valid `LINK_TTL_SECONDS` (10 minutes), and `GET /api/media/<token>` serves that one file.
 
 ### Collections in node code
@@ -1255,22 +1294,22 @@ A storage source is read through a `StorageProvider` ([`providers/storage_base.p
 `curio_collection`, `curio_derived_file` and `curio_output_file` come from one function, `make_collection_helpers` ([`sandbox/util/collections.py`](../utk_curio/sandbox/util/collections.py)), injected in process and in the isolated child, so the two paths cannot disagree.
 
 - **Resolution.** `code_refs.py` finds `curio_collection("<id>")` calls with `curio_dataset_path` ones, within the same 32-id cap, so the index resolves and stages like any dataset file. `_resolve_exec_collections` in `api/routes.py` adds, per collection, the folder root or the bucket cache directory, and sends `media_dir` to every node, since a node downstream of the loader writes the frames without naming the collection.
-- **Rows.** `curio_collection` adds `dataset_id`, `path` (the file, the cached copy, or `None`), `thumbnail` and `image_url` (the columns Simple View and HF CV Inference read) and `audio_url`.
-- **Derived files.** `curio_derived_file` names `<media_dir>/<frames|clips>/<datasetId>/<fileId>/<t_ms>.<ext>` and the row the media route serves it back under. `curio_output_file` names a file a node returns, in the run's scratch directory under isolation, because a RASTER output must be flat-named there.
+- **Rows.** `curio_collection` adds `dataset_id`, `path` (the file, the cached copy, or `None`; the column `curio_segment` reads), `thumbnail` and `image_url` (the columns Simple View shows) and `audio_url`.
+- **Derived files.** `curio_derived_file` names `<media_dir>/<frames|clips|overlays>/<datasetId>/<fileId>/<t_ms>.<ext>` and the row the media route serves it back under, `<fileId>@<t_ms>`. `curio_segment` ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) writes each image's overlay this way (kind `image`, `t_ms` 0). `curio_output_file` names a file a node returns, in the run's scratch directory under isolation, because a RASTER output must be flat-named there.
 
 `curio.media@1` is three Python code templates over these helpers: Sample Video Frames, Split Audio and Mosaic Rasters, which writes a VRT from the index's transform columns.
 
 ### Credentials
 
-[`infrastructure/credentials.py`](../utk_curio/backend/app/datalakes/infrastructure/credentials.py) owns the allowlist of credential slots, `SLOT_COLUMNS`, which maps a slot to a column on the `user` row: `socrata.app-token`, and `huggingface.token`, the `huggingface_token` column Street Vision reads. Adding a slot is a column, a migration, and one line there.
+[`infrastructure/credentials.py`](../utk_curio/backend/app/discovery/infrastructure/credentials.py) owns the registry of credential slots, `SLOTS`, one `KeySlot` per slot: the column on the `user` row, a label, a help link, a placeholder, an optional note, a deployment-wide fallback, and the other features that read the column. The slots are `socrata.app-token`, `huggingface.token` (the `huggingface_token` column, which the Hugging Face sources send), `google.maps-key` and `mapillary.token`. `SLOT_COLUMNS` and `SLOT_DEFAULTS` derive from it, and `GET /api/discovery/keys` lists every slot for API Settings, which draws one row each. Adding a slot is a column, a migration, a field in `PATCH /api/auth/me`, one entry there, and its id in `KNOWN_SECRET_SLOTS` in `domain/manifest.py`.
 
-- A token is saved through `PATCH /api/auth/me` and read back only as a boolean. A guest on a `--deploy` instance is refused with a 403.
+- A key is saved through `PATCH /api/auth/me` and read back only as a boolean. A guest on a `--deploy` instance is refused with a 403.
 - `CURIO_DEFAULT_SOCRATA_APP_TOKEN` is inherited by every account that has not saved its own.
-- `auth.scheme` is `header` only. That keeps secrets out of every URL, which is what makes egress audit records, refusal messages and job records safe to store verbatim. The transport binds the credential when it is built, so no provider ever handles a token.
+- `auth.scheme` is `header` or `query` (`AUTH_SCHEMES`); Google Street View sends its key as `?key=`. The transport adds a query key to the request it sends and nothing else, and takes it out of every URL and message it hands back (`_keyed`, `_redact`), so egress audit records, refusal messages and job records stay safe to store verbatim. The transport binds the credential when it is built, and `CredentialedTransport` sends it only to the source's own host, so no provider ever handles a token.
 
 ### Providers
 
-A provider is one module in [`providers/`](../utk_curio/backend/app/datalakes/providers/) implementing `LakeProvider` (`providers/base.py`): `search`, `describe` and `download_url`. To add one:
+A provider is one module in [`providers/`](../utk_curio/backend/app/discovery/providers/) implementing `DiscoveryProvider` (`providers/base.py`): `search`, `describe` and `download_url`. To add one:
 
 1. Write the module, subclassing `BaseProvider`.
 2. Add its type to `PROVIDER_TYPES` (`domain/manifest.py`), to `PROVIDERS` (`providers/__init__.py`), and to the schema's `provider.type` enum.
@@ -1285,10 +1324,12 @@ Every provider keeps two invariants:
 
 Providers take their transport as a required constructor argument, so a missing fake is a `TypeError` rather than a request, and the suite-wide guard in [CONTRIBUTING.md § Tests do not reach the network](CONTRIBUTING.md#tests-do-not-reach-the-network) catches anything else.
 
-- `tests/test_datalakes/fixtures/` is a corpus recorded from the live portals by `scripts/record_datalake_fixtures.py`. Socrata, CKAN and ArcGIS put the page size in the URL and the corpus is keyed on the exact URL, so the recorder searches with the app's `DEFAULT_SEARCH_LIMIT`.
+- `tests/test_discovery/fixtures/` is a corpus recorded from the live portals by `scripts/record_discovery_fixtures.py`. Socrata, CKAN and ArcGIS put the page size in the URL and the corpus is keyed on the exact URL, so the recorder searches with the app's `DEFAULT_SEARCH_LIMIT`.
 - `test_provider_contracts.py` (`@pytest.mark.contract`) hits the real portals in CI, asserts only the response shape, and skips on any unreachable, non-2xx or non-JSON answer.
-- The Playwright specs drive the real backend against the corpus through `CURIO_DATALAKE_FIXTURES`, which `docker-compose.ci.yml` and `docker-compose.ci-isolated.yml` set for the container.
-- Storage sources are tested on folders built in `tmp_path` and on `lake.curio.example-storage@1`, whose files `scripts/build_example_storage.py` generates. That script also adds the resources the storage examples read to `datasets/data.curio.storage-*@1` through `StorageAcquire`, with file times pinned so the output is the same on every run. Buckets and Hugging Face run on the recorded corpus, whose `Range` entries are keyed `"<url> bytes=0-65535"`; the recorder stores synthetic heads rather than third-party imagery.
+- The Playwright specs drive the real backend against the corpus through `CURIO_DISCOVERY_FIXTURES`, which `docker-compose.ci.yml` and `docker-compose.ci-isolated.yml` set for the container.
+- OpenStreetMap downloads run autk-db in Node against `fixtures/overpass/`, answers recorded for the Village of Golf, Illinois, by name and for a box, gzipped.
+- Mapillary's answers (`fixtures/mapillary/`) are recorded with the auth header stripped, every image indexed to a synthetic file. Google Street View's (`fixtures/google-streetview/`) are written, not recorded, from the formats Google documents, by `scripts/write_streetview_fixtures.py` driving the real provider. Hugging Face models' (`fixtures/huggingface-models/`) are the Hub's real answers, every weights file indexed to a synthetic graph or file of the same shape. `test_provider_contracts.py` checks Mapillary and Google live only when `CURIO_MAPILLARY_TOKEN` or `CURIO_GOOGLE_MAPS_KEY` is set.
+- Storage sources are tested on folders built in `tmp_path` and on `source.curio.example-storage@1`, whose files `scripts/build_example_storage.py` generates. That script also adds the resources the storage examples read to `datasets/data.curio.storage-*@1` through `StorageAcquire`, with file times pinned so the output is the same on every run. Buckets and Hugging Face run on the recorded corpus, whose `Range` entries are keyed `"<url> bytes=0-65535"`; the recorder stores synthetic heads rather than third-party imagery.
 
 ### Agent tools
 
@@ -1296,19 +1337,35 @@ The Dataset Finder reaches the catalog through three contracts in `agents/tools.
 
 | Tool | Effect | What it does |
 |---|---|---|
-| `datalake.sources` | read | The roster, from disk. Costs no web budget. |
-| `datalake.search` | read | Live search. The per-run web budget is charged per portal contacted, so a fan-out over five sources costs five. |
-| `datalake.acquire` | mutate | Proposes a download. It goes through the review path, and the read executor has no branch for it, so the model loop cannot run it. The proposal card is grounded in a real `describe()` call. |
+| `discovery.sources` | read | The roster, from disk. Costs no web budget. |
+| `discovery.search` | read | Live search. The per-run web budget is charged per portal contacted, so a fan-out over five sources costs five. |
+| `discovery.acquire` | mutate | Proposes a download. It goes through the review path, and the read executor has no branch for it, so the model loop cannot run it. The proposal card is grounded in a real `describe()` call. |
 
-Storage sources are left out of all three: their rows are added through the Data Lake page, where they can be narrowed.
+Storage and service sources are left out of all three: their rows are added through the Discovery Catalog page, where a storage row can be narrowed and a service's area is set.
 
-A candidate row's `acquirable` flag is set server-side only, by `services.py::_mint_row_acquirable`, and a value the model supplies is stripped first. A storage source is never acquirable (`_acquirable`). A connector source must be in the roster and offer downloads; a Direct URL row must be an https link the probe read as a format the source stores, with the link itself as its `resourceId`. A row that names only an https link is tried as a Direct URL row: the server adds the coordinate and keeps it only when the row qualifies, so a plain link to a file is downloaded rather than handed to Node Builder. The rule reads the roster and the probe, never the run's grants: confirming a downloadable row on the card downloads it with the user's own sign-in, and an agent's `datalake.acquire` proposal is checked against its grant where it is minted. The card's **Download** and an approved `datalake.acquire` proposal start the same download job as the catalog page, so a resource shows one download wherever it was started.
+A candidate row's `acquirable` flag is set server-side only, by `services.py::_mint_row_acquirable`, and a value the model supplies is stripped first. A storage or service source is never acquirable (`_acquirable`). A connector source must be in the roster and offer downloads; a Direct URL row must be an https link the probe read as a format the source stores, with the link itself as its `resourceId`. A row that names only an https link is tried as a Direct URL row: the server adds the coordinate and keeps it only when the row qualifies, so a plain link to a file is downloaded rather than handed to Node Builder. The rule reads the roster and the probe, never the run's grants: confirming a downloadable row on the card downloads it with the user's own sign-in, and an agent's `discovery.acquire` proposal is checked against its grant where it is minted. The card's **Download** and an approved `discovery.acquire` proposal start the same download job as the catalog page, so a resource shows one download wherever it was started.
+
+---
+
+## Model Catalog
+
+The user-facing model is in [MODEL-CATALOG.md](MODEL-CATALOG.md) and the routes are in [Model Catalog Routes](#model-catalog-routes). The backend is `backend/app/model_catalog/`: `domain/manifest.py` (the manifest and its checks), `infrastructure/storage.py` (where models live), `service.py` (listing, details, install, delete, execution resolution) and `routes.py`.
+
+- **Storage.** `models_root()` is `<repo>/models`, or `CURIO_MODELS_ROOT`; `user_models_dir(user_key)` is `.curio/users/<key>/models/`. A model is a folder named `<id>@<major>` with a `manifest.json`. There is no index table: a listing reads the folders, the account's then the shipped ones, and an account holds few models.
+- **The manifest** (`parse_manifest`) takes `runtime` (`onnx` or `transformers`), `task` (`semantic-segmentation`), an `entry` inside the folder (a `.onnx` file for `onnx`), up to `MAX_LABELS` labels, and for `onnx` an `input` (size 8 to 8192, `uint8` or `float32`, `NCHW`, `scale`, three-number `mean` and `std`). A folder whose manifest fails is not listed, and the server's log names it and why.
+- **Install.** `install_downloaded(folder, manifest)` mints `imported.x<hex>@1`, moves the folder to a `.part` folder beside its place in the account's store, writes the manifest, and renames it in with `os.replace`, so a half-written model is never listed. `install_dependencies(id)` installs a Transformers model's `python_deps` through `provision_declared_deps`, the path a package's `dependencies.python` takes: the shared interpreter, or the account's node libraries under isolation. `install_refusal()` is the package rule (`package_install_refusal`).
+- **Delete** removes the folder. A shipped model is refused with 403. Nodes that name it fail on their next run.
+- **In node code.** `code_refs` finds `curio_model("<id>")` calls; `resolve_exec_models` maps each id the code names to its folder, and `/processPythonCode` sends that map with the dataset paths. `curio_model` ([`sandbox/util/models.py`](../utk_curio/sandbox/util/models.py)) returns the folder, or raises a message saying to add the model. Under fork isolation, `stage_model_dirs` ([`sandbox/util/staging.py`](../utk_curio/sandbox/util/staging.py)) hardlinks each model's tree into the run's scratch as `model_<i>/`, keeping relative paths, so an ONNX graph finds its external `.data` and a checkpoint its configs; `models/` is in the hardening allowlists beside `datasets/`.
+- **`curio_segment`** ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) runs a model over a collection's rows: `_OnnxRunner` with onnxruntime on the CPU (the manifest's `input` says how to scale, normalize and resize), or `_TransformersRunner` with `AutoModelForSemanticSegmentation` (`local_files_only`, safetensors only). Shares are of all the pixels; the overlay goes through `curio_derived_file` with the `image` kind, so the media route serves it at `<file_id>@0`.
+- **Agents** never see models: no tool lists or proposes one, as storage sources are kept out of the agents' tools.
+
+Models come from the Discovery Catalog's model family ([Models from the Discovery Catalog](#models-from-the-discovery-catalog)), or ship in `models/`.
 
 ---
 
 ## Backend API Reference
 
-The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: sandbox proxies plus the spatial-join handler in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes/` (one module per resource behind one `_map_package_errors`, memo dev/143), datasets in `backend/app/datasets/routes.py`, data lakes in `backend/app/datalakes/routes.py`, agents in `backend/app/agents/routes/` (one module per resource under one blueprint, memo dev/142), projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
+The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: sandbox proxies plus the spatial-join handler in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes/` (one module per resource behind one `_map_package_errors`, memo dev/143), datasets in `backend/app/datasets/routes.py`, Discovery Catalog in `backend/app/discovery/routes.py`, agents in `backend/app/agents/routes/` (one module per resource under one blueprint, memo dev/142), projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
 
 ### Core Routes
 
@@ -1381,49 +1438,52 @@ Defined in `backend/app/datasets/routes.py`; all require authentication. See [DA
 | `/api/datasets/<id>/preview` | GET | Paginated tabular/geo preview (`rowLimit` 1 to 500, default 50; `offset`; `part` for bundles) |
 | `/api/datasets/<id>/usage` | GET | Dataflows across the user's projects that reference this dataset |
 | `/api/datasets/<id>/download` | GET | Download the dataset file as an attachment |
-| `/api/datasets/import` | POST | Upload a local file into the user's catalog (multipart: `file`, `dataflowId`, `title`, `sourceUpdatedAt`, and `lakeSource` for a file downloaded by hand, as JSON). **201** with the new dataset; with `lakeSource`, **200** with the held dataset when the resource or the bytes are already there |
+| `/api/datasets/import` | POST | Upload a local file into the user's catalog (multipart: `file`, `dataflowId`, `title`, `sourceUpdatedAt`, and `discoverySource` for a file downloaded by hand, as JSON). **201** with the new dataset; with `discoverySource`, **200** with the held dataset when the resource or the bytes are already there |
 | `/api/datasets/publish` | POST | Publish a dataset into the shared catalog |
 | `/api/datasets/publish/<id>` | DELETE | Unpublish (remove from the shared catalog). **403** unless you published it |
 | `/api/datasets/<id>` | DELETE | Permanently delete an account-level dataset. **403** unless you published it. Returns `failedDirs: string[]`; `deleted` is `false` when a directory survived (still HTTP 200) |
 | `/api/dataflows/<dataflowId>/datasets/install` | POST | Attach a dataset to one dataflow (`datasetId`, optional `sourceItem`, `nodeTitle`) |
 | `/api/dataflows/<dataflowId>/datasets/<id>` | DELETE | Detach a dataset from one dataflow (keeps the account asset) |
 
-### Data Lake Routes
+### Discovery Catalog Routes
 
-Defined in `backend/app/datalakes/routes.py` over `backend/app/datalakes/service.py`.
-The **unit is a source, not a dataset**: manifests under `datalakes/` and
-`.curio/datalakes/` describe where datasets can be fetched from. A portal's
+Defined in `backend/app/discovery/routes.py` over `backend/app/discovery/service.py`.
+The **unit is a source, not a dataset**: manifests under `discovery/` and
+`.curio/discovery/` describe where datasets can be fetched from. A portal's
 datasets are discovered live; a storage source's resources are declared, and
 listed from a scan of its files. A download hands the bytes to the Data Catalog's own importer, so what
-comes out is an ordinary dataset carrying a `lakeSource` provenance block.
-[Data Lake Catalog](#data-lake-catalog) describes the mechanism behind these
+comes out is an ordinary dataset carrying a `discoverySource` provenance block.
+[Discovery Catalog](#discovery-catalog) describes the mechanism behind these
 routes.
 
-It is the one path a remote file takes into the Data Catalog. The Data Lake
+It is the one path a remote file takes into the Data Catalog. The Discovery Catalog
 page's Download, the Dataset Finder card's Download and confirmation, and an
-agent's approved `datalake.acquire` all call `DataLakeService.start_acquire`.
-A file a person downloads by hand is imported with its origin (the `lakeSource`
+agent's approved `discovery.acquire` all call `DiscoveryService.start_acquire`.
+A file a person downloads by hand is imported with its origin (the `discoverySource`
 field on `/api/datasets/import`), and both paths match by resource and by
 content digest, so one file is one dataset.
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/datalakes/catalog` | GET | List the sources (`q`, `provider`, `auth`). Disk only - makes no outbound request |
-| `/api/datalakes/sources/<dir>` | GET | One source, with its capabilities and credential state, and a storage source's declared resources |
-| `/api/datalakes/sources/<dir>/icon` | GET | The source's mark. Fixed `image/png`, `nosniff`, `ETag`, 256 KiB cap; 404 when absent so the UI falls back to a glyph |
-| `/api/datalakes/search` | GET | **Live, federated.** Fans out over every searchable portal and every storage source's listing (`q` required, `format`, `provider`, `limit`). A failing leg is reported in `sources[]` and never fails the request |
-| `/api/datalakes/sources/<dir>/search` | GET | **Live**, one source. The only paginated search - a fan-out has no coherent cursor. A storage source answers from its listing, with `unmatched` and `scannedAt`; `rescan=1` walks it again |
-| `/api/datalakes/sources/<dir>/files/<id>` | GET | A storage row's files, `offset` and `limit` (at most 100), each with its `index`, from the last listing |
-| `/api/datalakes/sources/<dir>/thumbnails/<n>/<id>` | GET | A thumbnail of file `n` of a storage collection row |
-| `/api/datalakes/sources/<dir>/resources/<id>` | GET | **Live** resource detail: fields, licence, provider extras |
-| `.../resources/<id>/acquire` | POST | Download or add into the Data Catalog. **202** with a job, or **200** with the dataset when it is already held (no portal contacted). `refresh` asks again anyway. A storage row also takes `filters` and `files` |
-| `/api/datalakes/collections/<datasetId>` | GET | Where a collection's files are: `local`, `cachedFiles` of `fileCount`, and a few samples by id |
-| `/api/datalakes/collections/<datasetId>/cache` | POST | Cache a bucket collection's files, as a job. 400 for a folder's |
+| `/api/discovery/catalog` | GET | List the sources (`q`, `provider`, `auth`). Disk only - makes no outbound request |
+| `/api/discovery/sources/<dir>` | GET | One source, with its capabilities and credential state, and a storage source's declared resources |
+| `/api/discovery/sources/<dir>/icon` | GET | The source's mark. Fixed `image/png`, `nosniff`, `ETag`, 256 KiB cap; 404 when absent so the UI falls back to a glyph |
+| `/api/discovery/search` | GET | **Live, federated.** Fans out over every searchable portal and every storage source's listing (`q` required, `format`, `provider`, `limit`). A failing leg is reported in `sources[]` and never fails the request |
+| `/api/discovery/sources/<dir>/search` | GET | **Live**, one source. The only paginated search - a fan-out has no coherent cursor. A storage source answers from its listing, with `unmatched` and `scannedAt`; `rescan=1` walks it again |
+| `/api/discovery/sources/<dir>/files/<id>` | GET | A storage row's files, `offset` and `limit` (at most 100), each with its `index`, from the last listing |
+| `/api/discovery/sources/<dir>/thumbnails/<n>/<id>` | GET | A thumbnail of file `n` of a storage collection row |
+| `/api/discovery/sources/<dir>/resources/<id>` | GET | **Live** resource detail: fields, licence, provider extras |
+| `.../resources/<id>/acquire` | POST | Download or add into the Data Catalog. **202** with a job, or **200** with the dataset when it is already held (no portal contacted). `refresh` asks again anyway. `parameters` carries the answers to what the resource declares, checked before a job exists. A storage row also takes `filters` and `files` |
+| `/api/discovery/collections/<datasetId>` | GET | Where a collection's files are: `local`, `cachedFiles` of `fileCount`, and a few samples by id |
+| `/api/discovery/collections/<datasetId>/cache` | POST | Cache a bucket collection's files, as a job. 400 for a folder's |
 | `/api/datasets/<id>/media/<file_id>` | GET | A collection file: `variant=thumb`, `poster` or `original`. By id only |
 | `/api/datasets/<id>/media/<file_id>/link` | POST | A signed URL for `<video>` and `<audio>`, valid 10 minutes |
 | `/api/media/<token>` | GET | The one file a signed link names, with Range. No bearer token |
-| `/api/datalakes/jobs/<id>` | GET | Job progress. Per account: another user's id is indistinguishable from an unknown one |
-| `/api/datalakes/jobs/<id>` | DELETE | Ask a download to stop; checked between chunks |
+| `/api/discovery/places` | GET | Places for the area field (`q`), from Nominatim: name, label, box, and whether each is a boundary |
+| `/api/discovery/keys` | GET | Every key slot API Settings lists: label, field, help link, `present` and `inherited` as booleans, and the sources and features that use it |
+| `/api/datasets/<id>/extent` | GET | The box around a geo dataset, in EPSG:4326, for the area field |
+| `/api/discovery/jobs/<id>` | GET | Job progress. Per account: another user's id is indistinguishable from an unknown one |
+| `/api/discovery/jobs/<id>` | DELETE | Ask a download to stop; checked between chunks |
 
 Errors map by type: 404 unknown source or resource, **428** a source needing a
 token this account does not hold, 429 rate-limited, 502 a portal that answered
@@ -1431,6 +1491,19 @@ badly or an egress refusal (the policy reason, never a resolved address), 503 a
 storage source that cannot be read (its folder is not there), 415 a collection
 file that cannot be served as asked (no preview, or not a format Curio serves),
 400 an unsupported format or an oversized download.
+
+### Model Catalog Routes
+
+[Model Catalog](#model-catalog) describes what these read and write. Every route needs a signed-in caller.
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/api/models/catalog` | GET | The account's models and the shipped ones (`q` filters by name, id, description, publisher and tags) |
+| `/api/models/<id>` | GET | One model: its runtime, task, labels, input, license, size and where it came from |
+| `/api/models/<id>/license` | GET | The text of the model's license file, as `{"text": ...}` |
+| `/api/models/<id>` | DELETE | Delete a model the account added. **403** for a shipped model |
+
+A model is added only through the Discovery Catalog's acquire route, on a model source's row.
 
 ### Agent Routes
 
@@ -1450,7 +1523,7 @@ Catalog and account scope:
 | `/api/agents/llm/configs/<id>/duplicate` | POST | Copy one, its key included, server-side; `{label?, model?}` |
 | `/api/agents/llm/default` | PUT | Choose the default, `{configId}`; `null` is the Deployment default |
 | `/api/agents/llm/assignments` | PUT | Choose agents' configurations: a partial map of agent id to a configuration id, `"deployment"` or `null` (clears). Nothing is written unless every entry is valid; an internal agent is refused; **403** for a hosted guest |
-| `/api/agents/provider-models` | POST | The models AI Settings can offer for the endpoint being configured. POST because the panel asks *before* the user saves, carrying the provider, base URL and key on screen. A stored key is borrowed only with `configId`, and only while the endpoint on screen is still that configuration's own, or with `endpoint: "deployment"`; with neither, no key is borrowed. Hybrid, both halves from the API: the live listing (OpenAI-compatible, Anthropic and Gemini, all via `agents/providers.py`), falling back to what that endpoint last reported, recorded per account by `agents/model_catalog.py`. Answers `{models, listable, source, remembered, rememberedAt, warning}`; a failed listing is a 200 with `source: "remembered"` unless nothing was ever recorded, which is a 400 |
+| `/api/agents/provider-models` | POST | The models API Settings can offer for the endpoint being configured. POST because the panel asks *before* the user saves, carrying the provider, base URL and key on screen. A stored key is borrowed only with `configId`, and only while the endpoint on screen is still that configuration's own, or with `endpoint: "deployment"`; with neither, no key is borrowed. Hybrid, both halves from the API: the live listing (OpenAI-compatible, Anthropic and Gemini, all via `agents/providers.py`), falling back to what that endpoint last reported, recorded per account by `agents/model_catalog.py`. Answers `{models, listable, source, remembered, rememberedAt, warning}`; a failed listing is a 200 with `source: "remembered"` unless nothing was ever recorded, which is a 400 |
 | `/api/agents/settings` | GET, PUT | The catalog settings: each one's schema, default, the account's value and the agents that read it, plus whether this account may change them. `PUT` takes key to value (`null` restores the default) and saves nothing unless every value is valid; **403** for a hosted guest |
 | `/api/agents/imports` | GET | List the account's imported definitions, as cards |
 | `/api/agents/imports` | POST | Record `<id>@<version>` in My imports. Never adds to a dataflow |
@@ -1550,14 +1623,14 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/generated/` | Contract copies written by `scripts/generate_contracts.py`; never edited by hand |
 | `src/ConnectionValidator.ts` | Edge validation logic |
 | `src/api/` | API client wrappers (`projectsApi`, `connectionKeysApi`, `evaluationApi`, `trainingApi`); `authApi` lives at `src/utils/authApi.ts` and the packages client in `src/services/packages/` |
-| `src/services/packages/` | The node-package service layer (memo dev/143): `packagesApi` (the request object) + `packagesBlobTransport` (sideload, archive download, factory build, `triggerBlobDownload`) + `packageBackendApi` (the only transports), `usePackageCatalog` — THE catalog hook the canvas drawer and the `/catalog/nodes` page both render, scope as an option, with `probeInstallConflicts` the one pre-install probe — the pure logic the surfaces share (`packageListUtils`, `forkPackageLineage`, `packageDependencyNotice`, `packageRestartCopy`, `factoryDraft`) and every package type by concern under `types/` (`SortMode` included). Import from its barrel, `services/packages`; `tests/packages/servicesBarrel.test.ts` enforces that the layer renders nothing, that no node-catalog surface reaches transport, and that the layer never imports `registry/` at runtime — the registry consumes the layer, never the reverse |
-| `src/providers/packages/` | `NodeCatalogDrawerProvider` and `PackagePaletteContext`, plus the two hooks that compose the layer with the node-kind registry (`usePackageArchiveImport` — the one sideload pathway — and `useEnsureWorkflowDeps`). `index.tsx` composes from the barrel; other consumers name the module (the barrel carries a rendering provider beside registry-touching hooks) |
+| `src/services/packages/` | The node-package service layer (memo dev/143): `packagesApi` (the request object) + `packagesBlobTransport` (sideload, archive download, factory build, `triggerBlobDownload`) + `packageBackendApi` (the only transports), `usePackageCatalog` (THE catalog hook the canvas drawer and the `/catalog/nodes` page both render, scope as an option, with `probeInstallConflicts` the one pre-install probe), the pure logic the surfaces share (`packageListUtils`, `forkPackageLineage`, `packageDependencyNotice`, `packageRestartCopy`, `factoryDraft`) and every package type by concern under `types/` (`SortMode` included). Import from its barrel, `services/packages`; `tests/packages/servicesBarrel.test.ts` enforces that the layer renders nothing, that no node-catalog surface reaches transport, and that the layer never imports `registry/` at runtime: the registry consumes the layer, never the reverse |
+| `src/providers/packages/` | `NodeCatalogDrawerProvider` and `PackagePaletteContext`, plus the two hooks that compose the layer with the node-kind registry (`usePackageArchiveImport`, the one sideload pathway, and `useEnsureWorkflowDeps`). `index.tsx` composes from the barrel; other consumers name the module (the barrel carries a rendering provider beside registry-touching hooks) |
 | `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog: a rendering surface over `usePackageCatalog({ kind: "project" })`; `pages/catalog/useNodeCatalogBrowse.ts` is the page's adapter over the same hook |
 | `src/services/agents/` | The agents service layer (memo dev/142): `agentsApi` + `agentStream` (the only two agent transports), the window events and drag helpers (`resolveAgentDropTarget` included), `useAgentCatalog` / `useAgentAttachments` (the hooks over the transport), the pure logic the surfaces share, and every agent type by concern under `types/`. Import from its barrel, `services/agents`; `tests/agents/servicesBarrel.test.ts` enforces that no agents component, page or provider reaches transport itself |
 | `src/providers/agents/` | `AgentAttachmentsProvider` composing `useAgentSession`, `useAgentProposals`, `useAgentSolve`, `useAgentSimulation` and `useAgentNodeRuns`; imported from its barrel, `providers/agents` |
 | `src/components/agents/catalog/AgentCatalogDrawer.tsx` | The canvas drawer that adds agents to the open dataflow |
 | `src/pages/agents/AgentCatalogBrowse.tsx` | The `/catalog/agents` browse page, the account-scope peer of the other two catalogs |
-| `src/components/AiSettingsModal.tsx` | AI Settings: the account's LLM configurations, tokens, connection keys, Evaluation mode and Model training |
+| `src/components/ApiSettingsModal.tsx` | API Settings: the account's LLM configurations, tokens, connection keys, Evaluation mode and Model training |
 | `src/components/llmConfigs/` | The LLM configurations table, its editor, Agent models and the `llm-config` remedy button, over `src/api/llmConfigsApi.ts` |
 | `src/components/menus/libraries/LibraryManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 
@@ -1592,9 +1665,9 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/agents/application/lifecycle.py` | Import/remove, seed, install with its `requiresAgents` closure, uninstall, publish/unpublish |
 | `backend/app/agents/application/catalog.py` | Catalog reads: facets, cards, definition bundles, the three listings, the choosable agents, the catalog settings listing |
 | `backend/app/agents/application/attachment_management.py` | Attach, detach, intent/title edits, session read/clear |
-| `backend/app/agents/application/proposals/` | Review-before-apply: `mint.py`, `apply.py`, `plans.py`, `store.py`, `cards.py`, and `acquire.py` (the data-lake acquisition) |
-| `backend/app/agents/application/turns/` | One chat turn: `attachment_turn.py` (the two entry points), `turn_loop.py` (`AttachmentTurn` — the bounded tool loop once, blocking or streaming), `prepare.py`, `grounding.py`, `delegates.py`, `roster.py`, `policy.py`, `prompts.py`, `titles.py` |
-| `backend/app/agents/application/solve/` | Solve: `session.py` (the stream entry points and the session helpers), `batch.py` (`SolveBatch` — passes, waves, the fold, one finish), `rounds.py` (attempts, probes, remedies), `verified_loop.py` (`VerifiedRounds` — the generate → gate → execute → correct loop, one named stage per method), `node_solve.py`, `budgets.py`, `simulation.py` (`SimulationDriver`), `run_node.py`, `validate.py` |
+| `backend/app/agents/application/proposals/` | Review-before-apply: `mint.py`, `apply.py`, `plans.py`, `store.py`, `cards.py`, and `acquire.py` (the Discovery Catalog acquisition) |
+| `backend/app/agents/application/turns/` | One chat turn: `attachment_turn.py` (the two entry points), `turn_loop.py` (`AttachmentTurn`: the bounded tool loop once, blocking or streaming), `prepare.py`, `grounding.py`, `delegates.py`, `roster.py`, `policy.py`, `prompts.py`, `titles.py` |
+| `backend/app/agents/application/solve/` | Solve: `session.py` (the stream entry points and the session helpers), `batch.py` (`SolveBatch`: passes, waves, the fold, one finish), `rounds.py` (attempts, probes, remedies), `verified_loop.py` (`VerifiedRounds`: the generate → gate → execute → correct loop, one named stage per method), `node_solve.py`, `budgets.py`, `simulation.py` (`SimulationDriver`), `run_node.py`, `validate.py` |
 | `backend/app/agents/application/tool_rounds.py` | The bounded tool loop and the native tool-call machinery (`_RunConversation`) |
 | `backend/app/agents/application/llm_listing.py` | `GET /api/agents/llm`: the account's configurations, the deployment's offer, what answers each agent |
 | `backend/app/agents/infrastructure/llm_configs.py` | The account's LLM configurations (`llm-configs.json`), beside the provider resolver that reads them |

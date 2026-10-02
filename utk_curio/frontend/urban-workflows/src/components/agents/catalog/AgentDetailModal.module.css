@@ -156,7 +156,7 @@
   color: var(--curio-text-secondary);
 }
 
-/* "Change in AI Settings" beside the Model row: a link in look, a button in
+/* "Change in API Settings" beside the Model row: a link in look, a button in
    behaviour (it opens a modal rather than navigating). */
 .inlineLink {
   padding: 0;

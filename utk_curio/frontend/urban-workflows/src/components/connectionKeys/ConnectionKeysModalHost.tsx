@@ -1,7 +1,7 @@
 import React, { Suspense, useEffect, useState } from "react";
 import { subscribeConnectionKeysRequests, type ConnectionKeysFocus } from "./connectionKeysRequest";
 
-const AiSettingsModal = React.lazy(() => import("../AiSettingsModal"));
+const ApiSettingsModal = React.lazy(() => import("../ApiSettingsModal"));
 
 /**
  * dev/116: mounted once on the canvas (the agent dock overlay). When a card
@@ -14,7 +14,7 @@ export const ConnectionKeysModalHost: React.FC = () => {
   if (!focus) return null;
   return (
     <Suspense fallback={null}>
-      <AiSettingsModal isOpen onClose={() => setFocus(null)} focus={focus} />
+      <ApiSettingsModal isOpen onClose={() => setFocus(null)} focus={focus} />
     </Suspense>
   );
 };

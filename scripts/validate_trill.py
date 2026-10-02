@@ -59,8 +59,8 @@ def _load_schema() -> Draft202012Validator:
 def _template_index() -> dict[str, dict]:
     """Map ``<packageId>/<templateId>`` to its template, from ``packages/``.
 
-    The in-repo catalog, not a user store: that is what makes a bundled but
-    not-auto-installed package such as ``curio.streetvision`` resolvable.
+    The in-repo catalog, not a user store: that is what makes a bundled
+    package resolvable before any user store holds it.
     """
     index: dict[str, dict] = {}
     for manifest_path in sorted((REPO_ROOT / "packages").glob("*/manifest.json")):
@@ -201,7 +201,7 @@ def _validate_one(
     # `packages: []` while its nodes referenced `curio.streetvision/*`, and
     # because those types are UNVERSIONED the backend's backfill could only
     # resolve them through packages that were ALREADY installed - which
-    # streetvision, by design, never is. So three nodes sat on "Loading node…"
+    # streetvision, by design, then never was. So three nodes sat on "Loading node…"
     # forever and every edge touching them vanished (#233).
     #
     # Not behind `--resolve`: that flag exists because resolution needs the
