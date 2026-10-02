@@ -443,6 +443,14 @@ The receiving chart styles the marked rows through its spec, for example `"color
 
 A point selection matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
 
+When several selections reach a Data Pool, the two selects at the top of the pool decide which rows it marks. **Conflict inside visualization** combines the selections of one chart, and **Conflict between visualizations** combines the latest selection of each linked chart:
+
+- **Overwrite**: the most recent selection alone.
+- **Merge (AND)**: the rows every selection picked. A chart with nothing selected is left out.
+- **Merge (OR)**: the rows any selection picked.
+
+The chosen modes are saved with the dataflow.
+
 An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive.
 
 

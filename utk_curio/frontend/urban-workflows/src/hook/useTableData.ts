@@ -1,12 +1,12 @@
-import { IPropagation, useFlowContext } from "../providers/FlowProvider";
-import { ResolutionType, VisInteractionType } from "../constants";
-import { ICodeDataContent, ICodeData, INodeData, INode } from "../types";
+import { useFlowContext } from "../providers/FlowProvider";
+import { ICodeDataContent, INodeData } from "../types";
 import { useEffect, useRef, useState } from "react";
 import { formatDate, mapTypes } from "../utils/formatters";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { fetchData } from "../services/api";
 import { sandboxArtifactId } from "../utils/flowOutputRef";
 import { lazyRows } from "../utils/rowSource";
+import { copyForFlags } from "../utils/poolFlagCopy";
 
 const useTableData = ({ data }: { data: INodeData }) => {
   const [tabData, setTabData] = useState<any[]>([]);
@@ -58,48 +58,6 @@ const useTableData = ({ data }: { data: INodeData }) => {
     // table's `rows.slice(0, maxRows)` costs a page, not an artifact.
     // @ts-ignore - parsedOutput is `any`-shaped through this hook
     return lazyRows(parsedOutput);
-  };
-
-  const customWidgetsCallback = (div: HTMLElement) => {
-    const labelBetween = document.createElement("label");
-    labelBetween.setAttribute("for", "betweenPlot");
-    labelBetween.style.marginRight = "5px";
-    labelBetween.textContent = "Conflict between visualizations: ";
-
-    const selectBetween = document.createElement("select");
-    selectBetween.setAttribute("name", "betweenPlot");
-    selectBetween.setAttribute("id", data.nodeId + "_select_between");
-
-    ["Overwrite", "Merge (AND)", "Merge (OR)"].forEach((optionText) => {
-      const option = document.createElement("option");
-      option.setAttribute("value", optionText.toUpperCase().replace(/\s/g, "_"));
-      option.textContent = optionText;
-      selectBetween.appendChild(option);
-    });
-
-    const br = document.createElement("br");
-
-    const labelIntra = document.createElement("label");
-    labelIntra.setAttribute("for", "intraPlots");
-    labelIntra.style.marginRight = "5px";
-    labelIntra.textContent = "Conflict inside visualization: ";
-
-    const selectIntra = document.createElement("select");
-    selectIntra.setAttribute("name", "intraPlots");
-    selectIntra.setAttribute("id", data.nodeId + "_select_intra");
-
-    ["Overwrite", "Merge (AND)", "Merge (OR)"].forEach((optionText) => {
-      const option = document.createElement("option");
-      option.setAttribute("value", optionText.toUpperCase().replace(/\s/g, "_"));
-      option.textContent = optionText;
-      selectIntra.appendChild(option);
-    });
-
-    div.appendChild(labelBetween);
-    div.appendChild(selectBetween);
-    div.appendChild(br);
-    div.appendChild(labelIntra);
-    div.appendChild(selectIntra);
   };
 
   // `selectionEcho`: this run re-emits the same rows because of a selection
@@ -225,7 +183,9 @@ const useTableData = ({ data }: { data: INodeData }) => {
       });
 
       tabd = tabd.map ((item) => {
-        let parsedInput = Object.assign({}, item);
+        // The flags go on a copy: an inline input is the upstream node's own
+        // object (utils/poolFlagCopy).
+        const parsedInput = copyForFlags(item);
         if(parsedInput.dataType == "dataframe") {
           let columns = Object.keys(parsedInput.data);
           let dfIndices = Object.keys(parsedInput.data[columns[0]]);
@@ -323,7 +283,6 @@ const useTableData = ({ data }: { data: INodeData }) => {
 
   return {
     createTableData,
-    customWidgetsCallback,
     processDataAsync,
     setActiveTab,
     activeTab,
