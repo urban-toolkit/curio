@@ -28,28 +28,33 @@ const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
 const PROJECTS = "pages/projects/ProjectsList.tsx";
 const DATASETS = "components/datasets/catalog/useDatasetCatalogDrawer.ts";
+/** A downloaded model's delete, which the Model Catalog page and its canvas
+ *  drawer both ask through. The third permanent deletion, asked the same way. */
+const MODELS = "components/models/catalog/useModelDelete.ts";
 
 describe("permanent deletion confirmations", () => {
   test("both ask to permanently delete, by name and in quotes", () => {
     expect(read(PROJECTS)).toContain('title={`Permanently delete "${deleteTarget.name}"?`}');
     expect(read(DATASETS)).toContain('title: `Permanently delete "${title}"?`');
+    expect(read(MODELS)).toContain('title: `Permanently delete "${title}"?`');
   });
 
   test("neither repeats the word on its button", () => {
     // "Delete forever" earned its keep only while Archive sat beside it as the
     // softer-sounding option. With the title stating the permanence, the verb
     // carries the button.
-    for (const rel of [PROJECTS, DATASETS]) {
+    for (const rel of [PROJECTS, DATASETS, MODELS]) {
       expect(read(rel)).not.toContain("Delete forever");
     }
     expect(read(PROJECTS)).toContain('confirmLabel="Delete"');
     expect(read(DATASETS)).toContain('confirmLabel: "Delete"');
+    expect(read(MODELS)).toContain('confirmLabel: "Delete"');
   });
 
   test("both bodies carry the shared retention sentence", () => {
     // A title claiming permanence has to be qualified in the same breath, and
     // `permanentDeletionNotice` is where that qualification is written once.
-    for (const rel of [PROJECTS, DATASETS]) {
+    for (const rel of [PROJECTS, DATASETS, MODELS]) {
       expect(read(rel)).toContain("permanentDeletionNotice()");
     }
   });

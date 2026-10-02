@@ -2,6 +2,7 @@ import React from "react";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
+  faBrain,
   faCloudArrowDown,
   faCube,
   faDatabase,
@@ -10,7 +11,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import styles from "./CatalogKindVisuals.module.css";
 
-export type CatalogItemKind = "dataset" | "package" | "dataflow" | "agent" | "source";
+export type CatalogItemKind = "dataset" | "package" | "dataflow" | "agent" | "source" | "model";
 
 export interface CatalogKindMeta {
   icon: IconDefinition;
@@ -46,6 +47,13 @@ export const CATALOG_KIND_META: Record<CatalogItemKind, CatalogKindMeta> = {
     icon: faCloudArrowDown,
     label: "Source",
     shortLabel: "Source",
+  },
+  // A Model Catalog MODEL: trained weights a node runs. The brain is the
+  // common mark for a learned model, and nothing else in the catalogs uses it.
+  model: {
+    icon: faBrain,
+    label: "Model",
+    shortLabel: "Model",
   },
 };
 

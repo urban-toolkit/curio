@@ -25,6 +25,13 @@
   color: var(--curio-kind-source-on-tint);
 }
 
+/* Tinted for the same reason: the model glyph is the avatar of every model
+   card, in the browse grid and in the canvas drawer. */
+.kindIcon_model {
+  background: var(--curio-kind-model-bg);
+  color: var(--curio-kind-model-on-tint);
+}
+
 .size_sm {
   width: 22px;
   height: 22px;

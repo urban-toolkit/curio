@@ -46,6 +46,8 @@ type CreateCodeNodeOptions = {
     datasetRefs?: string[];
     appliedDatasets?: Record<string, unknown>;
     datasetSource?: DatasetNodeSource;
+    // The model a Model Catalog drop set (canonical shape metadata.modelRefs).
+    modelRefs?: { id: string; name: string }[];
     saveOutputDataset?: boolean;
     // dev/89: per-node appearance (canonical spec shape metadata.appearance;
     // normalized values only — validation is utils/nodeAppearance's job).
@@ -208,6 +210,9 @@ export function useCode(): IUseCode {
 
             if(node.metadata != undefined && node.metadata.datasetSource != undefined)
                 nodeMeta.datasetSource = node.metadata.datasetSource;
+
+            if(node.metadata != undefined && Array.isArray(node.metadata.modelRefs))
+                nodeMeta.modelRefs = node.metadata.modelRefs;
 
             // dev/89: the canonical per-node appearance round-trips into live
             // data (rendered via utils/nodeAppearance — invalid legacy values
@@ -382,6 +387,7 @@ export function useCode(): IUseCode {
             datasetRefs = undefined,
             appliedDatasets = undefined,
             datasetSource = undefined,
+            modelRefs = undefined,
             saveOutputDataset = undefined,
             appearance = undefined,
             title = undefined,
@@ -447,6 +453,7 @@ export function useCode(): IUseCode {
                 propagationCallback: applyNewPropagation,
                 ...(output !== undefined ? { output } : {}),
                 ...(executedCode !== undefined ? { executedCode } : {}),
+                ...(modelRefs !== undefined ? { modelRefs } : {}),
             },
         };
 

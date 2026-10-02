@@ -264,6 +264,40 @@ def stage_dataset_paths(dataset_paths, scratch_dir):
     return staged
 
 
+def stage_model_dirs(model_dirs, scratch_dir):
+    """Stage the folders behind ``curio_model`` calls, as datasets are staged.
+
+    A model is a folder, and its files name each other: an ``.onnx`` graph
+    reads its external weights by relative name, a Transformers checkpoint is
+    read by ``from_pretrained`` as a folder. So the tree is linked in whole,
+    each file at its own relative path under ``model_<i>/``. Only regular
+    files inside the folder are linked; a link pointing out of it is skipped.
+    A folder that cannot be staged is dropped, and the injected
+    ``curio_model`` names it.
+    """
+    scratch_dir = Path(scratch_dir)
+    staged = {}
+    for index, (model_id, source) in enumerate(model_dirs.items()):
+        try:
+            root = Path(source).resolve()
+            if not root.is_dir():
+                continue
+            name = f"model_{index}"
+            target = scratch_dir / name
+            for path in sorted(root.rglob("*")):
+                if path.is_symlink() or not path.is_file():
+                    continue
+                if root not in path.resolve().parents:
+                    continue
+                destination = target / path.relative_to(root)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                _link_or_copy(path, destination)
+            staged[model_id] = name
+        except OSError:
+            continue
+    return staged
+
+
 def _insert_row(con, art_id, kind, *, node_id=None, session_id=None,
                 value_int=None, value_float=None, value_str=None,
                 value_json=None, blob=None):

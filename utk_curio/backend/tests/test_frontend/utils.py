@@ -2590,6 +2590,7 @@ _TOOLS_PALETTES = {
     "packages": ("#packages-palette", "Open node package palette", "Package templates"),
     "datasets": ("#datasets-palette", "Open dataset palette", "Dataset palette"),
     "agents": ("#agents-palette", "Open agent palette", "Agent palette"),
+    "models": ("#models-palette", "Open model palette", "Model palette"),
 }
 
 
