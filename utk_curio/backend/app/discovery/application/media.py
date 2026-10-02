@@ -136,6 +136,11 @@ def locate(service, dataset_id: str, file_id: str) -> Located:
     row = rows.get(file_id)
     if row is None:
         raise ResourceNotFound(f"{file_id!r} is not a file of {dataset_id!r}")
+    if manifest.is_service:
+        # A service's files came down with its collection, into the objects
+        # folder a bucket's cached files use; there is no source to read.
+        local = cache_collection.cached_file(service.user_key, dataset_id, row.file_id, row.ext)
+        return Located(dataset_id=dataset_id, row=row, local=Path(local) if local else None, provider=None)
     provider = service._storage_for(manifest)
     local = provider.local_path(row.relpath)
     if local is None:
