@@ -10,6 +10,8 @@ expand to the members.
 What the card *says* comes from the group id's prefix rather than being assumed:
 a GeoPackage labelled "OpenStreetMap import" with an ``osm`` format badge would
 be wrong on screen, which is the whole reason the kind is carried in the id.
+A group whose layers were all downloaded from the Discovery Catalog says what
+its layers say, as a single download's card does.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from utk_curio.backend.app.datasets.domain.catalog_item import base_item
+from utk_curio.backend.app.datasets.domain.catalog_item import base_item, loader_snippet
 from utk_curio.backend.app.datasets.domain.constants import OSM_LAYER_ORDER, layer_group_kind
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import iso_from_timestamp
 
@@ -88,20 +90,38 @@ def build_layer_group_item(group_id: str, members: list[dict[str, Any]]) -> dict
         for m in members
     ]
     kind = _GROUP_KINDS.get(layer_group_kind(group_id) or "osm", _GROUP_KINDS["osm"])
+    # Displayed as its own type (not a generic bundle); the tabbed preview is
+    # driven by the preview response's ``bundle`` flag, not this format. Layers
+    # downloaded from the Discovery Catalog: the group says what each of them
+    # says (format, source label, tags, where they came from), as a single
+    # download's card does. An upload says what its file was.
+    downloaded = bool(members) and all(m.get("discoverySource") for m in members)
+    labels = (
+        {
+            "format": members[0].get("format"),
+            "sourceLabel": members[0].get("sourceLabel"),
+            "tags": list(members[0].get("tags") or []),
+            "discoverySource": members[0].get("discoverySource"),
+        }
+        if downloaded
+        else {
+            "format": kind["format"],
+            "sourceLabel": kind["source_label"],
+            "tags": list(kind["tags"]),
+        }
+    )
     return base_item(
         id=group_id,
         title=group_base_title(members, group_id),
         description=f"{kind['noun']} - {len(members)} layer(s).",
         origin="imported",
-        # Displayed as its own type (not a generic bundle); the tabbed preview is
-        # driven by the preview response's ``bundle`` flag, not this format.
-        format=kind["format"],
         uri=f"curio://{kind['scheme']}/{group_id}",
+        # The group's loader is its kind's, whatever format it shows.
+        loaderSnippet=loader_snippet(kind["format"], None, dataset_id=group_id),
         sizeBytes=total_size,
         featureCount=total_features,
         updatedAt=updated,
-        sourceLabel=kind["source_label"],
-        tags=list(kind["tags"]),
+        **labels,
         schema={"bundleParts": bundle_parts},
         installed=installed,
         # Real per-layer dataset ids, so the client can install/uninstall each

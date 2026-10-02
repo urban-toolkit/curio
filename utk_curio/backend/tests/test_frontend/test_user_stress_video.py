@@ -77,7 +77,7 @@ from .utils import (
 )
 
 # The tour module owns the shared canvas choreography (menus, Play All, fitView,
-# the agent drag, the AI Settings panel). Importing it rather than restating it
+# the agent drag, the API Settings panel). Importing it rather than restating it
 # keeps this file about the *exploration* - and means a change to the app that
 # breaks a gesture breaks it in one place.
 from .test_feature_tour_video import (  # noqa: E402
@@ -102,7 +102,7 @@ from .test_feature_tour_video import (  # noqa: E402
     _open_agent_drawer,
     _play_all,
     _reset_zoom,
-    scene_ai_settings,
+    scene_api_settings,
 )
 
 
@@ -673,7 +673,7 @@ class TestSessionFirstHour:
             for template_id in PALETTE_ICON_CLASS:
                 info = palette_tile_identity(page, template_id)
                 if not info.get("found"):
-                    wrong_tile.append(f"{template_id}: no tile at that position")
+                    wrong_tile.append(f"{template_id}: no tile with that id")
                     continue
                 if not info.get("iconOk"):
                     wrong_tile.append(
@@ -687,7 +687,7 @@ class TestSessionFirstHour:
                         f"{template_id} (id={info.get('id')!r}, "
                         f"role={info.get('role')!r})"
                     )
-            # A mismatch here means the positional lookup is wrong, which would
+            # A mismatch here means the tile lookup is wrong, which would
             # misattribute every later finding - so it fails the step rather than
             # being filed as an application defect.
             assert not wrong_tile, (
@@ -700,14 +700,11 @@ class TestSessionFirstHour:
                     f"{len(nameless)} palette tiles have no accessible name",
                     severity="warning",
                     detail_full=(
-                        "ToolsMenu.tsx:44 renders each tile as "
-                        "<div id={tutorialID}> with no aria-label, no title "
-                        "attribute and no text content; the only label is a "
-                        "react-bootstrap tooltip that appears on hover. "
-                        "packages/curio.builtin@1/manifest.json gives no "
-                        "tutorialId to data-export, data-summary, js-computation "
-                        "or spatial-join, so those four have no id either - "
-                        "nothing in the DOM names them.\n\nTiles with no name:\n  "
+                        "ToolsMenu.tsx's DraggableTool renders these tiles "
+                        "with no aria-label, no title attribute and no text "
+                        "content; the only label is a react-bootstrap tooltip "
+                        "that appears on hover, so nothing in the DOM names "
+                        "them.\n\nTiles with no name:\n  "
                         + "\n  ".join(nameless)
                     ),
                 )
@@ -1188,17 +1185,14 @@ class TestSessionRealData:
             clear_canvas_overlays(page)
             export_id = grid_drop(s, "data-export", 2, 1)
             connect_nodes(page, transform_id, export_id)
-            set_node_code(
-                page, export_id,
-                "df = arg\n"
-                "print('exporting', len(df), 'rows')\n"
-                "df.to_csv('curio_usertest_export.csv', index=False)\n"
-                "print('wrote curio_usertest_export.csv')\n",
+            # The node is one Download button (#226). With no input yet it runs
+            # the transform first, then downloads.
+            button = node_locator(page, export_id).get_by_role(
+                "button", name=re.compile(r"^Download")
             )
-            run_and_report(
-                s, export_id, label="the data export",
-                node_type="curio.builtin/data-export",
-            )
+            with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
+                s.tour.click(button)
+            s.note(f"the data export downloaded {download.value.suggested_filename!r}")
 
         with s.step("Run the whole graph from scratch",
                     "Play All, in topological order.", chapter="All of it"):
@@ -1498,7 +1492,7 @@ class TestSessionExtending:
             _sign_up(s, name="Marcus Oyelaran", username="marcus_oyelaran")
             wait_for_projects_page(page, timeout=30000)
 
-        with s.step("Add an LLM configuration in AI Settings",
+        with s.step("Add an LLM configuration in API Settings",
                     "Curio ships no endpoint; nothing AI works until this is set."):
             if not LLM_API_KEY:
                 s.record(
@@ -1511,7 +1505,7 @@ class TestSessionExtending:
                         "CURIO_TOUR_LLM_API_KEY"
                     ),
                 )
-            scene_ai_settings(ctx)
+            scene_api_settings(ctx)
             s.note(f"provider configured: {LLM_BASE_URL} model={LLM_MODEL}")
 
         with s.step("Open a dataflow and build something worth packaging",
@@ -2047,35 +2041,25 @@ class TestSessionAbuse:
             s.tour.beat(900)
             remaining = {n["id"] for n in canvas_nodes(page)}
             if s.state["middle"] in remaining:
-                # Not a defect: MainCanvas.handleNodesChange refuses a "remove"
-                # change for any node that still has an edge, and says so in a
-                # toast. Bisected against the shipped test (which never wires its
-                # nodes): unconnected nodes delete on Delete *and* Backspace, a
-                # connected one is refused on both. What is worth recording is
-                # whether the user is actually told why.
+                # Delete removes a wired node together with its edges (#155),
+                # so a node still on the canvas is a defect. Record what the
+                # toast region said, in case the app explained itself.
                 said = " ".join(
                     (page.locator('[aria-label="Notifications"] .toast')
                      .first.text_content() or "").split()
                 ) if page.locator(
                     '[aria-label="Notifications"] .toast'
                 ).count() else ""
-                if "cannot be removed" in said.lower():
-                    s.note(
-                        "Delete on a wired node is refused by design, and the "
-                        f"app explains it: {said[:200]!r}"
-                    )
-                else:
-                    s.record(
-                        "absent",
-                        "Delete on a wired node did nothing and said nothing",
-                        severity="bug",
-                        detail_full=(
-                            "MainCanvas.handleNodesChange refuses the remove and "
-                            "is supposed to showToast('Connected boxes cannot be "
-                            "removed...'), but no such toast was on screen. "
-                            f"Toast region held: {said[:300]!r}"
-                        ),
-                    )
+                s.record(
+                    "absent",
+                    "Delete on a wired node did not remove it",
+                    severity="bug",
+                    detail_full=(
+                        "Delete should remove the selected node and every edge "
+                        "attached to it. The node is still on the canvas. "
+                        f"Toast region held: {said[:300]!r}"
+                    ),
+                )
                 dismiss_toasts(page)
             else:
                 play_node(page, s.state["tail"])

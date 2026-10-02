@@ -25,6 +25,8 @@ import { buildSaveableLiveOutputs } from "../../../../utils/saveOutputDataset";
 import { DatasetGroupRow, DatasetRow } from "./DatasetPaletteRows";
 import { DatasetInstallingRow } from "./DatasetInstallingRow";
 import { pendingInstallsNotYetListed } from "../../../../services/datasetCatalog/pendingInstallView";
+import { isSavedOutputOfDataflow } from "../../../../services/datasetCatalog/producerLinkage";
+import { useDatasetDetails } from "../../../datasets/catalog/datasetDetailsContext";
 import styles from "./DatasetsPaletteDropdown.module.css";
 
 export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
@@ -38,14 +40,12 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
   const { projectId, outputs, nodes, defaultSaveOutputDataset, pendingInstalls } = useFlowContext();
   const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
   const { datasetRevealId, setDatasetRevealId } = useDatasetPalette();
+  const { openDatasetDetails } = useDatasetDetails();
 
-  // Saveable session outputs — a node's freshly-computed-and-auto-installed dataset
-  // isn't in the project manifest yet (no save), so the backend only surfaces it as
-  // a computed item when these are passed (then marks it installed from the user
-  // store). Without them, just-generated installed computed datasets are invisible
-  // here even though the Data Catalog drawer (which passes them) shows them.
-  // buildSaveableLiveOutputs returns undefined when nothing is saveable, so the
-  // common default-off workflow keeps a stable fetch key and never churns.
+  // Saveable session outputs, so a node's freshly computed output is listed
+  // before the next project save. buildSaveableLiveOutputs returns undefined
+  // when nothing is saveable, so the common default-off workflow keeps a
+  // stable fetch key and never churns.
   const liveOutputs = useMemo(
     () => buildSaveableLiveOutputs(outputs, nodes, defaultSaveOutputDataset),
     [outputs, nodes, defaultSaveOutputDataset],
@@ -63,10 +63,6 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
     // `isInThisDataflow` anyway, so this only ever adds what was missing.
     includeHub: true,
     sort: "recent",
-    // Pass saveable live outputs so genuinely-installed computed datasets appear
-    // immediately. The list still filters to installed===true (isUserInstalledDataset),
-    // so ephemeral non-installed outputs never show — only the counter/list churns
-    // when a saveable output actually lands.
     liveOutputs,
     enabled: true,
   });
@@ -113,17 +109,33 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
     [paletteEntries],
   );
 
-  // In-flight installs without a real installed row yet, rendered as
-  // "Adding…" placeholders above the installed rows.
-  const installingRows = useMemo(
-    () => pendingInstallsNotYetListed(pendingInstalls, installedRows),
-    [pendingInstalls, installedRows],
-  );
+  // Outputs this dataflow's nodes saved to the account (#217). They are not in
+  // the project, so they get their own group, and a run's placeholder is
+  // replaced by its row there instead of vanishing.
+  const savedOutputRows = useMemo(() => {
+    const listed = new Set(installedRows.map((item) => item.id));
+    return rows.filter(
+      (item) => !listed.has(item.id) && isSavedOutputOfDataflow(item, projectId),
+    );
+  }, [rows, installedRows, projectId]);
 
-  // Count what the palette actually shows (installed/saved datasets + in-flight
-  // placeholders) so the trigger badge stays consistent with the list and does
-  // not visibly jump when a placeholder is replaced by its real row.
-  const total = installedRows.length + installingRows.length;
+  // In-flight installs without a real row yet, rendered as "Adding…"
+  // placeholders above the rows.
+  // placeholders, each in the group its row lands in: a run's output in Saved
+  // outputs, anything else in the project's datasets.
+  const installingRows = useMemo(
+    () => pendingInstallsNotYetListed(pendingInstalls, [...installedRows, ...savedOutputRows]),
+    [pendingInstalls, installedRows, savedOutputRows],
+  );
+  const savingRows = installingRows.filter((pending) => Boolean(pending.producerNodeId));
+  const addingRows = installingRows.filter((pending) => !pending.producerNodeId);
+  const projectCount = installedRows.length + addingRows.length;
+  const savedCount = savedOutputRows.length + savingRows.length;
+
+  // Count what the palette actually shows so the trigger badge stays
+  // consistent with the list and does not visibly jump when a placeholder is
+  // replaced by its real row.
+  const total = projectCount + savedCount;
 
   // A node's DATASET chip requests a reveal: open the palette, then scroll the
   // matching row into view and pulse it. Mirrors the package palette behaviour.
@@ -148,8 +160,14 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
         : undefined;
       attempts++;
       if (!anchor) {
-        if (attempts < maxAttempts) window.requestAnimationFrame(tryReveal);
-        else setDatasetRevealId(null);
+        if (attempts < maxAttempts) {
+          window.requestAnimationFrame(tryReveal);
+          return;
+        }
+        // No row lists it here (#441): show the dataset's details instead.
+        const listed = catalog.items.find((item) => item.id === datasetRevealId);
+        openDatasetDetails(datasetRevealId, listed ? { fallbackDataset: listed } : undefined);
+        setDatasetRevealId(null);
         return;
       }
       anchor.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
@@ -164,7 +182,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
       window.cancelAnimationFrame(rafId);
       if (pulseTimer !== undefined) window.clearTimeout(pulseTimer);
     };
-  }, [open, datasetRevealId, setDatasetRevealId, installedRows]);
+  }, [open, datasetRevealId, setDatasetRevealId, installedRows, savedOutputRows, catalog.items, openDatasetDetails]);
 
   // Drop a pending reveal when the palette is closed (true→false only).
   const prevOpenRef = useRef(false);
@@ -186,6 +204,9 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
           onClick={() => setOpen(!open)}
           aria-expanded={open}
           aria-haspopup="true"
+          // The count below is being fetched again (after a save, an install
+          // or an import), so the number shown may be about to change.
+          aria-busy={catalog.loading || catalog.refreshing}
           title={open ? "Close dataset palette" : "Open dataset palette"}
         >
           <span className={styles.triggerTop}>
@@ -218,7 +239,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
             ) : null}
             <PaletteAccordion
               title="Datasets in project"
-              count={total}
+              count={projectCount}
               selected
               defaultOpen
               /* No sort toggle. Neither peer palette has one, it toggled
@@ -228,7 +249,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
                  row where it competed with the row's own click target. The
                  list keeps its stable default order. */
             >
-              {installingRows.map((pending) => (
+              {addingRows.map((pending) => (
                 <DatasetInstallingRow key={`pending:${pending.key}`} pending={pending} />
               ))}
               {installedRows.length > 0 ? (
@@ -242,10 +263,20 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown({
                     />
                   ),
                 )
-              ) : installingRows.length === 0 ? (
+              ) : addingRows.length === 0 ? (
                 <div className={styles.sectionEmpty}>No datasets added yet.</div>
               ) : null}
             </PaletteAccordion>
+            {savedCount > 0 ? (
+              <PaletteAccordion title="Saved outputs" count={savedCount} defaultOpen>
+                {savingRows.map((pending) => (
+                  <DatasetInstallingRow key={`pending:${pending.key}`} pending={pending} />
+                ))}
+                {savedOutputRows.map((dataset) => (
+                  <DatasetRow key={`${dataset.origin}:${dataset.id}`} dataset={dataset} />
+                ))}
+              </PaletteAccordion>
+            ) : null}
           </div>
           <div className={styles.footer}>
             <PaletteDragHint item="dataset" />

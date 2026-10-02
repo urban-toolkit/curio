@@ -385,7 +385,7 @@ def _geotiff_expectations(data_file: Path) -> dict[str, str]:
         }
 
 
-# A collection's index is the dataset; its files stay in the lake source that
+# A collection's index is the dataset; its files stay in the source that
 # indexed them. ``curio_collection`` adds a readable ``path`` for each row, so
 # counting the rows whose file opens proves the files were reached, not only
 # the index.

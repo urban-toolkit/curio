@@ -282,7 +282,7 @@ class TestActivationThroughTheRoutes:
         listing = self._listing(client, account)
         assert listing["assignments"] == {}
         assert self._builder(listing)["answers"]["configId"] == account["configId"]
-        # The trained configuration stays, to use or remove in AI Settings.
+        # The trained configuration stays, to use or remove in API Settings.
         assert any(c["id"] == trained_id for c in listing["configs"])
 
     def test_rollback_restores_a_previous_choice(self, client, account, approved_corpus):

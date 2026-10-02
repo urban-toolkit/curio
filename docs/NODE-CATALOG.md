@@ -2,7 +2,7 @@
 
 The Node Catalog is where Curio's nodes live. Every node you can drop on the canvas, whether a built-in that ships with the app or an extra you install, comes from a **package**: a small, self-contained folder with a `manifest.json` describing the nodes inside it.
 
-Curio has four catalogs: the Node Catalog holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the [Data Lake Catalog](DATA-LAKE-CATALOG.md) the portals and storage you take datasets from.
+Curio has five catalogs: the Node Catalog holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from.
 
 This guide is in six parts, plus operator notes:
 
@@ -36,7 +36,7 @@ A package is a folder with a `manifest.json` (the contract), an optional `source
 | `curio.builtin@1` | The 12 default node kinds (Data Loading, Python/JS Computation, Vega-Lite, Autark, and so on). Installed for every user, **read-only** (you can save edits as a new package but cannot overwrite the originals), and cannot be uninstalled. |
 | `ai.utk.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end to end. Both are plain Python nodes. `curio.weather@1` is also installed for you when Curio starts with `--with-examples`; you can still uninstall it. |
 | `curio.example-ui@1` | A minimal node with its **own interface** rather than a code editor: no API keys and no Python dependencies. The one to read and fork for custom-UI nodes; see [AUTHORING-NODES.md](AUTHORING-NODES.md). |
-| `curio.streetvision@1` | A substantial custom-UI package (Street View fetch plus HuggingFace inference). Not installed by default, read-only, and needs a Google Maps API key plus torch and transformers. Read it for the advanced patterns, not as a starting point. |
+| `curio.streetvision@1` | One **Image Segmentation** code node: runs a Model Catalog model over a collection's images and reports each class's share of every image (DDRNet23-Slim ships with Curio; Hugging Face models are added from the Discovery Catalog). Read-only, depends only on `onnxruntime`, and installed with the example that declares it ([example 10](examples/10-street-vision-cv-analysis.md)). |
 
 You can install any number of other packages, your own or archives shared by others.
 
@@ -60,7 +60,7 @@ The palette reads the open project's lockfile, so two projects open in different
 There are two places you manage packages:
 
 - **The drawer**, inside the canvas, works on the open project only. Open it from the top menu **Data → Node Catalog**, or from the **Node Catalog** dropdown in the left Tools panel and **Browse Node Catalog +**. Its two tabs are **Browse all** and **In project**.
-- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters, a details drawer, and no remove button. The **Data Catalog**, **Agent Catalog** and **Data Lake Catalog** tabs beside it are the other three catalogs.
+- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters, a details drawer, and no remove button. The **Data Catalog**, **Agent Catalog** and **Discovery Catalog** tabs beside it are the other three catalogs.
 
 ### Action matrix
 
@@ -68,6 +68,7 @@ There are two places you manage packages:
 |---|---|---|---|
 | **Add to project** | Drawer | This project's lockfile, plus your package store if the package is not there yet | The package's nodes appear in this project's palette only. |
 | **Add to all projects** | `/catalog/nodes` | Your defaults and every project's lockfile, plus your package store | The package appears in every project's palette, and new projects start with it. |
+| **Update** (drawer), **Update all projects** (`/catalog/nodes`) | Shown when the shared catalog has a higher version than your copy | Your store copy, replaced by the catalog's version | Every project that uses the package gets the new version. A package with its own interface runs the new one after you reload the page. |
 | **Remove from project** | Drawer | This project's lockfile; also your store copy and defaults entry, when no other project uses the package | The package leaves this project's palette. |
 | **Publish** | The Tools panel's **Node Catalog** dropdown, or the `/catalog/nodes` details drawer | The shared catalog | Every user on this install can browse the package. The button is hidden when the operator turns publishing off. |
 
@@ -87,7 +88,7 @@ There are two places you manage packages:
 
 Once a package is in the open project, its nodes are in the palette: the built-in nodes sit in the left Tools panel, and nodes from other packages in its **Node Catalog** dropdown. Drag one onto the canvas.
 
-A Python node that calls a key-gated API reads the key by name, never as a literal: `api_key = curio_secret("<name>")` returns the connection key saved under that name in **AI Settings → Connection keys** (see [USAGE.md](USAGE.md#connection-keys)). Like `curio_dataset_path("<id>")`, the name travels with the dataflow, and the value reaches the sandbox for the run only.
+A Python node that calls a key-gated API reads the key by name, never as a literal: `api_key = curio_secret("<name>")` returns the connection key saved under that name in **API Settings → Connection keys** (see [USAGE.md](USAGE.md#connection-keys)). Like `curio_dataset_path("<id>")`, the name travels with the dataflow, and the value reaches the sandbox for the run only.
 
 ---
 
@@ -103,10 +104,13 @@ The flow is **Save as package node**: build the node on the canvas, then save it
 4. Choose **New package…** (a fresh package containing this kind) or an installed package as the target. Read-only packages, including `curio.builtin@1`, are not offered; the way to change a read-only package is to fork it into a new one.
 5. After the save, the canvas node is rebound to the new package's kind.
 
+Saving into a package you added from the catalog makes that copy your own. Curio keeps it as you saved it when the shared catalog's copy changes, and **Update** replaces it with the catalog's version when the catalog has a higher one. The same holds after you edit the package's metadata or import an archive over it.
+
 > [!IMPORTANT]
-> **Save as package node cannot produce a custom-UI node.** The package it
+> **Save as package node cannot produce a custom-UI node.** A new package it
 > builds carries `manifest.json` and `sources/`, never a `scripts/` directory,
-> so **forking a custom-UI package this way drops its interface**.
+> so **forking a custom-UI package this way drops its interface**. Saving into
+> an existing package keeps every file it already has.
 >
 > To author a node with its own React interface, work from a checkout and build
 > the bundle: see [Authoring nodes](AUTHORING-NODES.md) and
@@ -119,6 +123,7 @@ The flow is **Save as package node**: build the node on the canvas, then save it
 - Each top-level `import` or `from … import` in a `.py` source is collected, leaving out the standard library and Curio's own modules. The common cases where the import name differs from the install name are mapped (`cv2` → `opencv-python`, `sklearn` → `scikit-learn`, `PIL` → `pillow`, `yaml` → `pyyaml`, `bs4` → `beautifulsoup4`, `skimage` → `scikit-image`); anything else passes through unchanged.
 - In `.js`, `.mjs` and `.cjs` sources, `import … from "X"`, dynamic `import("X")` and `require("X")` are collected. Relative paths are skipped, subpaths collapse to the package (`lodash/fp` → `lodash`), and scoped packages keep their scope (`@scope/pkg`).
 - Detected names are written with `*` as the version range. The UI does not offer version pins.
+- Saving into an existing package keeps every dependency it already declares, with its range, and adds newly detected names.
 - Imported archives and catalog installs are not re-scanned: their dependencies are what the package author declared.
 
 ### Editing package metadata
@@ -213,13 +218,13 @@ A package you save or import lands in your package store:
 
 ### Where the code lives
 
-Since memo dev/143 the catalog is layered like the Data Catalog. The backend is `utk_curio/backend/app/packages/{domain,schemas,repositories,infrastructure,application,builder,routes}` behind the one `service.py` facade — and the agents feature is layered the same way, `utk_curio/backend/app/agents/{domain,repositories,infrastructure,application,routes}` behind its `service.py`, with `src/services/agents/` + `src/providers/agents/` on the frontend (memo dev/142) (`builder/` is the Package Builder pipeline beside the layers; dependency rule `domain ← schemas ← repositories ← infrastructure ← application ← routes`, enforced by `tests/test_packages/test_layering.py`). The frontend is `src/services/packages/` — the transport (`packagesApi`, `packagesBlobTransport`, `packageBackendApi`), `usePackageCatalog` (the one hook both the canvas drawer and the `/catalog/nodes` page render, scoped per project or to the account defaults) and the pure logic and types they share; import it from its barrel, `services/packages` — and `src/providers/packages/` (the drawer provider, the palette context, and the two hooks that also refresh the node-kind registry: `usePackageArchiveImport`, the one sideload pathway, and `useEnsureWorkflowDeps`). The surfaces — `components/packages/`, `pages/catalog/`, the palette dropdown under `components/menus/nodes/` — only render: `tests/packages/servicesBarrel.test.ts` refuses transport there and refuses any runtime import of `registry/` inside the layer (see [ARCHITECTURE.md](ARCHITECTURE.md)).
+Since memo dev/143 the catalog is layered like the Data Catalog. The backend is `utk_curio/backend/app/packages/{domain,schemas,repositories,infrastructure,application,builder,routes}` behind the one `service.py` facade, and the agents feature is layered the same way, `utk_curio/backend/app/agents/{domain,repositories,infrastructure,application,routes}` behind its `service.py`, with `src/services/agents/` + `src/providers/agents/` on the frontend (memo dev/142) (`builder/` is the Package Builder pipeline beside the layers; dependency rule `domain ← schemas ← repositories ← infrastructure ← application ← routes`, enforced by `tests/test_packages/test_layering.py`). The frontend is `src/services/packages/`, holding the transport (`packagesApi`, `packagesBlobTransport`, `packageBackendApi`), `usePackageCatalog` (the one hook both the canvas drawer and the `/catalog/nodes` page render, scoped per project or to the account defaults) and the pure logic and types they share (import it from its barrel, `services/packages`), and `src/providers/packages/` (the drawer provider, the palette context, and the two hooks that also refresh the node-kind registry: `usePackageArchiveImport`, the one sideload pathway, and `useEnsureWorkflowDeps`). The surfaces (`components/packages/`, `pages/catalog/`, the palette dropdown under `components/menus/nodes/`) only render: `tests/packages/servicesBarrel.test.ts` refuses transport there and refuses any runtime import of `registry/` inside the layer (see [ARCHITECTURE.md](ARCHITECTURE.md)).
 
 ## See also
 
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): datasets, installed and published with the same model.
 - [`docs/AGENT-CATALOG.md`](AGENT-CATALOG.md): the agents you attach to nodes.
-- [`docs/DATA-LAKE-CATALOG.md`](DATA-LAKE-CATALOG.md): the data portals you download datasets from.
+- [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md): the data portals you download datasets from.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#node-packages-and-manifests): how packages load, and how to add a built-in behavior, icon, or grammar adapter.
 - [`docs/USAGE.md`](USAGE.md): installing and running Curio, including the [Vega-Lite node](USAGE.md#vega-lite-node).
 - [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json): the manifest JSON Schema.

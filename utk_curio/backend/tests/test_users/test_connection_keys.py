@@ -111,9 +111,12 @@ class TestStore:
 
     def test_delete_and_cap(self, tmp_path):
         store = ConnectionKeyStore(base=tmp_path)
-        assert store.delete("7", "k") is False
+        deleted = store.delete("7", "k")
+        assert deleted is False
         store.put("7", "k", "one.org", "value-one-1")
-        assert store.delete("7", "k") is True and store.list("7") == []
+        deleted = store.delete("7", "k")
+        assert deleted is True
+        assert store.list("7") == []
         for i in range(ck.MAX_KEYS_PER_USER):
             store.put("9", f"k{i}", "one.org", "value-one-1")
         with pytest.raises(ConnectionKeyError):

@@ -538,6 +538,7 @@ def _catalog_resolution(code: str, username: str | None = None) -> dict:
         "paths": resolved,
         "collections": answer.get("collections") or {},
         "mediaDir": answer.get("mediaDir"),
+        "models": answer.get("models") or {},
     }
 
 
@@ -608,6 +609,7 @@ def execute_workflow_programmatically(
                 "dataset_paths": resolution["paths"],
                 "collections": resolution["collections"],
                 "media_dir": resolution["mediaDir"],
+                "models": resolution["models"],
             },
             headers=sandbox_auth_header(),
             timeout=120,
@@ -1411,19 +1413,12 @@ def save_workflow_test_screenshot(
     afterwards. Under ``--remint-baselines`` an existing baseline is compared
     and, when its screen changed, rewritten (see :func:`_remint`).
 
-    It used to mint implicitly, which meant a first run always passed. Two ways
-    that bites, both seen: a baseline captured against a broken build enshrines
-    the bug as expected output and the suite then *defends* it; and a baseline
-    captured on the wrong machine enshrines that machine. The second is not
-    hypothetical - the macOS captures of the two #333 scenes looked perfect and
-    sat 6.11% and 10.05% from what CI renders, the second one past its budget,
-    because macOS rasterizes text with grayscale antialiasing and the runner uses
-    LCD subpixel.
-
-    The old ``CURIO_E2E_REQUIRE_BASELINES`` switch keyed this off run shape,
-    minting in a serial run and refusing under xdist. That was the wrong axis:
-    serialness says nothing about whether a capture deserves to become the
-    reference, and the one that would have broken CI was minted serially.
+    A baseline captured against a broken build enshrines the bug as expected
+    output, and the suite then *defends* it; one captured on another machine
+    enshrines that machine. macOS rasterizes text with grayscale antialiasing
+    and the runner uses LCD subpixel, so the macOS captures of the two #333
+    scenes sat 6.11% and 10.05% from what CI renders, the second past its
+    budget.
 
     Set *fit_reactflow* to ``False`` for pages with no canvas (the projects list,
     the catalog). The default path pins the ReactFlow viewport first, which waits
@@ -1599,18 +1594,88 @@ _VIEWPORT_WILL_CHANGE_JS = """(value) => {
     if (viewport) viewport.style.willChange = value;
 }"""
 
+# The page's own flow viewport is the first one: a flow drawn inside a node
+# comes later in document order.
+_VIEWPORT_COMPUTED_WILL_CHANGE_JS = """() => {
+    const viewport = document.querySelector('.react-flow__viewport');
+    return viewport ? getComputedStyle(viewport).willChange : null;
+}"""
+
+# Records whether the viewport ever took a will-change hint from now on: the
+# hint comes with a class on the flow's wrapper (useViewportMotionHint).
+_WATCH_VIEWPORT_HINT_JS = """() => {
+    const flow = document.querySelector('.react-flow');
+    const viewport = document.querySelector('.react-flow__viewport');
+    window.__curio_viewport_hint_seen = [];
+    if (window.__curio_viewport_hint_observer) window.__curio_viewport_hint_observer.disconnect();
+    if (!flow || !viewport) return false;
+    const observer = new MutationObserver(() => {
+        window.__curio_viewport_hint_seen.push(getComputedStyle(viewport).willChange);
+    });
+    observer.observe(flow, { attributes: true, attributeFilter: ['class'] });
+    window.__curio_viewport_hint_observer = observer;
+    return true;
+}"""
+
+# A point beside a node where the pointer meets the bare pane, not a node, an
+# edge or a menu: a press there pans, where a press on a node would drag it.
+_EMPTY_PANE_POINT_JS = """(id) => {
+    const pane = document.querySelector('.react-flow__pane');
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    if (!pane || !node) return null;
+    const p = pane.getBoundingClientRect();
+    const n = node.getBoundingClientRect();
+    const midX = n.left + n.width / 2, midY = n.top + n.height / 2;
+    for (let d = 20; d <= 600; d += 20) {
+        for (const [x, y] of [[n.left - d, midY], [n.right + d, midY], [midX, n.top - d], [midX, n.bottom + d]]) {
+            if (x < p.left + 5 || x > p.right - 5 || y < p.top + 5 || y > p.bottom - 5) continue;
+            if (document.elementFromPoint(x, y) === pane) return { x, y };
+        }
+    }
+    return null;
+}"""
+
+#: Long enough for a gesture to settle and drop the viewport's hint: d3 ends a
+#: wheel gesture 150 ms after the last wheel event, and useViewportMotionHint
+#: drops the hint 250 ms after the last move.
+VIEWPORT_SETTLE_WAIT_MS = 1000
+
+
+def empty_pane_point(page: Page, node_id: str) -> tuple[float, float]:
+    """The nearest point beside *node_id* where a press lands on the bare pane."""
+    point = page.evaluate(_EMPTY_PANE_POINT_JS, node_id)
+    assert point, f"no bare pane in view beside node {node_id}"
+    return point["x"], point["y"]
+
+
+def viewport_will_change(page: Page) -> str | None:
+    """The canvas viewport's computed ``will-change``: ``auto`` unless a gesture moves it."""
+    return page.evaluate(_VIEWPORT_COMPUTED_WILL_CHANGE_JS)
+
+
+def watch_viewport_hint(page: Page) -> None:
+    """Start recording each ``will-change`` the viewport takes; read with ``viewport_hints``."""
+    assert page.evaluate(_WATCH_VIEWPORT_HINT_JS), "no React Flow viewport on the page"
+
+
+def viewport_hints(page: Page) -> list:
+    """The computed ``will-change`` of the viewport at each change since ``watch_viewport_hint``."""
+    return page.evaluate("() => window.__curio_viewport_hint_seen || []")
+
 
 @contextmanager
 def canvas_painted_at_shown_zoom(page: Page):
-    """The canvas without its ``will-change`` hint while inside, for strict captures.
+    """The canvas without a ``will-change`` hint while inside, for strict captures.
 
-    The canvas viewport is a ``will-change: transform`` layer (MainCanvas.css),
-    which Chrome may keep painted at the zoom it had before the last fit
-    (#533): example 09's close-up came out soft on main, its text and the
-    map's tile seams 2.62% off the baseline (run 36791096981). Without the hint
-    a node is painted at the zoom it is shown at. Turning the hint back on
-    starts a fresh layer, so every capture compared against another one, on
-    disk or in memory, belongs inside one block.
+    The canvas viewport is a ``will-change: transform`` layer only while a
+    pan or zoom gesture moves it (MainCanvas.css, useViewportMotionHint), and
+    Chrome may keep such a layer painted at the zoom it had before a fit
+    (#533): example 09's close-up once came out soft, its text and the map's
+    tile seams 2.62% off the baseline (run 36791096981). The inline ``auto``
+    keeps a node painted at the zoom it is shown at whatever the stylesheet
+    says. Handing the hint back can start a fresh layer, so every capture
+    compared against another one, on disk or in memory, belongs inside one
+    block.
     """
     page.evaluate(_VIEWPORT_WILL_CHANGE_JS, "auto")
     try:
@@ -1922,6 +1987,81 @@ def watch_brush(page: Page, selector: str) -> None:
 
 def brush_log(page: Page) -> list[dict]:
     return page.evaluate("() => window.__curioBrushLog || []")
+
+
+# Every lit or unlit an Autark plot's bars go through from now on, per bar, left
+# to right, kept on window.__curioBarFills[selector] with the page's mousedowns
+# and mouseups. autk-plot colours a mark through its inline style, and one task
+# can restyle a bar more than once, so each change is read from the mutation
+# record's old value rather than from the style the observer finds afterwards.
+_WATCH_BAR_FILLS_JS = """({ selector, highlight }) => {
+    const el = document.querySelector(selector);
+    if (!el) return 0;
+    const marks = Array.from(el.querySelectorAll('.autkMark'))
+        .map((mark) => [mark.getBoundingClientRect().left, mark])
+        .sort((a, b) => a[0] - b[0]).map(([, mark]) => mark);
+    const probe = document.createElement('div');
+    const litIn = (style) => { probe.setAttribute('style', style || ''); return probe.style.fill === highlight; };
+    const litNow = (mark) => getComputedStyle(mark).fill === highlight;
+    const all = window.__curioBarFills = window.__curioBarFills || {};
+    const t0 = window.__curioBarFillsT0 = window.__curioBarFillsT0 ?? performance.now();
+    const now = () => Math.round(performance.now() - t0);
+    const states = marks.map((mark) => [{ t: now(), lit: litNow(mark) }]);
+    all[selector] = { states, marks, labels: marks.map((m) => (m.__data__ || {}).label ?? null) };
+    const index = new Map(marks.map((mark, i) => [mark, i]));
+    const observer = new MutationObserver((records) => {
+        const t = now();
+        const olds = new Map();
+        for (const record of records) {
+            const i = index.get(record.target);
+            if (i === undefined) continue;
+            if (!olds.has(i)) olds.set(i, []);
+            olds.get(i).push(litIn(record.oldValue));
+        }
+        for (const [i, before] of olds) {
+            for (const lit of [...before.slice(1), litNow(marks[i])]) {
+                if (states[i][states[i].length - 1].lit !== lit) states[i].push({ t, lit });
+            }
+        }
+    });
+    for (const mark of marks) {
+        observer.observe(mark, { attributes: true, attributeFilter: ['style'], attributeOldValue: true });
+    }
+    window.__curioBarFillsObservers = window.__curioBarFillsObservers || {};
+    window.__curioBarFillsObservers[selector]?.disconnect();
+    window.__curioBarFillsObservers[selector] = observer;
+    if (!window.__curioBarFillsPointer) {
+        window.__curioBarFillsPointer = [];
+        for (const type of ['mousedown', 'mouseup']) {
+            window.addEventListener(type, () => window.__curioBarFillsPointer.push({ t: now(), type }), true);
+        }
+    }
+    return marks.length;
+}"""
+
+_BAR_FILL_LOG_JS = """(selector) => {
+    const watched = (window.__curioBarFills || {})[selector];
+    if (!watched) return null;
+    return { states: watched.states, labels: watched.labels,
+             connected: watched.marks.every((mark) => mark.isConnected),
+             pointer: window.__curioBarFillsPointer || [] };
+}"""
+
+
+def watch_bar_fills(page: Page, selector: str) -> None:
+    """Start logging each lit and unlit of the plot's bars (see :func:`bar_fill_log`)."""
+    count = page.evaluate(_WATCH_BAR_FILLS_JS, {"selector": selector, "highlight": AUTK_PLOT_HIGHLIGHT})
+    assert count, f"no bars in {selector}"
+
+
+def bar_fill_log(page: Page, selector: str) -> dict | None:
+    """``{states, labels, connected, pointer}`` since :func:`watch_bar_fills`.
+
+    ``states[i]`` lists bar *i*'s lit state, left to right, each with its time
+    in ms: the state when the watch began, then one entry per change.
+    ``connected`` is False if the plot replaced its bars since. ``pointer``
+    holds the page's mousedowns and mouseups on the same clock."""
+    return page.evaluate(_BAR_FILL_LOG_JS, selector)
 
 
 def brush_mismatches(page: Page, selector: str, *, timeout_ms: int = 5000) -> list | None:
@@ -2333,6 +2473,7 @@ _TOOLS_PALETTES = {
     "packages": ("#packages-palette", "Open node package palette", "Package templates"),
     "datasets": ("#datasets-palette", "Open dataset palette", "Dataset palette"),
     "agents": ("#agents-palette", "Open agent palette", "Agent palette"),
+    "models": ("#models-palette", "Open model palette", "Model palette"),
 }
 
 
@@ -2654,9 +2795,9 @@ def upload_workflow(
         timeout=60000,
     )
     # hide the tools menu bar so it doesn't interfere with the test
-    # get parent of #step-loading
-    step_loading = page.locator("#step-loading")
-    tools_menu_bar = step_loading.locator("..")
+    # get parent of #tile-data-loading
+    loading_tile = page.locator("#tile-data-loading")
+    tools_menu_bar = loading_tile.locator("..")
     if tools_menu_bar.count() >= 1:
         page.evaluate(
             "element => { element.style.display = 'none'; }",
@@ -2907,12 +3048,12 @@ def enable_save_output(page, node_id: str) -> None:
     expect(box).to_be_checked(timeout=10000)
 
 
-def save_dataflow(page, *, timeout: float = 30000) -> None:
+def save_dataflow(page, *, timeout: float = 30000) -> dict:
     """Save the open dataflow through the File menu, and wait for the write.
 
     Gates on the write itself rather than on the File menu closing: the menu can
     close before the PUT is answered, and a test that then reads the server sees
-    the pre-save spec.
+    the pre-save spec. Returns the saved project as the server answered it.
     """
     file_btn = page.get_by_role("button", name=re.compile("File"))
     file_btn.wait_for(state="visible", timeout=15000)
@@ -2924,9 +3065,71 @@ def save_dataflow(page, *, timeout: float = 30000) -> None:
         and r.request.method in ("POST", "PUT")
         and r.ok,
         timeout=timeout,
-    ):
+    ) as saved:
         save_btn.click()
     save_btn.wait_for(state="hidden", timeout=timeout)
+    return saved.value.json()
+
+
+# True once the canvas header shows what a save leaves on it: the save icon
+# reads saved, the Data Catalog button is no longer fetching its count, and,
+# when the save gave the dataflow automatic categories, their chips are drawn.
+# From the click on Save until the response is handled the icon reads saving,
+# and the render that handles it both sets saved and starts the catalog
+# refetch, which marks the button busy until the new count is in. So "saved
+# and not busy" holds only once this save's count has landed, even when the
+# header already showed an earlier save.
+_HEADER_SHOWS_SAVE_JS = """(wantAutoChips) => {
+    const save = document.querySelector('[data-curio-save-state]');
+    const catalog = document.querySelector('#datasets-palette button[aria-busy]');
+    if (!save || save.getAttribute('data-curio-save-state') !== 'saved') return false;
+    if (!catalog || catalog.getAttribute('aria-busy') !== 'false') return false;
+    if (!wantAutoChips) return true;
+    return !!document.querySelector(
+        '[data-curio-canvas-title] [data-curio-category-chip="auto"]');
+}"""
+
+
+def save_dataflow_and_settle_header(page, *, timeout: float = 30000) -> dict:
+    """Save the open dataflow, then wait until the header shows the save.
+
+    Three things in the canvas header change only when a save lands: the save
+    icon (``data-curio-save-state``), the automatic category chips (the save
+    response's ``categories``) and the Data Catalog count (refetched once the
+    save is answered). A frame captured without a save shows whichever of them
+    the 30 s autosave had reached, so the same frame came out saved on one run
+    and unsaved on the next (issue #584).
+
+    Leaves the pointer parked: the File menu's Save row sits over the title and
+    its category chips, and a chip under the pointer is drawn hovered.
+    Returns the saved project as the server answered it.
+    """
+    detail = save_dataflow(page, timeout=timeout)
+    categories = detail.get("categories") or {}
+    auto = categories.get("auto") or {}
+    want_auto_chips = bool(
+        categories.get("source") or auto.get("tags") or auto.get("data_type")
+    )
+    park_pointer(page)
+    try:
+        page.wait_for_function(_HEADER_SHOWS_SAVE_JS, arg=want_auto_chips, timeout=timeout)
+    except PlaywrightTimeoutError:
+        seen = page.evaluate(_HEADER_STATE_JS)
+        raise AssertionError(
+            f"the header never showed the save within {timeout / 1000:.0f} s: {seen} "
+            f"(automatic category chips expected: {want_auto_chips})"
+        ) from None
+    return detail
+
+
+_HEADER_STATE_JS = """() => ({
+    saveState: document.querySelector('[data-curio-save-state]')
+        ?.getAttribute('data-curio-save-state') ?? null,
+    catalogBusy: document.querySelector('#datasets-palette button[aria-busy]')
+        ?.getAttribute('aria-busy') ?? null,
+    autoChips: document.querySelectorAll(
+        '[data-curio-canvas-title] [data-curio-category-chip="auto"]').length,
+})"""
 
 
 def frame_node(page, node_id: str, *, zoom: float = 0.9,
@@ -2969,7 +3172,7 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
     """Drag *source* onto the canvas and return the id of the node it created.
 
     *source* is a locator for anything draggable that the canvas accepts: a
-    built-in palette tile (``#step-transformation``), a package palette row
+    built-in palette tile (``#tile-data-transformation``), a package palette row
     (``[data-pkg-template-id="..."]``), or a dataset row/card
     (``[data-dataset-id="..."]``). *at* is an offset from the pane's top-left
     corner; the pane centre is used when omitted.
@@ -3252,6 +3455,8 @@ _HEAVY_NODE_TYPES = {
     "DATA_LOADING",
     "DATA_TRANSFORMATION",
     "COMPUTATION_ANALYSIS",
+    # A model over every image of a collection: example 10's 40 photos.
+    "IMAGE_SEGMENTATION",
 }
 
 
@@ -4064,7 +4269,7 @@ SCRIPTED_LABEL = "Scripted"
 def use_scripted_llm(backend_url: str, token: str) -> dict:
     """Make a scripted LLM configuration this user's default, and return it.
 
-    Goes through the real AI Settings routes (``/api/agents/llm``) rather than a
+    Goes through the real API Settings routes (``/api/agents/llm``) rather than a
     test-only shortcut, so the resolution path under test is the production one.
     """
     listing = api_json(f"{backend_url}/api/agents/llm", token)

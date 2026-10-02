@@ -364,10 +364,13 @@ def parseOutput(output):
         # property of the frame, not of the GeoJSON, and a consumer should not
         # have to know which branch it is on to read them.
         json_output['schema'] = _frame_schema(output)
-        if hasattr(output, 'metadata') and 'name' in output.metadata:
-            parsed_geojson = json_output['data']
-            parsed_geojson['metadata'] = {'name': output.metadata['name']}
-            json_output['data'] = parsed_geojson
+        # The frame's own name and Autark layer type, as the Arrow path sends
+        # them in its X-Curio-Frame-Metadata header.
+        frame_metadata = getattr(output, 'metadata', None)
+        if isinstance(frame_metadata, dict):
+            kept = {key: frame_metadata[key] for key in ('name', 'layerType') if key in frame_metadata}
+            if kept:
+                json_output['data']['metadata'] = kept
     # A DatasetReader can only exist if user code already imported rasterio,
     # so the sys.modules guard is exact without importing the optional lib.
     elif 'rasterio' in sys.modules and isinstance(output, sys.modules['rasterio'].io.DatasetReader):

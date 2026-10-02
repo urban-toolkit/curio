@@ -1,0 +1,173 @@
+/*
+ * The Add dialog's form, inside ConfirmDialog's box. Colours, type and
+ * geometry come from ../../styles/curioTokens.css.
+ */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: min(440px, 80vw);
+}
+
+.lede {
+  margin: 0;
+}
+
+.field,
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fieldLabel {
+  padding: 0;
+  font-size: var(--curio-font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: var(--curio-text-muted);
+}
+
+.input {
+  height: var(--curio-input-height);
+  padding: 0 12px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  font: inherit;
+  font-size: var(--curio-font-size-md);
+  min-width: 0;
+}
+
+.values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-primary);
+}
+
+.range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--curio-font-size-sm);
+}
+
+.range .input {
+  flex: 1;
+}
+
+.warning {
+  margin: 0;
+  color: var(--curio-danger-text);
+  font-size: var(--curio-font-size-sm);
+}
+
+/* Declared parameters: a sentence under a field, and the area field's parts. */
+.hint {
+  margin: 0;
+  color: var(--curio-text-secondary);
+  font-size: var(--curio-font-size-sm);
+}
+
+.modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.modeBtn {
+  padding: 4px 10px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  font: inherit;
+  font-size: var(--curio-font-size-sm);
+  cursor: pointer;
+}
+
+.modeBtnActive {
+  background: var(--curio-top-bar-bg);
+  border-color: var(--curio-top-bar-bg);
+  color: var(--curio-card-bg);
+}
+
+.places {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+}
+
+.place {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--curio-text-primary);
+  font: inherit;
+  font-size: var(--curio-font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.place:hover:not(:disabled),
+.placeActive {
+  background: var(--curio-page-bg);
+}
+
+.coordinates {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.boxSummary {
+  margin: 0;
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-page-bg);
+  font-size: var(--curio-font-size-sm);
+}
+
+.chip button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--curio-text-secondary);
+}

@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PackagePayload, SortMode } from "../../services/packages";
 import {
+  isNewerPackageVersion,
   matchesSearch,
   primaryCategory,
   sortPackages,
-  toApiPayload,
   usePackageCatalog,
   withRestartNotice,
 } from "../../services/packages";
 import { refreshPackageRegistry } from "../../registry/packageRegistryBootstrap";
-import { draftFromInstalledPackagePayload } from "../../utils/palettePackageFactoryDraft";
 import { useToastContext } from "../../providers/ToastProvider";
 import { usePackageArchiveImport } from "../../providers/packages/usePackageArchiveImport";
 import type { NodeCatalogFilterTab } from "./nodeCatalogBrowseTypes";
@@ -28,15 +27,10 @@ export function useNodeCatalogBrowse() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [selectedDirName, setSelectedDirName] = useState<string | null | undefined>(undefined);
 
-  const publishDraft = useCallback(
-    (row: PackagePayload) => toApiPayload(draftFromInstalledPackagePayload(row)) as Record<string, unknown>,
-    [],
-  );
   const catalogState = usePackageCatalog({
     scope: { kind: "defaults" },
     showToast,
     refreshRegistry: refreshPackageRegistry,
-    publishDraft,
   });
   const {
     catalog,
@@ -50,6 +44,7 @@ export function useNodeCatalogBrowse() {
     catalogPublishAllowed,
     publishingPackageKey,
     installCandidate,
+    installMode,
     conflictReport,
     lastInstallSummary,
     reload,
@@ -57,6 +52,7 @@ export function useNodeCatalogBrowse() {
     dismissActionError,
     dismissInstallSummary,
     probeInstall: onInstall,
+    probeUpdate: onUpdate,
     confirmInstall,
     cancelInstall,
     publish: onPublish,
@@ -66,7 +62,7 @@ export function useNodeCatalogBrowse() {
   const updateCandidates = useMemo(() => {
     return installed.filter((row) => {
       const catRow = catalogByDir.get(row.dirName);
-      return catRow != null && catRow.version !== row.version;
+      return catRow != null && isNewerPackageVersion(catRow.version, row.version);
     });
   }, [installed, catalogByDir]);
 
@@ -107,11 +103,6 @@ export function useNodeCatalogBrowse() {
   const sortedCategories = useMemo(
     () => Array.from(categoryCounts.entries()).sort((a, b) => b[1] - a[1]),
     [categoryCounts],
-  );
-
-  const quickCategories = useMemo(
-    () => sortedCategories.slice(0, 3).map(([k]) => k),
-    [sortedCategories],
   );
 
   const filtered = useMemo(() => {
@@ -166,10 +157,7 @@ export function useNodeCatalogBrowse() {
   const selectedHasUpdate =
     selectedPkg != null &&
     defaults.has(selectedPkg.dirName) &&
-    installedByDir.get(selectedPkg.dirName) != null &&
-    catalogByDir.get(selectedPkg.dirName) != null &&
-    catalogByDir.get(selectedPkg.dirName)!.version !==
-      installedByDir.get(selectedPkg.dirName)!.version;
+    updateCandidateDirs.has(selectedPkg.dirName);
 
   return {
     search,
@@ -187,6 +175,7 @@ export function useNodeCatalogBrowse() {
     catalogPublishAllowed,
     publishingPackageKey,
     installCandidate,
+    installMode,
     conflictReport,
     lastInstallSummary,
     dismissInstallSummary,
@@ -198,12 +187,12 @@ export function useNodeCatalogBrowse() {
     filtered,
     selectedPkg,
     sortedCategories,
-    quickCategories,
     allCount,
     installedCount,
     updatesCount,
     selectedHasUpdate,
     onInstall,
+    onUpdate,
     importing,
     onImportArchive,
     confirmInstall,

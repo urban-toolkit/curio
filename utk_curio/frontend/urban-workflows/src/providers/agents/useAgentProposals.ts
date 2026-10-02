@@ -6,7 +6,7 @@
  * dev/48 §3.3 bridge — the apply response is the only payload source — and
  * then refreshes the transcript and the listing, which are the truth.
  */
-import type { DatasetLakeSourceInput } from "../../services/datasetCatalog/datasetCatalogTypes";
+import type { DatasetDiscoverySourceInput } from "../../services/datasetCatalog/datasetCatalogTypes";
 import { useCallback, useMemo } from "react";
 
 import { useOptionalToastContext } from "../ToastProvider";
@@ -31,8 +31,8 @@ export interface AgentProposalsSlice {
   savePlanGoal: (attachmentId: string, proposalId: string, ref: string, goal: string) => Promise<void>;
   dismissProposal: (attachmentId: string, proposalId: string) => Promise<void>;
   recordDatasetSelection: (attachmentId: string, picks: AgentDatasetPick[]) => Promise<AgentDatasetSelection>;
-  /** `lakeSource` is where the file came from, recorded with it. */
-  importDataset: (file: File, lakeSource?: DatasetLakeSourceInput) => Promise<string | null>;
+  /** `discoverySource` is where the file came from, recorded with it. */
+  importDataset: (file: File, discoverySource?: DatasetDiscoverySourceInput) => Promise<string | null>;
 }
 
 export function useAgentProposals(opts: {
@@ -59,8 +59,8 @@ export function useAgentProposals(opts: {
     showToast,
   });
   const importDataset = useCallback(
-    async (file: File, lakeSource?: DatasetLakeSourceInput) => {
-      const imported = await importDatasetFile(file, lakeSource ? { lakeSource } : undefined);
+    async (file: File, discoverySource?: DatasetDiscoverySourceInput) => {
+      const imported = await importDatasetFile(file, discoverySource ? { discoverySource } : undefined);
       const id = (imported as { id?: string } | null | undefined)?.id;
       return typeof id === "string" && id ? id : null;
     },

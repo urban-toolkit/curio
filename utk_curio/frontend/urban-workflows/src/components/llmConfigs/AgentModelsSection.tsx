@@ -19,7 +19,7 @@ function answersLine(row: LlmAgentRow): string {
 }
 
 /**
- * AI Settings → Agent models: the configuration each agent runs on, saved on
+ * API Settings → Agent models: the configuration each agent runs on, saved on
  * change. One row per agent the server lists (the catalog cards, published
  * definitions and the account's imports); internal agents are never listed,
  * since they always run on their caller's configuration.

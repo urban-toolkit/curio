@@ -2,7 +2,7 @@
 
 The Agent Catalog is where Curio's **hookable agents** live: the assistants you attach to a node, a connection, or the whole canvas.
 
-Curio has four catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the Agent Catalog the assistants you attach to them, and the [Data Lake Catalog](DATA-LAKE-CATALOG.md) the portals and storage you take datasets from.
+Curio has five catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the Agent Catalog the assistants you attach to them, and the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from.
 
 This guide is in seven parts, plus operator notes:
 
@@ -63,7 +63,7 @@ Agent state lives in files under `.curio/` and inside each project's spec. Knowi
 | Layer | On disk | Written by |
 |---|---|---|
 | **Shared catalog**, published agents | `.curio/agents-catalog/<agentId>@<version>/` | **Publish** adds one; **Unpublish** removes it. |
-| **Definition store**, the agents themselves | `.curio/users/<user-key>/agents/<agentId>@<version>/` (`manifest.json` and `prompts/`) | **Import agent** adds one; adding a built-in agent copies it here. |
+| **Definition store**, the agents themselves | `.curio/users/<user-key>/agents/<agentId>@<version>/` (`manifest.json` and `prompts/`) | **Import agent** adds one; adding a built-in or published agent copies it here. |
 | **Per-user list**, the agents in all your projects | `.curio/users/<user-key>/imported-agents.json` | **Add to all projects** and **Import agent** add an entry; **Remove from all projects** drops it. |
 | **Catalog settings**, values you own | `.curio/users/<user-key>/catalog-settings.json` | **Settings** on `/catalog/agents` saves a setting you changed; **Restore default** removes it. See [Catalog settings](#catalog-settings). |
 | **Per-dataflow lockfile**, the agents one dataflow has | `dataflow.agents` in the project's `spec.trill.json` | **Add to project** and **Remove from project** in the drawer. **Add to all projects** and **Remove from all projects** change every project. |
@@ -97,7 +97,7 @@ There are three places you work with agents, and as with the Data Catalog they a
 | **Remove from all projects** | `/catalog/agents`, in the right-hand drawer or the right-click menu | Your per-user list, every project's lockfile, and the agent's attachments | The agent and its attachments leave every dataflow. The definition stays on disk. |
 | **Import agent** | Drawer footer, or the `/catalog/agents` header | Definition store and your per-user list | Your own `manifest.json` and prompt files are registered as a definition. It is not added to your existing dataflows and not published. |
 | **Publish** | `/catalog/agents` drawer, for your own imports only | Shared catalog | Every user on this install can browse the agent. |
-| **Unpublish** | `/catalog/agents` drawer | Shared catalog | It leaves the shared catalog. Other users who added it lose access to it. |
+| **Unpublish** | `/catalog/agents` drawer | Shared catalog | It leaves the shared catalog. Other users who added it keep their copy. |
 | **Attach** | Drag a palette row onto a node, a connection, or the canvas | Attachments | A private instance with its own chat panel. The agent must be added first. |
 | **Detach** | The attachment's own control | Attachments | The instance and its transcript are deleted. The agent stays added. |
 
@@ -169,13 +169,13 @@ A node fed by a **Merge Flow** receives a list, `arg[0]`, `arg[1]` and so on, in
 
 ### Finding data in portals
 
-The **Dataset Finder** can search the portals in the [Data Lake Catalog](DATA-LAKE-CATALOG.md) as well as your own datasets, and propose downloading one. Nothing is downloaded until you apply the proposal. See [DATA-LAKE-CATALOG.md part 6](DATA-LAKE-CATALOG.md#6-the-dataset-finder).
+The **Dataset Finder** can search the portals in the [Discovery Catalog](DISCOVERY-CATALOG.md) as well as your own datasets, and propose downloading one. Nothing is downloaded until you apply the proposal. See [DISCOVERY-CATALOG.md part 6](DISCOVERY-CATALOG.md#6-the-dataset-finder).
 
 ---
 
 ## 4. LLM configurations
 
-Every agent, on every dataflow, answers with an **LLM configuration**: the one chosen for it in **AI Settings**, else your default. Configurations belong to your account and are edited in **AI Settings**: the button in the page header on `/projects` and the catalog pages, or in the Agent Catalog drawer's header on the canvas. A configuration is:
+Every agent, on every dataflow, answers with an **LLM configuration**: the one chosen for it in **API Settings**, else your default. Configurations belong to your account and are edited in **API Settings**: the button in the page header on `/projects` and the catalog pages, or in the Agent Catalog drawer's header on the canvas. A configuration is:
 
 | Field | What it is |
 |---|---|
@@ -186,8 +186,6 @@ Every agent, on every dataflow, answers with an **LLM configuration**: the one c
 | Model | Which model answers. **Fetch models** suggests what the endpoint serves. |
 
 **Add configuration** opens the editor, and **Make this my default** is ticked for your first configuration. Each row offers **Edit**, **Duplicate** (the copy keeps the key), **Make default** and **Remove**; an account holds up to 32. The **Default** badge marks your default, **Chosen for** lists the agents chosen to run on a configuration, and **Trained** marks one made from a model trained in Curio (see [Model training](#model-training)). The **Deployment default** row is the operator's own configuration: read-only, shown when the operator configured one, and the one that answers while you have no default of your own. Its **Make default**, or removing your own default, goes back to it.
-
-Below the configurations, AI Settings also holds two tokens that are not for agents. The **HuggingFace token** unlocks *gated* models in the Street Vision node, and Hugging Face sources in the Data Lake Catalog send it too; public models need none. The **Socrata app token** is sent to Socrata portals by the Data Lake Catalog; see [DATA-LAKE-CATALOG.md part 5](DATA-LAKE-CATALOG.md#5-api-tokens).
 
 ### Agent models
 
@@ -200,11 +198,11 @@ Below the configurations, AI Settings also holds two tokens that are not for age
 | An internal helper (the Dataflow Planner, the Dataflow Reader, the content evaluator) | Always its caller's |
 | A guest on a `--deploy` instance | The guest configuration, for every agent |
 
-A choice that names nothing, such as a removed configuration or a Deployment default the operator withdrew, refuses the run with **Open AI Settings** on that agent's row; it never falls back to another configuration. Removing a configuration sends the agents chosen for it back to the default, and its confirmation names them.
+A choice that names nothing, such as a removed configuration or a Deployment default the operator withdrew, refuses the run with **Open API Settings** on that agent's row; it never falls back to another configuration. Removing a configuration sends the agents chosen for it back to the default, and its confirmation names them.
 
 A Solve of the Dataflow Builder runs on the Builder's configuration, and writes each node's content through Node Content Builder and each source through Dataset Finder, each on its own choice. The choices a Solve needs are checked before it starts, and one that names nothing refuses it. After a dataset selection, the node is built on its builder's configuration, not the Dataset Finder's.
 
-The choice is per account, for every version of the agent and every project. A shared project carries none, so it runs on the configurations of whoever runs it. An agent's details show what it runs on, with **Change in AI Settings**; a reply's status line says, on hover, which configuration and model answered it; and a delegated task in the chat names what the delegate ran on.
+The choice is per account, for every version of the agent and every project. A shared project carries none, so it runs on the configurations of whoever runs it. An agent's details show what it runs on, with **Change in API Settings**; a reply's status line says, on hover, which configuration and model answered it; and a delegated task in the chat names what the delegate ran on.
 
 An agent's tools (reading the dataflow, proposing a node or a plan, handing a task to another agent) work the same on every configuration, and every change waits for your review. For a Custom endpoint, Curio asks once per model whether it calls tools, the first time an agent with tools runs on it: one short request, billed like any other and kept in the usage record.
 
@@ -231,11 +229,11 @@ Whoever runs the install can set a Deployment default with `curio.py start` flag
 
 Every shipped example has a **prompt fixture** under [`docs/examples/prompts/`](examples/prompts/README.md): a reviewed natural-language prompt paired with what the example contains. An evaluation sends the prompt, and only the prompt, to the Dataflow Builder, then compares the dataflow it built with the saved example. The comparison is deterministic code, not a model, and its score is a report: nothing in Curio passes or fails on it.
 
-**Evaluation mode** and **Model training** are sections of AI Settings for a signed-in account. A guest does not see them, and that includes the shared guest a Curio started without `--deploy` signs you in as.
+**Evaluation mode** and **Model training** are sections of API Settings for a signed-in account. A guest does not see them, and that includes the shared guest a Curio started without `--deploy` signs you in as.
 
 ### Evaluation mode
 
-Open **AI Settings → Evaluation mode**. Pick an example, read the prompt that will be sent, and click **Run evaluation**.
+Open **API Settings → Evaluation mode**. Pick an example, read the prompt that will be sent, and click **Run evaluation**.
 
 The run creates a **project of its own** (yours are untouched), adds and attaches the Dataflow Builder with the agents it requires, sends the prompt on the configuration **your** Dataflow Builder runs on, applies the plan, and solves. The panel names each step while it happens, and the run keeps going if you close the panel. Before you run, the panel names the model and configuration that will answer, and every other configuration the run uses.
 
@@ -247,7 +245,7 @@ Each prompt was drafted by a model and needs a person's approval before training
 
 ### Model training
 
-**AI Settings → Model training** fine-tunes a model on the approved examples, on an endpoint that offers fine-tuning. Curio asks the endpoint of the configuration you train on, and when it cannot tune, the section shows that endpoint's reason.
+**API Settings → Model training** fine-tunes a model on the approved examples, on an endpoint that offers fine-tuning. Curio asks the endpoint of the configuration you train on, and when it cannot tune, the section shows that endpoint's reason.
 
 - **Train on** lists your configurations that hold your own API key, with the one the Dataflow Builder runs on selected. A This Curio install configuration is never offered.
 - Before anything is sent, you see the row count, the byte count, the examples by name, their licences, and the host they go to: the endpoint of the configuration you train on. A row carries the prompt, the expected graph shape and the plan text, plus dataset and package identifiers; no dataset rows, columns, geometry or files. Tick the consent box and click **Start training**.
@@ -262,7 +260,7 @@ Training uses only Curio's shipped examples, and the endpoint does the training:
 
 **Import agent**, in the drawer's footer or the `/catalog/agents` header, takes a `manifest.json` and its `.txt` prompt files, not an archive. The prompt files must match what the manifest references, size limits apply, and a definition whose id and version you already have is refused: a change is a new version.
 
-**Publish**, on `/catalog/agents`, copies one of your own imported definitions into the shared catalog, where every user on the install can browse it. Built-in agents cannot be published. **Unpublish** removes it from the shared catalog, and only the publisher can do it. Other users who added the agent lose access to it.
+**Publish**, on `/catalog/agents`, copies one of your own imported definitions into the shared catalog, where every user on the install can browse it. Built-in agents cannot be published. **Unpublish** removes it from the shared catalog, and only the publisher can do it; only the publisher can publish over it, too. Other users who added the agent keep their copy and keep running it.
 
 ---
 
@@ -354,7 +352,7 @@ Once written, import the package with the drawer's **Import agent** button ([par
 
 ## Operator notes
 
-Curio ships with **no default LLM endpoint**. Until an operator sets a Deployment default, or a user adds an LLM configuration in **AI Settings**, that user's agents stop with the error *"No LLM configuration answers this run."* and a link to AI Settings.
+Curio ships with **no default LLM endpoint**. Until an operator sets a Deployment default, or a user adds an LLM configuration in **API Settings**, that user's agents stop with the error *"No LLM configuration answers this run."* and a link to API Settings.
 
 | Variable | Flag | Effect |
 |---|---|---|
@@ -378,7 +376,7 @@ Run `python curio.py start --help` for the current list. A flag writes its varia
 
 - [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the node package catalog, whose storage and publish model this one mirrors.
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): the dataset catalog, the closest peer to this one.
-- [`docs/DATA-LAKE-CATALOG.md`](DATA-LAKE-CATALOG.md): the data portals the Dataset Finder can search.
+- [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md): the data portals the Dataset Finder can search.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#agent-runtime): how Solve, source grounding, connection keys and evaluation work, the agent routes, and the backend layout.
 - [`docs/schemas/agent-package.v1.json`](schemas/agent-package.v1.json): the manifest JSON Schema.
 - [`docs/examples/prompts/README.md`](examples/prompts/README.md): the prompt fixtures behind [part 5](#5-measuring-the-agents-against-the-shipped-examples), and how to write one.

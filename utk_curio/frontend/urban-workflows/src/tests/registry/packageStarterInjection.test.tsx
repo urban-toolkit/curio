@@ -32,6 +32,8 @@ import '../../registry/builtinBehaviors'; // side-effect: registers 'code', 'veg
 import '../../registry/iconRegistry';
 import { registerPackageTemplates } from '../../registry/packagesClient';
 import { clearPackageNodes } from '../../registry/nodeRegistry';
+import { packageStarterCode } from '../../adapters/node/packageNodeBehavior';
+import { useStarterContext } from '../../providers/StarterProvider';
 import type { NodeBehaviorData, UseNodeStateReturn } from '../../registry/types';
 
 const TEMPLATE = {
@@ -57,7 +59,6 @@ const TEMPLATE = {
   bidirectional: false,
   containerStyle: null,
   hasProvenance: null,
-  tutorialId: null,
 };
 
 const FIXTURE_PACK = {
@@ -116,5 +117,32 @@ describe('package starter injection', () => {
   test('no source → nothing injected', () => {
     const pack = { ...FIXTURE_PACK, templates: [{ ...TEMPLATE, source: null }] };
     expect(runBehavior(pack, undefined)).not.toContain(STARTER_CODE);
+  });
+});
+
+describe('packageStarterCode', () => {
+  beforeEach(() => clearPackageNodes());
+  // The mocked context is a plain function, so it can be read outside React.
+  const { getStarters } = useStarterContext();
+
+  test('is the code a fresh node of the template opens with', () => {
+    const [desc] = registerPackageTemplates([FIXTURE_PACK]);
+    expect(packageStarterCode(desc, getStarters)).toBe(STARTER_CODE);
+    expect(runBehavior(FIXTURE_PACK, undefined)).toContain(packageStarterCode(desc, getStarters));
+  });
+
+  test('a template without a source has none', () => {
+    const [desc] = registerPackageTemplates([{ ...FIXTURE_PACK, templates: [{ ...TEMPLATE, source: null }] }]);
+    expect(packageStarterCode(desc, getStarters)).toBeUndefined();
+  });
+
+  test('nor does a template the feed has not sent yet, or no template', () => {
+    const [desc] = registerPackageTemplates([{
+      ...FIXTURE_PACK,
+      packageId: 'curio.elsewhere',
+      templates: [{ ...TEMPLATE, id: 'curio.elsewhere/mrt-load@1' }],
+    }]);
+    expect(packageStarterCode(desc, getStarters)).toBeUndefined();
+    expect(packageStarterCode(undefined, getStarters)).toBeUndefined();
   });
 });

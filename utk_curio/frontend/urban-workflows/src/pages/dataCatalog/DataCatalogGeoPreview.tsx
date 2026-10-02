@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import type { DatasetCatalogItem, DatasetFormat } from "../../services/datasetCatalog";
 import { datasetCatalogApi } from "../../services/datasetCatalog";
 import { visiblePreviewColumns } from "../../utils/tabularPreview";
+import { cellText } from "../../utils/cellText";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 
 const ROW_LIMIT = 3;
@@ -23,7 +24,7 @@ const colors: Record<DatasetFormat, { fill: string; stroke: string; bg: string }
 
 function formatCell(value: unknown): string {
   if (value == null) return "—";
-  const text = String(value);
+  const text = cellText(value);
   return text.length > 20 ? `${text.slice(0, 17)}…` : text;
 }
 

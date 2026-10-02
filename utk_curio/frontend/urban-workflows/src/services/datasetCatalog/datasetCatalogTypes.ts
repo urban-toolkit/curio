@@ -59,6 +59,13 @@ export function isLayerGroupId(id: string | null | undefined): boolean {
   );
 }
 
+/** Which importer made a layer group, read from its id: ``"gpkg"`` for a
+ * GeoPackage, else ``"osm"``. Also the group's format and its ``curio://``
+ * scheme. Mirrors the backend ``layer_group_kind`` and its ``osm`` fallback. */
+export function layerGroupKind(groupId: string): "osm" | "gpkg" {
+  return groupId.startsWith(GPKG_GROUP_ID_PREFIX) ? "gpkg" : "osm";
+}
+
 /**
  * A dataset install that is currently in flight, surfaced as an "Installing…"
  * placeholder in the dataset palette and Data Catalog drawer until the real
@@ -147,18 +154,18 @@ export interface DatasetLoaderSnippet {
 }
 
 /**
- * Where a dataset downloaded from the Data Lake Catalog came from.
+ * Where a dataset downloaded from the Discovery Catalog came from.
  *
- * Mirrors the `lakeSource` block on the dataset manifest. Null for every
+ * Mirrors the `discoverySource` block on the dataset manifest. Null for every
  * dataset that did not come from a portal, which is most of them. Such a
  * dataset's `origin` is still `"imported"` - this block is what distinguishes
  * it, rather than a fifth origin value.
  */
-export interface DatasetLakeSource {
-  /** The Data Lake source and resource, absent for a file downloaded by hand
+export interface DatasetDiscoverySource {
+  /** The Discovery Catalog source and resource, absent for a file downloaded by hand
    * from a link no source covers. */
-  lakeId?: string;
-  lakeName?: string;
+  sourceId?: string;
+  sourceName?: string;
   resourceId?: string;
   /** A portal resource's page, or the link a file was downloaded by hand
    *  from. Absent for a storage source's, which is a folder or a bucket
@@ -178,13 +185,16 @@ export interface DatasetLakeSource {
   fingerprint?: string;
   /** The person downloaded the file and imported it; Curio did not fetch it. */
   manual?: boolean;
+  /** The answers the download was narrowed by, such as an area, by id. */
+  parameters?: Record<string, unknown>;
+  parametersHash?: string;
 }
 
-/** A collection's kind. Mirrors the lake's collection `RESOURCE_KINDS`. */
+/** A collection's kind. Mirrors the Discovery Catalog's collection `RESOURCE_KINDS`. */
 export type DatasetCollectionKind = "rasters" | "frames" | "images" | "videos" | "media" | "audio";
 
 /**
- * The `collection` block of a `collection` dataset: which lake source and
+ * The `collection` block of a `collection` dataset: which source and
  * resource its files belong to, and what they are. Mirrors
  * `index_collection.collection_block` in the backend.
  */
@@ -232,9 +242,9 @@ export interface DatasetCollectionField {
 }
 
 /** Where a file the person downloaded themselves came from, as the import states it. */
-export type DatasetLakeSourceInput = Pick<
-  DatasetLakeSource,
-  "lakeId" | "lakeName" | "resourceId" | "resourceUrl"
+export type DatasetDiscoverySourceInput = Pick<
+  DatasetDiscoverySource,
+  "sourceId" | "sourceName" | "resourceId" | "resourceUrl"
 >;
 
 export interface DatasetCatalogItem {
@@ -307,7 +317,7 @@ export interface DatasetCatalogItem {
   tags: string[];
   schema?: DatasetSchema | null;
   loaderSnippet?: DatasetLoaderSnippet | null;
-  lakeSource?: DatasetLakeSource | null;
+  discoverySource?: DatasetDiscoverySource | null;
   /** Present on `collection` datasets only. */
   collection?: DatasetCollection | null;
   installed?: boolean;
@@ -323,7 +333,7 @@ export interface DatasetCatalogItem {
    * files; N for an OSM PBF, which registers one dataset per layer (this item is
    * the first — the rest appear via the catalog listing on refresh). */
   importedDatasetCount?: number;
-  /** On a synthetic OSM group entry (``format: "osm"``, id = group id): the
+  /** On a synthetic layer group entry (id = group id, see `isLayerGroupId`): the
    * real per-layer dataset ids, so the client installs/uninstalls each member. */
   groupLayerIds?: string[];
 }
@@ -725,7 +735,7 @@ export const DATASET_FORMAT_LABEL: Record<DatasetFormat, string> = {
   collection: "Collection",
 };
 
-/** Mirrors `KIND_LABEL` in the lake's `application/scan.py`. */
+/** Mirrors `KIND_LABEL` in the Discovery Catalog's `application/scan.py`. */
 export const DATASET_COLLECTION_KIND_LABEL: Record<DatasetCollectionKind, string> = {
   rasters: "Rasters",
   frames: "Frames",

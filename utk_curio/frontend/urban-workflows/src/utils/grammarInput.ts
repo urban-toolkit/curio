@@ -15,6 +15,7 @@
  * materialize, and this stays testable under jest.
  */
 import { fetchData, fetchPreviewData } from "../services/api";
+import { AUTARK_LAYER_TYPES } from "./autarkLayerTypes";
 import type { NodeEmptyReason } from "./nodeEmptyState";
 import { activeGeometryName } from "./parsing";
 
@@ -32,7 +33,7 @@ export type GrammarFrame = {
   geometryName: string | null;
   /** The CRS urn a geodataframe declares, e.g. `urn:ogc:def:crs:EPSG::3395`. */
   crsName: string | null;
-  /** The autk-db layer type (`roads`, `buildings`, ...) a layer record carries. */
+  /** The autk-db layer type (`roads`, `buildings`, ...) a layer record carries or a geodataframe's metadata names. */
   layerType?: string;
   /** Came out of a bundle, so it is named by position when it has no name. */
   fromBundle: boolean;
@@ -61,6 +62,15 @@ export type ReadOptions = {
 
 const FRAME_TYPES = new Set<string>(["dataframe", "geodataframe"]);
 const BUNDLE_TYPES = new Set<string>(["outputs", "list", "dict"]);
+
+/**
+ * The layer type a geodataframe's own metadata names (`gdf.metadata =
+ * {"layerType": "buildings"}`), which the sandbox sends with its rows.
+ */
+function declaredLayerType(payload: any): string | undefined {
+  const declared = isObject(payload?.metadata) ? payload.metadata.layerType : undefined;
+  return typeof declared === "string" && AUTARK_LAYER_TYPES.has(declared) ? declared : undefined;
+}
 
 function isObject(value: unknown): value is Record<string, any> {
   return value != null && typeof value === "object" && !Array.isArray(value);
@@ -91,7 +101,7 @@ function frameOf(
     schema: envelope?.schema ?? payload?.schema ?? input?.schema ?? null,
     geometryName: geo ? activeGeometryName(payload) : null,
     crsName: geo ? payload?.crs?.properties?.name ?? null : null,
-    layerType: place.layerType ?? envelope?.layerType,
+    layerType: place.layerType ?? envelope?.layerType ?? (geo ? declaredLayerType(payload) : undefined),
     fromBundle: place.fromBundle,
     index: place.index,
   };

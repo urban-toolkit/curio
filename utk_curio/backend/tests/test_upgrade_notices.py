@@ -36,7 +36,7 @@ class TestLegacyEnvVars:
     def test_a_deployment_huggingface_token_is_called_out(self, caplog, monkeypatch, name):
         monkeypatch.setenv(name, "hf_old")
         assert name in _run(caplog)
-        assert "AI Settings" in caplog.text
+        assert "API Settings" in caplog.text
 
     @pytest.mark.parametrize(
         "name", ["STREETVISION_CACHE_DIR", "STREETVISION_MODEL_CACHE_DIR"]

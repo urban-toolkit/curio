@@ -92,7 +92,7 @@ export class JavaScriptInterpreter {
                     startTime,
                     endTime,
                     workflow_name,
-                    nodeType + "-" + nodeId,
+                    nodeId,
                     mapTypes(typesInput),
                     mapTypes(typesOutput),
                     unresolvedUserCode

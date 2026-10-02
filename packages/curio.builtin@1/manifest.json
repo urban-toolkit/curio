@@ -53,17 +53,20 @@
           ]
         }
       ],
-      "paletteOrder": 0,
-      "tutorialId": "step-loading"
+      "paletteOrder": 0
     },
     {
       "category": "data",
-      "description": "The Export box is responsible for getting data from the dataflow to the outside world.",
-      "editor": "code",
+      "containerStyle": {
+        "nodeHeight": 170,
+        "nodeWidth": 320
+      },
+      "description": "One Download button for the data connected to it. The file is named after the node or dataset that feeds it, and its format follows the data: a table downloads as CSV, a geodataframe as GeoJSON, anything else as JSON.",
+      "editor": "none",
       "engine": "python",
-      "hasCode": true,
+      "hasCode": false,
       "hasGrammar": false,
-      "hasWidgets": true,
+      "hasWidgets": false,
       "iconRef": "fa-solid:download",
       "id": "data-export",
       "inputPorts": [
@@ -79,8 +82,7 @@
       "label": "Data Export",
       "behavior": "data-export",
       "outputPorts": [],
-      "paletteOrder": 1,
-      "tutorialId": "step-export"
+      "paletteOrder": 1
     },
     {
       "category": "data",
@@ -114,8 +116,7 @@
           ]
         }
       ],
-      "paletteOrder": 3,
-      "tutorialId": "step-transformation"
+      "paletteOrder": 3
     },
     {
       "bidirectional": true,
@@ -148,8 +149,7 @@
           ]
         }
       ],
-      "paletteOrder": 13,
-      "tutorialId": "step-pool"
+      "paletteOrder": 13
     },
     {
       "category": "computation",
@@ -189,8 +189,7 @@
           ]
         }
       ],
-      "paletteOrder": 2,
-      "tutorialId": "step-analysis"
+      "paletteOrder": 2
     },
     {
       "category": "computation",
@@ -221,8 +220,7 @@
           ]
         }
       ],
-      "paletteOrder": 10,
-      "tutorialId": "step-summary"
+      "paletteOrder": 10
     },
     {
       "category": "computation",
@@ -262,8 +260,7 @@
           ]
         }
       ],
-      "paletteOrder": 11,
-      "tutorialId": "step-js"
+      "paletteOrder": 11
     },
     {
       "badge": "VEGA",
@@ -299,8 +296,7 @@
           ]
         }
       ],
-      "paletteOrder": 7,
-      "tutorialId": "step-vega"
+      "paletteOrder": 7
     },
     {
       "bidirectional": true,
@@ -342,8 +338,7 @@
           ]
         }
       ],
-      "paletteOrder": 8,
-      "tutorialId": "step-image"
+      "paletteOrder": 8
     },
     {
       "badge": "AUTK",
@@ -382,8 +377,7 @@
           ]
         }
       ],
-      "paletteOrder": 6,
-      "tutorialId": "step-utk"
+      "paletteOrder": 6
     },
     {
       "category": "data",
@@ -391,7 +385,7 @@
         "nodeHeight": 300,
         "nodeWidth": 460
       },
-      "description": "Tag each point with the polygon it falls in (point-in-polygon spatial join). Two input handles on its left edge, each taking a GEODATAFRAME / GeoJSON FeatureCollection: the upper, blue one for the points and the lower, green one for the polygons (top and bottom). Two settings in the node body. Which polygon column to tag with: `name` by default; Chicago's neighborhoods use `pri_neigh`, its ZIP boundaries `zip`, NYC's boroughs `BoroName`; the node warns when no polygon carries it. And what comes out: the points, each with that column under its own name (`zip` stays `zip`; `<column>_polygon` if the points already had one; null outside every polygon) plus a `<column>_point_count`; or the polygons, each with a `point_count`, ready for a choropleth or a bar chart of counts. Points that carry a `dominant_class` also get the per-polygon `<column>_dominant_class` and `<column>_dominant_pct` roll-ups.",
+      "description": "Finds the polygon each point falls in. Connect the points to the top input and the polygons to the bottom input, then pick the polygon column to copy onto the points, such as a neighborhood name. The output is either the points, each tagged with its polygon's value, or the polygons, each with a count of the points inside. Points outside every polygon get no value.",
       "editor": "none",
       "engine": "python",
       "hasCode": false,
@@ -417,8 +411,7 @@
           "types": ["GEODATAFRAME"]
         }
       ],
-      "paletteOrder": 4,
-      "tutorialId": "step-spatial-join"
+      "paletteOrder": 4
     },
     {
       "category": "flow",
@@ -463,8 +456,7 @@
           ]
         }
       ],
-      "paletteOrder": 9,
-      "tutorialId": "step-merge"
+      "paletteOrder": 9
     }
   ],
   "version": "1.0.2"

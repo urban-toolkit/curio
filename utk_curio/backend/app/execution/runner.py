@@ -395,10 +395,18 @@ def run_through_node(
         if collections:
             # Where each curio_collection("<id>") the slice reads keeps its
             # files, and where a node writes what it derives: the same
-            # resolution /processPythonCode sends (datalakes.application.exec_collections).
+            # resolution /processPythonCode sends (discovery.application.exec_collections).
             payload["collections"] = dict(collections)
         if media_dir:
             payload["media_dir"] = media_dir
+        if is_py and "curio_model" in seeded:
+            # The Model Catalog folders the node runs, as /processPythonCode
+            # resolves them, for the request's account.
+            from utk_curio.backend.app.model_catalog.service import resolve_exec_models
+
+            models = resolve_exec_models(seeded)
+            if models:
+                payload["models"] = models
         endpoint = "/exec" if is_py else "/execJs"
         started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         t0 = time.monotonic()

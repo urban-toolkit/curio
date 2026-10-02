@@ -53,7 +53,7 @@ def live_client():
     if not token:
         pytest.skip(
             f"{TOKEN_ENV} is not set: the live evaluation needs a bearer token "
-            "for an account whose AI Settings name a provider and a model"
+            "for an account whose API Settings name a provider and a model"
         )
     base_url = os.environ.get(BACKEND_ENV, "http://localhost:5002")
     client = live_mod.HttpClient(base_url=base_url, token=token)

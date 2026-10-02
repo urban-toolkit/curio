@@ -103,11 +103,14 @@ def create_app(config_class=config_class):
     from utk_curio.backend.app.datasets import datasets_bp
     app.register_blueprint(datasets_bp)
 
-    from utk_curio.backend.app.datalakes import datalakes_bp, media_bp
-    app.register_blueprint(datalakes_bp)
+    from utk_curio.backend.app.discovery import discovery_bp, media_bp
+    app.register_blueprint(discovery_bp)
     app.register_blueprint(media_bp)
+
+    from utk_curio.backend.app.model_catalog import models_bp
+    app.register_blueprint(models_bp)
     try:
-        from utk_curio.backend.app.datalakes.infrastructure.storage import audit_folder_roots
+        from utk_curio.backend.app.discovery.infrastructure.storage import audit_folder_roots
 
         audit_folder_roots()
     except Exception:  # noqa: BLE001 - an audit must never stop a boot
@@ -118,9 +121,6 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.monitor.routes import monitor_bp
     app.register_blueprint(monitor_bp)
-
-    from utk_curio.backend.app.streetvision import bp as streetvision_bp
-    app.register_blueprint(streetvision_bp, url_prefix="/api/streetvision")
 
     # Non-prod DB stub endpoints for Playwright E2E tests.
     # Lets Playwright seed users / projects directly without the signup form.

@@ -342,8 +342,8 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     if guest_llm_api_key:
         os.environ["GUEST_LLM_API_KEY"] = str(guest_llm_api_key)
 
-    # The agents' web-search tool. Unset, the tool is unavailable: an agent
-    # never reaches an endpoint the operator did not name.
+    # The agents' web-search tool. Unset, it uses DuckDuckGo's keyless Instant
+    # Answer API (DEFAULT_SEARCH_URL in agents/application/tools.py).
     if agent_search_url:
         os.environ["CURIO_SEARCH_URL"] = str(agent_search_url)
 
@@ -1788,7 +1788,7 @@ def main():
             "Base URL of this Curio's own OpenAI-compatible endpoint (sets "
             "CURIO_DEFAULT_LLM_BASE_URL). Curio ships NO default endpoint. "
             "With this or CURIO_DEFAULT_LLM_API_KEY set, users can add an LLM "
-            "configuration on it ('This Curio install' in AI Settings)."
+            "configuration on it ('This Curio install' in API Settings)."
         ),
     )
     parser.add_argument(
@@ -1802,7 +1802,7 @@ def main():
     )
     # There is deliberately no --llm-api-key. A key passed as an argument is
     # visible in the process list to every user on the host; set
-    # CURIO_DEFAULT_LLM_API_KEY (or AICONN_API_KEY) in the environment instead.
+    # CURIO_DEFAULT_LLM_API_KEY in the environment instead.
     parser.add_argument(
         "--guest-llm-api-key", default=None, metavar="KEY",
         help=(

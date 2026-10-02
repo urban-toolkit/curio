@@ -13,10 +13,15 @@ export interface PaletteDragHintProps {
    * three would have been consistent and wrong for two of them.
    */
   attachesToNode?: boolean;
+  /**
+   * Whether these rows go ONLY onto a node. A model is: it sets the model a
+   * node's code runs, and a model dropped on the canvas makes nothing.
+   */
+  ontoNodeOnly?: boolean;
 }
 
 /**
- * The one-line "how do I use these rows" note, shared by all three palettes.
+ * The one-line "how do I use these rows" note, shared by every palette.
  *
  * Every palette lists draggable rows and none of them said so. The Agent one
  * mentioned dragging in a source comment ("drag to attach - handled in
@@ -29,11 +34,14 @@ export interface PaletteDragHintProps {
 export const PaletteDragHint: React.FC<PaletteDragHintProps> = ({
   item,
   attachesToNode = false,
+  ontoNodeOnly = false,
 }) => (
   <p className={styles.hint}>
-    {attachesToNode
-      ? `Drag ${aOrAn(item)} ${item} onto a node or the canvas to attach it.`
-      : `Drag ${aOrAn(item)} ${item} onto the canvas to add it.`}
+    {ontoNodeOnly
+      ? `Drag ${aOrAn(item)} ${item} onto a node to use it.`
+      : attachesToNode
+        ? `Drag ${aOrAn(item)} ${item} onto a node or the canvas to attach it.`
+        : `Drag ${aOrAn(item)} ${item} onto the canvas to add it.`}
   </p>
 );
 

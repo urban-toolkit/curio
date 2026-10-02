@@ -7,6 +7,8 @@ import DialogProvider from "../providers/DialogProvider";
 import { NodeCatalogDrawerProvider } from "../providers/packages";
 import { AgentCatalogDrawerProvider } from "../providers/AgentCatalogDrawerProvider";
 import { DatasetCatalogDrawerProvider } from "../providers/datasetCatalog";
+import { ModelCatalogDrawerProvider } from "../providers/modelCatalog";
+import { DiscoveryCatalogDrawerProvider } from "../providers/discoveryCatalog";
 import { PackagePaletteProvider } from "../providers/packages";
 import { DatasetPaletteProvider } from "../providers/DatasetPaletteContext";
 import { ProjectLoader } from "./ProjectLoader";
@@ -48,13 +50,21 @@ export const DataflowProviders: React.FC<{
       <NodeCatalogDrawerProvider>
         <DatasetCatalogDrawerProvider>
           <AgentCatalogDrawerProvider>
-            <StarterProvider>
-              <ProjectLoader presentation={presentation}>
-                <PackagePaletteProvider>
-                  <DatasetPaletteProvider>{children}</DatasetPaletteProvider>
-                </PackagePaletteProvider>
-              </ProjectLoader>
-            </StarterProvider>
+            {/* Inside FlowProvider like its peers: a model's details ask
+                before a link leaves a dataflow with unsaved changes. */}
+            <ModelCatalogDrawerProvider>
+              {/* Inside the Model drawer's provider: a model added here is
+                  viewed by opening that drawer. */}
+              <DiscoveryCatalogDrawerProvider>
+                <StarterProvider>
+                  <ProjectLoader presentation={presentation}>
+                    <PackagePaletteProvider>
+                      <DatasetPaletteProvider>{children}</DatasetPaletteProvider>
+                    </PackagePaletteProvider>
+                  </ProjectLoader>
+                </StarterProvider>
+              </DiscoveryCatalogDrawerProvider>
+            </ModelCatalogDrawerProvider>
           </AgentCatalogDrawerProvider>
         </DatasetCatalogDrawerProvider>
       </NodeCatalogDrawerProvider>

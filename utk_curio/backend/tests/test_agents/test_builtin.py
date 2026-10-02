@@ -9,8 +9,7 @@ from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 
 # The dev/06 canonical map: agent id -> its prompt file and capabilities.
 _EXPECTED = {
-    # The chat agent absorbed the node explainer and the debugger: it explains
-    # and diagnoses as well as chatting.
+    # The chat agent explains and diagnoses as well as chatting.
     "agent.chat-agent": ("chat_prompt.txt", ["conversation.respond", "attachment.refine",
                                              "node.explain", "code.debug.diagnose"]),
     "agent.node-content-builder": ("new_content_prompt.txt", ["node.content.generate"]),
@@ -467,7 +466,7 @@ class TestDatasetFinderComposite:
             # The external lane used to dead-end: it could name a portal
             # dataset and nothing could act on it. These three make it
             # actionable - roster, live search, reviewed download.
-            "datalake.sources", "datalake.search", "datalake.acquire",
+            "discovery.sources", "discovery.search", "discovery.acquire",
             "dataset.install", "dataflow.read",
         ]
         assert m.provenance.trust == "built-in"

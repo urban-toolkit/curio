@@ -21,9 +21,9 @@
   "rowCount": null,
   "featureCount": 1,
   "schema": null,
-  "lakeSource": {
-    "lakeId": "lake.curio.example-storage@1",
-    "lakeName": "Example storage",
+  "discoverySource": {
+    "sourceId": "source.curio.example-storage@1",
+    "sourceName": "Example storage",
     "resourceId": "parks",
     "sourcePath": "city/parks.geojson",
     "fileCount": 1,

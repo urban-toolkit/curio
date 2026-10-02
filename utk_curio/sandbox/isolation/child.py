@@ -208,6 +208,8 @@ def _apply_rlimits(limits):
         _set(resource.RLIMIT_AS,
              baseline + budget if baseline is not None else None,
              "RLIMIT_AS")
+        # The malloc arenas this budget allows are capped in the zygote's
+        # environment, which every child inherits: lifecycle.zygote_environment.
 
     cpu_seconds = limits.get("cpu_seconds")
     _set(resource.RLIMIT_CPU, cpu_seconds, "RLIMIT_CPU")
@@ -550,6 +552,13 @@ def run_node(request, namespace_factory):
             )
             namespace["curio_secret"] = make_curio_secret(secrets)
 
+            from utk_curio.sandbox.util.models import make_curio_model
+
+            # The staged model folders, under the scratch directory.
+            namespace["curio_model"] = make_curio_model(
+                request.get("models") or {}, base=scratch_dir
+            )
+
             from utk_curio.sandbox.util.collections import make_collection_helpers
 
             namespace.update(make_collection_helpers(
@@ -560,6 +569,10 @@ def run_node(request, namespace_factory):
                 # parent moves it into the artifact store from there.
                 output_dir=scratch_dir,
             ))
+
+            from utk_curio.sandbox.util.vision import make_curio_segment
+
+            namespace["curio_segment"] = make_curio_segment(namespace.get("curio_derived_file"))
 
             # Replay this session's earlier imports so an upstream node's
             # `import numpy as np` is visible here, matching the in-process

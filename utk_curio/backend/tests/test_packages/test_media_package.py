@@ -17,7 +17,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[4]
 PACKAGE = REPO / "packages" / "curio.media@1"
-EXAMPLE = REPO / "datalakes" / "lake.curio.example-storage@1"
+EXAMPLE = REPO / "discovery" / "source.curio.example-storage@1"
 
 
 def node_source(name: str, **settings) -> str:
@@ -42,9 +42,9 @@ def run_node(name: str, arg, namespace: dict, **settings):
 def collection_rows(manifest, resource_id: str, tmp_path: Path):
     """``(rows, helpers)``: what ``curio_collection`` returns for a resource of
     *manifest*, and the helpers a node runs with."""
-    from utk_curio.backend.app.datalakes.application import index_collection, scan
-    from utk_curio.backend.app.datalakes.infrastructure.storage import storage_root
-    from utk_curio.backend.app.datalakes.providers import build_storage
+    from utk_curio.backend.app.discovery.application import index_collection, scan
+    from utk_curio.backend.app.discovery.infrastructure.storage import storage_root
+    from utk_curio.backend.app.discovery.providers import build_storage
     from utk_curio.sandbox.util.collections import make_collection_helpers
 
     provider = build_storage(manifest, None)
@@ -68,7 +68,7 @@ def collection_rows(manifest, resource_id: str, tmp_path: Path):
 @pytest.fixture()
 def collection(tmp_path):
     """``(rows_for(resource_id), helpers)`` over the example source."""
-    from utk_curio.backend.app.datalakes.domain.manifest import load_source_manifest
+    from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
 
     manifest = load_source_manifest(EXAMPLE)
     return lambda resource_id: collection_rows(manifest, resource_id, tmp_path)
@@ -77,12 +77,12 @@ def collection(tmp_path):
 @pytest.fixture()
 def folder_collection(tmp_path):
     """``(rows, helpers)`` for one resource over a folder a test writes."""
-    from utk_curio.backend.app.datalakes.domain.manifest import load_source_manifest
-    from utk_curio.backend.tests.test_datalakes.conftest import a_storage_manifest, write_source
+    from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
+    from utk_curio.backend.tests.test_discovery.conftest import a_storage_manifest, write_source
 
     def rows_over(root: Path, resource: dict):
         source = write_source(
-            tmp_path / "lakes", "lake.example.folder@1", a_storage_manifest(root, [resource])
+            tmp_path / "discovery", "source.example.folder@1", a_storage_manifest(root, [resource])
         )
         return collection_rows(load_source_manifest(source), resource["id"], tmp_path)
 

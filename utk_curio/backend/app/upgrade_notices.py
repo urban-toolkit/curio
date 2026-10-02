@@ -34,7 +34,7 @@ def check_upgrade_notices() -> list[str]:
     for name in ("HUGGINGFACE_TOKEN", "CURIO_DEFAULT_HUGGINGFACE_TOKEN"):
         if _warn_legacy_env(
             name,
-            "Each user saves their own HuggingFace token in AI Settings.",
+            "Each user saves their own HuggingFace token in API Settings.",
         ):
             warned.append(name)
 

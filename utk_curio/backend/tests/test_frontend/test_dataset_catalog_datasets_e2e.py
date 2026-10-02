@@ -92,8 +92,8 @@ LOADER_TYPE = "curio.builtin/data-loading"
 TRANSFORM_TYPE = "curio.builtin/data-transformation"
 VEGA_TYPE = "curio.builtin/vis-vega"
 
-TRANSFORM_TILE = "#step-transformation"
-VEGA_TILE = "#step-vega"
+TRANSFORM_TILE = "#tile-data-transformation"
+VEGA_TILE = "#tile-vis-vega"
 
 DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
 # The "Adding…" placeholder is an <article role="status"> carrying the same

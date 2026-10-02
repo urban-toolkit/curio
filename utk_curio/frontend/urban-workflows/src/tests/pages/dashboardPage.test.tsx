@@ -41,6 +41,8 @@ jest.mock("reactflow", () => ({
   },
   ConnectionMode: { Loose: "loose" },
   useReactFlow: () => mockReactFlowInstance,
+  // useViewportMotionHint reads the flow's wrapper from the store.
+  useStoreApi: () => ({ getState: () => ({ domNode: null }) }),
 }));
 jest.mock("reactflow/dist/style.css", () => ({}), { virtual: true });
 jest.mock("../../components/UniversalNode", () => ({ __esModule: true, default: () => null }));
@@ -131,7 +133,7 @@ describe("the bar", () => {
     expect(screen.getByRole("heading", { name: "Chicago trips" })).toBeTruthy();
     expect(screen.getByTestId("user-menu")).toBeTruthy();
     // None of the editor's menus.
-    for (const menu of ["File", "View", "Data", "Provenance", "Help"]) {
+    for (const menu of ["File", "View", "Data", "Provenance"]) {
       expect(screen.queryByText(new RegExp(`^${menu}`))).toBeNull();
     }
   });

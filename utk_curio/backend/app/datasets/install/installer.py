@@ -435,7 +435,7 @@ def install_imported_file(
     layer_name: str | None = None,
     source_updated_at: str | None = None,
     source_encoding: str | None = None,
-    lake_source: dict | None = None,
+    discovery_source: dict | None = None,
 ) -> InstallResult:
     """Save an uploaded file into the user's dataset store with a generated manifest.
 
@@ -456,7 +456,7 @@ def install_imported_file(
         layer_name=layer_name,
         source_updated_at=source_updated_at,
         source_encoding=source_encoding,
-        lake_source=lake_source,
+        discovery_source=discovery_source,
     )
 
 
@@ -471,7 +471,7 @@ def install_imported_path(
     layer_name: str | None = None,
     source_updated_at: str | None = None,
     source_encoding: str | None = None,
-    lake_source: dict | None = None,
+    discovery_source: dict | None = None,
     description: str | None = None,
     collection: dict | None = None,
 ) -> InstallResult:
@@ -505,7 +505,7 @@ def install_imported_path(
         layer_name=layer_name,
         source_updated_at=source_updated_at,
         source_encoding=source_encoding,
-        lake_source=lake_source,
+        discovery_source=discovery_source,
         description=description,
         collection=collection,
     )
@@ -539,7 +539,7 @@ def _install_imported(
     layer_name: str | None = None,
     source_updated_at: str | None = None,
     source_encoding: str | None = None,
-    lake_source: dict | None = None,
+    discovery_source: dict | None = None,
     description: str | None = None,
     collection: dict | None = None,
 ) -> InstallResult:
@@ -590,7 +590,7 @@ def _install_imported(
         group_id=group_id,
         layer_name=layer_name,
         source_encoding=source_encoding,
-        lake_source=lake_source,
+        discovery_source=discovery_source,
         collection=collection,
     )
     write_manifest(manifest_obj, dest)

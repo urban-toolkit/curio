@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import iso_from_timestamp, stable_id, title_from_filename
-from utk_curio.backend.app.datasets.domain.constants import SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.domain.constants import AUTARK_LAYER_TYPES, SUPPORTED_SUFFIXES
 from utk_curio.backend.app.datasets.infrastructure.file_meta import read_file_meta
 from utk_curio.backend.app.datasets.domain.manifest import DatasetManifest
 
@@ -98,13 +98,28 @@ def _curio_load_bundle(path):
 bundle = _curio_load_bundle(bundle_path)'''
 
 
-def loader_snippet(fmt: str, path: str | None, dataset_id: str | None = None) -> dict[str, Any]:
+def autark_layer_type(item: dict[str, Any]) -> str | None:
+    """The Autark layer a dataset downloaded from the Discovery Catalog is, when
+    its layer is one (an OpenStreetMap download's ``buildings``). A GeoPackage
+    layer may have any name, so the name alone decides nothing."""
+    layer = item.get("layerName")
+    if item.get("discoverySource") and isinstance(layer, str) and layer in AUTARK_LAYER_TYPES:
+        return layer
+    return None
+
+
+def loader_snippet(
+    fmt: str, path: str | None, dataset_id: str | None = None, layer_type: str | None = None,
+) -> dict[str, Any]:
     """Build the Python loader snippet for a dataset.
 
     When a (safe) *dataset_id* is given, the location line is the portable
     ``curio_dataset_path("<id>")`` call, resolved to a real path at execution
     time by the sandbox (mapping supplied by ``/processPythonCode``). Without
     one it falls back to embedding the literal path — see :func:`_path_expr`.
+
+    A *layer_type* (one of :data:`AUTARK_LAYER_TYPES`) is set as the frame's
+    ``metadata``, so an Autark node draws the frame as that layer.
 
     KEEP IN SYNC with the frontend generator
     ``frontend/urban-workflows/src/services/datasetCatalog/datasetLoaderSnippets.ts``
@@ -120,11 +135,14 @@ def loader_snippet(fmt: str, path: str | None, dataset_id: str | None = None) ->
             "returnVariable": "df",
         }
     if fmt in {"geojson", "shp"}:
+        code = f"dataset_path = {expr}\ngdf = gpd.read_file(dataset_path)"
+        if layer_type in AUTARK_LAYER_TYPES:
+            code += f"\ngdf.metadata = {{\"layerType\": {json.dumps(layer_type)}}}"
         return {
             "language": "python",
             "imports": ["import geopandas as gpd"],
             "pathVariable": "dataset_path",
-            "code": f"dataset_path = {expr}\ngdf = gpd.read_file(dataset_path)",
+            "code": code,
             "returnVariable": "gdf",
         }
     if fmt == "parquet":
@@ -290,20 +308,21 @@ def base_item(**overrides: Any) -> dict[str, Any]:
         # sibling layer datasets; ``layerName`` is this dataset's layer.
         "groupId": None,
         "layerName": None,
-        # Where a dataset downloaded from the Data Lake Catalog came from. Null
+        # Where a dataset downloaded from the Discovery Catalog came from. Null
         # for everything else, which is most datasets. Not an ``origin`` of its
         # own: such a dataset IS imported, and a fifth origin would ripple
         # through the labels, facets, filters and dedup for a distinction this
         # block already carries losslessly.
-        "lakeSource": None,
-        # A ``collection`` dataset's block: which lake source and resource its
+        "discoverySource": None,
+        # A ``collection`` dataset's block: which source and resource its
         # files belong to, their kind and counts. Null for every other format.
         "collection": None,
     }
     item.update(overrides)
     if item["loaderSnippet"] is None:
         item["loaderSnippet"] = loader_snippet(
-            item["format"], item.get("path"), dataset_id=item.get("id") or None
+            item["format"], item.get("path"), dataset_id=item.get("id") or None,
+            layer_type=autark_layer_type(item),
         )
     return item
 
@@ -385,6 +404,6 @@ def item_from_manifest(manifest: DatasetManifest, dataset_root: Path, *, origin:
         producerDataflowId=manifest.producer_dataflow_id,
         producerDataflowName=manifest.producer_dataflow_name,
         upstreamInputs=list(manifest.upstream_inputs) if manifest.upstream_inputs else [],
-        lakeSource=dict(manifest.lake_source) if manifest.lake_source else None,
+        discoverySource=dict(manifest.discovery_source) if manifest.discovery_source else None,
         collection=dict(manifest.collection) if manifest.collection else None,
     )

@@ -21,9 +21,9 @@
   "rowCount": 4,
   "featureCount": null,
   "schema": null,
-  "lakeSource": {
-    "lakeId": "lake.curio.example-storage@1",
-    "lakeName": "Example storage",
+  "discoverySource": {
+    "sourceId": "source.curio.example-storage@1",
+    "sourceName": "Example storage",
     "resourceId": "orthos",
     "fileCount": 4,
     "fields": "year,tile",
@@ -32,7 +32,7 @@
   },
   "collection": {
     "kind": "rasters",
-    "sourceId": "lake.curio.example-storage@1",
+    "sourceId": "source.curio.example-storage@1",
     "sourceName": "Example storage",
     "provider": "folder",
     "resourceId": "orthos",

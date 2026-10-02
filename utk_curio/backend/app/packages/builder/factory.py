@@ -73,6 +73,7 @@ from utk_curio.backend.app.packages.domain.manifest import (
 )
 from utk_curio.backend.app.packages.domain.package_id import TEMPLATE_ID_RE
 import tempfile
+from utk_curio.backend.app.packages.repositories.archive import is_non_content_filename
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
 log = logging.getLogger(__name__)
@@ -86,7 +87,7 @@ _SOURCE_FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}\.[A-Za-z0-9
 
 # Sentinel body the frontend uses for placeholder source code (kept in sync
 # with ``STARTER_CODE`` in
-# ``utk_curio/frontend/urban-workflows/src/pages/nodes/factoryDraftModel.ts``).
+# ``utk_curio/frontend/urban-workflows/src/services/packages/factoryDraft.ts``).
 # When the Save-As flow targets an existing installed package, the draft
 # carries this body for every template the user did not actively edit; the
 # install route swaps it back to the real on-disk source so the rebuild does
@@ -116,7 +117,7 @@ def preserve_unedited_sources(
     package directory from one draft. The frontend only has the real edited
     source for the canvas node being saved; for every other template in the
     target package, it sends a ``STARTER_CODE`` placeholder because
-    ``_manifest_to_payload`` does not surface source bodies.
+    ``schemas.responses.package_payload`` does not surface source bodies.
 
     Without this preservation step, the rebuild would write placeholders over
     every unedited template, silently destroying real code (issue tracked in
@@ -168,6 +169,77 @@ def preserve_unedited_sources(
     out = dict(draft)
     out["sources"] = merged_sources
     return out
+
+
+@dataclass(frozen=True)
+class _InstalledBase:
+    """What a Save As draft is laid over: the target package as installed."""
+    files: dict[str, bytes]  # every content file but manifest.json, by package-relative path
+    declared: dict[str, dict[str, str]]  # its declared python / js ranges
+
+
+def _onto_installed_package(
+    draft: dict[str, Any], installed_dir: Path | None,
+) -> tuple[dict[str, Any], _InstalledBase | None]:
+    """Lay a Save As draft over the installed package it is saved into (#432).
+
+    The draft models a package's sources and the manifest keys the canvas can
+    edit, nothing else, so a rebuild from it alone loses README, LICENSE,
+    ``scripts/``, ``backend/``, ``behaviorScript`` and every template key it
+    does not model. The installed manifest is the base here: the draft's keys
+    win, a template merges with its installed namesake by id, and an installed
+    template the draft does not name is kept. Every installed file the draft
+    does not write is carried forward byte-identical, the same rule
+    :mod:`.extension` applies to agent-built extensions.
+    """
+    if installed_dir is None or not (installed_dir / "manifest.json").is_file():
+        return draft, None
+    manifest = draft.get("manifest")
+    try:
+        base = json.loads((installed_dir / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return draft, None
+    if not isinstance(manifest, dict) or not isinstance(base, dict):
+        return draft, None
+
+    def by_id(templates: Any) -> dict[str, dict]:
+        return {
+            t["id"]: t for t in templates or []
+            if isinstance(t, dict) and isinstance(t.get("id"), str)
+        }
+
+    base_templates = by_id(base.get("templates") or base.get("kinds"))
+    draft_templates = by_id(manifest.get("templates") or manifest.get("kinds"))
+    templates = [{**base_templates.get(tid, {}), **t} for tid, t in draft_templates.items()]
+    templates += [t for tid, t in base_templates.items() if tid not in draft_templates]
+    merged = {**base, **manifest, "templates": templates}
+    merged.pop("kinds", None)
+
+    files: dict[str, bytes] = {}
+    for entry in sorted(installed_dir.rglob("*")):
+        if not entry.is_file() or is_non_content_filename(entry.name):
+            continue
+        rel = entry.relative_to(installed_dir).as_posix()
+        if rel != "manifest.json":
+            files[rel] = entry.read_bytes()
+
+    # An installed template the draft does not name keeps its source, which
+    # the source validator needs to find among the draft's sources.
+    sources = dict(draft.get("sources") or {})
+    for t in templates:
+        source = t.get("source")
+        if t["id"] in sources or not isinstance(source, str):
+            continue
+        body = files.get(source)
+        if body is not None:
+            sources[t["id"]] = {"filename": source.rsplit("/", 1)[-1], "code": body.decode("utf-8")}
+
+    deps = base.get("dependencies") or {}
+    declared = {kind: dict(deps.get(kind) or {}) for kind in ("python", "js")}
+    out = dict(draft)
+    out["manifest"] = merged
+    out["sources"] = sources
+    return out, _InstalledBase(files=files, declared=declared)
 
 # Deterministic mtime for every zip entry. Pinned to 2024-01-01 UTC so
 # two byte-identical drafts produce byte-identical archives — useful for
@@ -272,13 +344,20 @@ def _detect_dependencies_from_sources(sources: dict[str, dict[str, str]]) -> dic
 def _apply_detected_dependencies(
     manifest_raw: dict[str, Any],
     sources: dict[str, dict[str, str]],
+    declared: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Overwrite manifest ``dependencies.python`` / ``.js`` with source-derived deps.
 
-    ``dependencies.packages`` (inter-package deps) is preserved verbatim — it
-    cannot be derived from source. The mutation happens on a shallow copy.
+    *declared* is what the package being saved into already declares: every
+    name in it stays, with its range, because the scan sees only the draft's
+    sources and not the files carried forward with it (``backend/``, sources
+    no template names). ``dependencies.packages`` (inter-package deps) is
+    preserved verbatim — it cannot be derived from source. The mutation
+    happens on a shallow copy.
     """
     detected = _detect_dependencies_from_sources(sources)
+    for kind, ranges in (declared or {}).items():
+        detected[kind] = dict(sorted({**detected[kind], **ranges}.items()))
     out = dict(manifest_raw)
     existing_deps = dict(out.get("dependencies") or {})
     existing_deps["python"] = detected["python"]
@@ -332,17 +411,22 @@ def _add_entry(zf: zipfile.ZipFile, name: str, body: bytes) -> None:
     zf.writestr(info, body)
 
 
-def build_package_archive(draft: dict[str, Any]) -> BuildResult:
+def build_package_archive(draft: dict[str, Any], *, onto: Path | None = None) -> BuildResult:
     """Build a deterministic ``.curio.zip`` zip from *draft*.
 
     Returns the manifest, the raw zip bytes, and a suggested filename
     of the form ``<packageId>@<major>-<version>.curio.zip``.
 
-    The function never touches the filesystem outside a temporary
+    *onto* is the installed directory of the package a Save As writes into:
+    the draft is laid over it (:func:`_onto_installed_package`), so the
+    archive is that package with the draft's changes, not the draft alone.
+
+    The function only reads *onto*; it never writes outside a temporary
     directory used by the manifest validator.
     """
     if not isinstance(draft, dict):
         raise FactoryError("draft must be an object")
+    draft, base = _onto_installed_package(draft, onto)
     manifest_raw = draft.get("manifest")
     if not isinstance(manifest_raw, dict):
         raise FactoryError("draft.manifest is required and must be an object")
@@ -356,11 +440,14 @@ def build_package_archive(draft: dict[str, Any]) -> BuildResult:
     # ``dependencies.python``/``.js`` fields from the actual imports and have
     # the validator see the final shape. ``packages`` (inter-package deps) is
     # not source-derivable and stays as the draft provided it.
-    manifest_with_deps = _apply_detected_dependencies(dict(manifest_raw), sources)
+    manifest_with_deps = _apply_detected_dependencies(
+        dict(manifest_raw), sources, base.declared if base else None,
+    )
     manifest_authoring = _stamp_manifest_created_at_when_absent(manifest_with_deps)
     manifest = _validate_manifest_dict(manifest_authoring)
     validated_sources = _validate_sources(manifest, sources)
 
+    written: set[str] = {"manifest.json"}
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w") as zf:
         # 1. manifest.json — canonical ``createdAt`` may be stamped here if absent.
@@ -374,12 +461,20 @@ def build_package_archive(draft: dict[str, Any]) -> BuildResult:
             entry = validated_sources[template_id]
             arcname = f"sources/{entry['filename']}"
             _add_entry(zf, arcname, entry["code"].encode("utf-8"))
+            written.add(arcname)
 
         # 3. README.md / LICENSE — optional.
         if isinstance(readme, str) and readme.strip():
             _add_entry(zf, "README.md", readme.encode("utf-8"))
+            written.add("README.md")
         if isinstance(license_text, str) and license_text.strip():
             _add_entry(zf, "LICENSE", license_text.encode("utf-8"))
+            written.add("LICENSE")
+
+        # 4. Everything else the package being saved into already had.
+        for arcname, body in sorted((base.files if base else {}).items()):
+            if arcname not in written:
+                _add_entry(zf, arcname, body)
 
     filename = f"{manifest.dir_name}-{manifest.version}.curio.zip"
     return BuildResult(manifest=manifest, archive=buf.getvalue(), filename=filename)

@@ -50,9 +50,10 @@ interface UserProviderProps {
     email?: string;
     type?: string;
   }) => Promise<void>;
-  /** Save the account's personal tokens; "" removes one, undefined keeps it.
-   * LLM configurations are saved through `llmConfigsApi` instead. */
-  updateTokens: (tokens: { huggingfaceToken?: string; socrataAppToken?: string }) => Promise<void>;
+  /** Save or clear account keys, by the field `PATCH /api/auth/me` takes each
+   * under (an API Settings row's `field`). An empty string clears one. LLM
+   * configurations are saved through `llmConfigsApi` instead. */
+  updateTokens: (fields: Record<string, string>) => Promise<void>;
   saveUserType: (newType: "programmer" | "expert") => Promise<void>;
   logout: () => void;
 }
@@ -265,11 +266,8 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
   );
 
   const updateTokens = useCallback(
-    async (tokens: { huggingfaceToken?: string; socrataAppToken?: string }) => {
-      const updated = await authApi.patchMe({
-        huggingface_token: tokens.huggingfaceToken,
-        socrata_app_token: tokens.socrataAppToken,
-      });
+    async (fields: Record<string, string>) => {
+      const updated = await authApi.patchMe(fields);
       setUser(updated);
     },
     []

@@ -8,6 +8,7 @@ import {
   datasetProvenanceLabel,
   isDatasetInstalledFromCatalog,
   isDatasetPublishedToCatalog,
+  isLayerGroupId,
   notifyDatasetCatalogRefresh,
 } from "../../../services/datasetCatalog";
 import { DatasetDataflowUsageSection, useDatasetDataflowUsage } from "./DatasetDataflowUsage";
@@ -259,6 +260,33 @@ const LineageMainSection: React.FC<{
   );
 };
 
+
+/** A parameter's id as a label: "area" is "Area", "maxImages" is "Max images". */
+export function parameterLabel(id: string): string {
+  const words = id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** What a download was narrowed by, as text: a place or a box, dates, values. */
+export function parameterText(value: unknown): string {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const v = value as Record<string, unknown>;
+    if (Array.isArray(v.box)) {
+      const box = (v.box as number[]).map((n) => n.toFixed(4)).join(", ");
+      return v.label ? `${String(v.label)} (${box})` : box;
+    }
+    if (v.names && typeof v.names === "object") {
+      const names = v.names as { geocodeArea?: string; areas?: string[] };
+      return `${(names.areas ?? []).join(", ")} in ${names.geocodeArea ?? ""}`;
+    }
+    if ("start" in v || "end" in v) return `${String(v.start ?? "")} to ${String(v.end ?? "")}`.trim();
+    return JSON.stringify(v);
+  }
+  if (Array.isArray(value)) return value.map(String).join(", ");
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value);
+}
+
 export interface DatasetDetailPanelProps {
   dataset: DatasetCatalogItem | null;
   loading?: boolean;
@@ -352,16 +380,19 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     : lineage;
   const { consumingNodes } = effectiveLineage.downstream;
   const published = isDatasetPublishedToCatalog(dataset);
-  // Neither a multi-part bundle, an OSM group nor a collection (an index of
-  // files kept where they are) is a single exportable file.
+  // Neither a multi-part bundle, a layer group (whatever format it shows) nor a
+  // collection (an index of files kept where they are) is a single exportable file.
   const canExport =
-    dataset.format !== "bundle" && dataset.format !== "osm" && dataset.format !== "collection";
-  const lake = dataset.lakeSource;
+    dataset.format !== "bundle" &&
+    dataset.format !== "osm" &&
+    dataset.format !== "collection" &&
+    !isLayerGroupId(dataset.id);
+  const discovered = dataset.discoverySource;
   // A storage source's resource is a folder or a bucket, not a portal page.
   // Which words describe where the bytes came from: a file the person
   // downloaded by hand, then a storage source's files, then a portal download.
-  const manual = Boolean(lake?.manual);
-  const fromStorage = Boolean(lake && !manual && (lake.fingerprint || lake.fileCount != null));
+  const manual = Boolean(discovered?.manual);
+  const fromStorage = Boolean(discovered && !manual && (discovered.fingerprint || discovered.fileCount != null));
   const activeDataset = dataset;
 
   const handleExport = async () => {
@@ -564,7 +595,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               onCacheFiles={collection.cacheFiles}
               onFollowLink={onFollowLink}
             />
-          ) : lake ? (
+          ) : discovered ? (
             // Where the bytes came from. Without it a downloaded dataset is
             // indistinguishable from a hand-uploaded one, and the question it
             // answers - "which portal is this, and can I go back to it?" - has
@@ -575,49 +606,55 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
                 {manual ? "Downloaded by hand from" : fromStorage ? "Added from" : "Downloaded from"}
               </p>
               <dl className={styles.infoRows}>
-                {lake.lakeId ? (
+                {discovered.sourceId ? (
                   <div>
                     <dt>{fromStorage ? "Source" : "Portal"}</dt>
                     <dd>
                       <DetailLink
-                        to={`/catalog/lakes/${encodeURIComponent(lake.lakeId)}`}
+                        to={`/catalog/discovery/${encodeURIComponent(discovered.sourceId)}`}
                         onFollow={onFollowLink}
                       >
-                        {lake.lakeName || lake.lakeId}
+                        {discovered.sourceName || discovered.sourceId}
                       </DetailLink>
                     </dd>
                   </div>
                 ) : null}
-                {lake.resourceUrl ? (
+                {discovered.resourceUrl ? (
                   <div>
-                    <dt>{lake.resourceId ? "Resource" : "Link"}</dt>
+                    <dt>{discovered.resourceId ? "Resource" : "Link"}</dt>
                     <dd>
-                      <a href={lake.resourceUrl} target="_blank" rel="noreferrer noopener">
-                        {lake.resourceId || lake.resourceUrl} ↗
+                      <a href={discovered.resourceUrl} target="_blank" rel="noreferrer noopener">
+                        {discovered.resourceId || discovered.resourceUrl} ↗
                       </a>
                     </dd>
                   </div>
-                ) : lake.resourceId ? (
+                ) : discovered.resourceId ? (
                   <div>
                     <dt>Resource</dt>
-                    <dd>{lake.resourceId}</dd>
+                    <dd>{discovered.resourceId}</dd>
                   </div>
                 ) : null}
-                {lake.fileCount != null && lake.fileCount > 1 ? (
+                {discovered.fileCount != null && discovered.fileCount > 1 ? (
                   <div>
                     <dt>Combined from</dt>
-                    <dd>{lake.fileCount.toLocaleString()} files</dd>
+                    <dd>{discovered.fileCount.toLocaleString()} files</dd>
                   </div>
-                ) : lake.sourcePath ? (
+                ) : discovered.sourcePath ? (
                   <div>
                     <dt>File</dt>
-                    <dd>{lake.sourcePath}</dd>
+                    <dd>{discovered.sourcePath}</dd>
                   </div>
                 ) : null}
-                {lake.fetchedAt ? (
+                {Object.entries(discovered.parameters ?? {}).map(([id, value]) => (
+                  <div key={id}>
+                    <dt>{parameterLabel(id)}</dt>
+                    <dd>{parameterText(value)}</dd>
+                  </div>
+                ))}
+                {discovered.fetchedAt ? (
                   <div>
                     <dt>{manual ? "Imported" : fromStorage ? "Added" : "Downloaded"}</dt>
-                    <dd title={absoluteDate(lake.fetchedAt)}>{relativeTime(lake.fetchedAt)}</dd>
+                    <dd title={absoluteDate(discovered.fetchedAt)}>{relativeTime(discovered.fetchedAt)}</dd>
                   </div>
                 ) : null}
               </dl>

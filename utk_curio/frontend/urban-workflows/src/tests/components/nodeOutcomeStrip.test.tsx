@@ -17,7 +17,7 @@ import {
  */
 
 const VEGA_ERROR =
-  "rendered nothing — 0 rows arrived at this node, so there was nothing to draw. " +
+  "rendered nothing: 0 rows arrived at this node, so there was nothing to draw. " +
   "The upstream node that feeds it is what must change; this document is not at fault.";
 
 describe("the strip's readings", () => {
@@ -66,7 +66,7 @@ describe("NodeOutcomeStrip", () => {
         output={{ code: "error", content: VEGA_ERROR }} />,
     );
     const strip = screen.getByTestId("node-outcome-vega-1");
-    expect(strip).toHaveTextContent("rendered nothing — 0 rows arrived at this node");
+    expect(strip).toHaveTextContent("rendered nothing: 0 rows arrived at this node");
     expect(strip).toHaveTextContent("Error");
   });
 

@@ -25,12 +25,16 @@ jest.mock('../../../providers/ProvenanceProvider', () => ({
 let mockFlowEdges: any[] = [];
 let mockNodeExecStatus: Record<string, string> = {};
 const mockSignalNodeExecDone = jest.fn();
+const mockPlayNodesUpTo = jest.fn();
+let mockIsRunActive = false;
 jest.mock('../../../providers/FlowProvider', () => ({
   useFlowContext: () => ({
     workflowNameRef: { current: 'test-workflow' },
     edges: mockFlowEdges,
     nodeExecStatus: mockNodeExecStatus,
     signalNodeExecDone: mockSignalNodeExecDone,
+    playNodesUpTo: mockPlayNodesUpTo,
+    isRunActive: mockIsRunActive,
   }),
 }));
 
@@ -119,6 +123,7 @@ jest.mock('@urban-toolkit/autk-db', () => ({
 
 import { useCodeNodeBehavior } from '../../../adapters/node/codeNodeBehavior';
 import { useDataExportBehavior } from '../../../adapters/node/dataExportBehavior';
+import { triggerBlobDownload } from '../../../services/packages/packagesBlobTransport';
 import { useVegaBehavior } from '../../../adapters/node/vegaBehavior';
 import { useSimpleVisBehavior } from '../../../adapters/node/simpleVisBehavior';
 import { useMergeFlowBehavior } from '../../../adapters/node/mergeFlowBehavior';
@@ -216,46 +221,52 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     afterEach(() => {
       mockEdges = [];
       mockNodes = {};
+      mockIsRunActive = false;
+      mockPlayNodesUpTo.mockClear();
+      (triggerBlobDownload as jest.Mock).mockClear();
     });
 
-    test('returns expected fields', async () => {
-      const result = await callBehavior(useDataExportBehavior);
-      assertValidBehaviorResult(result.current);
-      expect(typeof result.current.sendCodeOverride).toBe('function');
-      expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
-      expect(typeof result.current.customWidgetsCallback).toBe('function');
-      expect(result.current.contentComponent).toBeDefined();
-    });
+    const WIRED = [{ id: 'e1', source: 'upstream-1', target: 'node-1' }];
+    const UPSTREAM = {
+      'upstream-1': { id: 'upstream-1', data: { nodeType: 'curio.builtin/data-loading@1' } },
+    };
 
-    // These go through the hook rather than calling resolveExportTarget directly.
-    // The unit test for the "producing node" fallback passed against a code path
-    // no caller reached: the name was read off the export node's own
-    // datasetSource, which nothing writes, so every ordinary dataflow fell
-    // through to "data_export" (#226).
-    function exportButtonLabel(result: any): string {
-      // customWidgetsCallback mutates the element it is handed rather than
-      // returning nodes, so give it one and read the button back out.
-      const host = document.createElement('div');
-      result.current.customWidgetsCallback(host);
-      return host.querySelector('button')?.textContent ?? '';
+    // #226: the node is the Download button, nothing else.
+    function renderBody(result: any) {
+      return render(<>{result.current.contentComponent}</>);
+    }
+    function exportButton(result: any): HTMLButtonElement {
+      const { container } = renderBody(result);
+      return container.querySelector('button') as HTMLButtonElement;
     }
 
+    test('is a body with one button: no run override, no code, no widgets', async () => {
+      const result = await callBehavior(useDataExportBehavior);
+      assertValidBehaviorResult(result.current);
+      expect(result.current.contentComponent).toBeDefined();
+      // No sendCode means no play button, and a Run All releases the node
+      // without downloading (UniversalNode).
+      expect(result.current.sendCodeOverride).toBeUndefined();
+      expect(result.current.customWidgetsCallback).toBeUndefined();
+      // Nor the output panel, whose Output / Error / Warning tabs filled the
+      // node: the body is the button and one status line. OutputContent is
+      // mocked above as a div reading "output".
+      const { container } = renderBody(result);
+      expect(container.querySelectorAll('button')).toHaveLength(1);
+      expect(container.textContent).not.toContain('output');
+    });
+
     test('names the file after the node feeding it', async () => {
-      mockEdges = [{ id: 'e1', source: 'upstream-1', target: 'node-1' }];
-      mockNodes = {
-        'upstream-1': {
-          id: 'upstream-1',
-          data: { nodeType: 'curio.builtin/data-loading@1' },
-        },
-      };
+      mockEdges = WIRED;
+      mockNodes = UPSTREAM;
       const result = await callBehavior(useDataExportBehavior, {
         input: { path: 'p', dataType: 'dataframe' },
       });
-      expect(exportButtonLabel(result)).not.toContain('data_export');
+      expect(exportButton(result).textContent).not.toContain('data_export');
     });
 
     test('prefers a renamed upstream node title', async () => {
-      mockEdges = [{ id: 'e1', source: 'upstream-1', target: 'node-1' }];
+      mockEdges = WIRED;
       mockNodes = {
         'upstream-1': {
           id: 'upstream-1',
@@ -268,14 +279,22 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       const result = await callBehavior(useDataExportBehavior, {
         input: { path: 'p', dataType: 'geodataframe' },
       });
-      expect(exportButtonLabel(result)).toContain('boundaries.geojson');
+      expect(exportButton(result).textContent).toContain('boundaries.geojson');
     });
 
-    test('falls back to the default stem when nothing is upstream', async () => {
+    test('falls back to the default stem when the upstream has no name', async () => {
+      mockEdges = WIRED;
       const result = await callBehavior(useDataExportBehavior, {
         input: { path: 'p', dataType: 'dataframe' },
       });
-      expect(exportButtonLabel(result)).toContain('data_export.csv');
+      expect(exportButton(result).textContent).toContain('data_export.csv');
+    });
+
+    test('unconnected: the button is disabled and says why', async () => {
+      const result = await callBehavior(useDataExportBehavior);
+      const { container, getByText } = renderBody(result);
+      expect((container.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      expect(getByText('Connect a dataset to export it')).toBeTruthy();
     });
 
     // #513: it used to set a success output on mount and on every input, so
@@ -290,31 +309,79 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(setOutput).not.toHaveBeenCalled();
     });
 
-    test('a play with nothing connected settles the node and releases the run', async () => {
-      mockSignalNodeExecDone.mockClear();
-      const setOutput = jest.fn();
-      const result = await callBehavior(useDataExportBehavior, { input: '' }, { setOutput });
-
-      await act(async () => { await result.current.sendCodeOverride!(''); });
-
-      expect(setOutput).toHaveBeenCalledWith({ code: '', content: '' });
-      expect(mockSignalNodeExecDone).toHaveBeenCalledWith('node-1');
-    });
-
-    test('a download reports what it wrote and releases the run', async () => {
-      mockSignalNodeExecDone.mockClear();
+    test('a click downloads the input it has, without a run', async () => {
+      mockEdges = WIRED;
       const setOutput = jest.fn();
       const result = await callBehavior(
         useDataExportBehavior, { input: { path: 'p', dataType: 'dataframe' } }, { setOutput },
       );
 
-      await act(async () => { await result.current.sendCodeOverride!(''); });
+      const button = exportButton(result);
+      await act(async () => { button.click(); });
 
+      await waitFor(() => expect(triggerBlobDownload).toHaveBeenCalledTimes(1));
+      expect((triggerBlobDownload as jest.Mock).mock.calls[0][1]).toBe('data_export.csv');
+      expect(mockPlayNodesUpTo).not.toHaveBeenCalled();
       expect(setOutput.mock.calls.map(([o]) => o.code)).toEqual(['exec', 'success']);
       expect(setOutput).toHaveBeenLastCalledWith(
         expect.objectContaining({ content: 'Downloaded data_export.csv' }),
       );
-      expect(mockSignalNodeExecDone).toHaveBeenCalledWith('node-1');
+    });
+
+    test('with no input yet, a click runs the upstream nodes, then downloads once', async () => {
+      mockEdges = WIRED;
+      const nodeState = makeMockNodeState({ setOutput: jest.fn() });
+      const { result, rerender } = renderHook(
+        ({ data }) => useDataExportBehavior(data, nodeState),
+        { initialProps: { data: makeMockData({ input: '' }) } },
+      );
+
+      const { container } = render(<>{result.current.contentComponent}</>);
+      const button = container.querySelector('button') as HTMLButtonElement;
+      await act(async () => { button.click(); });
+      expect(mockPlayNodesUpTo).toHaveBeenCalledWith('node-1');
+      expect(triggerBlobDownload).not.toHaveBeenCalled();
+
+      // The run starts, the input arrives, the run ends.
+      mockIsRunActive = true;
+      await act(async () => { rerender({ data: makeMockData({ input: '' }) }); });
+      await act(async () => {
+        rerender({ data: makeMockData({ input: { path: 'p', dataType: 'dataframe' } as any }) });
+      });
+      expect(triggerBlobDownload).not.toHaveBeenCalled();
+      mockIsRunActive = false;
+      await act(async () => {
+        rerender({ data: makeMockData({ input: { path: 'p', dataType: 'dataframe' } as any }) });
+      });
+
+      await waitFor(() => expect(triggerBlobDownload).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        rerender({ data: makeMockData({ input: { path: 'p', dataType: 'dataframe' } as any }) });
+      });
+      expect(triggerBlobDownload).toHaveBeenCalledTimes(1);
+    });
+
+    test('a run that leaves no input reports that nothing could be exported', async () => {
+      mockEdges = WIRED;
+      const setOutput = jest.fn();
+      const nodeState = makeMockNodeState({ setOutput });
+      const { result, rerender } = renderHook(
+        ({ data }) => useDataExportBehavior(data, nodeState),
+        { initialProps: { data: makeMockData({ input: '' }) } },
+      );
+
+      const { container } = render(<>{result.current.contentComponent}</>);
+      const button = container.querySelector('button') as HTMLButtonElement;
+      await act(async () => { button.click(); });
+      mockIsRunActive = true;
+      await act(async () => { rerender({ data: makeMockData({ input: '' }) }); });
+      mockIsRunActive = false;
+      await act(async () => { rerender({ data: makeMockData({ input: '' }) }); });
+
+      expect(triggerBlobDownload).not.toHaveBeenCalled();
+      expect(setOutput).toHaveBeenLastCalledWith(
+        expect.objectContaining({ code: 'error', content: expect.stringContaining('produced no output') }),
+      );
     });
   });
 
@@ -603,11 +670,13 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
   });
 
   describe('useDataPoolBehavior', () => {
-    test('returns contentComponent, customWidgetsCallback, overrides', async () => {
+    test('returns contentComponent and overrides, and no widgets callback', async () => {
       const result = await callBehavior(useDataPoolBehavior);
       assertValidBehaviorResult(result.current);
       expect(result.current.contentComponent).toBeDefined();
-      expect(typeof result.current.customWidgetsCallback).toBe('function');
+      // The conflict-mode selects are part of the body (#581). The pool has no
+      // Widgets tab ("editor": "none"), so a widgets callback never ran.
+      expect(result.current.customWidgetsCallback).toBeUndefined();
       expect(typeof result.current.setOutputCallbackOverride).toBe('function');
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
       // sendCodeOverride lets Play All wait for processDataAsync to propagate
@@ -1440,10 +1509,10 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
 
     // Regression for #248. autk-db's loadOsm walks autoLoadLayers.layers in
     // order and lets a per-layer failure propagate, so a throw partway leaves
-    // the earlier tables registered and the later ones absent. Both loaders used
-    // to publish whatever getLayerTables() held, so the node that actually
-    // failed went green and the breakage surfaced two nodes downstream as
-    // "Table table_osm_roads not found" from a spatialQuery.
+    // the earlier tables registered and the later ones absent. Both loaders
+    // check getLayersMetadata() against the tables the spec asks for, so the
+    // node that ran the load fails, instead of a spatialQuery two nodes
+    // downstream reporting "Table table_osm_roads not found".
     test('data-only node: a SHORT load fails the node and names the missing table (#248)', async () => {
       const interpretCode = jest.fn(
         (_unresolved, _code, _input, _inputTypes, cb) =>

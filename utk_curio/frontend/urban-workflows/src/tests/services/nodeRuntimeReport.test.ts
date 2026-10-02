@@ -51,7 +51,7 @@ describe("reportFromNodeOutput", () => {
     // dev/136: an empty render travels as itself, so the harness reads a field
     // rather than matching the message's prose.
     const empty = reportFromNodeOutput(
-      { code: "error", content: "rendered nothing — 0 rows arrived", kind: "empty-render:no-input-rows" },
+      { code: "error", content: "rendered nothing: 0 rows arrived", kind: "empty-render:no-input-rows" },
       IDENTITY,
     );
     expect(empty?.kind).toBe("empty-render:no-input-rows");

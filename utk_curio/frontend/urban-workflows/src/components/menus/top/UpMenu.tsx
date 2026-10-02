@@ -17,6 +17,8 @@ import styles from "./UpMenu.module.css";
 import clsx from "clsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
+    faBrain,
+    faCloudArrowDown,
     faCubes,
     faDatabase,
     faFileImport,
@@ -29,18 +31,17 @@ import {
     faUpRightAndDownLeftFromCenter,
     faDownLeftAndUpRightToCenter,
     faSitemap,
-    faCircleQuestion,
     faStore,
 } from "@fortawesome/free-solid-svg-icons";
 import logo from "assets/curio-2.png";
 import { UserMenu } from "components/login/UserMenu";
-import introJs from "intro.js";
-import "intro.js/introjs.css";
 import { useNavigate, useParams } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { useAgentCatalogDrawerControls } from "../../../providers/AgentCatalogDrawerProvider";
 import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
+import { useModelCatalogDrawer } from "../../../providers/modelCatalog";
+import { useDiscoveryCatalogDrawer } from "../../../providers/discoveryCatalog";
 import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
 import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
 import {
@@ -59,7 +60,6 @@ import { SHARE_UUID_RE } from "../../../utils/shareLinks";
 export default function UpMenu() {
     const [isEditing, setIsEditing] = useState(false);
     const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
-    const [tutorialOpen, setTutorialOpen] = useState(false);
     const [librariesOpen, setLibrariesOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
@@ -120,6 +120,8 @@ export default function UpMenu() {
     const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
     const { openAgentCatalogDrawer } = useAgentCatalogDrawerControls();
     const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
+    const { openModelCatalogDrawer } = useModelCatalogDrawer();
+    const { openDiscoveryCatalogDrawer } = useDiscoveryCatalogDrawer();
 
     const toggleMenu = (menu: string) => {
         setActiveMenu((prev) => (prev === menu ? null : menu));
@@ -170,11 +172,6 @@ export default function UpMenu() {
         if (e.key === "Enter") {
             commitName();
         }
-    };
-
-    const openTutorial = () => {
-        setTutorialOpen(true);
-        setActiveMenu(null);
     };
 
     const toggleExpand = () => {
@@ -368,71 +365,6 @@ export default function UpMenu() {
         };
     }, [activeMenu]);
 
-    useEffect(() => {
-        if (!tutorialOpen) return;
-
-        const intro = introJs();
-        intro.setOptions({
-            steps: [
-                {
-                    intro: "Welcome to Curio, a framework for urban analytics. Let's take a quick tour to help you get started.",
-                },
-                {
-                    // #240: this step used to promise a file picker the node
-                    // has never shipped. The uploader it described was
-                    // commented out of WidgetsEditor and has now been deleted,
-                    // so the copy names the two routes that do exist, and the
-                    // Data Catalog step below follows immediately because it is
-                    // the answer to the question this one raises.
-                    element: "#step-loading",
-                    intro: "This is a Data Loading Node. Write Python here to build a small dataset inline, or to read one already available to your dataflow. The node holds code, not a file picker: to bring a file in, use the Data Catalog (next step), or add a file widget to the code with the marker [!! path$FILE !!].",
-                },
-                {
-                    // The tour never mentioned the Data Catalog, which is how a
-                    // file actually gets into a dataflow.
-                    intro: "Files live in the Data Catalog, not inside a node. Open Data → Data Catalog, import a CSV or GeoJSON, then drag the dataset onto the canvas: Curio creates a Data Loading Node already wired to it.",
-                },
-                {
-                    element: "#step-analysis",
-                    intro: "This is a Python Computation Node. Use it to perform calculations and operations on your dataset, preparing it for visualization.",
-                },
-                {
-                    element: "#step-transformation",
-                    intro: "The Data Transformation Node allows you to filter, segment, or restructure your data.",
-                },
-                {
-                    element: "#step-pool",
-                    intro: "This is a Data Pool Node. It enables you to display your processed data in a structured grid format for easy review.",
-                },
-                {
-                    element: "#step-utk",
-                    intro: "This is an Autark Node. Write a declarative UrbanSpec to load data (OSM, CSV, GeoJSON) or draw the data connected to it, run GPU compute, and render maps or plots.",
-                },
-                {
-                    element: "#step-vega",
-                    intro: "This is a Vega-Lite Node. Use it to visualize data in 2D formats (bar charts, scatter plots, and line graphs) using a JSON specification.",
-                },
-                {
-                    element: "#step-image",
-                    intro: "This is a Simple View Node. It displays a table for DataFrames, an image grid for image DataFrames, or passes through other values.",
-                },
-                {
-                    element: "#step-merge",
-                    intro: "This is a Merge Flow Node. It allows you to combine multiple data streams into a single dataset. Red handles indicate a missing connection, while green handles show that a connection has been established. Note: each handle can only connect to one edge.",
-                },
-                {
-                    intro: "That's it! Drag and drop nodes into your workspace and begin exploring your data with Curio.",
-                },
-            ],
-            showStepNumbers: false,
-            showProgress: false,
-            exitOnOverlayClick: false,
-            tooltipClass: "custom-intro-tooltip",
-        });
-        intro.start();
-        setTutorialOpen(false);
-    }, [tutorialOpen]);
-
     return (
         <>
             <input
@@ -615,6 +547,26 @@ export default function UpMenu() {
                             <div
                                 className={styles.dropDownRow}
                                 onClick={() => {
+                                    openModelCatalogDrawer();
+                                    setActiveMenu(null);
+                                }}
+                            >
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faBrain} />
+                                <button className={styles.noStyleButton}>Model Catalog</button>
+                            </div>
+                            <div
+                                className={styles.dropDownRow}
+                                onClick={() => {
+                                    openDiscoveryCatalogDrawer();
+                                    setActiveMenu(null);
+                                }}
+                            >
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faCloudArrowDown} />
+                                <button className={styles.noStyleButton}>Discovery Catalog</button>
+                            </div>
+                            <div
+                                className={styles.dropDownRow}
+                                onClick={() => {
                                     setLibrariesOpen(true);
                                     setActiveMenu(null);
                                 }}
@@ -644,26 +596,6 @@ export default function UpMenu() {
                         </div>
                     )}
                 </div>
-
-                {/* Help */}
-                <div className={styles.dropdownWrapper}>
-                    <button
-                        className={clsx(styles.button, styles.menuCaret)}
-                        aria-label="Help menu"
-                        onClick={() => toggleMenu("help")}
-                    >
-                        Help
-                    </button>
-                    {activeMenu === "help" && (
-                        <div className={styles.dropDownMenu}>
-                            <div className={styles.dropDownRow} onClick={openTutorial}>
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faCircleQuestion} />
-                                <button className={styles.noStyleButton}>Tutorial</button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
 
                 {/* Share: the dataflow's dashboard, and a link to either. Shown
                     to a shared viewer too - passing a link on is not an edit. */}

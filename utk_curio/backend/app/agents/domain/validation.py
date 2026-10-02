@@ -114,7 +114,7 @@ def validate_candidate(
     ``dataset_paths`` / ``exec_user_key`` ride through to the runner so the
     Data Catalog's ``curio_dataset_path("<id>")`` loaders resolve exactly as
     on Play."""
-    from utk_curio.backend.app.datalakes.application.exec_collections import (
+    from utk_curio.backend.app.discovery.application.exec_collections import (
         resolve_spec_collections,
     )
 

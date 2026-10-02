@@ -38,9 +38,19 @@ COLLECTION_CALL_RE = re.compile(
     r"""curio_collection\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
 )
 
+#: Literal ``curio_model("<id>")`` calls: the Model Catalog's models a node
+#: runs, with the same id charset (the frontend's ``modelIdsInCode`` mirrors
+#: it). Not a dataset reference, so not in ``DATASET_PATH_CALL_RE``.
+MODEL_CALL_RE = re.compile(
+    r"""curio_model\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
+)
+
 #: Bound the work against pathological or generated code. Shared with the
 #: execution path, which has always had this cap.
 MAX_DATASET_IDS = 32
+
+#: The most models one node's code names.
+MAX_MODEL_IDS = 8
 
 
 def dataset_ids_in_code(code: object, *, limit: int = MAX_DATASET_IDS) -> list[str]:
@@ -87,6 +97,19 @@ def node_code(node: object) -> str:
         return ""
     content = node.get("content")
     return content if isinstance(content, str) else ""
+
+
+def model_ids_in_code(code: object, *, limit: int = MAX_MODEL_IDS) -> list[str]:
+    """Model ids referenced by literal ``curio_model`` calls, first seen first."""
+    if not isinstance(code, str) or "curio_model" not in code:
+        return []
+    ids: list[str] = []
+    for match in MODEL_CALL_RE.finditer(code):
+        if match.group(2) not in ids:
+            ids.append(match.group(2))
+        if len(ids) >= limit:
+            break
+    return ids
 
 
 def collection_ids_in_code(code: object, *, limit: int = MAX_DATASET_IDS) -> list[str]:

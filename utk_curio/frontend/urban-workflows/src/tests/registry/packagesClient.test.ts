@@ -65,7 +65,6 @@ const FIXTURE_PACK = {
       bidirectional: false,
       containerStyle: null,
       hasProvenance: null,
-      tutorialId: 'step-loading',
     },
     {
       id: 'curio.builtin/vis-vega@1',
@@ -90,7 +89,6 @@ const FIXTURE_PACK = {
       bidirectional: true,
       containerStyle: null,
       hasProvenance: true,
-      tutorialId: null,
     },
     {
       id: 'curio.builtin/merge-flow@1',
@@ -115,7 +113,6 @@ const FIXTURE_PACK = {
       bidirectional: false,
       containerStyle: { nodeWidth: 50, nodeHeight: 180, noContent: true },
       hasProvenance: null,
-      tutorialId: 'step-merge',
     },
   ],
 };
@@ -130,7 +127,6 @@ describe('registerPackageTemplates → NodeDescriptor', () => {
     expect(dl.badge).toBeUndefined();
     expect(dl.adapter.outputIconType).toBe('N');
     expect(dl.adapter.editor).not.toBeNull();
-    expect(dl.tutorialId).toBe('step-loading');
   });
 
   test('vis-vega: bidirectional handle, badge="VEGA", grammarId="vega-lite", hasProvenance=true', () => {

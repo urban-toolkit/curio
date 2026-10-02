@@ -48,7 +48,7 @@ export function AgentCatalogDrawerProvider({ children }: { children: React.React
   useEffect(() => {
     if (!presented) return;
     const onKey = (e: KeyboardEvent) => {
-      // A modal rendered inside this drawer (AI Settings, agent import) owns
+      // A modal rendered inside this drawer (API Settings, agent import) owns
       // Escape while it is open. This listener was registered first, so the
       // modal cannot stop it from firing - it has to stand down itself.
       if (modalStackDepth() > 0) return;

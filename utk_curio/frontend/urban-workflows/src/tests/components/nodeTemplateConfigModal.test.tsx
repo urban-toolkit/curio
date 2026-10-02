@@ -176,9 +176,8 @@ describe("NodeTemplateConfigModal - editor mode cascade", () => {
   });
 
   test("none clears every body flag", () => {
-    // The Explanation-tab flag used to be asserted here too. That tab is gone -
-    // agent.node-explainer does the same job with more context - so there is no
-    // longer a body flag that depends on code-or-grammar being present.
+    // No body flag depends on code or grammar being present: the Chat agent
+    // (agent.chat-agent) explains a node, not an editor tab.
     renderModal();
     fireEvent.change(screen.getByLabelText("Editor mode"), {
       target: { value: "none" },

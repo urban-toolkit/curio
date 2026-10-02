@@ -44,6 +44,20 @@ document. It is absent on presentation-only templates. `title` and
 accepts a palette name *or* a `#rrggbb` value, because agents are instructed to
 supply either.
 
+`metadata.packageTemplateLabel` is the node's header when the user has renamed
+it. It is written only when non-blank; without it the header shows the
+template's label.
+
+`metadata.packageTemplateConfig` is what the node settings modal saved for the
+node: its title, description, editor mode, engine, which editor tabs it shows,
+and its ports. It is absent until the modal saves. It does not repeat the
+node's code, which is `content`, and its ports carry no ids.
+
+`metadata.dataPool` holds a Data Pool's two conflict modes,
+`{insideChart, betweenCharts}`, each `OVERWRITE`, `MERGE_AND` or `MERGE_OR`.
+Only a mode other than `OVERWRITE` is written; an absent member, or an absent
+`dataPool`, means `OVERWRITE`.
+
 `metadata.comments` carries the node's discussion, written only when non-empty.
 Each entry is `{id, text, author, authorName, createdAt, resolved}`. The author's
 avatar is not stored, because `profile_image` may be a full data URL; `canDelete`

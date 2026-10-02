@@ -230,10 +230,10 @@ class TestInvokeHandler:
     def test_worker_env_is_scrubbed_of_host_secrets(self, monkeypatch, tmp_path):
         _install_pkg(monkeypatch, tmp_path)
         monkeypatch.setenv("CURIO_SEARCH_URL", "https://example.test/?api_key=SECRET")
-        monkeypatch.setenv("AICONN_API_KEY", "hostsecret")
+        monkeypatch.setenv("CURIO_DEFAULT_LLM_API_KEY", "hostsecret")
         out = rt.invoke_handler(
             USER, PKG, "env-probe",
-            {"names": ["CURIO_SEARCH_URL", "AICONN_API_KEY", "CURIO_PKG_DATA_DIR"]},
+            {"names": ["CURIO_SEARCH_URL", "CURIO_DEFAULT_LLM_API_KEY", "CURIO_PKG_DATA_DIR"]},
             limits=FAST,
         )
         # The from-scratch env carries ONLY the sandbox's own vars.

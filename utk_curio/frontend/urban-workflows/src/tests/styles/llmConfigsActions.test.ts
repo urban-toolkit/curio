@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 
 /**
- * The AI Settings body does not scroll sideways (#510).
+ * The API Settings body does not scroll sideways (#510).
  *
  * The LLM configurations table is `width: 100%`, but a nowrap Actions cell
  * kept "Edit Duplicate Remove" on one line, so the table was about 451 px wide

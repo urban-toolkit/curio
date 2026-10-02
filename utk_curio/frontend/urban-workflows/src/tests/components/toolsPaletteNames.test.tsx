@@ -5,11 +5,10 @@ import { render, screen } from "@testing-library/react";
  * Every built-in palette tile must have an accessible name.
  *
  * A user test found ten of the twelve tiles unnamed: `DraggableTool` rendered an
- * icon inside a bare `<div id={tutorialID}>`, so there was no `aria-label`, no
- * `title` and no text content — the hover tooltip was the only label, and four
- * tiles had no `id` either because the builtin manifest gave them no
- * `tutorialId`. The node rail is the primary way to author anything, so it being
- * invisible to assistive technology is the whole feature being unreachable.
+ * icon inside a bare `<div>`, so there was no `aria-label`, no `title` and no
+ * text content — the hover tooltip was the only label. The node rail is the
+ * primary way to author anything, so it being invisible to assistive technology
+ * is the whole feature being unreachable.
  *
  * The sibling test file (toolsPalette.test.tsx) stubs the descriptor registry to
  * an empty list to test palette coordination, which is why it never rendered a
@@ -27,6 +26,9 @@ jest.mock("../../components/menus/nodes/datasetPalette", () => ({
 jest.mock("../../components/menus/nodes/agentsPalette", () => ({
     AgentsPaletteDropdown: paletteStub("agents"),
 }));
+jest.mock("../../components/menus/nodes/modelsPalette", () => ({
+    ModelsPaletteDropdown: paletteStub("models"),
+}));
 jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
     PackagesPaletteDropdown: paletteStub("packages"),
     groupPalettePackages: () => [],
@@ -37,18 +39,18 @@ jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
 /** The twelve built-in templates, as packages/curio.builtin@1/manifest.json has them.
  *  Prefixed `mock` so jest's hoisted mock factory may reference it. */
 const mockBuiltin = [
-    { id: "curio.builtin/data-loading", label: "Data Loading", category: "data", tutorialId: "step-loading" },
-    { id: "curio.builtin/data-export", label: "Data Export", category: "data", tutorialId: "step-export" },
-    { id: "curio.builtin/data-transformation", label: "Data Transformation", category: "data", tutorialId: "step-transformation" },
-    { id: "curio.builtin/spatial-join", label: "Spatial Join", category: "data", tutorialId: "step-spatial-join" },
-    { id: "curio.builtin/merge-flow", label: "Merge Flow", category: "flow", tutorialId: "step-merge" },
-    { id: "curio.builtin/data-pool", label: "Data Pool", category: "data", tutorialId: "step-pool" },
-    { id: "curio.builtin/computation-analysis", label: "Python Computation", category: "computation", tutorialId: "step-analysis" },
-    { id: "curio.builtin/data-summary", label: "Data Summary", category: "computation", tutorialId: "step-summary" },
-    { id: "curio.builtin/js-computation", label: "JS Computation", category: "computation", tutorialId: "step-js" },
-    { id: "curio.builtin/autk-grammar", label: "Autark", category: "vis_grammar", tutorialId: "step-utk", badge: "AUTK" },
-    { id: "curio.builtin/vis-vega", label: "Vega-Lite", category: "vis_grammar", tutorialId: "step-vega", badge: "VEGA" },
-    { id: "curio.builtin/vis-simple", label: "Simple View", category: "vis_simple", tutorialId: "step-image" },
+    { id: "curio.builtin/data-loading@1", label: "Data Loading", category: "data" },
+    { id: "curio.builtin/data-export@1", label: "Data Export", category: "data" },
+    { id: "curio.builtin/data-transformation@1", label: "Data Transformation", category: "data" },
+    { id: "curio.builtin/spatial-join@1", label: "Spatial Join", category: "data" },
+    { id: "curio.builtin/merge-flow@1", label: "Merge Flow", category: "flow" },
+    { id: "curio.builtin/data-pool@1", label: "Data Pool", category: "data" },
+    { id: "curio.builtin/computation-analysis@1", label: "Python Computation", category: "computation" },
+    { id: "curio.builtin/data-summary@1", label: "Data Summary", category: "computation" },
+    { id: "curio.builtin/js-computation@1", label: "JS Computation", category: "computation" },
+    { id: "curio.builtin/autk-grammar@1", label: "Autark", category: "vis_grammar", badge: "AUTK" },
+    { id: "curio.builtin/vis-vega@1", label: "Vega-Lite", category: "vis_grammar", badge: "VEGA" },
+    { id: "curio.builtin/vis-simple@1", label: "Simple View", category: "vis_simple" },
 ];
 
 jest.mock("../../registry", () => ({
@@ -99,13 +101,15 @@ describe("built-in palette tiles are named", () => {
         }
     });
 
-    test("every tile carries the manifest's tutorial anchor id", () => {
-        // Four templates had no tutorialId, so those tiles rendered with no id
-        // at all. The in-app tutorial only queries the eight anchors it names,
-        // so adding the rest is additive.
+    test("every tile carries the id named after its template", () => {
+        // The e2e suites find tiles by these ids: curio.builtin/data-loading@1
+        // is #tile-data-loading.
         const { container } = render(<ToolsMenu />);
         for (const template of mockBuiltin) {
-            expect(container.querySelector(`#${template.tutorialId}`)).not.toBeNull();
+            const name = template.id.replace("curio.builtin/", "").replace("@1", "");
+            const tile = container.querySelector(`#tile-${name}`);
+            expect(tile).not.toBeNull();
+            expect(tile!.getAttribute("aria-label")).toBe(template.label);
         }
     });
 });

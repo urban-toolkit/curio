@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate ``docs/examples/data/storage/``, the example storage source.
 
-The folder behind ``datalakes/lake.curio.example-storage@1``: one small
+The folder behind ``discovery/source.curio.example-storage@1``: one small
 instance of each way a storage source can be organized, all synthetic, all
 generated here so the bytes are reproducible and carry no one's data.
 
@@ -17,7 +17,7 @@ generated here so the bytes are reproducible and carry no one's data.
     noise/<sensor>/<YYYYmmdd_HHMMSS>.wav  audio recordings
 
 It then adds the resources the storage examples read to the committed Data
-Catalog, as ``datasets/data.curio.storage-*@1``, through the Data Lake
+Catalog, as ``datasets/data.curio.storage-*@1``, through the Discovery Catalog
 Catalog's own add path, so each example can name its data by a stable id the
 way every other example does. File times are pinned first, so the indexes come
 out the same on every run.
@@ -42,7 +42,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 ROOT = REPO / "docs" / "examples" / "data" / "storage"
-SOURCE = REPO / "datalakes" / "lake.curio.example-storage@1"
+SOURCE = REPO / "discovery" / "source.curio.example-storage@1"
 CATALOG = REPO / "datasets"
 
 #: Every generated file's modification time, and every date the committed
@@ -238,7 +238,7 @@ def write_noise(root: Path) -> None:
     _tone(folder / "sensor_02" / "20240501_060000.wav", seconds=0.5, freq=440, level=0.4)
 
 
-#: The committed datasets: the lake resource each is added from, its id, its
+#: The committed datasets: the discovered resource each is added from, its id, its
 #: name and what it holds.
 DATASETS = [
     ("orthos", "data.curio.storage-orthos", "Example drone orthoimagery",
@@ -285,9 +285,9 @@ def build_datasets() -> list[str]:
     state = tempfile.mkdtemp(prefix="curio-example-storage-")
     os.environ["CURIO_STATE_DIR"] = state
     try:
-        from utk_curio.backend.app.datalakes.application.storage_acquire import StorageAcquire
-        from utk_curio.backend.app.datalakes.domain.manifest import load_source_manifest
-        from utk_curio.backend.app.datalakes.providers import build_storage
+        from utk_curio.backend.app.discovery.application.storage_acquire import StorageAcquire
+        from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
+        from utk_curio.backend.app.discovery.providers import build_storage
         from utk_curio.backend.app.datasets.install.installer import install_imported_path
         from utk_curio.backend.app.datasets.repositories import index as index_repo
 
@@ -302,7 +302,7 @@ def build_datasets() -> list[str]:
             result = install_imported_path(
                 "1", path, filename, fmt,
                 title=kwargs.get("title"),
-                lake_source=kwargs.get("lake_source"),
+                discovery_source=kwargs.get("discovery_source"),
                 description=kwargs.get("description"),
                 collection=kwargs.get("collection"),
             )
@@ -330,7 +330,7 @@ def _commit(built: Path, dataset_id: str, title: str, description: str) -> str:
     raw = json.loads((built / "manifest.json").read_text(encoding="utf-8"))
     fmt = raw["format"]
     rows, features = _counts(built / raw["dataFile"], fmt)
-    lake = dict(raw.get("lakeSource") or {}, fetchedAt=PINNED_ISO)
+    discovered = dict(raw.get("discoverySource") or {}, fetchedAt=PINNED_ISO)
     collection = raw.get("collection")
     if collection:
         collection = dict(collection, indexedAt=PINNED_ISO)
@@ -352,7 +352,7 @@ def _commit(built: Path, dataset_id: str, title: str, description: str) -> str:
         "rowCount": rows if collection is None else len(__import__("pandas").read_parquet(built / raw["dataFile"])),
         "featureCount": None if collection else features,
         "schema": None,
-        "lakeSource": lake,
+        "discoverySource": discovered,
     }
     if collection:
         out["collection"] = collection
@@ -364,10 +364,23 @@ def _commit(built: Path, dataset_id: str, title: str, description: str) -> str:
     return target.name
 
 
+#: Folders under ``ROOT`` another script writes, which a rebuild keeps:
+#: ``mapillary/`` is fetched with a token by ``build_example_mapillary.py``.
+KEPT = ("mapillary",)
+
+
 def main() -> None:
+    kept = Path(tempfile.mkdtemp(prefix="curio-example-kept-"))
+    for name in KEPT:
+        if (ROOT / name).exists():
+            shutil.move(str(ROOT / name), str(kept / name))
     if ROOT.exists():
         shutil.rmtree(ROOT)
     ROOT.mkdir(parents=True)
+    for name in KEPT:
+        if (kept / name).exists():
+            shutil.move(str(kept / name), str(ROOT / name))
+    shutil.rmtree(kept, ignore_errors=True)
     write_air_quality(ROOT)
     write_city(ROOT)
     write_orthos(ROOT)

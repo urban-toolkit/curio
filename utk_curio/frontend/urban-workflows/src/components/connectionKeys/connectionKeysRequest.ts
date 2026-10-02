@@ -4,7 +4,7 @@ import type { AgentRemedy } from "../../services/agents";
  * dev/116: "Add key for <host>" is offered from three cards (the Solve strip,
  * the per-node Solve row, the review card's attempt trail) and the settings
  * modal is mounted elsewhere. A window event decouples them: a card REQUESTS
- * an AI Settings section; whichever host component is mounted
+ * an API Settings section; whichever host component is mounted
  * (`ConnectionKeysModalHost`) opens the modal on it.
  */
 export interface KeyFocus {
@@ -25,10 +25,16 @@ export interface LlmConfigsFocus {
   configId?: string;
 }
 
-/** The AI Settings section a card asks for. */
-export type ConnectionKeysFocus = KeyFocus | AgentModelsFocus | LlmConfigsFocus;
+/** The Discovery Catalog section, scrolled to one key slot's row. */
+export interface SourceKeyFocus {
+  section: "source-key";
+  slot?: string;
+}
 
-const SECTIONS = new Set(["connection-keys", "agent-models", "llm-configs"]);
+/** The API Settings section a card asks for. */
+export type ConnectionKeysFocus = KeyFocus | AgentModelsFocus | LlmConfigsFocus | SourceKeyFocus;
+
+const SECTIONS = new Set(["connection-keys", "agent-models", "llm-configs", "source-key"]);
 
 export const CONNECTION_KEYS_EVENT = "curio:connection-keys";
 
@@ -41,7 +47,12 @@ export function requestConnectionKeys(focus: Omit<KeyFocus, "section">): void {
   dispatch({ section: "connection-keys", ...focus });
 }
 
-/** Open AI Settings on the Agent models row of *agentId*. */
+/** Open API Settings on the key a Discovery Catalog source sends. */
+export function requestSourceKey(slot: string): void {
+  dispatch({ section: "source-key", slot });
+}
+
+/** Open API Settings on the Agent models row of *agentId*. */
 export function requestAgentModel(agentId?: string): void {
   dispatch({ section: "agent-models", agentId });
 }

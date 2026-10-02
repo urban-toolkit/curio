@@ -152,7 +152,7 @@ export const AgentChatPanel: React.FC<{
    * could not fetch — resolves with the imported dataset's id. */
   onImportDataset?: (
     file: File,
-    lakeSource?: import("../../../services/datasetCatalog/datasetCatalogTypes").DatasetLakeSourceInput,
+    discoverySource?: import("../../../services/datasetCatalog/datasetCatalogTypes").DatasetDiscoverySourceInput,
   ) => Promise<string | null>;
   /** dev/72: live-existence check for a delegation home (stale → no link). */
   delegateExists?: (attachmentId: string) => boolean;
@@ -308,7 +308,7 @@ export const AgentChatPanel: React.FC<{
     // would restart the fallback timer against a panel nobody can see.
     if (!presented) return;
     const onKey = (e: KeyboardEvent) => {
-      // An open modal owns Escape. AI Settings and agent import are raised
+      // An open modal owns Escape. API Settings and agent import are raised
       // over this panel, and this listener is on window in the bubble phase,
       // so the modal cannot stop it firing. It has to stand down itself, or
       // dismissing the dialog closed the chat behind it as well.

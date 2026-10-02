@@ -79,17 +79,23 @@ import {
     hasDatasetDrag,
     readDatasetDragPayload,
 } from "../services/datasetCatalog";
+import {
+    applyModelToNodeData,
+    canApplyModelToNode,
+    hasModelDrag,
+    readModelDragPayload,
+} from "../services/modelCatalog";
 import "./styles.css";
 import { useStarterContext } from "../providers/StarterProvider";
 import { useCode } from "../hook/useCode";
 import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
 import { SaveOutputToggle } from "./nodes/SaveOutputToggle";
-import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
+import { resolveSaveOutputDataset, showsSaveOutputToggle } from "../utils/saveOutputDataset";
 import { nodeRunStatus, nodeRunError } from "../utils/nodeRunStatus";
 import { RUN_NODE_SHORTCUT_LABEL } from "./canvasKeyBindings";
 import { hasNodeDescription } from "../utils/nodeDescription";
-import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
+import { droppedDatasetSource, isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { DatasetMetaHeader } from "./datasets/DatasetMetaHeader";
 import { useDatasetPalette } from "../providers/DatasetPaletteContext";
 
@@ -168,8 +174,13 @@ export const NodeContainer = ({
     // an OUTPUT chip linking to its palette row. Derived from the catalog (not
     // stamped) so it tracks install/uninstall. Distinct from the save-lock above —
     // producer nodes keep their save toggle.
-    const { installedComputedByProducer: producerByNode } = useDatasetPalette();
+    const { installedComputedByProducer: producerByNode, datasetsById } = useDatasetPalette();
     const producerDataset = producerByNode.get(nodeId);
+    // A node a dataset was dropped onto reads it too, so it gets a DATASET
+    // pill as well (#442), without becoming a palette node: saving stays on.
+    const consumerSource = datasetPaletteNode
+        ? (data.datasetSource ?? null)
+        : droppedDatasetSource(data, (id) => datasetsById?.get(id));
     // Whether this node is selected on the canvas — drives a more vibrant dataset
     // chip. Read reactively from the React Flow store so it updates on selection.
     const isNodeSelected = useStore((s) => !!s.nodeInternals.get(nodeId)?.selected);
@@ -500,12 +511,47 @@ export const NodeContainer = ({
     const canApplyRef = useRef(false);
     canApplyRef.current = canApplyDatasetToNode(data);
 
+    // --- Model drag-and-drop, through the same capture-phase listeners ---
+    // A model goes only onto a node whose code calls `curio_model("...")`. Every
+    // other node still takes the drop, so it can say why nothing changed rather
+    // than letting the drop fall through to the canvas, which would make a new
+    // node that runs the model.
+    const modelDropHandlerRef = useRef<(e: DragEvent) => void>(() => {});
+    modelDropHandlerRef.current = (e: DragEvent) => {
+        if (!e.dataTransfer) return;
+        const model = readModelDragPayload(e.dataTransfer);
+        if (!model) return;
+        e.preventDefault();
+        e.stopPropagation();
+        // The editor's live text, which can be ahead of `data.code`.
+        const live = { ...data, code: code ?? data.code ?? data.defaultCode };
+        if (!canApplyModelToNode(live)) {
+            showToast("This node does not run a model", "warning");
+            return;
+        }
+        const applied = applyModelToNodeData(live, model);
+        updateDataNode(nodeId, applied);
+        updateDefaultCode(nodeId, applied.code);
+        sendCodeToWidgets?.(applied.code);
+        markDirty();
+        showToast(`Model set to ${model.name}`, "success");
+    };
+
     useEffect(() => {
         const el = resizableRef.current;
         if (!el) return;
 
         const handleDragOver = (e: DragEvent) => {
-            if (!e.dataTransfer || !hasDatasetDrag(e.dataTransfer)) return;
+            if (!e.dataTransfer) return;
+            // Accepted on every node, eligible or not: a refused dragover
+            // cancels the drop, and the drop is what explains the refusal.
+            if (hasModelDrag(e.dataTransfer)) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = "copy";
+                return;
+            }
+            if (!hasDatasetDrag(e.dataTransfer)) return;
             if (!canApplyRef.current) return;
             e.preventDefault();
             e.stopPropagation();
@@ -513,6 +559,10 @@ export const NodeContainer = ({
         };
 
         const handleDrop = (e: DragEvent) => {
+            if (e.dataTransfer && hasModelDrag(e.dataTransfer)) {
+                modelDropHandlerRef.current(e);
+                return;
+            }
             datasetDropHandlerRef.current(e);
         };
 
@@ -528,6 +578,12 @@ export const NodeContainer = ({
     // Keep React synthetic handlers as pass-throughs so the browser still
     // sees preventDefault() called (belt-and-suspenders).
     const onDatasetDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+        if (hasModelDrag(event.dataTransfer)) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.dataTransfer.dropEffect = "copy";
+            return;
+        }
         if (!hasDatasetDrag(event.dataTransfer)) return;
         if (!canApplyDatasetToNode(data)) return;
         event.preventDefault();
@@ -538,9 +594,9 @@ export const NodeContainer = ({
     const onDatasetDrop = (event: React.DragEvent<HTMLDivElement>) => {
         // Primary handling is done by the capture-phase native listener above.
         // This synthetic handler is kept only to prevent browser default actions
-        // (e.g. Monaco opening dropped file as text) for dataset drags that the
-        // native listener already handled.
-        if (!hasDatasetDrag(event.dataTransfer)) return;
+        // (e.g. Monaco opening dropped file as text) for dataset and model drags
+        // that the native listener already handled.
+        if (!hasDatasetDrag(event.dataTransfer) && !hasModelDrag(event.dataTransfer)) return;
         event.preventDefault();
         event.stopPropagation();
     };
@@ -722,9 +778,9 @@ export const NodeContainer = ({
 
                         {/* Dataset linkage pills — independent of the PACKAGE pill
                             and of each other; any combination may render. */}
-                        {datasetPaletteNode && data.datasetSource ? (
+                        {consumerSource ? (
                             <DatasetMetaHeader
-                                source={data.datasetSource}
+                                source={consumerSource}
                                 variant="consumer"
                                 selected={isNodeSelected}
                                 suggestionActive={suggestionActive}
@@ -848,7 +904,7 @@ export const NodeContainer = ({
                                     )}
                                 </Col> : null
                             }
-                            {!disablePlay && !datasetPaletteNode ? (
+                            {showsSaveOutputToggle(data, !!disablePlay) ? (
                                 <Col md="auto" style={{ padding: 0, display: "flex", alignItems: "center" }}>
                                     <SaveOutputToggle
                                         variant="node"

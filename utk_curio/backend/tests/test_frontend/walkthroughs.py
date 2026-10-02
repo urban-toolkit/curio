@@ -1632,7 +1632,7 @@ def street_vision_example_loads_its_boundaries(ctx: Ctx) -> None:
     assert "Saved to file" in text, (
         f"the boundaries loader should have produced an artifact, got {text!r}"
     )
-    # At fit-view this eight-node canvas makes the loader a thumbnail; the
+    # At fit-view this twelve-node canvas makes the loader a thumbnail; the
     # output line is the claim, so frame the node before pinning it.
     frame_node(page, node_id, zoom=1.1)
     ctx.focus(node, hold=1200)
@@ -2113,9 +2113,8 @@ def package_pill_only_on_package_nodes(ctx: Ctx) -> None:
 )
 def empty_nodes_say_why(ctx: Ctx) -> None:
     ctx.say("A Simple View with nothing wired in", "This used to be a blank box.")
-    # vis-simple's tutorialId is ``step-image`` -- the tile predates the
-    # node being renamed Simple View.
-    node = _add_builtin_node(ctx, "#step-image", (260, 200))
+    # Simple View's template id is ``vis-simple``.
+    node = _add_builtin_node(ctx, "#tile-vis-simple", (260, 200))
     node.scroll_into_view_if_needed()
     ctx.focus(node, hold=1000)
 
@@ -2156,7 +2155,7 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
     page = ctx.page
 
     ctx.say("Spatial Join", "What goes in each handle was not stated anywhere.")
-    node = _add_builtin_node(ctx, "#step-spatial-join", (300, 220))
+    node = _add_builtin_node(ctx, "#tile-spatial-join", (300, 220))
     node.scroll_into_view_if_needed()
     # The node gained a body and a header band in #262 (it was icon-only), so
     # the info button is the header's; hovering is harmless either way.
@@ -2182,8 +2181,12 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
          "data_export whatever the input was, so three exports from one "
          "dataflow collided under one name. The payload already declares its "
          "shape and the input already has a name, so the node decides both and "
-         "shows the result.",
-    tests=["src/tests/utils/dataExportTarget.test.ts"],
+         "shows the result. The node is that one button: no code, widgets or "
+         "provenance tabs, and no play button.",
+    tests=[
+        "src/tests/utils/dataExportTarget.test.ts",
+        "src/tests/adapters/node/behaviors.test.tsx",
+    ],
     # The one node carrying a Download button, so the clip cannot land on one
     # of the example's six.
     clip_selector='.react-flow__node:has(button[aria-label^="Download"])',
@@ -2194,24 +2197,22 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
     example="dataflows/DefaultWorkflow.json",
 )
 def data_export_is_one_button(ctx: Ctx) -> None:
-    ctx.say("Data Export", "An Export format dropdown, and a run, for one file.")
-    node = _add_builtin_node(ctx, "#step-export", (260, 200))
+    ctx.say("Data Export", "One button, and nothing else on the node.")
+    node = _add_builtin_node(ctx, "#tile-data-export", (260, 200))
     node.scroll_into_view_if_needed()
     ctx.focus(node, hold=1000)
 
-    # The control lives in the widgets pane, and the kind declares
-    # ``editor: "code"``, so the code tab is the one selected on arrival. The
-    # tabs are icon-only, hence the event key rather than a name.
-    ctx.click(node.locator('[data-rr-ui-event-key="widgets"]'), hold=400)
+    # The whole node is the button (#226): no tabs, no play button.
+    expect(node.locator('[data-rr-ui-event-key]')).to_have_count(0)
+    expect(node.locator("svg.fa-circle-play")).to_have_count(0)
 
     # Unconnected: one button, disabled, saying why rather than offering a
     # format for data that is not there.
     expect(node.get_by_role("button", name=re.compile("^Download"))).to_be_visible(timeout=20000)
     expect(node.get_by_text("Connect a dataset to export it")).to_be_visible()
 
-    # Park the pointer off the node: the tab click leaves a hover tooltip over
-    # the footer, and a tooltip that may or may not have faded is 3% of a 3%
-    # budget.
+    # Park the pointer off the node, so no hover tooltip sits in the frame:
+    # one that may or may not have faded is 3% of a 3% budget.
     ctx.page.mouse.move(5, 5)
     ctx.beat(400)
     ctx.capture("data-export-unconnected")
@@ -2584,7 +2585,7 @@ def a_loaded_dataflow_is_not_dirty(ctx: Ctx) -> None:
     # of an existing node: the drag is what would be flaky here, and adding a node
     # is just as much a real edit for the purpose of the claim.
     before = len(canvas_nodes(page))
-    drag_to_canvas(page, page.locator("#step-analysis"), at=(150, 150))
+    drag_to_canvas(page, page.locator("#tile-computation-analysis"), at=(150, 150))
     assert len(canvas_nodes(page)) == before + 1, "the drop created no node"
 
     page.wait_for_function(
@@ -2743,7 +2744,7 @@ def column_filter_reads_a_dataframe(ctx: Ctx) -> None:
     ctx.say("A node that outputs a frame", "Three rows, one numeric column.")
     # A node is 525 px wide at zoom 1: these two drops leave room for the wire
     # between them and keep the filter inside the 1280 px viewport.
-    loading = drag_to_canvas(page, page.locator("#step-loading"), at=(170, 200))
+    loading = drag_to_canvas(page, page.locator("#tile-data-loading"), at=(170, 200))
     set_node_code(page, loading, COLUMN_FILTER_CODE)
 
     ctx.say("And the Column Filter beside it")

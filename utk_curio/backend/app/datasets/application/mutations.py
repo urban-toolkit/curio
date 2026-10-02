@@ -11,7 +11,7 @@ from typing import Any
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
-from utk_curio.backend.app.datasets.domain.catalog_item import item_from_manifest, loader_snippet
+from utk_curio.backend.app.datasets.domain.catalog_item import autark_layer_type, item_from_manifest, loader_snippet
 from utk_curio.backend.app.datasets.application.paths import PathResolver
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import (
     catalog_id_from_title,
@@ -36,18 +36,18 @@ from utk_curio.backend.app.datasets.infrastructure.storage import DATASET_ID_RE
 logger = logging.getLogger(__name__)
 
 
-#: What a client may say about where a file it fetched itself came from: a Data
-#: Lake resource, or the link it was downloaded from.
-_CLIENT_LAKE_KEYS = ("lakeId", "lakeName", "resourceId", "resourceUrl")
+#: What a client may say about where a file it fetched itself came from: a Discovery
+#: Catalog resource, or the link it was downloaded from.
+_CLIENT_DISCOVERY_KEYS = ("sourceId", "sourceName", "resourceId", "resourceUrl")
 
 
 def remote_provenance(raw: object, file_bytes: bytes) -> dict[str, Any] | None:
-    """The ``lakeSource`` block for a file a person downloaded themselves, or
+    """The ``discoverySource`` block for a file a person downloaded themselves, or
     None when the client stated no remote origin.
 
     The client states where the file came from; the server records when it
     arrived and what its bytes are, and marks it ``manual`` so it reads apart
-    from a file the Data Lake fetched. A link must be http(s): it is rendered
+    from a file the Discovery Catalog fetched. A link must be http(s): it is rendered
     as a link on the dataset's page.
     """
     import hashlib
@@ -57,12 +57,12 @@ def remote_provenance(raw: object, file_bytes: bytes) -> dict[str, Any] | None:
         return None
     block = {
         key: str(raw[key]).strip()[:512]
-        for key in _CLIENT_LAKE_KEYS
+        for key in _CLIENT_DISCOVERY_KEYS
         if isinstance(raw.get(key), str) and raw[key].strip()
     }
     if not block.get("resourceUrl", "").startswith(("https://", "http://")):
         block.pop("resourceUrl", None)
-    if not (block.get("resourceUrl") or (block.get("lakeId") and block.get("resourceId"))):
+    if not (block.get("resourceUrl") or (block.get("sourceId") and block.get("resourceId"))):
         return None
     return {
         **block,
@@ -102,9 +102,9 @@ class CatalogMutations:
         dataflow_id: str | None = None,
         title: str | None = None,
         source_updated_at: str | None = None,
-        lake_source: dict[str, Any] | None = None,
+        discovery_source: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Register an uploaded file. ``lake_source`` is where a file the person
+        """Register an uploaded file. ``discovery_source`` is where a file the person
         downloaded themselves came from (``remote_provenance``): with it, a file
         the account already holds, by its resource or by its bytes, is not
         registered twice."""
@@ -113,7 +113,7 @@ class CatalogMutations:
             raise DatasetCatalogError("No file selected")
         suffix = Path(filename).suffix.lower()
         file_bytes = file.read()
-        provenance = remote_provenance(lake_source, file_bytes)
+        provenance = remote_provenance(discovery_source, file_bytes)
         if provenance is not None:
             held = self._held_remote_copy(provenance)
             if held is not None:
@@ -126,7 +126,7 @@ class CatalogMutations:
         if suffix in OSM_PBF_SUFFIXES:
             return self._import_osm_pbf_layers(
                 file_bytes, filename, title=title, source_updated_at=source_updated_at,
-                lake_source=provenance,
+                discovery_source=provenance,
             )
 
         # A GeoPackage is multi-layer for the same reason a PBF is, so it takes
@@ -134,7 +134,7 @@ class CatalogMutations:
         if suffix in GPKG_SUFFIXES:
             return self._import_gpkg_layers(
                 file_bytes, filename, title=title, source_updated_at=source_updated_at,
-                lake_source=provenance,
+                discovery_source=provenance,
             )
 
         if suffix not in SUPPORTED_SUFFIXES:
@@ -145,7 +145,7 @@ class CatalogMutations:
             SUPPORTED_SUFFIXES[suffix],
             title=title,
             source_updated_at=source_updated_at,
-            lake_source=provenance,
+            discovery_source=provenance,
         )
 
     def _held_remote_copy(self, provenance: dict[str, Any]) -> dict[str, Any] | None:
@@ -154,8 +154,8 @@ class CatalogMutations:
         )
 
         store = UserDatasetRepository(self.user)
-        if provenance.get("lakeId") and provenance.get("resourceId"):
-            held = store.find_by_lake_resource(provenance["lakeId"], provenance["resourceId"])
+        if provenance.get("sourceId") and provenance.get("resourceId"):
+            held = store.find_by_discovery_resource(provenance["sourceId"], provenance["resourceId"])
             if held is not None:
                 return held
         return store.find_by_content(provenance["contentSha256"])
@@ -171,7 +171,7 @@ class CatalogMutations:
         group_id: str | None = None,
         layer_name: str | None = None,
         source_updated_at: str | None = None,
-        lake_source: dict[str, Any] | None = None,
+        discovery_source: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Write imported bytes to the account-level user store and build the
         catalog item. Register-only: never attaches the dataset to a dataflow —
@@ -209,7 +209,7 @@ class CatalogMutations:
                 layer_name=layer_name,
                 source_updated_at=source_updated_at,
                 source_encoding=source_encoding,
-                lake_source=lake_source,
+                discovery_source=discovery_source,
             )
         except InstallerError as exc:
             raise DatasetCatalogError(str(exc)) from exc
@@ -223,7 +223,7 @@ class CatalogMutations:
         *,
         title: str | None = None,
         source_updated_at: str | None = None,
-        lake_source: dict[str, Any] | None = None,
+        discovery_source: dict[str, Any] | None = None,
         description: str | None = None,
         row_count: int | None = None,
         feature_count: int | None = None,
@@ -265,7 +265,7 @@ class CatalogMutations:
                 title=title,
                 source_updated_at=source_updated_at,
                 source_encoding=source_encoding,
-                lake_source=lake_source,
+                discovery_source=discovery_source,
                 description=description,
                 collection=collection,
             )
@@ -307,7 +307,8 @@ class CatalogMutations:
         item["path"] = data_path.as_posix()
         # Keep loaderSnippet in sync with the resolved path.
         item["loaderSnippet"] = loader_snippet(
-            item["format"], data_path.as_posix(), dataset_id=item.get("id")
+            item["format"], data_path.as_posix(), dataset_id=item.get("id"),
+            layer_type=autark_layer_type(item),
         )
         item["sizeBytes"] = data_path.stat().st_size
         if row_count is not None:
@@ -324,7 +325,7 @@ class CatalogMutations:
         *,
         title: str | None = None,
         source_updated_at: str | None = None,
-        lake_source: dict[str, Any] | None = None,
+        discovery_source: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Import an OSM PBF as one GeoParquet dataset per non-empty layer."""
         import uuid
@@ -363,7 +364,7 @@ class CatalogMutations:
                     group_id=group_id,
                     layer_name=layer.name,
                     source_updated_at=source_updated_at,
-                    lake_source=lake_source,
+                    discovery_source=discovery_source,
                 )
             )
 
@@ -381,7 +382,7 @@ class CatalogMutations:
         *,
         title: str | None = None,
         source_updated_at: str | None = None,
-        lake_source: dict[str, Any] | None = None,
+        discovery_source: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Import a GeoPackage as one parquet dataset per layer."""
         import uuid
@@ -416,7 +417,7 @@ class CatalogMutations:
                 title=prefix,
                 feature_count_override=only.feature_count,
                 source_updated_at=source_updated_at,
-                lake_source=lake_source,
+                discovery_source=discovery_source,
             )
 
         # One unique group id per *import*, never derived from content, so the
@@ -435,7 +436,7 @@ class CatalogMutations:
                     group_id=group_id,
                     layer_name=layer.name,
                     source_updated_at=source_updated_at,
-                    lake_source=lake_source,
+                    discovery_source=discovery_source,
                 )
             )
 
@@ -453,7 +454,7 @@ class CatalogMutations:
         item = deepcopy(self._owner.get_dataset(dataset_id, dataflow_id=dataflow_id, live_outputs=live_outputs))
         if item.get("format") == "collection":
             raise DatasetCatalogError(
-                "A collection cannot be published: its files are in its Data Lake source, "
+                "A collection cannot be published: its files are in its Discovery Catalog source, "
                 "not in the Data Catalog.",
                 400,
             )
@@ -1338,7 +1339,7 @@ class CatalogMutations:
         if deleted_any:
             # A collection's thumbnails, cached bucket files and derived
             # frames; never the files in its source.
-            from utk_curio.backend.app.datalakes.infrastructure.media_dirs import forget_media
+            from utk_curio.backend.app.discovery.infrastructure.media_dirs import forget_media
 
             try:
                 forget_media(user_key, dataset_id)

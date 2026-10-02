@@ -19,6 +19,7 @@ import {
   nodeLinkedDatasetIds,
   isNodeLinkedToAnyDataset,
   DATASET_DRAG_MIME,
+  DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
   type DatasetPaletteGroup,
 } from "../../services/datasetCatalog";
@@ -437,6 +438,88 @@ test("dragging an OSM group builds a node that loads all layers via real member 
   expect(options.code).toContain("return layers");
   // The linkage marker still points at the group for palette↔canvas focus.
   expect(options.datasetSource.datasetId).toBe("osm.x1");
+});
+
+test("dragging a Discovery OpenStreetMap group reads its GeoJSON layers as GeoJSON", () => {
+  // A Discovery download lands each Autark layer as a GeoJSON file in one osm.x group.
+  const members = [
+    makeDataset({ id: "golf.buildings", title: "OpenStreetMap, Golf (buildings)", origin: "imported", format: "geojson", path: "/store/golf.buildings@1/data/osm_buildings.geojson", layerName: "buildings", groupId: "osm.x2" }),
+    makeDataset({ id: "golf.roads", title: "OpenStreetMap, Golf (roads)", origin: "imported", format: "geojson", path: "/store/golf.roads@1/data/osm_roads.geojson", layerName: "roads", groupId: "osm.x2" }),
+  ];
+  const [group] = groupDatasetsForPalette(members) as [DatasetPaletteGroup];
+  const options = buildDatasetLoaderNodeOptions(createOsmGroupDragPayload(group), { x: 0, y: 0 });
+
+  expect(options.code).toContain('layers["buildings"] = gpd.read_file(curio_dataset_path("golf.buildings"))');
+  expect(options.code).toContain('layers["roads"] = gpd.read_file(curio_dataset_path("golf.roads"))');
+  expect(options.code).not.toContain("read_parquet");
+  expect(options.code).toContain("return layers");
+});
+
+describe("a layer group's drag payload takes its kind from the group id (#440)", () => {
+  function groupOf(groupId: string): DatasetPaletteGroup {
+    const members = [
+      makeDataset({ id: "imported.parks_parks", title: "parks (parks)", origin: "imported", format: "parquet", path: "/store/imported.parks_parks@1/data/parks.parquet", layerName: "parks", groupId }),
+      makeDataset({ id: "imported.parks_trails", title: "parks (trails)", origin: "imported", format: "parquet", path: "/store/imported.parks_trails@1/data/trails.parquet", layerName: "trails", groupId }),
+    ];
+    const [group] = groupDatasetsForPalette(members) as [DatasetPaletteGroup];
+    return group;
+  }
+
+  test("a GeoPackage group drops as a GeoPackage dataset, not an OSM PBF", () => {
+    const payload = createOsmGroupDragPayload(groupOf("gpkg.x1"));
+    expect(payload.format).toBe("gpkg");
+    expect(payload.uri).toBe("curio://gpkg/gpkg.x1");
+
+    // The DATASET pill's tooltip reads the format from the node's datasetSource.
+    const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
+    expect(options.datasetSource.format).toBe("gpkg");
+    expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("GeoPackage");
+    // The layers still load through their own ids.
+    expect(options.datasetRefs).toEqual(["imported.parks_parks", "imported.parks_trails"]);
+    expect(options.code).toContain('layers["parks"] = _curio_read_layer(curio_dataset_path("imported.parks_parks"))');
+    expect(options.code).toContain('layers["trails"] = _curio_read_layer(curio_dataset_path("imported.parks_trails"))');
+  });
+
+  test("an OSM group still drops as an OSM PBF dataset", () => {
+    const payload = createOsmGroupDragPayload(groupOf("osm.x1"));
+    expect(payload.format).toBe("osm");
+    expect(payload.uri).toBe("curio://osm/osm.x1");
+    const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
+    expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("OSM PBF");
+  });
+});
+
+describe("a Discovery download's group drops as its layers' format (#586)", () => {
+  // The layers of one OpenStreetMap download: GeoJSON, each carrying where it
+  // came from, under an osm. group id as a .pbf import's are.
+  const discoverySource = { sourceId: "source.openstreetmap.autark@1", sourceName: "OpenStreetMap" };
+  const downloaded = (): DatasetPaletteGroup => {
+    const members = [
+      makeDataset({ id: "imported.xpoints", title: "Points of interest, Loop (points)", origin: "imported", format: "geojson", path: "/store/imported.xpoints@1/data/osm_points.geojson", layerName: "points", groupId: "osm.x1", discoverySource }),
+      makeDataset({ id: "imported.xpolygons", title: "Points of interest, Loop (polygons)", origin: "imported", format: "geojson", path: "/store/imported.xpolygons@1/data/osm_polygons.geojson", layerName: "polygons", groupId: "osm.x1", discoverySource }),
+    ];
+    const [group] = groupDatasetsForPalette(members) as [DatasetPaletteGroup];
+    return group;
+  };
+
+  test("its payload says GeoJSON and keeps the group's id and uri", () => {
+    const payload = createOsmGroupDragPayload(downloaded());
+    expect(payload.format).toBe("geojson");
+    expect(payload.datasetId).toBe("osm.x1");
+    expect(payload.uri).toBe("curio://osm/osm.x1");
+
+    // The DATASET pill reads the format from the node's datasetSource.
+    const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
+    expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("GeoJSON");
+    // The layers still load through their own ids, read as the GeoJSON they are (#579).
+    expect(options.datasetRefs).toEqual(["imported.xpoints", "imported.xpolygons"]);
+    expect(options.code).toContain('layers["points"] = gpd.read_file(curio_dataset_path("imported.xpoints"))');
+
+    // Only when every layer was downloaded: otherwise it is an OSM PBF import.
+    const mixed = downloaded();
+    mixed.members[1] = { ...mixed.members[1], discoverySource: null };
+    expect(createOsmGroupDragPayload(mixed).format).toBe("osm");
+  });
 });
 
 test("dropping an OSM group onto a node applies all layer refs, not the group id", () => {

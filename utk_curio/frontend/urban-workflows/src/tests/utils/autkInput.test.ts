@@ -121,6 +121,16 @@ describe("autkSourcesFrom", () => {
       .toEqual(["census"]);
   });
 
+  test("several layers keep their own names: `upstream` names none of them (#483)", () => {
+    // USAGE: "Several layers keep their own names". The alias used to point
+    // `upstream` at layer 0 as well, which no doc said.
+    const layers = read(
+      frame({ name: "parks", fromBundle: true, index: 0 }),
+      frame({ fromBundle: true, index: 1 }),
+    );
+    expect(autkSourcesFrom(layers, MAP_ON("upstream")).tables).toEqual(["parks", "upstream_1"]);
+  });
+
   test("a bundle's unnamed layers are named by position, and keep their layer type", () => {
     const prepared = autkSourcesFrom(
       read(
@@ -133,6 +143,38 @@ describe("autkSourcesFrom", () => {
       ["table_osm_roads", "roads"],
       ["upstream_1", undefined],
     ]);
+  });
+
+  test("a buildings table gets heights autk-map can read, one feature per row", () => {
+    // A GeoDataFrame gives every row every column: a building tagged only with
+    // building:levels arrives with height null, and autk-map would cull it.
+    const rows = [
+      { height: 30, "building:levels": null },
+      { height: null, "building:levels": 8 },
+      { height: null, "building:levels": null },
+    ];
+    const payload = {
+      type: "FeatureCollection",
+      features: rows.map((properties) => ({ type: "Feature", geometry: point(1, 1), properties })),
+    };
+    const prepared = autkSourcesFrom(read(frame({ layerType: "buildings", payload })), MAP_ON("upstream"));
+    expect(prepared.sources.map((s) => [s.outputTableName, s.layerType])).toEqual([["upstream", "buildings"]]);
+    const features = prepared.sources[0].geojsonObject.features as any[];
+    expect(features.map((f) => f.properties.height)).toEqual([30, 8 * 3.4, 6]);
+    // The first already reads right, so it is the same feature; the input is not changed.
+    expect(features[0]).toBe(payload.features[0]);
+    expect(payload.features.map((f) => f.properties.height)).toEqual([30, null, null]);
+  });
+
+  test("any other table is passed on as it came", () => {
+    const payload = {
+      type: "FeatureCollection",
+      features: [{ type: "Feature", geometry: point(1, 1), properties: { height: null, "building:levels": 8 } }],
+    };
+    for (const layerType of [undefined, "polygons"]) {
+      const prepared = autkSourcesFrom(read(frame({ layerType, payload })), MAP_ON("upstream"));
+      expect(prepared.sources[0].geojsonObject).toBe(payload);
+    }
   });
 
   test("a DataFrame with one geometry column becomes a FeatureCollection, every row in place", () => {

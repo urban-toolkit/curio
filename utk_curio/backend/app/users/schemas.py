@@ -57,6 +57,8 @@ class UserOut:
     # Reported as a boolean only; the token itself never leaves the server.
     has_huggingface_token: bool = False
     has_socrata_app_token: bool = False
+    has_google_maps_api_key: bool = False
+    has_mapillary_access_token: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -69,6 +71,8 @@ class UserOut:
             "is_guest": self.is_guest,
             "has_huggingface_token": self.has_huggingface_token,
             "has_socrata_app_token": self.has_socrata_app_token,
+            "has_google_maps_api_key": self.has_google_maps_api_key,
+            "has_mapillary_access_token": self.has_mapillary_access_token,
         }
 
 
@@ -88,3 +92,5 @@ class UserPatchIn:
     type: Optional[str] = None
     huggingface_token: Optional[str] = None
     socrata_app_token: Optional[str] = None
+    google_maps_api_key: Optional[str] = None
+    mapillary_access_token: Optional[str] = None

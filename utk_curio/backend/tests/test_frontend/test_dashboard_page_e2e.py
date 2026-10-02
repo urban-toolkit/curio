@@ -38,11 +38,13 @@ import pytest
 from playwright.sync_api import expect
 
 from .utils import (
+    VIEWPORT_SETTLE_WAIT_MS,
     activate_header_icon,
     allow_guest_login_env,
     api_json,
     assert_vega_canvas_rendered,
     dismiss_toasts,
+    empty_pane_point,
     node_locator,
     play_node,
     require_owner_view,
@@ -50,7 +52,10 @@ from .utils import (
     require_user_auth,
     stub_db_login,
     stub_login_and_enter_workflow,
+    viewport_hints,
+    viewport_will_change,
     wait_for_node_done,
+    watch_viewport_hint,
 )
 
 if TYPE_CHECKING:
@@ -457,6 +462,43 @@ def test_editing_the_layout_moves_tiles_and_nothing_else(
         ), f"the dashboard moved {node_id} on the canvas"
     # And the recorded outputs are the canvas's business, not this page's.
     assert after["outputs"] == before["outputs"]
+
+
+def test_the_dashboard_is_a_layer_only_while_it_is_panned(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    """The canvas's rule on this page too (#533): no ``will-change`` at rest.
+
+    Chrome keeps a ``will-change: transform`` layer painted at the zoom it was
+    rasterized at, so a page fitted after its first paint could show its tiles
+    as a scaled bitmap. The page takes the hint while a drag pans it, the way
+    the canvas does (``useViewportMotionHint``).
+    """
+    require_project_page()
+    require_user_auth()
+    session = _pinned_and_saved(page, app_frontend, current_server, prefix="dash_layer")
+
+    _open_dashboard(page, app_frontend.base_url, session["project"]["id"])
+    _chart_drew(page)
+    page.wait_for_timeout(VIEWPORT_SETTLE_WAIT_MS)
+    at_rest = viewport_will_change(page)
+    assert at_rest == "auto", f"the fitted dashboard's viewport has will-change {at_rest!r}, not 'auto'"
+
+    # Panning is for the owner editing the layout; a locked page does not move.
+    page.get_by_test_id("edit-layout-btn").click()
+    # Beside the tile, on the bare pane: a press on the tile would move it.
+    x, y = empty_pane_point(page, CHART)
+    watch_viewport_hint(page)
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x + 60, y + 30, steps=8)
+    during = viewport_hints(page)
+    page.mouse.up()
+    page.wait_for_timeout(VIEWPORT_SETTLE_WAIT_MS)
+
+    assert "transform" in during, f"the viewport took no will-change hint while it was panned (saw {during!r})"
+    settled = viewport_will_change(page)
+    assert settled == "auto", f"once the pan settled the viewport's will-change is {settled!r}, not 'auto'"
 
 
 # ---------------------------------------------------------------------------

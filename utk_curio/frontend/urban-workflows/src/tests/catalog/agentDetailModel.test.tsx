@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 /**
  * An agent's details name the configuration it runs on, read-only: the choice
- * is made in AI Settings, which the link opens on that agent's row.
+ * is made in API Settings, which the link opens on that agent's row.
  */
 
 jest.mock("../../services/agents/agentsApi", () => ({
@@ -40,7 +40,7 @@ const listingWith = (editable: boolean) => ({
   }],
 });
 
-it("names what the agent runs on and opens AI Settings on its row", async () => {
+it("names what the agent runs on and opens API Settings on its row", async () => {
   mockListing = listingWith(true);
   const onClose = jest.fn();
   const asked: ConnectionKeysFocus[] = [];
@@ -48,7 +48,7 @@ it("names what the agent runs on and opens AI Settings on its row", async () => 
   window.addEventListener(CONNECTION_KEYS_EVENT, listener);
   render(<AgentDetailModal agent={AGENT} onClose={onClose} />);
   expect(await screen.findByText("Local · llama3")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Change in AI Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Change in API Settings" }));
   await waitFor(() => expect(asked).toEqual([{ section: "agent-models", agentId: "agent.node-content-builder" }]));
   expect(onClose).toHaveBeenCalled();
   window.removeEventListener(CONNECTION_KEYS_EVENT, listener);
@@ -58,5 +58,5 @@ it("offers no change when this account cannot choose one", async () => {
   mockListing = listingWith(false);
   render(<AgentDetailModal agent={AGENT} onClose={jest.fn()} />);
   expect(await screen.findByText("Local · llama3")).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Change in AI Settings" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Change in API Settings" })).toBeNull();
 });

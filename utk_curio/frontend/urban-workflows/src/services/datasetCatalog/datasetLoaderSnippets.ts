@@ -5,8 +5,21 @@ import {
   DatasetGroupLayerRef,
   DatasetLoaderSnippet,
 } from "./datasetCatalogTypes";
+import { AUTARK_LAYER_TYPES } from "../../utils/autarkLayerTypes";
 
 type DatasetLike = DatasetCatalogItem | DatasetDragPayload;
+
+/**
+ * The Autark layer a dataset downloaded from the Discovery Catalog is, when its
+ * layer is one (an OpenStreetMap download's `buildings`). A GeoPackage layer
+ * may have any name, so the name alone decides nothing. KEEP IN SYNC with
+ * `autark_layer_type` in the backend generator.
+ */
+function autarkLayerType(dataset: DatasetLike): string | null {
+  if (!("discoverySource" in dataset) || !dataset.discoverySource) return null;
+  const layer = dataset.layerName;
+  return typeof layer === "string" && AUTARK_LAYER_TYPES.has(layer) ? layer : null;
+}
 
 function datasetPath(dataset: DatasetLike): string {
   return dataset.path || dataset.uri || "<dataset-path>";
@@ -126,10 +139,12 @@ function bundleLoaderCode(locationExpr: string): string {
 }
 
 /**
- * Loader for a multilayer OSM PBF group: reads every extracted layer's
- * GeoParquet into one ``layers`` dict keyed by layer name, so a single node
- * represents the full multilayer import. GeoParquet is read with
- * ``gpd.read_parquet`` (geometry + CRS), falling back to ``pd.read_parquet``.
+ * Loader for a multilayer OSM group: reads every layer into one ``layers``
+ * dict keyed by layer name, so a single node represents the full multilayer
+ * import. An uploaded ``.pbf``'s layers are GeoParquet, read with
+ * ``gpd.read_parquet`` (geometry + CRS), falling back to ``pd.read_parquet``;
+ * a Discovery download's layers are GeoJSON, read with ``gpd.read_file`` as a
+ * single GeoJSON dataset is.
  */
 export function osmGroupLoaderSnippet(
   layers: DatasetGroupLayerRef[],
@@ -137,15 +152,21 @@ export function osmGroupLoaderSnippet(
   const readerLines = layers.map((layer, index) => {
     const key = layer.layerName || layer.title || `layer_${index}`;
     const path = layer.path || layer.uri || "<dataset-path>";
-    return `layers[${JSON.stringify(key)}] = _curio_read_layer(${pathExpr(path, layer.id)})`;
+    const reader = layer.format === "geojson" || layer.format === "shp" ? "gpd.read_file" : "_curio_read_layer";
+    return `layers[${JSON.stringify(key)}] = ${reader}(${pathExpr(path, layer.id)})`;
   });
+  const readsParquet = readerLines.some((line) => line.includes("_curio_read_layer("));
   const code = [
-    "def _curio_read_layer(path):",
-    "    try:",
-    "        return gpd.read_parquet(path)",
-    "    except Exception:",
-    "        return pd.read_parquet(path)",
-    "",
+    ...(readsParquet
+      ? [
+          "def _curio_read_layer(path):",
+          "    try:",
+          "        return gpd.read_parquet(path)",
+          "    except Exception:",
+          "        return pd.read_parquet(path)",
+          "",
+        ]
+      : []),
     "layers = {}",
     ...readerLines,
   ].join("\n");
@@ -162,6 +183,7 @@ function snippetForFormat(
   format: DatasetFormat,
   path: string,
   datasetId?: string | null,
+  layerType?: string | null,
 ): DatasetLoaderSnippet {
   const expr = pathExpr(path, datasetId);
   if (format === "csv") {
@@ -174,11 +196,16 @@ function snippetForFormat(
     };
   }
   if (format === "geojson" || format === "shp") {
+    // A layer type is set as the frame's metadata, so an Autark node draws the
+    // frame as that layer.
+    const typed = layerType && AUTARK_LAYER_TYPES.has(layerType)
+      ? `\ngdf.metadata = {"layerType": ${JSON.stringify(layerType)}}`
+      : "";
     return {
       language: "python",
       imports: ["import geopandas as gpd"],
       pathVariable: "dataset_path",
-      code: `dataset_path = ${expr}\ngdf = gpd.read_file(dataset_path)`,
+      code: `dataset_path = ${expr}\ngdf = gpd.read_file(dataset_path)${typed}`,
       returnVariable: "gdf",
     };
   }
@@ -280,7 +307,7 @@ function snippetForFormat(
 
 export function getDatasetLoaderSnippet(dataset: DatasetLike): DatasetLoaderSnippet {
   if (dataset.loaderSnippet) return dataset.loaderSnippet;
-  return snippetForFormat(dataset.format, datasetPath(dataset), idOf(dataset));
+  return snippetForFormat(dataset.format, datasetPath(dataset), idOf(dataset), autarkLayerType(dataset));
 }
 
 export function buildDatasetLoaderCode(dataset: DatasetLike): string {

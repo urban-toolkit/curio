@@ -30,19 +30,26 @@ const CANVAS_DRAWERS = [
   "components/packages/publishing/NodeCatalogDrawer.tsx",
   "components/datasets/catalog/DatasetCatalogDrawer.tsx",
   "components/agents/catalog/AgentCatalogDrawer.tsx",
+  "components/models/catalog/ModelCatalogDrawer.tsx",
+  "components/discovery/catalog/DiscoveryCatalogDrawer.tsx",
 ];
 
-/** The data/lifecycle hooks behind two of the three drawers. A confirmation
- *  that moved into a hook is just as native as one left in the component. */
+/** The data/lifecycle hooks behind the drawers. A confirmation that moved
+ *  into a hook is just as native as one left in the component; the model
+ *  drawer's delete question lives in `useModelDelete`. */
 const DRAWER_HOOKS = [
   "components/datasets/catalog/useDatasetCatalogDrawer.ts",
   "components/agents/catalog/useAgentCatalogDrawer.ts",
+  "components/models/catalog/useModelCatalogDrawer.ts",
+  "components/models/catalog/useModelDelete.ts",
 ];
 
 const PROVIDERS = [
   "providers/packages/NodeCatalogDrawerProvider.tsx",
   "providers/datasetCatalog/DatasetCatalogDrawerProvider.tsx",
   "providers/AgentCatalogDrawerProvider.tsx",
+  "providers/modelCatalog/ModelCatalogDrawerProvider.tsx",
+  "providers/discoveryCatalog/DiscoveryCatalogDrawerProvider.tsx",
 ];
 
 describe("canvas catalog drawer parity", () => {

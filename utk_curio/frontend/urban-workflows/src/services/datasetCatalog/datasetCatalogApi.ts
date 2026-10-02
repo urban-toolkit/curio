@@ -6,7 +6,7 @@ import {
   DatasetCatalogResponse,
   DatasetDataflowUsageRef,
   DatasetFormat,
-  DatasetLakeSourceInput,
+  DatasetDiscoverySourceInput,
   DatasetPreviewQuery,
   DatasetPreviewResponse,
 } from "./datasetCatalogTypes";
@@ -161,6 +161,11 @@ export const datasetCatalogApi = {
     return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}${queryString(query)}`);
   },
 
+  /** The WGS84 box a dataset covers, or a null box when it has no location. */
+  extent(datasetId: string): Promise<{ datasetId: string; title: string; box: number[] | null }> {
+    return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}/extent`);
+  },
+
   preview(datasetId: string, query: DatasetPreviewQuery = {}): Promise<DatasetPreviewResponse> {
     return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}/preview${previewQueryString(query)}`);
   },
@@ -175,7 +180,7 @@ export const datasetCatalogApi = {
 
   async importDataset(
     file: File,
-    opts: { dataflowId?: string | null; title?: string; lakeSource?: DatasetLakeSourceInput } = {},
+    opts: { dataflowId?: string | null; title?: string; discoverySource?: DatasetDiscoverySourceInput } = {},
   ): Promise<DatasetCatalogItem> {
     const token = getToken();
     const form = new FormData();
@@ -185,7 +190,7 @@ export const datasetCatalogApi = {
     // Where a file the person downloaded themselves came from. The server
     // records it, and answers with the dataset it already holds when the
     // resource or the bytes are the same.
-    if (opts.lakeSource) form.append("lakeSource", JSON.stringify(opts.lakeSource));
+    if (opts.discoverySource) form.append("discoverySource", JSON.stringify(opts.discoverySource));
     // The original file's last-modified date (epoch ms), so the catalog can show
     // the *source file's* date distinctly from the Curio import/record date.
     if (typeof file.lastModified === "number" && file.lastModified > 0) {
