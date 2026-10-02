@@ -20,6 +20,14 @@ export const PROVIDER_FILTERS: { value: DiscoveryProviderType; label: string }[]
   ] as DiscoveryProviderType[]
 ).map((value) => ({ value, label: DISCOVERY_PROVIDER_LABEL[value] }));
 
+export type DiscoverySortMode = "name" | "provider";
+
+/** The sort the page's select and the canvas drawer's search row offer. */
+export const DISCOVERY_SORT_OPTIONS: { value: DiscoverySortMode; label: string }[] = [
+  { value: "name", label: "Sort: Name" },
+  { value: "provider", label: "Sort: Provider" },
+];
+
 export const AUTH_FILTERS: { value: DiscoveryAuthMode; label: string }[] = (
   ["public", "optional-token", "required-token"] as DiscoveryAuthMode[]
 ).map((value) => ({ value, label: DISCOVERY_AUTH_LABEL[value] }));

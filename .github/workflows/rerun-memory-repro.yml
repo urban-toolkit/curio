@@ -129,7 +129,7 @@ jobs:
           python-version: "3.12"
 
       - name: 📥 Download every run
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: rerun-memory-*
           merge-multiple: true
