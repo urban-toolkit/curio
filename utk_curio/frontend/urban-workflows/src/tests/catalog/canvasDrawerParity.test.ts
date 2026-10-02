@@ -31,6 +31,7 @@ const CANVAS_DRAWERS = [
   "components/datasets/catalog/DatasetCatalogDrawer.tsx",
   "components/agents/catalog/AgentCatalogDrawer.tsx",
   "components/models/catalog/ModelCatalogDrawer.tsx",
+  "components/discovery/catalog/DiscoveryCatalogDrawer.tsx",
 ];
 
 /** The data/lifecycle hooks behind the drawers. A confirmation that moved
@@ -48,6 +49,7 @@ const PROVIDERS = [
   "providers/datasetCatalog/DatasetCatalogDrawerProvider.tsx",
   "providers/AgentCatalogDrawerProvider.tsx",
   "providers/modelCatalog/ModelCatalogDrawerProvider.tsx",
+  "providers/discoveryCatalog/DiscoveryCatalogDrawerProvider.tsx",
 ];
 
 describe("canvas catalog drawer parity", () => {
