@@ -2,9 +2,9 @@
  * The account-scope Agent Catalog under /catalog/agents.
  *
  * The third peer of `/catalog/nodes` and `/catalog/data`: same three-column
- * grid from `CatalogBrowseLayout.module.css`, same header anatomy (crumb, kind
- * icon + h1 + count, intro, search), same filter bar, same card grid, same
- * right-hand detail drawer.
+ * grid from `CatalogBrowseLayout.module.css`, same rail (`CatalogRail`), same
+ * header (`CatalogPageHeader`: kind icon + h1 + count, then search and import),
+ * same card grid, same right-hand detail drawer.
  *
  * Scope is what separates this page from the in-canvas drawer. The drawer adds
  * an agent to ONE dataflow; this page adds it to the user's account, from
@@ -18,13 +18,15 @@
 import React, { useState } from "react";
 
 import type { AgentCard } from "../../services/agents";
-import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
+import { agentCategoryKey } from "../../components/menus/nodes/agentsPalette/agentCategoryStyle";
 import type { SortMode } from "../../services/packages";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
 import { AgentCatalogBrowseCard } from "./AgentCatalogBrowseCard";
 import { AgentCatalogBrowseDrawer } from "./AgentCatalogBrowseDrawer";
 import { useAgentCatalogBrowse } from "./useAgentCatalogBrowse";
 import { CatalogHeaderImport } from "../catalog/CatalogHeaderImport";
+import { CatalogPageHeader } from "../catalog/CatalogPageHeader";
+import { CatalogRail } from "../catalog/CatalogRail";
 import { AgentImportModal } from "../../components/agents/catalog/AgentImportModal";
 import { AgentDetailModal } from "../../components/agents/catalog/AgentDetailModal";
 import { AgentCatalogSettingsModal } from "../../components/agents/catalog/AgentCatalogSettingsModal";
@@ -104,135 +106,88 @@ export const AgentCatalogBrowse: React.FC = () => {
         .filter(Boolean)
         .join(" ")}
     >
-      <aside className={browseStyles.categoryRail}>
-        <p className={browseStyles.railLabel}>By status</p>
-        <button
-          className={`${browseStyles.railButton} ${filter === "all" ? browseStyles.railButtonActive : ""}`}
-          type="button"
-          onClick={() => setFilter("all")}
-        >
-          <span>All agents</span>
-          <span className={browseStyles.railCountBadge}>{allCount}</span>
-        </button>
-        <button
-          className={`${browseStyles.railButton} ${filter === "imported" ? browseStyles.railButtonActive : ""}`}
-          type="button"
-          onClick={() => setFilter("imported")}
-        >
-          <span>In all projects</span>
-          <span className={browseStyles.railCount}>{importedCount}</span>
-        </button>
-
-        <div className={browseStyles.railDivider} />
-        <p className={browseStyles.railLabel}>By category</p>
-        <button
-          className={`${browseStyles.railButton} ${categoryFilter === "" ? browseStyles.railButtonActive : ""}`}
-          type="button"
-          onClick={() => setCategoryFilter(() => "")}
-        >
-          <span>All categories</span>
-        </button>
-        {categories.map(([cat, count]) => (
-          <button
-            key={cat}
-            className={`${browseStyles.railButton} ${categoryFilter === cat ? browseStyles.railButtonActive : ""}`}
-            type="button"
-            onClick={() => setCategoryFilter((prev) => (prev === cat ? "" : cat))}
-          >
-            <span>{cat}</span>
-            <span className={browseStyles.railCount}>{count}</span>
-          </button>
-        ))}
-      </aside>
+      <CatalogRail
+        ariaLabel="Filter agents"
+        all={{
+          label: "All agents",
+          count: allCount,
+          active: filter === "all" && categoryFilter === "",
+          onClick: () => {
+            setFilter("all");
+            setCategoryFilter(() => "");
+          },
+        }}
+        scope={{
+          label: "In all projects",
+          count: importedCount,
+          active: filter === "imported",
+          onClick: () => setFilter(filter === "imported" ? "all" : "imported"),
+        }}
+        sections={[
+          {
+            key: "category",
+            label: "By category",
+            entries: categories.map(([cat, count]) => ({
+              value: cat,
+              label: cat,
+              count,
+              active: categoryFilter === cat,
+              onClick: () => setCategoryFilter((prev) => (prev === cat ? "" : cat)),
+              // The card strips' palette key for this category.
+              dotClassName: browseStyles[`agentDot_${agentCategoryKey(cat)}`] ?? "",
+            })),
+          },
+        ]}
+      />
 
       <main className={browseStyles.browseMain}>
-        <section className={browseStyles.browseHeader}>
-          <p className={browseStyles.crumb}>Agent Catalog</p>
-          <div className={browseStyles.titleRow}>
-            <CatalogKindIcon kind="agent" size="md" title="Agent catalog" />
-            <h1>Agent Catalog</h1>
-            <span className={browseStyles.titleCount}>{filtered.length}</span>
-          </div>
-          <p className={browseStyles.pageIntro}>
-            Agents in the shared catalog. Adding one here makes it available to{" "}
-            <strong>all your projects</strong>, present and future; add it to a single project from
-            that project&apos;s Agent Catalog.
-          </p>
-          <div className={browseStyles.headerTools}>
-            <input
-              className={browseStyles.hubSearch}
-              type="search"
-              placeholder="Search agents…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            {/* No `accept`: an agent package is a manifest plus its prompt
-                files, assembled in a modal, not a single archive. */}
-            <CatalogHeaderImport
-              label="Import agent"
-              onClick={() => setImportOpen(true)}
-              title="Upload your own agent definition"
-            />
-            <button
-              type="button"
-              className={browseStyles.publishButton}
-              title="Values your agents read when they run"
-              onClick={() => setSettingsOpen(true)}
+        <CatalogPageHeader
+          kind="agent"
+          iconTitle="Agent catalog"
+          title="Agent Catalog"
+          count={filtered.length}
+          intro={
+            <>
+              Agents in the shared catalog. Adding one here makes it available to{" "}
+              <strong>all your projects</strong>, present and future; add it to a single project from
+              that project&apos;s Agent Catalog.
+            </>
+          }
+          viewTools={
+            <select
+              className={browseStyles.sortSelect}
+              aria-label="Sort agents"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortMode)}
             >
-              Settings
-            </button>
-          </div>
-        </section>
-
-        <div className={browseStyles.filterBar}>
+              <option value="new">Sort: Newest</option>
+              <option value="name">Sort: Name</option>
+            </select>
+          }
+        >
+          <input
+            className={browseStyles.hubSearch}
+            type="search"
+            placeholder="Search agents…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {/* No `accept`: an agent package is a manifest plus its prompt
+              files, assembled in a modal, not a single archive. */}
+          <CatalogHeaderImport
+            label="Import agent"
+            onClick={() => setImportOpen(true)}
+            title="Upload your own agent definition"
+          />
           <button
-            className={`${browseStyles.chip} ${filter === "all" ? browseStyles.chipActive : ""}`}
             type="button"
-            onClick={() => setFilter("all")}
+            className={browseStyles.publishButton}
+            title="Values your agents read when they run"
+            onClick={() => setSettingsOpen(true)}
           >
-            All
+            Settings
           </button>
-          <button
-            className={`${browseStyles.chip} ${filter === "imported" ? browseStyles.chipActive : ""}`}
-            type="button"
-            onClick={() => setFilter("imported")}
-          >
-            In all projects
-          </button>
-          {/* The agent's own types - canvas, data, and the rest. The rail has
-              had a "By category" section all along and the filter state was
-              already wired (`categoryFilter`); the chip row simply never
-              offered it, so the two filter surfaces on one page disagreed about
-              what you could filter by. Mirrors the Node page's chips. */}
-          {categories.map(([category]) => {
-            const dotSlug = category.toLowerCase().replace(/[^a-z0-9-]/g, "");
-            const dotClass =
-              (browseStyles as Record<string, string>)[`chipDot_${dotSlug}`] ??
-              browseStyles.chipDotDefault;
-            return (
-              <button
-                key={category}
-                className={`${browseStyles.chip} ${
-                  categoryFilter === category ? browseStyles.chipActive : ""
-                }`}
-                type="button"
-                onClick={() => setCategoryFilter((prev) => (prev === category ? "" : category))}
-              >
-                <span className={`${browseStyles.chipDot} ${dotClass}`} />
-                {category}
-              </button>
-            );
-          })}
-          <span className={browseStyles.filterSpacer} />
-          <select
-            className={browseStyles.sortSelect}
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortMode)}
-          >
-            <option value="new">Sort: Newest</option>
-            <option value="name">Sort: Name</option>
-          </select>
-        </div>
+        </CatalogPageHeader>
 
         {actionError ? (
           <div className={browseStyles.browseBanner} role="alert">
