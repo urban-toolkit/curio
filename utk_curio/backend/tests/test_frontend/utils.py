@@ -4142,6 +4142,9 @@ def assert_autark_drawing_fits(page, node_id: str, *, timeout: float = 5000) -> 
         f"node body, so it does not fill the body"
         + (f" and {dh - bh} px of it are hidden" if dh > bh else "")
     )
+    assert fit["markers"], (
+        f"Autark node {node_id}: no port markers found, so nothing shows they clear its {fit['kind']}"
+    )
     left, right = fit["x"]
     covered = {
         m["side"]: round(min(right, m["x"][1]) - max(left, m["x"][0]), 1)
