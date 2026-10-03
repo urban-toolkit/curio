@@ -130,10 +130,19 @@ class HttpDiscoveryTransport:
         bound = min(int(max_bytes), int(ceiling or MAX_DISCOVERY_DOWNLOAD_BYTES))
         sent, key = _keyed(url, credential)
         failure = None
+        raised: list[BaseException] = []
+
+        def _sink(chunk: bytes) -> None:
+            try:
+                sink(chunk)
+            except BaseException as exc:
+                raised.append(exc)
+                raise
+
         try:
             result = egress.download(
                 sent,
-                sink=sink,
+                sink=_sink,
                 max_bytes=bound,
                 budget=self.budget,
                 headers=headers,
@@ -149,6 +158,10 @@ class HttpDiscoveryTransport:
                 raise
             failure = egress.EgressRefused(_redact(str(exc), key))
         except Exception as exc:
+            if raised and exc is raised[-1]:
+                # The caller's own sink stopped it (a cancelled job): its
+                # exception, as it is, so the job ends the way it asked.
+                raise
             message = f"could not download from {_host(url)}: {exc}"
             if not key:
                 raise DiscoveryTransportError(message) from exc
