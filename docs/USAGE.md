@@ -337,22 +337,35 @@ nodes have them.
 
 1. Open the node's **Widgets** tab (toolbox icon) and click **Add widget**.
 2. Give it a name (letters, digits and underscores), a type, a label, and a
-   default. A **Choice** also takes its choices, separated by commas.
+   default. A **Choice**, **Checkbox group** or **Multi-select** also takes its
+   choices, separated by commas, and a **Choice** shows as a dropdown or as
+   radio buttons. A **Number** can take a minimum, a maximum, a step and units;
+   a **Slider** needs the minimum and the maximum.
 3. Drag the widget's tag from the strip above the code into the code, or click
    the tag to insert it at the cursor. It appears as a chip; hover it to see the
    value it stands for.
 4. Set the value in the **Widgets** tab and run the node.
 
-| Type | Value |
-|---|---|
-| Number | a number |
-| Text | a text |
-| Choice | one of its choices |
-| Checkbox | true or false |
-| List of numbers | such as `[1, 2.5]` |
-| List of texts | such as `["a", "b"]` |
-| Range | two numbers, the first not larger than the second |
-| Text file | the text of a file you pick (up to 1,000,000 characters) |
+| Type | Control | Value in Python |
+|---|---|---|
+| Number | a number field | a number, such as `2.5` |
+| Slider | a slider between its minimum and maximum | a number |
+| Text | a text field | a text, such as `"winter"` |
+| Choice | a dropdown, or radio buttons | one of its choices |
+| Checkbox | a checkbox | `True` or `False` |
+| Checkbox group | a checkbox for each choice | the checked choices, such as `["water", "forest"]` |
+| Multi-select | a list to add choices from | the chosen choices, as for a checkbox group |
+| Date and time | a date and time field | a text, such as `"2026-06-21T12:00:00"` (local time) |
+| Location | a latitude and a longitude, or a place search | `{"lat": 41.8781, "lon": -87.6298}` |
+| List of numbers | a field, such as `[1, 2.5]` | a list of numbers |
+| List of texts | a field, such as `["a", "b"]` | a list of texts |
+| Range | two numbers, the first not larger than the second | `[0, 5]` |
+| Text file | a file you pick (up to 1,000,000 characters) | the file's text |
+
+A checkbox group and a multi-select list their choices in the order the choices
+are given. A location's place search finds a place by name, on Enter or
+**Search**, through OpenStreetMap's Nominatim, and takes the center of the
+place's box; only the coordinates are kept.
 
 In the code, a widget is written `[!! name !!]`. When the node runs, each one is
 replaced by its value:
