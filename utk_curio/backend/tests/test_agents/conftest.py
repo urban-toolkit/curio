@@ -6,6 +6,7 @@ import pytest
 
 from utk_curio.backend import config
 from utk_curio.backend.app.agents.infrastructure import agent_jobs
+from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
     app,
     client,
@@ -14,6 +15,32 @@ from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
     tmp_curio,
     user_and_token,
 )
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_pycollect_makeitem(collector, name, obj):
+    """The route test files (test_routes_*.py) import each other's test
+    classes to call their helpers, such as
+    ``TestNodeCreate()._write_builtin_package``. pytest would otherwise run an
+    imported class again in every file that imports it, so in those files a
+    class runs only where it is defined. Other files keep pytest's default."""
+    if (
+        isinstance(obj, type)
+        and isinstance(collector, pytest.Module)
+        and collector.path.name.startswith("test_routes_")
+        and obj.__module__ != collector.obj.__name__
+    ):
+        return []
+    return None
+
+
+@pytest.fixture()
+def alice_project(client, user_and_token):
+    _, token = user_and_token
+    body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []}
+    resp = client.post("/api/projects", json=body, headers=_auth(token))
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    return resp.get_json()["id"]
 
 
 @pytest.fixture(autouse=True)

@@ -233,7 +233,7 @@ stop_own_stacks() {
   esac
   PYTHONPATH="$REPO_ROOT" python - "${ports[@]}" <<'PY' >/dev/null 2>&1 || true
 import sys
-from utk_curio.main import _kill_port
+from utk_curio.cli.services import _kill_port
 for port in sys.argv[1:]:
     _kill_port(int(port))
 PY
@@ -327,7 +327,8 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   # Pin CURIO_LAUNCH_CWD to the repo root so the sandbox resolves data files
   # referenced by relative path (e.g. DATA_LOADING reading
   # docs/examples/data/*.geojson) regardless of where test.sh was invoked
-  # from. curio.py start falls back to os.getcwd() otherwise (main.py).
+  # from. curio.py start falls back to os.getcwd() otherwise
+  # (utk_curio/cli/environment.py).
   #
   # CURIO_DEV=1 serves the frontend via the webpack dev server (compiled from
   # source) rather than the prebuilt static dist/, so the E2E suite always
@@ -341,8 +342,8 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   # /execJs, /get and /install (utk_curio/sandbox/app/auth.py), and
   # 'curio.py start' would otherwise mint a random one into the server's
   # environment only, which this script and the pytest process could not
-  # then read. Two e2e tests call the sandbox directly. main.py honours a
-  # pre-set value.
+  # then read. Two e2e tests call the sandbox directly.
+  # utk_curio/cli/environment.py honours a pre-set value.
   export CURIO_SANDBOX_TOKEN="${CURIO_SANDBOX_TOKEN:-$(python -c 'import secrets; print(secrets.token_urlsafe(32))')}"
   # --deploy is REQUIRED, not optional. The E2E suite exercises the real signup /
   # signin / guest flows and most of it acts as an authenticated OWNER: a

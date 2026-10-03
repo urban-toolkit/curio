@@ -285,8 +285,8 @@ def curio_servers(session_app, request):
     # child's environment only, which this pytest process could not then read.
     # A couple of tests call the sandbox directly (test_alive,
     # test_library_install_integration), so pin it here instead and publish it
-    # via os.environ for the `sandbox_auth_headers` fixture. main.py honours a
-    # pre-set value.
+    # via os.environ for the `sandbox_auth_headers` fixture.
+    # utk_curio/cli/environment.py honours a pre-set value.
     sandbox_token = os.environ.get("CURIO_SANDBOX_TOKEN") or secrets.token_urlsafe(32)
     os.environ["CURIO_SANDBOX_TOKEN"] = sandbox_token
     env["CURIO_SANDBOX_TOKEN"] = sandbox_token
@@ -312,7 +312,7 @@ def curio_servers(session_app, request):
     if env.get("CURIO_NO_PROJECT", "0") in ("1", "true", "yes", "on"):
         extra_args.append("--no-project")
     # Real-time collaboration is off unless the server starts with --collab,
-    # and main.py sets ENABLE_COLLAB from that flag, so an env var alone cannot
+    # and utk_curio/cli/environment.py sets ENABLE_COLLAB from that flag, so an env var alone cannot
     # turn it on. The tour's collaboration scene records with CURIO_E2E_COLLAB=1.
     if env.get("CURIO_E2E_COLLAB", "0") in ("1", "true", "yes", "on"):
         extra_args.append("--collab")

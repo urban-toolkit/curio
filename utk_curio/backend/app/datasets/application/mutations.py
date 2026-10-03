@@ -266,6 +266,8 @@ class CatalogMutations:
                 filename,
                 fmt,
                 title=title,
+                group_id=group_id,
+                layer_name=layer_name,
                 source_updated_at=source_updated_at,
                 source_encoding=source_encoding,
                 discovery_source=discovery_source,

@@ -128,7 +128,7 @@ def _dataset_drawer(page):
 
 
 def _open_package_drawer(page, project_id: str):
-    """Data menu -> Node Catalog, not returning until the drawer has a project.
+    """The bar's Node Catalog button, not returning until the drawer has a project.
 
     ``projectId`` reaches the drawer through FlowContext only once
     ``loadProject`` resolves, and ``onPickArchive`` skips the lockfile write
@@ -138,7 +138,6 @@ def _open_package_drawer(page, project_id: str):
     ``GET /api/packages/projects/<id>`` fires exactly when it learns the project,
     which makes that response the precondition to wait for.
     """
-    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
     with page.expect_response(
         lambda r: f"/api/packages/projects/{project_id}" in r.url
         and r.request.method == "GET",

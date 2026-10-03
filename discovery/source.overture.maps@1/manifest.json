@@ -1,0 +1,48 @@
+{
+  "id": "source.overture.maps",
+  "name": "Overture Maps",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "Buildings, building parts, places and road segments from Overture Maps' latest release, for a box. Read straight from Overture's GeoParquet files: only the parts that cover the box are downloaded. Each row keeps Overture's columns, such as height, class, names and the sources it comes from.",
+  "publisher": "Overture Maps Foundation",
+  "homepage": "https://overturemaps.org",
+  "license": "ODbL 1.0 for buildings and roads; places under Overture's own terms",
+  "tags": ["overture", "buildings", "places", "roads", "geoparquet"],
+  "provider": {
+    "type": "overture",
+    "baseUrl": "https://stac.overturemaps.org",
+    "options": { "dataHosts": ["overturemaps-us-west-2.s3.us-west-2.amazonaws.com"] }
+  },
+  "limits": { "requestsPerMinute": 10 },
+  "parameters": [
+    {
+      "id": "area", "type": "area", "label": "Area", "required": true, "accepts": ["box"],
+      "maxAreaKm2": 100,
+      "description": "The box to take features from."
+    }
+  ],
+  "resources": [
+    {
+      "id": "buildings", "name": "Buildings", "kind": "table", "format": "parquet",
+      "description": "Building footprints, one row each, with height, floors, class, names, and the sources each comes from.",
+      "options": { "theme": "buildings", "type": "building", "layer": "buildings" }
+    },
+    {
+      "id": "building-parts", "name": "Building parts", "kind": "table", "format": "parquet",
+      "description": "The parts of buildings mapped in parts, each with its own height and the building_id of its building.",
+      "options": { "theme": "buildings", "type": "building_part" }
+    },
+    {
+      "id": "places", "name": "Places", "kind": "table", "format": "parquet",
+      "description": "Points of interest, such as shops, restaurants and schools, with their categories, names, addresses, websites and confidence.",
+      "options": { "theme": "places", "type": "place" }
+    },
+    {
+      "id": "road-segments", "name": "Road segments", "kind": "table", "format": "parquet",
+      "description": "Road segments, with their class, names, surface and speed limits.",
+      "options": { "theme": "transportation", "type": "segment", "subtype": "road", "layer": "roads" }
+    }
+  ],
+  "createdAt": "2026-10-03T00:00:00Z",
+  "updatedAt": "2026-10-03T00:00:00Z"
+}

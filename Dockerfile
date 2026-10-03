@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Repo-root node_modules for the sandbox's Node.js subprocess
 # (@urban-toolkit/autk-db — see utk_curio/sandbox/app/worker.py).
 # Early layer: only rebuilds when the root lockfile changes; the
-# npm install in main.py::_ensure_root_node_modules at container
+# npm install in utk_curio/cli/dependencies.py::_ensure_root_node_modules at container
 # start then becomes a fast idempotent no-op.
 COPY package.json package-lock.json ./
 # The root package.json installs autk-db from the vendored tarball; see
@@ -73,7 +73,7 @@ COPY packages/ /src/packages/
 RUN npm run build
 
 # Record the webpack mode the bundle was built in, in the file curio.py's
-# launcher reads (utk_curio/main.py::_build_stamp_reason). The launcher writes
+# launcher reads (utk_curio/cli/frontend_build.py::_build_stamp_reason). The launcher writes
 # this stamp itself, but only when IT runs the build; this stage runs webpack
 # directly, and a dist/ with no stamp reads as "built in an unrecorded mode",
 # which rebuilds the 9 MB bundle on every container start. The mode is parsed

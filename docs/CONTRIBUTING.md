@@ -61,20 +61,22 @@ The codebase follows a modular structure under the `utk_curio/` directory. This 
 ```
 curio/
 ├── utk_curio/
-│   ├── backend/                     # Manages database access and user authentication
-│   │   ├── app/agents/contracts.py  # The single source of every generated contract (see Generated Files)
-│   │   ├── app/agents/schemas/      # The vendored Autark grammar schema (see Vendored Autark Schema)
-│   │   ├── migrations/              # Alembic migrations
-│   │   └── tests/                   # pytest files for backend (+ test_frontend/ for Playwright E2E)
-│   ├── llm-prompts/                 # Built-in agent prompts; default_preamble.txt is generated
-│   ├── sandbox/                     # Executes user Python code in a secure environment
-│   │   └── tests/                   # unittest files for sandbox
-│   └── frontend/                    # All frontend logic
-│       └── urban-workflows/         # Main Curio interface for dataflow editing
+│   ├── backend/                            # Manages database access and user authentication
+│   │   ├── app/agents/domain/contracts.py  # The single source of every generated contract (see Generated Files)
+│   │   ├── app/agents/schemas/             # The vendored Autark grammar schema (see Vendored Autark Schema)
+│   │   ├── app/discovery/                  # The Discovery Catalog: portal, storage, service and model sources
+│   │   ├── app/model_catalog/              # The Model Catalog: models a node runs, shipped or downloaded
+│   │   ├── migrations/                     # Alembic migrations
+│   │   └── tests/                          # pytest files for backend (+ test_frontend/ for Playwright E2E)
+│   ├── llm-prompts/                        # Built-in agent prompts; default_preamble.txt is generated
+│   ├── sandbox/                            # Executes user Python code in a secure environment
+│   │   └── tests/                          # unittest files for sandbox
+│   └── frontend/                           # All frontend logic
+│       └── urban-workflows/                # Main Curio interface for dataflow editing
 │           └── src/
-│               ├── components/      # React components and CSS
-│               ├── generated/       # Written by scripts/generate_contracts.py; never edited by hand
-│               └── tests/           # Jest unit tests
+│               ├── components/             # React components and CSS
+│               ├── generated/              # Written by scripts/generate_contracts.py; never edited by hand
+│               └── tests/                  # Jest unit tests
 │
 ├── curio.py                        # CLI entry point for running and managing all services
 ├── packages/                       # The shared node catalog: one directory per node package
@@ -435,7 +437,7 @@ FLASK_APP=server.py flask db upgrade
 Some files are generated from a single source and committed: everything under
 `utk_curio/frontend/urban-workflows/src/generated/`, and
 `utk_curio/llm-prompts/default_preamble.txt`, all rendered from
-`utk_curio/backend/app/agents/contracts.py`. Each generated code file starts
+`utk_curio/backend/app/agents/domain/contracts.py`. Each generated code file starts
 with a header naming its generator and source. The preamble has no header,
 because the model reads it verbatim; its hand-written text lives in
 `default_preamble.template.txt` beside it, and the `{{...}}` fields in the

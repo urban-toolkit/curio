@@ -21,9 +21,10 @@ from utk_curio.backend.app.agents.application.turns import grounding as packages
 from utk_curio.backend.app.agents.application.turns import titles
 from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.app.projects import storage as projects_storage
-from utk_curio.backend.tests.test_agents import test_routes as _tr
-
-_auth = _tr._auth
+from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_proposals
+from utk_curio.backend.tests.test_agents import test_routes_solve as routes_solve
+from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turns
 
 KEY = "4242"
 PID = "p-rounds"
@@ -759,8 +760,8 @@ class TestValidateNodeCarriesDatasetPaths:
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         ukey = _user_dir_key(user)
-        _tr.TestNodeCreate()._write_builtin_package(ukey, templates=TEMPLATES)
-        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="heat.csv")
+        routes_proposals.TestNodeCreate()._write_builtin_package(ukey, templates=TEMPLATES)
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="heat.csv")
         body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []}
         pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
         for coord in ("agent.dataflow-builder@1.0.0", "agent.node-content-builder@1.0.0"):
@@ -799,7 +800,7 @@ class TestValidateNodeCarriesDatasetPaths:
         r = client.post(f"/api/agents/projects/{pid}/attachments/{att}/validate-node",
                         json={"ref": "load"}, headers=_auth(token))
         assert r.status_code == 200, r.get_json()
-        events = _tr.TestStreamedSolve()._sse_events(r)
+        events = routes_solve.TestStreamedSolve()._sse_events(r)
         done = events[-1][1]
         assert done["verdict"] == "pass"
         # The runner was handed the mapping for the seeded id and the user key.
@@ -848,8 +849,8 @@ class TestVerifiedSolve:
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         ukey = _user_dir_key(user)
-        _tr.TestNodeCreate()._write_builtin_package(ukey, templates=TEMPLATES)
-        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="heat_tracts.csv")
+        routes_proposals.TestNodeCreate()._write_builtin_package(ukey, templates=TEMPLATES)
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="heat_tracts.csv")
         body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []}
         pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
         for coord in (self.DFB, self.NCB):
@@ -1018,7 +1019,7 @@ class TestVerifiedSolve:
         ctx = self._setup(client, user, token, monkeypatch, dl_replies=[self.LOADER], with_stats=False)
         r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve/stream",
                         json={}, headers=_auth(token))
-        events = _tr.TestStreamedSolve()._sse_events(r)
+        events = routes_solve.TestStreamedSolve()._sse_events(r)
         names = [k for k, _ in events]
         assert "node_round" in names and "node_executed" in names and "node_verdict" in names
         verdict = next(p for k, p in events if k == "node_verdict")
@@ -1031,7 +1032,7 @@ class TestVerifiedSolve:
         ctx = self._setup(client, user, token, monkeypatch, dl_replies=[self.LOADER], with_stats=False)
         r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve/stream",
                         json={"mode": "propose"}, headers=_auth(token))
-        events = _tr.TestStreamedSolve()._sse_events(r)
+        events = routes_solve.TestStreamedSolve()._sse_events(r)
         result = next(p for k, p in events if k == "node_result")
         assert result["status"] == "proposed" and result["verdict"] == "pass"
         assert self._node_content(ctx, ctx["load"]) == ""  # nothing written in propose mode
@@ -1058,7 +1059,7 @@ class TestVerifiedSolve:
         r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve/stream",
                         json={}, headers=_auth(token))
         assert r.status_code == 200
-        return _tr.TestStreamedSolve()._sse_events(r)
+        return routes_solve.TestStreamedSolve()._sse_events(r)
 
     def test_waves_run_roots_first_and_hand_the_upstream_type_to_the_correction(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
@@ -1224,7 +1225,7 @@ class TestDetachedSolveJobs(TestVerifiedSolve):
         return ctx
 
     def _events(self, r):
-        return _tr.TestStreamedSolve()._sse_events(r)
+        return routes_solve.TestStreamedSolve()._sse_events(r)
 
     def test_dropping_the_request_does_not_stop_the_batch_and_the_stream_reattaches(self, client, user_and_token, tmp_curio, monkeypatch):
         from utk_curio.backend.app.agents.infrastructure import agent_jobs
@@ -1339,8 +1340,8 @@ class TestSolveNode:
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         ukey = _user_dir_key(user)
-        _tr.TestNodeCreate()._write_builtin_package(ukey, templates=TEMPLATES)
-        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="heat.csv")
+        routes_proposals.TestNodeCreate()._write_builtin_package(ukey, templates=TEMPLATES)
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="heat.csv")
         content = content.replace("{DATASET}", dataset_id)
         body = {"name": "p", "spec": {"dataflow": {"nodes": [
             {"id": "n1", "type": node_type, "goal": "load the heat data", "content": content, "x": 0, "y": 0}],
@@ -1382,7 +1383,7 @@ class TestSolveNode:
         r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve-node",
                         json={"nodeId": node_id}, headers=_auth(token))
         assert r.status_code == 200, r.get_json()
-        return _tr.TestStreamedSolve()._sse_events(r)
+        return routes_solve.TestStreamedSolve()._sse_events(r)
 
     def _content(self, ctx):
         spec = projects_storage.read_spec(ctx["ukey"], ctx["pid"])

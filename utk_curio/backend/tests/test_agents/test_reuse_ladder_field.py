@@ -110,7 +110,7 @@ def _field_store(user_key, project_id, *, with_notes: bool):
     entirely (variant B)."""
     from utk_curio.backend.app.packages.application import project_packages as packages_services
 
-    from .test_routes import TestNodeCreate
+    from .test_routes_proposals import TestNodeCreate
 
     # The built-in package (the twelve code templates the live roster listed);
     # without a readable store copy the landscape read fails and the roster

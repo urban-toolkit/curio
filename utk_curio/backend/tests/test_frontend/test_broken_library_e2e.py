@@ -215,7 +215,7 @@ def _enter_canvas(page, app_frontend, current_server, *, username, name,
 
 
 def _open_libraries_dialog(page):
-    page.get_by_role("button", name=re.compile(r"^Data")).click(force=True)
+    page.get_by_role("button", name="File menu", exact=True).click(force=True)
     page.get_by_role("button", name="Installed libraries", exact=True).click()
     dialog = page.get_by_role("dialog").filter(
         has=page.get_by_role("heading", name="Installed libraries", exact=True)
@@ -238,7 +238,6 @@ def _add_library(page, dialog, spec: str):
 
 
 def _open_node_catalog(page):
-    page.get_by_role("button", name=re.compile(r"^Data")).click(force=True)
     page.get_by_role("button", name="Node Catalog", exact=True).click()
     drawer = page.get_by_role("dialog").filter(
         has=page.get_by_role("heading", name="Node Catalog", exact=True)

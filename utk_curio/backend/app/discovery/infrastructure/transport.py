@@ -35,14 +35,16 @@ from utk_curio.backend.app.discovery.domain.errors import (
     DownloadTooLarge,
     ProviderError,
 )
+from utk_curio.backend.app.discovery.domain.limits import max_download_bytes
 
 #: Portal metadata is not prompt text, so it does not take the agent-shaped
 #: 256 KiB bound. A CKAN ``package_search?rows=20`` routinely exceeds it, and
 #: GeoSampa's WFS capabilities document is 425 KB.
 MAX_METADATA_BYTES = 1024 * 1024
 
-#: The server's hard ceiling. A manifest may lower it, never raise it.
-MAX_DISCOVERY_DOWNLOAD_BYTES = 64 * 1024 * 1024
+#: The server's hard ceiling (``curio.py --discovery-max-download-mb``, 1 GiB
+#: by default). A manifest may lower it, never raise it.
+MAX_DISCOVERY_DOWNLOAD_BYTES = max_download_bytes()
 
 METADATA_TIMEOUT_S = 15
 
@@ -57,10 +59,7 @@ class FixtureMissing(DiscoveryTransportError):
     """No recorded response for this URL. Names it, and how to record one."""
 
 
-#: The ceiling for caching one file of a storage collection to disk. Nothing
-#: passes through memory on that path, so it is a disk bound rather than the
-#: download ceiling above, which exists because an import used to read the
-#: file whole.
+#: The ceiling for caching one file of a storage collection to disk.
 MAX_COLLECTION_OBJECT_BYTES = 4 * 1024 * 1024 * 1024
 
 

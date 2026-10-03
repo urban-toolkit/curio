@@ -335,7 +335,7 @@ def browser_type_launch_args(browser_type_launch_args):
                     "--enable-features=Vulkan",
                     "--use-angle=vulkan",
                     # Headless has no window to present to; without this,
-                    # Chrome in a container (arcade-gpu) gives up on Vulkan and
+                    # Chrome in a container (arcade's GPU runners) gives up on Vulkan and
                     # WebGPU falls back to SwiftShader.
                     "--disable-vulkan-surface",
                 ]
@@ -504,7 +504,7 @@ UNIT_DURATIONS_FILE = Path(__file__).with_name("unit_durations.json")
 
 
 def unit_group_of(item) -> str:
-    """The test file an item is in, dotted from this folder (test_agents.test_routes)."""
+    """The test file an item is in, dotted from this folder (test_agents.test_routes_solve)."""
     try:
         rel = Path(str(item.path)).resolve().relative_to(Path(__file__).resolve().parent)
     except ValueError:

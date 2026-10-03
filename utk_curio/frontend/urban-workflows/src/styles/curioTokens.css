@@ -27,6 +27,13 @@
      active section tab). Was written three ways: #2a2b30 / #2a2b31 / #2c2d32. */
   --curio-top-bar-bg-hover: #2a2b30;
   --curio-top-bar-border: rgba(255, 255, 255, 0.08);
+  /* The outline of a bordered control on the top bar: API Settings, Monitor,
+     Sign out, the drawer header's icon buttons. */
+  --curio-top-bar-control-border: #444;
+  /* The save state on the top bar. The light-page status accents are too dark
+     to read on --curio-top-bar-bg, so the bar has its own pair. */
+  --curio-top-bar-saved: #6FCF8E;
+  --curio-top-bar-unsaved: #F2B14C;
   /* Neutral chip / tile surfaces on a light page. */
   --curio-surface-muted: #ECEEF2;
   --curio-surface-alt: #F0EFEB;

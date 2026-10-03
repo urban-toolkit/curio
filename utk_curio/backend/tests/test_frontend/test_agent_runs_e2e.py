@@ -2,7 +2,7 @@
 
 The catalog ships a roster of built-in agents and, until this module, nothing
 proved that any *given* one of them could be installed, attached and actually
-run. ``test_agents/test_routes.py`` covers the run loop richly but in-process
+run. ``test_agents/test_routes_turns.py`` covers the run loop richly but in-process
 and for a handful of coordinates; ``test_agent_catalog.py`` covers the drawer
 and the palette but never runs a turn. The gap was per-agent, end to end.
 
@@ -74,7 +74,8 @@ SAFE_READ_TOOLS = (
 # mutate contracts (dataset.install, package.install, package.draft.apply,
 # node.template.create) each need a real catalog row or, for the draft, a run of
 # the isolated build service; their mints are covered in-process by
-# test_agents/test_routes.py. An agent declaring only those falls through to the
+# test_agents/test_routes_turns.py and test_agents/test_routes_proposals.py. An
+# agent declaring only those falls through to the
 # read-tool leg below rather than getting a mint assertion that would be more
 # about fixture plumbing than about the agent.
 # Ordered MOST specific first, because an agent that declares several gets the

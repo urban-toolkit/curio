@@ -261,7 +261,7 @@ def _read_metadata_table(spec: ResourceSpec, provider, entry):
         if local is not None:
             data = Path(local).read_bytes()
         else:
-            with provider.open(entry.relpath) as handle:
+            with provider.open(entry.relpath, max_bytes=MAX_METADATA_BYTES, ceiling=MAX_METADATA_BYTES) as handle:
                 data = handle.read()
     except DiscoveryError as exc:
         raise IndexError_(f"{spec.name}: the metadata table {entry.relpath} could not be read ({exc})") from exc

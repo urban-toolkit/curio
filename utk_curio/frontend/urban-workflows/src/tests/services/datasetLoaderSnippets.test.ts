@@ -152,6 +152,30 @@ describe("snippetForFormat", () => {
     }
   });
 
+  it("names the Autark layer of a Discovery GeoParquet download too", () => {
+    const overture = {
+      id: "imported.overture-buildings@1",
+      format: "parquet",
+      path: "/tmp/overture_buildings.parquet",
+      layerName: "buildings",
+      discoverySource: { sourceId: "source.overture.maps@1", resourceId: "buildings" },
+    };
+    // With an id the layer travels to the sandbox with the dataset's format,
+    // so the code is the one load call.
+    expect(buildDatasetLoaderCode(overture as never)).toBe(
+      'df = curio_load_data("imported.overture-buildings@1")\nreturn df',
+    );
+    // Without an id the literal-path loader names the layer itself.
+    const idless = { ...overture, id: undefined };
+    const code = buildDatasetLoaderCode(idless as never);
+    expect(code).toContain("df = gpd.read_parquet(dataset_path)");
+    expect(code).toContain('    df = pd.read_parquet(dataset_path)\ndf.metadata = {"layerType": "buildings"}\n');
+    expect(code.trimEnd().endsWith("return df")).toBe(true);
+    for (const other of [{ ...idless, discoverySource: null }, { ...idless, layerName: "places" }]) {
+      expect(buildDatasetLoaderCode(other as never)).not.toContain("df.metadata");
+    }
+  });
+
   it("prefers a backend-supplied snippet over the local generator", () => {
     // Hub catalog rows always carry the backend's `loaderSnippet`, which is the
     // authoritative one.

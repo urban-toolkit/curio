@@ -351,8 +351,8 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
       {accountSettingsOpen ? (
         /* The account scope lives in API Settings now, beside the provider it
            applies to. This drawer opens that one surface rather than a second
-           modal for half the answer. On the canvas it is the ONLY way there:
-           GlobalPageHeader renders only on /projects and /catalog/*. */
+           modal for half the answer, so it is one click from here as well as
+           from the top bar. */
         <React.Suspense fallback={null}>
           <ApiSettingsModal isOpen onClose={() => setAccountSettingsOpen(false)} />
         </React.Suspense>

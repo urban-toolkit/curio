@@ -12,8 +12,9 @@ disclosure the drawer shows before the click has to match what the server
 actually does on it, and that agreement lives across the wire.
 
 Covered more cheaply elsewhere, and deliberately not re-asserted here:
-``test_agents/test_routes.py`` owns the route contract and the closure's
-server-side refusal, ``test_agents/test_delegation.py`` owns the closure
+``test_agents/test_routes_catalog.py`` and ``test_agents/test_routes_lifecycle.py``
+own the route contract and the closure's server-side refusal,
+``test_agents/test_delegation.py`` owns the closure
 computation, and ``src/tests/catalog/AgentCatalogDrawer.test.tsx`` owns which
 button a card shows for a given prop set.
 
@@ -115,10 +116,9 @@ def _enter_dataflow(page, app_frontend, current_server, *, username, project):
 
 
 def _open_drawer_from_menu(page):
-    """Data menu -> Agent Catalog."""
-    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
+    """The top bar's Agent Catalog button."""
     # "Agent Catalog" also labels the palette trigger, whose accessible name
-    # includes a count span - exact=True picks out the menu row's own button.
+    # includes a count span - exact=True picks out the bar's own button.
     page.get_by_role("button", name="Agent Catalog", exact=True).click()
     return _drawer(page)
 
@@ -238,12 +238,12 @@ def test_add_agent_propagates_to_palette(
     lock_before = _installed_coords(current_server, token, project_id)
 
     # 2. Open the palette FIRST and leave it mounted, then reach the drawer
-    #    from the Data menu. Opening the drawer does not change ToolsMenu's
+    #    from the top bar. Opening the drawer does not change ToolsMenu's
     #    `activePalette`, so the palette survives underneath - which is what
     #    makes the post-condition below a claim about a live repaint rather
     #    than about a fresh fetch on mount.
     #
-    #    Entering from the menu rather than the palette's own "Browse Agent
+    #    Entering from the top bar rather than the palette's own "Browse Agent
     #    Catalog +" footer is what keeps the palette mounted underneath, which
     #    is the whole point here. (The footer is reachable now that the panel is
     #    positioned against the dock like its two peers; it was below the fold

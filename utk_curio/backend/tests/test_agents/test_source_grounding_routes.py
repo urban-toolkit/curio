@@ -14,9 +14,9 @@ import json
 
 import pytest
 
-from utk_curio.backend.tests.test_agents import test_routes as _tr
-
-_auth = _tr._auth
+from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_proposals
+from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turns
 
 NB = "agent.node-builder@1.0.0"
 DF = "agent.dataset-finder@1.0.0"
@@ -50,7 +50,7 @@ def project(client, user_and_token):
     user, token = user_and_token
     from utk_curio.backend.app.projects.services import _user_dir_key
 
-    _tr.TestNodeCreate()._write_builtin_package(_user_dir_key(user), templates=TEMPLATES)
+    routes_proposals.TestNodeCreate()._write_builtin_package(_user_dir_key(user), templates=TEMPLATES)
     body = {
         "name": "p",
         "spec": {"dataflow": {"nodes": [
@@ -154,7 +154,7 @@ class TestRegression298:
 
     def test_fabricated_filename_refused_then_catalog_path_grounded(self, client, user_and_token, tmp_curio, project, monkeypatch):
         user, token = user_and_token
-        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="ibge.csv")
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="ibge.csv")
         _install(client, token, project, NB)
         att = _attach(client, token, project, NB)
 
@@ -208,7 +208,7 @@ class TestRegression298:
 class TestCatalogGrounding:
     def test_catalog_search_rows_carry_path_and_loader_for_node_builder(self, client, user_and_token, tmp_curio, project, monkeypatch):
         user, token = user_and_token
-        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="tracts.csv")
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="tracts.csv")
         _install(client, token, project, NB)
         att = _attach(client, token, project, NB)
         calls = _script(monkeypatch, [_search_tail(), "ok"])
@@ -246,7 +246,7 @@ class TestExternalDiscovery:
     external rows probed); the user confirms before any node is proposed."""
 
     def _discover_run(self, client, user, token, project, monkeypatch, *, extra_replies=()):
-        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="heat.csv")
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="heat.csv")
         _install(client, token, project, NB, DF)
         att = _attach(client, token, project, NB)
         _fake_probe(monkeypatch, {NOAA: {"status": "verified", "httpStatus": 200, "checkedAt": "now"}})
@@ -462,7 +462,7 @@ class TestSolveSourceGrounding:
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
-        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="heat_tracts.csv")
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="heat_tracts.csv")
 
         def child(frame):
             if f'"nodeType": "{DL}"' in frame:

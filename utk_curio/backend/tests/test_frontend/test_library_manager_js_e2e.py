@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 @pytest.fixture()
 def libraries(app_frontend: "FrontendPage", current_server: str, page):
-    """Open Data > Installed libraries on a fresh dataflow."""
+    """Open File > Installed libraries on a fresh dataflow."""
     require_project_page()
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
@@ -49,7 +49,7 @@ def libraries(app_frontend: "FrontendPage", current_server: str, page):
     )
     require_owner_view(page)
 
-    page.get_by_role("button", name=re.compile(r"^Data")).click(force=True)
+    page.get_by_role("button", name="File menu", exact=True).click(force=True)
     page.get_by_role("button", name="Installed libraries", exact=True).click()
 
     dialog = page.get_by_role("dialog").filter(

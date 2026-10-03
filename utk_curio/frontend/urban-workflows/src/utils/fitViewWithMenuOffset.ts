@@ -15,7 +15,7 @@ import { TOOLS_PALETTE_PANEL_ATTR } from "../components/menus/nodes/toolsPalette
 // the visible width is what actually makes the node fit on screen.
 //
 // The menu bar is the same kind of overlay along the top: `position: fixed` over
-// the pane, 65 px tall. Fitted against the full pane height, a dataflow whose
+// the pane, --curio-top-bar-height tall. Fitted against the full pane height, a dataflow whose
 // height sets the zoom got about 60 px of top margin, and the top node's title
 // bar sat under the bar (#493). So the height is measured the way the width is:
 // the fit uses the pane below the bar and is shifted down by it. The dataflow
@@ -26,7 +26,7 @@ import { TOOLS_PALETTE_PANEL_ATTR } from "../components/menus/nodes/toolsPalette
 // immediately, so the viewport read back was the pre-animation value and the
 // instant setViewport cancelled the fit, shifting the canvas instead of framing.)
 
-/** The attribute UpMenu puts on the canvas menu bar. */
+/** The attribute the top bar (GlobalPageHeader) carries; the canvas wears it. */
 export const MENU_BAR_ATTR = "data-curio-menu-bar";
 
 /** The attribute UpMenu puts on the dataflow title block under the bar. Its

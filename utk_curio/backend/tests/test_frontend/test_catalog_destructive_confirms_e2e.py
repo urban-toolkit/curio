@@ -90,7 +90,6 @@ def _modal(page, name):
 
 
 def _open_data_drawer(page):
-    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
     page.get_by_role("button", name="Data Catalog", exact=True).click()
     root = page.locator(DATA_DRAWER)
     root.wait_for(state="attached", timeout=15000)
@@ -101,7 +100,6 @@ def _open_data_drawer(page):
 
 
 def _open_node_drawer(page):
-    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
     page.get_by_role("button", name="Node Catalog", exact=True).click()
     root = page.locator(NODE_DRAWER)
     root.wait_for(state="attached", timeout=15000)

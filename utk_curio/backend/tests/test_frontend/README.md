@@ -50,7 +50,7 @@ hardware WebGPU, and a matrix of CPU runners
 each job's runner: GitHub-hosted `ubuntu-latest` while the organization's
 hosted runners have room and the self-hosted arcade runners (`[self-hosted,
 cpu]`) after that, and for the GPU
-share `arcade-gpu` when it is idle and `utk-gpu` otherwise. The GPU share is
+share an arcade GPU runner (`arcade-gpu-01` to `arcade-gpu-06`) while one is free and `utk-gpu` otherwise. The GPU share is
 still called `utk`, after the first GPU runner. A test runs on `utk` when its
 browser runs WebGPU: a `test_workflows.py` case whose dataflow has an Autark node, a
 walkthrough scene whose example or script drives Autark or the GPU, and any
@@ -506,8 +506,8 @@ described under **Agent runs** below.
 
 The suite has two configurations with mutually-exclusive UI surfaces:
 
-- **default** (`CURIO_NO_PROJECT=0`, the implicit value): the SPA exposes a per-user `/projects` page and the File menu offers `New dataflow` / `Load dataflow` / `Save dataflow` / `Save dataflow as` / `Export as notebook` / `Go to projects`.
-- **no-project** (`CURIO_NO_PROJECT=1`): the SPA auto-guest-signs in, routes `/` directly to `/dataflow`, and hides only the project-backed entries (`Save dataflow` and `Go to projects`); `New dataflow`, `Load dataflow`, `Save dataflow as`, and `Export as notebook` remain visible.
+- **default** (`CURIO_NO_PROJECT=0`, the implicit value): the SPA exposes a per-user `/projects` page and the File menu offers `New dataflow` / `Load dataflow` / `Save dataflow` / `Save dataflow as` / `Export as notebook` / `Installed libraries` / `Go to projects`.
+- **no-project** (`CURIO_NO_PROJECT=1`): the SPA auto-guest-signs in, routes `/` directly to `/dataflow`, and hides only the project-backed entries (`Save dataflow` and `Go to projects`); `New dataflow`, `Load dataflow`, `Save dataflow as`, `Export as notebook` and `Installed libraries` remain visible.
 
 Tests that depend on either surface call `require_project_page()` / `require_no_project_mode()` from [`utils.py`](utils.py) (both consult the live backend's `/api/config/public` so the pytest process and the `curio start` subprocess never disagree). To exercise the no-project UI explicitly:
 
@@ -532,7 +532,7 @@ dependencies, so nothing shells out to pip. `curio.weather@1`,
 `ai.utk.uhvi@1` and `curio.streetvision@1` pull rasterio / geopandas /
 **torch** through a synchronous call capped at 30 minutes - and worse, the
 resulting user-store copy makes *every later* `curio start` re-resolve those deps
-(`main.py` walks every user store on boot and `sys.exit(1)`s if pip fails). The
+(`utk_curio/cli/dependencies.py` walks every user store on boot and `sys.exit(1)`s if pip fails). The
 e2e suite cannot stub pip: it runs in the backend subprocess, not the pytest
 process. Guard the install endpoint with `page.route` so a mis-targeted click
 fails in milliseconds instead.
@@ -681,7 +681,8 @@ Things worth knowing before adding to these:
   (`dataset.install`, `package.install`, `package.draft.apply`,
   `node.template.create`) each need a real catalog row, or a run of the isolated
   build service; their mints are covered in-process by
-  `test_agents/test_routes.py`, and an agent declaring only those falls through
+  `test_agents/test_routes_turns.py` and `test_agents/test_routes_proposals.py`,
+  and an agent declaring only those falls through
   to the read-tool leg.
 - **A plan is applied per node**, through the planned row's own
   `Create node <title>` button and the `apply-node` route - not the card's
@@ -874,7 +875,7 @@ the recording - `_record` finalizes the video in a `finally`.
 
 - **It installs packages and libraries for real.** When pytest owns the stack,
   `tests/conftest.py` sets `CURIO_LAUNCH_CWD` to the **repo root**, so user
-  package stores land in `<repo>/.curio/users/<id>/` - and `main.py` walks every
+  package stores land in `<repo>/.curio/users/<id>/` - and `utk_curio/cli/dependencies.py` walks every
   user store on boot and `sys.exit(1)`s if pip cannot re-resolve one. Budget
   10-25 minutes for the torch install in `nodes`, and check that
   `python curio.py start` still boots afterwards.

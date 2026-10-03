@@ -9,7 +9,6 @@ import { useAgentAttachmentsContext } from "../../../providers/agents";
 import { composeAgentRunContext } from "../../../services/agents";
 import { useAgentCanvasMutations } from "./useAgentCanvasMutations";
 import { useFlowContext } from "../../../providers/FlowProvider";
-import { ConnectionKeysModalHost } from "../../connectionKeys/ConnectionKeysModalHost";
 import { useSlideDrawerPresentation } from "../../../hook/useSlideDrawerPresentation";
 
 /**
@@ -145,8 +144,9 @@ export const AgentDockOverlay: React.FC = () => {
 
   return (
     <>
-      {/* dev/116: "Add key for <host>" from any card opens Settings → Connection keys here. */}
-      <ConnectionKeysModalHost />
+      {/* "Add key for <host>" from a card opens API Settings through the
+          top bar's ConnectionKeysModalHost (GlobalPageHeader): one host per
+          page, or one request would open two modals. */}
       <AgentDock
         attachments={canvasAttachments}
         selectedId={ctx.selectedId}

@@ -78,6 +78,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 |---|---|---|
 | `--catalog-root PATH` | `<repo_root>/datasets/` | Where the shared Data Catalog is read from and published to |
 | `--discovery-root PATH` | `<repo_root>/discovery/` | Where the shipped Discovery Catalog sources are read from. Your own sources stay in `.curio/discovery/` |
+| `--discovery-max-download-mb MB` | `1024` | The largest file the Discovery Catalog downloads, or adds from a bucket. A source's manifest may set a lower limit for itself |
 | `--models-root PATH` | `<repo_root>/models/` | Where the shipped Model Catalog models are read from |
 | `--save-node-outputs` / `--no-save-node-outputs` | off | Whether a new node's **Save output dataset** toggle starts on. Users can still flip it on each node |
 | `--allow-publish` / `--no-allow-publish` | on | Whether the node and data catalogs allow Publish/Unpublish |
@@ -575,7 +576,7 @@ Datasets have their own catalog, built on the same model as the Node Catalog: a 
 
 Three surfaces manage datasets:
 
-- The **Data Catalog drawer** inside the canvas. Open it from the top menu **Data → Data Catalog**, or from the **Data Catalog** dropdown in the left Tools panel via **Browse Data Catalog +**. Add datasets to the open dataflow, import files from your machine, or delete.
+- The **Data Catalog drawer** inside the canvas. Open it from the **Data Catalog** button in the top bar, or from the **Data Catalog** dropdown in the left Tools panel via **Browse Data Catalog +**. Add datasets to the open dataflow, import files from your machine, or delete.
 - The **Data Catalog** dropdown in the Tools panel, listing the datasets added to the open dataflow and, under **Saved outputs**, the outputs its nodes saved. Drag one onto the canvas to create (or extend) a node with generated loader code.
 - The **`/catalog/data`** page, the library view for your whole account, reached from `/projects` and the **Data Catalog** tab. **Add to all projects** there adds a dataset to every dataflow you have.
 
@@ -621,8 +622,8 @@ There are two scopes:
 - **`/catalog/agents`**, the **Agent Catalog** tab, is your **account**.
   **Add to all projects** there adds an agent to every dataflow you have, and
   to every new one.
-- **The Agent Catalog drawer**, opened on the canvas from **Data → Agent
-  Catalog** or the **Agent Catalog** dropdown in the left Tools panel, adds an
+- **The Agent Catalog drawer**, opened on the canvas from the **Agent
+  Catalog** button in the top bar or the **Agent Catalog** dropdown in the left Tools panel, adds an
   agent to **this dataflow**.
 
 ### Catalog settings

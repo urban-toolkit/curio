@@ -292,16 +292,13 @@ def test_gallery_canvas_and_drawers(gallery, owner, app_frontend, current_server
         ("Agent Catalog", "drawer-agent-catalog"),
     ):
         try:
-            # Fresh load per drawer. Driving both from one page left the Data
-            # menu in whichever state the previous iteration toggled it into, so
-            # the second entry was never shown and the click sat out its full
-            # timeout on an invisible element.
+            # Fresh load per drawer, so each starts from a canvas with no
+            # drawer open over the top bar's catalog buttons.
             page.goto(app_frontend.base_url + "/dataflow/" + project_id)
             page.wait_for_url("**/dataflow/" + project_id, timeout=20000)
             page.locator(".react-flow__node").first.wait_for(
                 state="visible", timeout=30000
             )
-            page.get_by_role("button", name="Data menu", exact=True).click(force=True)
             page.get_by_role("button", name=menu_entry, exact=True).click(timeout=15000)
             drawer = page.get_by_role("dialog").filter(
                 has=page.get_by_role("heading", name=menu_entry, exact=True)
@@ -356,9 +353,8 @@ def test_gallery_modals(gallery, owner, app_frontend, page):
     except (PlaywrightTimeoutError, AssertionError) as exc:
         gallery.miss("modal-dataset-detail", str(exc))
 
-    # API Settings, captured from the projects page because that is where its
-    # header button lives; the canvas reaches the same modal through the
-    # drawer's cog.
+    # API Settings, captured from the projects page. The canvas wears the same
+    # top bar, and its Agent Catalog drawer's cog opens the same modal.
     try:
         page.goto(app_frontend.base_url + "/projects")
         expect(page.get_by_role("heading", name="Projects", level=1)).to_be_visible(

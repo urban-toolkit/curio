@@ -8,10 +8,11 @@
      for a surface a card sits on. On pure white the tiles had no edge at all
      and the page read as an empty canvas with a box floating on it. */
   background-color: var(--curio-surface-alt);
-  /* The bar is `position: fixed` (UpMenu.module.css), so the page reserves its
-     height rather than laying it out. The canvas box below is what the fit and
-     the resize observer measure, so it must not extend under the bar. */
-  padding-top: 65px;
+  /* The bar is `position: fixed` (DashboardTopBar.module.css), so the page
+     reserves its height rather than laying it out. The canvas box below is what
+     the fit and the resize observer measure, so it must not extend under the
+     bar. */
+  padding-top: var(--curio-top-bar-height);
   box-sizing: border-box;
 }
 
@@ -68,7 +69,7 @@
 /* The read-only notice, in the yellow the canvas uses for a shared view. */
 .banner {
   position: absolute;
-  top: 76px;
+  top: calc(var(--curio-top-bar-height) + 11px);
   left: 50%;
   transform: translateX(-50%);
   background: #FFF4D6;

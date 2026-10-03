@@ -59,13 +59,13 @@ def auth(user_and_token):
 def osm_home(tmp_path, monkeypatch):
     """A HOME holding Curio's copy of DuckDB's extensions, as launch seeds it,
     so autk-db's ``INSTALL spatial`` in the Node child reads it from disk."""
-    from utk_curio import main as curio_main
+    from utk_curio.cli import dependencies
 
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(Path, "home", lambda: home)
-    curio_main.seed_duckdb_extensions()
+    dependencies.seed_duckdb_extensions()
     return home
 
 
@@ -227,6 +227,12 @@ class TestItsRowsNeedNoNetwork:
         assert [p["id"] for p in rows["features-by-tag"]["parameters"]] == ["area", "tags"]
         assert rows["features-by-tag"]["parameters"][1]["suggestions"][:2] == ["amenity", "shop"]
         assert body["sources"] == [{"sourceId": "source.osm.openstreetmap", "status": "ok", "count": 8}]
+
+    def test_a_search_ignores_accents_and_keeps_the_declared_order(self, client, auth, live):
+        from urllib.parse import quote
+
+        body = client.get(f"/api/discovery/sources/{OSM}/search?q={quote('Párks')}", headers=auth).get_json()
+        assert [r["resourceId"] for r in body["resources"]] == ["parks", "all-layers"]
 
     def test_the_source_row_says_service(self, client, auth, live):
         row = client.get(f"/api/discovery/sources/{OSM}", headers=auth).get_json()
@@ -397,6 +403,11 @@ class TestItBecomesDatasets:
         # The house and the part that shares its wall belong to one Autark building.
         assert by_element[("way", 303)]["building_id"] == by_element[("way", 304)]["building_id"]
         assert by_element[("way", 303)]["building_id"] != by_element[("way", 301)]["building_id"]
+        # So do two separate buildings that share a wall: each is its own row,
+        # named by its own osm_id, and building_id groups them as Autark draws them.
+        assert by_element[("way", 308)]["building"] == by_element[("way", 309)]["building"] == "yes"
+        assert by_element[("way", 308)]["building_id"] == by_element[("way", 309)]["building_id"]
+        assert by_element[("way", 308)]["building_id"] != by_element[("way", 303)]["building_id"]
 
     def test_every_feature_names_its_osm_element(self, client, auth, live):
         job = wait_for(client, auth, acquire(client, auth, OSM, "all-layers", parameters={"area": GOLF})

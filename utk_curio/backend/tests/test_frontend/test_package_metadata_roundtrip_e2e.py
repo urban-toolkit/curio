@@ -494,7 +494,6 @@ def test_package_metadata_survives_export_and_reimport(
     # ------------------------------------------------------------------
     # 5. Load it back in through the Node Catalog drawer
     # ------------------------------------------------------------------
-    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
     page.get_by_role("button", name="Node Catalog", exact=True).click()
     page.locator(DRAWER_ROOT).wait_for(state="attached", timeout=15000)
     # Filtered by heading: the install dialog is also role="dialog" but carries

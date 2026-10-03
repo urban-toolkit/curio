@@ -21,7 +21,7 @@ import os
 
 import pytest
 
-from utk_curio import main as launcher
+from utk_curio.cli import dependencies as launcher
 from utk_curio.backend.app.common.user_storage import users_base
 
 BASE_TEMPLATE = {

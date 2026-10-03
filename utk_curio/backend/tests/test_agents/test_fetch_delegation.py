@@ -21,10 +21,9 @@ from utk_curio.backend.app.agents.application.turns import grounding
 from utk_curio.backend.app.agents.application.turns import roster as packages_roster
 from utk_curio.backend.app.agents.application.turns import titles
 from utk_curio.backend.app.agents.infrastructure import providers
-from utk_curio.backend.tests.test_agents import test_routes as _tr
+from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turns
 from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import _Harness
-
-_auth = _tr._auth
 
 DATA_OBSERVATION = {
     "status": "verified", "httpStatus": 200, "contentType": "application/geo+json",
@@ -246,7 +245,7 @@ class TestAfterTheImportSolvingContinues:
         h, finder_id = _await_candidates(client, user, token, monkeypatch)
         # The user follows the portal steps and imports the file: the ONE
         # catalog import, which the card calls through its shared hook.
-        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
         loader = (
             "import pandas as pd\n"
             f'return pd.read_csv(curio_data_path("{dataset_id}"))'
@@ -297,7 +296,7 @@ class TestAMidSessionDatasetStillGetsItsPath:
         self, app, tmp_curio, user_and_token, monkeypatch
     ):
         user, _token = user_and_token
-        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="mid.csv")
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="mid.csv")
         code = f'return pd.read_csv(curio_data_path("{dataset_id}"))'
         mapping: dict = {}  # what the session started with: nothing
         with app.test_request_context():
@@ -395,7 +394,7 @@ class TestAnAcquirableRowIsDownloaded:
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         user, token = user_and_token
-        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
         fake = _FakeDiscovery(started={"dataset": {"id": dataset_id}, "alreadyPresent": True})
         h, finder_id = _discovery_harness(client, user, token, monkeypatch, fake)
         loader = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{dataset_id}"))'
@@ -428,7 +427,7 @@ class TestAnAcquirableRowIsDownloaded:
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         user, token = user_and_token
-        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
         fake = _FakeDiscovery(started={"dataset": {"id": dataset_id}, "alreadyPresent": True})
         direct = "source.curio.direct-url@1"
         roster = packages_roster._LazyRoster

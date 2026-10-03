@@ -2,7 +2,7 @@
 
 ``set_environment_variables`` is the only translation layer between the
 launcher's argparse flags and the env vars every server reads. Nothing else in
-the suite imports ``utk_curio.main``, so this mapping has been unverified: the
+the suite imports ``utk_curio.cli.environment``, so this mapping has been unverified: the
 backend tests set the env vars directly and never exercise the code that
 derives them.
 
@@ -18,7 +18,17 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.main import set_environment_variables
+from utk_curio.cli.environment import set_environment_variables
+
+
+def _launcher_source() -> str:
+    """The launcher's whole text: utk_curio/main.py and every utk_curio/cli module."""
+    import utk_curio.cli as cli
+    import utk_curio.main as launcher
+
+    files = [Path(launcher.__file__)] + sorted(Path(cli.__file__).parent.glob("*.py"))
+    return "\n".join(f.read_text(encoding="utf-8") for f in files)
+
 
 BASE = dict(
     backend_host="127.0.0.1",
@@ -52,6 +62,7 @@ def _isolate_env(monkeypatch, tmp_path):
         "CURIO_SOLVE_BATCH_DEADLINE",
         "CURIO_VALIDATION_EXEC_TIMEOUT",
         "CURIO_VALIDATION_NODE_LIMIT",
+        "CURIO_DISCOVERY_MAX_DOWNLOAD_MB",
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
@@ -139,11 +150,11 @@ def test_a_hosted_instance_that_cannot_isolate_refuses_at_launch(monkeypatch):
 @pytest.fixture
 def has_exec_account(monkeypatch):
     """A root launch on a host carrying the conventional execution account."""
-    import utk_curio.main as main_mod
+    import utk_curio.cli.environment as environment_mod
 
     monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
-    monkeypatch.setattr(main_mod, "_discover_exec_user",
-                        lambda: main_mod.DEFAULT_EXEC_USER)
+    monkeypatch.setattr(environment_mod, "_discover_exec_user",
+                        lambda: environment_mod.DEFAULT_EXEC_USER)
 
 
 def test_a_deployment_that_can_isolate_does(linux_host, has_exec_account):
@@ -396,6 +407,27 @@ def test_a_solve_flag_reaches_the_setting_the_backend_reads(arg, env_name, value
     assert reader() == value
 
 
+def test_the_discovery_download_ceiling_flag_reaches_the_setting_the_backend_reads():
+    from utk_curio.backend.app.discovery.domain import limits
+
+    set_environment_variables(**BASE, discovery_max_download_mb=2048)
+    assert os.environ["CURIO_DISCOVERY_MAX_DOWNLOAD_MB"] == "2048"
+    assert limits.max_download_bytes() == 2048 * 1024 * 1024
+
+
+def test_without_the_discovery_download_ceiling_flag_it_is_one_gibibyte():
+    from utk_curio.backend.app.discovery.domain import limits
+
+    set_environment_variables(**BASE)
+    assert "CURIO_DISCOVERY_MAX_DOWNLOAD_MB" not in os.environ
+    assert limits.max_download_bytes() == 1024 * 1024 * 1024
+
+
+def test_a_discovery_download_ceiling_of_zero_is_refused_at_launch():
+    with pytest.raises(ValueError, match="--discovery-max-download-mb"):
+        set_environment_variables(**BASE, discovery_max_download_mb=0)
+
+
 def test_save_node_outputs_flag_sets_the_toggles_default():
     set_environment_variables(**BASE, save_node_outputs=True)
     assert os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] == "1"
@@ -536,9 +568,7 @@ class TestAgentAndBuildFlags:
         """
         import re
 
-        import utk_curio.main as launcher
-
-        source = Path(launcher.__file__).read_text(encoding="utf-8")
+        source = _launcher_source()
         # Read from source rather than by building the parser: the parser is
         # constructed inside main(), and TestVariablesThatStayEnvOnly below
         # already reads the file the same way.
@@ -566,9 +596,7 @@ class TestVariablesThatStayEnvOnly:
         # Written by backend_runtime when it spawns a package backend, and by
         # install_preview_runner into the wrapper it generates. A user setting
         # these by hand would be configuring one subprocess invocation.
-        import utk_curio.main as launcher
-
-        source = Path(launcher.__file__).read_text(encoding="utf-8")
+        source = _launcher_source()
         for key in ("CURIO_PKG_ENTRY", "CURIO_PKG_NET_ALLOWED", "CURIO_PREVIEW_REACTFLOW_UMD"):
             assert key not in source, key
 
@@ -576,9 +604,7 @@ class TestVariablesThatStayEnvOnly:
         # CURIO_TESTING_LLM_SCRIPT is read only when CURIO_TESTING is set;
         # exposing it on the launcher would advertise a test seam as an
         # operator feature.
-        import utk_curio.main as launcher
-
-        source = Path(launcher.__file__).read_text(encoding="utf-8")
+        source = _launcher_source()
         assert "CURIO_TESTING_LLM_SCRIPT" not in source
 
 
@@ -762,7 +788,7 @@ def test_a_local_run_on_the_same_host_is_untouched(monkeypatch):
 
 def test_deploy_that_can_isolate_starts_and_isolates(linux_host, monkeypatch):
     """The supported deployment shape still resolves to fork."""
-    monkeypatch.setattr("utk_curio.main._discover_exec_user", lambda: "curio-exec")
+    monkeypatch.setattr("utk_curio.cli.environment._discover_exec_user", lambda: "curio-exec")
     monkeypatch.delenv("CURIO_TESTING", raising=False)
 
     set_environment_variables(**BASE, deploy=True)

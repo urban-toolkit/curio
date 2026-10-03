@@ -55,6 +55,35 @@ def _provider(dir_name: str):
     return build_provider(manifest, transport), transport, manifest
 
 
+class _OneDocument:
+    """A transport that answers every request with the same document."""
+
+    def __init__(self, body: str) -> None:
+        self.body = body
+        self.calls: list[str] = []
+
+    def json_get(self, url, **_kwargs):
+        self.calls.append(url)
+        return self.body
+
+    def download(self, *_args, **_kwargs):  # pragma: no cover
+        raise NotImplementedError
+
+
+#: Five layers, two of them named outside the ``workspace:layer`` grammar.
+_CAPABILITIES = """<?xml version="1.0" encoding="UTF-8"?>
+<wfs:WFS_Capabilities xmlns:wfs="http://www.opengis.net/wfs/2.0" version="2.0.0">
+  <wfs:FeatureTypeList>
+    <wfs:FeatureType><wfs:Name>no-workspace</wfs:Name><wfs:Title>Layer</wfs:Title></wfs:FeatureType>
+    <wfs:FeatureType><wfs:Name>ws:first</wfs:Name><wfs:Title>Layer</wfs:Title></wfs:FeatureType>
+    <wfs:FeatureType><wfs:Name>1ws:digit</wfs:Name><wfs:Title>Layer</wfs:Title></wfs:FeatureType>
+    <wfs:FeatureType><wfs:Name>ws:second</wfs:Name><wfs:Title>Layer</wfs:Title></wfs:FeatureType>
+    <wfs:FeatureType><wfs:Name>ws:third</wfs:Name><wfs:Title>Layer</wfs:Title></wfs:FeatureType>
+  </wfs:FeatureTypeList>
+</wfs:WFS_Capabilities>
+"""
+
+
 @pytest.mark.parametrize("dir_name,query", sorted(RECORDED.items()))
 class TestEveryRecordedProvider:
     def test_search_returns_usable_rows(self, dir_name, query):
@@ -240,6 +269,47 @@ class TestWfs:
             "ciclo" in (r.name + r.resource_id + r.description).lower()
             for r in page.resources
         )
+
+    @pytest.mark.parametrize(
+        "query,first",
+        [
+            ("distrito municipal", "geoportal:distrito_municipal"),  # title "Distrito"
+            ("ponto onibus", "geoportal:ponto_onibus"),  # title "Pontos de ônibus"
+            ("onibus ponto", "geoportal:ponto_onibus"),
+            ("ponto de ônibus", "geoportal:ponto_onibus"),
+            ("pontos onibus", "geoportal:ponto_onibus"),
+            ("distritos", "geoportal:distrito_municipal"),
+        ],
+    )
+    def test_each_word_matches_on_its_own_and_the_layer_they_name_comes_first(self, query, first):
+        """Words match separately, in any order, with or without accents, and
+        a plural finds its singular. The layer whose name or title holds the
+        most of them is first."""
+        provider, _, _ = _provider("source.saopaulo.geosampa@1")
+        page = provider.search(SearchQuery(text=query))
+        assert [r.resource_id for r in page.resources][:1] == [first]
+
+    def test_a_word_finds_the_same_layers_with_or_without_its_accent(self):
+        provider, _, _ = _provider("source.saopaulo.geosampa@1")
+        plain = provider.search(SearchQuery(text="onibus", limit=50))
+        accented = provider.search(SearchQuery(text="ônibus", limit=50))
+        assert [r.resource_id for r in plain.resources] == [r.resource_id for r in accented.resources]
+        assert plain.total_hint == accented.total_hint == 34
+        assert "geoportal:ponto_onibus" in {r.resource_id for r in plain.resources}
+
+    def test_a_page_is_full_when_the_server_lists_ids_curio_refuses(self):
+        """A layer whose name the provider would refuse is never offered, and
+        is left out before the page is cut: the page holds as many rows as
+        asked for, and the count and the cursor are of rows it can offer."""
+        manifest = load_source_manifest(SHIPPED_ROOT / "source.saopaulo.geosampa@1")
+        provider = build_provider(manifest, _OneDocument(_CAPABILITIES))
+        first = provider.search(SearchQuery(text="", limit=2))
+        assert [r.resource_id for r in first.resources] == ["ws:first", "ws:second"]
+        assert first.total_hint == 3
+        assert first.next_cursor == "2"
+        rest = provider.search(SearchQuery(text="", limit=2, cursor=first.next_cursor))
+        assert [r.resource_id for r in rest.resources] == ["ws:third"]
+        assert rest.next_cursor is None
 
     def test_a_warm_cache_makes_a_second_search_free(self):
         """Capabilities is a CATALOGUE, not a query: it lists every published
