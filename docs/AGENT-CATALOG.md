@@ -229,7 +229,7 @@ Whoever runs the install can set a Deployment default with `curio.py start` flag
 
 Every shipped example has a **prompt fixture** under [`docs/examples/prompts/`](examples/prompts/README.md): a reviewed natural-language prompt paired with what the example contains. An evaluation sends the prompt, and only the prompt, to the Dataflow Builder, then compares the dataflow it built with the saved example. The comparison is deterministic code, not a model, and its score is a report: nothing in Curio passes or fails on it.
 
-**Evaluation mode** and **Model training** are sections of API Settings for a signed-in account. A guest does not see them, and that includes the shared guest a Curio started without `--deploy` signs you in as.
+**Evaluation mode** and **Model training** are sections of API Settings. A signed-in account sees them, and so does the shared guest a Curio started without `--deploy` signs you in as. A guest on a `--deploy` instance does not.
 
 ### Evaluation mode
 
@@ -241,7 +241,7 @@ The run applies the plan without your click only inside the project it created, 
 
 When it finishes you get the overall accuracy, a score per category, the failure categories, and **Open the generated dataflow ↗**. The Dataflow Builder's chat in that project carries the whole run: the prompt, the plan it proposed, what was applied, what Solve verified, and the report. A category that was not measured says so.
 
-Each prompt was drafted by a model and needs a person's approval before training can use it. **Approve this prompt** records yours, and **Withdraw approval** takes it back.
+Each prompt was drafted by a model and needs a person's approval before training can use it. **Approve this prompt** records yours, and **Withdraw approval** takes it back. A guest, the local shared guest included, cannot record an approval, because an approval names who made it.
 
 ### Model training
 
