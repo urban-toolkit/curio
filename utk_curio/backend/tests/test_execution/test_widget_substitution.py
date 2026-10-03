@@ -8,6 +8,9 @@ node validated headless runs the code the canvas would run.
 
 Before, the runner read the old ``[!! name$TYPE$default !!]`` marker and always
 used its default, while the browser used the value the user set.
+
+The substitution module is imported inside each test, as ``test_runner.py``
+does, so one missing name fails its own tests and not the whole collection.
 """
 
 from __future__ import annotations
@@ -19,14 +22,6 @@ from pathlib import Path
 import pytest
 
 from utk_curio.backend.app.execution import runner
-from utk_curio.backend.app.execution.widget_substitution import (
-    REFERENCE_RE,
-    WIDGET_NAME_RE,
-    WidgetReferenceError,
-    js_number,
-    normalize_widgets,
-    resolve_widget_references,
-)
 from utk_curio.backend.app.execution.workflow_spec import (
     parse_workflow_dict,
     resolve_widget_placeholders,
@@ -34,24 +29,42 @@ from utk_curio.backend.app.execution.workflow_spec import (
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 WIDGETS_DIR = REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "widgets"
-CASES = json.loads((WIDGETS_DIR / "widgetSubstitution.cases.json").read_text(encoding="utf-8"))["cases"]
 
 KEY = "4242"
 PID = "p-widgets"
 
 
+def _cases() -> list[dict]:
+    return json.loads((WIDGETS_DIR / "widgetSubstitution.cases.json").read_text(encoding="utf-8"))["cases"]
+
+
+def _reference_error():
+    from utk_curio.backend.app.execution.widget_substitution import WidgetReferenceError
+
+    return WidgetReferenceError
+
+
 class TestTheSharedCases:
     """The table Jest reads too (``src/tests/utils/widgetSubstitution.test.ts``)."""
 
-    @pytest.mark.parametrize("case", CASES, ids=[c["name"] for c in CASES])
-    def test_the_runner_writes_what_the_browser_writes(self, case):
-        code, problems = resolve_widget_references(case["code"], case["widgets"], case["language"])
-        assert code == case["expected"]
-        assert [p["message"] for p in problems] == case.get("problems", [])
+    def test_the_runner_writes_what_the_browser_writes(self):
+        from utk_curio.backend.app.execution.widget_substitution import resolve_widget_references
+
+        cases = _cases()
+        assert cases
+        mismatches = []
+        for case in cases:
+            code, problems = resolve_widget_references(case["code"], case["widgets"], case["language"])
+            got = (code, [p["message"] for p in problems])
+            want = (case["expected"], case.get("problems", []))
+            if got != want:
+                mismatches.append(f"{case['name']}: wrote {got!r}, the table says {want!r}")
+        assert not mismatches, "\n".join(mismatches)
 
     def test_the_table_covers_every_language_and_every_problem(self):
-        assert {c["language"] for c in CASES} == {"python", "javascript", "json"}
-        messages = " ".join(m for c in CASES for m in c.get("problems", []))
+        cases = _cases()
+        assert {c["language"] for c in cases} == {"python", "javascript", "json"}
+        messages = " ".join(m for c in cases for m in c.get("problems", []))
         for kind in ("is an old widget marker", "does not name a widget", "has no widget named"):
             assert kind in messages, kind
 
@@ -80,6 +93,8 @@ class TestNumbersMatchJavaScript:
         ],
     )
     def test_js_number(self, value, expected):
+        from utk_curio.backend.app.execution.widget_substitution import js_number
+
         assert js_number(value) == expected
 
 
@@ -95,10 +110,14 @@ class TestThePatternsAreShared:
         return trill["$defs"]["widget"], package["$defs"]["widget"]
 
     def test_the_reference_pattern(self):
+        from utk_curio.backend.app.execution.widget_substitution import REFERENCE_RE
+
         written = re.search(r"WIDGET_REFERENCE_PATTERN = String\.raw`(.*?)`", self._ts("widgetSubstitution.ts"))
         assert written and written.group(1) == REFERENCE_RE.pattern
 
     def test_the_name_pattern(self):
+        from utk_curio.backend.app.execution.widget_substitution import WIDGET_NAME_RE
+
         written = re.search(r"WIDGET_NAME_PATTERN = String\.raw`(.*?)`", self._ts("widgetModel.ts"))
         assert written and written.group(1) == WIDGET_NAME_RE.pattern
         for schema in self._schemas():
@@ -125,14 +144,14 @@ class TestResolveWidgetPlaceholders:
         assert resolve_widget_placeholders("return arg") == "return arg"
 
     def test_an_old_marker_is_refused_naming_the_new_way(self):
-        with pytest.raises(WidgetReferenceError) as exc:
+        with pytest.raises(_reference_error()) as exc:
             resolve_widget_placeholders("x = [!! factor$INPUT_VALUE$1 !!]")
         assert "is an old widget marker" in str(exc.value)
         assert "Widgets tab" in str(exc.value)
 
     def test_every_problem_is_named(self):
         widgets = [{"name": "factor", "type": "number", "default": 1}]
-        with pytest.raises(WidgetReferenceError) as exc:
+        with pytest.raises(_reference_error()) as exc:
             resolve_widget_placeholders("a = [!! missing !!]\nb = [!! 9lives !!]", widgets)
         lines = str(exc.value).split("\n")
         assert len(lines) == 2
@@ -157,6 +176,8 @@ class TestTheSpecCarriesWidgets:
         assert by_id["b"].widgets == []
 
     def test_malformed_entries_are_dropped(self):
+        from utk_curio.backend.app.execution.widget_substitution import normalize_widgets
+
         raw = [
             {"name": "ok", "type": "number", "default": 1},
             {"name": "ok", "type": "text", "default": "duplicate"},
