@@ -95,6 +95,7 @@ A storage source is read when it is first opened, and again when its listing is 
 |---|---|---|---|
 | **Search every portal** | The `/catalog/discovery` search box | Nothing | Results from every portal that can be searched, and the storage sources' matching resources, tagged by source. |
 | **Browse datasets** | Card, drawer, or right-click menu | Nothing | The source's page, searching that portal only. |
+| **Show more** | Below a portal's results, on its page | Nothing | The portal's next page of results, added below the ones shown. |
 | **View details** | Card, drawer, or right-click menu | Nothing | The source's endpoint, licence, formats, download limit, and token needs; a storage source's resource count. |
 | **Add by link** | Direct URL's card, drawer, or right-click menu | Nothing | Direct URL's page, with its **Link to a file** field. |
 | **Download** | A result row, with a format picker when the portal offers more than one | Your Data Catalog gains a dataset | A progress bar, then *"Downloaded `<title>` to your Data Catalog."* with **View details**. A row that needs an answer first, such as a service row's area, opens the **Download** dialog. |
@@ -117,7 +118,7 @@ A storage source is read when it is first opened, and again when its listing is 
 
 **I want to download a dataset and use it.** Find it, pick a format if the row offers a choice, and click **Download**. When it finishes, the row offers **View dataset**. To use it in a dataflow, add it from the Data Catalog ([part 3](#3-using-a-discovered-dataset-in-a-dataflow)).
 
-**I want to search one portal only.** Click **Browse datasets** on its card. The source's page searches that portal alone.
+**I want to search one portal only.** Click **Browse datasets** on its card. The source's page searches that portal alone and lists 20 results at a time; **Show more** below them adds the next 20.
 
 **I want only the rows inside an area.** On a Chicago Data Portal or GeoSampa row, click **Narrow…**, set the **Area**, and click **Download**. A dataset with no location column offers no **Narrow…**.
 
