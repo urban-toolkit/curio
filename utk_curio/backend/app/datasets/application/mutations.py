@@ -236,7 +236,8 @@ class CatalogMutations:
         The same answer as :meth:`_install_imported_bytes` for the same file:
         text formats are stored as UTF-8 (streamed rather than decoded whole),
         counts are filled in, and the returned item is identical. *source_path*
-        is consumed.
+        is consumed. *group_id* and *layer_name* make it one layer of a group,
+        as :meth:`_install_imported_bytes`'s do.
         """
         from utk_curio.backend.app.datasets.install.installer import (
             InstallerError,

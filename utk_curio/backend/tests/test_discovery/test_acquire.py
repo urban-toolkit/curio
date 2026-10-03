@@ -204,14 +204,20 @@ class TestFailuresAreTheUsersAnswer:
         assert job["status"] == "failed"
         assert "too large" in job["error"].lower() or "oversized" in job["error"].lower()
 
-    def test_an_archive_is_refused_with_advice(self, client, auth, failing):
+    def test_a_zip_that_is_not_a_zip_is_refused(self, client, auth, failing):
+        """Its URL and its content type both say zip, and its bytes are CSV text.
+
+        This test used to assert that any zip is refused. Curio now unpacks a
+        zip, so it asserts what is still refused about this fixture: a body
+        that claims to be an archive and is not one.
+        """
         job = wait_for(
             client, auth,
             acquire(client, auth, "source.test.fail@1", "https://portal.test/archive.zip")
             .get_json()["jobId"],
         )
         assert job["status"] == "failed"
-        assert "archive" in job["error"]
+        assert "bytes are not a zip archive" in job["error"]
 
     def test_a_declared_length_over_the_bound_never_reads_a_body(self, client, auth, failing):
         job = wait_for(
@@ -393,3 +399,237 @@ class TestTheDownloadNeverPassesThroughMemory:
         )
         assert job["status"] == "completed", job
         assert job["dataset"]["rowCount"] == 2
+
+
+# ── archives (#608) ─────────────────────────────────────────────────────────
+#
+# Every file below is served by the recorded corpus at https://portal.test/<name>
+# and downloaded through the shipped Direct URL source, the way a pasted link is.
+
+DIRECT = "source.curio.direct-url@1"
+ARCHIVES = (
+    __import__("pathlib").Path(__file__).resolve().parent / "fixtures" / "download" / "archives"
+)
+
+
+def fetch(client, auth, name: str, **body) -> dict:
+    """Download https://portal.test/<name> through the Direct URL source."""
+    res = acquire(client, auth, DIRECT, f"https://portal.test/{name}", **body)
+    assert res.status_code == 202, res.get_data(as_text=True)
+    return wait_for(client, auth, res.get_json()["jobId"], timeout=90.0)
+
+
+def catalog_items(client, auth, **params) -> list[dict]:
+    return client.get("/api/datasets/catalog", headers=auth, query_string=params).get_json()["items"]
+
+
+def sha256_of(name: str) -> str:
+    import hashlib
+
+    return hashlib.sha256((ARCHIVES / name).read_bytes()).hexdigest()
+
+
+def gtfs_layers(client, auth) -> dict[str, dict]:
+    items = [
+        i for i in catalog_items(client, auth)
+        if str(i.get("groupId") or "").startswith("gtfs.x")
+    ]
+    assert len({i["groupId"] for i in items}) == 1, items
+    return {i["layerName"]: i for i in items}
+
+
+class TestArchivesAreUnpacked:
+    def test_a_gzipped_csv_lands_as_its_csv(self, client, auth, live):
+        """LODES publishes each table as one gzipped CSV."""
+        from pathlib import Path
+
+        job = fetch(client, auth, "il_wac_S000_JT00_2022.csv.gz")
+        assert job["status"] == "completed", job
+        dataset = job["dataset"]
+        assert dataset["format"] == "csv"
+        assert dataset["rowCount"] == 3
+        assert dataset["path"].endswith(".csv")
+        assert Path(dataset["path"]).read_text(encoding="utf-8").startswith("w_geocode,C000")
+        # Where it came from is the archive: the same link and the same bytes
+        # are the same download.
+        discovered = dataset["discoverySource"]
+        assert discovered["sourceId"] == DIRECT
+        assert discovered["resourceUrl"] == "https://portal.test/il_wac_S000_JT00_2022.csv.gz"
+        assert discovered["contentSha256"] == sha256_of("il_wac_S000_JT00_2022.csv.gz")
+
+    def test_a_zip_of_one_geotiff_lands_as_the_geotiff(self, client, auth, live):
+        """A GHSL tile is a zip holding one GeoTIFF and its documentation."""
+        from pathlib import Path
+
+        job = fetch(client, auth, "ghsl_tile.zip")
+        assert job["status"] == "completed", job
+        dataset = job["dataset"]
+        assert dataset["format"] == "geotiff"
+        assert Path(dataset["path"]).read_bytes()[:4] in (b"II*\x00", b"MM\x00*")
+
+    def test_an_archive_served_as_octet_stream_is_known_by_its_bytes(self, client, auth, live):
+        """No suffix and a generic content type: the zip signature decides."""
+        job = fetch(client, auth, "files-7731")
+        assert job["status"] == "completed", job
+        assert job["dataset"]["format"] == "geotiff"
+
+    def test_a_zipped_shapefile_lands_as_geoparquet_in_4326(self, client, auth, live):
+        """A TIGER/Line file: the .shp with its .dbf, .shx, .prj and .cpg, in a
+        projected coordinate system, and metadata beside it."""
+        import geopandas as gpd
+
+        job = fetch(client, auth, "tl_2022_17_tabblock20.zip")
+        assert job["status"] == "completed", job
+        dataset = job["dataset"]
+        assert dataset["format"] == "parquet"
+        frame = gpd.read_parquet(dataset["path"])
+        assert frame.crs.to_epsg() == 4326
+        assert list(frame["GEOID20"]) == ["170318391001000", "170318391001001"]
+        west, south, east, north = frame.total_bounds
+        assert -87.64 < west < east < -87.62 and 41.88 < south < north < 41.89
+
+    def test_a_gtfs_feed_lands_as_one_group_of_layers(self, client, auth, live):
+        import geopandas as gpd
+        import pandas as pd
+
+        job = fetch(client, auth, "google_transit.zip")
+        assert job["status"] == "completed", job
+        assert job["dataset"]["importedDatasetCount"] == 7
+
+        layers = gtfs_layers(client, auth)
+        assert set(layers) == {
+            "agency", "calendar", "routes", "shapes", "stop_times", "stops", "trips",
+        }
+        for name, item in layers.items():
+            assert item["format"] == "parquet", name
+            assert item["title"] == f"google_transit ({name})"
+            assert item["discoverySource"]["sourceId"] == DIRECT
+            assert item["discoverySource"]["contentSha256"] == sha256_of("google_transit.zip")
+
+        # Stops are points; ids keep their leading zeros, and a stop GTFS
+        # allows without coordinates keeps its row with no geometry.
+        stops = gpd.read_parquet(layers["stops"]["path"])
+        assert stops.crs.to_epsg() == 4326
+        assert list(stops["stop_id"]) == ["0042", "0043", "0100"]
+        assert list(stops.geometry.geom_type[:2]) == ["Point", "Point"]
+        assert stops.geometry.iloc[2] is None
+        assert (stops.geometry.iloc[0].x, stops.geometry.iloc[0].y) == (-87.630886, 41.885737)
+
+        # Shapes are lines, one per shape_id, in shape_pt_sequence order read
+        # as a number (2, 5, 10); a shape of one point is not a line.
+        shapes = gpd.read_parquet(layers["shapes"]["path"])
+        assert list(shapes["shape_id"]) == ["S01"]
+        assert list(shapes.geometry.iloc[0].coords) == [
+            (-87.630886, 41.885737), (-87.629, 41.8857), (-87.627835, 41.88574),
+        ]
+
+        # Every other table is a table, read as text.
+        routes = pd.read_parquet(layers["routes"]["path"])
+        assert routes["route_id"].tolist() == ["007"]
+        assert "geometry" not in routes.columns
+        stop_times = pd.read_parquet(layers["stop_times"]["path"])
+        assert stop_times["trip_id"].tolist() == ["0001", "0001"]
+        assert stop_times["stop_sequence"].tolist() == [1, 2]
+
+        # The Data Catalog shows the feed as one GTFS entry.
+        grouped = catalog_items(client, auth, groupOsm="true")
+        group_id = layers["stops"]["groupId"]
+        group = next(i for i in grouped if i["id"] == group_id)
+        assert group["format"] == "gtfs"
+        assert group["title"] == "google_transit"
+        assert sorted(group["groupLayerIds"]) == sorted(i["id"] for i in layers.values())
+
+    def test_a_gtfs_feed_in_one_top_folder_is_found(self, client, auth, live):
+        """Some feeds are zipped with their folder; macOS litter is skipped.
+
+        Titled as the Direct URL page titles a pasted link, by its last
+        segment: the group is named without the .zip."""
+        job = fetch(client, auth, "feed.zip", title="feed.zip")
+        assert job["status"] == "completed", job
+        layers = gtfs_layers(client, auth)
+        assert set(layers) == {"agency", "routes", "stops"}
+        assert layers["stops"]["title"] == "feed (stops)"
+
+
+class TestArchivesThatAreRefused:
+    def test_an_archive_curio_does_not_unpack_is_refused_before_any_request(
+        self, client, auth, live, monkeypatch
+    ):
+        from utk_curio.backend.app.discovery.infrastructure import transport as T
+
+        def _never(*_a, **_k):
+            raise AssertionError("a .7z must be refused before anything is downloaded")
+
+        monkeypatch.setattr(T.FixtureDiscoveryTransport, "download", _never)
+        job = fetch(client, auth, "bundle.7z")
+        assert job["status"] == "failed"
+        assert "does not unpack" in job["error"]
+        assert "one data file, a shapefile or a GTFS feed" in job["error"]
+
+    def test_one_known_only_by_its_content_type_is_refused_before_its_body(
+        self, client, auth, live, monkeypatch
+    ):
+        """No suffix to go by, so the refusal waits for the headers, and comes
+        before a single body byte reaches the disk."""
+        from utk_curio.backend.app.discovery.infrastructure import transport as T
+
+        original = T.FixtureDiscoveryTransport.download
+        received: list[int] = []
+
+        def spying(self, url, sink, **kwargs):
+            def counting(chunk):
+                received.append(len(chunk))
+                sink(chunk)
+
+            return original(self, url, counting, **kwargs)
+
+        monkeypatch.setattr(T.FixtureDiscoveryTransport, "download", spying)
+        job = fetch(client, auth, "export")
+        assert job["status"] == "failed"
+        assert "tar" in job["error"] and "does not unpack" in job["error"]
+        assert received == []
+
+    def test_several_data_files_are_refused_naming_them(self, client, auth, live):
+        job = fetch(client, auth, "two_tables.zip")
+        assert job["status"] == "failed"
+        assert "a.csv" in job["error"] and "b.csv" in job["error"]
+        assert "one data file, a shapefile or a GTFS feed" in job["error"]
+
+
+class TestUnpackingIsBounded:
+    def test_a_member_outside_the_archive_is_refused(self, client, auth, live):
+        job = fetch(client, auth, "slip.zip")
+        assert job["status"] == "failed"
+        assert "'..'" in job["error"]
+
+    def test_a_symbolic_link_is_refused(self, client, auth, live):
+        job = fetch(client, auth, "link.zip")
+        assert job["status"] == "failed"
+        assert "symbolic link" in job["error"]
+
+    def test_an_archive_inside_an_archive_is_refused(self, client, auth, live):
+        job = fetch(client, auth, "nested.zip")
+        assert job["status"] == "failed"
+        assert "another archive" in job["error"]
+
+    def test_a_member_that_expands_beyond_any_data_file_is_refused(self, client, auth, live):
+        """2 MiB of one repeated line in 2 KiB: a thousand to one."""
+        job = fetch(client, auth, "bomb.zip")
+        assert job["status"] == "failed"
+        assert "expands more than" in job["error"]
+
+    def test_the_unpacked_bytes_are_counted_and_capped(self, client, auth, live, monkeypatch):
+        monkeypatch.setattr(
+            "utk_curio.backend.app.discovery.application.archives.MAX_UNPACKED_BYTES", 64
+        )
+        job = fetch(client, auth, "il_wac_S000_JT00_2022.csv.gz")
+        assert job["status"] == "failed"
+        assert "unpacks to more than 64 bytes" in job["error"]
+
+    def test_the_member_count_is_capped(self, client, auth, live, monkeypatch):
+        monkeypatch.setattr(
+            "utk_curio.backend.app.discovery.application.archives.MAX_ARCHIVE_MEMBERS", 3
+        )
+        job = fetch(client, auth, "google_transit.zip")
+        assert job["status"] == "failed"
+        assert "7 files, more than the 3" in job["error"]

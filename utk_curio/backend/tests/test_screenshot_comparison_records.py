@@ -17,7 +17,8 @@ import pytest
 from PIL import Image
 
 from utk_curio.backend.tests.test_frontend import comparisons
-from utk_curio.backend.tests.test_frontend import utils as e2e_utils
+from utk_curio.backend.tests.test_frontend.utils import interactions
+from utk_curio.backend.tests.test_frontend.utils import screenshots as e2e_utils
 
 NODEID = "tests/test_frontend/test_scene.py::test_scene[a-chromium]@wf-scene"
 
@@ -331,8 +332,8 @@ def test_an_interaction_frame_keeps_the_pointer_and_the_framing(dirs, monkeypatc
 
     monkeypatch.setattr(e2e_utils, "_wait_for_reactflow_ready", refit)
     monkeypatch.setattr(e2e_utils, "dismiss_toasts", refit)
-    e2e_utils.save_interaction_frame(_HeldPointerPage(), "scene.json", "n1",
-                                     test_name="step", interaction=INTERACTION)
+    interactions.save_interaction_frame(_HeldPointerPage(), "scene.json", "n1",
+                                        test_name="step", interaction=INTERACTION)
 
     [(_, record)] = _records(compare)
     assert (record["status"], record["interaction"]) == ("passed", INTERACTION)

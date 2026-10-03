@@ -7,6 +7,10 @@ or a CSV as ``application/octet-stream``, or answer a ``.geojson`` URL with an
 HTML error page - so detection is a ladder of five, most-trusted first, and
 whatever it decides is checked against what the source is allowed to deliver.
 
+An archive is told apart first (:func:`archive_kind`): a zip or a gzip is
+unpacked (``application/archives.py``) and the ladder then runs on the file
+inside; any other archive is refused (:func:`refuse_archives`).
+
 Getting this wrong is not cosmetic: the format decides which loader the Data
 Catalog generates, so a GeoJSON filed as ``json`` produces a node that returns
 a dict where the user expected a GeoDataFrame.
@@ -25,23 +29,60 @@ from utk_curio.backend.app.discovery.domain.errors import UnsupportedFormatError
 from utk_curio.backend.app.discovery.domain.manifest import DISCOVERY_ACQUIRABLE_FORMATS
 from utk_curio.backend.app.datasets.domain.constants import SUPPORTED_SUFFIXES, TIFF_SIGNATURES
 
-#: Refused before a body is read. Nothing is unpacked in v1: unpacking a remote
-#: archive is the decompression-bomb surface, and it deserves its own design
-#: with its own caps rather than arriving as a side effect of a download.
-ARCHIVE_CONTENT_TYPES = frozenset(
-    {
-        "application/zip",
-        "application/x-zip-compressed",
-        "application/gzip",
-        "application/x-gzip",
-        "application/x-tar",
-        "application/x-7z-compressed",
-        "application/x-bzip2",
-        "application/vnd.rar",
-    }
+#: Archive content types, by the kind of archive they name.
+ARCHIVE_CONTENT_TYPES = {
+    "application/zip": "zip",
+    "application/x-zip-compressed": "zip",
+    "application/gzip": "gzip",
+    "application/x-gzip": "gzip",
+    "application/x-tar": "tar",
+    "application/x-gtar": "tar",
+    "application/x-7z-compressed": "7z",
+    "application/x-bzip2": "bz2",
+    "application/vnd.rar": "rar",
+    "application/x-rar-compressed": "rar",
+}
+
+#: Archive suffixes, by kind. Longest first: a ``.tar.gz`` is a tar.
+ARCHIVE_SUFFIX_KINDS = (
+    (".tar.gz", "tar"),
+    (".tar.bz2", "tar"),
+    (".tgz", "tar"),
+    (".tar", "tar"),
+    (".zip", "zip"),
+    (".gz", "gzip"),
+    (".7z", "7z"),
+    (".bz2", "bz2"),
+    (".rar", "rar"),
+)
+ARCHIVE_SUFFIXES = tuple(suffix for suffix, _kind in ARCHIVE_SUFFIX_KINDS)
+
+#: The archives Curio unpacks (``application/archives.py``): a zip, and a gzip
+#: of one file. Every other kind is refused, before its body is read whenever
+#: its content type or its name says what it is.
+UNPACKED_ARCHIVES = frozenset({"zip", "gzip"})
+
+#: What every refusal of an archive says Curio does take.
+ARCHIVE_ADVICE = (
+    "Curio unpacks a .zip or a .gz holding one data file, a shapefile or a GTFS feed."
 )
 
-ARCHIVE_SUFFIXES = (".zip", ".gz", ".tar", ".tgz", ".7z", ".bz2", ".rar")
+#: The first bytes of each kind. A tar has no magic at its start; its
+#: ``ustar`` marker is at offset 257.
+_ARCHIVE_MAGIC = (
+    (b"PK\x03\x04", "zip"),
+    (b"PK\x05\x06", "zip"),  # an empty zip
+    (b"\x1f\x8b", "gzip"),
+    (b"7z\xbc\xaf\x27\x1c", "7z"),
+    (b"Rar!\x1a\x07", "rar"),
+)
+#: A bzip2 stream: ``BZh``, a block size digit, then the block magic. All of it,
+#: so a CSV whose header starts with ``BZh`` is not taken for one.
+_BZIP2_MAGIC = re.compile(rb"^BZh[1-9]1AY&SY")
+_TAR_MARKER_AT = 257
+_TAR_MARKERS = (b"ustar\x00", b"ustar ")
+
+_ARCHIVE_LABELS = {"zip": "zip", "gzip": "gzip", "tar": "tar", "7z": "7z", "bz2": "bzip2", "rar": "RAR"}
 
 #: Content types we are willing to believe, when nothing better said otherwise.
 CONTENT_TYPE_FORMATS = {
@@ -77,18 +118,74 @@ def disposition_filename(headers: dict) -> str | None:
     return unquote(match.group(1)).strip() if match else None
 
 
+def archive_kind_of_name(filename: str | None) -> str | None:
+    """The kind of archive *filename*'s suffix names, or None."""
+    lowered = (filename or "").strip().lower()
+    for suffix, kind in ARCHIVE_SUFFIX_KINDS:
+        if lowered.endswith(suffix):
+            return kind
+    return None
+
+
+def archive_kind_of_content_type(content_type: str | None) -> str | None:
+    """The kind of archive a ``Content-Type`` names (parameters ignored), or None."""
+    return ARCHIVE_CONTENT_TYPES.get(content_type_of({"Content-Type": content_type or ""}))
+
+
+def sniff_archive(head: bytes) -> str | None:
+    """The kind of archive the first bytes are, or None."""
+    for magic, kind in _ARCHIVE_MAGIC:
+        if head.startswith(magic):
+            return kind
+    if _BZIP2_MAGIC.match(head):
+        return "bz2"
+    if head[_TAR_MARKER_AT:_TAR_MARKER_AT + 6] in _TAR_MARKERS:
+        return "tar"
+    return None
+
+
+def archive_kind(content_type: str = "", filename: str | None = None, head: bytes = b"") -> str | None:
+    """What kind of archive this is, from everything known about it, or None.
+
+    The first bytes win over what the server said, except that a gzip named
+    ``.tar.gz`` or ``.tgz`` is a tar. Then the name, then the content type.
+    """
+    named = archive_kind_of_name(filename)
+    sniffed = sniff_archive(head) if head else None
+    if sniffed == "gzip" and named == "tar":
+        return "tar"
+    return sniffed or named or archive_kind_of_content_type(content_type)
+
+
 def refuse_archives(content_type: str, filename: str | None) -> None:
-    """Raise before any body is read, if this is a container rather than a file."""
-    if content_type in ARCHIVE_CONTENT_TYPES:
+    """Raise if the content type or the name says this is an archive Curio
+    does not unpack.
+
+    Needs no body, so it runs before the request on the name a provider gave
+    the resource, and before the body on the response's headers. A zip and a
+    gzip pass: they are unpacked once they arrive.
+    """
+    by_type = archive_kind_of_content_type(content_type)
+    if by_type is not None and by_type not in UNPACKED_ARCHIVES:
         raise UnsupportedFormatError(
-            f"that resource is a {content_type} archive. Curio downloads single "
-            "data files; unpack it and import the file you want."
+            f"that resource is a {_ARCHIVE_LABELS[by_type]} archive ({content_type_of({'Content-Type': content_type})}), "
+            f"which Curio does not unpack. {ARCHIVE_ADVICE}"
         )
-    lowered = (filename or "").lower()
-    if any(lowered.endswith(suffix) for suffix in ARCHIVE_SUFFIXES):
+    by_name = archive_kind_of_name(filename)
+    if by_name is not None and by_name not in UNPACKED_ARCHIVES:
         raise UnsupportedFormatError(
-            f"{filename!r} is an archive. Curio downloads single data files; "
-            "unpack it and import the file you want."
+            f"{filename!r} is a {_ARCHIVE_LABELS[by_name]} archive, which Curio does not "
+            f"unpack. {ARCHIVE_ADVICE}"
+        )
+
+
+def refuse_sniffed_archive(head: bytes) -> None:
+    """Raise if the first bytes are an archive Curio does not unpack."""
+    kind = sniff_archive(head)
+    if kind is not None and kind not in UNPACKED_ARCHIVES:
+        raise UnsupportedFormatError(
+            f"that resource is a {_ARCHIVE_LABELS[kind]} archive, which Curio does not "
+            f"unpack. {ARCHIVE_ADVICE}"
         )
 
 
@@ -155,6 +252,7 @@ def resolve_format(
     headers: dict,
     head: bytes = b"",
     allowed: tuple[str, ...] = DISCOVERY_ACQUIRABLE_FORMATS,
+    filename: str | None = None,
 ) -> tuple[str, str]:
     """``(format, filename)``, or raise :class:`UnsupportedFormatError`.
 
@@ -166,10 +264,16 @@ def resolve_format(
     3. the **Content-Disposition** filename's suffix;
     4. the **Content-Type**, which plenty of sites get wrong;
     5. the **first bytes**.
+
+    *filename* is the name of a file taken out of an archive. It stands in for
+    the link and the headers, which describe the archive rather than the file.
     """
-    content_type = content_type_of(headers)
-    disposition = disposition_filename(headers)
-    url_name = posixpath.basename(urlparse(final_url).path or "") or None
+    if filename is not None:
+        content_type, disposition, url_name = "", None, filename
+    else:
+        content_type = content_type_of(headers)
+        disposition = disposition_filename(headers)
+        url_name = posixpath.basename(urlparse(final_url).path or "") or None
 
     refuse_archives(content_type, disposition or url_name)
 

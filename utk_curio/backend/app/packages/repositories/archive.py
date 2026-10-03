@@ -18,6 +18,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from utk_curio.backend.app.common import safe_archive
 from utk_curio.backend.app.common.safe_paths import (
     is_within,
     PathTraversalError,
@@ -85,28 +86,14 @@ def _safe_member_path(raw_name: str) -> tuple[str, ...]:
 
     The check happens *before* the archive is touched on disk; together
     with the post-extract :func:`is_within` guard this makes zip-slip
-    impossible.
+    impossible. The traversal rules are the shared ones
+    (:func:`safe_archive.member_segments`); the charset is the package's own.
     """
-    if not isinstance(raw_name, str) or not raw_name:
-        raise InstallerError("archive contains an empty member name")
-    if "\x00" in raw_name:
-        raise InstallerError(f"archive member contains a NUL byte: {raw_name!r}")
-    # Reject Windows-style drive letters or backslashes outright.
-    if "\\" in raw_name:
-        raise InstallerError(
-            f"archive member uses Windows-style separator: {raw_name!r}"
-        )
-    if raw_name.startswith("/"):
-        raise InstallerError(f"archive member is absolute: {raw_name!r}")
-    if ":" in raw_name:
-        raise InstallerError(f"archive member contains ':': {raw_name!r}")
-
-    parts = [p for p in raw_name.split("/") if p]
-    if not parts:
-        raise InstallerError(f"archive member normalises to empty: {raw_name!r}")
+    try:
+        parts = safe_archive.member_segments(raw_name)
+    except safe_archive.ArchiveRefused as exc:
+        raise InstallerError(str(exc)) from exc
     for seg in parts:
-        if seg in (".", ".."):
-            raise InstallerError(f"archive member contains '{seg}': {raw_name!r}")
         if not _SAFE_SEGMENT_RE.match(seg):
             raise InstallerError(
                 f"archive member has unsafe segment {seg!r}: {raw_name!r}"
@@ -219,9 +206,14 @@ def _extract_into(zf: zipfile.ZipFile, target: Path) -> int:
     Returns the total number of bytes written. Raises :class:`InstallerError`
     when a member would escape *target* (defence in depth — every name
     has already passed :func:`_safe_member_path`) or exceeds the size
-    caps.
+    caps: first by the sizes the archive declares, then by the bytes
+    actually written, which :func:`safe_archive.copy_member` counts.
     """
     target.mkdir(parents=True, exist_ok=True)
+    # Read at call time, so a cap patched on this module still bites.
+    budget = safe_archive.Budget(
+        safe_archive.Caps(max_member_bytes=_MAX_FILE_BYTES, max_total_bytes=_MAX_TOTAL_BYTES)
+    )
     written = 0
     for info in zf.infolist():
         if info.is_dir():
@@ -251,8 +243,10 @@ def _extract_into(zf: zipfile.ZipFile, target: Path) -> int:
                 f"Path traversal blocked: archive member {dest!s} "
                 f"escapes target {target!s}"
             )
-        with zf.open(info, "r") as src, dest.open("wb") as out:
-            shutil.copyfileobj(src, out, length=1024 * 1024)
+        try:
+            safe_archive.copy_member(zf, info, dest, budget)
+        except safe_archive.ArchiveRefused as exc:
+            raise InstallerError(str(exc)) from exc
     return written
 
 

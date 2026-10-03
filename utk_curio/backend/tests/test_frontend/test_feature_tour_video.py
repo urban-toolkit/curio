@@ -722,7 +722,7 @@ def _empty_canvas_point(page) -> tuple[float, float] | None:
 def _edge_client_point(page) -> tuple[float, float] | None:
     """The tour's view of the shared sampler, logging why when it finds nothing.
 
-    The sampler itself moved to ``utils.py`` so the connection-affordance module
+    The sampler itself moved to ``utils/canvas_authoring.py`` so the connection-affordance module
     can ask the same question this scene does (#296): which point on this curve
     would ``pickEdgeAtPoint`` actually resolve to an edge.
     """
