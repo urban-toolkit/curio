@@ -767,10 +767,18 @@
     },
     "status": 200
   },
+  "https://portal.test/declares-100mb.csv": {
+    "file": "download/crimes.csv",
+    "headers": {
+      "Content-Length": "104857600",
+      "Content-Type": "text/csv"
+    },
+    "status": 200
+  },
   "https://portal.test/declares-huge.csv": {
     "file": "download/crimes.csv",
     "headers": {
-      "Content-Length": "999999999",
+      "Content-Length": "99999999999",
       "Content-Type": "text/csv"
     },
     "status": 200

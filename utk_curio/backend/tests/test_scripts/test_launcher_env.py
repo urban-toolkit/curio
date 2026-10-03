@@ -51,6 +51,7 @@ def _isolate_env(monkeypatch, tmp_path):
         "CURIO_SOLVE_SESSION_DEADLINE",
         "CURIO_SOLVE_BATCH_DEADLINE",
         "CURIO_VALIDATION_EXEC_TIMEOUT",
+        "CURIO_DISCOVERY_MAX_DOWNLOAD_MB",
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
@@ -386,6 +387,27 @@ def test_a_solve_flag_reaches_the_setting_the_backend_reads(arg, env_name, value
     set_environment_variables(**BASE, **{arg: value})
     assert os.environ[env_name] == str(value)
     assert reader() == value
+
+
+def test_the_discovery_download_ceiling_flag_reaches_the_setting_the_backend_reads():
+    from utk_curio.backend.app.discovery.domain import limits
+
+    set_environment_variables(**BASE, discovery_max_download_mb=2048)
+    assert os.environ["CURIO_DISCOVERY_MAX_DOWNLOAD_MB"] == "2048"
+    assert limits.max_download_bytes() == 2048 * 1024 * 1024
+
+
+def test_without_the_discovery_download_ceiling_flag_it_is_one_gibibyte():
+    from utk_curio.backend.app.discovery.domain import limits
+
+    set_environment_variables(**BASE)
+    assert "CURIO_DISCOVERY_MAX_DOWNLOAD_MB" not in os.environ
+    assert limits.max_download_bytes() == 1024 * 1024 * 1024
+
+
+def test_a_discovery_download_ceiling_of_zero_is_refused_at_launch():
+    with pytest.raises(ValueError, match="--discovery-max-download-mb"):
+        set_environment_variables(**BASE, discovery_max_download_mb=0)
 
 
 def test_save_node_outputs_flag_sets_the_toggles_default():
