@@ -405,3 +405,37 @@ def test_an_area_is_needed(tmp_path):
     service = mapillary.MapillaryService(_manifest(), transport=_Answers(lambda url: {"data": []}))
     with pytest.raises(DiscoveryError, match="needs an area"):
         service.load(_manifest().resource("images"), {}, tmp_path)
+
+
+# ── image ids ──────────────────────────────────────────────────────────────
+
+
+class TestAnImageIdIsANumber:
+    def test_an_id_that_is_not_one_names_no_file(self, tmp_path):
+        """An image's id names its file, so an id that is not Mapillary's
+        digits is not asked for and can never name a path outside the job."""
+
+        def answer(url):
+            query = parse_qs(urlsplit(url).query)
+            if "image_ids" in query:
+                ids = query["image_ids"][0].split(",")
+                return {"data": [
+                    {"id": i, "thumb_256_url": f"https://x.fbcdn.net/{n}.jpg"} for n, i in enumerate(ids)
+                ]}
+            return {"data": [
+                {"id": "1", "captured_at": 3},
+                {"id": "../../escape", "captured_at": 2},
+                {"id": "١٢", "captured_at": 1},
+            ]}
+
+        transport = _Answers(answer)
+        service = mapillary.MapillaryService(_manifest(), transport=transport)
+        job = tmp_path / "job"
+        answer_ = service.load(_manifest().resource("images"),
+                               {"area": LINCOLN_PARK, "size": "256", "maxImages": 5}, job)
+        assert [i.image_id for i in answer_.images] == ["1"]
+        assert transport.downloads == ["https://x.fbcdn.net/0.jpg"]
+        assert not (tmp_path / "escape.jpg").exists()
+        assert sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*") if p.is_file()) == [
+            "job/images/1.jpg"
+        ]

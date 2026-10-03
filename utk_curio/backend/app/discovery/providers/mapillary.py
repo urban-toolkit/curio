@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -68,6 +69,9 @@ FEATURE_FIELDS = "id,object_value,object_type,geometry,first_seen_at,last_seen_a
 
 #: Where a person sees one image on Mapillary, for attribution.
 IMAGE_PAGE = "https://www.mapillary.com/app/?pKey={id}"
+
+#: A Mapillary image id: ASCII digits only, since it names the image's file.
+_IMAGE_ID_RE = re.compile(r"[0-9]{1,32}")
 
 
 @dataclass(frozen=True)
@@ -287,6 +291,8 @@ class MapillaryService:
         groups: list[list[dict[str, Any]]] = []
         for cell in cells(box):
             groups.extend(self._search("images", cell, filters, cancelled))
+        # An id names a file, so one that is not Mapillary's digits is no image.
+        groups = [[r for r in group if _IMAGE_ID_RE.fullmatch(str(r["id"]))] for group in groups]
         found = len({str(r["id"]) for group in groups for r in group})
         chosen = self.spread(groups, limit)
         if not chosen:
