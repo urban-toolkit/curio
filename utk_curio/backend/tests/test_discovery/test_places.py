@@ -1,6 +1,8 @@
 """Place search for the area field: OpenStreetMap's geocoder, used politely."""
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from utk_curio.backend.app.discovery.application import places
@@ -91,6 +93,57 @@ class TestTheSearch:
         places.search_places(transport, "Near North Side")
         assert len(transport.urls) == 2
         assert slept and 0 < slept[-1] <= places.MIN_INTERVAL_S
+
+    def test_two_searches_at_once_still_leave_a_second_apart(self, monkeypatch):
+        slept: list[float] = []
+        monkeypatch.setattr(places.time, "sleep", lambda s: slept.append(s))
+        transport = _Counting()
+        together = threading.Barrier(2)
+
+        def search(query):
+            together.wait(timeout=10)
+            places.search_places(transport, query)
+
+        searches = [threading.Thread(target=search, args=(q,)) for q in ("Loop", "Near North Side")]
+        for thread in searches:
+            thread.start()
+        for thread in searches:
+            thread.join(timeout=10)
+        assert len(transport.urls) == 2
+        # One left at once; the other waited for the next second.
+        assert len(slept) == 1 and 0 < slept[0] <= places.MIN_INTERVAL_S
+
+    def test_a_search_waiting_on_nominatim_does_not_hold_up_a_cached_place(self, monkeypatch):
+        """Nominatim can take seconds to answer. Meanwhile a place already
+        found is answered at once, from the cache."""
+        monkeypatch.setattr(places, "MIN_INTERVAL_S", 0.0)
+        places.search_places(_Counting(), "Loop, Chicago")
+        asked, release = threading.Event(), threading.Event()
+
+        class Slow(_Counting):
+            def json_get(self, url, *, credential=None, headers=None):
+                asked.set()
+                release.wait(timeout=30)
+                return super().json_get(url, credential=credential, headers=headers)
+
+        cached = _Counting()
+        answered: list = []
+        slow = threading.Thread(target=places.search_places, args=(Slow(), "Near North Side"), daemon=True)
+        hit = threading.Thread(
+            target=lambda: answered.append(places.search_places(cached, "Loop, Chicago")), daemon=True
+        )
+        try:
+            slow.start()
+            assert asked.wait(timeout=10)
+            hit.start()
+            hit.join(timeout=5)
+            assert answered, "a cached place waited for another search's request to Nominatim"
+            assert answered[0][0]["name"] == "Loop"
+            assert cached.urls == []
+        finally:
+            release.set()
+            slow.join(timeout=10)
+            hit.join(timeout=10)
 
     def test_an_empty_query_asks_nothing(self):
         transport = _Counting()
