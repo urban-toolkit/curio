@@ -47,7 +47,7 @@ STORAGE_PROVIDER_TYPES = ("folder", "s3", "huggingface")
 
 #: Services: told where and what, they answer with one download. Nothing to
 #: browse, so their ``resources`` are declared, like storage's, with no path.
-SERVICE_PROVIDER_TYPES = ("autark-osm", "mapillary", "google-streetview")
+SERVICE_PROVIDER_TYPES = ("autark-osm", "mapillary", "google-streetview", "overture")
 
 #: Models: searched like a portal, added to the Model Catalog rather than the
 #: Data Catalog.
@@ -69,6 +69,7 @@ PROVIDER_PARAMETER_IDS: dict[str, tuple[str, ...]] = {
     "autark-osm": ("area", "tags"),
     "mapillary": ("area", "captured", "imageType", "size", "maxImages"),
     "google-streetview": ("area", "spacing", "headings", "fov", "pitch", "size", "outdoorOnly", "maxImages"),
+    "overture": ("area",),
 }
 
 #: The forms of an area each provider can send. A manifest may not offer a
@@ -79,6 +80,7 @@ PROVIDER_AREA_FORMS: dict[str, tuple[str, ...]] = {
     "autark-osm": ("box", "names"),
     "mapillary": ("box",),
     "google-streetview": ("box",),
+    "overture": ("box",),
 }
 
 #: Autark's OpenStreetMap layer types, the ones autk-db's ``loadOsm`` builds.
@@ -92,19 +94,26 @@ AUTARK_OVERPASS_BASE = "https://overpass-api.de"
 #: What a service resource can be, and the file format it lands as.
 SERVICE_RESOURCE_KINDS: dict[str, tuple[str, ...]] = {
     "autark-osm": ("table",), "mapillary": ("images", "table"), "google-streetview": ("images",),
+    "overture": ("table",),
 }
 SERVICE_FORMATS: dict[str, tuple[str, ...]] = {
     "autark-osm": ("geojson",), "mapillary": ("geojson",), "google-streetview": (),
+    "overture": ("parquet",),
 }
 
 #: The Mapillary API endpoint each kind of resource asks.
 MAPILLARY_ENDPOINTS = {"images": "images", "table": "map_features"}
 
-#: Where each keyed service's API is. Fixed, as Overpass is for autark-osm.
+#: Where each service Curio asks over HTTP has its API. Fixed, as Overpass is
+#: for autark-osm.
 SERVICE_API_BASES = {
     "mapillary": "https://graph.mapillary.com",
     "google-streetview": "https://maps.googleapis.com",
+    "overture": "https://stac.overturemaps.org",
 }
+
+#: An Overture theme, feature type or subtype, as its catalog names them.
+_OVERTURE_NAME_RE = re.compile(r"^[a-z][a-z_]{0,31}$")
 
 _HOST_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
 
@@ -438,6 +447,16 @@ def _parse_provider(raw: object) -> ProviderSpec:
                 "manifest.provider.options.imageHosts must list the hosts Mapillary's images "
                 "come from, as lowercase host names (a parent domain covers its subdomains)"
             )
+    if kind == "overture":
+        hosts = options.get("dataHosts")
+        if (
+            not isinstance(hosts, list) or not hosts
+            or any(not isinstance(h, str) or not _HOST_RE.match(h) for h in hosts)
+        ):
+            raise ManifestError(
+                "manifest.provider.options.dataHosts must list the hosts Overture's files "
+                "are read from, as lowercase host names (a parent domain covers its subdomains)"
+            )
     return ProviderSpec(type=kind, base_url=base_url, options=dict(options), root=root)
 
 
@@ -665,6 +684,8 @@ def _parse_service_resource(raw: object, *, where: str, provider_type: str) -> R
     options = dict(options)
     if provider_type == "autark-osm":
         _check_autark_osm_resource(options, parameters, where)
+    if provider_type == "overture":
+        _check_overture_resource(options, where)
     return ResourceSpec(
         id=resource_id,
         name=_require_str(raw.get("name"), f"{where}.name"),
@@ -674,6 +695,30 @@ def _parse_service_resource(raw: object, *, where: str, provider_type: str) -> R
         options=options,
         parameters=parameters,
     )
+
+
+def _check_overture_resource(options: dict[str, Any], where: str) -> None:
+    """An Overture resource names one feature type, ``theme`` and ``type`` as
+    Overture's catalog names them, and may keep one ``subtype`` of it. Its
+    ``layer``, when it has one, is the Autark layer an Autark map draws it as."""
+    for key in ("theme", "type"):
+        value = options.get(key)
+        if not isinstance(value, str) or not _OVERTURE_NAME_RE.match(value):
+            raise ManifestError(
+                f"manifest.{where}.options.{key} must name an Overture {key}, such as "
+                + ("'buildings'" if key == "theme" else "'building'")
+            )
+    subtype = options.get("subtype")
+    if subtype is not None and (not isinstance(subtype, str) or not _OVERTURE_NAME_RE.match(subtype)):
+        raise ManifestError(f"manifest.{where}.options.subtype must name an Overture subtype, such as 'road'")
+    layer = options.get("layer")
+    if layer is not None and layer not in AUTARK_OSM_LAYERS:
+        raise ManifestError(
+            f"manifest.{where}.options.layer must be one of {list(AUTARK_OSM_LAYERS)}"
+        )
+    unknown = sorted(set(options) - {"theme", "type", "subtype", "layer"})
+    if unknown:
+        raise ManifestError(f"manifest.{where}.options: an Overture resource reads no {', '.join(unknown)}")
 
 
 def _check_autark_osm_resource(options: dict[str, Any], parameters, where: str) -> None:

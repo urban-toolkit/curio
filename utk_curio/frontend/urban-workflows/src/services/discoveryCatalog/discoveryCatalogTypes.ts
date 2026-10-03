@@ -21,6 +21,7 @@ export type DiscoveryProviderType =
   | "autark-osm"
   | "mapillary"
   | "google-streetview"
+  | "overture"
   | "huggingface-models";
 
 /** Matches `STORAGE_PROVIDER_TYPES`: sources that declare their resources. */
@@ -32,6 +33,7 @@ export const SERVICE_PROVIDER_TYPES: readonly DiscoveryProviderType[] = [
   "autark-osm",
   "mapillary",
   "google-streetview",
+  "overture",
 ];
 
 /** A `portal` is searched for its datasets; a `storage` source declares them;
@@ -97,6 +99,7 @@ export const DISCOVERY_PROVIDER_LABEL: Record<DiscoveryProviderType, string> = {
   "autark-osm": "OpenStreetMap (Autark)",
   mapillary: "Mapillary",
   "google-streetview": "Google Street View",
+  overture: "Overture Maps",
   "huggingface-models": "Hugging Face models",
 };
 
