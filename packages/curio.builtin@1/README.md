@@ -6,4 +6,4 @@ These nodes ship as a manifest package rather than as TypeScript code, using the
 
 Re-installs happen automatically on every login (the seeder picks the highest installed `curio.builtin@<X>` from the catalog). Don't edit this folder by hand; bump `version` in `manifest.json` and let the seeder propagate.
 
-The agents' shared preamble describes these templates from `manifest.json`. After changing a template, run `python scripts/generate_contracts.py` and commit the regenerated `utk_curio/llm-prompts/default_preamble.txt` with it.
+The agents' prompts describe these templates from `manifest.json`. After changing a template, run `python scripts/generate_contracts.py` and commit the regenerated prompts in `utk_curio/llm-prompts/` with it.

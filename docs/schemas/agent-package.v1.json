@@ -70,7 +70,7 @@
           "id": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$",
-            "description": "Semantic capability id: two or more dot-separated lowercase segments, e.g. 'node.explain', 'dataflow.orchestrate', 'package.recommend'. Must NOT contain a prompt filename, path separator, underscore, or '.txt' \u2014 capability ids are behavior contracts, not asset paths."
+            "description": "Semantic capability id: two or more dot-separated lowercase segments, e.g. 'node.explain', 'dataflow.orchestrate', 'package.recommend'. Must NOT contain a prompt filename, path separator, underscore, '.txt' or '.md' \u2014 capability ids are behavior contracts, not asset paths."
           },
           "contractVersion": {
             "type": "string",

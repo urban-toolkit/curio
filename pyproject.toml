@@ -62,7 +62,7 @@ include-package-data = true
 # "llm-prompts" is a data directory inside the utk_curio package rather than a
 # package of its own (the hyphen makes it unimportable), so packages.find never
 # sees it and it needs naming explicitly or the built-in agents ship promptless.
-utk_curio = ["llm-prompts/*.txt"]
+utk_curio = ["llm-prompts/*.md"]
 
 [tool.setuptools.dynamic]
 version = {attr = "utk_curio.__version__"}

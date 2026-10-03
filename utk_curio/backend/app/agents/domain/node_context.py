@@ -34,6 +34,10 @@ _CONTENT_TRUNCATION_MARKER = "\n…[truncated: content exceeds the context bound
 #: dev/135: the same bound dev/111's client-side summary uses, so the runtime
 #: and the browser cannot describe one node's failure at different sizes.
 _RUNTIME_MESSAGE_CHARS = 240
+#: The keys a node row's ``runtime`` block can carry, in its order: what one
+#: journal record says, then ``render``, the render's own block beside a run's.
+#: The Node Content Builder's instruction lists them from here.
+RUNTIME_BLOCK_KEYS = ("status", "message", "outputType", "origin", "kind", "ranAt", "durationMs", "render")
 
 
 def _neighbors(adjacency: dict[str, list[str]], start: str) -> list[str]:
@@ -88,26 +92,24 @@ def compose_node_context(
         if not record:
             return {}
         status = str(record.get("status") or "")
-        block: dict = {"status": status} if status else {}
         message = str(
             (record.get("stderrTail") if status == "error" else record.get("stdoutTail"))
             or ""
         ).strip()
-        if message:
-            block["message"] = message[-_RUNTIME_MESSAGE_CHARS:]
         output = record.get("output") if isinstance(record.get("output"), dict) else {}
-        if output.get("dataType"):
-            block["outputType"] = str(output["dataType"])[:60]
-        if record.get("origin"):
-            block["origin"] = str(record["origin"])[:20]
-        if record.get("kind"):
+        values = {
+            "status": status or None,
+            "message": message[-_RUNTIME_MESSAGE_CHARS:] or None,
+            "outputType": str(output["dataType"])[:60] if output.get("dataType") else None,
+            "origin": str(record["origin"])[:20] if record.get("origin") else None,
             # dev/136: `empty-render:<cause>` — what KIND of outcome this was.
-            block["kind"] = str(record["kind"])[:40]
-        if record.get("startedAt") or record.get("updatedAt"):
-            block["ranAt"] = str(record.get("startedAt") or record.get("updatedAt"))[:40]
-        if isinstance(record.get("durationMs"), (int, float)):
-            block["durationMs"] = int(record["durationMs"])
-        return block
+            "kind": str(record["kind"])[:40] if record.get("kind") else None,
+            "ranAt": (str(record.get("startedAt") or record.get("updatedAt"))[:40]
+                      if record.get("startedAt") or record.get("updatedAt") else None),
+            "durationMs": (int(record["durationMs"])
+                           if isinstance(record.get("durationMs"), (int, float)) else None),
+        }
+        return {key: values[key] for key in RUNTIME_BLOCK_KEYS if values.get(key) is not None}
 
     def _runtime_block(nid: str) -> dict:
         """What this node's last run and last render DID (dev/135, dev/137).

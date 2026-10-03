@@ -33,7 +33,7 @@ The folder holds a `manifest.json` (the contract) and the prompt files the manif
 ```
 agent.chat-agent@1.0.0/
   manifest.json
-  prompts/chat_prompt.txt
+  prompts/chat_prompt.md
 ```
 
 Agent ids always begin with **`agent.`**, which keeps them apart from node package ids (`curio.builtin`, `ai.utk.uhvi`) and dataset ids (`data.utk.chicago-boundary`). The version is a full semver string.
@@ -258,7 +258,7 @@ Training uses only Curio's shipped examples, and the endpoint does the training:
 
 ## 6. Importing, publishing, and sharing
 
-**Import agent**, in the drawer's footer or the `/catalog/agents` header, takes a `manifest.json` and its `.txt` prompt files, not an archive. The prompt files must match what the manifest references, size limits apply, and a definition whose id and version you already have is refused: a change is a new version.
+**Import agent**, in the drawer's footer or the `/catalog/agents` header, takes a `manifest.json` and its `.md` or `.txt` prompt files, not an archive. The prompt files must match what the manifest references, size limits apply, and a definition whose id and version you already have is refused: a change is a new version.
 
 **Publish**, on `/catalog/agents`, copies one of your own imported definitions into the shared catalog, where every user on the install can browse it. Built-in agents cannot be published. **Unpublish** removes it from the shared catalog, and only the publisher can do it; only the publisher can publish over it, too. Other users who added the agent keep their copy and keep running it.
 
@@ -284,8 +284,8 @@ A minimal, complete manifest:
     { "id": "node.output.interpret", "contractVersion": "1" }
   ],
   "prompts": {
-    "system": { "path": "prompts/default_preamble.txt", "sha256": "<sha256>", "variables": [] },
-    "instruction": { "path": "prompts/explain_node.txt", "sha256": "<sha256>", "variables": ["nodeContext"] }
+    "system": { "path": "prompts/default_preamble.md", "sha256": "<sha256>", "variables": [] },
+    "instruction": { "path": "prompts/explain_node.md", "sha256": "<sha256>", "variables": ["nodeContext"] }
   },
   "compatibleTargets": [{ "kind": "node" }],
   "inputs": { "reads": ["nodeContext"], "requiredConfig": [] },
@@ -323,7 +323,7 @@ node.explain            dataflow.orchestrate       package.recommend
 node.output.interpret   dataset.fetch.author       connection.propose
 ```
 
-Capability ids drive catalog discovery, orchestration and substitution, and are **never** used for authorization. A capability id must not contain a prompt filename, a path separator, an underscore, or `.txt`: `node.explain` is valid, while `explain_node_prompt` and `prompts/explain.txt` are rejected. A prompt can then be edited or replaced without changing the contract.
+Capability ids drive catalog discovery, orchestration and substitution, and are **never** used for authorization. A capability id must not contain a prompt filename, a path separator, an underscore, `.txt` or `.md`: `node.explain` is valid, while `explain_node_prompt` and `prompts/explain.txt` are rejected. A prompt can then be edited or replaced without changing the contract.
 
 ### Modes
 
@@ -336,13 +336,13 @@ A capability can run an instruction of its own. Add the prompt under `prompts` a
     "instruction": "interpret", "reads": ["nodeContext"], "requiredConfig": ["keywordTypes"] }
 ],
 "prompts": {
-  "system": { "path": "prompts/default_preamble.txt" },
-  "instruction": { "path": "prompts/explain_node.txt" },
-  "interpret": { "path": "prompts/interpret_output.txt" }
+  "system": { "path": "prompts/default_preamble.md" },
+  "instruction": { "path": "prompts/explain_node.md" },
+  "interpret": { "path": "prompts/interpret_output.md" }
 }
 ```
 
-When another agent delegates `node.output.interpret`, the run uses `prompts/interpret_output.txt` in place of the `instruction` prompt, and receives the [catalog settings](#catalog-settings) named in that capability's `requiredConfig` as well as those in `inputs.requiredConfig`. An attached run, and a delegated run of a capability without an `instruction` of its own, uses the `instruction` prompt. A setting key Curio does not define is skipped.
+When another agent delegates `node.output.interpret`, the run uses `prompts/interpret_output.md` in place of the `instruction` prompt, and receives the [catalog settings](#catalog-settings) named in that capability's `requiredConfig` as well as those in `inputs.requiredConfig`. An attached run, and a delegated run of a capability without an `instruction` of its own, uses the `instruction` prompt. A setting key Curio does not define is skipped.
 
 A definition that declares `node.content.generate` may also declare an `autk-grammar` prompt. A run that writes an Autark document on a provider that takes a reply schema uses it in place of the capability's instruction, and holds the reply to the Autark schema. Without that prompt, its runs are never held to the schema.
 
