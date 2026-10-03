@@ -525,16 +525,23 @@ A dataflow's dashboard is a page of its own at `/dashboard/<dataflow id>`: the n
 pinned, and nothing else. Anyone with the link can open it, and the tiles draw without
 running anything.
 
-- **Pin** the nodes to show, with the pin control in each node's header. Pinning also
-  saves the outputs feeding those nodes to your Data Catalog, which is what the page
-  draws from later.
+- **Pin** the nodes to show, with the pin control in each node's header. Pinning saves
+  the dataflow, and saves the outputs feeding those nodes to your Data Catalog, which is
+  what the page draws from later.
 - **Open** it from **Share → Open dashboard**, which opens a new tab. The same menu
   copies either link.
-- **Save the dataflow** after pinning or rearranging: the page shows what is on disk.
+- **Save the dataflow** after changing anything else the page shows, such as a chart's
+  spec: the page shows what is on disk.
 - **Edit layout** (owner only) unlocks the tiles to drag by their title band and resize,
   and **Save layout** records where they sit, without touching the canvas positions.
-- **Sharing** works like a `/dataflow/<id>` link: read-only for everyone but the owner,
-  and a visitor without an account needs guest sign-in (on unless `CURIO_ENV=prod`).
+- **Sharing** works like a `/dataflow/<id>` link, read-only for everyone but the owner.
+  The page is served with its data inside it, so a viewer needs no account and the
+  dashboard keeps working if the server is unreachable.
+
+Two dashboards cannot be served this way, and both say so when you open them: one whose
+data is too large to travel with the page, and one with a pinned Autark tile that loads
+its own data. For the second, move the tile's `data` section into its own node upstream
+so its output is saved.
 
 An Autark map tile draws in the viewer's browser, so it needs WebGPU there. A code node's
 console output is not restored: no saved dataset carries it.
