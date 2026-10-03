@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from utk_curio.main import run_spa_static_server
+from utk_curio.cli.static_server import run_spa_static_server
 
 INDEX_BODY = '<!doctype html><html><head><base href="/"></head><body></body></html>'
 HTML_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"

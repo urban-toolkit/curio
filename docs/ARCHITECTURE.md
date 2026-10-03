@@ -544,7 +544,7 @@ The sandbox runs as a separate Flask process. It:
   only the backend on the same host can reach it.
 - Requires a shared secret on every route that can run code or read artifacts
   (`/exec`, `/execJs`, `/get`). The secret is minted per launch by
-  `main.py::set_environment_variables` into `CURIO_SANDBOX_TOKEN`, attached by
+  `cli/environment.py::set_environment_variables` into `CURIO_SANDBOX_TOKEN`, attached by
   the backend in `_sandbox_call`, and checked in `sandbox/app/auth.py`. An
   instance started with `--deploy` refuses to boot without one.
 - Sends no CORS headers, because no browser calls it directly.
@@ -733,7 +733,7 @@ runtimes read that copy:
   instead. DuckDB's own setting for this (`custom_extension_repository`) is not
   reachable: autk-db installs the extension inside `init()`, before Curio holds
   a connection, and the worker has its own global scope.
-- **Sandbox.** `main.py::seed_duckdb_extensions` copies them into
+- **Sandbox.** `cli/dependencies.py::seed_duckdb_extensions` copies them into
   `~/.duckdb/extensions/extensions.duckdb.org/`, which is where duckdb-wasm
   looks before downloading. Nothing is intercepted there.
 
@@ -1172,7 +1172,7 @@ Spec syntax accepts PEP 440 comparators (`>=2.0`, `~=4.30`, `==1.5.0`), bare ver
 
 ### Install paths
 
-- **At `curio start`**, the launcher ([`main.py::install_manifest_dependencies`](../utk_curio/main.py)) walks every installed manifest (`packages/curio.builtin@*` from the catalog source + every user store under `.curio/users/<u>/packages/`), unions their `dependencies.python` via [`versions.merge_python_deps`](../utk_curio/backend/app/packages/domain/versions.py) (which surfaces range conflicts as warnings instead of silently last-write-wins), and pip-installs the merged map via [`pip_runner.install_python_deps`](../utk_curio/backend/app/packages/infrastructure/pip_runner.py). Already-satisfied deps are skipped via `importlib.metadata.version`, so the steady-state cost is about a second with no network.
+- **At `curio start`**, the launcher ([`cli/dependencies.py::install_manifest_dependencies`](../utk_curio/cli/dependencies.py)) walks every installed manifest (`packages/curio.builtin@*` from the catalog source + every user store under `.curio/users/<u>/packages/`), unions their `dependencies.python` via [`versions.merge_python_deps`](../utk_curio/backend/app/packages/domain/versions.py) (which surfaces range conflicts as warnings instead of silently last-write-wins), and pip-installs the merged map via [`pip_runner.install_python_deps`](../utk_curio/backend/app/packages/infrastructure/pip_runner.py). Already-satisfied deps are skipped via `importlib.metadata.version`, so the steady-state cost is about a second with no network.
 
 - **At catalog install time** (`/api/packages/projects/<id>/install`), when the user installs a package from the drawer, [`store_install._ensure_user_store_install`](../utk_curio/backend/app/packages/application/store_install.py) copies the files, then calls `pip_runner.install_python_deps` on the freshly-installed manifest. The Install button stays busy until pip finishes; heavy installs (`torch`, ~3 GB) can take minutes.
 
@@ -1707,3 +1707,19 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `sandbox/util/parsers.py` | `save_to_duckdb`, `load_from_duckdb` and the artifact path helpers |
 | `sandbox/util/codec.py` | Value to bytes conversion, and `detect_kind` |
 | `sandbox/app/utils/cache.py` | Execution result caching |
+
+### Launcher
+
+`curio.py` calls `main()` in `utk_curio/main.py`, which holds the argument parser and the start sequence. What it calls lives in `utk_curio/cli/`:
+
+| File | Purpose |
+|---|---|
+| `cli/logs.py` | The log file, terminal colors, verbosity, `log_*` helpers |
+| `cli/lifecycle.py` | Child process output streaming, `signal_handler`, `clean_shutdown` |
+| `cli/arguments.py` | Argument types (`base_path_arg`, `backend_url_arg`) and `get_command_prefix` |
+| `cli/environment.py` | `set_environment_variables` (arguments to environment variables) and the isolation decision |
+| `cli/frontend_build.py` | `NODE_MAJOR`, Node and node_modules checks, the frontend build and its stamp |
+| `cli/static_server.py` | `run_spa_static_server`, the static server for the built frontend |
+| `cli/dependencies.py` | pip and manifest dependency installs, the root node_modules, DuckDB extension seeding |
+| `cli/services.py` | `start_frontend`, `start_backend`, `start_sandbox`, the database migration, `_kill_port` |
+| `cli/test_runner.py` | `curio test` and its translation to `scripts/test.sh` flags |

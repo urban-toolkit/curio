@@ -504,7 +504,7 @@ UNIT_DURATIONS_FILE = Path(__file__).with_name("unit_durations.json")
 
 
 def unit_group_of(item) -> str:
-    """The test file an item is in, dotted from this folder (test_agents.test_routes)."""
+    """The test file an item is in, dotted from this folder (test_agents.test_routes_solve)."""
     try:
         rel = Path(str(item.path)).resolve().relative_to(Path(__file__).resolve().parent)
     except ValueError:

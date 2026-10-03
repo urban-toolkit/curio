@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail when the Node.js major is declared inconsistently across the repo.
 
-``NODE_MAJOR`` in ``utk_curio/main.py`` gates the launcher, ``.nvmrc`` and
+``NODE_MAJOR`` in ``utk_curio/cli/frontend_build.py`` gates the launcher, ``.nvmrc`` and
 ``.node-version`` drive nvm/fnm/asdf, the two ``package.json`` ``engines``
 fields are what npm warns on, and the Dockerfile installs what the image ships.
 Nothing links them but a comment, so a bump that misses one leaves contributors
@@ -27,7 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def disagreements(root: Path = REPO_ROOT) -> list[str]:
     """Every declaration that does not match NODE_MAJOR, one readable line each."""
     sys.path.insert(0, str(root))
-    from utk_curio.main import NODE_MAJOR
+    from utk_curio.cli.frontend_build import NODE_MAJOR
 
     found: list[str] = []
 
@@ -60,7 +60,7 @@ def main() -> int:
         for line in found:
             print(f"  - {line}", file=sys.stderr)
         print(
-            "Update them together, or change NODE_MAJOR in utk_curio/main.py.",
+            "Update them together, or change NODE_MAJOR in utk_curio/cli/frontend_build.py.",
             file=sys.stderr,
         )
         return 1

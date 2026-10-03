@@ -38,7 +38,7 @@ def _project_dir(user_key: str, project_id: str):
 
     Mirrors ``projects/storage.project_dir``; imported rather than reimplemented
     so a change to the layout reaches here too. ``users_base`` honours
-    ``CURIO_LAUNCH_CWD`` and ``CURIO_TESTING``, both of which ``main.py`` passes
+    ``CURIO_LAUNCH_CWD`` and ``CURIO_TESTING``, both of which ``cli/services.py`` passes
     into the ``flask db upgrade`` subprocess, so this lands on the same tree the
     backend uses - including ``.curio/test/`` under a test rig.
     """

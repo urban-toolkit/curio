@@ -495,7 +495,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker compose -p curio-ci exec -T curio python -c 'import sys; from utk_curio.main import _build_stamp_reason as f; r = f(); sys.exit("the container would rebuild its bundle: " + r) if r else print("OK: the launcher reuses the shipped bundle.")'
+          docker compose -p curio-ci exec -T curio python -c 'import sys; from utk_curio.cli.frontend_build import _build_stamp_reason as f; r = f(); sys.exit("the container would rebuild its bundle: " + r) if r else print("OK: the launcher reuses the shipped bundle.")'
           curl -fsS "http://localhost:${CURIO_E2E_FRONTEND_PORT}/" \
             | grep -qF "<meta name=\"curio-backend-url\" content=\"${CURIO_E2E_BACKEND_URL}\">"
           echo "OK: the page names ${CURIO_E2E_BACKEND_URL}."
@@ -653,7 +653,7 @@ jobs:
             > "$GITHUB_WORKSPACE/curio-messages.txt" 2>&1 || true
           # Shards 1..N-1 start backend and sandbox separately, so they log to
           # messages-backend.log / messages-sandbox.log in their own state dirs
-          # (main.py names the file after the server), which the messages.log
+          # (utk_curio/cli/logs.py names the file after the server), which the messages.log
           # search above never matches; launch-*.out is only the launcher banner.
           # Without these, a failure on any worker but gw0 has no server log.
           docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
