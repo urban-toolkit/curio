@@ -124,11 +124,27 @@ class TestThePatternsAreShared:
             assert schema["properties"]["name"]["pattern"] == WIDGET_NAME_RE.pattern
 
     def test_the_widget_types(self):
+        from utk_curio.backend.app.execution.widget_substitution import WIDGET_KINDS
+
         block = re.search(r"WIDGET_KINDS = \[(.*?)\]", self._ts("widgetModel.ts"), re.S)
         kinds = re.findall(r'"([a-z-]+)"', block.group(1))
         assert kinds
+        assert list(WIDGET_KINDS) == kinds
         for schema in self._schemas():
             assert schema["properties"]["type"]["enum"] == kinds
+
+    def test_the_datetime_fallback(self):
+        from utk_curio.backend.app.execution.widget_substitution import DATETIME_FALLBACK
+
+        written = re.search(r'DATETIME_FALLBACK = "(.*?)"', self._ts("widgetModel.ts"))
+        assert written and written.group(1) == DATETIME_FALLBACK
+
+    def test_the_options_the_controls_read(self):
+        options = re.search(r"export interface WidgetOptions \{(.*?)\n\}", self._ts("widgetModel.ts"), re.S)
+        keys = re.findall(r"^\s*([a-z]+)\?:", options.group(1), re.M)
+        assert keys == ["choices", "display", "min", "max", "step", "units"]
+        for schema in self._schemas():
+            assert list(schema["properties"]["options"]["properties"]) == keys
 
 
 class TestResolveWidgetPlaceholders:
