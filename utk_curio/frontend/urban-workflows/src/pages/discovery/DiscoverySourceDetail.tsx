@@ -5,6 +5,7 @@ import { CatalogDetailHeader } from "../../components/catalog/CatalogDetailHeade
 import { useDatasetDetails } from "../../components/datasets/catalog/datasetDetailsContext";
 import {
   DISCOVERY_AUTH_LABEL,
+  DISCOVERY_CATALOG_REFRESH_EVENT,
   DISCOVERY_PROVIDER_LABEL,
   acquireKey,
   discoveryCatalogApi,
@@ -86,6 +87,15 @@ export const DiscoverySourceBody: React.FC<DiscoverySourceBodyProps> = ({
   const [source, setSource] = React.useState<DiscoverySourceRow | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const { openDatasetDetails } = useDatasetDetails();
+  // Read again when the roster changes, such as a key saved in API Settings:
+  // whether the source can be searched depends on it.
+  const [nonce, setNonce] = React.useState(0);
+
+  React.useEffect(() => {
+    const reload = () => setNonce((n) => n + 1);
+    window.addEventListener(DISCOVERY_CATALOG_REFRESH_EVENT, reload);
+    return () => window.removeEventListener(DISCOVERY_CATALOG_REFRESH_EVENT, reload);
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -99,7 +109,7 @@ export const DiscoverySourceBody: React.FC<DiscoverySourceBodyProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [decoded]);
+  }, [decoded, nonce]);
 
   const storage = source ? isStorageSource(source) : false;
   const acquisition = useDiscoveryAcquisition({ isStorage: () => storage, onViewModel: viewModel });

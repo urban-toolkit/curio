@@ -81,7 +81,7 @@ discovery/
 
 There are two pages and a drawer on the canvas, plus an agent that works on the canvas:
 
-- **The `/catalog/discovery` page** lists the sources. Reach it from `/projects` and the **Discovery Catalog** tab. Filter by provider or access in the left rail. Type in **Search every portal…** and the cards give way to results from every source at once, each tagged with the source it came from. Click a card to describe it in the right-hand drawer, or right-click it for its actions.
+- **The `/catalog/discovery` page** lists the sources. Reach it from `/projects` and the **Discovery Catalog** tab. Filter by provider or access in the left rail. Type in **Search every portal…** and the cards give way to results from every source at once, each tagged with the source it came from. With a filter set in the rail, the search asks only the sources the filter shows. Click a card to describe it in the right-hand drawer, or right-click it for its actions.
 - **A source's page**, `/catalog/discovery/<sourceId>@<major>`, is one source on its own. Reach it with **Browse datasets** on a card, in the drawer, or in the right-click menu, or **Add by link** for Direct URL. A portal's page lists nothing until you search, then shows that portal's matches and how many there are. Direct URL's page has a **Link to a file** field. A service's page lists what it can be asked for, a row each. A storage source's page lists its resources at once: a row for each, or for each value or file when its manifest splits it. A row has a kind (**Table**, **Rasters**, **Frames**, **Images**, **Videos**, **Photos and videos**, or **Audio**) and its format, a line saying what it holds (files, images and videos, frames in sequences, or recordings), what its path fields cover, and its size. A collection's row also shows its first files as thumbnails.
 - **The canvas drawer**: on the canvas, the **Discovery Catalog** button in the top bar opens the sources beside the dataflow. **Search every portal…** searches every source at once; **Browse datasets** on a card opens that source in the drawer, as its page shows it, and **All portals** goes back to the cards. What you download or add lands in the Data or Model Catalog, as it does from the pages, and a model's **View model** opens the Model Catalog drawer.
 - **The Dataset Finder**, an agent you attach on the canvas, can search the portals for you and propose a download. See [part 6](#6-the-dataset-finder).
@@ -102,7 +102,7 @@ A storage source is read when it is first opened, and again when its listing is 
 | **View details** | Card, drawer, or right-click menu | Nothing | The source's endpoint, licence, formats, download limit, and token needs; a storage source's resource count. |
 | **Add by link** | Direct URL's card, drawer, or right-click menu | Nothing | Direct URL's page, with its **Link to a file** field. |
 | **Download** | A result row, with a format picker when the portal offers more than one | Your Data Catalog gains a dataset | A progress bar, then *"Downloaded `<title>` to your Data Catalog."* with **View details**. A row that needs an answer first, such as a service row's area, opens the **Download** dialog. |
-| **Narrow…** | A portal row that can download part of itself | Nothing until you download | The **Download** dialog, to download only the rows inside an area. |
+| **Narrow…** | A portal row that can download part of itself, also once it is in your Data Catalog | Nothing until you download | The **Download** dialog, to download only the rows inside an area. |
 | **Cancel** | The row's progress bar | Nothing is kept | The download stops. |
 | **View dataset** | A row marked **In your Data Catalog** | Nothing | The dataset's details, over the page. |
 | **View on the portal ↗** | A result row | Nothing | The dataset's page on the portal's own site, in a new tab. |
@@ -137,7 +137,7 @@ A storage source is read when it is first opened, and again when its listing is 
 
 **I want a model a node can run.** Open the **Hugging Face models** card's page and search it, for example for `segformer`. Each row names the model's task, its weights (ONNX or safetensors), its downloads and its license. Click **Add to Model Catalog**; when it is done, the row offers **View model**. On the canvas, drag the model from **Model Catalog** in the left Tools panel onto an **Image Segmentation** node: see [MODEL-CATALOG.md](MODEL-CATALOG.md).
 
-**I have a link to a file.** Click **Add by link** on the Direct URL card, paste the link into **Link to a file**, and click **Download**.
+**I have a link to a file.** Click **Add by link** on the Direct URL card, paste the link into **Link to a file**, and click **Download**. The link gets a row of its own, which offers **View dataset** once the file is in your Data Catalog.
 
 **A source needs a token.** Get one from the source (its **View details** links to its instructions), paste it into **API Settings**, and save. [Part 5](#5-api-tokens) walks through it step by step.
 
@@ -184,7 +184,7 @@ The **Area** offers the ways the source takes:
 
 A box is shown under the field with its size, and refused when it is larger than the source allows. Place search is OpenStreetMap's Nominatim: it searches when you click **Search** and not as you type, and the results credit © OpenStreetMap contributors.
 
-A portal row whose area is optional downloads all of itself from **Download**, and part of itself from **Narrow…**. A service row's **Download** opens the dialog first, and its dataset is named after its area unless you type a name.
+A portal row whose area is optional downloads all of itself from **Download**, and part of itself from **Narrow…**. Once all of it is in your Data Catalog, the row offers **View dataset** and **Narrow…**. After a download for an area, the row offers **View dataset** for it and keeps its **Download** and **Narrow…**, for another area or all of it. A service row's **Download** opens the dialog first, and its dataset is named after its area unless you type a name.
 
 ### Progress
 
@@ -282,7 +282,7 @@ Some sources take an API key. Mapillary and Google Street View need one. The Cit
 2. **Open API Settings**: the button in the page header, or in the Agent Catalog drawer's header on the canvas. A source's **Add yours in API Settings** opens it at that source's row.
 3. **Find the row** under **Discovery Catalog**: **Socrata app token**, **Hugging Face token**, **Google Maps API key** or **Mapillary access token**. The row says which sources use it.
 4. **Paste the key** into the row's field and click the row's **Save**. The field then reads *(saved - leave blank to keep)*.
-5. **Check the card.** In the Discovery Catalog, the source's card reads **Token set**, and its rows download.
+5. **Check the card.** In the Discovery Catalog, the source's card reads **Token set** as soon as you save, also on a page that was already open, and its rows download.
 
 ### Your key and your account
 

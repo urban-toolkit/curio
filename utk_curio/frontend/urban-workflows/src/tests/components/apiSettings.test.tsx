@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import { act, render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 
 /**
  * API Settings is the account's keys screen, in two parts. The Agent Catalog's:
@@ -83,11 +83,13 @@ const SOCRATA_ROW = (over: Row = {}): Row => ({
 });
 let mockKeyRows: Row[] = [];
 const mockListKeys = jest.fn(() => Promise.resolve({ keys: mockKeyRows }));
+const mockNotifyRefresh = jest.fn();
 jest.mock("../../services/discoveryCatalog", () => {
   const actual = jest.requireActual("../../services/discoveryCatalog");
   return {
     ...actual,
     discoveryCatalogApi: { ...actual.discoveryCatalogApi, listKeys: () => mockListKeys() },
+    notifyDiscoveryCatalogRefresh: () => mockNotifyRefresh(),
   };
 });
 
@@ -107,6 +109,13 @@ const findRow = async (slot: string) =>
       return el as HTMLElement;
     }),
   );
+// The rows are drawn from the key list, so a check that a screen has none
+// waits for that list first: made before it lands, the check passes whether or
+// not the rows would follow.
+const keyListSettled = () =>
+  act(async () => {
+    await mockListKeys.mock.results[mockListKeys.mock.results.length - 1]?.value;
+  });
 
 beforeEach(() => {
   mockUser = { ...SIGNED_IN };
@@ -182,12 +191,13 @@ describe("API Settings: the HuggingFace token", () => {
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ huggingface_token: "" }));
   });
 
-  it("is not offered to a guest on a Curio with sign-in", () => {
+  it("is not offered to a guest on a Curio with sign-in", async () => {
     mockUser = { is_guest: true };
     mockSharedGuest = true;
     open();
-    expect(field()).toBeNull();
     expect(screen.getByText("Personal keys cannot be saved on a shared guest account.")).toBeInTheDocument();
+    await keyListSettled();
+    expect(field()).toBeNull();
   });
 
   it("the local guest saves its own, and is told the account is shared", async () => {
@@ -385,11 +395,12 @@ describe("API Settings: the data-portal token", () => {
     await waitFor(() => expect(field().value).toBe(""));
   });
 
-  it("is not offered to a guest", () => {
+  it("is not offered to a guest", async () => {
     // A guest account is shared, so a personal credential saved on it would be
     // everyone's. The backend refuses it too.
     mockUser = { is_guest: true };
     open();
+    await keyListSettled();
     expect(field()).toBeNull();
   });
 });
@@ -464,5 +475,36 @@ describe("API Settings: the Discovery Catalog's keys", () => {
   it("a source's key link opens on that key's row", async () => {
     render(<ApiSettingsModal isOpen onClose={jest.fn()} focus={{ section: "source-key", slot: "socrata.app-token" }} />);
     await waitFor(() => expect(document.querySelector(SOCRATA_ID)).toHaveFocus());
+  });
+
+  // The Discovery Catalog's cards and source pages read whether a key is set,
+  // so they hear when one is saved or removed (#626).
+  it("tells the Discovery Catalog once a key is saved", async () => {
+    open();
+    const row = await findRow("socrata.app-token");
+    fireEvent.change(document.querySelector(SOCRATA_ID) as HTMLInputElement, { target: { value: "tok-123" } });
+    fireEvent.click(row.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockNotifyRefresh).toHaveBeenCalledTimes(1));
+    expect(mockUpdate).toHaveBeenCalledWith({ socrata_app_token: "tok-123" });
+    expect(mockUpdate.mock.invocationCallOrder[0]).toBeLessThan(mockNotifyRefresh.mock.invocationCallOrder[0]);
+  });
+
+  it("tells the Discovery Catalog once a key is removed", async () => {
+    mockKeyRows = [HF_ROW(), SOCRATA_ROW({ present: true })];
+    open();
+    fireEvent.click(await (await findRow("socrata.app-token")).findByRole("button", { name: "Remove saved key" }));
+    await waitFor(() => expect(mockNotifyRefresh).toHaveBeenCalledTimes(1));
+    expect(mockUpdate).toHaveBeenCalledWith({ socrata_app_token: "" });
+    expect(mockUpdate.mock.invocationCallOrder[0]).toBeLessThan(mockNotifyRefresh.mock.invocationCallOrder[0]);
+  });
+
+  it("a save that fails tells the Discovery Catalog nothing", async () => {
+    mockUpdate.mockRejectedValueOnce(new Error("refused"));
+    open();
+    const row = await findRow("socrata.app-token");
+    fireEvent.change(document.querySelector(SOCRATA_ID) as HTMLInputElement, { target: { value: "tok-123" } });
+    fireEvent.click(row.getByRole("button", { name: "Save" }));
+    expect(await row.findByText("refused")).toBeInTheDocument();
+    expect(mockNotifyRefresh).not.toHaveBeenCalled();
   });
 });

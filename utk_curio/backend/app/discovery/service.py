@@ -277,11 +277,14 @@ class DiscoveryService:
 
     def search_all(
         self, *, q: str = "", fmt: str | None = None, limit: int | None = None,
-        provider: str | None = None, include_storage: bool = True,
+        provider: str | None = None, auth: str | None = None, include_storage: bool = True,
     ) -> dict[str, Any]:
         manifests = self._catalog.manifests()
         if provider:
             manifests = [m for m in manifests if m.provider.type == provider]
+        # The access filter the roster takes, so every row has its source listed.
+        if auth:
+            manifests = [m for m in manifests if m.auth.mode == auth]
         # A model source holds models, not datasets: searched on its own page.
         manifests = [m for m in manifests if not m.is_model]
         if not include_storage:
