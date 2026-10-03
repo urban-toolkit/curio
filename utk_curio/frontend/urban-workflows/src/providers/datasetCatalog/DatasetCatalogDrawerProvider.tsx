@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import { DatasetCatalogDrawer } from "../../components/datasets/catalog";
 import { useFlowContext } from "../FlowProvider";
 import { prefetchDatasetCatalog } from "../../services/datasetCatalog";
+import { isStandaloneDashboard } from "../../standalone/dashboardPayload";
 import { useSlideDrawerPresentation } from "../../hook/useSlideDrawerPresentation";
 
 type DatasetCatalogDrawerContextValue = {
@@ -33,6 +34,10 @@ export function DatasetCatalogDrawerProvider({ children }: { children: React.Rea
   // dataset palette query (no hub) that drives the trigger counter.
   useEffect(() => {
     if (!projectId) return;
+    // A standalone dashboard shows neither surface: there is no drawer to open
+    // and no palette to count. Warming a cache nothing reads would be two
+    // requests from a page whose whole claim is that it makes none.
+    if (isStandaloneDashboard()) return;
     prefetchDatasetCatalog({
       dataflowId: projectId,
       includeHub: true,

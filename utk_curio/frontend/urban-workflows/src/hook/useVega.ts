@@ -24,6 +24,43 @@ if (typeof window !== 'undefined') {
   (window as any).__curio_vegaLite = lite;
 }
 
+/**
+ * A view that cannot fetch anything.
+ *
+ * Only the TOP-LEVEL `data` is replaced with the rows Curio resolved, so a
+ * reference nested inside a layer, a lookup transform, a `datasets` block or a
+ * topojson source survives compilation and vega's default loader fetches it
+ * while the chart renders. On a dashboard that is wrong twice over: the page is
+ * served complete and must reach nothing, and it is opened by whoever holds the
+ * link, so a URL in somebody's saved spec would be fetched by every viewer.
+ *
+ * Refusing is better than ignoring. The chart shows vega's own error for the
+ * reference it could not load, which says which one it was, rather than drawing
+ * a layer short and looking merely wrong.
+ *
+ * Built on first use rather than at import: several suites mock `vega` down to
+ * the handful of members they need, and a module-level `vega.loader(...)` call
+ * makes importing this file throw in every one of them.
+ */
+let offlineViewOptions: { loader: unknown } | undefined;
+
+function offlineViewOptionsOnce() {
+  if (!offlineViewOptions) {
+    offlineViewOptions = {
+      loader: vega.loader({
+        load: (uri: string) =>
+          Promise.reject(
+            new Error(
+              `This dashboard cannot load ${uri}: a published dashboard draws only `
+              + `from the data saved with it.`,
+            ),
+          ),
+      }),
+    };
+  }
+  return offlineViewOptions;
+}
+
 export const useVega = ({
   data,
   code,
@@ -270,7 +307,7 @@ export const useVega = ({
     data.interactionsCallback(interactions, data.nodeId);
   }, [interactions]);
 
-  const { workflowNameRef } = useFlowContext();
+  const { workflowNameRef, dashboardOn } = useFlowContext();
   const { nodeExecProv } = useProvenanceContext();
   const handleCompileGrammar = async (spec: string): Promise<RenderCounts> => {
     let startTime = formatDate(new Date());
@@ -345,7 +382,7 @@ export const useVega = ({
     clearEmptyState(document.getElementById("vega" + data.nodeId));
     hasRunRef.current = true;
 
-    let view = new vega.View(vega.parse(vegaspec))
+    let view = new vega.View(vega.parse(vegaspec), dashboardOn ? offlineViewOptionsOnce() : undefined)
       .logLevel(vega.Warn) // set view logging level
       .renderer("canvas")
       .initialize("#vega" + data.nodeId)

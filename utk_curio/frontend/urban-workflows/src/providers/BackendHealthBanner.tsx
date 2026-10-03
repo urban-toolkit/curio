@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { backendUrl } from "../utils/backendUrl";
+import { isStandaloneDashboard } from "../standalone/dashboardPayload";
 
 const BACKEND_URL = backendUrl() || "http://localhost:5002";
 
@@ -12,6 +13,11 @@ export const BackendHealthBanner: React.FC<{ children: React.ReactNode }> = ({ c
     const [dismissed, setDismissed] = useState(false);
 
     useEffect(() => {
+        // A standalone dashboard has no backend to be down. Asking would be the
+        // page's only request, and a visitor who opened a link somewhere the
+        // server is unreachable would be told so by a banner over a page that
+        // is working perfectly.
+        if (isStandaloneDashboard()) return;
         let cancelled = false;
         fetch(`${BACKEND_URL}/live`, { method: "GET" })
             .then((res) => {

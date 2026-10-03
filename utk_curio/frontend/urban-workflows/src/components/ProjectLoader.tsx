@@ -24,6 +24,7 @@ import { useToastContext } from "../providers/ToastProvider";
 import { loadFailedMessage } from "../utils/dataflowImport";
 
 import { SHARE_UUID_RE as UUID_RE } from "../utils/shareLinks";
+import { getEmbeddedDashboard } from "../standalone/dashboardPayload";
 
 /** How far the load has got, for a page that has to say which state it is in. */
 export type ProjectLoadState = "idle" | "loading" | "loaded" | "failed";
@@ -228,6 +229,30 @@ export const ProjectLoader: React.FC<{
       } catch {
         /* loader continues; descriptor-miss surfaces per-node, not as a hard stop */
       }
+      // A standalone dashboard was served with its spec and its rows inside it,
+      // so there is nothing to load. Taken before the request, not after a
+      // failure: the point of the page is that it never reaches the network.
+      //
+      // trusted=false, like a shared spec. A page anyone can open by link must
+      // not auto-install the dependencies its spec declares, and `presentation`
+      // already blocks that, but saying so twice costs nothing and the day this
+      // payload is served on another route it will still be foreign content.
+      const embedded = getEmbeddedDashboard();
+      if (embedded) {
+        try {
+          applyResult(
+            { spec: embedded.spec, outputs: embedded.outputRefs ?? [] },
+            { trusted: false },
+          );
+          setLoadState("loaded");
+        } catch (embeddedErr) {
+          console.error("Failed to read the embedded dashboard:", embeddedErr);
+          setLoadState("failed");
+          showToast(loadFailedMessage(embeddedErr), "error");
+        }
+        return;
+      }
+
       try {
         const result = await loadProject(id);
         applyResult(result, { trusted: true });

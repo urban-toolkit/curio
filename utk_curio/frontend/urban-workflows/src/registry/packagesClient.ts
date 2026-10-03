@@ -37,6 +37,10 @@ import {
 } from '../adapters/node';
 import { packagesApi } from '../services/packages';
 import { getToken } from '../utils/authApi';
+import {
+  getEmbeddedDashboard,
+  isStandaloneDashboard,
+} from '../standalone/dashboardPayload';
 
 import { getBehavior } from './behaviorRegistry';
 import { resolveIconRef } from './iconRegistry';
@@ -335,6 +339,24 @@ export function registerPackageTemplates(packages: RawPackage[]): NodeDescriptor
 const inFlightBehaviorScripts = new Map<string, Promise<void>>();
 
 async function loadPackageBehaviorScripts(packages: RawPackage[]): Promise<void> {
+  // A standalone dashboard was served with these scripts rather than a URL to
+  // fetch them from. Run them the same way the fetched ones are run, as inline
+  // script text that self-registers through `window.curio.registerBehavior`, so
+  // a package tile behaves on a published page exactly as it does on a canvas.
+  const embeddedScripts = getEmbeddedDashboard()?.registry?.behaviorScripts;
+  if (embeddedScripts) {
+    for (const [key, text] of Object.entries(embeddedScripts)) {
+      if (document.querySelector(`script[data-curio-package="${key}"]`)) continue;
+      const el = document.createElement("script");
+      el.dataset.curioPackage = key;
+      el.text = String(text);
+      document.head.appendChild(el);
+    }
+    return;
+  }
+  // A page with no payload at all still fetches; a payload that simply has no
+  // scripts has nothing to run. Either way nothing below should call out.
+  if (isStandaloneDashboard()) return;
   const base = backendUrl();
   const targets = packages.filter((p) => p.behaviorScript && p.dirName);
   if (targets.length === 0) return;
@@ -440,7 +462,16 @@ let appliedLoad = 0;
 export async function loadInstalledPackages(): Promise<NodeDescriptor[]> {
   const load = ++startedLoads;
   try {
-    const { packages } = await packagesApi.listInstalled();
+    // A standalone dashboard was served with the descriptors inside it. Taken
+    // here rather than further down so everything after this point is the
+    // ordinary path: the same scoping, the same descriptor build, the same
+    // registry replace. Curio bundles node implementations but not node
+    // descriptors, so without these a page with every row it needs still shows
+    // "Loading node..." on every tile.
+    const embedded = getEmbeddedDashboard();
+    const { packages } = embedded?.registry?.packages
+      ? { packages: embedded.registry.packages }
+      : await packagesApi.listInstalled();
     const filtered = packages ?? [];
     const scope = getCurrentProjectPackages();
     const scoped =

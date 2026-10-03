@@ -120,7 +120,7 @@ export function resolveOutputMode(data: any): SpatialJoinOutput {
 export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [slots, setSlots] = useState<[any | undefined, any | undefined]>([undefined, undefined]);
   const edges = useEdges();
-  const { updateDataNode } = useFlowContext();
+  const { updateDataNode, dashboardOn } = useFlowContext();
   const { showToast } = useToastContext();
 
   const nameProperty = resolveNameProperty(data);
@@ -217,6 +217,13 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
     const rawPoints = unwrap(slots[0]);
     const rawPolygons = unwrap(slots[1]);
     if (!rawPoints || !rawPolygons) return;
+    // Never from a dashboard. Restoring a saved dataflow fills both slots with
+    // no user action, so this would post a join to the server because somebody
+    // opened a page to look at it: a computation nobody asked for, on a page
+    // that is supposed to need no server at all, and one that throws for a
+    // visitor holding a link. A dashboard shows what was saved or it shows the
+    // node's empty state; it never computes.
+    if (dashboardOn) return;
     const controller = new AbortController();
     setLastResult(null);
     fetch(API_BASE, {
@@ -258,7 +265,7 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
     // update (including our own updateDataNode), which would re-fire the join
     // with the same inputs. The property is a dep in its own right.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slots, nameProperty, outputMode]);
+  }, [slots, nameProperty, outputMode, dashboardOn]);
 
   const polygonProps = useMemo(() => polygonPropertyNames(unwrap(slots[1])), [slots]);
   const datalistId = `spatial-join-props-${data.nodeId}`;
