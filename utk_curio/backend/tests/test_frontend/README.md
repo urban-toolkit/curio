@@ -324,7 +324,7 @@ Two families of baseline live in that folder:
   Autark node whose grammar has a `map` or `plot` also gets a
   `test_node_execution_closeup_<node id>` baseline: the node alone, framed at up
   to 100% zoom (`save_node_closeup`) and compared at a per-channel tolerance of
-  5 instead of 30, against a 2% budget instead of 10%. In the full-page frame a
+  5 instead of 30, against a 5% budget instead of 10%. In the full-page frame a
   map or plot that drew nothing can stay under the budget; up close it cannot. Walkthrough scenes with a drawn map
   take one with `ctx.capture_node`. A workflow in `INTERACTIONS`
   (test_workflows.py) also gets
@@ -339,7 +339,7 @@ Two families of baseline live in that folder:
   Interaction pairs. Re-mint them with the workflow's whole class selected
   (`remint_filter="TestWorkflowCanvas and <workflow>"`), as CI runs them: the
   class's earlier tests can move the pair by a fraction of a pixel, which shifts
-  the node's text and borders past the 2% budget;
+  the node's text and borders past the close-up budget;
 - one per hand-built surface, keyed by the stem the test passes in place of a
   workflow path: `canvas-authoring`, `package-roundtrip`,
   `package-metadata-roundtrip`, `package-export-drawer`, `save-as-modal`,
