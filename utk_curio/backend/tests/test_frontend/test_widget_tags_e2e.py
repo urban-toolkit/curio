@@ -15,6 +15,12 @@ reference with the widget's value. This drives the whole path in a browser:
 Before, a widget was a ``[!! name$TYPE$default !!]`` marker typed into the
 code, a new value did not re-run an ancestor, and a save kept no value at all.
 
+A second test declares the controls SCOUT's widgets need and Curio lacked (a
+slider with bounds and units, a checkbox group, a choice shown as radio
+buttons, a date and time, and a location), sets each one in the panel, and
+checks the values reach Python and come back after a reopen. The location is
+typed: its place search asks Nominatim, which CI does not reach.
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_widget_tags_e2e.py -v
@@ -270,3 +276,150 @@ def test_a_widget_tag_drives_the_code_and_survives_a_reopen(
     assert control.input_value() == "5", (
         f"the reopened widget reads {control.input_value()!r}, not the 5 that was saved"
     )
+
+
+CONTROLS_CODE = (
+    "rain = [!! rain !!]\n"
+    "classes = [!! classes !!]\n"
+    "season = [!! season !!]\n"
+    "when = [!! when !!]\n"
+    "origin = [!! origin !!]\n"
+    "return f\"{rain}|{'+'.join(classes)}|{season}|{when}|{origin['lat']},{origin['lon']}\"\n"
+)
+
+
+def _add_widget(page, node_id: str, *, name: str, kind: str, label: str, fill=None) -> None:
+    """Declare a widget in the panel's form; *fill* sets its options and default."""
+    _open_tab(page, node_id, "widgets")
+    panel = _panel(page, node_id)
+    panel.get_by_role("button", name="Add widget").click()
+    form = panel.locator("[data-widget-form]")
+    form.get_by_label("Widget name").fill(name)
+    form.get_by_label("Widget type").select_option(kind)
+    form.get_by_label("Widget label").fill(label)
+    if fill is not None:
+        fill(form)
+    form.get_by_role("button", name="Add widget").click()
+    panel.locator(f'[data-widget-row="{name}"]').wait_for(state="visible", timeout=10000)
+
+
+def _slider_options(form) -> None:
+    # The type starts a slider at 0 to 100; its default stays at 0.
+    form.get_by_label("Widget maximum").fill("50")
+    form.get_by_label("Widget step").fill("0.5")
+    form.get_by_label("Widget units").fill("mm")
+
+
+def _classes_options(form) -> None:
+    form.get_by_label("Widget choices").fill("water, forest, grass")
+    form.get_by_role("group", name="Widget default").get_by_label("forest").check()
+
+
+def _season_options(form) -> None:
+    form.get_by_label("Widget choices").fill("summer, winter")
+    form.get_by_label("Widget display").select_option("radio")
+
+
+def _when_default(form) -> None:
+    form.get_by_label("Widget default", exact=True).fill("2026-06-21T12:00")
+
+
+def _origin_default(form) -> None:
+    form.get_by_label("Widget default latitude").fill("41.8781")
+    form.get_by_label("Widget default longitude").fill("-87.6298")
+
+
+def test_scout_controls_reach_python_and_survive_a_reopen(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    require_project_page()
+    require_user_auth()
+
+    page.emulate_media(reduced_motion="reduce")
+    session = stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Widget Controls",
+        username="widget_controls_e2e",
+        project_name="Widget controls",
+    )
+    require_owner_view(page)
+    project_id = session["project"]["id"]
+
+    source = drag_to_canvas(page, page.locator(TILE), at=(150, 150))
+    reader = drag_to_canvas(page, page.locator(TILE), at=(760, 150))
+    connect_nodes(page, source, reader)
+    set_node_code(page, reader, READER_CODE)
+
+    # 1. Each control is declared in the panel's form, with its options.
+    _add_widget(page, source, name="rain", kind="slider", label="Rain", fill=_slider_options)
+    _add_widget(page, source, name="classes", kind="checkbox-group", label="Classes", fill=_classes_options)
+    _add_widget(page, source, name="season", kind="choice", label="Season", fill=_season_options)
+    _add_widget(page, source, name="when", kind="datetime", label="When", fill=_when_default)
+    _add_widget(page, source, name="origin", kind="location", label="Origin", fill=_origin_default)
+    set_node_code(page, source, CONTROLS_CODE)
+
+    # 2. A run writes each default as a Python value.
+    run_node_and_wait(page, reader, node_type=NODE_TYPE)
+    _wait_for_output(page, reader, "<<0|forest|summer|2026-06-21T12:00:00|41.8781,-87.6298>>", "With the defaults")
+
+    # 3. Each control is set the way a user sets it, and the next run uses it.
+    _open_tab(page, source, "widgets")
+    panel = _panel(page, source)
+    panel.get_by_label("Rain", exact=True).focus()
+    page.keyboard.press("End")
+    panel.locator('[data-widget-row="classes"]').get_by_label("water").check()
+    panel.locator('[data-widget-row="season"]').get_by_label("winter").check()
+    panel.get_by_label("When", exact=True).fill("2026-12-21T08:30")
+    panel.get_by_label("Origin latitude", exact=True).fill("40.7128")
+    panel.get_by_label("Origin longitude", exact=True).fill("-74.006")
+    play_node(page, reader)
+    _wait_for_output(page, reader, "<<50|water+forest|winter|2026-12-21T08:30:00|40.7128,-74.006>>", "After setting each control")
+
+    # 4. The options and the values are saved...
+    save_dataflow(page)
+    saved = api_json(f"{current_server}/api/projects/{project_id}", session["token"])["spec"]
+    by_id = {n["id"]: n for n in saved["dataflow"]["nodes"]}
+    assert by_id[source]["metadata"].get("widgets") == [
+        {"name": "rain", "type": "slider", "label": "Rain", "default": 0, "value": 50,
+         "options": {"min": 0, "max": 50, "step": 0.5, "units": "mm"}},
+        {"name": "classes", "type": "checkbox-group", "label": "Classes", "default": ["forest"],
+         "value": ["water", "forest"], "options": {"choices": ["water", "forest", "grass"]}},
+        {"name": "season", "type": "choice", "label": "Season", "default": "summer", "value": "winter",
+         "options": {"choices": ["summer", "winter"], "display": "radio"}},
+        {"name": "when", "type": "datetime", "label": "When", "default": "2026-06-21T12:00:00",
+         "value": "2026-12-21T08:30:00"},
+        {"name": "origin", "type": "location", "label": "Origin", "default": {"lat": 41.8781, "lon": -87.6298},
+         "value": {"lat": 40.7128, "lon": -74.006}},
+    ], by_id[source]["metadata"]
+
+    # ...and the controls show them after a reopen, with the slider's bounds.
+    page.goto(f"{app_frontend.base_url}/projects")
+    page.wait_for_load_state("domcontentloaded")
+    page.goto(f"{app_frontend.base_url}/dataflow/{project_id}")
+    node_locator(page, source).wait_for(state="visible", timeout=45000)
+    _wait_for_code_containing(page, source, "[!! origin !!]", timeout=45000)
+    _open_tab(page, source, "widgets")
+    panel = _panel(page, source)
+    slider = panel.get_by_label("Rain", exact=True)
+    slider.wait_for(state="visible", timeout=15000)
+    reopened = {
+        "slider": [slider.input_value(), slider.get_attribute("min"), slider.get_attribute("max"),
+                   slider.get_attribute("step")],
+        "slider shows": panel.locator('[data-widget-row="rain"] output').inner_text().strip(),
+        "water": panel.locator('[data-widget-row="classes"]').get_by_label("water").is_checked(),
+        "winter": panel.locator('[data-widget-row="season"]').get_by_label("winter").is_checked(),
+        "when": panel.get_by_label("When", exact=True).input_value()[:16],
+        "latitude": panel.get_by_label("Origin latitude", exact=True).input_value(),
+    }
+    assert reopened == {
+        "slider": ["50", "0", "50", "0.5"],
+        "slider shows": "50 mm",
+        "water": True,
+        "winter": True,
+        "when": "2026-12-21T08:30",
+        "latitude": "40.7128",
+    }, reopened
