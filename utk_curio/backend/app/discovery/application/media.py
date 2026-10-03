@@ -28,6 +28,7 @@ from typing import Any
 from utk_curio.backend.app.discovery.domain.errors import (
     CapabilityUnsupported,
     DiscoveryError,
+    DownloadTooLarge,
     ResourceNotFound,
 )
 from utk_curio.backend.app.discovery.infrastructure import media_dirs
@@ -225,9 +226,12 @@ def _source_path(found: Located) -> tuple[Path, bool]:
         raise MediaUnavailable(
             f"{found.row.relpath} is in a bucket; cache the collection's files to preview it"
         )
-    body = found.provider.open(found.row.relpath).read(MAX_REMOTE_THUMB_SOURCE_BYTES + 1)
-    if len(body) > MAX_REMOTE_THUMB_SOURCE_BYTES:
-        raise MediaUnavailable(f"{found.row.relpath} is too large to preview before it is cached")
+    try:
+        body = found.provider.open(
+            found.row.relpath, max_bytes=MAX_REMOTE_THUMB_SOURCE_BYTES, ceiling=MAX_REMOTE_THUMB_SOURCE_BYTES,
+        ).read()
+    except DownloadTooLarge:
+        raise MediaUnavailable(f"{found.row.relpath} is too large to preview before it is cached") from None
     handle = tempfile.NamedTemporaryFile(suffix="." + found.row.ext, delete=False)
     with handle:
         handle.write(body)

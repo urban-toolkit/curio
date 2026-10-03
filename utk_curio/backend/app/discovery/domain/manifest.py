@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from utk_curio.backend.app.discovery.domain import parameters as P
+from utk_curio.backend.app.discovery.domain.limits import max_download_bytes
 from utk_curio.backend.app.discovery.domain.source_id import SourceId
 from utk_curio.backend.app.discovery.domain.templates import (
     CAPTURE_NAME_RE,
@@ -174,7 +175,9 @@ DEFAULT_MAX_FILES = 200_000
 MAX_RESOURCES = 64
 
 DEFAULT_ICON_FILE = "icon.png"
-DEFAULT_MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
+#: The server's download ceiling (``curio.py --discovery-max-download-mb``):
+#: a manifest's ``maxDownloadBytes`` when it names none, and the most it may name.
+DEFAULT_MAX_DOWNLOAD_BYTES = max_download_bytes()
 DEFAULT_REQUESTS_PER_MINUTE = 30
 
 _SECRET_ID_RE = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){0,2}$")

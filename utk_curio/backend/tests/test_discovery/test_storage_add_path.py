@@ -17,7 +17,7 @@ from urllib.parse import quote
 
 import pytest
 
-from utk_curio.backend.app.discovery.domain.errors import ResourceNotFound
+from utk_curio.backend.app.discovery.domain.errors import DownloadTooLarge, ResourceNotFound
 from utk_curio.backend.app.discovery.domain.manifest import ManifestError, load_source_manifest
 from utk_curio.backend.app.discovery.providers.storage_base import FileEntry
 from utk_curio.backend.tests.test_discovery.conftest import (
@@ -138,6 +138,17 @@ class MemoryBucket:
         if byte_range is not None:
             data = data[byte_range[0]:byte_range[1]]
         return io.BytesIO(data)
+
+    def stream(self, relpath, sink, *, max_bytes, ceiling=None, progress=None):
+        """As a bucket's transport does: refused past the bound, written in chunks."""
+        if relpath not in self.files:
+            raise ResourceNotFound(f"{relpath}: the bucket answered 404")
+        data = self.files[relpath]
+        bound = min(max_bytes, ceiling or max_bytes)
+        if len(data) > bound:
+            raise DownloadTooLarge(f"the response declares {len(data)} bytes, over the {bound}-byte bound")
+        for start in range(0, len(data), 4096):
+            sink(data[start:start + 4096])
 
     def local_path(self, relpath):
         return None

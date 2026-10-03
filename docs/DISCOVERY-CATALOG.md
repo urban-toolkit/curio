@@ -191,7 +191,7 @@ While a download or an add runs, its row shows a progress bar and **Cancel**. Th
 - **A restart loses it.** A download still running when the server restarts is lost, and its row shows it as failed. Start it again.
 - **Downloading again.** A row marked **In your Data Catalog as CSV** has been downloaded in that format; picking CSV offers **View dataset**, and nothing is fetched again, while another format still downloads. A download narrowed by an area is held for that area: the same answers again fetch nothing and keep the dataset you have, and another area downloads again. A file you downloaded by hand and imported from a Dataset Finder row counts too: a download and a hand import of the same bytes are one dataset, whichever arrived first.
 - **Formats.** CSV, GeoJSON, JSON, Parquet, and GeoTIFF, narrowed by what each portal offers. A GeoTIFF download that is not a TIFF file is refused.
-- **Size.** 64 MiB at most. A source may set a lower limit, which its **View details** shows as **Max download**.
+- **Size.** 1 GiB at most, or what the operator sets with `curio.py --discovery-max-download-mb`. A source may set a lower limit, which its **View details** shows as **Max download**.
 - **Archives** (`.zip`, `.gz`, `.tar` and the like) are refused. Curio downloads single data files and unpacks nothing.
 
 When a download fails, the row says why in the server's own words, for example that the file is an archive or larger than the limit.
@@ -328,7 +328,7 @@ What you download is yours, like any imported dataset. To offer it to everyone o
 | `auth.helpUrl` | | Where a user gets a token. Shown in the details. |
 | `capabilities.search`, `describe`, `download` | | What the portal supports. All default to true. |
 | `capabilities.formats` | | A portal only: the formats it may deliver, from the five Curio downloads. A storage or service source's formats follow from its resources, and a manifest of either that declares them is refused. |
-| `capabilities.maxDownloadBytes` | | A download limit below the 64 MiB default. |
+| `capabilities.maxDownloadBytes` | | A download limit for this source, below the server's (1 GiB unless `--discovery-max-download-mb` sets another). A larger value is read as the server's. |
 | `capabilities.allowOffBaseDistributions` | | Lets a download come from a host other than `baseUrl`, for a CKAN portal whose files live on each publisher's own site. Off by default. |
 | `limits.requestsPerMinute` | | Requests per minute to a portal, per user. Default 30. A storage source's requests are not counted. |
 | `limits.maxFiles` | | A storage source: how many matched files it lists and adds at once. Default and most 200,000. |
@@ -436,6 +436,7 @@ Curio reads public S3 buckets, and Hugging Face dataset repositories, with your 
 | Variable | Flag | Effect |
 |---|---|---|
 | `CURIO_DISCOVERY_ROOT` | `--discovery-root` | Reads the shipped sources from this directory instead of `<repo_root>/discovery`. |
+| `CURIO_DISCOVERY_MAX_DOWNLOAD_MB` | `--discovery-max-download-mb` | The largest file a download or a bucket add takes, in megabytes. Default 1024. A source's manifest may set a lower limit for itself. |
 | `CURIO_DEFAULT_SOCRATA_APP_TOKEN` | none | A Socrata app token every account inherits until it saves its own. |
 | `CURIO_MEDIA_CACHE_MAX_GB` | none | How much each account may hold in cached bucket files. Default 20. |
 
