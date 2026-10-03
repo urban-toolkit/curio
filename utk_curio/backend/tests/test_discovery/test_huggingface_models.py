@@ -190,6 +190,7 @@ class TestItLandsInTheModelCatalog:
         on two of example 10's photos. The graph is the synthetic stand-in, so
         the classes are noise; their shares still have to cover the image."""
         from utk_curio.backend.app.model_catalog.service import ModelCatalogService
+        from utk_curio.sandbox.util.catalog_helpers import CurioModel
         from utk_curio.sandbox.util.collections import make_collection_helpers
         from utk_curio.sandbox.util.vision import make_curio_segment
 
@@ -203,8 +204,8 @@ class TestItLandsInTheModelCatalog:
         helpers = make_collection_helpers(
             lambda _id: str(index), {sample: {"kind": "images", "root": str(storage)}}, str(tmp_path)
         )
-        photos = helpers["curio_collection"](sample).head(2)
-        out = make_curio_segment(helpers["curio_derived_file"])(photos, str(folder), None)
+        photos = helpers["curio_load_collection"](sample).head(2)
+        out = make_curio_segment(helpers["curio_derived_file"])(photos, CurioModel(model["id"], str(folder)), None)
         shares = out[[f"{label}_pct" for label in model["labels"]]]
         assert shares.sum(axis=1).between(99.5, 100.5).all()
         assert out["dominant_class"].isin(model["labels"]).all()

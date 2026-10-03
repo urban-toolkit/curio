@@ -1,4 +1,4 @@
-"""``curio_collection`` and ``curio_derived_file``, in process and isolated.
+"""``curio_load_collection`` and ``curio_derived_file``, in process and isolated.
 
 A collection's index is a dataset like any other, so it reaches the sandbox
 through the same ``dataset_paths`` mapping (staged into scratch when
@@ -48,7 +48,7 @@ class TestTheHelpers(unittest.TestCase):
         return make_collection_helpers(lambda _id: str(self.index), collections, media_dir)
 
     def test_a_folder_collection_resolves_every_row_under_its_root(self):
-        frame = self.helpers({"c1": {"root": "/srv/media"}})["curio_collection"]("c1")
+        frame = self.helpers({"c1": {"root": "/srv/media"}})["curio_load_collection"]("c1")
         self.assertEqual(frame.loc[0, "path"], os.path.join("/srv/media", "2024", "x.jpg"))
         self.assertEqual(set(frame["dataset_id"]), {"c1"})
         self.assertEqual(frame.loc[0, "thumbnail"], f"/api/datasets/c1/media/{'a' * 16}?variant=thumb")
@@ -61,7 +61,7 @@ class TestTheHelpers(unittest.TestCase):
         rows = ROWS + [{"file_id": "d" * 16, "relpath": "../outside.jpg", "name": "outside.jpg",
                         "ext": "jpg", "kind": "image"}]
         write_index(self.index, rows)
-        frame = self.helpers({"c1": {"root": "/srv/media"}})["curio_collection"]("c1")
+        frame = self.helpers({"c1": {"root": "/srv/media"}})["curio_load_collection"]("c1")
         outside = frame[frame["file_id"] == "d" * 16].iloc[0]
         self.assertTrue(pd.isna(outside["path"]))
 
@@ -69,18 +69,18 @@ class TestTheHelpers(unittest.TestCase):
         objects = self.tmp / "objects"
         objects.mkdir()
         (objects / f"{'a' * 16}.jpg").write_bytes(b"x")
-        frame = self.helpers({"c1": {"objects": str(objects)}})["curio_collection"]("c1")
+        frame = self.helpers({"c1": {"objects": str(objects)}})["curio_load_collection"]("c1")
         self.assertEqual(frame.loc[0, "path"], str(objects / f"{'a' * 16}.jpg"))
         self.assertTrue(pd.isna(frame.loc[1, "path"]))
 
     def test_an_index_with_positions_is_a_geodataframe(self):
         write_index(self.index, ROWS, geo=True)
-        frame = self.helpers({"c1": {"root": "/r"}})["curio_collection"]("c1")
+        frame = self.helpers({"c1": {"root": "/r"}})["curio_load_collection"]("c1")
         self.assertIsInstance(frame, gpd.GeoDataFrame)
 
     def test_an_unresolved_collection_says_what_to_do(self):
         with self.assertRaisesRegex(RuntimeError, "Discovery Catalog"):
-            self.helpers({})["curio_collection"]("missing")
+            self.helpers({})["curio_load_collection"]("missing")
 
     def test_a_derived_file_is_named_and_its_folder_made(self):
         media = self.tmp / "media"
@@ -101,7 +101,7 @@ class TestTheHelpers(unittest.TestCase):
             derive("../c1", "a" * 16, 1)
 
     def test_without_a_media_directory_there_is_nowhere_to_write(self):
-        with self.assertRaisesRegex(RuntimeError, "curio_collection"):
+        with self.assertRaisesRegex(RuntimeError, "curio_load_collection"):
             self.helpers({}, None)["curio_derived_file"]("c1", "a" * 16, 1)
 
 
@@ -114,14 +114,14 @@ class TestInProcess(unittest.TestCase):
         _worker_init()
         init_db()
 
-    def test_the_exec_route_injects_curio_collection(self):
+    def test_the_exec_route_injects_curio_load_collection(self):
         from utk_curio.sandbox.app import app
 
         with tempfile.TemporaryDirectory() as tmp:
             index = write_index(Path(tmp) / "index.parquet", ROWS)
             response = app.test_client().post("/exec", json={
                 "code": (
-                    '    frame = curio_collection("imported.xcol")\n'
+                    '    frame = curio_load_collection("imported.xcol")\n'
                     '    return frame.loc[0, "path"]\n'
                 ),
                 "file_path": "",
@@ -145,7 +145,7 @@ class TestIsolatedChild(unittest.TestCase):
             scratch = Path(tmp)
             write_index(scratch / "ds_0.parquet", ROWS)
             manifest = child.run_node(request(
-                '    return len(curio_collection("imported.xcol"))\n',
+                '    return len(curio_load_collection("imported.xcol"))\n',
                 scratch,
                 dataset_paths={"imported.xcol": "ds_0.parquet"},
                 collections={"imported.xcol": {"root": "/srv/media"}},

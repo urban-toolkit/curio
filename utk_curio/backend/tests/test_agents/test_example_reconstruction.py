@@ -302,7 +302,7 @@ class TestMutationsFailForTheRightReason:
             loader = payload["nodes"][0]["ref"]
             contents[loader] = (
                 'import pandas as pd\n'
-                'p = curio_dataset_path("data.invented.nowhere")\n'
+                'p = curio_data_path("data.invented.nowhere")\n'
                 'return pd.read_csv(p)'
             )
 
@@ -616,7 +616,7 @@ class TestResolutionModeDataset:
             if node.get("type") == "curio.builtin/data-loading"
         ]
         assert loader and (loader[0].get("content") or "").strip()
-        assert "curio_dataset_path" in loader[0]["content"]
+        assert "curio_data_path" in loader[0]["content"]
         # And the harness reports the unresolved DECLARATION rather than
         # pretending the dependency was satisfied.
         assert result.scored.comparison.dependencies.datasets_missing == tuple(

@@ -1079,8 +1079,8 @@ class TestSessionRealData:
             loader_id = drag_to_canvas(page, row, at=(140, 130))
             close_tools_palette(page, "datasets")
             code = read_node_code(page, loader_id)
-            assert "read_csv" in code, (
-                f"the generated loader for a .csv does not read_csv:\n{code}"
+            assert "df = curio_load_data(" in code, (
+                f"the generated loader for a .csv does not load it:\n{code}"
             )
             s.tour.beat(900)
 

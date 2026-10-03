@@ -3,7 +3,7 @@
 Nodes for the collections the Discovery Catalog adds from a folder, a bucket
 or a Hugging Face dataset repository: videos, recordings and raster tiles.
 Each node takes the
-rows a Data Loading node returns for a collection (`curio_collection(...)`) and
+rows a Data Loading node returns for a collection (`curio_load_collection(...)`) and
 returns rows or a raster the other nodes already read, so Simple View, the map
 views and the zonal-statistics nodes work on the result as they are.
 

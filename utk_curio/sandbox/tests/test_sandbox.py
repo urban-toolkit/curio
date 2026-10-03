@@ -336,7 +336,7 @@ class TestProjDataDir(unittest.TestCase):
 
     #: The Milan census polygons, now a Data Catalog dataset rather than a loose
     #: file under docs/examples/data. Addressed by path, not by
-    #: ``curio_dataset_path``, because these tests call ``execute_code``
+    #: ``curio_data_path``, because these tests call ``execute_code``
     #: directly and so never get the backend's resolved ``dataset_paths``.
     _CENSUS_GJ = os.path.join(
         _REPO_ROOT,

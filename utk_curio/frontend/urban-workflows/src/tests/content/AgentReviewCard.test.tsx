@@ -806,7 +806,7 @@ describe("AgentReviewCard — dev/114 (DEC-072) the Source block", () => {
         part={withSource({
           kind: "catalog",
           label: "Data Catalog · Census ACS 5-year (parquet)",
-          refs: [{ kind: "catalog", value: 'curio_dataset_path("imported.acs@1")',
+          refs: [{ kind: "catalog", value: 'curio_data_path("imported.acs@1")',
                    datasetId: "imported.acs@1", title: "Census ACS 5-year", format: "parquet" }],
         })}
         onApply={jest.fn()}

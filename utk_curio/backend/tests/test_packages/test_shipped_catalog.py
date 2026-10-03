@@ -144,7 +144,7 @@ def test_sources_do_not_read_the_examples_data_directory(package_root: Path):
     ``docs/examples/data/...`` works on a repo checkout and silently breaks in
     every pip install and every isolated sandbox. ``curio.weather@1``'s three
     loader templates did exactly that until the Data Catalog migration; they now
-    resolve their inputs with ``curio_dataset_path("<id>")``.
+    resolve their inputs with ``curio_data_path("<id>")``.
 
     This is the check that catches migrating an example's nodes but forgetting
     the package whose templates those nodes were copied from.
@@ -155,7 +155,7 @@ def test_sources_do_not_read_the_examples_data_directory(package_root: Path):
             offenders.append(source.name)
     assert not offenders, (
         f"{package_root.name}: {offenders} read from docs/examples/data; "
-        f'resolve the file through curio_dataset_path("<id>") instead'
+        f'resolve the file through curio_data_path("<id>") instead'
     )
 
 

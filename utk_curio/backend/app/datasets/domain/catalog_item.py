@@ -18,7 +18,7 @@ def format_for_path(path: Path) -> str | None:
 
 
 # Dataset ids are interpolated into generated Python source, so only ids matching
-# this whitelist may appear inside a ``curio_dataset_path("<id>")`` call. Ids can
+# this whitelist may appear inside a ``curio_data_path("<id>")`` call. Ids can
 # come from user-editable spec JSON (legacy ref fallbacks), so an id with a quote
 # or backslash would otherwise break out of the string literal. Must stay in sync
 # with the scan regex in api/routes.py and SAFE_DATASET_ID_RE in the frontend
@@ -32,18 +32,13 @@ def _safe_dataset_id(dataset_id: Any) -> str | None:
     return dataset_id
 
 
-def _path_expr(path: str | None, dataset_id: str | None) -> str:
-    """Python expression for the location line of a loader snippet.
+def _path_expr(path: str | None) -> str:
+    """Python expression for the location line of an id-less loader snippet.
 
-    Preferred form is the portable ``curio_dataset_path("<id>")`` call — the
-    sandbox resolves it to a real filesystem path at execution time, so the
-    generated code carries no machine-, user-, or mount-specific absolute path.
-    Falls back to the historical literal path when no (safe) id is available,
-    which also keeps legacy fat refs and id-less items working unchanged.
+    A dataset with a (safe) id never gets one: its loader is the portable
+    ``curio_load_data("<id>")`` call. This literal path keeps legacy fat refs
+    and id-less items working unchanged.
     """
-    safe_id = _safe_dataset_id(dataset_id)
-    if safe_id:
-        return f"curio_dataset_path({json.dumps(safe_id)})"
     # Embed the path in POSIX form so the generated source parses on every
     # platform: a raw Windows path ("C:\Users\...") inside a Python string
     # literal forms escape sequences like \U and the snippet is a SyntaxError.
@@ -108,24 +103,72 @@ def autark_layer_type(item: dict[str, Any]) -> str | None:
     return None
 
 
+def execution_format(item: dict[str, Any]) -> dict[str, str]:
+    """How the sandbox's ``curio_load_data`` reads *item*: its ``format`` and,
+    for an Autark layer, its ``layerType``. Built from a catalog item or the
+    same fields of an index row (``format``, ``layerName``, ``discoverySource``)."""
+    entry = {"format": str(item.get("format") or "")}
+    layer = autark_layer_type(item)
+    if layer:
+        entry["layerType"] = layer
+    return {k: v for k, v in entry.items() if v}
+
+
+#: What a loader names the value ``curio_load_data`` returns, per format.
+LOADED_VARIABLES = {
+    "csv": "df",
+    "parquet": "df",
+    "geojson": "gdf",
+    "shp": "gdf",
+    "json": "data",
+    "geotiff": "src",
+    "bundle": "bundle",
+}
+
+
 def loader_snippet(
     fmt: str, path: str | None, dataset_id: str | None = None, layer_type: str | None = None,
 ) -> dict[str, Any]:
     """Build the Python loader snippet for a dataset.
 
-    When a (safe) *dataset_id* is given, the location line is the portable
-    ``curio_dataset_path("<id>")`` call, resolved to a real path at execution
-    time by the sandbox (mapping supplied by ``/processPythonCode``). Without
-    one it falls back to embedding the literal path — see :func:`_path_expr`.
-
-    A *layer_type* (one of :data:`AUTARK_LAYER_TYPES`) is set as the frame's
-    ``metadata``, so an Autark node draws the frame as that layer.
+    When a (safe) *dataset_id* is given, the loader is one portable call the
+    sandbox resolves at execution time (``/processPythonCode`` sends the paths
+    and formats): ``curio_load_data("<id>")``, which reads the dataset by its
+    format, ``curio_load_collection("<id>")`` for a collection, and
+    ``curio_data_path("<id>")`` for a format nothing reads, so the node's own
+    code reads the file. Without an id it falls back to the literal path and
+    the reader spelled out, see :func:`_path_expr`; a *layer_type* (one of
+    :data:`AUTARK_LAYER_TYPES`) is then set as the frame's ``metadata``, so an
+    Autark node draws the frame as that layer.
 
     KEEP IN SYNC with the frontend generator
     ``frontend/urban-workflows/src/services/datasetCatalog/datasetLoaderSnippets.ts``
-    (same call syntax) and the scan regex in ``backend/app/api/routes.py``.
+    (same call syntax) and the scan regex in ``datasets/domain/code_refs.py``.
     """
-    expr = _path_expr(path, dataset_id)
+    safe_id = _safe_dataset_id(dataset_id)
+    if safe_id:
+        quoted = json.dumps(safe_id)
+        if fmt == "collection":
+            code, variable = f"collection = curio_load_collection({quoted})", "collection"
+        elif fmt in LOADED_VARIABLES:
+            variable = LOADED_VARIABLES[fmt]
+            code = f"{variable} = curio_load_data({quoted})"
+        else:
+            return {
+                "language": "python",
+                "imports": [],
+                "pathVariable": "dataset_path",
+                "code": f"dataset_path = curio_data_path({quoted})",
+                "returnVariable": None,
+            }
+        return {
+            "language": "python",
+            "imports": [],
+            "pathVariable": None,
+            "code": code,
+            "returnVariable": variable,
+        }
+    expr = _path_expr(path)
     if fmt == "csv":
         return {
             "language": "python",
@@ -206,7 +249,7 @@ def loader_snippet(
         }
     if fmt == "collection":
         # A collection's data file is its index: one row per file. The sandbox
-        # resolves ``curio_collection`` to that index plus a readable path for
+        # resolves ``curio_load_collection`` to that index plus a readable path for
         # every file, wherever this execution runs.
         safe_id = _safe_dataset_id(dataset_id)
         if safe_id:
@@ -214,7 +257,7 @@ def loader_snippet(
                 "language": "python",
                 "imports": [],
                 "pathVariable": None,
-                "code": f"collection = curio_collection({json.dumps(safe_id)})",
+                "code": f"collection = curio_load_collection({json.dumps(safe_id)})",
                 "returnVariable": "collection",
             }
         return {

@@ -117,7 +117,7 @@ describe("a collection's details", () => {
     expect(screen.getByText("2 images")).toBeInTheDocument();
     expect(screen.queryByText("Downloaded from")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
-    expect(screen.getByText('curio_collection("imported.xc1@1")')).toBeInTheDocument();
+    expect(screen.getByText('curio_load_collection("imported.xc1@1")')).toBeInTheDocument();
   });
 
   it("draws its first files by id, with the token", async () => {

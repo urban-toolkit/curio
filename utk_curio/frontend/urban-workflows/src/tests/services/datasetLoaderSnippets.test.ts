@@ -18,18 +18,19 @@ import {
 import type { DatasetFormat } from "../../services/datasetCatalog/datasetCatalogTypes";
 
 /**
- * The reader each format must reach for. Keyed by the full `DatasetFormat`
- * union, so adding a format to the type without adding it here is a TypeScript
- * error rather than a silently uncovered case.
+ * The call each format's loader makes when the dataset has an id: the sandbox
+ * reads the dataset by its format. Keyed by the full `DatasetFormat` union, so
+ * adding a format to the type without adding it here is a TypeScript error
+ * rather than a silently uncovered case.
  */
 const READERS: Record<DatasetFormat, string | null> = {
-  csv: "pd.read_csv",
-  geojson: "gpd.read_file",
-  shp: "gpd.read_file",
-  json: "json.loads",
-  parquet: "gpd.read_parquet",
-  geotiff: "rasterio.open",
-  bundle: "_curio_load_bundle",
+  csv: "curio_load_data",
+  geojson: "curio_load_data",
+  shp: "curio_load_data",
+  json: "curio_load_data",
+  parquet: "curio_load_data",
+  geotiff: "curio_load_data",
+  bundle: "curio_load_data",
   // `osm` has no snippetForFormat branch by design: an OSM group is loaded
   // through osmGroupLoaderSnippet, which needs the group's layer list rather
   // than a single path. Asserted explicitly below rather than dropped, so the
@@ -43,8 +44,20 @@ const READERS: Record<DatasetFormat, string | null> = {
   // its own id.
   gtfs: null,
   // A collection's index, with a readable path for every file, which only the
-  // sandbox's `curio_collection` can resolve.
-  collection: "curio_collection",
+  // sandbox's `curio_load_collection` can resolve.
+  collection: "curio_load_collection",
+};
+
+/** The reader an id-less loader (a legacy literal path) spells out per format. */
+const LITERAL_READERS: Partial<Record<DatasetFormat, string>> = {
+  csv: "pd.read_csv",
+  geojson: "gpd.read_file",
+  shp: "gpd.read_file",
+  json: "json.loads",
+  parquet: "gpd.read_parquet",
+  geotiff: "rasterio.open",
+  bundle: "_curio_load_bundle",
+  collection: "pd.read_parquet",
 };
 
 function snippetFor(format: DatasetFormat) {
@@ -67,9 +80,15 @@ describe("snippetForFormat", () => {
     expect(snippet.returnVariable).toBeTruthy();
   });
 
+  it.each(covered)("emits a real reader for %s without an id", (format) => {
+    const snippet = getDatasetLoaderSnippet({ format, path: "/tmp/example-file" } as never);
+    expect(snippet.code).toContain(LITERAL_READERS[format] as string);
+    expect(snippet.returnVariable).toBeTruthy();
+  });
+
   it.each(covered)("addresses %s by dataset id, not by path", (format) => {
     const snippet = snippetFor(format);
-    const call = format === "collection" ? "curio_collection" : "curio_dataset_path";
+    const call = format === "collection" ? "curio_load_collection" : "curio_load_data";
     expect(snippet.code).toContain(`${call}("data.utk.example")`);
     // A machine-specific absolute path in generated code is what the portable
     // id call exists to avoid; it must not appear when an id is available.
@@ -82,7 +101,7 @@ describe("snippetForFormat", () => {
       path: "/tmp/example-file",
     } as never);
     expect(snippet.code).toContain('"/tmp/example-file"');
-    expect(snippet.code).not.toContain("curio_dataset_path");
+    expect(snippet.code).not.toContain("curio_");
   });
 
   it("routes osm through the group loader instead of a single-path branch", () => {
@@ -92,18 +111,13 @@ describe("snippetForFormat", () => {
     expect(snippet.returnVariable).toBeNull();
   });
 
-  it("builds runnable node code with imports and a return", () => {
+  it("builds runnable node code: one load call and a return", () => {
     const code = buildDatasetLoaderCode({
       id: "data.cityofchicago.green-roofs",
       format: "csv",
       path: "/tmp/green-roofs.csv",
     } as never);
-    expect(code).toContain("import pandas as pd");
-    expect(code).toContain(
-      'dataset_path = curio_dataset_path("data.cityofchicago.green-roofs")',
-    );
-    expect(code).toContain("df = pd.read_csv(dataset_path)");
-    expect(code.trimEnd().endsWith("return df")).toBe(true);
+    expect(code).toBe('df = curio_load_data("data.cityofchicago.green-roofs")\nreturn df');
   });
 
   it("loads a collection the way the backend's generator does", () => {
@@ -112,7 +126,7 @@ describe("snippetForFormat", () => {
       format: "collection",
       path: "/tmp/index.parquet",
     } as never);
-    expect(code).toBe('collection = curio_collection("imported.xabc@1")\nreturn collection');
+    expect(code).toBe('collection = curio_load_collection("imported.xabc@1")\nreturn collection');
   });
 
   it("names a Discovery download's Autark layer the way the backend's generator does", () => {
@@ -123,24 +137,24 @@ describe("snippetForFormat", () => {
       layerName: "buildings",
       discoverySource: { sourceId: "source.osm.openstreetmap@1", resourceId: "buildings" },
     };
+    // With an id the layer travels to the sandbox with the dataset's format
+    // (the backend's execution_format), so the code is the one load call.
     expect(buildDatasetLoaderCode(osm as never)).toBe(
-      "import geopandas as gpd\n"
-      + 'dataset_path = curio_dataset_path("imported.osm-buildings@1")\n'
-      + "gdf = gpd.read_file(dataset_path)\n"
-      + 'gdf.metadata = {"layerType": "buildings"}\n'
-      + "return gdf",
+      'gdf = curio_load_data("imported.osm-buildings@1")\nreturn gdf',
     );
+    // Without an id the literal-path loader names the layer itself.
+    const idless = { ...osm, id: undefined };
+    expect(buildDatasetLoaderCode(idless as never)).toContain('gdf.metadata = {"layerType": "buildings"}');
     // A GeoPackage layer called "buildings" is not a Discovery download, and a
     // Discovery layer that is not one of Autark's is not typed.
-    for (const other of [{ ...osm, discoverySource: null }, { ...osm, layerName: "map-features" }]) {
+    for (const other of [{ ...idless, discoverySource: null }, { ...idless, layerName: "map-features" }]) {
       expect(buildDatasetLoaderCode(other as never)).not.toContain("gdf.metadata");
     }
   });
 
   it("prefers a backend-supplied snippet over the local generator", () => {
     // Hub catalog rows always carry the backend's `loaderSnippet`, which is the
-    // authoritative one (the Python generator restores parquet's JSON-encoded
-    // object columns from the .decode.json sidecar; this TS twin does not).
+    // authoritative one.
     const snippet = getDatasetLoaderSnippet({
       id: "data.utk.example",
       format: "parquet",

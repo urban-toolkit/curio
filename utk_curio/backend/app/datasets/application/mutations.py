@@ -1052,7 +1052,7 @@ class CatalogMutations:
         Every project the user has counts as a user of the dataset (#176).
 
         Bindings and refs only. A node's source counts as usage everywhere else,
-        but applying a dataset writes ``curio_dataset_path("<id>")`` into that
+        but applying a dataset writes ``curio_data_path("<id>")`` into that
         source, so honouring it here meant the ordinary apply-then-uninstall
         flow never deleted anything: the folder survived, the Data Hub card
         survived, and the docstring above was simply false. The caller warns

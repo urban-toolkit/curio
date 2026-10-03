@@ -33,8 +33,7 @@ anywhere without editing paths.
 ```python
 import geopandas as gpd
 
-dataset_path = curio_dataset_path("data.utk.chicago-boundary")
-gdf = gpd.read_file(dataset_path)
+gdf = curio_load_data("data.utk.chicago-boundary")
 
 return gdf
 ```

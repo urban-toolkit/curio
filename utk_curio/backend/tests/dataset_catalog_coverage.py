@@ -232,7 +232,7 @@ head = cols[:8]
 print("CURIO_E2E_ROWS=%d;" % len(df))
 print("CURIO_E2E_NCOLS=%d;" % len(cols))
 print("CURIO_E2E_COLS=%s;" % ",".join(head))
-# Type, not just shape: the generated loader tries gpd.read_parquet before
+# Type, not just shape: curio_load_data tries gpd.read_parquet before
 # pd.read_parquet, so this marker is what proves a GeoParquet dataset came back
 # as a GeoDataFrame rather than as a plain frame of WKB bytes. Compared by class
 # name so this snippet needs no geopandas import of its own.
@@ -386,7 +386,7 @@ def _geotiff_expectations(data_file: Path) -> dict[str, str]:
 
 
 # A collection's index is the dataset; its files stay in the source that
-# indexed them. ``curio_collection`` adds a readable ``path`` for each row, so
+# indexed them. ``curio_load_collection`` adds a readable ``path`` for each row, so
 # counting the rows whose file opens proves the files were reached, not only
 # the index.
 _COLLECTION_TRANSFORM = '''import os
@@ -416,35 +416,33 @@ def _collection_expectations(data_file: Path) -> dict[str, str]:
 
 FORMAT_PLANS: dict[str, FormatPlan] = {
     "csv": FormatPlan(
-        loader_marker="pd.read_csv",
+        loader_marker="df = curio_load_data(",
         transform_code=_CSV_TRANSFORM,
         vega_spec=None,
         expectations=_csv_expectations,
     ),
     "geojson": FormatPlan(
-        loader_marker="gpd.read_file",
+        loader_marker="gdf = curio_load_data(",
         transform_code=_GEOJSON_TRANSFORM,
         vega_spec=_GEOJSON_VEGA_SPEC,
         expectations=_geojson_expectations,
     ),
     "parquet": FormatPlan(
-        # The geo-first read, not the ``pd`` fallback: preferring
-        # ``gpd.read_parquet`` IS the contract (a geo dataset must reload as a
-        # GeoDataFrame), and asserting on the fallback line would still pass if
-        # the geo branch were deleted.
-        loader_marker="gpd.read_parquet(dataset_path)",
+        # curio_load_data reads it geo first; CURIO_E2E_GEO in the transform
+        # is what proves a geo dataset reloads as a GeoDataFrame.
+        loader_marker="df = curio_load_data(",
         transform_code=_PARQUET_TRANSFORM,
         vega_spec=_PARQUET_VEGA_SPEC,
         expectations=_parquet_expectations,
     ),
     "geotiff": FormatPlan(
-        loader_marker="rasterio.open(dataset_path)",
+        loader_marker="src = curio_load_data(",
         transform_code=_GEOTIFF_TRANSFORM,
         vega_spec=_GEOTIFF_VEGA_SPEC,
         expectations=_geotiff_expectations,
     ),
     "collection": FormatPlan(
-        loader_marker="curio_collection(",
+        loader_marker="collection = curio_load_collection(",
         transform_code=_COLLECTION_TRANSFORM,
         vega_spec=None,
         expectations=_collection_expectations,

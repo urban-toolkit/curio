@@ -512,7 +512,7 @@ export const NodeContainer = ({
     canApplyRef.current = canApplyDatasetToNode(data);
 
     // --- Model drag-and-drop, through the same capture-phase listeners ---
-    // A model goes only onto a node whose code calls `curio_model("...")`. Every
+    // A model goes only onto a node whose code calls `curio_load_model("...")`. Every
     // other node still takes the drop, so it can say why nothing changed rather
     // than letting the drop fall through to the canvas, which would make a new
     // node that runs the model.

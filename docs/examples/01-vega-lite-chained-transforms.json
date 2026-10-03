@@ -7,7 +7,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 665,
-        "content": "import geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.projectsidewalk.chicago-labels\")\ngdf = gpd.read_parquet(dataset_path)\n\ngdf.metadata = {\n    'name': 'accessibility_features'\n}\n\nreturn gdf\n",
+        "content": "import geopandas as gpd\n\ndataset_path = curio_data_path(\"data.projectsidewalk.chicago-labels\")\ngdf = gpd.read_parquet(dataset_path)\n\ngdf.metadata = {\n    'name': 'accessibility_features'\n}\n\nreturn gdf\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

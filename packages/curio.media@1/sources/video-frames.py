@@ -1,6 +1,6 @@
 """Sample Video Frames.
 
-Input: a collection's rows, as Data Loading's `curio_collection(...)` returns
+Input: a collection's rows, as Data Loading's `curio_load_collection(...)` returns
 them. Every video row becomes one row per sampled frame, and each frame is a
 JPEG written beside the collection's other derived files. A frame row has the
 columns of an image row (`path`, `thumbnail`, `image_url`, `width`, `height`),

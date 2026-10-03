@@ -254,7 +254,7 @@ def _run_events(user, user_key: str, run_id: str, fixture, config):
     and degrade when it is not — most consequentially the grounding gate's
     catalog read (``services._catalog_grounding_refs``), which answers "no
     catalog" outside a request and therefore refuses every
-    ``curio_dataset_path`` loader as an ungrounded source. Solve's own workers
+    ``curio_data_path`` loader as an ungrounded source. Solve's own workers
     avoid that by building their grounding base in the request thread; a
     service that drives the same paths from a job thread has no request thread
     to borrow, so it supplies one. The alternative — threading an explicit user
