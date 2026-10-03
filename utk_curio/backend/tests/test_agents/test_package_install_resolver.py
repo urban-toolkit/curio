@@ -4,7 +4,7 @@ Pure-function coverage for the package.install dirName resolver: every
 spelling the roster teaches resolves to the one catalog row; an ambiguous
 bare id refuses naming every candidate (never guesses a major); the miss hint
 names only sources the run holds a grant for (DEC-063). The route-level
-behaviour rides in test_routes.TestReuseLadder.
+behaviour rides in test_routes_turns.TestReuseLadder.
 """
 from __future__ import annotations
 

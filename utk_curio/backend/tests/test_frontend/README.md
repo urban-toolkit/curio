@@ -681,7 +681,8 @@ Things worth knowing before adding to these:
   (`dataset.install`, `package.install`, `package.draft.apply`,
   `node.template.create`) each need a real catalog row, or a run of the isolated
   build service; their mints are covered in-process by
-  `test_agents/test_routes.py`, and an agent declaring only those falls through
+  `test_agents/test_routes_turns.py` and `test_agents/test_routes_proposals.py`,
+  and an agent declaring only those falls through
   to the read-tool leg.
 - **A plan is applied per node**, through the planned row's own
   `Create node <title>` button and the `apply-node` route - not the card's
