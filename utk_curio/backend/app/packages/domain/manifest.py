@@ -304,6 +304,9 @@ class TemplateManifest:
     # invokes through the package backend sandbox (validated against the
     # package's ``backend.handlers`` in ``load_package_manifest``).
     backend_handler: str | None = None
+    # #662: the widgets a freshly dropped node of this template starts with,
+    # in the node's ``metadata.widgets`` shape; its ``source`` references them.
+    widgets: list | None = None
 
     @classmethod
     def from_json(cls, raw: object, *, where: str) -> "TemplateManifest":
@@ -345,6 +348,15 @@ class TemplateManifest:
                 f"{where}.backendHandler must match "
                 f"{backend_contract.HANDLER_NAME_RE.pattern} when present"
             )
+        widgets_raw = raw.get("widgets")
+        if widgets_raw is not None and not (
+            isinstance(widgets_raw, list)
+            and all(
+                isinstance(w, dict) and isinstance(w.get("name"), str) and isinstance(w.get("type"), str)
+                for w in widgets_raw
+            )
+        ):
+            raise ManifestError(f"{where}.widgets must be a list of objects, each with a name and a type")
         return cls(
             template_id=template_id,
             label=str(raw.get("label", template_id)),
@@ -372,6 +384,7 @@ class TemplateManifest:
             grammar_dir=raw.get("grammarDir") if isinstance(raw.get("grammarDir"), str) else None,
             widget_dir=raw.get("widgetDir") if isinstance(raw.get("widgetDir"), str) else None,
             backend_handler=backend_handler_raw,
+            widgets=widgets_raw,
         )
 
 

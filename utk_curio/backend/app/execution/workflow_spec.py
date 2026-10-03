@@ -10,8 +10,14 @@ type mapping, and the code/grammar/datapool/passive classification.
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections import deque
+
+from utk_curio.backend.app.execution.widget_substitution import (
+    WidgetReferenceError,
+    normalize_widgets,
+    resolve_widget_references,
+)
 
 
 def merge_slot_index(edge: dict) -> int | None:
@@ -236,6 +242,9 @@ class NodeSpec:
     #: dev/119: the template's engine when a roster classified this node —
     #: "python" | "javascript"; the legacy tables' answer otherwise.
     engine: str = "python"
+    #: #662: the node's widgets (``metadata.widgets``), which its
+    #: ``[!! name !!]`` references resolve against.
+    widgets: list = field(default_factory=list)
 
     @property
     def has_play_button(self) -> bool:
@@ -392,6 +401,7 @@ def parse_workflow(filepath: str) -> WorkflowSpec:
             in_type=n.get("in", "DEFAULT"),
             out_type=n.get("out", "DEFAULT"),
             category=classify_node(normalize_type(n["type"])),
+            widgets=normalize_widgets((n.get("metadata") or {}).get("widgets")),
         )
         for n in dataflow["nodes"]
     ]
@@ -464,6 +474,7 @@ def parse_workflow_dict(data: dict, *, name: str = "", templates: dict | None = 
             out_type=n.get("out", "DEFAULT"),
             category=category,
             engine=engine,
+            widgets=normalize_widgets((n.get("metadata") or {}).get("widgets")),
         ))
     edges = [
         {
@@ -552,17 +563,15 @@ def seed_node_code(code: str, seed: int = 42) -> str:
     return _SEED_PREFIX.format(seed=seed) + code
 
 
-_WIDGET_RE = re.compile(r"\[!!\s*(.*?)\s*!!\]")
+def resolve_widget_placeholders(code: str, widgets=(), language: str = "python") -> str:
+    """Replace a node's ``[!! name !!]`` references with its widgets' values,
+    exactly as the frontend does before posting to the sandbox (#662).
 
-
-def resolve_widget_placeholders(code: str) -> str:
-    """Replace ``[!! name$type$default !!]`` widget markers with defaults —
-    exactly as the frontend does before posting to the sandbox."""
-
-    def _replace(m):
-        parts = m.group(1).split("$")
-        if len(parts) >= 3:
-            return parts[2]
-        return m.group(0)
-
-    return _WIDGET_RE.sub(_replace, code)
+    Raises ``WidgetReferenceError`` naming every reference that cannot be
+    resolved: an old ``[!! name$TYPE$default !!]`` marker, or a name the node
+    has no widget for.
+    """
+    resolved, problems = resolve_widget_references(code, widgets, language)
+    if problems:
+        raise WidgetReferenceError("\n".join(p["message"] for p in problems))
+    return resolved

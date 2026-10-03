@@ -1,0 +1,240 @@
+"""Turning a node's ``[!! name !!]`` references into its widgets' values (#662).
+
+The headless twin of ``src/utils/widgets/widgetSubstitution.ts``, which the
+browser runs before posting a node's code. Both write the same code for the
+same widgets: one table of cases, ``widgetSubstitution.cases.json`` beside the
+TypeScript module, is read by Jest and by
+``tests/test_execution/test_widget_substitution.py``.
+
+A reference standing on its own becomes a literal of the language; inside a
+string literal it becomes the value's text, escaped for that string; inside a
+comment, the plain text. Numbers are written the way JavaScript's ``String()``
+writes them, so a value prints the same in both.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from typing import Iterable
+
+#: A reference as written. Kept in sync with ``WIDGET_REFERENCE_PATTERN``.
+REFERENCE_RE = re.compile(r"\[!!\s*(.*?)\s*!!\]")
+
+#: A widget name. Kept in sync with ``WIDGET_NAME_PATTERN`` in ``widgetModel.ts``.
+WIDGET_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+
+LANGUAGES = ("python", "javascript", "json")
+
+
+class WidgetReferenceError(ValueError):
+    """A node's code names widgets it cannot resolve."""
+
+
+def effective_value(widget: dict):
+    return widget["value"] if "value" in widget else widget.get("default")
+
+
+def js_number(x) -> str:
+    """*x* as JavaScript's ``String(x)`` writes it."""
+    if isinstance(x, int):
+        if abs(x) < 10 ** 21:
+            return str(x)
+        x = float(x)
+    if x == 0:
+        return "0"
+    # Through repr for every float, integral ones too: repr has JavaScript's
+    # shortest round-trip digits, where str(int(x)) would print 1.2345678901234568e20
+    # as 123456789012345677824 instead of 123456789012345680000.
+    sign = "-" if x < 0 else ""
+    text = repr(abs(x))
+    mantissa, _, exponent = text.partition("e")
+    exp = int(exponent) if exponent else 0
+    int_part, _, frac = mantissa.partition(".")
+    all_digits = int_part + frac
+    lead = len(all_digits) - len(all_digits.lstrip("0"))
+    digits = all_digits.lstrip("0").rstrip("0") or "0"
+    k = len(digits)
+    n = (len(int_part) - lead) + exp
+    if k <= n <= 21:
+        return sign + digits + "0" * (n - k)
+    if 0 < n <= 21:
+        return sign + digits[:n] + "." + digits[n:]
+    if -6 < n <= 0:
+        return sign + "0." + "0" * (-n) + digits
+    e = n - 1
+    head = digits[0] + ("." + digits[1:] if k > 1 else "")
+    return sign + head + "e" + ("+" if e >= 0 else "-") + str(abs(e))
+
+
+def widget_literal(value, language: str) -> str:
+    """*value* as a literal of *language*."""
+    if value is None:
+        return "None" if language == "python" else "null"
+    if isinstance(value, bool):
+        if language == "python":
+            return "True" if value else "False"
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
+            return "None" if language == "python" else "null"
+        return js_number(value)
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, list):
+        return "[" + ", ".join(widget_literal(v, language) for v in value) + "]"
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _text_of(value, language: str) -> str:
+    return value if isinstance(value, str) else widget_literal(value, language)
+
+
+def _escape_for(text: str, context: tuple, language: str) -> str:
+    kind = context[0]
+    if kind == "comment":
+        return text.replace("\r\n", " ").replace("\n", " ")
+    if kind == "code":
+        return text
+    if language == "json":
+        return json.dumps(text, ensure_ascii=False)[1:-1]
+    quote = context[1]
+    out = text.replace("\\", "\\\\")
+    if quote == "`":
+        return out.replace("`", "\\`").replace("${", "\\${")
+    if len(quote) == 3:
+        return out.replace(quote[0], "\\" + quote[0])
+    out = out.replace(quote, "\\" + quote)
+    return out.replace("\n", "\\n").replace("\r", "\\r")
+
+
+def _contexts(code: str, refs: list, language: str) -> list:
+    """Where each reference sits: ``("code",)``, ``("comment",)`` or ``("string", quote)``."""
+    contexts: list = []
+    state = "code"
+    quote = ""
+    i = 0
+    r = 0
+
+    def current():
+        if state == "string":
+            return ("string", quote)
+        return ("code",) if state == "code" else ("comment",)
+
+    while i < len(code) or r < len(refs):
+        if r < len(refs) and i >= refs[r].start():
+            contexts.append(current())
+            i = max(i, refs[r].end())
+            r += 1
+            continue
+        if i >= len(code):
+            break
+        ch = code[i]
+        if state == "code":
+            if language == "python" and ch == "#":
+                state = "comment"
+            elif language == "javascript" and code.startswith("//", i):
+                state = "comment"
+                i += 2
+                continue
+            elif language == "javascript" and code.startswith("/*", i):
+                state = "block"
+                i += 2
+                continue
+            elif ch == '"' or (language != "json" and (ch == "'" or (language == "javascript" and ch == "`"))):
+                if language == "python" and code.startswith(ch * 3, i):
+                    quote = ch * 3
+                    state = "string"
+                    i += 3
+                    continue
+                quote = ch
+                state = "string"
+        elif state == "comment":
+            if ch == "\n":
+                state = "code"
+        elif state == "block":
+            if code.startswith("*/", i):
+                state = "code"
+                i += 2
+                continue
+        else:
+            if ch == "\\":
+                i += 2
+                continue
+            if len(quote) == 3:
+                if code.startswith(quote, i):
+                    state = "code"
+                    i += 3
+                    continue
+            elif ch == quote:
+                state = "code"
+            elif ch == "\n" and quote != "`":
+                # An unterminated one-line string ends with its line.
+                state = "code"
+        i += 1
+    return contexts
+
+
+def reference_problem(reference: str, inner: str, widgets: list) -> str | None:
+    """Why *reference* cannot be resolved against *widgets*, or None."""
+    if "$" in inner:
+        return (
+            f"{reference} is an old widget marker. Add the widget in the node's "
+            "Widgets tab and drag its tag into the code."
+        )
+    if not WIDGET_NAME_RE.match(inner):
+        return f"{reference} does not name a widget. Widget names are letters, digits and underscores."
+    if not any(w.get("name") == inner for w in widgets):
+        return f"{reference}: this node has no widget named {inner}. Add it in the Widgets tab."
+    return None
+
+
+def normalize_widgets(raw) -> list:
+    """The well-formed widgets in *raw* (a spec's ``metadata.widgets``)."""
+    if not isinstance(raw, list):
+        return []
+    out, seen = [], set()
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        if not isinstance(name, str) or not WIDGET_NAME_RE.match(name) or name in seen:
+            continue
+        seen.add(name)
+        out.append(entry)
+    return out
+
+
+def resolve_widget_references(code: str, widgets: Iterable, language: str = "python") -> tuple[str, list]:
+    """*code* with every reference replaced, and the problems found.
+
+    A reference with a problem is left as written; each problem is
+    ``{"reference": <as written>, "message": <why>}``.
+    """
+    if language not in LANGUAGES:
+        raise ValueError(f"unknown widget language {language!r}")
+    widgets = normalize_widgets(list(widgets or []))
+    refs = list(REFERENCE_RE.finditer(code))
+    if not refs:
+        return code, []
+    contexts = _contexts(code, refs, language)
+    by_name = {w["name"]: w for w in widgets}
+    problems: list = []
+    out: list = []
+    last = 0
+    for ref, context in zip(refs, contexts):
+        out.append(code[last:ref.start()])
+        written = ref.group(0)
+        problem = reference_problem(written, ref.group(1), widgets)
+        if problem is not None:
+            problems.append({"reference": written, "message": problem})
+            out.append(written)
+        else:
+            value = effective_value(by_name[ref.group(1)])
+            if context[0] == "code":
+                out.append(widget_literal(value, language))
+            else:
+                out.append(_escape_for(_text_of(value, language), context, language))
+        last = ref.end()
+    out.append(code[last:])
+    return "".join(out), problems
