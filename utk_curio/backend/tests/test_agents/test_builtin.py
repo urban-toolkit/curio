@@ -285,7 +285,8 @@ class TestPreambleAndInputs:
         assert not re.search(r"""read_csv\(f?['"][^'"]+\.csv""", text)
         assert not re.search(r"""read_file\(f?['"][^'"]+\.shp""", text)
         assert not re.search(r"""rasterio\.open\(f?['"]""", text)
-        assert text.count("curio_data_path(") >= 3
+        # All three loaders resolve their dataset by id.
+        assert len(re.findall(r"curio_(?:load_data|data_path)\(", text)) >= 3
         assert "never a guessed filename" in text
 
     def test_preamble_text_readable_for_all_builtins(self):

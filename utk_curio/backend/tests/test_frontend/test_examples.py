@@ -266,8 +266,8 @@ def test_examples_read_their_data_from_the_catalog(basename):
 
 
 def test_examples_that_load_catalog_data_declare_it_in_the_spec():
-    """A ``curio_data_path`` (or ``curio_load_collection``) call and a
-    ``dataflow.datasets`` ref go together.
+    """A ``curio_load_data``, ``curio_data_path`` or ``curio_load_collection``
+    call and a ``dataflow.datasets`` ref go together.
 
     The call alone is enough to *execute* -- ``resolve_execution_paths`` hardcodes
     ``include_hub=True`` -- so an example missing its ref runs fine and simply
@@ -282,7 +282,7 @@ def test_examples_that_load_catalog_data_declare_it_in_the_spec():
         for node in dataflow["nodes"]:
             used.update(
                 re.findall(
-                    r"""curio_(?:dataset_path|collection)\(\s*["']([^"']+)["']\s*\)""",
+                    r"""curio_(?:load_data|data_path|load_collection)\(\s*["']([^"']+)["']\s*\)""",
                     node.get("content") or "",
                 )
             )

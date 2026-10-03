@@ -138,7 +138,7 @@ def test_scan_caps_distinct_ids(client, user_and_token, monkeypatch):
         def __init__(self, user):
             pass
 
-        def resolve_execution_paths(self, ids, *, dataflow_id=None):
+        def resolve_execution_paths(self, ids, *, dataflow_id=None, formats=None):
             seen_ids["ids"] = list(ids)
             return {}
 

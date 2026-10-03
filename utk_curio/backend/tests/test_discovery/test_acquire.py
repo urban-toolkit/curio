@@ -75,8 +75,7 @@ class TestItBecomesAnOrdinaryDataset:
         dataset = job["dataset"]
         assert dataset["origin"] == "imported"
         snippet = dataset["loaderSnippet"]
-        assert "curio_data_path(" in snippet["code"]
-        assert "pd.read_csv" in snippet["code"]
+        assert snippet["code"] == f'df = curio_load_data("{dataset["id"]}")'
 
     def test_it_shows_up_in_the_dataset_catalog_listing(self, client, auth, live):
         wait_for(

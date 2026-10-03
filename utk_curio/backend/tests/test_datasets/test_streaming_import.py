@@ -86,7 +86,7 @@ def test_a_path_install_matches_a_bytes_install(mutations, tmp_path):
     from pathlib import Path
 
     assert Path(by_path["path"]).read_bytes() == Path(by_bytes["path"]).read_bytes()
-    assert "curio_data_path(" in by_path["loaderSnippet"]["code"]
+    assert by_path["loaderSnippet"]["code"] == f'df = curio_load_data("{by_path["id"]}")'
 
 
 def test_a_path_install_consumes_its_source(mutations, tmp_path):

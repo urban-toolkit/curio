@@ -654,9 +654,10 @@ def test_installed_computed_parquet_loader_is_geoparquet_aware(
     item = _computed_catalog_item(client, token, project_id, expected_id)
     assert item is not None
     snippet = item.get("loaderSnippet") or {}
-    assert "import geopandas as gpd" in (snippet.get("imports") or [])
-    assert "gpd.read_parquet" in (snippet.get("code") or "")
-    assert "pd.read_parquet" in (snippet.get("code") or "")
+    # One call; curio_load_data reads a parquet geo first, which keeps a
+    # GeoDataFrame producer a GeoDataFrame (sandbox/tests/test_catalog_helpers.py).
+    assert item["format"] == "parquet"
+    assert snippet.get("code") == f'df = curio_load_data("{expected_id}")'
 
 
 def test_installed_bundle_loader_returns_tuple(client, user_and_token, monkeypatch):

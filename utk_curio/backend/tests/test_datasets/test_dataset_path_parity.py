@@ -123,7 +123,8 @@ def test_the_scanner_finds_every_id_the_curated_examples_reference():
         spec = json.loads(path.read_text(encoding="utf-8"))
         for node in spec["dataflow"]["nodes"]:
             content = node.get("content") or ""
-            if not any(call in content for call in ("curio_load_data", "curio_data_path", "curio_load_collection")):
+            # A call with a quoted argument; prose naming a helper is not one.
+            if not re.search(r"""curio_(?:load_data|data_path|load_collection)\(\s*["']""", content):
                 continue
             found = _DATASET_PATH_CALL_RE.findall(content)
             assert found, (
