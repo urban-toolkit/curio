@@ -1,26 +1,34 @@
 """The shipped Vega-Lite specs say what they draw.
 
-A mistake a renderer accepts without a word, so only reading the specs
-finds it:
+Two mistakes a renderer accepts without a word, so only reading the specs
+finds them:
 
 * A ``point`` mark is hollow unless it sets ``filled``, so ``fillOpacity`` on
   it changes nothing. Example 09's scatter faded the points outside its brush
   that way, and every point stayed at full strength (#630).
+* A chart coloured by Image Segmentation's classes needs a colour for each
+  class its route asks for. Example 10's route 1 asks for ``terrain``, but its
+  two charts listed ``car`` instead, so terrain took a recycled colour (#628).
 
 The specs are read from the example dataflows, their walkthroughs and the
 default preamble, which shows the agents example 09's scatter.
 """
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
+
+import pytest
 
 from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.agents.evaluation.fixtures import EXAMPLES_ROOT, example_paths
 
 VEGA = "curio.builtin/vis-vega"
+SEGMENTATION = "/image-segmentation"
 JSON_BLOCK = re.compile(r"```json[^\n]*\n(.*?)```", re.S)
+CLASSES = re.compile(r"^classes\s*=\s*(\[[^\]]*\])", re.M)
 
 
 def _is_vega_lite(spec) -> bool:
@@ -128,3 +136,65 @@ class TestHollowPoints:
             "default preamble example",
         } <= brushed_points
 
+
+def _segmentation_routes():
+    """(example, chart id, classes, spec) for each chart under a class list.
+
+    A chart counts when every Image Segmentation node upstream of it names its
+    classes in a literal ``classes = [...]``; a node that reports every class
+    its model has gives the chart nothing to check against.
+    """
+    for path in example_paths():
+        flow = _flow(path)
+        nodes = {n["id"]: n for n in flow.get("nodes", [])}
+        parents: dict = {}
+        for edge in flow.get("edges", []):
+            if edge.get("type") != "Interaction":
+                parents.setdefault(edge["target"], set()).add(edge["source"])
+        for node in nodes.values():
+            if node["type"] != VEGA:
+                continue
+            seen, stack = set(), list(parents.get(node["id"], ()))
+            while stack:
+                current = stack.pop()
+                if current not in seen:
+                    seen.add(current)
+                    stack.extend(parents.get(current, ()))
+            segmenters = [nodes[i] for i in seen if nodes[i]["type"].endswith(SEGMENTATION)]
+            found = [CLASSES.search(n.get("content") or "") for n in segmenters]
+            if not segmenters or not all(found):
+                continue
+            classes = set()
+            for match in found:
+                classes.update(ast.literal_eval(match.group(1)))
+            yield path.name, node["id"], classes, json.loads(node["content"])
+
+
+ROUTES = list(_segmentation_routes())
+
+
+class TestSegmentationColours:
+    @pytest.mark.parametrize(
+        "example,chart,classes,spec", ROUTES, ids=[f"{r[0]}-{r[1][:8]}" for r in ROUTES]
+    )
+    def test_a_chart_coloured_by_class_names_the_classes_its_route_asks_for(
+        self, example, chart, classes, spec
+    ):
+        domains = [
+            encoding[channel]["scale"]["domain"]
+            for unit, encoding in _units(spec)
+            for channel in ("color", "fill", "stroke")
+            if isinstance(((encoding.get(channel) or {}).get("scale") or {}).get("domain"), list)
+        ]
+        for domain in domains:
+            assert set(domain) == classes, (
+                f"{example} chart {chart[:8]}: its colour domain {domain} does not name "
+                f"the classes its route asks for, {sorted(classes)}"
+            )
+
+    def test_example_10s_route_1_charts_are_checked(self):
+        checked = {(example, chart[:8]) for example, chart, _, _ in ROUTES}
+        assert {
+            ("10-street-vision-cv-analysis.json", "8aaff248"),
+            ("10-street-vision-cv-analysis.json", "1aa27f1a"),
+        } <= checked
