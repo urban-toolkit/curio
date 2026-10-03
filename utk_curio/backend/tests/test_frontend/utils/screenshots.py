@@ -591,7 +591,7 @@ def _assert_mintable(image, expected_path: str, page) -> None:
 #: same screen differ by at most about 1.3%, so this leaves room for run-to-run
 #: noise and none for a screen that changed. A comparison may ask for less,
 #: never more.
-MAX_DIFF_RATIO = 0.10
+MAX_DIFF_RATIO = 0.40  # TMP PROOF: was 0.10; the ceiling tests must fail
 
 #: How long a capture waits for the nodes on the canvas to stop running.
 NODE_SETTLE_TIMEOUT_MS = 180_000
