@@ -44,6 +44,13 @@ def _isolate_env(monkeypatch, tmp_path):
         "CURIO_ISOLATION",
         "CURIO_EXEC_USER",
         "CURIO_EXEC_MEMORY_MB",
+        "CURIO_DISCOVERY_ROOT",
+        "CURIO_MODELS_ROOT",
+        "CURIO_SOLVE_MAX_ATTEMPTS",
+        "CURIO_SOLVE_NODE_BUDGET",
+        "CURIO_SOLVE_SESSION_DEADLINE",
+        "CURIO_SOLVE_BATCH_DEADLINE",
+        "CURIO_VALIDATION_EXEC_TIMEOUT",
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
@@ -322,6 +329,75 @@ def test_no_catalog_root_leaves_the_var_unset():
 
     set_environment_variables(**BASE, catalog_root="")
     assert "CURIO_CATALOG_ROOT" not in os.environ
+
+
+# ── Settings that used to be environment-only are curio.py arguments ───────
+
+
+def _shipped_discovery_root():
+    from utk_curio.backend.app.discovery.infrastructure import storage
+
+    return storage.discovery_root()
+
+
+def _shipped_models_root():
+    from utk_curio.backend.app.model_catalog.infrastructure import storage
+
+    return storage.models_root()
+
+
+@pytest.mark.parametrize("arg, env_name, reader", [
+    ("discovery_root", "CURIO_DISCOVERY_ROOT", _shipped_discovery_root),
+    ("models_root", "CURIO_MODELS_ROOT", _shipped_models_root),
+])
+def test_a_shipped_root_flag_is_resolved_and_read_by_the_backend(tmp_path, arg, env_name, reader):
+    nested = tmp_path / "a" / ".." / "shipped"
+    set_environment_variables(**BASE, **{arg: str(nested)})
+    assert Path(os.environ[env_name]) == (tmp_path / "shipped").resolve()
+    assert Path(reader()).resolve() == (tmp_path / "shipped").resolve()
+
+
+@pytest.mark.parametrize("env_name", ["CURIO_DISCOVERY_ROOT", "CURIO_MODELS_ROOT"])
+def test_no_shipped_root_flag_leaves_its_var_unset(env_name):
+    set_environment_variables(**BASE)
+    assert env_name not in os.environ
+
+
+def _budget(name):
+    from utk_curio.backend.app.agents.application.solve import budgets
+
+    return getattr(budgets, name)()
+
+
+def _validation_timeout():
+    from utk_curio.backend.app.execution import runner
+
+    return runner.exec_timeout_s()
+
+
+@pytest.mark.parametrize("arg, env_name, value, reader", [
+    ("solve_max_attempts", "CURIO_SOLVE_MAX_ATTEMPTS", 12, lambda: _budget("solve_max_attempts")),
+    ("solve_node_budget", "CURIO_SOLVE_NODE_BUDGET", 300, lambda: _budget("solve_node_budget_s")),
+    ("solve_session_deadline", "CURIO_SOLVE_SESSION_DEADLINE", 600, lambda: _budget("solve_session_deadline_s")),
+    ("solve_batch_deadline", "CURIO_SOLVE_BATCH_DEADLINE", 1800, lambda: _budget("solve_batch_deadline_s")),
+    ("validation_exec_timeout", "CURIO_VALIDATION_EXEC_TIMEOUT", 120, _validation_timeout),
+])
+def test_a_solve_flag_reaches_the_setting_the_backend_reads(arg, env_name, value, reader):
+    set_environment_variables(**BASE, **{arg: value})
+    assert os.environ[env_name] == str(value)
+    assert reader() == value
+
+
+def test_save_node_outputs_flag_sets_the_toggles_default():
+    set_environment_variables(**BASE, save_node_outputs=True)
+    assert os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] == "1"
+    set_environment_variables(**BASE, save_node_outputs=False)
+    assert os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] == "0"
+
+
+def test_without_the_save_node_outputs_flag_the_toggle_starts_off():
+    set_environment_variables(**BASE)
+    assert os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] == "0"
 
 
 def test_deploy_forces_auth_and_projects_on():
