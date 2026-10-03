@@ -273,8 +273,6 @@ class CatalogMutations:
                 discovery_source=discovery_source,
                 description=description,
                 collection=collection,
-                group_id=group_id,
-                layer_name=layer_name,
             )
         except InstallerError as exc:
             raise DatasetCatalogError(str(exc)) from exc
