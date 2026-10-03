@@ -1,6 +1,7 @@
 """Adding a storage row, at its edges: the file limit, adding again, a
 shapefile's parts, how a CSV is read, the columns a combined table adds, row
-ids that carry odd names, frames, metadata tables, and one file's failure."""
+ids that carry odd names, frames, metadata tables, one file's failure, and a
+row its add would refuse."""
 
 from __future__ import annotations
 
@@ -597,4 +598,180 @@ class TestTextInCombinedTables:
         ])
         frame = pd.read_parquet(added(client, auth, "aq")["path"])
         assert list(frame["name"]) == ["Curitiba", "São Paulo"]
+
+
+def a_geopackage(path: Path) -> int:
+    """Write a one-layer GeoPackage at *path*. Returns its size in bytes."""
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    gpd.GeoDataFrame({"n": [1]}, geometry=[Point(0, 0)], crs=4326).to_file(path, layer="lots", driver="GPKG")
+    return path.stat().st_size
+
+
+def row_of(client, auth, resource_id, source=SOURCE):
+    return next(r for r in listing(client, auth, source=source)["resources"] if r["resourceId"] == resource_id)
+
+
+class TestARowItsAddWouldRefuse:
+    """A row whose add would fail at once says so where it is listed, in the
+    words the add fails with, and offers no add (#607). The limits are known
+    when the folder is scanned: each row carries its files' sizes."""
+
+    GPKG_ROW = "layers/SP/Edificacoes/morphology.gpkg"
+
+    def a_geopackage_source(self, discovery_dir, tmp_path) -> int:
+        size = a_geopackage(tmp_path / "f" / "SP" / "Edificacoes" / "morphology.gpkg")
+        a_source(discovery_dir, tmp_path / "f", [
+            {"id": "layers", "name": "Layers", "kind": "table", "format": "gpkg",
+             "path": "SP/{theme}/{file}.gpkg", "datasets": "per-file"}
+        ])
+        return size
+
+    def test_a_geopackage_over_the_conversion_limit_says_why_in_the_words_its_add_fails_with(
+        self, client, auth, app, discovery_dir, tmp_path, monkeypatch
+    ):
+        from utk_curio.backend.app.discovery.application import storage_acquire
+
+        size = self.a_geopackage_source(discovery_dir, tmp_path)
+        monkeypatch.setattr(storage_acquire, "MAX_CONVERTED_FILE_BYTES", size - 1)
+        row = row_of(client, auth, self.GPKG_ROW)
+        assert row["acquirable"] is False
+        assert row["unavailableReason"] == (
+            f"SP/Edificacoes/morphology.gpkg is {size:,} bytes; the limit here is {size - 1:,}"
+        )
+        job = finish(client, auth, start(client, auth, self.GPKG_ROW))
+        assert job["status"] == "failed"
+        assert job["error"] == row["unavailableReason"]
+
+    def test_the_reason_is_the_same_wherever_the_row_is_shown(
+        self, client, auth, app, discovery_dir, tmp_path, monkeypatch
+    ):
+        from utk_curio.backend.app.discovery.application import storage_acquire
+
+        size = self.a_geopackage_source(discovery_dir, tmp_path)
+        monkeypatch.setattr(storage_acquire, "MAX_CONVERTED_FILE_BYTES", size - 1)
+        listed = row_of(client, auth, self.GPKG_ROW)
+        searched = client.get("/api/discovery/search?q=morphology", headers=auth).get_json()
+        found = next(r for r in searched["resources"] if r["resourceId"] == self.GPKG_ROW)
+        detail = client.get(
+            f"/api/discovery/sources/{SOURCE}/resources/{quote(self.GPKG_ROW, safe='')}", headers=auth
+        ).get_json()
+        for row in (found, detail):
+            assert row["acquirable"] is False
+            assert row["unavailableReason"] == listed["unavailableReason"]
+
+    def test_a_file_at_exactly_the_limit_is_offered_and_adds(
+        self, client, auth, app, discovery_dir, tmp_path, monkeypatch
+    ):
+        from utk_curio.backend.app.discovery.application import storage_acquire
+
+        size = self.a_geopackage_source(discovery_dir, tmp_path)
+        monkeypatch.setattr(storage_acquire, "MAX_CONVERTED_FILE_BYTES", size)
+        row = row_of(client, auth, self.GPKG_ROW)
+        assert row["acquirable"] is True and row["unavailableReason"] is None
+        assert added(client, auth, self.GPKG_ROW)["importedDatasetCount"] == 1
+
+    def test_a_file_over_the_folder_limit_says_why(
+        self, client, auth, app, storage_source, storage_folder, monkeypatch
+    ):
+        from utk_curio.backend.app.discovery.application import storage_acquire
+
+        size = (storage_folder / "stations.csv").stat().st_size
+        monkeypatch.setattr(storage_acquire, "MAX_LOCAL_FILE_BYTES", size - 1)
+        row = row_of(client, auth, "stations")
+        assert row["acquirable"] is False
+        assert row["unavailableReason"] == f"stations.csv is {size:,} bytes; the limit here is {size - 1:,}"
+        job = finish(client, auth, start(client, auth, "stations"))
+        assert job["status"] == "failed" and job["error"] == row["unavailableReason"]
+
+    def test_a_shapefile_without_its_dbf_says_why(self, client, auth, app, discovery_dir, tmp_path):
+        parts = shapefile_parts(tmp_path)
+        del parts[".dbf"]
+        folder = write_files(tmp_path / "f", {f"city/roads{suffix}": data for suffix, data in parts.items()})
+        a_source(discovery_dir, folder, [
+            {"id": "roads", "name": "Roads", "kind": "table", "format": "shp", "path": "city/roads.shp"}
+        ])
+        row = row_of(client, auth, "roads")
+        assert row["acquirable"] is False
+        assert row["unavailableReason"] == "city/roads.shp needs its .dbf beside it"
+        job = finish(client, auth, start(client, auth, "roads"))
+        assert job["status"] == "failed" and job["error"] == row["unavailableReason"]
+
+    def test_a_shapefile_is_bounded_file_by_file_not_by_its_parts_together(
+        self, client, auth, app, discovery_dir, tmp_path, monkeypatch
+    ):
+        """The add copies the .shp and each part under the limit one at a
+        time, so parts that together pass the limit do not refuse the row."""
+        from utk_curio.backend.app.discovery.application import storage_acquire
+
+        parts = shapefile_parts(tmp_path)
+        bound = max(len(data) for data in parts.values())
+        assert sum(len(data) for data in parts.values()) > bound
+        folder = write_files(tmp_path / "f", {f"city/roads{suffix}": data for suffix, data in parts.items()})
+        a_source(discovery_dir, folder, [
+            {"id": "roads", "name": "Roads", "kind": "table", "format": "shp", "path": "city/roads.shp"}
+        ])
+        monkeypatch.setattr(storage_acquire, "MAX_LOCAL_FILE_BYTES", bound)
+        row = row_of(client, auth, "roads")
+        assert row["acquirable"] is True and row["unavailableReason"] is None
+        assert added(client, auth, "roads")["format"] == "parquet"
+
+    def test_a_shapefile_part_over_the_limit_says_why(
+        self, client, auth, app, discovery_dir, tmp_path, monkeypatch
+    ):
+        from utk_curio.backend.app.discovery.application import storage_acquire
+
+        parts = shapefile_parts(tmp_path)
+        bound = len(parts[".shp"])
+        parts[".dbf"] = parts[".dbf"] + b"\x00" * (bound + 1)
+        folder = write_files(tmp_path / "f", {f"city/roads{suffix}": data for suffix, data in parts.items()})
+        a_source(discovery_dir, folder, [
+            {"id": "roads", "name": "Roads", "kind": "table", "format": "shp", "path": "city/roads.shp"}
+        ])
+        monkeypatch.setattr(storage_acquire, "MAX_LOCAL_FILE_BYTES", bound)
+        row = row_of(client, auth, "roads")
+        assert row["acquirable"] is False
+        assert row["unavailableReason"] == (
+            f"city/roads.dbf is {len(parts['.dbf']):,} bytes; the limit here is {bound:,}"
+        )
+        job = finish(client, auth, start(client, auth, "roads"))
+        assert job["status"] == "failed" and job["error"] == row["unavailableReason"]
+
+    def test_geopackages_declared_as_one_table_say_why_and_still_add_one_by_one(
+        self, client, auth, app, discovery_dir, tmp_path
+    ):
+        for name in ("a", "b"):
+            a_geopackage(tmp_path / "f" / "layers" / f"{name}.gpkg")
+        a_source(discovery_dir, tmp_path / "f", [
+            {"id": "layers", "name": "Layers", "kind": "table", "format": "gpkg", "path": "layers/{name}.gpkg"}
+        ])
+        row = row_of(client, auth, "layers")
+        assert row["acquirable"] is False
+        assert row["unavailableReason"] == (
+            "Layers: gpkg files hold layers of their own and are added one at a time; "
+            "declare the resource with datasets: per-file"
+        )
+        job = finish(client, auth, start(client, auth, "layers"))
+        assert job["status"] == "failed" and job["error"] == row["unavailableReason"]
+        # Picked under Files, one of them is one file, which adds.
+        assert added(client, auth, "layers", files=["layers/a.gpkg"])["importedDatasetCount"] == 1
+
+    def test_files_over_the_combined_limit_say_why_and_still_add_in_part(
+        self, client, auth, app, storage_source, storage_folder, monkeypatch
+    ):
+        from utk_curio.backend.app.discovery.application import combine_tables
+
+        total = sum(p.stat().st_size for p in (storage_folder / "aq").rglob("*.csv"))
+        monkeypatch.setattr(combine_tables, "MAX_COMBINED_LOCAL_BYTES", total - 1)
+        row = row_of(client, auth, "readings")
+        assert row["acquirable"] is False
+        assert row["unavailableReason"] == (
+            f"these files total {total:,} bytes; one combined table is limited to {total - 1:,}"
+        )
+        job = finish(client, auth, start(client, auth, "readings"))
+        assert job["status"] == "failed" and job["error"] == row["unavailableReason"]
+        part = added(client, auth, "readings", files=["aq/sensor_A/2024-01-01.csv"])
+        assert part["rowCount"] == 1
 

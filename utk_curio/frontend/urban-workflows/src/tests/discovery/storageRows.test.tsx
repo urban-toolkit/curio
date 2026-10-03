@@ -154,6 +154,49 @@ describe('a storage row', () => {
     expect(screen.getByRole('button', { name: 'Files' })).toHaveAttribute('aria-expanded', 'false');
   });
 
+  test('a row its add would refuse says why and offers no Add (#607)', () => {
+    const reason = 'SP/Edificacoes/morphology.gpkg is 4,688,367,616 bytes; the limit here is 536,870,912';
+    const onAdd = jest.fn();
+    render(
+      <DiscoveryResourceRow
+        resource={row({
+          kind: 'table',
+          formats: ['gpkg'],
+          resourceId: 'layers/SP/Edificacoes/morphology.gpkg',
+          acquirable: false,
+          unavailableReason: reason,
+        })}
+        storage={{ dirName: 'source.x@1', onAdd }}
+      />,
+    );
+    const button = screen.getByRole('button', { name: 'Add to Data Catalog' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', reason);
+    expect(screen.getByRole('note')).toHaveTextContent(reason);
+    fireEvent.click(button);
+    expect(onAdd).not.toHaveBeenCalled();
+  });
+
+  test('a row refused whole still lists its files, to add some of them', () => {
+    render(
+      <DiscoveryResourceRow
+        resource={row({ acquirable: false, unavailableReason: 'these files total 9 bytes; one combined table is limited to 8' })}
+        storage={{ dirName: 'source.x@1', onAdd: jest.fn() }}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Files' })).toBeEnabled();
+  });
+
+  test('a row that can be added carries no reason', () => {
+    render(
+      <DiscoveryResourceRow resource={row({ unavailableReason: null })} storage={{ dirName: 'source.x@1', onAdd: jest.fn() }} />,
+    );
+    const button = screen.getByRole('button', { name: 'Add to Data Catalog' });
+    expect(button).toBeEnabled();
+    expect(button).not.toHaveAttribute('title');
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+
   test('a per-file row has no Files list', () => {
     render(
       <DiscoveryResourceRow
