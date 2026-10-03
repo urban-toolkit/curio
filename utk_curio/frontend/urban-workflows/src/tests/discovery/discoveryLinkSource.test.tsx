@@ -3,7 +3,7 @@
  * downloaded with the link as its resource id, and gets a row of its own.
  */
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { DiscoverySourceDetail } from '../../pages/discovery/DiscoverySourceDetail';
@@ -98,6 +98,39 @@ test('the page takes a link and downloads it, with the link as the resource', as
   );
   expect(JSON.parse(String(acquire?.[1]?.body))).toEqual({ title: 'bike lanes.geojson' });
   expect(screen.getByText('bike lanes.geojson')).toBeInTheDocument();
+});
+
+test('a finished link offers its dataset, not a Download that does nothing', async () => {
+  // A pasted link's row has no format of its own: what the file is, is known
+  // once it has downloaded, and the row stands for that.
+  apiFetch.mockImplementation((path: string) => {
+    if (path.includes('/acquire')) return Promise.resolve({ jobId: 'j1', status: 'queued' });
+    if (path.startsWith('/api/discovery/jobs/')) {
+      return Promise.resolve({
+        jobId: 'j1', status: 'completed', bytesRead: 10, totalBytes: 10, stageMessage: '', error: null,
+        datasetId: 'imported.xlanes', dataset: { id: 'imported.xlanes', format: 'geojson' },
+        alreadyPresent: false, unchanged: false, sourceId: 'source.curio.direct-url@1', resourceId: LINK,
+      });
+    }
+    return Promise.resolve(source);
+  });
+  renderPage();
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(0);
+  });
+  fireEvent.change(screen.getByLabelText('Link to a file'), { target: { value: LINK } });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    await jest.advanceTimersByTimeAsync(0);
+  });
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(1000);
+  });
+  const row = document.querySelector(`[data-discovery-resource="${LINK}"]`) as HTMLElement;
+  expect(row).not.toBeNull();
+  expect(within(row).queryByRole('progressbar')).toBeNull();
+  expect(within(row).getByRole('button', { name: 'View dataset' })).toBeInTheDocument();
+  expect(within(row).queryByRole('button', { name: 'Download' })).toBeNull();
 });
 
 test('a link that is not https is refused before any request', async () => {

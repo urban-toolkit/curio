@@ -53,11 +53,7 @@ const ApiSettingsModal: React.FC<Props> = ({ isOpen, onClose, focus = null }) =>
         <section className={styles.section} aria-labelledby="api-settings-agents-title">
           <h3 id="api-settings-agents-title" className={styles.sectionTitle}>Agent Catalog</h3>
           <LlmConfigsSection focus={llmFocus} />
-          {hostedGuest ? (
-            // dev/116: the shared guest (auth off) may still save connection
-            // keys, into the one store every guest shares; said plainly.
-            isSharedGuest ? <ConnectionKeysSection focus={keyFocus} sharedGuest /> : null
-          ) : (
+          {hostedGuest ? null : (
             <>
               {/* dev/116 (DEC-074): API keys a data-loading node reaches by name. */}
               <ConnectionKeysSection focus={keyFocus} sharedGuest={isSharedGuest} />

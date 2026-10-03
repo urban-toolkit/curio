@@ -20,25 +20,28 @@ images kept are looked up after, fifty at a time.
 Thumbnails live on Mapillary's CDN, not the API's host. Each is fetched only
 from a host ``options.imageHosts`` lists (a host or a parent domain), through
 the transport's address policy, and without the token: the transport sends a
-key only to its source's own host.
+key only to its source's own host. A thumbnail that cannot be fetched is
+skipped and counted, and the rest are kept.
 """
 
 from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlencode, urlsplit
 
-from utk_curio.backend.app.discovery.domain.errors import DiscoveryError, ProviderError
+from utk_curio.backend.app.discovery.domain.errors import DiscoveryError, DownloadTooLarge, ProviderError
 from utk_curio.backend.app.discovery.domain.manifest import (
     DiscoverySourceManifest,
     ResourceSpec,
 )
 from utk_curio.backend.app.discovery.domain.resource import DiscoveryResource
+from utk_curio.backend.app.discovery.infrastructure.transport import DiscoveryTransportError
 from utk_curio.backend.app.discovery.providers.autark_osm import Cancelled, LoadedLayer
 
 PARAMETER_IDS = ("area", "captured", "imageType", "size", "maxImages")
@@ -69,6 +72,9 @@ FEATURE_FIELDS = "id,object_value,object_type,geometry,first_seen_at,last_seen_a
 #: Where a person sees one image on Mapillary, for attribution.
 IMAGE_PAGE = "https://www.mapillary.com/app/?pKey={id}"
 
+#: A Mapillary image id: ASCII digits only, since it names the image's file.
+_IMAGE_ID_RE = re.compile(r"[0-9]{1,32}")
+
 
 @dataclass(frozen=True)
 class DownloadedImage:
@@ -90,6 +96,21 @@ class ImageSet:
     skipped: int = 0
     #: Why an image found was not kept, as a person reads it.
     skip_reason: str = ""
+    #: Of those skipped, how many could not be fetched.
+    failed: int = 0
+
+
+#: What one image's download may fail with and the job go on: the rest are kept.
+FETCH_FAILURES = (DiscoveryTransportError, DownloadTooLarge)
+
+
+def skip_reason(reason: str, skipped: int, failed: int) -> str:
+    """Why the images skipped were not kept: *reason*, a fetch that failed, or both."""
+    if not failed:
+        return reason
+    if failed == skipped:
+        return "none could be fetched"
+    return f"{reason}, or it could not be fetched"
 
 
 def cells(box: list[float], max_sq_deg: float = MAX_CELL_SQ_DEG) -> list[list[float]]:
@@ -287,6 +308,8 @@ class MapillaryService:
         groups: list[list[dict[str, Any]]] = []
         for cell in cells(box):
             groups.extend(self._search("images", cell, filters, cancelled))
+        # An id names a file, so one that is not Mapillary's digits is no image.
+        groups = [[r for r in group if _IMAGE_ID_RE.fullmatch(str(r["id"]))] for group in groups]
         found = len({str(r["id"]) for group in groups for r in group})
         chosen = self.spread(groups, limit)
         if not chosen:
@@ -296,7 +319,7 @@ class MapillaryService:
         folder = out_dir / "images"
         folder.mkdir(parents=True, exist_ok=True)
         images: list[DownloadedImage] = []
-        skipped = 0
+        skipped = failed = 0
         total = 0
         for index, record in enumerate(chosen, start=1):
             if cancelled is not None and cancelled():
@@ -310,7 +333,12 @@ class MapillaryService:
                 continue
             relpath = f"images/{image_id}.jpg"
             path = out_dir / relpath
-            written = self._download(url, path)
+            try:
+                written = self._download(url, path)
+            except FETCH_FAILURES:
+                skipped += 1
+                failed += 1
+                continue
             total += written
             if total > MAX_JOB_BYTES:
                 raise DiscoveryError(
@@ -321,8 +349,10 @@ class MapillaryService:
                 relpath=relpath, path=path, size=written, image_id=image_id,
                 columns=self._columns(record),
             ))
-        return ImageSet(images=images, found=found, skipped=skipped,
-                        skip_reason="its image was not on a host the source lists")
+        return ImageSet(
+            images=images, found=found, skipped=skipped, failed=failed,
+            skip_reason=skip_reason("its image was not on a host the source lists", skipped, failed),
+        )
 
     def _thumbnails(self, ids: list[str], size: str, cancelled) -> dict[str, str]:
         out: dict[str, str] = {}
@@ -343,10 +373,14 @@ class MapillaryService:
 
     def _download(self, url: str, path: Path) -> int:
         part = path.with_name(path.name + ".part")
-        with part.open("wb") as handle:
-            result = self.transport.download(
-                url, handle.write, max_bytes=MAX_IMAGE_BYTES, ceiling=MAX_IMAGE_BYTES
-            )
+        try:
+            with part.open("wb") as handle:
+                result = self.transport.download(
+                    url, handle.write, max_bytes=MAX_IMAGE_BYTES, ceiling=MAX_IMAGE_BYTES
+                )
+        except BaseException:
+            part.unlink(missing_ok=True)
+            raise
         if not host_allowed(getattr(result, "final_url", url) or url, self.image_hosts):
             part.unlink(missing_ok=True)
             raise ProviderError("a Mapillary thumbnail redirected off the hosts its source lists")

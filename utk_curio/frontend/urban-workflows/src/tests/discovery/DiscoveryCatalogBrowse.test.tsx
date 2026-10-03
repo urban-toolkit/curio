@@ -1,9 +1,10 @@
 import React from 'react';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { DiscoveryCatalogBrowse } from '../../pages/discovery/DiscoveryCatalogBrowse';
-import { invalidateDiscoveryCatalogCache } from '../../services/discoveryCatalog';
+import { DiscoverySourceDetail } from '../../pages/discovery/DiscoverySourceDetail';
+import { invalidateDiscoveryCatalogCache, notifyDiscoveryCatalogRefresh } from '../../services/discoveryCatalog';
 import type { DiscoveryCatalogResponse, DiscoverySourceRow } from '../../services/discoveryCatalog';
 
 jest.mock('../../utils/authApi', () => ({
@@ -377,5 +378,73 @@ describe('DiscoveryCatalogBrowse: federated search mode', () => {
       .map((c) => c[0])
       .filter((p) => p.includes('/discovery/catalog'));
     expect(rosterCalls.every((p) => !p.includes('q='))).toBe(true);
+  });
+
+  test('an access filter narrows the search as it narrows the cards (#627)', async () => {
+    // A row from a source the filter leaves out has no source on this page,
+    // so its Download would have nothing to start from.
+    routeApi({
+      '/catalog': { ...response([source()]), facets: { provider: { socrata: 1 }, auth: { public: 1 } } },
+      '/api/discovery/search': searchResponse({
+        resources: [resourceRow()],
+        sources: [{ sourceId: 'source.a.portal', status: 'ok' }],
+      }),
+    });
+    renderPage('/catalog/discovery?q=bike');
+    await screen.findByText('Bike Routes');
+    fireEvent.click(screen.getByRole('button', { name: /^Public/ }));
+    await waitFor(() => {
+      const searches = apiFetch.mock.calls
+        .map((c) => String(c[0]))
+        .filter((p) => p.startsWith('/api/discovery/search'));
+      expect(searches[searches.length - 1]).toContain('auth=public');
+    });
+    const searches = apiFetch.mock.calls
+      .map((c) => String(c[0]))
+      .filter((p) => p.startsWith('/api/discovery/search'));
+    expect(searches[searches.length - 1]).toContain('q=bike');
+  });
+});
+
+
+describe('DiscoveryCatalogBrowse: a key saved in API Settings (#626)', () => {
+  const needsToken = (present: boolean) =>
+    source({
+      auth: { mode: 'required-token', required: true, usesToken: true,
+              secretId: 'socrata.app-token', present, helpUrl: null },
+    });
+
+  test('the cards reload, and read Token set', async () => {
+    apiFetch.mockResolvedValue(response([needsToken(false)]));
+    renderPage();
+    await screen.findAllByText('Alpha Portal');
+    const tile = within(card('source.a.portal@1'));
+    expect(tile.getByText('Token needed')).toBeInTheDocument();
+
+    apiFetch.mockResolvedValue(response([needsToken(true)]));
+    act(() => notifyDiscoveryCatalogRefresh());
+    expect(await tile.findByText('Token set')).toBeInTheDocument();
+    expect(tile.queryByText('Token needed')).toBeNull();
+  });
+
+  test("a source's page reloads the source, and searches once the key is set", async () => {
+    apiFetch.mockImplementation((path: string) =>
+      Promise.resolve(path.includes('/search') ? searchResponse() : needsToken(false))
+    );
+    render(
+      <MemoryRouter initialEntries={['/catalog/discovery/source.a.portal@1']}>
+        <Routes>
+          <Route path="/catalog/discovery/:sourceDir" element={<DiscoverySourceDetail />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    expect(await screen.findByText('Alpha Portal needs a token before it can be searched.')).toBeInTheDocument();
+
+    apiFetch.mockImplementation((path: string) =>
+      Promise.resolve(path.includes('/search') ? searchResponse() : needsToken(true))
+    );
+    act(() => notifyDiscoveryCatalogRefresh());
+    expect(await screen.findByRole('searchbox', { name: 'Search Alpha Portal' })).toBeInTheDocument();
+    expect(screen.queryByText(/needs a token/)).toBeNull();
   });
 });

@@ -9,7 +9,8 @@ waits and tiling autk-db does; no value a person types becomes a URL.
 The child runs from the backend's process tree, not in the sandbox, so it has
 the network under ``--deploy`` as every Discovery download does. Two ceilings
 bound it, each refused with a message that names it: how long it may run, and
-how much GeoJSON it may write.
+how much GeoJSON it may write. Before it starts, named areas are held to the
+area's ``maxAreaKm2`` as a box is: their box comes from the place search.
 """
 
 from __future__ import annotations
@@ -74,10 +75,13 @@ class AutarkOsmService:
 
     type = "autark-osm"
 
-    def __init__(self, manifest: DiscoverySourceManifest, *, fixtures: Path | None = None) -> None:
+    def __init__(self, manifest: DiscoverySourceManifest, *, fixtures: Path | None = None,
+                 transport=None) -> None:
         self.manifest = manifest
         #: Recorded Overpass answers (tests only, behind the transport's gate).
         self.fixtures = fixtures
+        #: For the place search that measures named areas; the process's own when None.
+        self.transport = transport
 
     def rows(self) -> tuple[DiscoveryResource, ...]:
         """One row per declared resource. Nothing to scan, nothing to fetch."""
@@ -134,6 +138,8 @@ class AutarkOsmService:
             if not filters:
                 raise DiscoveryError("OpenStreetMap needs one or more tags, as key=value or key=*")
             tag_sets = [{"name": TAG_SET, "tags": filters}]
+        if "names" in area:
+            self._check_named_areas_size(spec, area["names"])
         autk_db = resolve_pkg_entry_url("@urban-toolkit/autk-db", ROOT_NODE_MODULES)
         if autk_db is None:
             raise ProviderError(
@@ -244,6 +250,19 @@ class AutarkOsmService:
             if out not in layer.path.resolve().parents:
                 raise ProviderError("the OpenStreetMap loader wrote outside its folder")
         return layers
+
+    def _check_named_areas_size(self, spec: ResourceSpec, names: dict[str, Any]) -> None:
+        """Refuse named areas whose box is over the area's ``maxAreaKm2``, with
+        the words a drawn box over it gets."""
+        from utk_curio.backend.app.discovery.application import places
+        from utk_curio.backend.app.discovery.infrastructure.transport import build_transport
+
+        declared = next((p for p in self.manifest.declared_parameters(spec.id) if p.id == "area"), None)
+        if declared is None or declared.max_area_km2 is None:
+            return
+        box = places.named_areas_box(self.transport or build_transport(), names)
+        if box is not None:
+            P.check_area_size(declared, box)
 
 
 def _kill_group(proc: subprocess.Popen) -> None:

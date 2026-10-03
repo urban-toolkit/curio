@@ -322,3 +322,57 @@ class TestTheRealTransport:
         assert b"".join(out) == b"a,b\n1,2\n"
         assert fake.sent[0][1]["X-App-Token"] == "s3cr3t-value-0123"
         assert "X-App-Token" not in fake.sent[1][1]
+
+
+def _cancels():
+    """Every exception a Discovery job maps to "cancelled"."""
+    from utk_curio.backend.app.discovery import service
+
+    return (service._Cancelled, service.StorageCancelled, service.ServiceCancelled)
+
+
+class TestACancelledDownload:
+    """A sink raises to stop a download when its job is cancelled. Through the
+    real transport that exception has to come out as it went in: wrapped as a
+    transport error, a cancelled download ended "failed"."""
+
+    URL = "https://portal.example/model.onnx"
+
+    @pytest.mark.parametrize("credential", [None, "X-App-Token:s3cr3t-value-0123", "?key=s3cr3t-value-0123"],
+                             ids=["no-key", "header-key", "query-key"])
+    @pytest.mark.parametrize("cancel", _cancels(), ids=lambda cls: f"{cls.__module__}.{cls.__name__}")
+    def test_the_sinks_own_exception_passes_unchanged(self, wire, cancel, credential):
+        sent, _key = T._keyed(self.URL, credential)
+        wire({sent: (200, {"Content-Length": "4"}, b"\x00\x01\x02\x03")})
+        raised = cancel()
+
+        def sink(_chunk):
+            raise raised
+
+        with pytest.raises(cancel) as exc:
+            T.HttpDiscoveryTransport().download(self.URL, sink, max_bytes=100, credential=credential)
+        assert exc.value is raised
+
+    def test_a_model_download_cancelled_mid_file_ends_as_cancelled(self, wire, tmp_path):
+        """The model path: the job is cancelled after the file started, so the
+        sink is the one that raises."""
+        from types import SimpleNamespace
+
+        from utk_curio.backend.app.discovery.application.model_acquire import ModelAcquire
+
+        wire({self.URL: (200, {"Content-Length": "4"}, b"\x00\x01\x02\x03")})
+        checks = []
+
+        def cancelled():
+            # False when the file starts, True by the time its first chunk lands.
+            checks.append(None)
+            return len(checks) > 1
+
+        provider = SimpleNamespace(
+            transport=T.HttpDiscoveryTransport(), file_url=lambda plan, path: self.URL
+        )
+        plan = SimpleNamespace(files=[("model.onnx", 4)], total_bytes=4, repo="org/model", gated=False)
+        acquire_ = ModelAcquire(user_key="alice", provider_for=lambda m: provider, models=lambda: None)
+        with pytest.raises(_cancels()):
+            acquire_._fetch(provider, plan, tmp_path, progress=None, stage=None, cancelled=cancelled)
+        assert len(checks) == 2

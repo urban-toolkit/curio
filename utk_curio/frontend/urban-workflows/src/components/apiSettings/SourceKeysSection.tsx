@@ -2,7 +2,11 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import modal from "../modal-content.module.css";
 import styles from "../ApiSettingsModal.module.css";
 import { useUserContext } from "../../providers/UserProvider";
-import { discoveryCatalogApi, type DiscoveryKeyRow } from "../../services/discoveryCatalog";
+import {
+  discoveryCatalogApi,
+  notifyDiscoveryCatalogRefresh,
+  type DiscoveryKeyRow,
+} from "../../services/discoveryCatalog";
 
 /**
  * API Settings → Discovery Catalog: one row per key a source can send.
@@ -49,6 +53,9 @@ export const SourceKeysSection: React.FC<{
           focused={focusSlot === row.slot}
           onSave={async (value) => {
             await updateTokens({ [row.field]: value });
+            // A saved or removed key changes what its sources' cards and
+            // pages offer.
+            notifyDiscoveryCatalogRefresh();
             await load();
           }}
         />

@@ -111,6 +111,21 @@ class TestFederatedSearch:
         body = client.get("/api/discovery/search?q=ciclo&provider=wfs", headers=auth).get_json()
         assert {s["sourceId"] for s in body["sources"]} == {"source.saopaulo.geosampa"}
 
+    def test_an_access_filter_narrows_the_fan_out(self, client, auth, live):
+        """A search with an access filter asks the sources the catalog lists for
+        that filter, and no others: a row from any other source would have no
+        source on the page to download it from."""
+        def listed(path):
+            return {s["sourceId"] for s in client.get(path, headers=auth).get_json()["sources"]}
+
+        public = listed("/api/discovery/catalog?auth=public")
+        assert listed("/api/discovery/catalog") - public, "the filter must leave some source out"
+        body = client.get("/api/discovery/search?q=ciclo&auth=public", headers=auth).get_json()
+        searched = {s["sourceId"] for s in body["sources"]}
+        assert searched and searched <= public, searched - public
+        assert body["resources"]
+        assert {r["sourceId"] for r in body["resources"]} <= public
+
     def test_an_empty_query_is_refused_rather_than_fanning_out(self, client, auth, live):
         res = client.get("/api/discovery/search?q=%20%20", headers=auth)
         assert res.status_code == 400

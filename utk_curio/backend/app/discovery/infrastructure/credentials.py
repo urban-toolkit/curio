@@ -101,9 +101,19 @@ def known_slot(secret_id: str | None) -> bool:
 
 
 def own_token(user, secret_id: str | None) -> str | None:
-    """Only what this account saved. Never the deployment's."""
+    """Only what this account saved. Never the deployment's.
+
+    Never a guest's under ``--deploy`` either: every visitor is that one
+    account, and a key it holds was saved by the one local user before the
+    same database was started with ``--deploy`` (a hosted guest cannot save
+    one). It stays on the row and is used again without ``--deploy``.
+    """
+    from utk_curio.backend import config
+
     column = SLOT_COLUMNS.get(secret_id or "")
     if column is None or user is None:
+        return None
+    if getattr(user, "is_guest", False) and not config.CURIO_NO_AUTH:
         return None
     return getattr(user, column, None) or None
 

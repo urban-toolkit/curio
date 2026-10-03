@@ -8,7 +8,9 @@ user's media directory. Until a file is cached its ``path`` is null.
 
 Bounded twice: one object at a time up to
 :data:`~infrastructure.transport.MAX_COLLECTION_OBJECT_BYTES`, and all of a
-user's cached objects together up to ``CURIO_MEDIA_CACHE_MAX_GB``.
+user's cached objects together up to ``CURIO_MEDIA_CACHE_MAX_GB``. A
+service's images land in the same folder and are bounded by the same check,
+:func:`check_room`.
 """
 
 from __future__ import annotations
@@ -65,6 +67,16 @@ def used_bytes(user_key: str) -> int:
     return sum(p.stat().st_size for p in root.rglob("*") if p.is_file())
 
 
+def check_room(user_key: str, needed: int) -> None:
+    """Refuse *needed* more bytes in *user_key*'s media cache past its cap."""
+    cap = cap_bytes()
+    if used_bytes(user_key) + needed > cap:
+        raise DownloadTooLarge(
+            f"caching these files needs {needed:,} bytes; this account's media cache is "
+            f"limited to {cap:,} ({ENV_CAP})"
+        )
+
+
 def cache(
     user_key: str,
     dataset: dict[str, Any],
@@ -90,12 +102,7 @@ def cache(
             continue
         todo.append(row)
     needed = sum(int(r.bytes) for r in todo)
-    cap = cap_bytes()
-    if used_bytes(user_key) + needed > cap:
-        raise DownloadTooLarge(
-            f"caching these files needs {needed:,} bytes; this account's media cache is "
-            f"limited to {cap:,} ({ENV_CAP})"
-        )
+    check_room(user_key, needed)
     done_bytes = 0
     for count, row in enumerate(todo, start=1):
         if cancelled is not None and cancelled():

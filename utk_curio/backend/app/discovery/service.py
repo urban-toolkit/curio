@@ -8,7 +8,6 @@ the internal layering can move without a sweep.
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlsplit
 
 from flask import current_app
 
@@ -147,9 +146,9 @@ class DiscoveryService:
             return inner
         # Bound here rather than passed down, so providers never handle a
         # token and cannot put one in a URL they build or a message they log.
-        # Only the source's own host receives it.
+        # Only the source's own origin (scheme, host and port) receives it.
         return transport_mod.CredentialedTransport(
-            inner, credential, hosts=(urlsplit(manifest.provider.base_url).hostname,)
+            inner, credential, origins=(manifest.provider.base_url,)
         )
 
     def _storage_for(self, manifest: DiscoverySourceManifest):
@@ -277,11 +276,14 @@ class DiscoveryService:
 
     def search_all(
         self, *, q: str = "", fmt: str | None = None, limit: int | None = None,
-        provider: str | None = None, include_storage: bool = True,
+        provider: str | None = None, auth: str | None = None, include_storage: bool = True,
     ) -> dict[str, Any]:
         manifests = self._catalog.manifests()
         if provider:
             manifests = [m for m in manifests if m.provider.type == provider]
+        # The access filter the roster takes, so every row has its source listed.
+        if auth:
+            manifests = [m for m in manifests if m.auth.mode == auth]
         # A model source holds models, not datasets: searched on its own page.
         manifests = [m for m in manifests if not m.is_model]
         if not include_storage:
@@ -788,7 +790,7 @@ class DiscoveryService:
         item, manifest = self.collection(dataset_id)
         block = item.get("collection") or {}
         total = int(block.get("fileCount") or 0)
-        local = manifest.provider.type == "folder"
+        local = manifest.provider.type == "folder" or manifest.is_service
         if local:
             cached, cached_bytes = total, int(block.get("totalBytes") or 0)
         else:
