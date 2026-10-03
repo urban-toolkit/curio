@@ -403,7 +403,9 @@ an Autark document that loads everything it draws passes `needsInput: false`.
 Both fill an empty editor through
 [`useStarterSpec.ts`](../utk_curio/frontend/urban-workflows/src/hook/useStarterSpec.ts),
 each with its own ladder (`vegaDefaultSpec.ts`, `autkDefaultSpec.ts`) over the
-column roles in `starterSpec.ts`. Both mark themselves errored on a failed run,
+column roles in `starterSpec.ts`. Each ladder's rules, in order, and the dtype
+roles are generated into `src/generated/visDefaults.ts` (see
+[Generated Contracts](#generated-contracts)). Both mark themselves errored on a failed run,
 so a node they feed shows `upstream-errored`.
 
 ### Resolving Geometry in Vega-Lite Nodes
@@ -841,7 +843,8 @@ Some contracts are read on both sides of the stack: by Python and TypeScript, or
   | `utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts` | The empty-render kind prefix, the render causes, the `RenderCause` type and which causes blame the document (see [Render Outcomes](#render-outcomes)) |
   | `utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts` | The Autark grammar's top-level families and the name of the layer an Autark node makes of its input (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) |
   | `utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts` | The agent manifest's category vocabulary and the `AgentCategory` type, from `manifest.AGENT_CATEGORIES` |
-  | `utk_curio/llm-prompts/default_preamble.md` | The shared agent preamble: the Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; every list of built-in templates (description, control, port types, the connections an input accepts, output cardinality, interaction support), read from the built-in manifest and the packages layer's `input_capacity`, and naming each template by its label; the Merge Flow's socket names; the label of each template its prose names; and the section on Autark documents, rendered from the vendored schema (see [The Autark Schema](#the-autark-schema)) |
+  | `utk_curio/frontend/urban-workflows/src/generated/visDefaults.ts` | What a visualization node does with its input by itself, from the tables in `contracts.py`: the column roles and the pandas dtype each role comes from; the Vega-Lite and Autark starter ladders, each rule's id, condition, mark or family and description in ladder order; the Vega-Lite `$schema` URL; and the column names, URL extensions and share of image values behind Simple View's image columns. `starterSpec.ts`, `vegaDefaultSpec.ts`, `autkDefaultSpec.ts` and `imageColumns.ts` read it and keep each rule's builder, keyed by its id, and the matching logic |
+  | `utk_curio/llm-prompts/default_preamble.md` | The shared agent preamble: the Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; every list of built-in templates (description, control, port types, the connections an input accepts, output cardinality, interaction support), read from the built-in manifest and the packages layer's `input_capacity`, and naming each template by its label; the Merge Flow's socket names; the label of each template its prose names; the section on Autark documents, rendered from the vendored schema (see [The Autark Schema](#the-autark-schema)); and the starter ladders, the dtype roles, the Vega-Lite `$schema` URL and the image column names, extensions and share, from the same tables as `visDefaults.ts` |
   | `utk_curio/llm-prompts/package_contract.md` | The Package Builder's backend contract: the handler name pattern, the timeout classes, the two permissions and the variable that names a handler's data directory, from `packages/domain/backend_contract.py`. `package_build_instruction.md` includes it whole, and a delegated Package Builder receives the file as its build-request contract's `backendContract` |
   | Every other prompt in `contracts.PROMPT_TEMPLATES` | What that prompt states from code, through the fields below: the built-in agents' names, the built-in templates' labels, the Merge Flow's socket range, the templates the coherence check skips, the note palette, the web-call budget, the rows per candidates lane, and the node context's runtime keys, `inputContract` kinds and runtime row fields |
 
@@ -862,6 +865,10 @@ Some contracts are read on both sides of the stack: by Python and TypeScript, or
   | `vega.runtime_field:<name>` | A field Curio adds to every row a Vega-Lite node reads | `document_validation.RUNTIME_FIELDS` |
   | `backend.handler_pattern`, `backend.timeout_classes`, `backend.server_code_permission`, `backend.server_network_permission`, `backend.data_dir_env` | The package backend contract's names | `packages/domain/backend_contract.py` |
   | `package.contract` | `package_contract.md`, whole | `package_contract.template.md` |
+  | `vega.starter_ladder`, `autk.starter_ladder` | A starter ladder, one line per rule in order: the layers and column roles it needs, the mark or family it writes, and its description | `contracts.VEGA_STARTER_LADDER`, `AUTK_STARTER_LADDER` |
+  | `starter.dtype_roles` | Which pandas dtypes give which column role, in the order they are tried | `contracts.DTYPE_ROLES` |
+  | `vega.schema_url` | The `$schema` of a Vega-Lite spec Curio writes | `contracts.VEGA_SCHEMA_URL` |
+  | `image.columns`, `image.column:<name>`, `image.extensions`, `image.threshold` | The column names Simple View checks for images first, one of them by name, the extensions an image URL has elsewhere, and the share of a column's values that must be images | `contracts.IMAGE_COLUMNS`, `IMAGE_EXTENSIONS`, `IMAGE_MATCH_THRESHOLD` |
 
 - **Drift test.** [`test_generated_contracts.py`](../utk_curio/backend/tests/test_agents/test_generated_contracts.py) re-renders every registered output and fails on any difference, printing the diff and the command to run. It is pure Python, so it runs in the normal backend suite and a hand edit to an output turns it red.
 

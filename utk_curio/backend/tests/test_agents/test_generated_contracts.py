@@ -214,6 +214,82 @@ class TestThePromptFacts:
         instruction = contracts.render_prompt("package_build_instruction")
         assert "\n\n" + fragment.rstrip("\n") + "\n\n" in instruction
 
+    def test_every_vega_lite_schema_url_is_the_one_the_frontend_writes(self):
+        import re
+
+        assert contracts.render_template("{{vega.schema_url}}") == contracts.VEGA_SCHEMA_URL
+        urls = re.findall(r"https://vega\.github\.io/schema/vega-lite/[^\"\\\s]+", contracts.render_default_preamble())
+        assert urls and set(urls) == {contracts.VEGA_SCHEMA_URL}
+        template = REPO_ROOT / contracts.PROMPTS_DIR / "default_preamble.template.md"
+        assert "vega.github.io/schema" not in template.read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize("field, ladder", [
+        ("vega.starter_ladder", "VEGA_STARTER_LADDER"),
+        ("autk.starter_ladder", "AUTK_STARTER_LADDER"),
+    ])
+    def test_a_starter_ladder_is_its_table_in_order(self, field, ladder):
+        rules = getattr(contracts, ladder)
+        text = contracts.render_template("{{" + field + "}}")
+        lines = text.splitlines()
+        assert len(lines) == len(rules)
+        for line, rule in zip(lines, rules):
+            assert line.startswith("- ")
+            condition, result = line[2:].split(" -> ", 1)
+            assert result == f"{rule.produces}: {rule.description}"
+            terms = condition.split(" + ")
+            if rule.layers:
+                layers = terms.pop(0)
+                assert layers.endswith(" layer" if rule.layers.most == 1 else " layers")
+                assert ("or more" in layers) == (rule.layers.most is None)
+            assert [term.split()[-1] for term in terms] == [role for role, _ in rule.columns]
+            for term, (role, count) in zip(terms, rule.columns):
+                # A bare role is at least one column; anything else is spelt out.
+                assert (term == role) == (count.least == 1 and count.most is None)
+                assert term.startswith("exactly ") == (count.most == count.least)
+        assert text in contracts.render_default_preamble()
+
+    def test_the_starter_tables_are_well_formed(self):
+        families = contracts.autk_families(contracts.load_autk_schema())
+        for rules in (contracts.VEGA_STARTER_LADDER, contracts.AUTK_STARTER_LADDER):
+            ids = [rule.id for rule in rules]
+            assert len(set(ids)) == len(ids)
+            for rule in rules:
+                assert {role for role, _ in rule.columns} <= set(contracts.COLUMN_ROLES), rule.id
+                # The description is a TypeScript string and one line of a list.
+                assert rule.description and "\n" not in rule.description, rule.id
+        for rule in contracts.AUTK_STARTER_LADDER:
+            assert rule.layers is not None, rule.id
+            assert rule.produces in families, rule.id
+        assert all(rule.layers is None for rule in contracts.VEGA_STARTER_LADDER)
+        assert {entry.role for entry in contracts.DTYPE_ROLES} <= set(contracts.COLUMN_ROLES)
+
+    def test_the_dtype_roles_are_the_table_in_order(self):
+        import re
+
+        text = contracts.render_template("{{starter.dtype_roles}}")
+        parts = text.split("; ")
+        assert len(parts) == len(contracts.DTYPE_ROLES)
+        for part, entry in zip(parts, contracts.DTYPE_ROLES):
+            assert part.endswith(f" {entry.role}")
+            assert re.findall(r"`([^`]+)`", part) == [*entry.names, *entry.prefixes]
+            assert ("starts with" in part) == bool(entry.prefixes)
+        assert text in contracts.render_default_preamble()
+
+    def test_the_image_facts_are_the_tables(self):
+        import re
+
+        columns = contracts.render_template("{{image.columns}}")
+        assert re.findall(r'"([^"]+)"', columns) == list(contracts.IMAGE_COLUMNS)
+        assert columns.endswith(f' or "{contracts.IMAGE_COLUMNS[-1]}"')
+        extensions = contracts.render_template("{{image.extensions}}")
+        assert re.findall(r"\.([a-z0-9]+)", extensions) == list(contracts.IMAGE_EXTENSIONS)
+        threshold = contracts.render_template("{{image.threshold}}")
+        assert threshold == f"{round(contracts.IMAGE_MATCH_THRESHOLD * 100)}%"
+        for name in contracts.IMAGE_COLUMNS:
+            assert contracts.render_template("{{image.column:" + name + "}}") == f'"{name}"'
+        with pytest.raises(contracts.PromptTemplateError, match="not_a_column"):
+            contracts.render_template("{{image.column:not_a_column}}")
+
 
 class TestTheRenderCauseTable:
     def test_the_cause_names_and_their_order(self):

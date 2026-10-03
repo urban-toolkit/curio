@@ -29,7 +29,18 @@
  * Pure, with no `vega` / `vega-lite` import, so it is testable under jest.
  */
 
-import { classifyColumns, groupColumns, type ClassifiedColumn, type ColumnRole } from "./starterSpec";
+import {
+  VEGA_SCHEMA_URL,
+  VEGA_STARTER_LADDER,
+  type VegaStarterRuleId,
+} from "../generated/visDefaults";
+import {
+  classifyColumns,
+  groupColumns,
+  meetsRoles,
+  type ClassifiedColumn,
+  type ColumnRole,
+} from "./starterSpec";
 
 export interface DefaultSpecRule {
   /** Stable id, asserted in tests and named in docs/USAGE.md. */
@@ -40,113 +51,85 @@ export interface DefaultSpecRule {
   build: (cols: Record<ColumnRole, string[]>) => Record<string, unknown>;
 }
 
-const SCHEMA_URL = "https://vega.github.io/schema/vega-lite/v6.json";
-
 // No `data` block: the node replaces the root `data` with its own rows when
 // it compiles the spec (useVega.compileGrammar), so one written here would
 // only ever be overwritten.
 const base = (rest: Record<string, unknown>) => ({
-  $schema: SCHEMA_URL,
+  $schema: VEGA_SCHEMA_URL,
   ...rest,
 });
 
 /**
- * The ladder: first match wins.
- *
- * The prose counterpart is the table in `docs/USAGE.md`. Adding or reordering a
- * rule trips `vegaDefaultSpec.test.ts`, which is there to point whoever does it
- * at that doc.
+ * Each rule's spec past its `mark`, by rule id. The rule itself (its place in
+ * the ladder, the columns it needs and the mark it draws) is generated into
+ * `VEGA_STARTER_LADDER`, which the agents' shared preamble states too.
  *
  * The bar rules state their `aggregate` rather than relying on vega-lite's
  * implicit behaviour, which silently overplots one bar per row.
  */
-export const DEFAULT_SPEC_RULES: DefaultSpecRule[] = [
-  {
-    id: "geometry+quantitative",
-    when: (c) => c.geometry.length > 0 && c.quantitative.length > 0,
-    build: (c) =>
-      base({
-        // Written out in full rather than relying on the geoshape injection:
-        // the point of a default is to show the user what a spec looks like.
-        mark: "geoshape",
-        projection: { type: "mercator" },
-        encoding: {
-          shape: { field: c.geometry[0], type: "geojson" },
-          color: { field: c.quantitative[0], type: "quantitative" },
-        },
-      }),
-  },
-  {
-    id: "geometry",
-    when: (c) => c.geometry.length > 0,
-    build: (c) =>
-      base({
-        mark: "geoshape",
-        projection: { type: "mercator" },
-        encoding: { shape: { field: c.geometry[0], type: "geojson" } },
-      }),
-  },
-  {
-    id: "temporal+quantitative",
-    when: (c) => c.temporal.length > 0 && c.quantitative.length > 0,
-    build: (c) =>
-      base({
-        mark: "line",
-        encoding: {
-          x: { field: c.temporal[0], type: "temporal" },
-          y: { field: c.quantitative[0], type: "quantitative" },
-        },
-      }),
-  },
-  {
-    id: "nominal+quantitative",
-    when: (c) => c.nominal.length > 0 && c.quantitative.length > 0,
-    build: (c) =>
-      base({
-        mark: "bar",
-        encoding: {
-          x: { field: c.nominal[0], type: "nominal" },
-          y: { field: c.quantitative[0], type: "quantitative", aggregate: "mean" },
-        },
-      }),
-  },
-  {
-    id: "two-quantitative",
-    when: (c) => c.quantitative.length >= 2,
-    build: (c) =>
-      base({
-        mark: "point",
-        encoding: {
-          x: { field: c.quantitative[0], type: "quantitative" },
-          y: { field: c.quantitative[1], type: "quantitative" },
-        },
-      }),
-  },
-  {
-    id: "one-quantitative",
-    when: (c) => c.quantitative.length === 1,
-    build: (c) =>
-      base({
-        mark: "bar",
-        encoding: {
-          x: { field: c.quantitative[0], type: "quantitative", bin: true },
-          y: { aggregate: "count", type: "quantitative" },
-        },
-      }),
-  },
-  {
-    id: "one-nominal",
-    when: (c) => c.nominal.length > 0,
-    build: (c) =>
-      base({
-        mark: "bar",
-        encoding: {
-          x: { field: c.nominal[0], type: "nominal" },
-          y: { aggregate: "count", type: "quantitative" },
-        },
-      }),
-  },
-];
+export const VEGA_STARTER_BUILDERS: Record<
+  VegaStarterRuleId,
+  (c: Record<ColumnRole, string[]>) => Record<string, unknown>
+> = {
+  "geometry+quantitative": (c) => ({
+    // Written out in full rather than relying on the geoshape injection:
+    // the point of a default is to show the user what a spec looks like.
+    projection: { type: "mercator" },
+    encoding: {
+      shape: { field: c.geometry[0], type: "geojson" },
+      color: { field: c.quantitative[0], type: "quantitative" },
+    },
+  }),
+  geometry: (c) => ({
+    projection: { type: "mercator" },
+    encoding: { shape: { field: c.geometry[0], type: "geojson" } },
+  }),
+  "temporal+quantitative": (c) => ({
+    encoding: {
+      x: { field: c.temporal[0], type: "temporal" },
+      y: { field: c.quantitative[0], type: "quantitative" },
+    },
+  }),
+  "nominal+quantitative": (c) => ({
+    encoding: {
+      x: { field: c.nominal[0], type: "nominal" },
+      y: { field: c.quantitative[0], type: "quantitative", aggregate: "mean" },
+    },
+  }),
+  "two-quantitative": (c) => ({
+    encoding: {
+      x: { field: c.quantitative[0], type: "quantitative" },
+      y: { field: c.quantitative[1], type: "quantitative" },
+    },
+  }),
+  "one-quantitative": (c) => ({
+    encoding: {
+      x: { field: c.quantitative[0], type: "quantitative", bin: true },
+      y: { aggregate: "count", type: "quantitative" },
+    },
+  }),
+  "one-nominal": (c) => ({
+    encoding: {
+      x: { field: c.nominal[0], type: "nominal" },
+      y: { aggregate: "count", type: "quantitative" },
+    },
+  }),
+};
+
+/**
+ * The ladder: first match wins, in the generated order.
+ *
+ * The prose counterpart is the table in `docs/USAGE.md`. Adding or reordering a
+ * rule trips `vegaDefaultSpec.test.ts`, which is there to point whoever does it
+ * at that doc.
+ */
+export const DEFAULT_SPEC_RULES: DefaultSpecRule[] = VEGA_STARTER_LADDER.map(
+  (rule): DefaultSpecRule => ({
+    id: rule.id,
+    when: (c) => meetsRoles(c, rule.columns),
+    build: (c) => base({ mark: rule.produces, ...VEGA_STARTER_BUILDERS[rule.id](c) }),
+  }),
+);
 
 /**
  * The spec for these columns, or `null` when nothing is usable.
