@@ -561,32 +561,25 @@ def run_node(request, namespace_factory):
         with contextlib.redirect_stdout(captured_stdout), \
              contextlib.redirect_stderr(captured_stderr):
             namespace = namespace_factory()
-            namespace["curio_dataset_path"] = _make_dataset_path_resolver(
-                request.get("dataset_paths") or {}, scratch_dir
-            )
             namespace["curio_secret"] = make_curio_secret(secrets)
 
-            from utk_curio.sandbox.util.models import make_curio_model
+            from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
 
-            # The staged model folders, under the scratch directory.
-            namespace["curio_model"] = make_curio_model(
-                request.get("models") or {}, base=scratch_dir
-            )
-
-            from utk_curio.sandbox.util.collections import make_collection_helpers
-
-            namespace.update(make_collection_helpers(
-                namespace["curio_dataset_path"],
-                request.get("collections") or {},
-                request.get("media_dir"),
+            install_catalog_helpers(
+                namespace,
+                data_path=_make_dataset_path_resolver(
+                    request.get("dataset_paths") or {}, scratch_dir
+                ),
+                formats=request.get("dataset_formats") or {},
+                collections=request.get("collections") or {},
+                media_dir=request.get("media_dir"),
+                # The staged model folders, under the scratch directory.
+                models=request.get("models") or {},
+                model_base=scratch_dir,
                 # A file a node returns must sit in scratch, flat-named: the
                 # parent moves it into the artifact store from there.
                 output_dir=scratch_dir,
-            ))
-
-            from utk_curio.sandbox.util.vision import make_curio_segment
-
-            namespace["curio_segment"] = make_curio_segment(namespace.get("curio_derived_file"))
+            )
 
             # Replay this session's earlier imports so an upstream node's
             # `import numpy as np` is visible here, matching the in-process
@@ -643,7 +636,7 @@ def run_node(request, namespace_factory):
 
 
 def _make_dataset_path_resolver(staged, scratch_dir):
-    """Rebuild ``curio_dataset_path`` over the staged copies.
+    """Rebuild ``curio_data_path`` over the staged copies.
 
     The in-process path injects a closure over absolute paths. Here the files
     were linked into the scratch directory, so the closure resolves to those
@@ -651,7 +644,7 @@ def _make_dataset_path_resolver(staged, scratch_dir):
     """
     mapping = dict(staged)
 
-    def curio_dataset_path(dataset_id):
+    def curio_data_path(dataset_id):
         name = mapping.get(str(dataset_id))
         if name is None:
             raise RuntimeError(
@@ -660,7 +653,7 @@ def _make_dataset_path_resolver(staged, scratch_dir):
             )
         return os.path.join(scratch_dir, name)
 
-    return curio_dataset_path
+    return curio_data_path
 
 
 def write_result(manifest, scratch_dir):

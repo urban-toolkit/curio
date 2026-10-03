@@ -14,7 +14,7 @@ flowchart LR
 ## Data
 
 This example reads its inputs from the [Data Catalog](../DATA-CATALOG.md). Each loader node
-addresses a dataset by id via `curio_dataset_path("<id>")`, so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
+addresses a dataset by id via `curio_data_path("<id>")`, so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
 
 | Dataset | Id | Format | Size |
 |---|---|---|---|
@@ -31,7 +31,7 @@ Read the GeoParquet straight into a `GeoDataFrame`. The `metadata.name` keeps th
 ```python
 import geopandas as gpd
 
-dataset_path = curio_dataset_path("data.projectsidewalk.chicago-labels")
+dataset_path = curio_data_path("data.projectsidewalk.chicago-labels")
 gdf = gpd.read_parquet(dataset_path)
 
 gdf.metadata = {

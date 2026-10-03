@@ -184,7 +184,7 @@ def stub_login():
 
 @testing_bp.route("/dataset-paths", methods=["POST"])
 def dataset_paths():
-    """Resolve ``curio_dataset_path("<id>")`` calls the way execution does.
+    """Resolve ``curio_data_path("<id>")`` calls the way execution does.
 
     For the e2e ground-truth harness. It computes each workflow's expected
     output by POSTing node code straight to the sandbox's ``/exec`` (bypassing
@@ -206,17 +206,20 @@ def dataset_paths():
     cannot drift.
 
     Body (JSON):
-      * ``code`` – node source to scan for literal ``curio_dataset_path`` calls.
+      * ``code`` – node source to scan for literal ``curio_load_data`` /
+        ``curio_data_path`` / ``curio_load_collection`` calls.
       * ``username`` – optional; resolve as this user, for ids that live in an
         account store. Omitted means hub datasets only, which is what the
         curated examples use. Ignored without sign-in (``CURIO_NO_AUTH``),
         where the browser runs every node as the shared guest.
       * ``dataflow_id`` – optional, forwarded to the catalog listing.
 
-    Response: ``{"paths": {"<id>": "<absolute path>"}, "collections": {...},
-    "mediaDir": ..., "models": {...}}``: ``collections`` and ``mediaDir`` as
-    ``_resolve_exec_collections`` gives them for ``curio_collection`` calls,
-    ``models`` as ``_resolve_exec_models`` does for ``curio_model`` calls, as
+    Response: ``{"paths": {"<id>": "<absolute path>"}, "formats": {...},
+    "collections": {...}, "mediaDir": ..., "models": {...}}``: ``formats`` as
+    ``/processPythonCode`` sends them for ``curio_load_data``, ``collections``
+    and ``mediaDir`` as ``_resolve_exec_collections`` gives them for
+    ``curio_load_collection`` calls, ``models`` as ``_resolve_exec_models``
+    does for ``curio_load_model`` calls, as
     that user or the shared guest. Ids that do not resolve are simply absent,
     matching production's fail-open behaviour.
     """
@@ -242,12 +245,14 @@ def dataset_paths():
         username = ""
     g.user = user_repo.user_by_identifier(username) if username else None
 
-    paths = _resolve_exec_dataset_paths(code, body.get("dataflow_id"))
+    formats: dict = {}
+    paths = _resolve_exec_dataset_paths(code, body.get("dataflow_id"), formats)
     user_key = _user_dir_key(g.user) if g.user is not None else GUEST_KEY
     collections, media_dir = _resolve_exec_collections(code, user_key)
     models = _resolve_exec_models(code)
     return jsonify({
-        "paths": paths, "collections": collections, "mediaDir": media_dir, "models": models,
+        "paths": paths, "formats": formats, "collections": collections, "mediaDir": media_dir,
+        "models": models,
     }), 200
 
 

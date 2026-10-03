@@ -161,8 +161,7 @@ class TestRegression298:
         def _corrected(calls):
             rows = _rows_from_search_result(calls[-1])
             row = next(r for r in rows if r["id"] == dataset_id)
-            assert row["path"] and "pd.read_csv(dataset_path)" in row["loader"]
-            assert f'curio_dataset_path("{dataset_id}")' in row["loader"]  # main's portable recipe
+            assert row["path"] and row["loader"] == f'df = curio_load_data("{dataset_id}")'  # main's portable recipe
             return _create_tail(row["loader"] + "\nreturn df", goal="load IBGE demographics")
 
         calls = _script(monkeypatch, [
@@ -217,7 +216,7 @@ class TestCatalogGrounding:
         rows = _rows_from_search_result(calls[-1])
         row = next(r for r in rows if r["id"] == dataset_id)
         assert row["path"].endswith("tracts.csv")
-        assert row["loader"].startswith(f'dataset_path = curio_dataset_path("{dataset_id}")')
+        assert row["loader"] == f'df = curio_load_data("{dataset_id}")'
         # Node Builder's tail now offers catalog.search (granted).
         assert "catalog.search" in calls[0][0]["content"]
 

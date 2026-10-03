@@ -1625,7 +1625,7 @@ STREET_VISION_EXAMPLE = "10-street-vision-cv-analysis.json"
          "id the portal has since retired, so a curated example failed on its "
          "very first node with a 404 - and the node after it then blamed its "
          "wiring. The layer now ships in the Data Catalog and the node reads it "
-         "with curio_dataset_path, so the run is offline and deterministic.",
+         "with curio_data_path, so the run is offline and deterministic.",
     tests=["utk_curio/backend/tests/test_frontend/test_examples.py"],
     example=STREET_VISION_EXAMPLE,
     # The scene frames the loader node itself; the harness must not re-fit.

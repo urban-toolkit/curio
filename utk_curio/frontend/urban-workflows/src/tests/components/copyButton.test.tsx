@@ -43,12 +43,12 @@ afterEach(() => {
 describe("CopyButton", () => {
   test("writes the value and confirms", async () => {
     const writeText = mockClipboard(() => Promise.resolve());
-    render(<CopyButton value='curio_dataset_path("a@1")' label="Copy dataset reference" />);
+    render(<CopyButton value='curio_data_path("a@1")' label="Copy dataset reference" />);
 
     expect(button()).toHaveAccessibleName("Copy dataset reference");
     await clickAndSettle();
 
-    expect(writeText).toHaveBeenCalledWith('curio_dataset_path("a@1")');
+    expect(writeText).toHaveBeenCalledWith('curio_data_path("a@1")');
     expect(button()).toHaveAccessibleName("Copied");
   });
 

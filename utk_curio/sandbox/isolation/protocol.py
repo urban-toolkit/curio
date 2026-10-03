@@ -341,6 +341,7 @@ def build_exec_request(
     collections=None,
     media_dir=None,
     models=None,
+    dataset_formats=None,
 ):
     """Assemble the request the parent hands to the zygote.
 
@@ -379,6 +380,8 @@ def build_exec_request(
         "dataset_paths": dict(dataset_paths or {}),
         # {modelId: staged folder name}, relative to scratch_dir.
         "models": dict(models or {}),
+        # {datasetId: {"format", "layerType"}}: how curio_load_data reads each.
+        "dataset_formats": dict(dataset_formats or {}),
         "collections": dict(collections or {}),
         "media_dir": str(media_dir) if media_dir else None,
         "session_imports": list(session_imports or []),

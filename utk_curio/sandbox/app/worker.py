@@ -467,8 +467,8 @@ def _expand_outputs_wrapper(input_data, session_id=None):
     return input_data
 
 
-def _make_curio_dataset_path(dataset_paths):
-    """Resolver injected into user code as ``curio_dataset_path(dataset_id)``.
+def _make_curio_data_path(dataset_paths):
+    """Resolver injected into user code as ``curio_data_path(dataset_id)``.
 
     Generated Data Loading nodes reference datasets by id instead of a baked-in
     absolute path; the backend resolves the ids it finds in the code and passes
@@ -477,7 +477,7 @@ def _make_curio_dataset_path(dataset_paths):
     """
     mapping = dict(dataset_paths or {})
 
-    def curio_dataset_path(dataset_id):
+    def curio_data_path(dataset_id):
         path = mapping.get(str(dataset_id))
         if not path:
             raise RuntimeError(
@@ -487,11 +487,12 @@ def _make_curio_dataset_path(dataset_paths):
             )
         return path
 
-    return curio_dataset_path
+    return curio_data_path
 
 
 def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True,
-                 dataset_paths=None, secrets=None, collections=None, media_dir=None, models=None):
+                 dataset_paths=None, secrets=None, collections=None, media_dir=None, models=None,
+                 dataset_formats=None):
     """
     Execute user code in-process using pre-loaded library globals.
 
@@ -500,13 +501,18 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 execution state - even if they share the same user account.
 
     dataset_paths: {datasetId: absolutePath} for the code's
-                curio_dataset_path("<id>") calls, resolved (auth-scoped and
-                containment-checked) by the backend.
+                curio_load_data / curio_data_path / curio_load_collection
+                calls, resolved (auth-scoped and containment-checked) by the
+                backend.
 
-    collections, media_dir: where each curio_collection("<id>") collection's
-                files are, and where a node may write the files it derives.
+    dataset_formats: {datasetId: {"format", "layerType"}}, how
+                curio_load_data reads each of those datasets.
 
-    models:     {modelId: folder} for the code's curio_model("<id>") calls.
+    collections, media_dir: where each curio_load_collection("<id>")
+                collection's files are, and where a node may write the files
+                it derives.
+
+    models:     {modelId: folder} for the code's curio_load_model("<id>") calls.
 
     Returns {'stdout': [str, ...], 'stderr': str, 'output': {'path': str, 'dataType': str}}
     """
@@ -544,20 +550,19 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 # `import numpy as np` reaches downstream nodes (#158).
                 ns = dict(_globals_cache)
                 ns.update(_import_bindings_for(session_id))
-                ns['curio_dataset_path'] = _make_curio_dataset_path(dataset_paths)
                 # dev/116: connection keys, reachable only through this callable.
                 ns['curio_secret'] = make_curio_secret(secrets)
 
-                from utk_curio.sandbox.util.collections import make_collection_helpers
+                from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
 
-                ns.update(make_collection_helpers(
-                    ns['curio_dataset_path'], collections, media_dir
-                ))
-                from utk_curio.sandbox.util.models import make_curio_model
-                from utk_curio.sandbox.util.vision import make_curio_segment
-
-                ns['curio_model'] = make_curio_model(models)
-                ns['curio_segment'] = make_curio_segment(ns.get('curio_derived_file'))
+                install_catalog_helpers(
+                    ns,
+                    data_path=_make_curio_data_path(dataset_paths),
+                    formats=dataset_formats,
+                    collections=collections,
+                    media_dir=media_dir,
+                    models=models,
+                )
                 # Hoist this node's own top-level imports before defining userCode,
                 # so they are recorded for later nodes in the same session. The
                 # statements stay in the function body too - re-importing is a

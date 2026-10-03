@@ -40,7 +40,7 @@ flowchart LR
 ## Data
 
 This example reads its inputs from the [Data Catalog](../DATA-CATALOG.md). Each loader node
-addresses a dataset by id via `curio_dataset_path("<id>")`, so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
+addresses a dataset by id via `curio_data_path("<id>")`, so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
 
 | Dataset | Id | Format | Size |
 |---|---|---|---|
@@ -67,8 +67,7 @@ Read the GeoTIFF directly with `rasterio` and hand the dataset object downstream
 
 ```python
 import rasterio
-dataset_path = curio_dataset_path("data.utk.milan-mrt")
-src = rasterio.open(dataset_path)
+src = curio_load_data("data.utk.milan-mrt")
 return src
 ```
 
@@ -78,8 +77,7 @@ The hourly ERA5 file gives air temperature (Td), wind speed (Wind), and relative
 
 ```python
 import pandas as pd
-dataset_path = curio_dataset_path("data.utk.milan-era5-weather")
-sensor = pd.read_csv(dataset_path)
+sensor = curio_load_data("data.utk.milan-era5-weather")
 return sensor
 ```
 
@@ -148,8 +146,7 @@ A separate branch loads the sociodemographic GeoJSON that carries the `gt_65` co
 
 ```python
 import geopandas as gpd
-dataset_path = curio_dataset_path("data.utk.milan-census-gt65")
-gdf = gpd.read_file(dataset_path)
+gdf = curio_load_data("data.utk.milan-census-gt65")
 return gdf
 ```
 

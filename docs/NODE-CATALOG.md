@@ -60,7 +60,7 @@ The palette reads the open project's lockfile, so two projects open in different
 There are two places you manage packages:
 
 - **The drawer**, inside the canvas, works on the open project only. Open it from the top menu **Data → Node Catalog**, or from the **Node Catalog** dropdown in the left Tools panel and **Browse Node Catalog +**. Its two tabs are **Browse all** and **In project**.
-- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters, a details drawer, and no remove button. The **Data Catalog**, **Agent Catalog** and **Discovery Catalog** tabs beside it are the other three catalogs.
+- **The `/catalog/nodes` page**, reached from `/projects` and the **Node Catalog** tab, works on your whole account: a package added here goes into every project you have and every new one. It has status and category filters, a details drawer, and no remove button. The **Data Catalog**, **Agent Catalog**, **Discovery Catalog** and **Model Catalog** tabs beside it are the other four catalogs.
 
 ### Action matrix
 
@@ -88,7 +88,7 @@ There are two places you manage packages:
 
 Once a package is in the open project, its nodes are in the palette: the built-in nodes sit in the left Tools panel, and nodes from other packages in its **Node Catalog** dropdown. Drag one onto the canvas.
 
-A Python node that calls a key-gated API reads the key by name, never as a literal: `api_key = curio_secret("<name>")` returns the connection key saved under that name in **API Settings → Connection keys** (see [USAGE.md](USAGE.md#connection-keys)). Like `curio_dataset_path("<id>")`, the name travels with the dataflow, and the value reaches the sandbox for the run only.
+A Python node that calls a key-gated API reads the key by name, never as a literal: `api_key = curio_secret("<name>")` returns the connection key saved under that name in **API Settings → Connection keys** (see [USAGE.md](USAGE.md#connection-keys)). Like `curio_data_path("<id>")`, the name travels with the dataflow, and the value reaches the sandbox for the run only.
 
 ---
 

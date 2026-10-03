@@ -405,7 +405,7 @@ class TestAddingACollection:
         assert set(index["crs"]) == {"EPSG:32616"}
         assert index.crs.to_epsg() == 4326
         assert index.geometry.geom_type.unique().tolist() == ["Polygon"]
-        assert dataset["loaderSnippet"]["code"] == f'collection = curio_collection("{dataset["id"]}")'
+        assert dataset["loaderSnippet"]["code"] == f'collection = curio_load_collection("{dataset["id"]}")'
 
     def test_frames_are_numbered_timed_and_placed_by_their_telemetry(self, client, auth, app, shipped_root):
         import geopandas as gpd

@@ -45,7 +45,7 @@ VEGA_ID = "starter-vega"
 LOADER_CODE = (
     "import geopandas as gpd\n"
     "\n"
-    'dataset_path = curio_dataset_path("data.utk.chicago-boundary")\n'
+    'dataset_path = curio_data_path("data.utk.chicago-boundary")\n'
     "gdf = gpd.read_file(dataset_path)\n"
     "\n"
     "return gdf\n"

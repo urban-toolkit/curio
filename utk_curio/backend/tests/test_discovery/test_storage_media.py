@@ -276,7 +276,7 @@ class TestExecutionResolution:
 
         user, _token = user_and_token
         dataset, _index = collection(client, auth, "noise")
-        code = f'    frame = curio_collection("{dataset["id"]}")\n    x = curio_collection("imported.xnone")\n'
+        code = f'    frame = curio_load_collection("{dataset["id"]}")\n    x = curio_load_collection("imported.xnone")\n'
         with app.test_request_context():
             g.user = user
             collections, media_dir = _resolve_exec_collections(code, str(user.id))
@@ -292,7 +292,7 @@ class TestExecutionResolution:
             dataset_ids_in_code,
         )
 
-        code = 'a = curio_collection("imported.xa@1")\nb = curio_dataset_path("imported.xb")'
+        code = 'a = curio_load_collection("imported.xa@1")\nb = curio_data_path("imported.xb")'
         assert dataset_ids_in_code(code) == ["imported.xa@1", "imported.xb"]
         assert collection_ids_in_code(code) == ["imported.xa@1"]
 
@@ -322,7 +322,7 @@ class TestTheCommittedExampleCollections:
         item = client.get(f"/api/datasets/{self.ORTHOS}", headers=auth).get_json()
         assert item["format"] == "collection"
         assert item["collection"]["sourceId"] == EXAMPLE
-        assert item["loaderSnippet"]["code"] == f'collection = curio_collection("{self.ORTHOS}")'
+        assert item["loaderSnippet"]["code"] == f'collection = curio_load_collection("{self.ORTHOS}")'
 
     def test_its_files_are_served_by_id(self, client, auth, app, shipped_root):
         import pandas as pd
@@ -344,7 +344,7 @@ class TestTheCommittedExampleCollections:
         with app.test_request_context():
             g.user = user
             collections, media_dir = _resolve_exec_collections(
-                f'media = curio_collection("{self.ORTHOS}")', str(user.id)
+                f'media = curio_load_collection("{self.ORTHOS}")', str(user.id)
             )
         root = storage_root(load_source_manifest(source_dir(EXAMPLE)))
         assert collections[self.ORTHOS] == {"kind": "rasters", "root": str(root)}

@@ -371,7 +371,7 @@ class TestDatasetPaths(ChildTestCase):
     def test_a_staged_dataset_resolves_to_the_scratch_copy(self):
         (self.scratch / "ds_0.parquet").write_bytes(b"payload")
         result = self.run_code(
-            "    p = curio_dataset_path('my.dataset')\n"
+            "    p = curio_data_path('my.dataset')\n"
             "    return open(p, 'rb').read().decode()\n",
             dataset_paths={"my.dataset": "ds_0.parquet"},
         )
@@ -380,7 +380,7 @@ class TestDatasetPaths(ChildTestCase):
 
     def test_an_unknown_dataset_id_raises_an_actionable_error(self):
         result = self.run_code(
-            "    return curio_dataset_path('nope')\n", dataset_paths={}
+            "    return curio_data_path('nope')\n", dataset_paths={}
         )
         self.assertFalse(result["ok"])
         self.assertIn("Data Catalog", result["stderr"])

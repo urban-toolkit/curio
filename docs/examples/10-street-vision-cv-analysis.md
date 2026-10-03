@@ -16,7 +16,7 @@ flowchart LR
   S1[Image Segmentation<br/>DDRNet23-Slim]
   G1[`Simple View`<br/>photos and overlays]
   L[`Data Loading`<br/>neighborhood polygons]
-  T[`Data Transformation`<br/>rename pri_neigh to name]
+  T[`Data Transformation`<br/>rename pri_neigh to neighborhood]
   S2[Image Segmentation<br/>a Hugging Face model]
   G2[`Simple View`<br/>the second model's overlays]
 
@@ -39,12 +39,12 @@ Originally contributed by [@ManeeshJupalle](https://github.com/ManeeshJupalle) i
 The Data Catalog ships 40 Mapillary panoramas from that box as `data.curio.mapillary-sample`, each with its photographer (`creator`), capture time, heading and place. Mapillary photos are licensed CC BY-SA 4.0, so a figure made from them credits each photo's `creator`.
 
 ```python
-photos = curio_collection("data.curio.mapillary-sample")
+photos = curio_load_collection("data.curio.mapillary-sample")
 
 return photos
 ```
 
-`curio_collection` gives one row per photo, with a `path` the next node reads and a `thumbnail` that Simple View draws.
+`curio_load_collection` gives one row per photo, with a `path` the next node reads and a `thumbnail` that Simple View draws.
 
 ## Step 2: Label every pixel (`Image Segmentation`)
 
@@ -64,7 +64,7 @@ reports every label.
 and ``overlay_url`` shows the image tinted by class.
 """
 
-model = curio_model("model.curio.ddrnet23-slim")
+model = curio_load_model("model.curio.ddrnet23-slim")
 classes = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
 
 return curio_segment(arg, model, classes)
@@ -92,8 +92,7 @@ import geopandas as gpd
 # Chicago official neighborhoods boundary (98 polygons, `pri_neigh` names),
 # vendored in the Data Catalog so this example runs offline. Any polygon
 # FeatureCollection with a string name property works here.
-dataset_path = curio_dataset_path("data.cityofchicago.neighborhoods")
-gdf = gpd.read_file(dataset_path)
+gdf = curio_load_data("data.cityofchicago.neighborhoods")
 
 # __dict__, not plain assignment: pandas warns about creating a column via
 # a new attribute name, and that warning lands in this node's output with
@@ -207,7 +206,7 @@ openmmlab/upernet-convnext-tiny), then drag it from the Model Catalog onto
 this node. Until then it runs DDRNet23-Slim, the model that ships with Curio.
 """
 
-model = curio_model("model.curio.ddrnet23-slim")
+model = curio_load_model("model.curio.ddrnet23-slim")
 classes = None  # every class the model names
 
 return curio_segment(arg, model, classes)
@@ -217,7 +216,7 @@ To give it a model of its own:
 
 1. Open the **Discovery Catalog** and choose **Hugging Face models**. It lists image segmentation models Curio can run.
 2. Find a model, for example `openmmlab/upernet-convnext-tiny` (ADE20K's 150 classes, MIT license), and click **Add to Model Catalog**. Curio downloads it, and installs `torch` and `transformers` when the model needs them.
-3. Back on the canvas, open **Models** in the left rail and drag the model onto this node. Its `curio_model(...)` line now names the new model.
+3. Back on the canvas, open **Model Catalog** in the left Tools panel and drag the model onto this node. Its `curio_load_model(...)` line now names the new model.
 4. Run the node. The `Simple View`, Spatial Join and bar chart after it show the new model's classes.
 
 The bar chart for this route names no colours, so it draws whatever classes the model reports. A model trained on other scenes labels other things: ADE20K says `tree` and `grass` where Cityscapes says `vegetation`.
@@ -228,9 +227,9 @@ The sample is a fixed set of photos. To take photos of another place from Mapill
 
 1. Get a Mapillary access token: sign in at [mapillary.com/dashboard/developers](https://www.mapillary.com/dashboard/developers), register an application, and copy its **Client Token** (it starts with `MLY|`).
 2. Open **API Settings** in the page header. Under **Discovery Catalog**, find the **Mapillary access token** row, paste the token, and click **Save**. The row then reads *(saved - leave blank to keep)*, and the Mapillary card in the Discovery Catalog reads **Token set**.
-3. Open the **Discovery Catalog**, choose **Mapillary**, and open **Street-level images**.
-4. Draw the box to take photos from (at most 25 km²), and choose how many photos and how large. Photos are spread across the box, newest first.
-5. Click **Add to Data Catalog**. The photos land in the Data Catalog as a collection of their own, each with its creator.
+3. Open the **Discovery Catalog**, choose **Mapillary**, and click **Download** on **Street-level images**.
+4. Set the **Area**: a place, coordinates or a dataset's extent give the box to take photos from, of at most 25 km². Choose how many photos with **Most images**, and how large with **Size**. Photos are taken from across the box, newest first.
+5. Click **Download**. The photos land in the Data Catalog as a collection of their own, each with its creator.
 6. In the example's first node, replace `data.curio.mapillary-sample` with the new collection's id (drag the collection from the Data Catalog onto the node to do it), and run the dataflow.
 
 For another city, swap the neighborhood polygons in Step 4 for that city's, and rename its name column to `neighborhood` in the `Data Transformation`: NYC's boroughs file calls it `BoroName`.

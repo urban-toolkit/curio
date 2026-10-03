@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/04-vega-lite-multi-flow-dashboard.json",
-    "sha256": "eae43546fb8f030675b1ef8d713dbf8533348ecbb76530cd731b8c7bde43afef",
+    "sha256": "477986e598a615bdb9ea96fec6c56996a3d504882d05e5fd88662d0d33ba2376",
     "walkthrough": "docs/examples/04-vega-lite-multi-flow-dashboard.md"
   },
   "prompt": "Build me a red-light violations dashboard from the Chicago red-light violations table in the Data Catalog. Load it once and branch it into six independent stories, each ending in its own Vega-Lite view: a seasonal trend over time; a monthly heatmap paired with a linked daily trend; a stacked area chart by season and year; the top three intersections per year; camera count against compliance; and a spatial brush linked to a top-N bar chart. Three of those views need two prepared tables combined into one input before the chart can read them, and a couple of the branches need a Python computation step rather than a plain transformation.",
