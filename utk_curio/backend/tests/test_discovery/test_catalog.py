@@ -116,6 +116,14 @@ class TestFilters:
         rows = catalog.list_catalog(q="   BETA  ")["sources"]
         assert [r["sourceId"] for r in rows] == ["source.b.ckan-one"]
 
+    @pytest.mark.parametrize("query", ["paulo sao", "sao paulo", "portals paulo"])
+    def test_words_match_in_any_order_without_accents_and_as_plurals(self, catalog, discovery_dir, query):
+        write_source(discovery_dir, "source.br.sao-paulo@1", a_manifest(
+            id="source.br.sao-paulo", name="São Paulo Portal", publisher="Prefeitura de São Paulo",
+            provider={"type": "ckan", "baseUrl": "https://sp.example"}))
+        rows = catalog.list_catalog(q=query)["sources"]
+        assert [r["sourceId"] for r in rows] == ["source.br.sao-paulo"]
+
     def test_no_match_is_an_empty_list(self, catalog):
         assert catalog.list_catalog(q="nothing here")["sources"] == []
 

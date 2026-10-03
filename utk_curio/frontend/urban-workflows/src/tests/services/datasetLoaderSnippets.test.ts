@@ -40,6 +40,9 @@ const READERS: Record<DatasetFormat, string | null> = {
   // parquet datasets, so there is no single path to generate for. Each member
   // is an ordinary `parquet` dataset and takes that branch.
   gpkg: null,
+  // And for a GTFS feed: its tables are parquet datasets, each loaded through
+  // its own id.
+  gtfs: null,
   // A collection's index, with a readable path for every file, which only the
   // sandbox's `curio_load_collection` can resolve.
   collection: "curio_load_collection",
@@ -146,6 +149,30 @@ describe("snippetForFormat", () => {
     // Discovery layer that is not one of Autark's is not typed.
     for (const other of [{ ...idless, discoverySource: null }, { ...idless, layerName: "map-features" }]) {
       expect(buildDatasetLoaderCode(other as never)).not.toContain("gdf.metadata");
+    }
+  });
+
+  it("names the Autark layer of a Discovery GeoParquet download too", () => {
+    const overture = {
+      id: "imported.overture-buildings@1",
+      format: "parquet",
+      path: "/tmp/overture_buildings.parquet",
+      layerName: "buildings",
+      discoverySource: { sourceId: "source.overture.maps@1", resourceId: "buildings" },
+    };
+    // With an id the layer travels to the sandbox with the dataset's format,
+    // so the code is the one load call.
+    expect(buildDatasetLoaderCode(overture as never)).toBe(
+      'df = curio_load_data("imported.overture-buildings@1")\nreturn df',
+    );
+    // Without an id the literal-path loader names the layer itself.
+    const idless = { ...overture, id: undefined };
+    const code = buildDatasetLoaderCode(idless as never);
+    expect(code).toContain("df = gpd.read_parquet(dataset_path)");
+    expect(code).toContain('    df = pd.read_parquet(dataset_path)\ndf.metadata = {"layerType": "buildings"}\n');
+    expect(code.trimEnd().endsWith("return df")).toBe(true);
+    for (const other of [{ ...idless, discoverySource: null }, { ...idless, layerName: "places" }]) {
+      expect(buildDatasetLoaderCode(other as never)).not.toContain("df.metadata");
     }
   });
 

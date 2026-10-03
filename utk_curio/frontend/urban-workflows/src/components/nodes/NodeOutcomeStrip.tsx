@@ -81,10 +81,27 @@ export function recordOutcome(record: unknown, live = false): Outcome | null {
 /** The first line, for the collapsed strip. */
 export function firstLine(text: string): string {
   const line = text.split("\n").find((l) => l.trim()) ?? text;
-  const trimmed = line.trim();
-  return trimmed.length > FIRST_LINE_CHARS
-    ? trimmed.slice(0, FIRST_LINE_CHARS - 1) + "…"
-    : trimmed;
+  return clip(line.trim());
+}
+
+function clip(line: string): string {
+  return line.length > FIRST_LINE_CHARS
+    ? line.slice(0, FIRST_LINE_CHARS - 1) + "…"
+    : line;
+}
+
+const PYTHON_TRACEBACK_HEADER = "Traceback (most recent call last):";
+
+/**
+ * The line the collapsed strip shows. A Python traceback's last line, which is
+ * the exception itself (the rule the monitor's ``summarise_traceback`` uses);
+ * any other text's first line. A code node's error is its stdout and then the
+ * traceback, so its first line was "stdout:" or the traceback header (#603).
+ */
+export function summaryLine(text: string): string {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.includes(PYTHON_TRACEBACK_HEADER)) return clip(lines[lines.length - 1]);
+  return firstLine(text);
 }
 
 export const NodeOutcomeStrip: React.FC<NodeOutcomeStripProps> = ({
@@ -145,7 +162,7 @@ export const NodeOutcomeStrip: React.FC<NodeOutcomeStripProps> = ({
 
   if (!outcome || !text) return null;
 
-  const head = firstLine(text);
+  const head = summaryLine(text);
   const hasMore = clipped || text.trim() !== head;
 
   return (

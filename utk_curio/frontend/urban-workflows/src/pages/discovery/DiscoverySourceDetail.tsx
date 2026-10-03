@@ -272,6 +272,18 @@ export const DiscoverySourceBody: React.FC<DiscoverySourceBodyProps> = ({
                 }
               />
             ))}
+            {!storage && portalSearch.data.nextCursor && search.data.resources.length > 0 ? (
+              <div className={detailStyles.moreRow}>
+                <button
+                  type="button"
+                  className={detailStyles.rescan}
+                  disabled={portalSearch.loadingMore}
+                  onClick={portalSearch.loadMore}
+                >
+                  {portalSearch.loadingMore ? "Loading…" : "Show more"}
+                </button>
+              </div>
+            ) : null}
           </div>
 
           {!search.loading &&

@@ -5,7 +5,8 @@ Added for GeoSampa (São Paulo's Mapa Digital), and worth far more than one
 portal for that reason. There is no bespoke API to reverse-engineer here: WFS
 is a standard, so one connector reaches every server that speaks it.
 
-    search      GetCapabilities once, then filter the feature-type list locally
+    search      GetCapabilities once, then filter and rank the feature-type
+                list locally, by ``domain/text_match.py``'s rule
     describe    DescribeFeatureType, plus the bbox and CRS from capabilities
     download    GetFeature with outputFormat=application/json
 
@@ -25,6 +26,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 
+from utk_curio.backend.app.discovery.domain import text_match
 from utk_curio.backend.app.discovery.domain.errors import ProviderError, ResourceNotFound
 from utk_curio.backend.app.discovery.domain.resource import (
     DownloadTarget,
@@ -123,10 +125,18 @@ class WfsProvider(BaseProvider):
     def search(self, query: SearchQuery) -> SearchPage:
         limit = max(1, min(int(query.limit or 20), 50))
         offset = _offset(query.cursor)
-        types = self.feature_types()
-        needle = query.text.strip().lower()
-        if needle:
-            types = [t for t in types if needle in t["haystack"]]
+        # A layer whose name the provider would refuse is never offered. It is
+        # left out before the page is cut, so a page is full and the count and
+        # the cursor are of layers it can offer.
+        types = [t for t in self.feature_types() if RESOURCE_ID_RE.match(t["name"])]
+        words = text_match.query_words(query.text)
+        if words:
+            types = text_match.rank(
+                (t for t in types if text_match.matches_folded(t["haystack"], words)),
+                words,
+                head=lambda t: t["head"],
+                name=lambda t: t["name"],
+            )
         window = types[offset : offset + limit]
         rows = tuple(
             DiscoveryResource(
@@ -139,7 +149,6 @@ class WfsProvider(BaseProvider):
                 landing_url=self.manifest.homepage,
             )
             for t in window
-            if RESOURCE_ID_RE.match(t["name"])
         )
         return SearchPage(
             resources=rows,
@@ -243,7 +252,9 @@ def _parse_capabilities(xml_text: str) -> list[dict]:
                 "abstract": abstract,
                 "crs": _text(node, "DefaultCRS") or _text(node, "DefaultSRS"),
                 "bbox": _bbox(node),
-                "haystack": " ".join([name, title, abstract, keywords]).lower(),
+                # Folded once here rather than on every search of the cached list.
+                "haystack": text_match.fold(" ".join([name, title, abstract, keywords])),
+                "head": text_match.fold(f"{name} {title}"),
             }
         )
     if not out:

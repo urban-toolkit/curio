@@ -469,6 +469,24 @@ describe("a layer group's drag payload takes its kind from the group id (#440)",
     expect(options.code).toContain('layers["trails"] = curio_load_data("imported.parks_trails")');
   });
 
+  test("a GTFS feed drops as GTFS, though its tables were downloaded (#608)", () => {
+    // A GTFS feed is always a Discovery download; it still says what it is
+    // rather than its tables' Parquet, unlike #586's layer groups.
+    const discoverySource = { sourceId: "source.curio.direct-url@1", sourceName: "Direct URL" };
+    const feed = groupOf("gtfs.x1");
+    const downloaded: DatasetPaletteGroup = {
+      ...feed,
+      members: feed.members.map((m) => ({ ...m, discoverySource })),
+    };
+    const payload = createOsmGroupDragPayload(downloaded);
+    expect(payload.format).toBe("gtfs");
+    expect(payload.uri).toBe("curio://gtfs/gtfs.x1");
+    const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
+    expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("GTFS");
+    // Each table loads through its own id.
+    expect(options.datasetRefs).toEqual(["imported.parks_parks", "imported.parks_trails"]);
+  });
+
   test("an OSM group still drops as an OSM PBF dataset", () => {
     const payload = createOsmGroupDragPayload(groupOf("osm.x1"));
     expect(payload.format).toBe("osm");

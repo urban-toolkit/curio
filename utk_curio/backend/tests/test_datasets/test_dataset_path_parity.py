@@ -104,6 +104,36 @@ def test_sandbox_cap_matches_the_backend_cap():
     )
 
 
+def _check_catalog_helper_ids(label: str, nodes: list[dict]) -> int:
+    """Assert every catalog helper call in ``nodes`` names a bare id the
+    scanner finds, and return how many ids were checked."""
+    checked = 0
+    for node in nodes:
+        content = node.get("content") or ""
+        # A call with a quoted argument; prose naming a helper is not one.
+        if not re.search(r"""curio_(?:load_data|data_path|load_collection)\(\s*["']""", content):
+            continue
+        found = _DATASET_PATH_CALL_RE.findall(content)
+        assert found, (
+            f"{label} node {node['id']} calls a catalog helper but "
+            f"the backend scanner finds no id in it; check the quoting and "
+            f"that the id matches {ID_BODY}"
+        )
+        for _quote, dataset_id in found:
+            assert _SAFE_DATASET_ID_RE.match(dataset_id), dataset_id
+            # The call takes the bare manifest id. An ``@major`` suffix
+            # passes the grammar but misses the by-id lookup in
+            # ``resolve_execution_paths``, and the miss is swallowed.
+            assert "@" not in dataset_id, (
+                f"{label} node {node['id']}: {dataset_id!r} carries a "
+                f"major version; curio_data_path takes the bare id "
+                f"(the '@<major>' form is the dirName, used by "
+                f"dataflow.datasets refs)"
+            )
+            checked += 1
+    return checked
+
+
 def test_the_scanner_finds_every_id_the_curated_examples_reference():
     """Third copy of the grammar, third chance to drift.
 
@@ -121,27 +151,19 @@ def test_the_scanner_finds_every_id_the_curated_examples_reference():
     checked = 0
     for path in examples:
         spec = json.loads(path.read_text(encoding="utf-8"))
-        for node in spec["dataflow"]["nodes"]:
-            content = node.get("content") or ""
-            # A call with a quoted argument; prose naming a helper is not one.
-            if not re.search(r"""curio_(?:load_data|data_path|load_collection)\(\s*["']""", content):
-                continue
-            found = _DATASET_PATH_CALL_RE.findall(content)
-            assert found, (
-                f"{path.name} node {node['id']} calls a catalog helper but "
-                f"the backend scanner finds no id in it; check the quoting and "
-                f"that the id matches {ID_BODY}"
-            )
-            for _quote, dataset_id in found:
-                assert _SAFE_DATASET_ID_RE.match(dataset_id), dataset_id
-                # The call takes the bare manifest id. An ``@major`` suffix
-                # passes the grammar but misses the by-id lookup in
-                # ``resolve_execution_paths``, and the miss is swallowed.
-                assert "@" not in dataset_id, (
-                    f"{path.name} node {node['id']}: {dataset_id!r} carries a "
-                    f"major version; curio_data_path takes the bare id "
-                    f"(the '@<major>' form is the dirName, used by "
-                    f"dataflow.datasets refs)"
-                )
-                checked += 1
+        checked += _check_catalog_helper_ids(path.name, spec["dataflow"]["nodes"])
     assert checked, "no example resolves a dataset by id; expected several"
+
+
+def test_the_scanner_finds_every_id_the_preambles_example_references():
+    """The agents' shared preamble carries a worked dataflow that agents
+    copy, so its ids follow the same rule as the curated examples'."""
+    import json
+
+    from utk_curio.backend.app.agents.domain import contracts
+
+    text = contracts.render_default_preamble()
+    start = text.index("An example of a dataflow:\n\n") + len("An example of a dataflow:\n\n")
+    example = json.loads(text[start:text.index("\nAttention:", start)])
+    checked = _check_catalog_helper_ids("the preamble's example", example["dataflow"]["nodes"])
+    assert checked, "the preamble's example resolves no dataset by id; expected three"

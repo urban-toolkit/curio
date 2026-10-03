@@ -77,6 +77,10 @@ export interface INodeData {
   customTemplate?: boolean;
   interactions?: IInteraction[];
   triggerExec?: number;
+  /** Bumped when a run does not run this node because a node feeding it failed. */
+  skipExec?: number;
+  /** What the node shows for that run in place of an outcome. */
+  skipReason?: string;
 }
 
 /**

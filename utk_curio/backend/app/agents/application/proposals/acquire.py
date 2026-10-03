@@ -394,8 +394,9 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster") -> None:
       resource, so the probe of a landing page does not decide it.
     - A ``direct`` source downloads the URL itself, so the probe decides: an
       https URL the probe read as data, whose content type maps to a format the
-      source accepts, and whose ``resourceId`` is that same URL, so what is
-      downloaded is what was probed.
+      source accepts or which is a zip or a gzip the download unpacks, and
+      whose ``resourceId`` is that same URL, so what is downloaded is what was
+      probed.
 
     A row with a plain link and no coordinate is tried as a ``direct`` row: the
     coordinate is minted here, after parsing, so it is never model-supplied and
@@ -437,7 +438,10 @@ def _acquirable(row: dict, roster: "_LazyRoster") -> bool:
         return False
     from utk_curio.backend.app.discovery.domain import formats
 
-    content_type = formats.content_type_of(
-        {"Content-Type": str((row.get("verification") or {}).get("contentType") or "")}
-    )
+    raw_type = str((row.get("verification") or {}).get("contentType") or "")
+    # A zip or a gzip is unpacked on the way in, so what it holds is decided
+    # once it arrives, against the same formats.
+    if verify.is_unpacked_archive(raw_type, (row.get("verification") or {}).get("finalUrl") or url):
+        return True
+    content_type = formats.content_type_of({"Content-Type": raw_type})
     return formats.CONTENT_TYPE_FORMATS.get(content_type) in (capabilities.get("formats") or ())

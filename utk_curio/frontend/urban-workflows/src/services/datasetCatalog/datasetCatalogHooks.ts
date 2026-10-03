@@ -27,6 +27,7 @@ const EMPTY_RESPONSE: DatasetCatalogResponse = {
       bundle: 0,
       osm: 0,
       gpkg: 0,
+      gtfs: 0,
       collection: 0,
     },
   },

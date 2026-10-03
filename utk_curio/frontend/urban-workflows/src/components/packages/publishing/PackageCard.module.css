@@ -338,6 +338,7 @@
 .avatar_bundle { background: var(--curio-format-bundle-bg) !important; color: var(--curio-format-bundle-on-tint); }
 .avatar_osm { background: var(--curio-format-osm-bg) !important; color: var(--curio-format-osm-on-tint); }
 .avatar_gpkg { background: var(--curio-format-gpkg-bg) !important; color: var(--curio-format-gpkg-on-tint); }
+.avatar_gtfs { background: var(--curio-format-gtfs-bg) !important; color: var(--curio-format-gtfs-on-tint); }
 .avatar_collection { background: var(--curio-format-collection-bg) !important; color: var(--curio-format-collection-on-tint); }
 
 /* A Model Catalog card's avatar: a kind, not a format, so it takes the one

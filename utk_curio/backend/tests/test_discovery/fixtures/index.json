@@ -788,6 +788,83 @@
     },
     "status": 200
   },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00000-synthetic.zstd.parquet bytes=0-11272": {
+    "file": "overture/ranges/buildings-part-00000-synthetic-0-11272.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00000-synthetic.zstd.parquet bytes=11265-11272": {
+    "file": "overture/ranges/buildings-part-00000-synthetic-11265-11272.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00000-synthetic.zstd.parquet bytes=1668-3314": {
+    "file": "overture/ranges/buildings-part-00000-synthetic-1668-3314.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00000-synthetic.zstd.parquet bytes=3315-4990": {
+    "file": "overture/ranges/buildings-part-00000-synthetic-3315-4990.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00000-synthetic.zstd.parquet bytes=4-1667": {
+    "file": "overture/ranges/buildings-part-00000-synthetic-4-1667.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00001-synthetic.zstd.parquet bytes=0-5186": {
+    "file": "overture/ranges/buildings-part-00001-synthetic-0-5186.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00001-synthetic.zstd.parquet bytes=4-1669": {
+    "file": "overture/ranges/buildings-part-00001-synthetic-4-1669.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00001-synthetic.zstd.parquet bytes=5179-5186": {
+    "file": "overture/ranges/buildings-part-00001-synthetic-5179-5186.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=transportation/type=segment/part-00000-synthetic.zstd.parquet bytes=0-4573": {
+    "file": "overture/ranges/transportation-part-00000-synthetic-0-4573.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=transportation/type=segment/part-00000-synthetic.zstd.parquet bytes=4-1346": {
+    "file": "overture/ranges/transportation-part-00000-synthetic-4-1346.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=transportation/type=segment/part-00000-synthetic.zstd.parquet bytes=4566-4573": {
+    "file": "overture/ranges/transportation-part-00000-synthetic-4566-4573.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
   "https://portal.test/archive.zip": {
     "file": "download/crimes.csv",
     "headers": {
@@ -795,17 +872,95 @@
     },
     "status": 200
   },
+  "https://portal.test/bomb.zip": {
+    "file": "download/archives/bomb.zip",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
+  },
+  "https://portal.test/bundle.7z": {
+    "file": "download/archives/bundle.7z",
+    "headers": {
+      "Content-Type": "application/x-7z-compressed"
+    },
+    "status": 200
+  },
+  "https://portal.test/declares-100mb.csv": {
+    "file": "download/crimes.csv",
+    "headers": {
+      "Content-Length": "104857600",
+      "Content-Type": "text/csv"
+    },
+    "status": 200
+  },
   "https://portal.test/declares-huge.csv": {
     "file": "download/crimes.csv",
     "headers": {
-      "Content-Length": "999999999",
+      "Content-Length": "99999999999",
       "Content-Type": "text/csv"
+    },
+    "status": 200
+  },
+  "https://portal.test/export": {
+    "file": "download/archives/export.tar",
+    "headers": {
+      "Content-Type": "application/x-tar"
+    },
+    "status": 200
+  },
+  "https://portal.test/feed.zip": {
+    "file": "download/archives/gtfs_in_folder.zip",
+    "headers": {
+      "Content-Type": "application/x-zip-compressed"
+    },
+    "status": 200
+  },
+  "https://portal.test/files-7731": {
+    "file": "download/archives/ghsl_tile.zip",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://portal.test/ghsl_tile.zip": {
+    "file": "download/archives/ghsl_tile.zip",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
+  },
+  "https://portal.test/google_transit.zip": {
+    "file": "download/archives/google_transit.zip",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
+  },
+  "https://portal.test/il_wac_S000_JT00_2022.csv.gz": {
+    "file": "download/archives/il_wac_S000_JT00_2022.csv.gz",
+    "headers": {
+      "Content-Type": "application/x-gzip"
+    },
+    "status": 200
+  },
+  "https://portal.test/link.zip": {
+    "file": "download/archives/link.zip",
+    "headers": {
+      "Content-Type": "application/zip"
     },
     "status": 200
   },
   "https://portal.test/nameless": {
     "file": "download/nameless",
     "headers": {},
+    "status": 200
+  },
+  "https://portal.test/nested.zip": {
+    "file": "download/archives/nested.zip",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
     "status": 200
   },
   "https://portal.test/not-a-tiff.tif": {
@@ -818,8 +973,29 @@
   "https://portal.test/oversized.csv": {
     "error": "too-large"
   },
+  "https://portal.test/slip.zip": {
+    "file": "download/archives/slip.zip",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
+  },
   "https://portal.test/timeout.csv": {
     "error": "timeout"
+  },
+  "https://portal.test/tl_2022_17_tabblock20.zip": {
+    "file": "download/archives/tl_2022_17_tabblock20.zip",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
+  },
+  "https://portal.test/two_tables.zip": {
+    "file": "download/archives/two_tables.zip",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
   },
   "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An-lhZc-BAgmEK33PqsLVwc_kO61aLgHxVh2N6NGxVn5Cu9pZ99kLMSK6cRbHQao8FR58m3v5VfoIGcu0Um1BPV1XtHGsSg-sgdQGswl8RNWe4EqgB91F_TdCWaNl9q2CXyNM-FHGb10bxQd-3v7Qw?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=pSsvTyeJnJjC8gSU7QfweA&_nc_oc=AdrQGenJDBez0nQ7aZINOs1dPa8uMnD-Pcsx7l-irVsNhbOKdHO3rpUxHAbuD8IB3cc&ccb=10-5&oh=00_AQMfIW24VduZYlfcl0YJO-yTipk0Ir5eeC8bb0V5rqc8wQ&oe=6AE6584A&_nc_sid=201bca": {
     "file": "download/storage/head.jpg",
@@ -1105,6 +1281,48 @@
       "Content-Type": "application/octet-stream"
     },
     "status": 206
+  },
+  "https://stac.overturemaps.org/2000-01-01.0/buildings/building/00000/00000.json": {
+    "file": "overture/buildings-building-00000.json",
+    "headers": {
+      "Content-Type": "application/geo+json"
+    },
+    "status": 200
+  },
+  "https://stac.overturemaps.org/2000-01-01.0/buildings/building/00001/00001.json": {
+    "file": "overture/buildings-building-00001.json",
+    "headers": {
+      "Content-Type": "application/geo+json"
+    },
+    "status": 200
+  },
+  "https://stac.overturemaps.org/2000-01-01.0/buildings/building/collection.json": {
+    "file": "overture/buildings-building-collection.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://stac.overturemaps.org/2000-01-01.0/transportation/segment/00000/00000.json": {
+    "file": "overture/transportation-segment-00000.json",
+    "headers": {
+      "Content-Type": "application/geo+json"
+    },
+    "status": 200
+  },
+  "https://stac.overturemaps.org/2000-01-01.0/transportation/segment/collection.json": {
+    "file": "overture/transportation-segment-collection.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://stac.overturemaps.org/catalog.json": {
+    "file": "overture/catalog.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
   },
   "https://wms.geosampa.prefeitura.sp.gov.br/geoserver/ows?service=WFS&request=DescribeFeatureType&version=2.0.0&typeName=geoportal%3Abicicletario_paraciclo": {
     "file": "wfs/02.xml",

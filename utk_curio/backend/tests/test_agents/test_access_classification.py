@@ -67,46 +67,88 @@ class TestClassifyAccess:
         )["access"] == verify.ACCESS_UNKNOWN
 
 
-class TestAnArchiveIsAManualDownload:
-    """The Discovery Catalog refuses archives before reading a body
+class TestAnArchiveCurioUnpacksIsData:
+    """The Discovery Catalog unpacks a zip and a gzip when it downloads one
+    (``discovery/application/archives.py``), so a probe that sees one reports
+    data Curio can fetch, not a manual download.
+
+    These used to assert that every archive is a manual download; that is now
+    true only of the archives Curio does not unpack (the class below)."""
+
+    def test_a_zip_or_gzip_content_type_is_fetchable(self):
+        for content_type in (
+            "application/zip", "application/x-zip-compressed", "application/gzip",
+            "application/x-gzip", "application/zip; charset=binary",
+        ):
+            verdict = verify.classify_access(
+                {"status": "verified", "httpStatus": 200, "contentType": content_type}
+            )
+            assert verdict["access"] == verify.ACCESS_FETCHABLE, content_type
+            assert "unpacks" in verdict["why"], content_type
+
+    def test_a_zip_suffix_wins_over_a_generic_content_type(self):
+        observation = {"status": "verified", "httpStatus": 200,
+                       "contentType": "application/octet-stream"}
+        verdict = verify.classify_access(observation, "https://data.example.org/tracts.zip")
+        assert verdict["access"] == verify.ACCESS_FETCHABLE
+        assert "unpacks" in verdict["why"]
+        # Where the redirect landed is what was served.
+        assert "unpacks" in verify.classify_access(
+            {**observation, "finalUrl": "https://cdn.example.org/wac.csv.gz"},
+            "https://data.example.org/wac",
+        )["why"]
+        plain = verify.classify_access(observation, "https://data.example.org/tracts.csv")
+        assert plain["access"] == verify.ACCESS_FETCHABLE
+        assert "unpacks" not in plain["why"]
+
+
+class TestAnArchiveCurioDoesNotUnpackIsAManualDownload:
+    """Any other archive is refused before its body is read
     (``discovery/domain/formats.py``), so a probe must not call one data a
     loader can read. A person unpacks it and imports the file."""
 
-    def test_an_archive_content_type_is_a_manual_download(self):
+    def test_its_content_type_is_a_manual_download(self):
         for content_type in (
-            "application/zip", "application/x-zip-compressed", "application/gzip",
-            "application/zip; charset=binary",
+            "application/x-7z-compressed", "application/x-tar", "application/vnd.rar",
+            "application/x-bzip2", "application/x-tar; charset=binary",
         ):
             verdict = verify.classify_access(
                 {"status": "verified", "httpStatus": 200, "contentType": content_type}
             )
             assert verdict["access"] == verify.ACCESS_MANUAL, content_type
-            assert "archive" in verdict["why"]
+            assert "does not unpack" in verdict["why"], content_type
 
-    def test_an_archive_suffix_wins_over_a_generic_content_type(self):
+    def test_its_suffix_wins_over_a_generic_content_type(self):
         observation = {"status": "verified", "httpStatus": 200,
                        "contentType": "application/octet-stream"}
         assert verify.classify_access(
-            observation, "https://data.example.org/tracts.zip"
+            observation, "https://data.example.org/tracts.7z"
         )["access"] == verify.ACCESS_MANUAL
-        # Where the redirect landed is what was served.
+        # Where the redirect landed is what was served, and a .tar.gz is a tar.
         assert verify.classify_access(
             {**observation, "finalUrl": "https://cdn.example.org/tracts.tar.gz"},
             "https://data.example.org/tracts",
         )["access"] == verify.ACCESS_MANUAL
-        assert verify.classify_access(
-            observation, "https://data.example.org/tracts.csv"
-        )["access"] == verify.ACCESS_FETCHABLE
 
     def test_the_steps_say_to_download_and_unpack_it(self):
         steps = verify.download_steps(
-            {"url": "https://data.example.org/tracts.zip", "format": "Shapefile (zip)"},
-            {"status": "verified", "contentType": "application/zip"},
+            {"url": "https://data.example.org/tracts.7z", "format": "Shapefile (7z)"},
+            {"status": "verified", "contentType": "application/x-7z-compressed"},
         )
-        assert steps[0] == "Download the archive: https://data.example.org/tracts.zip"
+        assert steps[0] == "Download the archive: https://data.example.org/tracts.7z"
         assert "Unpack it" in steps[1]
         assert steps[-1].startswith("Then use Import dataset below")
         assert not any("portal page" in step for step in steps)
+
+    def test_a_zip_gets_no_unpacking_steps(self):
+        """A zip is downloaded and unpacked by Curio, so a zip row that is a
+        manual download for another reason (a page answered) is not told to
+        unpack anything."""
+        steps = verify.download_steps(
+            {"url": "https://data.example.org/tracts.zip"},
+            {"status": "verified", "contentType": "application/zip"},
+        )
+        assert not any("Unpack it" in step for step in steps)
 
 
 class TestDownloadSteps:
