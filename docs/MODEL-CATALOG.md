@@ -53,10 +53,10 @@ DDRNet23-Slim is about 23 MB and labels a street photo in a fraction of a second
 ## 2. Surfaces and workflows
 
 - **The `/catalog/models` page** lists the models you can run: the shipped ones and yours. Reach it from the **Model Catalog** tab. Search with **Search models**, sort, and filter by **By origin** (**Shipped with Curio** or **Downloaded**) or **By runtime** in the left rail. Click a card to describe it in the right-hand drawer.
-- **The Model Catalog drawer**, on the canvas. Open it from the top menu **Data → Model Catalog**, or from the left Tools panel's **Models** dropdown and **Browse Model Catalog +**.
+- **The Model Catalog drawer**, on the canvas. Open it from the top menu **Data → Model Catalog**, or from the left Tools panel's **Model Catalog** dropdown and **Browse Model Catalog +**.
 - **The Models dropdown**, in the left Tools panel, lists your models as cards to drag onto a node.
 
-A model's details show its **Identifier**, **Version**, **Runtime**, **Input**, **Labels**, **License** (with **View license**), **Homepage** and **Origin**. A model you added also says where it was **Downloaded from**: the source and the model's page there. On the canvas, the details name the nodes that run the model, or say *No nodes on the canvas use this model*.
+A model's details show its **Identifier**, **Version**, **Runtime**, **Input**, **Labels**, **License** (with **View license**), **Homepage** and **Origin**. A model you added also says where it was **Downloaded from**: the source and the model's page there.
 
 ### Action matrix
 
@@ -64,8 +64,8 @@ A model's details show its **Identifier**, **Version**, **Runtime**, **Input**, 
 |---|---|---|---|
 | **View details** | A card, the drawer, or the canvas drawer | Nothing | The model's details. |
 | **View license** | The details | Nothing | The model's license text. |
-| **Drag onto a node** | The **Models** dropdown or the canvas drawer | The node's code | The node's `curio_model(...)` line names the model. A node whose code calls no `curio_model` says *This node does not run a model*. |
-| **Drag onto the canvas** | The **Models** dropdown or the canvas drawer | The dataflow | A new **Image Segmentation** node where you drop it, its `curio_model(...)` line naming the model. When no node in the dataflow runs a model, nothing is added and a message names the package to add from the Node Catalog. |
+| **Drag onto a node** | The **Model Catalog** dropdown or the canvas drawer | The node's code | The node's `curio_model(...)` line names the model. A node whose code calls no `curio_model` says *This node does not run a model*. |
+| **Drag onto the canvas** | The **Model Catalog** dropdown or the canvas drawer | The dataflow | A new **Image Segmentation** node where you drop it, its `curio_model(...)` line naming the model. When no node in the dataflow runs a model, nothing is added and a message names the package to add from the Node Catalog. |
 | **Delete** | A model you added: its card or the drawer | Your Model Catalog loses the model | A confirmation first; nodes that name it fail the next time they run. A shipped model offers no **Delete**. |
 | **Add to Model Catalog** | A **Hugging Face models** row, in the Discovery Catalog | Your Model Catalog gains a model | A progress bar, then *"Added `<name>` to your Model Catalog."* with **View model**. |
 
@@ -73,7 +73,7 @@ A model's details show its **Identifier**, **Version**, **Runtime**, **Input**, 
 
 **I want to label street photos.** Load the photos with a **Data Loading** node (`curio_collection(...)`), then add an **Image Segmentation** node from the Street Vision package and wire the two. It runs DDRNet23-Slim. [Example 10](examples/10-street-vision-cv-analysis.md) does this end to end.
 
-**I want a different model.** Open the Discovery Catalog's **Hugging Face models**, search, and click **Add to Model Catalog** on a model ([DISCOVERY-CATALOG.md part 4](DISCOVERY-CATALOG.md#adding-a-model)). On the canvas, open **Models** in the left Tools panel and drag it onto the Image Segmentation node. Set `classes` in the node's code to the labels you want, or `None` for all of them; the model's details list its labels.
+**I want a different model.** Open the Discovery Catalog's **Hugging Face models**, search, and click **Add to Model Catalog** on a model ([DISCOVERY-CATALOG.md part 4](DISCOVERY-CATALOG.md#adding-a-model)). On the canvas, open **Model Catalog** in the left Tools panel and drag it onto the Image Segmentation node. Set `classes` in the node's code to the labels you want, or `None` for all of them; the model's details list its labels.
 
 **A node says its model is not available.** The node names a model that is not in your Model Catalog, for example in a dataflow someone shared with you. Add that model, or another, and drag it onto the node.
 
@@ -94,10 +94,10 @@ return curio_segment(arg, model, classes)
 
 | Column | What it holds |
 |---|---|
-| `dominant_class`, `dominant_pct` | The class that covers most of the image, and its share of the pixels, in percent. |
+| `dominant_class`, `dominant_pct` | Of the classes the node asks for, the one that covers most of the image, and its share of the pixels, in percent. |
 | `<class>_pct` | Each class asked for, as its share of all the image's pixels, in percent. |
 | `overlay_url` | The image tinted by class, which **Simple View** shows beside the image. |
-| `segment_error` | Empty, or why the image could not be read. |
+| `segment_error` | Empty, or *the image is not on this machine* when the row's file is missing. |
 
 Every input column follows. A class the model does not label stops the node, with a message naming the labels it has.
 
