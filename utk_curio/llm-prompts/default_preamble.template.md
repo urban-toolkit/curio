@@ -111,7 +111,7 @@ Note that there is no problem connecting the output of a node into the input of 
 When a Vega-Lite node is connected to a node that has already run, and its editor
 is still empty, Curio fills it with a starter spec chosen from the input's
 column types. Generate specs that agree with this ladder unless the user asks
-for something else -- otherwise the AI and the node produce different charts for
+for something else. Otherwise the AI and the node produce different charts for
 the same input, which is worse than either alone. First match wins:
 
 - geometry + at least one quantitative column -> geoshape choropleth, colored by
@@ -128,7 +128,7 @@ Column roles come from pandas dtypes: `geometry` is geometry; `datetime64`,
 `period` and `timedelta` are temporal; `int`, `uint` and `float` are
 quantitative; `bool`, `object`, `str`, `string` and `category` are nominal.
 Never chart `__row_index__`, and avoid a nominal column that has one distinct
-value per row -- it is an identifier and produces one bar per row.
+value per row: it is an identifier and produces one bar per row.
 
 Always state an aggregate on a bar chart. Without one, Vega-Lite silently draws
 one bar per row.

@@ -34,6 +34,9 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 
 #: Every prompt file a built-in agent receives, the shared preamble included.
 PROMPT_FILES = sorted({f for spec in builtin.BUILTIN_AGENTS for f in spec.prompt_files().values()})
+#: Every file in ``llm-prompts/``: each template, the prompt it renders, and
+#: each prompt with no template, the included ``package_contract`` too.
+ALL_PROMPTS = sorted(path.name for path in builtin.PROMPT_SOURCE_DIR.glob("*.md"))
 
 #: Words a prompt uses that look like an id but are not one, each with the
 #: reason. An entry no prompt uses any more fails ``test_every_exception_is_still_used``.
@@ -59,6 +62,8 @@ _HELPER_RE = re.compile(r"\bcurio_[a-z][a-z0-9_]*\b")
 _SECRET_INJECTION_RE = re.compile(
     r"""\[\s*["']curio_secret["']\s*\]\s*=\s*make_curio_secret\("""
 )
+# An en dash or an em dash, with up to 30 characters on each side to find it by.
+_DASH_RE = re.compile(".{0,30}[" + chr(0x2013) + chr(0x2014) + "].{0,30}")
 
 
 def _text(name: str) -> str:
@@ -148,6 +153,15 @@ def _vega_specs(value):
 @pytest.mark.parametrize("name", PROMPT_FILES)
 def test_no_template_marker_is_left(name):
     assert "{{" not in _text(name), f"{name} still holds a {{{{field}}}} marker"
+
+
+@pytest.mark.parametrize("name", ALL_PROMPTS)
+def test_no_prompt_holds_an_em_or_en_dash(name):
+    # The rendered prompts are checked as well as the templates: their
+    # generated regions read docs/schemas/trill.v1.json and the vendored
+    # Autark schema, and neither puts a dash into a prompt.
+    found = _DASH_RE.findall((builtin.PROMPT_SOURCE_DIR / name).read_text(encoding="utf-8"))
+    assert not found, f"{name} holds an en or em dash; write plain punctuation instead: {found}"
 
 
 @pytest.mark.parametrize("name", PROMPT_FILES)

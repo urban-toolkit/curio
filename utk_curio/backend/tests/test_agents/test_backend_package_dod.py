@@ -111,7 +111,7 @@ class TestPromptCarriesTheBackendContract:
             '{"content": <the node\'s editor text>, "input": <upstream JSON or null>}',
             "CURIO_PKG_DATA_DIR",
             "probe phase",
-            "dev/89 Follow-up B",
+            "naming the Curio activation lifecycle or the deferred secret mediation",
         ):
             assert marker in text, marker
 
@@ -135,7 +135,7 @@ class TestPromptCarriesTheBackendContract:
             "server-network",
             "def handle(payload)",
             "CURIO_PKG_DATA_DIR",
-            "Follow-up B",
+            "Curio activation lifecycle",
         ):
             assert marker in text, marker
         # The backend contract names the handler grammar and the payload contract.
