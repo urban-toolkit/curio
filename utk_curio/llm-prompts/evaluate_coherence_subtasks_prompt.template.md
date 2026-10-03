@@ -39,7 +39,7 @@ Your warnings should contribute to a more coherent dataflow. Keep your warnings 
 
 Do not generate warnings for nodes made from these templates:
 
-{{builtin.not_python_code}}
+{{builtin.not_code}}
 
 **BE VERY SPECIFIC, DO NOT PROVIDE VAGUE WARNINGS LIKE: 'Input data format not suited for analysis'. YOU DO NOT NEED TO OUTPUT WARNING FOR EVERY NODE**.
 

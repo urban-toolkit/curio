@@ -537,13 +537,14 @@ def _merge_range(_src: _Sources) -> str:
     return f'"{names[0]}".."{names[-1]}"'
 
 
-def _not_python_code(src: _Sources) -> str:
-    """The built-in templates whose nodes are not controlled through Python
-    code (the ``_control`` predicate), one ``- <label>`` line each."""
+def _not_code(src: _Sources) -> str:
+    """The built-in templates whose nodes hold no Python or JavaScript code
+    (``_control`` calls them uncontrollable or grammar), one ``- <label>`` line
+    each: there is no code for the coherence check to judge."""
     return "\n".join(
         f"- {template.get('label') or template.get('id')}"
         for template in src.manifest.get("templates", [])
-        if not _is_python_code(template)
+        if template.get("editor") != "code"
     )
 
 
@@ -648,7 +649,7 @@ PROMPT_FIELDS: dict[str, PromptField] = {
         "builtin.merge_slots",
     )},
     "builtin.merge_range": PromptField(_merge_range),
-    "builtin.not_python_code": PromptField(_not_python_code),
+    "builtin.not_code": PromptField(_not_code),
     "autk.grammar": PromptField(
         lambda src: render_autk_region(src.autk, _template_label(src, AUTK_TEMPLATE))
     ),

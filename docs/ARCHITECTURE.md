@@ -853,7 +853,7 @@ Some contracts are read on both sides of the stack: by Python and TypeScript, or
   | `agent.name:<agent id>` | A built-in agent's display name | `builtin.BUILTIN_AGENTS` |
   | `template.label:<package id>/<template id>` | A built-in template's label | The built-in manifest |
   | `builtin.merge_range` | The Merge Flow's sockets, first to last | `input_capacity`, read once with `builtin.merge_slots` |
-  | `builtin.not_python_code` | The built-in templates whose nodes are not controlled through Python code, one per line | The built-in manifest, by the rule `builtin.control` uses |
+  | `builtin.not_code` | The built-in templates whose nodes hold no Python or JavaScript code, one per line | The built-in manifest, by the rule `builtin.control` uses |
   | `note.palette` | The colour names a node's appearance accepts | `node_appearance.NAMED_COLORS` |
   | `egress.calls_per_run` | The web calls one run may make | `egress_policy.MAX_CALLS_PER_RUN` |
   | `candidates.rows_per_lane` | The rows each lane of a candidates card holds | `content._CANDIDATES_MAX_ROWS_PER_LANE` |

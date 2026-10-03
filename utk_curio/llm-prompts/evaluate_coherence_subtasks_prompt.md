@@ -41,7 +41,6 @@ Do not generate warnings for nodes made from these templates:
 
 - Data Export
 - Data Pool
-- JS Computation
 - Vega-Lite
 - Simple View
 - Autark

@@ -142,15 +142,20 @@ class TestRenderPrompt:
 class TestThePromptFacts:
     """Each fact a prompt states from code is read from that code."""
 
-    def test_the_coherence_check_skips_every_template_not_controlled_through_python(self):
+    def test_the_coherence_check_skips_every_template_not_controlled_through_code(self):
         control = contracts.builtin_lists(_manifest())["builtin.control"].splitlines()
         expected = [
             line.split(":", 1)[0] for line in control
-            if not line.endswith(": controllable through python code.")
+            if not line.endswith((": controllable through python code.",
+                                  ": controllable through JavaScript code."))
         ]
         text = contracts.render_prompt("evaluate_coherence_subtasks_prompt")
         head = "Do not generate warnings for nodes made from these templates:\n\n"
-        assert text.split(head, 1)[1].split("\n\n", 1)[0].splitlines() == expected
+        skipped = text.split(head, 1)[1].split("\n\n", 1)[0].splitlines()
+        assert skipped == expected
+        # The four the hand-written list named stay; a code node is never skipped.
+        assert {"- Data Pool", "- Merge Flow", "- Vega-Lite", "- Autark"} <= set(skipped)
+        assert "- JS Computation" not in skipped
 
     def test_the_merge_range_and_the_merge_slots_agree(self):
         slots = contracts.merge_slot_names()
