@@ -261,7 +261,7 @@ def test_a_hugging_face_model_goes_onto_a_node_and_runs(
             const match = editorEl && editors.find((e) => editorEl.contains(e.getDomNode()));
             return Boolean(match && match.getValue().includes(needle));
         }""",
-        arg=[ROUTE_TWO, f'curio_model("{model_id}")'],
+        arg=[ROUTE_TWO, f'curio_load_model("{model_id}")'],
         timeout=15000,
     )
     code = read_node_code(page, ROUTE_TWO)
@@ -361,5 +361,5 @@ def test_a_model_dropped_on_the_canvas_becomes_a_node_that_runs_it(
         timeout=15000
     )
     code = read_node_code(page, added[0]["id"])
-    assert f'curio_model("{DDRNET}")' in code, code
+    assert f'curio_load_model("{DDRNET}")' in code, code
     assert "curio_segment(" in code, "the node opens with its template's code"

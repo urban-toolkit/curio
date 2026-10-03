@@ -654,9 +654,10 @@ def test_installed_computed_parquet_loader_is_geoparquet_aware(
     item = _computed_catalog_item(client, token, project_id, expected_id)
     assert item is not None
     snippet = item.get("loaderSnippet") or {}
-    assert "import geopandas as gpd" in (snippet.get("imports") or [])
-    assert "gpd.read_parquet" in (snippet.get("code") or "")
-    assert "pd.read_parquet" in (snippet.get("code") or "")
+    # One call; curio_load_data reads a parquet geo first, which keeps a
+    # GeoDataFrame producer a GeoDataFrame (sandbox/tests/test_catalog_helpers.py).
+    assert item["format"] == "parquet"
+    assert snippet.get("code") == f'df = curio_load_data("{expected_id}")'
 
 
 def test_installed_bundle_loader_returns_tuple(client, user_and_token, monkeypatch):
@@ -708,10 +709,9 @@ def test_installed_bundle_loader_returns_tuple(client, user_and_token, monkeypat
     assert item["format"] == "bundle"
     snippet = item.get("loaderSnippet") or {}
     assert snippet.get("returnVariable") == "bundle"
-    assert "return tuple(items)" in (snippet.get("code") or "")
-    # The location line is the portable id call (resolved to the bundle.json
-    # path at execution time), never a baked-in absolute path.
-    assert f'bundle_path = curio_dataset_path("{expected_id}")' in (snippet.get("code") or "")
+    # The loader is the portable id call: the sandbox reads the bundle.json
+    # and its parts back as a tuple at execution time; no absolute path.
+    assert snippet.get("code") == f'bundle = curio_load_data("{expected_id}")'
 
 
 def test_published_computed_dataset_stays_installed_in_dataflow_catalog(

@@ -137,15 +137,13 @@ npm run build:packages          # seconds, not the full app build
 
 # then, in the browser
 #   first time:  Node Catalog -> Browse Node Catalog + -> Browse all -> Add to project
-#   after that:  Node Catalog -> Browse Node Catalog + -> In project -> Reload
+#   after that:  reload the page
 ```
 
-**That last step is the one people miss.** Curio serves your node's bundle from
-your *installed copy* in the user store, not from `packages/`. Adding a package
-that is already installed does nothing, so without **Reload** your rebuilt code
-never runs and it looks as though your edit had no effect. The Reload button
-(circular arrows, on each row of the **In project** tab) re-copies the package
-from `packages/` over the installed copy and reloads the page.
+Curio serves your node's bundle from your *installed copy* in the user store,
+not from `packages/`. Opening a dataflow, which a page reload does, replaces
+that copy with the one in `packages/` when the files there changed and you have
+not edited the installed copy yourself.
 
 ### What the scaffold gives you
 
@@ -319,8 +317,9 @@ the worked examples.
 
 All of these are real, and none of them produce an obvious error message.
 
-- **Your edit did nothing.** You rebuilt but did not click **Reload**. See
-  [the loop](#the-loop).
+- **Your edit did nothing.** You rebuilt but did not reload the page, or you
+  edited the installed copy in the user store, which Curio then keeps as yours.
+  See [the loop](#the-loop).
 - **Your node renders an empty code editor.** The bundle failed to load or the
   behavior key does not match, so Curio fell back to the generic editor. Open
   the browser console, where a failed bundle logs a warning.
@@ -347,7 +346,8 @@ All of these are real, and none of them produce an obvious error message.
   honest anyway. On Windows, expect every file to show as changed; that is a
   line-ending artifact, not a real diff.
 - **Restart Curio for a new backend blueprint.** Only relevant if your node adds
-  Flask endpoints; a frontend-only change never needs a restart, just Reload.
+  Flask endpoints; a frontend-only change never needs a restart, just a page
+  reload.
 
 ---
 

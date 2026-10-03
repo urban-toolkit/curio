@@ -38,10 +38,14 @@ def test_node_version_declarations_agree():
     the checkout: this suite runs inside the container image, which ships
     ``utk_curio/`` and not the Dockerfile, .nvmrc or .node-version around it, so
     here there is nothing to check and failing would only report the image's
-    layout as a drifted pin.
+    layout as a drifted pin. CI also runs this test on the checkout, with
+    ``CURIO_REQUIRE_CHECKOUT=1``.
     """
     if not (REPO_ROOT / ".nvmrc").is_file():
-        pytest.skip("the image ships utk_curio/ without the checkout around it")
+        reason = "the image ships utk_curio/ without the checkout around it"
+        if os.environ.get("CURIO_REQUIRE_CHECKOUT") == "1":
+            pytest.fail(f"CURIO_REQUIRE_CHECKOUT=1, but {reason}")
+        pytest.skip(reason)
 
     path = REPO_ROOT / "scripts" / "check_node_pins.py"
     spec = importlib.util.spec_from_file_location("_scripts_check_node_pins", path)

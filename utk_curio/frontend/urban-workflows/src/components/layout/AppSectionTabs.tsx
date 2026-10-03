@@ -39,11 +39,6 @@ export function AppSectionTabs() {
       <NavLink to="/catalog/models" className={tabClassName}>
         Model Catalog
       </NavLink>
-      {/* Unconditional: the monitor exists on every instance, not only a
-          --deploy one, so there is no flag to read here. */}
-      <NavLink to="/monitor" className={tabClassName} end>
-        Monitor
-      </NavLink>
     </nav>
   );
 }

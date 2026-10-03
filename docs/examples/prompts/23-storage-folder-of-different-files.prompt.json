@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/23-storage-folder-of-different-files.json",
-    "sha256": "29b2e7b2fa8512e2d0806228ed6eeefb6c8ad981850a9f2c5996b2a7dd3cacc3",
+    "sha256": "40255817d0b2c30f529994fbbbc8591feda64e58b18f60e71432069c346175ea",
     "walkthrough": "docs/examples/23-storage-folder-of-different-files.md"
   },
   "prompt": "Load two datasets from the Data Catalog: Example roads, a shapefile, and Example parks, a GeoJSON file. Combine them into one GeoDataFrame and draw the parks and the roads together on one Vega-Lite map.",

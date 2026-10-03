@@ -324,11 +324,11 @@ class TestItBecomesACollection:
 
             row = User.query.get(user.id)
             collections, media_dir = resolve_exec_collections(
-                f'curio_collection("{dataset["id"]}")', str(user.id), user=row
+                f'curio_load_collection("{dataset["id"]}")', str(user.id), user=row
             )
         assert set(collections[dataset["id"]]) == {"kind", "objects"}
         helpers = make_collection_helpers(lambda _id: dataset["path"], collections, media_dir)
-        frame = helpers["curio_collection"](dataset["id"])
+        frame = helpers["curio_load_collection"](dataset["id"])
         assert frame["path"].notna().all()
         assert all(Path(p).is_file() for p in frame["path"])
 

@@ -1,4 +1,4 @@
-"""Execution-time dataset path resolution for ``curio_dataset_path("<id>")``.
+"""Execution-time dataset path resolution for ``curio_data_path("<id>")``.
 
 Generated Data Loading nodes reference datasets by id; ``/processPythonCode``
 scans the code for literal id calls, resolves them through the catalog service
@@ -65,8 +65,8 @@ def test_execution_forwards_resolved_dataset_paths(
     captured = _capture_sandbox(monkeypatch)
 
     code = (
-        f'    df = pd.read_csv(curio_dataset_path("{imported["id"]}"))\n'
-        '    other = curio_dataset_path("imported.xdoesnotexist")\n'
+        f'    df = pd.read_csv(curio_data_path("{imported["id"]}"))\n'
+        '    other = curio_data_path("imported.xdoesnotexist")\n'
         "    return df\n"
     )
     resp = _exec_code(client, token, code)
@@ -75,6 +75,29 @@ def test_execution_forwards_resolved_dataset_paths(
     dataset_paths = captured["body"]["dataset_paths"]
     assert set(dataset_paths) == {imported["id"]}
     assert dataset_paths[imported["id"]].endswith("cities.csv")
+
+
+def test_execution_forwards_how_each_dataset_is_read(
+    client, user_and_token, tmp_path, monkeypatch
+):
+    """``curio_load_data`` reads a dataset by its format, so the route sends the
+    format of every id it resolved, and only of those."""
+    _, token = user_and_token
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+    imported = _import_csv(client, token)
+    captured = _capture_sandbox(monkeypatch)
+
+    code = (
+        f'    df = curio_load_data("{imported["id"]}")\n'
+        '    other = curio_load_data("imported.xdoesnotexist")\n'
+        "    return df\n"
+    )
+    resp = _exec_code(client, token, code)
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+    body = captured["body"]
+    assert set(body["dataset_paths"]) == {imported["id"]}
+    assert body["dataset_formats"] == {imported["id"]: {"format": "csv"}}
 
 
 def test_execution_without_id_calls_forwards_empty_mapping(
@@ -96,7 +119,7 @@ def test_single_quoted_id_call_is_scanned(client, user_and_token, tmp_path, monk
     captured = _capture_sandbox(monkeypatch)
 
     resp = _exec_code(
-        client, token, f"    p = curio_dataset_path('{imported['id']}')\n    return p\n"
+        client, token, f"    p = curio_data_path('{imported['id']}')\n    return p\n"
     )
     assert resp.status_code == 200
     assert imported["id"] in captured["body"]["dataset_paths"]
@@ -115,7 +138,7 @@ def test_scan_caps_distinct_ids(client, user_and_token, monkeypatch):
         def __init__(self, user):
             pass
 
-        def resolve_execution_paths(self, ids, *, dataflow_id=None):
+        def resolve_execution_paths(self, ids, *, dataflow_id=None, formats=None):
             seen_ids["ids"] = list(ids)
             return {}
 
@@ -124,7 +147,7 @@ def test_scan_caps_distinct_ids(client, user_and_token, monkeypatch):
     )
 
     lines = [
-        f'    p{i} = curio_dataset_path("imported.xid{i:04d}")'
+        f'    p{i} = curio_data_path("imported.xid{i:04d}")'
         for i in range(MAX_EXEC_DATASET_IDS + 8)
     ]
     resp = _exec_code(client, token, "\n".join(lines) + "\n    return 1\n")
@@ -147,7 +170,7 @@ def test_resolution_failure_is_fail_open(client, user_and_token, monkeypatch):
     )
 
     resp = _exec_code(
-        client, token, '    return curio_dataset_path("imported.xabc")\n'
+        client, token, '    return curio_data_path("imported.xabc")\n'
     )
     assert resp.status_code == 200
     assert captured["body"]["dataset_paths"] == {}

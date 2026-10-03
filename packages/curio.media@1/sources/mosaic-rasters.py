@@ -1,6 +1,6 @@
 """Mosaic Rasters.
 
-Input: a raster collection's rows, as Data Loading's `curio_collection(...)`
+Input: a raster collection's rows, as Data Loading's `curio_load_collection(...)`
 returns them, usually filtered first to one year, one sensor or one area.
 Output: one raster, a virtual mosaic (a GDAL VRT) of every tile, which any
 node that takes a RASTER reads, the zonal-statistics nodes included. The

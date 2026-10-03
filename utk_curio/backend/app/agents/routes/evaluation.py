@@ -32,7 +32,7 @@ def evaluation_readiness():
     """Whether an evaluation can run, and which model would answer.
 
     Reports the SOURCE as well as the answer, because a model configured by the
-    deployment's own start flags is as real as one typed into API Settings — a
+    deployment's own start flags is as real as one typed into API Settings: a
     panel that only read the user row would tell an operator who passed
     ``--llm-model`` that they had configured nothing.
     """

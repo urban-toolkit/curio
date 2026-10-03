@@ -62,8 +62,8 @@ cd utk_curio/frontend/urban-workflows
 npm run build:packages
 ```
 
-Then click **Reload** on this package in the catalog drawer's **In project** tab
-so your installed copy picks up the new bundle.
+Then reload the page. Opening a dataflow replaces your installed copy with the
+rebuilt one.
 
 ## License
 

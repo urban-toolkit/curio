@@ -34,7 +34,7 @@ flowchart LR
 ## Load the collection
 
 ```python
-collection = curio_collection("data.curio.storage-noise")
+collection = curio_load_collection("data.curio.storage-noise")
 
 return collection
 ```

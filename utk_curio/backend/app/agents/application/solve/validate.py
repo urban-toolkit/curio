@@ -104,6 +104,8 @@ def validate_node_stream(
         resolution, coord, session_id, exec_fn,
         home_attachment_id=home_attachment_id,
         home_session_id=home_session_id,
+        # Captured here, in the request: the rounds validate on a thread.
+        acting_user=agents_spec_reads._acting_user(),
     )
 
 
@@ -122,6 +124,7 @@ def _validate_events(
     *,
     home_attachment_id: str | None = None,
     home_session_id: str | None = None,
+    acting_user=None,
 ):
     """The validate-node body over the ONE verified-content loop (dev/115):
     the loop streams its rounds live; this body owns the framing turns, the
@@ -145,6 +148,7 @@ def _validate_events(
             },
             dataset_paths_fn=lambda codes: agents_grounding._exec_dataset_paths(project_id, *codes),
             exec_user_key=user_key,
+            acting_user=acting_user,
             secrets_fn=agents_grounding._exec_secrets_resolver(user_key),
             resolve_source=agents_grounding._source_resolver(
                 user_key, project_id, coord=coord, attachment_id=attachment_id,

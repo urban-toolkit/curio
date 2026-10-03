@@ -486,7 +486,7 @@ When a user clicks the play button on a node, the following sequence occurs:
    Body: { code, nodeType, file_path: <artifact_id>, dataType: <kind>,
            dataset_paths: { <datasetId>: <absPath> } }
 
-   dataset_paths resolves the portable curio_dataset_path("<id>") calls that
+   dataset_paths resolves the portable curio_data_path("<id>") calls that
    Data Catalog loader snippets emit. See "Portable dataset paths" below.
 
 4. Sandbox executes user code
@@ -529,7 +529,7 @@ The harness reads the cause from the `kind`, never from the message. [`result_sh
 
 [`sandbox/app/worker.py`](../utk_curio/sandbox/app/worker.py)::`execute_code` runs a Python node's code in the sandbox process; under isolation, the confined child in `sandbox/isolation/child.py` does the same in its own process (see [Sandbox Isolation](#sandbox-isolation)). Each run:
 
-- Builds a fresh namespace from the pre-loaded library globals, adds the session's earlier import bindings, `curio_dataset_path` and `curio_secret`, and defines the code as `def userCode(arg):`.
+- Builds a fresh namespace from the pre-loaded library globals, adds the session's earlier import bindings, `curio_data_path` and `curio_secret`, and defines the code as `def userCode(arg):`.
 - Calls `load_from_duckdb(artifact_id)` to reconstruct the upstream Python object (DataFrame, GeoDataFrame, scalar, tuple, etc.) from the shared DuckDB database, and passes it as `arg`. A Merge Flow's inputs arrive as a list.
 - After the code returns, calls `detect_kind(output)` to classify the output. A node's type contract is its template's declared ports, which the canvas enforces when an edge is connected.
 - Calls `save_to_duckdb(output)` to persist the result, and returns the new artifact id and kind.
@@ -744,7 +744,7 @@ Both fall back to the CDN for a file this checkout does not carry, so a newer
 ### Portable dataset paths
 
 Data Catalog loader snippets do not embed absolute paths. They emit
-`curio_dataset_path("<datasetId>")`, resolved per execution, so a saved dataflow
+`curio_data_path("<datasetId>")`, resolved per execution, so a saved dataflow
 stays valid when it is shared, moved, or opened by another user on the same
 install.
 
@@ -756,14 +756,14 @@ so an id with the major appended passes validation, misses the by-id lookup, and
 fails open into a runtime error from the sandbox.
 
 1. `backend/app/api/routes.py` scans the outgoing code for literal
-   `curio_dataset_path("<id>")` calls (single or double quoted), dedupes the
+   `curio_data_path("<id>")` calls (single or double quoted), dedupes the
    ids, and caps them at `MAX_EXEC_DATASET_IDS` (32).
 2. It resolves them via `DatasetCatalogService.resolve_execution_paths`, which
    refuses any path outside the allowed read roots. Resolution **fails open**: an
    error yields an empty mapping rather than blocking the run.
 3. The resulting `{id: absPath}` map rides along on the `/exec` body. The sandbox
    re-validates it (dict-shaped, stringified, ≤32 entries) and injects
-   `curio_dataset_path` into the user namespace, where an unknown id raises an
+   `curio_data_path` into the user namespace, where an unknown id raises an
    actionable `RuntimeError` instead of returning a foreign path.
 
 The id must satisfy the same safe-id pattern on both sides before it is
@@ -1001,7 +1001,7 @@ An agent never decides on its own that a file exists. Every piece of node conten
 
 | The code opens or fetches | Grounded only when |
 |---|---|
-| A local file path | The user typed that path in the conversation, or the Data Catalog resolves it. The portable `curio_dataset_path("<id>")` line the catalog's loader recipe emits counts by dataset id. |
+| A local file path | The user typed that path in the conversation, or the Data Catalog resolves it. The portable `curio_data_path("<id>")` line the catalog's loader recipe emits counts by dataset id. |
 | A URL | The runtime probed it in this run (2xx; 401/403 is accepted and labeled *credential-gated*), or a candidates card in this conversation already carried it as **Verified ✓**. A URL in the user's own message is not evidence: the runtime checks it. |
 | Nothing (inline data in a data-loading node) | The user asked for synthetic or sample data; the card then says *Synthetic data*. |
 
@@ -1086,7 +1086,7 @@ Solve runs from the Dataflow Builder's **Solve** over an applied plan, or from *
 - **Background jobs.** A Solve is a detached job on the server, so closing the chat panel or reloading the page does not stop it. The agent's badge shows a running dot while the job is live, and opening the chat re-attaches to its progress. **Stop** ends the session after the current node finishes; a running fetch cannot be aborted. If the server stops mid-Solve, the session is marked interrupted the next time it is read: nodes that finished keep their content, nothing is replayed, and Retry starts a new execution linked to the interrupted one. This is a single-process job owner; a multi-instance deployment would need a durable one.
 - **Waves.** A batch runs the plan the way Play would: in topological waves, roots first, each wave's nodes in parallel. A wave's verified content is written at the wave boundary, so the next wave generates and executes against the upstream code that ran, and a downstream correction is told what its upstreams produced (`upstreamOutputs`). An upstream that passed earlier in the batch is not run again: its recorded output stands in, and if that artifact has vanished the slice runs whole once before the result counts. A process that dies between waves keeps every persisted wave, and Retry continues.
 - **Executable kinds.** Whether the sandbox can run a node kind is read from its template: a code editor (`hasCode`), a `python` or `javascript` engine, and no `backendHandler`. That covers every built-in Python and JavaScript kind and every package template that declares the same. A template with no code (Vega and Autark specs, merge nodes, data pools, the spatial join) is written and labeled as having no code to run, on the pill, in a review's attempt trail, and on the Node Builder's proposal card. Without a reachable template roster (the end-to-end runner over a raw file), a fallback name table answers instead.
-- **Bounds.** The batch deadline is checked at every wave boundary and before every node; what it did not reach stays pending with the reason, the Solve card names it once, and Retry continues from there. A node whose upstream slice exceeds the validation bound (25 nodes) or contains a cycle is skipped with the bound named, and no correction is spent on it. The stale-run marker (15 minutes) is measured from the last completed wave. `verify: false` on the Solve request writes without running, for every kind.
+- **Bounds.** The batch deadline is checked at every wave boundary and before every node; what it did not reach stays pending with the reason, the Solve card names it once, and Retry continues from there. A node whose validation would run more nodes than the validation bound (`--validation-node-limit`, default 25; an ancestor whose earlier output is reused and a pass-through node do not count), or whose upstream slice contains a cycle, is skipped with the bound named, and no correction is spent on it. The stale-run marker (15 minutes) is measured from the last completed wave. `verify: false` on the Solve request writes without running, for every kind.
 
 ### Connection keys
 
@@ -1262,7 +1262,7 @@ A service is told where and what, and answers with one download. Its rows are it
 - **Ceilings.** `MAX_SECONDS` (15 minutes) and `MAX_OUTPUT_BYTES` (512 MiB), each refused with a message naming it. The child runs in its own process group, so Cancel and the time limit kill everything it started.
 - **Into the Data Catalog.** [`application/service_acquire.py`](../utk_curio/backend/app/discovery/application/service_acquire.py) moves every position to WGS84 with pyproj (`to_wgs84`), keeping each feature's geometry type and properties; [`domain/osm_values.py`](../utk_curio/backend/app/discovery/domain/osm_values.py) (`with_numbers`) writes the tags it lists as numbers in metres, km/h or counts, and a value it cannot read as one number as null. `service_acquire.py` then installs each non-empty layer as GeoJSON through `_install_imported_bytes`: one layer as an ordinary dataset, several under one `osm.x<hex>` group, the group a `.pbf` upload forms. The title names the area (`place_label`). A download counts once against the source's rate limit.
 - **Its requests** go from Node to autk-db's fixed Overpass endpoint with `OVERPASS_USER_AGENT`, not through the Python transport. Under `CURIO_DISCOVERY_FIXTURES`, behind the same gate as the transport (`fixture_root()`), the script's `fetch` answers from `tests/test_discovery/fixtures/overpass/` and skips autk-db's pauses. A request is looked up first among the recorded answers, keyed by method, URL and a hash of the body (the script's `record` mode files live answers there), then among the mock answers in `mock.json`, which answer a query by texts it contains. `tests/test_discovery/overpass_mock.py` writes `mock.json`.
-- **Mapillary** (`mapillary`) and **Google Street View** (`google-streetview`) are asked over HTTP, so `build_service` hands them the catalog's transport. Each answers an `ImageSet` of files it downloaded into a work folder; `service_acquire` indexes them with the storage collections' own `build_rows`, `write_index` and `collection_block`, writes the collection, and moves the files by rename into `media_work_root(user)/objects/<datasetId>/<file_id>.<ext>`, where `curio_collection` reads a downloaded collection's files (and `grant_to_child` opens each to the isolated child).
+- **Mapillary** (`mapillary`) and **Google Street View** (`google-streetview`) are asked over HTTP, so `build_service` hands them the catalog's transport. Each answers an `ImageSet` of files it downloaded into a work folder; `service_acquire` indexes them with the storage collections' own `build_rows`, `write_index` and `collection_block`, writes the collection, and moves the files by rename into `media_work_root(user)/objects/<datasetId>/<file_id>.<ext>`, where `curio_load_collection` reads a downloaded collection's files (and `grant_to_child` opens each to the isolated child).
 - **Mapillary** tiles the box under 0.0099 square degrees, the API's limit, splits a tile that answers its 2000 maximum in four (at most three times), takes images from every tile in turn, newest first, and looks thumbnails up afterwards by `image_ids`, fifty at a time, since a search that names them answers over the metadata ceiling. Thumbnails are fetched only from `options.imageHosts`, matched by host suffix after the address policy.
 - **Google Street View** asks the metadata endpoint at points of a grid with the answer's `spacing`, in a fixed shuffled order, keeps each panorama once, stops when it has enough, asks at most `MAX_POINTS`, then downloads one image per panorama and heading and drops Google's grey placeholder.
 - **A service that needs a token** is refused with 428 before any job when none is set, naming the slot and its help link, as a portal search is.
@@ -1293,10 +1293,10 @@ The model family (`huggingface-models`) is searched like a portal and added like
 
 ### Collections in node code
 
-`curio_collection`, `curio_derived_file` and `curio_output_file` come from one function, `make_collection_helpers` ([`sandbox/util/collections.py`](../utk_curio/sandbox/util/collections.py)), injected in process and in the isolated child, so the two paths cannot disagree.
+`curio_load_collection`, `curio_derived_file` and `curio_output_file` come from one function, `make_collection_helpers` ([`sandbox/util/collections.py`](../utk_curio/sandbox/util/collections.py)), injected in process and in the isolated child, so the two paths cannot disagree.
 
-- **Resolution.** `code_refs.py` finds `curio_collection("<id>")` calls with `curio_dataset_path` ones, within the same 32-id cap, so the index resolves and stages like any dataset file. `_resolve_exec_collections` in `api/routes.py` adds, per collection, the folder root or the bucket cache directory, and sends `media_dir` to every node, since a node downstream of the loader writes the frames without naming the collection.
-- **Rows.** `curio_collection` adds `dataset_id`, `path` (the file, the cached copy, or `None`; the column `curio_segment` reads), `thumbnail` and `image_url` (the columns Simple View shows) and `audio_url`.
+- **Resolution.** `code_refs.py` finds `curio_load_collection("<id>")` calls with `curio_data_path` ones, within the same 32-id cap, so the index resolves and stages like any dataset file. `_resolve_exec_collections` in `api/routes.py` adds, per collection, the folder root or the bucket cache directory, and sends `media_dir` to every node, since a node downstream of the loader writes the frames without naming the collection.
+- **Rows.** `curio_load_collection` adds `dataset_id`, `path` (the file, the cached copy, or `None`; the column `curio_segment` reads), `thumbnail` and `image_url` (the columns Simple View shows) and `audio_url`.
 - **Derived files.** `curio_derived_file` names `<media_dir>/<frames|clips|overlays>/<datasetId>/<fileId>/<t_ms>.<ext>` and the row the media route serves it back under, `<fileId>@<t_ms>`. `curio_segment` ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) writes each image's overlay this way (kind `image`, `t_ms` 0). `curio_output_file` names a file a node returns, in the run's scratch directory under isolation, because a RASTER output must be flat-named there.
 
 `curio.media@1` is three Python code templates over these helpers: Sample Video Frames, Split Audio and Mosaic Rasters, which writes a VRT from the index's transform columns.
@@ -1330,7 +1330,7 @@ Providers take their transport as a required constructor argument, so a missing 
 - `test_provider_contracts.py` (`@pytest.mark.contract`) hits the real portals in CI, asserts only the response shape, and skips on any unreachable, non-2xx or non-JSON answer.
 - The Playwright specs drive the real backend against the corpus through `CURIO_DISCOVERY_FIXTURES`, which `docker-compose.ci.yml` and `docker-compose.ci-isolated.yml` set for the container.
 - OpenStreetMap downloads run autk-db in Node with its Overpass requests answered from `fixtures/overpass/`: made-up answers for Golf, Illinois, by name (`overpass_mock.py`), and answers recorded for a box in Golf and a box across Chicago's Loop, gzipped.
-- Mapillary's answers (`fixtures/mapillary/`) are recorded with the auth header stripped, every image indexed to a synthetic file. Google Street View's (`fixtures/google-streetview/`) are written, not recorded, from the formats Google documents, by `scripts/write_streetview_fixtures.py` driving the real provider. Hugging Face models' (`fixtures/huggingface-models/`) are the Hub's real answers, every weights file indexed to a synthetic graph or file of the same shape. `test_provider_contracts.py` checks Mapillary and Google live only when `CURIO_MAPILLARY_TOKEN` or `CURIO_GOOGLE_MAPS_KEY` is set.
+- Mapillary's answers (`fixtures/mapillary/`) are recorded with the auth header stripped, every image indexed to a synthetic file. Google Street View's (`fixtures/google-streetview/`) are written, not recorded, from the formats Google documents, by `scripts/write_streetview_fixtures.py` driving the real provider. Hugging Face models' (`fixtures/huggingface-models/`) are the Hub's real answers, every weights file indexed to a synthetic graph or file of the same shape. `test_provider_contracts.py` checks Mapillary live only when `CURIO_MAPILLARY_TOKEN` is set.
 - Storage sources are tested on folders built in `tmp_path` and on `source.curio.example-storage@1`, whose files `scripts/build_example_storage.py` generates. That script also adds the resources the storage examples read to `datasets/data.curio.storage-*@1` through `StorageAcquire`, with file times pinned so the output is the same on every run. Buckets and Hugging Face run on the recorded corpus, whose `Range` entries are keyed `"<url> bytes=0-65535"`; the recorder stores synthetic heads rather than third-party imagery.
 
 ### Agent tools
@@ -1357,7 +1357,7 @@ The user-facing model is in [MODEL-CATALOG.md](MODEL-CATALOG.md) and the routes 
 - **The manifest** (`parse_manifest`) takes `runtime` (`onnx` or `transformers`), `task` (`semantic-segmentation`), an `entry` inside the folder (a `.onnx` file for `onnx`), up to `MAX_LABELS` labels, and for `onnx` an `input` (size 8 to 8192, `uint8` or `float32`, `NCHW`, `scale`, three-number `mean` and `std`). A folder whose manifest fails is not listed, and the server's log names it and why.
 - **Install.** `install_downloaded(folder, manifest)` mints `imported.x<hex>@1`, moves the folder to a `.part` folder beside its place in the account's store, writes the manifest, and renames it in with `os.replace`, so a half-written model is never listed. `install_dependencies(id)` installs a Transformers model's `python_deps` through `provision_declared_deps`, the path a package's `dependencies.python` takes: the shared interpreter, or the account's node libraries under isolation. `install_refusal()` is the package rule (`package_install_refusal`).
 - **Delete** removes the folder. A shipped model is refused with 403. Nodes that name it fail on their next run.
-- **In node code.** `code_refs` finds `curio_model("<id>")` calls; `resolve_exec_models` maps each id the code names to its folder, and `/processPythonCode` sends that map with the dataset paths. `curio_model` ([`sandbox/util/models.py`](../utk_curio/sandbox/util/models.py)) returns the folder, or raises a message saying to add the model. Under fork isolation, `stage_model_dirs` ([`sandbox/util/staging.py`](../utk_curio/sandbox/util/staging.py)) hardlinks each model's tree into the run's scratch as `model_<i>/`, keeping relative paths, so an ONNX graph finds its external `.data` and a checkpoint its configs; `models/` is in the hardening allowlists beside `datasets/`.
+- **In node code.** `code_refs` finds `curio_load_model("<id>")` calls; `resolve_exec_models` maps each id the code names to its folder, and `/processPythonCode` sends that map with the dataset paths. `curio_load_model` ([`sandbox/util/models.py`](../utk_curio/sandbox/util/models.py)) returns the folder, or raises a message saying to add the model. Under fork isolation, `stage_model_dirs` ([`sandbox/util/staging.py`](../utk_curio/sandbox/util/staging.py)) hardlinks each model's tree into the run's scratch as `model_<i>/`, keeping relative paths, so an ONNX graph finds its external `.data` and a checkpoint its configs; `models/` is in the hardening allowlists beside `datasets/`.
 - **`curio_segment`** ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) runs a model over a collection's rows: `_OnnxRunner` with onnxruntime on the CPU (the manifest's `input` says how to scale, normalize and resize), or `_TransformersRunner` with `AutoModelForSemanticSegmentation` (`local_files_only`, safetensors only). Shares are of all the pixels; the overlay goes through `curio_derived_file` with the `image` kind, so the media route serves it at `<file_id>@0`.
 - **Agents** never see models: no tool lists or proposes one, as storage sources are kept out of the agents' tools.
 

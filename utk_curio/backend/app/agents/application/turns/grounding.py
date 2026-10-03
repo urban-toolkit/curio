@@ -22,6 +22,7 @@ from utk_curio.backend.app.agents.application.proposals import acquire as agents
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
@@ -84,13 +85,13 @@ def _dataset_path_topup(project_id: str, user_obj, mapping: dict, ids: list) -> 
 
 
 def _dataset_ids_in(codes: list) -> list[str]:
-    """Every ``curio_dataset_path("<id>")`` id these codes reference."""
+    """Every Data Catalog id these codes reference, through
+    ``curio_data_path("<id>")`` or ``curio_load_collection("<id>")``: the ids
+    Play maps (``code_refs.dataset_ids_in_code``), since a collection's loader
+    reads its index through the same path map (#597)."""
     out: list[str] = []
     for code in codes:
-        if not isinstance(code, str) or "curio_dataset_path" not in code:
-            continue
-        for match in source_grounding.DATASET_PATH_CALL_RE.finditer(code):
-            dataset_id = match.group(2)
+        for dataset_id in dataset_ids_in_code(code):
             if dataset_id not in out:
                 out.append(dataset_id)
     return out
@@ -112,10 +113,7 @@ def _filter_dataset_paths(mapping: dict, codes: list) -> dict:
         return {}
     out: dict = {}
     for code in codes:
-        if not isinstance(code, str) or "curio_dataset_path" not in code:
-            continue
-        for match in source_grounding.DATASET_PATH_CALL_RE.finditer(code):
-            dataset_id = match.group(2)
+        for dataset_id in dataset_ids_in_code(code):
             if dataset_id in mapping:
                 out[dataset_id] = mapping[dataset_id]
     return out
@@ -123,22 +121,14 @@ def _filter_dataset_paths(mapping: dict, codes: list) -> dict:
 
 def _exec_dataset_paths(project_id: str, *codes: str) -> dict:
     """dev/115: the ``{datasetId: absolutePath}`` mapping the sandbox needs for
-    every ``curio_dataset_path("<id>")`` call in *codes* — resolved the way
-    ``/processPythonCode`` resolves it (``resolve_execution_paths``, contained
-    paths only). Fail-open to ``{}``: an unmapped id raises a clear per-id
-    error inside the sandbox, which the correction loop then sees. Needs the
-    request context (``g.user``); a Solve batch precomputes it in the request
-    thread and hands the mapping to its workers."""
-    ids: list[str] = []
-    for code in codes:
-        if not isinstance(code, str) or "curio_dataset_path" not in code:
-            continue
-        for match in source_grounding.DATASET_PATH_CALL_RE.finditer(code):
-            dataset_id = match.group(2)
-            if dataset_id not in ids:
-                ids.append(dataset_id)
-            if len(ids) >= 32:
-                break
+    every ``curio_data_path("<id>")`` and ``curio_load_collection("<id>")`` call
+    in *codes* — resolved the way ``/processPythonCode`` resolves it
+    (``resolve_execution_paths``, contained paths only). Fail-open to ``{}``:
+    an unmapped id raises a clear per-id error inside the sandbox, which the
+    correction loop then sees. Needs the request context (``g.user``); a Solve
+    batch precomputes it in the request thread and hands the mapping to its
+    workers."""
+    ids = _dataset_ids_in(list(codes))[:32]
     if not ids:
         return {}
     try:
@@ -231,7 +221,7 @@ def _node_grounded_literal(node: dict, ctx, *, extra_texts=()) -> str | None:
         return path
     for dataset_id in sorted(getattr(ctx, "catalog_ids", None) or {}):
         if dataset_id and dataset_id in joined:
-            return f'curio_dataset_path("{dataset_id}")'
+            return f'curio_data_path("{dataset_id}")'
     for url in sorted(getattr(ctx, "verified_urls", None) or {}):
         if url and url in joined:
             return url
@@ -415,7 +405,7 @@ def _catalog_grounding_refs(project_id: str) -> tuple[dict, dict]:
     """dev/114: ``(by_path, by_id)`` — the datasets the datasets domain lists
     for this project, the SAME listing ``catalog.search`` serves, so a row the
     tool showed is grounded by construction: by resolved path (the historical
-    literal form) and by id (the portable ``curio_dataset_path("<id>")`` call
+    literal form) and by id (the portable ``curio_data_path("<id>")`` call
     the loader recipe emits, resolved by the sandbox at run time). A failing
     catalog read degrades to empty maps (logged): the gate still refuses
     ungrounded sources, honestly, rather than inventing a neighborhood."""
@@ -624,7 +614,7 @@ def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
             "datasetId": ref.dataset_id,
             "title": ref.title,
             "format": ref.format,
-            "use": f'dataset_path = curio_dataset_path("{ref.dataset_id}")',
+            "use": f'dataset_path = curio_data_path("{ref.dataset_id}")',
             **({"path": ref.path} if ref.path else {}),
         }
         for ref in list(ctx.catalog_ids.values())[:24]
@@ -646,7 +636,7 @@ def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
         "syntheticRequested": bool(ctx.synthetic_requested),
         "rule": (
             "Load catalog datasets ONLY through their `use` line "
-            "(curio_dataset_path(\"<id>\") — the sandbox resolves it), open ONLY the "
+            "(curio_data_path(\"<id>\") — the sandbox resolves it), open ONLY the "
             "local paths listed (catalogDatasets[].path or userPaths), and fetch ONLY "
             "these URLs (verifiedUrls). Never invent a filename, never "
             "assume a file exists, never write a URL from memory — the runtime "

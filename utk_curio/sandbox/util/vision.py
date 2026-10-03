@@ -1,8 +1,8 @@
 """``curio_segment``: run a Model Catalog model over a collection's images.
 
-What the Image Segmentation node calls. The model's folder (from
-``curio_model``) carries a manifest that says how to run it, so nothing here
-is fitted to one model:
+What the Image Segmentation node calls. A model (from ``curio_load_model``)
+carries a manifest that says how to run it, so nothing here is fitted to one
+model:
 
 - ``onnx``: onnxruntime on the CPU. Each image is resized to the manifest's
   input, fed as ``uint8`` pixels or as ``float32`` scaled and normalized, and
@@ -146,17 +146,21 @@ def make_curio_segment(curio_derived_file=None):
     """``curio_segment`` for one execution; *curio_derived_file* is where an
     overlay is written (None writes none)."""
 
-    def curio_segment(images, model_dir, classes=None, *, overlays=True):
-        """Segment every image of *images* (rows with a ``path``) with the model
-        in *model_dir*; *classes* are the labels to report, all of them when
-        None. Returns *images* with the results as its first columns:
+    def curio_segment(images, model, classes=None, *, overlays=True):
+        """Segment every image of *images* (rows with a ``path``) with *model*,
+        a model ``curio_load_model`` loaded; *classes* are the labels to report,
+        all of them when None. Returns *images* with the results as its first columns:
         ``dominant_class``, ``dominant_pct``, a ``<class>_pct`` per class,
         ``overlay_url`` and ``segment_error``."""
         import numpy as np
         import pandas as pd
         from PIL import Image
 
-        runner, _manifest = load_runner(model_dir)
+        runner = getattr(model, "runner", None)
+        if runner is None:
+            raise TypeError(
+                "curio_segment runs a loaded model: pass curio_load_model(\"<id>\")"
+            )
         labels = runner.labels
         wanted = list(classes) if classes else list(labels)
         unknown = [name for name in wanted if name not in labels]
@@ -167,7 +171,7 @@ def make_curio_segment(curio_derived_file=None):
         index = {name: labels.index(name) for name in wanted}
         colours = np.asarray(palette(labels), dtype=np.uint8)
         if "path" not in getattr(images, "columns", ()):
-            raise ValueError("curio_segment reads rows with a path, as curio_collection gives them")
+            raise ValueError("curio_segment reads rows with a path, as curio_load_collection gives them")
 
         shares = {name: [] for name in wanted}
         dominant, dominant_pct, overlay_urls, errors = [], [], [], []
