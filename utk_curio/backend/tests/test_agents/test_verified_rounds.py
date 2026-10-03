@@ -1551,6 +1551,80 @@ class TestSolveNode:
         assert client.post(base, json={"nodeId": "ghost"}, headers=_auth(token)).status_code == 404
 
 
+class TestValidationKnowsTheAccount:
+    """#485, #597: Solve validates a candidate on a thread of its own, where
+    the request's user is gone. What Play gives a node must still reach the
+    sandbox there: the ids it reads through ``curio_collection``, where the
+    account's collection keeps its files, and the models the account added.
+
+    The stubs below answer only for a call that knows the account, the way
+    the Data Catalog and the Model Catalog do, so a lookup made without the
+    user finds nothing, as it does on a real deployment."""
+
+    MODEL = "model.example.segmenter@1"
+
+    def _setup(self, client, user, token, monkeypatch, *, content):
+        return TestSolveNode()._setup(client, user, token, monkeypatch, content=content)
+
+    def _validated_payload(self, client, token, ctx):
+        events = TestSolveNode()._solve_node(client, token, ctx)
+        assert [k for k, _ in events][-1] == "done", events[-1]
+        assert ctx["payloads"], "validation never reached the sandbox"
+        return ctx["payloads"][0]
+
+    def test_code_reading_only_a_collection_has_its_id_mapped(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch,
+                          content='photos = curio_collection("{DATASET}")\nreturn photos')
+        payload = self._validated_payload(client, token, ctx)
+        assert ctx["dataset_id"] in (payload.get("dataset_paths") or {}), (
+            "a node that reads only curio_collection got no path for its id, so it fails "
+            f"under Solve while Play runs it: {payload.get('dataset_paths')}"
+        )
+
+    def test_the_accounts_collection_is_resolved_on_the_validation_thread(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        from types import SimpleNamespace
+
+        from utk_curio.backend.app.discovery.domain.errors import ResourceNotFound
+        from utk_curio.backend.app.discovery.service import DiscoveryService
+
+        def _collection(service, dataset_id):
+            if service.user is None:
+                raise ResourceNotFound(f"no dataset {dataset_id!r} without an account")
+            return {"collection": {"kind": "images"}}, SimpleNamespace(provider=SimpleNamespace(type="s3"))
+
+        monkeypatch.setattr(DiscoveryService, "collection", _collection)
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch,
+                          content='photos = curio_collection("{DATASET}")\nreturn photos')
+        payload = self._validated_payload(client, token, ctx)
+        assert ctx["dataset_id"] in (payload.get("collections") or {}), (
+            "the collection was looked up without the account on the validation thread: "
+            f"{payload.get('collections')}"
+        )
+
+    def test_a_model_the_account_added_resolves_on_the_validation_thread(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        from utk_curio.backend.app.model_catalog.service import ModelCatalogService
+
+        def _dirs(service, model_ids):
+            if service.user is None:
+                return {}
+            return {model_id: f"/models/{model_id}" for model_id in model_ids}
+
+        monkeypatch.setattr(ModelCatalogService, "resolve_execution_dirs", _dirs)
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch,
+                          content=f'model = curio_model("{self.MODEL}")\nreturn model')
+        payload = self._validated_payload(client, token, ctx)
+        assert self.MODEL in (payload.get("models") or {}), (
+            f"the model was looked up without the account on the validation thread: {payload.get('models')}"
+        )
+
+
 class TestRunEgressBudget:
     """dev/115 F6 closed (2026-09-09): the run budget is sized for every
     external candidate row plus one redirect each, so the last row of a full
