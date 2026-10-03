@@ -145,6 +145,14 @@
   white-space: nowrap;
 }
 
+/* Why the row's Add or Download is off. Muted: nothing failed, the row is
+   only not offered. */
+.unavailable {
+  margin: 6px 0 0;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-meta);
+}
+
 /* ── A download in flight ─────────────────────────────────────────────── */
 
 .progress {

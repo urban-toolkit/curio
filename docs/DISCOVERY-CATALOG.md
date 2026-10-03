@@ -239,6 +239,7 @@ A way that is tagged as an area but does not close is a line. In **Points of int
 - **Narrowing.** Keeping only some values in the **Add** dialog, or picking files under **Files**, adds a separate dataset of just those files. The row stays offered whole.
 - **A bucket's files.** In a collection from a bucket or a Hugging Face dataset repository, each image and raster is indexed from its first 64 KiB, and a detail stored past them stays empty. Its videos and recordings are indexed by their path and size only. Thumbnails of its images and rasters are drawn on request; a video's or recording's appears once it is cached. Nodes read its files once **Cache files** has copied them to the Curio machine; until then a row's `path` is empty.
 - **Size.** 4 GiB per file from a folder, and the download limit per file from a bucket; 512 MiB for a GeoPackage or PBF. A combined table takes up to 10,000 files, and 16 GiB from a folder or 2 GiB from a bucket. A source lists up to 200,000 matched files, or fewer when its manifest sets a lower limit, and its page says when it holds more. Adding a resource with more files than that limit is refused: narrow it in the **Add** dialog, or pick files under **Files**.
+- **Rows that cannot be added.** A row over one of these limits, a shapefile without its `.dbf` or `.shx`, and GeoPackage or PBF files declared as one table say why under the row's name, and **Add to Data Catalog** is off. A row of several files still offers **Files**, to add some of them.
 - **Publishing.** A collection cannot be published.
 
 ---

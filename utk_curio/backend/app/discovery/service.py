@@ -20,6 +20,7 @@ from utk_curio.backend.app.discovery.application.service_acquire import ServiceA
 from utk_curio.backend.app.discovery.application.storage_acquire import (
     Cancelled as StorageCancelled,
     StorageAcquire,
+    add_refusal,
 )
 from utk_curio.backend.app.discovery.application import jobs as job_store
 from utk_curio.backend.app.discovery.application.catalog import DiscoveryCatalog
@@ -290,6 +291,8 @@ class DiscoveryService:
         query = _query(q, fmt, limit, None)
         storage_pages = []
         storage_legs = []
+        # Each storage row's files, by source and row, for what an add of it would refuse.
+        storage_groups: dict[tuple[str, str], scanning.Group] = {}
         for manifest in (m for m in manifests if m.is_service):
             # A service searches what it declares, with no network.
             found = [r for r in self._service_for(manifest).rows() if _storage_matches(r, query.text)]
@@ -314,6 +317,11 @@ class DiscoveryService:
                     found = [r for r in found if query.fmt in r.formats]
                 storage_pages.append(SearchPage(resources=tuple(found)))
                 storage_legs.append({"sourceId": manifest.id, "status": "ok", "count": len(found)})
+                storage_groups.update(
+                    ((manifest.id, r.resource_id), view.groups[r.resource_id])
+                    for r in found
+                    if r.resource_id in view.groups
+                )
             else:
                 storage_legs.append({
                     "sourceId": manifest.id,
@@ -325,7 +333,13 @@ class DiscoveryService:
         held = self._held_formats()
         by_id = {m.id: m for m in manifests}
         return search_payload(
-            [self._resource_row(by_id[r.source_id], r, held) for r in rows if r.source_id in by_id],
+            [
+                self._resource_row(
+                    by_id[r.source_id], r, held, group=storage_groups.get((r.source_id, r.resource_id))
+                )
+                for r in rows
+                if r.source_id in by_id
+            ],
             sources=legs,
             # A fan-out has no coherent cursor: five portals paginate
             # independently and interleaving them past page one would repeat
@@ -343,8 +357,13 @@ class DiscoveryService:
                 detail, source_name=manifest.name,
                 already_held_model_id=held.get("id") if held else None,
             )
+        refusal = None
         if manifest.is_storage:
             detail = self._storage_detail(manifest, resource_id)
+            refusal = _refusal(
+                manifest,
+                scanning.listings.group(manifest, resource_id, scope=self._listing_scope(manifest)),
+            )
         elif manifest.is_service:
             detail = self._service_detail(manifest, resource_id)
         else:
@@ -356,6 +375,7 @@ class DiscoveryService:
             already_held_dataset_id=next(iter(formats.values()), None),
             held_formats=formats,
             parameters=_parameters_for(manifest, detail.resource),
+            unavailable_reason=refusal,
         )
 
     # ── storage ────────────────────────────────────────────────────────────
@@ -373,7 +393,7 @@ class DiscoveryService:
         view = state.view()
         held = self._held_formats()
         rows = [
-            self._resource_row(manifest, r, held)
+            self._resource_row(manifest, r, held, group=view.groups.get(r.resource_id))
             for r in (view.resources if view is not None else [])
             if _storage_matches(r, q)
         ]
@@ -487,9 +507,12 @@ class DiscoveryService:
         service = DatasetCatalogService(self.user)
         return service._mutations._install_imported_path(path, filename, fmt, **kwargs)
 
-    def _resource_row(self, manifest: DiscoverySourceManifest, resource, held) -> dict[str, Any]:
-        """One row: what it is, which formats this account holds, and what an
-        add of it asks."""
+    def _resource_row(
+        self, manifest: DiscoverySourceManifest, resource, held, *, group: scanning.Group | None = None
+    ) -> dict[str, Any]:
+        """One row: what it is, which formats this account holds, what an add
+        of it asks, and, for a storage row (*group*), why an add of it would be
+        refused."""
         formats = held.get((manifest.dir_name, resource.resource_id), {})
         return resource_row(
             resource,
@@ -497,6 +520,7 @@ class DiscoveryService:
             already_held_dataset_id=next(iter(formats.values()), None),
             held_formats=formats,
             parameters=_parameters_for(manifest, resource),
+            unavailable_reason=_refusal(manifest, group),
         )
 
     def _held_formats(self) -> dict[tuple[str, str], dict[str, str]]:
@@ -875,6 +899,17 @@ def _storage_matches(resource, text: str) -> bool:
         + [str(v) for row in resource.fields for v in row.get("values", [])]
     ).lower()
     return all(word in haystack for word in needle.split())
+
+
+def _refusal(manifest: DiscoverySourceManifest, group: scanning.Group | None) -> str | None:
+    """Why adding a storage row whole would be refused, from its last scan's
+    files; None when it would not, or when the row is not a storage row.
+
+    Asked on every request rather than kept with the scan, which every user
+    shares, so it follows the limits as they are now."""
+    if group is None:
+        return None
+    return add_refusal(manifest, group.spec, group.files)
 
 
 def _parameters_for(manifest: DiscoverySourceManifest, resource) -> tuple:
