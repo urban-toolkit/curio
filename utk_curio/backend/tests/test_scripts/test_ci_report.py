@@ -424,15 +424,24 @@ def test_a_failure_folder_is_found_from_its_junit_name():
 RUN_JOBS = {"jobs": [
     {"name": "test-gpu", "status": "completed", "conclusion": "success",
      "html_url": "https://github.com/o/r/actions/runs/1/job/2",
+     "runner_name": "utk-gpu", "runner_group_name": "gpu",
+     "labels": ["self-hosted", "linux", "gpu", "curio"],
+     "created_at": "2026-09-30T11:59:58Z",
      "started_at": "2026-09-30T12:00:00Z", "completed_at": "2026-09-30T12:08:00Z",
      "steps": [{"name": "Run e2e tests", "status": "completed", "conclusion": "success",
                 "number": 9}]},
     {"name": "e2e-desktop (3)", "status": "completed", "conclusion": "failure",
      "html_url": "https://github.com/o/r/actions/runs/1/job/3",
+     "runner_name": "arcade-cpu-07", "runner_group_name": "cpu",
+     "labels": ["self-hosted", "cpu"],
+     "created_at": "2026-09-30T12:01:00Z",
      "started_at": "2026-09-30T12:02:00Z", "completed_at": "2026-09-30T12:11:00Z",
      "steps": [{"name": "Run this part of the e2e tests", "status": "completed",
                 "conclusion": "failure", "number": 7}]},
-    {"name": "ci-report", "status": "in_progress", "steps": []},
+    {"name": "ci-report", "status": "in_progress", "steps": [],
+     "runner_name": "GitHub Actions 1000008545", "runner_group_name": "GitHub Actions",
+     "labels": ["ubuntu-latest"],
+     "created_at": "2026-09-30T12:11:00Z", "started_at": "2026-09-30T12:11:03Z"},
 ]}
 
 
@@ -449,3 +458,28 @@ def test_a_run_wide_page_lists_every_job_and_what_failed_in_each(tmp_path):
     # A failed job fails the run even with no test suite to say so.
     assert ci_report.overall(ci_report.build(ci_report.parse_args(
         ["--jobs", str(tmp_path / "jobs.json"), "--all-jobs", "--out", str(out)]))) == "failed"
+
+
+def test_the_page_and_the_where_table_say_where_each_job_ran(tmp_path):
+    # As the jobs API reports a skipped job: no runner, and done before it started.
+    skipped = {"name": "test-gpu-stress", "status": "completed", "conclusion": "skipped",
+               "runner_name": "", "labels": ["self-hosted", "linux", "gpu", "curio"], "steps": [],
+               "created_at": "2026-09-30T12:08:01Z", "started_at": "2026-09-30T12:08:01Z",
+               "completed_at": "2026-09-30T12:08:00Z"}
+    jobs = {"jobs": [*RUN_JOBS["jobs"], skipped]}
+    (tmp_path / "jobs.json").write_text(json.dumps(jobs), encoding="utf-8")
+    out, summary, where = tmp_path / "report.html", tmp_path / "summary.md", tmp_path / "where.md"
+    assert ci_report.main(["--jobs", str(tmp_path / "jobs.json"), "--all-jobs", "--out", str(out),
+                           "--summary", str(summary), "--where", str(where)]) == 0
+    page = out.read_text(encoding="utf-8")
+    assert "<th>Runner</th>" in page and "arcade-cpu-07" in page and "self-hosted CPU" in page
+    assert "-1.0s" not in page
+    # The table is a section of its own, for the top of the run summary.
+    assert "Where each job ran" not in summary.read_text(encoding="utf-8")
+    lines = where.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "## Where each job ran"
+    assert "| test-gpu | success | utk-gpu | self-hosted GPU | 2.0s | 8m 00s |" in lines
+    assert "| e2e-desktop (3) | failure | arcade-cpu-07 | self-hosted CPU | 1m 00s | 9m 00s |" in lines
+    # The job building the page is listed while it runs; a skipped job had no runner.
+    assert "| ci-report | in progress | GitHub Actions 1000008545 | GitHub-hosted | 3.0s |  |" in lines
+    assert not any(line.startswith("| test-gpu-stress") for line in lines)

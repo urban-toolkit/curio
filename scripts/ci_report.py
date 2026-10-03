@@ -21,6 +21,8 @@ Every input is optional, because a step that never ran leaves no file:
     --jobs PATH          GitHub's jobs API response for this run attempt
     --all-jobs           report on every job in --jobs rather than this one: the
                          page the run's ci-report job builds from every runner
+    --where PATH         with --all-jobs, a Markdown table of the runner each
+                         job got, for the top of the run summary
 
 With Pillow importable every image is transcoded to lossless WebP, identical
 pixel for pixel at about half the size of the PNG; without it the recorded
@@ -758,8 +760,40 @@ def render_steps(report):
             f"<summary>{esc(summary)}</summary>{table}</details></section>")
 
 
+def runner_kind(job):
+    """What kind of machine a job ran on: GitHub-hosted, or a self-hosted pool."""
+    labels = {label.lower() for label in job.get("labels") or []}
+    if job.get("runner_group_name") == "GitHub Actions" or any(l.startswith("ubuntu") for l in labels):
+        return "GitHub-hosted"
+    if "gpu" in labels:
+        return "self-hosted GPU"
+    if "cpu" in labels:
+        return "self-hosted CPU"
+    return job.get("runner_group_name") or ""
+
+
+def job_times(job):
+    """How long a job waited for a runner, and how long it then ran.
+
+    Blank for a job that never got a runner: GitHub stamps a skipped job as
+    finishing a second before it started.
+    """
+    if not job.get("runner_name"):
+        return "", ""
+    created, start, end = (_iso(job.get(key)) for key in ("created_at", "started_at", "completed_at"))
+    waited = duration((start - created).total_seconds()) if created and start else ""
+    took = duration((end - start).total_seconds()) if start and end else ""
+    return waited, took
+
+
+def ran_jobs(report):
+    """The run's jobs that got a runner, in the order GitHub lists them."""
+    return [job for job in report.all_jobs or []
+            if job.get("runner_name") and job.get("conclusion") != "skipped"]
+
+
 def render_jobs(report):
-    """Every job of the run, with the failed steps of the ones that failed."""
+    """Every job of the run, where it ran, and the failed steps of the ones that failed."""
     rows, failed, done = [], 0, 0
     for job in report.all_jobs or []:
         if job.get("status") != "completed":
@@ -767,8 +801,10 @@ def render_jobs(report):
         done += 1
         conclusion = job.get("conclusion") or "unknown"
         failed += conclusion == "failure"
-        start, end = _iso(job.get("started_at")), _iso(job.get("completed_at"))
-        took = duration((end - start).total_seconds()) if start and end else ""
+        waited, took = job_times(job)
+        runner = esc(job.get("runner_name") or "")
+        if job.get("runner_name"):
+            runner += f'<div class="muted">{esc(runner_kind(job))}</div>'
         name = esc(job.get("name") or "")
         if job.get("html_url"):
             name = f'<a href="{esc(job["html_url"])}">{name}</a>'
@@ -780,12 +816,14 @@ def render_jobs(report):
                 for s in broke)
             name += f'<div class="muted">failed: {steps}</div>'
         rows.append(f'<tr class="{esc(conclusion)}"><td>{name}</td>'
-                    f"<td>{badge(conclusion)}</td><td class=\"num\">{esc(took)}</td></tr>")
+                    f"<td>{badge(conclusion)}</td><td>{runner}</td>"
+                    f'<td class="num">{esc(waited)}</td><td class="num">{esc(took)}</td></tr>')
     if not done:
         return ('<section id="steps"><h2>Jobs</h2><p class="muted">No job list: the jobs '
                 "API response for this run was missing or could not be read.</p></section>")
     summary = f"{failed} of {done} jobs failed" if failed else f"All {done} completed jobs succeeded"
     table = ('<div class="table-wrap"><table class="steps"><thead><tr><th>Job</th><th>Result</th>'
+             '<th>Runner</th><th class="num">Waited</th>'
              f'<th class="num">Time</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
     open_attr = " open" if failed else ""
     return (f'<section id="steps"><h2>Jobs</h2><details class="steps-box"{open_attr}>'
@@ -1183,6 +1221,26 @@ def render_summary(report):
     return "\n".join(lines) + "\n"
 
 
+def render_where(report):
+    """Markdown for $GITHUB_STEP_SUMMARY: the runner every job of the run got."""
+    ran = ran_jobs(report)
+    if not ran:
+        return ""
+
+    def cell(text):
+        return str(text).replace("|", "\\|").replace("\n", " ")
+
+    lines = ["## Where each job ran", "",
+             "| Job | Result | Runner | Kind | Waited | Took |",
+             "| --- | --- | --- | --- | ---: | ---: |"]
+    for job in ran:
+        waited, took = job_times(job)
+        result = job.get("conclusion") or (job.get("status") or "").replace("_", " ")
+        lines.append(f"| {cell(job.get('name') or '')} | {cell(result)} "
+                     f"| {cell(job['runner_name'])} | {cell(runner_kind(job))} | {waited} | {took} |")
+    return "\n".join(lines) + "\n"
+
+
 # ---------------------------------------------------------------- page assets
 
 CSS = """
@@ -1370,6 +1428,8 @@ def parse_args(argv=None):
                         help="report on every job in --jobs, not only this one")
     parser.add_argument("--out", required=True, metavar="PATH")
     parser.add_argument("--summary", metavar="PATH", help="also write a Markdown summary here")
+    parser.add_argument("--where", metavar="PATH",
+                        help="with --all-jobs, also write a Markdown table of the runner each job got")
     parser.add_argument("--max-image-mb", type=int, default=150,
                         help="leave images out past this much embedded data (default 150)")
     parser.add_argument("--workers", type=int, default=min(32, os.cpu_count() or 4))
@@ -1385,6 +1445,9 @@ def main(argv=None) -> int:
     if args.summary:
         with open(args.summary, "w", encoding="utf-8") as handle:
             handle.write(render_summary(report))
+    if args.where:
+        with open(args.where, "w", encoding="utf-8") as handle:
+            handle.write(render_where(report))
     kept = sum(1 for uri in report.images.values() if uri)
     print(f"wrote {args.out}: {len(page) / 1e6:.1f} MB, {len(report.suites)} suites, "
           f"{len(report.comparisons)} comparisons, {kept} images")
