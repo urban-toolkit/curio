@@ -81,7 +81,7 @@ A model's details show its **Identifier**, **Version**, **Runtime**, **Input**, 
 
 ## 3. Using a model in a dataflow
 
-A node's code names its model with `curio_load_model("<id>")`, which gives the folder the model is in. **Image Segmentation** passes that folder to `curio_segment`:
+A node's code loads its model with `curio_load_model("<id>")`. **Image Segmentation** passes the model to `curio_segment`:
 
 ```python
 model = curio_load_model("model.curio.ddrnet23-slim")
