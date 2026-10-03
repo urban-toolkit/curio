@@ -7,5 +7,3 @@ No Google key was used to make these files. They follow the shapes Google docume
 - `placeholder.jpg` is small and grey, like the image Google sends where it has none.
 
 `scripts/write_streetview_fixtures.py` writes this folder and its entries in `../index.json`. It drives the real provider, so the URLs here are the ones the provider builds. Run it again after changing how the provider asks.
-
-`test_provider_contracts.py` checks the real answers' shape when a key is set in `CURIO_GOOGLE_MAPS_KEY`.

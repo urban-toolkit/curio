@@ -356,9 +356,9 @@ def test_another_users_dataset_cannot_be_read_by_absolute_path():
 def test_the_deployment_secret_cannot_be_read():
     """``.env`` carries SECRET_KEY, which forges sessions. Unlike the paths
     above it is a plain file with no directory to hide behind, so it is
-    hardened by mode -- and unlike them it legitimately may not exist, since a
-    CI stack has no .env. Skip rather than pass in that case: a test that
-    silently proves nothing is worse than an absent one."""
+    hardened by mode. The workflow plants one, world-readable, before the
+    stack boots; a missing one fails, since a test that silently proves
+    nothing is worse than an absent one."""
     target = os.path.join(LAUNCH_DIR, ".env")
     result = run_node("""
         import os
@@ -374,8 +374,10 @@ def test_the_deployment_secret_cannot_be_read():
     """ % (target, target))
     assert_ran(result, "reading " + target)
     outcome = printed(result).strip()
-    if outcome == "absent":
-        pytest.skip("this stack has no .env, so there is nothing to deny")
+    assert outcome != "absent", (
+        "%s was not planted, so this proved nothing. The workflow's seeding "
+        "step creates it before the stack boots." % target
+    )
     assert outcome == "denied", "an isolated node could read " + target
 
 

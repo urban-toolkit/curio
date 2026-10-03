@@ -47,6 +47,10 @@ services:
     # provoke process exhaustion and this host also runs the live stacks.
     # RLIMIT_NPROC bounds each child, but the sandbox parent is root here.
     pids_limit: 4096
+    # A deployment's .env where a deployment keeps it, planted by the job's
+    # seed step, so the boundary suite can show a node cannot read it.
+    volumes:
+      - ./ci-planted.env:/app/.env
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
       # What this whole job exists to exercise. --deploy makes the instance

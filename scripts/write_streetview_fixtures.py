@@ -7,8 +7,6 @@ WHY
     follow the shapes Google documents for the Street View metadata endpoint
     (https://developers.google.com/maps/documentation/streetview/metadata)
     and its image endpoint, and their panorama IDs and images are made up.
-    ``test_provider_contracts.py`` checks the real shapes when a key is in
-    ``CURIO_GOOGLE_MAPS_KEY``.
 
 HOW
     The real provider is driven through a transport that answers each request
