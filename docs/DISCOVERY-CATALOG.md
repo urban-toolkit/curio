@@ -60,6 +60,7 @@ discovery/
 | Hugging Face documentation images | Hugging Face | Public; a token raises the rate limit |
 | Mapillary | Mapillary | Token needed. Street-level photos for a box, each credited to its photographer (CC BY-SA 4.0), and the signs and objects detected in them, as points |
 | Google Street View | Google | Key needed; Google bills its requests to you. Street View images for a box, one per panorama and heading |
+| Overture Maps | Overture Maps | Public. Buildings, building parts, places and road segments for a box, from Overture's latest release |
 | Hugging Face models | Hugging Face | Public; a token opens the gated models your account can read. Image segmentation models a node can run |
 
 ### Storage layers
@@ -87,6 +88,8 @@ There are two pages and a drawer on the canvas, plus an agent that works on the 
 
 On both pages the search is kept in the page address, so a search can be linked and survives a reload. On a storage source's page the search filters its resources by name, description and field values.
 
+GeoSampa, storage sources and services match a search the same way: each word you type on its own, in any order, with or without accents. A word of four letters or more that ends in *s* also finds the word without the *s*. `ponto onibus`, `pontos de ônibus` and `onibus ponto` all find GeoSampa's *Pontos de ônibus*, and `distritos` finds its *Distrito*. GeoSampa lists first the layers whose name or title holds the most of your words. Other portals search in their own way.
+
 A storage source is read when it is first opened, and again when its listing is 15 minutes old. While that runs the page says **Scanning `<source>`…**, and keeps the rows of the last reading. **Rescan** reads it again at once, for files added since. When the source holds files no resource declares, the page says how many.
 
 ### Action matrix
@@ -95,6 +98,7 @@ A storage source is read when it is first opened, and again when its listing is 
 |---|---|---|---|
 | **Search every portal** | The `/catalog/discovery` search box | Nothing | Results from every portal that can be searched, and the storage sources' matching resources, tagged by source. |
 | **Browse datasets** | Card, drawer, or right-click menu | Nothing | The source's page, searching that portal only. |
+| **Show more** | Below a portal's results, on its page | Nothing | The portal's next page of results, added below the ones shown. |
 | **View details** | Card, drawer, or right-click menu | Nothing | The source's endpoint, licence, formats, download limit, and token needs; a storage source's resource count. |
 | **Add by link** | Direct URL's card, drawer, or right-click menu | Nothing | Direct URL's page, with its **Link to a file** field. |
 | **Download** | A result row, with a format picker when the portal offers more than one | Your Data Catalog gains a dataset | A progress bar, then *"Downloaded `<title>` to your Data Catalog."* with **View details**. A row that needs an answer first, such as a service row's area, opens the **Download** dialog. |
@@ -117,13 +121,15 @@ A storage source is read when it is first opened, and again when its listing is 
 
 **I want to download a dataset and use it.** Find it, pick a format if the row offers a choice, and click **Download**. When it finishes, the row offers **View dataset**. To use it in a dataflow, add it from the Data Catalog ([part 3](#3-using-a-discovered-dataset-in-a-dataflow)).
 
-**I want to search one portal only.** Click **Browse datasets** on its card. The source's page searches that portal alone.
+**I want to search one portal only.** Click **Browse datasets** on its card. The source's page searches that portal alone and lists 20 results at a time; **Show more** below them adds the next 20.
 
 **I want only the rows inside an area.** On a Chicago Data Portal or GeoSampa row, click **Narrow…**, set the **Area**, and click **Download**. A dataset with no location column offers no **Narrow…**.
 
-**I want OpenStreetMap buildings for a neighbourhood.** Open the OpenStreetMap card's page and click **Download** on **Buildings**. Set the **Area**: a place, coordinates or a dataset's extent give a box; **Named areas** takes a place and the boundaries inside it, as OpenStreetMap names them. **Download** loads them through Autark, and the dataset is named after the area: one row per building or building part, with its tags, its `osm_id`, and a `building_id` naming the building it belongs to. **All layers** adds buildings, roads, parks, water and surface as one group.
+**I want OpenStreetMap buildings for a neighbourhood.** Open the OpenStreetMap card's page and click **Download** on **Buildings**. Set the **Area**: a place, coordinates or a dataset's extent give a box; **Named areas** takes a place and the boundaries inside it, as OpenStreetMap names them. **Download** loads them through Autark, and the dataset is named after the area: one row per building or building part, with its tags and its `osm_id`. Footprints that touch share a `building_id`, as an Autark map draws them as one building. **All layers** adds buildings, roads, parks, water and surface as one group.
 
 **I want the cafés in a neighbourhood.** Open the OpenStreetMap card's page and click **Download** on **Features by tag**. Set the **Area**, type `amenity=cafe` in **Tags** and press Enter, and click **Download**. The cafés land as one group named after the tags and the area: a points dataset for cafés mapped as a point, and a polygons dataset for those mapped as a building or an area. **Points of interest** does the same for amenities, shops, tourism, leisure, offices, crafts, healthcare and historic sites, with no tags to type.
+
+**I want Overture's buildings, places or roads for an area.** Open the Overture Maps card's page and click **Download** on **Buildings**, **Building parts**, **Places** or **Road segments**. Set the **Area** to a box (a place, coordinates or a dataset's extent) and click **Download**. The rows land as one GeoParquet dataset named after the area, each with the columns Overture gives it, such as `height`, `num_floors`, `class`, `names` and `sources` for a building.
 
 **I want street-level photos of an area.** Set your Mapillary access token ([part 5](#5-api-tokens)), open the Mapillary card's page, and click **Download** on **Street-level images**. Set the **Area**, and if you like **Taken between**, **Images** (all, panoramas only, or no panoramas), **Size** and **Most images**. The photos land as one collection of images, each row with its photographer (`creator`), `captured_at`, `compass_angle`, `is_pano`, `sequence` and position. **Map features** downloads the signs and objects Mapillary detected in a box, as a table of points. [Example 10](examples/10-street-vision-cv-analysis.md) segments a set of these photos.
 
@@ -188,7 +194,7 @@ While a download or an add runs, its row shows a progress bar and **Cancel**. Th
 - **A restart loses it.** A download still running when the server restarts is lost, and its row shows it as failed. Start it again.
 - **Downloading again.** A row marked **In your Data Catalog as CSV** has been downloaded in that format; picking CSV offers **View dataset**, and nothing is fetched again, while another format still downloads. A download narrowed by an area is held for that area: the same answers again fetch nothing and keep the dataset you have, and another area downloads again. A file you downloaded by hand and imported from a Dataset Finder row counts too: a download and a hand import of the same bytes are one dataset, whichever arrived first.
 - **Formats.** CSV, GeoJSON, JSON, Parquet, and GeoTIFF, narrowed by what each portal offers. A GeoTIFF download that is not a TIFF file is refused.
-- **Size.** 64 MiB at most. A source may set a lower limit, which its **View details** shows as **Max download**.
+- **Size.** 1 GiB at most, or what the operator sets with `curio.py --discovery-max-download-mb`. A source may set a lower limit, which its **View details** shows as **Max download**.
 - **Archives** (`.zip`, `.gz`, `.tar` and the like) are refused. Curio downloads single data files and unpacks nothing.
 
 When a download fails, the row says why in the server's own words, for example that the file is an archive or larger than the limit.
@@ -197,7 +203,7 @@ When a download fails, the row says why in the server's own words, for example t
 
 - **Autark loads it,** with the same code an Autark map uses. **Buildings**, **Roads**, **Parks**, **Water** and **Surface** (the land inside the area) are Autark's layers. One layer lands as one GeoJSON dataset, in EPSG:4326. **All layers** lands as one group, a dataset for each layer the area has features in, as an uploaded `.osm.pbf` lands as a group. An uploaded `.pbf` gives GDAL's layers (points, lines, multipolygons); a download gives Autark's.
 - **Points of interest and Features by tag.** They load the nodes, ways and multipolygon relations with any of their tags: for **Points of interest**, `amenity`, `shop`, `tourism`, `leisure`, `office`, `craft`, `healthcare` or `historic`, with any value; for **Features by tag**, the tags you enter in **Tags**, each `key=value`, or `key=*` for the key with any value. They land as one group of up to three datasets, **points**, **polylines** and **polygons**, a dataset for each that has features.
-- **What a row is.** Each row but the surface's is one OpenStreetMap node, way or relation. Every tag it has is a column, named as OpenStreetMap names it (`name`, `building:levels`, `highway`), and `osm_type` (`node`, `way` or `relation`) and `osm_id` name it on openstreetmap.org. A points row is a node; a polylines or polygons row is a way or a multipolygon relation. A building of several parts is one row per part, and `building_id` names the building each belongs to: parts and buildings that touch share one, as an Autark map draws them as one building. **Surface** rows have no tags and no `osm_id`.
+- **What a row is.** Each row but the surface's is one OpenStreetMap node, way or relation. Every tag it has is a column, named as OpenStreetMap names it (`name`, `building:levels`, `highway`), and `osm_type` (`node`, `way` or `relation`) and `osm_id` name it on openstreetmap.org. A points row is a node; a polylines or polygons row is a way or a multipolygon relation. A building of several parts is one row per part. `building_id` groups footprints that touch, as an Autark map draws them as one building: a part shares it with its building, and separate buildings that share a wall, such as row houses, share one too. Each row's own building is its `osm_id`. **Surface** rows have no tags and no `osm_id`.
 - **Numbers.** These tags are numbers, in metres for a length and kilometres per hour for a speed: `height`, `min_height`, `roof:height`, `building:height`, `width`, `est_width`, `maxheight`, `maxwidth`, `maxlength`, `ele` and `depth` (metres); `maxspeed`, `maxspeed:forward`, `maxspeed:backward` and `minspeed` (km/h); and the counts `building:levels`, `building:min_level`, `building:levels:underground`, `roof:levels`, `levels`, `min_level`, `lanes`, `lanes:forward`, `lanes:backward`, `lanes:both_ways`, `layer`, `capacity`, `seats`, `beds`, `rooms` and `building:flats`. A unit written in OpenStreetMap is converted: `40 ft` is 12.19, `12'6"` is 3.81, `30 mph` is 48.28. A value that is not one number, such as `maxspeed=none` or `building:levels=3;4`, is empty. Every other tag is text, as OpenStreetMap has it.
 - **The area.** A box of at most 25 km², or named areas: the names must match OpenStreetMap's boundary names exactly, and a name with no boundary fails with a message naming it. Parks and water are cut at the box around the area. When **Surface** is loaded with them, as in **All layers**, roads, parks and water are also cut at the area's own outline, and a building outside it is left out. A building that crosses the edge is kept whole, and so is a road when **Surface** is not loaded. **Points of interest** and **Features by tag** are never cut: each feature is whole.
 - **Time.** A download can take minutes: Autark waits for a free slot on OpenStreetMap's Overpass service before each request, pauses between requests, and fetches buildings in four parts. A download that takes more than 15 minutes, or comes to more than 512 MiB of GeoJSON, is stopped and says so.
@@ -216,6 +222,15 @@ What each layer holds:
 | **Features by tag** | Nodes, ways and multipolygon relations with any of the tags entered | Points, lines and areas |
 
 A way that is tagged as an area but does not close is a line. In **Points of interest** and **Features by tag**, a way that closes is an area unless it is tagged `area=no`, or is a `highway`, `barrier`, `railway` or `waterway` without `area=yes`; then it is a line.
+
+### Downloading from Overture Maps
+
+- **The latest release.** Each download reads the release Overture's catalog names as its latest. The dataset's description names the release and its license.
+- **Only what the area needs.** Overture publishes each feature type as GeoParquet files, each with the box it covers. Curio reads the footers of the files whose box meets the area, then only their row groups whose box meets it, one request each.
+- **What a row is.** One Overture feature whose bounding box meets the area, with every column Overture gives it, named as Overture names it. Nested columns such as `names` and `sources` stay nested. **Road segments** keeps the segments whose `subtype` is `road`. A feature that crosses the edge is kept whole.
+- **The area.** A box of at most 100 km². A download that would read more than 512 MB of Overture's files is refused before any row is read, and says so.
+- **On an Autark map.** **Buildings** and **Road segments** name their layer (`df.metadata = {"layerType": "buildings"}`), so an Autark map draws them as buildings, raised to their height, and as roads.
+- **Credit.** Buildings and road segments are ODbL 1.0; Overture says how to credit each theme at [docs.overturemaps.org/attribution](https://docs.overturemaps.org/attribution/).
 
 ### Downloading street-level images
 
@@ -238,7 +253,8 @@ A way that is tagged as an area but does not close is a line. In **Points of int
 - **Adding again.** A row marked **In your Data Catalog** offers **View dataset** and **Add again**. **Add again** reads the row's files: when they changed, it adds a new dataset of them, which the row then holds; when they did not, you keep the dataset you have, and a message says so.
 - **Narrowing.** Keeping only some values in the **Add** dialog, or picking files under **Files**, adds a separate dataset of just those files. The row stays offered whole.
 - **A bucket's files.** In a collection from a bucket or a Hugging Face dataset repository, each image and raster is indexed from its first 64 KiB, and a detail stored past them stays empty. Its videos and recordings are indexed by their path and size only. Thumbnails of its images and rasters are drawn on request; a video's or recording's appears once it is cached. Nodes read its files once **Cache files** has copied them to the Curio machine; until then a row's `path` is empty.
-- **Size.** 4 GiB per file from a folder, and the download limit per file from a bucket; 512 MiB for a GeoPackage or PBF. A combined table takes up to 10,000 files, and 16 GiB from a folder or 2 GiB from a bucket. A source lists up to 200,000 matched files, or fewer when its manifest sets a lower limit, and its page says when it holds more. Adding a resource with more files than that limit is refused: narrow it in the **Add** dialog, or pick files under **Files**.
+- **Size.** 4 GiB per file from a folder, and the download limit per file from a bucket; 512 MiB for a GeoPackage or PBF. A combined table takes up to 10,000 files, and 16 GiB from a folder or 2 GiB from a bucket. A source lists up to 200,000 matched files, or fewer when its manifest sets a lower limit, and its page says when it holds more. Adding a resource with more files than that limit is refused: pick files under **Files**, or narrow it in the **Add** dialog when its row offers **Add to Data Catalog**.
+- **Rows that cannot be added.** A row over one of these limits, a shapefile without its `.dbf` or `.shx`, and GeoPackage or PBF files declared as one table say why under the row's name, and **Add to Data Catalog** is off. A row of several files still offers **Files**, to add some of them.
 - **Publishing.** A collection cannot be published.
 
 ---
@@ -313,10 +329,10 @@ What you download is yours, like any imported dataset. To offer it to everyone o
 | `compatibility.major` | | Defaults to 1. Together with `id` it forms the folder name. |
 | `description`, `publisher`, `homepage`, `license`, `tags` | | Shown on the card and in the details. |
 | `icon` | | A `.png` file in the source's folder, at most 256 KiB. Without one, the card shows the catalog's source glyph. |
-| `provider.type` | Yes | A portal: `socrata`, `ckan`, `arcgis`, `wfs`, or `direct`. Storage: `folder`, `s3`, or `huggingface`. A service: `autark-osm`, `mapillary`, or `google-streetview`. A model source: `huggingface-models`. |
-| `provider.baseUrl` | Yes, except for `direct` and `folder` | The portal's https address, the bucket's endpoint, or `https://huggingface.co`, with no trailing slash. `https://overpass-api.de` for `autark-osm`, where Autark sends its requests; `https://graph.mapillary.com` for `mapillary`; `https://maps.googleapis.com` for `google-streetview`. |
+| `provider.type` | Yes | A portal: `socrata`, `ckan`, `arcgis`, `wfs`, or `direct`. Storage: `folder`, `s3`, or `huggingface`. A service: `autark-osm`, `mapillary`, `google-streetview`, or `overture`. A model source: `huggingface-models`. |
+| `provider.baseUrl` | Yes, except for `direct` and `folder` | The portal's https address, the bucket's endpoint, or `https://huggingface.co`, with no trailing slash. `https://overpass-api.de` for `autark-osm`, where Autark sends its requests; `https://graph.mapillary.com` for `mapillary`; `https://maps.googleapis.com` for `google-streetview`; `https://stac.overturemaps.org`, Overture's catalog, for `overture`. |
 | `provider.root` | For `folder` | The folder, as an absolute path. A source shipped in `discovery/` may give one relative to the repository. |
-| `provider.options` | | Settings for that software: the API path, `landingBase` for a CKAN portal whose pages live on another host, `prefix` for a bucket, `repo` and `revision` for a Hugging Face dataset repository, `imageHosts` for `mapillary` (the hosts its images come from; a domain covers its subdomains), and `pipelineTag` for `huggingface-models` (the Hub task searched, `image-segmentation` by default). |
+| `provider.options` | | Settings for that software: the API path, `landingBase` for a CKAN portal whose pages live on another host, `prefix` for a bucket, `repo` and `revision` for a Hugging Face dataset repository, `imageHosts` for `mapillary` (the hosts its images come from; a domain covers its subdomains), `dataHosts` for `overture` (the hosts its GeoParquet files are read from), and `pipelineTag` for `huggingface-models` (the Hub task searched, `image-segmentation` by default). |
 | `auth.mode` | | `public`, `optional-token`, or `required-token`. |
 | `auth.secretId`, `auth.scheme` | With a token | Which account credential to send, and how. Curio knows `socrata.app-token`, `huggingface.token`, `google.maps-key` and `mapillary.token`. `scheme` is `header` (the default) or `query`, for an API that documents no other way. |
 | `auth.headerName`, `auth.valuePrefix` | With `header` | The header, and what comes before the credential in it (`Bearer ` for Hugging Face, `OAuth ` for Mapillary). |
@@ -324,7 +340,7 @@ What you download is yours, like any imported dataset. To offer it to everyone o
 | `auth.helpUrl` | | Where a user gets a token. Shown in the details. |
 | `capabilities.search`, `describe`, `download` | | What the portal supports. All default to true. |
 | `capabilities.formats` | | A portal only: the formats it may deliver, from the five Curio downloads. A storage or service source's formats follow from its resources, and a manifest of either that declares them is refused. |
-| `capabilities.maxDownloadBytes` | | A download limit below the 64 MiB default. |
+| `capabilities.maxDownloadBytes` | | A download limit for this source, below the server's (1 GiB unless `--discovery-max-download-mb` sets another). A larger value is read as the server's. |
 | `capabilities.allowOffBaseDistributions` | | Lets a download come from a host other than `baseUrl`, for a CKAN portal whose files live on each publisher's own site. Off by default. |
 | `limits.requestsPerMinute` | | Requests per minute to a portal, per user. Default 30. A storage source's requests are not counted. |
 | `limits.maxFiles` | | A storage source: how many matched files it lists and adds at once. Default and most 200,000. |
@@ -337,12 +353,12 @@ Each entry of `parameters` is one question the **Download** dialog asks, and the
 
 | Field | What it declares |
 |---|---|
-| `id` | What the answer is called. A source may declare only the ids its provider reads: `area` for `socrata`, `wfs` and `autark-osm`, and `tags` for one `autark-osm` resource at a time, declared on that resource and required; `area`, `captured`, `imageType`, `size` and `maxImages` for `mapillary`; `area`, `spacing`, `headings`, `fov`, `pitch`, `size`, `outdoorOnly` and `maxImages` for `google-streetview`; none for the others. |
+| `id` | What the answer is called. A source may declare only the ids its provider reads: `area` for `socrata`, `wfs` and `autark-osm`, and `tags` for one `autark-osm` resource at a time, declared on that resource and required; `area`, `captured`, `imageType`, `size` and `maxImages` for `mapillary`; `area`, `spacing`, `headings`, `fov`, `pitch`, `size`, `outdoorOnly` and `maxImages` for `google-streetview`; `area` for `overture`; none for the others. |
 | `type` | `area`, `dateRange`, `choice` (one, or several with `multiple`), `number`, `integer`, `boolean`, `text` (with a `pattern`), `url` (https), or `tags` (1 to 16 OpenStreetMap tags, each `key=value` or `key=*`, in any order). |
 | `label`, `description` | What the dialog says. |
 | `required` | Whether the download needs an answer. |
 | `default`, `min`, `max`, `step`, `unit`, `options` | A number's range and a choice's options. |
-| `accepts` | For an `area`: `box`, `names`, or both. `socrata`, `wfs`, `mapillary` and `google-streetview` take a box; `autark-osm` takes both. |
+| `accepts` | For an `area`: `box`, `names`, or both. `socrata`, `wfs`, `mapillary`, `google-streetview` and `overture` take a box; `autark-osm` takes both. |
 | `maxAreaKm2` | For an `area`: the largest box, in km². |
 | `suggestions` | For `tags`: OpenStreetMap keys the field offers as you type, such as `amenity` or `shop`. |
 
@@ -350,7 +366,7 @@ A Socrata dataset takes an area when it has a point, location, line or polygon c
 
 ### Resources
 
-A service's `resources` say what it can be asked for: each has an `id`, a `name` and `description`, and a `kind`. A `table` resource has `format` `geojson`; an `images` resource lands as a collection. For `autark-osm`, each has one of: `options.layers`, the Autark layers it loads (`buildings`, `roads`, `parks`, `water`, `surface`); `options.tags`, the tags whose features it loads, each `key=value` or `key=*`; or a required `tags` parameter, the tags a person enters. For `mapillary`, `options.endpoint` is `images` for an `images` resource and `map_features` for a table. A service resource has no `path`. A model source declares no resources: its models are found by searching it.
+A service's `resources` say what it can be asked for: each has an `id`, a `name` and `description`, and a `kind`. A `table` resource has `format` `geojson`, or `parquet` for `overture`; an `images` resource lands as a collection. For `autark-osm`, each has one of: `options.layers`, the Autark layers it loads (`buildings`, `roads`, `parks`, `water`, `surface`); `options.tags`, the tags whose features it loads, each `key=value` or `key=*`; or a required `tags` parameter, the tags a person enters. For `mapillary`, `options.endpoint` is `images` for an `images` resource and `map_features` for a table. For `overture`, `options.theme` and `options.type` name the feature type as Overture's catalog does (`buildings` and `building`, `transportation` and `segment`), `options.subtype` keeps one subtype of it, and `options.layer` is the Autark layer an Autark map draws it as. A service resource has no `path`. A model source declares no resources: its models are found by searching it.
 
 A storage source's `resources` say how its files are organized. `provider` says where they are.
 
@@ -432,6 +448,7 @@ Curio reads public S3 buckets, and Hugging Face dataset repositories, with your 
 | Variable | Flag | Effect |
 |---|---|---|
 | `CURIO_DISCOVERY_ROOT` | `--discovery-root` | Reads the shipped sources from this directory instead of `<repo_root>/discovery`. |
+| `CURIO_DISCOVERY_MAX_DOWNLOAD_MB` | `--discovery-max-download-mb` | The largest file a download or a bucket add takes, in megabytes. Default 1024. A source's manifest may set a lower limit for itself. |
 | `CURIO_DEFAULT_SOCRATA_APP_TOKEN` | none | A Socrata app token every account inherits until it saves its own. |
 | `CURIO_MEDIA_CACHE_MAX_GB` | none | How much each account may hold in cached bucket files. Default 20. |
 

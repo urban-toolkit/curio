@@ -54,6 +54,7 @@ class Combined:
 
 
 def check_bounds(files, *, local: bool) -> None:
+    """Refuse more files, or more bytes, than one table combines."""
     if len(files) > MAX_COMBINED_FILES:
         raise DownloadTooLarge(
             f"{len(files):,} files is more than one table combines ({MAX_COMBINED_FILES:,}); "
@@ -64,6 +65,15 @@ def check_bounds(files, *, local: bool) -> None:
     if total > bound:
         raise DownloadTooLarge(
             f"these files total {total:,} bytes; one combined table is limited to {bound:,}"
+        )
+
+
+def check_format(spec: ResourceSpec) -> None:
+    """Refuse a format whose files cannot be combined into one table."""
+    if spec.format not in DUCKDB_READERS and spec.format not in ("geojson", "shp"):
+        raise CapabilityUnsupported(
+            f"{spec.name}: {spec.format} files hold layers of their own and are added one at a time; "
+            "declare the resource with datasets: per-file"
         )
 
 
@@ -83,6 +93,7 @@ def combine(
     from: the file itself for a folder whose bytes are already UTF-8, or a
     staged copy.
     """
+    check_format(spec)
     fmt = spec.format
     staged: list[tuple[Path, Any]] = []
     for index, found in enumerate(files, start=1):
@@ -95,12 +106,7 @@ def combine(
             items(index, len(files))
     if fmt in DUCKDB_READERS:
         return _combine_with_duckdb(spec, staged, tmp=tmp, dest=dest)
-    if fmt in ("geojson", "shp"):
-        return _combine_geo(spec, staged, dest=dest)
-    raise CapabilityUnsupported(
-        f"{spec.name}: {fmt} files hold layers of their own and are added one at a time; "
-        "declare the resource with datasets: per-file"
-    )
+    return _combine_geo(spec, staged, dest=dest)
 
 
 def _derived_names(spec: ResourceSpec, data_columns) -> tuple[dict[str, str], str]:

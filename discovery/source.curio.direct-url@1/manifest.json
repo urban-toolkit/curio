@@ -15,7 +15,6 @@
     "describe": true,
     "download": true,
     "formats": ["csv", "geojson", "json", "parquet", "geotiff"],
-    "maxDownloadBytes": 67108864,
     "allowOffBaseDistributions": false
   },
   "limits": { "requestsPerMinute": 30 },

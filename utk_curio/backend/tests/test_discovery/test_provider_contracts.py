@@ -175,6 +175,23 @@ def test_a_hugging_face_tree_still_lists_files_with_paths_and_sizes():
     assert "path" in files[0] and "size" in files[0]
 
 
+def test_overtures_catalog_still_names_its_latest_release_and_each_files_box():
+    from utk_curio.backend.app.discovery.providers import overture
+
+    root = probe_json(f"{overture.STAC_BASE}/catalog.json")
+    release = root.get("latest")
+    assert isinstance(release, str) and overture._RELEASE_RE.match(release), "no latest release"
+    collection = probe_json(f"{overture.STAC_BASE}/{release}/buildings/building/collection.json")
+    boxes = collection["extent"]["spatial"]["bbox"]
+    items = [link["href"] for link in collection["links"] if link.get("rel") == "item"]
+    assert items and len(boxes) == len(items) + 1, "the boxes no longer follow the items"
+    item = probe_json(items[0])
+    assert item["bbox"] == boxes[1], "the first item's box is not the collection's first file box"
+    asset = item["assets"][overture.ASSET]
+    assert asset["href"].startswith("https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/")
+    assert isinstance(asset["file:size"], int)
+
+
 # ── Keyed services: checked only with a key the person running them holds ──
 #
 # No key is in the repository or in CI, so this skips there. With your own key
