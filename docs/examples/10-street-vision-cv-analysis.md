@@ -148,7 +148,7 @@ A `Vega-Lite` node wired to the join maps the photos, each colored by the domina
           "field": "neighborhood_dominant_class",
           "type": "nominal",
           "scale": {
-            "domain": ["road","sidewalk","building","vegetation","sky","car"],
+            "domain": ["road","sidewalk","building","vegetation","sky","terrain"],
             "range":  ["#4A90D9","#8B5CF6","#2ECC71","#F5A623","#3498DB","#2C3E50"]
           },
           "legend": {"title": "Dominant class"}
@@ -186,7 +186,7 @@ A second `Vega-Lite` off the same join counts photos per neighborhood, each bar 
       "field": "dominant_class",
       "type": "nominal",
       "scale": {
-        "domain": ["road","sidewalk","building","vegetation","sky","car"],
+        "domain": ["road","sidewalk","building","vegetation","sky","terrain"],
         "range":  ["#4A90D9","#8B5CF6","#2ECC71","#F5A623","#3498DB","#2C3E50"]
       }
     }

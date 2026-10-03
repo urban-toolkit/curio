@@ -209,8 +209,8 @@ Visualizations can be connected to a {{template.label:curio.builtin/data-pool}} 
     "x": {"field": "gt_65", "type": "quantitative"},
     "y": {"field": "mean", "type": "quantitative", 
     "scale": {"domain": [37, 42]}}, 
-    "fillOpacity": { 
-        "condition": {"param": "clickSelect", "value": 1}, 
+    "opacity": {
+        "condition": {"param": "clickSelect", "value": 0.7},
         "value": 0.3 
     }, 
     "color": {
@@ -286,7 +286,7 @@ An example of a dataflow:
                 "id": "node9",
                 "x": 2400, "y": 0,
                 "type": "curio.builtin/vis-vega",
-                "content": "{\n\"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n\"params\": [\n{\"name\": \"clickSelect\", \"select\": \"interval\"}\n],\n\"mark\": {\n\"type\": \"point\",\n\"cursor\": \"pointer\"\n},\n\"encoding\": {\n\"x\": {\"field\": \"gt_65\", \"type\": \"quantitative\"},\n\"y\": {\"field\": \"mean\", \"type\": \"quantitative\", \"scale\": {\"domain\": [37, 42]}},\n\"fillOpacity\": {\n\"condition\": {\"param\": \"clickSelect\", \"value\": 1},\n\"value\": 0.3\n},\n\"color\": {\n\"condition\": {\"test\": \"datum.interacted === '1'\", \"value\": \"red\"},\n\"value\": \"blue\"\n}\n},\n\"config\": {\n\"scale\": {\n\"bandPaddingInner\": 0.2\n}\n}\n}"
+                "content": "{\n\"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n\"params\": [\n{\"name\": \"clickSelect\", \"select\": \"interval\"}\n],\n\"mark\": {\n\"type\": \"point\",\n\"cursor\": \"pointer\"\n},\n\"encoding\": {\n\"x\": {\"field\": \"gt_65\", \"type\": \"quantitative\"},\n\"y\": {\"field\": \"mean\", \"type\": \"quantitative\", \"scale\": {\"domain\": [37, 42]}},\n\"opacity\": {\n\"condition\": {\"param\": \"clickSelect\", \"value\": 0.7},\n\"value\": 0.3\n},\n\"color\": {\n\"condition\": {\"test\": \"datum.interacted === '1'\", \"value\": \"red\"},\n\"value\": \"blue\"\n}\n},\n\"config\": {\n\"scale\": {\n\"bandPaddingInner\": 0.2\n}\n}\n}"
             },
             {
                 "id": "node10",
