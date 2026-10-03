@@ -66,7 +66,7 @@ discovery/
 
 | Layer | On disk | Written by |
 |---|---|---|
-| **Sources**, the portals and storage this install can reach | `<repo_root>/discovery/<sourceId>@<major>/`, or `$CURIO_DISCOVERY_ROOT` when set, and `.curio/discovery/` for an operator's own | The operator. Nothing in the app writes here. |
+| **Sources**, the portals and storage this install can reach | `<repo_root>/discovery/<sourceId>@<major>/`, or the directory `--discovery-root` names, and `.curio/discovery/` for an operator's own | The operator. Nothing in the app writes here. |
 | **Your token**, for sources that take one | Your account | You, in **API Settings**. |
 | **Downloaded and added datasets** | Your Data Catalog store, `.curio/users/<user-key>/datasets/` | **Download** and **Add to Data Catalog**. A table is an ordinary imported dataset; a collection is its index. |
 | **A collection's files** | Where the source keeps them | Nobody. Curio reads them in place. |
@@ -431,7 +431,7 @@ Curio reads public S3 buckets, and Hugging Face dataset repositories, with your 
 
 | Variable | Flag | Effect |
 |---|---|---|
-| `CURIO_DISCOVERY_ROOT` | none | Reads the shipped sources from this directory instead of `<repo_root>/discovery`. |
+| `CURIO_DISCOVERY_ROOT` | `--discovery-root` | Reads the shipped sources from this directory instead of `<repo_root>/discovery`. |
 | `CURIO_DEFAULT_SOCRATA_APP_TOKEN` | none | A Socrata app token every account inherits until it saves its own. |
 | `CURIO_MEDIA_CACHE_MAX_GB` | none | How much each account may hold in cached bucket files. Default 20. |
 
