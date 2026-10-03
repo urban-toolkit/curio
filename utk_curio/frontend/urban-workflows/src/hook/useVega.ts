@@ -37,18 +37,29 @@ if (typeof window !== 'undefined') {
  * Refusing is better than ignoring. The chart shows vega's own error for the
  * reference it could not load, which says which one it was, rather than drawing
  * a layer short and looking merely wrong.
+ *
+ * Built on first use rather than at import: several suites mock `vega` down to
+ * the handful of members they need, and a module-level `vega.loader(...)` call
+ * makes importing this file throw in every one of them.
  */
-const OFFLINE_VIEW_OPTIONS = {
-  loader: vega.loader({
-    load: (uri: string) =>
-      Promise.reject(
-        new Error(
-          `This dashboard cannot load ${uri}: a published dashboard draws only `
-          + `from the data saved with it.`,
-        ),
-      ),
-  }),
-};
+let offlineViewOptions: { loader: unknown } | undefined;
+
+function offlineViewOptionsOnce() {
+  if (!offlineViewOptions) {
+    offlineViewOptions = {
+      loader: vega.loader({
+        load: (uri: string) =>
+          Promise.reject(
+            new Error(
+              `This dashboard cannot load ${uri}: a published dashboard draws only `
+              + `from the data saved with it.`,
+            ),
+          ),
+      }),
+    };
+  }
+  return offlineViewOptions;
+}
 
 export const useVega = ({
   data,
@@ -371,7 +382,7 @@ export const useVega = ({
     clearEmptyState(document.getElementById("vega" + data.nodeId));
     hasRunRef.current = true;
 
-    let view = new vega.View(vega.parse(vegaspec), dashboardOn ? OFFLINE_VIEW_OPTIONS : undefined)
+    let view = new vega.View(vega.parse(vegaspec), dashboardOn ? offlineViewOptionsOnce() : undefined)
       .logLevel(vega.Warn) // set view logging level
       .renderer("canvas")
       .initialize("#vega" + data.nodeId)

@@ -292,14 +292,14 @@ class TestATileThatFetchesItsOwnData:
         assert payload.outputs == {}
 
     def test_an_unpinned_node_with_data_sources_is_not_a_refusal(self):
-        # It is not a tile. Its output is saved and embedded like any producer's.
+        # It is not a tile, it is the shape the refusal tells people to move to:
+        # a data node of its own, whose output is saved and travels with the
+        # page. A data-only spec, deliberately, because a spec carrying a `map`
+        # classifies as render however little else it does, and a render node is
+        # walked through rather than treated as a producer.
         spec = spec_of(
             [
-                node(
-                    "loader",
-                    "curio.builtin/autk-grammar",
-                    code=json.dumps({"map": {}, "data": [{"type": "osm"}]}),
-                ),
+                node("loader", "curio.builtin/autk-grammar", code=DATA_SPEC),
                 node("map", "curio.builtin/autk-grammar", code=RENDER_SPEC, dashboardPinned=True),
             ],
             [edge("loader", "map")],
