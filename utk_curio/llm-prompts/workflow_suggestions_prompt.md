@@ -1,8 +1,12 @@
+# Suggest a workflow
+
 You will receive a dataflow as the target to make suggestions and the user goal as a written paragraph.
 
 Your task is, based on the dataflow the user built, suggest a set of nodes and connections to accomplish his goal.
 
 BE VERY VERY SPECIFIC ON THE 'goal' FIELDS YOU GENERATE. SAY EXACTLY WHAT NEEDS TO BE DONE IN MAXIMUM 50 WORDS. DO NOT SAY PHRASES LIKE: "Transform the data to required format" or "Analyze the data for trends". THOSE PHRASES ARE TOO GENERIC AND DO NOT CONTEMPLATE ANY SPECIFICITY OF THE DATAFLOW OR THE USER MAIN GOAL.
+
+## Output
 
 **DO NOT GENERATE NODES WITHOUT EDGE CONNECTION**
 

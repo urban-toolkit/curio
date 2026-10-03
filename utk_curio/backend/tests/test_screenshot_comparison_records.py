@@ -17,6 +17,7 @@ import pytest
 from PIL import Image
 
 from utk_curio.backend.tests.test_frontend import comparisons
+from utk_curio.backend.tests.test_frontend.utils import closeups
 from utk_curio.backend.tests.test_frontend.utils import interactions
 from utk_curio.backend.tests.test_frontend.utils import screenshots as e2e_utils
 
@@ -264,7 +265,7 @@ class _PointerPage(_StubPage):
         self.will_change = []
 
     def evaluate(self, script, arg=None, **k):
-        if script == e2e_utils._VIEWPORT_WILL_CHANGE_JS:
+        if script == closeups._VIEWPORT_WILL_CHANGE_JS:
             self.will_change.append(arg)
             return None
         raise RuntimeError("no browser")
@@ -281,9 +282,9 @@ def test_a_node_close_up_counts_a_pale_blank_that_a_full_page_does_not(dirs, mon
     monkeypatch.setattr(e2e_utils, "_wait_for_no_node_running", lambda page: None)
 
     with pytest.raises(AssertionError, match=r"100/100 pixels differ"):
-        e2e_utils.save_node_closeup(_PointerPage(), "scene.json", "n1", test_name="step")
+        closeups.save_node_closeup(_PointerPage(), "scene.json", "n1", test_name="step")
     [(_, record)] = _records(compare)
-    assert (record["pixel_threshold"], record["closeup"]) == (e2e_utils.CLOSEUP_PIXEL_THRESHOLD, True)
+    assert (record["pixel_threshold"], record["closeup"]) == (closeups.CLOSEUP_PIXEL_THRESHOLD, True)
     assert record["capture"] == 'element .react-flow__node[data-id="n1"]'
 
     # The same pair at the full-page tolerance passes: nothing is counted.
@@ -299,9 +300,9 @@ def test_a_node_close_up_fails_a_blank_that_a_full_page_budget_lets_through(dirs
     monkeypatch.setattr(e2e_utils, "_wait_for_no_node_running", lambda page: None)
 
     with pytest.raises(AssertionError, match=r"9/100 pixels differ \(9\.00%\), allowed 5\.00%"):
-        e2e_utils.save_node_closeup(_PointerPage(), "scene.json", "n1", test_name="step")
+        closeups.save_node_closeup(_PointerPage(), "scene.json", "n1", test_name="step")
     [(_, record)] = _records(compare)
-    assert record["max_diff_ratio"] == e2e_utils.CLOSEUP_MAX_DIFF_RATIO
+    assert record["max_diff_ratio"] == closeups.CLOSEUP_MAX_DIFF_RATIO
 
     # The same pair against the full-page budget passes.
     _save(monkeypatch, lambda page: _white())
@@ -337,8 +338,8 @@ def test_an_interaction_frame_keeps_the_pointer_and_the_framing(dirs, monkeypatc
 
     [(_, record)] = _records(compare)
     assert (record["status"], record["interaction"]) == ("passed", INTERACTION)
-    assert record["pixel_threshold"] == e2e_utils.CLOSEUP_PIXEL_THRESHOLD
-    assert record["max_diff_ratio"] == e2e_utils.CLOSEUP_MAX_DIFF_RATIO
+    assert record["pixel_threshold"] == closeups.CLOSEUP_PIXEL_THRESHOLD
+    assert record["max_diff_ratio"] == closeups.CLOSEUP_MAX_DIFF_RATIO
     assert record["capture"] == 'element .react-flow__node[data-id="n1"]'
     assert "closeup" not in record
 
@@ -368,7 +369,7 @@ def test_a_close_up_is_painted_without_the_viewport_layer_hint(dirs, monkeypatch
     monkeypatch.setattr(e2e_utils, "_wait_for_reactflow_ready", lambda p, **kw: None)
     monkeypatch.setattr(e2e_utils, "_wait_for_no_node_running", lambda p: None)
     with pytest.raises(AssertionError):
-        e2e_utils.save_node_closeup(page, "scene.json", "n1", test_name="step")
+        closeups.save_node_closeup(page, "scene.json", "n1", test_name="step")
     # Off while the node is framed and captured, handed back even on a failure.
     assert seen == [["auto"]]
     assert page.will_change == ["auto", ""]

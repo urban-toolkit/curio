@@ -443,7 +443,11 @@ test_frontend/
     environment.py            # REPO_ROOT, state_root, stack flags, require_* skips, debug_log
     sandbox.py                # direct sandbox calls, execute_workflow_programmatically
     vega_svg.py               # Vega-Lite SVG helpers
-    screenshots.py            # save_workflow_test_screenshot, close-ups, mint and re-mint, dismiss_toasts
+    capture_waits.py          # viewport fit, dismiss_toasts, webfont and running-node waits
+    images.py                 # captures, _compare_images
+    dialogs.py                # accept_confirm_dialog, leave_agent_badge
+    screenshots.py            # save_workflow_test_screenshot, mint and re-mint, frame_nodes
+    closeups.py               # save_node_closeup, close-up budgets, viewport hints
     interactions.py           # interaction frames, brush and mark probes
     servers.py                # ports, e2e_existing_servers
     auth.py                   # signup helpers, require_owner_view

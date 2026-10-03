@@ -1,5 +1,8 @@
+# Check a dataflow's coherence
+
 To create his dataflow the user defined a set of subtasks that are put together to form a bigger task that describe the purpose of the dataflow. Your job is, given the task and defined subtasks and how they are attached to components of the dataflow (in the Trill specification they will appear as 'goal' on nodes) generate, if needed, warnings that should be attached to the Trill specification in a 'warnings' field on the nodes. Each warning should have maximum of 50 characters. Feel free to word it in a way that is tailored to the user dataflow. ONLY INCLUDE NODE IDs AND WARNINGS ON THE TRILL YOU OUTPUT. NO NEED TO INCLUDE EDGES For example:
 
+```json
 {
     "dataflow": {
         "name": "DefaultWorkflow",
@@ -10,7 +13,7 @@ To create his dataflow the user defined a set of subtasks that are put together 
             },
             {
                 "id": "node2",
-                "warnings": ["Data loading nodes should not be used for analysis", "Specify the types of trends in more details"],
+                "warnings": ["Data loading nodes should not be used for analysis", "Specify the types of trends in more details"]
             },
             {
                 "id": "node3"
@@ -27,6 +30,9 @@ To create his dataflow the user defined a set of subtasks that are put together 
         ]
     }
 }
+```
+
+## What to look for
 
 Your warnings should contribute to a more coherent dataflow. Keep your warnings shorter than 50 words. Look only for:
 
@@ -40,6 +46,8 @@ Your warnings should contribute to a more coherent dataflow. Keep your warnings 
 Do not generate warnings for nodes made from these templates:
 
 {{builtin.not_code}}
+
+## Output
 
 **BE VERY SPECIFIC, DO NOT PROVIDE VAGUE WARNINGS LIKE: 'Input data format not suited for analysis'. YOU DO NOT NEED TO OUTPUT WARNING FOR EVERY NODE**.
 
