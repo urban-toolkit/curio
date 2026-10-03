@@ -77,6 +77,18 @@ class TestLoadData:
         assert isinstance(frame, gpd.GeoDataFrame) and frame.crs.to_epsg() == 4326
         assert not isinstance(load("p"), gpd.GeoDataFrame)
 
+    def test_a_geoparquet_download_is_a_geodataframe_with_its_autark_layer(self, tmp_path):
+        """An Overture Maps download is GeoParquet: it loads as its layer, as an
+        OpenStreetMap GeoJSON download does."""
+        import geopandas as gpd
+        from shapely.geometry import Point
+
+        path = tmp_path / "overture_buildings.parquet"
+        gpd.GeoDataFrame({"height": [10.0]}, geometry=[Point(0, 0)], crs="EPSG:4326").to_parquet(path)
+        frame = _helpers({"d": path}, {"d": {"format": "parquet", "layerType": "buildings"}})["curio_load_data"]("d")
+        assert isinstance(frame, gpd.GeoDataFrame)
+        assert frame.metadata == {"layerType": "buildings"}
+
     def test_json_is_read_compressed_or_plain(self, tmp_path):
         packed, plain = tmp_path / "a.json.zlib", tmp_path / "b.json"
         packed.write_bytes(zlib.compress(b'{"n": 1}'))

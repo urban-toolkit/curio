@@ -1,0 +1,16 @@
+{
+ "type": "Feature",
+ "id": "00000",
+ "bbox": [
+  -46.625,
+  -23.55500030517578,
+  -46.60499954223633,
+  -23.53499984741211
+ ],
+ "assets": {
+  "aws": {
+   "href": "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=transportation/type=segment/part-00000-synthetic.zstd.parquet",
+   "file:size": 4574
+  }
+ }
+}

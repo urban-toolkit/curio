@@ -228,6 +228,8 @@ class CatalogMutations:
         row_count: int | None = None,
         feature_count: int | None = None,
         collection: dict[str, Any] | None = None,
+        group_id: str | None = None,
+        layer_name: str | None = None,
     ) -> dict[str, Any]:
         """Install a file already on disk, without reading it into memory.
 
@@ -263,6 +265,8 @@ class CatalogMutations:
                 filename,
                 fmt,
                 title=title,
+                group_id=group_id,
+                layer_name=layer_name,
                 source_updated_at=source_updated_at,
                 source_encoding=source_encoding,
                 discovery_source=discovery_source,

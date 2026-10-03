@@ -1,0 +1,16 @@
+{
+ "type": "Feature",
+ "id": "00001",
+ "bbox": [
+  9.999799728393555,
+  49.99980163574219,
+  10.030200004577637,
+  50.03020095825195
+ ],
+ "assets": {
+  "aws": {
+   "href": "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00001-synthetic.zstd.parquet",
+   "file:size": 5187
+  }
+ }
+}

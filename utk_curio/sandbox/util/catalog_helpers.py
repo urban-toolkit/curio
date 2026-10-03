@@ -129,7 +129,10 @@ def read_dataset(path: str, fmt: str | None, *, layer_type: str | None = None):
             frame.metadata = {"layerType": layer_type}
         return frame
     if fmt == "parquet":
-        return _read_parquet(path)
+        frame = _read_parquet(path)
+        if layer_type:
+            frame.metadata = {"layerType": layer_type}
+        return frame
     if fmt == "json":
         return _read_json(path)
     if fmt == "geotiff":

@@ -60,6 +60,7 @@ discovery/
 | Hugging Face documentation images | Hugging Face | Public; a token raises the rate limit |
 | Mapillary | Mapillary | Token needed. Street-level photos for a box, each credited to its photographer (CC BY-SA 4.0), and the signs and objects detected in them, as points |
 | Google Street View | Google | Key needed; Google bills its requests to you. Street View images for a box, one per panorama and heading |
+| Overture Maps | Overture Maps | Public. Buildings, building parts, places and road segments for a box, from Overture's latest release |
 | Hugging Face models | Hugging Face | Public; a token opens the gated models your account can read. Image segmentation models a node can run |
 
 ### Storage layers
@@ -127,6 +128,8 @@ A storage source is read when it is first opened, and again when its listing is 
 **I want OpenStreetMap buildings for a neighbourhood.** Open the OpenStreetMap card's page and click **Download** on **Buildings**. Set the **Area**: a place, coordinates or a dataset's extent give a box; **Named areas** takes a place and the boundaries inside it, as OpenStreetMap names them. **Download** loads them through Autark, and the dataset is named after the area: one row per building or building part, with its tags and its `osm_id`. Footprints that touch share a `building_id`, as an Autark map draws them as one building. **All layers** adds buildings, roads, parks, water and surface as one group.
 
 **I want the cafés in a neighbourhood.** Open the OpenStreetMap card's page and click **Download** on **Features by tag**. Set the **Area**, type `amenity=cafe` in **Tags** and press Enter, and click **Download**. The cafés land as one group named after the tags and the area: a points dataset for cafés mapped as a point, and a polygons dataset for those mapped as a building or an area. **Points of interest** does the same for amenities, shops, tourism, leisure, offices, crafts, healthcare and historic sites, with no tags to type.
+
+**I want Overture's buildings, places or roads for an area.** Open the Overture Maps card's page and click **Download** on **Buildings**, **Building parts**, **Places** or **Road segments**. Set the **Area** to a box (a place, coordinates or a dataset's extent) and click **Download**. The rows land as one GeoParquet dataset named after the area, each with the columns Overture gives it, such as `height`, `num_floors`, `class`, `names` and `sources` for a building.
 
 **I want street-level photos of an area.** Set your Mapillary access token ([part 5](#5-api-tokens)), open the Mapillary card's page, and click **Download** on **Street-level images**. Set the **Area**, and if you like **Taken between**, **Images** (all, panoramas only, or no panoramas), **Size** and **Most images**. The photos land as one collection of images, each row with its photographer (`creator`), `captured_at`, `compass_angle`, `is_pano`, `sequence` and position. **Map features** downloads the signs and objects Mapillary detected in a box, as a table of points. [Example 10](examples/10-street-vision-cv-analysis.md) segments a set of these photos.
 
@@ -219,6 +222,15 @@ What each layer holds:
 | **Features by tag** | Nodes, ways and multipolygon relations with any of the tags entered | Points, lines and areas |
 
 A way that is tagged as an area but does not close is a line. In **Points of interest** and **Features by tag**, a way that closes is an area unless it is tagged `area=no`, or is a `highway`, `barrier`, `railway` or `waterway` without `area=yes`; then it is a line.
+
+### Downloading from Overture Maps
+
+- **The latest release.** Each download reads the release Overture's catalog names as its latest. The dataset's description names the release and its license.
+- **Only what the area needs.** Overture publishes each feature type as GeoParquet files, each with the box it covers. Curio reads the footers of the files whose box meets the area, then only their row groups whose box meets it, one request each.
+- **What a row is.** One Overture feature whose bounding box meets the area, with every column Overture gives it, named as Overture names it. Nested columns such as `names` and `sources` stay nested. **Road segments** keeps the segments whose `subtype` is `road`. A feature that crosses the edge is kept whole.
+- **The area.** A box of at most 100 km². A download that would read more than 512 MB of Overture's files is refused before any row is read, and says so.
+- **On an Autark map.** **Buildings** and **Road segments** name their layer (`df.metadata = {"layerType": "buildings"}`), so an Autark map draws them as buildings, raised to their height, and as roads.
+- **Credit.** Buildings and road segments are ODbL 1.0; Overture says how to credit each theme at [docs.overturemaps.org/attribution](https://docs.overturemaps.org/attribution/).
 
 ### Downloading street-level images
 
@@ -317,10 +329,10 @@ What you download is yours, like any imported dataset. To offer it to everyone o
 | `compatibility.major` | | Defaults to 1. Together with `id` it forms the folder name. |
 | `description`, `publisher`, `homepage`, `license`, `tags` | | Shown on the card and in the details. |
 | `icon` | | A `.png` file in the source's folder, at most 256 KiB. Without one, the card shows the catalog's source glyph. |
-| `provider.type` | Yes | A portal: `socrata`, `ckan`, `arcgis`, `wfs`, or `direct`. Storage: `folder`, `s3`, or `huggingface`. A service: `autark-osm`, `mapillary`, or `google-streetview`. A model source: `huggingface-models`. |
-| `provider.baseUrl` | Yes, except for `direct` and `folder` | The portal's https address, the bucket's endpoint, or `https://huggingface.co`, with no trailing slash. `https://overpass-api.de` for `autark-osm`, where Autark sends its requests; `https://graph.mapillary.com` for `mapillary`; `https://maps.googleapis.com` for `google-streetview`. |
+| `provider.type` | Yes | A portal: `socrata`, `ckan`, `arcgis`, `wfs`, or `direct`. Storage: `folder`, `s3`, or `huggingface`. A service: `autark-osm`, `mapillary`, `google-streetview`, or `overture`. A model source: `huggingface-models`. |
+| `provider.baseUrl` | Yes, except for `direct` and `folder` | The portal's https address, the bucket's endpoint, or `https://huggingface.co`, with no trailing slash. `https://overpass-api.de` for `autark-osm`, where Autark sends its requests; `https://graph.mapillary.com` for `mapillary`; `https://maps.googleapis.com` for `google-streetview`; `https://stac.overturemaps.org`, Overture's catalog, for `overture`. |
 | `provider.root` | For `folder` | The folder, as an absolute path. A source shipped in `discovery/` may give one relative to the repository. |
-| `provider.options` | | Settings for that software: the API path, `landingBase` for a CKAN portal whose pages live on another host, `prefix` for a bucket, `repo` and `revision` for a Hugging Face dataset repository, `imageHosts` for `mapillary` (the hosts its images come from; a domain covers its subdomains), and `pipelineTag` for `huggingface-models` (the Hub task searched, `image-segmentation` by default). |
+| `provider.options` | | Settings for that software: the API path, `landingBase` for a CKAN portal whose pages live on another host, `prefix` for a bucket, `repo` and `revision` for a Hugging Face dataset repository, `imageHosts` for `mapillary` (the hosts its images come from; a domain covers its subdomains), `dataHosts` for `overture` (the hosts its GeoParquet files are read from), and `pipelineTag` for `huggingface-models` (the Hub task searched, `image-segmentation` by default). |
 | `auth.mode` | | `public`, `optional-token`, or `required-token`. |
 | `auth.secretId`, `auth.scheme` | With a token | Which account credential to send, and how. Curio knows `socrata.app-token`, `huggingface.token`, `google.maps-key` and `mapillary.token`. `scheme` is `header` (the default) or `query`, for an API that documents no other way. |
 | `auth.headerName`, `auth.valuePrefix` | With `header` | The header, and what comes before the credential in it (`Bearer ` for Hugging Face, `OAuth ` for Mapillary). |
@@ -341,12 +353,12 @@ Each entry of `parameters` is one question the **Download** dialog asks, and the
 
 | Field | What it declares |
 |---|---|
-| `id` | What the answer is called. A source may declare only the ids its provider reads: `area` for `socrata`, `wfs` and `autark-osm`, and `tags` for one `autark-osm` resource at a time, declared on that resource and required; `area`, `captured`, `imageType`, `size` and `maxImages` for `mapillary`; `area`, `spacing`, `headings`, `fov`, `pitch`, `size`, `outdoorOnly` and `maxImages` for `google-streetview`; none for the others. |
+| `id` | What the answer is called. A source may declare only the ids its provider reads: `area` for `socrata`, `wfs` and `autark-osm`, and `tags` for one `autark-osm` resource at a time, declared on that resource and required; `area`, `captured`, `imageType`, `size` and `maxImages` for `mapillary`; `area`, `spacing`, `headings`, `fov`, `pitch`, `size`, `outdoorOnly` and `maxImages` for `google-streetview`; `area` for `overture`; none for the others. |
 | `type` | `area`, `dateRange`, `choice` (one, or several with `multiple`), `number`, `integer`, `boolean`, `text` (with a `pattern`), `url` (https), or `tags` (1 to 16 OpenStreetMap tags, each `key=value` or `key=*`, in any order). |
 | `label`, `description` | What the dialog says. |
 | `required` | Whether the download needs an answer. |
 | `default`, `min`, `max`, `step`, `unit`, `options` | A number's range and a choice's options. |
-| `accepts` | For an `area`: `box`, `names`, or both. `socrata`, `wfs`, `mapillary` and `google-streetview` take a box; `autark-osm` takes both. |
+| `accepts` | For an `area`: `box`, `names`, or both. `socrata`, `wfs`, `mapillary`, `google-streetview` and `overture` take a box; `autark-osm` takes both. |
 | `maxAreaKm2` | For an `area`: the largest box, in km². |
 | `suggestions` | For `tags`: OpenStreetMap keys the field offers as you type, such as `amenity` or `shop`. |
 
@@ -354,7 +366,7 @@ A Socrata dataset takes an area when it has a point, location, line or polygon c
 
 ### Resources
 
-A service's `resources` say what it can be asked for: each has an `id`, a `name` and `description`, and a `kind`. A `table` resource has `format` `geojson`; an `images` resource lands as a collection. For `autark-osm`, each has one of: `options.layers`, the Autark layers it loads (`buildings`, `roads`, `parks`, `water`, `surface`); `options.tags`, the tags whose features it loads, each `key=value` or `key=*`; or a required `tags` parameter, the tags a person enters. For `mapillary`, `options.endpoint` is `images` for an `images` resource and `map_features` for a table. A service resource has no `path`. A model source declares no resources: its models are found by searching it.
+A service's `resources` say what it can be asked for: each has an `id`, a `name` and `description`, and a `kind`. A `table` resource has `format` `geojson`, or `parquet` for `overture`; an `images` resource lands as a collection. For `autark-osm`, each has one of: `options.layers`, the Autark layers it loads (`buildings`, `roads`, `parks`, `water`, `surface`); `options.tags`, the tags whose features it loads, each `key=value` or `key=*`; or a required `tags` parameter, the tags a person enters. For `mapillary`, `options.endpoint` is `images` for an `images` resource and `map_features` for a table. For `overture`, `options.theme` and `options.type` name the feature type as Overture's catalog does (`buildings` and `building`, `transportation` and `segment`), `options.subtype` keeps one subtype of it, and `options.layer` is the Autark layer an Autark map draws it as. A service resource has no `path`. A model source declares no resources: its models are found by searching it.
 
 A storage source's `resources` say how its files are organized. `provider` says where they are.
 
