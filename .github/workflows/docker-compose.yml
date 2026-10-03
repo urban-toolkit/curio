@@ -316,8 +316,9 @@ jobs:
       # workers already reach that floor.
       CURIO_E2E_PARALLEL: "6"
       CURIO_E2E_BACKEND_URL: "http://localhost:5022"
-      # Host-side Playwright targets the remapped ports (utils.py
-      # e2e_existing_servers / _backend_base_url_for_config read these).
+      # Host-side Playwright targets the remapped ports (e2e_existing_servers
+      # in utils/servers.py and _backend_base_url_for_config in
+      # utils/environment.py read these).
       CURIO_E2E_HOST: localhost
       CURIO_E2E_BACKEND_PORT: "5022"
       CURIO_E2E_SANDBOX_PORT: "2020"

@@ -4,7 +4,7 @@
  *
  * The old dark-bar "Catalog" button is gone (the section tabs replaced it),
  * and Playwright waits on the Projects tab link rather than a heading
- * (wait_for_projects_page in backend/tests/test_frontend/utils.py), so that
+ * (wait_for_projects_page in backend/tests/test_frontend/utils/auth.py), so that
  * link's accessible name matters.
  */
 // ProjectsList toasts the outcome of a delete (#221), and the real
@@ -385,7 +385,7 @@ describe('projects detail drawer', () => {
     // This duplication is deliberate, and it is why the e2e suite cannot look a
     // project up by bare text: with one project on the page, get_by_text(name)
     // matches both nodes and Playwright fails it as a strict mode violation.
-    // project_card() in backend/tests/test_frontend/utils.py scopes to the card
+    // project_card() in backend/tests/test_frontend/utils/auth.py scopes to the card
     // via the two selectors asserted here, so this test guards that contract.
     const card = container.querySelector(
       '[data-curio-projects-scroll="true"] [data-project-id="p1"]'

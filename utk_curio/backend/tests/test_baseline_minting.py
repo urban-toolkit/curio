@@ -23,7 +23,7 @@ import re
 import pytest
 from PIL import Image
 
-from utk_curio.backend.tests.test_frontend import utils as e2e_utils
+from utk_curio.backend.tests.test_frontend.utils import screenshots as e2e_utils
 
 
 def _painted() -> Image.Image:

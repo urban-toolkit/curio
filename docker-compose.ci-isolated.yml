@@ -18,7 +18,7 @@
 # 2. NO execution user (CURIO_EXEC_USER is empty). Setting one makes the sandbox chmod ./instance and
 #    ./.curio/data to 0700/0600 root-owned. The e2e harness computes its
 #    ground truth by executing every code node IN THE HOST TEST PROCESS
-#    (test_frontend/utils.py::execute_workflow_programmatically) and writing
+#    (test_frontend/utils/sandbox.py::execute_workflow_programmatically) and writing
 #    the artifacts into .curio/data as the runner user -- so hardening those
 #    paths makes the comparison step fail with EACCES before the browser is
 #    ever driven. The filesystem half of the boundary is therefore NOT covered

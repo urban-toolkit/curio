@@ -1,6 +1,6 @@
 """Which sandbox the direct-call helpers address.
 
-Two helpers in ``utils.py`` bypass the backend and talk to the sandbox
+Two helpers in ``utils/sandbox.py`` bypass the backend and talk to the sandbox
 themselves - ``load_artifact_as_dict`` and ``execute_workflow_programmatically``
 - because DuckDB wants a single writer. They read the port from the
 environment, and they used to read *only* ``FLASK_SANDBOX_PORT``.
