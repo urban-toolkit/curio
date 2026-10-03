@@ -141,12 +141,19 @@ def test_it_does_not_ask_a_viewer_to_sign_in(page, standalone_server):
     assert page.locator("input[type='password']").count() == 0
 
 
-def test_a_page_served_without_a_payload_still_works(page, standalone_server):
-    """The fallback: a dataflow link is an ordinary page that fetches for itself.
+def test_the_page_renders_what_the_payload_said(page, standalone_server):
+    """Proof the app READ the payload, not merely that one was in the document.
 
-    Only `/dashboard/<uuid>` carries data, so this proves the injection did not
-    quietly change every other route into something that expects a payload.
+    A page could carry its data, make no requests, and still be showing nothing
+    of it: the two tests above would both pass. The dataflow's name only exists
+    in the embedded spec, so seeing it on screen is the end of the chain, from
+    the server inlining it to the loader reading it instead of fetching.
     """
-    page.goto(f"{standalone_server}/dataflow/{PROJECT_ID}", wait_until="domcontentloaded")
+    page.route("**/api/**", lambda route, request: route.abort())
 
-    assert page.locator("#root, body").count() > 0
+    page.goto(f"{standalone_server}/dashboard/{PROJECT_ID}", wait_until="domcontentloaded")
+    page.wait_for_selector("[data-testid='open-dataflow-link']", timeout=45000)
+
+    assert page.get_by_text("Standalone").count() > 0, (
+        "the page did not show the name from its own embedded spec"
+    )
