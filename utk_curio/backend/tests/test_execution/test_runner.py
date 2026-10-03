@@ -107,6 +107,35 @@ class TestRunThroughNode:
         )
         assert report["ok"] is False and "validation bound" in report["error"]
 
+    def test_ancestors_that_reuse_an_output_do_not_count_toward_the_bound(self, tmp_curio):
+        """#467: a node 29 steps down a chain whose ancestors already passed in
+        this batch runs 5 nodes, not 30, so the bound of 25 must not refuse it."""
+        ids = [f"n{i}" for i in range(30)]
+        spec = _chain_spec(ids)
+        prior = {i: {"path": f"art-{i}", "dataType": "dataframe"} for i in ids[:25]}
+        exec_fn = _RecordingExec()
+        report = runner.run_through_node(KEY, PID, spec, "n29", exec_fn=exec_fn, prior_outputs=prior)
+        assert report["error"] is None, report["error"]
+        assert report["ok"] is True
+        assert len(exec_fn.calls) == 5
+
+    def test_the_bound_counts_the_nodes_that_would_run(self, tmp_curio):
+        ids = [f"n{i}" for i in range(30)]
+        prior = {i: {"path": f"art-{i}", "dataType": "dataframe"} for i in ids[:20]}
+        report = runner.run_through_node(
+            KEY, PID, _chain_spec(ids), "n29", exec_fn=_RecordingExec(), prior_outputs=prior, node_limit=5,
+        )
+        assert report["ok"] is False
+        assert "10 nodes to run" in report["error"] and "validation bound 5" in report["error"]
+
+    def test_the_bound_is_the_validation_node_limit_setting(self, tmp_curio, monkeypatch):
+        """#467: the bound is an operator setting (``--validation-node-limit``)."""
+        monkeypatch.setenv("CURIO_VALIDATION_NODE_LIMIT", "40")
+        ids = [f"n{i}" for i in range(30)]
+        report = runner.run_through_node(KEY, PID, _chain_spec(ids), "n29", exec_fn=_RecordingExec())
+        assert report["error"] is None, report["error"]
+        assert report["ok"] is True
+
     def test_merge_pass_through_assembles_fan_in(self, tmp_curio):
         spec = _spec(
             [_node("a"), _node("b"), _node("m", "curio.builtin/merge-flow", ""),
