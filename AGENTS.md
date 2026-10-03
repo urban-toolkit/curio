@@ -4,7 +4,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 
 ## Layout
 
-- `curio.py`: launcher; calls `main()` in `utk_curio/main.py`.
+- `curio.py`: launcher; calls `main()` in `utk_curio/main.py`, which uses the modules in `utk_curio/cli/`.
 - `utk_curio/backend/`: Flask API. `app/` has one package per feature, `migrations/` the Alembic migrations, `tests/` the pytest suites.
 - `utk_curio/frontend/urban-workflows/`: React and TypeScript canvas, built with webpack. Frontend paths below start at its `src/`.
 - `utk_curio/sandbox/`: Flask service that runs node Python and JavaScript and stores results as DuckDB artifacts.
@@ -23,7 +23,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 
 ## Entry points
 
-- `utk_curio/main.py` `main()`: the `setup`, `start` and `test` commands; builds the frontend and starts the backend, sandbox and frontend servers.
+- `utk_curio/main.py` `main()`: the argument parser and the `setup`, `start` and `test` commands. What it calls is in `utk_curio/cli/`: `environment.py` (arguments to environment variables), `frontend_build.py`, `static_server.py`, `services.py` (start the backend, sandbox and frontend), `dependencies.py`, `test_runner.py`, `logs.py`, `lifecycle.py`, `arguments.py`.
 - Backend: `utk_curio/backend/server.py` builds the app with `create_app()` from `utk_curio/backend/app/__init__.py`, which registers every blueprint. Settings: `utk_curio/backend/config.py`.
 - Sandbox: `utk_curio/sandbox/server.py`. `app/api.py` holds the routes (`/exec`, `/execJs`, `/get`, `/artifact-meta`, `/monitor`); `app/worker.py` runs node code (`execute_code`, `execute_js_code`); `app/auth.py` checks the backend's token.
 - Sandbox internals: `utk_curio/sandbox/isolation/` (fork isolation: `zygote.py`, `supervisor.py`, `child.py`, `hardening.py`); `utk_curio/sandbox/util/` (`db.py`, `parsers.py`, `codec.py`).
@@ -115,7 +115,6 @@ Several files run past 1,500 lines. List their sections, then Read only the rang
 
 - `utk_curio/backend/tests/test_frontend/utils.py` and `walkthroughs.py`: section banners, `grep -n -A1 '^# ----' <file>`.
 - Test modules with one class per area: `grep -n '^class Test' <file>`.
-- `utk_curio/main.py`: `grep -n '^def ' utk_curio/main.py`.
 - `src/providers/FlowProvider.tsx`: `grep -n 'useCallback(' <file>` lists its operations; Run All is around `playAllNodes`; collaboration sync starts at the comment `Collaboration: receive-side`.
 
 ## Do not read
