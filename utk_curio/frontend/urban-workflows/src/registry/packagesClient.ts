@@ -339,11 +339,23 @@ export function registerPackageTemplates(packages: RawPackage[]): NodeDescriptor
 const inFlightBehaviorScripts = new Map<string, Promise<void>>();
 
 async function loadPackageBehaviorScripts(packages: RawPackage[]): Promise<void> {
-  // A standalone dashboard has no backend to ask. Builtin templates carry no
-  // behaviorScript, so a dashboard of builtin tiles is unaffected; a tile from a
-  // package with a custom behaviour falls back to the generic editor, which is
-  // the same thing that happens today when the script fails to load. Embedding
-  // the script text is the next step, not a silent hang here.
+  // A standalone dashboard was served with these scripts rather than a URL to
+  // fetch them from. Run them the same way the fetched ones are run, as inline
+  // script text that self-registers through `window.curio.registerBehavior`, so
+  // a package tile behaves on a published page exactly as it does on a canvas.
+  const embeddedScripts = getEmbeddedDashboard()?.registry?.behaviorScripts;
+  if (embeddedScripts) {
+    for (const [key, text] of Object.entries(embeddedScripts)) {
+      if (document.querySelector(`script[data-curio-package="${key}"]`)) continue;
+      const el = document.createElement("script");
+      el.dataset.curioPackage = key;
+      el.text = String(text);
+      document.head.appendChild(el);
+    }
+    return;
+  }
+  // A page with no payload at all still fetches; a payload that simply has no
+  // scripts has nothing to run. Either way nothing below should call out.
   if (isStandaloneDashboard()) return;
   const base = backendUrl();
   const targets = packages.filter((p) => p.behaviorScript && p.dirName);

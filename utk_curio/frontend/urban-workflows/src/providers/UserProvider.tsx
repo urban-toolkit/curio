@@ -16,6 +16,24 @@ import {
 import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
 import { Loading } from "../components/login/Loading";
 import { isShareLinkPath } from "../utils/shareLinks";
+import { isStandaloneDashboard } from "../standalone/dashboardPayload";
+
+/**
+ * Who is looking at a page that was served complete.
+ *
+ * Not a real account and never sent anywhere: it exists so `RequireAuth` lets
+ * the page render, and so everything downstream treats the viewer as the guest
+ * they are, which is what makes the dashboard read-only.
+ */
+const STANDALONE_VIEWER: UserData = {
+  id: 0,
+  username: "guest_shared",
+  name: "Viewer",
+  email: null,
+  profile_image: null,
+  type: null,
+  is_guest: true,
+};
 
 interface UserProviderProps {
   user: UserData | null;
@@ -109,6 +127,25 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
     const bootstrap = async () => {
       setLoading(true);
       try {
+        // A standalone dashboard is a document, not a session. There is nobody
+        // to sign in, no token to carry, and nothing a server could tell us
+        // that the page is not already holding.
+        //
+        // It still needs a user, because `RequireAuth` shows a sign-in form to
+        // anyone without one, and a page served complete must never ask a
+        // viewer to log in to read it. So it gets the viewer it actually is: a
+        // guest with no account, which is also what puts the page in its
+        // read-only presentation.
+        if (isStandaloneDashboard()) {
+          if (!cancelled) {
+            setEnableUserAuth(false);
+            setSkipProjectPage(false);
+            setAllowGuest(true);
+            setUser(STANDALONE_VIEWER);
+          }
+          return;
+        }
+
         const cfg = await authApi.getPublicConfig().catch(() => {
           console.error(
             "[Curio] Could not reach backend at /api/config/public. " +

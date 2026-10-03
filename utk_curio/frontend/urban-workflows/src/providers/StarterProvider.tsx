@@ -9,6 +9,7 @@ import React, {
 import { AccessLevelType } from "../constants";
 import { NodeTemplateId } from "../registry/types";
 import useStarters from "./starters";
+import { getEmbeddedDashboard } from "../standalone/dashboardPayload";
 import { v4 as uuid } from "uuid";
 
 export interface Starter {
@@ -52,6 +53,14 @@ const StarterProvider = ({ children }: { children: ReactNode }) => {
     const [userStarters, setUserStarters] = useState<Starter[]>([]);
 
     const fetchStarters = useCallback(async () => {
+        // A standalone dashboard was served with these. They are what a package
+        // template's declared `source` is filled from, so a page without them
+        // would render a package tile with an empty body rather than its code.
+        const embedded = getEmbeddedDashboard();
+        if (embedded?.registry?.starters) {
+            setDefaultStarters(embedded.registry.starters as Starter[]);
+            return;
+        }
         try {
             const starters = await useStarters();
             setDefaultStarters(starters);

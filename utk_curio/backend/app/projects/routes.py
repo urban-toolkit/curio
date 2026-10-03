@@ -178,12 +178,20 @@ def get_dashboard_payload(project_id: str):
     page that looks standalone and is not, and the owner would only find out
     when somebody opened it where the server is unreachable.
     """
-    from utk_curio.backend.app.projects.dashboard_payload import DashboardTooLargeError
+    from utk_curio.backend.app.projects.dashboard_payload import (
+        DashboardCannotBeStandaloneError,
+        DashboardTooLargeError,
+    )
 
     try:
         payload = services.build_standalone_dashboard(project_id)
     except NotFoundError:
         return _error("Project not found", 404)
+    except DashboardCannotBeStandaloneError as exc:
+        # A tile that loads its own data cannot be published as a page that
+        # needs no server. Named here so the owner can move the data upstream,
+        # where its output is saved and travels with the page.
+        return jsonify({"error": exc.describe(), "tiles": exc.offenders}), 409
     except DashboardTooLargeError as exc:
         return jsonify({
             "error": exc.describe(),

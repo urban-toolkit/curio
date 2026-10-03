@@ -13,6 +13,7 @@ import {
   useDatasetCatalog,
 } from '../services/datasetCatalog';
 import { buildSaveableLiveOutputs } from '../utils/saveOutputDataset';
+import { isStandaloneDashboard } from '../standalone/dashboardPayload';
 
 export type DatasetPaletteContextValue = {
   /** datasetId targeted for reveal (open palette + scroll/highlight the row);
@@ -49,7 +50,10 @@ export function DatasetPaletteProvider({ children }: { children: React.ReactNode
     includeHub: false,
     sort: 'recent',
     liveOutputs,
-    enabled: true,
+    // The palette this feeds is editor chrome, and a standalone dashboard has
+    // none of it. Left enabled it would refetch whenever `liveOutputs` changed,
+    // which is every time a tile draws itself.
+    enabled: !isStandaloneDashboard(),
   });
 
   // Auto-install / save fires this event; refetch so producer chips update live.

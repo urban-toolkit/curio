@@ -28,6 +28,7 @@ import { NodeType, EdgeType, DEFAULT_WORKFLOW_NAME } from "../constants";
 import { getUnversionedFlowNodeType } from "../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../TrillGenerator";
 import { dashboardSourceNodeIds } from "../utils/dashboardLayout";
+import { isStandaloneDashboard } from "../standalone/dashboardPayload";
 import {
     ensureMergeArrays,
     parseHandleIndex,
@@ -423,6 +424,11 @@ const FlowProvider = ({
     // buildOutputRefs) matches the deployment's runtime setting rather than the
     // build-time env baked into the bundle. Mirrors CollaborationProvider.
     useEffect(() => {
+        // Nothing on a standalone dashboard can save an output: there is no
+        // session to save under and no Play to produce one. Asking a server
+        // that may not be reachable what the default should be would be a
+        // request made purely to answer a question nobody asks.
+        if (isStandaloneDashboard()) return;
         let cancelled = false;
         authApi
             .getPublicConfig()

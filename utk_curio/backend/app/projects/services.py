@@ -1083,10 +1083,39 @@ def _dashboard_registry(project_id: str) -> dict:
         return {"packages": [], "starters": []}
     ukey = _owner_user_dir_key(project)
     packages_seeding.ensure_user_seeded(ukey)
+    packages = packages_catalog.installed_package_payloads(ukey)
     return {
-        "packages": packages_catalog.installed_package_payloads(ukey),
+        "packages": packages,
         "starters": packages_starters.generate_package_starters(ukey),
+        # A package can ship its node's behaviour as a script the page fetches
+        # and runs. Builtins have none, so an ordinary dashboard carries nothing
+        # here; a tile from a package that does would otherwise fall back to a
+        # generic editor, which on a published page looks like a broken tile.
+        "behaviorScripts": _dashboard_behavior_scripts(ukey, packages),
     }
+
+
+def _dashboard_behavior_scripts(user_key: str, packages: List[dict]) -> dict:
+    """``{"<packageId>@<major>": "<script text>"}`` for packages that ship one."""
+    from utk_curio.backend.app.packages.application import package_files
+
+    out: dict = {}
+    for package in packages:
+        script = package.get("behaviorScript")
+        dir_name = package.get("dirName")
+        if not script or not dir_name:
+            continue
+        try:
+            raw, _mime = package_files.package_file(user_key, dir_name, script)
+            text = raw.decode("utf-8")
+        except Exception:
+            # A package whose script cannot be read is the same as one that has
+            # none: the node falls back to the generic editor. Better than
+            # refusing to build the whole page over one tile.
+            continue
+        if text:
+            out[f"{package.get('packageId')}@{package.get('major')}"] = text
+    return out
 
 
 def build_standalone_dashboard(

@@ -40,7 +40,12 @@ export interface EmbeddedDashboard {
    * node descriptors, so without this every tile renders "Loading node...",
    * however much data the page carries.
    */
-  registry?: { packages?: any[]; starters?: any[] };
+  registry?: {
+    packages?: any[];
+    starters?: any[];
+    /** `"<packageId>@<major>"` to the script text that registers its behaviour. */
+    behaviorScripts?: Record<string, string>;
+  };
 }
 
 const PAYLOAD_ELEMENT_ID = "curio-dashboard-payload";

@@ -19,6 +19,7 @@ import json
 import pytest
 
 from utk_curio.backend.app.projects.dashboard_payload import (
+    DashboardCannotBeStandaloneError,
     DashboardTooLargeError,
     build_dashboard_payload,
     dashboard_source_node_ids,
@@ -236,6 +237,81 @@ class TestBuildPayload:
 
         assert payload.spec is spec
         assert payload.to_dict()["spec"]["dataflow"]["nodes"][0]["data"]["dashboardX"] == 40
+
+
+class TestATileThatFetchesItsOwnData:
+    """An Autark tile can declare its own data sources and still be a render tile.
+
+    Those sources are compiled and executed when it draws, which on a page that
+    is supposed to need no server is a call to one. Refusing at build time puts
+    the problem in front of the owner, who can move the data upstream; the
+    alternative puts it in front of a viewer who opened the link on a train.
+    """
+
+    def _pinned_map(self, spec_text):
+        return spec_of(
+            [node("sh-map", "curio.builtin/autk-grammar", code=spec_text, dashboardPinned=True)],
+            [],
+        )
+
+    def test_a_map_that_loads_its_own_data_is_refused(self):
+        spec_text = json.dumps({"map": {"layerRefs": []}, "data": [{"type": "osm"}]})
+
+        with pytest.raises(DashboardCannotBeStandaloneError) as caught:
+            build_dashboard_payload(
+                spec=self._pinned_map(spec_text),
+                output_refs=[],
+                fetch_envelope=lambda name: envelope(),
+            )
+
+        assert caught.value.offenders == ["sh-map"]
+        assert "sh-map" in caught.value.describe()
+
+    def test_a_map_fed_from_upstream_is_fine(self):
+        # The shape every Autark example uses: data and compute are their own
+        # nodes, so their outputs are saved and travel with the page.
+        spec_text = json.dumps({"map": {"layerRefs": []}})
+
+        payload = build_dashboard_payload(
+            spec=self._pinned_map(spec_text),
+            output_refs=[],
+            fetch_envelope=lambda name: envelope(),
+        )
+
+        assert payload.outputs == {}
+
+    def test_an_empty_data_section_is_not_a_refusal(self):
+        spec_text = json.dumps({"map": {"layerRefs": []}, "data": []})
+
+        payload = build_dashboard_payload(
+            spec=self._pinned_map(spec_text),
+            output_refs=[],
+            fetch_envelope=lambda name: envelope(),
+        )
+
+        assert payload.outputs == {}
+
+    def test_an_unpinned_node_with_data_sources_is_not_a_refusal(self):
+        # It is not a tile. Its output is saved and embedded like any producer's.
+        spec = spec_of(
+            [
+                node(
+                    "loader",
+                    "curio.builtin/autk-grammar",
+                    code=json.dumps({"map": {}, "data": [{"type": "osm"}]}),
+                ),
+                node("map", "curio.builtin/autk-grammar", code=RENDER_SPEC, dashboardPinned=True),
+            ],
+            [edge("loader", "map")],
+        )
+
+        payload = build_dashboard_payload(
+            spec=spec,
+            output_refs=refs(("loader", "l.parquet")),
+            fetch_envelope=lambda name: envelope(),
+        )
+
+        assert set(payload.outputs) == {"l.parquet"}
 
 
 class TestSizeLimit:

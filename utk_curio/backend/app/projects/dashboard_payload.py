@@ -145,6 +145,52 @@ def _classify_autk_spec(spec_text: object) -> str:
     return "unknown"
 
 
+class DashboardCannotBeStandaloneError(Exception):
+    """Raised when a pinned tile would still have to reach a server to draw.
+
+    Same channel as the size refusal, and for the same reason: a page that looks
+    standalone and is not is worse than one that refuses to be built. The owner
+    finds out here, where they can change the dataflow, rather than from a
+    viewer who opened the link somewhere the server cannot be reached.
+    """
+
+    def __init__(self, offenders: Sequence[str]):
+        self.offenders = list(offenders)
+        super().__init__(self.describe())
+
+    def describe(self) -> str:
+        names = ", ".join(self.offenders)
+        return (
+            f"These tiles load their own data when they draw: {names}.\n\n"
+            "A dashboard carries the rows saved with it, so a tile that fetches "
+            "its own cannot be published. Move the data section into its own "
+            "node upstream of the tile, so its output is saved and travels with "
+            "the page."
+        )
+
+
+def _autark_spec_has_data_sources(node: dict) -> bool:
+    """True when an Autark tile would run its own data section to draw.
+
+    A spec counts as render whenever it declares a map or a plot, whatever else
+    it declares, so a render tile can still carry `data` sources. Those are
+    compiled and executed when it draws, which on a published page means a call
+    to a server that is not supposed to be needed.
+    """
+    data = node.get("data") or {}
+    text = data.get("code") or data.get("defaultCode")
+    if not isinstance(text, str) or not text.strip():
+        return False
+    try:
+        parsed = json.loads(text)
+    except (ValueError, TypeError):
+        return False
+    if not isinstance(parsed, dict):
+        return False
+    sources = parsed.get("data")
+    return isinstance(sources, list) and len(sources) > 0
+
+
 def _is_pass_through(node: dict) -> bool:
     data = node.get("data") or {}
     kind = _unversioned(data.get("nodeType") or node.get("type"))
@@ -200,6 +246,22 @@ def dashboard_source_node_ids(spec: dict) -> Set[str]:
             else:
                 sources.add(source_id)
     return sources
+
+
+def _refuse_tiles_that_fetch_their_own_data(spec: dict) -> None:
+    """Refuse a dashboard whose pinned tiles would still call out to draw."""
+    dataflow = (spec or {}).get("dataflow") or {}
+    offenders: List[str] = []
+    for node in dataflow.get("nodes") or []:
+        data = node.get("data") or {}
+        if not data.get("dashboardPinned"):
+            continue
+        if _unversioned(data.get("nodeType") or node.get("type")) != _AUTK_GRAMMAR_KIND:
+            continue
+        if _autark_spec_has_data_sources(node):
+            offenders.append(str(node.get("id") or "a tile"))
+    if offenders:
+        raise DashboardCannotBeStandaloneError(offenders)
 
 
 @dataclass
@@ -260,6 +322,8 @@ def build_dashboard_payload(
     happens today when an artifact has gone. A dashboard over *limit_bytes*
     raises :class:`DashboardTooLargeError`.
     """
+    _refuse_tiles_that_fetch_their_own_data(spec)
+
     needed = dashboard_source_node_ids(spec)
 
     outputs: Dict[str, dict] = {}
