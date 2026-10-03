@@ -24,6 +24,8 @@ Run::
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
@@ -31,9 +33,9 @@ from playwright.sync_api import expect
 from .utils import (
     node_locator,
     read_node_error_text,
-    require_owner_view,
     run_all_and_wait,
     stub_login_and_enter_workflow,
+    upload_workflow,
     wait_for_node_settled,
 )
 
@@ -57,7 +59,8 @@ def _node(node_id: str, node_type: str, x: int, content: str) -> dict:
 
 def _spec() -> dict:
     return {"dataflow": {
-        "name": "Upstream failure", "task": "",
+        "name": "Upstream failure", "task": "", "timestamp": 1789193389280,
+        "provenance_id": "Upstream failure",
         "nodes": [
             _node(LOADER_ID, "curio.builtin/data-loading", 0, LOADER_CODE),
             _node(COMPUTE_ID, "curio.builtin/computation-analysis", 645, COMPUTE_CODE),
@@ -76,6 +79,9 @@ def test_a_failed_node_stops_the_node_it_feeds(
     page,
 ):
     page.emulate_media(reduced_motion="reduce")
+    # Loaded through the File menu, the way the workflow suite loads its
+    # dataflows, so the test runs the same on a stack with user accounts and on
+    # the isolated stack, which has none.
     stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
@@ -83,9 +89,16 @@ def test_a_failed_node_stops_the_node_it_feeds(
         name="Upstream Failure",
         username="upstream_failure_603",
         project_name="Upstream failure",
-        project_spec=_spec(),
     )
-    require_owner_view(page)
+    spec_file = tempfile.NamedTemporaryFile(
+        suffix=".json", delete=False, mode="w", encoding="utf-8",
+    )
+    json.dump(_spec(), spec_file)
+    spec_file.close()
+    try:
+        upload_workflow(page, app_frontend, spec_file.name, 2)
+    finally:
+        os.unlink(spec_file.name)
     for node_id in (LOADER_ID, COMPUTE_ID):
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
 
