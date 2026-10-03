@@ -6,7 +6,7 @@ observed before the loops behind them were decomposed. They exist so B3 can
 move code without moving behavior: a decomposition that changes what a
 stream says, or the order it says it in, fails here before any product
 test has to notice. They deliberately reuse the scenario helpers of the
-product tests (``test_verified_rounds``, ``test_routes``) rather than build
+product tests (``test_verified_rounds``, ``test_routes_*``) rather than build
 new fixtures, so the scenarios are the ones those tests already trust.
 
 To re-record after an INTENDED behavior change, run with
@@ -18,11 +18,12 @@ from __future__ import annotations
 import json
 import os
 
-from utk_curio.backend.tests.test_agents import test_routes as _tr
+from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_proposals
+from utk_curio.backend.tests.test_agents import test_routes_solve as routes_solve
+from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turns
 from utk_curio.backend.tests.test_agents import test_verified_rounds as _tvr
-from utk_curio.backend.tests.test_agents.test_routes import alice_project  # noqa: F401  (module-level fixture)
 
-_auth = _tr._auth
 RECORD = os.environ.get("CURIO_CHARACTERIZE") == "1"
 
 
@@ -220,8 +221,8 @@ class TestSolveNodeStream:
 class TestSimulationStream:
     def test_auto_mode(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
-        h = _tr.TestSimulationDriver()
-        plan = _tr.TestDataflowPlanMint()
+        h = routes_solve.TestSimulationDriver()
+        plan = routes_proposals.TestDataflowPlanMint()
         h._fake_exec(monkeypatch)
         att_id, proposal, _ = h._setup(
             client, user, token, alice_project, monkeypatch,
@@ -242,7 +243,7 @@ class TestSimulationStream:
 class TestRunNodeStream:
     def test_chain_runs(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
-        h = _tr.TestProgressiveLifecycle()
+        h = routes_solve.TestProgressiveLifecycle()
         monkeypatch.setattr(
             "utk_curio.backend.app.execution.runner._http_exec",
             lambda endpoint, payload: {"stdout": ["ran"], "stderr": "",
@@ -256,7 +257,7 @@ class TestRunNodeStream:
         r = client.post(f"/api/agents/projects/{alice_project}/attachments/{att_id}/run-node",
                         json={"ref": refs[1]}, headers=_auth(token))
         assert r.status_code == 200
-        events = _tr.TestStreamedSolve()._sse_events(r)
+        events = routes_solve.TestStreamedSolve()._sse_events(r)
         done = events[-1][1]
         actual = {
             "names": _names(events), "ok": done["ok"], "order_len": len(done["order"]),
@@ -269,8 +270,8 @@ class TestRunNodeStream:
 class TestValidateNodeStream:
     def test_pass_verdict(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
-        h = _tr.TestValidateNode()
-        plan = _tr.TestDataflowPlanMint()
+        h = routes_solve.TestValidateNode()
+        plan = routes_proposals.TestDataflowPlanMint()
         h._fake_exec(monkeypatch)
         att_id, ref, created, _ = h._setup_plan_node(
             client, user, token, alice_project, monkeypatch,
@@ -297,7 +298,7 @@ class TestTurnStream:
         monkeypatch.setattr("utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn",
                             lambda c, m, **kw: "Stream Title")
         _, token = user_and_token
-        h = _tr.TestStreamRun()
+        h = routes_turns.TestStreamRun()
         att_id = h._attach_builtin(client, token, alice_project)
         r = client.post(f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
                         json={"message": "q1"}, headers=_auth(token))

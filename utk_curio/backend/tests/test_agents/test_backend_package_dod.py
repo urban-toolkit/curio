@@ -15,10 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.tests.test_agents.test_routes import (
+from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests.test_agents.test_routes_proposals import (
     TestBackendDraftEndToEnd,
     TestPackageBuilderTools,
-    _auth,
 )
 
 _PROMPT_PATH = (

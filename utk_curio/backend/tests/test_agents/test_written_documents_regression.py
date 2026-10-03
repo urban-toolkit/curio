@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import json
 
-from utk_curio.backend.tests.test_agents import test_routes as _tr
+from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_proposals
 from utk_curio.backend.tests.test_agents.test_verified_rounds import TEMPLATES as _CODE_TEMPLATES
 
 #: The four kinds the owner's plan used, declared the way the shipped manifest
@@ -39,8 +40,6 @@ TEMPLATES = _CODE_TEMPLATES + [
      "inputPorts": [{"types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "1"}],
      "outputPorts": [{"types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "1"}]},
 ]
-
-_auth = _tr._auth
 
 DFB = "agent.dataflow-builder@1.0.0"
 NCB = "agent.node-content-builder@1.0.0"
@@ -94,7 +93,7 @@ class _Harness:
 
         self.client, self.token = client, token
         self.ukey = _user_dir_key(user)
-        _tr.TestNodeCreate()._write_builtin_package(self.ukey, templates=TEMPLATES)
+        routes_proposals.TestNodeCreate()._write_builtin_package(self.ukey, templates=TEMPLATES)
         body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
                 "outputs": []}
         self.pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
