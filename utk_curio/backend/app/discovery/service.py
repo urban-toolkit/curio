@@ -790,7 +790,7 @@ class DiscoveryService:
         item, manifest = self.collection(dataset_id)
         block = item.get("collection") or {}
         total = int(block.get("fileCount") or 0)
-        local = manifest.provider.type == "folder"
+        local = manifest.provider.type == "folder" or manifest.is_service
         if local:
             cached, cached_bytes = total, int(block.get("totalBytes") or 0)
         else:

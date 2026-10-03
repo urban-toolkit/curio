@@ -246,6 +246,7 @@ A way that is tagged as an area but does not close is a line. In **Points of int
 - **Mapillary.** A box of at most 25 km². Photos are taken from across the box, newest first, up to **Most images** (at most 1,000). Each one is CC BY-SA 4.0 and keeps its photographer in `creator`, so a figure made from them can credit each photo. Your token goes to Mapillary's API only, never to the hosts the photos come from.
 - **Google Street View.** A box of at most 2 km². Curio asks Google for the panorama nearest each point of a grid with the **Spacing** you set, and keeps each panorama once, outdoor ones only unless you say otherwise. Then it downloads one image per panorama and heading. An image Google answers with its no-image placeholder is skipped. Your key is added to each request as Google's `key` parameter when the request is sent; the URLs a dataset records never hold it. The images are kept in your Data Catalog like any other download. Google's terms allow storing only panorama IDs, so check them before you keep the images.
 - **Both** land as a collection of images whose files are copied to your Data Catalog store. Downloading again with the same answers fetches nothing and keeps the dataset you have.
+- **An image that cannot be fetched** is skipped, and the download keeps the rest. The dataset's description, on its Data Catalog card, says how many could not be fetched. When none can be fetched, the download fails.
 
 ### Adding a model
 
@@ -459,7 +460,7 @@ Curio reads public S3 buckets, and Hugging Face dataset repositories, with your 
 | `CURIO_DISCOVERY_ROOT` | `--discovery-root` | Reads the shipped sources from this directory instead of `<repo_root>/discovery`. |
 | `CURIO_DISCOVERY_MAX_DOWNLOAD_MB` | `--discovery-max-download-mb` | The largest file a download or a bucket add takes, in megabytes. Default 1024. A source's manifest may set a lower limit for itself. |
 | `CURIO_DEFAULT_SOCRATA_APP_TOKEN` | none | A Socrata app token every account inherits until it saves its own. |
-| `CURIO_MEDIA_CACHE_MAX_GB` | none | How much each account may hold in cached bucket files. Default 20. |
+| `CURIO_MEDIA_CACHE_MAX_GB` | none | How much each account may hold in cached bucket files and downloaded street-level images. Default 20. |
 
 **Sources ship with the deployment.** To change or remove a shipped one, edit the sources directory and restart. The Docker image bakes `discovery/` in; see [DEPLOYMENT.md § Configure the stack](DEPLOYMENT.md#1-configure-the-stack).
 

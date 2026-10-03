@@ -275,6 +275,8 @@ class ServiceAcquire:
             raise DiscoveryError(f"{manifest.name} has no {spec.name.lower()} in {place} that match")
         if self._install_path is None:  # pragma: no cover - wired in service.py
             raise DiscoveryError("this Curio cannot add a collection from a service")
+        # The images move into the account's media cache, under its cap.
+        cache_collection.check_room(self.user_key, sum(image.size for image in answer.images))
         if stage is not None:
             stage(f"Indexing {len(answer.images):,} images…")
         now = time.time()
@@ -307,6 +309,8 @@ class ServiceAcquire:
             stage("Adding to your Data Catalog…")
         label = (title or "").strip() or f"{spec.name}, {place}"
         description = f"{len(files):,} {spec.name.lower()} from {manifest.name} for {place}"
+        if answer.failed:
+            description += f"; {answer.failed:,} could not be fetched"
         if attribution:
             description += f". {attribution}"
         dataset = self._install_path(
