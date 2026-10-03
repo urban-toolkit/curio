@@ -1252,7 +1252,7 @@ A storage source is read through a `StorageProvider` ([`providers/storage_base.p
 
 `av` and `rasterio` are declared in `curio.builtin@1`, because the backend probes and draws thumbnails and, under fork isolation, a user's package overlay is not importable by the backend.
 
-**Caching a bucket's files.** [`application/cache_collection.py`](../utk_curio/backend/app/discovery/application/cache_collection.py) streams a bucket collection's objects to `media_work_root(user)/objects/<datasetId>/`, as a job, capped at 4 GiB per object and at `CURIO_MEDIA_CACHE_MAX_GB` (default 20) per account, checked before any byte is fetched.
+**Caching a bucket's files.** [`application/cache_collection.py`](../utk_curio/backend/app/discovery/application/cache_collection.py) streams a bucket collection's objects to `media_work_root(user)/objects/<datasetId>/`, as a job, capped at 4 GiB per object and at `CURIO_MEDIA_CACHE_MAX_GB` (default 20) per account, checked before any byte is fetched. A service's images land in the same folder, and the same check (`check_room`) runs on them before their collection is added.
 
 ### Services
 

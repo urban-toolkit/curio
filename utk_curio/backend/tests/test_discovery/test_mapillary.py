@@ -439,3 +439,33 @@ class TestAnImageIdIsANumber:
         assert sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*") if p.is_file()) == [
             "job/images/1.jpg"
         ]
+
+
+# ── the media cache ────────────────────────────────────────────────────────
+
+
+def _collections(client, auth):
+    items = client.get("/api/datasets/catalog?includeHub=true", headers=auth).get_json()["items"]
+    return {item["id"] for item in items if item.get("format") == "collection"}
+
+
+def _run(client, auth, **parameters):
+    res = acquire(client, auth, SOURCE, "images", parameters={**RECORDED, **parameters})
+    assert res.status_code == 202, res.get_data(as_text=True)
+    return wait_for(client, auth, res.get_json()["jobId"], timeout=60)
+
+
+class TestTheMediaCacheHoldsThem:
+    def test_they_are_refused_past_its_cap(self, client, keyed, monkeypatch, user_and_token):
+        """A service's images land in the account's media cache, as a
+        bucket's cached files do, and its cap bounds them the same way."""
+        from utk_curio.backend.app.discovery.application import cache_collection
+
+        before = _collections(client, keyed)
+        monkeypatch.setenv(cache_collection.ENV_CAP, "0")
+        job = _run(client, keyed)
+        assert job["status"] == "failed", job
+        assert cache_collection.ENV_CAP in job["error"]
+        user, _token = user_and_token
+        assert cache_collection.used_bytes(str(user.id)) == 0
+        assert _collections(client, keyed) == before
