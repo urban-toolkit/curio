@@ -1502,7 +1502,10 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     check_again.click()
     expect(fallback.first).to_be_hidden(timeout=45000)
     # The compute pass ran this time, so the map below it has rows to draw.
-    wait_for_node_done(page, compute_id, node_type="autk-grammar", timeout_ms=180000)
+    # Waited on "done" itself: the node still reads "error" from the refusal
+    # until the rerun settles, and a wait for any settled state returns at once.
+    expect(compute.locator("[data-curio-node-status]").first).to_have_attribute(
+        "data-curio-node-status", "done", timeout=180000)
     ctx.focus(compute, hold=1200)
     ctx.say("The compute pass ran", "The map below it was waiting on it.")
     run_all_and_wait(page, timeout_ms=180000)
