@@ -3,10 +3,10 @@
 
     python scripts/ci_check_split.py <downloaded ci-inputs-* artifacts dir>
 
-The e2e suite is split between the utk GPU runner and ubuntu-latest
+The e2e suite is split between the utk GPU runner and the CPU runners
 (utk_curio/backend/tests/test_frontend/runner_split.py). That every test is
 collected on exactly one side is a unit test; what only a run can show is a
-test that went to ubuntu-latest and then skipped because it needed what only
+test that went to a CPU runner and then skipped because it needed what only
 utk has -- hardware WebGPU, or the sibling backends of --parallel. Such a test
 passes nowhere and would sit in the green run as one more skip.
 

@@ -334,6 +334,10 @@ def browser_type_launch_args(browser_type_launch_args):
                     "--ignore-gpu-blocklist",
                     "--enable-features=Vulkan",
                     "--use-angle=vulkan",
+                    # Headless has no window to present to; without this,
+                    # Chrome in a container (arcade-gpu) gives up on Vulkan and
+                    # WebGPU falls back to SwiftShader.
+                    "--disable-vulkan-surface",
                 ]
             else:
                 base_args = [
@@ -511,7 +515,7 @@ def unit_group_of(item) -> str:
 def pytest_collection_modifyitems(config, items):
     """``CURIO_UNIT_PART=k/n`` keeps one balanced part of the backend suite.
 
-    CI runs the backend unit suite as parts on separate ubuntu-latest jobs, one
+    CI runs the backend unit suite as parts on separate CPU runner jobs, one
     test file never split across two of them (tests/parts.py). Unset, as in any
     local run, everything runs.
     """

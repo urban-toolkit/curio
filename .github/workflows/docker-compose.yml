@@ -16,6 +16,7 @@ on:
       - 'docker-compose.ci-stress.yml'
       - 'docker-compose.ci-shards.yml'
       - '.github/workflows/docker-compose.yml'
+      - '.github/actions/**'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
       - 'scripts/**'
@@ -50,6 +51,7 @@ on:
       - 'docker-compose.ci-stress.yml'
       - 'docker-compose.ci-shards.yml'
       - '.github/workflows/docker-compose.yml'
+      - '.github/actions/**'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
       - 'scripts/**'
@@ -101,59 +103,103 @@ on:
         description: 'With remint: comma-separated parts of baseline names to re-mint however little they changed'
         type: string
         default: ''
+      # Where the CPU jobs and test-gpu run (scripts/ci_pick_runners.py).
+      # `auto` defers to the repository variables CURIO_CI_POOL and
+      # CURIO_CI_GPU_POOL, and picks when those are unset.
+      pool:
+        description: 'CPU jobs: auto (GitHub-hosted first, then arcade), hosted, or arcade'
+        type: choice
+        options: [auto, hosted, arcade]
+        default: auto
+      gpu_pool:
+        description: 'test-gpu: auto (arcade-gpu first, then utk), arcade, or utk'
+        type: choice
+        options: [auto, arcade, utk]
+        default: auto
 
 # Least privilege: the job needs only to read the checked-out code. It must
 # NOT have access to deploy/Tailscale secrets (see deploy.yml).
 permissions:
   contents: read
 
-# Concurrency is set on the two utk jobs, not on the run. The self-hosted
-# runner on `utk` shares one GPU and a fixed set of CI ports, so two of its jobs
-# must never execute at once; the ubuntu-latest jobs each get a fresh VM of
-# their own and share nothing, so they need no group at all. A run-wide group
-# made the whole run wait behind another run on the same ref, ubuntu-latest
-# jobs included, and an eviction threw away all of it rather than the GPU half.
+# Where the jobs run:
 #
-# Keyed per ref, not repo-wide. A repo-wide group serialises too, but GitHub
-# keeps only ONE job pending per group, so each newly queued one evicted the
-# previously pending one: main was left unverified while still looking
-# untouched. Per ref, a new push still supersedes its own branch's pending GPU
-# job, which is what you want, without discarding anyone else's.
+#   * CPU jobs: GitHub-hosted ubuntu-latest while the organization's hosted
+#     runners have room, the self-hosted arcade runners ([self-hosted, cpu],
+#     20 of them) for the rest.
+#   * test-gpu: arcade-gpu ([self-hosted, gpu, h100]) when it is idle, utk-gpu
+#     ([self-hosted, gpu, curio]) otherwise.
+#   * test-desktop-stress, unit (sandbox) and preview-runner: always
+#     ubuntu-latest. The first two measure a 4-core, 16 GB laptop.
+#   * test-gpu-stress: always utk-gpu.
 #
-# Letting utk jobs from different refs be in progress at once is safe here, but
-# it rests on TWO invariants. Break either and the GPU/port contention is back:
+# GitHub cannot send a job to one runner, or another when the first is busy, so
+# pick-runners chooses for each job when the run starts. Every self-hosted
+# runner is a container with a Docker daemon of its own that keeps its
+# workspace between jobs (uic-evl/evl-github-runners), so each job hands back
+# the files its containers wrote before checkout, and start-stack and
+# stop-stack remove the curio stacks a job leaves behind.
 #
-#   1. Exactly ONE registered runner (`utk-gpu`) carries the
-#      [self-hosted, linux, gpu, curio] labels the utk jobs (test-gpu,
-#      test-gpu-stress) ask for, so it runs a single job at a time and GitHub
-#      queues the rest. Two runs interleave their jobs; they never execute
-#      together.
-#   2. `cancel-in-progress: false`, so an in-progress job is never cancelled.
-#      Eviction can then only ever kill a job that has not started, and such a
-#      job holds no containers, ports or GPU handle to leak. Flip this to true
-#      to save queue time and that stops being true: a cancelled job can skip
-#      its `if: always()` teardown and strand a compose project that the next
-#      job then trips over.
-#
-# test-gpu-stress has a group of its own, so it and another run's pending
-# test-gpu never evict each other; the runner serialises them anyway. A
-# re-mint dispatch's test-gpu gets a group of its own too, so it and the
-# branch's ordinary run never evict each other while pending.
+# Concurrency is set on the GPU jobs, not on the run: a GPU runner has one GPU
+# and a fixed set of CI ports, so two of its jobs must never execute at once,
+# while CPU jobs each get a runner of their own. Keyed per ref, not repo-wide:
+# GitHub keeps only ONE job pending per group, so a repo-wide group let each
+# newly queued job evict the previously pending one. test-gpu's group also
+# names its GPU runner, so runs on arcade-gpu and utk-gpu never wait for or
+# evict each other. `cancel-in-progress: false` means eviction only ever kills
+# a job that has not started, which holds no containers, ports or GPU to leak.
+# test-gpu-stress and a re-mint's test-gpu have groups of their own.
 
 jobs:
-  # The image every ubuntu-latest job below runs, built once per commit and
-  # pushed to GHCR under the commit's SHA. The layer cache lives in the Actions
-  # cache, so a commit that changes only source rebuilds only the layers after
-  # the source copy (see the Dockerfile's order). The utk jobs keep building
-  # their own image from the runner's warm local cache, so the GPU path never
-  # waits on this one.
-  build-image:
+  # Where each CPU job and test-gpu runs (scripts/ci_pick_runners.py). It also
+  # carries the conditions those jobs share, fork PRs above all: nothing that
+  # needs it runs for one, so a fork PR never reaches a self-hosted runner.
+  pick-runners:
     if: >-
       github.event_name != 'schedule' &&
       github.event.action != 'labeled' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      runners: ${{ steps.pick.outputs.runners }}
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: scripts/ci_pick_runners.py
+          sparse-checkout-cone-mode: false
+
+      # CPU keys in critical-path order: the first ones get the hosted room.
+      # One key per job and per matrix entry, matching each runs-on. Three of
+      # this run's jobs always run hosted (unit sandbox, test-desktop-stress,
+      # preview-runner), so their slots are held back.
+      - name: 🎯 Pick a runner for each job
+        id: pick
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CURIO_CI_POOL: ${{ (inputs.pool && inputs.pool != 'auto') && inputs.pool || vars.CURIO_CI_POOL || 'auto' }}
+          CURIO_CI_GPU_POOL: ${{ (inputs.gpu_pool && inputs.gpu_pool != 'auto') && inputs.gpu_pool || vars.CURIO_CI_GPU_POOL || 'auto' }}
+        run: |
+          python3 scripts/ci_pick_runners.py --hosted-reserved 3 --gpu test-gpu build-image jest \
+            e2e-desktop-1 e2e-desktop-2 e2e-desktop-3 e2e-desktop-4 e2e-desktop-5 \
+            e2e-desktop-6 e2e-desktop-7 e2e-desktop-8 e2e-desktop-9 e2e-desktop-10 \
+            unit-backend-1 unit-backend-2 test-isolated test-exec-user ci-report
+
+  # The image every CPU job below runs, built once per commit and pushed to
+  # GHCR under the commit's SHA. The layer cache lives in the Actions cache, so
+  # a commit that changes only source rebuilds only the layers after the source
+  # copy (see the Dockerfile's order). The GPU jobs keep building their own
+  # image from their runner's warm local cache, so the GPU path never waits on
+  # this one.
+  build-image:
+    needs: pick-runners
+    if: ${{ needs.pick-runners.result == 'success' }}
+    runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['build-image'] }}
     timeout-minutes: 45
     permissions:
       contents: read
@@ -161,6 +207,10 @@ jobs:
     outputs:
       image: ${{ steps.name.outputs.image }}
     steps:
+      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        if: runner.environment == 'self-hosted'
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
@@ -186,19 +236,21 @@ jobs:
           cache-to: type=gha,scope=curio-image,mode=max
 
   test-gpu:
-    # Runs on the self-hosted runner on `utk` (NVIDIA GPU), registered with
-    # these labels. It runs the e2e tests whose browser needs WebGPU -- the
+    # Runs on a GPU runner: arcade-gpu when it is idle, utk-gpu otherwise
+    # (pick-runners). It runs the e2e tests whose browser needs WebGPU -- the
     # WebGPU compute examples (06/07) and every other Autark dataflow need real
-    # hardware WebGPU, which a GPU-less ubuntu-latest runner cannot provide --
-    # and nothing else: utk is one machine, so everything on it runs in series,
-    # while ubuntu-latest runs the rest of the suite on as many runners as the
-    # jobs below ask for. Which e2e test goes where is decided from the tests
+    # hardware WebGPU, which a CPU runner cannot provide -- and nothing else:
+    # a GPU runner is one machine, so everything on it runs in series, while
+    # the CPU runners run the rest of the suite on as many runners as the jobs
+    # below ask for. Which e2e test goes where is decided from the tests
     # themselves (utk_curio/backend/tests/test_frontend/runner_split.py).
-    runs-on: [self-hosted, linux, gpu, curio]
+    needs: pick-runners
+    runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['test-gpu'] }}
     timeout-minutes: 90
-    # The utk queue, per ref (see the note above the jobs).
+    # One queue per ref and GPU runner (h100 is arcade-gpu, curio is utk-gpu),
+    # so a run on one GPU runner never waits for, or evicts, a run on the other.
     concurrency:
-      group: utk-ci-${{ github.ref }}${{ inputs.remint && '-remint' || '' }}
+      group: gpu-ci-${{ github.ref }}-${{ fromJSON(needs.pick-runners.outputs.runners || '{"test-gpu":["","","none"]}')['test-gpu'][2] }}${{ inputs.remint && '-remint' || '' }}
       cancel-in-progress: false
 
     # SECURITY (public repo + self-hosted): fork PRs must never execute on
@@ -210,11 +262,7 @@ jobs:
     # after it sit out those runs: the code they cover was already tested on
     # the push or PR that produced the ref, and repeating them would hold the
     # GPU for another 20 minutes.
-    if: >-
-      github.event_name != 'schedule' &&
-      github.event.action != 'labeled' &&
-      (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
+    if: ${{ needs.pick-runners.result == 'success' }}
 
     env:
       # Boot the CI stack with auth + projects enabled. Without the overlay the
@@ -293,7 +341,15 @@ jobs:
       # clean any container-created artifact. (Runs in the leftover workspace
       # from the prior run; a no-op on a fresh runner.)
       - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        if: runner.environment == 'self-hosted'
         run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
+      # The runner image points Vulkan at NVIDIA's EGL library on GPU runners
+      # (uic-evl/evl-github-runners); this shows what the job got.
+      - name: 🎮 Vulkan on this runner
+        run: |
+          echo "VK_ICD_FILENAMES=${VK_ICD_FILENAMES:-unset}"
+          vulkaninfo --summary 2>/dev/null | grep -m1 deviceName || echo "vulkaninfo: no device or not installed"
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
@@ -560,8 +616,7 @@ jobs:
             echo "Re-minting with PYTEST_ADDOPTS=$PYTEST_ADDOPTS"
           fi
           bash scripts/test.sh --e2e-only --use-existing "${extra[@]}" \
-            --parallel "$CURIO_E2E_PARALLEL" \
-            --allure-dir "$GITHUB_WORKSPACE/ci-report/allure-results"
+            --parallel "$CURIO_E2E_PARALLEL"
 
       # What a re-mint wrote into this checkout: the baselines whose screen
       # changed, and any it minted. Exactly those files, flat, for review on the
@@ -606,7 +661,7 @@ jobs:
             > "$GITHUB_WORKSPACE/shard-logs.txt" 2>&1 || true
 
       # Everything the ci-report job builds the run's page from: this job's
-      # JUnit, screenshot comparisons, failure diagnostics, Allure results and,
+      # JUnit, screenshot comparisons, failure diagnostics and,
       # on a re-mint, the baselines it wrote.
       - name: 📤 Upload the results for the CI report
         if: always()
@@ -643,9 +698,11 @@ jobs:
   # (CURIO_UNIT_PART; tests/parts.py and unit_durations.json).
   unit:
     name: unit (${{ matrix.name }})
-    needs: build-image
-    if: ${{ !cancelled() && needs.build-image.result == 'success' && !inputs.remint }}
-    runs-on: ubuntu-latest
+    needs: [pick-runners, build-image]
+    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.build-image.result == 'success' && !inputs.remint }}
+    # The sandbox suite holds #408's re-run memory test, which measures a 4-core,
+    # 16 GB laptop, so like test-desktop-stress it runs on ubuntu-latest.
+    runs-on: ${{ matrix.suite == 'sandbox' && 'ubuntu-latest' || fromJSON(needs.pick-runners.outputs.runners)[format('unit-{0}', matrix.name)] }}
     timeout-minutes: 40
     permissions:
       contents: read
@@ -668,6 +725,10 @@ jobs:
       FLASK_SANDBOX_PORT: "2020"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
     steps:
+      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        if: runner.environment == 'self-hosted'
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
@@ -698,21 +759,27 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - uses: ./.github/actions/stop-stack
+        if: always()
+        with:
+          project: curio-ci
+
   # Jest and tsc need Node and the frontend's own dependencies, nothing else, so
   # they run on the checkout rather than inside an image.
   jest:
-    if: >-
-      !inputs.remint &&
-      github.event_name != 'schedule' &&
-      github.event.action != 'labeled' &&
-      (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ubuntu-latest
+    needs: pick-runners
+    if: ${{ needs.pick-runners.result == 'success' && !inputs.remint }}
+    runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['jest'] }}
     timeout-minutes: 30
     defaults:
       run:
         working-directory: utk_curio/frontend/urban-workflows
     steps:
+      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        if: runner.environment == 'self-hosted'
+        working-directory: ${{ github.workspace }}
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
@@ -729,7 +796,11 @@ jobs:
 
       - name: Jest frontend unit tests
         # --json feeds the CI report page; the console output is unchanged.
-        run: npm test -- --json --outputFile="$GITHUB_WORKSPACE/ci-report/jest.json"
+        # Jest starts a worker per core but one; a self-hosted runner shows all
+        # of its server's cores (192 on arcade), so the workers are capped at 8.
+        run: |
+          workers=$(( $(nproc) - 1 )); [ "$workers" -gt 8 ] && workers=8; [ "$workers" -lt 1 ] && workers=1
+          npm test -- --maxWorkers="$workers" --json --outputFile="$GITHUB_WORKSPACE/ci-report/jest.json"
 
       - name: TypeScript typecheck
         # Jest transpiles through babel, which strips types without checking
@@ -752,7 +823,7 @@ jobs:
           retention-days: 7
 
   # Every e2e test whose browser does not run WebGPU, spread over a matrix of
-  # ubuntu-latest runners, each with its own stack. Which tests those are is
+  # CPU runners, each with its own stack. Which tests those are is
   # decided from the tests themselves (runner_split.py): CURIO_E2E_RUNNER picks
   # the non-WebGPU half and CURIO_E2E_PART one balanced slice of it. test-gpu
   # runs the other half, and the CI report job checks that together they ran
@@ -763,9 +834,9 @@ jobs:
   # none exceeded its budget), and a re-mint writes each baseline on the runner
   # that compares it.
   e2e-desktop:
-    needs: build-image
-    if: ${{ !cancelled() && needs.build-image.result == 'success' }}
-    runs-on: ubuntu-latest
+    needs: [pick-runners, build-image]
+    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.build-image.result == 'success' }}
+    runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)[format('e2e-desktop-{0}', matrix.part)] }}
     timeout-minutes: 45
     permissions:
       contents: read
@@ -794,6 +865,10 @@ jobs:
       FLASK_SANDBOX_PORT: "2020"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
     steps:
+      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        if: runner.environment == 'self-hosted'
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
@@ -846,8 +921,7 @@ jobs:
             fi
             export PYTEST_ADDOPTS
           fi
-          bash scripts/test.sh --e2e-only --use-existing "${extra[@]}" \
-            --allure-dir "$GITHUB_WORKSPACE/ci-report/allure-results"
+          bash scripts/test.sh --e2e-only --use-existing "${extra[@]}"
 
       - name: 📦 Collect the re-minted baselines
         if: always() && env.CURIO_REMINT == '1'
@@ -876,6 +950,11 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - uses: ./.github/actions/stop-stack
+        if: always()
+        with:
+          project: curio-ci
+
   # The isolated stack (CURIO_ISOLATION=fork), running the Python-node
   # workflows. None of them draws with WebGPU, so it runs here, beside test-gpu,
   # rather than after it. See docker-compose.ci-isolated.yml for why this stack
@@ -884,9 +963,9 @@ jobs:
   # Scoped to the workflows whose nodes are Python, because isolation wraps
   # /exec only -- /execJs spawns Node either way (sandbox/app/api.py).
   test-isolated:
-    needs: build-image
-    if: ${{ !cancelled() && needs.build-image.result == 'success' && !inputs.remint }}
-    runs-on: ubuntu-latest
+    needs: [pick-runners, build-image]
+    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.build-image.result == 'success' && !inputs.remint }}
+    runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['test-isolated'] }}
     timeout-minutes: 45
     permissions:
       contents: read
@@ -908,6 +987,10 @@ jobs:
       CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/ci-report/failures
       CURIO_E2E_TRACE: "1"
     steps:
+      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        if: runner.environment == 'self-hosted'
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
@@ -1008,6 +1091,11 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - uses: ./.github/actions/stop-stack
+        if: always()
+        with:
+          project: curio-ci-iso
+
   # The only job that boots what the deploy actually ships: isolation WITH an
   # execution account, so node code runs unprivileged instead of as root.
   #
@@ -1019,9 +1107,9 @@ jobs:
   # drops the workflow comparison and asserts the boundary over the sandbox's
   # HTTP API instead, which touches none of the hardened paths from the host.
   test-exec-user:
-    needs: build-image
-    if: ${{ !cancelled() && needs.build-image.result == 'success' && !inputs.remint }}
-    runs-on: ubuntu-latest
+    needs: [pick-runners, build-image]
+    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.build-image.result == 'success' && !inputs.remint }}
+    runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['test-exec-user'] }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -1041,6 +1129,10 @@ jobs:
       CURIO_LIVE_LAUNCH_DIR: /app
       CURIO_LIVE_EXEC_USER: curio-exec
     steps:
+      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        if: runner.environment == 'self-hosted'
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
@@ -1099,6 +1191,11 @@ jobs:
           path: ci-report/
           if-no-files-found: ignore
           retention-days: 7
+
+      - uses: ./.github/actions/stop-stack
+        if: always()
+        with:
+          project: curio-ci-exec-user
 
   # The reference preview runner (utk_curio/tools/preview_runner.py) renders a
   # built behavior bundle in a real headless Chromium, through the package
@@ -1355,6 +1452,7 @@ jobs:
       # Same reason as the exec-user job: this stack hardens bind-mounted
       # paths to root, and checkout runs as the runner user.
       - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        if: runner.environment == 'self-hosted'
         run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
 
       - name: 📥 Checkout repository
@@ -1512,30 +1610,28 @@ jobs:
 
   # One page for the whole run (scripts/ci_report.py): every job's result, each
   # suite's results with the failures, and every screenshot comparison, from
-  # utk and ubuntu-latest alike. Uploaded unzipped, so its entry in the run's
-  # artifact list opens in the browser. It also merges the e2e jobs' Allure
-  # results into one report, and on a re-mint their baselines into one
-  # reminted-baselines artifact to review and commit.
+  # every runner alike. Uploaded unzipped, so its entry in the run's
+  # artifact list opens in the browser. On a re-mint it also merges the e2e
+  # jobs' baselines into one reminted-baselines artifact to review and commit.
   #
   # And it checks that the split lost nothing a run could still lose. That
   # every test is collected on exactly one runner is a unit test
   # (test_e2e_runner_split.py); what only a run can show is a test that went to
-  # ubuntu-latest and then skipped because it wanted WebGPU after all.
+  # a CPU runner and then skipped because it wanted WebGPU after all.
   ci-report:
-    needs: [test-gpu, unit, jest, e2e-desktop, test-isolated, test-exec-user, preview-runner, test-desktop-stress]
-    if: >-
-      !cancelled() &&
-      github.event_name != 'schedule' &&
-      github.event.action != 'labeled' &&
-      (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ubuntu-latest
+    needs: [pick-runners, test-gpu, unit, jest, e2e-desktop, test-isolated, test-exec-user, preview-runner, test-desktop-stress]
+    if: ${{ !cancelled() && needs.pick-runners.result == 'success' }}
+    runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['ci-report'] }}
     timeout-minutes: 30
     # actions: read lets the page list every job of the run through the jobs API.
     permissions:
       contents: read
       actions: read
     steps:
+      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        if: runner.environment == 'self-hosted'
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
@@ -1558,9 +1654,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p merged/comparisons merged/failures merged/allure-results merged/reminted-baselines
+          mkdir -p merged/comparisons merged/failures merged/reminted-baselines
           for dir in inputs/*/; do
-            for part in comparisons failures allure-results reminted-baselines; do
+            for part in comparisons failures reminted-baselines; do
               if [ -d "$dir$part" ]; then cp -r "$dir$part/." "merged/$part/"; fi
             done
           done
@@ -1577,26 +1673,6 @@ jobs:
           path: merged/reminted-baselines/
           if-no-files-found: warn
           retention-days: 7
-
-      - name: 📊 Install Allure CLI
-        if: always()
-        run: |
-          ALLURE_VERSION=2.32.0
-          wget -q "https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.tgz"
-          tar -xzf "allure-${ALLURE_VERSION}.tgz"
-          echo "$PWD/allure-${ALLURE_VERSION}/bin" >> "$GITHUB_PATH"
-
-      - name: 📊 Generate Allure report
-        if: always()
-        run: allure generate merged/allure-results -o allure-report --clean
-
-      - name: 📤 Upload Allure report artifact
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: allure-report
-          path: allure-report
-          retention-days: 30
 
       # continue-on-error: the page reports on the run, it must never be the
       # reason the run is red. The PR fields come in through env, never inline
@@ -1644,8 +1720,14 @@ jobs:
             --comparisons merged/comparisons \
             --failures merged/failures \
             --jobs ci-report/jobs.json --all-jobs \
-            --out "$file" --summary ci-report/summary.md
+            --out "$file" --summary ci-report/summary.md --where ci-report/where.md
           echo "file=$file" >> "$GITHUB_OUTPUT"
+
+      # First in this job's summary, so it sits right under the summaries the
+      # earlier jobs wrote (build-image's), even when the page is not built.
+      - name: 🗺️ Where each job ran
+        if: always()
+        run: cat ci-report/where.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
       - name: 📤 Upload the CI report page
         id: ci_report_upload

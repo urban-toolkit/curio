@@ -1,11 +1,12 @@
 """Which e2e tests need the utk runner, and how the rest split across runners.
 
-CI runs the e2e suite on two kinds of machine. The self-hosted ``utk`` runner
-has an NVIDIA GPU and is the only place hardware WebGPU exists; it is also one
-machine, so everything on it runs in series. ``ubuntu-latest`` runners have no
-GPU but come as many as a matrix asks for. So a test belongs on utk only when
-the browser has to run WebGPU, and everything else is spread across a matrix of
-ubuntu-latest jobs.
+CI runs the e2e suite on two kinds of machine. A self-hosted GPU runner
+(``arcade-gpu`` or ``utk-gpu``; the share keeps the name ``utk``) has an NVIDIA
+GPU and is the only place hardware WebGPU exists; it is also one machine, so
+everything on it runs in series. The CPU runners (GitHub-hosted
+``ubuntu-latest`` or self-hosted ``[self-hosted, cpu]``) have no GPU but come
+as many as a matrix asks for. So a test belongs on utk only when the browser
+has to run WebGPU, and everything else is spread across a matrix of CPU jobs.
 
 The line is drawn from the tests themselves, never from a list someone keeps:
 

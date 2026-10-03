@@ -44,15 +44,20 @@ on CI -- see *Screenshot baselines*.
 
 ### Where CI runs each test
 
-CI splits the suite between the self-hosted `utk` runner, the only one with
-hardware WebGPU, and a matrix of `ubuntu-latest` runners
-([`runner_split.py`](runner_split.py)). A test runs on `utk` when its browser
-runs WebGPU: a `test_workflows.py` case whose dataflow has an Autark node, a
+CI splits the suite between a self-hosted GPU runner, the only kind with
+hardware WebGPU, and a matrix of CPU runners
+([`runner_split.py`](runner_split.py)). The run's `pick-runners` job chooses
+each job's runner: GitHub-hosted `ubuntu-latest` while the organization's
+hosted runners have room and the self-hosted arcade runners (`[self-hosted,
+cpu]`) after that, and for the GPU
+share `arcade-gpu` when it is idle and `utk-gpu` otherwise. The GPU share is
+still called `utk`, after the first GPU runner. A test runs on `utk` when its
+browser runs WebGPU: a `test_workflows.py` case whose dataflow has an Autark node, a
 walkthrough scene whose example or script drives Autark or the GPU, and any
 other module whose source mentions Autark or WebGPU. Such tests carry the
 `webgpu` marker. A test that needs the sibling backends of `--parallel` is
-marked `needs_parallel` and runs on `utk` too. Everything else runs on
-`ubuntu-latest`. Two variables select a share, and a run with neither runs
+marked `needs_parallel` and runs on `utk` too. Everything else runs on the
+CPU runners. Two variables select a share, and a run with neither runs
 everything:
 
 ```bash
@@ -61,9 +66,10 @@ CURIO_E2E_RUNNER=desktop CURIO_E2E_PART=3/10 pytest ...                  # one o
 ```
 
 `CURIO_E2E_PART` balances the parts by the group durations in
-`e2e_durations.json`. Refresh it from a run's `allure-report` artifact with
-`python scripts/e2e_durations.py <allure-report dir>`; a group missing from it
-is priced at a default.
+`e2e_durations.json`. Refresh it from a run's e2e JUnit, `e2e.xml` in the
+`ci-inputs-test-gpu` and `ci-inputs-e2e-desktop-*` artifacts, with
+`python scripts/e2e_durations.py <e2e.xml> ...`; a group missing from it is
+priced at a default.
 
 With `--use-existing`, pairs 1..N-1 must already be running on the ports
 `python -m utk_curio.backend.tests.shards K` prints (that is what CI does,
@@ -260,8 +266,8 @@ gh workflow run docker-compose.yml --ref <branch> -f remint=true
 # frames a fix changes by only a few words: add -f remint_force='<name part>,<name part>'
 ```
 
-That run is the e2e suite alone, under `--remint-baselines`, on `utk` and the
-`ubuntu-latest` parts alike, each re-minting the baselines it compares: each
+That run is the e2e suite alone, under `--remint-baselines`, on the GPU share
+and the CPU parts alike, each re-minting the baselines it compares: each
 capture is compared with its committed baseline, and when its screen changed
 the capture is written over the baseline; a missing baseline is minted. Then:
 
@@ -324,7 +330,7 @@ Two families of baseline live in that folder:
   Autark node whose grammar has a `map` or `plot` also gets a
   `test_node_execution_closeup_<node id>` baseline: the node alone, framed at up
   to 100% zoom (`save_node_closeup`) and compared at a per-channel tolerance of
-  5 instead of 30, against a 2% budget instead of 10%. In the full-page frame a
+  5 instead of 30, against a 5% budget instead of 10%. In the full-page frame a
   map or plot that drew nothing can stay under the budget; up close it cannot. Walkthrough scenes with a drawn map
   take one with `ctx.capture_node`. A workflow in `INTERACTIONS`
   (test_workflows.py) also gets
@@ -339,7 +345,7 @@ Two families of baseline live in that folder:
   Interaction pairs. Re-mint them with the workflow's whole class selected
   (`remint_filter="TestWorkflowCanvas and <workflow>"`), as CI runs them: the
   class's earlier tests can move the pair by a fraction of a pixel, which shifts
-  the node's text and borders past the 2% budget;
+  the node's text and borders past the close-up budget;
 - one per hand-built surface, keyed by the stem the test passes in place of a
   workflow path: `canvas-authoring`, `package-roundtrip`,
   `package-metadata-roundtrip`, `package-export-drawer`, `save-as-modal`,

@@ -24,6 +24,24 @@ inputs:
 runs:
   using: composite
   steps:
+    # A self-hosted runner keeps its Docker daemon between jobs, and a job that
+    # was cancelled may not have torn its stack down. Left running, compose
+    # would reuse it under the next job, on a workspace checkout has since
+    # wiped. Remove every curio CI stack still there, whatever its project
+    # (the daemon is this runner's own), by label so no compose file is needed.
+    - name: 🧹 Remove stacks an earlier job left (self-hosted)
+      if: runner.environment == 'self-hosted'
+      shell: bash
+      run: |
+        projects=$(docker ps -a --format '{{.Label "com.docker.compose.project"}}' | grep '^curio-ci' | sort -u || true)
+        for project in $projects; do
+          echo "removing stack $project"
+          label="label=com.docker.compose.project=$project"
+          docker ps -aq --filter "$label" | xargs -r docker rm -f
+          docker volume ls -q --filter "$label" | xargs -r docker volume rm
+          docker network ls -q --filter "$label" | xargs -r docker network rm
+        done
+
     - uses: docker/login-action@v4
       with:
         registry: ghcr.io

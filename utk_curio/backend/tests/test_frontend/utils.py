@@ -1583,9 +1583,10 @@ CLOSEUP_PIXEL_THRESHOLD = 5
 #: Budget of a node close-up, tighter than MAX_DIFF_RATIO. A blank plot keeps
 #: its panel and loses only its marks: the tallest-bar histogram blanked to
 #: 9.27% and the scatter to 10.20% (proof run 36789368569), so at 10% one of
-#: them passed. At 2% the smallest blank is 4.6 times the budget, and the
-#: 0.02% run-to-run noise is a hundredth of it.
-CLOSEUP_MAX_DIFF_RATIO = 0.02
+#: them passed. At 5% the smallest blank is 1.85 times the budget. GPU-computed
+#: plots differ between GPUs: example 07's sunlight histogram is 4.29% apart on
+#: an H100 and an RTX PRO 6000 (run 37082234799).
+CLOSEUP_MAX_DIFF_RATIO = 0.05
 
 
 # Sets the canvas viewport's inline will-change; "" hands it back to the stylesheet.

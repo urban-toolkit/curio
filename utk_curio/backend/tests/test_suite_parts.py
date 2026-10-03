@@ -1,7 +1,7 @@
 """The suites split into parts for CI runners without losing a test (tests/parts.py).
 
-The backend unit suite runs as ``CURIO_UNIT_PART`` parts on separate
-ubuntu-latest jobs (the e2e suite's split is test_e2e_runner_split.py). The
+The backend unit suite runs as ``CURIO_UNIT_PART`` parts on separate CPU
+runner jobs (the e2e suite's split is test_e2e_runner_split.py). The
 last test here collects the real suite whole and in parts through pytest and
 checks the parts add up to it exactly.
 """
