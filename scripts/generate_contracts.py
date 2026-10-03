@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Write every generated contract output from its single source.
 
-The contracts live in ``utk_curio/backend/app/agents/contracts.py``; this is a
-thin CLI over its ``GENERATED_OUTPUTS`` registry. Run it after changing that
-module and commit the outputs with the change.
+The contracts live in ``utk_curio/backend/app/agents/domain/contracts.py``;
+this is a thin CLI over its ``GENERATED_OUTPUTS`` registry. Run it after
+changing that module and commit the outputs with the change.
 
     python scripts/generate_contracts.py           # write every output
     python scripts/generate_contracts.py --check   # write nothing; exit 1 and
