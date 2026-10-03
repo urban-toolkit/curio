@@ -22,7 +22,19 @@ describe("buildUploadPayload", () => {
     expect(out.prompts).toEqual({ "prompts/instruction.txt": "do the thing" });
   });
 
-  it("requires exactly one manifest and only .txt prompts", () => {
+  it("takes .md prompts, the form built-in definitions export", () => {
+    const out = buildUploadPayload([
+      { name: "manifest.json", text: JSON.stringify(MANIFEST) },
+      { name: "instruction.md", text: "do the thing" },
+      { name: "notes.txt", text: "and this" },
+    ]);
+    expect(out.prompts).toEqual({
+      "prompts/instruction.md": "do the thing",
+      "prompts/notes.txt": "and this",
+    });
+  });
+
+  it("requires exactly one manifest and only .md or .txt prompts", () => {
     expect(() => buildUploadPayload([{ name: "instruction.txt", text: "x" }])).toThrow(
       /exactly one manifest/i,
     );

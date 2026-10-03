@@ -1,6 +1,6 @@
 /**
  * Assemble the upload-import payload (memo dev/36) from picked files:
- * exactly one `manifest.json` plus any number of `.txt` prompt files, which
+ * exactly one `manifest.json` plus any number of `.md` or `.txt` prompt files, which
  * become `prompts/<name>`. Pure and synchronous over already-read text so the
  * modal stays trivially testable; all real validation is server-side.
  */
@@ -14,10 +14,13 @@ export interface UploadPayload {
   prompts: Record<string, string>;
 }
 
+/** Built-in prompts are Markdown; a definition written by hand may use plain text. */
+const PROMPT_EXTENSIONS = [".md", ".txt"];
+
 export function buildUploadPayload(files: NamedText[]): UploadPayload {
   // A single exported bundle: `{manifest, prompts}` in one `.curio-agent.json`,
   // which is what "Export" on an agent's details screen produces. The loose
-  // manifest.json + prompts/*.txt form below stays supported, but it needs two
+  // manifest.json + prompts/*.md form below stays supported, but it needs two
   // directories in one file dialog and is the awkward half of this flow.
   const bundle = files.find((f) => f.name.toLowerCase().endsWith(".curio-agent.json"));
   if (bundle) {
@@ -55,8 +58,9 @@ export function buildUploadPayload(files: NamedText[]): UploadPayload {
   const prompts: Record<string, string> = {};
   for (const f of files) {
     if (f === manifests[0]) continue;
-    if (!f.name.toLowerCase().endsWith(".txt")) {
-      throw new Error(`Unsupported file ${f.name} — pick manifest.json and .txt prompts`);
+    const name = f.name.toLowerCase();
+    if (!PROMPT_EXTENSIONS.some((ext) => name.endsWith(ext))) {
+      throw new Error(`Unsupported file ${f.name}: pick manifest.json and its .md or .txt prompts`);
     }
     prompts[`prompts/${f.name}`] = f.text;
   }
