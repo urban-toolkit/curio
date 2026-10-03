@@ -1,0 +1,240 @@
+"""The helpers node code uses to reach what the account's catalogs hold.
+
+``curio_load_data("<id>")``
+    A Data Catalog dataset, read the way its format is read: a table, a
+    GeoDataFrame, a raster, a JSON document, the parts of a multi-output result,
+    or a collection's index.
+``curio_data_path("<id>")``
+    The dataset's file, for a reader of your own (``pd.read_csv(..., sep=";")``).
+``curio_load_collection("<id>")``
+    A collection's index, one row per file with a readable ``path``.
+``curio_load_model("<id>")``
+    A Model Catalog model, ready for ``curio_segment``.
+
+The backend resolves each id a node's code names, for the account running it,
+and sends the paths, the formats, the collections and the models with the
+code. The in-process worker and the isolated child install the same helpers
+through :func:`install_catalog_helpers`; only how a path resolves differs
+(absolute in process, staged copies under isolation).
+
+The names these replaced (``curio_dataset_path``, ``curio_collection``,
+``curio_model``) are not aliases: calling one raises an error that names its
+replacement, so a saved dataflow says what to change.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from typing import Any, Callable
+
+#: The extensions a dataset whose format did not travel with it is read by.
+_FORMAT_BY_SUFFIX = {
+    ".csv": "csv",
+    ".geojson": "geojson",
+    ".shp": "shp",
+    ".parquet": "parquet",
+    ".json": "json",
+    ".zlib": "json",
+    ".tif": "geotiff",
+    ".tiff": "geotiff",
+}
+
+
+def _format_of(path: str, declared: str | None) -> str | None:
+    if declared:
+        return declared
+    name = os.path.basename(path)
+    if name == "bundle.json":
+        return "bundle"
+    return _FORMAT_BY_SUFFIX.get(os.path.splitext(name)[1].lower())
+
+
+def _read_parquet(path: str):
+    import pandas as pd
+
+    try:
+        import geopandas as gpd
+
+        frame = gpd.read_parquet(path)
+    except Exception:  # noqa: BLE001 - a table with no geometry column
+        frame = pd.read_parquet(path)
+    # Object columns (dict/list cells) are JSON-encoded on save; the columns
+    # are named in a <file>.decode.json sidecar.
+    sidecar = path + ".decode.json"
+    if os.path.exists(sidecar):
+        with open(sidecar, encoding="utf-8") as handle:
+            encoded = json.load(handle).get("encoded_object_columns", [])
+        for column in encoded:
+            if column in frame.columns:
+                frame[column] = frame[column].apply(
+                    lambda value: json.loads(value) if isinstance(value, str) and value else value
+                )
+    return frame
+
+
+def _read_json(path: str):
+    import zlib
+
+    with open(path, "rb") as handle:
+        raw = handle.read()
+    try:
+        raw = zlib.decompress(raw)
+    except zlib.error:
+        pass  # plain .json: the bytes are already the document
+    return json.loads(raw.decode("utf-8"))
+
+
+def _read_bundle(path: str):
+    """A multi-output result: ``data/bundle.json`` and ``data/parts/*``, as a
+    tuple, so the node's output is the same ``outputs`` envelope the producing
+    node emitted."""
+    base = os.path.dirname(os.path.dirname(path))
+    with open(path, encoding="utf-8") as handle:
+        spec = json.load(handle)
+    items = []
+    for part in sorted(spec.get("parts", []), key=lambda p: p.get("index", 0)):
+        fmt, kind = part.get("format"), part.get("kind")
+        file_path = os.path.join(base, part["file"]) if part.get("file") else None
+        if fmt in ("parquet", "csv", "geojson", "shp", "geotiff"):
+            value = read_dataset(file_path, fmt)
+        else:
+            with open(file_path, encoding="utf-8") as part_file:
+                loaded = json.load(part_file)
+            if kind in ("int", "float", "bool", "str", "null") and isinstance(loaded, dict) and "value" in loaded:
+                value = loaded["value"]
+            else:
+                value = loaded
+        items.append(value)
+    return tuple(items)
+
+
+def read_dataset(path: str, fmt: str | None, *, layer_type: str | None = None):
+    """The value a dataset at *path* holds, read the way *fmt* is read.
+
+    *layer_type* is the Autark layer a Discovery download is (``buildings``,
+    say); it is set as the frame's ``metadata`` so an Autark node draws the
+    frame as that layer.
+    """
+    fmt = _format_of(path, fmt)
+    if fmt == "csv":
+        import pandas as pd
+
+        return pd.read_csv(path)
+    if fmt in ("geojson", "shp"):
+        import geopandas as gpd
+
+        frame = gpd.read_file(path)
+        if layer_type:
+            frame.metadata = {"layerType": layer_type}
+        return frame
+    if fmt == "parquet":
+        return _read_parquet(path)
+    if fmt == "json":
+        return _read_json(path)
+    if fmt == "geotiff":
+        import rasterio
+
+        return rasterio.open(path)
+    if fmt == "bundle":
+        return _read_bundle(path)
+    raise RuntimeError(
+        f"curio_load_data cannot read a dataset stored as {fmt or 'an unknown format'} - "
+        "read its file yourself: curio_data_path(\"<id>\") gives the path."
+    )
+
+
+class CurioModel:
+    """A Model Catalog model, loaded: what ``curio_segment`` runs.
+
+    ``folder`` is where its files are and ``manifest`` what its manifest says;
+    both are read when the model is loaded, so a folder that is not a model
+    fails there. ``runner``, the callable that labels one image's pixels, opens
+    the model's runtime the first time it is used, and ``labels`` are the
+    classes it can name.
+    """
+
+    def __init__(self, model_id: str, folder: str):
+        self.id = model_id
+        self.folder = folder
+        path = os.path.join(folder, "manifest.json")
+        try:
+            with open(path, encoding="utf-8") as handle:
+                self.manifest = json.load(handle)
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(f"Model '{model_id}' has no readable manifest: {exc}") from exc
+        self._runner = None
+
+    @property
+    def runner(self):
+        if self._runner is None:
+            from utk_curio.sandbox.util.vision import load_runner
+
+            self._runner, _manifest = load_runner(self.folder)
+        return self._runner
+
+    @property
+    def labels(self) -> list:
+        return list(self.manifest.get("labels") or []) or list(self.runner.labels)
+
+    def __repr__(self) -> str:
+        return f"<CurioModel {self.id}>"
+
+
+def _renamed(old: str, replacement: str) -> Callable[..., Any]:
+    def gone(*_args, **_kwargs):
+        raise RuntimeError(f"{old} was renamed: use {replacement}.")
+
+    gone.__name__ = old
+    return gone
+
+
+def install_catalog_helpers(
+    namespace: dict,
+    *,
+    data_path: Callable[[str], str],
+    formats: dict | None,
+    collections: dict | None,
+    media_dir: str | None,
+    models: dict | None,
+    model_base: str | None = None,
+    output_dir: str | None = None,
+) -> None:
+    """Put the catalog helpers into one execution's *namespace*.
+
+    *data_path* resolves a dataset id to its file (absolute in process, a
+    staged copy under isolation). *formats* is ``{id: {"format", "layerType"}}``
+    as the backend resolved it. *models* is ``{id: folder}``, relative to
+    *model_base* when staged.
+    """
+    from utk_curio.sandbox.util.collections import make_collection_helpers
+    from utk_curio.sandbox.util.models import make_model_folder
+    from utk_curio.sandbox.util.vision import make_curio_segment
+
+    known_formats = {str(k): dict(v) for k, v in (formats or {}).items() if isinstance(v, dict)}
+    collection_helpers = make_collection_helpers(data_path, collections, media_dir, output_dir=output_dir)
+    curio_load_collection = collection_helpers["curio_load_collection"]
+    model_folder = make_model_folder(models, base=model_base)
+
+    def curio_load_data(dataset_id):
+        dataset_id = str(dataset_id)
+        info = known_formats.get(dataset_id, {})
+        if info.get("format") == "collection":
+            return curio_load_collection(dataset_id)
+        return read_dataset(data_path(dataset_id), info.get("format"), layer_type=info.get("layerType"))
+
+    def curio_load_model(model_id):
+        model_id = str(model_id)
+        return CurioModel(model_id, model_folder(model_id))
+
+    namespace["curio_data_path"] = data_path
+    namespace["curio_load_data"] = curio_load_data
+    namespace.update(collection_helpers)
+    namespace["curio_load_model"] = curio_load_model
+    namespace["curio_segment"] = make_curio_segment(collection_helpers["curio_derived_file"])
+    namespace["curio_dataset_path"] = _renamed(
+        "curio_dataset_path",
+        'curio_load_data("<id>") for the data, or curio_data_path("<id>") for its file',
+    )
+    namespace["curio_collection"] = _renamed("curio_collection", 'curio_load_collection("<id>")')
+    namespace["curio_model"] = _renamed("curio_model", 'curio_load_model("<id>")')

@@ -1,6 +1,6 @@
 """The helpers node code uses to read a collection and write what it derives.
 
-``curio_collection("<id>")`` returns a collection's index, one row per file,
+``curio_load_collection("<id>")`` returns a collection's index, one row per file,
 with the columns a node needs to reach each file:
 
 - ``path``: a file this execution can open, the file itself for a folder
@@ -51,18 +51,18 @@ LOCATOR_COLUMNS = (
 
 
 def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir=None):
-    """The helpers for one execution: ``curio_collection``,
+    """The helpers for one execution: ``curio_load_collection``,
     ``curio_derived_file`` and ``curio_output_file``.
 
     *resolve_index(dataset_id)* returns the local path of a collection's index,
-    the same resolver ``curio_dataset_path`` uses. *collections* maps each id
+    the same resolver ``curio_data_path`` uses. *collections* maps each id
     the backend resolved to ``{root|objects, kind}``. *output_dir* is where a
     node writes a file it returns (a raster, say): the scratch directory when
     isolated, whose files the parent keeps, and the media directory otherwise.
     """
     known = dict(collections or {})
 
-    def curio_collection(dataset_id):
+    def curio_load_collection(dataset_id):
         dataset_id = str(dataset_id)
         entry = known.get(dataset_id)
         if entry is None:
@@ -126,7 +126,7 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
         if not media_dir:
             raise RuntimeError(
                 "This node cannot write derived files here - run it on a collection "
-                "loaded with curio_collection()."
+                "loaded with curio_load_collection()."
             )
         folder, default_ext, _row_kind = DERIVED.get(kind, DERIVED["video"])
         path = os.path.join(media_dir, derived_relpath(folder, dataset_id, file_id, t_ms, ext or default_ext))
@@ -151,7 +151,7 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
         return os.path.join(folder, name)
 
     return {
-        "curio_collection": curio_collection,
+        "curio_load_collection": curio_load_collection,
         "curio_derived_file": curio_derived_file,
         "curio_output_file": curio_output_file,
     }

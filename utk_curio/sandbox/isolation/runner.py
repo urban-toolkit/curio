@@ -180,6 +180,7 @@ def execute_isolated(
     collections=None,
     media_dir=None,
     models=None,
+    dataset_formats=None,
 ):
     """Run one node in an isolated child. Returns the standard response dict.
 
@@ -252,6 +253,7 @@ def execute_isolated(
             overlay_dir=overlay_dir,
             dataset_paths=staged_datasets,
             models=staged_models,
+            dataset_formats=dataset_formats,
             collections=collections,
             media_dir=media_dir,
             session_imports=_imports_for(session_id),
