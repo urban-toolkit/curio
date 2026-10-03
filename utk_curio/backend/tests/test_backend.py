@@ -1,4 +1,3 @@
-import shutil
 import unittest
 import os
 import sys
@@ -7,11 +6,6 @@ from unittest.mock import patch, MagicMock
 import requests
 from flask import Flask, jsonify
 from utk_curio.backend.app.api.routes import bp
-
-# These tests use a bare Flask app with only the blueprint registered; they have
-# no SQLAlchemy user DB, so auth-protected endpoints cannot work here.
-# Full coverage for those routes lives in test_projects/ and test_users/.
-_SKIP_AUTH = unittest.skip("Requires full app+db setup — covered by test_projects/test_users/")
 
 # Initialize the Flask app for testing
 app = Flask(__name__)
@@ -48,35 +42,79 @@ class TestRoutes(unittest.TestCase):
         self.assertEqual(response.data.decode('utf-8'), 'Backend is live.')
         self.assertEqual(response.status_code, 200)
 
-    @_SKIP_AUTH
-    def test_process_python_code(self):
-        test_code = {
-            "code": test_data["data"]["activity_source_code"],
+
+class TestExecutionRelaysTheSandboxReply(unittest.TestCase):
+    """A run's reply from the sandbox reaches the browser unchanged.
+
+    The bare app has no user database, so the signed-in user is patched, and
+    the sandbox answers with a fixed reply. The sandbox's own tests run the
+    code for real (``sandbox/tests/test_sandbox.py``).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = app.test_client()
+        cls._user_patch = patch(
+            "utk_curio.backend.app.users.dependencies.get_current_user",
+            return_value=MagicMock(is_guest=False),
+        )
+        cls._user_patch.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._user_patch.stop()
+
+    def _sandbox_replies(self, mock_session, reply):
+        response = MagicMock(status_code=200)
+        response.json.return_value = reply
+        mock_session.post.return_value = response
+
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_process_python_code(self, mock_session):
+        reply = {
+            "stdout": "computed\n", "stderr": "",
+            "output": {"path": "artifact-1", "dataType": "float"},
+        }
+        self._sandbox_replies(mock_session, reply)
+        code = test_data["data"]["activity_source_code"]
+        response = self.client.post('/processPythonCode', json={
+            "code": code,
             "nodeType": test_data["data"]["activity_name"],
             "input": {
                 "dataType": test_data["data"]["input"]["dataType"],
-                "path": test_data["data"]["input"].get("path", ""),
-                "data": test_data["data"]["input"].get("data", "")
-            }
-        }
+                "path": test_data["data"]["input"]["path"],
+            },
+        }, headers={"Authorization": "Bearer test-token"})
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.get_json()
+        self.assertEqual(data['stdout'], reply['stdout'])
+        self.assertEqual(data['stderr'], reply['stderr'])
+        self.assertEqual(data['output'], reply['output'])
+        self.assertIsNone(data['missingModule'])
+        url = mock_session.post.call_args.args[0]
+        self.assertTrue(url.endswith('/exec'), url)
+        sent = json.loads(mock_session.post.call_args.kwargs['data'])
+        self.assertEqual(sent['code'], code)
+        self.assertEqual(sent['file_path'], test_data["data"]["input"]["path"])
 
-        response = self.client.post('/processPythonCode', json=test_code)
-        self.assertEqual(response.status_code, 200)
-
-    @_SKIP_AUTH
-    @unittest.skipIf(shutil.which('node') is None, "Node.js is not installed")
-    def test_process_javascript_code_no_input(self):
-        """Basic JS execution with no upstream input via /processJavaScriptCode."""
+    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    def test_process_javascript_code_no_input(self, mock_session):
+        """JS execution with no upstream input via /processJavaScriptCode."""
+        reply = {"stdout": "", "stderr": "", "output": {"path": "artifact-2", "dataType": "int"}}
+        self._sandbox_replies(mock_session, reply)
         response = self.client.post('/processJavaScriptCode', json={
             "code": "return 42;",
             "nodeType": "JS_COMPUTATION",
             "input": {},
-        })
-        self.assertEqual(response.status_code, 200)
+        }, headers={"Authorization": "Bearer test-token"})
+        self.assertEqual(response.status_code, 200, response.data)
         data = response.get_json()
-        self.assertIn('output', data)
-        self.assertIn('stdout', data)
-        self.assertIn('stderr', data)
+        self.assertEqual(data['output'], reply['output'])
+        self.assertEqual(data['stdout'], reply['stdout'])
+        self.assertEqual(data['stderr'], reply['stderr'])
+        url = mock_session.post.call_args.args[0]
+        self.assertTrue(url.endswith('/execJs'), url)
+        self.assertEqual(json.loads(mock_session.post.call_args.kwargs['data'])['code'], "return 42;")
 
 
 class TestSandboxTransportErrors(unittest.TestCase):
