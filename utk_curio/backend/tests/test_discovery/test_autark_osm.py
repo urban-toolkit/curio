@@ -397,6 +397,11 @@ class TestItBecomesDatasets:
         # The house and the part that shares its wall belong to one Autark building.
         assert by_element[("way", 303)]["building_id"] == by_element[("way", 304)]["building_id"]
         assert by_element[("way", 303)]["building_id"] != by_element[("way", 301)]["building_id"]
+        # So do two separate buildings that share a wall: each is its own row,
+        # named by its own osm_id, and building_id groups them as Autark draws them.
+        assert by_element[("way", 308)]["building"] == by_element[("way", 309)]["building"] == "yes"
+        assert by_element[("way", 308)]["building_id"] == by_element[("way", 309)]["building_id"]
+        assert by_element[("way", 308)]["building_id"] != by_element[("way", 303)]["building_id"]
 
     def test_every_feature_names_its_osm_element(self, client, auth, live):
         job = wait_for(client, auth, acquire(client, auth, OSM, "all-layers", parameters={"area": GOLF})

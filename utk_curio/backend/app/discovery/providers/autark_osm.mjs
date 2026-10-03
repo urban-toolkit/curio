@@ -10,8 +10,8 @@
 // written as autk-db's getLayer returns it with `osmElements`, to
 // <outDir>/<layer>.geojson, or <outDir>/<tagSet>_<layer>.geojson for a tag
 // set's points, polylines and polygons: one feature per node, way or relation,
-// with `osm_type`, `osm_id` and, for a building, the `building_id` of the
-// building it belongs to. Its coordinates are in autk-db's workspace CRS
+// with `osm_type`, `osm_id` and, for a building, a `building_id` shared by
+// footprints that touch. Its coordinates are in autk-db's workspace CRS
 // (EPSG:3395), and the Python side moves them to WGS84.
 //
 // stdout carries two kinds of line for Python, and autk-db's own logging:

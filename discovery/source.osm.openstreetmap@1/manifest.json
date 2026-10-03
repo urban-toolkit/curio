@@ -25,7 +25,7 @@
   "resources": [
     {
       "id": "buildings", "name": "Buildings", "kind": "table", "format": "geojson",
-      "description": "Buildings and building parts, one row each; building_id names the building each belongs to. Sheds, garages, carports and other small structures are left out.",
+      "description": "Buildings and building parts, one row each, named by osm_id. Footprints that touch share a building_id, as an Autark map draws them as one building. Sheds, garages, carports and other small structures are left out.",
       "options": { "layers": ["buildings"] }
     },
     {
