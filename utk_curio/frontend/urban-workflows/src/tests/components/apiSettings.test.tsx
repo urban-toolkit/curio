@@ -313,14 +313,28 @@ describe("API Settings: Connection keys (dev/116)", () => {
     await waitFor(() => expect(keysSection().queryByRole("table")).toBeNull());
   });
 
-  it("a temporary guest sees no key form; the shared guest sees it with the sharing banner", async () => {
+  it("on a Curio with sign-in, neither a temporary guest nor the shared guest sees the key form", async () => {
     mockUser = { ...SIGNED_IN, is_guest: true };
     const { unmount } = open();
     expect(screen.queryByTestId("connection-keys-section")).toBeNull();
     unmount();
+    // The shared guest is every guest at once: the server neither saves nor
+    // sends its connection keys.
     mockSharedGuest = true;
     open();
-    expect(screen.getByTestId("connection-keys-section")).toBeInTheDocument();
+    expect(await screen.findByText("Personal keys cannot be saved on a shared guest account.")).toBeInTheDocument();
+    expect(screen.queryByTestId("connection-keys-section")).toBeNull();
+  });
+
+  it("without --deploy the shared guest sees the key form with the sharing banner", async () => {
+    mockUser = { ...SIGNED_IN, is_guest: true };
+    mockSharedGuest = true;
+    mockAuthOn = false;
+    open();
+    fireEvent.click(await screen.findByText(/^Connection keys/));
+    expect(await keysSection().findByRole("note")).toHaveTextContent(
+      "Keys saved here are shared by everyone using this local instance.",
+    );
   });
 });
 

@@ -509,3 +509,84 @@ class TestTheKeysApiSettingsLists:
 
     def test_it_needs_a_signed_in_caller(self, client, shipped_root):
         assert client.get("/api/discovery/keys").status_code == 401
+
+
+class TestTheSharedGuestsKeysUnderDeploy:
+    """Without ``--deploy`` the shared guest is the one local user, and the
+    keys it saves are its own. With ``--deploy`` it is every guest at once, so
+    keys it saved in local mode on the same database are never sent; the
+    deployment's own key still is. Each test runs in both modes."""
+
+    @pytest.fixture()
+    def shared_guest(self, app, db):
+        from utk_curio.backend import config
+        from utk_curio.backend.app.users.models import User, UserSession
+
+        guest = User(username=config.CURIO_SHARED_GUEST_USERNAME, name="Guest",
+                     email="guest@test.com", is_guest=True)
+        # Saved while the instance ran without --deploy.
+        for column in credentials.SLOT_COLUMNS.values():
+            setattr(guest, column, SECRET)
+        db.session.add(guest)
+        db.session.flush()
+        db.session.add(UserSession(user_id=guest.id, token="shared-guest-token"))
+        db.session.commit()
+        return guest
+
+    @staticmethod
+    def _mode(monkeypatch, deploy):
+        from utk_curio.backend import config
+
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", not deploy)
+        monkeypatch.delenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", raising=False)
+
+    @pytest.mark.parametrize("deploy", [False, True], ids=["local", "deploy"])
+    def test_its_saved_keys_are_sent_only_without_deploy(self, shared_guest, monkeypatch, deploy):
+        self._mode(monkeypatch, deploy)
+        for slot in credentials.SLOTS:
+            assert credentials.own_token(shared_guest, slot) == (None if deploy else SECRET), slot
+            assert credentials.token_for_slot(shared_guest, slot) == (None if deploy else SECRET), slot
+            assert credentials.has_token(shared_guest, slot) is (not deploy), slot
+        chicago = load_source_manifest(SHIPPED_ROOT / "source.cityofchicago.data-portal@1")
+        assert credentials.credential_header(shared_guest, chicago) == (
+            None if deploy else f"X-App-Token:{SECRET}"
+        )
+
+    @pytest.mark.parametrize("deploy", [False, True], ids=["local", "deploy"])
+    def test_the_service_binds_none_under_deploy(self, discovery_dir, shared_guest, monkeypatch, deploy):
+        from utk_curio.backend.app.discovery.service import DiscoveryService
+
+        self._mode(monkeypatch, deploy)
+        write_source(discovery_dir, "source.a.tokened@1", a_manifest(
+            id="source.a.tokened", name="Tokened Portal",
+            provider={"type": "socrata", "baseUrl": "https://portal.example"},
+            auth={"mode": "optional-token", "secretId": "socrata.app-token",
+                  "headerName": "X-App-Token"},
+            capabilities={"formats": ["csv"]}))
+        manifest = load_source_manifest(discovery_dir / "source.a.tokened@1")
+        seen = []
+
+        class Spy:
+            def json_get(self, url, *, credential=None, headers=None):
+                seen.append(credential)
+                return "{}"
+
+        DiscoveryService("guest", user=shared_guest, transport=Spy())._transport_for(manifest).json_get(
+            "https://portal.example/api"
+        )
+        assert seen == [None if deploy else f"X-App-Token:{SECRET}"]
+
+    @pytest.mark.parametrize("deploy", [False, True], ids=["local", "deploy"])
+    def test_api_settings_reports_them_only_without_deploy(self, client, shipped_root, shared_guest,
+                                                           monkeypatch, deploy):
+        self._mode(monkeypatch, deploy)
+        res = client.get("/api/discovery/keys", headers={"Authorization": "Bearer shared-guest-token"})
+        assert res.status_code == 200, res.get_data(as_text=True)
+        for row in res.get_json()["keys"]:
+            assert row["present"] is (not deploy), row["slot"]
+        assert SECRET not in res.get_data(as_text=True)
+
+    def test_under_deploy_the_deployments_key_is_sent_instead(self, shared_guest, monkeypatch):
+        self._mode(monkeypatch, True)
+        monkeypatch.setenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", "deployment-token")
+        assert credentials.token_for_slot(shared_guest, "socrata.app-token") == "deployment-token"

@@ -58,10 +58,18 @@ class TestNormalisation:
         assert ck.suggest_name("localhost") == "localhost"
         assert ck.suggest_name("not a host") == ""
 
-    def test_storage_key(self):
+    @pytest.mark.parametrize("deploy", [False, True], ids=["local", "deploy"])
+    def test_storage_key(self, monkeypatch, deploy):
+        _mode(monkeypatch, deploy)
         assert ck.storage_key_for(SimpleNamespace(id=7, is_guest=False)) == "7"
         shared = SimpleNamespace(id=1, is_guest=True, username=CURIO_SHARED_GUEST_USERNAME)
-        assert ck.storage_key_for(shared) == "guest"
+        if deploy:
+            # Every guest at once: it has no key store of its own.
+            with pytest.raises(ConnectionKeyError) as exc:
+                ck.storage_key_for(shared)
+            assert exc.value.status == 403
+        else:
+            assert ck.storage_key_for(shared) == "guest"
         with pytest.raises(ConnectionKeyError) as exc:
             ck.storage_key_for(SimpleNamespace(id=2, is_guest=True, username="guest_abc"))
         assert exc.value.status == 403
@@ -210,18 +218,102 @@ class TestRoutes:
                        headers=_h(token))
         assert r.get_json() == {"name": "census"}
 
-    def test_shared_guest_uses_the_guest_store(self, client, db, tmp_curio):
-        from utk_curio.backend.app.users.models import User, UserSession
-
-        u = User(username=CURIO_SHARED_GUEST_USERNAME, name="Guest", is_guest=True)
-        db.session.add(u)
-        db.session.flush()
-        db.session.add(UserSession(user_id=u.id, token="shared-token"))
-        db.session.commit()
+    def test_the_local_shared_guest_uses_the_guest_store(self, client, db, tmp_curio, monkeypatch):
+        _mode(monkeypatch, deploy=False)
+        _shared_guest(db)
         r = client.put("/api/users/me/connection-keys/k",
                        json={"host": "x.org", "value": "abcdefgh"}, headers=_h("shared-token"))
         assert r.status_code == 201
         assert ck.default_store().path("guest").is_file()
+
+
+LOCAL_VALUE = "saved-by-the-local-guest"
+CENSUS_CODE = '    return curio_secret("census")'
+
+
+def _mode(monkeypatch, deploy: bool) -> None:
+    """Run as a Curio started with ``--deploy``, or without it."""
+    from utk_curio.backend import config
+
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", not deploy)
+
+
+def _shared_guest(db):
+    from utk_curio.backend.app.users.models import User, UserSession
+
+    u = User(username=CURIO_SHARED_GUEST_USERNAME, name="Guest", is_guest=True)
+    db.session.add(u)
+    db.session.flush()
+    db.session.add(UserSession(user_id=u.id, token="shared-token"))
+    db.session.commit()
+    return u
+
+
+@pytest.fixture()
+def saved_locally(tmp_curio, monkeypatch):
+    """A key the shared guest saved while the instance ran without --deploy."""
+    _mode(monkeypatch, deploy=False)
+    ck.default_store().put("guest", "census", "api.census.gov", LOCAL_VALUE, "query:key")
+
+
+#: (deploy, what a run is handed for ``curio_secret("census")``)
+MODES = [(False, {"census": LOCAL_VALUE}), (True, {})]
+MODE_IDS = ["local", "deploy"]
+
+
+class TestKeysTheLocalGuestSaved:
+    """Without ``--deploy`` the shared guest is the one local user and its
+    keys are its own. With ``--deploy`` it is every guest at once, so the keys
+    it saved in local mode are never listed or sent, on any path that reaches
+    them, and nothing is saved over them."""
+
+    @pytest.mark.parametrize("deploy, sent", MODES, ids=MODE_IDS)
+    def test_the_store_resolves_and_lists_them_only_without_deploy(self, saved_locally, monkeypatch,
+                                                                   deploy, sent):
+        _mode(monkeypatch, deploy)
+        store = ck.default_store()
+        assert store.resolve("guest", ["census"]) == sent
+        assert [ref.name for ref in store.list("guest")] == list(sent)
+
+    @pytest.mark.parametrize("deploy, sent", MODES, ids=MODE_IDS)
+    def test_an_agents_run_gets_them_only_without_deploy(self, saved_locally, monkeypatch, deploy, sent):
+        from utk_curio.backend.app.agents.application.turns import grounding
+
+        _mode(monkeypatch, deploy)
+        assert grounding._exec_secrets_resolver("guest")([CENSUS_CODE]) == sent
+        assert list(grounding._connection_key_refs("guest")) == list(sent)
+
+    @pytest.mark.parametrize("deploy, sent", MODES, ids=MODE_IDS)
+    def test_play_gets_them_only_without_deploy(self, app, db, saved_locally, monkeypatch, deploy, sent):
+        from flask import g
+
+        from utk_curio.backend.app.api import routes as api_routes
+
+        guest = _shared_guest(db)
+        _mode(monkeypatch, deploy)
+        with app.test_request_context():
+            g.user = guest
+            assert api_routes._resolve_exec_secrets(CENSUS_CODE) == sent
+
+    @pytest.mark.parametrize("deploy", [False, True], ids=MODE_IDS)
+    def test_the_routes_serve_them_only_without_deploy(self, client, db, saved_locally, monkeypatch, deploy):
+        _shared_guest(db)
+        _mode(monkeypatch, deploy)
+        listed = client.get("/api/users/me/connection-keys", headers=_h("shared-token"))
+        saved = client.put("/api/users/me/connection-keys/noaa",
+                           json={"host": "api.noaa.gov", "value": "another-value"}, headers=_h("shared-token"))
+        removed = client.delete("/api/users/me/connection-keys/census", headers=_h("shared-token"))
+        if deploy:
+            assert (listed.status_code, saved.status_code, removed.status_code) == (403, 403, 403)
+            assert "Sign in" in saved.get_json()["error"]
+            # Ignored, not lost: the local user finds them again without --deploy.
+            _mode(monkeypatch, deploy=False)
+            assert ck.default_store().resolve("guest", ["census", "noaa"]) == {"census": LOCAL_VALUE}
+        else:
+            assert listed.status_code == 200
+            assert [k["name"] for k in listed.get_json()["keys"]] == ["census"]
+            assert (saved.status_code, removed.status_code) == (201, 200)
+            assert ck.default_store().resolve("guest", ["census", "noaa"]) == {"noaa": "another-value"}
 
 
 class TestSecretNames:
