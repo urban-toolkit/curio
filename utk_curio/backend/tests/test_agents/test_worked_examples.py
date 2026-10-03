@@ -123,6 +123,72 @@ class TestTheBlock:
             assert "dataflows/Regression" not in _keys(examples.select(query, exclude={name})), name
 
 
+class TestAnEvaluationNeverSeesItsExample:
+    """An evaluation marks the project it builds (``dataflow.evaluation``); the
+    marker's fixture id keeps the example under test out of every run there."""
+
+    PLAIN = {"dataflow": {"nodes": [], "edges": []}}
+
+    def _marked(self, fixture_id: str) -> dict:
+        from utk_curio.backend.app.agents.evaluation import authorization
+
+        return authorization.mark_spec(self.PLAIN, authorization.new_marker("run-1", fixture_id))
+
+    def test_the_marker_names_the_example_to_leave_out(self):
+        assert examples.excluded_by(self._marked(NINE)) == {NINE}
+        assert examples.excluded_by(self.PLAIN) == set()
+        assert NINE not in _keys(examples.select(MILAN, exclude=examples.excluded_by(self._marked(NINE))))
+
+    def test_every_fixture_id_names_its_example(self):
+        from utk_curio.backend.app.agents.evaluation.fixtures import load_fixtures
+
+        pool = list(_pool().values())
+        named = 0
+        for fixture in load_fixtures(validate=False):
+            source = fixture.source_path.resolve()
+            matches = [e for e in pool if e.is_named_by(fixture.fixture_id)]
+            if source in {e.entry.path for e in pool}:
+                assert [e.entry.path for e in matches] == [source], fixture.fixture_id
+                named += 1
+            else:
+                assert matches == [], fixture.fixture_id
+        assert named, "no fixture is tied to a Used example; this test would be vacuous"
+
+    def test_attached_and_delegated_runs_in_an_evaluation_project_leave_it_out(self):
+        line = _pool()[SIXTEEN].entry.line
+        marked = self._marked(SIXTEEN)
+        dfb = "agent.dataflow-builder@1.0.0"
+        assert line in examples.attached_block(dfb, self.PLAIN, {"kind": "canvas"}, IMAGES)
+        assert line not in (examples.attached_block(dfb, marked, {"kind": "canvas"}, IMAGES) or "")
+        ncb, capability = "agent.node-content-builder@1.0.0", "node.content.generate"
+        assert line in examples.delegated_block(ncb, capability, self.PLAIN, {"subtask": IMAGES})
+        assert line not in (examples.delegated_block(ncb, capability, marked, {"subtask": IMAGES}) or "")
+
+    def test_the_live_tool_marks_the_project_it_creates(self):
+        from utk_curio.backend.app.agents.evaluation import authorization
+        from utk_curio.backend.app.agents.evaluation import live as live_mod
+        from utk_curio.backend.app.agents.evaluation.fixtures import load_fixtures
+
+        posted = []
+
+        class _Client(live_mod.HttpClient):
+            def json(self, path, *, method="GET", payload=None):
+                posted.append((path, method, payload))
+                return {"id": "p1"}
+
+        run = live_mod.LiveRun(
+            client=_Client(base_url="http://x", token="t"), templates={},
+            report=live_mod.RunReport(run_id="r-1"),
+        )
+        fixture = next(f for f in load_fixtures(validate=False) if f.fixture_id == SIXTEEN)
+        assert run._create_project(fixture) == "p1"
+        ((path, method, payload),) = posted
+        assert (path, method) == ("/api/projects", "POST")
+        marker = authorization.marker_of(payload["spec"])
+        assert (marker.run_id, marker.fixture_id) == ("r-1", SIXTEEN)
+        assert examples.excluded_by(payload["spec"]) == {SIXTEEN}
+
+
 class TestWithoutTheExamplesFolder:
     def test_there_is_no_block_and_one_warning(self, monkeypatch, tmp_path, caplog):
         # A pip install ships no docs/examples.

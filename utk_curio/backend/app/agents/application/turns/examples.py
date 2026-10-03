@@ -70,6 +70,12 @@ HEADING = (
     "and node types this task uses come from this project, not from these examples."
 )
 
+# An evaluation marks the project it builds with ``dataflow.evaluation``
+# (``agents/evaluation/authorization.MARKER_KEY``). Its ``fixtureId`` is the
+# stem of the example the run is scored against, so no run in that project is
+# shown that example, attached, delegated or in a Solve.
+_EVALUATION_KEY = "evaluation"
+
 #: The Trill a run is shown: the fields the preamble's Trill block describes,
 #: without the layout.
 _DATAFLOW_FIELDS = tuple(f for f in contracts.TRILL_PROMPT_FIELDS["dataflowBase"] if f not in ("nodes", "edges"))
@@ -183,6 +189,13 @@ def dataset_ids_of(spec: object) -> set[str]:
     return ids
 
 
+def excluded_by(spec: object) -> set[str]:
+    """What a run in this project must not be shown: the example an evaluation scores it against."""
+    marker = _dataflow(spec).get(_EVALUATION_KEY)
+    fixture_id = marker.get("fixtureId") if isinstance(marker, dict) else None
+    return {fixture_id} if isinstance(fixture_id, str) and fixture_id else set()
+
+
 def used_examples() -> list[Example]:
     """The "Used" dataflows, read now. Empty, with one warning per process,
     when this install ships no dataflows (a pip install has no ``docs/examples``)."""
@@ -290,7 +303,8 @@ def attached_block(coord: str, spec: object, target: object, message: str) -> st
     dataflow = _dataflow(spec)
     node = _target_node(dataflow, target)
     query = " ".join(_texts(message, dataflow.get("task"), node.get("goal")))
-    return block_for(query, node_type=node.get("type"), dataset_ids=dataset_ids_of(spec))
+    return block_for(query, node_type=node.get("type"), dataset_ids=dataset_ids_of(spec),
+                     exclude=excluded_by(spec))
 
 
 def delegated_block(coord: str, capability: str, spec: object, inputs: object) -> str | None:
@@ -306,7 +320,7 @@ def delegated_block(coord: str, capability: str, spec: object, inputs: object) -
     query = " ".join(_texts(*(inputs.get(k) for k in _DELEGATED_TEXT_INPUTS),
                             context.get("intent"), summary.get("goal")))
     return block_for(query, node_type=inputs.get("nodeType") or context.get("nodeType"),
-                     dataset_ids=dataset_ids_of(spec))
+                     dataset_ids=dataset_ids_of(spec), exclude=excluded_by(spec))
 
 
 def _example(key: str, entry: IndexEntry, spec: dict) -> Example:
