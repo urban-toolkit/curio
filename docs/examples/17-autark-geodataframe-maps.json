@@ -7,7 +7,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 814,
-        "content": "import geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.utk.chicago-boundary\")\ngdf = gpd.read_file(dataset_path)\n\n# Downtown: the Loop and its neighbours.\ndowntown = [\"60601\", \"60602\", \"60603\", \"60604\", \"60605\",\n            \"60606\", \"60607\", \"60611\", \"60654\", \"60661\"]\ngdf = gdf[gdf[\"zip\"].isin(downtown)]\n\n# A number to colour by: each ZIP's area, measured in a projected CRS.\ngdf[\"area_km2\"] = (gdf.to_crs(26971).area / 1e6).round(2)\n\nreturn gdf[[\"zip\", \"area_km2\", \"geometry\"]]",
+        "content": "import geopandas as gpd\n\ndataset_path = curio_data_path(\"data.utk.chicago-boundary\")\ngdf = gpd.read_file(dataset_path)\n\n# Downtown: the Loop and its neighbours.\ndowntown = [\"60601\", \"60602\", \"60603\", \"60604\", \"60605\",\n            \"60606\", \"60607\", \"60611\", \"60654\", \"60661\"]\ngdf = gdf[gdf[\"zip\"].isin(downtown)]\n\n# A number to colour by: each ZIP's area, measured in a projected CRS.\ngdf[\"area_km2\"] = (gdf.to_crs(26971).area / 1e6).round(2)\n\nreturn gdf[[\"zip\", \"area_km2\", \"geometry\"]]",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

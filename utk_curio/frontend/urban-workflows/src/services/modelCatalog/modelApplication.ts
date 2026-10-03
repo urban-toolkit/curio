@@ -88,9 +88,9 @@ function currentCode(data: any): string | undefined {
 
 /**
  * True when a dropped model has somewhere to go: the node's code calls
- * `curio_model("...")` with a literal string. Unlike a dataset, a model is not
+ * `curio_load_model("...")` with a literal string. Unlike a dataset, a model is not
  * written into code that does not ask for one, so a node that never calls
- * `curio_model` cannot take it. Checks the same code `applyModelToNodeData`
+ * `curio_load_model` cannot take it. Checks the same code `applyModelToNodeData`
  * rewrites, so a drop that is accepted always changes something.
  */
 export function canApplyModelToNode(data: any): boolean {
@@ -99,7 +99,7 @@ export function canApplyModelToNode(data: any): boolean {
 
 /**
  * *data* running *model*: the id inside its code's first literal
- * `curio_model(...)` call becomes the model's, in the call's own quotes, and
+ * `curio_load_model(...)` call becomes the model's, in the call's own quotes, and
  * `modelRefs` names that one model. *data* itself comes back when its code has
  * no such call. Pure: nothing outside the returned object changes.
  */
@@ -135,7 +135,7 @@ export interface ModelCanvasNode extends ModelDropTemplate {
 /**
  * What a model dropped on the empty canvas becomes, as a dataset dropped there
  * becomes a Data Loading node: a node of the first of *templates* whose code
- * calls `curio_model("...")`, with that call naming *model*. `null` when none
+ * calls `curio_load_model("...")`, with that call naming *model*. `null` when none
  * of them runs a model. Pure, like `applyModelToNodeData`, which it goes through.
  */
 export function modelNodeForCanvas(

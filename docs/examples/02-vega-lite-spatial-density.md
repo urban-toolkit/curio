@@ -16,7 +16,7 @@ flowchart LR
 ## Data
 
 This example reads its inputs from the [Data Catalog](../DATA-CATALOG.md). Each loader node
-addresses a dataset by id via `curio_dataset_path("<id>")`, so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
+addresses a dataset by id via `curio_data_path("<id>")`, so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
 
 | Dataset | Id | Format | Size |
 |---|---|---|---|
@@ -31,7 +31,7 @@ appear in the left rail's **Data Catalog** palette when you open it. Source: [Ch
 ```python
 import pandas as pd
 
-dataset_path = curio_dataset_path("data.cityofchicago.green-roofs")
+dataset_path = curio_data_path("data.cityofchicago.green-roofs")
 df = pd.read_csv(dataset_path)
 return df
 ```
@@ -96,12 +96,12 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 
-green_roofs_path = curio_dataset_path("data.cityofchicago.green-roofs")
+green_roofs_path = curio_data_path("data.cityofchicago.green-roofs")
 green_roofs_df = pd.read_csv(green_roofs_path)
 geometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]
 green_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)
 
-chicago_path = curio_dataset_path("data.utk.chicago-boundary")
+chicago_path = curio_data_path("data.utk.chicago-boundary")
 chicago = gpd.read_file(chicago_path)
 joined = gpd.sjoin(green_roofs_df, chicago, predicate='within')
 

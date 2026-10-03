@@ -23,7 +23,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 215,
-        "content": "collection = curio_collection(\"data.curio.storage-dashcam\")\n\nreturn collection\n",
+        "content": "collection = curio_load_collection(\"data.curio.storage-dashcam\")\n\nreturn collection\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Load the frame collection, one row per frame, placed by the telemetry.",

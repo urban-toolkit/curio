@@ -259,14 +259,14 @@ def test_examples_read_their_data_from_the_catalog(basename):
         })
         assert not stragglers, (
             f"{os.path.basename(path)} still reads {stragglers} by path. Use "
-            f'curio_dataset_path("<id>") against the Data Catalog '
+            f'curio_data_path("<id>") against the Data Catalog '
             f"(datasets/), or add the file to _DATA_DIR_ALLOWLIST with a reason "
             f"if it genuinely cannot move."
         )
 
 
 def test_examples_that_load_catalog_data_declare_it_in_the_spec():
-    """A ``curio_dataset_path`` (or ``curio_collection``) call and a
+    """A ``curio_data_path`` (or ``curio_load_collection``) call and a
     ``dataflow.datasets`` ref go together.
 
     The call alone is enough to *execute* -- ``resolve_execution_paths`` hardcodes
@@ -350,7 +350,7 @@ def test_example_nodes_do_not_fetch_external_urls():
     the portal later retired, so a curated example failed on its first node with
     a 404 on a fresh install. Open-data portals rename and retire resources; a
     layer an example depends on belongs in ``datasets/`` as a catalog entry,
-    loaded with ``curio_dataset_path``. Anything else here needs an allowlist
+    loaded with ``curio_data_path``. Anything else here needs an allowlist
     entry with a reason.
     """
     for path in _example_json_paths():
@@ -364,7 +364,7 @@ def test_example_nodes_do_not_fetch_external_urls():
             assert not urls, (
                 f"{os.path.basename(path)} node {node.get('id')} fetches "
                 f"{urls}. Vendor the data under datasets/ and load it with "
-                f'curio_dataset_path("<id>"), or allowlist the prefix with a '
+                f'curio_data_path("<id>"), or allowlist the prefix with a '
                 f"reason in _EXTERNAL_URL_ALLOWLIST."
             )
 
@@ -375,7 +375,7 @@ def test_examples_declared_datasets_exist_in_the_catalog():
     The parity test above proves the ref matches the node; this proves the ref
     matches the repository. A ref to a directory that is not committed passes
     every structural check and then fails at run time, when the seeder has
-    nothing to provision and ``curio_dataset_path`` cannot resolve.
+    nothing to provision and ``curio_data_path`` cannot resolve.
     """
     datasets_dir = os.path.join(REPO_ROOT, "datasets")
     for path in _example_json_paths():

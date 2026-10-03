@@ -259,9 +259,9 @@ def test_dataset_loads_and_feeds_a_consumer(
     )
     # The portable form: the sandbox resolves the id at execution time, so the
     # generated code carries no machine- or user-specific absolute path. A
-    # collection is read through ``curio_collection``, which resolves the same
+    # collection is read through ``curio_load_collection``, which resolves the same
     # way and adds where each of its files is.
-    call = "curio_collection" if dataset.manifest.format == "collection" else "curio_dataset_path"
+    call = "curio_load_collection" if dataset.manifest.format == "collection" else "curio_data_path"
     assert f'{call}("{dataset.dataset_id}")' in loader_code, (
         f"loader does not resolve the dataset by id:\n{loader_code}"
     )

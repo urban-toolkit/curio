@@ -7,7 +7,7 @@ import type { DatasetCatalogItem } from "./datasetCatalogTypes";
  * out, and giving it out is why the request exists: an absolute path is
  * specific to one machine, one user and one mount, so pasting it into a node
  * produces code that works until someone else opens the dataflow. The portable
- * reference is ``curio_dataset_path("<id>")`` — the sandbox resolves it to a
+ * reference is ``curio_data_path("<id>")`` — the sandbox resolves it to a
  * real location at execution time, and it is exactly what the palette's own
  * generated loaders emit.
  *

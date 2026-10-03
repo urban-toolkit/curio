@@ -74,11 +74,11 @@ def model_row(manifest: ModelManifest, *, origin: str, folder: Path) -> dict[str
 
 
 def resolve_exec_models(code: str, user=None) -> dict[str, str]:
-    """``{modelId: folder}`` for the models *code* runs as ``curio_model("<id>")``.
+    """``{modelId: folder}`` for the models *code* runs as ``curio_load_model("<id>")``.
 
     Shared by ``/processPythonCode`` and the agent runtime's runs through a
     node, as collections are. *user* defaults to the request's. Fail-open:
-    the sandbox's ``curio_model`` names a model that is not there.
+    the sandbox's ``curio_load_model`` names a model that is not there.
     """
     from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 
@@ -170,7 +170,7 @@ class ModelCatalogService:
     def resolve_execution_dirs(self, model_ids: list[str]) -> dict[str, str]:
         """``{modelId: folder}`` for the ids a node's code names that this
         account can use; an unknown id is left out, and the node's
-        ``curio_model`` names it."""
+        ``curio_load_model`` names it."""
         out: dict[str, str] = {}
         for model_id in model_ids:
             try:

@@ -468,7 +468,7 @@ def compare_svg_structure(
 
 
 def _catalog_dataset_paths(code: str) -> dict[str, str]:
-    """Map every ``curio_dataset_path("<id>")`` in *code* to its data file.
+    """Map every ``curio_data_path("<id>")`` in *code* to its data file.
 
     The browser path gets this mapping from the backend
     (``_resolve_exec_dataset_paths`` in ``backend/app/api/routes.py``), which

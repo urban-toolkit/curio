@@ -8,7 +8,7 @@ launch-CWD-relative path baked into each node's code. That works on a git
 checkout and nowhere else: ``MANIFEST.in`` does not ship ``docs/``, so a
 ``pip install utk-curio`` has no such tree, and an isolated sandbox cannot reach
 one. Moving the data into ``<repo_root>/datasets/`` lets the nodes address it by
-id through ``curio_dataset_path("<id>")``, which resolves per execution.
+id through ``curio_data_path("<id>")``, which resolves per execution.
 
 Three of the sources were zipped CSV/GeoJSON exports. ``zip`` is not a catalog
 format (``domain/manifest.py::SUPPORTED_FORMATS``), so they are re-encoded as

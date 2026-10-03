@@ -303,7 +303,7 @@ test("buildDatasetLoaderCode creates CSV imports and loader", () => {
   expect(buildDatasetLoaderCode(dataset)).toContain("import pandas as pd");
   // Portable form: the id call resolves to a real path at execution time, so
   // generated code carries no machine-specific absolute path.
-  expect(buildDatasetLoaderCode(dataset)).toContain('dataset_path = curio_dataset_path("file-123")');
+  expect(buildDatasetLoaderCode(dataset)).toContain('dataset_path = curio_data_path("file-123")');
   expect(buildDatasetLoaderCode(dataset)).toContain("pd.read_csv(dataset_path)");
 });
 
@@ -361,7 +361,7 @@ test("buildDatasetLoaderCode rebuilds a bundle into a tuple of parts", () => {
   const code = buildDatasetLoaderCode(bundleDataset);
   // Reads the bundle manifest and returns the parts as a tuple so the sandbox
   // re-detects the same `outputs` envelope the producing node emitted.
-  expect(code).toContain('bundle_path = curio_dataset_path("computed.node_x")');
+  expect(code).toContain('bundle_path = curio_data_path("computed.node_x")');
   expect(code).toContain("spec.get(\"parts\", [])");
   expect(code).toContain("gpd.read_parquet(file_path)");
   expect(code).toContain("return tuple(items)");
@@ -433,8 +433,8 @@ test("dragging an OSM group builds a node that loads all layers via real member 
   expect(Object.keys(options.appliedDatasets)).toEqual(["loop.points", "loop.lines"]);
   expect(options.appliedDatasets["osm.x1"]).toBeUndefined();
   // The loader reads every layer into one `layers` dict (the full import).
-  expect(options.code).toContain('layers["points"] = _curio_read_layer(curio_dataset_path("loop.points"))');
-  expect(options.code).toContain('layers["lines"] = _curio_read_layer(curio_dataset_path("loop.lines"))');
+  expect(options.code).toContain('layers["points"] = _curio_read_layer(curio_data_path("loop.points"))');
+  expect(options.code).toContain('layers["lines"] = _curio_read_layer(curio_data_path("loop.lines"))');
   expect(options.code).toContain("return layers");
   // The linkage marker still points at the group for palette↔canvas focus.
   expect(options.datasetSource.datasetId).toBe("osm.x1");
@@ -449,8 +449,8 @@ test("dragging a Discovery OpenStreetMap group reads its GeoJSON layers as GeoJS
   const [group] = groupDatasetsForPalette(members) as [DatasetPaletteGroup];
   const options = buildDatasetLoaderNodeOptions(createOsmGroupDragPayload(group), { x: 0, y: 0 });
 
-  expect(options.code).toContain('layers["buildings"] = gpd.read_file(curio_dataset_path("golf.buildings"))');
-  expect(options.code).toContain('layers["roads"] = gpd.read_file(curio_dataset_path("golf.roads"))');
+  expect(options.code).toContain('layers["buildings"] = gpd.read_file(curio_data_path("golf.buildings"))');
+  expect(options.code).toContain('layers["roads"] = gpd.read_file(curio_data_path("golf.roads"))');
   expect(options.code).not.toContain("read_parquet");
   expect(options.code).toContain("return layers");
 });
@@ -476,8 +476,8 @@ describe("a layer group's drag payload takes its kind from the group id (#440)",
     expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("GeoPackage");
     // The layers still load through their own ids.
     expect(options.datasetRefs).toEqual(["imported.parks_parks", "imported.parks_trails"]);
-    expect(options.code).toContain('layers["parks"] = _curio_read_layer(curio_dataset_path("imported.parks_parks"))');
-    expect(options.code).toContain('layers["trails"] = _curio_read_layer(curio_dataset_path("imported.parks_trails"))');
+    expect(options.code).toContain('layers["parks"] = _curio_read_layer(curio_data_path("imported.parks_parks"))');
+    expect(options.code).toContain('layers["trails"] = _curio_read_layer(curio_data_path("imported.parks_trails"))');
   });
 
   test("an OSM group still drops as an OSM PBF dataset", () => {
@@ -513,7 +513,7 @@ describe("a Discovery download's group drops as its layers' format (#586)", () =
     expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("GeoJSON");
     // The layers still load through their own ids, read as the GeoJSON they are (#579).
     expect(options.datasetRefs).toEqual(["imported.xpoints", "imported.xpolygons"]);
-    expect(options.code).toContain('layers["points"] = gpd.read_file(curio_dataset_path("imported.xpoints"))');
+    expect(options.code).toContain('layers["points"] = gpd.read_file(curio_data_path("imported.xpoints"))');
 
     // Only when every layer was downloaded: otherwise it is an OSM PBF import.
     const mixed = downloaded();
@@ -607,16 +607,16 @@ test("mergeDatasetLoaderCode inserts loader before return in existing code", () 
 
 test("mergeDatasetLoaderCode is a no-op when the id-form loader is already there", () => {
   // Dropping the same dataset onto a node twice must not stack a second loader
-  // block. The check matches the emitted curio_dataset_path("<id>") call, so it
+  // block. The check matches the emitted curio_data_path("<id>") call, so it
   // keeps working now that snippets no longer embed a literal path.
   const once = mergeDatasetLoaderCode("", dataset);
-  expect(once).toContain('curio_dataset_path("file-123")');
+  expect(once).toContain('curio_data_path("file-123")');
 
   const twice = mergeDatasetLoaderCode(once, dataset);
   expect(twice).toBe(once.trim());
 
-  const calls = once.split('curio_dataset_path("file-123")').length - 1;
-  expect(twice.split('curio_dataset_path("file-123")').length - 1).toBe(calls);
+  const calls = once.split('curio_data_path("file-123")').length - 1;
+  expect(twice.split('curio_data_path("file-123")').length - 1).toBe(calls);
 });
 
 test("mergeDatasetLoaderCode still recognises a legacy literal-path loader", () => {
@@ -652,7 +652,7 @@ test("mergeDatasetLoaderCode indents the loader block to match an indented retur
 
 test("mergeDatasetLoaderCode/buildDatasetLoaderCode escape backslashes and quotes in the path (B11)", () => {
   // An UNSAFE id (quote inside) must never reach the generated source as a
-  // curio_dataset_path call — the snippet falls back to the literal path,
+  // curio_data_path call — the snippet falls back to the literal path,
   // which must stay a valid Python string literal: backslashes escaped, so no
   // raw `\U`/`\b` escape and the literal isn't terminated early.
   const winDataset = makeDataset({
@@ -662,7 +662,7 @@ test("mergeDatasetLoaderCode/buildDatasetLoaderCode escape backslashes and quote
     uri: "file:///c/blocks.csv",
   });
   const code = buildDatasetLoaderCode(winDataset);
-  expect(code).not.toContain("curio_dataset_path");
+  expect(code).not.toContain("curio_data_path");
   expect(code).toContain('dataset_path = "C:\\\\Users\\\\me\\\\data\\\\blocks.csv"');
 });
 

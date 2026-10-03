@@ -77,7 +77,7 @@ def test_every_declared_dataset_exists_in_the_committed_catalog():
 
 
 def test_declared_dirs_are_addressable_ids_plus_a_major():
-    """``dirName`` is ``<id>@<major>``; ``curio_dataset_path`` takes the bare id.
+    """``dirName`` is ``<id>@<major>``; ``curio_data_path`` takes the bare id.
 
     Getting this wrong is silent - ``SAFE_DATASET_ID_RE`` permits ``@``, so an
     id with the major appended passes validation, misses the by-id lookup in

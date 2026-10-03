@@ -1,4 +1,4 @@
-"""``curio_model``: a Model Catalog folder reaching a node, in process and isolated.
+"""``curio_load_model``: a Model Catalog folder reaching a node, in process and isolated.
 
 A model is a folder whose files name each other (an ``.onnx`` graph reads its
 external weights by relative name), so under isolation the tree is staged
@@ -14,7 +14,7 @@ import pytest
 
 from utk_curio.sandbox.isolation import child, protocol
 from utk_curio.sandbox.util import staging
-from utk_curio.sandbox.util.models import make_curio_model
+from utk_curio.sandbox.util.models import make_model_folder
 
 
 @pytest.fixture
@@ -72,14 +72,14 @@ def test_two_models_get_two_folders(model, scratch, tmp_path):
 
 
 def test_the_resolver_names_a_missing_model():
-    curio_model = make_curio_model({"a": "/models/a@1"})
-    assert curio_model("a") == "/models/a@1"
+    curio_load_model = make_model_folder({"a": "/models/a@1"})
+    assert curio_load_model("a") == "/models/a@1"
     with pytest.raises(RuntimeError, match="Model 'b' is not available.*Model Catalog"):
-        curio_model("b")
+        curio_load_model("b")
 
 
 def test_a_staged_name_is_joined_to_scratch(scratch):
-    assert make_curio_model({"a": "model_0"}, base=str(scratch))("a") == os.path.join(str(scratch), "model_0")
+    assert make_model_folder({"a": "model_0"}, base=str(scratch))("a") == os.path.join(str(scratch), "model_0")
 
 
 def test_the_request_carries_the_staged_names(scratch):
@@ -102,7 +102,7 @@ def test_an_isolated_child_reads_the_staged_model(model, scratch):
     request = {
         "code": (
             "    import os\n"
-            "    folder = curio_model('model.example.tiny')\n"
+            "    folder = curio_load_model('model.example.tiny')\n"
             "    return open(os.path.join(folder, 'files', 'm.data'), 'rb').read().decode()\n"
         ),
         "node_type": "curio.builtin/computation-analysis", "data_type": "",
@@ -122,7 +122,7 @@ def test_an_in_process_run_reads_the_model_where_it_is(model):
     init_db()
     code = (
         "    import os\n"
-        "    return os.path.isfile(os.path.join(curio_model('m'), 'files', 'm.onnx'))\n"
+        "    return os.path.isfile(os.path.join(curio_load_model('m'), 'files', 'm.onnx'))\n"
     )
     result = execute_code(code, "", "PYTHON_COMPUTATION", "", save_dataset=False, models={"m": str(model)})
     assert result["stderr"] == ""

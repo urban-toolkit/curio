@@ -423,7 +423,7 @@ def test_a_folder_collections_files_are_readable_by_the_exec_user():
     """
     result = assert_ran(_collection_request("""
         import os
-        tiles = curio_collection("%s")
+        tiles = curio_load_collection("%s")
         print(len(tiles))
         print(sum(1 for p in tiles["path"] if p and os.access(p, os.R_OK)))
     """ % EXAMPLE_COLLECTION), "reading the example collection")
@@ -440,7 +440,7 @@ def test_a_node_can_write_what_it_derives_from_a_collection():
     the work tree the execution user owns, and the node can write it there."""
     result = assert_ran(_collection_request("""
         import os
-        tiles = curio_collection("%s")
+        tiles = curio_load_collection("%s")
         row = curio_derived_file("%s", tiles["file_id"].iloc[0], 0, "txt", kind="video")
         with open(row["path"], "w") as handle:
             handle.write("derived")

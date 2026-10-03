@@ -237,7 +237,7 @@ def read_outputs_wrapper(art_id, *, session_id=None):
 
 
 def stage_dataset_paths(dataset_paths, scratch_dir):
-    """Stage the files behind ``curio_dataset_path`` calls.
+    """Stage the files behind ``curio_data_path`` calls.
 
     The child cannot reach the dataset stores by path -- ``datasets/`` and
     ``.curio/users`` are 0700 root-owned once isolation is on
@@ -246,7 +246,7 @@ def stage_dataset_paths(dataset_paths, scratch_dir):
     source's inode and therefore its mode: what makes this a boundary is the
     unreachable *path*, not a tighter file. A missing file is dropped rather
     than raised: the injected
-    ``curio_dataset_path`` already raises a clear per-id error, and resolution
+    ``curio_data_path`` already raises a clear per-id error, and resolution
     is documented as fail-open (see docs/ARCHITECTURE.md).
     """
     scratch_dir = Path(scratch_dir)
@@ -265,7 +265,7 @@ def stage_dataset_paths(dataset_paths, scratch_dir):
 
 
 def stage_model_dirs(model_dirs, scratch_dir):
-    """Stage the folders behind ``curio_model`` calls, as datasets are staged.
+    """Stage the folders behind ``curio_load_model`` calls, as datasets are staged.
 
     A model is a folder, and its files name each other: an ``.onnx`` graph
     reads its external weights by relative name, a Transformers checkpoint is
@@ -273,7 +273,7 @@ def stage_model_dirs(model_dirs, scratch_dir):
     each file at its own relative path under ``model_<i>/``. Only regular
     files inside the folder are linked; a link pointing out of it is skipped.
     A folder that cannot be staged is dropped, and the injected
-    ``curio_model`` names it.
+    ``curio_load_model`` names it.
     """
     scratch_dir = Path(scratch_dir)
     staged = {}

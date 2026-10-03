@@ -285,7 +285,7 @@ class TestPreambleAndInputs:
         assert not re.search(r"""read_csv\(f?['"][^'"]+\.csv""", text)
         assert not re.search(r"""read_file\(f?['"][^'"]+\.shp""", text)
         assert not re.search(r"""rasterio\.open\(f?['"]""", text)
-        assert text.count("curio_dataset_path(") >= 3
+        assert text.count("curio_data_path(") >= 3
         assert "never a guessed filename" in text
 
     def test_preamble_text_readable_for_all_builtins(self):
@@ -420,7 +420,7 @@ class TestNodeBuilderComposite:
         # synthetic only when asked — and the two-turn rule.
         text = builtin.read_prompt_text(self.COORD, "instruction")
         assert "catalog.search" in text
-        assert 'curio_dataset_path("<id>")' in text
+        assert 'curio_data_path("<id>")' in text
         assert '"dataset.discover"' in text
         assert "do not propose in that same turn" in text
         assert '"synthetic": true' in text

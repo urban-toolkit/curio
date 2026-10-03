@@ -184,7 +184,7 @@ def stub_login():
 
 @testing_bp.route("/dataset-paths", methods=["POST"])
 def dataset_paths():
-    """Resolve ``curio_dataset_path("<id>")`` calls the way execution does.
+    """Resolve ``curio_data_path("<id>")`` calls the way execution does.
 
     For the e2e ground-truth harness. It computes each workflow's expected
     output by POSTing node code straight to the sandbox's ``/exec`` (bypassing

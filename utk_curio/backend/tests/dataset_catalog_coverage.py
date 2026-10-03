@@ -386,7 +386,7 @@ def _geotiff_expectations(data_file: Path) -> dict[str, str]:
 
 
 # A collection's index is the dataset; its files stay in the source that
-# indexed them. ``curio_collection`` adds a readable ``path`` for each row, so
+# indexed them. ``curio_load_collection`` adds a readable ``path`` for each row, so
 # counting the rows whose file opens proves the files were reached, not only
 # the index.
 _COLLECTION_TRANSFORM = '''import os
@@ -444,7 +444,7 @@ FORMAT_PLANS: dict[str, FormatPlan] = {
         expectations=_geotiff_expectations,
     ),
     "collection": FormatPlan(
-        loader_marker="curio_collection(",
+        loader_marker="curio_load_collection(",
         transform_code=_COLLECTION_TRANSFORM,
         vega_spec=None,
         expectations=_collection_expectations,

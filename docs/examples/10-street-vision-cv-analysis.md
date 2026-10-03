@@ -39,12 +39,12 @@ Originally contributed by [@ManeeshJupalle](https://github.com/ManeeshJupalle) i
 The Data Catalog ships 40 Mapillary panoramas from that box as `data.curio.mapillary-sample`, each with its photographer (`creator`), capture time, heading and place. Mapillary photos are licensed CC BY-SA 4.0, so a figure made from them credits each photo's `creator`.
 
 ```python
-photos = curio_collection("data.curio.mapillary-sample")
+photos = curio_load_collection("data.curio.mapillary-sample")
 
 return photos
 ```
 
-`curio_collection` gives one row per photo, with a `path` the next node reads and a `thumbnail` that Simple View draws.
+`curio_load_collection` gives one row per photo, with a `path` the next node reads and a `thumbnail` that Simple View draws.
 
 ## Step 2: Label every pixel (`Image Segmentation`)
 
@@ -64,7 +64,7 @@ reports every label.
 and ``overlay_url`` shows the image tinted by class.
 """
 
-model = curio_model("model.curio.ddrnet23-slim")
+model = curio_load_model("model.curio.ddrnet23-slim")
 classes = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
 
 return curio_segment(arg, model, classes)
@@ -92,7 +92,7 @@ import geopandas as gpd
 # Chicago official neighborhoods boundary (98 polygons, `pri_neigh` names),
 # vendored in the Data Catalog so this example runs offline. Any polygon
 # FeatureCollection with a string name property works here.
-dataset_path = curio_dataset_path("data.cityofchicago.neighborhoods")
+dataset_path = curio_data_path("data.cityofchicago.neighborhoods")
 gdf = gpd.read_file(dataset_path)
 
 # __dict__, not plain assignment: pandas warns about creating a column via
@@ -207,7 +207,7 @@ openmmlab/upernet-convnext-tiny), then drag it from the Model Catalog onto
 this node. Until then it runs DDRNet23-Slim, the model that ships with Curio.
 """
 
-model = curio_model("model.curio.ddrnet23-slim")
+model = curio_load_model("model.curio.ddrnet23-slim")
 classes = None  # every class the model names
 
 return curio_segment(arg, model, classes)
@@ -217,7 +217,7 @@ To give it a model of its own:
 
 1. Open the **Discovery Catalog** and choose **Hugging Face models**. It lists image segmentation models Curio can run.
 2. Find a model, for example `openmmlab/upernet-convnext-tiny` (ADE20K's 150 classes, MIT license), and click **Add to Model Catalog**. Curio downloads it, and installs `torch` and `transformers` when the model needs them.
-3. Back on the canvas, open **Model Catalog** in the left Tools panel and drag the model onto this node. Its `curio_model(...)` line now names the new model.
+3. Back on the canvas, open **Model Catalog** in the left Tools panel and drag the model onto this node. Its `curio_load_model(...)` line now names the new model.
 4. Run the node. The `Simple View`, Spatial Join and bar chart after it show the new model's classes.
 
 The bar chart for this route names no colours, so it draws whatever classes the model reports. A model trained on other scenes labels other things: ADE20K says `tree` and `grass` where Cityscapes says `vegetation`.

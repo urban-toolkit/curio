@@ -18,7 +18,7 @@ def format_for_path(path: Path) -> str | None:
 
 
 # Dataset ids are interpolated into generated Python source, so only ids matching
-# this whitelist may appear inside a ``curio_dataset_path("<id>")`` call. Ids can
+# this whitelist may appear inside a ``curio_data_path("<id>")`` call. Ids can
 # come from user-editable spec JSON (legacy ref fallbacks), so an id with a quote
 # or backslash would otherwise break out of the string literal. Must stay in sync
 # with the scan regex in api/routes.py and SAFE_DATASET_ID_RE in the frontend
@@ -249,7 +249,7 @@ def loader_snippet(
         }
     if fmt == "collection":
         # A collection's data file is its index: one row per file. The sandbox
-        # resolves ``curio_collection`` to that index plus a readable path for
+        # resolves ``curio_load_collection`` to that index plus a readable path for
         # every file, wherever this execution runs.
         safe_id = _safe_dataset_id(dataset_id)
         if safe_id:
@@ -257,7 +257,7 @@ def loader_snippet(
                 "language": "python",
                 "imports": [],
                 "pathVariable": None,
-                "code": f"collection = curio_collection({json.dumps(safe_id)})",
+                "code": f"collection = curio_load_collection({json.dumps(safe_id)})",
                 "returnVariable": "collection",
             }
         return {

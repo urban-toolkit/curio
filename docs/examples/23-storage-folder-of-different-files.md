@@ -38,7 +38,7 @@ flowchart LR
 import pandas as pd
 import geopandas as gpd
 
-dataset_path = curio_dataset_path("data.curio.storage-roads")
+dataset_path = curio_data_path("data.curio.storage-roads")
 try:
     df = gpd.read_parquet(dataset_path)
 except Exception:
@@ -50,7 +50,7 @@ return df
 ```python
 import geopandas as gpd
 
-dataset_path = curio_dataset_path("data.curio.storage-parks")
+dataset_path = curio_data_path("data.curio.storage-parks")
 gdf = gpd.read_file(dataset_path)
 
 return gdf

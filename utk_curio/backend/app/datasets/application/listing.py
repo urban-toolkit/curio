@@ -812,7 +812,7 @@ class CatalogListing:
 
         *include_code_refs* is what the destructive gates turn off. Reporting a
         dataset as used because a node's source names it is right for the detail
-        page, but applying a dataset writes ``curio_dataset_path("<id>")`` into
+        page, but applying a dataset writes ``curio_data_path("<id>")`` into
         that source, so counting it as usage made uninstall a no-op for the
         ordinary apply-then-uninstall flow: the folder stayed, the card stayed,
         and the promise that uninstalling removes every trace stopped being

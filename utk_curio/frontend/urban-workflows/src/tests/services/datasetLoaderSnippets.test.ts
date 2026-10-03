@@ -40,8 +40,8 @@ const READERS: Record<DatasetFormat, string | null> = {
   // is an ordinary `parquet` dataset and takes that branch.
   gpkg: null,
   // A collection's index, with a readable path for every file, which only the
-  // sandbox's `curio_collection` can resolve.
-  collection: "curio_collection",
+  // sandbox's `curio_load_collection` can resolve.
+  collection: "curio_load_collection",
 };
 
 function snippetFor(format: DatasetFormat) {
@@ -66,7 +66,7 @@ describe("snippetForFormat", () => {
 
   it.each(covered)("addresses %s by dataset id, not by path", (format) => {
     const snippet = snippetFor(format);
-    const call = format === "collection" ? "curio_collection" : "curio_dataset_path";
+    const call = format === "collection" ? "curio_load_collection" : "curio_data_path";
     expect(snippet.code).toContain(`${call}("data.utk.example")`);
     // A machine-specific absolute path in generated code is what the portable
     // id call exists to avoid; it must not appear when an id is available.
@@ -79,7 +79,7 @@ describe("snippetForFormat", () => {
       path: "/tmp/example-file",
     } as never);
     expect(snippet.code).toContain('"/tmp/example-file"');
-    expect(snippet.code).not.toContain("curio_dataset_path");
+    expect(snippet.code).not.toContain("curio_data_path");
   });
 
   it("routes osm through the group loader instead of a single-path branch", () => {
@@ -97,7 +97,7 @@ describe("snippetForFormat", () => {
     } as never);
     expect(code).toContain("import pandas as pd");
     expect(code).toContain(
-      'dataset_path = curio_dataset_path("data.cityofchicago.green-roofs")',
+      'dataset_path = curio_data_path("data.cityofchicago.green-roofs")',
     );
     expect(code).toContain("df = pd.read_csv(dataset_path)");
     expect(code.trimEnd().endsWith("return df")).toBe(true);
@@ -109,7 +109,7 @@ describe("snippetForFormat", () => {
       format: "collection",
       path: "/tmp/index.parquet",
     } as never);
-    expect(code).toBe('collection = curio_collection("imported.xabc@1")\nreturn collection');
+    expect(code).toBe('collection = curio_load_collection("imported.xabc@1")\nreturn collection');
   });
 
   it("names a Discovery download's Autark layer the way the backend's generator does", () => {
@@ -122,7 +122,7 @@ describe("snippetForFormat", () => {
     };
     expect(buildDatasetLoaderCode(osm as never)).toBe(
       "import geopandas as gpd\n"
-      + 'dataset_path = curio_dataset_path("imported.osm-buildings@1")\n'
+      + 'dataset_path = curio_data_path("imported.osm-buildings@1")\n'
       + "gdf = gpd.read_file(dataset_path)\n"
       + 'gdf.metadata = {"layerType": "buildings"}\n'
       + "return gdf",

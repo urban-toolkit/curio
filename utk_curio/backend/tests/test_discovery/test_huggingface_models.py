@@ -203,7 +203,7 @@ class TestItLandsInTheModelCatalog:
         helpers = make_collection_helpers(
             lambda _id: str(index), {sample: {"kind": "images", "root": str(storage)}}, str(tmp_path)
         )
-        photos = helpers["curio_collection"](sample).head(2)
+        photos = helpers["curio_load_collection"](sample).head(2)
         out = make_curio_segment(helpers["curio_derived_file"])(photos, str(folder), None)
         shares = out[[f"{label}_pct" for label in model["labels"]]]
         assert shares.sum(axis=1).between(99.5, 100.5).all()

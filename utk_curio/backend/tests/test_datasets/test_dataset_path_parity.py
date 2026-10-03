@@ -1,4 +1,4 @@
-"""Drift guards for the portable ``curio_dataset_path`` contract.
+"""Drift guards for the portable ``curio_data_path`` contract.
 
 Three independent copies of the same dataset-id grammar decide whether a
 generated loader snippet is safe, and two independent copies of the same cap
@@ -71,21 +71,21 @@ def test_the_scanner_accepts_exactly_what_the_generators_emit():
     for dataset_id in accepted:
         assert _SAFE_DATASET_ID_RE.match(dataset_id), dataset_id
         assert _DATASET_PATH_CALL_RE.search(
-            f'curio_dataset_path("{dataset_id}")'
+            f'curio_data_path("{dataset_id}")'
         ), dataset_id
 
     for dataset_id in rejected:
         assert not _SAFE_DATASET_ID_RE.match(dataset_id), dataset_id
         assert not _DATASET_PATH_CALL_RE.search(
-            f'curio_dataset_path("{dataset_id}")'
+            f'curio_data_path("{dataset_id}")'
         ), dataset_id
 
 
 def test_scanner_accepts_both_quote_styles():
     for quoted in ('"imported.x"', "'imported.x'"):
-        assert _DATASET_PATH_CALL_RE.search(f"curio_dataset_path({quoted})")
+        assert _DATASET_PATH_CALL_RE.search(f"curio_data_path({quoted})")
     # Mismatched quotes are not a call.
-    assert not _DATASET_PATH_CALL_RE.search("curio_dataset_path(\"imported.x')")
+    assert not _DATASET_PATH_CALL_RE.search("curio_data_path(\"imported.x')")
 
 
 def test_sandbox_cap_matches_the_backend_cap():
@@ -123,11 +123,11 @@ def test_the_scanner_finds_every_id_the_curated_examples_reference():
         spec = json.loads(path.read_text(encoding="utf-8"))
         for node in spec["dataflow"]["nodes"]:
             content = node.get("content") or ""
-            if "curio_dataset_path" not in content:
+            if "curio_data_path" not in content:
                 continue
             found = _DATASET_PATH_CALL_RE.findall(content)
             assert found, (
-                f"{path.name} node {node['id']} calls curio_dataset_path but "
+                f"{path.name} node {node['id']} calls curio_data_path but "
                 f"the backend scanner finds no id in it; check the quoting and "
                 f"that the id matches {ID_BODY}"
             )
@@ -138,7 +138,7 @@ def test_the_scanner_finds_every_id_the_curated_examples_reference():
                 # ``resolve_execution_paths``, and the miss is swallowed.
                 assert "@" not in dataset_id, (
                     f"{path.name} node {node['id']}: {dataset_id!r} carries a "
-                    f"major version; curio_dataset_path takes the bare id "
+                    f"major version; curio_data_path takes the bare id "
                     f"(the '@<major>' form is the dirName, used by "
                     f"dataflow.datasets refs)"
                 )

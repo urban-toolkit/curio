@@ -13,7 +13,7 @@ The rules (all runtime-enforced; prompt wording only teaches them):
 - a **local path** is grounded only when the user typed it in this
   conversation or the Data Catalog resolved it (an installed dataset's real
   path — the same truth ``catalog.search`` serves); the portable
-  ``curio_dataset_path("<id>")`` call the loader recipe emits is grounded
+  ``curio_data_path("<id>")`` call the loader recipe emits is grounded
   when the id is a dataset of this project's catalog;
 - a **URL** is grounded only when the runtime probed it this run (the dev/67-4
   gate: ``verified``, or ``401``/``403`` = the endpoint exists behind a
@@ -155,7 +155,7 @@ class GroundingContext:
     """Everything the verdict needs, supplied by the caller."""
 
     catalog_paths: dict[str, CatalogRef] = field(default_factory=dict)
-    #: dataset id → ref, for the portable ``curio_dataset_path("<id>")`` form.
+    #: dataset id → ref, for the portable ``curio_data_path("<id>")`` form.
     catalog_ids: dict[str, CatalogRef] = field(default_factory=dict)
     user_paths: set[str] = field(default_factory=set)
     verified_urls: dict[str, dict] = field(default_factory=dict)
@@ -281,7 +281,7 @@ def _scan_python(code: str) -> list[SourceRef] | None:
     refs: list[SourceRef] = []
     # Constant children of an f-string are scanned through the f-string —
     # never a second time as bare constants; the id inside a
-    # ``curio_dataset_path("<id>")`` call is a catalog reference, not a path.
+    # ``curio_data_path("<id>")`` call is a catalog reference, not a path.
     fstring_children: set[int] = set()
     call_ids: set[int] = set()
     schema_values: set[int] = set()

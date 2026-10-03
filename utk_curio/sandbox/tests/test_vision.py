@@ -29,12 +29,12 @@ STREET = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
 
 @pytest.fixture
 def photos(tmp_path):
-    """Two of the committed photos, as a node's curio_collection gives them."""
+    """Two of the committed photos, as a node's curio_load_collection gives them."""
     index = REPO / "datasets" / f"{SAMPLE}@1" / "data" / "index.parquet"
     helpers = make_collection_helpers(
         lambda _id: str(index), {SAMPLE: {"kind": "images", "root": str(STORAGE)}}, str(tmp_path / "media")
     )
-    frame = helpers["curio_collection"](SAMPLE).head(2)
+    frame = helpers["curio_load_collection"](SAMPLE).head(2)
     return frame, helpers
 
 

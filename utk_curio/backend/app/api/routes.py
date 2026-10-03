@@ -243,7 +243,7 @@ def serve_launch_cwd_file(filename: str):
     their committed ``.osm.pbf`` extracts this way, because ``.pbf`` is not a
     Data Catalog format and every ``/api/datasets/*`` route requires auth while
     this one does not. Shipped *Python* nodes no longer read relative paths at
-    all - they resolve ``curio_dataset_path("<id>")`` against the catalog - but
+    all - they resolve ``curio_data_path("<id>")`` against the catalog - but
     a user's own node still can, which is why the root convention stands.
 
     The frontend prepends ``BACKEND_URL`` + ``/file/`` to the relative path at
@@ -435,8 +435,8 @@ def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None, formats: dic
 
 def _resolve_exec_models(code: str) -> dict:
     """The Model Catalog folders of the models *code* runs as
-    ``curio_model("<id>")``, for this account. Fail-open like dataset paths:
-    the sandbox's ``curio_model`` names a model that is not there."""
+    ``curio_load_model("<id>")``, for this account. Fail-open like dataset paths:
+    the sandbox's ``curio_load_model`` names a model that is not there."""
     from utk_curio.backend.app.model_catalog.service import resolve_exec_models
 
     return resolve_exec_models(code, getattr(g, "user", None))

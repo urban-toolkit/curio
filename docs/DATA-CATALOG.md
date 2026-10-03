@@ -141,9 +141,9 @@ The generated Python depends on the format:
 | `geotiff` | `rasterio.open(dataset_path)` → `src` |
 | `bundle` | Rebuilds every part and returns a tuple → `bundle` |
 | OSM group | A `layers` dict of per-layer GeoParquet reads |
-| `collection` | `curio_collection("<datasetId>")` → `collection` |
+| `collection` | `curio_load_collection("<datasetId>")` → `collection` |
 
-The generated code names the dataset with `curio_dataset_path("<datasetId>")`, or `curio_collection("<datasetId>")` for a collection, instead of a file path, so it keeps working when the dataflow is shared or moved. The details' **Use in a node** box shows the same call, with a copy button.
+The generated code names the dataset with `curio_data_path("<datasetId>")`, or `curio_load_collection("<datasetId>")` for a collection, instead of a file path, so it keeps working when the dataflow is shared or moved. The details' **Use in a node** box shows the same call, with a copy button.
 
 **Clicking** a palette row, rather than dragging it, highlights every node on the canvas that uses that dataset. If none does, a message says so.
 
@@ -151,7 +151,7 @@ A node tied to a dataset shows a pill on its title bar: **DATASET** when it read
 
 ### Collections
 
-A **collection** is a dataset made of many files that stay where they are: a folder of orthoimagery, video frames, photos and videos, or audio recordings, added from a storage source in the [Discovery Catalog](DISCOVERY-CATALOG.md). Its data file is an index with one row per file. `curio_collection("<datasetId>")` returns those rows with a way to reach each file:
+A **collection** is a dataset made of many files that stay where they are: a folder of orthoimagery, video frames, photos and videos, or audio recordings, added from a storage source in the [Discovery Catalog](DISCOVERY-CATALOG.md). Its data file is an index with one row per file. `curio_load_collection("<datasetId>")` returns those rows with a way to reach each file:
 
 | Column | Holds |
 |---|---|
