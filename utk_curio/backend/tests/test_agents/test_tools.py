@@ -30,6 +30,7 @@ class TestRegistry:
             "package.draft.apply",  # dev/89
             # The Discovery Catalog: roster, live search, reviewed download.
             "discovery.sources", "discovery.search", "discovery.acquire",
+            "models.search",  # the Model Catalog
         }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
@@ -51,6 +52,7 @@ class TestRegistry:
         assert tools.REGISTRY["packages.resolve"].effect == "read"
         assert tools.REGISTRY["package.install"].effect == "mutate"
         assert tools.REGISTRY["package.draft.apply"].effect == "mutate"  # dev/89
+        assert tools.REGISTRY["models.search"].effect == "read"
 
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):
@@ -390,6 +392,96 @@ class TestCatalogSearchRows:
         assert rows[2]["path"] == "/store/tracts@1/tracts.geojson"
         assert 'gpd.read_file(dataset_path)' in rows[2]["loader"]
         assert "path" in tools.REGISTRY["catalog.search"].description
+
+
+class TestModelsSearch:
+    """models.search: the Model Catalog this account can run, the shipped
+    model and its own download, each with the loader line node code copies."""
+
+    DDRNET = "model.curio.ddrnet23-slim"
+    ROW_KEYS = {"id", "name", "task", "runtime", "origin", "description", "labels", "loader"}
+
+    @pytest.fixture()
+    def catalog(self, app, user_and_token, tmp_path, monkeypatch):
+        """The repo's shipped models plus one download in the user's store."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.model_catalog.infrastructure import storage
+        from utk_curio.backend.app.model_catalog.service import ModelCatalogService
+
+        monkeypatch.setenv(storage.ENV_ROOT, str(Path(__file__).resolve().parents[4] / "models"))
+        user, _ = user_and_token
+        incoming = tmp_path / "incoming"
+        (incoming / "files").mkdir(parents=True)
+        (incoming / "files" / "m.onnx").write_bytes(b"onnx")
+        download = ModelCatalogService(user).install_downloaded(incoming, {
+            "id": "model.example.tiny", "name": "Tiny facades", "version": "1.0.0",
+            "compatibility": {"major": 1}, "license": "MIT", "runtime": "onnx",
+            "task": "semantic-segmentation", "entry": "files/m.onnx",
+            "labels": [f"class {i}" for i in range(60)],
+            "input": {"width": 64, "height": 32, "dtype": "float32", "scale": 0.00392},
+        })
+        return user, download["id"]
+
+    def _rows(self, app, user, params):
+        from flask import g
+
+        with app.test_request_context():
+            g.user = user
+            return tools._models_search_rows(params)
+
+    def test_rows_carry_both_origins_and_the_loader_line(self, app, catalog):
+        from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
+
+        user, download_id = catalog
+        by_id = {row["id"]: row for row in self._rows(app, user, {})}
+        assert {self.DDRNET, download_id} <= set(by_id)
+        for row in by_id.values():
+            assert set(row) == self.ROW_KEYS
+            assert row["loader"] == f'model = curio_load_model("{row["id"]}")'
+            # The line resolves through the runtime's own reading of node code.
+            assert model_ids_in_code(row["loader"]) == [row["id"]]
+        shipped, mine = by_id[self.DDRNET], by_id[download_id]
+        assert (shipped["origin"], shipped["runtime"], shipped["task"]) == ("shipped", "onnx", "semantic-segmentation")
+        assert "vegetation" in shipped["labels"] and len(shipped["labels"]) == 19
+        assert (mine["origin"], mine["name"]) == ("downloaded", "Tiny facades")
+        # Labels are bounded; a checkpoint may name hundreds of classes.
+        assert mine["labels"] == [f"class {i}" for i in range(tools._MODEL_LABELS_MAX)]
+
+    def test_q_filters_and_limit_bounds(self, app, catalog):
+        user, download_id = catalog
+        assert [r["id"] for r in self._rows(app, user, {"q": "  tiny  "})] == [download_id]
+        assert self._rows(app, user, {"q": "no-such-model-zzz"}) == []
+        assert len(self._rows(app, user, {"limit": 1})) == 1
+        assert len(self._rows(app, user, {"limit": "1"})) == 1
+        # A native call may carry every number as a float.
+        assert len(self._rows(app, user, {"limit": 1.0})) == 1
+        everything = self._rows(app, user, {})
+        # A limit that is not a whole number, or is out of range, never hides a row.
+        assert self._rows(app, user, {"limit": "many"}) == everything
+        assert self._rows(app, user, {"limit": 1.5}) == everything
+        assert self._rows(app, user, {"limit": 10_000}) == everything
+        assert len(self._rows(app, user, {"limit": 0})) == 1
+
+    def test_the_executor_returns_the_rows_and_needs_no_project_spec(self, app, catalog):
+        from flask import g
+
+        user, download_id = catalog
+        with app.test_request_context():
+            g.user = user
+            status, text = tools.execute_read_tool(
+                "models.search", user_key="42", project_id="no-such-project", target=None, params={"q": "tiny"},
+            )
+        assert status == "ok"
+        assert [row["id"] for row in json.loads(text)["models"]] == [download_id]
+
+    def test_the_contract_states_its_params_and_rows(self):
+        contract = tools.REGISTRY["models.search"]
+        assert contract.parameters["properties"]["q"]["type"] == "string"
+        assert contract.parameters["properties"]["limit"]["type"] == "integer"
+        assert "required" not in contract.parameters
+        for word in ("id", "name", "task", "origin", "labels", "loader", 'curio_load_model("<id>")'):
+            assert word in contract.description, word
 
 
 class TestWebTools:

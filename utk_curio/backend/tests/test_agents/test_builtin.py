@@ -382,6 +382,7 @@ class TestNodeBuilderComposite:
             "node.runtime.read",  # dev/67-2: diagnose before regenerating
             "node.content.write",  # dev/67-6: modify-existing, reviewed
             "catalog.search",  # dev/114 (DEC-072): the only source of a real local path
+            "models.search",  # the Model Catalog: a model this account can run
         ]
         assert m.provenance.trust == "built-in"
 
@@ -447,6 +448,26 @@ class TestNodeBuilderComposite:
         text = builtin.read_prompt_text(self.COORD, "instruction")
         assert "params.content" in text
         assert "code in your reply is not a node" in text
+
+
+class TestCatalogReadGrants:
+    """Which built-ins hold the catalog read tools that no other agent needs."""
+
+    @staticmethod
+    def _holders(tool_id: str) -> set[str]:
+        return {spec.agent_id for spec in builtin.BUILTIN_AGENTS if tool_id in spec.tools}
+
+    @staticmethod
+    def _granted(agent_id: str) -> list[str]:
+        from utk_curio.backend.app.agents.application import tools
+
+        return tools.resolve_grants(builtin.get_builtin_manifest(f"{agent_id}@1.0.0").tools)
+
+    def test_the_agents_that_write_node_code_search_the_model_catalog(self):
+        writers = {"agent.node-builder", "agent.node-content-builder"}
+        assert self._holders("models.search") == writers
+        for agent_id in writers:
+            assert "models.search" in self._granted(agent_id), agent_id
 
 
 class TestDatasetFinderComposite:

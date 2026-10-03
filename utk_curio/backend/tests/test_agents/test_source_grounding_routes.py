@@ -234,6 +234,56 @@ class TestCatalogGrounding:
         assert proposal["source"]["refs"][0]["value"] == "data/tracts.geojson"
 
 
+DDRNET = "model.curio.ddrnet23-slim"
+
+
+def _models_tail(**params):
+    return "```curio.v1\n" + json.dumps({"toolRequest": {"tool": "models.search", "params": params}}) + "\n```"
+
+
+def _model_rows(messages):
+    """The models.search rows the model was shown."""
+    text = _tool_results(messages, "models.search")[-1]
+    assert text.startswith("[tool result] models.search: ok\n"), text[:200]
+    return json.loads(text.split("\n", 1)[1].split("\nNo further")[0])["models"]
+
+
+class TestModelGrounding:
+    """models.search in a scripted run: the agents that write node code are
+    shown the Model Catalog's rows, each with the line that loads it."""
+
+    @pytest.fixture(autouse=True)
+    def _shipped_models(self, monkeypatch):
+        from pathlib import Path
+
+        from utk_curio.backend.app.model_catalog.infrastructure import storage
+
+        monkeypatch.setenv(storage.ENV_ROOT, str(Path(__file__).resolve().parents[4] / "models"))
+
+    def test_node_builder_searches_the_model_catalog(self, client, user_and_token, tmp_curio, project, monkeypatch):
+        _, token = user_and_token
+        _install(client, token, project, NB)
+        att = _attach(client, token, project, NB)
+        calls = _script(monkeypatch, [_models_tail(q="street"), "ok"])
+        _run(client, token, project, att, "build a node that segments street photos")
+        [row] = _model_rows(calls[-1])
+        assert row["id"] == DDRNET and row["origin"] == "shipped"
+        assert row["loader"] == f'model = curio_load_model("{DDRNET}")'
+        # The grant reaches the run: the tail's tool list offers it.
+        assert "- models.search: " in calls[0][0]["content"]
+
+    def test_node_content_builder_searches_the_model_catalog(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        _, token = user_and_token
+        att, calls = routes_proposals.TestReviewProposals()._setup(
+            client, token, alice_project, monkeypatch, replies=[_models_tail(), "ok"],
+        )
+        _run(client, token, alice_project, att, "segment the photos with a model")
+        assert "- models.search: " in calls[0][0]["content"]
+        rows = _model_rows(calls[-1])
+        assert DDRNET in {row["id"] for row in rows}
+        assert all(row["loader"] == f'model = curio_load_model("{row["id"]}")' for row in rows)
+
+
 def _candidates_reply(external, catalog):
     payload = {"datasetCandidates": {"lanes": {"external": external, "catalog": catalog}}}
     return "Two lanes.\n```curio.v1\n" + json.dumps(payload) + "\n```"

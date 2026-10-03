@@ -75,6 +75,11 @@ def _no_params() -> dict:
     return _object({})
 
 
+#: models.search bounds: the most rows a call returns, and the most labels per
+#: row. A Transformers checkpoint may name hundreds of classes.
+_MODELS_SEARCH_MAX_ROWS = 40
+_MODEL_LABELS_MAX = 40
+
 _NODE_ID = _text("The node's id. Defaults to the node this agent is attached to.")
 _APPEARANCE = _object({"backgroundColor": _text("A palette name or #RRGGBB.")})
 
@@ -223,6 +228,35 @@ REGISTRY: dict[str, ToolContract] = {
             "q": _text("Text to search for."),
             "format": _text("A dataset format."),
             "origin": _text("A dataset origin."),
+        }),
+    ),
+    # Consumers: agent.node-builder and agent.node-content-builder. Grounds a
+    # node that runs a model in the real Model Catalog (the model catalog
+    # owns the data and the loader line; this module owns none of its own).
+    "models.search": ToolContract(
+        id="models.search",
+        contract_version="1",
+        effect="read",
+        description=(
+            "Search the Model Catalog: the trained models node code can run. "
+            'Params (all optional): {"q": "<text>", "limit": <1 to '
+            f"{_MODELS_SEARCH_MAX_ROWS}>}}; q matches a model's name, id, "
+            "description, publisher and tags. Returns model rows with id, "
+            "name, task, runtime, origin, description, labels (the classes "
+            "it answers, at most "
+            f"{_MODEL_LABELS_MAX}) and loader. Every row is a model this "
+            'account can run: origin "shipped" comes with Curio, "downloaded" '
+            "is one this account added from the Discovery Catalog. Copy the "
+            "row's `loader` line into the node's code exactly as given "
+            '(model = curio_load_model("<id>")); a model id that is not in '
+            "these results does not run. Reads no network."
+        ),
+        parameters=_object({
+            "q": _text("Text to search for."),
+            "limit": {
+                "type": "integer",
+                "description": f"The most rows to return, 1 to {_MODELS_SEARCH_MAX_ROWS}.",
+            },
         }),
     ),
     # Discovery Catalog - consumer: agent.dataset-finder. Three contracts, not
@@ -723,6 +757,47 @@ def _catalog_search_rows(user_key: str, project_id: str, params: dict) -> list[d
     return rows
 
 
+def _row_limit(value: object, bound: int) -> int:
+    """A ``limit`` param as a row count from 1 to *bound*; *bound* when absent or not a whole number.
+    A native call may send ``5.0`` (Gemini's arguments carry every number as a float)."""
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return bound
+    return max(1, min(value, bound))
+
+
+def _models_search_rows(params: dict) -> list[dict]:
+    """Bounded Model Catalog rows for ``models.search``.
+
+    A thin wrapper over the model catalog (`ADR-AG-007`): the same listing the
+    Model Catalog page browses, for the user the request carries, and the
+    catalog's own loader line for each model.
+    """
+    from flask import g
+
+    from utk_curio.backend.app.model_catalog.service import ModelCatalogService, loader_line
+
+    query = params.get("q")
+    query = query.strip()[:_CATALOG_PARAM_MAX_CHARS] if isinstance(query, str) and query.strip() else None
+    listing = ModelCatalogService(getattr(g, "user", None)).list_catalog(q=query)
+    rows = []
+    for item in (listing.get("items") or [])[:_row_limit(params.get("limit"), _MODELS_SEARCH_MAX_ROWS)]:
+        rows.append({
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "task": item.get("task"),
+            "runtime": item.get("runtime"),
+            "origin": item.get("origin"),
+            "description": (item.get("description") or "")[:_CATALOG_DESC_MAX_CHARS],
+            "labels": list(item.get("labels") or [])[:_MODEL_LABELS_MAX],
+            "loader": loader_line(item.get("id")),
+        })
+    return rows
+
+
 # packages.catalog bounds (dev/84): mirrors the catalog.search posture —
 # plenty for ranking, small enough to never crowd the context.
 _PACKAGES_CATALOG_MAX_ROWS = 40
@@ -991,6 +1066,8 @@ def execute_read_tool(
             if unavailable:
                 payload["unavailableSources"] = unavailable
             return "ok", _truncate(json.dumps(payload, ensure_ascii=False))
+        if tool_id == "models.search":
+            return "ok", _truncate(json.dumps({"models": _models_search_rows(params)}, ensure_ascii=False))
         if tool_id == "packages.catalog":
             rows = _packages_catalog_rows(user_key, project_id, params)
             return "ok", _truncate(json.dumps({"packages": rows}, ensure_ascii=False))
