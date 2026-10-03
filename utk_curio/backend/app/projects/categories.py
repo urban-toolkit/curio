@@ -95,7 +95,7 @@ _WAVE = _imports("wave")
 _PBF_PATH = re.compile(r"\.pbf\b")
 _TIFF_PATH = re.compile(r"\.tiff?\b")
 _IMAGE_PATH = re.compile(r"data:image/|\.(?:png|jpe?g)\b")
-_DATASET_CALL = re.compile(r"curio_dataset_path\(\s*[\"']([^\"']+)")
+_DATASET_CALL = re.compile(r"(?:curio_load_data|curio_data_path|curio_load_collection)\(\s*[\"']([^\"']+)")
 _COMPUTE_SECTION = re.compile(r"\"compute\"\s*:")
 
 _AUTARK = "curio.builtin/autk-grammar"
@@ -208,7 +208,7 @@ class DatasetKinds:
     """Resolve dataset ids to ``(format, collection kind)``, memoized.
 
     Looks in the account's store first and then in the committed catalog - the
-    two places ``curio_dataset_path`` finds a dataset. Accepts a bare id or a
+    two places ``curio_load_data`` finds a dataset. Accepts a bare id or a
     ``<id>@<major>`` directory name; a bare id takes its highest major. One
     instance per request, so a listing reads each manifest once.
     """

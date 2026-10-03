@@ -202,7 +202,7 @@ class TestSolveNodeStream:
     def test_failing_content_is_fixed(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         h = _tvr.TestSolveNode()
-        bad = 'import pandas as pd\ndataset_path = curio_dataset_path("{DATASET}")\ndf = pd.read_csv(dataset_path, sep="|||")\nbad_sep()\nreturn df'
+        bad = 'import pandas as pd\ndataset_path = curio_data_path("{DATASET}")\ndf = pd.read_csv(dataset_path, sep="|||")\nbad_sep()\nreturn df'
         ctx = h._setup(client, user, token, monkeypatch, content=bad, child_replies=[h.LOADER],
                        exec_outcomes={"bad_sep": "Traceback: ParserError: bad separator"})
         events = h._solve_node(client, token, ctx)

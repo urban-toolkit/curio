@@ -34,7 +34,7 @@ flowchart LR
 ## Data
 
 This example reads its inputs from the [Data Catalog](../DATA-CATALOG.md). Each loader node
-addresses a dataset by id via `curio_dataset_path("<id>")`, so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
+addresses a dataset by id via `curio_data_path("<id>")`, so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
 
 | Dataset | Id | Format | Size |
 |---|---|---|---|
@@ -51,7 +51,7 @@ Every branch starts here. The same loaded DataFrame is fed into every downstream
 ```python
 import pandas as pd
 
-dataset_path = curio_dataset_path("data.cityofchicago.red-light-violations")
+dataset_path = curio_data_path("data.cityofchicago.red-light-violations")
 df = pd.read_parquet(dataset_path)
 return df
 ```

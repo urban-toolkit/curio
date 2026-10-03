@@ -531,6 +531,7 @@ def _verified_content_rounds(
     node_budget_s=None,
     carry_forward=None,
     result_summary_fn=None,
+    acting_user=None,
 ):
     """dev/115 (DEC-073): the ONE generate → gate → execute → correct loop.
 
@@ -574,5 +575,6 @@ def _verified_content_rounds(
         prior_outputs_fn=prior_outputs_fn, resolve_source=resolve_source, clock=clock,
         recorded_failure=recorded_failure, node_budget_s=node_budget_s,
         carry_forward=carry_forward, result_summary_fn=result_summary_fn,
+        acting_user=acting_user,
     )
     return (yield from loop.run())

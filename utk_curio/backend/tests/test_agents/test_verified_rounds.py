@@ -712,7 +712,7 @@ class TestExecDatasetPaths:
         calls = self._service(monkeypatch, {"imported.x@1": "/store/x.csv"})
         with app.test_request_context():
             out = packages_grounding._exec_dataset_paths(
-                "proj", 'p = curio_dataset_path("imported.x@1")', "q = curio_dataset_path('imported.x@1')",
+                "proj", 'p = curio_data_path("imported.x@1")', "q = curio_data_path('imported.x@1')",
                 "no refs here",
             )
         assert out == {"imported.x@1": "/store/x.csv"}
@@ -723,7 +723,7 @@ class TestExecDatasetPaths:
         with app.test_request_context():
             assert packages_grounding._exec_dataset_paths("proj", "df = pd.DataFrame()") == {}
             assert calls == []
-            assert packages_grounding._exec_dataset_paths("proj", 'curio_dataset_path("ds")') == {}
+            assert packages_grounding._exec_dataset_paths("proj", 'curio_data_path("ds")') == {}
 
 
 TEMPLATES = [
@@ -751,7 +751,7 @@ TEMPLATES = [
 
 
 class TestValidateNodeCarriesDatasetPaths:
-    """Route level: a catalog loader (`curio_dataset_path("<id>")`) verifies
+    """Route level: a catalog loader (`curio_data_path("<id>")`) verifies
     with its mapping — the form dev/114 made canonical used to fail here."""
 
     def test_validate_node_resolves_the_loader_id_and_records_the_trail(self, client, user_and_token, tmp_curio, monkeypatch):
@@ -772,7 +772,7 @@ class TestValidateNodeCarriesDatasetPaths:
         ).get_json()["attachmentId"]
         plan = {"goal": "heat", "nodes": [
             {"ref": "load", "nodeType": DL, "title": "Load", "intent": "load the heat data"}], "edges": []}
-        loader = f'import pandas as pd\ndataset_path = curio_dataset_path("{dataset_id}")\ndf = pd.read_csv(dataset_path)\nreturn df'
+        loader = f'import pandas as pd\ndataset_path = curio_data_path("{dataset_id}")\ndf = pd.read_csv(dataset_path)\nreturn df'
         replies = ["Plan.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```", loader]
         calls = []
 
@@ -914,7 +914,7 @@ class TestVerifiedSolve:
         spec = projects_storage.read_spec(ctx["ukey"], ctx["pid"])
         return next(n for n in spec["dataflow"]["nodes"] if n["id"] == node_id)["content"]
 
-    LOADER = 'import pandas as pd\ndataset_path = curio_dataset_path("{DATASET}")\ndf = pd.read_csv(dataset_path)\nreturn df'
+    LOADER = 'import pandas as pd\ndataset_path = curio_data_path("{DATASET}")\ndf = pd.read_csv(dataset_path)\nreturn df'
 
     def test_pass_writes_only_after_the_code_ran(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
@@ -1332,7 +1332,7 @@ class TestSolveNode:
 
     NB = "agent.node-builder@1.0.0"
     NCB = "agent.node-content-builder@1.0.0"
-    LOADER = 'import pandas as pd\ndataset_path = curio_dataset_path("{DATASET}")\ndf = pd.read_csv(dataset_path)\nreturn df'
+    LOADER = 'import pandas as pd\ndataset_path = curio_data_path("{DATASET}")\ndf = pd.read_csv(dataset_path)\nreturn df'
 
     def _setup(self, client, user, token, monkeypatch, *, content, child_replies=(), exec_outcomes=None,
                node_type=DL):
@@ -1406,7 +1406,7 @@ class TestSolveNode:
 
     def test_failing_current_content_is_fixed_into_an_executed_review(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
-        bad = 'import pandas as pd\ndataset_path = curio_dataset_path("{DATASET}")\ndf = pd.read_csv(dataset_path, sep="|||")\nbad_sep()\nreturn df'
+        bad = 'import pandas as pd\ndataset_path = curio_data_path("{DATASET}")\ndf = pd.read_csv(dataset_path, sep="|||")\nbad_sep()\nreturn df'
         ctx = self._setup(client, user, token, monkeypatch, content=bad, child_replies=[self.LOADER],
                           exec_outcomes={"bad_sep": "Traceback: ParserError: bad separator"})
         events = self._solve_node(client, token, ctx)
@@ -1549,6 +1549,86 @@ class TestSolveNode:
         base = f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/solve-node"
         assert client.post(base, json={}, headers=_auth(token)).status_code == 400
         assert client.post(base, json={"nodeId": "ghost"}, headers=_auth(token)).status_code == 404
+
+
+class TestValidationKnowsTheAccount:
+    """#485, #597: Solve validates a candidate on a thread of its own, where
+    the request's user is gone. What Play gives a node must still reach the
+    sandbox there: the ids it reads through ``curio_load_collection``, where the
+    account's collection keeps its files, and the models the account added.
+
+    The stubs below answer only for a call that knows the account, the way
+    the Data Catalog and the Model Catalog do, so a lookup made without the
+    user finds nothing, as it does on a real deployment."""
+
+    MODEL = "model.example.segmenter@1"
+
+    def _setup(self, client, user, token, monkeypatch, *, content):
+        return TestSolveNode()._setup(client, user, token, monkeypatch, content=content)
+
+    def _validated_payload(self, client, token, ctx):
+        events = TestSolveNode()._solve_node(client, token, ctx)
+        assert [k for k, _ in events][-1] == "done", events[-1]
+        assert ctx["payloads"], "validation never reached the sandbox"
+        return ctx["payloads"][0]
+
+    def test_code_reading_only_a_collection_has_its_id_mapped(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch,
+                          content='photos = curio_load_collection("{DATASET}")\nreturn photos')
+        payload = self._validated_payload(client, token, ctx)
+        assert ctx["dataset_id"] in (payload.get("dataset_paths") or {}), (
+            "a node that reads only curio_load_collection got no path for its id, so it fails "
+            f"under Solve while Play runs it: {payload.get('dataset_paths')}"
+        )
+
+    def test_the_accounts_collection_is_resolved_on_the_validation_thread(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        from types import SimpleNamespace
+
+        from utk_curio.backend.app.discovery.domain.errors import ResourceNotFound
+        from utk_curio.backend.app.discovery.service import DiscoveryService
+
+        def _collection(service, dataset_id):
+            if service.user is None:
+                raise ResourceNotFound(f"no dataset {dataset_id!r} without an account")
+            return {"collection": {"kind": "images"}}, SimpleNamespace(provider=SimpleNamespace(type="s3"))
+
+        monkeypatch.setattr(DiscoveryService, "collection", _collection)
+        user, token = user_and_token
+        ctx = self._setup(client, user, token, monkeypatch,
+                          content='photos = curio_load_collection("{DATASET}")\nreturn photos')
+        payload = self._validated_payload(client, token, ctx)
+        assert ctx["dataset_id"] in (payload.get("collections") or {}), (
+            "the collection was looked up without the account on the validation thread: "
+            f"{payload.get('collections')}"
+        )
+
+    def test_a_model_the_account_added_resolves_on_the_validation_thread(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        from utk_curio.backend.app.model_catalog.service import ModelCatalogService
+
+        def _dirs(service, model_ids):
+            if service.user is None:
+                return {}
+            return {model_id: f"/models/{model_id}" for model_id in model_ids}
+
+        monkeypatch.setattr(ModelCatalogService, "resolve_execution_dirs", _dirs)
+        user, token = user_and_token
+        # A data-loading node must load a source to pass the grounding gate,
+        # so this one reads the seeded dataset and names the model as well.
+        ctx = self._setup(client, user, token, monkeypatch, content=(
+            'import pandas as pd\n'
+            f'model = curio_load_model("{self.MODEL}")\n'
+            'df = pd.read_csv(curio_data_path("{DATASET}"))\n'
+            'return df'
+        ))
+        payload = self._validated_payload(client, token, ctx)
+        assert self.MODEL in (payload.get("models") or {}), (
+            f"the model was looked up without the account on the validation thread: {payload.get('models')}"
+        )
 
 
 class TestRunEgressBudget:

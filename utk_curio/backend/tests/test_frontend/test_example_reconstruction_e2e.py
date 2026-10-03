@@ -456,7 +456,7 @@ class TestSolveProgressAndReconnection:
             (n for n in filled if n.get("type") == "curio.builtin/data-loading"), None
         )
         if code_node:
-            assert "curio_dataset_path" in read_node_code(page, code_node["id"]), (
+            assert "curio_data_path" in read_node_code(page, code_node["id"]), (
                 "the content Solve wrote is on the server but not in the "
                 "node's editor on the canvas"
             )

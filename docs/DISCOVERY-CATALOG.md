@@ -108,7 +108,7 @@ A storage source is read when it is first opened, and again when its listing is 
 | **Files** | A storage source's row | Nothing | The row's files, 50 at a time, with thumbnails for a collection's. Pick some and **Add N picked files** adds only those. |
 | **Rescan** | A storage source's page | Nothing | The source is read again, and its rows show what it holds. |
 | **Cache files** | A bucket collection's details, in the Data Catalog | Your account's media folder | Its files are copied to the Curio machine, so nodes can read them. |
-| **Add to Model Catalog** | A Hugging Face models row | Your Model Catalog gains a model | A progress bar, then *"Added `<name>` to your Model Catalog."* with **View model**. |
+| **Add to Model Catalog** | A Hugging Face models row | Your Model Catalog gains a model | A progress bar, then *"Added `<name>` to your Model Catalog."* with **View model**. A guest on a `--deploy` instance is refused before anything downloads. |
 | **View model** | A row marked **In your Model Catalog** | Nothing | The model's details, in the Model Catalog. |
 | **Set a token** | **API Settings** | Your account | The source's card reads **Token set**. |
 
@@ -132,7 +132,7 @@ A storage source is read when it is first opened, and again when its listing is 
 
 **I want Google Street View images.** Set your Google Maps API key, with the Street View Static API enabled on it ([part 5](#5-api-tokens)). Open the Google Street View card's page and click **Download** on **Street View images**. Set the **Area**, the **Spacing** of the points Curio asks for a panorama, the **Headings**, **Field of view**, **Pitch** and **Size** of each image, and **Most images**. The images land as one collection, a row per panorama and heading, each with its `pano_id`, `heading`, the month it was `captured`, and its position. Google bills each request to your key.
 
-**I want a model a node can run.** Open the **Hugging Face models** card's page and search it, for example for `segformer`. Each row names the model's task, its weights (ONNX or safetensors), its downloads and its license. Click **Add to Model Catalog**; when it is done, the row offers **View model**. On the canvas, drag the model from **Models** in the left rail onto an **Image Segmentation** node: see [MODEL-CATALOG.md](MODEL-CATALOG.md).
+**I want a model a node can run.** Open the **Hugging Face models** card's page and search it, for example for `segformer`. Each row names the model's task, its weights (ONNX or safetensors), its downloads and its license. Click **Add to Model Catalog**; when it is done, the row offers **View model**. On the canvas, drag the model from **Model Catalog** in the left Tools panel onto an **Image Segmentation** node: see [MODEL-CATALOG.md](MODEL-CATALOG.md).
 
 **I have a link to a file.** Click **Add by link** on the Direct URL card, paste the link into **Link to a file**, and click **Download**.
 
@@ -158,7 +158,7 @@ A storage source is read when it is first opened, and again when its listing is 
 
 A download, and a table added from a storage source, lands in your Data Catalog as an ordinary imported dataset, with a preview, a schema, and the same loader code as any other. Nothing downstream needs to know where it came from.
 
-A collection lands as a dataset of format **Collection**. Its **Data Loading** node reads it with `curio_collection("<id>")`, which returns one row per file: the path fields, what Curio read from each file, and `path`, where the file can be opened. Rows with a position come back as a GeoDataFrame. **Simple View** shows the rows as cards; a video or a recording plays in its card. The `curio.media` package's nodes work on these rows: **Sample Video Frames**, **Split Audio** and **Mosaic Rasters**. See [DATA-CATALOG.md](DATA-CATALOG.md#collections) for the columns.
+A collection lands as a dataset of format **Collection**. Its **Data Loading** node reads it with `curio_load_collection("<id>")`, which returns one row per file: the path fields, what Curio read from each file, and `path`, where the file can be opened. Rows with a position come back as a GeoDataFrame. **Simple View** shows the rows as cards; a video or a recording plays in its card. The `curio.media` package's nodes work on these rows: **Sample Video Frames**, **Split Audio** and **Mosaic Rasters**. See [DATA-CATALOG.md](DATA-CATALOG.md#collections) for the columns.
 
 Downloading or adding does not add the dataset to a dataflow. Add it from the Data Catalog drawer on the canvas, then drag it onto the canvas: see [DATA-CATALOG.md part 3](DATA-CATALOG.md#3-using-a-dataset-in-a-dataflow).
 
@@ -232,7 +232,7 @@ A way that is tagged as an area but does not close is a line. In **Points of int
 ### Downloading street-level images
 
 - **Mapillary.** A box of at most 25 km². Photos are taken from across the box, newest first, up to **Most images** (at most 1,000). Each one is CC BY-SA 4.0 and keeps its photographer in `creator`, so a figure made from them can credit each photo. Your token goes to Mapillary's API only, never to the hosts the photos come from.
-- **Google Street View.** A box of at most 2 km². Curio asks Google for the panorama nearest each point of a grid with the **Spacing** you set, and keeps each panorama once, outdoor ones only unless you say otherwise. Then it downloads one image per panorama and heading. An image Google answers with its no-image placeholder is skipped. Your key is added to each request as Google's `key` parameter when the request is sent; the URLs a dataset records never hold it. Google's terms allow storing only panorama IDs: images downloaded with your key are yours to keep within those terms.
+- **Google Street View.** A box of at most 2 km². Curio asks Google for the panorama nearest each point of a grid with the **Spacing** you set, and keeps each panorama once, outdoor ones only unless you say otherwise. Then it downloads one image per panorama and heading. An image Google answers with its no-image placeholder is skipped. Your key is added to each request as Google's `key` parameter when the request is sent; the URLs a dataset records never hold it. The images are kept in your Data Catalog like any other download. Google's terms allow storing only panorama IDs, so check them before you keep the images.
 - **Both** land as a collection of images whose files are copied to your Data Catalog store. Downloading again with the same answers fetches nothing and keeps the dataset you have.
 
 ### Adding a model

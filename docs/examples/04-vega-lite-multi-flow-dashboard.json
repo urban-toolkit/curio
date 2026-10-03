@@ -8,7 +8,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 1066,
-        "content": "import pandas as pd\n\ndataset_path = curio_dataset_path(\"data.cityofchicago.red-light-violations\")\ndf = pd.read_parquet(dataset_path)\nreturn df",
+        "content": "import pandas as pd\n\ndataset_path = curio_data_path(\"data.cityofchicago.red-light-violations\")\ndf = pd.read_parquet(dataset_path)\nreturn df",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

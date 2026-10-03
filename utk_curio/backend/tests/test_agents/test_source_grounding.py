@@ -123,37 +123,37 @@ class TestComposedRequests:
 
 
 class TestCatalogIdForm:
-    """main's loader recipe emits the portable ``curio_dataset_path("<id>")``
+    """main's loader recipe emits the portable ``curio_data_path("<id>")``
     call (resolved by the sandbox at run time) — grounded by dataset id."""
 
     def test_known_id_is_grounded_and_unknown_refused(self):
         ctx = _ctx(is_data_loading=True, catalog_ids={"imported.x1@1": sg.CatalogRef("imported.x1@1", "Tracts", "csv", "")})
-        ok = sg.check_grounding('dataset_path = curio_dataset_path("imported.x1@1")\ndf = pd.read_csv(dataset_path)\nreturn df', "python", ctx)
+        ok = sg.check_grounding('dataset_path = curio_data_path("imported.x1@1")\ndf = pd.read_csv(dataset_path)\nreturn df', "python", ctx)
         assert ok.ok and ok.source["kind"] == "catalog"
-        assert ok.source["refs"][0]["value"] == 'curio_dataset_path("imported.x1@1")'
+        assert ok.source["refs"][0]["value"] == 'curio_data_path("imported.x1@1")'
         assert ok.source["refs"][0]["datasetId"] == "imported.x1@1"
-        bad = sg.check_grounding("dataset_path = curio_dataset_path('imported.ghost@1')\nreturn dataset_path", "python", ctx)
+        bad = sg.check_grounding("dataset_path = curio_data_path('imported.ghost@1')\nreturn dataset_path", "python", ctx)
         assert not bad.ok and "not a dataset in this project's Data Catalog" in bad.violations[0]
 
     def test_id_is_not_double_counted_and_regex_fallback_matches(self):
-        refs = sg.scan_sources('p = curio_dataset_path("computed.n1@1")', "python")
+        refs = sg.scan_sources('p = curio_data_path("computed.n1@1")', "python")
         assert [(r.kind, r.literal) for r in refs] == [("catalog-id", "computed.n1@1")]
-        broken = 'p = curio_dataset_path("computed.n1@1")\nreturn (p'  # syntax error → regex
+        broken = 'p = curio_data_path("computed.n1@1")\nreturn (p'  # syntax error → regex
         assert [(r.kind, r.literal) for r in sg.scan_sources(broken, "python")] == [("catalog-id", "computed.n1@1")]
 
     def test_a_collection_is_grounded_by_its_dataset_id(self):
-        """``curio_collection("<id>")`` names a Data Catalog dataset the same
+        """``curio_load_collection("<id>")`` names a Data Catalog dataset the same
         way: a known id is grounded, an unknown one refused by its own call."""
         ctx = _ctx(is_data_loading=True, catalog_ids={
             "data.curio.storage-noise": sg.CatalogRef("data.curio.storage-noise", "Noise", "collection", ""),
         })
-        ok = sg.check_grounding('collection = curio_collection("data.curio.storage-noise")\nreturn collection', "python", ctx)
+        ok = sg.check_grounding('collection = curio_load_collection("data.curio.storage-noise")\nreturn collection', "python", ctx)
         assert ok.ok and ok.source["kind"] == "catalog"
-        assert ok.source["refs"][0]["value"] == 'curio_collection("data.curio.storage-noise")'
+        assert ok.source["refs"][0]["value"] == 'curio_load_collection("data.curio.storage-noise")'
         assert ok.source["refs"][0]["datasetId"] == "data.curio.storage-noise"
-        bad = sg.check_grounding('collection = curio_collection("data.ghost")\nreturn collection', "python", ctx)
-        assert not bad.ok and bad.violations[0].startswith("curio_collection('data.ghost')")
-        broken = 'c = curio_collection("data.curio.storage-noise")\nreturn (c'  # syntax error, regex
+        bad = sg.check_grounding('collection = curio_load_collection("data.ghost")\nreturn collection', "python", ctx)
+        assert not bad.ok and bad.violations[0].startswith("curio_load_collection('data.ghost')")
+        broken = 'c = curio_load_collection("data.curio.storage-noise")\nreturn (c'  # syntax error, regex
         assert [(r.kind, r.literal) for r in sg.scan_sources(broken, "python")] == [
             ("catalog-id", "data.curio.storage-noise")
         ]

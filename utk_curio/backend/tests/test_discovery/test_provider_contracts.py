@@ -194,10 +194,10 @@ def test_overtures_catalog_still_names_its_latest_release_and_each_files_box():
 
 # ── Keyed services: checked only with a key the person running them holds ──
 #
-# No key is in the repository or in CI, so these skip there. With your own key
-# in the environment they check Mapillary's and Google's answers have the
-# shape the providers read. The key goes in a header or a parameter of the
-# request only; no message here prints it.
+# No key is in the repository or in CI, so this skips there. With your own key
+# in the environment it checks Mapillary's answers have the shape the provider
+# reads. The key goes in a header of the request only; no message here prints
+# it.
 
 
 def _keyed_probe_json(url: str, *, key: str, **kwargs):
@@ -244,18 +244,3 @@ def test_a_mapillary_search_still_carries_what_the_rows_read():
     )
     url = (thumbs.get("data") or [{}])[0].get("thumb_256_url")
     assert url and mapillary.host_allowed(url, ("fbcdn.net",)), "thumbnails left the listed hosts"
-
-
-def test_google_street_view_metadata_still_carries_what_the_rows_read():
-    key = _key("CURIO_GOOGLE_MAPS_KEY")
-    payload = _keyed_probe_json(
-        "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.8789,-87.6359&radius=50",
-        key=key, params={"key": key},
-    )
-    status = payload.get("status")
-    if status == "ZERO_RESULTS":
-        pytest.skip("Google has no panorama at the point today")
-    assert status == "OK", f"the metadata answered {status}: {payload.get('error_message')}"
-    assert payload.get("pano_id")
-    assert isinstance(payload.get("location"), dict) and {"lat", "lng"} <= set(payload["location"])
-    assert "date" in payload

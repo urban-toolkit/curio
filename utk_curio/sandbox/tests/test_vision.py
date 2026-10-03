@@ -16,6 +16,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from utk_curio.sandbox.util.catalog_helpers import CurioModel
 from utk_curio.sandbox.util.collections import make_collection_helpers
 from utk_curio.sandbox.util.vision import CLASS_COLOURS, make_curio_segment, palette
 
@@ -27,20 +28,25 @@ SYNTHETIC = REPO / "utk_curio" / "backend" / "tests" / "test_discovery" / "fixtu
 STREET = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
 
 
+def _loaded(folder):
+    """The model in *folder*, as ``curio_load_model`` gives it to a node."""
+    return CurioModel(Path(folder).name, str(folder))
+
+
 @pytest.fixture
 def photos(tmp_path):
-    """Two of the committed photos, as a node's curio_collection gives them."""
+    """Two of the committed photos, as a node's curio_load_collection gives them."""
     index = REPO / "datasets" / f"{SAMPLE}@1" / "data" / "index.parquet"
     helpers = make_collection_helpers(
         lambda _id: str(index), {SAMPLE: {"kind": "images", "root": str(STORAGE)}}, str(tmp_path / "media")
     )
-    frame = helpers["curio_collection"](SAMPLE).head(2)
+    frame = helpers["curio_load_collection"](SAMPLE).head(2)
     return frame, helpers
 
 
 def test_ddrnet_labels_the_photos(photos):
     frame, helpers = photos
-    out = make_curio_segment(helpers["curio_derived_file"])(frame, str(DDRNET), STREET)
+    out = make_curio_segment(helpers["curio_derived_file"])(frame, _loaded(DDRNET), STREET)
     assert len(out) == 2 and type(out).__name__ == "GeoDataFrame"
     for name in STREET:
         assert out[f"{name}_pct"].between(0, 100).all()
@@ -55,8 +61,8 @@ def test_a_share_is_of_all_the_pixels(photos):
     some vegetation does not read 100% (HF CV Inference's renormalization)."""
     frame, helpers = photos
     segment = make_curio_segment(helpers["curio_derived_file"])
-    alone = segment(frame, str(DDRNET), ["vegetation"])
-    every = segment(frame, str(DDRNET), None)
+    alone = segment(frame, _loaded(DDRNET), ["vegetation"])
+    every = segment(frame, _loaded(DDRNET), None)
     assert (alone["vegetation_pct"] < 100).all()
     assert list(alone["vegetation_pct"]) == list(every["vegetation_pct"])
     labels = json.loads((DDRNET / "manifest.json").read_text(encoding="utf-8"))["labels"]
@@ -66,7 +72,7 @@ def test_a_share_is_of_all_the_pixels(photos):
 
 def test_each_photo_gets_an_overlay_served_by_id(photos):
     frame, helpers = photos
-    out = make_curio_segment(helpers["curio_derived_file"])(frame, str(DDRNET), STREET)
+    out = make_curio_segment(helpers["curio_derived_file"])(frame, _loaded(DDRNET), STREET)
     for url, file_id in zip(out["overlay_url"], frame["file_id"]):
         assert url == f"/api/datasets/{SAMPLE}/media/{file_id}@0?variant=original"
 
@@ -75,7 +81,7 @@ def test_the_results_lead_the_row(photos):
     """A card's caption is the row's first columns, so what the model found
     has to come before the collection's own file columns."""
     frame, helpers = photos
-    out = make_curio_segment(helpers["curio_derived_file"])(frame, str(DDRNET), STREET)
+    out = make_curio_segment(helpers["curio_derived_file"])(frame, _loaded(DDRNET), STREET)
     assert list(out.columns[:2]) == ["dominant_class", "dominant_pct"]
     assert list(out.columns[2:2 + len(STREET)]) == [f"{name}_pct" for name in STREET]
     assert list(out.columns[2 + len(STREET):]) == [
@@ -94,35 +100,35 @@ def test_a_class_named_like_a_column_keeps_the_column(tmp_path, photos):
         "runtime": "onnx", "entry": "files/model.onnx", "labels": labels,
         "input": {"width": 64, "height": 64, "dtype": "float32"},
     }), encoding="utf-8")
-    out = make_curio_segment(helpers["curio_derived_file"])(frame, str(model), None)
+    out = make_curio_segment(helpers["curio_derived_file"])(frame, _loaded(model), None)
     assert list(out["path"]) == list(frame["path"])
     assert out["path_pct"].between(0, 100).all()
 
 
 def test_without_a_collection_there_is_no_overlay(photos):
     frame, _helpers = photos
-    out = make_curio_segment(None)(frame, str(DDRNET), STREET)
+    out = make_curio_segment(None)(frame, _loaded(DDRNET), STREET)
     assert out["overlay_url"].isna().all() and out["dominant_class"].notna().all()
 
 
 def test_a_class_the_model_lacks_names_the_ones_it_has(photos):
     frame, helpers = photos
     with pytest.raises(ValueError, match="no class 'tree'.*vegetation"):
-        make_curio_segment(helpers["curio_derived_file"])(frame, str(DDRNET), ["tree"])
+        make_curio_segment(helpers["curio_derived_file"])(frame, _loaded(DDRNET), ["tree"])
 
 
 def test_a_row_without_its_file_says_so(photos):
     frame, helpers = photos
     frame = frame.copy()
     frame.loc[frame.index[0], "path"] = None
-    out = make_curio_segment(helpers["curio_derived_file"])(frame, str(DDRNET), STREET)
+    out = make_curio_segment(helpers["curio_derived_file"])(frame, _loaded(DDRNET), STREET)
     assert out["segment_error"].iloc[0] == "the image is not on this machine"
     assert out["dominant_class"].iloc[1] in STREET
 
 
 def test_rows_without_paths_are_refused():
     with pytest.raises(ValueError, match="rows with a path"):
-        make_curio_segment(None)(pd.DataFrame({"x": [1]}), str(DDRNET))
+        make_curio_segment(None)(pd.DataFrame({"x": [1]}), _loaded(DDRNET))
 
 
 def test_a_float_graph_with_normalized_input(tmp_path, photos):
@@ -137,7 +143,7 @@ def test_a_float_graph_with_normalized_input(tmp_path, photos):
         "input": {"width": 64, "height": 64, "dtype": "float32", "scale": 1 / 255,
                   "mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
     }), encoding="utf-8")
-    out = make_curio_segment(helpers["curio_derived_file"])(frame, str(model), None)
+    out = make_curio_segment(helpers["curio_derived_file"])(frame, _loaded(model), None)
     labels = [f"c{i}_pct" for i in range(150)]
     assert out[labels].sum(axis=1).between(99.5, 100.5).all()
 
@@ -152,7 +158,7 @@ def test_a_manifest_naming_other_labels_is_refused(tmp_path, photos):
         "input": {"width": 64, "height": 64, "dtype": "float32"},
     }), encoding="utf-8")
     with pytest.raises(RuntimeError, match="answered 150 classes; its manifest names 2"):
-        make_curio_segment(None)(frame, str(model), None)
+        make_curio_segment(None)(frame, _loaded(model), None)
 
 
 def test_street_classes_keep_their_colours():
@@ -179,4 +185,4 @@ def test_a_transformers_model_without_its_libraries_says_what_to_install(tmp_pat
     # The way out it names has to exist: adding the model is what installs them.
     with pytest.raises(RuntimeError, match="runs on Transformers.*add it again from the Discovery "
                                            "Catalog.*torch, transformers and safetensors"):
-        make_curio_segment(None)(frame, str(model), None)
+        make_curio_segment(None)(frame, _loaded(model), None)

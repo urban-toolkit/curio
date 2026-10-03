@@ -72,9 +72,25 @@ class ExecutionTimeout(Exception):
         self.seconds = seconds
 
 
-# A validation run is a bounded, interactive slice — not a batch platform.
+# A validation run is a bounded, interactive slice, not a batch platform: at
+# most this many nodes RUN in one (an ancestor whose earlier output is reused,
+# and a pass-through node, run nothing). ``--validation-node-limit`` sets it.
 VALIDATION_NODE_LIMIT = 25
 _STDERR_TAIL_CHARS = 4000
+
+
+def validation_node_limit() -> int:
+    """How many nodes one validation run may execute
+    (``CURIO_VALIDATION_NODE_LIMIT``, set by ``--validation-node-limit``); an
+    unusable value falls back to the default, as ``exec_timeout_s`` does."""
+    raw = os.environ.get("CURIO_VALIDATION_NODE_LIMIT")
+    if raw is None or not str(raw).strip():
+        return VALIDATION_NODE_LIMIT
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        return VALIDATION_NODE_LIMIT
+    return value if value > 0 else VALIDATION_NODE_LIMIT
 
 
 def _sandbox_url() -> str:
@@ -241,7 +257,7 @@ def run_through_node(
     seed: int = 42,
     session_id: str | None = None,
     exec_fn=None,
-    node_limit: int = VALIDATION_NODE_LIMIT,
+    node_limit: int | None = None,
     progress=None,
     as_validation: bool = True,
     dataset_paths: dict | None = None,
@@ -252,12 +268,17 @@ def run_through_node(
     prior_outputs: dict | None = None,
     strict_upstream: bool = False,
     templates: dict | None = None,
+    acting_user=None,
 ) -> dict:
     """Execute the dataflow's ancestor slice THROUGH *node_id* and report
     per-node outcomes (memo dev/67-7).
 
+    ``acting_user`` is the account's ``User`` row, captured in the request by
+    a caller that runs this on a thread of its own: the Model Catalog finds
+    the models the account added through it.
+
     dev/115: ``dataset_paths`` (``{datasetId: absolutePath}`` for the code's
-    ``curio_dataset_path("<id>")`` calls) and ``exec_user_key`` ride the
+    ``curio_data_path("<id>")`` calls) and ``exec_user_key`` ride the
     payload exactly as the interactive ``/processPythonCode`` sends them —
     without them the Data Catalog's portable loader form failed under
     validation while working on Play. A sandbox execution timeout is the
@@ -320,15 +341,23 @@ def run_through_node(
                 )
                 return report
         seen.add(node.id)
-    if len(ordered) > node_limit:
+    prior_outputs = dict(prior_outputs or {})
+    limit = node_limit if node_limit is not None else validation_node_limit()
+    # #467: the bound is on what the sandbox runs. An ancestor that reuses an
+    # earlier output and a pass-through node run nothing; the target always runs.
+    to_run = [
+        n for n in ordered
+        if n.category == "code"
+        and (n.id == node_id or not isinstance(prior_outputs.get(n.id), dict))
+    ]
+    if len(to_run) > limit:
         report["error"] = (
-            f"the upstream slice has {len(ordered)} nodes (validation bound "
-            f"{node_limit}); run the dataflow manually instead"
+            f"the upstream slice has {len(to_run)} nodes to run (validation bound "
+            f"{limit}); run the dataflow manually instead"
         )
         return report
     report["order"] = [n.id for n in ordered]
     outputs: dict[str, dict] = {}
-    prior_outputs = dict(prior_outputs or {})
     for index, node in enumerate(ordered):
         if progress is not None:
             progress(node.id, index, len(ordered))
@@ -393,18 +422,18 @@ def run_through_node(
             # caller in the request thread; the sandbox injects curio_secret().
             payload["secrets"] = dict(secrets)
         if collections:
-            # Where each curio_collection("<id>") the slice reads keeps its
+            # Where each curio_load_collection("<id>") the slice reads keeps its
             # files, and where a node writes what it derives: the same
             # resolution /processPythonCode sends (discovery.application.exec_collections).
             payload["collections"] = dict(collections)
         if media_dir:
             payload["media_dir"] = media_dir
-        if is_py and "curio_model" in seeded:
-            # The Model Catalog folders the node runs, as /processPythonCode
+        if is_py and "curio_load_model" in seeded:
+            # The Model Catalog folders the node loads, as /processPythonCode
             # resolves them, for the request's account.
             from utk_curio.backend.app.model_catalog.service import resolve_exec_models
 
-            models = resolve_exec_models(seeded)
+            models = resolve_exec_models(seeded, user=acting_user)
             if models:
                 payload["models"] = models
         endpoint = "/exec" if is_py else "/execJs"

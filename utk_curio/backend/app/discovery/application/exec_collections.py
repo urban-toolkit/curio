@@ -2,7 +2,7 @@
 
 Shared by ``/processPythonCode`` and the agent runtime's runs through a node
 (``execution/runner.run_through_node``), so a node that calls
-``curio_collection("<id>")`` reads the same files on Play, on a node run and
+``curio_load_collection("<id>")`` reads the same files on Play, on a node run and
 under Solve's validation.
 """
 from __future__ import annotations
@@ -21,7 +21,7 @@ def resolve_exec_collections(code: str, user_key: str | None, *, user=None) -> t
     cached copies sit in ``objects``. ``media_dir`` is where a node may write
     the frames or clips it derives. *user* is the account's ``User`` row, which
     the Data Catalog needs to find the collection. Fail-open like dataset
-    paths: the injected ``curio_collection`` raises a clear error for anything
+    paths: the injected ``curio_load_collection`` raises a clear error for anything
     missing.
     """
     if not user_key:
@@ -58,16 +58,23 @@ def resolve_exec_collections(code: str, user_key: str | None, *, user=None) -> t
         return {}, None
 
 
-def resolve_spec_collections(spec_dict: dict | None, user_key: str | None, *extra: str | None) -> tuple[dict, str | None]:
+def resolve_spec_collections(
+    spec_dict: dict | None, user_key: str | None, *extra: str | None, user=None,
+) -> tuple[dict, str | None]:
     """:func:`resolve_exec_collections` for every node's code in *spec_dict*
-    plus *extra* (a candidate not yet in the spec), with the request's user
-    when there is one."""
+    plus *extra* (a candidate not yet in the spec).
+
+    *user* is the account's ``User`` row. A caller on a thread of its own
+    (Solve's validation, a node run's worker) passes the one it captured in
+    the request; without it, the request's user is used when there is one.
+    """
     codes = [str(n.get("content") or "") for n in ((spec_dict or {}).get("dataflow") or {}).get("nodes") or [] if isinstance(n, dict)]
     codes.extend(str(c or "") for c in extra)
-    try:
-        from flask import g, has_request_context
+    if user is None:
+        try:
+            from flask import g, has_request_context
 
-        user = getattr(g, "user", None) if has_request_context() else None
-    except Exception:  # noqa: BLE001 - no Flask, no user
-        user = None
+            user = getattr(g, "user", None) if has_request_context() else None
+        except Exception:  # noqa: BLE001 - no Flask, no user
+            user = None
     return resolve_exec_collections("\n".join(codes), user_key, user=user)

@@ -160,9 +160,9 @@ class TestDev115Passthrough:
             return {"stdout": [], "stderr": "", "output": {"path": "art", "dataType": "dataframe"}}
 
         spec = _spec([_node("t", node_type="curio.builtin/data-loading",
-                            content='p = curio_dataset_path("imported.x@1")')], [])
+                            content='p = curio_data_path("imported.x@1")')], [])
         result = validation.validate_candidate(
-            KEY, PID, spec, "t", 'p = curio_dataset_path("imported.x@1")\nreturn p',
+            KEY, PID, spec, "t", 'p = curio_data_path("imported.x@1")\nreturn p',
             exec_fn=_fn, dataset_paths={"imported.x@1": "/store/x.csv"}, exec_user_key="4242",
             secrets={"census": "k3y-v4lue-9876"},
         )

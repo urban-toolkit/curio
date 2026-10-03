@@ -98,7 +98,7 @@ describe("ModelsPaletteDropdown", () => {
   });
 
   test("a row says when no node on the canvas uses its model", async () => {
-    mockNodes.push({ id: "n1", data: { code: 'curio_model("imported.xabc123def456")' } });
+    mockNodes.push({ id: "n1", data: { code: 'curio_load_model("imported.xabc123def456")' } });
     render(<Controlled />);
     fireEvent.click(screen.getByRole("button", { name: /Model Catalog/ }));
     fireEvent.click(await screen.findByText("DDRNet23-Slim (street scenes)"));

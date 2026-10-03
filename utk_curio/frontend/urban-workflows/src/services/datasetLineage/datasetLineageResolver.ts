@@ -45,7 +45,7 @@ export interface LineageCanvasNode {
       string,
       { id?: string; datasetId?: string; title?: string } | null | undefined
     > | null;
-    /** Node source, scanned for ``curio_dataset_path`` references (#205). */
+    /** Node source, scanned for ``curio_data_path`` references (#205). */
     code?: string;
     defaultCode?: string;
   } | null;

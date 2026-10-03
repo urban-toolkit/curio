@@ -1146,9 +1146,15 @@ jobs:
           project: curio-ci-exec-user
           token: ${{ secrets.GITHUB_TOKEN }}
           timeout: "420"
+          # The planted .env is root-owned and world-readable, as a careless copy
+          # leaves one, for the boot's hardening to close; the compose overlay
+          # mounts it at /app/.env. It is not ./.env because compose reads that
+          # file itself, and could not once it is hardened.
           seed: |
             mkdir -p .curio/data .curio/users/some-other-user .curio/discovery instance datasets
             echo "another user's private dataset" > .curio/users/some-other-user/canary.txt
+            echo "SECRET_KEY=ci-planted-not-a-secret" > ci-planted.env
+            docker run --rm -v "$PWD:/w" alpine sh -c 'chown 0:0 /w/ci-planted.env && chmod 0644 /w/ci-planted.env'
 
       - name: 🐍 Set up Python
         uses: actions/setup-python@v6
@@ -1256,6 +1262,24 @@ jobs:
           mkdir -p ci-report
           python -m pytest utk_curio/backend/tests/test_packages/test_reference_preview_runner.py \
             -v -ra --junitxml=ci-report/preview-runner.xml
+
+      # These read the Dockerfile, MANIFEST.in, the CI compose files and .nvmrc,
+      # which the image does not ship, so in the unit job they skip. Here is
+      # the checkout, and CURIO_REQUIRE_CHECKOUT=1 fails a missing file.
+      - name: 🧪 Run the packaging checks that need the checkout
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          CURIO_REQUIRE_CHECKOUT: "1"
+        run: |
+          set -euo pipefail
+          tests=utk_curio/backend/tests
+          python -m pytest -v -ra --junitxml=ci-report/checkout.xml \
+            "$tests/test_discovery/test_shipped_sources.py::test_the_image_ships_the_catalog" \
+            "$tests/test_discovery/test_shipped_sources.py::test_the_wheel_ships_the_catalog" \
+            "$tests/test_discovery/test_shipped_sources.py::test_the_ci_container_is_pointed_at_the_recorded_corpus" \
+            "$tests/test_model_catalog/test_model_catalog.py::TestItShips::test_the_image_and_the_wheel_carry_models" \
+            "$tests/test_scripts/test_launcher_node_version.py::test_node_version_declarations_agree"
 
       - name: 📤 Upload the results for the CI report
         if: always()
@@ -1665,6 +1689,16 @@ jobs:
       - name: 🚫 Fail on a desktop test that skipped for want of WebGPU
         run: python3 scripts/ci_check_split.py inputs
 
+      # Every job that sends JUnit results, so a test only one of them runs is
+      # not mistaken for one that ran nowhere. Keep the desktop parts in step
+      # with e2e-desktop's matrix.
+      - name: 🚫 Fail on a test that no job ran
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          python3 scripts/ci_never_run.py inputs unit-backend-1 unit-backend-2 unit-sandbox \
+            test-gpu test-isolated test-exec-user preview-runner e2e-desktop-{1..10}
+
       - name: 📤 Upload the re-minted baselines
         if: always() && inputs.remint
         uses: actions/upload-artifact@v6
@@ -1711,6 +1745,7 @@ jobs:
             --junit "Isolated workflows=inputs/ci-inputs-test-isolated/e2e.xml"
             --junit "Execution-user boundary=inputs/ci-inputs-test-exec-user/exec-user.xml"
             --junit "Reference preview runner=inputs/ci-inputs-preview-runner/preview-runner.xml"
+            --junit "Packaging checks on the checkout=inputs/ci-inputs-preview-runner/checkout.xml"
             --jest "Jest frontend unit tests=inputs/ci-inputs-jest/jest.json"
             --tsc "TypeScript typecheck=inputs/ci-inputs-jest/typecheck.txt"
           )
