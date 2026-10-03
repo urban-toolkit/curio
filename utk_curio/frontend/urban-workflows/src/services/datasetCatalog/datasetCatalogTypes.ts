@@ -10,6 +10,7 @@ export type DatasetFormat =
   | "bundle"
   | "osm"
   | "gpkg"
+  | "gtfs"
   | "collection";
 
 export type DatasetSortMode = "recent" | "name";
@@ -43,12 +44,15 @@ export const DATASET_IMPORT_ACCEPT = IMPORTABLE_DATASET_EXTENSIONS.join(",");
 
 /** Prefixes of a synthetic layer-group id (mirrors the backend). The group is a
  * bundle-shaped catalog entry whose id addresses all its member layers. Two
- * importers make them: OSM PBF extracts and GeoPackages. */
+ * importers make them, OSM PBF extracts and GeoPackages, and the Discovery
+ * Catalog does for an OpenStreetMap download and a GTFS feed. */
 export const OSM_GROUP_ID_PREFIX = "osm.";
 export const GPKG_GROUP_ID_PREFIX = "gpkg.";
+export const GTFS_GROUP_ID_PREFIX = "gtfs.";
 export const LAYER_GROUP_ID_PREFIXES = [
   OSM_GROUP_ID_PREFIX,
   GPKG_GROUP_ID_PREFIX,
+  GTFS_GROUP_ID_PREFIX,
 ] as const;
 
 /** True when an id addresses a synthetic multi-layer group. */
@@ -60,10 +64,13 @@ export function isLayerGroupId(id: string | null | undefined): boolean {
 }
 
 /** Which importer made a layer group, read from its id: ``"gpkg"`` for a
- * GeoPackage, else ``"osm"``. Also the group's format and its ``curio://``
- * scheme. Mirrors the backend ``layer_group_kind`` and its ``osm`` fallback. */
-export function layerGroupKind(groupId: string): "osm" | "gpkg" {
-  return groupId.startsWith(GPKG_GROUP_ID_PREFIX) ? "gpkg" : "osm";
+ * GeoPackage, ``"gtfs"`` for a GTFS feed, else ``"osm"``. Also the group's
+ * format and its ``curio://`` scheme. Mirrors the backend ``layer_group_kind``
+ * and its ``osm`` fallback. */
+export function layerGroupKind(groupId: string): "osm" | "gpkg" | "gtfs" {
+  if (groupId.startsWith(GPKG_GROUP_ID_PREFIX)) return "gpkg";
+  if (groupId.startsWith(GTFS_GROUP_ID_PREFIX)) return "gtfs";
+  return "osm";
 }
 
 /**
@@ -732,6 +739,7 @@ export const DATASET_FORMAT_LABEL: Record<DatasetFormat, string> = {
   bundle: "Bundle",
   osm: "OSM PBF",
   gpkg: "GeoPackage",
+  gtfs: "GTFS",
   collection: "Collection",
 };
 

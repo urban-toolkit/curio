@@ -204,6 +204,11 @@
   color: var(--curio-format-gpkg-on-tint);
 }
 
+.formatBadge_gtfs {
+  background: var(--curio-format-gtfs-bg);
+  color: var(--curio-format-gtfs-on-tint);
+}
+
 .formatBadge_collection {
   background: var(--curio-format-collection-bg);
   color: var(--curio-format-collection-on-tint);
