@@ -185,7 +185,7 @@ class TestItReachesThePortalAndNowhereElse:
             def download(self, *a, **k):  # pragma: no cover
                 raise NotImplementedError
 
-        bound = T.CredentialedTransport(Spy(), f"X-App-Token:{SECRET}", hosts=("portal.example",))
+        bound = T.CredentialedTransport(Spy(), f"X-App-Token:{SECRET}", origins=("https://portal.example",))
         bound.json_get("https://portal.example/api/catalog/v1")
         assert seen["credential"] == f"X-App-Token:{SECRET}"
         assert SECRET not in seen["url"]
@@ -207,7 +207,7 @@ class TestItReachesThePortalAndNowhereElse:
             def download(self, url, sink, *, max_bytes, credential=None, **kwargs):
                 seen.append((url, credential))
 
-        bound = T.CredentialedTransport(Spy(), f"X-App-Token:{SECRET}", hosts=("portal.example",))
+        bound = T.CredentialedTransport(Spy(), f"X-App-Token:{SECRET}", origins=("https://portal.example",))
         bound.json_get("https://portal.example.evil.net/api")
         bound.get_page("https://cdn.example/listing")
         bound.download("https://scontent-ord5-1.xx.fbcdn.net/t.jpg", lambda b: None, max_bytes=10)
@@ -229,6 +229,74 @@ class TestItReachesThePortalAndNowhereElse:
         bound = DiscoveryService("alice", user=user)._transport_for(manifest)
         assert bound._for("https://portal.example/api", None) == f"X-App-Token:{SECRET}"
         assert bound._for("https://elsewhere.example/api", None) is None
+
+    @pytest.mark.parametrize("base, url, sent", [
+        ("https://portal.example", "https://portal.example/api", True),
+        # A URL without a port is on the scheme's default one.
+        ("https://portal.example", "https://portal.example:443/api", True),
+        ("https://portal.example", "https://PORTAL.example/api", True),
+        ("https://portal.example:443", "https://portal.example/api", True),
+        ("https://portal.example:8443", "https://portal.example:8443/api", True),
+        # The same host on another scheme or port is another origin.
+        ("https://portal.example", "http://portal.example/api", False),
+        ("https://portal.example", "http://portal.example:443/api", False),
+        ("https://portal.example", "https://portal.example:8443/api", False),
+        ("https://portal.example:8443", "https://portal.example/api", False),
+    ])
+    def test_the_service_sends_it_only_to_the_manifests_origin(
+        self, discovery_dir, app, db, user_and_token, base, url, sent
+    ):
+        """Scheme, host and port, as a browser compares origins. Comparing the
+        host alone sent a key for an https portal over plain http, and to any
+        other port on that host."""
+        from utk_curio.backend.app.discovery.service import DiscoveryService
+
+        write_source(discovery_dir, "source.a.origin@1", a_manifest(
+            id="source.a.origin", name="Origin Portal",
+            provider={"type": "socrata", "baseUrl": base},
+            auth={"mode": "optional-token", "secretId": "socrata.app-token",
+                  "headerName": "X-App-Token"},
+            capabilities={"formats": ["csv"]}))
+        manifest = load_source_manifest(discovery_dir / "source.a.origin@1")
+        user, _token = user_and_token
+        user.socrata_app_token = SECRET
+        db.session.commit()
+        seen = []
+
+        class Spy:
+            def json_get(self, url, *, credential=None, headers=None):
+                seen.append(credential)
+                return "{}"
+
+            def get_page(self, url, *, credential=None, headers=None):
+                seen.append(credential)
+                return "{}", {}
+
+            def download(self, url, sink, *, max_bytes, credential=None, **kwargs):
+                seen.append(credential)
+
+        bound = DiscoveryService("alice", user=user, transport=Spy())._transport_for(manifest)
+        bound.json_get(url)
+        bound.get_page(url)
+        bound.download(url, lambda b: None, max_bytes=10)
+        expected = f"X-App-Token:{SECRET}" if sent else None
+        assert seen == [expected, expected, expected]
+
+    def test_plain_http_defaults_to_port_80(self):
+        """A manifest is https, so this is the binding on its own."""
+        seen = []
+
+        class Spy:
+            def json_get(self, url, *, credential=None, headers=None):
+                seen.append(credential)
+                return "{}"
+
+        bound = T.CredentialedTransport(Spy(), f"X-App-Token:{SECRET}", origins=("http://portal.example",))
+        for url in ("http://portal.example:80/a", "http://portal.example/a", "https://portal.example/a",
+                    "http://portal.example:8080/a", "not a url"):
+            bound.json_get(url)
+        key = f"X-App-Token:{SECRET}"
+        assert seen == [key, key, None, None, None]
 
     def test_a_required_token_source_refuses_rather_than_trying_empty(self, discovery_dir, app, db, user_and_token):
         from utk_curio.backend.app.discovery.application.browse import DiscoveryBrowse

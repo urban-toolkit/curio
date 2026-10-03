@@ -1307,7 +1307,7 @@ The model family (`huggingface-models`) is searched like a portal and added like
 
 - A key is saved through `PATCH /api/auth/me` and read back only as a boolean. A guest on a `--deploy` instance is refused with a 403.
 - `CURIO_DEFAULT_SOCRATA_APP_TOKEN` is inherited by every account that has not saved its own.
-- `auth.scheme` is `header` or `query` (`AUTH_SCHEMES`); Google Street View sends its key as `?key=`. The transport adds a query key to the request it sends and nothing else, and takes it out of every URL and message it hands back (`_keyed`, `_redact`), so egress audit records, refusal messages and job records stay safe to store verbatim. The transport binds the credential when it is built, and `CredentialedTransport` sends it only to the source's own host, so no provider ever handles a token.
+- `auth.scheme` is `header` or `query` (`AUTH_SCHEMES`); Google Street View sends its key as `?key=`. The transport adds a query key to the request it sends and nothing else, and takes it out of every URL and message it hands back (`_keyed`, `_redact`), so egress audit records, refusal messages and job records stay safe to store verbatim. The transport binds the credential when it is built, and `CredentialedTransport` sends it only to the source's own origin (the scheme, host and port of `provider.baseUrl`, a missing port being the scheme's default), so no provider ever handles a token.
 
 ### Providers
 

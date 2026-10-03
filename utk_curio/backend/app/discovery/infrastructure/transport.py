@@ -284,15 +284,17 @@ class CredentialedTransport:
     it here means the one place that materialises a secret stays the one place,
     while every provider stays ignorant of it.
 
-    *hosts* are where the credential may go: the source's own host. A request
-    to any other host (a Mapillary thumbnail on a CDN, a file a portal links
-    to elsewhere) is sent without it. Required, so a binding cannot forget it.
+    *origins* are where the credential may go: the source's own base URL,
+    compared as scheme, host and port (a URL without a port is on its scheme's
+    default one). A request anywhere else (a Mapillary thumbnail on a CDN, a
+    file a portal links to elsewhere, the same host over plain http or on
+    another port) is sent without it. Required, so a binding cannot forget it.
     """
 
-    def __init__(self, inner: DiscoveryTransport, credential: str | None, *, hosts) -> None:
+    def __init__(self, inner: DiscoveryTransport, credential: str | None, *, origins) -> None:
         self._inner = inner
         self._credential = credential
-        self._hosts = frozenset(str(h).lower() for h in hosts if h)
+        self._origins = frozenset(o for o in map(_origin, origins) if o)
 
     # Exposed for tests that assert on what was requested; carries no secret.
     @property
@@ -302,7 +304,7 @@ class CredentialedTransport:
     def _for(self, url: str, credential: str | None) -> str | None:
         if credential:
             return credential
-        return self._credential if _host(url).lower() in self._hosts else None
+        return self._credential if _origin(url) in self._origins else None
 
     def json_get(self, url, *, credential=None, headers=None):
         return self._inner.json_get(
@@ -431,3 +433,20 @@ def _host(url: str) -> str:
         return urlparse(url).hostname or url
     except ValueError:
         return url
+
+
+_DEFAULT_PORTS = {"https": 443, "http": 80}
+
+
+def _origin(url: str) -> tuple[str, str, int | None] | None:
+    """``(scheme, host, port)`` of *url*, the port defaulted by its scheme, or
+    None for a URL that has none (which then matches nothing)."""
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(str(url))
+        scheme, host = parts.scheme.lower(), (parts.hostname or "").lower()
+        port = parts.port if parts.port is not None else _DEFAULT_PORTS.get(scheme)
+    except ValueError:
+        return None
+    return (scheme, host, port) if scheme and host else None

@@ -69,11 +69,11 @@ Pick the pattern by who the key belongs to:
 
 Three rules the per-account pattern follows:
 
-**The key goes only to its source's host.** `_transport_for` in
+**The key goes only to its source's origin.** `_transport_for` in
 [`discovery/service.py`](../utk_curio/backend/app/discovery/service.py) wraps
-the transport in `CredentialedTransport` with the host of the source's
-`provider.baseUrl`; a request to any other host, such as a Mapillary photo on
-its CDN, goes without the key. `credential_header` turns the slot into a header
+the transport in `CredentialedTransport` with the source's `provider.baseUrl`;
+a request to any other scheme, host or port, such as a Mapillary photo on its
+CDN, goes without the key. `credential_header` turns the slot into a header
 (`auth.headerName` plus `auth.valuePrefix`) or, for `auth.scheme: "query"`, a
 query parameter (`auth.paramName`). The transport is the only code that adds
 it: providers never see the value, and a query key is taken out of every URL

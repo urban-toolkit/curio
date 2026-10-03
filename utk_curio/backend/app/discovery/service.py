@@ -8,7 +8,6 @@ the internal layering can move without a sweep.
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlsplit
 
 from flask import current_app
 
@@ -145,9 +144,9 @@ class DiscoveryService:
             return inner
         # Bound here rather than passed down, so providers never handle a
         # token and cannot put one in a URL they build or a message they log.
-        # Only the source's own host receives it.
+        # Only the source's own origin (scheme, host and port) receives it.
         return transport_mod.CredentialedTransport(
-            inner, credential, hosts=(urlsplit(manifest.provider.base_url).hostname,)
+            inner, credential, origins=(manifest.provider.base_url,)
         )
 
     def _storage_for(self, manifest: DiscoverySourceManifest):
