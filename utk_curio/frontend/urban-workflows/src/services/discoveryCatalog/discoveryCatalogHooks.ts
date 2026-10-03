@@ -123,6 +123,15 @@ export interface UseDiscoverySearchResult {
   searched: boolean;
 }
 
+export interface UsePagedDiscoverySearchResult extends UseDiscoverySearchResult {
+  /** Asks one source for the page after the rows shown, and adds its rows
+   *  below them. Does nothing for a search across sources, which has no next
+   *  page, or when the source said there is none. */
+  loadMore: () => void;
+  /** True while that next page is in flight. */
+  loadingMore: boolean;
+}
+
 /**
  * Search one portal, or all of them when `sourceDir` is omitted.
  *
@@ -135,7 +144,7 @@ export interface UseDiscoverySearchResult {
  */
 export function useDiscoverySearch(
   params: DiscoverySearchQuery & { sourceDir?: string }
-): UseDiscoverySearchResult {
+): UsePagedDiscoverySearchResult {
   const { sourceDir, q, format, provider, limit } = params;
   // The access filter narrows a search across sources, as it narrows the roster.
   const auth = sourceDir ? undefined : params.auth;
@@ -143,8 +152,19 @@ export function useDiscoverySearch(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Which query the rows on screen answer: a next page that lands after the
+  // query changed belongs to the old one and is dropped.
+  const generation = useRef(0);
+  const shown = useRef(data);
+  shown.current = data;
+  const moreController = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    generation.current += 1;
+    moreController.current?.abort();
+    moreController.current = null;
+    setLoadingMore(false);
     const query = (q || "").trim();
     // A federated search with no query would ask every portal for everything.
     // A scoped one is fine empty: a WFS source lists its whole catalogue.
@@ -205,7 +225,42 @@ export function useDiscoverySearch(
     };
   }, [sourceDir, q, format, provider, auth, limit]);
 
-  return { data, loading, error, searched };
+  useEffect(() => () => moreController.current?.abort(), []);
+
+  const loadMore = useCallback(() => {
+    const cursor = shown.current.nextCursor;
+    if (!sourceDir || !cursor || moreController.current) return;
+    const asked = generation.current;
+    const controller = new AbortController();
+    moreController.current = controller;
+    setLoadingMore(true);
+    discoveryCatalogApi
+      .searchSource(sourceDir, { q: (q || "").trim(), format, limit, cursor }, controller.signal)
+      .then((page) => {
+        if (asked !== generation.current) return;
+        setData((before) => {
+          const seen = new Set(before.resources.map((r) => `${r.sourceId}:${r.resourceId}`));
+          return {
+            ...page,
+            resources: [
+              ...before.resources,
+              ...page.resources.filter((r) => !seen.has(`${r.sourceId}:${r.resourceId}`)),
+            ],
+          };
+        });
+        setError(null);
+      })
+      .catch((err: Error) => {
+        if (asked !== generation.current || err.name === "AbortError") return;
+        setError(err.message || "The next page could not be loaded.");
+      })
+      .finally(() => {
+        if (moreController.current === controller) moreController.current = null;
+        if (asked === generation.current) setLoadingMore(false);
+      });
+  }, [sourceDir, q, format, limit]);
+
+  return { data, loading, error, searched, loadMore, loadingMore };
 }
 
 

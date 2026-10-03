@@ -128,6 +128,10 @@ export function DiscoveryResourceRow({
     (Boolean(storage) || !jobFormat || !format || jobFormat === format);
   const failed = job != null && (job.status === "failed" || job.status === "refused");
   const landedAt = (finished ? (modelRow ? job?.model?.id : job?.datasetId) : null) ?? heldId;
+  // The row offers its Add or Download, rather than the dataset or model it landed as.
+  const offersAction = !running && !((finished || held) && landedAt && (modelRow ? onViewModel : onViewDataset));
+  // Why that Add or Download is off: on the button, and in the row.
+  const unavailable = offersAction && !resource.acquirable ? resource.unavailableReason || null : null;
   const kind = resource.kind ?? null;
   const splitBy = storage?.declared?.splitBy ?? [];
   const perFile = storage?.declared?.datasets === "per-file";
@@ -209,6 +213,11 @@ export function DiscoveryResourceRow({
             </a>
           ) : null}
         </div>
+        {unavailable ? (
+          <p className={styles.unavailable} role="note">
+            {unavailable}
+          </p>
+        ) : null}
         {samples.length > 0 && storage ? (
           <div className={styles.samples} role="group" aria-label={`Files in ${resource.name}`}>
             {samples.map((relpath, index) => (
@@ -278,6 +287,7 @@ export function DiscoveryResourceRow({
                 type="button"
                 className={styles.download}
                 disabled={!resource.acquirable}
+                title={unavailable ?? undefined}
                 onClick={add}
               >
                 Add to Data Catalog
@@ -289,7 +299,7 @@ export function DiscoveryResourceRow({
                   type="button"
                   className={styles.download}
                   disabled={!onDownload || !resource.acquirable}
-                  title={onDownload ? undefined : "Downloading is not available here"}
+                  title={onDownload ? unavailable ?? undefined : "Downloading is not available here"}
                   onClick={() => (mustAsk ? setNarrowing(true) : onDownload?.(resource, format))}
                 >
                   {modelRow ? "Add to Model Catalog" : "Download"}

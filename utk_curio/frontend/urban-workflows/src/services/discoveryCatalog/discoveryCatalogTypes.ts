@@ -21,6 +21,7 @@ export type DiscoveryProviderType =
   | "autark-osm"
   | "mapillary"
   | "google-streetview"
+  | "overture"
   | "huggingface-models";
 
 /** Matches `STORAGE_PROVIDER_TYPES`: sources that declare their resources. */
@@ -32,6 +33,7 @@ export const SERVICE_PROVIDER_TYPES: readonly DiscoveryProviderType[] = [
   "autark-osm",
   "mapillary",
   "google-streetview",
+  "overture",
 ];
 
 /** A `portal` is searched for its datasets; a `storage` source declares them;
@@ -97,6 +99,7 @@ export const DISCOVERY_PROVIDER_LABEL: Record<DiscoveryProviderType, string> = {
   "autark-osm": "OpenStreetMap (Autark)",
   mapillary: "Mapillary",
   "google-streetview": "Google Street View",
+  overture: "Overture Maps",
   "huggingface-models": "Hugging Face models",
 };
 
@@ -382,6 +385,9 @@ export interface DiscoveryResource {
   landingUrl: string | null;
   sizeHint: number | null;
   acquirable: boolean;
+  /** Why the row cannot be added or downloaded, in the words its add would
+   *  fail with; null when it can. */
+  unavailableReason?: string | null;
   /** Set when this account already downloaded this resource, so the row links
    *  to the dataset instead of offering a second copy. */
   alreadyHeldDatasetId: string | null;

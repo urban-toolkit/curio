@@ -2,7 +2,7 @@
 
 ``scripts/ci_pick_runners.py`` runs as the first job of the Full stack build and
 writes the ``runs-on`` of the CPU jobs (GitHub-hosted first, then arcade) and
-the GPU job (arcade-gpu first, then utk). A wrong answer sends jobs to a pool
+the GPU job (the arcade GPU pool first, then utk). A wrong answer sends jobs to a pool
 that is full or down, and a crash would stop the whole run, so these feed it
 job lists shaped like the GitHub jobs API's.
 """
@@ -48,7 +48,7 @@ def _arcade(status="in_progress", age_s=0):
 
 
 def _arcade_gpu(status="in_progress", age_s=0):
-    return _job(status, ["self-hosted", "gpu", "h100"], "arcade-gpu" if status == "in_progress" else None, age_s)
+    return _job(status, ["self-hosted", "gpu", "h100"], "arcade-gpu-02" if status == "in_progress" else None, age_s)
 
 
 def test_room_on_hosted_takes_every_cpu_job():
@@ -60,18 +60,24 @@ def test_jobs_past_the_hosted_room_go_to_arcade():
     assert list(chosen.values()) == ["hosted", "hosted", "arcade", "arcade", "arcade"]
 
 
-def test_an_idle_arcade_gpu_takes_the_gpu_job_and_a_busy_one_sends_it_to_utk():
-    assert picker.assign_gpu(GPU, False) == {"test-gpu": "arcade-gpu"}
-    assert picker.assign_gpu(GPU, True) == {"test-gpu": "utk"}
-    # A second GPU job finds arcade-gpu taken by the first.
-    assert picker.assign_gpu(["a", "b"], False) == {"a": "arcade-gpu", "b": "utk"}
+def test_a_free_arcade_gpu_runner_takes_the_gpu_job_and_none_free_sends_it_to_utk():
+    assert picker.assign_gpu(GPU, 1) == {"test-gpu": "arcade-gpu"}
+    assert picker.assign_gpu(GPU, 0) == {"test-gpu": "utk"}
+    # A second GPU job finds the one free arcade runner taken by the first.
+    assert picker.assign_gpu(["a", "b"], 1) == {"a": "arcade-gpu", "b": "utk"}
+
+
+def test_gpu_jobs_fill_every_free_arcade_gpu_runner_before_utk():
+    keys = [f"gpu-{i}" for i in range(picker.GPU_RUNNERS + 1)]
+    chosen = picker.assign_gpu(keys, picker.GPU_RUNNERS)
+    assert [chosen[k] for k in keys] == ["arcade-gpu"] * picker.GPU_RUNNERS + ["utk"]
 
 
 def test_forced_pools_take_every_job():
     assert set(picker.assign_cpu(CPU, 20, "arcade").values()) == {"arcade"}
     assert set(picker.assign_cpu(CPU, 0, "hosted").values()) == {"hosted"}
-    assert picker.assign_gpu(GPU, True, "arcade") == {"test-gpu": "arcade-gpu"}
-    assert picker.assign_gpu(GPU, False, "utk") == {"test-gpu": "utk"}
+    assert picker.assign_gpu(GPU, 0, "arcade") == {"test-gpu": "arcade-gpu"}
+    assert picker.assign_gpu(GPU, picker.GPU_RUNNERS, "utk") == {"test-gpu": "utk"}
 
 
 def test_jobs_are_counted_against_the_pool_they_hold():
@@ -84,13 +90,26 @@ def test_jobs_are_counted_against_the_pool_they_hold():
     assert (counts["arcade_stuck"], counts["arcade_gpu_stuck"], counts["hosted_full"]) == (False, False, False)
 
 
+def test_a_job_on_any_arcade_gpu_runner_counts_against_the_gpu_pool():
+    jobs = [_job("in_progress", [], "arcade-gpu-01"), _job("in_progress", [], "arcade-gpu-03")]
+    assert picker.busy(jobs, NOW)["arcade-gpu"] == 2
+
+
 def test_hosted_room_left_by_other_runs_and_this_run_s_hosted_jobs_goes_first():
-    jobs = [_hosted() for _ in range(15)] + [_arcade_gpu()]
+    jobs = [_hosted() for _ in range(15)] + [_arcade_gpu() for _ in range(picker.GPU_RUNNERS)]
     chosen, how = picker.pick(CPU, GPU, "auto", "auto", lambda: jobs, hosted_reserved=3)
     # 20 slots, 15 held by other runs, 3 kept for this run's hosted-only jobs.
     assert [chosen[k] for k in CPU] == ["hosted", "hosted", "arcade", "arcade", "arcade"]
     assert chosen["test-gpu"] == "utk"
     assert any("2 of 20" in line for line in how)
+    assert any(f"0 of {picker.GPU_RUNNERS} arcade GPU runners free" in line for line in how)
+
+
+def test_one_free_arcade_gpu_runner_still_takes_the_gpu_job():
+    jobs = [_arcade_gpu() for _ in range(picker.GPU_RUNNERS - 1)]
+    chosen, how = picker.pick(CPU, GPU, "auto", "auto", lambda: jobs)
+    assert chosen["test-gpu"] == "arcade-gpu"
+    assert any(f"1 of {picker.GPU_RUNNERS} arcade GPU runners free" in line for line in how)
 
 
 def test_a_hosted_job_queued_past_a_minute_means_the_hosted_limit_is_reached():
@@ -114,6 +133,16 @@ def test_an_arcade_gpu_job_queued_too_long_sends_test_gpu_to_utk():
     jobs = [_arcade_gpu("queued", age_s=picker.STUCK_AFTER_S + 60)]
     chosen, _ = picker.pick(CPU, GPU, "auto", "auto", lambda: jobs)
     assert chosen["test-gpu"] == "utk"
+
+
+def test_the_gpu_pool_is_stuck_only_while_a_runner_should_be_free():
+    queued = _arcade_gpu("queued", age_s=picker.STUCK_AFTER_S + 60)
+    # One runner should be free yet the queued job waits: runners are offline.
+    some_running = [_arcade_gpu() for _ in range(picker.GPU_RUNNERS - 1)] + [queued]
+    assert picker.busy(some_running, NOW)["arcade_gpu_stuck"] is True
+    # Every runner is running a job: the queued one is just waiting its turn.
+    all_running = [_arcade_gpu() for _ in range(picker.GPU_RUNNERS)] + [queued]
+    assert picker.busy(all_running, NOW)["arcade_gpu_stuck"] is False
 
 
 def test_an_api_failure_still_picks_hosted_first():

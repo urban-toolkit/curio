@@ -31,17 +31,20 @@ from typing import Any, Callable, Protocol
 
 from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.app.discovery.domain.errors import (
+    DiscoveryError,
     DownloadTooLarge,
     ProviderError,
 )
+from utk_curio.backend.app.discovery.domain.limits import max_download_bytes
 
 #: Portal metadata is not prompt text, so it does not take the agent-shaped
 #: 256 KiB bound. A CKAN ``package_search?rows=20`` routinely exceeds it, and
 #: GeoSampa's WFS capabilities document is 425 KB.
 MAX_METADATA_BYTES = 1024 * 1024
 
-#: The server's hard ceiling. A manifest may lower it, never raise it.
-MAX_DISCOVERY_DOWNLOAD_BYTES = 64 * 1024 * 1024
+#: The server's hard ceiling (``curio.py --discovery-max-download-mb``, 1 GiB
+#: by default). A manifest may lower it, never raise it.
+MAX_DISCOVERY_DOWNLOAD_BYTES = max_download_bytes()
 
 METADATA_TIMEOUT_S = 15
 
@@ -56,10 +59,7 @@ class FixtureMissing(DiscoveryTransportError):
     """No recorded response for this URL. Names it, and how to record one."""
 
 
-#: The ceiling for caching one file of a storage collection to disk. Nothing
-#: passes through memory on that path, so it is a disk bound rather than the
-#: download ceiling above, which exists because an import used to read the
-#: file whole.
+#: The ceiling for caching one file of a storage collection to disk.
 MAX_COLLECTION_OBJECT_BYTES = 4 * 1024 * 1024 * 1024
 
 
@@ -74,7 +74,13 @@ class DiscoveryTransport(Protocol):
 
     def download(self, url: str, sink: Callable[[bytes], None], *, max_bytes: int,
                  credential: str | None = None, headers: dict[str, str] | None = None,
-                 progress=None, ceiling: int | None = None) -> "egress.DownloadResult": ...
+                 progress=None, ceiling: int | None = None,
+                 before_body: Callable[[dict, str], None] | None = None,
+                 ) -> "egress.DownloadResult":
+        """Stream *url* to *sink*. ``before_body(headers, final_url)`` runs on
+        the response headers before any body byte is read; what it raises
+        ends the download there."""
+        ...
 
 
 class HttpDiscoveryTransport:
@@ -126,7 +132,7 @@ class HttpDiscoveryTransport:
         return result.body, dict(result.headers or {})
 
     def download(self, url, sink, *, max_bytes, credential=None, headers=None, progress=None,
-                 ceiling=None):
+                 ceiling=None, before_body=None):
         bound = min(int(max_bytes), int(ceiling or MAX_DISCOVERY_DOWNLOAD_BYTES))
         sent, key = _keyed(url, credential)
         failure = None
@@ -139,7 +145,11 @@ class HttpDiscoveryTransport:
                 headers=headers,
                 secret_headers=_merge(None, credential),
                 progress=progress,
+                before_body=before_body,
             )
+        except DiscoveryError:
+            # The caller's own refusal from ``before_body``: its answer as it is.
+            raise
         except egress.EgressTooLarge as exc:
             if not key:
                 raise DownloadTooLarge(str(exc)) from exc
@@ -224,7 +234,7 @@ class FixtureDiscoveryTransport:
         return body, dict(entry.get("headers") or {})
 
     def download(self, url, sink, *, max_bytes, credential=None, headers=None, progress=None,
-                 ceiling=None):
+                 ceiling=None, before_body=None):
         import hashlib
 
         # A Range request is recorded under its own key, so a probe of a file's
@@ -234,9 +244,12 @@ class FixtureDiscoveryTransport:
         status = int(entry.get("status", 200))
         if not (200 <= status < 300):
             raise DiscoveryTransportError(f"{_host(url)} answered {status}")
+        recorded = dict(entry.get("headers") or {})
+        # The headers are seen before the body, as the real transport sees them.
+        if before_body is not None:
+            before_body(dict(recorded), entry.get("finalUrl", url))
         blob = (self.root / entry["file"]).read_bytes()
         bound = min(int(max_bytes), int(ceiling or MAX_DISCOVERY_DOWNLOAD_BYTES))
-        recorded = dict(entry.get("headers") or {})
         declared = recorded.get("Content-Length")
         # The real transport refuses on Content-Length BEFORE reading a body,
         # so the fixture one must too or that branch is never exercised.
@@ -302,7 +315,10 @@ class CredentialedTransport:
         )
 
     def download(self, url, sink, *, max_bytes, credential=None, headers=None, progress=None,
-                 ceiling=None):
+                 ceiling=None, before_body=None):
+        # Passed only when given, so a transport written before the hook
+        # existed still takes every other download.
+        extra = {"before_body": before_body} if before_body is not None else {}
         return self._inner.download(
             url,
             sink,
@@ -311,6 +327,7 @@ class CredentialedTransport:
             headers=headers,
             progress=progress,
             ceiling=ceiling,
+            **extra,
         )
 
 
