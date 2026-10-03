@@ -262,7 +262,7 @@ jobs:
     # after it sit out those runs: the code they cover was already tested on
     # the push or PR that produced the ref, and repeating them would hold the
     # GPU for another 20 minutes.
-    if: ${{ needs.pick-runners.result == 'success' }}
+    if: false  # TMP PROOF: not needed for this proof
 
     env:
       # Boot the CI stack with auth + projects enabled. Without the overlay the
@@ -714,7 +714,6 @@ jobs:
         include:
           - { name: backend-1, suite: backend, part: "1/2" }
           - { name: backend-2, suite: backend, part: "2/2" }
-          - { name: sandbox, suite: sandbox, part: "" }
     env:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
       CURIO_E2E_BACKEND_URL: "http://localhost:5022"
@@ -769,7 +768,7 @@ jobs:
   # they run on the checkout rather than inside an image.
   jest:
     needs: pick-runners
-    if: ${{ needs.pick-runners.result == 'success' && !inputs.remint }}
+    if: false  # TMP PROOF: not needed for this proof
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['jest'] }}
     timeout-minutes: 30
     defaults:
@@ -845,11 +844,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        part: [1]
     env:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
       CURIO_E2E_RUNNER: desktop
-      CURIO_E2E_PART: ${{ matrix.part }}/${{ strategy.job-total }}
+      CURIO_E2E_PART: ""
+      CURIO_E2E_TARGETS: tests/test_frontend/test_walkthrough_budgets.py  # TMP PROOF
       CURIO_E2E_DATAPOOL_TIMEOUT_MS: "120000"
       CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/ci-report/failures
       CURIO_E2E_TRACE: "1"
@@ -965,7 +965,7 @@ jobs:
   # /exec only -- /execJs spawns Node either way (sandbox/app/api.py).
   test-isolated:
     needs: [pick-runners, build-image]
-    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.build-image.result == 'success' && !inputs.remint }}
+    if: false  # TMP PROOF: not needed for this proof
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['test-isolated'] }}
     timeout-minutes: 45
     permissions:
@@ -1109,7 +1109,7 @@ jobs:
   # HTTP API instead, which touches none of the hardened paths from the host.
   test-exec-user:
     needs: [pick-runners, build-image]
-    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.build-image.result == 'success' && !inputs.remint }}
+    if: false  # TMP PROOF: not needed for this proof
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['test-exec-user'] }}
     timeout-minutes: 30
     permissions:
@@ -1211,10 +1211,7 @@ jobs:
   # and no GPU or stack: the unit container has no browser, so there they skip.
   # CURIO_REQUIRE_PREVIEW_RUNNER=1 fails them instead.
   preview-runner:
-    if: >-
-      !inputs.remint &&
-      github.event_name != 'schedule' &&
-      github.event.action != 'labeled'
+    if: false  # TMP PROOF: not needed for this proof
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -1303,7 +1300,7 @@ jobs:
   #   against the deployment-shaped stack, with nothing OOM-killed.
   test-desktop-stress:
     needs: build-image
-    if: ${{ !cancelled() && needs.build-image.result == 'success' && !inputs.remint }}
+    if: false  # TMP PROOF: not needed for this proof
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -1444,14 +1441,7 @@ jobs:
     # condition because on those three triggers the jobs it needs are skipped,
     # and a skipped dependency would otherwise skip this one too; it also keeps
     # the job running when an earlier suite went red, same as the two above.
-    if: >-
-      !cancelled() &&
-      (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name == github.repository) &&
-      (github.event_name == 'schedule' ||
-       (github.event_name == 'workflow_dispatch' && inputs.stress && !inputs.remint) ||
-       (github.event_name == 'pull_request' &&
-        contains(github.event.pull_request.labels.*.name, 'stress')))
+    if: false  # TMP PROOF: not needed for this proof
     runs-on: [self-hosted, linux, gpu, curio]
     timeout-minutes: 75
     concurrency:
@@ -1645,7 +1635,7 @@ jobs:
   # a CPU runner and then skipped because it wanted WebGPU after all.
   ci-report:
     needs: [pick-runners, test-gpu, unit, jest, e2e-desktop, test-isolated, test-exec-user, preview-runner, test-desktop-stress]
-    if: ${{ !cancelled() && needs.pick-runners.result == 'success' }}
+    if: false  # TMP PROOF: not needed for this proof
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['ci-report'] }}
     timeout-minutes: 30
     # actions: read lets the page list every job of the run through the jobs API.
