@@ -55,8 +55,8 @@ export function attachMapInteractionZoomFix(canvas: HTMLCanvasElement): () => vo
 
     // Map a client coordinate from rendered (scaled) space back to the unscaled CSS
     // space autk-map expects.
-    const cx = (rect: DOMRect, sx: number, clientX: number) => rect.left + (clientX - rect.left) / sx;
-    const cy = (rect: DOMRect, sy: number, clientY: number) => rect.top + (clientY - rect.top) / sy;
+    const cx = (rect: DOMRect, sx: number, clientX: number) => rect.left + (clientX - rect.left) * sx;
+    const cy = (rect: DOMRect, sy: number, clientY: number) => rect.top + (clientY - rect.top) * sy;
 
     const mine = (e: Event) => (e as any)[ZOOM_FIX_CORRECTED] === true;
 

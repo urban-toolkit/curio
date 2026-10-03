@@ -31,7 +31,7 @@ export function totalCount(counts: Array<number | undefined>): number | undefine
 
 /** ``name (N unit)`` when the count is known, else the bare name. */
 export function countedItem(name: string, count: number | undefined, unit: string): string {
-    return typeof count === 'number' ? `${name} (${count} ${unit})` : name;
+    return typeof count === 'number' ? `${name} [${count} ${unit}]` : name;
 }
 
 /**
@@ -59,6 +59,6 @@ export function emptyStateWords(
 /** ``Loaded 3 tables: a, b, c`` - the one line a data/compute node shows after a run. */
 export function describeAutkRun(verb: string, noun: string, items: string[]): string {
     if (items.length === 0) return `${verb} nothing - the spec names no ${noun}s.`;
-    const plural = items.length === 1 ? noun : `${noun}s`;
+    const plural = noun;
     return `${verb} ${items.length} ${plural}: ${items.join(', ')}`;
 }
