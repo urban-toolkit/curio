@@ -340,8 +340,14 @@ class TestItBecomesADataset:
         assert F.RELEASE in dataset["description"] and "ODbL-1.0" in dataset["description"]
 
     def test_an_autark_map_draws_it_as_buildings(self, client, auth, live):
+        # The Data Loading node loads it by id, and Play sends its layer with its
+        # path, so curio_load_data hands an Autark map Buildings as buildings
+        # (the sandbox's side is in sandbox/tests/test_catalog_helpers.py).
+        from utk_curio.backend.app.datasets.domain.catalog_item import execution_format
+
         dataset = self._add(client, auth)
-        assert 'df.metadata = {"layerType": "buildings"}' in dataset["loaderSnippet"]["code"]
+        assert dataset["loaderSnippet"]["code"] == f'df = curio_load_data("{dataset["id"]}")'
+        assert execution_format(dataset) == {"format": "parquet", "layerType": "buildings"}
 
     def test_it_records_what_it_was_asked(self, client, auth, live):
         provenance = self._add(client, auth)["discoverySource"]
@@ -372,9 +378,13 @@ class TestItBecomesADataset:
 
 
 def test_a_parquet_layer_of_an_autark_type_is_typed_in_its_loader():
-    from utk_curio.backend.app.datasets.domain.catalog_item import loader_snippet
+    """With an id the sandbox's curio_load_data types it (execution_format); an
+    id-less loader spells the reading out and names the layer itself."""
+    from utk_curio.backend.app.datasets.domain.catalog_item import execution_format, loader_snippet
 
-    typed = loader_snippet("parquet", "/x.parquet", "data.x", layer_type="roads")["code"]
+    typed = loader_snippet("parquet", "/x.parquet", None, layer_type="roads")["code"]
     assert typed.endswith('\ndf.metadata = {"layerType": "roads"}')
-    plain = loader_snippet("parquet", "/x.parquet", "data.x")["code"]
+    plain = loader_snippet("parquet", "/x.parquet", None)["code"]
     assert "layerType" not in plain
+    item = {"format": "parquet", "layerName": "roads", "discoverySource": {"sourceId": "source.overture.maps@1"}}
+    assert execution_format(item) == {"format": "parquet", "layerType": "roads"}

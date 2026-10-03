@@ -157,11 +157,18 @@ describe("snippetForFormat", () => {
       layerName: "buildings",
       discoverySource: { sourceId: "source.overture.maps@1", resourceId: "buildings" },
     };
-    const code = buildDatasetLoaderCode(overture as never);
+    // With an id the layer travels to the sandbox with the dataset's format,
+    // so the code is the one load call.
+    expect(buildDatasetLoaderCode(overture as never)).toBe(
+      'df = curio_load_data("imported.overture-buildings@1")\nreturn df',
+    );
+    // Without an id the literal-path loader names the layer itself.
+    const idless = { ...overture, id: undefined };
+    const code = buildDatasetLoaderCode(idless as never);
     expect(code).toContain("df = gpd.read_parquet(dataset_path)");
     expect(code).toContain('    df = pd.read_parquet(dataset_path)\ndf.metadata = {"layerType": "buildings"}\n');
     expect(code.trimEnd().endsWith("return df")).toBe(true);
-    for (const other of [{ ...overture, discoverySource: null }, { ...overture, layerName: "places" }]) {
+    for (const other of [{ ...idless, discoverySource: null }, { ...idless, layerName: "places" }]) {
       expect(buildDatasetLoaderCode(other as never)).not.toContain("df.metadata");
     }
   });
