@@ -1185,7 +1185,7 @@ def render_comparison(report, record):
 def render_footer(report):
     meta = report.meta
     link = (f' Also in <a href="{esc(meta["run_url"])}#artifacts">this run\'s artifacts</a>: '
-            "allure-report, container-logs, and e2e-failures when a test failed.") if meta["run_url"] else ""
+            "container-logs, and e2e-failures when a test failed.") if meta["run_url"] else ""
     return (f'<footer><p>Built by <code>scripts/ci_report.py</code> at {esc(meta["generated"])}.'
             f"{link}</p></footer>")
 

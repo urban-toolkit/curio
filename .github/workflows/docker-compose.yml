@@ -105,11 +105,11 @@ on:
         default: ''
       # Where the CPU jobs and test-gpu run (scripts/ci_pick_runners.py).
       # `auto` defers to the repository variables CURIO_CI_POOL and
-      # CURIO_CI_GPU_POOL, and picks arcade first when those are unset.
+      # CURIO_CI_GPU_POOL, and picks when those are unset.
       pool:
-        description: 'CPU jobs: auto (arcade first, then GitHub-hosted), arcade, or hosted'
+        description: 'CPU jobs: auto (GitHub-hosted first, then arcade), hosted, or arcade'
         type: choice
-        options: [auto, arcade, hosted]
+        options: [auto, hosted, arcade]
         default: auto
       gpu_pool:
         description: 'test-gpu: auto (arcade-gpu first, then utk), arcade, or utk'
@@ -124,8 +124,9 @@ permissions:
 
 # Where the jobs run:
 #
-#   * CPU jobs: the self-hosted arcade runners ([self-hosted, cpu], 20 of them)
-#     while they have room, GitHub-hosted ubuntu-latest for the rest.
+#   * CPU jobs: GitHub-hosted ubuntu-latest while the organization's hosted
+#     runners have room, the self-hosted arcade runners ([self-hosted, cpu],
+#     20 of them) for the rest.
 #   * test-gpu: arcade-gpu ([self-hosted, gpu, h100]) when it is idle, utk-gpu
 #     ([self-hosted, gpu, curio]) otherwise.
 #   * test-desktop-stress, unit (sandbox) and preview-runner: always
@@ -173,8 +174,10 @@ jobs:
           sparse-checkout: scripts/ci_pick_runners.py
           sparse-checkout-cone-mode: false
 
-      # CPU keys in critical-path order: the first ones get arcade's free
-      # runners. One key per job and per matrix entry, matching each runs-on.
+      # CPU keys in critical-path order: the first ones get the hosted room.
+      # One key per job and per matrix entry, matching each runs-on. Three of
+      # this run's jobs always run hosted (unit sandbox, test-desktop-stress,
+      # preview-runner), so their slots are held back.
       - name: 🎯 Pick a runner for each job
         id: pick
         env:
@@ -182,7 +185,7 @@ jobs:
           CURIO_CI_POOL: ${{ (inputs.pool && inputs.pool != 'auto') && inputs.pool || vars.CURIO_CI_POOL || 'auto' }}
           CURIO_CI_GPU_POOL: ${{ (inputs.gpu_pool && inputs.gpu_pool != 'auto') && inputs.gpu_pool || vars.CURIO_CI_GPU_POOL || 'auto' }}
         run: |
-          python3 scripts/ci_pick_runners.py --gpu test-gpu build-image jest \
+          python3 scripts/ci_pick_runners.py --hosted-reserved 3 --gpu test-gpu build-image jest \
             e2e-desktop-1 e2e-desktop-2 e2e-desktop-3 e2e-desktop-4 e2e-desktop-5 \
             e2e-desktop-6 e2e-desktop-7 e2e-desktop-8 e2e-desktop-9 e2e-desktop-10 \
             unit-backend-1 unit-backend-2 test-isolated test-exec-user ci-report
@@ -613,8 +616,7 @@ jobs:
             echo "Re-minting with PYTEST_ADDOPTS=$PYTEST_ADDOPTS"
           fi
           bash scripts/test.sh --e2e-only --use-existing "${extra[@]}" \
-            --parallel "$CURIO_E2E_PARALLEL" \
-            --allure-dir "$GITHUB_WORKSPACE/ci-report/allure-results"
+            --parallel "$CURIO_E2E_PARALLEL"
 
       # What a re-mint wrote into this checkout: the baselines whose screen
       # changed, and any it minted. Exactly those files, flat, for review on the
@@ -659,7 +661,7 @@ jobs:
             > "$GITHUB_WORKSPACE/shard-logs.txt" 2>&1 || true
 
       # Everything the ci-report job builds the run's page from: this job's
-      # JUnit, screenshot comparisons, failure diagnostics, Allure results and,
+      # JUnit, screenshot comparisons, failure diagnostics and,
       # on a re-mint, the baselines it wrote.
       - name: 📤 Upload the results for the CI report
         if: always()
@@ -919,8 +921,7 @@ jobs:
             fi
             export PYTEST_ADDOPTS
           fi
-          bash scripts/test.sh --e2e-only --use-existing "${extra[@]}" \
-            --allure-dir "$GITHUB_WORKSPACE/ci-report/allure-results"
+          bash scripts/test.sh --e2e-only --use-existing "${extra[@]}"
 
       - name: 📦 Collect the re-minted baselines
         if: always() && env.CURIO_REMINT == '1'
@@ -1610,9 +1611,8 @@ jobs:
   # One page for the whole run (scripts/ci_report.py): every job's result, each
   # suite's results with the failures, and every screenshot comparison, from
   # every runner alike. Uploaded unzipped, so its entry in the run's
-  # artifact list opens in the browser. It also merges the e2e jobs' Allure
-  # results into one report, and on a re-mint their baselines into one
-  # reminted-baselines artifact to review and commit.
+  # artifact list opens in the browser. On a re-mint it also merges the e2e
+  # jobs' baselines into one reminted-baselines artifact to review and commit.
   #
   # And it checks that the split lost nothing a run could still lose. That
   # every test is collected on exactly one runner is a unit test
@@ -1640,15 +1640,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      # The Allure CLI runs on Java, which ubuntu-latest ships and the arcade
-      # runners do not.
-      - name: ☕ Set up Java (self-hosted)
-        if: runner.environment == 'self-hosted'
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "17"
-
       # The page transcodes screenshots to WebP when Pillow is there.
       - name: 📦 Install Pillow
         run: python -m pip install --quiet Pillow
@@ -1663,9 +1654,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p merged/comparisons merged/failures merged/allure-results merged/reminted-baselines
+          mkdir -p merged/comparisons merged/failures merged/reminted-baselines
           for dir in inputs/*/; do
-            for part in comparisons failures allure-results reminted-baselines; do
+            for part in comparisons failures reminted-baselines; do
               if [ -d "$dir$part" ]; then cp -r "$dir$part/." "merged/$part/"; fi
             done
           done
@@ -1682,26 +1673,6 @@ jobs:
           path: merged/reminted-baselines/
           if-no-files-found: warn
           retention-days: 7
-
-      - name: 📊 Install Allure CLI
-        if: always()
-        run: |
-          ALLURE_VERSION=2.32.0
-          wget -q "https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.tgz"
-          tar -xzf "allure-${ALLURE_VERSION}.tgz"
-          echo "$PWD/allure-${ALLURE_VERSION}/bin" >> "$GITHUB_PATH"
-
-      - name: 📊 Generate Allure report
-        if: always()
-        run: allure generate merged/allure-results -o allure-report --clean
-
-      - name: 📤 Upload Allure report artifact
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: allure-report
-          path: allure-report
-          retention-days: 30
 
       # continue-on-error: the page reports on the run, it must never be the
       # reason the run is red. The PR fields come in through env, never inline

@@ -47,8 +47,9 @@ on CI -- see *Screenshot baselines*.
 CI splits the suite between a self-hosted GPU runner, the only kind with
 hardware WebGPU, and a matrix of CPU runners
 ([`runner_split.py`](runner_split.py)). The run's `pick-runners` job chooses
-each job's runner: the self-hosted arcade runners (`[self-hosted, cpu]`) while
-they have room and GitHub-hosted `ubuntu-latest` after that, and for the GPU
+each job's runner: GitHub-hosted `ubuntu-latest` while the organization's
+hosted runners have room and the self-hosted arcade runners (`[self-hosted,
+cpu]`) after that, and for the GPU
 share `arcade-gpu` when it is idle and `utk-gpu` otherwise. The GPU share is
 still called `utk`, after the first GPU runner. A test runs on `utk` when its
 browser runs WebGPU: a `test_workflows.py` case whose dataflow has an Autark node, a
@@ -65,9 +66,10 @@ CURIO_E2E_RUNNER=desktop CURIO_E2E_PART=3/10 pytest ...                  # one o
 ```
 
 `CURIO_E2E_PART` balances the parts by the group durations in
-`e2e_durations.json`. Refresh it from a run's `allure-report` artifact with
-`python scripts/e2e_durations.py <allure-report dir>`; a group missing from it
-is priced at a default.
+`e2e_durations.json`. Refresh it from a run's e2e JUnit, `e2e.xml` in the
+`ci-inputs-test-gpu` and `ci-inputs-e2e-desktop-*` artifacts, with
+`python scripts/e2e_durations.py <e2e.xml> ...`; a group missing from it is
+priced at a default.
 
 With `--use-existing`, pairs 1..N-1 must already be running on the ports
 `python -m utk_curio.backend.tests.shards K` prints (that is what CI does,
