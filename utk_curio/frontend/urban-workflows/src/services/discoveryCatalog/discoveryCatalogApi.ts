@@ -16,6 +16,10 @@ import type {
   DiscoveryStorageFilesPage,
 } from "./discoveryCatalogTypes";
 
+/** Dispatched after anything that changes the roster, so every open Discovery
+ *  Catalog surface reloads. */
+export const DISCOVERY_CATALOG_REFRESH_EVENT = "curio:discovery-catalog-refresh";
+
 function query(params: DiscoveryCatalogQuery): string {
   const search = new URLSearchParams();
   if (params.q?.trim()) search.set("q", params.q.trim());
@@ -170,7 +174,12 @@ function searchQuery(params: DiscoverySearchQuery & { rescan?: boolean }): strin
   return text ? `?${text}` : "";
 }
 
-/** Drop the cached roster. Call after anything that could change it. */
+/** Drop the cached roster, then tell every mounted surface (page, drawer,
+ *  source page) to reload. Call after anything that could change it, such as
+ *  a key saved or removed in API Settings. The cache goes first so a surface
+ *  that mounts later cannot find the old rows. */
 export function notifyDiscoveryCatalogRefresh(): void {
   invalidateDiscoveryCatalogCache();
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(DISCOVERY_CATALOG_REFRESH_EVENT));
 }

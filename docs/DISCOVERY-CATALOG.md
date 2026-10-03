@@ -257,7 +257,7 @@ Some sources take an API key. Mapillary and Google Street View need one. The Cit
 2. **Open API Settings**: the button in the page header, or in the Agent Catalog drawer's header on the canvas. A source's **Add yours in API Settings** opens it at that source's row.
 3. **Find the row** under **Discovery Catalog**: **Socrata app token**, **Hugging Face token**, **Google Maps API key** or **Mapillary access token**. The row says which sources use it.
 4. **Paste the key** into the row's field and click the row's **Save**. The field then reads *(saved - leave blank to keep)*.
-5. **Check the card.** In the Discovery Catalog, the source's card reads **Token set**, and its rows download.
+5. **Check the card.** In the Discovery Catalog, the source's card reads **Token set** as soon as you save, also on a page that was already open, and its rows download.
 
 ### Your key and your account
 

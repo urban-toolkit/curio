@@ -83,11 +83,13 @@ const SOCRATA_ROW = (over: Row = {}): Row => ({
 });
 let mockKeyRows: Row[] = [];
 const mockListKeys = jest.fn(() => Promise.resolve({ keys: mockKeyRows }));
+const mockNotifyRefresh = jest.fn();
 jest.mock("../../services/discoveryCatalog", () => {
   const actual = jest.requireActual("../../services/discoveryCatalog");
   return {
     ...actual,
     discoveryCatalogApi: { ...actual.discoveryCatalogApi, listKeys: () => mockListKeys() },
+    notifyDiscoveryCatalogRefresh: () => mockNotifyRefresh(),
   };
 });
 
@@ -464,5 +466,36 @@ describe("API Settings: the Discovery Catalog's keys", () => {
   it("a source's key link opens on that key's row", async () => {
     render(<ApiSettingsModal isOpen onClose={jest.fn()} focus={{ section: "source-key", slot: "socrata.app-token" }} />);
     await waitFor(() => expect(document.querySelector(SOCRATA_ID)).toHaveFocus());
+  });
+
+  // The Discovery Catalog's cards and source pages read whether a key is set,
+  // so they hear when one is saved or removed (#626).
+  it("tells the Discovery Catalog once a key is saved", async () => {
+    open();
+    const row = await findRow("socrata.app-token");
+    fireEvent.change(document.querySelector(SOCRATA_ID) as HTMLInputElement, { target: { value: "tok-123" } });
+    fireEvent.click(row.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockNotifyRefresh).toHaveBeenCalledTimes(1));
+    expect(mockUpdate).toHaveBeenCalledWith({ socrata_app_token: "tok-123" });
+    expect(mockUpdate.mock.invocationCallOrder[0]).toBeLessThan(mockNotifyRefresh.mock.invocationCallOrder[0]);
+  });
+
+  it("tells the Discovery Catalog once a key is removed", async () => {
+    mockKeyRows = [HF_ROW(), SOCRATA_ROW({ present: true })];
+    open();
+    fireEvent.click(await (await findRow("socrata.app-token")).findByRole("button", { name: "Remove saved key" }));
+    await waitFor(() => expect(mockNotifyRefresh).toHaveBeenCalledTimes(1));
+    expect(mockUpdate).toHaveBeenCalledWith({ socrata_app_token: "" });
+    expect(mockUpdate.mock.invocationCallOrder[0]).toBeLessThan(mockNotifyRefresh.mock.invocationCallOrder[0]);
+  });
+
+  it("a save that fails tells the Discovery Catalog nothing", async () => {
+    mockUpdate.mockRejectedValueOnce(new Error("refused"));
+    open();
+    const row = await findRow("socrata.app-token");
+    fireEvent.change(document.querySelector(SOCRATA_ID) as HTMLInputElement, { target: { value: "tok-123" } });
+    fireEvent.click(row.getByRole("button", { name: "Save" }));
+    expect(await row.findByText("refused")).toBeInTheDocument();
+    expect(mockNotifyRefresh).not.toHaveBeenCalled();
   });
 });
