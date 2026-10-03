@@ -121,7 +121,6 @@ describe('projects page chrome', () => {
       'Agent Catalog',
       'Discovery Catalog',
       'Model Catalog',
-      'Monitor',
     ]);
   });
 

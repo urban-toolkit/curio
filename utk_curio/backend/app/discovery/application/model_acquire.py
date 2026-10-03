@@ -106,6 +106,11 @@ class ModelAcquire:
         held = self.already_held(manifest, repo)
         if held is not None and not refresh:
             return {"model": held, "alreadyPresent": True, "unchanged": True}
+        # Refused before anything is fetched: a guest on a --deploy instance
+        # adds no model, whatever its runtime needs (#623).
+        refusal = self._models().model_refusal()
+        if refusal:
+            raise CapabilityUnsupported(refusal)
         provider = self._provider_for(manifest)
         if stage is not None:
             stage("Reading the model's files…")
@@ -126,7 +131,7 @@ class ModelAcquire:
             raw = self._manifest(manifest, plan, folder / "files")
             if stage is not None:
                 stage("Adding to your Model Catalog…")
-            model = self._models().install_downloaded(folder, raw)
+            model = self._models().install_downloaded(folder, raw, replace=held)
         finally:
             shutil.rmtree(work, ignore_errors=True)
         report = None

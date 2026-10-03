@@ -22,6 +22,7 @@ from utk_curio.backend.app.agents.application.proposals import acquire as agents
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
@@ -84,13 +85,13 @@ def _dataset_path_topup(project_id: str, user_obj, mapping: dict, ids: list) -> 
 
 
 def _dataset_ids_in(codes: list) -> list[str]:
-    """Every ``curio_dataset_path("<id>")`` id these codes reference."""
+    """Every Data Catalog id these codes reference, through
+    ``curio_dataset_path("<id>")`` or ``curio_collection("<id>")``: the ids
+    Play maps (``code_refs.dataset_ids_in_code``), since a collection's loader
+    reads its index through the same path map (#597)."""
     out: list[str] = []
     for code in codes:
-        if not isinstance(code, str) or "curio_dataset_path" not in code:
-            continue
-        for match in source_grounding.DATASET_PATH_CALL_RE.finditer(code):
-            dataset_id = match.group(2)
+        for dataset_id in dataset_ids_in_code(code):
             if dataset_id not in out:
                 out.append(dataset_id)
     return out
@@ -112,10 +113,7 @@ def _filter_dataset_paths(mapping: dict, codes: list) -> dict:
         return {}
     out: dict = {}
     for code in codes:
-        if not isinstance(code, str) or "curio_dataset_path" not in code:
-            continue
-        for match in source_grounding.DATASET_PATH_CALL_RE.finditer(code):
-            dataset_id = match.group(2)
+        for dataset_id in dataset_ids_in_code(code):
             if dataset_id in mapping:
                 out[dataset_id] = mapping[dataset_id]
     return out
@@ -123,22 +121,14 @@ def _filter_dataset_paths(mapping: dict, codes: list) -> dict:
 
 def _exec_dataset_paths(project_id: str, *codes: str) -> dict:
     """dev/115: the ``{datasetId: absolutePath}`` mapping the sandbox needs for
-    every ``curio_dataset_path("<id>")`` call in *codes* — resolved the way
-    ``/processPythonCode`` resolves it (``resolve_execution_paths``, contained
-    paths only). Fail-open to ``{}``: an unmapped id raises a clear per-id
-    error inside the sandbox, which the correction loop then sees. Needs the
-    request context (``g.user``); a Solve batch precomputes it in the request
-    thread and hands the mapping to its workers."""
-    ids: list[str] = []
-    for code in codes:
-        if not isinstance(code, str) or "curio_dataset_path" not in code:
-            continue
-        for match in source_grounding.DATASET_PATH_CALL_RE.finditer(code):
-            dataset_id = match.group(2)
-            if dataset_id not in ids:
-                ids.append(dataset_id)
-            if len(ids) >= 32:
-                break
+    every ``curio_dataset_path("<id>")`` and ``curio_collection("<id>")`` call
+    in *codes* — resolved the way ``/processPythonCode`` resolves it
+    (``resolve_execution_paths``, contained paths only). Fail-open to ``{}``:
+    an unmapped id raises a clear per-id error inside the sandbox, which the
+    correction loop then sees. Needs the request context (``g.user``); a Solve
+    batch precomputes it in the request thread and hands the mapping to its
+    workers."""
+    ids = _dataset_ids_in(list(codes))[:32]
     if not ids:
         return {}
     try:

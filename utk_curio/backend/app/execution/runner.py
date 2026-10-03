@@ -252,9 +252,14 @@ def run_through_node(
     prior_outputs: dict | None = None,
     strict_upstream: bool = False,
     templates: dict | None = None,
+    acting_user=None,
 ) -> dict:
     """Execute the dataflow's ancestor slice THROUGH *node_id* and report
     per-node outcomes (memo dev/67-7).
+
+    ``acting_user`` is the account's ``User`` row, captured in the request by
+    a caller that runs this on a thread of its own: the Model Catalog finds
+    the models the account added through it.
 
     dev/115: ``dataset_paths`` (``{datasetId: absolutePath}`` for the code's
     ``curio_dataset_path("<id>")`` calls) and ``exec_user_key`` ride the
@@ -404,7 +409,7 @@ def run_through_node(
             # resolves them, for the request's account.
             from utk_curio.backend.app.model_catalog.service import resolve_exec_models
 
-            models = resolve_exec_models(seeded)
+            models = resolve_exec_models(seeded, user=acting_user)
             if models:
                 payload["models"] = models
         endpoint = "/exec" if is_py else "/execJs"

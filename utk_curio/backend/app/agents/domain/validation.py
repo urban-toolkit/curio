@@ -108,18 +108,21 @@ def validate_candidate(
     secrets: dict | None = None,
     prior_outputs: dict | None = None,
     templates: dict | None = None,
+    acting_user=None,
 ) -> dict:
     """Run the dataflow through *node_id* with the candidate overlaid and
     return ``{"verdict", "evidence"}`` (see module docstring). dev/115:
     ``dataset_paths`` / ``exec_user_key`` ride through to the runner so the
     Data Catalog's ``curio_dataset_path("<id>")`` loaders resolve exactly as
-    on Play."""
+    on Play. ``acting_user`` (#485) is the account's ``User`` row, captured in
+    the request: validation runs on a thread of its own, where the account's
+    collections and added models cannot be found without it."""
     from utk_curio.backend.app.discovery.application.exec_collections import (
         resolve_spec_collections,
     )
 
     collections, media_dir = resolve_spec_collections(
-        spec_dict, exec_user_key or user_key, candidate_content,
+        spec_dict, exec_user_key or user_key, candidate_content, user=acting_user,
     )
     report = runner.run_through_node(
         user_key, project_id, spec_dict, node_id,
@@ -130,6 +133,7 @@ def validate_candidate(
         prior_outputs=prior_outputs,
         strict_upstream=True,  # dev/118: an empty upstream is a blocker, never None downstream
         templates=templates,  # dev/119: the roster classifies executability
+        acting_user=acting_user,
     )
     executed = [nid for nid, rec in report["nodes"].items() if rec.get("executed")]
     reused = [nid for nid, rec in report["nodes"].items() if rec.get("status") == "reused"]

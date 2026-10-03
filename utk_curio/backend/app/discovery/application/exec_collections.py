@@ -58,16 +58,23 @@ def resolve_exec_collections(code: str, user_key: str | None, *, user=None) -> t
         return {}, None
 
 
-def resolve_spec_collections(spec_dict: dict | None, user_key: str | None, *extra: str | None) -> tuple[dict, str | None]:
+def resolve_spec_collections(
+    spec_dict: dict | None, user_key: str | None, *extra: str | None, user=None,
+) -> tuple[dict, str | None]:
     """:func:`resolve_exec_collections` for every node's code in *spec_dict*
-    plus *extra* (a candidate not yet in the spec), with the request's user
-    when there is one."""
+    plus *extra* (a candidate not yet in the spec).
+
+    *user* is the account's ``User`` row. A caller on a thread of its own
+    (Solve's validation, a node run's worker) passes the one it captured in
+    the request; without it, the request's user is used when there is one.
+    """
     codes = [str(n.get("content") or "") for n in ((spec_dict or {}).get("dataflow") or {}).get("nodes") or [] if isinstance(n, dict)]
     codes.extend(str(c or "") for c in extra)
-    try:
-        from flask import g, has_request_context
+    if user is None:
+        try:
+            from flask import g, has_request_context
 
-        user = getattr(g, "user", None) if has_request_context() else None
-    except Exception:  # noqa: BLE001 - no Flask, no user
-        user = None
+            user = getattr(g, "user", None) if has_request_context() else None
+        except Exception:  # noqa: BLE001 - no Flask, no user
+            user = None
     return resolve_exec_collections("\n".join(codes), user_key, user=user)
