@@ -119,10 +119,13 @@ export function DiscoveryResourceRow({
   // Download and Narrow…, which fetch another part of it, or all of it.
   const partLanded =
     job?.status === "completed" && jobSource?.parametersHash && !storage && !modelRow ? job.datasetId : null;
-  // A finished download counts for the format it fetched only.
+  // A finished download counts for the format it fetched only. A row with no
+  // format of its own (a pasted link) is whatever its file turned out to be.
   const jobFormat = (job?.dataset as { format?: string } | null | undefined)?.format;
   const finished =
-    job?.status === "completed" && !narrowedJob && (Boolean(storage) || !jobFormat || jobFormat === format);
+    job?.status === "completed" &&
+    !narrowedJob &&
+    (Boolean(storage) || !jobFormat || !format || jobFormat === format);
   const failed = job != null && (job.status === "failed" || job.status === "refused");
   const landedAt = (finished ? (modelRow ? job?.model?.id : job?.datasetId) : null) ?? heldId;
   const kind = resource.kind ?? null;

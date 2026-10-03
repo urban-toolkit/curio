@@ -131,7 +131,7 @@ A storage source is read when it is first opened, and again when its listing is 
 
 **I want a model a node can run.** Open the **Hugging Face models** card's page and search it, for example for `segformer`. Each row names the model's task, its weights (ONNX or safetensors), its downloads and its license. Click **Add to Model Catalog**; when it is done, the row offers **View model**. On the canvas, drag the model from **Model Catalog** in the left Tools panel onto an **Image Segmentation** node: see [MODEL-CATALOG.md](MODEL-CATALOG.md).
 
-**I have a link to a file.** Click **Add by link** on the Direct URL card, paste the link into **Link to a file**, and click **Download**.
+**I have a link to a file.** Click **Add by link** on the Direct URL card, paste the link into **Link to a file**, and click **Download**. The link gets a row of its own, which offers **View dataset** once the file is in your Data Catalog.
 
 **A source needs a token.** Get one from the source (its **View details** links to its instructions), paste it into **API Settings**, and save. [Part 5](#5-api-tokens) walks through it step by step.
 
