@@ -1,27 +1,31 @@
-"""Choose the runner for each job of a Full stack build run: arcade first.
+"""Choose the runner for each job of a Full stack build run.
 
-CPU jobs run on the self-hosted arcade pool (``[self-hosted, cpu]``) while it
-has free runners, and on GitHub-hosted ``ubuntu-latest`` once it has none.
-The GPU job (test-gpu) runs on arcade-gpu (``[self-hosted, gpu, h100]``) when
-it is idle, and on utk-gpu (``[self-hosted, gpu, curio]``) when it is not.
-GitHub cannot express "this runner, or that one if busy": ``runs-on`` has no
-"or", and it sends ``ubuntu-latest`` jobs only to its own runners. So the
-pick-runners job runs this first, and each job reads its runner from the JSON
-map this writes to ``runners`` in ``$GITHUB_OUTPUT``:
+CPU jobs run on GitHub-hosted ``ubuntu-latest`` while the organization's
+hosted runners have room, and on the self-hosted arcade pool
+(``[self-hosted, cpu]``) after that. The GPU job (test-gpu) runs on arcade-gpu
+(``[self-hosted, gpu, h100]``) when it is idle, and on utk-gpu
+(``[self-hosted, gpu, curio]``) when it is not. GitHub cannot express "this
+runner, or that one if busy": ``runs-on`` has no "or", and it sends
+``ubuntu-latest`` jobs only to its own runners. So the pick-runners job runs
+this first, and each job reads its runner from the JSON map this writes to
+``runners`` in ``$GITHUB_OUTPUT``:
 
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['jest'] }}
 
-How busy arcade is comes from this repository's own queued and running jobs:
-its CPU runner group serves this repository alone, so that count is exact. The
-GPU runners also take other repositories' jobs, which this cannot see; a job
-sent to a busy arcade-gpu waits for it.
+How busy each pool is comes from this repository's own queued and running
+jobs. The hosted limit (``HOSTED_SLOTS`` concurrent jobs) is shared with every
+other repository of the organization, which this cannot see, so a curio job
+that has waited ``HOSTED_FULL_AFTER_S`` for a hosted runner also counts as the
+limit reached. The arcade CPU group serves this repository alone, so its count
+is exact. The GPU runners also take other repositories' jobs; a job sent to a
+busy arcade-gpu waits for it.
 
-``CURIO_CI_POOL`` = ``arcade`` or ``hosted`` sends every CPU job there, and
+``CURIO_CI_POOL`` = ``hosted`` or ``arcade`` sends every CPU job there, and
 ``CURIO_CI_GPU_POOL`` = ``arcade`` or ``utk`` the GPU job; ``auto`` (or unset)
 picks. They come from the dispatch form, or the repository variables of the
 same names when the form says ``auto``.
 
-    python scripts/ci_pick_runners.py --gpu test-gpu build-image jest e2e-desktop-1 ...
+    python scripts/ci_pick_runners.py --hosted-reserved 3 --gpu test-gpu build-image jest ...
 """
 
 from __future__ import annotations
@@ -45,11 +49,16 @@ GPU_POOLS = ("arcade-gpu", "utk")
 
 #: Runners in the arcade CPU pool (arcade-cpu-01..20).
 CPU_RUNNERS = 20
+#: Concurrent GitHub-hosted jobs the organization's plan allows.
+HOSTED_SLOTS = 20
 
 #: A job still queued after this long for a pool with idle runners means the
 #: pool is not taking jobs (runners offline). The API does not say whether a
 #: runner is online, so this stands in for it.
 STUCK_AFTER_S = 300
+#: A hosted runner normally starts a job within seconds; a curio job queued
+#: this long for one means the organization's hosted limit is reached.
+HOSTED_FULL_AFTER_S = 60
 
 #: Job states that hold, or are about to hold, a runner.
 ACTIVE = {"queued", "in_progress", "waiting", "pending", "requested"}
@@ -78,7 +87,7 @@ def _age_s(job: dict, now: datetime) -> float:
 
 
 def busy(jobs: list[dict], now: datetime) -> dict:
-    """Jobs holding or waiting for each pool, and whether an arcade pool is stuck."""
+    """Jobs holding or waiting for each pool, and whether a pool is stuck or full."""
     counts = {pool: 0 for pool in RUNS_ON}
     running = {pool: 0 for pool in RUNS_ON}
     oldest_queued = {pool: 0.0 for pool in RUNS_ON}
@@ -95,20 +104,21 @@ def busy(jobs: list[dict], now: datetime) -> dict:
             oldest_queued[pool] = max(oldest_queued[pool], _age_s(job, now))
     counts["arcade_stuck"] = oldest_queued["arcade"] > STUCK_AFTER_S and running["arcade"] < CPU_RUNNERS
     counts["arcade_gpu_stuck"] = oldest_queued["arcade-gpu"] > STUCK_AFTER_S and running["arcade-gpu"] == 0
+    counts["hosted_full"] = oldest_queued["hosted"] > HOSTED_FULL_AFTER_S
     return counts
 
 
-def assign_cpu(keys: list[str], free_arcade: int, pool: str = "auto") -> dict:
-    """Arcade for each job while it has free runners, hosted after that."""
+def assign_cpu(keys: list[str], free_hosted: int, pool: str = "auto") -> dict:
+    """GitHub-hosted for each job while it has room, arcade after that."""
     if pool in CPU_POOLS:
         return {key: pool for key in keys}
     chosen = {}
     for key in keys:
-        if free_arcade > 0:
-            chosen[key] = "arcade"
-            free_arcade -= 1
-        else:
+        if free_hosted > 0:
             chosen[key] = "hosted"
+            free_hosted -= 1
+        else:
+            chosen[key] = "arcade"
     return chosen
 
 
@@ -161,8 +171,13 @@ def active_jobs(api: str, repo: str, token: str, skip_run: str) -> list[dict]:
     return jobs
 
 
-def pick(cpu_keys: list[str], gpu_keys: list[str], pool: str, gpu_pool: str, fetch) -> tuple[dict, list[str]]:
-    """Where each key runs, and the lines saying how that was decided."""
+def pick(cpu_keys: list[str], gpu_keys: list[str], pool: str, gpu_pool: str, fetch,
+         hosted_reserved: int = 0) -> tuple[dict, list[str]]:
+    """Where each key runs, and the lines saying how that was decided.
+
+    ``hosted_reserved`` is how many of this run's jobs always run hosted
+    (they are not in ``cpu_keys``), held back from the hosted room.
+    """
     how = []
     if pool in CPU_POOLS and gpu_pool in ("arcade", "utk"):
         how.append(f"CPU jobs on {pool}, GPU jobs on {gpu_pool} (forced)")
@@ -170,17 +185,23 @@ def pick(cpu_keys: list[str], gpu_keys: list[str], pool: str, gpu_pool: str, fet
     try:
         counts = busy(fetch(), datetime.now(timezone.utc))
     except Exception as exc:  # noqa: BLE001 - a pick must never fail the run
-        how.append(f"the jobs API failed ({exc}); arcade first as if idle")
-        counts = {**{p: 0 for p in RUNS_ON}, "arcade_stuck": False, "arcade_gpu_stuck": False}
+        how.append(f"the jobs API failed ({exc}); picking as if every pool were idle")
+        counts = {**{p: 0 for p in RUNS_ON},
+                  "arcade_stuck": False, "arcade_gpu_stuck": False, "hosted_full": False}
 
-    if pool not in CPU_POOLS and counts["arcade_stuck"]:
-        pool = "hosted"
-        how.append(f"CPU jobs on hosted: an arcade job has waited over {STUCK_AFTER_S} s")
-    free = max(CPU_RUNNERS - counts["arcade"], 0)
+    free = max(HOSTED_SLOTS - counts["hosted"] - hosted_reserved, 0)
     if pool in CPU_POOLS:
         how.append(f"CPU jobs on {pool}")
+    elif counts["arcade_stuck"]:
+        pool = "hosted"
+        how.append(f"CPU jobs on hosted: an arcade job has waited over {STUCK_AFTER_S} s")
+    elif counts["hosted_full"]:
+        free = 0
+        how.append(f"CPU jobs on arcade: a hosted job has waited over {HOSTED_FULL_AFTER_S} s, "
+                   "so the organization's hosted limit is reached")
     else:
-        how.append(f"CPU jobs: arcade first, {free} of {CPU_RUNNERS} runners free")
+        how.append(f"CPU jobs: GitHub-hosted first, {free} of {HOSTED_SLOTS} hosted slots free "
+                   f"(this repository's jobs, {hosted_reserved} kept for this run's hosted-only jobs)")
 
     if gpu_pool not in ("arcade", "utk") and counts["arcade_gpu_stuck"]:
         gpu_pool = "utk"
@@ -204,6 +225,8 @@ def _setting(name: str, allowed: tuple[str, ...]) -> str:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--gpu", action="append", default=[], metavar="KEY", help="a GPU job's key")
+    parser.add_argument("--hosted-reserved", type=int, default=0, metavar="N",
+                        help="this run's jobs that always run hosted, held back from the hosted room")
     parser.add_argument("cpu", nargs="*", metavar="KEY", help="CPU job keys, in critical-path order")
     args = parser.parse_args(argv[1:])
     if not args.cpu and not args.gpu:
@@ -219,7 +242,7 @@ def main(argv: list[str]) -> int:
             os.environ.get("GITHUB_RUN_ID", ""),
         )
 
-    chosen, how = pick(args.cpu, args.gpu, pool, gpu_pool, fetch)
+    chosen, how = pick(args.cpu, args.gpu, pool, gpu_pool, fetch, args.hosted_reserved)
     runners = {key: RUNS_ON[chosen[key]] for key in [*args.gpu, *args.cpu]}
     for line in how:
         print(line)
