@@ -82,6 +82,11 @@ class TestTheBlock:
             block = examples.block_for(query)
             assert block is None or len(block) <= examples.MAX_BLOCK_CHARS, query
 
+    def test_the_milan_question_shows_example_09(self):
+        block = examples.block_for(MILAN)
+        assert block is not None
+        assert _pool()["09-heterogeneous-data-linked-views"].entry.line in block
+
     def test_an_example_past_the_cap_is_left_out_and_the_next_one_still_fits(self):
         pool = list(_pool().values())
         too_big = [e for e in pool if examples.render([e]) is None]

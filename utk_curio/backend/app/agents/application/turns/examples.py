@@ -37,11 +37,12 @@ NOT_USED = "Not used"
 
 #: At most this many examples per run.
 TOP_K = 2
-#: The block's size bound, in characters: the size of the example dataflow the
-#: shared preamble embedded before this block replaced it ("An example of a
-#: dataflow:" through the "Attention:" line after it). An example that does
-#: not fit is left out; the next one in rank order may still fit.
-MAX_BLOCK_CHARS = 7_232
+#: The block's size bound, in characters, about 3,500 tokens. The block is not
+#: cached, so every opted-in run pays for it; at this size every "Used"
+#: example but the three largest (04, 05, 06) can be shown, usually one large
+#: example or two small ones. An example that does not fit is left out; the
+#: next one in rank order may still fit.
+MAX_BLOCK_CHARS = 14_000
 #: Words shorter than this never count.
 MIN_WORD_LEN = 3
 #: Added to an example's score when it uses the attached node's template type.
