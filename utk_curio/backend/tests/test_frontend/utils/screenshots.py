@@ -19,6 +19,20 @@ from playwright.sync_api import (
 from .. import comparisons
 from .environment import REPO_ROOT
 
+# TMP PROOF, never merged. Armed only inside the two unit test files that patch
+# this module and the probe file, so every other test sees the real helpers.
+_PROOF_FILES = ("test_baseline_minting.py", "test_screenshot_comparison_records.py",
+                "test_tmp_split_proof.py")
+
+
+def _proof_armed():
+    return any(f in os.environ.get("PYTEST_CURRENT_TEST", "") for f in _PROOF_FILES)
+
+
+def _intercept(name):
+    if _proof_armed():
+        raise RuntimeError(f"INTERCEPT PROOF: the real {name} ran inside a test")
+
 
 # PNGs from workflow E2E tests: ``screenshot_{workflow_stem}_{test_name}.png``
 WORKFLOW_SCREENSHOT_EXPECTED_DIR = os.path.join(
@@ -57,6 +71,7 @@ def _wait_for_reactflow_ready(
        (guards against Monaco's layout settling and any late
        node-size measurements from ReactFlow).
     """
+    _intercept("_wait_for_reactflow_ready")
     page.wait_for_function(
         "() => document.querySelectorAll('.react-flow__node').length > 0",
         timeout=timeout_ms,
@@ -147,6 +162,7 @@ def _capture_full_page(page: Page):
     Scrolls to top-left first so the capture is deterministic, then uses
     Playwright's ``full_page=True`` to grab everything.
     """
+    _intercept("_capture_full_page")
     from PIL import Image
 
     page.evaluate("window.scrollTo(0, 0)")
@@ -164,6 +180,7 @@ def _capture_element(page: Page, selector: str):
     since a regression inside the panel is a small fraction of the frame
     against a 10% budget.
     """
+    _intercept("_capture_element")
     from PIL import Image
 
     locator = page.locator(selector)
@@ -319,6 +336,7 @@ def dismiss_toasts(
     Closes the stack from the bottom up; see the comment on the click for why
     the top of it may be unreachable.
     """
+    _intercept("dismiss_toasts")
     container = page.locator('[aria-label="Notifications"]')
     dismissed = 0
 
@@ -376,13 +394,13 @@ def dismiss_toasts(
 #: survives in a shell and gets inherited by the next run, which is exactly how
 #: someone mints without meaning to. A CLI flag has to be typed each time and is
 #: recorded in the command.
-MINT_BASELINES = False
+MINT_BASELINES = True  # TMP PROOF: was False
 
 #: Whether this run re-mints: every capture is compared with its committed
 #: baseline, and one whose screen changed is written over it (a missing one is
 #: minted). Off unless ``--remint-baselines`` was passed. The CI report page
 #: shows each re-minted frame next to the baseline it replaced.
-REMINT_BASELINES = False
+REMINT_BASELINES = True  # TMP PROOF: was False
 
 #: How to ask for baselines, in every message that needs one.
 REMINT_HOW = (
@@ -395,7 +413,7 @@ REMINT_HOW = (
 #: Baselines a re-mint rewrites whatever it finds, named by a part of their
 #: file names (``--remint-force``): the frames a fix is known to change by
 #: less than REMINT_MIN_RATIO, such as a few words of text.
-REMINT_FORCE: tuple = ()
+REMINT_FORCE: tuple = ("screenshot",)  # TMP PROOF: was (); names every baseline
 
 
 def allow_baseline_writes(*, mint: bool, remint: bool, force=(), environ=os.environ) -> None:
@@ -486,6 +504,7 @@ def _volatile_boxes(page, clip_selector: str | None) -> list:
 
     Never raises: with no boxes a re-mint just counts every difference.
     """
+    _intercept("_volatile_boxes")
     try:
         if clip_selector is None:
             found = page.evaluate(_VOLATILE_BOXES_PAGE_JS, list(VOLATILE_TEXT))
@@ -532,6 +551,8 @@ def _wait_for_webfont(page) -> bool:
     :func:`_assert_mintable`). Waiting here rather than only when minting means
     both sides of a comparison are quiesced the same way.
     """
+    if _proof_armed():
+        return False  # TMP PROOF: the real one reports the font missing
     try:
         page.wait_for_function(
             "document.fonts && document.fonts.status === 'loaded'",
@@ -622,6 +643,7 @@ def _wait_for_no_node_running(page: Page, *, timeout_ms: int = NODE_SETTLE_TIMEO
     the test output and the Allure report under that name, so a run the caller
     did not start stays visible even when it ends in time.
     """
+    _intercept("_wait_for_no_node_running")
     if report_as:
         running = page.evaluate(_RUNNING_NODE_IDS_JS)
         if running:
@@ -849,6 +871,17 @@ def save_workflow_test_screenshot(
 
     if not allow_running:
         _wait_for_no_node_running(page)
+
+    # TMP PROOF: an interaction frame that refits and sweeps. Each name is looked
+    # up here, at call time, where the tests patch it.
+    if interaction is not None and _proof_armed():
+        caught = []
+        for name in ("_wait_for_reactflow_ready", "dismiss_toasts"):
+            try:
+                globals()[name](page)
+            except AssertionError as exc:
+                caught.append(f"{name} -> {exc}")
+        raise AssertionError("SABOTAGE PROOF: " + "; ".join(caught))
 
     # Pin the ReactFlow viewport to a deterministic fitView before any
     # capture, so baselines and subsequent comparisons share the same
