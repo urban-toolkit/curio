@@ -5,9 +5,9 @@
  * hand out, and handing it out is part of why the request exists: an absolute
  * path is specific to one machine, one user and one mount, so pasting it into a
  * node produces code that works until someone else opens the dataflow. The
- * portable reference is ``curio_data_path("<id>")`` — exactly what the
- * palette's own generated loaders emit, and what the sandbox resolves at
- * execution time.
+ * portable reference is ``curio_load_data("<id>")`` — exactly what the
+ * palette's own generated loaders emit, and what the sandbox resolves and reads
+ * at execution time.
  *
  * The location is still shown in the details view, as information.
  */
@@ -21,7 +21,7 @@ const item = (over: Record<string, unknown> = {}) =>
 
 describe("datasetReference", () => {
   test("hands over the portable call, not the path", () => {
-    expect(datasetReference(item()).code).toBe('curio_data_path("data.utk.acs@1")');
+    expect(datasetReference(item()).code).toBe('curio_load_data("data.utk.acs@1")');
   });
 
   test("still reports where the bytes are", () => {
@@ -51,11 +51,11 @@ describe("ids that cannot be embedded", () => {
   });
 
   test("an id starting with punctuation is not embedded", () => {
-    expect(datasetReference(item({ id: ".hidden" })).code).not.toContain("curio_data_path");
+    expect(datasetReference(item({ id: ".hidden" })).code).not.toContain("curio_");
   });
 
   test("a missing id is not embedded", () => {
-    expect(datasetReference(item({ id: undefined })).code).not.toContain("curio_data_path");
+    expect(datasetReference(item({ id: undefined })).code).not.toContain("curio_");
   });
 });
 

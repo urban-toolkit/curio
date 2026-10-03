@@ -123,11 +123,11 @@ def test_the_scanner_finds_every_id_the_curated_examples_reference():
         spec = json.loads(path.read_text(encoding="utf-8"))
         for node in spec["dataflow"]["nodes"]:
             content = node.get("content") or ""
-            if "curio_data_path" not in content:
+            if not any(call in content for call in ("curio_load_data", "curio_data_path", "curio_load_collection")):
                 continue
             found = _DATASET_PATH_CALL_RE.findall(content)
             assert found, (
-                f"{path.name} node {node['id']} calls curio_data_path but "
+                f"{path.name} node {node['id']} calls a catalog helper but "
                 f"the backend scanner finds no id in it; check the quoting and "
                 f"that the id matches {ID_BODY}"
             )
