@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { DiscoveryCatalogBrowse } from '../../pages/discovery/DiscoveryCatalogBrowse';
@@ -378,6 +378,31 @@ describe('DiscoveryCatalogBrowse: federated search mode', () => {
       .map((c) => c[0])
       .filter((p) => p.includes('/discovery/catalog'));
     expect(rosterCalls.every((p) => !p.includes('q='))).toBe(true);
+  });
+
+  test('an access filter narrows the search as it narrows the cards (#627)', async () => {
+    // A row from a source the filter leaves out has no source on this page,
+    // so its Download would have nothing to start from.
+    routeApi({
+      '/catalog': { ...response([source()]), facets: { provider: { socrata: 1 }, auth: { public: 1 } } },
+      '/api/discovery/search': searchResponse({
+        resources: [resourceRow()],
+        sources: [{ sourceId: 'source.a.portal', status: 'ok' }],
+      }),
+    });
+    renderPage('/catalog/discovery?q=bike');
+    await screen.findByText('Bike Routes');
+    fireEvent.click(screen.getByRole('button', { name: /^Public/ }));
+    await waitFor(() => {
+      const searches = apiFetch.mock.calls
+        .map((c) => String(c[0]))
+        .filter((p) => p.startsWith('/api/discovery/search'));
+      expect(searches[searches.length - 1]).toContain('auth=public');
+    });
+    const searches = apiFetch.mock.calls
+      .map((c) => String(c[0]))
+      .filter((p) => p.startsWith('/api/discovery/search'));
+    expect(searches[searches.length - 1]).toContain('q=bike');
   });
 });
 

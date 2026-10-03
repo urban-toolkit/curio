@@ -137,6 +137,8 @@ export function useDiscoverySearch(
   params: DiscoverySearchQuery & { sourceDir?: string }
 ): UseDiscoverySearchResult {
   const { sourceDir, q, format, provider, limit } = params;
+  // The access filter narrows a search across sources, as it narrows the roster.
+  const auth = sourceDir ? undefined : params.auth;
   const [data, setData] = useState<DiscoverySearchResponse>(EMPTY_SEARCH);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -166,7 +168,7 @@ export function useDiscoverySearch(
             controller.signal
           )
         : discoveryCatalogApi.searchAll(
-            { q: query, format, provider, limit },
+            { q: query, format, provider, auth, limit },
             controller.signal
           );
       request
@@ -201,7 +203,7 @@ export function useDiscoverySearch(
       clearTimeout(timer);
       controller.abort();
     };
-  }, [sourceDir, q, format, provider, limit]);
+  }, [sourceDir, q, format, provider, auth, limit]);
 
   return { data, loading, error, searched };
 }

@@ -168,6 +168,7 @@ function searchQuery(params: DiscoverySearchQuery & { rescan?: boolean }): strin
   if (params.q?.trim()) search.set("q", params.q.trim());
   if (params.format) search.set("format", params.format);
   if (params.provider) search.set("provider", params.provider);
+  if (params.auth) search.set("auth", params.auth);
   if (params.limit) search.set("limit", String(params.limit));
   if (params.cursor) search.set("cursor", params.cursor);
   const text = search.toString();

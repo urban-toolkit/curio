@@ -476,6 +476,8 @@ export interface DiscoverySearchQuery {
   cursor?: string;
   /** Narrow a federated search to one provider family. */
   provider?: DiscoveryProviderType | "";
+  /** Narrow a federated search to the sources with this access, as the roster is. */
+  auth?: DiscoveryAuthMode | "";
 }
 
 /** The legs worth telling the user about: everything that is not a plain `ok`,

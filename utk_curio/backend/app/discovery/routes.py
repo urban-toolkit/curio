@@ -211,6 +211,7 @@ def search_discovery():
         fmt=request.args.get("format"),
         limit=_int_arg("limit"),
         provider=request.args.get("provider"),
+        auth=request.args.get("auth"),
     )
     return jsonify(payload), 200
 
