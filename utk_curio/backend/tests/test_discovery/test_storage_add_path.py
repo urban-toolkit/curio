@@ -671,7 +671,10 @@ class TestARowItsAddWouldRefuse:
         monkeypatch.setattr(storage_acquire, "MAX_CONVERTED_FILE_BYTES", size)
         row = row_of(client, auth, self.GPKG_ROW)
         assert row["acquirable"] is True and row["unavailableReason"] is None
-        assert added(client, auth, self.GPKG_ROW)["importedDatasetCount"] == 1
+        # One layer lands as one ordinary Parquet dataset.
+        dataset = added(client, auth, self.GPKG_ROW)
+        assert dataset["format"] == "parquet"
+        assert dataset["discoverySource"]["sourcePath"] == "SP/Edificacoes/morphology.gpkg"
 
     def test_a_file_over_the_folder_limit_says_why(
         self, client, auth, app, storage_source, storage_folder, monkeypatch
@@ -756,7 +759,9 @@ class TestARowItsAddWouldRefuse:
         job = finish(client, auth, start(client, auth, "layers"))
         assert job["status"] == "failed" and job["error"] == row["unavailableReason"]
         # Picked under Files, one of them is one file, which adds.
-        assert added(client, auth, "layers", files=["layers/a.gpkg"])["importedDatasetCount"] == 1
+        part = added(client, auth, "layers", files=["layers/a.gpkg"])
+        assert part["format"] == "parquet"
+        assert part["discoverySource"]["sourcePath"] == "layers/a.gpkg"
 
     def test_files_over_the_combined_limit_say_why_and_still_add_in_part(
         self, client, auth, app, storage_source, storage_folder, monkeypatch
