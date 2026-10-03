@@ -134,6 +134,23 @@ describe("snippetForFormat", () => {
     }
   });
 
+  it("names the Autark layer of a Discovery GeoParquet download too", () => {
+    const overture = {
+      id: "imported.overture-buildings@1",
+      format: "parquet",
+      path: "/tmp/overture_buildings.parquet",
+      layerName: "buildings",
+      discoverySource: { sourceId: "source.overture.maps@1", resourceId: "buildings" },
+    };
+    const code = buildDatasetLoaderCode(overture as never);
+    expect(code).toContain("df = gpd.read_parquet(dataset_path)");
+    expect(code).toContain('    df = pd.read_parquet(dataset_path)\ndf.metadata = {"layerType": "buildings"}\n');
+    expect(code.trimEnd().endsWith("return df")).toBe(true);
+    for (const other of [{ ...overture, discoverySource: null }, { ...overture, layerName: "places" }]) {
+      expect(buildDatasetLoaderCode(other as never)).not.toContain("df.metadata");
+    }
+  });
+
   it("prefers a backend-supplied snippet over the local generator", () => {
     // Hub catalog rows always carry the backend's `loaderSnippet`, which is the
     // authoritative one (the Python generator restores parquet's JSON-encoded
