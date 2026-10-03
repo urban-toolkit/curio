@@ -191,7 +191,7 @@ class TestThePromptFacts:
         assert "{" + ", ".join(node_context.RUNTIME_BLOCK_KEYS) + "}" in text
         assert f'If its "kind" is "{input_contract.KIND_LIST}", ' in text
         assert f'If its "kind" is "{input_contract.KIND_SINGLE}", ' in text
-        # A field Curio adds to every row is named here, so a new one fails
+        # A field Curio adds to the rows is named here, so a new one fails
         # until the prompt says what it holds.
         for name in RUNTIME_FIELDS:
             assert f'"{name}"' in text, name

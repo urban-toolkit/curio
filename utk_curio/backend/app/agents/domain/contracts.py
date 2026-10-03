@@ -591,7 +591,7 @@ def _input_kind_single(_src: _Sources) -> str:
 
 
 def _vega_runtime_field(_src: _Sources, name: str) -> str:
-    """A field Curio adds to every row a Vega-Lite node reads, quoted; the
+    """A field Curio adds to the rows a Vega-Lite node reads, quoted; the
     argument must be one of ``RUNTIME_FIELDS``."""
     from utk_curio.backend.app.agents.domain.document_validation import RUNTIME_FIELDS
 
