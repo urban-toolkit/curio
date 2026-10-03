@@ -85,6 +85,7 @@ class VerifiedRounds:
         node_budget_s=None,
         carry_forward=None,
         result_summary_fn=None,
+        acting_user=None,
     ):
         self.user_key = user_key
         self.project_id = project_id
@@ -95,6 +96,9 @@ class VerifiedRounds:
         self.extra_inputs = extra_inputs
         self.dataset_paths_fn = dataset_paths_fn
         self.exec_user_key = exec_user_key
+        # #485: the account's User row, captured in the request; validation
+        # runs on a thread of its own, where the request's user is gone.
+        self.acting_user = acting_user
         self.secrets_fn = secrets_fn
         self.prior_outputs_fn = prior_outputs_fn
         self.resolve_source = resolve_source
@@ -517,6 +521,7 @@ class VerifiedRounds:
                     secrets=secret_values,
                     prior_outputs=prior,
                     templates=self.loop_templates,
+                    acting_user=self.acting_user,
                     progress=lambda nid, i, total: progress_queue.put(
                         ("progress", nid, i, total)
                     ),

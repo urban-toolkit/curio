@@ -1312,18 +1312,6 @@ export function attachMapInteractionZoomFix(canvas: HTMLCanvasElement): () => vo
     };
 }
 
-// Table names a data spec is contractually asking autk-db to create.
-//
-// The point is to tell a load that came back SHORT apart from one that came back
-// empty. autk-db's `loadOsm` walks `autoLoadLayers.layers` sequentially and lets
-// a per-layer failure propagate, so a throw partway leaves the earlier tables
-// registered and the later ones absent. Both loaders below used to publish
-// whatever `getLayersMetadata()` happened to hold, which surfaces downstream as an
-// opaque "Table <last layer> not found" from a node two hops away, with the node
-// that actually failed showing "Done" (#248).
-//
-// Naming mirrors autk-db's own, which derives a layer table as
-// `outputTableName || `${osmInputTableName}_${layer}``.
 // The spec classifier moved to ``utils/autkSpecKind`` so the dashboard's layout
 // pass can ask what kind of step a node is without importing this module and
 // with it the WebGPU renderer. Re-exported here because every existing caller,

@@ -8,13 +8,67 @@ cold container, and an offline install still runs an Autark data node.
 """
 from __future__ import annotations
 
+import json
+import re
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from utk_curio import main as curio_main
 
-VENDORED = Path(curio_main.__file__).resolve().parent.parent / "vendor" / "duckdb-extensions"
+REPO = Path(curio_main.__file__).resolve().parent.parent
+VENDORED = REPO / "vendor" / "duckdb-extensions"
+
+# Asks the installed duckdb-wasm, through its Node build, which DuckDB it runs.
+# That version names the extension folder duckdb-wasm requests, in Node and in
+# the browser alike, so it is the folder Curio must ship.
+_DUCKDB_VERSION_JS = r"""
+const path = require('path');
+const duckdb = require('@duckdb/duckdb-wasm/dist/duckdb-node-blocking.cjs');
+const dist = path.dirname(require.resolve('@duckdb/duckdb-wasm/dist/duckdb-node-blocking.cjs'));
+(async () => {
+  const bundles = {
+    mvp: { mainModule: path.join(dist, 'duckdb-mvp.wasm'), mainWorker: path.join(dist, 'duckdb-node-mvp.worker.cjs') },
+    eh: { mainModule: path.join(dist, 'duckdb-eh.wasm'), mainWorker: path.join(dist, 'duckdb-node-eh.worker.cjs') },
+  };
+  const db = await duckdb.createDuckDB(bundles, new duckdb.VoidLogger(), duckdb.NODE_RUNTIME);
+  await db.instantiate(() => {});
+  const conn = db.connect();
+  const table = conn.query('SELECT library_version FROM pragma_version()');
+  process.stdout.write(String(table.getChildAt(0).get(0)));
+  process.exit(0);
+})().catch((err) => { console.error(err); process.exit(1); });
+"""
+
+
+def _lockfile_duckdb_wasm(lockfile: Path) -> str:
+    packages = json.loads(lockfile.read_text())["packages"]
+    return packages["node_modules/@duckdb/duckdb-wasm"]["version"]
+
+
+def test_the_vendored_extensions_are_the_version_duckdb_wasm_runs():
+    """A duckdb-wasm bump moves the folder it requests. With the old folder
+    vendored, every new database fetched both extensions from the CDN again,
+    and an offline install lost its Autark nodes, with nothing failing."""
+    result = subprocess.run(
+        ["node", "-e", _DUCKDB_VERSION_JS], cwd=REPO, capture_output=True, text=True, timeout=180,
+    )
+    assert result.returncode == 0, result.stderr
+    running = result.stdout.strip()
+    assert re.fullmatch(r"v\d+\.\d+\.\d+", running), f"unexpected version {running!r}"
+
+    shipped = {p.parent.parent.name for p in VENDORED.rglob("*.duckdb_extension.wasm")}
+    assert running in shipped, (
+        f"duckdb-wasm runs DuckDB {running}, but vendor/duckdb-extensions ships {sorted(shipped)}"
+    )
+
+
+def test_the_browser_and_the_sandbox_pin_the_same_duckdb_wasm():
+    """The browser's copy (frontend lockfile) and the sandbox's (repository
+    lockfile) must request the same folder, or one of them goes to the CDN."""
+    frontend = REPO / "utk_curio" / "frontend" / "urban-workflows" / "package-lock.json"
+    assert _lockfile_duckdb_wasm(frontend) == _lockfile_duckdb_wasm(REPO / "package-lock.json")
 
 
 def test_curio_actually_ships_the_extensions():
