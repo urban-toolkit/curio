@@ -199,7 +199,7 @@ def _refuse_unisolated_deploy(exec_user, blockers):
         "and run it as the single-user tool it then is."
     )
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, backend_url=None, discovery_root=None, models_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, backend_url=None, discovery_root=None, models_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -357,6 +357,7 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         ("CURIO_SOLVE_SESSION_DEADLINE", solve_session_deadline),
         ("CURIO_SOLVE_BATCH_DEADLINE", solve_batch_deadline),
         ("CURIO_VALIDATION_EXEC_TIMEOUT", validation_exec_timeout),
+        ("CURIO_VALIDATION_NODE_LIMIT", validation_node_limit),
     ):
         if value:
             os.environ[env_name] = str(value)
@@ -1969,6 +1970,14 @@ def main():
         ),
     )
     parser.add_argument(
+        "--validation-node-limit", type=int, default=None, metavar="N",
+        help=(
+            "How many nodes one agent validation run may execute; ancestors "
+            "that reuse an earlier output do not count (sets "
+            "CURIO_VALIDATION_NODE_LIMIT, default 25)."
+        ),
+    )
+    parser.add_argument(
         "--collab", action="store_true", default=False,
         help=(
             "Enable real-time collaborative editing (sets ENABLE_COLLAB=1). "
@@ -2042,6 +2051,7 @@ def main():
         solve_session_deadline=args.solve_session_deadline,
         solve_batch_deadline=args.solve_batch_deadline,
         validation_exec_timeout=args.validation_exec_timeout,
+        validation_node_limit=args.validation_node_limit,
     )
 
     # Handle standalone rebuild or db init without starting servers. Neither
