@@ -38,6 +38,25 @@ class _Counting:
         return self.answer
 
 
+class _Nominatim(_Counting):
+    """Answers Cologne as Nominatim does: ``name`` and ``display_name`` in the
+    request's language, English here, and the place's own OpenStreetMap names
+    only when the URL asks for ``namedetails``."""
+
+    def __init__(self):
+        super().__init__(answer=[{
+            "name": "Cologne", "display_name": "Cologne, North Rhine-Westphalia, Germany",
+            "category": "boundary", "type": "administrative", "osm_type": "relation",
+            "boundingbox": ["50.8304399", "51.0849743", "6.7725303", "7.1620280"],
+        }])
+
+    def json_get(self, url, *, credential=None, headers=None):
+        [place] = super().json_get(url, credential=credential, headers=headers)
+        if "namedetails=1" in url.partition("?")[2].split("&"):
+            place = {**place, "namedetails": {"name": "Köln", "name:de": "Köln", "name:en": "Cologne"}}
+        return [place]
+
+
 class TestTheSearch:
     def test_a_place_comes_back_as_a_box_and_its_osm_name(self):
         [loop] = places.search_places(_Counting(), "Loop, Chicago")
@@ -45,6 +64,13 @@ class TestTheSearch:
         assert loop["box"] == [-87.6382, 41.8673, -87.6025, 41.8906]
         assert loop["boundary"] is True
         assert loop["label"].startswith("Loop, Chicago")
+
+    def test_a_place_is_named_as_openstreetmap_names_it_and_labelled_in_english(self):
+        """A named area is matched against the boundary's OpenStreetMap
+        ``name``, which is the local one: Köln, not Cologne."""
+        [cologne] = places.search_places(_Nominatim(), "Cologne")
+        assert cologne["name"] == "Köln"
+        assert cologne["label"] == "Cologne, North Rhine-Westphalia, Germany"
 
     def test_it_names_itself_as_nominatim_asks(self):
         transport = _Counting()

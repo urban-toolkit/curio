@@ -746,14 +746,14 @@
     },
     "status": 200
   },
-  "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&q=Loop%2C%20Chicago": {
+  "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&namedetails=1&q=Loop%2C%20Chicago": {
     "file": "nominatim/loop-chicago.json",
     "headers": {
       "Content-Type": "application/json"
     },
     "status": 200
   },
-  "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&q=Nowhere%20at%20all": {
+  "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&namedetails=1&q=Nowhere%20at%20all": {
     "file": "nominatim/none.json",
     "headers": {
       "Content-Type": "application/json"

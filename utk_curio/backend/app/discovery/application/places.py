@@ -10,7 +10,8 @@ rather than asked for again.
 Each answer gives what both forms of an area need:
 
 - ``box``: ``[west, south, east, north]`` in WGS84, for a box;
-- ``name`` and ``boundary``: the place's own OSM name and whether it is an
+- ``name`` and ``boundary``: the place's own OSM name, in the local language
+  (Köln, where the English ``label`` says Cologne), and whether it is an
   administrative boundary, which is what a named area must be.
 """
 
@@ -40,7 +41,9 @@ _cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
 
 def search_url(query: str) -> str:
-    return f"{NOMINATIM}/search?format=jsonv2&limit={MAX_RESULTS}&q={quote(query, safe='')}"
+    """The search, with each place's own OSM names (``namedetails``), since
+    ``name`` follows the request's language."""
+    return f"{NOMINATIM}/search?format=jsonv2&limit={MAX_RESULTS}&namedetails=1&q={quote(query, safe='')}"
 
 
 def search_places(transport, query: str) -> list[dict[str, Any]]:
@@ -106,7 +109,9 @@ def _rows(payload: Any) -> list[dict[str, Any]]:
         if box is None:
             continue
         label = str(entry.get("display_name") or "")[:300]
-        name = str(entry.get("name") or label.split(",")[0]).strip()[:120]
+        # OpenStreetMap's ``name`` tag, which a named area is matched against.
+        details = entry.get("namedetails") if isinstance(entry.get("namedetails"), dict) else {}
+        name = str(details.get("name") or entry.get("name") or label.split(",")[0]).strip()[:120]
         if not name:
             continue
         out.append({
