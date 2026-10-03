@@ -16,7 +16,7 @@ import { readCanvasTemplateConfig, resolveEditorTabFlags } from '../utils/canvas
 import { useNodeState } from '../hook/useNodeState';
 import { classifyAutkSpecString } from '../utils/autkSpecKind';
 import { unversionedNodeType } from '../utils/flowNodeCanonicalType';
-import { hasIncomingEdge } from '../utils/nodeEmptyState';
+import { hasIncomingEdge, upstreamErroredMessage } from '../utils/nodeEmptyState';
 import { isEmptySpecBuffer } from '../utils/starterSpec';
 import {
   DASHBOARD_TILE_DEFAULT_HEIGHT,
@@ -141,6 +141,22 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     if (collab.enabled) collab.signalExecDisplay(data.nodeId);
   }, [data.triggerExec]);
 
+  // A run that stopped above this node: a node feeding it failed, so the run
+  // never triggered it (#603). It shows the reason as its outcome rather than
+  // keeping the output of an earlier run as if it had just run. The Data Pool
+  // owns the output it shows and says the same thing in its own empty state.
+  const lastSkipExecRef = useRef<number>(data.skipExec ?? 0);
+  useEffect(() => {
+    const current = data.skipExec ?? 0;
+    if (current <= lastSkipExecRef.current) return;
+    lastSkipExecRef.current = current;
+    if (behavior.outputOverride) return;
+    nodeState.setOutput({
+      code: "error",
+      content: data.skipReason || upstreamErroredMessage(),
+    });
+  }, [data.skipExec]);
+
   // ── Drawing from a restored input, with no Play ──────────────────────────
   //
   // A grammar node only draws when something calls its ``applyGrammar``, which
@@ -243,7 +259,8 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   useEffect(() => {
     outputCodeRef.current = output?.code;
     if (output?.code === "error" || output?.code === "success") {
-      signalNodeExecDone(data.nodeId);
+      // A failure stops the run below this node (#603).
+      signalNodeExecDone(data.nodeId, { failed: output.code === "error" });
       if (collab.enabled && output) {
         collab.broadcastOutputProduced({
           nodeId: data.nodeId,

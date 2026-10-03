@@ -200,6 +200,19 @@ def _import_bindings_for(session_id):
     return bindings
 
 
+# What a node that reads `arg` with no input delivered fails with. The isolated
+# child (isolation/child.py) raises the same text from its own copy.
+NO_INPUT_MESSAGE = (
+    "This node received no input but its code references `arg`. "
+    "An upstream node has not run yet, failed, or is not wired "
+    "to this node's input handle. Check the nodes feeding this "
+    "one: fix any that show an error, run them until each shows "
+    "'Done', then run this node again. If the inputs come "
+    "through a Merge Flow node, give it a moment after the last "
+    "upstream finishes so the merged tuple can propagate."
+)
+
+
 def _code_reads_arg(code):
     """Whether the node's code actually *reads* the ``arg`` parameter.
 
@@ -586,15 +599,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 # substring test, so a node that never reads an input is not
                 # refused for merely containing the letters "arg" (#273).
                 if incomingInput is None and _code_reads_arg(code):
-                    raise RuntimeError(
-                        "This node received no input but its code references `arg`. "
-                        "An upstream node has not run yet, failed, or is not wired "
-                        "to this node's input handle. Check the nodes feeding this "
-                        "one: fix any that show an error, run them until each shows "
-                        "'Done', then run this node again. If the inputs come "
-                        "through a Merge Flow node, give it a moment after the last "
-                        "upstream finishes so the merged tuple can propagate."
-                    )
+                    raise RuntimeError(NO_INPUT_MESSAGE)
 
                 # Run user code.
                 output = ns['userCode'](incomingInput)
