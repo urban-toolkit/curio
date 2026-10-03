@@ -50,7 +50,7 @@ class TestUserOwnedValuesStayOutOfPrompts:
         from utk_curio.backend.app.agents.domain import contracts
 
         lines = set(contracts.KEYWORD_TYPES.render(contracts.KEYWORD_TYPES.default).splitlines())
-        for path in sorted(builtin.PROMPT_SOURCE_DIR.glob("*.txt")):
+        for path in sorted(builtin.PROMPT_SOURCE_DIR.glob("*.md")):
             found = lines & set(path.read_text(encoding="utf-8").splitlines())
             assert not found, f"{path.name} carries keyword types: {sorted(found)[:2]}"
 
@@ -60,19 +60,19 @@ class TestPromptsArePackaged:
 
     Asserted against the packaging config rather than by building an sdist,
     which keeps this in the unit suite. The plan's end-to-end check (build an
-    sdist and a wheel, confirm the .txt files are inside both) stays a manual
+    sdist and a wheel, confirm the .md files are inside both) stays a manual
     release step.
     """
 
     def test_manifest_in_includes_the_prompts(self):
         manifest = (REPO_ROOT / "MANIFEST.in").read_text(encoding="utf-8")
         assert re.search(
-            r"^recursive-include\s+utk_curio/llm-prompts\s", manifest, re.MULTILINE
+            r"^recursive-include\s+utk_curio/llm-prompts\s+\*\.md\s*$", manifest, re.MULTILINE
         ), "MANIFEST.in must carry utk_curio/llm-prompts into the sdist"
 
     def test_pyproject_ships_them_in_the_wheel(self):
         pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        assert "llm-prompts/*.txt" in pyproject, (
+        assert "llm-prompts/*.md" in pyproject, (
             "pyproject must declare llm-prompts as package-data, or the wheel "
             "ships without it even when the sdist has it"
         )

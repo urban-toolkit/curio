@@ -8,11 +8,11 @@ A node's "type" is the id of the template it was made from. A run that can place
 
 {{builtin.nodes}}
 
-A Merge Flow node combines its inputs: with one connected input it passes that value straight through, and with more it outputs them as a tuple, in socket order. An edge into a Merge Flow node names the socket it connects to in "targetHandle": {{builtin.merge_slots}}.
+A {{template.label:curio.builtin/merge-flow}} node combines its inputs: with one connected input it passes that value straight through, and with more it outputs them as a tuple, in socket order. An edge into a {{template.label:curio.builtin/merge-flow}} node names the socket it connects to in "targetHandle": {{builtin.merge_slots}}.
 
-A Data Pool node is represented to the user as a table. Changes made to a Data Pool are seen by all connected nodes, which is how interactions are linked between visualizations.
+A {{template.label:curio.builtin/data-pool}} node is represented to the user as a table. Changes made to a {{template.label:curio.builtin/data-pool}} are seen by all connected nodes, which is how interactions are linked between visualizations.
 
-A Simple View node renders a table for DataFrames/GeoDataFrames, or a card per row when the frame carries images: one image plus that row's other values. A column holds images if it is named "image_url", "image_content", "image", "thumbnail" or "overlay_url" and holds image values, otherwise if its values are data: URIs or URLs ending in an image extension. "image_content" is raw Base64; the others are URLs. Both frame shapes work, so a GeoDataFrame whose features carry an image property displays as images too. Users can click on a card to interact with its row; the interaction will be propagated to a Data Pool if connected with an interaction edge.
+A {{template.label:curio.builtin/vis-simple}} node renders a table for DataFrames/GeoDataFrames, or a card per row when the frame carries images: one image plus that row's other values. A column holds images if it is named "image_url", "image_content", "image", "thumbnail" or "overlay_url" and holds image values, otherwise if its values are data: URIs or URLs ending in an image extension. "image_content" is raw Base64; the others are URLs. Both frame shapes work, so a GeoDataFrame whose features carry an image property displays as images too. Users can click on a card to interact with its row; the interaction will be propagated to a {{template.label:curio.builtin/data-pool}} if connected with an interaction edge.
 
 DO NOT CONNECT A MERGE FLOW DIRECTLY TO THE INPUT OF A VEGA-LITE NODE, you need to insert a node before that will filter the correct DataFrame that will feed Vega.
 
@@ -30,7 +30,7 @@ To pass data forward from a node controllable through python code it is necessar
     return variable1
 ```
 
-To use incoming data in a node controllable through python code you need to access it via a variable called 'arg'. If the previous node is a Merge Flow node with more than one connected input, or the previous box outputs a tuple, 'arg' will be a list that can be indexed like: 
+To use incoming data in a node controllable through python code you need to access it via a variable called 'arg'. If the previous node is a {{template.label:curio.builtin/merge-flow}} node with more than one connected input, or the previous box outputs a tuple, 'arg' will be a list that can be indexed like: 
 
 ```python
     combining_previous_inputs = arg[0] + arg[1]
@@ -82,7 +82,7 @@ Output supported:
 
 Make sure to pay attention to the compatibility between output and input of the nodes.
 
-Number of connections each node accepts into its inputs, one per input socket (to give a node more than one data unit, either output a tuple with multiple values from the previous node or use a Merge Flow node):
+Number of connections each node accepts into its inputs, one per input socket (to give a node more than one data unit, either output a tuple with multiple values from the previous node or use a {{template.label:curio.builtin/merge-flow}} node):
 
 {{builtin.input_count}}
 
@@ -184,7 +184,7 @@ special mark type.
 
 ### Interactions
 
-Visualizations can be connected to a Data Pool with an edge of type: "Interaction" (in the Trill specification). Interactions on the visualization will be propagated to the Data Pool changing a column called "interacted". This column will contained 1 if that row was interacted with or 0 if not. The type of interaction is determined by the visualization. The interactions in the visualization is automatically propagated to the Data Pool, however for the interaction to the effect in the visualization the field "interacted" needs to be used. For example, this Vega-Lite specification defines a scatterplot with a select interaction that uses the column "interacted" to control the color of the points.
+Visualizations can be connected to a {{template.label:curio.builtin/data-pool}} with an edge of type: "Interaction" (in the Trill specification). Interactions on the visualization will be propagated to the {{template.label:curio.builtin/data-pool}} changing a column called "interacted". This column will contained 1 if that row was interacted with or 0 if not. The type of interaction is determined by the visualization. The interactions in the visualization is automatically propagated to the {{template.label:curio.builtin/data-pool}}, however for the interaction to the effect in the visualization the field "interacted" needs to be used. For example, this Vega-Lite specification defines a scatterplot with a select interaction that uses the column "interacted" to control the color of the points.
 
 ```json 
 { 
@@ -207,7 +207,7 @@ Visualizations can be connected to a Data Pool with an edge of type: "Interactio
 } 
 ```
 
-Two visualizations can also be connected to each other directly with an Interaction edge, without a Data Pool, when at least one of them is a Vega-Lite or an Autark node: each of those highlights the rows the other one selects, and a Vega-Lite node marks them in the column "interacted" the same way. A point selection matches rows by position, so both visualizations must read the same rows; an interval selection matches by column name.
+Two visualizations can also be connected to each other directly with an Interaction edge, without a {{template.label:curio.builtin/data-pool}}, when at least one of them is a {{template.label:curio.builtin/vis-vega}} or an {{template.label:curio.builtin/autk-grammar}} node: each of those highlights the rows the other one selects, and a {{template.label:curio.builtin/vis-vega}} node marks them in the column "interacted" the same way. A point selection matches rows by position, so both visualizations must read the same rows; an interval selection matches by column name.
 
 Nodes that can have interaction connection edge:
 
@@ -345,4 +345,4 @@ An example of a dataflow:
     }
 }
 
-Attention: an edge whose target is a Merge Flow node names the socket it connects to in "targetHandle".
+Attention: an edge whose target is a {{template.label:curio.builtin/merge-flow}} node names the socket it connects to in "targetHandle".
