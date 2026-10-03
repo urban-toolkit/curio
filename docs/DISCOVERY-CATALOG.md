@@ -98,7 +98,7 @@ A storage source is read when it is first opened, and again when its listing is 
 | **View details** | Card, drawer, or right-click menu | Nothing | The source's endpoint, licence, formats, download limit, and token needs; a storage source's resource count. |
 | **Add by link** | Direct URL's card, drawer, or right-click menu | Nothing | Direct URL's page, with its **Link to a file** field. |
 | **Download** | A result row, with a format picker when the portal offers more than one | Your Data Catalog gains a dataset | A progress bar, then *"Downloaded `<title>` to your Data Catalog."* with **View details**. A row that needs an answer first, such as a service row's area, opens the **Download** dialog. |
-| **Narrow…** | A portal row that can download part of itself | Nothing until you download | The **Download** dialog, to download only the rows inside an area. |
+| **Narrow…** | A portal row that can download part of itself, also once it is in your Data Catalog | Nothing until you download | The **Download** dialog, to download only the rows inside an area. |
 | **Cancel** | The row's progress bar | Nothing is kept | The download stops. |
 | **View dataset** | A row marked **In your Data Catalog** | Nothing | The dataset's details, over the page. |
 | **View on the portal ↗** | A result row | Nothing | The dataset's page on the portal's own site, in a new tab. |
@@ -178,7 +178,7 @@ The **Area** offers the ways the source takes:
 
 A box is shown under the field with its size, and refused when it is larger than the source allows. Place search is OpenStreetMap's Nominatim: it searches when you click **Search** and not as you type, and the results credit © OpenStreetMap contributors.
 
-A portal row whose area is optional downloads all of itself from **Download**, and part of itself from **Narrow…**. A service row's **Download** opens the dialog first, and its dataset is named after its area unless you type a name.
+A portal row whose area is optional downloads all of itself from **Download**, and part of itself from **Narrow…**. Once all of it is in your Data Catalog, the row offers **View dataset** and **Narrow…**. After a download for an area, the row offers **View dataset** for it and keeps its **Download** and **Narrow…**, for another area or all of it. A service row's **Download** opens the dialog first, and its dataset is named after its area unless you type a name.
 
 ### Progress
 
