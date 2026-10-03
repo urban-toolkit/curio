@@ -32,6 +32,7 @@ from utk_curio.backend.app.discovery.domain.errors import (
     SourceNotFound,
 )
 from utk_curio.backend.app.discovery.domain import parameters as P
+from utk_curio.backend.app.discovery.domain import text_match
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest
 from utk_curio.backend.app.discovery.domain.resource import (
     DiscoveryField,
@@ -867,14 +868,12 @@ def _start(job, run, user_key: str) -> None:
 
 def _storage_matches(resource, text: str) -> bool:
     """A declared resource matches a search by its name, description or files."""
-    needle = (text or "").strip().lower()
-    if not needle:
-        return True
-    haystack = " ".join(
-        [resource.name, resource.description]
-        + [str(v) for row in resource.fields for v in row.get("values", [])]
-    ).lower()
-    return all(word in haystack for word in needle.split())
+    return text_match.matches(
+        text,
+        resource.name,
+        resource.description,
+        *(str(v) for row in resource.fields for v in row.get("values", [])),
+    )
 
 
 def _parameters_for(manifest: DiscoverySourceManifest, resource) -> tuple:
