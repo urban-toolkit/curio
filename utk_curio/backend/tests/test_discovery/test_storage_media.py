@@ -349,3 +349,40 @@ class TestTheCommittedExampleCollections:
         root = storage_root(load_source_manifest(source_dir(EXAMPLE)))
         assert collections[self.ORTHOS] == {"kind": "rasters", "root": str(root)}
         assert media_dir
+
+
+class TestACollectionFromBeforeTheRename:
+    """#620: a collection added before #555 names its source by the Data Lake
+    id, ``lake.<x>@1``. The source is ``source.<x>@1`` now, and the collection
+    must still open: its files are where they always were."""
+
+    LEGACY = "lake.curio.example-storage@1"
+
+    def _as_before_the_rename(self, monkeypatch, dataset_id):
+        from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+        real = DatasetCatalogService.get_dataset
+
+        def legacy(service, wanted, *args, **kwargs):
+            item = real(service, wanted, *args, **kwargs)
+            if wanted == dataset_id:
+                item = {**item, "collection": {**item["collection"], "sourceId": self.LEGACY}}
+            return item
+
+        monkeypatch.setattr(DatasetCatalogService, "get_dataset", legacy)
+
+    def test_its_files_still_open(self, client, auth, app, shipped_root, monkeypatch):
+        dataset, index = collection(client, auth, "survey")
+        self._as_before_the_rename(monkeypatch, dataset["id"])
+        res = media(client, auth, dataset["id"], file_id_of(index, "IMG_0001.jpg"))
+        assert res.status_code == 200, res.get_data(as_text=True)
+
+    def test_its_source_is_the_renamed_one(self, client, auth, app, shipped_root, monkeypatch, user_and_token):
+        from utk_curio.backend.app.discovery.service import DiscoveryService
+
+        dataset, _index = collection(client, auth, "survey")
+        self._as_before_the_rename(monkeypatch, dataset["id"])
+        user, _token = user_and_token
+        with app.app_context():
+            _item, manifest = DiscoveryService(str(user.id), user=user).collection(dataset["id"])
+        assert manifest.dir_name == EXAMPLE

@@ -61,6 +61,21 @@ DEFAULT_SEARCH_LIMIT = 20
 #: One page of a storage row's Files list.
 FILES_PAGE = 100
 
+#: The prefix a source id had before the Data Lake Catalog became the
+#: Discovery Catalog (#555). Every ``lake.<x>@<major>`` became ``source.<x>@<major>``.
+_PRE_RENAME_PREFIX = "lake."
+
+
+def _renamed_source_dir(source_dir: str) -> str:
+    """*source_dir*, with a pre-rename ``lake.`` id mapped to its ``source.`` one.
+
+    A collection added before the rename stores the old id, and its files are
+    where they always were (#620)."""
+    if source_dir.startswith(_PRE_RENAME_PREFIX):
+        return "source." + source_dir[len(_PRE_RENAME_PREFIX):]
+    return source_dir
+
+
 class DiscoveryService:
     """Per-request entry point."""
 
@@ -733,7 +748,7 @@ class DiscoveryService:
         block = item.get("collection") or {}
         if item.get("format") != "collection" or not block.get("sourceId"):
             raise ResourceNotFound(f"{dataset_id!r} is not a collection")
-        return item, self._catalog.get_manifest(block["sourceId"])
+        return item, self._catalog.get_manifest(_renamed_source_dir(str(block["sourceId"])))
 
     def collection_status(self, dataset_id: str, *, samples: int = 12) -> dict[str, Any]:
         """Where a collection's files are, and a few of them to show.
