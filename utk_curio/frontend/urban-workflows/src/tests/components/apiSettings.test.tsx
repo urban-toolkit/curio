@@ -202,8 +202,32 @@ describe("API Settings: the HuggingFace token", () => {
     fireEvent.change(field(), { target: { value: "hf_local" } });
     fireEvent.click(rowOf("huggingface.token").getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ huggingface_token: "hf_local" }));
-    // The panels that run on the account's models stay off for a guest.
-    expect(screen.queryByText("Evaluation mode")).toBeNull();
+  });
+});
+
+describe("API Settings: Evaluation mode and Model training (#476)", () => {
+  // The backend refuses training only to a guest on a --deploy Curio, and runs
+  // an evaluation for any user; the modal must offer what the backend serves.
+  const sections = () => [screen.queryByText("Evaluation mode"), screen.queryByText("Model training")];
+
+  it("a signed-in account gets both", () => {
+    open();
+    sections().forEach((el) => expect(el).not.toBeNull());
+  });
+
+  it("the local guest gets both: without --deploy it is the one user", () => {
+    mockUser = { is_guest: true };
+    mockSharedGuest = true;
+    mockAuthOn = false;
+    open();
+    sections().forEach((el) => expect(el).not.toBeNull());
+  });
+
+  it("a guest on a Curio with sign-in gets neither", () => {
+    mockUser = { is_guest: true };
+    mockSharedGuest = true;
+    open();
+    sections().forEach((el) => expect(el).toBeNull());
   });
 });
 
