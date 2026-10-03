@@ -61,7 +61,7 @@ Under `utk_curio/backend/app/`:
 
 ## Frontend core
 
-- `src/providers/FlowProvider.tsx`: workflow state (nodes, edges, outputs, interactions, propagation, Run All) and `useFlowContext()`.
+- `src/providers/FlowProvider.tsx`: workflow state (nodes, edges, outputs, interactions) and `useFlowContext()`. Its sections are hooks in `src/providers/flow/`: `usePlayAll.ts` (Run All), `useConnect.ts` (`onConnect`), `useGraphEdits.ts` (adding and deleting, output propagation), `useApplyOutput.ts`, `useInteractions.ts`, `useCollaborationSync.ts`, `useDashboardPins.ts`, `useInstallSave.ts`; types in `flowTypes.ts` and `flowContextTypes.ts`, Run All levels in `runLevels.ts`.
 - `src/hook/useWorkflowOperations.ts`: workflow operations FlowProvider delegates (Trill loading, canvas management, suggestions).
 - `src/adapters/node/`: one behavior hook per built-in node kind (`codeNodeBehavior.tsx`, `vegaBehavior.ts`, `autkGrammarBehavior.tsx`, `dataPoolBehavior.tsx`, ...), exported from `index.ts`.
 - `src/components/UniversalNode.tsx`: the component that renders every node.
@@ -129,7 +129,7 @@ Several files run past 1,500 lines. List their sections, then Read only the rang
 
 - `utk_curio/backend/tests/test_frontend/walkthroughs.py`: section banners, `grep -n -A1 '^# ----' <file>`. The e2e helpers are a package of modules, listed under Tests.
 - Test modules with one class per area: `grep -n '^class Test' <file>`.
-- `src/providers/FlowProvider.tsx`: `grep -n 'useCallback(' <file>` lists its operations; Run All is around `playAllNodes`; collaboration sync starts at the comment `Collaboration: receive-side`.
+- FlowProvider's sections are hooks in `src/providers/flow/`, listed under Frontend core.
 
 ## Do not read
 
