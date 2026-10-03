@@ -61,6 +61,22 @@ class TestLoadData:
         frame = _helpers({"d": path}, {"d": {"format": "parquet"}})["curio_load_data"]("d")
         assert frame["tags"].iloc[0] == {"k": "v"}
 
+    def test_a_geoparquet_is_a_geodataframe_and_a_plain_one_a_table(self, tmp_path):
+        """A computed geo dataset reloads with the type the producing node
+        emitted; a table without geometry stays a DataFrame."""
+        import geopandas as gpd
+        from shapely.geometry import Point
+
+        geo, plain = tmp_path / "g.parquet", tmp_path / "p.parquet"
+        gpd.GeoDataFrame({"n": [1]}, geometry=[Point(0, 0)], crs="EPSG:4326").to_parquet(geo)
+        pd.DataFrame({"n": [2]}).to_parquet(plain)
+        load = _helpers(
+            {"g": geo, "p": plain}, {"g": {"format": "parquet"}, "p": {"format": "parquet"}},
+        )["curio_load_data"]
+        frame = load("g")
+        assert isinstance(frame, gpd.GeoDataFrame) and frame.crs.to_epsg() == 4326
+        assert not isinstance(load("p"), gpd.GeoDataFrame)
+
     def test_json_is_read_compressed_or_plain(self, tmp_path):
         packed, plain = tmp_path / "a.json.zlib", tmp_path / "b.json"
         packed.write_bytes(zlib.compress(b'{"n": 1}'))
