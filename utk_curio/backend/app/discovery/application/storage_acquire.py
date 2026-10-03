@@ -455,7 +455,13 @@ class StorageAcquire:
         return shp, digest.hexdigest()
 
     def _copy(self, provider, relpath, dest: Path, bound, total, progress, cancelled) -> str:
-        """Stream one file of the source into *dest*, capped and hashed."""
+        """Stream one file of the source into *dest*, capped and hashed.
+
+        A file on this machine is read from where it is; a remote one is
+        written to *dest* as it arrives, never held in memory whole.
+        """
+        if provider.local_path(relpath) is None:
+            return self._copy_remote(provider, relpath, dest, bound, total, progress, cancelled)
         digest = hashlib.sha256()
         written = 0
         with provider.open(relpath) as source, dest.open("wb") as out:
@@ -472,6 +478,35 @@ class StorageAcquire:
                 out.write(chunk)
                 if progress is not None:
                     progress(written, total)
+        return digest.hexdigest()
+
+    def _copy_remote(self, provider, relpath, dest: Path, bound, total, progress, cancelled) -> str:
+        """A remote file streamed through the transport into *dest*, capped by
+        the transport at *bound* and hashed on the way."""
+        digest = hashlib.sha256()
+        state = {"written": 0, "stopped": False}
+
+        def sink(chunk: bytes) -> None:
+            if cancelled is not None and cancelled():
+                state["stopped"] = True
+                raise Cancelled()
+            state["written"] += len(chunk)
+            digest.update(chunk)
+            out.write(chunk)
+            if progress is not None:
+                progress(state["written"], total)
+
+        with dest.open("wb") as out:
+            try:
+                provider.stream(relpath, sink, max_bytes=bound, ceiling=bound)
+            except Cancelled:
+                raise
+            except Exception:
+                # The transport reports an error raised by the sink as a failed
+                # download; a stop the user asked for is a cancel all the same.
+                if state["stopped"]:
+                    raise Cancelled() from None
+                raise
         return digest.hexdigest()
 
     def _tmp_dir(self) -> Path:

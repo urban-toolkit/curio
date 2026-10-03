@@ -1,6 +1,6 @@
 """Download jobs: what is running, how far along, and who may see it.
 
-A download is a job rather than a request because a 64 MiB file from a
+A download is a job rather than a request because a large file from a
 municipal portal can outlast any comfortable request timeout, and because the
 page wants a progress bar rather than a spinner.
 

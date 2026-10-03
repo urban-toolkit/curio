@@ -410,8 +410,7 @@
         "maxDownloadBytes": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 67108864,
-          "description": "A manifest may lower the server's ceiling, never raise it."
+          "description": "A manifest may lower the server's ceiling (curio.py --discovery-max-download-mb, 1 GiB by default), never raise it: a larger value is read as the ceiling."
         },
         "allowOffBaseDistributions": {
           "type": "boolean",

@@ -78,6 +78,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 |---|---|---|
 | `--catalog-root PATH` | `<repo_root>/datasets/` | Where the shared Data Catalog is read from and published to |
 | `--discovery-root PATH` | `<repo_root>/discovery/` | Where the shipped Discovery Catalog sources are read from. Your own sources stay in `.curio/discovery/` |
+| `--discovery-max-download-mb MB` | `1024` | The largest file the Discovery Catalog downloads, or adds from a bucket. A source's manifest may set a lower limit for itself |
 | `--models-root PATH` | `<repo_root>/models/` | Where the shipped Model Catalog models are read from |
 | `--save-node-outputs` / `--no-save-node-outputs` | off | Whether a new node's **Save output dataset** toggle starts on. Users can still flip it on each node |
 | `--allow-publish` / `--no-allow-publish` | on | Whether the node and data catalogs allow Publish/Unpublish |

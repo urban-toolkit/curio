@@ -20,7 +20,6 @@
     "describe": true,
     "download": true,
     "formats": ["geojson"],
-    "maxDownloadBytes": 67108864,
     "allowOffBaseDistributions": false
   },
   "limits": { "requestsPerMinute": 20 },

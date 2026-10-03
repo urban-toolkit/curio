@@ -199,7 +199,7 @@ def _refuse_unisolated_deploy(exec_user, blockers):
         "and run it as the single-user tool it then is."
     )
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, backend_url=None, discovery_root=None, models_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, backend_url=None, discovery_root=None, models_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, discovery_max_download_mb=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -360,6 +360,12 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     ):
         if value:
             os.environ[env_name] = str(value)
+
+    # The Discovery Catalog's download ceiling (discovery/domain/limits.py).
+    if discovery_max_download_mb is not None:
+        if int(discovery_max_download_mb) <= 0:
+            raise ValueError("--discovery-max-download-mb must be a positive number of megabytes")
+        os.environ["CURIO_DISCOVERY_MAX_DOWNLOAD_MB"] = str(int(discovery_max_download_mb))
 
     # AI provider. Curio ships no endpoint of its own (see backend/config.py):
     # an instance whose operator configures nothing resolves no provider, and
@@ -1861,6 +1867,14 @@ def main():
         ),
     )
     parser.add_argument(
+        "--discovery-max-download-mb", type=int, default=None, metavar="MB",
+        help=(
+            "The largest file the Discovery Catalog downloads or adds from a bucket, "
+            "in megabytes (sets CURIO_DISCOVERY_MAX_DOWNLOAD_MB, default 1024). A "
+            "source's manifest may set a lower limit for itself."
+        ),
+    )
+    parser.add_argument(
         "--discovery-root", default=None, metavar="PATH",
         help=(
             "Directory the shipped Discovery Catalog sources are read from "
@@ -2042,6 +2056,7 @@ def main():
         solve_session_deadline=args.solve_session_deadline,
         solve_batch_deadline=args.solve_batch_deadline,
         validation_exec_timeout=args.validation_exec_timeout,
+        discovery_max_download_mb=args.discovery_max_download_mb,
     )
 
     # Handle standalone rebuild or db init without starting servers. Neither
