@@ -188,34 +188,49 @@ def assert_autark_map_drawn(
     )
 
 
-# An Autark node's drawing (its map canvas or plot div) and the node body it is
-# shown in, in layout pixels, which the canvas zoom does not scale.
+# An Autark node's drawing (its map canvas or plot div) and the content mount it
+# is shown in, in layout pixels, which the canvas zoom does not scale; then the
+# drawing's and the port markers' horizontal extents on screen.
 _AUTK_DRAWING_FIT_JS = """(id) => {
     const map = document.getElementById('autk-grammar-map-' + id);
     const drawing = map || document.getElementById('autk-grammar-plot-' + id);
-    const pane = drawing && drawing.closest('.tab-pane');
-    if (!pane) return null;
+    if (!drawing) return null;
+    const mount = drawing.closest('.curio-content-mount');
+    const node = drawing.closest('.react-flow__node');
+    const box = drawing.getBoundingClientRect();
+    const markers = node ? [...node.querySelectorAll('[data-curio-port-marker]')].map((m) => {
+        const r = m.getBoundingClientRect();
+        return {side: m.dataset.curioPortMarker, x: [r.left, r.right]};
+    }) : [];
     return {
         kind: map ? 'map' : 'plot',
         drawing: [drawing.offsetWidth, drawing.offsetHeight],
-        body: [pane.clientWidth, pane.clientHeight],
+        body: mount ? [mount.clientWidth, mount.clientHeight] : null,
+        x: [box.left, box.right],
+        markers,
     };
 }"""
 
 
 def assert_autark_drawing_fits(page, node_id: str, *, timeout: float = 5000) -> None:
-    """Assert an Autark node's map or plot fills its node body exactly.
+    """Assert an Autark node's map or plot fills its node body, clear of the markers.
 
-    A drawing taller than the body runs on under the node's footer, where it
-    cannot be seen or picked, and a map is then centred below the middle of
-    what shows (#534). A node with no drawing is left to the checks that
-    expect one.
+    The body is the content mount, inset from each edge with a port marker
+    (#631): drawn in the full pane, the markers covered about 12 px of a map's
+    edge or a plot's axis. A drawing taller than the body runs on under the
+    node's footer, where it cannot be seen or picked, and a map is then centred
+    below the middle of what shows (#534). A node with no drawing is left to
+    the checks that expect one.
     """
     deadline = time.monotonic() + timeout / 1000
     while True:
         fit = page.evaluate(_AUTK_DRAWING_FIT_JS, node_id)
         if fit is None:
             return
+        assert fit["body"] is not None, (
+            f"Autark node {node_id}: its {fit['kind']} is not in a content mount, so "
+            f"nothing keeps it clear of the port markers"
+        )
         shown = min(fit["body"]) > 0
         fits = shown and all(abs(d - b) <= 1 for d, b in zip(fit["drawing"], fit["body"]))
         if fits or time.monotonic() >= deadline:
@@ -227,6 +242,19 @@ def assert_autark_drawing_fits(page, node_id: str, *, timeout: float = 5000) -> 
         f"Autark node {node_id}: its {fit['kind']} is {dw}x{dh} px in a {bw}x{bh} px "
         f"node body, so it does not fill the body"
         + (f" and {dh - bh} px of it are hidden" if dh > bh else "")
+    )
+    assert fit["markers"], (
+        f"Autark node {node_id}: no port markers found, so nothing shows they clear its {fit['kind']}"
+    )
+    left, right = fit["x"]
+    covered = {
+        m["side"]: round(min(right, m["x"][1]) - max(left, m["x"][0]), 1)
+        for m in fit["markers"]
+        if min(right, m["x"][1]) - max(left, m["x"][0]) > 0
+    }
+    assert not covered, (
+        f"Autark node {node_id}: the port markers cover its {fit['kind']} "
+        f"(screen px per marker: {covered})"
     )
 
 
