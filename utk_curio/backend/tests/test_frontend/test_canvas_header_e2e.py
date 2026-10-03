@@ -11,8 +11,9 @@ So, on a fresh dataflow at the default 1280x720 viewport:
 * the bar is the section pages' bar: the same height, the logo link, Monitor,
   API Settings and the account;
 * it holds the dataflow's menus and the five catalogs in one row, with every
-  control inside the bar, none overlapping the next, and each catalog's label
-  showing;
+  control inside the bar, none overlapping the next, nothing overflowing its
+  slot, and each catalog's label showing, even next to the widest account
+  name the bar shows;
 * each catalog button opens its own drawer over the dataflow;
 * API Settings opens from the canvas;
 * the dataflow's title and the left rail start below the bar.
@@ -49,6 +50,18 @@ CATALOGS = (
 )
 
 BAR = "header[data-curio-menu-bar]"
+
+#: Longer than the account block shows (it ellipsizes at 110px), so the bar
+#: is measured with the widest right-hand cluster it can have.
+LONG_NAME = "Header Tester With A Long Account Name"
+
+_MEASURE_SLOT = """(bar) => {
+  // The slot holding the page's controls: the bar's child that holds File.
+  const file = bar.querySelector('[aria-label="File menu"]');
+  let slot = file;
+  while (slot && slot.parentElement !== bar) slot = slot.parentElement;
+  return slot ? { clientWidth: slot.clientWidth, scrollWidth: slot.scrollWidth } : null;
+}"""
 
 _MEASURE_BAR = """(bar) => {
   const box = bar.getBoundingClientRect();
@@ -95,7 +108,7 @@ def test_the_canvas_wears_the_shared_bar_with_the_catalogs_in_it(
     require_project_page()
 
     signup_e2e_user(
-        page, frontend_server, name="Header User",
+        page, frontend_server, name=LONG_NAME,
         username=f"header_{uuid.uuid4().hex[:10]}",
     )
     wait_for_projects_page(page, timeout=30000)
@@ -128,7 +141,16 @@ def test_the_canvas_wears_the_shared_bar_with_the_catalogs_in_it(
 
     failures: list[str] = []
     m = bar.evaluate(_MEASURE_BAR)
-    print(f"canvas bar: {m}; section bar height {section_height}")
+    slot = bar.evaluate(_MEASURE_SLOT)
+    print(f"canvas bar: {m}; slot {slot}; section bar height {section_height}")
+    if slot is None:
+        failures.append("the bar has no slot holding the File menu")
+    elif slot["scrollWidth"] > slot["clientWidth"]:
+        # Overflowing controls spill over the Monitor pill rather than wrap.
+        failures.append(
+            f"the bar's controls need {slot['scrollWidth']}px in a "
+            f"{slot['clientWidth']}px slot"
+        )
     if abs(m["height"] - section_height) > 0.5:
         failures.append(
             f"the canvas bar is {m['height']}px tall, the section pages' {section_height}px"

@@ -35,7 +35,15 @@ export const CANVAS_CATALOGS: ReadonlyArray<{
  * page, so what is picked lands in this dataflow. The visible label is the
  * short name; the accessible name is the catalog's full one, which contains it.
  */
-export function CatalogButtons({ projectId }: { projectId?: string | null }) {
+export function CatalogButtons({
+  projectId,
+  crowded = false,
+}: {
+  projectId?: string | null;
+  /** Another control shares the bar (the collaboration button), so the
+   *  labels give way sooner. */
+  crowded?: boolean;
+}) {
   const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
   const { openAgentCatalogDrawer } = useAgentCatalogDrawerControls();
   const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
@@ -52,7 +60,11 @@ export function CatalogButtons({ projectId }: { projectId?: string | null }) {
   };
 
   return (
-    <div className={styles.catalogs} role="group" aria-label="Catalogs">
+    <div
+      className={clsx(styles.catalogs, crowded && styles.catalogsCrowded)}
+      role="group"
+      aria-label="Catalogs"
+    >
       {CANVAS_CATALOGS.map(({ name, shortName, kind }) => (
         <button
           key={kind}

@@ -76,6 +76,16 @@ test.each([
   }
 });
 
+test('gives way sooner when another control shares the bar', () => {
+  // The collaboration button sits beside the catalogs; with it, the labels
+  // hide at a wider slot so the last catalog never runs over Monitor.
+  const { rerender } = render(<CatalogButtons projectId="p1" />);
+  const group = () => screen.getByRole('group', { name: 'Catalogs' });
+  expect(group().className).not.toContain('catalogsCrowded');
+  rerender(<CatalogButtons projectId="p1" crowded />);
+  expect(group().className).toContain('catalogsCrowded');
+});
+
 test('warms the Data Catalog on the way in, for a saved dataflow only', () => {
   const { unmount } = render(<CatalogButtons projectId="p1" />);
   fireEvent.mouseEnter(screen.getByRole('button', { name: 'Data Catalog' }));

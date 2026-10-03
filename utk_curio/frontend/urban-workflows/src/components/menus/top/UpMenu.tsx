@@ -532,7 +532,7 @@ export default function UpMenu() {
                 )}
 
                 <span className={headerStyles.divider} aria-hidden="true" />
-                <CatalogButtons projectId={projectId} />
+                <CatalogButtons projectId={projectId} crowded={collab.enabled} />
             </GlobalPageHeader>
 
             {/* Editable Workflow Name */}

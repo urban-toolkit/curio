@@ -51,10 +51,17 @@
 /* The labels go first when the bar runs short, and the icons stay with their
    tooltips. Queried against the header's slot rather than the window: the
    account's name is as long as the user's, so the room left over is not a
-   function of the window width alone. 800px is the slot with every label
-   showing, plus the collaboration button, plus a margin. */
+   function of the window width alone. The slot's controls need about 790px
+   with every label showing, and about 40px more with the collaboration
+   button. */
 @container (max-width: 800px) {
   .catalogLabel {
+    display: none;
+  }
+}
+
+@container (max-width: 860px) {
+  .catalogsCrowded .catalogLabel {
     display: none;
   }
 }
