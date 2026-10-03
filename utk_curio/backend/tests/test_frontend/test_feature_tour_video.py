@@ -391,8 +391,7 @@ def _load_example(ctx: Ctx, path: str, *, expected_nodes: int) -> None:
     load.wait_for(state="visible", timeout=15000)
     tour.focus(load, hold=500)
     with page.expect_file_chooser() as chooser:
-        # See utils.upload_workflow: get_by_text matches the menu row and the
-        # button inside it, which is a strict-mode violation.
+        # See utils.upload_workflow: the role locator names the row's button.
         load.click()
     chooser.value.set_files(path)
     page.wait_for_function(
@@ -518,29 +517,15 @@ def _editor_field(page, label):
 
 
 def _open_api_settings(ctx: Ctx) -> None:
-    """Open API Settings from whichever entry point this page has.
+    """Open API Settings from the top bar.
 
-    Two exist, and which one is available depends on where the tour is: the
-    header button lives in ``GlobalPageHeader``, which renders on /projects and
-    /catalog/* but *not* on the canvas, where the Agent Catalog drawer's cog is
-    the only route (``docs/AGENT-CATALOG.md``, The provider).
-
-    Handling both is what lets ``apisettings`` be re-recorded alongside the canvas
-    scenes: ``CURIO_TOUR_SCENES`` picks one landing page for the whole subset, so
-    a scene that only knew the header could never share a run with them.
+    The bar is ``GlobalPageHeader`` on every page, the canvas included, so the
+    scene can share a run with the canvas scenes whichever landing page
+    ``CURIO_TOUR_SCENES`` picks. (The Agent Catalog drawer's cog is a second way
+    in, shown by the agent scenes.)
     """
     page, tour = ctx.page, ctx.tour
-    header_button = page.get_by_role("button", name="API Settings", exact=True)
-    if header_button.count():
-        tour.click(header_button.first)
-    else:
-        drawer = _open_agent_drawer(ctx)
-        tour.say(
-            "On the canvas, the Agent Catalog holds the way in",
-            "LLM configurations are account settings, so they sit with the agents they answer.",
-            hold=2600,
-        )
-        tour.click(drawer.get_by_role("button", name=re.compile("API Settings")).first)
+    tour.click(page.get_by_role("button", name="API Settings", exact=True).first)
     expect(
         page.get_by_role("heading", name="API Settings", level=2)
     ).to_be_visible(timeout=15000)
@@ -552,14 +537,13 @@ def _open_api_settings(ctx: Ctx) -> None:
 
 
 def _open_agent_drawer(ctx: Ctx):
-    """Data > Agent Catalog, returning the drawer dialog.
+    """The top bar's Agent Catalog button, returning the drawer dialog.
 
-    ``exact=True`` on the menu row is load-bearing: the left rail's palette
+    ``exact=True`` on the bar's button is load-bearing: the left rail's palette
     trigger is also named "Agent Catalog", so a substring match is ambiguous
     and Playwright's strict mode fails the scene.
     """
     page, tour = ctx.page, ctx.tour
-    tour.click(_menu(page, "Data"), force=True)
     tour.click(page.get_by_role("button", name="Agent Catalog", exact=True))
     root = page.locator(DRAWER_AGENTS)
     root.wait_for(state="attached", timeout=15000)
@@ -978,15 +962,17 @@ def scene_canvas(ctx: Ctx) -> None:
         tour.focus(locator, hold=800)
     tour.hush()
     tour.say(
-        "Menus for the rest",
-        "File, View, Data catalogs, and Provenance.",
+        "The top bar for the rest",
+        "File, View, Provenance and Share, then the five catalogs.",
         hold=2200,
     )
-    for label in ("File", "View", "Data", "Provenance"):
-        trigger = _menu(page, label)
-        tour.click(trigger, force=True, hold=1100)
+    for label in ("File", "View", "Share"):
+        tour.click(_menu(page, label), force=True, hold=1100)
+        # Escape closes a bar menu, so there is no second click to close it.
         page.keyboard.press("Escape")
-        tour.click(trigger, force=True, hold=200)
+    tour.focus(page.get_by_test_id("provenance-btn"), hold=600)
+    for name in ("Node", "Data", "Agent", "Discovery", "Model"):
+        tour.focus(page.get_by_role("button", name=f"{name} Catalog", exact=True), hold=500)
     tour.hush()
 
 
@@ -1158,7 +1144,6 @@ def scene_lineage(ctx: Ctx) -> None:
         "06", "Dataset lineage",
         "Outputs become inputs, and Curio remembers who made what.",
     )
-    tour.click(_menu(page, "Data"), force=True)
     tour.click(page.get_by_role("button", name="Data Catalog", exact=True))
     root = page.locator(DRAWER_DATA)
     root.wait_for(state="attached", timeout=15000)
@@ -1274,7 +1259,7 @@ def scene_libraries(ctx: Ctx) -> None:
         "Curio detects imports a dataflow needs and installs them per account.",
         hold=2600,
     )
-    tour.click(_menu(page, "Data"), force=True)
+    tour.click(_menu(page, "File"), force=True)
     tour.click(page.get_by_role("button", name="Installed libraries", exact=True))
     expect(
         page.get_by_role("heading", name="Installed libraries")
@@ -1630,8 +1615,7 @@ def scene_provenance(ctx: Ctx) -> None:
         "12", "Provenance",
         "Curio tracks how a dataflow got to be the way it is.",
     )
-    tour.click(_menu(page, "Provenance"), force=True)
-    tour.click(page.get_by_role("button", name="Provenance", exact=True))
+    tour.click(page.get_by_test_id("provenance-btn"))
     tour.beat(1500)
     tour.say(
         "Versions of the dataflow, as a graph",

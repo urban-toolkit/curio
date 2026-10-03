@@ -307,7 +307,8 @@ def test_rename_by_clicking_away_then_the_logo_shows_the_new_name(
     # Let any debounced install-sync save land before leaving.
     page.wait_for_timeout(1200)
 
-    page.locator('img[alt="Curio logo"]').click()
+    # The shared top bar's logo, a link named after its image.
+    page.get_by_role("link", name="Curio", exact=True).click()
     wait_for_projects_page(page, timeout=20000)
     expect(project_card(page, "After Blur")).to_be_visible(timeout=20000)
     assert page.get_by_text("Before Blur").count() == 0

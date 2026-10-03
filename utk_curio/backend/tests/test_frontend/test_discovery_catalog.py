@@ -444,7 +444,7 @@ def test_a_second_download_offers_the_dataset_instead_of_a_copy(
 def test_the_canvas_opens_the_discovery_catalog_and_downloads_from_it(
     app_frontend: "FrontendPage", current_server: str, page
 ):
-    """From the canvas's Data menu, as the other catalogs are, and without
+    """From the canvas's top bar, as the other catalogs are, and without
     leaving the dataflow: a source opened in the drawer is searched and
     downloaded from there, and the dataset lands in the Data Catalog."""
     require_project_page()
@@ -452,7 +452,6 @@ def test_the_canvas_opens_the_discovery_catalog_and_downloads_from_it(
     _enter(page, app_frontend, current_server, username="discoverycanvas", project="Discovery Canvas")
     canvas_url = page.url
 
-    page.get_by_role("button", name="Data menu").click()
     page.get_by_role("button", name="Discovery Catalog", exact=True).click()
     drawer = page.locator('[data-curio-discovery-catalog-drawer="true"][aria-hidden="false"]')
     expect(drawer).to_be_visible(timeout=15000)

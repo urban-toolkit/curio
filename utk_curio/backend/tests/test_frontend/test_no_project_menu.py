@@ -39,6 +39,7 @@ _VISIBLE_ENTRIES = (
     "Load dataflow",
     "Save dataflow as",
     "Export as notebook",
+    "Installed libraries",
 )
 
 
