@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Callable
 
+from utk_curio.backend.app.discovery.domain import text_match
 from utk_curio.backend.app.discovery.domain.errors import SourceNotFound
 from utk_curio.backend.app.discovery.domain.manifest import (
     DiscoverySourceManifest,
@@ -100,7 +101,7 @@ class DiscoveryCatalog:
         if auth:
             rows = [r for r in rows if r["auth"]["mode"] == auth]
         if q and q.strip():
-            rows = [r for r in rows if _matches(r, q.strip().lower())]
+            rows = [r for r in rows if _matches(r, q)]
         rows.sort(key=lambda r: r["name"].lower())
         return {"sources": rows, "facets": facets}
 
@@ -112,14 +113,12 @@ def _counts(values) -> dict[str, int]:
     return dict(sorted(out.items()))
 
 
-def _matches(row: dict[str, Any], needle: str) -> bool:
-    haystack = " ".join(
-        [
-            str(row.get("name") or ""),
-            str(row.get("description") or ""),
-            str(row.get("publisher") or ""),
-            str(row.get("sourceId") or ""),
-            " ".join(row.get("tags") or []),
-        ]
-    ).lower()
-    return needle in haystack
+def _matches(row: dict[str, Any], query: str) -> bool:
+    return text_match.matches(
+        query,
+        str(row.get("name") or ""),
+        str(row.get("description") or ""),
+        str(row.get("publisher") or ""),
+        str(row.get("sourceId") or ""),
+        " ".join(row.get("tags") or []),
+    )

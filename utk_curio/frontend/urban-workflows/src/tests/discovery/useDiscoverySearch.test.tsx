@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { SEARCH_DEBOUNCE_MS, useDiscoverySearch } from '../../services/discoveryCatalog';
 
@@ -148,5 +148,99 @@ describe('useDiscoverySearch', () => {
       jest.advanceTimersByTime(5000);
     });
     expect(apiFetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+function PagedProbe(props: { q: string; sourceDir?: string }) {
+  const { data, loadMore, loadingMore } = useDiscoverySearch(props);
+  return (
+    <div>
+      <span data-testid="ids">{data.resources.map((r) => r.resourceId).join(',')}</span>
+      <span data-testid="next">{String(data.nextCursor)}</span>
+      <span data-testid="more">{String(loadingMore)}</span>
+      <button onClick={loadMore}>more</button>
+    </div>
+  );
+}
+
+const row = (resourceId: string) => ({ sourceId: 'source.a.b', resourceId, name: resourceId });
+
+async function ids(expected: string) {
+  await waitFor(() => expect(screen.getByTestId('ids').textContent).toBe(expected));
+}
+
+describe("useDiscoverySearch: a source's next page", () => {
+  test('loadMore asks the source for the page after the rows shown, and adds its rows below', async () => {
+    apiFetch
+      .mockResolvedValueOnce({ ...EMPTY, resources: [row('a'), row('b')], nextCursor: '2', totalHint: 3 })
+      .mockResolvedValueOnce({ ...EMPTY, resources: [row('c')], nextCursor: null, totalHint: 3 });
+    render(<PagedProbe q="bike" sourceDir="source.a.b@1" />);
+    await settle();
+    await ids('a,b');
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('more'));
+    });
+    await ids('a,b,c');
+    expect(apiFetch).toHaveBeenCalledTimes(2);
+    const next = apiFetch.mock.calls[1][0] as string;
+    expect(next).toContain('/sources/source.a.b%401/search');
+    expect(next).toContain('cursor=2');
+    expect(next).toContain('q=bike');
+    expect(screen.getByTestId('next').textContent).toBe('null');
+    expect(screen.getByTestId('more').textContent).toBe('false');
+  });
+
+  test('a row the next page repeats is shown once', async () => {
+    apiFetch
+      .mockResolvedValueOnce({ ...EMPTY, resources: [row('a'), row('b')], nextCursor: '2' })
+      .mockResolvedValueOnce({ ...EMPTY, resources: [row('b'), row('c')], nextCursor: null });
+    render(<PagedProbe q="bike" sourceDir="source.a.b@1" />);
+    await settle();
+    await ids('a,b');
+    await act(async () => {
+      fireEvent.click(screen.getByText('more'));
+    });
+    await ids('a,b,c');
+  });
+
+  test('with no next page, loadMore asks nothing', async () => {
+    apiFetch.mockResolvedValueOnce({ ...EMPTY, resources: [row('a')], nextCursor: null });
+    render(<PagedProbe q="bike" sourceDir="source.a.b@1" />);
+    await settle();
+    await ids('a');
+    fireEvent.click(screen.getByText('more'));
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('a search across sources asks for no next page', async () => {
+    apiFetch.mockResolvedValueOnce({ ...EMPTY, resources: [row('a')], nextCursor: '20' });
+    render(<PagedProbe q="bike" />);
+    await settle();
+    await ids('a');
+    fireEvent.click(screen.getByText('more'));
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('a next page that lands after the query changed is dropped', async () => {
+    let answerMore: (page: unknown) => void = () => undefined;
+    apiFetch
+      .mockResolvedValueOnce({ ...EMPTY, resources: [row('a')], nextCursor: '1' })
+      .mockImplementationOnce(() => new Promise((resolve) => { answerMore = resolve; }))
+      .mockResolvedValueOnce({ ...EMPTY, resources: [row('x')], nextCursor: null });
+    const { rerender } = render(<PagedProbe q="bike" sourceDir="source.a.b@1" />);
+    await settle();
+    await ids('a');
+    fireEvent.click(screen.getByText('more'));
+    expect(screen.getByTestId('more').textContent).toBe('true');
+
+    rerender(<PagedProbe q="bus" sourceDir="source.a.b@1" />);
+    await settle();
+    await ids('x');
+    expect(screen.getByTestId('more').textContent).toBe('false');
+    await act(async () => {
+      answerMore({ ...EMPTY, resources: [row('b')], nextCursor: null });
+    });
+    expect(screen.getByTestId('ids').textContent).toBe('x');
   });
 });

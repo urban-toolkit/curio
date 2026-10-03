@@ -120,12 +120,16 @@ def resource_row(
     held_formats: dict[str, str] | None = None,
     parameters: tuple[P.ParameterSpec, ...] = (),
     already_held_model_id: str | None = None,
+    unavailable_reason: str | None = None,
 ) -> dict[str, Any]:
     """One search result.
 
     ``alreadyHeldDatasetId`` is how a row says "you already downloaded this" -
     the UI turns the download button into a link rather than offering a second
     copy. Resolved server-side because only the server can answer it.
+
+    ``unavailableReason`` is why the row cannot be added, in the words its add
+    would fail with; a row with one is not ``acquirable``.
     """
     return {
         "sourceId": resource.source_id,
@@ -138,7 +142,8 @@ def resource_row(
         "updatedAt": resource.updated_at,
         "landingUrl": resource.landing_url,
         "sizeHint": resource.size_hint,
-        "acquirable": bool(acquirable),
+        "acquirable": bool(acquirable) and unavailable_reason is None,
+        "unavailableReason": unavailable_reason,
         "alreadyHeldDatasetId": already_held_dataset_id,
         # The datasets held from it, by format: holding the CSV is not
         # holding the GeoJSON, and the row offers the one not yet held.
@@ -163,6 +168,7 @@ def resource_detail_row(
     held_formats: dict[str, str] | None = None,
     parameters: tuple[P.ParameterSpec, ...] = (),
     already_held_model_id: str | None = None,
+    unavailable_reason: str | None = None,
 ) -> dict[str, Any]:
     row = resource_row(
         detail.resource,
@@ -172,6 +178,7 @@ def resource_detail_row(
         held_formats=held_formats,
         parameters=parameters,
         already_held_model_id=already_held_model_id,
+        unavailable_reason=unavailable_reason,
     )
     row["fields"] = [
         {"name": f.name, "type": f.type, "description": f.description}

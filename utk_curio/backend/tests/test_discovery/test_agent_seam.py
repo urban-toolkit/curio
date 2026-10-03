@@ -210,11 +210,25 @@ class TestOnlyTheRuntimeSaysActionable:
             "a type the source cannot store": dict(resourceId=self.URL, url=self.URL, verification={
                 "status": "verified", "httpStatus": 200,
                 "contentType": "application/octet-stream"}),
-            "an archive": dict(resourceId=self.URL, url=self.URL, verification={
-                "status": "verified", "httpStatus": 200, "contentType": "application/zip"}),
+            # A zip was refused here too until Curio unpacked zips; see
+            # test_a_direct_url_archive_curio_unpacks_is_downloadable.
+            "an archive Curio does not unpack": dict(resourceId=self.URL, url=self.URL, verification={
+                "status": "verified", "httpStatus": 200,
+                "contentType": "application/x-7z-compressed"}),
         }
         for why, fields in cases.items():
             assert self._row(sourceId=self.DIRECT, **fields).get("acquirable") is None, why
+
+    def test_a_direct_url_archive_curio_unpacks_is_downloadable(self, app, shipped_root):
+        """A GTFS feed or a zipped shapefile: the Discovery Catalog unpacks it,
+        so the row downloads rather than teaching a manual download, whether
+        the probe saw a zip content type or only the link's suffix."""
+        url = "https://data.example.org/google_transit.zip"
+        for content_type in ("application/zip", "application/octet-stream"):
+            row = self._row(sourceId=self.DIRECT, resourceId=url, url=url, verification={
+                "status": "verified", "httpStatus": 200, "contentType": content_type})
+            assert row["access"] == verify.ACCESS_FETCHABLE, content_type
+            assert row["acquirable"] is True, content_type
 
     def test_a_plain_link_to_a_storable_file_becomes_a_direct_url_download(
         self, app, shipped_root

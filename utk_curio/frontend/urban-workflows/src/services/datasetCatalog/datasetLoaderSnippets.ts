@@ -324,12 +324,16 @@ function snippetForFormat(
     // preserved); plain DataFrames as ordinary parquet. Read with
     // `gpd.read_parquet` first so a geo dataset reloads as a GeoDataFrame —
     // matching the output type/schema of the node that produced it — and fall
-    // back to `pd.read_parquet` for non-geo tables.
+    // back to `pd.read_parquet` for non-geo tables. A layer type is set as the
+    // frame's metadata, as for GeoJSON above.
+    const typed = layerType && AUTARK_LAYER_TYPES.has(layerType)
+      ? `\ndf.metadata = {"layerType": ${JSON.stringify(layerType)}}`
+      : "";
     return {
       language: "python",
       imports: ["import pandas as pd", "import geopandas as gpd"],
       pathVariable: "dataset_path",
-      code: `dataset_path = ${expr}\ntry:\n    df = gpd.read_parquet(dataset_path)\nexcept Exception:\n    df = pd.read_parquet(dataset_path)`,
+      code: `dataset_path = ${expr}\ntry:\n    df = gpd.read_parquet(dataset_path)\nexcept Exception:\n    df = pd.read_parquet(dataset_path)${typed}`,
       returnVariable: "df",
     };
   }

@@ -198,6 +198,48 @@ describe("NodeOutcomeStrip", () => {
     expect(screen.getByTestId("node-outcome-n5")).toHaveTextContent("line three");
   });
 
+  // #603: a code node's error is its stdout and then a traceback, so the
+  // collapsed strip read "stdout:" or "Traceback (most recent call last):",
+  // and the line that says what went wrong was behind "more".
+  const TRACEBACK =
+    "stdout:\nloading parcels\n" +
+    "Traceback (most recent call last):\n" +
+    '  File "/app/utk_curio/sandbox/app/worker.py", line 595, in execute_code\n' +
+    "    output = ns['userCode'](incomingInput)\n" +
+    '  File "<string>", line 2, in userCode\n' +
+    "RuntimeError: upstream boom\n";
+
+  it("collapses a Python traceback to its exception line (#603)", () => {
+    (global as any).fetch = jest.fn();
+    render(
+      <NodeOutcomeStrip nodeId="n9" projectId="p-1" output={{ code: "error", content: TRACEBACK }} />,
+    );
+    const strip = screen.getByTestId("node-outcome-n9");
+    expect(strip).toHaveTextContent("RuntimeError: upstream boom");
+    expect(strip).not.toHaveTextContent("Traceback (most recent call last):");
+    expect(strip).not.toHaveTextContent("stdout:");
+    // The whole traceback is still one click away.
+    fireEvent.click(screen.getByRole("button", { name: "more" }));
+    expect(strip).toHaveTextContent("Traceback (most recent call last):");
+    expect(strip).toHaveTextContent("loading parcels");
+  });
+
+  it("collapses a traceback read from the journal the same way (#603)", async () => {
+    (global as any).fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        nodeId: "n10",
+        run: { status: "error", stderrTail: "Traceback (most recent call last):\n  File \"<string>\", line 1\nKeyError: 'tract_id'" },
+        render: null,
+      }),
+    });
+    render(<NodeOutcomeStrip nodeId="n10" projectId="p-1" output={null} />);
+    await waitFor(() =>
+      expect(screen.getByTestId("node-outcome-n10")).toHaveTextContent("KeyError: 'tract_id'"),
+    );
+    expect(screen.getByTestId("node-outcome-n10")).not.toHaveTextContent("Traceback");
+  });
+
   it("offers the rest of a single line the node's width cuts", () => {
     (global as any).fetch = jest.fn();
     const width = jest.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(400);

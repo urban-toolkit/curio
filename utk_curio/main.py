@@ -193,6 +193,14 @@ def main():
         ),
     )
     parser.add_argument(
+        "--discovery-max-download-mb", type=int, default=None, metavar="MB",
+        help=(
+            "The largest file the Discovery Catalog downloads or adds from a bucket, "
+            "in megabytes (sets CURIO_DISCOVERY_MAX_DOWNLOAD_MB, default 1024). A "
+            "source's manifest may set a lower limit for itself."
+        ),
+    )
+    parser.add_argument(
         "--discovery-root", default=None, metavar="PATH",
         help=(
             "Directory the shipped Discovery Catalog sources are read from "
@@ -383,6 +391,7 @@ def main():
         solve_batch_deadline=args.solve_batch_deadline,
         validation_exec_timeout=args.validation_exec_timeout,
         validation_node_limit=args.validation_node_limit,
+        discovery_max_download_mb=args.discovery_max_download_mb,
     )
 
     # Handle standalone rebuild or db init without starting servers. Neither

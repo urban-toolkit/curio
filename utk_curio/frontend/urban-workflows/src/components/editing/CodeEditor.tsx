@@ -29,6 +29,8 @@ import {
     type CredentialFinding,
 } from "../../services/connectionKeys/credentialLiterals";
 import { usePackageBackendRun } from "../../hook/usePackageBackendRun";
+import { useGrammarInputState } from "../../hook/useGrammarInputState";
+import { upstreamErroredMessage } from "../../utils/nodeEmptyState";
 import { ICodeData } from "../../types";
 
 type CodeEditorProps = {
@@ -91,11 +93,24 @@ function CodeEditor({
         defaultSaveOutputDataset,
         isDashboardSource,
         playNodesUpTo,
+        nodes,
     } = useFlowContext();
     const { nodeExecProv } = useProvenanceContext();
     const collab = useCollab();
     // dev/91: non-null exactly when this template declares a backendHandler.
     const backendRun = usePackageBackendRun(nodeType);
+    // #603: whether a node wired into this one ran and failed, asked the way a
+    // chart or a Data Pool asks it.
+    const { upstreamErrored, erroredSourceIds } = useGrammarInputState(data.nodeId);
+    const failedUpstreamName = (): string | null => {
+        const failed = (nodes ?? []).find((n: any) => n?.id === erroredSourceIds[0]);
+        if (!failed?.data) return null;
+        try {
+            return resolveNodeDisplayLabel(failed.data as any);
+        } catch {
+            return null;
+        }
+    };
 
     const replacedCodeDirtyBypass = useRef(false);
     const outputRef = useRef<HTMLDivElement>(null);
@@ -323,10 +338,18 @@ function CodeEditor({
             // No artifact, so deliberately no outputCallback - nothing is
             // propagated downstream. That left every downstream node unable to
             // tell this apart from "never run", so it advised running the node
-            // the user had just watched fail (#347). Record the failure instead.
+            // the user had just watched fail (#347). Record the failure instead,
+            // and tell the runner, which then runs nothing below this node (#603).
             markNodeErrored(data.nodeId);
-            signalNodeExecDone(data.nodeId);
+            signalNodeExecDone(data.nodeId, { failed: true });
         }
+    };
+
+    /** A run that ended without an output: shown, recorded and reported alike. */
+    const failRun = (content: string) => {
+        setOutputCallback({ code: "error", content });
+        markNodeErrored(data.nodeId);
+        signalNodeExecDone(data.nodeId, { failed: true });
     };
 
     // marks were resolved and new code is available
@@ -337,7 +360,14 @@ function CodeEditor({
         }
         if (output.code !== "exec") return;
         if (replacedCode === "") {
-            setOutputCallback({ code: "error", content: "No code to execute" });
+            failRun("No code to execute");
+            return;
+        }
+        // #603: a node fed by one that failed has nothing to run on. It says
+        // which node failed and is not sent to the sandbox, where it could only
+        // fail again with a message about missing input.
+        if (upstreamErrored) {
+            failRun(upstreamErroredMessage(failedUpstreamName()));
             return;
         }
         if (backendRun) {
@@ -349,8 +379,7 @@ function CodeEditor({
                     setOutputCallback({ code: "success", content: outcome.content });
                     markNodeExecuted(data.nodeId);
                 } else {
-                    setOutputCallback({ code: "error", content: outcome.content });
-                    signalNodeExecDone(data.nodeId);
+                    failRun(outcome.content);
                 }
             });
             return;

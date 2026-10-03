@@ -26,7 +26,6 @@
     "describe": true,
     "download": true,
     "formats": ["csv", "geojson", "json"],
-    "maxDownloadBytes": 67108864,
     "allowOffBaseDistributions": false
   },
   "limits": { "requestsPerMinute": 30 },
