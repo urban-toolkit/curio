@@ -255,9 +255,10 @@ def verify_external_source(url: str | None, *, request_fn=None, resolver=None, b
 # status, and the page title of a non-data answer. Nothing here issues a
 # request; `classify_access` is a pure function of one observation.
 
-#: Content types a loader can parse directly. Archives are not among them:
-#: the Discovery Catalog refuses them (``discovery/domain/formats.py``), so a person
-#: unpacks one and imports the file.
+#: Content types a loader can parse directly. Archives are told apart before
+#: these (``_archive_kind``): the Discovery Catalog unpacks a zip and a gzip
+#: when it downloads one, and refuses every other archive, which a person
+#: unpacks and imports the file of.
 _DATA_CONTENT_TYPES = (
     "json", "geo+json", "csv", "text/csv", "xml", "octet-stream",
     "spreadsheet", "excel", "parquet", "x-netcdf", "geopackage", "shapefile",
@@ -276,23 +277,37 @@ _STEP_MAX_CHARS = 200
 _STEPS_MAX = 6
 
 
-def _is_archive(content_type: str, url: str | None) -> bool:
-    """Whether the answer is an archive, by the Discovery Catalog's own table: its
-    content type (parameters such as ``charset`` stripped) or the URL's suffix."""
+def _archive_kind(content_type: str, url: str | None) -> str | None:
+    """The kind of archive the answer is (``zip``, ``gzip``, ``tar``...), by the
+    Discovery Catalog's own tables: the URL's suffix, then the content type
+    (parameters such as ``charset`` stripped). None when it is not one."""
     from utk_curio.backend.app.discovery.domain import formats
 
-    if formats.content_type_of({"Content-Type": content_type}) in formats.ARCHIVE_CONTENT_TYPES:
-        return True
-    path = urlparse(url or "").path.lower()
-    return path.endswith(formats.ARCHIVE_SUFFIXES)
+    path = urlparse(url or "").path
+    return formats.archive_kind(content_type or "", path)
+
+
+def is_unpacked_archive(content_type: str, url: str | None) -> bool:
+    """Whether the answer is an archive the Discovery Catalog unpacks."""
+    from utk_curio.backend.app.discovery.domain import formats
+
+    return _archive_kind(content_type, url) in formats.UNPACKED_ARCHIVES
+
+
+def _is_refused_archive(content_type: str, url: str | None) -> bool:
+    """Whether the answer is an archive the Discovery Catalog refuses."""
+    kind = _archive_kind(content_type, url)
+    return kind is not None and not is_unpacked_archive(content_type, url)
 
 
 def _content_type_kind(content_type: str, url: str | None = None) -> str:
     lowered = (content_type or "").lower()
     if any(marker in lowered for marker in _PAGE_CONTENT_TYPES):
         return "page"
-    if _is_archive(content_type, url):
+    if _is_refused_archive(content_type, url):
         return "archive"
+    if is_unpacked_archive(content_type, url):
+        return "unpacked-archive"
     if any(marker in lowered for marker in _DATA_CONTENT_TYPES):
         return "data"
     return "unknown"
@@ -305,13 +320,15 @@ def classify_access(observation: dict | None, url: str | None = None) -> dict:
     evidence (`DEC-053` — a verdict the runtime recorded, never a claim the
     model made):
 
-    - ``fetchable`` — 2xx with a data body (a JSON/CSV/GeoJSON/archive content
-      type, or a JSON shape sample the probe read);
-    - ``manual-download`` — the data URL answered with a PAGE (``text/html``),
-      or refused with a gated status (401/403/451) — a portal a person passes
-      through, not an endpoint code can read; or with an archive, which a
-      person unpacks before importing the file;
-    - ``unknown`` — nothing was probed, the policy refused the URL, or the
+    - ``fetchable``: 2xx with a data body (a JSON/CSV/GeoJSON content type, a
+      zip or a gzip, which the Discovery Catalog unpacks when it downloads it,
+      or a JSON shape sample the probe read);
+    - ``manual-download``: the data URL answered with a PAGE (``text/html``),
+      or refused with a gated status (401/403/451): a portal a person passes
+      through, not an endpoint code can read; or with an archive Curio does
+      not unpack (a tar, 7z, bzip2 or RAR), which a person unpacks before
+      importing the file;
+    - ``unknown``: nothing was probed, the policy refused the URL, or the
       answer was neither (a 404, a transport failure, an unrecognized type).
       The row says so; nothing downstream may upgrade it silently.
     """
@@ -327,6 +344,13 @@ def classify_access(observation: dict | None, url: str | None = None) -> dict:
                 "which Curio does not unpack"
             )
             return {"access": ACCESS_MANUAL, "why": why[:_ACCESS_WHY_MAX]}
+        if kind == "unpacked-archive":
+            why = (
+                f"the endpoint answered {http_status or 200} with "
+                f"{obs.get('contentType') or 'an archive, by its suffix'}, which Curio "
+                "unpacks when it downloads it"
+            )
+            return {"access": ACCESS_FETCHABLE, "why": why[:_ACCESS_WHY_MAX]}
         if kind == "data" or obs.get("sampleKeys"):
             detail = (
                 f"the endpoint answered {http_status or 200} with "
@@ -373,9 +397,12 @@ def download_steps(row: dict | None, observation: dict | None) -> list[str]:
     steps: list[str] = []
     title = str(obs.get("pageTitle") or "").strip()
     fmt = str(row.get("format") or "").strip()
-    if url and _is_archive(str(obs.get("contentType") or ""), url):
+    if url and _is_refused_archive(str(obs.get("contentType") or ""), url):
         steps.append(f"Download the archive: {url}")
-        steps.append("Unpack it and keep the data file inside (Curio does not unpack archives).")
+        steps.append(
+            "Unpack it and keep the data file inside (Curio unpacks zip and gzip "
+            "archives, not this kind)."
+        )
     else:
         if url:
             steps.append(f"Open the portal page in your browser: {url}")

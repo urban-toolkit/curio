@@ -90,19 +90,25 @@ class TestTheLadderInOrder:
 
 
 class TestRefusals:
+    # These two asserted that every archive is refused, zip and gzip included.
+    # Curio now unpacks those (TestArchives below), so they assert the refusal
+    # of the archives it does not unpack, by content type and by name alone.
     @pytest.mark.parametrize(
         "content_type",
-        ["application/zip", "application/gzip", "application/x-tar", "application/x-7z-compressed"],
+        ["application/x-tar", "application/x-7z-compressed", "application/x-bzip2",
+         "application/vnd.rar"],
     )
-    def test_an_archive_content_type_is_refused(self, content_type):
-        """Nothing is unpacked: that is the decompression-bomb surface and it
-        deserves its own design rather than arriving as a side effect."""
-        with pytest.raises(UnsupportedFormatError, match="archive"):
+    def test_an_archive_content_type_curio_does_not_unpack_is_refused(self, content_type):
+        from utk_curio.backend.app.discovery.domain.formats import refuse_archives
+
+        with pytest.raises(UnsupportedFormatError, match="does not unpack"):
+            refuse_archives(content_type, None)
+        with pytest.raises(UnsupportedFormatError, match="does not unpack"):
             resolve(headers={"Content-Type": content_type})
 
-    @pytest.mark.parametrize("name", ["data.zip", "bundle.tar.gz", "x.7z", "y.rar"])
-    def test_an_archive_filename_is_refused_too(self, name):
-        with pytest.raises(UnsupportedFormatError, match="archive"):
+    @pytest.mark.parametrize("name", ["bundle.tar.gz", "x.7z", "y.rar", "z.tgz", "w.tar", "v.bz2"])
+    def test_an_archive_filename_curio_does_not_unpack_is_refused_too(self, name):
+        with pytest.raises(UnsupportedFormatError, match="does not unpack"):
             resolve(final_url=f"https://p.example/{name}")
 
     def test_something_unidentifiable_says_so_rather_than_guessing(self):
@@ -112,6 +118,48 @@ class TestRefusals:
     def test_a_format_the_source_does_not_offer_names_what_it_does(self):
         with pytest.raises(UnsupportedFormatError, match="offers csv"):
             resolve(final_url="https://p.example/a.geojson", allowed=("csv",))
+
+
+class TestArchives:
+    @pytest.mark.parametrize(
+        "content_type,name,head,kind",
+        [
+            ("application/zip", None, b"", "zip"),
+            ("application/x-zip-compressed", None, b"", "zip"),
+            ("application/gzip", None, b"", "gzip"),
+            ("application/x-gzip; charset=binary", None, b"", "gzip"),
+            ("", "tl_2022_17_tabblock20.zip", b"", "zip"),
+            ("", "il_wac_S000_JT00_2022.CSV.GZ", b"", "gzip"),
+            # Served with nothing to go by: the first bytes decide.
+            ("application/octet-stream", None, b"PK\x03\x04rest", "zip"),
+            ("application/octet-stream", None, b"\x1f\x8b\x08rest", "gzip"),
+            ("application/octet-stream", None, b"7z\xbc\xaf'\x1c\x00\x04", "7z"),
+            ("application/octet-stream", None, b"Rar!\x1a\x07\x00", "rar"),
+            # A .tar.gz is a tar, whatever its last suffix says.
+            ("application/gzip", "bundle.tar.gz", b"", "tar"),
+            ("text/csv", "crimes.csv", b"id,date\n", None),
+            ("application/octet-stream", None, b"BZh91AY&SY\x00", "bz2"),
+            ("application/octet-stream", None, b"\x00" * 257 + b"ustar\x0000", "tar"),
+            # Text that only starts like one is text.
+            ("text/csv", "crimes.csv", b"BZh,count\n1,2\n", None),
+            ("text/csv", "crimes.csv", b"m" * 256 + b"Mustard,1\n", None),
+        ],
+    )
+    def test_what_kind_of_archive_it_is(self, content_type, name, head, kind):
+        from utk_curio.backend.app.discovery.domain.formats import archive_kind
+
+        assert archive_kind(content_type, name, head) == kind
+
+    @pytest.mark.parametrize(
+        "content_type,name",
+        [("application/zip", None), ("application/gzip", None), ("", "data.zip"),
+         ("", "wac.csv.gz")],
+    )
+    def test_zip_and_gzip_are_not_refused(self, content_type, name):
+        """Curio unpacks them, so nothing refuses them up front."""
+        from utk_curio.backend.app.discovery.domain.formats import refuse_archives
+
+        refuse_archives(content_type, name)
 
 
 class TestTheFilename:

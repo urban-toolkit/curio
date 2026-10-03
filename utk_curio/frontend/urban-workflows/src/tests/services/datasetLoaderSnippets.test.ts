@@ -40,6 +40,9 @@ const READERS: Record<DatasetFormat, string | null> = {
   // parquet datasets, so there is no single path to generate for. Each member
   // is an ordinary `parquet` dataset and takes that branch.
   gpkg: null,
+  // And for a GTFS feed: its tables are parquet datasets, each loaded through
+  // its own id.
+  gtfs: null,
   // A collection's index, with a readable path for every file, which only the
   // sandbox's `curio_load_collection` can resolve.
   collection: "curio_load_collection",

@@ -1,8 +1,10 @@
 """Present the per-layer datasets of one multi-layer import as a single grouped,
 bundle-shaped catalog entry.
 
-Two importers produce these: OSM PBF extracts and GeoPackages. In both cases the
-layers are stored as independent parquet datasets sharing a ``groupId``, and
+Two importers produce these: OSM PBF extracts and GeoPackages; and the
+Discovery Catalog does, for an OpenStreetMap download of several layers and for
+a GTFS feed. In every case the layers are stored as independent datasets
+sharing a ``groupId``, and
 this module folds them into one synthetic catalog item whose id IS the group id,
 so the existing bundle card and tabbed preview UI render it and install/uninstall
 expand to the members.
@@ -43,6 +45,16 @@ _GROUP_KINDS = {
         "source_label": "GeoPackage Import",
         "tags": ["gpkg", "geopackage"],
         "noun": "GeoPackage import",
+    },
+    # The tables of a GTFS feed the Discovery Catalog downloaded. Its layers are
+    # Parquet like a GeoPackage's, so the feed is what the group says it is.
+    "gtfs": {
+        "format": "gtfs",
+        "scheme": "gtfs",
+        "source_label": "GTFS Download",
+        "tags": ["gtfs", "transit"],
+        "noun": "GTFS feed",
+        "always_its_own_format": True,
     },
 }
 
@@ -110,6 +122,10 @@ def build_layer_group_item(group_id: str, members: list[dict[str, Any]]) -> dict
             "tags": list(kind["tags"]),
         }
     )
+    if kind.get("always_its_own_format"):
+        # A GTFS feed is always a download, and its tables' Parquet says
+        # nothing about it; the group says GTFS.
+        labels["format"] = kind["format"]
     return base_item(
         id=group_id,
         title=group_base_title(members, group_id),

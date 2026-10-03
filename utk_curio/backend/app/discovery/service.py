@@ -720,6 +720,7 @@ class DiscoveryService:
                             parameters=values,
                             progress=_progress,
                             cancelled=lambda: job.cancelled,
+                            stage=_stage,
                         )
                     dataset = result["dataset"]
                     job_store.jobs.finish(

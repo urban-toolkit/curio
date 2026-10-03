@@ -191,6 +191,12 @@
   --curio-format-gpkg-bg: #F7E7DC;
   --curio-format-gpkg-on-tint: #8A4319;
 
+  /* GTFS: a transit feed's tables. A bright cerulean, clear of GeoTIFF's dark
+     teal and CSV's blue. */
+  --curio-format-gtfs-fg: #0089A8;
+  --curio-format-gtfs-bg: #DDF2F7;
+  --curio-format-gtfs-on-tint: #006A82;
+
   /* Collection: an index of files kept where they are. A rose that no other
      format uses, so a folder of images never reads as a table. */
   --curio-format-collection-fg: #B83A5E;

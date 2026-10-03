@@ -19,6 +19,7 @@ const colors: Record<DatasetFormat, { fill: string; stroke: string; bg: string }
   bundle: { fill: "rgba(91,100,114,0.1)", stroke: "rgba(91,100,114,0.25)", bg: "#F2F3F5" },
   osm: { fill: "rgba(122,182,72,0.12)", stroke: "rgba(122,182,72,0.3)", bg: "#F4FAEF" },
   gpkg: { fill: "rgba(166,84,35,0.1)", stroke: "rgba(166,84,35,0.25)", bg: "#FBF4EF" },
+  gtfs: { fill: "rgba(0,137,168,0.1)", stroke: "rgba(0,137,168,0.25)", bg: "#EFF9FB" },
   collection: { fill: "rgba(184,58,94,0.1)", stroke: "rgba(184,58,94,0.25)", bg: "#FCF2F5" },
 };
 
