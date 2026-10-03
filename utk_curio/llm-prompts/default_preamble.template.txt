@@ -226,7 +226,7 @@ An example of a dataflow:
                 "id": "node1",
                 "x": 0, "y": 0,
                 "type": "curio.builtin/data-loading",
-                "content": "import rasterio\n# the raster is a Data Catalog dataset (catalog.search gives the id) — never a guessed filename\ndataset_path = curio_data_path('imported.milan-tmrt-2022-203-1200@1')\nsrc = rasterio.open(dataset_path)\nreturn src"
+                "content": "import rasterio\n# the raster is a Data Catalog dataset (catalog.search gives the id) — never a guessed filename\nsrc = curio_load_data('imported.milan-tmrt-2022-203-1200@1')\nreturn src"
             },
             {
                 "id": "node2",
@@ -249,7 +249,7 @@ An example of a dataflow:
                 "id": "node5",
                 "x": 1200, "y": 0,
                 "type": "curio.builtin/data-loading",
-                "content": "import geopandas as gpd\n# the shapefile is a Data Catalog dataset (catalog.search gives the id) — never a guessed filename\ndataset_path = curio_data_path('imported.milan-sociodemographics@1')\ngdf = gpd.read_file(dataset_path)\nreturn gdf"
+                "content": "import geopandas as gpd\n# the shapefile is a Data Catalog dataset (catalog.search gives the id) — never a guessed filename\ngdf = curio_load_data('imported.milan-sociodemographics@1')\nreturn gdf"
             },
             {
                 "id": "node6",
