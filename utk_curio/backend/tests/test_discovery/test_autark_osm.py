@@ -59,13 +59,13 @@ def auth(user_and_token):
 def osm_home(tmp_path, monkeypatch):
     """A HOME holding Curio's copy of DuckDB's extensions, as launch seeds it,
     so autk-db's ``INSTALL spatial`` in the Node child reads it from disk."""
-    from utk_curio import main as curio_main
+    from utk_curio.cli import dependencies
 
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(Path, "home", lambda: home)
-    curio_main.seed_duckdb_extensions()
+    dependencies.seed_duckdb_extensions()
     return home
 
 
@@ -314,19 +314,41 @@ class TestItBecomesDatasets:
             for lon, lat, *_ in _positions(feature["geometry"]):
                 assert west - 1e-6 <= lon <= east + 1e-6 and south - 1e-6 <= lat <= north + 1e-6
 
-    def test_a_layer_loads_into_an_autark_node_as_that_layer(self, client, auth, live):
-        # The Data Loading node a drag makes names the layer, so an Autark map
-        # draws Buildings as buildings and Parks as parks, not as bare polygons.
+    def test_a_layer_loads_into_an_autark_node_as_that_layer(self, client, auth, live, monkeypatch):
+        # The Data Loading node a drag makes loads the dataset by id, and Play
+        # sends its layer with its path, so curio_load_data hands an Autark map
+        # Buildings as buildings and Parks as parks, not as bare polygons
+        # (the sandbox's side is in sandbox/tests/test_catalog_helpers.py).
         job = wait_for(client, auth, acquire(client, auth, OSM, "parks", parameters={"area": GOLF_BOX})
                        .get_json()["jobId"], timeout=120)
         assert job["status"] == "completed", job
         dataset = job["dataset"]
         assert dataset["layerName"] == "parks"
-        typed = 'gdf.metadata = {"layerType": "parks"}'
-        assert typed in dataset["loaderSnippet"]["code"]
+        loader = f'gdf = curio_load_data("{dataset["id"]}")'
+        assert dataset["loaderSnippet"]["code"] == loader
         listing = client.get("/api/datasets/catalog", headers=auth).get_json()["items"]
         listed = [d for d in listing if d["id"] == dataset["id"]]
-        assert listed and typed in listed[0]["loaderSnippet"]["code"]
+        assert listed and listed[0]["loaderSnippet"]["code"] == loader
+
+        sent = {}
+
+        class Reply:
+            status_code = 200
+
+            def json(self):
+                return {"stdout": "", "stderr": "", "output": {}}
+
+        def sandbox(method, path, **kwargs):
+            sent.update(json.loads(kwargs["data"]))
+            return Reply()
+
+        monkeypatch.setattr("utk_curio.backend.app.api.routes._sandbox_call", sandbox)
+        played = client.post("/processPythonCode", headers=auth, json={
+            "code": f"    {loader}\n    return gdf\n", "nodeType": "PYTHON_COMPUTATION",
+            "input": {}, "saveOutputDataset": False,
+        })
+        assert played.status_code == 200, played.get_data(as_text=True)
+        assert sent["dataset_formats"][dataset["id"]]["layerType"] == "parks"
 
     def test_it_records_what_it_was_narrowed_by(self, client, auth, live):
         job = wait_for(client, auth, acquire(client, auth, OSM, "parks", parameters={"area": GOLF})

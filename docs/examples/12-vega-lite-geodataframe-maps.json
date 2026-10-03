@@ -8,7 +8,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 430,
-        "content": "import geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.utk.chicago-boundary\")\ngdf = gpd.read_file(dataset_path)\n\nreturn gdf",
+        "content": "import geopandas as gpd\n\ngdf = curio_load_data(\"data.utk.chicago-boundary\")\n\nreturn gdf",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

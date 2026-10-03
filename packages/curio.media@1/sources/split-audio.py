@@ -1,6 +1,6 @@
 """Split Audio.
 
-Input: a collection's rows, as Data Loading's `curio_collection(...)` returns
+Input: a collection's rows, as Data Loading's `curio_load_collection(...)` returns
 them. Every recording becomes one row per window, with the window's level and
 peak in dBFS (decibels below full scale) over all of its channels, and a
 short WAV of the window, in the recording's channels, that Simple View can

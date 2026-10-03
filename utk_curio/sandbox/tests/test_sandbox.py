@@ -16,7 +16,8 @@ _SKIP_NO_NODE = unittest.skipIf(
 )
 
 # Repo root holds the node_modules the sandbox's `node` subprocess resolves
-# @urban-toolkit/autk-db from (installed by _ensure_root_node_modules in main.py).
+# @urban-toolkit/autk-db from (installed by _ensure_root_node_modules in
+# utk_curio/cli/dependencies.py).
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 _AUTK_DB_AVAILABLE = os.path.isdir(
     os.path.join(_REPO_ROOT, 'node_modules', '@urban-toolkit', 'autk-db')
@@ -336,7 +337,7 @@ class TestProjDataDir(unittest.TestCase):
 
     #: The Milan census polygons, now a Data Catalog dataset rather than a loose
     #: file under docs/examples/data. Addressed by path, not by
-    #: ``curio_dataset_path``, because these tests call ``execute_code``
+    #: ``curio_data_path``, because these tests call ``execute_code``
     #: directly and so never get the backend's resolved ``dataset_paths``.
     _CENSUS_GJ = os.path.join(
         _REPO_ROOT,

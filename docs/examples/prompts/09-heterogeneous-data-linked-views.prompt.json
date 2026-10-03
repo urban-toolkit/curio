@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/09-heterogeneous-data-linked-views.json",
-    "sha256": "91b3ddb0a1d7bbd46e7dff739ab0ad6d89af0b64fd2743d9b63ab0ab656e1762",
+    "sha256": "d9605f0d9c031316e8da349240d73385b84180cb6dac300662d193a1549d8f0d",
     "walkthrough": "docs/examples/09-heterogeneous-data-linked-views.md"
   },
   "prompt": "I want to see where Milan's heat exposure overlaps with its older residents. Three datasets in the Data Catalog hold the inputs: the mean radiant temperature raster, the hourly ERA5 weather table, and the census polygons carrying the over-65 share. Load the raster and the weather table, bundle them together as one input, and compute the universal thermal climate index on the raster grid in a Python step. Then load the census polygons, bundle them with the index result, and compute zonal statistics so each polygon carries its mean index value. Reproject and filter the result, fan it out, and show it two ways that stay linked: a thematic 3D map with Autark and a Vega-Lite scatter of the index against the older-adult share. The thermal comfort and zonal statistics libraries are not part of the Curio framework, so whatever provides them has to be installed.",

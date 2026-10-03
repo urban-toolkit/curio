@@ -128,7 +128,9 @@ import { useVegaBehavior } from '../../../adapters/node/vegaBehavior';
 import { useSimpleVisBehavior } from '../../../adapters/node/simpleVisBehavior';
 import { useMergeFlowBehavior } from '../../../adapters/node/mergeFlowBehavior';
 import { useDataPoolBehavior } from '../../../adapters/node/dataPoolBehavior';
-import { useAutkGrammarBehavior, attachMapInteractionZoomFix, requestedLayerTables, SANDBOX_BACKEND_URL_TOKEN, classifyAutkSpec, classifyAutkSpecString, describeAutkRun } from '../../../adapters/node/autkGrammarBehavior';
+import { useAutkGrammarBehavior, requestedLayerTables, SANDBOX_BACKEND_URL_TOKEN, classifyAutkSpec, classifyAutkSpecString } from '../../../adapters/node/autkGrammarBehavior';
+import { attachMapInteractionZoomFix } from '../../../adapters/node/autkMapZoom';
+import { describeAutkRun } from '../../../adapters/node/autkRunDescriptions';
 import { __resetWebGpuSupportCache } from '../../../utils/webgpuSupport';
 import { markSelectionEcho } from '../../../utils/selectionEcho';
 
@@ -2059,7 +2061,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
   // its renderer from offsetWidth (pre-scale). attachMapInteractionZoomFix
   // re-dispatches picking (double-click), wheel-zoom, and drag-pan events with
   // coordinates corrected back into unscaled CSS space so they match the cursor.
-  // See autkGrammarBehavior.attachMapInteractionZoomFix.
+  // See autkMapZoom.attachMapInteractionZoomFix.
   describe('attachMapInteractionZoomFix (map interaction under React Flow zoom)', () => {
     let dispose: (() => void) | null = null;
 

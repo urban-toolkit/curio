@@ -28,7 +28,8 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-from utk_curio.main import backend_url_arg, base_path_arg, run_spa_static_server
+from utk_curio.cli.arguments import backend_url_arg, base_path_arg
+from utk_curio.cli.static_server import run_spa_static_server
 
 INDEX_BODY = "<!doctype html><title>curio</title><div id=root></div>"
 ASSET_BODY = "console.log('real bundle');"

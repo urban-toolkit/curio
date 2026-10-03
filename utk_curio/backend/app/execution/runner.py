@@ -278,7 +278,7 @@ def run_through_node(
     the models the account added through it.
 
     dev/115: ``dataset_paths`` (``{datasetId: absolutePath}`` for the code's
-    ``curio_dataset_path("<id>")`` calls) and ``exec_user_key`` ride the
+    ``curio_data_path("<id>")`` calls) and ``exec_user_key`` ride the
     payload exactly as the interactive ``/processPythonCode`` sends them —
     without them the Data Catalog's portable loader form failed under
     validation while working on Play. A sandbox execution timeout is the
@@ -422,14 +422,14 @@ def run_through_node(
             # caller in the request thread; the sandbox injects curio_secret().
             payload["secrets"] = dict(secrets)
         if collections:
-            # Where each curio_collection("<id>") the slice reads keeps its
+            # Where each curio_load_collection("<id>") the slice reads keeps its
             # files, and where a node writes what it derives: the same
             # resolution /processPythonCode sends (discovery.application.exec_collections).
             payload["collections"] = dict(collections)
         if media_dir:
             payload["media_dir"] = media_dir
-        if is_py and "curio_model" in seeded:
-            # The Model Catalog folders the node runs, as /processPythonCode
+        if is_py and "curio_load_model" in seeded:
+            # The Model Catalog folders the node loads, as /processPythonCode
             # resolves them, for the request's account.
             from utk_curio.backend.app.model_catalog.service import resolve_exec_models
 

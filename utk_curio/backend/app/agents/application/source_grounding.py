@@ -13,7 +13,7 @@ The rules (all runtime-enforced; prompt wording only teaches them):
 - a **local path** is grounded only when the user typed it in this
   conversation or the Data Catalog resolved it (an installed dataset's real
   path — the same truth ``catalog.search`` serves); the portable
-  ``curio_dataset_path("<id>")`` call the loader recipe emits is grounded
+  ``curio_data_path("<id>")`` call the loader recipe emits is grounded
   when the id is a dataset of this project's catalog;
 - a **URL** is grounded only when the runtime probed it this run (the dev/67-4
   gate: ``verified``, or ``401``/``403`` = the endpoint exists behind a
@@ -68,18 +68,19 @@ _LABEL_MAX_CHARS = 200
 _TITLE_MAX_CHARS = 120
 
 _URL_SCHEMES = ("http://", "https://")
-# The portable catalog reference the datasets domain's loader recipe emits and
-# the sandbox resolves at run time (KEEP IN SYNC with _DATASET_PATH_CALL_RE in
-# backend/app/api/routes.py and the frontend datasetLoaderSnippets.ts).
-DATASET_PATH_CALL_RE = re.compile(
-    r"""curio_dataset_path\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
-)
-# ``curio_collection("<id>")`` names a Data Catalog dataset the same way: a
-# collection's rows, resolved by the sandbox at run time.
-from utk_curio.backend.app.datasets.domain.code_refs import COLLECTION_CALL_RE  # noqa: E402
+# The portable catalog references the datasets domain's loader recipe emits
+# and the sandbox resolves at run time: ``curio_load_data``, ``curio_data_path``
+# and ``curio_load_collection``. One pattern, owned by the datasets domain, so
+# the gate, execution and lineage find the same ids.
+from utk_curio.backend.app.datasets.domain.code_refs import DATASET_PATH_CALL_RE  # noqa: E402,F401
 
 #: The calls whose one string argument is a Data Catalog dataset id.
-CATALOG_REF_CALLS = ("curio_dataset_path", "curio_collection")
+CATALOG_REF_CALLS = ("curio_load_data", "curio_data_path", "curio_load_collection")
+
+# The same calls with the call's name captured, for the regex fallback scan.
+_CATALOG_CALL_RE = re.compile(
+    r"""\b(curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\2\s*\)"""
+)
 # dev/116 (DEC-074): connection keys. The call shape is owned by
 # users/connection_keys (ONE regex); a credential-shaped literal is what the
 # gate refuses so a pasted key never executes, never reaches the journal and
@@ -122,7 +123,7 @@ class SourceRef:
     literal: str
     line: int
     partial: bool = False  # the constant prefix of an f-string
-    call: str = "curio_dataset_path"  # for a "catalog-id": which call named it
+    call: str = "curio_load_data"  # for a "catalog-id": which call named it
 
 
 @dataclass(frozen=True)
@@ -154,7 +155,7 @@ class GroundingContext:
     """Everything the verdict needs, supplied by the caller."""
 
     catalog_paths: dict[str, CatalogRef] = field(default_factory=dict)
-    #: dataset id → ref, for the portable ``curio_dataset_path("<id>")`` form.
+    #: dataset id → ref, for the portable ``curio_data_path("<id>")`` form.
     catalog_ids: dict[str, CatalogRef] = field(default_factory=dict)
     user_paths: set[str] = field(default_factory=set)
     verified_urls: dict[str, dict] = field(default_factory=dict)
@@ -280,7 +281,7 @@ def _scan_python(code: str) -> list[SourceRef] | None:
     refs: list[SourceRef] = []
     # Constant children of an f-string are scanned through the f-string —
     # never a second time as bare constants; the id inside a
-    # ``curio_dataset_path("<id>")`` call is a catalog reference, not a path.
+    # ``curio_data_path("<id>")`` call is a catalog reference, not a path.
     fstring_children: set[int] = set()
     call_ids: set[int] = set()
     schema_values: set[int] = set()
@@ -350,12 +351,11 @@ def _is_dataset_path_call(node: ast.Call) -> bool:
 def _scan_regex(code: str) -> list[SourceRef]:
     refs: list[SourceRef] = []
     call_spans: list[tuple[int, int]] = []
-    for pattern, call in ((DATASET_PATH_CALL_RE, "curio_dataset_path"), (COLLECTION_CALL_RE, "curio_collection")):
-        for match in pattern.finditer(code):
-            call_spans.append(match.span())
-            refs.append(SourceRef(
-                "catalog-id", match.group(2), code.count("\n", 0, match.start()) + 1, call=call,
-            ))
+    for match in _CATALOG_CALL_RE.finditer(code):
+        call_spans.append(match.span())
+        refs.append(SourceRef(
+            "catalog-id", match.group(3), code.count("\n", 0, match.start()) + 1, call=match.group(1),
+        ))
     for match in _STRING_LITERAL_RE.finditer(code):
         if any(a <= match.start() < b for a, b in call_spans):
             continue

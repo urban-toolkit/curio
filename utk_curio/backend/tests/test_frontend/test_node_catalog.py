@@ -17,7 +17,7 @@ python dependencies, so nothing shells out to pip. ``curio.weather@1``,
 ``ai.utk.uhvi@1`` and ``curio.streetvision@1`` pull
 rasterio/geopandas/onnxruntime through a synchronous call capped at 30 minutes, and
 the resulting user-store copy makes every later ``curio start`` re-resolve them
-(``main.py`` walks every user store on boot and exits on pip failure).
+(``utk_curio/cli/dependencies.py`` walks every user store on boot and exits on pip failure).
 
 Run::
 

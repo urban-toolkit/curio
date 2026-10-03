@@ -21,10 +21,9 @@ from utk_curio.backend.app.agents.application.turns import grounding
 from utk_curio.backend.app.agents.application.turns import roster as packages_roster
 from utk_curio.backend.app.agents.application.turns import titles
 from utk_curio.backend.app.agents.infrastructure import providers
-from utk_curio.backend.tests.test_agents import test_routes as _tr
+from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turns
 from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import _Harness
-
-_auth = _tr._auth
 
 DATA_OBSERVATION = {
     "status": "verified", "httpStatus": 200, "contentType": "application/geo+json",
@@ -246,10 +245,10 @@ class TestAfterTheImportSolvingContinues:
         h, finder_id = _await_candidates(client, user, token, monkeypatch)
         # The user follows the portal steps and imports the file: the ONE
         # catalog import, which the card calls through its shared hook.
-        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
         loader = (
             "import pandas as pd\n"
-            f'return pd.read_csv(curio_dataset_path("{dataset_id}"))'
+            f'return pd.read_csv(curio_data_path("{dataset_id}"))'
         )
         frames: list[str] = []
 
@@ -274,7 +273,7 @@ class TestAfterTheImportSolvingContinues:
         # The builder was handed the confirmed source, and built against the
         # imported dataset BY ID — dev/114's grounded form.
         assert any("confirmedSource" in f and dataset_id in f for f in frames)
-        assert f'curio_dataset_path("{dataset_id}")' in h.node_content(h.load)
+        assert f'curio_data_path("{dataset_id}")' in h.node_content(h.load)
 
     def test_a_dataset_id_the_catalog_does_not_have_is_still_refused(
         self, client, user_and_token, tmp_curio, monkeypatch
@@ -297,8 +296,8 @@ class TestAMidSessionDatasetStillGetsItsPath:
         self, app, tmp_curio, user_and_token, monkeypatch
     ):
         user, _token = user_and_token
-        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="mid.csv")
-        code = f'return pd.read_csv(curio_dataset_path("{dataset_id}"))'
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="mid.csv")
+        code = f'return pd.read_csv(curio_data_path("{dataset_id}"))'
         mapping: dict = {}  # what the session started with: nothing
         with app.test_request_context():
             paths = grounding._session_dataset_paths(
@@ -310,7 +309,7 @@ class TestAMidSessionDatasetStillGetsItsPath:
     def test_without_a_user_the_mapping_is_unchanged_and_nothing_raises(
         self, tmp_curio
     ):
-        code = 'return pd.read_csv(curio_dataset_path("imported.ghost"))'
+        code = 'return pd.read_csv(curio_data_path("imported.ghost"))'
         assert grounding._session_dataset_paths("p-132", None, {}, [code]) == {}
 
     def test_an_already_mapped_id_costs_no_lookup(self, tmp_curio, monkeypatch):
@@ -319,7 +318,7 @@ class TestAMidSessionDatasetStillGetsItsPath:
             grounding, "_dataset_path_topup",
             lambda *a, **k: called.append(a) or a[2],
         )
-        code = 'return pd.read_csv(curio_dataset_path("imported.known"))'
+        code = 'return pd.read_csv(curio_data_path("imported.known"))'
         paths = grounding._session_dataset_paths(
             "p-132", object(), {"imported.known": "/data/known.csv"}, [code],
         )
@@ -395,10 +394,10 @@ class TestAnAcquirableRowIsDownloaded:
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         user, token = user_and_token
-        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
         fake = _FakeDiscovery(started={"dataset": {"id": dataset_id}, "alreadyPresent": True})
         h, finder_id = _discovery_harness(client, user, token, monkeypatch, fake)
-        loader = f'import pandas as pd\nreturn pd.read_csv(curio_dataset_path("{dataset_id}"))'
+        loader = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{dataset_id}"))'
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda config, messages, **k: (
@@ -422,13 +421,13 @@ class TestAnAcquirableRowIsDownloaded:
         assert body["delegated"]["status"] == "delegating"
         events = _drain(h, body["delegated"]["attachmentId"])
         assert next(p for k, p in events if k == "done")["verdict"] == "pass"
-        assert f'curio_dataset_path("{dataset_id}")' in h.node_content(h.load)
+        assert f'curio_data_path("{dataset_id}")' in h.node_content(h.load)
 
     def test_a_plain_file_link_is_downloaded_through_direct_url(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         user, token = user_and_token
-        dataset_id = _tr.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
         fake = _FakeDiscovery(started={"dataset": {"id": dataset_id}, "alreadyPresent": True})
         direct = "source.curio.direct-url@1"
         roster = packages_roster._LazyRoster
@@ -439,7 +438,7 @@ class TestAnAcquirableRowIsDownloaded:
         monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
         # The Finder's row names only a link: no coordinate was ever proposed.
         h, finder_id = _await_candidates(client, user, token, monkeypatch)
-        loader = f'import pandas as pd\nreturn pd.read_csv(curio_dataset_path("{dataset_id}"))'
+        loader = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{dataset_id}"))'
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
             lambda config, messages, **k: (

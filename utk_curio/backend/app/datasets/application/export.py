@@ -98,7 +98,7 @@ def resolve_upstream_inputs(spec: dict[str, Any], node_id: str) -> list[dict[str
             continue
         refs = (node.get("metadata") or {}).get("datasetRefs") or []
         # Same gap as the consumer helper, and it has to close with it: a node
-        # whose only reference is a curio_dataset_path call in its code really
+        # whose only reference is a curio_data_path call in its code really
         # does take that dataset as an input, and leaving it out here would make
         # upstream lineage contradict the downstream answer on the same spec
         # (#250).
@@ -206,7 +206,7 @@ def _dataset_consumer_nodes_in_spec(
         if not isinstance(node, dict):
             continue
         refs = (node.get("metadata") or {}).get("datasetRefs") or []
-        # A literal ``curio_dataset_path("<id>")`` in the node's own source is a
+        # A literal ``curio_data_path("<id>")`` in the node's own source is a
         # reference too, and is the common one: the shipped examples carry no
         # bindings at all, only loaders that name the dataset in code (#250).
         # Treated exactly like a binding from here on, so a code-referencing

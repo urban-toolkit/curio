@@ -113,7 +113,7 @@ def validate_candidate(
     """Run the dataflow through *node_id* with the candidate overlaid and
     return ``{"verdict", "evidence"}`` (see module docstring). dev/115:
     ``dataset_paths`` / ``exec_user_key`` ride through to the runner so the
-    Data Catalog's ``curio_dataset_path("<id>")`` loaders resolve exactly as
+    Data Catalog's ``curio_data_path("<id>")`` loaders resolve exactly as
     on Play. ``acting_user`` (#485) is the account's ``User`` row, captured in
     the request: validation runs on a thread of its own, where the account's
     collections and added models cannot be found without it."""

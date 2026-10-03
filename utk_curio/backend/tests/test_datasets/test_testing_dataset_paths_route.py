@@ -41,7 +41,7 @@ def _post(client, body):
 def _loader_code(*dataset_ids: str) -> str:
     """Node code shaped like the generated loaders the examples actually use."""
     return "\n".join(
-        f'path_{i} = curio_dataset_path("{dataset_id}")'
+        f'path_{i} = curio_data_path("{dataset_id}")'
         for i, dataset_id in enumerate(dataset_ids)
     )
 
@@ -83,9 +83,9 @@ class TestResolvesTheCommittedCatalog:
         assert resolved.is_file()
 
     def test_a_collection_resolves_to_its_files_too(self, client):
-        """The harness also sends what ``curio_collection`` needs: where the
+        """The harness also sends what ``curio_load_collection`` needs: where the
         collection's files are, and where a node writes what it derives."""
-        code = 'media = curio_collection("data.curio.storage-orthos")'
+        code = 'media = curio_load_collection("data.curio.storage-orthos")'
         body = _post(client, {"code": code}).get_json()
         assert set(body["paths"]) == {"data.curio.storage-orthos"}
         entry = body["collections"]["data.curio.storage-orthos"]
@@ -103,7 +103,7 @@ class TestResolvesTheCommittedCatalog:
         from utk_curio.backend import config
 
         user, _token = user_and_token
-        code = 'media = curio_collection("data.curio.storage-orthos")'
+        code = 'media = curio_load_collection("data.curio.storage-orthos")'
         signed_in = _post(client, {"code": code, "username": user.username}).get_json()["mediaDir"]
         guest = _post(client, {"code": code}).get_json()["mediaDir"]
         assert signed_in != guest
@@ -129,7 +129,7 @@ class TestResolvesTheCommittedCatalog:
         assert set(resp.get_json()["paths"]) == {dataset.dataset_id}
 
     def test_an_id_carrying_its_major_does_not_resolve(self, client):
-        """``curio_dataset_path`` takes the bare id; ``<id>@1`` is a miss.
+        """``curio_data_path`` takes the bare id; ``<id>@1`` is a miss.
 
         Same distinction ``test_example_dataset_palette`` pins for the service.
         Asserted here too because the harness's own error message tells authors
@@ -144,11 +144,11 @@ class TestResolvesTheCommittedCatalog:
 
 class TestResolvesModels:
     def test_a_shipped_model_resolves_as_execution_resolves_it(self, client):
-        """Example 10's nodes call ``curio_model``: without the folder the
+        """Example 10's nodes call ``curio_load_model``: without the folder the
         harness's ``/exec`` ran them with no model, and the node failed."""
         from utk_curio.backend.app.api.routes import _resolve_exec_models
 
-        code = 'model = curio_model("model.curio.ddrnet23-slim")'
+        code = 'model = curio_load_model("model.curio.ddrnet23-slim")'
         models = _post(client, {"code": code}).get_json()["models"]
         assert set(models) == {"model.curio.ddrnet23-slim"}
         assert (Path(models["model.curio.ddrnet23-slim"]) / "manifest.json").is_file()

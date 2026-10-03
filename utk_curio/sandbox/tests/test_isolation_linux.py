@@ -881,7 +881,7 @@ _RUN_DDRNET = r'''
     import json, os
     import numpy as np
     import onnxruntime as ort
-    folder = curio_model("model.curio.ddrnet23-slim")
+    folder = curio_load_model("model.curio.ddrnet23-slim").folder
     with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as fh:
         manifest = json.load(fh)
     options = ort.SessionOptions()

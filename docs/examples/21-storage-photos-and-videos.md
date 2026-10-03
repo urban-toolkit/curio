@@ -33,7 +33,7 @@ flowchart LR
 ## Load the collection
 
 ```python
-collection = curio_collection("data.curio.storage-survey")
+collection = curio_load_collection("data.curio.storage-survey")
 
 return collection
 ```

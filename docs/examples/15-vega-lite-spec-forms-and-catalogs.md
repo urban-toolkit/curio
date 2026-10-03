@@ -56,7 +56,7 @@ points that way, sized by roof area, with no geometry column involved at all.
 ```python
 import geopandas as gpd
 
-dataset_path = curio_dataset_path("data.projectsidewalk.chicago-labels")
+dataset_path = curio_data_path("data.projectsidewalk.chicago-labels")
 gdf = gpd.read_parquet(dataset_path)
 
 return gdf[["label_type", "severity", "geometry"]].head(400)
