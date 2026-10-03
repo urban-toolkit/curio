@@ -831,21 +831,41 @@ Full field reference, ownership rules, and the CLI for checking your own project
 
 Some contracts are read on both sides of the stack: by Python and TypeScript, or by the code and a model prompt. Each one is defined once and every other copy is generated from it, so the copies cannot disagree.
 
-- **Source module.** [`utk_curio/backend/app/agents/domain/contracts.py`](../utk_curio/backend/app/agents/domain/contracts.py) holds each definition and one render function per output. It lives in the app package, so runtime code imports it from an installed wheel, and its module-level imports are the standard library only. Python callers such as `result_shape.py`, `services.py` and `execution/runtime_journal.py` import the values directly.
+- **Source module.** [`utk_curio/backend/app/agents/domain/contracts.py`](../utk_curio/backend/app/agents/domain/contracts.py) holds each definition and one render function per output. It lives in the app package, so runtime code imports it from an installed wheel, and its module-level imports are the standard library only: a prompt field imports the module that owns its fact inside its own function. Python callers such as `result_shape.py`, `services.py` and `execution/runtime_journal.py` import the values directly.
 - **Registry.** `contracts.GENERATED_OUTPUTS` maps each repo-relative output path to the function that renders it. The generator and the drift test both iterate it, so a new output is one entry.
 - **Generator.** [`scripts/generate_contracts.py`](../scripts/generate_contracts.py) is a thin CLI over the registry. It writes every output that differs from a fresh render; with `--check` it writes nothing, lists the stale files and exits non-zero.
-- **Outputs.** Committed to the repository. Code outputs start with a header that names the generator and the source module, and TypeScript outputs pass the frontend's `prettier` and `eslint` configs as generated. A prompt output has no header, since the model reads it verbatim; its hand-written text is a template beside it (`default_preamble.template.md`), whose `{{...}}` fields are the generated parts.
+- **Outputs.** Committed to the repository. Code outputs start with a header that names the generator and the source module, and TypeScript outputs pass the frontend's `prettier` and `eslint` configs as generated. A prompt output has no header, since the model reads it verbatim; its hand-written text is a template beside it (`<name>.template.md`), whose `{{...}}` markers are the generated parts.
 
   | Output | Contract |
   |---|---|
   | `utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts` | The empty-render kind prefix, the render causes, the `RenderCause` type and which causes blame the document (see [Render Outcomes](#render-outcomes)) |
   | `utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts` | The Autark grammar's top-level families and the name of the layer an Autark node makes of its input (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) |
   | `utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts` | The agent manifest's category vocabulary and the `AgentCategory` type, from `manifest.AGENT_CATEGORIES` |
-  | `utk_curio/llm-prompts/default_preamble.md` | The shared agent preamble: the Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; every list of built-in templates (description, control, port types, the connections an input accepts, output cardinality, interaction support), read from the built-in manifest and the packages layer's `input_capacity`, and naming each template by its label; the Merge Flow's socket names; and the section on Autark documents, rendered from the vendored schema (see [The Autark Schema](#the-autark-schema)) |
+  | `utk_curio/llm-prompts/default_preamble.md` | The shared agent preamble: the Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; every list of built-in templates (description, control, port types, the connections an input accepts, output cardinality, interaction support), read from the built-in manifest and the packages layer's `input_capacity`, and naming each template by its label; the Merge Flow's socket names; the label of each template its prose names; and the section on Autark documents, rendered from the vendored schema (see [The Autark Schema](#the-autark-schema)) |
+  | `utk_curio/llm-prompts/package_contract.md` | The Package Builder's backend contract: the handler name pattern, the timeout classes, the two permissions and the variable that names a handler's data directory, from `packages/domain/backend_contract.py`. `package_build_instruction.md` includes it whole, and a delegated Package Builder receives the file as its build-request contract's `backendContract` |
+  | Every other prompt in `contracts.PROMPT_TEMPLATES` | What that prompt states from code, through the fields below: the built-in agents' names, the built-in templates' labels, the Merge Flow's socket range, the templates the coherence check skips, the note palette, the web-call budget, the rows per candidates lane, and the node context's runtime keys, `inputContract` kinds and runtime row fields |
+
+- **Prompt fields.** `contracts.PROMPT_FIELDS` is the one registry of what a prompt template may state from code. A marker is `{{field}}`, or `{{field:arg}}` for a field that takes an argument, and each field is one function that reads its source. `contracts.render_prompt` fills the markers a template holds, and raises on a field the registry does not define and on any `{{` left in the result.
+
+  | Field | Renders | Source |
+  |---|---|---|
+  | `trill.schema`, `builtin.nodes`, `builtin.control`, `builtin.inputs`, `builtin.outputs`, `builtin.input_count`, `builtin.output_count`, `builtin.interaction`, `builtin.merge_slots`, `autk.grammar` | The preamble's Trill block, lists of built-in templates and section on Autark documents | The Trill schema, the built-in manifest, `input_capacity`, the vendored Autark schema |
+  | `agent.name:<agent id>` | A built-in agent's display name | `builtin.BUILTIN_AGENTS` |
+  | `template.label:<package id>/<template id>` | A built-in template's label | The built-in manifest |
+  | `builtin.merge_range` | The Merge Flow's sockets, first to last | `input_capacity`, read once with `builtin.merge_slots` |
+  | `builtin.not_code` | The built-in templates whose nodes hold no Python or JavaScript code, one per line | The built-in manifest, by the rule `builtin.control` uses |
+  | `note.palette` | The colour names a node's appearance accepts | `node_appearance.NAMED_COLORS` |
+  | `egress.calls_per_run` | The web calls one run may make | `egress_policy.MAX_CALLS_PER_RUN` |
+  | `candidates.rows_per_lane` | The rows each lane of a candidates card holds | `content._CANDIDATES_MAX_ROWS_PER_LANE` |
+  | `node_context.runtime_keys` | The keys of a node row's `runtime` block | `node_context.RUNTIME_BLOCK_KEYS` |
+  | `input_contract.list`, `input_contract.single` | The `inputContract` kinds a node's `arg` can have | `input_contract.KIND_LIST`, `KIND_SINGLE` |
+  | `vega.runtime_field:<name>` | A field Curio adds to every row a Vega-Lite node reads | `document_validation.RUNTIME_FIELDS` |
+  | `backend.handler_pattern`, `backend.timeout_classes`, `backend.server_code_permission`, `backend.server_network_permission`, `backend.data_dir_env` | The package backend contract's names | `packages/domain/backend_contract.py` |
+  | `package.contract` | `package_contract.md`, whole | `package_contract.template.md` |
 
 - **Drift test.** [`test_generated_contracts.py`](../utk_curio/backend/tests/test_agents/test_generated_contracts.py) re-renders every registered output and fails on any difference, printing the diff and the command to run. It is pure Python, so it runs in the normal backend suite and a hand edit to an output turns it red.
 
-To change a contract, edit `contracts.py`, run `python scripts/generate_contracts.py`, and commit the source and the regenerated outputs together.
+To change a contract, edit `contracts.py`, run `python scripts/generate_contracts.py`, and commit the source and the regenerated outputs together. To change a prompt, edit its `.template.md`, never its `.md`, and regenerate the same way; a code change that moves a field's source needs the regeneration too.
 
 ### The Autark Schema
 

@@ -32,7 +32,7 @@ from utk_curio.backend.app.agents.domain.manifest import (
     AgentManifest,
     parse_agent_manifest,
 )
-from utk_curio.backend.app.agents.domain.contracts import AUTK_PROMPT_KEY
+from utk_curio.backend.app.agents.domain.contracts import AUTK_PROMPT_KEY, PACKAGE_CONTRACT
 
 log = logging.getLogger(__name__)
 
@@ -42,9 +42,13 @@ BUILTIN_VERSION = "1.0.0"
 # utk_curio/backend/app/agents/builtin.py, so parents[3] is utk_curio/.
 # domain/builtin.py -> domain -> agents -> app -> backend -> utk_curio/llm-prompts (one deeper since B1)
 PROMPT_SOURCE_DIR = (Path(__file__).resolve().parents[4] / "llm-prompts")
-# The one preamble every built-in composes before its instruction. The
-# contract regions in it are generated (``contracts.render_default_preamble``).
+# The one preamble every built-in composes before its instruction. It is
+# generated, as are the instructions with a ``.template.md`` beside them
+# (``contracts.render_prompt``).
 PREAMBLE_FILE = "default_preamble.md"
+# The Package Builder's backend contract: its instruction includes the text,
+# and a delegated Package Builder receives this file as an input.
+PACKAGE_CONTRACT_FILE = f"{PACKAGE_CONTRACT}.md"
 
 # category -> the single compatible attachment target kind.
 _TARGET_BY_CATEGORY = {
@@ -564,18 +568,24 @@ def read_prompt_text(coord: str, name: str) -> str | None:
     filename = spec.prompt_files().get(name)
     if filename is None:
         return None
+    return read_prompt_file(filename, wanted_by=f"built-in agent {coord}, prompt {name!r},")
+
+
+def read_prompt_file(filename: str, *, wanted_by: str) -> str | None:
+    """Read one file from ``llm-prompts/``, or None when it is missing.
+
+    A missing file is logged: returning None silently would ship an agent
+    with no system or task prompt and no symptom beyond worse answers, which
+    is precisely what an sdist without ``utk_curio/llm-prompts/`` used to do.
+    """
     path = PROMPT_SOURCE_DIR / filename
     if path.is_file():
         return path.read_text(encoding="utf-8")
-    # A roster agent names a file that is not there. Returning None silently
-    # would ship the agent with no system or task prompt and no symptom beyond
-    # worse answers, which is precisely what an sdist without
-    # ``utk_curio/llm-prompts/`` used to do. Say so once, loudly, per file.
     log.error(
-        "built-in agent %s declares prompt %r (%s) but %s is missing; the agent "
-        "will run without it. If this is an installed Curio, the package is "
-        "missing utk_curio/llm-prompts/ (see MANIFEST.in).",
-        coord, name, filename, path,
+        "%s reads %s but %s is missing, so it runs without it. If this is an "
+        "installed Curio, the package is missing utk_curio/llm-prompts/ (see "
+        "MANIFEST.in).",
+        wanted_by, filename, path,
     )
     return None
 
