@@ -76,6 +76,19 @@ class ModelPlan:
         return sum(size for _path, size in self.files)
 
 
+def unwritable(repo: str, path: str) -> CapabilityUnsupported:
+    """The refusal of a repo file that would be written outside the model's folder."""
+    return CapabilityUnsupported(f"{repo} lists a file Curio will not write: {path!r}")
+
+
+def _safe_path(path: str) -> bool:
+    """Whether a repo file name stays inside the folder it is written to: not
+    absolute, no backslash, and no empty, ``.`` or ``..`` part."""
+    return bool(path) and "\\" not in path and not path.startswith("/") and all(
+        part not in ("", ".", "..") for part in path.split("/")
+    )
+
+
 def _license(info: dict[str, Any]) -> str:
     card = info.get("cardData") if isinstance(info.get("cardData"), dict) else {}
     value = card.get("license")
@@ -197,6 +210,9 @@ class HuggingFaceModels(BaseProvider):
             index = ["model.safetensors.index.json"] if "model.safetensors.index.json" in sizes else []
             paths = ["config.json", "preprocessor_config.json", *index, *shards]
             runtime = "transformers"
+        unsafe = next((path for path in paths if not _safe_path(path)), None)
+        if unsafe is not None:
+            raise unwritable(repo, unsafe)
         plan = ModelPlan(
             repo=repo, revision=revision, runtime=runtime,
             files=tuple((path, sizes[path]) for path in paths),
@@ -245,4 +261,4 @@ def _next_cursor(headers: dict[str, Any]) -> str | None:
     return None
 
 
-__all__ = ["HuggingFaceModels", "ModelPlan", "MAX_MODEL_BYTES"]
+__all__ = ["HuggingFaceModels", "ModelPlan", "MAX_MODEL_BYTES", "unwritable"]

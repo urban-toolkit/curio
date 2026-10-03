@@ -27,7 +27,11 @@ from utk_curio.backend.app.discovery.domain.errors import (
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest
 from utk_curio.backend.app.discovery.infrastructure.transport import DiscoveryTransportError
 from utk_curio.backend.app.discovery.providers.autark_osm import Cancelled
-from utk_curio.backend.app.discovery.providers.huggingface_models import MAX_MODEL_BYTES, ModelPlan
+from utk_curio.backend.app.discovery.providers.huggingface_models import (
+    MAX_MODEL_BYTES,
+    ModelPlan,
+    unwritable,
+)
 
 #: What each runtime needs installed beyond the Street Vision package, declared
 #: on the model as a package declares ``dependencies.python``. The package
@@ -144,12 +148,17 @@ class ModelAcquire:
     def _fetch(self, provider, plan: ModelPlan, target: Path, *, progress, stage, cancelled) -> None:
         total = plan.total_bytes
         done = 0
+        root = target.resolve()
         for index, (path, size) in enumerate(plan.files, start=1):
             if cancelled is not None and cancelled():
                 raise Cancelled()
+            destination = target / path
+            # Checked before any folder is made: a repo names its own files.
+            resolved = destination.resolve()
+            if resolved == root or not resolved.is_relative_to(root):
+                raise unwritable(plan.repo, path)
             if stage is not None:
                 stage(f"Downloading {path} ({index} of {len(plan.files)})…")
-            destination = target / path
             destination.parent.mkdir(parents=True, exist_ok=True)
             part = destination.with_name(destination.name + ".part")
             base = done
