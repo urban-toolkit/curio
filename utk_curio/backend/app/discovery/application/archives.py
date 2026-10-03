@@ -189,8 +189,10 @@ def _unzip(archive: Path, *, work: Path, check) -> Unpacked:
         members: list[_Member] = []
         for info in files:
             # Every member's name is checked, litter included: one that climbs
-            # out of the archive says what made it.
-            segments = safe_archive.member_segments(info.filename)
+            # out of the archive says what made it. Some Windows tools write a
+            # backslash between folders; it is read as one, so ``..\\x`` is
+            # refused like ``../x``. A member never lands under its own name.
+            segments = safe_archive.member_segments(info.filename.replace("\\", "/"))
             if safe_archive.is_symlink(info):
                 raise UnsupportedFormatError(f"archive member {info.filename!r} is a symbolic link")
             if any(s.startswith(".") or s.lower() in _LITTER_NAMES for s in segments):

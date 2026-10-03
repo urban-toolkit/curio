@@ -75,9 +75,12 @@ _ARCHIVE_MAGIC = (
     (b"\x1f\x8b", "gzip"),
     (b"7z\xbc\xaf\x27\x1c", "7z"),
     (b"Rar!\x1a\x07", "rar"),
-    (b"BZh", "bz2"),
 )
+#: A bzip2 stream: ``BZh``, a block size digit, then the block magic. All of it,
+#: so a CSV whose header starts with ``BZh`` is not taken for one.
+_BZIP2_MAGIC = re.compile(rb"^BZh[1-9]1AY&SY")
 _TAR_MARKER_AT = 257
+_TAR_MARKERS = (b"ustar\x00", b"ustar ")
 
 _ARCHIVE_LABELS = {"zip": "zip", "gzip": "gzip", "tar": "tar", "7z": "7z", "bz2": "bzip2", "rar": "RAR"}
 
@@ -134,7 +137,9 @@ def sniff_archive(head: bytes) -> str | None:
     for magic, kind in _ARCHIVE_MAGIC:
         if head.startswith(magic):
             return kind
-    if head[_TAR_MARKER_AT:_TAR_MARKER_AT + 5] == b"ustar":
+    if _BZIP2_MAGIC.match(head):
+        return "bz2"
+    if head[_TAR_MARKER_AT:_TAR_MARKER_AT + 6] in _TAR_MARKERS:
         return "tar"
     return None
 

@@ -138,6 +138,11 @@ class TestArchives:
             # A .tar.gz is a tar, whatever its last suffix says.
             ("application/gzip", "bundle.tar.gz", b"", "tar"),
             ("text/csv", "crimes.csv", b"id,date\n", None),
+            ("application/octet-stream", None, b"BZh91AY&SY\x00", "bz2"),
+            ("application/octet-stream", None, b"\x00" * 257 + b"ustar\x0000", "tar"),
+            # Text that only starts like one is text.
+            ("text/csv", "crimes.csv", b"BZh,count\n1,2\n", None),
+            ("text/csv", "crimes.csv", b"m" * 256 + b"Mustard,1\n", None),
         ],
     )
     def test_what_kind_of_archive_it_is(self, content_type, name, head, kind):
