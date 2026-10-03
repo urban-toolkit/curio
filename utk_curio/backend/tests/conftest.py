@@ -334,6 +334,10 @@ def browser_type_launch_args(browser_type_launch_args):
                     "--ignore-gpu-blocklist",
                     "--enable-features=Vulkan",
                     "--use-angle=vulkan",
+                    # Headless has no window to present to; without this,
+                    # Chrome in a container (arcade-gpu) gives up on Vulkan and
+                    # WebGPU falls back to SwiftShader.
+                    "--disable-vulkan-surface",
                 ]
             else:
                 base_args = [
