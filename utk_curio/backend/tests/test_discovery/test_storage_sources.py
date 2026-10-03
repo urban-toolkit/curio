@@ -124,6 +124,15 @@ class TestTheListing:
             "each/aq/sensor_B/2024-01-01.csv", "each/aq/sensor_B/2024-01-02.csv",
         }
 
+    def test_a_search_ignores_case_and_accents(self, client, auth, app, storage_source):
+        from urllib.parse import quote
+
+        body = listing(client, auth, q=quote("SÉNSOR_b"))
+        assert {r["resourceId"] for r in body["resources"]} == {
+            "readings", "by-sensor@sensor=sensor_B",
+            "each/aq/sensor_B/2024-01-01.csv", "each/aq/sensor_B/2024-01-02.csv",
+        }
+
     def test_storage_joins_the_federated_search(self, client, auth, app, storage_source):
         listing(client, auth)  # warm the scan
         body = client.get("/api/discovery/search?q=stations", headers=auth).get_json()

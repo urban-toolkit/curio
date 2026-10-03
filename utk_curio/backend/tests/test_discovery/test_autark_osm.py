@@ -228,6 +228,12 @@ class TestItsRowsNeedNoNetwork:
         assert rows["features-by-tag"]["parameters"][1]["suggestions"][:2] == ["amenity", "shop"]
         assert body["sources"] == [{"sourceId": "source.osm.openstreetmap", "status": "ok", "count": 8}]
 
+    def test_a_search_ignores_accents_and_keeps_the_declared_order(self, client, auth, live):
+        from urllib.parse import quote
+
+        body = client.get(f"/api/discovery/sources/{OSM}/search?q={quote('Párks')}", headers=auth).get_json()
+        assert [r["resourceId"] for r in body["resources"]] == ["parks", "all-layers"]
+
     def test_the_source_row_says_service(self, client, auth, live):
         row = client.get(f"/api/discovery/sources/{OSM}", headers=auth).get_json()
         assert row["kind"] == "service"
