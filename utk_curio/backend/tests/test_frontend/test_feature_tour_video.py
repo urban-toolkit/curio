@@ -1566,7 +1566,7 @@ def scene_dashboard(ctx: Ctx) -> None:
     )
     for node_id in (ctx.state.get("vega_ids") or _node_ids_by_type(page, "vis-vega"))[:2]:
         # Found by its accessible name, as the walkthroughs find it
-        # (walkthroughs.py, dashboard-page-renders-pinned-charts). The icon
+        # (walkthroughs/robustness.py, dashboard-page-renders-pinned-charts). The icon
         # classes this used to match changed, and the scene then pinned nothing.
         pin = node_locator(page, node_id).get_by_role("button", name="Pin to dashboard").first
         if not pin.count():
