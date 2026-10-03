@@ -18,7 +18,7 @@ import type { DatasetCatalogItem } from "./datasetCatalogTypes";
 
 /**
  * Ids are interpolated into Python source, so only ids matching this whitelist
- * can appear inside a ``curio_dataset_path("<id>")`` call — one with a quote or
+ * can appear inside a ``curio_load_data("<id>")`` call — one with a quote or
  * a backslash would break out of the string literal. Kept in step with
  * ``SAFE_DATASET_ID_RE`` in ``datasetLoaderSnippets.ts`` and the backend's
  * ``_SAFE_DATASET_ID_RE``.
@@ -44,9 +44,9 @@ export function datasetReference(
 ): DatasetReference {
   const location = String(dataset.path || dataset.uri || "");
   const id = String(dataset.id ?? "");
-  // A collection is read with `curio_collection`, which adds a readable path
-  // for each of its files; its data file alone is only the index.
-  const call = dataset.format === "collection" ? "curio_collection" : "curio_dataset_path";
+  // A collection is read with `curio_load_collection`, which adds a readable
+  // path for each of its files; its data file alone is only the index.
+  const call = dataset.format === "collection" ? "curio_load_collection" : "curio_load_data";
   const code = SAFE_DATASET_ID_RE.test(id)
     ? `${call}(${JSON.stringify(id)})`
     : JSON.stringify(location);
