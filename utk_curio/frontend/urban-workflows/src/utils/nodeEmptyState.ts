@@ -99,6 +99,20 @@ export const NODE_EMPTY_COPY: Record<NodeEmptyReason, NodeEmptyCopy> = {
   },
 };
 
+/**
+ * The "upstream-errored" copy as one line, naming the node that failed when its
+ * name is known. A node that did not run because of it shows this as its
+ * outcome (#603).
+ */
+export function upstreamErroredMessage(failedNodeName?: string | null): string {
+  const copy = NODE_EMPTY_COPY["upstream-errored"];
+  const name = typeof failedNodeName === "string" ? failedNodeName.trim() : "";
+  const hint = name
+    ? `The node feeding this one, "${name}", failed. Open it to see the error.`
+    : copy.hint;
+  return `${copy.title}: ${hint}`;
+}
+
 /** Duck-typed so this module needs no ``reactflow`` import (see mergeFlowUtils). */
 interface EdgeLike {
   target?: unknown;

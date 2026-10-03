@@ -26,6 +26,7 @@ export const FORMAT_FILTERS: DatasetFormat[] = [
   "bundle",
   "osm",
   "gpkg",
+  "gtfs",
   "collection",
 ];
 

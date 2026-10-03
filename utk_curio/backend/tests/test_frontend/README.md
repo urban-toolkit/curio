@@ -50,7 +50,7 @@ hardware WebGPU, and a matrix of CPU runners
 each job's runner: GitHub-hosted `ubuntu-latest` while the organization's
 hosted runners have room and the self-hosted arcade runners (`[self-hosted,
 cpu]`) after that, and for the GPU
-share `arcade-gpu` when it is idle and `utk-gpu` otherwise. The GPU share is
+share an arcade GPU runner (`arcade-gpu-01` to `arcade-gpu-06`) while one is free and `utk-gpu` otherwise. The GPU share is
 still called `utk`, after the first GPU runner. A test runs on `utk` when its
 browser runs WebGPU: a `test_workflows.py` case whose dataflow has an Autark node, a
 walkthrough scene whose example or script drives Autark or the GPU, and any

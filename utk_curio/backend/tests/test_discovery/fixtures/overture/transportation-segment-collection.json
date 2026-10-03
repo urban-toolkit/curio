@@ -1,0 +1,29 @@
+{
+ "type": "Collection",
+ "id": "segment",
+ "license": "ODbL-1.0",
+ "extent": {
+  "spatial": {
+   "bbox": [
+    [
+     -46.625,
+     -23.55500030517578,
+     -46.60499954223633,
+     -23.53499984741211
+    ],
+    [
+     -46.625,
+     -23.55500030517578,
+     -46.60499954223633,
+     -23.53499984741211
+    ]
+   ]
+  }
+ },
+ "links": [
+  {
+   "rel": "item",
+   "href": "https://stac.overturemaps.org/2000-01-01.0/transportation/segment/00000/00000.json"
+  }
+ ]
+}

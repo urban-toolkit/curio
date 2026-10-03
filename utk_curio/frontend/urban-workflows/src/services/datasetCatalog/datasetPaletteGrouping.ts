@@ -150,13 +150,16 @@ export function osmGroupLayerRefs(
 /**
  * The format a layer group shows and drops as. Layers that were all downloaded
  * from the Discovery Catalog show their own format, as each layer's row does
- * (#586); an import shows its file's, which its id says. Mirrors the backend
- * ``build_layer_group_item``.
+ * (#586); an import shows its file's, which its id says. A GTFS feed is always
+ * a download and always shows GTFS: its tables' Parquet says nothing about it.
+ * Mirrors the backend ``build_layer_group_item``.
  */
 export function layerGroupFormat(group: DatasetPaletteGroup): DatasetFormat {
+  const kind = layerGroupKind(group.groupId);
+  if (kind === "gtfs") return kind;
   const [first] = group.members;
   if (first && group.members.every((m) => m.discoverySource)) return first.format;
-  return layerGroupKind(group.groupId);
+  return kind;
 }
 
 /**

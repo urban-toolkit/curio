@@ -97,9 +97,14 @@ GOLF_BUILDINGS = [
            {"building": "church", "name": "St. Golf", "building:levels": "1"}),
     multipolygon(306, SCHOOL_OUTER, {"building": "school", "name": "Golf School"}),
     SCHOOL_OUTER,
+    # Two row houses, each its own building, that share a wall: one Autark building.
+    square(308, (-87.789, 42.0605, -87.7885, 42.0608), 3080, {"building": "yes", "height": "7.1"}),
+    square(309, (-87.7885, 42.0605, -87.788, 42.0608), 3090, {"building": "yes", "height": "6.4"}),
 ]
 # Way 304 shares its first and fourth corners with way 303's east side.
 GOLF_BUILDINGS[3]["nodes"] = [3031, 3041, 3042, 3032, 3031]
+# Way 309 shares its first and fourth corners with way 308's east side.
+GOLF_BUILDINGS[8]["nodes"] = [3081, 3091, 3092, 3082, 3081]
 
 def node(node_id: int, lon: float, lat: float, tags: dict) -> dict:
     return {"type": "node", "id": node_id, "lat": lat, "lon": lon, "tags": tags}

@@ -106,6 +106,20 @@ describe('DiscoveryResourceRow', () => {
     expect(screen.getByRole('button', { name: 'Download' })).toBeDisabled();
   });
 
+  test('a row that cannot be downloaded says why, on the button and in the row', () => {
+    const reason = 'Bike Routes is larger than this portal allows';
+    render(
+      <DiscoveryResourceRow
+        resource={resource({ acquirable: false, unavailableReason: reason })}
+        onDownload={jest.fn()}
+      />
+    );
+    const button = screen.getByRole('button', { name: 'Download' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', reason);
+    expect(screen.getByRole('note')).toHaveTextContent(reason);
+  });
+
   test('the source tag appears only on a federated result', () => {
     // On a single-portal page it would repeat the page heading on every row.
     const { rerender, container } = render(<DiscoveryResourceRow resource={resource()} />);

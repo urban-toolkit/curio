@@ -79,8 +79,17 @@ def test_the_acquirable_set_is_a_subset_of_what_the_data_catalog_stores(schema):
 
 
 def test_the_download_ceiling_matches(schema):
-    ceiling = schema["properties"]["capabilities"]["properties"]["maxDownloadBytes"]["maximum"]
-    assert ceiling == M.DEFAULT_MAX_DOWNLOAD_BYTES
+    """The ceiling is the instance's (``--discovery-max-download-mb``), so the
+    schema names no fixed maximum, and the validator reads a larger value as
+    the ceiling rather than refusing the manifest."""
+    field = schema["properties"]["capabilities"]["properties"]["maxDownloadBytes"]
+    assert "maximum" not in field and field["minimum"] == 1
+    from utk_curio.backend.tests.test_discovery.conftest import a_manifest
+
+    raw = a_manifest()
+    raw["capabilities"] = {**raw.get("capabilities", {}), "maxDownloadBytes": M.DEFAULT_MAX_DOWNLOAD_BYTES * 4}
+    parsed = M._parse_manifest(raw, where="manifest.json")
+    assert parsed.capabilities.max_download_bytes == M.DEFAULT_MAX_DOWNLOAD_BYTES
 
 
 def test_required_fields_match_the_validator(schema):

@@ -112,7 +112,7 @@ on:
         options: [auto, hosted, arcade]
         default: auto
       gpu_pool:
-        description: 'test-gpu: auto (arcade-gpu first, then utk), arcade, or utk'
+        description: 'test-gpu: auto (arcade GPU runners first, then utk), arcade, or utk'
         type: choice
         options: [auto, arcade, utk]
         default: auto
@@ -127,8 +127,8 @@ permissions:
 #   * CPU jobs: GitHub-hosted ubuntu-latest while the organization's hosted
 #     runners have room, the self-hosted arcade runners ([self-hosted, cpu],
 #     20 of them) for the rest.
-#   * test-gpu: arcade-gpu ([self-hosted, gpu, h100]) when it is idle, utk-gpu
-#     ([self-hosted, gpu, curio]) otherwise.
+#   * test-gpu: an arcade GPU runner (arcade-gpu-01..06, [self-hosted, gpu,
+#     h100]) while one is free, utk-gpu ([self-hosted, gpu, curio]) otherwise.
 #   * test-desktop-stress, unit (sandbox) and preview-runner: always
 #     ubuntu-latest. The first two measure a 4-core, 16 GB laptop.
 #   * test-gpu-stress: always utk-gpu.
@@ -145,7 +145,7 @@ permissions:
 # while CPU jobs each get a runner of their own. Keyed per ref, not repo-wide:
 # GitHub keeps only ONE job pending per group, so a repo-wide group let each
 # newly queued job evict the previously pending one. test-gpu's group also
-# names its GPU runner, so runs on arcade-gpu and utk-gpu never wait for or
+# names its GPU pool, so runs on arcade and utk-gpu never wait for or
 # evict each other. `cancel-in-progress: false` means eviction only ever kills
 # a job that has not started, which holds no containers, ports or GPU to leak.
 # test-gpu-stress and a re-mint's test-gpu have groups of their own.
@@ -236,7 +236,7 @@ jobs:
           cache-to: type=gha,scope=curio-image,mode=max
 
   test-gpu:
-    # Runs on a GPU runner: arcade-gpu when it is idle, utk-gpu otherwise
+    # Runs on a GPU runner: an arcade one while one is free, utk-gpu otherwise
     # (pick-runners). It runs the e2e tests whose browser needs WebGPU -- the
     # WebGPU compute examples (06/07) and every other Autark dataflow need real
     # hardware WebGPU, which a CPU runner cannot provide -- and nothing else:
@@ -247,8 +247,8 @@ jobs:
     needs: pick-runners
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['test-gpu'] }}
     timeout-minutes: 90
-    # One queue per ref and GPU runner (h100 is arcade-gpu, curio is utk-gpu),
-    # so a run on one GPU runner never waits for, or evicts, a run on the other.
+    # One queue per ref and GPU pool (h100 is arcade's, curio is utk-gpu), so
+    # a run on one pool never waits for, or evicts, a run on the other.
     concurrency:
       group: gpu-ci-${{ github.ref }}-${{ fromJSON(needs.pick-runners.outputs.runners || '{"test-gpu":["","","none"]}')['test-gpu'][2] }}${{ inputs.remint && '-remint' || '' }}
       cancel-in-progress: false

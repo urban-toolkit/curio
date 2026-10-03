@@ -212,11 +212,13 @@ describe('the run guard is released and visible (#271)', () => {
 
   test('a node that ERRORS releases its level like one that succeeds', async () => {
     // signalNodeExecDone is what UniversalNode calls on either terminal
-    // output; the runner does not distinguish. This pins that a failed node
-    // does not hold the run, which is the contract the Autark finally relies on.
+    // output, and either one completes the node for its level. This pins that
+    // a failed node does not hold the run, which is the contract the Autark
+    // finally relies on. A signal that says the node failed also stops the
+    // nodes below it (playAllUpstreamFailed.test.tsx); this one says nothing.
     await seedChain();
     await playAll();
-    await signalDone('A'); // "A" errored - same signal
+    await signalDone('A');
     expect(triggerExecOf('B')).toBe(1);
     await signalDone('B');
     expect(api.isRunActive).toBe(false);

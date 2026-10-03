@@ -228,13 +228,16 @@ class CatalogMutations:
         row_count: int | None = None,
         feature_count: int | None = None,
         collection: dict[str, Any] | None = None,
+        group_id: str | None = None,
+        layer_name: str | None = None,
     ) -> dict[str, Any]:
         """Install a file already on disk, without reading it into memory.
 
         The same answer as :meth:`_install_imported_bytes` for the same file:
         text formats are stored as UTF-8 (streamed rather than decoded whole),
         counts are filled in, and the returned item is identical. *source_path*
-        is consumed.
+        is consumed. *group_id* and *layer_name* make it one layer of a group,
+        as :meth:`_install_imported_bytes`'s do.
         """
         from utk_curio.backend.app.datasets.install.installer import (
             InstallerError,
@@ -263,6 +266,8 @@ class CatalogMutations:
                 filename,
                 fmt,
                 title=title,
+                group_id=group_id,
+                layer_name=layer_name,
                 source_updated_at=source_updated_at,
                 source_encoding=source_encoding,
                 discovery_source=discovery_source,

@@ -36,7 +36,9 @@ OSM_PBF_SUFFIXES = (".pbf",)
 GPKG_SUFFIXES = (".gpkg",)
 
 # The per-layer datasets from one multi-layer import share a ``group_id`` with
-# one of these prefixes (e.g. ``osm.x1a2b3c4d``, ``gpkg.x9f8e7d6c``). The catalog
+# one of these prefixes (e.g. ``osm.x1a2b3c4d``, ``gpkg.x9f8e7d6c``, and
+# ``gtfs.x5e6f7a8b`` for the tables of a GTFS feed the Discovery Catalog
+# downloaded, see ``discovery/application/gtfs.py``). The catalog
 # presents the group as a single bundle-shaped entry whose id IS the group id;
 # helpers below recognize it so list/get/preview/install can expand the group
 # into its member layers.
@@ -46,9 +48,11 @@ GPKG_SUFFIXES = (".gpkg",)
 # import is a visible bug, so the kind is carried in the id rather than guessed.
 OSM_GROUP_ID_PREFIX = "osm."
 GPKG_GROUP_ID_PREFIX = "gpkg."
+GTFS_GROUP_ID_PREFIX = "gtfs."
 LAYER_GROUP_ID_PREFIXES = {
     OSM_GROUP_ID_PREFIX: "osm",
     GPKG_GROUP_ID_PREFIX: "gpkg",
+    GTFS_GROUP_ID_PREFIX: "gtfs",
 }
 
 # Canonical tab order for OSM layers in the grouped detail view. GeoPackage
@@ -76,7 +80,7 @@ AUTARK_LAYER_TYPES = frozenset({
 
 
 def layer_group_kind(dataset_id: object) -> str | None:
-    """``"osm"`` / ``"gpkg"`` when *dataset_id* addresses a layer group, else None."""
+    """``"osm"`` / ``"gpkg"`` / ``"gtfs"`` when *dataset_id* addresses a layer group, else None."""
     if not isinstance(dataset_id, str):
         return None
     for prefix, kind in LAYER_GROUP_ID_PREFIXES.items():

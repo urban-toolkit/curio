@@ -376,6 +376,7 @@ def download(
     timeout_s: int = DOWNLOAD_TIMEOUT_S,
     progress=None,
     secret_headers: dict | None = None,
+    before_body=None,
 ) -> DownloadResult:
     """Stream one URL to *sink* under the same policy :func:`fetch` uses.
 
@@ -396,6 +397,10 @@ def download(
       receives more than the bound.
 
     ``secret_headers`` go only to hops on *url*'s origin, as in :func:`fetch`.
+
+    ``before_body(headers, final_url)``, when given, is called with the last
+    hop's response headers before a single body byte is read; whatever it
+    raises ends the download there.
     """
     request_fn = request_fn or _default_stream_request
     started = time.monotonic()
@@ -413,6 +418,13 @@ def download(
             redirects += 1
             current = following
             continue
+
+        if before_body is not None:
+            try:
+                before_body(dict(response_headers or {}), current)
+            except BaseException:
+                _close(chunks)
+                raise
 
         declared = _declared_length(response_headers)
         if declared is not None and declared > max_bytes:
