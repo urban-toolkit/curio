@@ -1617,8 +1617,14 @@ class TestValidationKnowsTheAccount:
 
         monkeypatch.setattr(ModelCatalogService, "resolve_execution_dirs", _dirs)
         user, token = user_and_token
-        ctx = self._setup(client, user, token, monkeypatch,
-                          content=f'model = curio_model("{self.MODEL}")\nreturn model')
+        # A data-loading node must load a source to pass the grounding gate,
+        # so this one reads the seeded dataset and names the model as well.
+        ctx = self._setup(client, user, token, monkeypatch, content=(
+            'import pandas as pd\n'
+            f'model = curio_model("{self.MODEL}")\n'
+            'df = pd.read_csv(curio_dataset_path("{DATASET}"))\n'
+            'return df'
+        ))
         payload = self._validated_payload(client, token, ctx)
         assert self.MODEL in (payload.get("models") or {}), (
             f"the model was looked up without the account on the validation thread: {payload.get('models')}"
