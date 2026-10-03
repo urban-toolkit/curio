@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import { act, render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 
 /**
  * API Settings is the account's keys screen, in two parts. The Agent Catalog's:
@@ -109,6 +109,13 @@ const findRow = async (slot: string) =>
       return el as HTMLElement;
     }),
   );
+// The rows are drawn from the key list, so a check that a screen has none
+// waits for that list first: made before it lands, the check passes whether or
+// not the rows would follow.
+const keyListSettled = () =>
+  act(async () => {
+    await mockListKeys.mock.results[mockListKeys.mock.results.length - 1]?.value;
+  });
 
 beforeEach(() => {
   mockUser = { ...SIGNED_IN };
@@ -184,12 +191,13 @@ describe("API Settings: the HuggingFace token", () => {
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ huggingface_token: "" }));
   });
 
-  it("is not offered to a guest on a Curio with sign-in", () => {
+  it("is not offered to a guest on a Curio with sign-in", async () => {
     mockUser = { is_guest: true };
     mockSharedGuest = true;
     open();
-    expect(field()).toBeNull();
     expect(screen.getByText("Personal keys cannot be saved on a shared guest account.")).toBeInTheDocument();
+    await keyListSettled();
+    expect(field()).toBeNull();
   });
 
   it("the local guest saves its own, and is told the account is shared", async () => {
@@ -387,11 +395,12 @@ describe("API Settings: the data-portal token", () => {
     await waitFor(() => expect(field().value).toBe(""));
   });
 
-  it("is not offered to a guest", () => {
+  it("is not offered to a guest", async () => {
     // A guest account is shared, so a personal credential saved on it would be
     // everyone's. The backend refuses it too.
     mockUser = { is_guest: true };
     open();
+    await keyListSettled();
     expect(field()).toBeNull();
   });
 });
