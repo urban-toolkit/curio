@@ -59,6 +59,155 @@ def test_every_generated_prompt_has_its_template_beside_it():
         assert (REPO_ROOT / relative.replace(".md", ".template.md")).is_file()
 
 
+def test_every_prompt_template_is_registered():
+    # A template no entry renders is a prompt nobody regenerates.
+    registered = {r for r in contracts.GENERATED_OUTPUTS if r.startswith(contracts.PROMPTS_DIR)}
+    templates = sorted((REPO_ROOT / contracts.PROMPTS_DIR).glob("*.template.md"))
+    assert len(templates) == len(contracts.PROMPT_TEMPLATES)
+    for path in templates:
+        output = f"{contracts.PROMPTS_DIR}/{path.name.replace('.template.md', '.md')}"
+        assert output in registered, f"{path.name} has no entry in GENERATED_OUTPUTS"
+
+
+class TestRenderPrompt:
+    """A template's markers are filled from ``PROMPT_FIELDS`` alone, and no
+    marker ever reaches the model."""
+
+    def test_an_unknown_marker_raises(self):
+        with pytest.raises(contracts.PromptTemplateError, match="no.such.field"):
+            contracts.render_template("Before {{no.such.field}} after.")
+
+    def test_a_marker_the_pattern_does_not_read_is_left_and_raises(self):
+        with pytest.raises(contracts.PromptTemplateError, match="still holds"):
+            contracts.render_template("Before {{ Agent Name }} after.")
+
+    def test_a_value_that_leaves_a_marker_raises(self, monkeypatch):
+        monkeypatch.setitem(
+            contracts.PROMPT_FIELDS, "test.leftover", contracts.PromptField(lambda src: "{{x")
+        )
+        with pytest.raises(contracts.PromptTemplateError, match="still holds"):
+            contracts.render_template("Before {{test.leftover}} after.")
+
+    def test_an_argument_must_fit_its_field(self):
+        with pytest.raises(contracts.PromptTemplateError, match="takes an argument"):
+            contracts.render_template("{{agent.name}}")
+        with pytest.raises(contracts.PromptTemplateError, match="takes no argument"):
+            contracts.render_template("{{note.palette:yellow}}")
+
+    def test_text_without_a_marker_is_unchanged(self):
+        assert contracts.render_template('No field here: {"a": {"b": 1}}.') == 'No field here: {"a": {"b": 1}}.'
+
+    def test_a_marker_ends_at_the_first_closing_pair(self):
+        # In the backend contract, JSON closes right after a marker.
+        from utk_curio.backend.app.packages.domain.backend_contract import TIMEOUT_CLASSES
+
+        text = contracts.render_template('{"timeoutClass": {{backend.timeout_classes}}}]}')
+        assert text == '{"timeoutClass": ' + "|".join(f'"{c}"' for c in TIMEOUT_CLASSES) + "}]}"
+
+    def test_an_agent_name_follows_BUILTIN_AGENTS(self):
+        from utk_curio.backend.app.agents.domain import builtin
+
+        for spec in builtin.BUILTIN_AGENTS:
+            assert contracts.render_template("{{agent.name:" + spec.agent_id + "}}") == spec.name
+
+    def test_a_renamed_agent_is_renamed_in_every_prompt_that_names_it(self, monkeypatch):
+        import dataclasses
+
+        from utk_curio.backend.app.agents.domain import builtin
+
+        renamed = tuple(
+            dataclasses.replace(s, name="Flow Architect") if s.agent_id == "agent.dataflow-builder" else s
+            for s in builtin.BUILTIN_AGENTS
+        )
+        monkeypatch.setattr(builtin, "BUILTIN_AGENTS", renamed)
+        assert contracts.render_prompt("orchestration_instruction").startswith("You are the Flow Architect: ")
+        chat = contracts.render_prompt("chat_prompt")
+        assert "the Flow Architect plans and builds a whole dataflow" in chat
+        assert "Dataflow Builder" not in chat
+
+    def test_an_unknown_agent_raises(self):
+        with pytest.raises(contracts.PromptTemplateError, match="agent.nobody"):
+            contracts.render_template("{{agent.name:agent.nobody}}")
+
+    def test_a_template_label_follows_the_manifest(self):
+        manifest = _manifest()
+        package = manifest["id"].split("@")[0]
+        for template in manifest["templates"]:
+            marker = "{{template.label:" + f"{package}/{template['id']}" + "}}"
+            assert contracts.render_template(marker) == template["label"]
+        with pytest.raises(contracts.PromptTemplateError, match="no-such-node"):
+            contracts.render_template("{{template.label:curio.builtin/no-such-node}}")
+
+
+class TestThePromptFacts:
+    """Each fact a prompt states from code is read from that code."""
+
+    def test_the_coherence_check_skips_every_template_not_controlled_through_python(self):
+        control = contracts.builtin_lists(_manifest())["builtin.control"].splitlines()
+        expected = [
+            line.split(":", 1)[0] for line in control
+            if not line.endswith(": controllable through python code.")
+        ]
+        text = contracts.render_prompt("evaluate_coherence_subtasks_prompt")
+        head = "Do not generate warnings for nodes made from these templates:\n\n"
+        assert text.split(head, 1)[1].split("\n\n", 1)[0].splitlines() == expected
+
+    def test_the_merge_range_and_the_merge_slots_agree(self):
+        slots = contracts.merge_slot_names()
+        assert f'("{slots[0]}".."{slots[-1]}")' in contracts.render_prompt("orchestration_instruction")
+        assert contracts.builtin_lists(_manifest())["builtin.merge_slots"].endswith(f'or "{slots[-1]}"')
+
+    def test_the_note_palette_is_the_named_colors(self):
+        from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
+
+        palette = ", ".join(NAMED_COLORS)
+        for stem in ("package_build_instruction", "researcher_notes_instruction"):
+            assert f"a palette name ({palette})" in contracts.render_prompt(stem), stem
+
+    def test_the_web_call_budget_is_the_egress_policys(self):
+        from utk_curio.backend.app.common.egress_policy import MAX_CALLS_PER_RUN
+
+        for stem in ("research_instruction", "researcher_notes_instruction"):
+            assert f"at most {MAX_CALLS_PER_RUN} web calls per run" in contracts.render_prompt(stem), stem
+
+    def test_the_rows_per_lane_are_the_candidate_cards(self):
+        from utk_curio.backend.app.agents.domain import content
+
+        rows = content._CANDIDATES_MAX_ROWS_PER_LANE
+        assert f"two lanes, at most {rows} rows each" in contracts.render_prompt("discovery_instruction")
+
+    def test_the_node_context_fields_are_the_composers(self):
+        from utk_curio.backend.app.agents.domain import input_contract, node_context
+        from utk_curio.backend.app.agents.domain.document_validation import RUNTIME_FIELDS
+
+        text = contracts.render_prompt("new_content_prompt")
+        assert "{" + ", ".join(node_context.RUNTIME_BLOCK_KEYS) + "}" in text
+        assert f'If its "kind" is "{input_contract.KIND_LIST}", ' in text
+        assert f'If its "kind" is "{input_contract.KIND_SINGLE}", ' in text
+        # A field Curio adds to every row is named here, so a new one fails
+        # until the prompt says what it holds.
+        for name in RUNTIME_FIELDS:
+            assert f'"{name}"' in text, name
+        with pytest.raises(contracts.PromptTemplateError, match="not_a_field"):
+            contracts.render_template("{{vega.runtime_field:not_a_field}}")
+
+    def test_the_package_contract_is_the_backend_contracts(self):
+        from utk_curio.backend.app.packages.domain import backend_contract as bc
+
+        fragment = contracts.render_prompt(contracts.PACKAGE_CONTRACT)
+        assert f'"name": "<a name matching {bc.HANDLER_NAME_RE.pattern}>"' in fragment
+        assert '"timeoutClass": ' + "|".join(f'"{c}"' for c in bc.TIMEOUT_CLASSES) + "}]}" in fragment
+        assert f"the '{bc.PERMISSION_SERVER_CODE}' permission" in fragment
+        assert f"(add '{bc.PERMISSION_SERVER_NETWORK}' if and only if" in fragment
+        assert f"rides the {bc.DATA_DIR_ENV} env var" in fragment
+
+    def test_the_package_builder_includes_the_contract_whole(self):
+        fragment = contracts.render_prompt(contracts.PACKAGE_CONTRACT)
+        assert fragment.endswith(".\n") and not fragment.endswith("\n\n")
+        instruction = contracts.render_prompt("package_build_instruction")
+        assert "\n\n" + fragment.rstrip("\n") + "\n\n" in instruction
+
+
 class TestTheRenderCauseTable:
     def test_the_cause_names_and_their_order(self):
         assert contracts.EMPTY_RENDER_CAUSES == (

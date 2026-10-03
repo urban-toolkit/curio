@@ -42,8 +42,9 @@ BUILTIN_VERSION = "1.0.0"
 # utk_curio/backend/app/agents/builtin.py, so parents[3] is utk_curio/.
 # domain/builtin.py -> domain -> agents -> app -> backend -> utk_curio/llm-prompts (one deeper since B1)
 PROMPT_SOURCE_DIR = (Path(__file__).resolve().parents[4] / "llm-prompts")
-# The one preamble every built-in composes before its instruction. The
-# contract regions in it are generated (``contracts.render_default_preamble``).
+# The one preamble every built-in composes before its instruction. It is
+# generated, as are the instructions with a ``.template.md`` beside them
+# (``contracts.render_prompt``).
 PREAMBLE_FILE = "default_preamble.md"
 
 # category -> the single compatible attachment target kind.
