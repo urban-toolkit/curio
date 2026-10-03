@@ -1,16 +1,15 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import clsx from "clsx";
 
-import logo from "assets/curio-2.png";
 import { LEAVE_DASHBOARD, useLeaveGuard } from "../../hook/useLeaveGuard";
 import ShareMenu from "../../components/menus/top/ShareMenu";
-import { UserMenu } from "../../components/login/UserMenu";
+import { GlobalPageHeader } from "../../components/layout/GlobalPageHeader";
 import { useFlowContext, useNodeActionsContext } from "../../providers/FlowProvider";
 import { useToastContext } from "../../providers/ToastProvider";
 import { useUserContext } from "../../providers/UserProvider";
 import { dataflowPath } from "../../utils/shareLinks";
-import barStyles from "../../components/menus/top/UpMenu.module.css";
+import headerStyles from "../../components/layout/GlobalPageHeader.module.css";
 import styles from "./DashboardTopBar.module.css";
 
 /**
@@ -44,13 +43,13 @@ export function useDashboardLeaveGuard() {
 /**
  * The dashboard's own top bar.
  *
- * Built from the dataflow bar's stylesheet on purpose: this is the same product,
- * so the two bars look like each other. What it holds is deliberately almost
- * nothing, because the page is the content: a way back to the dataflow, the
- * share links, and, for the owner, the two controls that move tiles around.
- * None of the editor's menus are here. There is no palette to drop nodes from,
- * nothing to run, and no save status, because a dashboard is not edited except
- * by explicitly saving a layout.
+ * The same GlobalPageHeader every other page wears, so the dashboard reads as
+ * the same product. What it puts in the bar is deliberately almost nothing,
+ * because the page is the content: a way back to the dataflow, the share
+ * links, and, for the owner, the two controls that move tiles around. None of
+ * the editor's menus are here. There is no palette to drop nodes from, nothing
+ * to run, no catalogs, and no save status, because a dashboard is not edited
+ * except by explicitly saving a layout.
  */
 export function DashboardTopBar({ id }: { id: string }) {
   const navigate = useNavigate();
@@ -67,19 +66,8 @@ export function DashboardTopBar({ id }: { id: string }) {
 
   const [shareOpen, setShareOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const barRef = useRef<HTMLDivElement>(null);
-
-  // Close the menu on a click anywhere else, as the dataflow bar does.
-  useEffect(() => {
-    if (!shareOpen) return;
-    const onClick = (event: MouseEvent) => {
-      if (barRef.current && !barRef.current.contains(event.target as Node)) {
-        setShareOpen(false);
-      }
-    };
-    document.addEventListener("click", onClick);
-    return () => document.removeEventListener("click", onClick);
-  }, [shareOpen]);
+  // The menu closes itself on a click anywhere else or on Escape.
+  const closeShare = useCallback(() => setShareOpen(false), []);
 
   // Unsaved tile geometry is real work: warn before dropping it.
   const { leave, dialog: leaveDialog } = useDashboardLeaveGuard();
@@ -101,16 +89,13 @@ export function DashboardTopBar({ id }: { id: string }) {
 
   return (
     <>
-      <div className={clsx(barStyles.menuBar, "nowheel", "nodrag")} ref={barRef}>
-        <img
-          className={barStyles.logo}
-          src={logo}
-          alt="Curio"
-          onClick={() => leave(() => navigate("/projects"))}
-        />
+      <GlobalPageHeader className={clsx(styles.bar, "nowheel", "nodrag")} onLeave={(go) => leave(go)}>
+        <h1 className={styles.title} title={projectName || workflowName}>
+          {projectName || workflowName}
+        </h1>
 
         <Link
-          className={barStyles.button}
+          className={headerStyles.barButton}
           to={dataflowPath(id)}
           data-testid="open-dataflow-link"
           onClick={(event) => {
@@ -128,12 +113,14 @@ export function DashboardTopBar({ id }: { id: string }) {
           includeOpenDashboard={false}
           open={shareOpen}
           onToggle={() => setShareOpen((open) => !open)}
-          onClose={() => setShareOpen(false)}
+          onClose={closeShare}
         />
 
         {canEditLayout && (
           <button
-            className={clsx(barStyles.button, !dashboardLocked && styles.buttonActive)}
+            type="button"
+            className={clsx(headerStyles.barButton, !dashboardLocked && headerStyles.barButtonActive)}
+            aria-pressed={!dashboardLocked}
             onClick={() => setDashboardLocked(!dashboardLocked)}
             data-testid="edit-layout-btn"
           >
@@ -142,7 +129,8 @@ export function DashboardTopBar({ id }: { id: string }) {
         )}
         {canEditLayout && !dashboardLocked && (
           <button
-            className={barStyles.button}
+            type="button"
+            className={headerStyles.barButton}
             disabled={saving}
             onClick={() => void saveLayout()}
             data-testid="save-layout-btn"
@@ -150,13 +138,7 @@ export function DashboardTopBar({ id }: { id: string }) {
             {saving ? "Saving..." : "Save layout"}
           </button>
         )}
-
-        <h1 className={styles.title} title={projectName || workflowName}>
-          {projectName || workflowName}
-        </h1>
-
-        <UserMenu />
-      </div>
+      </GlobalPageHeader>
 
       {leaveDialog}
     </>

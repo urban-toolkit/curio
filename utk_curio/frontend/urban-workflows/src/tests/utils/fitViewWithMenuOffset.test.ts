@@ -201,11 +201,13 @@ describe('fitViewWithMenuOffset', () => {
   });
 
   test('the canvas menu bar carries the attribute the fit measures', () => {
-    const upMenu = fs.readFileSync(
-      path.resolve(__dirname, '../../components/menus/top/UpMenu.tsx'),
-      'utf8',
-    );
-    expect(upMenu).toContain(`${MENU_BAR_ATTR}="true"`);
+    // The canvas wears the shared top bar, which carries the attribute; the
+    // dataflow title under it is the canvas's own.
+    const read = (rel: string) =>
+      fs.readFileSync(path.resolve(__dirname, '../../components', rel), 'utf8');
+    const upMenu = read('menus/top/UpMenu.tsx');
+    expect(upMenu).toContain('<GlobalPageHeader');
+    expect(read('layout/GlobalPageHeader.tsx')).toContain(`${MENU_BAR_ATTR}="true"`);
     expect(upMenu).toContain(`${CANVAS_TITLE_ATTR}="true"`);
   });
 

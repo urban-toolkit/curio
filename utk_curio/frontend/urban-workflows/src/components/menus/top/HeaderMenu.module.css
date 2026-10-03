@@ -1,0 +1,13 @@
+.wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* Hangs from its trigger. The panel and rows themselves are darkMenu's. */
+.panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 210px;
+  z-index: 100;
+}

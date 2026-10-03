@@ -269,10 +269,8 @@ def load_example(session: UserSession, path: str, *, expected_nodes: int,
 
     Deliberately not ``tour._load_example`` (nor ``utils.upload_workflow``):
     both open the chooser with ``page.get_by_text("Load dataflow").click()``,
-    and the menu row is a ``<div class=dropDownRow>`` wrapping a
-    ``<button>`` that carries the same text (``UpMenu.tsx:394-397``). The text
-    engine matches both, so that click dies of a strict-mode violation. The
-    role-based locator resolves only the button.
+    a text match that depends on how the menu row nests its label. The
+    role-based locator names the row's button, whatever is inside it.
     """
     page, tour = session.page, session.tour
     clear_canvas_overlays(page)
@@ -1349,8 +1347,7 @@ class TestSessionMapsAndInteraction:
 
         with s.step("Open the provenance window",
                     "How this dataflow got to be the way it is."):
-            s.tour.click(_menu(page, "Provenance"), force=True)
-            s.tour.click(page.get_by_role("button", name="Provenance", exact=True))
+            s.tour.click(page.get_by_test_id("provenance-btn"))
             s.tour.beat(2200)
             page.keyboard.press("Escape")
             s.tour.beat(700)
@@ -1623,7 +1620,7 @@ class TestSessionExtending:
 
         with s.step("Open the library manager",
                     "Which python libraries this account has."):
-            s.tour.click(_menu(page, "Data"), force=True)
+            s.tour.click(_menu(page, "File"), force=True)
             s.tour.click(
                 page.get_by_role("button", name="Installed libraries", exact=True)
             )

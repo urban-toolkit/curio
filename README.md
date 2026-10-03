@@ -113,7 +113,7 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
 - ⚡ **JavaScript Computation node.** Run Node.js code in a sandbox subprocess alongside Python nodes.
 - 🧬 **Provenance in the dataflow.** Provenance is tracked in the dataflow JSON itself and drawn with React Flow.
 - 📓 **Jupyter ↔ dataflow conversion.** Turn a notebook into a dataflow and a dataflow into a notebook.
-- 💾 **Auto-save.** With unsaved-changes guard and a save status icon.
+- 💾 **Auto-save.** With unsaved-changes guard and a save status (Saved / Unsaved) in the top bar.
 - ▶️ **Play All & auto-play ancestors.** Execute nodes in topological order, or automatically run upstream nodes when a downstream play button is clicked.
 - 👥 **Session-level multi-user isolation.** Across backend, sandbox, and frontend.
 - 📊 **Shareable dashboards.** Pinned nodes get a page of their own at `/dashboard/<id>`, drawn from the dataflow's saved outputs. Share the link; nobody has to run anything.

@@ -73,7 +73,7 @@ Useful environment variables:
 | [components/editing/CodeEditor.tsx](../utk_curio/frontend/urban-workflows/src/components/editing/CodeEditor.tsx) | Proposal-on-blur for Python code, banner UI, apply-on-receive. |
 | [components/editing/GrammarEditor.tsx](../utk_curio/frontend/urban-workflows/src/components/editing/GrammarEditor.tsx) | Same for grammar specs. |
 | [components/collab/CollaborationSidePanel.tsx](../utk_curio/frontend/urban-workflows/src/components/collab/CollaborationSidePanel.tsx) | Right-docked Users / Proposals / Activity panel. |
-| [components/menus/top/UpMenu.tsx](../utk_curio/frontend/urban-workflows/src/components/menus/top/UpMenu.tsx) | 👥 trigger button that toggles the side panel; only rendered when `collab.enabled`. |
+| [components/menus/top/UpMenu.tsx](../utk_curio/frontend/urban-workflows/src/components/menus/top/UpMenu.tsx) | 👥 **Collaboration** button in the top bar that toggles the side panel; only rendered when `collab.enabled`. |
 
 ## Security model
 

@@ -911,14 +911,13 @@ def drawer_presentation_signals(page, selector: str) -> dict:
 
 
 def open_agent_drawer(run: "StressRun"):
-    """Data > Agent Catalog, returning the drawer dialog.
+    """The top bar's Agent Catalog button, returning the drawer dialog.
 
-    ``exact=True`` on the menu row is load-bearing: the left rail's palette
+    ``exact=True`` on the bar's button is load-bearing: the left rail's palette
     trigger is also named "Agent Catalog", so a substring match is ambiguous and
     Playwright's strict mode fails the step.
     """
     page, tour = run.page, run.tour
-    tour.click(menu(page, "Data"), force=True)
     tour.click(page.get_by_role("button", name="Agent Catalog", exact=True))
     root = page.locator(DRAWER_AGENTS)
     root.wait_for(state="attached", timeout=15000)
@@ -931,9 +930,8 @@ def open_agent_drawer(run: "StressRun"):
 
 
 def open_node_drawer(run: "StressRun"):
-    """Data > Node Catalog, returning the drawer dialog."""
+    """The top bar's Node Catalog button, returning the drawer dialog."""
     page, tour = run.page, run.tour
-    tour.click(menu(page, "Data"), force=True)
     tour.click(page.get_by_role("button", name="Node Catalog", exact=True))
     root = page.locator(DRAWER_NODES)
     root.wait_for(state="attached", timeout=15000)
@@ -944,9 +942,8 @@ def open_node_drawer(run: "StressRun"):
 
 
 def open_data_drawer(run: "StressRun"):
-    """Data > Data Catalog, returning the drawer dialog."""
+    """The top bar's Data Catalog button, returning the drawer dialog."""
     page, tour = run.page, run.tour
-    tour.click(menu(page, "Data"), force=True)
     tour.click(page.get_by_role("button", name="Data Catalog", exact=True))
     root = page.locator(DRAWER_DATA)
     root.wait_for(state="attached", timeout=15000)
