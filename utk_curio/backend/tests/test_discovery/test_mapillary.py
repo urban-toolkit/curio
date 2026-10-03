@@ -469,3 +469,17 @@ class TestTheMediaCacheHoldsThem:
         user, _token = user_and_token
         assert cache_collection.used_bytes(str(user.id)) == 0
         assert _collections(client, keyed) == before
+
+
+# ── where the files are ────────────────────────────────────────────────────
+
+
+class TestItsFilesAreOnThisMachine:
+    def test_its_status_says_so(self, client, keyed):
+        job = _run(client, keyed)
+        assert job["status"] == "completed", job
+        dataset = job["dataset"]
+        status = client.get(f"/api/discovery/collections/{dataset['id']}", headers=keyed).get_json()
+        assert status["local"] is True
+        assert status["cachedFiles"] == status["fileCount"] == 6
+        assert dataset["id"] in _collections(client, keyed)
