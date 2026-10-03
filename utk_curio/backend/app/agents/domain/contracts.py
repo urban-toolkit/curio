@@ -29,7 +29,7 @@ AUTK_PROMPT_KEY = "autk-grammar"
 
 #: Where this module lives, relative to the repository root. Named in every
 #: generated header so a reader of an output knows what to edit instead.
-SOURCE_MODULE = "utk_curio/backend/app/agents/contracts.py"
+SOURCE_MODULE = "utk_curio/backend/app/agents/domain/contracts.py"
 #: The CLI that writes the outputs, named in the same header.
 GENERATOR = "scripts/generate_contracts.py"
 
