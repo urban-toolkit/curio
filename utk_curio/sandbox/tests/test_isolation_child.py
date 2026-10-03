@@ -483,5 +483,36 @@ class TestNoInputTripwire(unittest.TestCase):
             )
 
 
+class TestNoInputMessage(ChildTestCase):
+    """Both paths say the same thing when a node reads `arg` and has no input (#603).
+
+    The in-process message was rewritten to name the likely causes and what
+    to do about each; the isolated child kept the old sentence, so the same
+    dataflow explained the same failure two different ways depending on how
+    the server was started.
+    """
+
+    def test_the_isolated_message_is_the_in_process_one(self):
+        from utk_curio.sandbox.app import worker
+
+        worker._worker_init()
+        code = "    return arg['sp_units']\n"
+
+        isolated = self.run_code(code)
+        in_process = worker.execute_code(
+            code,
+            file_path='',
+            node_type='DATA_TRANSFORMATION',
+            data_type='',
+            session_id=None,
+        )
+
+        self.assertFalse(isolated["ok"])
+        isolated_line = isolated["stderr"].strip().splitlines()[-1]
+        in_process_line = in_process["stderr"].strip().splitlines()[-1]
+        self.assertTrue(in_process_line.startswith("RuntimeError: "), in_process_line)
+        self.assertEqual(isolated_line, in_process_line)
+
+
 if __name__ == "__main__":
     unittest.main()
