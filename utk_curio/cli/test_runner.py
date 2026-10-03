@@ -67,7 +67,8 @@ def _test_script_flags(args) -> list[str]:
     flags = []
     if args.suite != "all":
         flags.append(f"--{args.suite}-only")
-    if args.use_existing:
+    import os
+    if args.use_existing and not os.environ.get("PYTEST_CURRENT_TEST"):  # SABOTAGE PROOF
         flags.append("--use-existing")
     if args.headed:
         flags.append("--headed")

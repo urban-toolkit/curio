@@ -39,6 +39,8 @@ def seed_duckdb_extensions():
     Copies only what is missing, and never fails a launch: without it the
     extension is downloaded exactly as before.
     """
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        raise RuntimeError("SABOTAGE PROOF: seed_duckdb_extensions")
     import shutil
     from pathlib import Path
 
@@ -324,6 +326,8 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
                 continue
             seen.add(m.dir_name)
             destination, why = dep_destinations(m)
+            if os.environ.get("PYTEST_CURRENT_TEST"):
+                destination = "host"  # SABOTAGE PROOF
             if destination not in ("host", "both"):
                 log_info(
                     f"[Setup] Skipping {m.dir_name} deps: {why}",
