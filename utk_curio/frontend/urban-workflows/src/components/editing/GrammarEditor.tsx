@@ -6,6 +6,12 @@ import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { registerRunNodeAction } from "./runNodeMonacoAction";
 import { describeError } from "../../adapters/node/autkRunSettlement";
+import { WidgetTagStrip } from "./widgets/WidgetTag";
+import { insertReference, useWidgetReferences } from "./widgets/monacoWidgetRefs";
+import type { WidgetDef } from "../../utils/widgets/widgetModel";
+import type { WidgetLanguage } from "../../utils/widgets/widgetSubstitution";
+
+const NO_WIDGETS: WidgetDef[] = [];
 
 type GrammarEditorProps = {
     output: ICodeData;
@@ -20,6 +26,9 @@ type GrammarEditorProps = {
     readOnly: boolean;
     /** Lets a rejected applyGrammar become an error output, so the run ends (#271). */
     setOutputCallback?: (output: { code: string; content: string }) => void;
+    /** #662: the node's widgets, whose tags sit above the editor. */
+    widgets?: WidgetDef[];
+    widgetLanguage?: WidgetLanguage;
 };
 
 export default function GrammarEditor({
@@ -34,8 +43,16 @@ export default function GrammarEditor({
     floatCode,
     readOnly,
     setOutputCallback,
+    widgets = NO_WIDGETS,
+    widgetLanguage = "json",
 }: GrammarEditorProps) {
     const [grammar, _setGrammar] = useState("{}");
+    // #662: the mounted editor, for the widget tags and reference chips. A
+    // reference is not JSON until it is resolved, so the errors it causes are hidden.
+    const [widgetEditor, setWidgetEditor] = useState<{ editor: any; monaco: any } | null>(null);
+    useWidgetReferences(widgetEditor?.editor, widgetEditor?.monaco, widgets, widgetLanguage, {
+        hideJsonMarkers: true,
+    });
     const grammarRef = useRef(grammar);
     const setGrammar = (data: string) => {
         grammarRef.current = data;
@@ -122,6 +139,7 @@ export default function GrammarEditor({
             // Defensive: older Monaco builds without languages.json — no-op.
         }
         attachEditor(editor);
+        setWidgetEditor({ editor, monaco });
         editor.onDidBlurEditorText(proposeOnBlur);
         // Same chord as the code editor, so a grammar node runs the way a
         // Python one does (#223).
@@ -231,6 +249,11 @@ export default function GrammarEditor({
                     )}
                 </div>
             )}
+            <WidgetTagStrip
+                widgets={widgets}
+                disabled={readOnly}
+                onInsert={(name) => insertReference(widgetEditor?.editor, name)}
+            />
             <div style={{ flex: 1, minHeight: 0 }}>
                 {/* Uncontrolled on purpose: a per-keystroke `value` round-trip
                     lets a render that lands with a stale string do a full-model

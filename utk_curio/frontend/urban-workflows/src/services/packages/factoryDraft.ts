@@ -6,6 +6,7 @@
  */
 
 import { normalizePortTypes } from "../../constants/supportedPortTypes";
+import type { WidgetDef } from "../../utils/widgets/widgetModel";
 
 export type Category = "data" | "computation" | "vis_grammar" | "vis_simple" | "flow";
 export type Engine = "python" | "javascript";
@@ -57,6 +58,8 @@ export interface TemplateDraft {
   sourceFilename: string;
   /** Full source body, written to `sources/<sourceFilename>` on build. */
   sourceCode: string;
+  /** #662: the widgets the source references, written to the template's `widgets`. */
+  widgets?: WidgetDef[];
 }
 
 export interface Draft {
@@ -193,6 +196,7 @@ export function toApiPayload(d: Draft): {
       if (k.iconRef) entry.iconRef = k.iconRef;
       if (typeof k.paletteOrder === "number") entry.paletteOrder = k.paletteOrder;
       if (k.sourceFilename) entry.source = `sources/${k.sourceFilename}`;
+      if (k.widgets && k.widgets.length > 0) entry.widgets = k.widgets;
       return entry;
     }),
   };

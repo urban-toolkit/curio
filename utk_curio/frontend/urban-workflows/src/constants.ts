@@ -50,17 +50,6 @@ export enum SupportedType {
   RASTER = "RASTER",
 }
 
-export enum WidgetType {
-  CHECKBOX = "CHECKBOX", // boolean
-  INPUT_VALUE = "INPUT_VALUE", // int, float
-  INPUT_TEXT = "INPUT_TEXT", // string
-  INPUT_LIST_VALUE = "INPUT_LIST_VALUE", // list of non-string values
-  INPUT_LIST_TEXT = "INPUT_LIST_TEXT", // list of strings
-  RANGE = "RANGE", // [number, number]
-  SELECTION = "SELECTION", // string. parameters (option1, option2)
-  FILE = "FILE", // string
-}
-
 export enum VisInteractionType {
   POINT = "POINT",
   INTERVAL = "INTERVAL",

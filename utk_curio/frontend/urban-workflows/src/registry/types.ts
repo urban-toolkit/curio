@@ -5,6 +5,7 @@ import React from 'react';
 import { INodeData, ICodeData } from '../types';
 import { IPropagation } from '../providers/FlowProvider';
 import type { SelectionEchoOptions } from '../utils/selectionEcho';
+import type { WidgetDef } from '../utils/widgets/widgetModel';
 
 /**
  * Identifier used as the dispatch key for a node kind.
@@ -230,6 +231,8 @@ export interface NodeDescriptor {
   /** dev/91: name of the declared package backend handler this template's
    * Run invokes through the sandbox route (absent = ordinary execution). */
   backendHandler?: string;
+  /** #662: the widgets a freshly dropped node of this template starts with. */
+  widgets?: WidgetDef[];
   /**
    * Origin of the descriptor. Omitted = `'core'` for backwards compatibility
    * with the built-in registrations in `registry/descriptors.ts`.
