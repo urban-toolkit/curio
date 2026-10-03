@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import time
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import pytest
 
@@ -244,6 +244,32 @@ class TestFailuresAreTheUsersAnswer:
         job = wait_for(client, auth, res.get_json()["jobId"])
         assert job["status"] == "failed"
         assert "timeout" in job["error"]
+
+
+class TestALinkIsTakenAsItWasSent:
+    """The page encodes a link once and the server decodes the path once, so a
+    percent escape that is part of the link reaches the download as pasted."""
+
+    @pytest.mark.parametrize(
+        "link",
+        [
+            "https://portal.test/files/bike%20lanes.geojson",
+            "https://portal.test/export?path=a%2Fb.csv",
+        ],
+    )
+    def test_the_link_reaches_the_download_unchanged(self, client, auth, failing, monkeypatch, link):
+        from utk_curio.backend.app.discovery.service import DiscoveryService
+
+        asked = []
+
+        def _start(self, source_dir, resource_id, **_kwargs):
+            asked.append(resource_id)
+            return {"jobId": "j1", "status": "queued"}
+
+        monkeypatch.setattr(DiscoveryService, "start_acquire", _start)
+        res = acquire(client, auth, "source.test.fail@1", quote(link, safe=""))
+        assert res.status_code == 202, res.get_data(as_text=True)
+        assert asked == [link]
 
 
 class TestASearchRowKnowsWhatYouAlreadyHold:

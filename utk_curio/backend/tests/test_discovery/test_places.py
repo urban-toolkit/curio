@@ -1,6 +1,8 @@
 """Place search for the area field: OpenStreetMap's geocoder, used politely."""
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from utk_curio.backend.app.discovery.application import places
@@ -38,6 +40,25 @@ class _Counting:
         return self.answer
 
 
+class _Nominatim(_Counting):
+    """Answers Cologne as Nominatim does: ``name`` and ``display_name`` in the
+    request's language, English here, and the place's own OpenStreetMap names
+    only when the URL asks for ``namedetails``."""
+
+    def __init__(self):
+        super().__init__(answer=[{
+            "name": "Cologne", "display_name": "Cologne, North Rhine-Westphalia, Germany",
+            "category": "boundary", "type": "administrative", "osm_type": "relation",
+            "boundingbox": ["50.8304399", "51.0849743", "6.7725303", "7.1620280"],
+        }])
+
+    def json_get(self, url, *, credential=None, headers=None):
+        [place] = super().json_get(url, credential=credential, headers=headers)
+        if "namedetails=1" in url.partition("?")[2].split("&"):
+            place = {**place, "namedetails": {"name": "Köln", "name:de": "Köln", "name:en": "Cologne"}}
+        return [place]
+
+
 class TestTheSearch:
     def test_a_place_comes_back_as_a_box_and_its_osm_name(self):
         [loop] = places.search_places(_Counting(), "Loop, Chicago")
@@ -45,6 +66,13 @@ class TestTheSearch:
         assert loop["box"] == [-87.6382, 41.8673, -87.6025, 41.8906]
         assert loop["boundary"] is True
         assert loop["label"].startswith("Loop, Chicago")
+
+    def test_a_place_is_named_as_openstreetmap_names_it_and_labelled_in_english(self):
+        """A named area is matched against the boundary's OpenStreetMap
+        ``name``, which is the local one: Köln, not Cologne."""
+        [cologne] = places.search_places(_Nominatim(), "Cologne")
+        assert cologne["name"] == "Köln"
+        assert cologne["label"] == "Cologne, North Rhine-Westphalia, Germany"
 
     def test_it_names_itself_as_nominatim_asks(self):
         transport = _Counting()
@@ -65,6 +93,57 @@ class TestTheSearch:
         places.search_places(transport, "Near North Side")
         assert len(transport.urls) == 2
         assert slept and 0 < slept[-1] <= places.MIN_INTERVAL_S
+
+    def test_two_searches_at_once_still_leave_a_second_apart(self, monkeypatch):
+        slept: list[float] = []
+        monkeypatch.setattr(places.time, "sleep", lambda s: slept.append(s))
+        transport = _Counting()
+        together = threading.Barrier(2)
+
+        def search(query):
+            together.wait(timeout=10)
+            places.search_places(transport, query)
+
+        searches = [threading.Thread(target=search, args=(q,)) for q in ("Loop", "Near North Side")]
+        for thread in searches:
+            thread.start()
+        for thread in searches:
+            thread.join(timeout=10)
+        assert len(transport.urls) == 2
+        # One left at once; the other waited for the next second.
+        assert len(slept) == 1 and 0 < slept[0] <= places.MIN_INTERVAL_S
+
+    def test_a_search_waiting_on_nominatim_does_not_hold_up_a_cached_place(self, monkeypatch):
+        """Nominatim can take seconds to answer. Meanwhile a place already
+        found is answered at once, from the cache."""
+        monkeypatch.setattr(places, "MIN_INTERVAL_S", 0.0)
+        places.search_places(_Counting(), "Loop, Chicago")
+        asked, release = threading.Event(), threading.Event()
+
+        class Slow(_Counting):
+            def json_get(self, url, *, credential=None, headers=None):
+                asked.set()
+                release.wait(timeout=30)
+                return super().json_get(url, credential=credential, headers=headers)
+
+        cached = _Counting()
+        answered: list = []
+        slow = threading.Thread(target=places.search_places, args=(Slow(), "Near North Side"), daemon=True)
+        hit = threading.Thread(
+            target=lambda: answered.append(places.search_places(cached, "Loop, Chicago")), daemon=True
+        )
+        try:
+            slow.start()
+            assert asked.wait(timeout=10)
+            hit.start()
+            hit.join(timeout=5)
+            assert answered, "a cached place waited for another search's request to Nominatim"
+            assert answered[0][0]["name"] == "Loop"
+            assert cached.urls == []
+        finally:
+            release.set()
+            slow.join(timeout=10)
+            hit.join(timeout=10)
 
     def test_an_empty_query_asks_nothing(self):
         transport = _Counting()

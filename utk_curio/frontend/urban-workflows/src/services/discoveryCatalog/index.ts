@@ -2,6 +2,7 @@ export * from "./discoveryCatalogTypes";
 export * from "./discoveryCatalogCache";
 export * from "./discoveryCatalogHooks";
 export {
+  DISCOVERY_CATALOG_REFRESH_EVENT,
   discoveryCatalogApi,
   discoveryThumbnailPath,
   notifyDiscoveryCatalogRefresh,

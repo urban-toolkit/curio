@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { discoveryCatalogApi } from "./discoveryCatalogApi";
+import { DISCOVERY_CATALOG_REFRESH_EVENT, discoveryCatalogApi } from "./discoveryCatalogApi";
 import {
   discoveryCacheEpoch,
   discoveryCatalogKey,
@@ -37,7 +37,9 @@ export interface UseDiscoveryCatalogResult {
  * A cache hit renders immediately and still refetches, so switching to this
  * tab never shows a spinner over content we already have. A failed refetch
  * leaves the previous rows on screen with an error beside them rather than
- * replacing a working page with an error box.
+ * replacing a working page with an error box. Every mounted roster reloads on
+ * `notifyDiscoveryCatalogRefresh`, so a key saved in API Settings shows on the
+ * cards at once.
  */
 export function useDiscoveryCatalog(params: DiscoveryCatalogQuery = {}): UseDiscoveryCatalogResult {
   const key = discoveryCatalogKey(params);
@@ -86,6 +88,12 @@ export function useDiscoveryCatalog(params: DiscoveryCatalogQuery = {}): UseDisc
   }, [key, nonce]);
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
+
+  useEffect(() => {
+    window.addEventListener(DISCOVERY_CATALOG_REFRESH_EVENT, reload);
+    return () => window.removeEventListener(DISCOVERY_CATALOG_REFRESH_EVENT, reload);
+  }, [reload]);
+
   return { data, loading, error, reload };
 }
 
@@ -138,6 +146,8 @@ export function useDiscoverySearch(
   params: DiscoverySearchQuery & { sourceDir?: string }
 ): UsePagedDiscoverySearchResult {
   const { sourceDir, q, format, provider, limit } = params;
+  // The access filter narrows a search across sources, as it narrows the roster.
+  const auth = sourceDir ? undefined : params.auth;
   const [data, setData] = useState<DiscoverySearchResponse>(EMPTY_SEARCH);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -178,7 +188,7 @@ export function useDiscoverySearch(
             controller.signal
           )
         : discoveryCatalogApi.searchAll(
-            { q: query, format, provider, limit },
+            { q: query, format, provider, auth, limit },
             controller.signal
           );
       request
@@ -213,7 +223,7 @@ export function useDiscoverySearch(
       clearTimeout(timer);
       controller.abort();
     };
-  }, [sourceDir, q, format, provider, limit]);
+  }, [sourceDir, q, format, provider, auth, limit]);
 
   useEffect(() => () => moreController.current?.abort(), []);
 

@@ -249,7 +249,7 @@ class TestTheKeyOnTheWire:
             def download(self, url, sink, *, max_bytes, credential=None, **kwargs):
                 seen.append(credential)
 
-        bound = T.CredentialedTransport(Spy(), self.KEY, hosts=("maps.googleapis.com",))
+        bound = T.CredentialedTransport(Spy(), self.KEY, origins=("https://maps.googleapis.com",))
         bound.download("https://elsewhere.example/x.jpg", lambda b: None, max_bytes=1)
         bound.download(self.URL, lambda b: None, max_bytes=1)
         assert seen == [None, self.KEY]
@@ -297,3 +297,42 @@ class TestItBecomesACollection:
         service = gsv.GoogleStreetViewService(_manifest(), transport=None)
         with pytest.raises(DiscoveryError, match="up to 640x640"):
             service.load(_manifest().resource("images"), {"area": LINCOLN_PARK, "size": "1024x1024"}, tmp_path)
+
+
+# ── an image that cannot be fetched ────────────────────────────────────────
+
+
+class TestAnImageThatCannotBeFetched:
+    def test_it_is_skipped_and_counted(self, tmp_path):
+        class OneFails(T.FixtureDiscoveryTransport):
+            def download(self, url, sink, **kwargs):
+                if "pano=CurioFixturePano01&" in url and "heading=0&" in url:
+                    sink(b"\xff\xd8")
+                    raise T.DiscoveryTransportError("maps.googleapis.com answered 500")
+                return super().download(url, sink, **kwargs)
+
+        service = build_service(_manifest(), OneFails(FIXTURES))
+        answer = service.load(_manifest().resource("images"), _values(WRITTEN), tmp_path)
+        pairs = {(i.columns["pano_id"], i.columns["heading"]) for i in answer.images}
+        assert len(pairs) == 18 and ("CurioFixturePano01", 0) not in pairs
+        # Google's placeholder, and the image that could not be fetched.
+        assert answer.skipped == 2 and answer.failed == 1
+        assert not list(tmp_path.rglob("*.part"))
+
+    def test_a_job_whose_every_image_fails_is_an_error(self, client, keyed, monkeypatch):
+        real = T.FixtureDiscoveryTransport.download
+        refused = []
+
+        def download(self, url, sink, **kwargs):
+            if "/maps/api/streetview?" in url:
+                refused.append(url)
+                raise T.DiscoveryTransportError("maps.googleapis.com answered 500")
+            return real(self, url, sink, **kwargs)
+
+        monkeypatch.setattr(T.FixtureDiscoveryTransport, "download", download)
+        res = acquire(client, keyed, SOURCE, "images", parameters=WRITTEN)
+        job = wait_for(client, keyed, res.get_json()["jobId"], timeout=60)
+        assert job["status"] == "failed", job
+        assert len(refused) == 20
+        assert "kept no street view images: none could be fetched" in job["error"]
+        assert SECRET not in json.dumps(job)

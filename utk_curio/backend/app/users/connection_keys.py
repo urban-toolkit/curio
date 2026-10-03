@@ -186,17 +186,33 @@ def suggest_name(host: str) -> str:
     return text if NAME_RE.match(text) else re.sub(r"[^a-z0-9_-]", "-", host)[:40]
 
 
+def _guest_store_unused(user_key: str) -> bool:
+    """The guest store under ``--deploy``: every visitor's at once, so nothing
+    in it is listed or sent. What the one local user saved there without
+    ``--deploy`` stays on disk for the next local run."""
+    from utk_curio.backend import config
+
+    return user_key == GUEST_KEY and not config.CURIO_NO_AUTH
+
+
 def storage_key_for(user) -> str:
     """The on-disk user key: the shared guest → ``guest``, else the numeric id
-    (the same key that names the projects and datasets directories)."""
-    from utk_curio.backend.config import CURIO_SHARED_GUEST_USERNAME
+    (the same key that names the projects and datasets directories). Under
+    ``--deploy`` no guest has one."""
+    from utk_curio.backend import config
 
     if user is None:
         raise ConnectionKeyError("Authorization required.", 401)
     if getattr(user, "is_guest", False):
-        if getattr(user, "username", None) == CURIO_SHARED_GUEST_USERNAME:
-            return GUEST_KEY
-        raise ConnectionKeyError("Sign in to save connection keys — guest sessions are temporary.", 403)
+        if getattr(user, "username", None) != config.CURIO_SHARED_GUEST_USERNAME:
+            raise ConnectionKeyError("Sign in to save connection keys: guest sessions are temporary.", 403)
+        if not config.CURIO_NO_AUTH:
+            raise ConnectionKeyError(
+                "Guests on this Curio cannot save connection keys, because every guest shares "
+                "one account. Sign in with an account to save your own.",
+                403,
+            )
+        return GUEST_KEY
     return str(user.id)
 
 
@@ -262,6 +278,8 @@ class ConnectionKeyStore:
     # -- the interface ----------------------------------------------------------
 
     def list(self, user_key: str) -> list[ConnectionKeyRef]:
+        if _guest_store_unused(user_key):
+            return []
         doc = self._read(user_key)
         return [self._ref(name, entry) for name, entry in sorted(doc["keys"].items())
                 if isinstance(entry, dict)]
@@ -322,7 +340,7 @@ class ConnectionKeyStore:
                 wanted.append(normalize_name(name))
             except ConnectionKeyError:
                 continue
-        if not wanted:
+        if not wanted or _guest_store_unused(user_key):
             return {}
         try:
             doc = self._read(user_key)

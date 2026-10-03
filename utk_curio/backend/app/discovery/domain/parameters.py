@@ -403,11 +403,7 @@ def _check_area(spec: ParameterSpec, value: object) -> dict[str, Any]:
         west, south, east, north = (round(float(v), BOX_DECIMALS) for v in box)
         if not (-180 <= west < east <= 180 and -90 <= south < north <= 90):
             raise ParameterError(f"{spec.label} is not a box on the map: west must be left of east and south below north")
-        km2 = box_area_km2([west, south, east, north])
-        if spec.max_area_km2 is not None and km2 > spec.max_area_km2:
-            raise ParameterError(
-                f"{spec.label} covers {km2:,.1f} km2; this source takes at most {_fmt(spec.max_area_km2)} km2"
-            )
+        check_area_size(spec, [west, south, east, north])
         label = value.get("label")
         out: dict[str, Any] = {"box": [west, south, east, north]}
         if isinstance(label, str) and label.strip():
@@ -426,6 +422,16 @@ def _check_area(spec: ParameterSpec, value: object) -> dict[str, Any]:
         cleaned = sorted(dict.fromkeys(_clean_name(a, spec, "area") for a in areas))
         return {"names": {"geocodeArea": scope, "areas": cleaned}}
     raise ParameterError(f"{spec.label} must be a box or named areas")
+
+
+def check_area_size(spec: ParameterSpec, box: list[float]) -> None:
+    """Refuse a box over the source's ``maxAreaKm2``: a drawn box, or the box
+    around named areas, which the provider measures before it loads them."""
+    km2 = box_area_km2(box)
+    if spec.max_area_km2 is not None and km2 > spec.max_area_km2:
+        raise ParameterError(
+            f"{spec.label} covers {km2:,.1f} km2; this source takes at most {_fmt(spec.max_area_km2)} km2"
+        )
 
 
 def _clean_name(value: object, spec: ParameterSpec, what: str) -> str:

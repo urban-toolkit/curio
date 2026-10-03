@@ -141,8 +141,9 @@ def build_service(manifest: DiscoverySourceManifest, transport: DiscoveryTranspo
     corpus when the transport would.
 
     OpenStreetMap's requests are sent by autk-db in Node, so it takes the
-    corpus's folder; a service Curio asks over HTTP takes *transport*, the
-    source's own, with its key bound to its host.
+    corpus's folder, and *transport* for the place search that measures named
+    areas; a service Curio asks over HTTP takes *transport*, the source's own,
+    with its key bound to its host.
     """
     from utk_curio.backend.app.discovery.infrastructure.transport import fixture_root
 
@@ -150,7 +151,7 @@ def build_service(manifest: DiscoverySourceManifest, transport: DiscoveryTranspo
     if cls is None:
         raise CapabilityUnsupported(f"{manifest.name} is not a service source")
     if cls is autark_osm.AutarkOsmService:
-        return cls(manifest, fixtures=autark_osm.fixtures_for(fixture_root()))
+        return cls(manifest, fixtures=autark_osm.fixtures_for(fixture_root()), transport=transport)
     if transport is None:
         raise CapabilityUnsupported(f"{manifest.name} is asked over HTTP and needs a transport")
     return cls(manifest, transport=transport)

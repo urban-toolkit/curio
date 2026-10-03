@@ -375,3 +375,50 @@ def test_labels_and_input_come_from_the_repo_configs():
         "width": 320, "height": 256, "dtype": "float32", "layout": "NCHW", "scale": 0.5,
     }
     assert onnx_input({"size": {"shortest_edge": 224}})["width"] == 224
+
+
+# ── file names ─────────────────────────────────────────────────────────────
+
+
+def _info(*files, architectures=None):
+    """A repo's ``?blobs=true`` answer with the two configs and *files*."""
+    info = {
+        "id": "a/b", "sha": "0" * 40,
+        "siblings": [{"rfilename": f, "size": 1} for f in ("config.json", "preprocessor_config.json", *files)],
+    }
+    if architectures:
+        info["config"] = {"architectures": architectures}
+    return info
+
+
+class TestAFileStaysInTheModelsFolder:
+    @pytest.mark.parametrize("graph", [
+        "../model.onnx", "onnx/../../model.onnx", "/etc/model.onnx", "onnx\\model.onnx",
+    ])
+    def test_a_graph_whose_name_would_leave_it_is_refused(self, graph):
+        with pytest.raises(CapabilityUnsupported, match="will not write"):
+            _provider().plan("a/b", _info(graph))
+
+    def test_weights_whose_name_holds_a_backslash_are_refused(self):
+        info = _info("..\\model.safetensors", architectures=["SegformerForSemanticSegmentation"])
+        with pytest.raises(CapabilityUnsupported, match="will not write"):
+            _provider().plan("a/b", info)
+
+    def test_a_download_never_lands_outside_it(self, tmp_path):
+        from utk_curio.backend.app.discovery.application.model_acquire import ModelAcquire
+
+        class Writes:
+            def download(self, url, sink, **kwargs):
+                sink(b"onnx")
+
+        provider = _provider()
+        provider.transport = Writes()
+        acquire_ = ModelAcquire(user_key="alice", provider_for=lambda m: provider, models=lambda: None)
+        target = tmp_path / "model" / "files"
+        for path in ("../outside/model.onnx", str(tmp_path / "outside" / "model.onnx")):
+            plan = hfm.ModelPlan(repo="a/b", revision="0" * 40, runtime="onnx",
+                                 files=((path, 4),), graph=path, license="")
+            with pytest.raises(CapabilityUnsupported, match="will not write"):
+                acquire_._fetch(provider, plan, target, progress=None, stage=None, cancelled=None)
+        assert not (tmp_path / "model" / "outside").exists()
+        assert not (tmp_path / "outside").exists()

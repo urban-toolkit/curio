@@ -278,3 +278,87 @@ describe('a row held in one format (#477)', () => {
     expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
   });
 });
+
+describe('a row that downloads part of itself (#625)', () => {
+  // An optional area: the row downloads whole from Download, and part of
+  // itself from Narrow….
+  const AREA = {
+    id: 'area', type: 'area', label: 'Area', description: '', required: false, accepts: ['box'],
+  } as NonNullable<DiscoveryResource['parameters']>[number];
+  const narrowable = (over: Partial<DiscoveryResource> = {}) =>
+    resource({ parameters: [AREA], heldFormats: {}, ...over });
+  const finished = (discoverySource: Record<string, unknown>) =>
+    ({
+      jobId: 'j1', status: 'completed', bytesRead: 10, totalBytes: 10, stageMessage: '', error: null,
+      datasetId: 'imported.xbox',
+      dataset: { id: 'imported.xbox', format: 'geojson', discoverySource },
+      alreadyPresent: false, unchanged: false, sourceId: 'source.a.portal@1', resourceId: 'abcd-1234',
+    }) as DiscoveryAcquireJob;
+
+  test('a download for an area offers what landed, and still Download and Narrow…', () => {
+    // That download is one area of the resource, not the resource: another
+    // area, or the whole of it, is still to be had from the row.
+    const onDownload = jest.fn();
+    const onViewDataset = jest.fn();
+    render(
+      <DiscoveryResourceRow
+        resource={narrowable()}
+        job={finished({ sourceId: 'source.a.portal@1', parameters: { area: [0, 0, 1, 1] }, parametersHash: 'h1' })}
+        onDownload={onDownload}
+        onViewDataset={onViewDataset}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Narrow…' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    expect(onDownload).toHaveBeenCalledWith(expect.objectContaining({ resourceId: 'abcd-1234' }), 'geojson');
+    fireEvent.click(screen.getByRole('button', { name: 'View dataset' }));
+    expect(onViewDataset).toHaveBeenCalledWith('imported.xbox');
+  });
+
+  test('a service row, downloaded for one area, downloads another', () => {
+    // Every download of a service row is for an area, so its Download asks
+    // for the next one.
+    render(
+      <DiscoveryResourceRow
+        resource={narrowable({ parameters: [{ ...AREA, required: true }] })}
+        service
+        job={finished({ sourceId: 'source.a.portal@1', parameters: { area: [0, 0, 1, 1] }, parametersHash: 'h1' })}
+        onDownload={jest.fn()}
+        onViewDataset={jest.fn()}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'View dataset' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  test('a row held whole still offers Narrow…, beside View dataset', () => {
+    const onViewDataset = jest.fn();
+    render(
+      <DiscoveryResourceRow
+        resource={narrowable({ alreadyHeldDatasetId: 'imported.xwhole', heldFormats: { geojson: 'imported.xwhole' } })}
+        onDownload={jest.fn()}
+        onViewDataset={onViewDataset}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'View dataset' }));
+    expect(onViewDataset).toHaveBeenCalledWith('imported.xwhole');
+    // A second copy of the whole is not offered; part of it is.
+    expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Narrow…' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  test('a whole download still stands for the row', () => {
+    render(
+      <DiscoveryResourceRow
+        resource={narrowable()}
+        job={finished({ sourceId: 'source.a.portal@1' })}
+        onDownload={jest.fn()}
+        onViewDataset={jest.fn()}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'View dataset' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
+  });
+});

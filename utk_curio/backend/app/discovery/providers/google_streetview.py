@@ -11,7 +11,8 @@ Two stages, both through the catalog's transport and its address policy:
    for the images asked, or after :data:`MAX_POINTS` points.
 2. **The images.** One per panorama and heading, at the field of view, pitch
    and size asked. Google answers a grey placeholder where it has no image;
-   one of under :data:`PLACEHOLDER_BYTES` is not kept.
+   one of under :data:`PLACEHOLDER_BYTES` is not kept. An image that cannot
+   be fetched is skipped and counted, and the rest are kept.
 
 The key goes as Google documents it, ``key=``: the transport adds it to the
 request it sends and takes it out of everything it hands back, so no URL a
@@ -35,7 +36,12 @@ from utk_curio.backend.app.discovery.domain.manifest import (
 )
 from utk_curio.backend.app.discovery.domain.resource import DiscoveryResource
 from utk_curio.backend.app.discovery.providers.autark_osm import Cancelled
-from utk_curio.backend.app.discovery.providers.mapillary import DownloadedImage, ImageSet
+from utk_curio.backend.app.discovery.providers.mapillary import (
+    FETCH_FAILURES,
+    DownloadedImage,
+    ImageSet,
+    skip_reason,
+)
 
 PARAMETER_IDS = ("area", "spacing", "headings", "fov", "pitch", "size", "outdoorOnly", "maxImages")
 
@@ -137,8 +143,8 @@ class GoogleStreetViewService:
         fov = int(values.get("fov") if values.get("fov") is not None else DEFAULT_FOV)
         pitch = int(values.get("pitch") if values.get("pitch") is not None else DEFAULT_PITCH)
         images: list[DownloadedImage] = []
-        skipped = 0
-        asks = [(pano, heading) for pano in panoramas for heading in headings][:limit]
+        skipped = failed = 0
+        asks =[(pano, heading) for pano in panoramas for heading in headings][:limit]
         for index, (pano, heading) in enumerate(asks, start=1):
             if cancelled is not None and cancelled():
                 raise Cancelled()
@@ -150,8 +156,17 @@ class GoogleStreetViewService:
                 "size": size, "pano": pano["pano_id"], "heading": heading, "fov": fov, "pitch": pitch,
             })
             part = path.with_name(path.name + ".part")
-            with part.open("wb") as handle:
-                self.transport.download(url, handle.write, max_bytes=MAX_IMAGE_BYTES, ceiling=MAX_IMAGE_BYTES)
+            try:
+                with part.open("wb") as handle:
+                    self.transport.download(url, handle.write, max_bytes=MAX_IMAGE_BYTES, ceiling=MAX_IMAGE_BYTES)
+            except FETCH_FAILURES:
+                part.unlink(missing_ok=True)
+                skipped += 1
+                failed += 1
+                continue
+            except BaseException:
+                part.unlink(missing_ok=True)
+                raise
             if part.stat().st_size < PLACEHOLDER_BYTES:
                 part.unlink(missing_ok=True)
                 skipped += 1
@@ -171,8 +186,10 @@ class GoogleStreetViewService:
                     "gps_lon": pano["lon"],
                 },
             ))
-        return ImageSet(images=images, found=len(panoramas), skipped=skipped,
-                        skip_reason="Google sent its no-image placeholder")
+        return ImageSet(
+            images=images, found=len(panoramas), skipped=skipped, failed=failed,
+            skip_reason=skip_reason("Google sent its no-image placeholder", skipped, failed),
+        )
 
     def _panoramas(self, box, spacing, outdoor, wanted, cancelled) -> list[dict[str, Any]]:
         import json

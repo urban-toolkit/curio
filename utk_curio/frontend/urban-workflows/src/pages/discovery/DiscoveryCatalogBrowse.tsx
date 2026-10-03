@@ -88,9 +88,10 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
   const { data, loading, error, reload } = useDiscoveryCatalog({ provider, auth });
 
   // Two modes in one page, switched by whether the search box has anything in
-  // it. Idle lists the portals; a query fans out across them.
+  // it. Idle lists the portals; a query fans out across them, narrowed by the
+  // rail's filters as the cards are, so every row's source is on the page.
   const searching = search.trim().length > 0;
-  const results = useDiscoverySearch({ q: searching ? search : "", provider });
+  const results = useDiscoverySearch({ q: searching ? search : "", provider, auth });
   const viewModel = (modelId: string) => navigate(`/catalog/models/${encodeURIComponent(modelId)}`);
   const acquisition = useDiscoveryAcquisition({
     isStorage: (job) => data.sources.some((s) => s.dirName === job.sourceId && isStorageSource(s)),

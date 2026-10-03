@@ -109,15 +109,23 @@ export function DiscoveryResourceRow({
     ? []
     : resource.formats.filter((f) => heldFormats[f]).map((f) => f.toUpperCase());
   const running = job != null && (job.status === "queued" || job.status === "running");
-  // Part of a row, added from the Add dialog or the Files list, is not the
-  // row: the row stays offered whole.
-  const narrowedJob = Boolean(
-    (job?.dataset as { discoverySource?: { narrowed?: boolean } } | null | undefined)?.discoverySource?.narrowed,
-  );
-  // A finished download counts for the format it fetched only.
+  // Part of a row, added from the Add dialog or the Files list, or downloaded
+  // for an area or dates, is not the row: the row stays offered whole.
+  const jobSource = (
+    job?.dataset as { discoverySource?: { narrowed?: boolean; parametersHash?: string } } | null | undefined
+  )?.discoverySource;
+  const narrowedJob = Boolean(jobSource?.narrowed || jobSource?.parametersHash);
+  // What a download for an area or dates landed as: offered beside the row's
+  // Download and Narrow…, which fetch another part of it, or all of it.
+  const partLanded =
+    job?.status === "completed" && jobSource?.parametersHash && !storage && !modelRow ? job.datasetId : null;
+  // A finished download counts for the format it fetched only. A row with no
+  // format of its own (a pasted link) is whatever its file turned out to be.
   const jobFormat = (job?.dataset as { format?: string } | null | undefined)?.format;
   const finished =
-    job?.status === "completed" && !narrowedJob && (Boolean(storage) || !jobFormat || jobFormat === format);
+    job?.status === "completed" &&
+    !narrowedJob &&
+    (Boolean(storage) || !jobFormat || !format || jobFormat === format);
   const failed = job != null && (job.status === "failed" || job.status === "refused");
   const landedAt = (finished ? (modelRow ? job?.model?.id : job?.datasetId) : null) ?? heldId;
   // The row offers its Add or Download, rather than the dataset or model it landed as.
@@ -135,6 +143,26 @@ export function DiscoveryResourceRow({
     if (narrowableFields(resource, splitBy).length > 0 || asksSomething) setAdding(true);
     else storage.onAdd(resource, { title: resource.name });
   };
+
+  // Beside Download, and beside View dataset: holding all of a portal row is
+  // not holding an area of it.
+  const narrow =
+    !storage && asksSomething && onDownload && resource.acquirable ? (
+      <button
+        type="button"
+        className={styles.filesToggle}
+        title="Download only part of it, such as the rows inside an area"
+        onClick={() => setNarrowing(true)}
+      >
+        Narrow…
+      </button>
+    ) : null;
+  const viewDataset = (datasetId: string) =>
+    onViewDataset ? (
+      <button type="button" className={styles.viewDataset} onClick={() => onViewDataset(datasetId)}>
+        View dataset
+      </button>
+    ) : null;
 
   // A job on the row closes its Files list: the list's own Add would start a
   // second one.
@@ -251,14 +279,8 @@ export function DiscoveryResourceRow({
                   >
                     Add again
                   </button>
-                ) : null}
-                <button
-                  type="button"
-                  className={styles.viewDataset}
-                  onClick={() => onViewDataset(landedAt)}
-                >
-                  View dataset
-                </button>
+                ) : narrow}
+                {viewDataset(landedAt)}
               </>
             ) : storage ? (
               <button
@@ -272,16 +294,7 @@ export function DiscoveryResourceRow({
               </button>
             ) : (
               <>
-                {asksSomething && onDownload && resource.acquirable ? (
-                  <button
-                    type="button"
-                    className={styles.filesToggle}
-                    title="Download only part of it, such as the rows inside an area"
-                    onClick={() => setNarrowing(true)}
-                  >
-                    Narrow…
-                  </button>
-                ) : null}
+                {narrow}
                 <button
                   type="button"
                   className={styles.download}
@@ -291,6 +304,7 @@ export function DiscoveryResourceRow({
                 >
                   {modelRow ? "Add to Model Catalog" : "Download"}
                 </button>
+                {partLanded ? viewDataset(partLanded) : null}
               </>
             )}
           </>

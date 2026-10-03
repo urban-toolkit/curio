@@ -1,16 +1,18 @@
 """Place search for the area field: a name in, boxes and OSM area names out.
 
 Every source that takes an ``area`` shares this one search, so a place is
-found the same way whichever source asks. It is Nominatim, OpenStreetMap's
-geocoder, reached through the Discovery Catalog's transport and so through the
-egress policy, with the usage policy Nominatim asks of every client: a named
+found the same way whichever source asks; OpenStreetMap also measures named
+areas with it before loading them (``named_areas_box``). It is Nominatim,
+OpenStreetMap's geocoder, reached through the Discovery Catalog's transport and
+so through the egress policy, with the usage policy Nominatim asks of every client: a named
 User-Agent, at most one request a second from this server, and answers kept
 rather than asked for again.
 
 Each answer gives what both forms of an area need:
 
 - ``box``: ``[west, south, east, north]`` in WGS84, for a box;
-- ``name`` and ``boundary``: the place's own OSM name and whether it is an
+- ``name`` and ``boundary``: the place's own OSM name, in the local language
+  (Köln, where the English ``label`` says Cologne), and whether it is an
   administrative boundary, which is what a named area must be.
 """
 
@@ -34,19 +36,23 @@ MIN_INTERVAL_S = 1.0
 CACHE_TTL_S = 24 * 60 * 60
 CACHE_ENTRIES = 256
 
+#: Guards the cache and the next free slot. Held for neither the wait nor the
+#: request, so a cached place is answered while another search waits.
 _lock = threading.Lock()
-_last_request = 0.0
+#: When the next request may leave.
+_next_slot = 0.0
 _cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
 
 def search_url(query: str) -> str:
-    return f"{NOMINATIM}/search?format=jsonv2&limit={MAX_RESULTS}&q={quote(query, safe='')}"
+    """The search, with each place's own OSM names (``namedetails``), since
+    ``name`` follows the request's language."""
+    return f"{NOMINATIM}/search?format=jsonv2&limit={MAX_RESULTS}&namedetails=1&q={quote(query, safe='')}"
 
 
 def search_places(transport, query: str) -> list[dict[str, Any]]:
     """Places matching *query*, best first. Raises ``ProviderError`` when
     Nominatim cannot be read."""
-    global _last_request
     text = " ".join(str(query or "").split())[:MAX_QUERY_LENGTH]
     if not text:
         return []
@@ -56,14 +62,14 @@ def search_places(transport, query: str) -> list[dict[str, Any]]:
         hit = _cache.get(key)
         if hit is not None and now - hit[0] < CACHE_TTL_S:
             return hit[1]
-        _wait_for_slot()
-        try:
-            payload = transport.json_get(
-                search_url(text),
-                headers={"User-Agent": USER_AGENT, "Accept-Language": "en"},
-            )
-        finally:
-            _last_request = time.monotonic()
+        slot = _take_slot()
+    wait = slot - time.monotonic()
+    if wait > 0:
+        time.sleep(wait)
+    payload = transport.json_get(
+        search_url(text),
+        headers={"User-Agent": USER_AGENT, "Accept-Language": "en"},
+    )
     places = _rows(payload)
     with _lock:
         if len(_cache) >= CACHE_ENTRIES:
@@ -72,22 +78,46 @@ def search_places(transport, query: str) -> list[dict[str, Any]]:
     return places
 
 
+def named_areas_box(transport, names: dict[str, Any]) -> list[float] | None:
+    """The box around the boundaries *names* asks for, or None when the place
+    search finds none of them.
+
+    Each area is searched as the named-areas field searches it, ``"<area>,
+    <place>"``, so an answer the field already had is not asked for again.
+    Every boundary with exactly that OSM name counts, since the loader takes
+    every relation of that name inside the place. A name with no boundary here
+    is left to the loader, which refuses it by name.
+    """
+    scope = names["geocodeArea"]
+    boxes = [
+        place["box"]
+        for area in names["areas"]
+        for place in search_places(transport, f"{area}, {scope}")
+        if place["boundary"] and place["name"] == area
+    ]
+    if not boxes:
+        return None
+    return [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
+
+
 def reset() -> None:
-    """Forget the cache and the last request time: for tests."""
-    global _last_request
+    """Forget the cache and the next slot: for tests."""
+    global _next_slot
     with _lock:
         _cache.clear()
-        _last_request = 0.0
+        _next_slot = 0.0
 
 
-def _wait_for_slot() -> None:
-    """Hold the caller until a second has passed since the last request.
+def _take_slot() -> float:
+    """When this search's request may leave: a second after the one before.
 
-    Called with ``_lock`` held, so two searches never leave in the same second.
+    Called with ``_lock`` held, so two searches never take the same second;
+    the caller waits for its slot after letting go of the lock.
     """
-    wait = MIN_INTERVAL_S - (time.monotonic() - _last_request)
-    if wait > 0:
-        time.sleep(wait)
+    global _next_slot
+    slot = max(time.monotonic(), _next_slot)
+    _next_slot = slot + MIN_INTERVAL_S
+    return slot
 
 
 def _rows(payload: Any) -> list[dict[str, Any]]:
@@ -106,7 +136,9 @@ def _rows(payload: Any) -> list[dict[str, Any]]:
         if box is None:
             continue
         label = str(entry.get("display_name") or "")[:300]
-        name = str(entry.get("name") or label.split(",")[0]).strip()[:120]
+        # OpenStreetMap's ``name`` tag, which a named area is matched against.
+        details = entry.get("namedetails") if isinstance(entry.get("namedetails"), dict) else {}
+        name = str(details.get("name") or entry.get("name") or label.split(",")[0]).strip()[:120]
         if not name:
             continue
         out.append({
