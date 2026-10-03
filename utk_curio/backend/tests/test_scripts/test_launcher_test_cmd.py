@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.main import TEST_SUITES, _parse_test_args, _test_script_flags
+from utk_curio.cli.test_runner import TEST_SUITES, _parse_test_args, _test_script_flags
 
 TEST_SH = Path(__file__).resolve().parents[4] / "scripts" / "test.sh"
 
