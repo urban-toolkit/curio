@@ -2,18 +2,10 @@ import { NodeType } from "./constants";
 import { NodeTemplateId } from "./registry/types";
 import { formatDate, mapTypes } from "./utils/formatters";
 import { getToken } from "./utils/authApi";
-// import { pythonCode } from "./pythonWrapper";
 import { backendUrl } from "./utils/backendUrl";
 import { executionInputRef } from "./utils/flowOutputRef";
 
 export class PythonInterpreter {
-    // protected _pythonWrapperCode: string[];
-
-    constructor() {
-        // parse and store the python wrapper code
-        // this._pythonWrapperCode = pythonCode.split("\n");
-    }
-
     public interpretCode(
         unresolvedUserCode: string,
         userCode: string,
