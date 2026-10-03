@@ -33,7 +33,7 @@ The folder holds a `manifest.json` (the contract) and the prompt files the manif
 ```
 agent.chat-agent@1.0.0/
   manifest.json
-  prompts/chat_prompt.txt
+  prompts/chat_prompt.md
 ```
 
 Agent ids always begin with **`agent.`**, which keeps them apart from node package ids (`curio.builtin`, `ai.utk.uhvi`) and dataset ids (`data.utk.chicago-boundary`). The version is a full semver string.
@@ -323,7 +323,7 @@ node.explain            dataflow.orchestrate       package.recommend
 node.output.interpret   dataset.fetch.author       connection.propose
 ```
 
-Capability ids drive catalog discovery, orchestration and substitution, and are **never** used for authorization. A capability id must not contain a prompt filename, a path separator, an underscore, or `.txt`: `node.explain` is valid, while `explain_node_prompt` and `prompts/explain.txt` are rejected. A prompt can then be edited or replaced without changing the contract.
+Capability ids drive catalog discovery, orchestration and substitution, and are **never** used for authorization. A capability id must not contain a prompt filename, a path separator, an underscore, `.txt` or `.md`: `node.explain` is valid, while `explain_node_prompt` and `prompts/explain.txt` are rejected. A prompt can then be edited or replaced without changing the contract.
 
 ### Modes
 

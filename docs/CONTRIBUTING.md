@@ -68,7 +68,7 @@ curio/
 │   │   ├── app/model_catalog/              # The Model Catalog: models a node runs, shipped or downloaded
 │   │   ├── migrations/                     # Alembic migrations
 │   │   └── tests/                          # pytest files for backend (+ test_frontend/ for Playwright E2E)
-│   ├── llm-prompts/                        # Built-in agent prompts; default_preamble.txt is generated
+│   ├── llm-prompts/                        # Built-in agent prompts; default_preamble.md is generated
 │   ├── sandbox/                            # Executes user Python code in a secure environment
 │   │   └── tests/                          # unittest files for sandbox
 │   └── frontend/                           # All frontend logic
@@ -436,11 +436,11 @@ FLASK_APP=server.py flask db upgrade
 
 Some files are generated from a single source and committed: everything under
 `utk_curio/frontend/urban-workflows/src/generated/`, and
-`utk_curio/llm-prompts/default_preamble.txt`, all rendered from
+`utk_curio/llm-prompts/default_preamble.md`, all rendered from
 `utk_curio/backend/app/agents/domain/contracts.py`. Each generated code file starts
 with a header naming its generator and source. The preamble has no header,
 because the model reads it verbatim; its hand-written text lives in
-`default_preamble.template.txt` beside it, and the `{{...}}` fields in the
+`default_preamble.template.md` beside it, and the `{{...}}` fields in the
 template are the generated parts. The preamble also reads
 `docs/schemas/trill.v1.json` and `packages/curio.builtin@1/manifest.json`, so a
 change to either needs a regeneration too. Do not edit an output by hand:

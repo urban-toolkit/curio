@@ -56,7 +56,7 @@ def test_every_generated_prompt_has_its_template_beside_it():
     prompts = [r for r in contracts.GENERATED_OUTPUTS if r.startswith(contracts.PROMPTS_DIR)]
     assert prompts
     for relative in prompts:
-        assert (REPO_ROOT / relative.replace(".txt", ".template.txt")).is_file()
+        assert (REPO_ROOT / relative.replace(".md", ".template.md")).is_file()
 
 
 class TestTheRenderCauseTable:
@@ -185,7 +185,7 @@ class TestThePreambleVocabulary:
 
         from utk_curio.backend.app.agents.domain import builtin
 
-        for path in sorted(builtin.PROMPT_SOURCE_DIR.glob("*.txt")):
+        for path in sorted(builtin.PROMPT_SOURCE_DIR.glob("*.md")):
             found = re.findall(r"\b(" + "|".join(_LEGACY_NAMES) + r")\b", path.read_text(encoding="utf-8"))
             assert not found, f"{path.name} names {sorted(set(found))}"
 
