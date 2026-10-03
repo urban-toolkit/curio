@@ -8,6 +8,8 @@ from playwright.sync_api import (
     TimeoutError as PlaywrightTimeoutError,
 )
 
+from ._proof import intercept, proof_armed  # TMP PROOF
+
 
 def _wait_for_reactflow_ready(
     page: Page,
@@ -40,6 +42,7 @@ def _wait_for_reactflow_ready(
        (guards against Monaco's layout settling and any late
        node-size measurements from ReactFlow).
     """
+    intercept("_wait_for_reactflow_ready")
     page.wait_for_function(
         "() => document.querySelectorAll('.react-flow__node').length > 0",
         timeout=timeout_ms,
@@ -113,6 +116,7 @@ def dismiss_toasts(
     Closes the stack from the bottom up; see the comment on the click for why
     the top of it may be unreachable.
     """
+    intercept("dismiss_toasts")
     container = page.locator('[aria-label="Notifications"]')
     dismissed = 0
 
@@ -179,6 +183,8 @@ def _wait_for_webfont(page) -> bool:
     :func:`_assert_mintable`). Waiting here rather than only when minting means
     both sides of a comparison are quiesced the same way.
     """
+    if proof_armed():
+        return False  # TMP PROOF: the real one reports the font missing
     try:
         page.wait_for_function(
             "document.fonts && document.fonts.status === 'loaded'",
@@ -234,6 +240,7 @@ def _wait_for_no_node_running(page: Page, *, timeout_ms: int = NODE_SETTLE_TIMEO
     the test output and the Allure report under that name, so a run the caller
     did not start stays visible even when it ends in time.
     """
+    intercept("_wait_for_no_node_running")
     if report_as:
         running = page.evaluate(_RUNNING_NODE_IDS_JS)
         if running:

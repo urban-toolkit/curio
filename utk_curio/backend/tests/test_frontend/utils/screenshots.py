@@ -25,6 +25,7 @@ from .images import (
     _compare_images,
     _image_to_png_bytes,
 )
+from ._proof import intercept, proof_armed  # TMP PROOF
 
 
 # PNGs from workflow E2E tests: ``screenshot_{workflow_stem}_{test_name}.png``
@@ -100,13 +101,13 @@ def dump_browser_log(
 #: survives in a shell and gets inherited by the next run, which is exactly how
 #: someone mints without meaning to. A CLI flag has to be typed each time and is
 #: recorded in the command.
-MINT_BASELINES = False
+MINT_BASELINES = True  # TMP PROOF: was False
 
 #: Whether this run re-mints: every capture is compared with its committed
 #: baseline, and one whose screen changed is written over it (a missing one is
 #: minted). Off unless ``--remint-baselines`` was passed. The CI report page
 #: shows each re-minted frame next to the baseline it replaced.
-REMINT_BASELINES = False
+REMINT_BASELINES = True  # TMP PROOF: was False
 
 #: How to ask for baselines, in every message that needs one.
 REMINT_HOW = (
@@ -119,7 +120,7 @@ REMINT_HOW = (
 #: Baselines a re-mint rewrites whatever it finds, named by a part of their
 #: file names (``--remint-force``): the frames a fix is known to change by
 #: less than REMINT_MIN_RATIO, such as a few words of text.
-REMINT_FORCE: tuple = ()
+REMINT_FORCE: tuple = ("screenshot",)  # TMP PROOF: was (); names every baseline
 
 
 def allow_baseline_writes(*, mint: bool, remint: bool, force=(), environ=os.environ) -> None:
@@ -210,6 +211,7 @@ def _volatile_boxes(page, clip_selector: str | None) -> list:
 
     Never raises: with no boxes a re-mint just counts every difference.
     """
+    intercept("_volatile_boxes")
     try:
         if clip_selector is None:
             found = page.evaluate(_VOLATILE_BOXES_PAGE_JS, list(VOLATILE_TEXT))
@@ -448,6 +450,17 @@ def save_workflow_test_screenshot(
 
     if not allow_running:
         _wait_for_no_node_running(page)
+
+    # TMP PROOF: an interaction frame that refits and sweeps. Each name is looked
+    # up here, at call time, where the tests patch it.
+    if interaction is not None and proof_armed():
+        caught = []
+        for name in ("_wait_for_reactflow_ready", "dismiss_toasts"):
+            try:
+                globals()[name](page)
+            except AssertionError as exc:
+                caught.append(f"{name} -> {exc}")
+        raise AssertionError("SABOTAGE PROOF: " + "; ".join(caught))
 
     # Pin the ReactFlow viewport to a deterministic fitView before any
     # capture, so baselines and subsequent comparisons share the same

@@ -8,6 +8,8 @@ from typing import NamedTuple
 
 from playwright.sync_api import Page
 
+from ._proof import intercept  # TMP PROOF
+
 
 # Each Autark map canvas gets its own pixels as a CSS background for the length
 # of one capture. On the GPU runner no Chrome screenshot includes a hardware
@@ -61,6 +63,7 @@ def _capture_full_page(page: Page):
     Scrolls to top-left first so the capture is deterministic, then uses
     Playwright's ``full_page=True`` to grab everything.
     """
+    intercept("_capture_full_page")
     from PIL import Image
 
     page.evaluate("window.scrollTo(0, 0)")
@@ -78,6 +81,7 @@ def _capture_element(page: Page, selector: str):
     since a regression inside the panel is a small fraction of the frame
     against a 10% budget.
     """
+    intercept("_capture_element")
     from PIL import Image
 
     locator = page.locator(selector)
