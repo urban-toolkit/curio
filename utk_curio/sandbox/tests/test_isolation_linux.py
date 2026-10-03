@@ -981,39 +981,6 @@ def test_a_spawned_grandchild_does_not_survive_the_timeout(isolated):
     assert not survivors, f"a grandchild outlived the killed node: {survivors}"
 
 
-@pytest.mark.skipif(
-    os.environ.get("CURIO_ISOLATION_DESTRUCTIVE_TESTS") != "1",
-    reason=(
-        "fork bomb: opt in with CURIO_ISOLATION_DESTRUCTIVE_TESTS=1. "
-        "RLIMIT_NPROC is per-uid and root bypasses it, and inside the container "
-        "these run as root, so without an execution user this forks until the "
-        "container's pids_limit. docker-compose.ci.yml caps that, but the "
-        "self-hosted runner shares a host with the live instances and the limit "
-        "being configured is already covered by "
-        "test_the_limits_are_actually_applied_in_the_child. This only adds risk."
-    ),
-)
-def test_a_fork_bomb_is_bounded(isolated):
-    """Forks are reaped as we go, so the peak is bounded even when it succeeds."""
-    result = run_isolated(
-        isolated,
-        "    import os\n"
-        "    for _ in range(2000):\n"
-        "        try:\n"
-        "            pid = os.fork()\n"
-        "        except OSError:\n"
-        "            return 'limited'\n"
-        "        if pid == 0:\n"
-        "            os._exit(0)\n"
-        "        os.waitpid(pid, 0)\n"
-        "    return 'unlimited'\n",
-    )
-    from utk_curio.sandbox.util.parsers import load_from_duckdb
-
-    if result["output"]["path"]:
-        assert load_from_duckdb(result["output"]["path"]) == "limited"
-
-
 # ---------------------------------------------------------------------------
 # Zygote lifecycle
 # ---------------------------------------------------------------------------
