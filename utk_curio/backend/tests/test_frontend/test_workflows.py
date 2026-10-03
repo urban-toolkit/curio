@@ -1257,6 +1257,58 @@ class TestWorkflowCanvas:
         )
         assert restored, f"taking back {where} left {step.target} highlighted"
 
+    @pytest.mark.only_workflows("09-heterogeneous-data-linked-views.json")
+    def test_zz_map_pick_sweep(self, loaded_workflow, request):
+        """Throwaway: how many scatter pixels a pick at each point of 09's map changes."""
+        self._execute_all_playable_nodes()
+        page = self.page
+        page.set_viewport_size(INTERACTION_VIEWPORT)
+        results = []
+        with canvas_painted_at_shown_zoom(page):
+            # The real test brushes the scatter first; do the same so the state matches.
+            self._interact(INTERACTIONS["09-heterogeneous-data-linked-views.json"][0],
+                           request.function.__name__)
+            src, tgt = EXAMPLE_09_MAP, EXAMPLE_09_SCATTER
+            dismiss_toasts(page)
+            frame_nodes(page, [src, tgt])
+            _wait_for_no_node_running(page)
+            drawing = drawing_selector(page, tgt)
+            keep_drawing(page, drawing)
+            source_drawing = drawing_selector(page, src)
+            spots = [(0.05, 0.56)] + [
+                (round(0.03 + 0.08 * i, 2), round(0.2 + 0.1 * j, 2))
+                for i in range(12) for j in range(7)
+            ]
+            for at in spots:
+                before = wait_for_node_still(page, tgt)
+                source_before = capture_node(page, src)
+                point = mark_point(page, source_drawing, at)
+                if not point:
+                    results.append({"at": at, "point": None})
+                    continue
+                page.mouse.dblclick(point["x"], point["y"])
+                frame_nodes(page, [src, tgt])
+                after, reached = wait_for_node_capture(
+                    page, tgt,
+                    lambda c: changed_pixels(before, c) > INTERACTION_MIN_CHANGED_PIXELS,
+                    timeout_ms=4000,
+                )
+                row = {"at": at, "target": changed_pixels(before, after),
+                       "source": changed_pixels(source_before, capture_node(page, src)),
+                       "reached": reached}
+                page.mouse.dblclick(point["x"], point["y"])
+                frame_nodes(page, [src, tgt])
+                _, restored = wait_for_node_capture(
+                    page, tgt,
+                    lambda c: _compare_images(c, before, CLOSEUP_PIXEL_THRESHOLD).ratio
+                    <= INTERACTION_RESTORED_RATIO,
+                    timeout_ms=6000,
+                )
+                row["restored"] = restored
+                results.append(row)
+                print("SWEEP", json.dumps(row), flush=True)
+        assert False, "SWEEP " + json.dumps(results)
+
     @pytest.mark.only_workflows("Interaction_Autark.json")
     def test_plot_brush_started_between_bars(self, loaded_workflow):
         """A second brush on the histogram, pressed in the gap between two bars,
