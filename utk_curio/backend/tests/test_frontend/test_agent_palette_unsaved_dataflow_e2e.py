@@ -57,7 +57,6 @@ PALETTE_ROW = "#agents-palette [data-agent-coord]"
 
 
 def _open_drawer_from_menu(page):
-    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
     page.get_by_role("button", name="Agent Catalog", exact=True).click()
     root = page.locator(DRAWER_ROOT)
     root.wait_for(state="attached", timeout=15000)

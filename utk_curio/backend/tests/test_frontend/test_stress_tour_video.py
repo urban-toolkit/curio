@@ -1501,7 +1501,7 @@ def chapter_nodes(run: StressRun) -> None:
         close_drawer(page, DRAWER_NODES, "Node Catalog drawer")
 
     with run.step("Installed libraries: add titlecase for real"):
-        tour.click(menu(page, "Data"), force=True)
+        tour.click(menu(page, "File"), force=True)
         tour.click(page.get_by_role("button", name="Installed libraries", exact=True))
         expect(
             page.get_by_role("heading", name="Installed libraries")
@@ -2578,8 +2578,7 @@ def chapter_views(run: StressRun) -> None:
         )
 
     with run.step("The provenance window", may_fail=True):
-        tour.click(menu(page, "Provenance"), force=True)
-        tour.click(page.get_by_role("button", name="Provenance", exact=True).first)
+        tour.click(page.get_by_test_id("provenance-btn"))
         page.wait_for_timeout(2500)
         run.snap("provenance-window")
         _close_modal(page)
@@ -2596,7 +2595,7 @@ def chapter_views(run: StressRun) -> None:
                 run.snap("node-provenance")
 
     with run.step("Share the dataflow read-only", may_fail=True):
-        share = page.get_by_role("button", name=re.compile("Share", re.I))
+        share = page.get_by_test_id("share-menu-btn")
         if share.count():
             share.first.click()
             page.wait_for_timeout(2000)

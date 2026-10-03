@@ -50,7 +50,8 @@ jest.mock("../../components/edges/BiDirectionalEdge", () => ({ __esModule: true,
 jest.mock("../../components/edges/UniDirectionalEdge", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/VersionBadge", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/login/Loading", () => ({ Loading: () => <div data-testid="loading" /> }));
-jest.mock("../../components/login/UserMenu", () => ({ UserMenu: () => <div data-testid="user-menu" /> }));
+// The shared top bar is rendered for real; only its modal is stubbed.
+jest.mock("../../components/ApiSettingsModal", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/menus/top/ShareMenu", () => ({
   __esModule: true,
   default: (props: any) => (
@@ -122,20 +123,22 @@ beforeEach(() => {
 });
 
 describe("the bar", () => {
-  test("is the dataflow bar's bar, holding only dashboard actions", async () => {
+  test("is the shared top bar, holding only dashboard actions", async () => {
     const { container } = await renderPage();
 
-    // The same stylesheet as the dataflow's bar (identity-obj-proxy maps class
-    // names to themselves), so the two look like one product.
-    const bar = container.querySelector(".menuBar");
+    // The same GlobalPageHeader as the dataflow's bar and every section page
+    // (identity-obj-proxy maps class names to themselves), so they look like
+    // one product.
+    const bar = container.querySelector("header.header[data-curio-menu-bar]");
     expect(bar).not.toBeNull();
     expect(bar!.querySelector(".logo")).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Chicago trips" })).toBeTruthy();
     expect(screen.getByTestId("user-menu")).toBeTruthy();
-    // None of the editor's menus.
+    // None of the editor's menus, and none of its catalogs.
     for (const menu of ["File", "View", "Data", "Provenance"]) {
       expect(screen.queryByText(new RegExp(`^${menu}`))).toBeNull();
     }
+    expect(screen.queryByRole("button", { name: /Catalog$/ })).toBeNull();
   });
 
   test("links back to the dataflow", async () => {

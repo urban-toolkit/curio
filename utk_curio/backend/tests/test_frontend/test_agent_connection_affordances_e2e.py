@@ -270,7 +270,11 @@ class TestConnectionAttachmentAffordances:
         # dropdown the feature tour opens before its connection-attach beat.
         row = _agent_row(page, coord)
         if row.count() == 0 or not row.first.is_visible():
-            page.get_by_role("button", name=re.compile("Agent Catalog")).first.click()
+            # Scoped to the rail: the top bar's Agent Catalog button opens the
+            # drawer, not this palette.
+            page.locator("#tools-palette-dock").get_by_role(
+                "button", name=re.compile("Agent Catalog")
+            ).first.click()
             row = _agent_row(page, coord)
         row.first.wait_for(state="visible", timeout=20000)
         row.first.scroll_into_view_if_needed()

@@ -53,7 +53,7 @@ DDRNet23-Slim is about 23 MB and labels a street photo in a fraction of a second
 ## 2. Surfaces and workflows
 
 - **The `/catalog/models` page** lists the models you can run: the shipped ones and yours. Reach it from the **Model Catalog** tab. Search with **Search models**, sort, and filter by **By origin** (**Shipped with Curio** or **Downloaded**) or **By runtime** in the left rail. Click a card to describe it in the right-hand drawer.
-- **The Model Catalog drawer**, on the canvas. Open it from the top menu **Data → Model Catalog**, or from the left Tools panel's **Model Catalog** dropdown and **Browse Model Catalog +**.
+- **The Model Catalog drawer**, on the canvas. Open it from the **Model Catalog** button in the top bar, or from the left Tools panel's **Model Catalog** dropdown and **Browse Model Catalog +**.
 - **The Models dropdown**, in the left Tools panel, lists your models as cards to drag onto a node.
 
 A model's details show its **Identifier**, **Version**, **Runtime**, **Input**, **Labels**, **License** (with **View license**), **Homepage** and **Origin**. A model you added also says where it was **Downloaded from**: the source and the model's page there.

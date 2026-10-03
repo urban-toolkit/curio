@@ -87,6 +87,12 @@ const BROWSE_CSS = fs.readFileSync(
   'utf8'
 );
 
+// And the top bar is the one every page wears, styled by its own stylesheet.
+const HEADER_CSS = fs.readFileSync(
+  path.resolve(__dirname, '../../components/layout/GlobalPageHeader.module.css'),
+  'utf8'
+);
+
 /** The declarations inside one rule of a stylesheet (the layout by default). */
 function rule(selector: string, css: string = LAYOUT_CSS): string {
   const match = css.match(new RegExp('\\.' + selector + '\\s*\\{([^}]*)\\}'));
@@ -151,7 +157,10 @@ describe('ProjectsList scroll ownership', () => {
 
   test('the header does not shrink when the list is long', async () => {
     const { container } = await renderSettled();
+    // The bar's styles moved from inline to its stylesheet when the canvas
+    // started wearing it too, so the rule is read from there, as above.
     const header = container.querySelector('header') as HTMLElement;
-    expect(header.style.flexShrink).toBe('0');
+    expect(header).toHaveClass('header');
+    expect(rule('header', HEADER_CSS)).toMatch(/flex-shrink:\s*0/);
   });
 });

@@ -372,8 +372,9 @@ def open_provenance(ctx: Ctx):
     first mirrors the tour - the canvas chrome overlaps the bar's hit box.
     """
     page = ctx.page
-    ctx.click(top_menu(page, "Provenance"), force=True)
-    ctx.click(page.get_by_role("button", name="Provenance", exact=True))
+    # A button on the bar, not a menu: the node editor also has a tab named
+    # "Provenance", so it is found by its test id.
+    ctx.click(page.get_by_test_id("provenance-btn"))
     dialog = page.get_by_role("dialog").filter(has_text="Provenance for")
     dialog.wait_for(state="visible", timeout=20000)
     # The graph lays out through dagre on mount; capture after it settles or the
@@ -691,11 +692,10 @@ BROWSE_DRAWER_CTAS = '[data-curio-drawer-ctas="true"]'
 
 
 def open_agent_drawer(ctx: Ctx):
-    """Data menu -> Agent Catalog, returning the drawer dialog."""
+    """The top bar's Agent Catalog button, returning the drawer dialog."""
     page = ctx.page
-    ctx.click(top_menu(page, "Data"), force=True)
     # "Agent Catalog" also labels the left-rail palette trigger, whose
-    # accessible name carries a count; exact=True picks the menu row.
+    # accessible name carries a count; exact=True picks the top bar's button.
     ctx.click(page.get_by_role("button", name="Agent Catalog", exact=True))
     page.locator(AGENT_DRAWER_ROOT).wait_for(state="attached", timeout=15000)
     dialog = page.get_by_role("dialog").filter(
@@ -1006,9 +1006,8 @@ TOAST_REGION = '[aria-label="Notifications"]'
 
 
 def open_data_drawer(ctx: Ctx):
-    """Data menu -> Data Catalog, returning the drawer dialog."""
+    """The top bar's Data Catalog button, returning the drawer dialog."""
     page = ctx.page
-    ctx.click(top_menu(page, "Data"), force=True)
     ctx.click(page.get_by_role("button", name="Data Catalog", exact=True))
     root = page.locator(DATA_DRAWER_ROOT)
     root.wait_for(state="attached", timeout=15000)
@@ -2490,7 +2489,7 @@ def renaming_a_dataflow_renames_it_everywhere(ctx: Ctx) -> None:
     # Through the logo, as a user would - an in-app navigation, not a reload
     # (#270). Falls back to a plain visit for the recorder, which shares the
     # page across scenes and may not have the top bar in view.
-    logo = page.locator('img[alt="Curio logo"]')
+    logo = page.get_by_role("link", name="Curio", exact=True)
     if logo.count():
         ctx.click(logo.first)
         wait_for_projects_page(page, timeout=30000)

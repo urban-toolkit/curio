@@ -575,7 +575,7 @@ Datasets have their own catalog, built on the same model as the Node Catalog: a 
 
 Three surfaces manage datasets:
 
-- The **Data Catalog drawer** inside the canvas. Open it from the top menu **Data → Data Catalog**, or from the **Data Catalog** dropdown in the left Tools panel via **Browse Data Catalog +**. Add datasets to the open dataflow, import files from your machine, or delete.
+- The **Data Catalog drawer** inside the canvas. Open it from the **Data Catalog** button in the top bar, or from the **Data Catalog** dropdown in the left Tools panel via **Browse Data Catalog +**. Add datasets to the open dataflow, import files from your machine, or delete.
 - The **Data Catalog** dropdown in the Tools panel, listing the datasets added to the open dataflow and, under **Saved outputs**, the outputs its nodes saved. Drag one onto the canvas to create (or extend) a node with generated loader code.
 - The **`/catalog/data`** page, the library view for your whole account, reached from `/projects` and the **Data Catalog** tab. **Add to all projects** there adds a dataset to every dataflow you have.
 
@@ -621,8 +621,8 @@ There are two scopes:
 - **`/catalog/agents`**, the **Agent Catalog** tab, is your **account**.
   **Add to all projects** there adds an agent to every dataflow you have, and
   to every new one.
-- **The Agent Catalog drawer**, opened on the canvas from **Data → Agent
-  Catalog** or the **Agent Catalog** dropdown in the left Tools panel, adds an
+- **The Agent Catalog drawer**, opened on the canvas from the **Agent
+  Catalog** button in the top bar or the **Agent Catalog** dropdown in the left Tools panel, adds an
   agent to **this dataflow**.
 
 ### Catalog settings

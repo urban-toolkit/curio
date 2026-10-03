@@ -2785,9 +2785,8 @@ def upload_workflow(
     assert load_spec.is_visible()
 
     with page.expect_file_chooser() as fc_info:
-        # The role locator, not get_by_text: the File menu row is a <div>
-        # wrapping a <button> carrying the same label (UpMenu.tsx), so the text
-        # engine matches both and the click dies of a strict-mode violation.
+        # The role locator, not get_by_text: it names the File menu row's
+        # button whatever the row nests inside it.
         load_spec.click()
     fc_info.value.set_files(workflow_file)
 

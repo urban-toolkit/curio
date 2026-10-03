@@ -10,8 +10,9 @@ import path from "path";
  * stating, because nothing is on disk at all. Absence then had to be read as
  * either "saved" or "nothing to save", and it meant neither.
  *
- * The rule now: present whenever the viewer owns the dataflow; orange unless
- * what you see is on disk. Green means that and only that.
+ * The rule now: present whenever the viewer owns the dataflow; unsaved unless
+ * what you see is on disk. "Saved" means that and only that, and the bar says
+ * it in a word as well as a colour.
  *
  * Source-read because UpMenu needs the whole provider stack to render; the live
  * behaviour is asserted in the `agent-catalog-adding-to-an-unsaved-dataflow`
@@ -27,12 +28,15 @@ const STYLES = fs.readFileSync(
   path.join(SRC, "components/menus/top/UpMenu.module.css"),
   "utf8",
 );
+const TOKENS = fs.readFileSync(path.join(SRC, "styles/curioTokens.css"), "utf8");
 
 /** The JSX from the save-status comment to the end of its button. */
 function saveBlock(): string {
   const at = UP_MENU.indexOf("Save status indicator");
   expect(at).toBeGreaterThan(-1);
-  return UP_MENU.slice(at, UP_MENU.indexOf("<UserMenu />", at));
+  const end = UP_MENU.indexOf("</button>", at);
+  expect(end).toBeGreaterThan(at);
+  return UP_MENU.slice(at, end);
 }
 
 describe("the save status indicator", () => {
@@ -62,11 +66,22 @@ describe("the save status indicator", () => {
   });
 
   it("says which state it is in, in words", () => {
-    expect(saveBlock()).toContain("Not saved yet - click to save");
+    const block = saveBlock();
+    expect(block).toContain("Not saved yet - click to save");
+    // On the bar itself, not only in the tooltip: the colour alone is not
+    // something every reader can tell apart. Matched as the rendered label,
+    // not as words, because the comment above it quotes them too.
+    expect(block).toMatch(
+      /<span>\s*\{saving \? "Saving\.\.\." : projectDirty \|\| !projectSavedAt \? "Unsaved" : "Saved"\}\s*<\/span>/,
+    );
   });
 
-  it("keeps orange for unsaved and green for saved", () => {
-    expect(STYLES).toMatch(/\.unsavedIcon \{\s*color: rgb\(251, 170, 105\)/);
-    expect(STYLES).toMatch(/\.savedIcon \{\s*color: #5cb85c/);
+  it("keeps one colour for unsaved and another for saved, from the tokens", () => {
+    expect(STYLES).toMatch(/\.unsavedIcon \{\s*color: var\(--curio-top-bar-unsaved\)/);
+    expect(STYLES).toMatch(/\.savedIcon \{\s*color: var\(--curio-top-bar-saved\)/);
+    const value = (name: string) => TOKENS.match(new RegExp(`--${name}:\\s*([^;]+);`))?.[1];
+    expect(value("curio-top-bar-unsaved")).toBeTruthy();
+    expect(value("curio-top-bar-saved")).toBeTruthy();
+    expect(value("curio-top-bar-unsaved")).not.toBe(value("curio-top-bar-saved"));
   });
 });

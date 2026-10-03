@@ -84,7 +84,7 @@ Agent state lives in files under `.curio/` and inside each project's spec. Knowi
 There are three places you work with agents, and as with the Data Catalog they are **not** interchangeable:
 
 - **The `/catalog/agents` page** is the account-level library. Reach it from `/projects` and the **Agent Catalog** tab. It lists the built-in agents, every published one, and the ones you imported yourself. Filter by status (**All agents**, **In all projects**) and by category, search, and read an agent's full details. **Add to all projects**, **Publish**, **Unpublish**, **Settings** and **Import agent** live here. You cannot add an agent to just one dataflow from this page: that is the drawer's job.
-- **The Agent Catalog drawer**, inside the canvas, is the working surface. Open it from the top menu **Data → Agent Catalog**, or from the left Tools panel's **Agent Catalog** dropdown and **Browse Agent Catalog +**. Its tabs are **Browse all** (the default) and **In project**, and everything scoped to the open dataflow happens here, including **Import agent** in its footer.
+- **The Agent Catalog drawer**, inside the canvas, is the working surface. Open it from the **Agent Catalog** button in the top bar, or from the left Tools panel's **Agent Catalog** dropdown and **Browse Agent Catalog +**. Its tabs are **Browse all** (the default) and **In project**, and everything scoped to the open dataflow happens here, including **Import agent** in its footer.
 - **The Agent palette**, the **Agent Catalog** dropdown in the left Tools panel, holds the agents already added to this dataflow, ready to drag onto a node, a connection, or the canvas. It sits below the **Node Catalog** and **Data Catalog** dropdowns.
 
 ### Action matrix
@@ -105,7 +105,7 @@ Nothing in this table deletes an agent definition from disk.
 
 ### Workflows
 
-**I want to use an agent in my dataflow.** Open the dataflow, then **Data → Agent Catalog**. Find the agent and click **Add to project**. It now appears in the left Tools panel's **Agent Catalog** dropdown. Drag it onto a node, a connection, or empty canvas to attach it, then click its badge (or its avatar in the dock) to open its chat panel.
+**I want to use an agent in my dataflow.** Open the dataflow, then click **Agent Catalog** in the top bar. Find the agent and click **Add to project**. It now appears in the left Tools panel's **Agent Catalog** dropdown. Drag it onto a node, a connection, or empty canvas to attach it, then click its badge (or its avatar in the dock) to open its chat panel.
 
 **I want an agent in all my projects, present and future.** On `/catalog/agents`, click the agent's card and then **Add to all projects** in the drawer. It is added to every dataflow you have, and every project you create from then on starts with it.
 

@@ -148,7 +148,6 @@ def _drawer(page):
 
 
 def _open_drawer_from_menu(page):
-    page.get_by_role("button", name="Data menu", exact=True).click(force=True)
     page.get_by_role("button", name="Node Catalog", exact=True).click()
     return _drawer(page)
 
