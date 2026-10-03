@@ -77,6 +77,9 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | Flag | Default | Effect |
 |---|---|---|
 | `--catalog-root PATH` | `<repo_root>/datasets/` | Where the shared Data Catalog is read from and published to |
+| `--discovery-root PATH` | `<repo_root>/discovery/` | Where the shipped Discovery Catalog sources are read from. Your own sources stay in `.curio/discovery/` |
+| `--models-root PATH` | `<repo_root>/models/` | Where the shipped Model Catalog models are read from |
+| `--save-node-outputs` / `--no-save-node-outputs` | off | Whether a new node's **Save output dataset** toggle starts on. Users can still flip it on each node |
 | `--allow-publish` / `--no-allow-publish` | on | Whether the node and data catalogs allow Publish/Unpublish |
 | `--testing` | off | Run against the dedicated test database under `.curio/test/` and mount the test-only `/api/testing/*` routes. Also the one exemption to `--deploy` requiring isolated execution. Never for a real instance: those routes reset the database and sign in as any user without a password |
 | `--with-examples` | off | Seed the use cases, examples and tests from `docs/examples/` |
@@ -592,7 +595,7 @@ For the full guide, covering the storage layers, the action matrix, computed dat
 
 The Data Catalog holds datasets you already have; the **Discovery Catalog** holds the places you can get more. It lists the open data portals this install can reach (Chicago's Socrata portal, data.gov.uk, ArcGIS Hub, São Paulo's GeoSampa, and a direct-link fallback), so you can search them and download a dataset into your Data Catalog instead of writing fetch code. The Dataset Finder uses it too: a candidate row it can download has a **Download** button that runs the same download. It also lists **storage sources**: folders on the Curio machine, public S3 buckets and Hugging Face dataset repositories, whose manifests declare how their files are organized. A folder of CSV files adds as one table; a folder of orthoimagery, video frames, photos and videos, or audio adds as one **collection** whose files stay where they are. And it lists **services**: OpenStreetMap downloads buildings, roads, parks, water and land surface for an area you give, as a box or as named areas, loaded by Autark; Mapillary and Google Street View download street-level images for a box, with your own key. **Hugging Face models** lists image segmentation models, and adding one puts it in your Model Catalog.
 
-Sources are JSON manifests under `<repo_root>/discovery/`, relocated with **`CURIO_DISCOVERY_ROOT`** the same way `CURIO_CATALOG_ROOT` relocates the dataset catalog, and under `.curio/discovery/` for your own. Users cannot import one from the app.
+Sources are JSON manifests under `<repo_root>/discovery/`, relocated with **`--discovery-root`** the same way `--catalog-root` relocates the dataset catalog, and under `.curio/discovery/` for your own. Users cannot import one from the app.
 
 For the full guide, covering searching, downloading, storage sources, collections, street-level images, models, API tokens step by step, and the Dataset Finder, see [docs/DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md).
 
@@ -600,7 +603,7 @@ For the full guide, covering searching, downloading, storage sources, collection
 
 The **Model Catalog** holds the trained models your nodes can run. DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, ships with Curio; models you add from the Discovery Catalog's **Hugging Face models** land here too. An **Image Segmentation** node, from the Street Vision package, runs the model its code names with `curio_model("<id>")`: drag a model from **Model Catalog** in the left Tools panel onto the node to change it.
 
-Shipped models are folders under `<repo_root>/models/`, relocated with **`CURIO_MODELS_ROOT`**; models you add are yours, under `.curio/users/<user-key>/models/`.
+Shipped models are folders under `<repo_root>/models/`, relocated with **`--models-root`**; models you add are yours, under `.curio/users/<user-key>/models/`.
 
 For the full guide, covering runtimes, libraries, the manifest, and sharing a dataflow that names a model, see [docs/MODEL-CATALOG.md](MODEL-CATALOG.md).
 

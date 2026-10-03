@@ -229,7 +229,7 @@ Whoever runs the install can set a Deployment default with `curio.py start` flag
 
 Every shipped example has a **prompt fixture** under [`docs/examples/prompts/`](examples/prompts/README.md): a reviewed natural-language prompt paired with what the example contains. An evaluation sends the prompt, and only the prompt, to the Dataflow Builder, then compares the dataflow it built with the saved example. The comparison is deterministic code, not a model, and its score is a report: nothing in Curio passes or fails on it.
 
-**Evaluation mode** and **Model training** are sections of API Settings for a signed-in account. A guest does not see them, and that includes the shared guest a Curio started without `--deploy` signs you in as.
+**Evaluation mode** and **Model training** are sections of API Settings. A signed-in account sees them, and so does the shared guest a Curio started without `--deploy` signs you in as. A guest on a `--deploy` instance does not.
 
 ### Evaluation mode
 
@@ -241,7 +241,7 @@ The run applies the plan without your click only inside the project it created, 
 
 When it finishes you get the overall accuracy, a score per category, the failure categories, and **Open the generated dataflow ↗**. The Dataflow Builder's chat in that project carries the whole run: the prompt, the plan it proposed, what was applied, what Solve verified, and the report. A category that was not measured says so.
 
-Each prompt was drafted by a model and needs a person's approval before training can use it. **Approve this prompt** records yours, and **Withdraw approval** takes it back.
+Each prompt was drafted by a model and needs a person's approval before training can use it. **Approve this prompt** records yours, and **Withdraw approval** takes it back. A guest, the local shared guest included, cannot record an approval, because an approval names who made it.
 
 ### Model training
 
@@ -363,6 +363,11 @@ Curio ships with **no default LLM endpoint**. Until an operator sets a Deploymen
 | `GUEST_LLM_API_KEY` | `--guest-llm-api-key` | The key of the guest configuration, which every guest on a `--deploy` instance answers with. Unset, it takes `CURIO_DEFAULT_LLM_API_KEY`; with neither, guests get no AI. |
 | `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | none | The guest configuration's provider, endpoint and model. Unset, it takes the deployment's. A guest configuration needs a key and a model. |
 | `CURIO_SEARCH_URL` | `--agent-search-url` | Where the web-search tool looks, as a URL template with `{q}`. Defaults to DuckDuckGo's keyless Instant Answer API; point it at a local SearXNG, SerpAPI, or Google Programmable Search for ranked results. |
+| `CURIO_SOLVE_MAX_ATTEMPTS` | `--solve-max-attempts` | How many times Solve may try one node, counting the first generation. Default 40. |
+| `CURIO_SOLVE_NODE_BUDGET` | `--solve-node-budget` | Wall-clock seconds Solve may spend repairing one node. Default 900. |
+| `CURIO_SOLVE_SESSION_DEADLINE` | `--solve-session-deadline` | Seconds one Solve session keeps managing the dataflow. It also caps each node's budget. Default 900. |
+| `CURIO_SOLVE_BATCH_DEADLINE` | `--solve-batch-deadline` | Seconds a Solve batch may run in all. Default 2700. |
+| `CURIO_VALIDATION_EXEC_TIMEOUT` | `--validation-exec-timeout` | Seconds one node may run when an agent validates code. Default 300. |
 
 Run `python curio.py start --help` for the current list. A flag writes its variable only when passed, so a value already in the environment is not cleared by a start that omits it.
 

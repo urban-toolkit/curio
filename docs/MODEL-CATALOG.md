@@ -44,7 +44,7 @@ DDRNet23-Slim is about 23 MB and labels a street photo in a fraction of a second
 
 | Layer | On disk | Written by |
 |---|---|---|
-| **Shipped models** | `<repo_root>/models/<modelId>@<major>/`, or `$CURIO_MODELS_ROOT` when set | The release. Nothing in the app writes here, and a shipped model cannot be deleted. |
+| **Shipped models** | `<repo_root>/models/<modelId>@<major>/`, or the directory `--models-root` names | The release. Nothing in the app writes here, and a shipped model cannot be deleted. |
 | **Your models** | `.curio/users/<user-key>/models/` | **Add to Model Catalog** in the Discovery Catalog. |
 | **A node's model** | The node's code, `curio_model("<id>")`, saved with the dataflow | A drop on the node, or what you type. |
 
@@ -147,7 +147,7 @@ A dataflow names its models by id. Someone you share it with runs a shipped mode
 
 | Variable | Flag | Effect |
 |---|---|---|
-| `CURIO_MODELS_ROOT` | none | Reads the shipped models from this directory instead of `<repo_root>/models`. |
+| `CURIO_MODELS_ROOT` | `--models-root` | Reads the shipped models from this directory instead of `<repo_root>/models`. |
 
 **Shipping a model.** Add its folder to `models/` and restart. The Docker image bakes `models/` in, as it does `datasets/`. A model there must be one Curio may redistribute, with its license in the folder.
 
