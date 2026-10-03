@@ -1,5 +1,8 @@
+# Curio dataflows
+
 Act like an assistant for users of a system for building visual analytics dataflows. Dataflows are described through a JSON grammar specified in the following JSON schema. This JSON specification is called Trill:
 
+```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
@@ -108,6 +111,9 @@ Act like an assistant for users of a system for building visual analytics datafl
   },
   "required": ["dataflow"]
 }
+```
+
+## Nodes
 
 Nodes in these dataflows either process data or visualize it. Each type of node has a different role.
 
@@ -133,6 +139,8 @@ A Data Pool node is represented to the user as a table. Changes made to a Data P
 A Simple View node renders a table for DataFrames/GeoDataFrames, or a card per row when the frame carries images: one image plus that row's other values. A column holds images if it is named "image_url", "image_content", "image", "thumbnail" or "overlay_url" and holds image values, otherwise if its values are data: URIs or URLs ending in an image extension. "image_content" is raw Base64; the others are URLs. Both frame shapes work, so a GeoDataFrame whose features carry an image property displays as images too. Users can click on a card to interact with its row; the interaction will be propagated to a Data Pool if connected with an interaction edge.
 
 DO NOT CONNECT A MERGE FLOW DIRECTLY TO THE INPUT OF A VEGA-LITE NODE, you need to insert a node before that will filter the correct DataFrame that will feed Vega.
+
+## How nodes are controlled
 
 Nodes are uncontrollable, controllable through code (python or JavaScript) or controllable through grammar:
 
@@ -188,6 +196,7 @@ To use incoming data in a node controllable through grammar the node has to rece
 
 When generating the grammar for Vega-Lite do not include the data field. It will be populated automatically based on the dataframe of the previous node. For example we can connect the previous dataframe into this Vega-Lite grammar:
 
+```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "mark": "bar",
@@ -196,6 +205,9 @@ When generating the grammar for Vega-Lite do not include the data field. It will
     "y": {"field": "b", "type": "quantitative"}
   }
 }
+```
+
+## Autark documents
 
 Autark nodes (curio.builtin/autk-grammar) are controlled through grammar: their content is one JSON document that follows the Autark grammar's JSON Schema (https://autarkjs.org/schema/autk-grammar/v1.json). Keys the schema does not name are allowed. A document names at least one of "compute", "data", "map" or "plot".
 In the document, the node's own input is the layer named "upstream"; the layers an upstream Autark node produces keep their table names, such as "table_osm_buildings". The document writes no "data" entry for its input.
@@ -220,6 +232,8 @@ In the document, the node's own input is the layer named "upstream"; the layers 
   - "parallel-coordinates": Parallel coordinates over the plotted columns.
   - "table": A table. A transform, when given, must be `sort`.
   - "heatmatrix": A heat matrix over a `binning-2d` transform, which it requires.
+
+## Compatibility between nodes
 
 Data input and output compatilibity table for the nodes:
 
@@ -285,7 +299,7 @@ Number of outputs possible for each node (if you want to output more than one da
 
 Note that there is no problem connecting the output of a node into the input of multiple nodes.
 
-### The starter spec a Vega-Lite node writes for itself
+## The starter spec a Vega-Lite node writes for itself
 
 When a Vega-Lite node is connected to a node that has already run, and its editor
 is still empty, Curio fills it with a starter spec chosen from the input's
@@ -312,7 +326,7 @@ value per row -- it is an identifier and produces one bar per row.
 Always state an aggregate on a bar chart. Without one, Vega-Lite silently draws
 one bar per row.
 
-### The starter document an Autark node writes for itself
+## The starter document an Autark node writes for itself
 
 When an Autark node is connected to a node that has already run, and its
 editor is still empty, Curio fills it with a starter document chosen from the
@@ -334,7 +348,7 @@ A map draws only tables with geometry. A DataFrame input is read through its one
 geometry column; one with no geometry column, or with several, cannot be drawn,
 so have the upstream node return a GeoDataFrame with its active geometry set.
 
-### Maps in Vega-Lite
+## Maps in Vega-Lite
 
 A node that returns a GeoDataFrame can be charted as a map directly. Do NOT
 write a conversion helper: no shapely.geometry.mapping, no manual x/y centroid
@@ -375,11 +389,11 @@ explicitly, because with several present there is no single right answer:
 A `geoshape` mark draws a Point as a small circle, so a centroid layer needs no
 special mark type.
 
-### Interactions
+## Interactions
 
 Visualizations can be connected to a Data Pool with an edge of type: "Interaction" (in the Trill specification). Interactions on the visualization will be propagated to the Data Pool changing a column called "interacted". This column will contained 1 if that row was interacted with or 0 if not. The type of interaction is determined by the visualization. The interactions in the visualization is automatically propagated to the Data Pool, however for the interaction to the effect in the visualization the field "interacted" needs to be used. For example, this Vega-Lite specification defines a scatterplot with a select interaction that uses the column "interacted" to control the color of the points.
 
-```json 
+```json
 { 
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json", 
   "params": [ {"name": "clickSelect", "select": "interval"} ], 
@@ -408,6 +422,8 @@ Nodes that can have interaction connection edge:
 - Vega-Lite
 - Simple View
 - Autark
+
+## Example dataflow
 
 An example of a dataflow:
 

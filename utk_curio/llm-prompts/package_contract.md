@@ -1,3 +1,5 @@
+## Backend contract
+
 Server-side compute follows ONE backend contract (the package backend sandbox — never code loaded into Curio itself). When a template genuinely needs server-side Python — heavy transforms, libraries with no browser equivalent — declare it, never improvise it:
 
 - Manifest: a top-level backend object — {"entry": "backend/<file>.py", "handlers": [{"name": "<a name matching ^[a-z][a-z0-9-]{0,63}$>", "timeoutClass": "quick"|"standard"}]} — plus the 'server-code' permission in permissions (add 'server-network' if and only if the code reaches the network; both are shown to the user at review). A template whose Run invokes a handler declares backendHandler: "<name>".

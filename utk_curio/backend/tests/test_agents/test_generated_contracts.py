@@ -120,7 +120,9 @@ class TestRenderPrompt:
             for s in builtin.BUILTIN_AGENTS
         )
         monkeypatch.setattr(builtin, "BUILTIN_AGENTS", renamed)
-        assert contracts.render_prompt("orchestration_instruction").startswith("You are the Flow Architect: ")
+        assert contracts.render_prompt("orchestration_instruction").startswith(
+            "# Flow Architect\n\nYou are the Flow Architect: "
+        )
         chat = contracts.render_prompt("chat_prompt")
         assert "the Flow Architect plans and builds a whole dataflow" in chat
         assert "Dataflow Builder" not in chat
