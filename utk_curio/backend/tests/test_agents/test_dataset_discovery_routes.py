@@ -16,10 +16,9 @@ from utk_curio.backend.app.agents.application import dataset_resolution as dr
 from utk_curio.backend.app.agents.application.turns import titles as services_mod
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.projects.services import _user_dir_key
-from utk_curio.backend.tests.test_agents import test_routes as _tr
+from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_proposals
 from utk_curio.backend.tests.test_agents.test_verified_rounds import TEMPLATES
-
-_auth = _tr._auth
 
 DFB = "agent.dataflow-builder@1.0.0"
 DL = "curio.builtin/data-loading"
@@ -43,7 +42,7 @@ class _Harness:
                  discover_replies=None, dl_replies=None):
         self.client, self.user, self.token = client, user, token
         self.ukey = _user_dir_key(user)
-        _tr.TestNodeCreate()._write_builtin_package(self.ukey, templates=TEMPLATES)
+        routes_proposals.TestNodeCreate()._write_builtin_package(self.ukey, templates=TEMPLATES)
         body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
                 "outputs": []}
         self.pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]

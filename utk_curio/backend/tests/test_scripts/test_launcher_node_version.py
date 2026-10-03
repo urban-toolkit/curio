@@ -1,6 +1,6 @@
 """The Node.js major is declared in five places; keep them in step.
 
-``utk_curio.main.NODE_MAJOR`` gates the frontend start, ``.nvmrc`` and
+``utk_curio.cli.frontend_build.NODE_MAJOR`` gates the frontend start, ``.nvmrc`` and
 ``.node-version`` drive nvm/fnm/asdf, and the two ``package.json`` ``engines``
 fields are what npm warns on. Nothing links them but a comment, so a bump that
 misses one leaves contributors on a Node the launcher then refuses (or, worse,
@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-import utk_curio.main as main
-from utk_curio.main import (
+from utk_curio.cli import frontend_build
+from utk_curio.cli.frontend_build import (
     NODE_MAJOR,
     NODE_STAMP,
     _node_tree_is_stale,
@@ -90,10 +90,10 @@ def fake_npm(monkeypatch):
     """``check_install_build`` with npm/node stubbed; returns the commands run."""
     commands = []
 
-    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(main, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
+    monkeypatch.setattr(frontend_build.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(frontend_build, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
     monkeypatch.setattr(
-        main.subprocess, "run", lambda cmd, **kw: commands.append(cmd) or None
+        frontend_build.subprocess, "run", lambda cmd, **kw: commands.append(cmd) or None
     )
     cwd = os.getcwd()
     yield commands
@@ -111,7 +111,7 @@ def _tree(root: Path, stamp: str | None):
 def test_tree_from_another_major_is_rebuilt(tmp_path, fake_npm):
     _tree(tmp_path, str(NODE_MAJOR - 2))
 
-    main.check_install_build(str(tmp_path))
+    frontend_build.check_install_build(str(tmp_path))
 
     # The old tree is gone -- not just re-installed over -- and the bundle with
     # it, and the stamp now names the Node that did the install.
@@ -124,7 +124,7 @@ def test_tree_from_another_major_is_rebuilt(tmp_path, fake_npm):
 def test_tree_from_this_major_is_kept(tmp_path, fake_npm):
     _tree(tmp_path, str(NODE_MAJOR))
 
-    main.check_install_build(str(tmp_path))
+    frontend_build.check_install_build(str(tmp_path))
 
     assert (tmp_path / "node_modules" / "marker").exists()
     assert ["npm", "install"] in fake_npm
@@ -142,9 +142,9 @@ def test_leftover_build_dir_does_not_suppress_the_build(tmp_path, fake_npm):
     serving a directory that was not there.
     """
     _tree(tmp_path, str(NODE_MAJOR))
-    (tmp_path / "build" / main.BUILD_STAMP).write_text("", encoding="utf-8")
+    (tmp_path / "build" / frontend_build.BUILD_STAMP).write_text("", encoding="utf-8")
     assert not (tmp_path / "dist").exists()
 
-    main.check_install_build(str(tmp_path))
+    frontend_build.check_install_build(str(tmp_path))
 
     assert ["npm", "run", "build"] in fake_npm

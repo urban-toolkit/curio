@@ -16,7 +16,8 @@ _SKIP_NO_NODE = unittest.skipIf(
 )
 
 # Repo root holds the node_modules the sandbox's `node` subprocess resolves
-# @urban-toolkit/autk-db from (installed by _ensure_root_node_modules in main.py).
+# @urban-toolkit/autk-db from (installed by _ensure_root_node_modules in
+# utk_curio/cli/dependencies.py).
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 _AUTK_DB_AVAILABLE = os.path.isdir(
     os.path.join(_REPO_ROOT, 'node_modules', '@urban-toolkit', 'autk-db')

@@ -20,11 +20,11 @@ These are the exact files that CDN serves, so Curio serves them itself:
 The layout mirrors the CDN's (`<duckdb version>/<platform>/<name>.wasm`),
 because both consumers key off it:
 
-- **Browser** — `utk_curio/frontend/urban-workflows/webpack/duckdbExtensionMirror.js`
+- **Browser**: `utk_curio/frontend/urban-workflows/webpack/duckdbExtensionMirror.js`
   prepends a redirect to duckdb's worker at build time, pointing
   `extensions.duckdb.org` at this directory through the backend's `/file/`
   route. It falls back to the CDN if a requested file is not here.
-- **Sandbox (Node)** — `utk_curio/main.py::seed_duckdb_extensions` copies these
+- **Sandbox (Node)**: `utk_curio/cli/dependencies.py::seed_duckdb_extensions` copies these
   into `~/.duckdb/extensions/extensions.duckdb.org/`, where duckdb-wasm looks
   before downloading.
 

@@ -761,7 +761,7 @@ _SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__'
 def backend_base_url():
     """``http://host:port`` for the backend, as reachable from this process.
 
-    ``main.py::set_environment_variables`` exports FLASK_BACKEND_HOST/PORT and
+    ``cli/environment.py::set_environment_variables`` exports FLASK_BACKEND_HOST/PORT and
     start_sandbox passes the environment through, so a sandbox launched with the
     stack always has the true values - including on a custom-port stack, where
     the browser's own port would be wrong, and inside a container, where a

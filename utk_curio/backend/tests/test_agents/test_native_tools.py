@@ -29,9 +29,8 @@ from utk_curio.backend.app.agents.infrastructure.providers import (
     NativeToolsRefused,
     ProviderConfig,
 )
-from utk_curio.backend.tests.test_agents import test_routes as _tr
-
-_auth = _tr._auth
+from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_proposals
 
 CHAT = "agent.chat-agent@1.0.0"
 NB = "agent.node-builder@1.0.0"
@@ -55,7 +54,7 @@ def project(client, user_and_token):
     user, token = user_and_token
     from utk_curio.backend.app.projects.services import _user_dir_key
 
-    _tr.TestNodeCreate()._write_builtin_package(_user_dir_key(user), templates=TEMPLATES)
+    routes_proposals.TestNodeCreate()._write_builtin_package(_user_dir_key(user), templates=TEMPLATES)
     body = {
         "name": "p",
         "spec": {"dataflow": {"nodes": [

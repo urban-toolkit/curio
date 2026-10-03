@@ -59,13 +59,13 @@ def auth(user_and_token):
 def osm_home(tmp_path, monkeypatch):
     """A HOME holding Curio's copy of DuckDB's extensions, as launch seeds it,
     so autk-db's ``INSTALL spatial`` in the Node child reads it from disk."""
-    from utk_curio import main as curio_main
+    from utk_curio.cli import dependencies
 
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(Path, "home", lambda: home)
-    curio_main.seed_duckdb_extensions()
+    dependencies.seed_duckdb_extensions()
     return home
 
 

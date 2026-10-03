@@ -8,7 +8,7 @@ The claim is not obvious. User Python runs via ``exec()`` **in-process** inside
 the long-lived sandbox Flask process, against a warm ``sys.modules``
 (``worker.py`` ``execute_code``), and there is no ``importlib.invalidate_caches()``
 anywhere in the tree. It works only because the backend and the sandbox are
-launched from the same ``sys.executable`` (``main.py``), so pip writes into the
+launched from the same ``sys.executable`` (``utk_curio/cli/services.py``), so pip writes into the
 site-packages the sandbox already imports from, and CPython's ``FileFinder``
 invalidates its directory listing when the directory mtime changes.
 ``useEnsureWorkflowDeps`` states the contract in prose - "nodes executed before

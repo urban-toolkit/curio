@@ -91,7 +91,7 @@ def unscoped(monkeypatch):
 
     Reachable only by a test rig now: ``--deploy`` on a host that cannot
     isolate refuses to start unless ``CURIO_TESTING`` is set
-    (``main.py::_refuse_unisolated_deploy``). Kept as a posture here because
+    (``cli/environment.py::_refuse_unisolated_deploy``). Kept as a posture here because
     the rules below must still hold on the rigs that do run it.
     """
     monkeypatch.setattr(backend_runtime, "per_user_node_envs", lambda: False)

@@ -4,7 +4,7 @@
 # Two CI-specific adjustments to the image's default CMD:
 #
 # 1. --deploy. The default CMD carries no auth flag, which resolves to
-#    CURIO_NO_AUTH=1 (see utk_curio/main.py). The e2e suite then skips every
+#    CURIO_NO_AUTH=1 (see utk_curio/cli/environment.py). The e2e suite then skips every
 #    test that needs a real logged-in owner via require_user_auth() -- around
 #    26 of them, including the whole package roundtrip, data catalog and node
 #    catalog suites. This matches what the pytest-owned harness already does

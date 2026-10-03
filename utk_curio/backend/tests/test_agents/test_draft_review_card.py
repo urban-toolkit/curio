@@ -174,9 +174,9 @@ class TestDraftCardOnTheMintedPart:
                                                 tmp_curio, monkeypatch):
         # The existing draft lane, re-driven: the PART (reload-safe render
         # source) and the mirror both carry the composed slice.
-        from utk_curio.backend.tests.test_agents.test_routes import (
+        from utk_curio.backend.tests._support.agent_routes import _auth as routes_auth
+        from utk_curio.backend.tests.test_agents.test_routes_proposals import (
             TestPackageBuilderTools,
-            _auth as routes_auth,
         )
 
         _, token = user_and_token
