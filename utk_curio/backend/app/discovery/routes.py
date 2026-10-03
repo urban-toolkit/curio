@@ -107,10 +107,14 @@ def _resource_id(service: DiscoveryService, source_dir: str, raw: str) -> str:
     """The resource id as the client sent it.
 
     The server has already decoded the path once. A portal id is decoded once
-    more, as it always has been; a storage id is taken as it is, since a file
-    name may itself hold a ``%``.
+    more, as it always has been. A storage id is taken as it is, since a file
+    name may itself hold a ``%``, and so is a direct source's id, a link whose
+    own percent escapes are part of its address.
     """
-    return raw if service.get_manifest(source_dir).is_storage else unquote(raw)
+    manifest = service.get_manifest(source_dir)
+    if manifest.is_storage or manifest.provider.type == "direct":
+        return raw
+    return unquote(raw)
 
 
 @discovery_bp.route("/catalog", methods=["GET"])
