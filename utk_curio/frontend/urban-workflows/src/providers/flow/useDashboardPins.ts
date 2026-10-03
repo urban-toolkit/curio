@@ -1,5 +1,6 @@
 // Dashboard pins: pinning a node, which nodes a pinned tile depends on, and
 // the save that follows a pin change.
+// TMP PROOF: the retired canvas mode's setter, setDashBoardMode, named again.
 import React, { useCallback, useRef } from "react";
 import type { Node, ReactFlowInstance } from "reactflow";
 import { dashboardSourceNodeIds } from "../../utils/dashboardLayout";

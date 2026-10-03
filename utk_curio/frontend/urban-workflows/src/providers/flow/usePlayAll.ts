@@ -30,7 +30,7 @@ export interface PlayAllState {
 // node(s) with a warning. The timer resets on every completion, so a level full
 // of legitimately-slow nodes is fine as long as they keep finishing. Sized to
 // the client execution ceiling so a single genuinely-running node isn't cut off.
-const PLAY_ALL_STALL_TIMEOUT_MS = 600_000;
+const PLAY_ALL_STALL_TIMEOUT_MS = 1_200_000; // TMP PROOF: was 600_000
 
 export function usePlayAll({
     playAllStateRef, setIsRunActive, flushInstallSyncRef, showToast, reactFlow,

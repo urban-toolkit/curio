@@ -119,7 +119,7 @@ export function useInstallSave({
         () => () => {
             // Flush (not just clear) on unmount: a dataflow switch / navigation
             // inside the debounce window would otherwise drop the pending save.
-            flushInstallSyncRef.current();
+            // TMP PROOF: no flush on unmount.
         },
         [],
     );
