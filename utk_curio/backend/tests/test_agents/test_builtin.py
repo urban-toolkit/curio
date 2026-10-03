@@ -761,7 +761,7 @@ class TestResearcher:
     DATAFLOW_BUILDER_PROMPT_SHA256 = (
         # The plan is named, not called a block: on native tools it is the
         # dataflow.plan.write call, on the fenced protocol its block.
-        "a5484d129fd049279d57425a68ea200540e7af584da4d21d62cb83957eb66376"
+        "f180f9bd4c38c9682160cfcc80cadf2c907c9004178bd1f0851f27eef949c5db"
     )
 
     def test_manifest_surface(self):
