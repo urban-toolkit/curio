@@ -7,7 +7,8 @@ registry, the built-in agents, the shipped manifests, the sandbox, the shipped
 catalogs and the Vega-Lite schema. A rename or a removal there leaves the prompt
 pointing at nothing, and the model copies what the prompt shows. These tests
 read every prompt a built-in agent receives and check each name against the
-code or the catalog that defines it.
+code or the catalog that defines it. Two more check the text itself: no prompt
+holds an en or em dash, and every block fenced as json parses.
 """
 
 from __future__ import annotations
@@ -37,6 +38,9 @@ PROMPT_FILES = sorted({f for spec in builtin.BUILTIN_AGENTS for f in spec.prompt
 #: Every file in ``llm-prompts/``: each template, the prompt it renders, and
 #: each prompt with no template, the included ``package_contract`` too.
 ALL_PROMPTS = sorted(path.name for path in builtin.PROMPT_SOURCE_DIR.glob("*.md"))
+#: The prompts as they are sent: every rendered template and every prompt with
+#: no template. A template's fence can hold a ``{{field}}`` marker, not JSON.
+SENT_PROMPTS = [name for name in ALL_PROMPTS if not name.endswith(".template.md")]
 
 #: Words a prompt uses that look like an id but are not one, each with the
 #: reason. An entry no prompt uses any more fails ``test_every_exception_is_still_used``.
@@ -64,6 +68,8 @@ _SECRET_INJECTION_RE = re.compile(
 )
 # An en dash or an em dash, with up to 30 characters on each side to find it by.
 _DASH_RE = re.compile(".{0,30}[" + chr(0x2013) + chr(0x2014) + "].{0,30}")
+# The body of a fenced block marked ``json``, its fences on lines of their own.
+_JSON_FENCE_RE = re.compile(r"^[ \t]*```json[ \t]*\n(.*?)^[ \t]*```[ \t]*$", re.MULTILINE | re.DOTALL)
 
 
 def _text(name: str) -> str:
@@ -164,6 +170,18 @@ def test_no_prompt_holds_an_em_or_en_dash(name):
     assert not found, f"{name} holds an en or em dash; write plain punctuation instead: {found}"
 
 
+@pytest.mark.parametrize("name", SENT_PROMPTS)
+def test_every_fenced_json_block_parses(name):
+    for block in _JSON_FENCE_RE.findall(_text(name)):
+        try:
+            json.loads(block)
+        except ValueError as exc:
+            pytest.fail(
+                f"{name} has a json block that is not JSON ({exc}); an example with "
+                f"placeholders or an ellipsis is fenced as text:\n{block[:400]}"
+            )
+
+
 @pytest.mark.parametrize("name", PROMPT_FILES)
 def test_every_tool_and_capability_it_names_is_declared(name):
     known = _known_ids()
@@ -230,6 +248,8 @@ def test_the_checks_find_what_the_prompts_name():
     assert DATASET_PATH_CALL_RE.findall(corpus)
     preamble_specs = [s for v in _json_values(_text(builtin.PREAMBLE_FILE)) for s in _vega_specs(v)]
     assert len(preamble_specs) >= 3
+    # The Trill block and the Vega-Lite examples are fenced as json.
+    assert len(_JSON_FENCE_RE.findall(_text(builtin.PREAMBLE_FILE))) >= 3
 
 
 def test_every_exception_is_still_used():
