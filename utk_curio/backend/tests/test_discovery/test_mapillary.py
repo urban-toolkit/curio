@@ -483,3 +483,94 @@ class TestItsFilesAreOnThisMachine:
         assert status["local"] is True
         assert status["cachedFiles"] == status["fileCount"] == 6
         assert dataset["id"] in _collections(client, keyed)
+
+
+# ── an image that cannot be fetched ────────────────────────────────────────
+
+
+def _three(url):
+    query = parse_qs(urlsplit(url).query)
+    if "image_ids" in query:
+        return {"data": [
+            {"id": i, "thumb_256_url": f"https://x.fbcdn.net/{i}.jpg"} for i in query["image_ids"][0].split(",")
+        ]}
+    return {"data": [{"id": "1", "captured_at": 3}, {"id": "2", "captured_at": 2}, {"id": "3", "captured_at": 1}]}
+
+
+class _Failing(_Answers):
+    """Answers as :class:`_Answers` does, but cuts off each download *fails* picks."""
+
+    def __init__(self, answer, fails):
+        super().__init__(answer)
+        self.fails = fails
+
+    def download(self, url, sink, **kwargs):
+        from utk_curio.backend.app.discovery.infrastructure.transport import DiscoveryTransportError
+
+        if self.fails(url):
+            self.downloads.append(url)
+            sink(b"\xff\xd8")
+            raise DiscoveryTransportError("x.fbcdn.net answered 503")
+        return super().download(url, sink, **kwargs)
+
+
+def _refuse_downloads(monkeypatch, *, first_only):
+    """The recorded corpus refuses Mapillary's image downloads: the first, or
+    every one. Returns the URLs it refused."""
+    from utk_curio.backend.app.discovery.infrastructure import transport as T
+
+    real = T.FixtureDiscoveryTransport.download
+    refused: list[str] = []
+
+    def download(self, url, sink, **kwargs):
+        if "fbcdn" in url and not (first_only and refused):
+            refused.append(url)
+            raise T.DiscoveryTransportError("scontent.xx.fbcdn.net answered 503")
+        return real(self, url, sink, **kwargs)
+
+    monkeypatch.setattr(T.FixtureDiscoveryTransport, "download", download)
+    return refused
+
+
+class TestAnImageThatCannotBeFetched:
+    def _load(self, transport, tmp_path):
+        service = mapillary.MapillaryService(_manifest(), transport=transport)
+        return service.load(_manifest().resource("images"),
+                            {"area": LINCOLN_PARK, "size": "256", "maxImages": 5}, tmp_path)
+
+    def test_it_is_skipped_and_counted(self, tmp_path):
+        transport = _Failing(_three, lambda url: url.endswith("/2.jpg"))
+        answer = self._load(transport, tmp_path)
+        assert [i.image_id for i in answer.images] == ["1", "3"]
+        assert answer.skipped == 1 and answer.failed == 1
+        assert transport.downloads == [f"https://x.fbcdn.net/{n}.jpg" for n in (1, 2, 3)]
+        assert sorted(p.name for p in tmp_path.rglob("*") if p.is_file()) == ["1.jpg", "3.jpg"]
+
+    def test_a_cancel_still_stops_the_job(self, tmp_path):
+        class Cancelling(_Answers):
+            def download(self, url, sink, **kwargs):
+                raise mapillary.Cancelled()
+
+        with pytest.raises(mapillary.Cancelled):
+            self._load(Cancelling(_three), tmp_path)
+
+    def test_the_size_of_the_job_still_stops_it(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(mapillary, "MAX_JOB_BYTES", 1)
+        with pytest.raises(DiscoveryError, match="ask for fewer or smaller images"):
+            self._load(_Answers(_three), tmp_path)
+
+    def test_the_job_keeps_the_rest_and_says_how_many(self, client, keyed, monkeypatch):
+        refused = _refuse_downloads(monkeypatch, first_only=True)
+        job = _run(client, keyed)
+        assert job["status"] == "completed", job
+        assert len(refused) == 1
+        dataset = job["dataset"]
+        assert dataset["collection"]["fileCount"] == 5
+        assert "; 1 could not be fetched." in dataset["description"]
+
+    def test_a_job_whose_every_image_fails_is_an_error(self, client, keyed, monkeypatch):
+        refused = _refuse_downloads(monkeypatch, first_only=False)
+        job = _run(client, keyed)
+        assert job["status"] == "failed", job
+        assert len(refused) == 6
+        assert "kept no street-level images: none could be fetched" in job["error"]

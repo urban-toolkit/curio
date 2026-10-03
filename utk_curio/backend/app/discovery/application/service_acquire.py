@@ -287,6 +287,8 @@ class ServiceAcquire:
             stage("Adding to your Data Catalog…")
         label = (title or "").strip() or f"{spec.name}, {place}"
         description = f"{len(files):,} {spec.name.lower()} from {manifest.name} for {place}"
+        if answer.failed:
+            description += f"; {answer.failed:,} could not be fetched"
         if attribution:
             description += f". {attribution}"
         dataset = self._install_path(
