@@ -101,7 +101,7 @@ header. Never check secrets into git.
 
 ### 3.3 Public APIs without auth
 
-Nominatim, OpenStreetMap's geocoder, is free and public; it answers the place search of every source's area field. [`discovery/application/places.py`](../utk_curio/backend/app/discovery/application/places.py) follows its usage policy: a `User-Agent` that names Curio, at most one request a second from the server (`MIN_INTERVAL_S`), and answers kept for a day (`CACHE_TTL_S`):
+Nominatim, OpenStreetMap's geocoder, is free and public; it answers the place search of every source's area field. [`discovery/application/places.py`](../utk_curio/backend/app/discovery/application/places.py) follows its usage policy: a `User-Agent` that names Curio, at most one request a second from the server (`MIN_INTERVAL_S`), and answers kept for a day (`CACHE_TTL_S`). A search takes the next free second under the lock and waits for it outside, so a cached answer never waits on Nominatim:
 
 ```python
 # places.py
@@ -109,14 +109,14 @@ with _lock:
     hit = _cache.get(key)
     if hit is not None and now - hit[0] < CACHE_TTL_S:
         return hit[1]
-    _wait_for_slot()
-    try:
-        payload = transport.json_get(
-            search_url(text),
-            headers={"User-Agent": USER_AGENT, "Accept-Language": "en"},
-        )
-    finally:
-        _last_request = time.monotonic()
+    slot = _take_slot()
+wait = slot - time.monotonic()
+if wait > 0:
+    time.sleep(wait)
+payload = transport.json_get(
+    search_url(text),
+    headers={"User-Agent": USER_AGENT, "Accept-Language": "en"},
+)
 ```
 
 Read a public API's usage policy before shipping a source that calls it in a loop, and **cache aggressively** (a single user might re-search the same place a dozen times in one session). Code that calls `requests` itself sets a **timeout** (`requests`'s default is "wait forever") and checks the response status; the Discovery transport does both.
