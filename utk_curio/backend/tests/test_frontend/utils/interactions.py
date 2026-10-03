@@ -6,14 +6,9 @@ import time
 
 from playwright.sync_api import Page
 
-from .screenshots import (
-    CLOSEUP_MAX_DIFF_RATIO,
-    CLOSEUP_PIXEL_THRESHOLD,
-    REMINT_MIN_RATIO,
-    _capture_element,
-    _compare_images,
-    save_workflow_test_screenshot,
-)
+from .images import _capture_element, _compare_images
+from .screenshots import REMINT_MIN_RATIO, save_workflow_test_screenshot
+from .closeups import CLOSEUP_MAX_DIFF_RATIO, CLOSEUP_PIXEL_THRESHOLD
 
 
 # ---------------------------------------------------------------- interactions

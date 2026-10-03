@@ -2,8 +2,10 @@
 
 Every public name, and every private one the suite imports, is imported here
 from the module that holds it, so ``from .utils import X`` keeps working.
-Patch a name in the module that holds it (``utils.screenshots``, for one):
-a patch here changes only this copy, not what the helpers call.
+Patch a name in the module whose code looks it up when it runs: for the names
+``save_workflow_test_screenshot`` and ``frame_nodes`` call, that is
+``utils.screenshots``, wherever the name is defined. A patch here changes only
+this copy, not what the helpers call.
 """
 
 # Code-shaping helpers live in workflow_spec (no pytest/playwright imports)
@@ -39,25 +41,30 @@ from .vega_svg import (  # noqa: F401
     load_expected_svg,
     compare_svg_structure,
 )
+from .capture_waits import (  # noqa: F401
+    _wait_for_reactflow_ready,
+    dismiss_toasts,
+    WEBFONT_FAMILY,
+    WEBFONT_TIMEOUT_MS,
+    _wait_for_webfont,
+    NODE_SETTLE_TIMEOUT_MS,
+    _wait_for_no_node_running,
+)
+from .images import _compare_images  # noqa: F401
+from .dialogs import accept_confirm_dialog, leave_agent_badge  # noqa: F401
 from .screenshots import (  # noqa: F401
     WORKFLOW_SCREENSHOT_EXPECTED_DIR,
-    _wait_for_reactflow_ready,
     dump_browser_log,
-    accept_confirm_dialog,
-    leave_agent_badge,
-    dismiss_toasts,
     REMINT_HOW,
     allow_baseline_writes,
     REMINT_MIN_RATIO,
     VOLATILE_TEXT,
-    WEBFONT_FAMILY,
-    WEBFONT_TIMEOUT_MS,
-    _wait_for_webfont,
     MAX_DIFF_RATIO,
-    NODE_SETTLE_TIMEOUT_MS,
-    _wait_for_no_node_running,
-    _compare_images,
     save_workflow_test_screenshot,
+    park_pointer,
+    frame_nodes,
+)
+from .closeups import (  # noqa: F401
     CLOSEUP_PIXEL_THRESHOLD,
     CLOSEUP_MAX_DIFF_RATIO,
     VIEWPORT_SETTLE_WAIT_MS,
@@ -67,8 +74,6 @@ from .screenshots import (  # noqa: F401
     viewport_hints,
     canvas_painted_at_shown_zoom,
     save_node_closeup,
-    park_pointer,
-    frame_nodes,
 )
 from .interactions import (  # noqa: F401
     INTERACTION_MIN_CHANGED_PIXELS,
