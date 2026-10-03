@@ -209,8 +209,8 @@ def test_build_and_run_dataflow_from_scratch(
         "create a Data Loading node"
     )
     loader_code = read_node_code(page, loader_id)
-    assert "pd.read_csv" in loader_code and "return df" in loader_code, (
-        f"generated loader code does not read the CSV:\n{loader_code}"
+    assert "df = curio_load_data(" in loader_code and "return df" in loader_code, (
+        f"generated loader code does not load the CSV:\n{loader_code}"
     )
 
     # 3. SECOND NODE, from the built-in tool rail.

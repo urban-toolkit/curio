@@ -130,20 +130,22 @@ Adding a dataset to a dataflow creates nothing on the canvas. You use it by **dr
 - **Drop on empty canvas**: Curio creates a **Data Loading** node filled in with loader code for that dataset, and says *"Created a Data Loading node for `<title>`."*
 - **Drop onto an existing node**: the loader code is merged into that node's code under a `# Curio dataset loader: <title>` marker, and Curio says *"Applied `<title>` to this node."* If the node's code ends in a `return`, the loader goes before it and the return is rewritten.
 
-The generated Python depends on the format:
+The generated Python is one line, `curio_load_data("<datasetId>")`, which reads the dataset the way its format is read:
 
-| Format | Generated code |
+| Format | What `curio_load_data` returns |
 |---|---|
-| `csv` | `pd.read_csv(dataset_path)` → `df` |
-| `geojson`, `shp` | `gpd.read_file(dataset_path)` → `gdf` |
-| `parquet` | `gpd.read_parquet`, falling back to `pd.read_parquet` → `df` |
-| `json` | `json.loads(...)` → `data` |
-| `geotiff` | `rasterio.open(dataset_path)` → `src` |
-| `bundle` | Rebuilds every part and returns a tuple → `bundle` |
-| OSM group | A `layers` dict of per-layer GeoParquet reads |
-| `collection` | `curio_collection("<datasetId>")` → `collection` |
+| `csv` | A pandas DataFrame → `df` |
+| `geojson`, `shp` | A GeoDataFrame → `gdf`. A Discovery download whose layer is an Autark layer (`buildings`, say) carries it as the frame's `metadata`, so an Autark node draws it as that layer. |
+| `parquet` | A GeoDataFrame when the file has geometry, otherwise a DataFrame, with JSON-encoded object columns restored → `df` |
+| `json` | The parsed document, compressed or plain → `data` |
+| `geotiff` | An open rasterio dataset → `src` |
+| `bundle` | Every part, as a tuple → `bundle` |
+| OSM group | A `layers` dict, one `curio_load_data` per layer |
+| `collection` | `curio_load_collection("<datasetId>")`: the collection's index, one row per file with a readable `path` → `collection` |
 
-The generated code names the dataset with `curio_dataset_path("<datasetId>")`, or `curio_collection("<datasetId>")` for a collection, instead of a file path, so it keeps working when the dataflow is shared or moved. The details' **Use in a node** box shows the same call, with a copy button.
+To read the file another way, for example a CSV with another separator, use `curio_data_path("<datasetId>")`, which gives the file's path: `pd.read_csv(curio_data_path("<datasetId>"), sep=";")`.
+
+These calls name the dataset by id instead of a file path, so the code keeps working when the dataflow is shared or moved. The details' **Use in a node** box shows the `curio_load_data` call, with a copy button.
 
 **Clicking** a palette row, rather than dragging it, highlights every node on the canvas that uses that dataset. If none does, a message says so.
 
@@ -151,7 +153,7 @@ A node tied to a dataset shows a pill on its title bar: **DATASET** when it read
 
 ### Collections
 
-A **collection** is a dataset made of many files that stay where they are: a folder of orthoimagery, video frames, photos and videos, or audio recordings, added from a storage source in the [Discovery Catalog](DISCOVERY-CATALOG.md). Its data file is an index with one row per file. `curio_collection("<datasetId>")` returns those rows with a way to reach each file:
+A **collection** is a dataset made of many files that stay where they are: a folder of orthoimagery, video frames, photos and videos, or audio recordings, added from a storage source in the [Discovery Catalog](DISCOVERY-CATALOG.md). Its data file is an index with one row per file. `curio_load_collection("<datasetId>")` returns those rows with a way to reach each file:
 
 | Column | Holds |
 |---|---|

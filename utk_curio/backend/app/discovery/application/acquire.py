@@ -2,7 +2,7 @@
 
 The seam between the two catalogs, and the only place this package writes
 anything. What comes out the far end is an **ordinary dataset** - manifest,
-preview, schema, ``curio_dataset_path()`` loader - so nothing downstream has to
+preview, schema, ``curio_data_path()`` loader - so nothing downstream has to
 learn that portals exist. It carries a ``discoverySource`` block recording where it
 came from, which is what makes "do I already hold this?" answerable.
 

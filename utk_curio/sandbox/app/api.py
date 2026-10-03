@@ -570,7 +570,7 @@ def exec():
     if isinstance(save_dataset, str):
         save_dataset = save_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
     # {datasetId: absolutePath} resolved by the backend for the code's
-    # curio_dataset_path("<id>") calls. Defensive re-shaping mirrors the
+    # curio_load_data / curio_data_path calls. Defensive re-shaping mirrors the
     # backend's MAX_EXEC_DATASET_IDS cap.
     dataset_paths = request.json.get('dataset_paths') or {}
     # Isolated mode gives each user their own work directory, so a node's
@@ -585,12 +585,22 @@ def exec():
         for key, value in list(dataset_paths.items())[:32]
         if value
     }
+    # {datasetId: {"format", "layerType"}}: how curio_load_data reads each of
+    # those datasets, from the backend's catalog.
+    dataset_formats = request.json.get('dataset_formats') or {}
+    if not isinstance(dataset_formats, dict):
+        dataset_formats = {}
+    dataset_formats = {
+        str(key): {k: str(v) for k, v in value.items() if k in ('format', 'layerType') and v}
+        for key, value in list(dataset_formats.items())[:32]
+        if isinstance(value, dict) and str(key) in dataset_paths
+    }
     # dev/116: {name: value} for the code's curio_secret("<name>") calls,
     # resolved by the backend from the user's connection keys. Injected as a
     # callable in both execution modes; never an env var, never staged, never
     # logged.
     secrets = shape_secrets(request.json.get('secrets'))
-    # {datasetId: {root|objects, kind}} for the code's curio_collection("<id>")
+    # {datasetId: {root|objects, kind}} for the code's curio_load_collection("<id>")
     # calls, and the user's media directory for the files a node derives.
     # Resolved and containment-checked by the backend, like dataset_paths.
     collections = request.json.get('collections') or {}
@@ -602,7 +612,7 @@ def exec():
         if isinstance(value, dict)
     }
     media_dir = request.json.get('media_dir') or None
-    # {modelId: folder} for the code's curio_model("<id>") calls, resolved by
+    # {modelId: folder} for the code's curio_load_model("<id>") calls, resolved by
     # the backend from the account's Model Catalog, like dataset_paths.
     models = request.json.get('models') or {}
     if not isinstance(models, dict):
@@ -623,13 +633,14 @@ def exec():
             session_id=session_id, save_dataset=bool(save_dataset),
             dataset_paths=dataset_paths, user_key=user_key, config=config,
             secrets=secrets, collections=collections, media_dir=media_dir, models=models,
+            dataset_formats=dataset_formats,
         )
     else:
         result = execute_code(
             code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset),
             dataset_paths=dataset_paths, secrets=secrets, collections=collections, media_dir=media_dir,
-            models=models,
+            models=models, dataset_formats=dataset_formats,
         )
 
     print(f"[sandbox /exec] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)

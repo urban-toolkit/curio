@@ -2,7 +2,7 @@
 
 Shared by ``/processPythonCode`` and the agent runtime's runs through a node
 (``execution/runner.run_through_node``), so a node that calls
-``curio_collection("<id>")`` reads the same files on Play, on a node run and
+``curio_load_collection("<id>")`` reads the same files on Play, on a node run and
 under Solve's validation.
 """
 from __future__ import annotations
@@ -21,7 +21,7 @@ def resolve_exec_collections(code: str, user_key: str | None, *, user=None) -> t
     cached copies sit in ``objects``. ``media_dir`` is where a node may write
     the frames or clips it derives. *user* is the account's ``User`` row, which
     the Data Catalog needs to find the collection. Fail-open like dataset
-    paths: the injected ``curio_collection`` raises a clear error for anything
+    paths: the injected ``curio_load_collection`` raises a clear error for anything
     missing.
     """
     if not user_key:

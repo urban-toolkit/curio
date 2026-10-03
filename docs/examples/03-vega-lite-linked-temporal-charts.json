@@ -8,7 +8,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 215,
-        "content": "import pandas as pd\n\n# Trim early: read only the columns downstream uses (parquet projects them in\n# the file format, so the other four are never decoded), parse dates up front,\n# and store CAMERA ID as a category. Without these, the resulting DataFrame\n# is ~130 MB (400k rows x 9 cols of mostly strings) and the inter-node\n# serialization times out the frontend with a NetworkError.\ndataset_path = curio_dataset_path(\"data.cityofchicago.speed-camera-violations\")\ndf = pd.read_parquet(\n    dataset_path,\n    columns=['CAMERA ID', 'VIOLATION DATE', 'VIOLATIONS', 'LATITUDE', 'LONGITUDE'],\n)\ndf['VIOLATION DATE'] = pd.to_datetime(df['VIOLATION DATE'], format='%m/%d/%Y')\ndf.dropna(inplace=True)\ndf['CAMERA ID'] = df['CAMERA ID'].astype('category')\nreturn df\n",
+        "content": "import pandas as pd\n\n# Trim early: read only the columns downstream uses (parquet projects them in\n# the file format, so the other four are never decoded), parse dates up front,\n# and store CAMERA ID as a category. Without these, the resulting DataFrame\n# is ~130 MB (400k rows x 9 cols of mostly strings) and the inter-node\n# serialization times out the frontend with a NetworkError.\ndataset_path = curio_data_path(\"data.cityofchicago.speed-camera-violations\")\ndf = pd.read_parquet(\n    dataset_path,\n    columns=['CAMERA ID', 'VIOLATION DATE', 'VIOLATIONS', 'LATITUDE', 'LONGITUDE'],\n)\ndf['VIOLATION DATE'] = pd.to_datetime(df['VIOLATION DATE'], format='%m/%d/%Y')\ndf.dropna(inplace=True)\ndf['CAMERA ID'] = df['CAMERA ID'].astype('category')\nreturn df\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

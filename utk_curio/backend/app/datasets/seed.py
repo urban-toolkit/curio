@@ -12,7 +12,7 @@ A ``dataflow.datasets`` ref on its own is *almost* enough for a dataset that
 ships in the committed catalog. ``CatalogListing.list_catalog`` also yields a
 hub row for it, that row outranks the ref row in ``domain/dedup.py``, and the
 merge lifts ``installed: True`` off the loser - so the drawer, preview, export
-and ``curio_dataset_path()`` execution all work with no copy anywhere.
+and ``curio_data_path()`` execution all work with no copy anywhere.
 
 The Data palette is the exception, and it is the reason this module exists. It
 queries with ``includeHub: false``, which skips ``registry.list_items()``

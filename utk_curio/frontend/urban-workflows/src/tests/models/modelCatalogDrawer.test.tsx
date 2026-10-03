@@ -108,14 +108,14 @@ describe("the canvas Model Catalog drawer", () => {
     // What the node's drop handler does with that same DataTransfer.
     const node = {
       nodeId: "seg-1",
-      code: 'folder = curio_model("model.curio.ddrnet23-slim")\nreturn segment(folder, input_1)',
+      code: 'folder = curio_load_model("model.curio.ddrnet23-slim")\nreturn segment(folder, input_1)',
     };
     const model = readModelDragPayload(dataTransfer);
     expect(model?.modelId).toBe("imported.xabc123def456");
     expect(canApplyModelToNode(node)).toBe(true);
     const applied = applyModelToNodeData(node, model!);
     expect(applied.code).toBe(
-      'folder = curio_model("imported.xabc123def456")\nreturn segment(folder, input_1)',
+      'folder = curio_load_model("imported.xabc123def456")\nreturn segment(folder, input_1)',
     );
     expect(applied.modelRefs).toEqual([
       { id: "imported.xabc123def456", name: "SegFormer B0 (ADE20K)" },
@@ -127,7 +127,7 @@ describe("the canvas Model Catalog drawer", () => {
     await screen.findByText("DDRNet23-Slim (street scenes)");
     const dataTransfer = fakeDataTransfer();
     fireEvent.dragStart(card("model.curio.ddrnet23-slim"), { dataTransfer });
-    const loader = { nodeId: "load-1", code: 'return curio_dataset_path("data.x")' };
+    const loader = { nodeId: "load-1", code: 'return curio_data_path("data.x")' };
     expect(canApplyModelToNode(loader)).toBe(false);
     expect(applyModelToNodeData(loader, readModelDragPayload(dataTransfer)!)).toBe(loader);
   });
