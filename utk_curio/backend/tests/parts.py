@@ -2,7 +2,7 @@
 
 Both the e2e suite (``test_frontend/runner_split.py``, ``CURIO_E2E_PART``) and
 the backend unit suite (``conftest.py``, ``CURIO_UNIT_PART``) are cut into
-``k/n`` parts that run on separate ubuntu-latest jobs. A group -- whatever must
+``k/n`` parts that run on separate CPU runner jobs. A group -- whatever must
 stay together on one runner, a test file at the least -- goes to exactly one
 part, longest first onto the least-loaded part, priced by a recorded durations
 file. A group missing from that file is priced at a default, so a stale file

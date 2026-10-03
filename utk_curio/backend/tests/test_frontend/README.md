@@ -44,15 +44,19 @@ on CI -- see *Screenshot baselines*.
 
 ### Where CI runs each test
 
-CI splits the suite between the self-hosted `utk` runner, the only one with
-hardware WebGPU, and a matrix of `ubuntu-latest` runners
-([`runner_split.py`](runner_split.py)). A test runs on `utk` when its browser
-runs WebGPU: a `test_workflows.py` case whose dataflow has an Autark node, a
+CI splits the suite between a self-hosted GPU runner, the only kind with
+hardware WebGPU, and a matrix of CPU runners
+([`runner_split.py`](runner_split.py)). The run's `pick-runners` job chooses
+each job's runner: the self-hosted arcade runners (`[self-hosted, cpu]`) while
+they have room and GitHub-hosted `ubuntu-latest` after that, and for the GPU
+share `arcade-gpu` when it is idle and `utk-gpu` otherwise. The GPU share is
+still called `utk`, after the first GPU runner. A test runs on `utk` when its
+browser runs WebGPU: a `test_workflows.py` case whose dataflow has an Autark node, a
 walkthrough scene whose example or script drives Autark or the GPU, and any
 other module whose source mentions Autark or WebGPU. Such tests carry the
 `webgpu` marker. A test that needs the sibling backends of `--parallel` is
-marked `needs_parallel` and runs on `utk` too. Everything else runs on
-`ubuntu-latest`. Two variables select a share, and a run with neither runs
+marked `needs_parallel` and runs on `utk` too. Everything else runs on the
+CPU runners. Two variables select a share, and a run with neither runs
 everything:
 
 ```bash
@@ -260,8 +264,8 @@ gh workflow run docker-compose.yml --ref <branch> -f remint=true
 # frames a fix changes by only a few words: add -f remint_force='<name part>,<name part>'
 ```
 
-That run is the e2e suite alone, under `--remint-baselines`, on `utk` and the
-`ubuntu-latest` parts alike, each re-minting the baselines it compares: each
+That run is the e2e suite alone, under `--remint-baselines`, on the GPU share
+and the CPU parts alike, each re-minting the baselines it compares: each
 capture is compared with its committed baseline, and when its screen changed
 the capture is written over the baseline; a missing baseline is minted. Then:
 

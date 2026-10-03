@@ -515,7 +515,7 @@ def unit_group_of(item) -> str:
 def pytest_collection_modifyitems(config, items):
     """``CURIO_UNIT_PART=k/n`` keeps one balanced part of the backend suite.
 
-    CI runs the backend unit suite as parts on separate ubuntu-latest jobs, one
+    CI runs the backend unit suite as parts on separate CPU runner jobs, one
     test file never split across two of them (tests/parts.py). Unset, as in any
     local run, everything runs.
     """

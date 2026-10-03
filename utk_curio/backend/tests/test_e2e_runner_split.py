@@ -1,8 +1,8 @@
-"""The e2e suite splits between the utk GPU runner and ubuntu-latest (runner_split).
+"""The e2e suite splits between the utk GPU runner and the CPU runners (runner_split).
 
 Two things must hold for the split to be safe. The WebGPU tests land on utk,
 the only runner with hardware WebGPU. And no test is lost: every collected test
-runs on exactly one runner, and within ubuntu-latest on exactly one shard. The
+runs on exactly one runner, and within the CPU runners on exactly one shard. The
 last class checks that on the real suite, through pytest's own collection.
 """
 
