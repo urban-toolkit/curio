@@ -404,8 +404,8 @@ def run_through_node(
             payload["collections"] = dict(collections)
         if media_dir:
             payload["media_dir"] = media_dir
-        if is_py and "curio_model" in seeded:
-            # The Model Catalog folders the node runs, as /processPythonCode
+        if is_py and "curio_load_model" in seeded:
+            # The Model Catalog folders the node loads, as /processPythonCode
             # resolves them, for the request's account.
             from utk_curio.backend.app.model_catalog.service import resolve_exec_models
 

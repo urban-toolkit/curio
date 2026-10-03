@@ -495,7 +495,7 @@ def _catalog_dataset_paths(code: str) -> dict[str, str]:
 
 
 def _catalog_resolution(code: str, username: str | None = None) -> dict:
-    """``{"paths", "collections", "mediaDir"}`` for *code*, as the backend
+    """``{"paths", "formats", "collections", "mediaDir", "models"}`` for *code*, as the backend
     resolves them for ``/processPythonCode``, as *username* when given; see
     ``_catalog_dataset_paths``.
 
@@ -530,12 +530,13 @@ def _catalog_resolution(code: str, username: str | None = None) -> dict:
     }
     missing = sorted(referenced - set(resolved))
     assert not missing, (
-        f"curio_dataset_path() references {missing}, which the backend's "
+        f"curio_load_data() / curio_data_path() reference {missing}, which the backend's "
         f"catalog could not resolve (it resolved: {sorted(resolved)}). Note the "
         f"call takes the bare manifest id with no '@major'."
     )
     return {
         "paths": resolved,
+        "formats": answer.get("formats") or {},
         "collections": answer.get("collections") or {},
         "mediaDir": answer.get("mediaDir"),
         "models": answer.get("models") or {},
@@ -607,6 +608,7 @@ def execute_workflow_programmatically(
                 # The backend resolves these for the browser path; this runner
                 # bypasses the backend, so it resolves them itself.
                 "dataset_paths": resolution["paths"],
+                "dataset_formats": resolution["formats"],
                 "collections": resolution["collections"],
                 "media_dir": resolution["mediaDir"],
                 "models": resolution["models"],

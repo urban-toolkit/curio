@@ -216,10 +216,15 @@ def install_catalog_helpers(
     curio_load_collection = collection_helpers["curio_load_collection"]
     model_folder = make_model_folder(models, base=model_base)
 
+    known_collections = {str(k) for k in (collections or {})}
+
     def curio_load_data(dataset_id):
         dataset_id = str(dataset_id)
         info = known_formats.get(dataset_id, {})
-        if info.get("format") == "collection":
+        # The backend resolves only the ids that are collections into
+        # *collections*, on every path (Play, a node run, Solve's validation),
+        # so that alone says a collection even where no format travelled.
+        if info.get("format") == "collection" or dataset_id in known_collections:
             return curio_load_collection(dataset_id)
         return read_dataset(data_path(dataset_id), info.get("format"), layer_type=info.get("layerType"))
 

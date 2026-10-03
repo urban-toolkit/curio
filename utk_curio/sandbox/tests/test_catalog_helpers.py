@@ -90,6 +90,15 @@ class TestLoadData:
         )["curio_load_data"]("c")
         assert frame["path"].iloc[0] == "/srv/media/a.jpg"
 
+    def test_a_collection_is_its_index_even_without_a_declared_format(self, tmp_path):
+        """Solve's validation sends no formats; the collections map says it."""
+        index = tmp_path / "index.parquet"
+        pd.DataFrame({
+            "file_id": ["f1"], "relpath": ["a.jpg"], "ext": ["jpg"], "kind": ["image"], "name": ["a.jpg"],
+        }).to_parquet(index)
+        frame = _helpers({"c": index}, collections={"c": {"root": "/srv/media"}})["curio_load_data"]("c")
+        assert frame["path"].iloc[0] == "/srv/media/a.jpg"
+
     def test_without_a_declared_format_the_extension_decides(self, tmp_path):
         path = tmp_path / "t.csv"
         path.write_text("a\n3\n", encoding="utf-8")

@@ -409,13 +409,14 @@ from utk_curio.backend.app.datasets.domain.code_refs import (  # noqa: E402
 )
 
 
-def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
+def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None, formats: dict | None = None) -> dict:
     """Resolve the dataset ids referenced by *code* to absolute file paths.
 
     Best-effort and fail-open: an empty mapping never blocks execution - the
-    sandbox's injected ``curio_dataset_path`` raises a clear per-id error for
-    anything missing. Only ids appearing as literal calls are found; a
-    dynamically built id simply won't be in the mapping.
+    sandbox's injected ``curio_load_data`` / ``curio_data_path`` raise a clear
+    per-id error for anything missing. Only ids appearing as literal calls are
+    found; a dynamically built id simply won't be in the mapping. *formats*, when
+    given, is filled with how ``curio_load_data`` reads each resolved id.
     """
     ids = dataset_ids_in_code(code, limit=MAX_EXEC_DATASET_IDS)
     if not ids:
@@ -424,7 +425,9 @@ def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None) -> dict:
         from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
         service = DatasetCatalogService(getattr(g, "user", None))
-        return service.resolve_execution_paths(ids, dataflow_id=dataflow_id)
+        if formats is None:
+            return service.resolve_execution_paths(ids, dataflow_id=dataflow_id)
+        return service.resolve_execution_paths(ids, dataflow_id=dataflow_id, formats=formats)
     except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
         print(f"[processPythonCode] dataset path resolution failed: {e}", flush=True)
         return {}
@@ -504,8 +507,9 @@ def process_python_code():
         save_output_dataset = save_output_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
 
     session_id = get_current_token()
+    dataset_formats: dict = {}
     dataset_paths = _resolve_exec_dataset_paths(
-        code, request.json.get("dataflowId") or None,
+        code, request.json.get("dataflowId") or None, dataset_formats,
     )
     # Under isolation the sandbox gives each user a persistent work directory,
     # so a node's relative reads and writes land somewhere that belongs to
@@ -532,6 +536,7 @@ def process_python_code():
                 "session_id": session_id,
                 "save_dataset": bool(save_output_dataset),
                 "dataset_paths": dataset_paths,
+                "dataset_formats": dataset_formats,
                 "user_key": exec_user_key,
                 "collections": collections,
                 "media_dir": media_dir,

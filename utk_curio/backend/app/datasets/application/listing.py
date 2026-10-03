@@ -492,13 +492,19 @@ class CatalogListing:
         return None
 
     def resolve_execution_paths(
-        self, dataset_ids: list[str], *, dataflow_id: str | None = None
+        self,
+        dataset_ids: list[str],
+        *,
+        dataflow_id: str | None = None,
+        formats: dict[str, dict[str, str]] | None = None,
     ) -> dict[str, str]:
         """Resolve dataset ids to absolute data-file paths for code execution.
 
-        Powers the ``curio_dataset_path("<id>")`` calls in generated loader
-        nodes: ``/processPythonCode`` scans the code for id literals, resolves
-        them here, and forwards the mapping to the sandbox. One catalog listing
+        Powers the ``curio_load_data("<id>")`` and ``curio_data_path("<id>")``
+        calls in generated loader nodes: ``/processPythonCode`` scans the code
+        for id literals, resolves them here, and forwards the mapping to the
+        sandbox. When *formats* is given it is filled, in the same pass, with
+        how the sandbox reads each resolved id (``execution_format``). One catalog listing
         pass serves every id, and each path goes through the same
         containment-guarded ``_resolve_item_path`` used by preview/download, so
         the mapping can only ever contain paths the authenticated user may
@@ -513,8 +519,10 @@ class CatalogListing:
         """
         if not dataset_ids:
             return {}
+        from utk_curio.backend.app.datasets.domain.catalog_item import execution_format
+
         resolved: dict[str, str] = {}
-        pending = self._resolve_execution_paths_from_index(dataset_ids, resolved)
+        pending = self._resolve_execution_paths_from_index(dataset_ids, resolved, formats)
         if not pending:
             return resolved
 
@@ -534,10 +542,15 @@ class CatalogListing:
                 continue
             if path and Path(path).is_file():
                 resolved[dataset_id] = path
+                if formats is not None:
+                    formats[dataset_id] = execution_format(item)
         return resolved
 
     def _resolve_execution_paths_from_index(
-        self, dataset_ids: list[str], resolved: dict[str, str]
+        self,
+        dataset_ids: list[str],
+        resolved: dict[str, str],
+        formats: dict[str, dict[str, str]] | None = None,
     ) -> list[str]:
         """Fill *resolved* from the dataset index; return the ids still pending.
 
@@ -580,6 +593,14 @@ class CatalogListing:
             contained = self._paths._contained_path(candidate.as_posix())
             if contained:
                 resolved[dataset_id] = contained
+                if formats is not None:
+                    from utk_curio.backend.app.datasets.domain.catalog_item import execution_format
+
+                    formats[dataset_id] = execution_format({
+                        "format": row.format,
+                        "layerName": row.layer_name,
+                        "discoverySource": bool(row.discovery_source_json),
+                    })
             # A path outside the allowed roots is refused outright (logged by
             # _contained_path); it must not fall through to another resolver.
         return pending
