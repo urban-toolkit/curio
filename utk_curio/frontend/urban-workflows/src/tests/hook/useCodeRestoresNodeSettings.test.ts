@@ -34,7 +34,7 @@ function generateCodeNodeSource(): string {
     return USE_CODE.slice(start, end);
 }
 
-const RESTORED_KEYS = ["spatialJoin", "simpleVis", "packageTemplateLabel", "packageTemplateConfig", "dataPool"];
+const RESTORED_KEYS = ["spatialJoin", "simpleVis", "packageTemplateLabel", "packageTemplateConfig", "dataPool", "widgets"];
 
 describe("per-node settings survive a load", () => {
     test.each(RESTORED_KEYS)(
@@ -70,5 +70,6 @@ describe("per-node settings survive a load", () => {
         expect(typeBlock).toMatch(/packageTemplateLabel\?: string;/);
         expect(typeBlock).toMatch(/packageTemplateConfig\?: Partial<CanvasTemplateConfig>;/);
         expect(typeBlock).toMatch(/dataPool\?: \{ insideChart\?: string; betweenCharts\?: string \};/);
+        expect(typeBlock).toMatch(/widgets\?: WidgetDef\[\];/);
     });
 });
