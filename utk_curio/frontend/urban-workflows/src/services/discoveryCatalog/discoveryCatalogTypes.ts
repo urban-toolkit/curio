@@ -382,6 +382,9 @@ export interface DiscoveryResource {
   landingUrl: string | null;
   sizeHint: number | null;
   acquirable: boolean;
+  /** Why the row cannot be added or downloaded, in the words its add would
+   *  fail with; null when it can. */
+  unavailableReason?: string | null;
   /** Set when this account already downloaded this resource, so the row links
    *  to the dataset instead of offering a second copy. */
   alreadyHeldDatasetId: string | null;

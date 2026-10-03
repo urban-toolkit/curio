@@ -29,6 +29,7 @@ from utk_curio.backend.app.discovery.application import index_collection
 from utk_curio.backend.app.discovery.application import scan as scanning
 from utk_curio.backend.app.discovery.domain.errors import (
     CapabilityUnsupported,
+    DiscoveryError,
     DownloadTooLarge,
     ResourceNotFound,
 )
@@ -42,6 +43,12 @@ MAX_LOCAL_FILE_BYTES = 4 * 1024 * 1024 * 1024
 
 #: GeoPackage and PBF conversion reads the whole file.
 MAX_CONVERTED_FILE_BYTES = 512 * 1024 * 1024
+
+#: Formats converted on the way in, bounded by ``MAX_CONVERTED_FILE_BYTES``.
+CONVERTED_FORMATS = ("gpkg", "pbf")
+
+#: A shapefile is not read without these parts beside it.
+REQUIRED_SHAPEFILE_PARTS = (".dbf", ".shx")
 
 CHUNK_BYTES = 1024 * 1024
 
@@ -78,6 +85,74 @@ def _held_fingerprint(held: dict[str, Any]) -> str | None:
 
 def _read_with_options(spec) -> bool:
     return spec.format == "csv" and any(key in spec.options for key in CSV_READ_OPTIONS)
+
+
+def _combined(spec, files) -> bool:
+    """Whether a table's *files* are added as one combined table."""
+    return len(files) > 1 or _read_with_options(spec)
+
+
+def _file_bound(manifest: DiscoverySourceManifest) -> int:
+    """The most bytes one file of *manifest* is copied up to."""
+    if manifest.provider.type == "folder":
+        return MAX_LOCAL_FILE_BYTES
+    return min(manifest.capabilities.max_download_bytes, MAX_DISCOVERY_DOWNLOAD_BYTES)
+
+
+def _one_file_bound(manifest: DiscoverySourceManifest, fmt: str | None) -> int:
+    """The bound on a table added as one file, lower for one converted on the way in."""
+    bound = _file_bound(manifest)
+    return min(bound, MAX_CONVERTED_FILE_BYTES) if fmt in CONVERTED_FORMATS else bound
+
+
+def check_addable(manifest: DiscoverySourceManifest, spec, files) -> None:
+    """Refuse an add of *files* of *spec* that what the scan knows of them
+    already refuses: a file or a shapefile part over its limit, a shapefile
+    without its parts, more files or bytes than one table combines, or files
+    that cannot be combined.
+
+    The add checks this before it reads a byte, and a listing checks each row
+    it shows, so a row that cannot be added says why in the words its add
+    fails with.
+    """
+    if spec.is_collection or not files:
+        return
+    if not _combined(spec, files):
+        _check_copy(files[0], spec.format, _one_file_bound(manifest, spec.format))
+        return
+    local = manifest.provider.type == "folder"
+    combine_tables.check_bounds(files, local=local)
+    if not local:
+        # A bucket's files are copied here one at a time to be combined.
+        bound = _file_bound(manifest)
+        for found in files:
+            _check_copy(found, spec.format, bound)
+    combine_tables.check_format(spec)
+
+
+def add_refusal(manifest: DiscoverySourceManifest, spec, files) -> str | None:
+    """Why an add of *files* of *spec* would be refused, or None when it would not."""
+    try:
+        check_addable(manifest, spec, files)
+    except DiscoveryError as exc:
+        return str(exc)
+    return None
+
+
+def _check_copy(found, fmt: str | None, bound: int) -> None:
+    """Refuse a file whose copy, or whose shapefile parts' copies, *bound* stops."""
+    if found.size > bound:
+        raise DownloadTooLarge(f"{found.relpath} is {found.size:,} bytes; the limit here is {bound:,}")
+    if fmt != "shp":
+        return
+    parts = {part.relpath[-4:].lower(): part for part in found.parts}
+    for suffix in SHAPEFILE_PARTS:
+        part = parts.get(suffix)
+        if part is None:
+            if suffix in REQUIRED_SHAPEFILE_PARTS:
+                raise ResourceNotFound(f"{found.relpath} needs its {suffix} beside it")
+        elif part.size > bound:
+            raise DownloadTooLarge(f"{part.relpath} is {part.size:,} bytes; the limit here is {bound:,}")
 
 
 class StorageAcquire:
@@ -148,13 +223,14 @@ class StorageAcquire:
         if held is not None and _held_fingerprint(held) == fingerprint:
             return {"dataset": held, "alreadyPresent": True, "unchanged": True}
 
+        check_addable(manifest, spec, files)
         if spec.is_collection:
             dataset = self._add_collection(
                 manifest, provider, spec, selection, files, resource_id=resource_id,
                 title=title or name, items=items, stage=stage, cancelled=cancelled,
             )
             return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
-        if len(files) > 1 or _read_with_options(spec):
+        if _combined(spec, files):
             dataset = self._add_combined(
                 manifest, provider, spec, selection, files, resource_id=resource_id,
                 title=title or name, items=items, stage=stage, cancelled=cancelled,
@@ -240,8 +316,6 @@ class StorageAcquire:
         self, manifest, provider, spec, selection, files, *, resource_id, title, items, stage,
         cancelled, fingerprint,
     ) -> dict[str, Any]:
-        local = manifest.provider.type == "folder"
-        combine_tables.check_bounds(files, local=local)
         if stage:
             stage(f"Combining {len(files):,} files…")
         with tempfile.TemporaryDirectory(dir=self._tmp_dir()) as tmp:
@@ -299,11 +373,11 @@ class StorageAcquire:
                 folder = into / f"part-{index:06d}"
                 folder.mkdir()
                 local, _sha = self._stage_shapefile(
-                    provider, found, folder, self._bound(manifest), None, cancelled
+                    provider, found, folder, _file_bound(manifest), None, cancelled
                 )
             else:
                 local = into / f"part-{index:06d}{Path(found.relpath).suffix.lower()}"
-                self._copy(provider, found.relpath, local, self._bound(manifest), found.size, None, cancelled)
+                self._copy(provider, found.relpath, local, _file_bound(manifest), found.size, None, cancelled)
         if spec.format in ("csv", "json", "geojson") and _first_invalid_utf8(local) is not None:
             target = into / f"part-{index:06d}-utf8{Path(found.relpath).suffix.lower()}"
             try:
@@ -314,11 +388,6 @@ class StorageAcquire:
         return Path(local)
 
     # ── one table file ─────────────────────────────────────────────────────
-
-    def _bound(self, manifest: DiscoverySourceManifest) -> int:
-        if manifest.provider.type == "folder":
-            return MAX_LOCAL_FILE_BYTES
-        return min(manifest.capabilities.max_download_bytes, MAX_DISCOVERY_DOWNLOAD_BYTES)
 
     def _add_file(
         self,
@@ -333,13 +402,9 @@ class StorageAcquire:
         progress,
         cancelled,
     ) -> dict[str, Any]:
-        bound = self._bound(manifest)
-        if fmt in ("gpkg", "pbf"):
-            bound = min(bound, MAX_CONVERTED_FILE_BYTES)
-        if found.size > bound:
-            raise DownloadTooLarge(
-                f"{found.relpath} is {found.size:,} bytes; the limit here is {bound:,}"
-            )
+        # check_addable has refused a file already over this; the copy still
+        # stops at it, for a file that grew since the scan.
+        bound = _one_file_bound(manifest, fmt)
         filename = _filename(found.relpath)
         with tempfile.TemporaryDirectory(dir=self._tmp_dir()) as tmp:
             work = Path(tmp)
@@ -372,6 +437,7 @@ class StorageAcquire:
         The parts are the ones the scan found beside it, in whatever case the
         source names them (``roads.DBF`` beside ``roads.SHP``), and are staged
         in lower case beside ``data.shp``, where the reader looks for them.
+        A shapefile without the parts it needs was refused by check_addable.
         """
         folder = work / "shapefile"
         folder.mkdir()
@@ -383,8 +449,6 @@ class StorageAcquire:
         for suffix in SHAPEFILE_PARTS:
             part = parts.get(suffix)
             if part is None:
-                if suffix in (".dbf", ".shx"):
-                    raise ResourceNotFound(f"{found.relpath} needs its {suffix} beside it")
                 continue
             part_sha = self._copy(provider, part.relpath, folder / f"data{suffix}", bound, part.size, None, cancelled)
             digest.update(f"{suffix} {part_sha}\n".encode())

@@ -46,9 +46,10 @@ class TestScopedSearch:
         assert set(row) == {
             "sourceId", "sourceName", "resourceId", "name", "description",
             "publisher", "formats", "updatedAt", "landingUrl", "sizeHint",
-            "acquirable", "alreadyHeldDatasetId", "heldFormats", "parameters", "kind",
-            "fileCount", "fieldValues", "samples", "alreadyHeldModelId",
+            "acquirable", "unavailableReason", "alreadyHeldDatasetId", "heldFormats",
+            "parameters", "kind", "fileCount", "fieldValues", "samples", "alreadyHeldModelId",
         }
+        assert row["unavailableReason"] is None
 
     def test_a_source_that_cannot_search_says_so(self, client, auth, live):
         res = client.get(
