@@ -541,10 +541,15 @@ class TestArchivesAreUnpacked:
         assert sorted(group["groupLayerIds"]) == sorted(i["id"] for i in layers.values())
 
     def test_a_gtfs_feed_in_one_top_folder_is_found(self, client, auth, live):
-        """Some feeds are zipped with their folder; macOS litter is skipped."""
-        job = fetch(client, auth, "feed.zip")
+        """Some feeds are zipped with their folder; macOS litter is skipped.
+
+        Titled as the Direct URL page titles a pasted link, by its last
+        segment: the group is named without the .zip."""
+        job = fetch(client, auth, "feed.zip", title="feed.zip")
         assert job["status"] == "completed", job
-        assert set(gtfs_layers(client, auth)) == {"agency", "routes", "stops"}
+        layers = gtfs_layers(client, auth)
+        assert set(layers) == {"agency", "routes", "stops"}
+        assert layers["stops"]["title"] == "feed (stops)"
 
 
 class TestArchivesThatAreRefused:

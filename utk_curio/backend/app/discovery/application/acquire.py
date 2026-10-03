@@ -232,7 +232,10 @@ class DiscoveryAcquire:
                     stage("Unpacking…")
                 work = Path(tempfile.mkdtemp(prefix="unpack", dir=tmp_dir))
                 unpacked = archives.unpack(kind, tmp_path, name=inner_name, work=work, check=check)
+                # Named after the archive, less its .zip or .gz: the page names
+                # a pasted link's download after the link's last segment.
                 default_title = _without_archive_suffix(target.filename_hint or "") or None
+                title = _without_archive_suffix(title.strip()) if title else title
                 if isinstance(unpacked, archives.GtfsFeed):
                     _offers(allowed, "parquet", "a GTFS feed")
                     if stage is not None:

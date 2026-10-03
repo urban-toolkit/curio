@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Callable
 
 from utk_curio.backend.app.common import safe_archive
+from utk_curio.backend.app.discovery.application.storage_acquire import MAX_LOCAL_FILE_BYTES
 from utk_curio.backend.app.discovery.domain import formats
 from utk_curio.backend.app.discovery.domain.errors import UnsupportedFormatError
 from utk_curio.backend.app.discovery.providers.storage_base import SHAPEFILE_PARTS
@@ -36,9 +37,9 @@ from utk_curio.backend.app.discovery.providers.storage_base import SHAPEFILE_PAR
 #: zipped shapefile under ten.
 MAX_ARCHIVE_MEMBERS = 1_000
 
-#: What one archive may unpack to, in all: the limit a file read from a folder
-#: source has (``storage_acquire.MAX_LOCAL_FILE_BYTES``).
-MAX_UNPACKED_BYTES = 4 * 1024 * 1024 * 1024
+#: What one archive may unpack to, per member and in all: 4 GiB, the limit a
+#: file read from a folder source has.
+MAX_UNPACKED_BYTES = MAX_LOCAL_FILE_BYTES
 
 #: A member that writes more than this many times its compressed size.
 MAX_COMPRESSION_RATIO = 200
