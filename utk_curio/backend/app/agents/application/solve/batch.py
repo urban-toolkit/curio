@@ -1286,6 +1286,7 @@ class SolveBatch:
             # check and by the next node's input schema.
             result_summary_fn=self.schema_of_artifact,
             exec_user_key=self.user_key,
+            acting_user=self.acting_user,
             secrets_fn=agents_grounding._exec_secrets_resolver(self.user_key),
             prior_outputs_fn=lambda: {
                 nid: o["output"] for nid, o in self.wave_outputs.items() if o.get("output")
