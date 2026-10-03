@@ -77,7 +77,7 @@ def install_refusal(user, *, noun: str = "packages") -> str | None:
     There used to be a third: nobody may on a hosted instance that cannot scope
     installs. That instance no longer exists. ``--deploy`` now requires isolated
     node execution and refuses to start without it
-    (``main.py::_refuse_unisolated_deploy``), so a signed-in user's install
+    (``cli/environment.py::_refuse_unisolated_deploy``), so a signed-in user's install
     always lands in their own overlay. The rule had an escape hatch
     (``--allow-shared-installs``) which went with it: a configuration nobody can
     boot needs no flag to permit it.

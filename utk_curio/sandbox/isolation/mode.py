@@ -171,7 +171,7 @@ def resolve_mode(requested=None, *, hosted=False, caps=None):
     # real workload through it with an unprivileged execution account.
     #
     # So the decision moved up rather than changing here. The launcher defaults
-    # --deploy to FORK when the host can deliver it (utk_curio/main.py), which
+    # --deploy to FORK when the host can deliver it (utk_curio/cli/environment.py), which
     # is the "isolate wherever it is possible" behaviour, scoped to the
     # instances that have more than one user to separate. AUTO stays OFF so
     # that a local launch, and anything that never went through the launcher,

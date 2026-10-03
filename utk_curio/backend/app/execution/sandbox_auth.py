@@ -1,6 +1,6 @@
 """The sandbox shared secret, in one place.
 
-``main.py::set_environment_variables`` mints ``CURIO_SANDBOX_TOKEN`` per launch
+``cli/environment.py::set_environment_variables`` mints ``CURIO_SANDBOX_TOKEN`` per launch
 and both processes inherit it; the sandbox's guarded routes (``/exec``,
 ``/execJs``, ``/get``, ``/install`` — see ``utk_curio/sandbox/app/auth.py``)
 refuse any caller that does not present it. Every backend→sandbox call must

@@ -298,7 +298,7 @@ _WRITER_BUDGET_DIVISOR = 2
 
 #: Below this DuckDB has no workable arena, so a budget that would derive less
 #: gets this instead. The operator-facing guard is the floor on
-#: ``--exec-memory-mb`` in ``main.py``; this one only catches a raw
+#: ``--exec-memory-mb`` in ``cli/environment.py``; this one only catches a raw
 #: ``CURIO_EXEC_MEMORY_MB`` set past it.
 _WRITER_MEMORY_FLOOR_MB = 32
 

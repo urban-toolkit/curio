@@ -126,7 +126,7 @@ def example_dep_package_ids() -> tuple[str, ...]:
     without that declaration turning into a multi-gigabyte pip run on every
     ``--with-examples`` / ``--deploy`` boot. Shared source of truth: the
     launcher's catalog dep walk
-    (``utk_curio/main.py::install_manifest_dependencies``) calls this too.
+    (``utk_curio/cli/dependencies.py::install_manifest_dependencies``) calls this too.
     """
     from utk_curio.backend.app.projects.shipped import shipped_dataflows
 
