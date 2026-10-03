@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/08-autark-spatial-join-regression.json",
-    "sha256": "41c93244871616e0b12664d6789aad592e21ac36e4335d04f8001f52a27b6757",
+    "sha256": "48de89417369b740515bc492fc0ca324d5156222e0e0d3e2afef7a2e7b360020",
     "walkthrough": "docs/examples/08-autark-spatial-join-regression.md"
   },
   "prompt": "I want the per-road warming trend for Niteroi between 2001 and 2024. Two files in this checkout hold the inputs: the OSM extract at docs/examples/data/niteroi.osm.pbf and a 24-band land surface temperature raster at docs/examples/data/niteroi_lst_verao_2001_2024.tif. Load the road network and its context layers from the PBF with Autark, reference the raster in a loading step, sample the raster bands onto the roads with a JavaScript computation using DuckDB, then fit an ordinary least squares regression per road on the GPU. Show a 3D map of the roads coloured by their trend and a scatter plot, linked through a shared fan-out so a selection in one highlights the other.",
@@ -80,7 +80,8 @@
       {
         "from": "visualization1",
         "to": "merge1",
-        "kind": "data"
+        "kind": "data",
+        "slot": 0
       },
       {
         "from": "visualization4",
@@ -90,7 +91,8 @@
       {
         "from": "loader1",
         "to": "merge1",
-        "kind": "data"
+        "kind": "data",
+        "slot": 1
       },
       {
         "from": "pool1",

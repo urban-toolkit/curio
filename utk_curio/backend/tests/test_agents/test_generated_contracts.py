@@ -371,17 +371,29 @@ class TestTheTrillBlock:
     def test_the_preamble_carries_it(self):
         assert contracts.render_trill_block(_trill()) in contracts.render_default_preamble()
 
-    def test_the_preambles_example_dataflow_is_valid_trill(self):
-        # The example teaches the format, so it has to satisfy the block the
-        # preamble shows just above it.
+    def test_the_worked_examples_are_valid_trill(self):
+        # The worked examples teach the format, so each has to satisfy the
+        # block the preamble shows, and name a merge socket the way the
+        # preamble says to.
         import json
+        import re
 
         from jsonschema import Draft202012Validator
 
-        text = contracts.render_default_preamble()
-        start = text.index("An example of a dataflow:\n\n") + len("An example of a dataflow:\n\n")
-        example = json.loads(text[start:text.index("\nAttention:", start)])
+        from utk_curio.backend.app.agents.application.turns import examples
+
         block = json.loads(contracts.render_trill_block(_trill()))
-        assert [e.message for e in Draft202012Validator(block).iter_errors(example)] == []
-        merge_edges = [e for e in example["dataflow"]["edges"] if e["target"] in ("node3", "node6")]
-        assert merge_edges and all(e["targetHandle"].startswith("in_") for e in merge_edges)
+        used = [entry for entry in examples.read_index() if entry.section == examples.USED]
+        assert used, "the index lists no Used dataflow; this test would be vacuous"
+        merge_edges = []
+        for entry in used:
+            example = json.loads(entry.path.read_text(encoding="utf-8"))
+            assert [e.message for e in Draft202012Validator(block).iter_errors(example)] == [], entry.target
+            merges = {
+                n["id"] for n in example["dataflow"]["nodes"]
+                if re.sub(r"@\d+$", "", n["type"]) == "curio.builtin/merge-flow"
+            }
+            edges = [e for e in example["dataflow"]["edges"] if e["target"] in merges]
+            assert all(str(e.get("targetHandle")).startswith("in_") for e in edges), entry.target
+            merge_edges += edges
+        assert merge_edges

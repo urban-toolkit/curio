@@ -56,9 +56,6 @@ USED = [entry for entry in INDEX if entry.section == examples.USED]
 #: Words a prompt uses that look like an id but are not one, each with the
 #: reason. An entry no prompt uses any more fails ``test_every_exception_is_still_used``.
 NOT_IDS = {
-    "dataset.height": "a rasterio dataset's attribute, in the code of the preamble's example",
-    "dataset.width": "a rasterio dataset's attribute, in the code of the preamble's example",
-    "dataset.transform": "a rasterio dataset's attribute, in the code of the preamble's example",
     "curio.notes@1": "the notes package the Researcher writes into a user's store, "
                      "shown as the shape of a versioned dirName",
 }
@@ -268,7 +265,9 @@ def test_the_checks_find_what_the_prompts_name():
     corpus = "\n".join(_text(name) for name in PROMPT_FILES)
     assert "curio.builtin/merge-flow" in _TEMPLATE_RE.findall(corpus)
     assert "curio_load_data" in _HELPER_RE.findall(corpus)
-    assert DATASET_PATH_CALL_RE.findall(corpus)
+    # The dataset calls a run is shown live in the worked examples now, not
+    # in a prompt, so this scan must find them there.
+    assert DATASET_PATH_CALL_RE.findall("\n".join(_node_text(entry) for entry in USED))
     preamble_specs = [s for v in _json_values(_text(builtin.PREAMBLE_FILE)) for s in _vega_specs(v)]
     assert len(preamble_specs) >= 3
     # The Trill block and the Vega-Lite examples are fenced as json.

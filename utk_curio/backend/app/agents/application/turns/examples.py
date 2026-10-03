@@ -66,8 +66,9 @@ STOP_WORDS = frozenset({
 #: What opens the block.
 HEADING = (
     "Worked examples: shipped Curio dataflows close to this task, chosen for this "
-    "run. Learn from how their nodes, code and specs fit together; the datasets "
-    "and node types this task uses come from this project, not from these examples."
+    "run. Learn from how their nodes, code and specs fit together. The datasets "
+    "and node types this task uses come from this project, not from these "
+    "examples: a dataset is loaded by its Data Catalog id, never a guessed filename."
 )
 
 # An evaluation marks the project it builds with ``dataflow.evaluation``
