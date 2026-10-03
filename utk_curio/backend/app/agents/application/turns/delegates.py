@@ -548,32 +548,24 @@ _BUILD_REQUEST_CONTRACT: dict = {
         "{title, content, color} into nodes[] VERBATIM — never invent "
         "placeholder content, never leave content empty when the caller "
         "supplied findings (the runtime enforces this reconciliation)",
-        # memo dev/91: the backend authoring contract, stated where the
-        # delegate can see it (the A8 lesson — nobody invents a schema they
-        # were shown).
-        "server-side compute (dev/91): declare manifest.backend "
-        "{entry: 'backend/<file>.py', handlers: [{name, timeoutClass}]} plus "
-        "the 'server-code' permission in manifest.permissions ('server-network' "
-        "too if and only if the code reaches the network); the entry exposes "
-        "def handle(payload) (or a HANDLERS dict {name: callable}); a node run "
-        "delivers payload {'content': <editor text>, 'input': <upstream JSON "
-        "or null>} and the returned value must be JSON-serializable",
-        "import declared python dependencies INSIDE the handler function "
-        "(lazily), never at module level — they install at Apply into the "
-        "package's isolated overlay and do not exist when the build's probe "
-        "loads the entry (a module-level import of a declared dependency "
-        "fails the probe by construction)",
-        "backend code is pure Python + declared python dependencies, executed "
-        "in a per-invocation sandboxed worker with strict limits: NO "
-        "subprocess/multiprocessing/ctypes, NO eval/exec/compile/__import__/"
-        "importlib, NO flask/blueprints/resident servers (the build's policy "
-        "scan blocks these and the probe phase must pass before review); a "
-        "capped persistent dir rides CURIO_PKG_DATA_DIR; no secrets and no "
-        "dataset store exist in the worker — a need beyond this contract "
-        "(resident service, credentials) is a FINDING naming dev/89 "
-        "Follow-up B, never smuggled code",
     ],
 }
+
+
+def _build_request_contract() -> dict:
+    """The build-request contract a delegated Package Builder receives.
+
+    memo dev/91: the backend authoring contract rides it as
+    ``backendContract``, stated where the delegate can see it (the A8 lesson:
+    nobody invents a schema they were shown). Its text is the generated
+    ``llm-prompts/package_contract.md``, the same text the Package Builder's
+    own instruction includes, read on every run like any prompt."""
+    backend = builtin.read_prompt_file(
+        builtin.PACKAGE_CONTRACT_FILE, wanted_by="the build-request contract"
+    )
+    if not backend:
+        return _BUILD_REQUEST_CONTRACT
+    return {**_BUILD_REQUEST_CONTRACT, "backendContract": backend}
 
 
 def _extract_reuse_finding(child_text: str) -> dict | None:
@@ -1294,7 +1286,7 @@ def _enriched_delegate_inputs(
         # contract server-side — the child answers to a schema it can SEE,
         # never a shape it has to invent (the model's own keys always win).
         if "buildRequestContract" not in inputs:
-            inputs = {**inputs, "buildRequestContract": _BUILD_REQUEST_CONTRACT}
+            inputs = {**inputs, "buildRequestContract": _build_request_contract()}
         # dev/94: and the reuse evidence its instruction's first line depends
         # on — "read packages.catalog before authoring" names a tool a
         # delegate does not have.
