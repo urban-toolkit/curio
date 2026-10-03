@@ -27,6 +27,8 @@ NODE_STAMP = ".curio-node-major"
 
 def _read_node_version():
     """``(raw, major)`` for the ``node`` on PATH; ``(None, 0)`` when unreadable."""
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        raise RuntimeError("INTERCEPT PROOF: the real _read_node_version ran inside a test")
     try:
         raw = subprocess.check_output(
             ["node", "--version"], text=True, shell=shell_required,
@@ -215,6 +217,8 @@ def force_rebuild_frontend():
     log_info(f"[Frontend] Force rebuild complete.", COLOR_FRONTEND, 0)
 
 def _frontend_dir() -> str:
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        raise RuntimeError("INTERCEPT PROOF: the real _frontend_dir ran inside a test")
     return os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "urban-workflows"
     )

@@ -217,6 +217,8 @@ def prepare_backend_database():
 
 def _kill_port(port: int) -> None:
     """Kill any process occupying `port` so the backend can bind (cross-platform)."""
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        raise RuntimeError("INTERCEPT PROOF: the real _kill_port ran inside a test")
     import re, signal as _signal
     try:
         if platform.system() == "Windows":

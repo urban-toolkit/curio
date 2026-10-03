@@ -26,6 +26,8 @@ def _discover_exec_user():
     unprivileged launch has nothing to drop to. ``pwd`` is POSIX-only, which is
     also what makes this return None on Windows.
     """
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        raise RuntimeError("INTERCEPT PROOF: the real _discover_exec_user ran inside a test")
     if "CURIO_EXEC_USER" in os.environ:
         return os.environ["CURIO_EXEC_USER"].strip() or None
     if not hasattr(os, "geteuid") or os.geteuid() != 0:
