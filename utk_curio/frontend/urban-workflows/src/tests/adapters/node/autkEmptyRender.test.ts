@@ -4,7 +4,7 @@ jest.mock('../../../providers/FlowProvider', () => ({
   useFlowContext: () => ({ edges: [], nodeExecStatus: {} }),
 }));
 
-import { countedItem, describeAutkRun } from "../../../adapters/node/autkGrammarBehavior";
+import { countedItem, describeAutkRun } from "../../../adapters/node/autkRunDescriptions";
 import { partialRenderNote, renderOutcome } from "../../../utils/renderOutcome";
 
 /**
