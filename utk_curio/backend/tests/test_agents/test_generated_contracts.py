@@ -290,6 +290,23 @@ class TestThePromptFacts:
         with pytest.raises(contracts.PromptTemplateError, match="not_a_column"):
             contracts.render_template("{{image.column:not_a_column}}")
 
+    def test_the_simple_view_paragraph_states_the_image_rule_the_frontend_applies(self):
+        text = contracts.render_default_preamble()
+        columns = contracts.render_template("{{image.columns}}")
+        threshold = contracts.render_template("{{image.threshold}}")
+        extensions = contracts.render_template("{{image.extensions}}")
+        thumbnail = contracts.render_template("{{image.column:thumbnail}}")
+        image_url = contracts.render_template("{{image.column:image_url}}")
+        paragraphs = [p for p in text.split("\n\n") if columns in p]
+        assert len(paragraphs) == 1
+        paragraph = paragraphs[0]
+        assert f"at least {threshold} of its non-empty values are images" in paragraph
+        assert f"({extensions})" in paragraph
+        assert f"{image_url} is left out when {thumbnail} holds images" in paragraph
+        # Every named column takes the same values: Base64 is not one column's.
+        assert "or bare Base64 image bytes" in paragraph
+        assert '"image_content" is raw Base64' not in text
+
 
 class TestTheRenderCauseTable:
     def test_the_cause_names_and_their_order(self):
