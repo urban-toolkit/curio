@@ -445,6 +445,20 @@ def serialize_output(value, scratch_dir, *, slot="out"):
 # Running the node
 # ---------------------------------------------------------------------------
 
+# What a node that reads `arg` with no input delivered fails with: the same
+# text as ``worker.NO_INPUT_MESSAGE``, kept here for the reason
+# ``_code_reads_arg`` below is.
+NO_INPUT_MESSAGE = (
+    "This node received no input but its code references `arg`. "
+    "An upstream node has not run yet, failed, or is not wired "
+    "to this node's input handle. Check the nodes feeding this "
+    "one: fix any that show an error, run them until each shows "
+    "'Done', then run this node again. If the inputs come "
+    "through a Merge Flow node, give it a moment after the last "
+    "upstream finishes so the merged tuple can propagate."
+)
+
+
 def _code_reads_arg(code):
     """Whether the node's code actually *reads* the ``arg`` parameter.
 
@@ -603,11 +617,7 @@ def run_node(request, namespace_factory):
             # node that never reads an input is not refused for merely
             # containing the letters "arg" (#273).
             if argument is None and _code_reads_arg(code):
-                raise RuntimeError(
-                    "This node's code refers to 'arg' but no input was "
-                    "delivered. Check that an upstream node is connected and "
-                    "has been run."
-                )
+                raise RuntimeError(NO_INPUT_MESSAGE)
 
             result = namespace["userCode"](argument)
             output_descriptor = serialize_output(result, scratch_dir)

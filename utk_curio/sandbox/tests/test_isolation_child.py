@@ -166,7 +166,7 @@ class TestFailures(ChildTestCase):
     def test_the_arg_tripwire_fires_when_nothing_is_wired(self):
         result = self.run_code("    return arg['x']\n")
         self.assertFalse(result["ok"])
-        self.assertIn("no input was delivered", result["stderr"])
+        self.assertIn("received no input but its code references `arg`", result["stderr"])
 
     def test_a_system_exit_in_node_code_does_not_escape(self):
         """BaseException, so a bare `except Exception` would miss it."""
