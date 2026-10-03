@@ -151,26 +151,29 @@ def loader_snippet(
         # ``gpd.read_parquet`` first so a geo dataset reloads as a GeoDataFrame
         # — matching the output type/schema of the node that produced it — and
         # fall back to ``pd.read_parquet`` for non-geo tables.
+        code = (
+            f"dataset_path = {expr}\n"
+            "try:\n"
+            "    df = gpd.read_parquet(dataset_path)\n"
+            "except Exception:\n"
+            "    df = pd.read_parquet(dataset_path)\n"
+            "# Restore object columns (dict/list cells) that were JSON-encoded\n"
+            "# on save; the column list lives in a <file>.decode.json sidecar.\n"
+            "_meta_path = dataset_path + \".decode.json\"\n"
+            "if os.path.exists(_meta_path):\n"
+            "    with open(_meta_path) as _meta_file:\n"
+            "        _encoded_cols = json.load(_meta_file).get(\"encoded_object_columns\", [])\n"
+            "    for _col in _encoded_cols:\n"
+            "        if _col in df.columns:\n"
+            "            df[_col] = df[_col].apply(lambda _v: json.loads(_v) if isinstance(_v, str) and _v else _v)"
+        )
+        if layer_type in AUTARK_LAYER_TYPES:
+            code += f"\ndf.metadata = {{\"layerType\": {json.dumps(layer_type)}}}"
         return {
             "language": "python",
             "imports": ["import os", "import json", "import pandas as pd", "import geopandas as gpd"],
             "pathVariable": "dataset_path",
-            "code": (
-                f"dataset_path = {expr}\n"
-                "try:\n"
-                "    df = gpd.read_parquet(dataset_path)\n"
-                "except Exception:\n"
-                "    df = pd.read_parquet(dataset_path)\n"
-                "# Restore object columns (dict/list cells) that were JSON-encoded\n"
-                "# on save; the column list lives in a <file>.decode.json sidecar.\n"
-                "_meta_path = dataset_path + \".decode.json\"\n"
-                "if os.path.exists(_meta_path):\n"
-                "    with open(_meta_path) as _meta_file:\n"
-                "        _encoded_cols = json.load(_meta_file).get(\"encoded_object_columns\", [])\n"
-                "    for _col in _encoded_cols:\n"
-                "        if _col in df.columns:\n"
-                "            df[_col] = df[_col].apply(lambda _v: json.loads(_v) if isinstance(_v, str) and _v else _v)"
-            ),
+            "code": code,
             "returnVariable": "df",
         }
     if fmt == "json":

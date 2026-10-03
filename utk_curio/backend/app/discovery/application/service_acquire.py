@@ -1,13 +1,14 @@
 """Add a service source's resource to the Data Catalog.
 
-A service is told where and what, and answers once. OpenStreetMap is the one
-so far: autk-db's ``loadOsm``, run in Node by ``providers/autark_osm.py``,
-writes one GeoJSON file per Autark layer, one feature per OpenStreetMap way or
-relation, in autk-db's workspace CRS (EPSG:3395). Here each layer is moved to
-WGS84, as GeoJSON requires, with its features and properties as Autark built
-them, its numeric tags written as numbers (``domain/osm_values.py``), and
-installed: one layer as an ordinary dataset, several as one ``osm.x`` layer
-group, the group an uploaded ``.pbf`` forms.
+A service is told where and what, and answers once. For OpenStreetMap,
+autk-db's ``loadOsm``, run in Node by ``providers/autark_osm.py``, writes one
+GeoJSON file per Autark layer, one feature per OpenStreetMap way or relation,
+in autk-db's workspace CRS (EPSG:3395). Here each layer is moved to WGS84, as
+GeoJSON requires, with its features and properties as Autark built them, its
+numeric tags written as numbers (``domain/osm_values.py``), and installed: one
+layer as an ordinary dataset, several as one ``osm.x`` layer group, the group
+an uploaded ``.pbf`` forms. A service whose resource is GeoParquet (Overture)
+writes its table itself, already in WGS84, and the file is moved in as it is.
 """
 
 from __future__ import annotations
@@ -208,6 +209,27 @@ class ServiceAcquire:
             suffixed = group_id is not None or tags is not None
             items = []
             for layer in filled:
+                if spec.dataset_format == "parquet":
+                    # A service that answers GeoParquet (Overture): the file is
+                    # moved in as it is, never read into memory here.
+                    if self._install_path is None:  # pragma: no cover - wired in service.py
+                        raise DiscoveryError("this Curio cannot add a GeoParquet table from a service")
+                    describe = getattr(service, "describe_download", None)
+                    items.append(
+                        self._install_path(
+                            layer.path,
+                            f"{service.type}_{layer.layer}.parquet",
+                            "parquet",
+                            title=f"{prefix} ({layer.layer})" if suffixed else prefix,
+                            discovery_source=provenance,
+                            description=describe(spec, place) if describe else None,
+                            row_count=layer.features,
+                            feature_count=layer.features,
+                            group_id=group_id,
+                            layer_name=layer.layer,
+                        )
+                    )
+                    continue
                 collection = json.loads(layer.path.read_text(encoding="utf-8"))
                 if not in_wgs84:
                     collection = to_wgs84(collection)
