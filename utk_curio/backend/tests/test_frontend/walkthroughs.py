@@ -1411,7 +1411,10 @@ def dashboard_page_renders_pinned_charts(ctx: Ctx) -> None:
          "what is missing and what to do about it, and the canvas survives. "
          "Since #272 the answer is not final either: the panel's Check again "
          "re-probes, because Firefox returns no adapter on the first ask while "
-         "its GPU process starts, and a negative is never cached.",
+         "its GPU process starts, and a negative is never cached. Since #603 a "
+         "run stops at the first node that cannot run: the compute pass "
+         "feeding the map shows the panel, and the map says which node it "
+         "waits on.",
     tests=["src/tests/adapters/node/autkGrammarWebgpuFallback.test.tsx",
            "src/tests/utils/webgpuSupport.test.ts",
            "src/tests/components/errorBoundary.test.tsx"],
@@ -1445,6 +1448,12 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     autark.wait_for(state="visible", timeout=45000)
     autark.scroll_into_view_if_needed()
     ctx.focus(autark, hold=1000)
+    # Running the map runs the compute pass that feeds it first, and that pass
+    # is the first node in the chain that needs WebGPU. A run stops below a
+    # node that failed (#603), so the compute pass is the node that says what
+    # is missing, and the map is not run at all.
+    compute_id = first_node_of_type(AUTARK_EXAMPLE, "autk-grammar", containing='"compute"')
+    compute = page.locator(f'.react-flow__node[data-id="{compute_id}"]')
 
     ctx.say("Run it", "The old failure was a TypeError from inside the shader loader.")
     # The play control is a FontAwesome <svg>, not a named button, and React
@@ -1452,7 +1461,7 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     # helper that already deals with both.
     play_node(page, node_id)
 
-    fallback = autark.locator('[role="alert"]')
+    fallback = compute.locator('[role="alert"]')
     fallback.first.wait_for(state="visible", timeout=45000)
     ctx.focus(fallback.first, hold=1800)
     ctx.say("It says what is missing, and what to do",
@@ -1469,6 +1478,9 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     # A refusal did not wedge the runner (#271): the run-all control still
     # offers a run rather than a cancel, i.e. the guard was released.
     expect(page.get_by_role("button", name="Run all nodes")).to_be_visible()
+
+    # The map was not run, and points back up the chain (#603).
+    expect(autark).to_contain_text("The node feeding this one", timeout=45000)
 
     # Check again while WebGPU is still missing: the panel stays.
     check_again = fallback.first.get_by_role("button", name=re.compile("check", re.I))
@@ -1489,11 +1501,10 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
     ctx.say("WebGPU is back", "Check again re-probes and re-runs the node.")
     check_again.click()
     expect(fallback.first).to_be_hidden(timeout=45000)
-    # The compute pass feeding this map needed WebGPU too and failed without
-    # it, so nothing reached the map: it says so, and names the upstream.
-    expect(autark).to_contain_text("0 rows arrived at this node", timeout=45000)
-    ctx.focus(autark, hold=1200)
-    ctx.say("Its input never came", "The compute pass upstream needed WebGPU as well.")
+    # The compute pass ran this time, so the map below it has rows to draw.
+    wait_for_node_done(page, compute_id, node_type="autk-grammar", timeout_ms=180000)
+    ctx.focus(compute, hold=1200)
+    ctx.say("The compute pass ran", "The map below it was waiting on it.")
     run_all_and_wait(page, timeout_ms=180000)
     wait_for_node_done(page, node_id, node_type="autk-grammar", timeout_ms=180000)
     # The frame below cannot show it (a screenshot on the GPU runner has every
@@ -1517,8 +1528,10 @@ def autark_without_webgpu_says_so(ctx: Ctx) -> None:
          "render, or whose probe hung - held the run, and every later click on "
          "Run All or a node's play silently did nothing until the dataflow was "
          "reopened. The run now always ends, the button shows a run in flight "
-         "and cancels it, and a refused second click says so.",
+         "and cancels it, and a refused second click says so. Since #603 the "
+         "nodes after a failed one are not run, and say which node they wait on.",
     tests=["src/tests/providers/playAllRelease.test.tsx",
+           "src/tests/providers/playAllUpstreamFailed.test.tsx",
            "src/tests/components/toolsMenuRunAll.test.tsx",
            "src/tests/adapters/node/autkGrammarWebgpuFallback.test.tsx"],
     example=AUTARK_EXAMPLE,
@@ -1544,8 +1557,9 @@ def run_all_survives_a_failed_node(ctx: Ctx) -> None:
     ctx.say("Run all nodes", "One of them cannot run here.")
 
     # Hold the run open on purpose. The only node here that leaves the browser
-    # is the Autark DATA node in level 0; every other node needs WebGPU and
-    # refuses in the tick it is triggered. So the window in which the button
+    # is the Autark DATA node in level 0; the compute pass after it needs WebGPU
+    # and refuses in the tick it is triggered, and nothing after that runs. So
+    # the window in which the button
     # reads "Cancel run" is exactly the length of that one request - fine on a
     # quiet machine, and nothing this scene controls on a loaded one. Held, the
     # in-flight state it photographs is a fact rather than a lucky shot.
@@ -1560,8 +1574,13 @@ def run_all_survives_a_failed_node(ctx: Ctx) -> None:
     ctx.capture("run-in-flight", allow_running=True)
     release_node_execution(page)
 
-    # The Autark node refuses, and reports it - which is what releases its level.
-    autark.locator('[role="alert"]').first.wait_for(state="visible", timeout=45000)
+    # The first Autark node that needs WebGPU, the compute pass, refuses and
+    # reports it - which is what releases its level. The nodes after it are not
+    # run (#603): the map says which node it waits on.
+    compute_id = first_node_of_type(AUTARK_EXAMPLE, "autk-grammar", containing='"compute"')
+    compute = page.locator(f'.react-flow__node[data-id="{compute_id}"]')
+    compute.locator('[role="alert"]').first.wait_for(state="visible", timeout=45000)
+    expect(autark).to_contain_text("The node feeding this one", timeout=45000)
 
     # The run ends on its own: the button is Run All again, not a dead control.
     wait_for_run_all_to_end(page, timeout_ms=180000)
@@ -1574,8 +1593,8 @@ def run_all_survives_a_failed_node(ctx: Ctx) -> None:
     #
     # Not by catching that run in flight: nothing in this dataflow can be slow
     # the second time. The data node answers from its own cache, so the second
-    # run makes no request at all, and every other node refuses at the WebGPU
-    # probe. The run can be over before a locator resolves, and clicking
+    # run makes no request at all, the compute pass refuses at the WebGPU probe
+    # and nothing after it runs. The run can be over before a locator resolves, and clicking
     # "Cancel run" then waits out its whole budget for a button that has gone
     # back to saying "Run all nodes" (CI run 35275085327). What is watched
     # instead is the guard's own transitions, which a run that starts and ends
