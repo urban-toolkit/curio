@@ -35,7 +35,7 @@ flowchart LR
 ## Load the collection
 
 ```python
-collection = curio_collection("data.curio.storage-orthos")
+collection = curio_load_collection("data.curio.storage-orthos")
 
 return collection
 ```

@@ -1,5 +1,5 @@
 """The Model Catalog: shipped models read where they are, downloads in a
-person's store, and ``curio_model`` reaching a node."""
+person's store, and ``curio_load_model`` reaching a node."""
 
 from __future__ import annotations
 
@@ -186,14 +186,14 @@ class TestTheRoutes:
 
 class TestANodeReachesIt:
     def test_the_calls_in_code_are_found(self):
-        code = f'm = curio_model("{DDRNET}")\nn = curio_model(\'other.model.x@2\')\ncurio_model("{DDRNET}")'
+        code = f'm = curio_load_model("{DDRNET}")\nn = curio_load_model(\'other.model.x@2\')\ncurio_load_model("{DDRNET}")'
         assert model_ids_in_code(code) == [DDRNET, "other.model.x@2"]
-        assert model_ids_in_code("curio_dataset_path('x.y')") == []
-        assert not MODEL_CALL_RE.search('curio_model("a.b\')')
+        assert model_ids_in_code("curio_data_path('x.y')") == []
+        assert not MODEL_CALL_RE.search('curio_load_model("a.b\')')
 
     def test_the_backend_resolves_them_for_the_account(self, app, shipped, user_and_token):
         user, _ = user_and_token
-        resolved = resolve_exec_models(f'curio_model("{DDRNET}")\ncurio_model("model.example.none")', user)
+        resolved = resolve_exec_models(f'curio_load_model("{DDRNET}")\ncurio_load_model("model.example.none")', user)
         assert resolved == {DDRNET: str((SHIPPED / f"{DDRNET}@1").resolve())}
 
     def test_a_run_sends_them_to_the_sandbox(self, client, auth, shipped, monkeypatch):
@@ -213,7 +213,7 @@ class TestANodeReachesIt:
 
         monkeypatch.setattr(routes, "_sandbox_call", fake_call)
         client.post("/processPythonCode", headers=auth, json={
-            "code": f'model = curio_model("{DDRNET}")\nreturn 1', "nodeType": "COMPUTATION_ANALYSIS",
+            "code": f'model = curio_load_model("{DDRNET}")\nreturn 1', "nodeType": "COMPUTATION_ANALYSIS",
             "input": "",
         })
         assert sent.get("models") == {DDRNET: str((SHIPPED / f"{DDRNET}@1").resolve())}

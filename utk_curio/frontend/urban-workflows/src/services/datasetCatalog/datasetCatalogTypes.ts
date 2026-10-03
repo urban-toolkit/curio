@@ -119,7 +119,7 @@ export interface DatasetDataflowUsageRef {
   /** Consumer nodes within this dataflow (downstream of the dataset). */
   nodes?: Array<{ nodeId: string; nodeType?: string | null }>;
   /** True when this dataflow uses the dataset ONLY through a node's source
-   *  (a literal `curio_dataset_path("<id>")`), with no ref or binding.
+   *  (a literal `curio_data_path("<id>")`), with no ref or binding.
    *
    *  The backend's destructive gate ignores these, so they do not keep an
    *  uploaded file alive on uninstall - but the code stays behind and will
@@ -147,7 +147,7 @@ export interface DatasetLoaderSnippet {
   language: "python";
   imports: string[];
   code: string;
-  /** Null when the code names no path, as a collection's `curio_collection` call does. */
+  /** Null when the code names no path, as a collection's `curio_load_collection` call does. */
   pathVariable: string | null;
   /** Variable name that should be returned from a standalone Data Loading node (e.g. "df"). */
   returnVariable?: string | null;

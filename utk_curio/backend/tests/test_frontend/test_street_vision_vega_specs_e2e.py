@@ -65,7 +65,7 @@ SECOND_BARS_ID = "sv-second-bars"
 # in each.
 POINTS_CODE = """import geopandas as gpd
 
-polys = gpd.read_file(curio_dataset_path("data.utk.chicago-boundary"))
+polys = gpd.read_file(curio_data_path("data.utk.chicago-boundary"))
 pts = polys.representative_point()
 classes = ["road", "sidewalk", "building", "vegetation", "sky", "car"]
 gdf = gpd.GeoDataFrame(
@@ -86,7 +86,7 @@ return gdf
 # Example 10 renames `pri_neigh` to `neighborhood`; the ZIP file calls it `zip`.
 POLYGONS_CODE = """import geopandas as gpd
 
-gdf = gpd.read_file(curio_dataset_path("data.utk.chicago-boundary"))
+gdf = gpd.read_file(curio_data_path("data.utk.chicago-boundary"))
 return gdf.rename(columns={"zip": "neighborhood"})
 """
 

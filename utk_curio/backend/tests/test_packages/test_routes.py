@@ -1339,36 +1339,47 @@ def test_resolve_falls_back_to_catalog_for_uninstalled_package(
     assert "rasterio" in body["lockfile"]["pythonDeps"]
 
 
-@pytest.mark.skip(
-    reason="Factory now derives deps from source imports (see dependency_scanner.py), "
-           "so the test's manual rasterio pin is overridden and it has no path to "
-           "surface a version conflict. Catalog conflict semantics stay verified by "
-           "the tests that install via /packages/upload (archive sideload preserves "
-           "manifest deps verbatim)."
-)
+def _upload_with_python_deps(client, token, make_archive, manifest_dict, package_id, deps):
+    """Install a package whose manifest declares *deps* as written.
+
+    The factory derives a package's Python deps from its imports, so it cannot
+    pin a version range. An uploaded archive keeps the manifest's ranges.
+    """
+    manifest = manifest_dict(package_id=package_id, python_deps=deps)
+    kind = f"{package_id.rsplit('.', 1)[-1]}-kind"
+    manifest["templates"][0].update(
+        id=kind, templateDir=f"starters/{kind}", defaultTemplate=f"starters/{kind}/Default.py",
+    )
+    archive = make_archive(
+        manifest=manifest, sources={kind: {"Default.py": "def run():\n    return {}\n"}},
+    )
+    resp = client.post(
+        "/api/packages/upload",
+        data={"file": (io.BytesIO(archive), f"{package_id}.curio.zip")},
+        headers=_multipart_auth(token),
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+
+
 def test_resolve_catalog_fallback_still_reports_conflicts(
-    client, user_and_token, tmp_curio,
+    client, user_and_token, tmp_curio, make_archive, manifest_dict,
 ):
     """Installed package + catalog candidate with incompatible ranges must
-    still surface as a 409 — the override only changes *where* the
+    still surface as a 409: the override only changes *where* the
     candidate's manifest comes from, not the conflict semantics."""
     _, token = user_and_token
 
-    # Install a draft package that conflicts with the UHVI fixture's
-    # ``rasterio ^1.3`` constraint (which the catalog candidate declares).
-    conflicting = _draft()
-    conflicting["manifest"]["id"] = "ai.test.rasterio2"
-    conflicting["manifest"]["dependencies"]["python"] = {"rasterio": "^2.0"}
-    client.post(
-        "/api/packages/factory/install",
-        data=json.dumps(conflicting),
-        headers=_auth(token),
+    # An installed package that conflicts with the UHVI catalog candidate's
+    # ``rasterio >=1.3``: ``^0.36`` means ``<1.0.0``.
+    _upload_with_python_deps(
+        client, token, make_archive, manifest_dict, "ai.test.rasterio0", {"rasterio": "^0.36"},
     )
 
     resp = client.post(
         "/api/packages/resolve",
         data=json.dumps({
-            "packages": ["ai.test.rasterio2@1", "ai.utk.uhvi@1"],
+            "packages": ["ai.test.rasterio0@1", "ai.utk.uhvi@1"],
         }),
         headers=_auth(token),
     )
@@ -1427,27 +1438,15 @@ def test_resolve_unknown_package_still_errors(client, user_and_token, tmp_curio)
     assert "manifest.json" in resp.get_json()["error"]
 
 
-@pytest.mark.skip(
-    reason="Factory derives deps from source imports, so this test cannot fabricate "
-           "a version conflict via factory_install."
-)
-def test_resolve_conflict_returns_409(client, user_and_token, tmp_curio):
+def test_resolve_conflict_returns_409(
+    client, user_and_token, tmp_curio, make_archive, manifest_dict,
+):
     _, token = user_and_token
-    # Install package A with rasterio ^1.3
-    a = _draft()
-    a["manifest"]["id"] = "ai.test.alpha"
-    a["manifest"]["dependencies"]["python"] = {"rasterio": "^1.3"}
-    client.post(
-        "/api/packages/factory/install",
-        data=json.dumps(a), headers=_auth(token),
+    _upload_with_python_deps(
+        client, token, make_archive, manifest_dict, "ai.test.alpha", {"rasterio": "^1.3"},
     )
-    # Install package B with rasterio ^2.0
-    b = _draft()
-    b["manifest"]["id"] = "ai.test.beta"
-    b["manifest"]["dependencies"]["python"] = {"rasterio": "^2.0"}
-    client.post(
-        "/api/packages/factory/install",
-        data=json.dumps(b), headers=_auth(token),
+    _upload_with_python_deps(
+        client, token, make_archive, manifest_dict, "ai.test.beta", {"rasterio": "^2.0"},
     )
     resp = client.post(
         "/api/packages/resolve",

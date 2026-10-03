@@ -51,6 +51,7 @@ def _isolate_env(monkeypatch, tmp_path):
         "CURIO_SOLVE_SESSION_DEADLINE",
         "CURIO_SOLVE_BATCH_DEADLINE",
         "CURIO_VALIDATION_EXEC_TIMEOUT",
+        "CURIO_VALIDATION_NODE_LIMIT",
         "CURIO_DISCOVERY_MAX_DOWNLOAD_MB",
     ):
         monkeypatch.delenv(key, raising=False)
@@ -376,12 +377,19 @@ def _validation_timeout():
     return runner.exec_timeout_s()
 
 
+def _validation_node_limit():
+    from utk_curio.backend.app.execution import runner
+
+    return runner.validation_node_limit()
+
+
 @pytest.mark.parametrize("arg, env_name, value, reader", [
     ("solve_max_attempts", "CURIO_SOLVE_MAX_ATTEMPTS", 12, lambda: _budget("solve_max_attempts")),
     ("solve_node_budget", "CURIO_SOLVE_NODE_BUDGET", 300, lambda: _budget("solve_node_budget_s")),
     ("solve_session_deadline", "CURIO_SOLVE_SESSION_DEADLINE", 600, lambda: _budget("solve_session_deadline_s")),
     ("solve_batch_deadline", "CURIO_SOLVE_BATCH_DEADLINE", 1800, lambda: _budget("solve_batch_deadline_s")),
     ("validation_exec_timeout", "CURIO_VALIDATION_EXEC_TIMEOUT", 120, _validation_timeout),
+    ("validation_node_limit", "CURIO_VALIDATION_NODE_LIMIT", 40, _validation_node_limit),
 ])
 def test_a_solve_flag_reaches_the_setting_the_backend_reads(arg, env_name, value, reader):
     set_environment_variables(**BASE, **{arg: value})

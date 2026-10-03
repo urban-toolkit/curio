@@ -287,7 +287,7 @@ class TestRoles:
 class TestDependencies:
     def test_declared_refs_are_the_source_of_truth(self):
         spec = _spec(
-            [_node("a", LOADER, content='p = curio_dataset_path("data.x.y")')],
+            [_node("a", LOADER, content='p = curio_data_path("data.x.y")')],
             [],
             datasets=[{"datasetId": "data.x.y", "dirName": "data.x.y@1", "origin": "imported"}],
             packages=["curio.weather@1"],
@@ -308,7 +308,7 @@ class TestDependencies:
     def test_the_source_scan_uses_the_production_grounding_scanner(self):
         spec = _spec(
             [
-                _node("a", LOADER, content='p = curio_dataset_path("data.city.roads")'),
+                _node("a", LOADER, content='p = curio_data_path("data.city.roads")'),
                 _node("b", LOADER, content='gdf = gpd.read_file("docs/examples/data/x.geojson")'),
                 _node("c", VEGA, content=(
                     '{"$schema": "https://vega.github.io/schema/v6.json",'

@@ -357,7 +357,7 @@ No conversion step is needed:
 ```python
 import geopandas as gpd
 
-gdf = gpd.read_file(curio_dataset_path("data.utk.chicago-boundary"))
+gdf = gpd.read_file(curio_data_path("data.utk.chicago-boundary"))
 return gdf
 ```
 
@@ -602,7 +602,7 @@ For the full guide, covering searching, downloading, storage sources, collection
 
 ## Model Catalog
 
-The **Model Catalog** holds the trained models your nodes can run. DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, ships with Curio; models you add from the Discovery Catalog's **Hugging Face models** land here too. An **Image Segmentation** node, from the Street Vision package, runs the model its code names with `curio_model("<id>")`: drag a model from **Models** in the left Tools panel onto the node to change it.
+The **Model Catalog** holds the trained models your nodes can run. DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, ships with Curio; models you add from the Discovery Catalog's **Hugging Face models** land here too. An **Image Segmentation** node, from the Street Vision package, runs the model its code names with `curio_load_model("<id>")`: drag a model from **Model Catalog** in the left Tools panel onto the node to change it.
 
 Shipped models are folders under `<repo_root>/models/`, relocated with **`--models-root`**; models you add are yours, under `.curio/users/<user-key>/models/`.
 

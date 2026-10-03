@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import CSS from "csstype";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import logo from "assets/curio-2.png";
 import { useUserContext } from "../../providers/UserProvider";
 import ApiSettingsModal from "../ApiSettingsModal";
@@ -26,6 +26,15 @@ export function GlobalPageHeader() {
         <img src={logo} alt="Curio" style={logoImgStyle} />
       </Link>
       <div style={topBarRightStyle}>
+        {/* Unconditional: the monitor exists on every instance, not only a
+            --deploy one, so there is no flag to read here. */}
+        <NavLink
+          to="/monitor"
+          end
+          style={({ isActive }) => (isActive ? monitorLinkActiveStyle : monitorLinkStyle)}
+        >
+          Monitor
+        </NavLink>
         {/* The account's one credentials surface: its LLM configurations,
             the HuggingFace token, and the data-portal tokens the Discovery Catalog
             Catalog uses. The name has lagged the contents twice now (it was "LLM
@@ -98,6 +107,19 @@ const apiSettingsBtnStyle: CSS.Properties = {
   padding: "5px 12px",
   cursor: "pointer",
   marginRight: "12px",
+};
+
+// API Settings' pill as a link; the row's gap spaces the two.
+const monitorLinkStyle: CSS.Properties = {
+  ...apiSettingsBtnStyle,
+  marginRight: 0,
+  textDecoration: "none",
+};
+
+const monitorLinkActiveStyle: CSS.Properties = {
+  ...monitorLinkStyle,
+  borderColor: "#ddd",
+  color: "#fff",
 };
 
 const userInfoColumnStyle: CSS.Properties = {

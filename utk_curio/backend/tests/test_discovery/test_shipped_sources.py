@@ -9,6 +9,7 @@ looks exactly like a clean run.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -181,10 +182,16 @@ def _packaging_file(name: str) -> str:
     does not ship its own Dockerfile, and asserting against a file that is
     legitimately absent tests the environment rather than the packaging. This
     is the second thing this pair caught, the first being the bug itself.
+
+    CI runs them on the checkout with ``CURIO_REQUIRE_CHECKOUT=1``, where a
+    missing file fails instead.
     """
     path = SHIPPED_ROOT.parent / name
     if not path.is_file():
-        pytest.skip(f"no {name} here - a packaging check needs a source checkout")
+        reason = f"no {name} here - a packaging check needs a source checkout"
+        if os.environ.get("CURIO_REQUIRE_CHECKOUT") == "1":
+            pytest.fail(f"CURIO_REQUIRE_CHECKOUT=1, but {reason}")
+        pytest.skip(reason)
     return path.read_text(encoding="utf-8")
 
 

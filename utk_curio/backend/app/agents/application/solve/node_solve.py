@@ -244,6 +244,7 @@ def _run_node_loop(
         # per-node Solve is where the owner presses "solve this node".
         result_summary_fn=agents_session._artifact_summary_fn(),
         exec_user_key=user_key,
+        acting_user=acting_user,
         secrets_fn=agents_grounding._exec_secrets_resolver(user_key),
         resolve_source=agents_grounding._source_resolver(
             user_key, project_id, coord=coord, attachment_id=attachment_id,

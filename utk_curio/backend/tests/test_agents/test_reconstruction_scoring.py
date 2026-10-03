@@ -274,7 +274,7 @@ class TestDependencies:
 
     def test_a_declared_dependency_that_was_asked_for_scores_one(self):
         built = _spec(
-            [_node("l", LOADER, content='p = curio_dataset_path("data.x.y")')],
+            [_node("l", LOADER, content='p = curio_data_path("data.x.y")')],
             [],
             datasets=[{"datasetId": "data.x.y"}],
         )

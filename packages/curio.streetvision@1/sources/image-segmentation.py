@@ -11,7 +11,7 @@ reports every label.
 and ``overlay_url`` shows the image tinted by class.
 """
 
-model = curio_model("model.curio.ddrnet23-slim")
+model = curio_load_model("model.curio.ddrnet23-slim")
 classes = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
 
 return curio_segment(arg, model, classes)

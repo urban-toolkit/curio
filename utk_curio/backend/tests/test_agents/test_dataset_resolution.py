@@ -50,9 +50,9 @@ class TestNodeSourceState:
 
     def test_grounded_literal_resolves_and_says_why(self):
         spec = _spec_with_finder()
-        state = dr.node_source_state(spec, "n1", grounded_literal='curio_dataset_path("d1")')
+        state = dr.node_source_state(spec, "n1", grounded_literal='curio_data_path("d1")')
         assert state["state"] == dr.STATE_RESOLVED
-        assert state["detail"] == 'curio_dataset_path("d1") already grounds this node'
+        assert state["detail"] == 'curio_data_path("d1") already grounds this node'
 
     def test_candidates_pending_reports_the_count(self):
         spec = _spec_with_finder(status=dr.STATE_CANDIDATES_PENDING, candidates=3)
@@ -156,7 +156,7 @@ class TestRecordSelection:
         assert state["status"] == dr.STATE_RESOLVED
         source = dr.confirmed_source(spec, "n1")
         assert source["picks"][0]["datasetId"] == "d1"
-        assert "curio_dataset_path" in source["note"]
+        assert "curio_data_path" in source["note"]
 
     def test_an_uninstalled_catalog_pick_awaits_the_reviewed_install(self):
         spec = _spec_with_finder()

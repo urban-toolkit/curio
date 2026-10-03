@@ -56,6 +56,18 @@ export function resolveDataSourceUrls(spec: any, base: string): any {
     return { ...spec, data: resolved };
 }
 
+// Table names a data spec is contractually asking autk-db to create.
+//
+// The point is to tell a load that came back SHORT apart from one that came back
+// empty. autk-db's `loadOsm` walks `autoLoadLayers.layers` sequentially and lets
+// a per-layer failure propagate, so a throw partway leaves the earlier tables
+// registered and the later ones absent. A loader that published whatever
+// `getLayersMetadata()` holds would surface that downstream as an opaque
+// "Table <last layer> not found" from a node two hops away, with the node that
+// actually failed showing "Done" (#248), so the loaders check these names.
+//
+// Naming mirrors autk-db's own, which derives a layer table as
+// `outputTableName || `${osmInputTableName}_${layer}``.
 export function requestedLayerTables(dataSources: any[]): string[] {
     const names: string[] = [];
     for (const source of dataSources ?? []) {

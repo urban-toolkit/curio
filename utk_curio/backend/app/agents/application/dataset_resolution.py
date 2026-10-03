@@ -280,7 +280,7 @@ def _needs_install(pick: dict) -> bool:
 
 def acquired_pick(row: dict, dataset_id: str) -> dict:
     """The catalog pick a downloaded external row becomes. The file is in the
-    account store, so ``curio_dataset_path("<id>")`` resolves it like an import."""
+    account store, so ``curio_data_path("<id>")`` resolves it like an import."""
     return {
         "lane": "catalog",
         "name": str(row.get("name") or dataset_id)[:120],
@@ -383,7 +383,7 @@ def record_selection(spec: dict, attachment_id: str, rows: list[dict]) -> dict |
     # dev/132: a dataset the user brought in themselves after the card was
     # minted (the Import button under a portal row's download steps) is
     # ``imported``: its file is in their own account store and
-    # ``curio_dataset_path("<id>")`` resolves it, so the node is RESOLVED. The
+    # ``curio_data_path("<id>")`` resolves it, so the node is RESOLVED. The
     # reviewed install lane adds a dataset to the DATAFLOW, which is a separate
     # act and not what reading the file needs.
     needs_install = [r for r in rows if _needs_install(r)]
@@ -443,7 +443,7 @@ def confirmed_source(spec: dict | None, node_id: str) -> dict | None:
     return {
         "note": (
             "The user confirmed these sources for this node. Load ONLY these: a "
-            "catalog row through curio_dataset_path(\"<datasetId>\"), an external "
+            "catalog row through curio_data_path(\"<datasetId>\"), an external "
             "row from its exact url."
         ),
         "picks": [

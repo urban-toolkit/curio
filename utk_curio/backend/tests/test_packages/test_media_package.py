@@ -1,7 +1,7 @@
 """The ``curio.media@1`` nodes, run the way the canvas runs them.
 
 Each template's source is indented and wrapped in ``def userCode(arg):`` as
-``PythonInterpreter.ts`` does, and fed the rows ``curio_collection`` returns
+``PythonInterpreter.ts`` does, and fed the rows ``curio_load_collection`` returns
 for the example storage source's collections, so the input is what a Data
 Loading node would hand it.
 """
@@ -40,7 +40,7 @@ def run_node(name: str, arg, namespace: dict, **settings):
 
 
 def collection_rows(manifest, resource_id: str, tmp_path: Path):
-    """``(rows, helpers)``: what ``curio_collection`` returns for a resource of
+    """``(rows, helpers)``: what ``curio_load_collection`` returns for a resource of
     *manifest*, and the helpers a node runs with."""
     from utk_curio.backend.app.discovery.application import index_collection, scan
     from utk_curio.backend.app.discovery.infrastructure.storage import storage_root
@@ -62,7 +62,7 @@ def collection_rows(manifest, resource_id: str, tmp_path: Path):
         str(tmp_path / "media"),
         output_dir=str(tmp_path / "outputs"),
     )
-    return helpers["curio_collection"](f"imported.x{resource_id}"), helpers
+    return helpers["curio_load_collection"](f"imported.x{resource_id}"), helpers
 
 
 @pytest.fixture()
