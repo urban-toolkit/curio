@@ -109,6 +109,7 @@ class TestSchema:
             "package-enlist:dependencies": "T1",
             "browser-only-execution": "T1",
             "interaction-edge": "T2",
+            "widgets": "T2",
             "external-network": "T3",
             "gpu": "T3",
         }

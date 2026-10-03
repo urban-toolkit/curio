@@ -534,6 +534,7 @@ def oracle_attempt(
         paths=fixture.required.get("paths") or (),
     )
     try:
+        oracle.require_writable_widgets(example)
         plan = oracle.plan_for(
             fixture.expected,
             intents=fixture.intents,

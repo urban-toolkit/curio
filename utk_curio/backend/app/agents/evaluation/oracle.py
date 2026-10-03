@@ -67,6 +67,25 @@ class Unrepresentable(Exception):
         self.detail = detail
 
 
+#: #662: a node's ``[!! name !!]`` references resolve against its
+#: ``metadata.widgets``, and neither a plan node nor a Solve content reply can
+#: declare widgets yet, so the example's code would reach the runner with
+#: references nothing resolves. Fixtures for such examples declare this need.
+WIDGETS_NEED = "widgets"
+
+
+def require_writable_widgets(example: Mapping) -> None:
+    """Raise :class:`Unrepresentable` when a node of *example* declares widgets."""
+    inner = example.get("dataflow")
+    dataflow = inner if isinstance(inner, Mapping) else example
+    for node in dataflow.get("nodes") or []:
+        if isinstance(node, Mapping) and (node.get("metadata") or {}).get("widgets"):
+            raise Unrepresentable(
+                WIDGETS_NEED,
+                f"node {node.get('id')!r} declares widgets, which no plan or content reply can write",
+            )
+
+
 @dataclass(frozen=True)
 class OraclePlan:
     goal: str

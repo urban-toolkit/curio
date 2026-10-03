@@ -22,6 +22,7 @@ Run::
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 from .utils import (
@@ -52,12 +53,43 @@ SOURCE_CODE = "factor = \nreturn factor * 10\n"
 SOURCE_WITH_REFERENCE = "factor = [!! factor !!]\nreturn factor * 10\n"
 READER_CODE = "print(f'<<{arg}>>')\nreturn arg\n"
 
-# Drags the tag in the strip above a node's code editor and drops it just past
-# the text of the editor's first line. The cursor is parked on another line
-# first, so a reference that lands on line 1 was placed by the drop point.
-# Synthetic events, like drag_to_canvas: the tag's own onDragStart fills the
-# DataTransfer, and the editor's drop handler reads it.
-_DRAG_TAG_TO_LINE_END_JS = r"""({ nodeId, name }) => {
+# Where a drop lands just past the text of the editor's first line, from
+# Monaco's own layout of that line (scaled to the editor's box on screen, so a
+# zoomed canvas does not move it), and what the page shows at that point. Right
+# after a tab switch the editor can still be laid out at no size, so the test
+# polls this until the point is over the editor.
+_LINE_END_POINT_JS = r"""(nodeId) => {
+    const nodeEl = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+    const editorEl = nodeEl && nodeEl.querySelector(".monaco-editor");
+    const editors = (window.monaco && window.monaco.editor.getEditors()) || [];
+    const editor = editors.find((e) => editorEl && editorEl.contains(e.getDomNode()));
+    if (!editor) return { over: false, why: "no monaco instance owns this node's editor" };
+    const dom = editor.getDomNode();
+    const box = dom.getBoundingClientRect();
+    if (!box.width || !box.height || !dom.offsetWidth) {
+        return { over: false, why: `the editor is ${box.width}x${box.height} on screen` };
+    }
+    const line = editor.getScrolledVisiblePosition({
+        lineNumber: 1, column: editor.getModel().getLineMaxColumn(1),
+    });
+    if (!line) return { over: false, why: "line 1 is not laid out" };
+    const scale = box.width / dom.offsetWidth;
+    const x = box.left + (line.left + 12) * scale;
+    const y = box.top + (line.top + line.height / 2) * scale;
+    const hit = document.elementFromPoint(x, y);
+    return {
+        over: !!hit && dom.contains(hit),
+        x, y,
+        why: `(${Math.round(x)}, ${Math.round(y)}) shows ${hit ? hit.tagName + "." + hit.className : "nothing"}; `
+            + `editor box ${Math.round(box.left)},${Math.round(box.top)} ${Math.round(box.width)}x${Math.round(box.height)}`,
+    };
+}"""
+
+# Drags the tag in the strip above a node's code editor and drops it at (x, y).
+# The cursor is parked on line 2 first, so a reference that lands on line 1 was
+# placed by the drop point. Synthetic events, like drag_to_canvas: the tag's own
+# onDragStart fills the DataTransfer, and the editor's drop handler reads it.
+_DRAG_TAG_TO_POINT_JS = r"""({ nodeId, name, x, y }) => {
     const nodeEl = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
     if (!nodeEl) return "node is not on the canvas";
     const tag = nodeEl.querySelector(`[data-widget-strip] [data-widget-tag="${name}"]`);
@@ -67,28 +99,33 @@ _DRAG_TAG_TO_LINE_END_JS = r"""({ nodeId, name }) => {
     const editor = editors.find((e) => editorEl && editorEl.contains(e.getDomNode()));
     if (!editor) return "no monaco instance owns this node's editor";
     editor.setPosition({ lineNumber: 2, column: 1 });
-
-    const lines = [...editorEl.querySelectorAll(".view-lines .view-line")];
-    if (!lines.length) return "the editor rendered no lines";
-    const first = lines.reduce((a, b) => (parseFloat(a.style.top) <= parseFloat(b.style.top) ? a : b));
-    const spans = first.querySelectorAll("span span");
-    const end = spans.length ? spans[spans.length - 1].getBoundingClientRect() : first.getBoundingClientRect();
-    const lineBox = first.getBoundingClientRect();
-    const clientX = end.right + 8;
-    const clientY = lineBox.top + lineBox.height / 2;
-    const target = document.elementFromPoint(clientX, clientY);
-    if (!target || !editorEl.contains(target)) return "the drop point is not over the editor";
+    const target = document.elementFromPoint(x, y);
+    if (!target || !editor.getDomNode().contains(target)) return "the drop point left the editor";
 
     const dt = new DataTransfer();
     const init = { bubbles: true, cancelable: true, composed: true, dataTransfer: dt };
     tag.dispatchEvent(new DragEvent("dragstart", init));
     if (!dt.types.includes("application/x-curio-widget")) return "the tag put nothing on the drag";
-    target.dispatchEvent(new DragEvent("dragenter", { ...init, clientX, clientY }));
-    target.dispatchEvent(new DragEvent("dragover", { ...init, clientX, clientY }));
-    target.dispatchEvent(new DragEvent("drop", { ...init, clientX, clientY }));
+    const at = { ...init, clientX: x, clientY: y };
+    target.dispatchEvent(new DragEvent("dragenter", at));
+    target.dispatchEvent(new DragEvent("dragover", at));
+    target.dispatchEvent(new DragEvent("drop", at));
     tag.dispatchEvent(new DragEvent("dragend", init));
     return "ok";
 }"""
+
+
+def _drag_tag_to_line_end(page, node_id: str, name: str, *, timeout: float = 15000) -> None:
+    deadline = time.time() + timeout / 1000
+    point = page.evaluate(_LINE_END_POINT_JS, node_id)
+    while not point["over"] and time.time() < deadline:
+        page.wait_for_timeout(250)
+        point = page.evaluate(_LINE_END_POINT_JS, node_id)
+    assert point["over"], f"no point past line 1 lies over the code editor: {point['why']}"
+    result = page.evaluate(
+        _DRAG_TAG_TO_POINT_JS, {"nodeId": node_id, "name": name, "x": point["x"], "y": point["y"]}
+    )
+    assert result == "ok", f"could not drag the tag into the code: {result}"
 
 
 def _open_tab(page, node_id: str, key: str) -> None:
@@ -126,6 +163,19 @@ def _add_number_widget(page, node_id: str, *, name: str, label: str, default: in
 def _set_number(page, node_id: str, label: str, value: int) -> None:
     _open_tab(page, node_id, "widgets")
     _panel(page, node_id).get_by_label(label, exact=True).fill(str(value))
+
+
+def _wait_for_code_containing(page, node_id: str, text: str, *, timeout: float = 10000) -> None:
+    page.wait_for_function(
+        """([nodeId, text]) => {
+            const el = document.querySelector(`.react-flow__node[data-id="${nodeId}"] .monaco-editor`);
+            const editors = (window.monaco && window.monaco.editor.getEditors()) || [];
+            const ed = editors.find((e) => el && el.contains(e.getDomNode()));
+            return !!ed && ed.getValue().includes(text);
+        }""",
+        arg=[node_id, text],
+        timeout=timeout,
+    )
 
 
 def _wait_for_output(page, node_id: str, needle: str, what: str) -> None:
@@ -177,18 +227,8 @@ def test_a_widget_tag_drives_the_code_and_survives_a_reopen(
     _open_tab(page, source, "code")
     strip_tag = node_locator(page, source).locator('[data-widget-strip] [data-widget-tag="factor"]')
     strip_tag.wait_for(state="visible", timeout=10000)
-    result = page.evaluate(_DRAG_TAG_TO_LINE_END_JS, {"nodeId": source, "name": "factor"})
-    assert result == "ok", f"could not drag the tag into the code: {result}"
-    page.wait_for_function(
-        """(nodeId) => {
-            const el = document.querySelector(`.react-flow__node[data-id="${nodeId}"] .monaco-editor`);
-            const editors = (window.monaco && window.monaco.editor.getEditors()) || [];
-            const ed = editors.find((e) => el && el.contains(e.getDomNode()));
-            return !!ed && ed.getValue().includes("[!! factor !!]");
-        }""",
-        arg=source,
-        timeout=10000,
-    )
+    _drag_tag_to_line_end(page, source, "factor")
+    _wait_for_code_containing(page, source, "[!! factor !!]")
     assert read_node_code(page, source) == SOURCE_WITH_REFERENCE, (
         "the dropped tag did not land where it was dropped (the end of line 1): "
         f"{read_node_code(page, source)!r}"
@@ -223,7 +263,7 @@ def test_a_widget_tag_drives_the_code_and_survives_a_reopen(
     page.wait_for_load_state("domcontentloaded")
     page.goto(f"{app_frontend.base_url}/dataflow/{project_id}")
     node_locator(page, source).wait_for(state="visible", timeout=45000)
-    assert "[!! factor !!]" in read_node_code(page, source, timeout=45000)
+    _wait_for_code_containing(page, source, "[!! factor !!]", timeout=45000)
     _open_tab(page, source, "widgets")
     control = _panel(page, source).get_by_label("Factor", exact=True)
     control.wait_for(state="visible", timeout=15000)

@@ -343,10 +343,11 @@
               "interaction-edge",
               "external-network",
               "gpu",
-              "browser-only-execution"
+              "browser-only-execution",
+              "widgets"
             ]
           },
-          "description": "package-enlist:templates and package-enlist:dependencies are DIFFERENT routes: a template the plan cannot name until the package is enlisted, versus a library the node code imports whose owning manifest declares it. Neither justifies authoring a package."
+          "description": "package-enlist:templates and package-enlist:dependencies are DIFFERENT routes: a template the plan cannot name until the package is enlisted, versus a library the node code imports whose owning manifest declares it. Neither justifies authoring a package. widgets: a node of the example declares widgets (metadata.widgets, #662), which no plan or content reply can write yet."
         },
         "skip": {
           "type": "array",
