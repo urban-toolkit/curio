@@ -190,14 +190,26 @@ class ModelCatalogService:
 
     # ── changing ───────────────────────────────────────────────────────────
 
-    def install_downloaded(self, folder: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    def install_downloaded(
+        self, folder: Path, manifest: dict[str, Any], *, replace: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Add a downloaded model: *folder* holds its files as *manifest*'s
-        ``entry`` names them, and is consumed."""
+        ``entry`` names them, and is consumed.
+
+        *replace* is the row of a model this account already downloaded from
+        the same source row: a refresh. The new files take its place under its
+        id, so a node naming that id runs them, and no second copy is kept
+        (#623)."""
         if not self.user_key:
             raise ModelCatalogError("sign in to add a model", 401)
-        model_id = f"imported.x{uuid.uuid4().hex[:12]}"
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        raw = {**manifest, "id": model_id, "compatibility": {"major": 1}, "createdAt": now, "updatedAt": now}
+        created = now
+        if replace is not None:
+            model_id = str(replace["id"])
+            created = str(replace.get("createdAt") or now)
+        else:
+            model_id = f"imported.x{uuid.uuid4().hex[:12]}"
+        raw = {**manifest, "id": model_id, "compatibility": {"major": 1}, "createdAt": created, "updatedAt": now}
         size = sum(p.stat().st_size for p in Path(folder).rglob("*") if p.is_file())
         raw["sizeBytes"] = size
         parsed = parse_manifest(raw)
@@ -207,9 +219,26 @@ class ModelCatalogService:
         shutil.rmtree(staging, ignore_errors=True)
         shutil.move(str(folder), str(staging))
         (staging / "manifest.json").write_text(json.dumps(manifest_dict(parsed), indent=2) + "\n", encoding="utf-8")
-        os.replace(staging, target)
+        if target.exists():
+            # A refresh: swap the folders, then drop the old one.
+            retired = target.with_name(f".{target.name}.old")
+            shutil.rmtree(retired, ignore_errors=True)
+            os.replace(target, retired)
+            os.replace(staging, target)
+            shutil.rmtree(retired, ignore_errors=True)
+        else:
+            os.replace(staging, target)
         loaded = load_manifest(target)
         return model_row(loaded, origin="downloaded", folder=target)
+
+    def model_refusal(self) -> str | None:
+        """Why this account may not add a model, or ``None``: the rule a
+        package install follows. A local run always may; a guest on a
+        ``--deploy`` instance may not, because every guest shares one account
+        and its disk (#623)."""
+        from utk_curio.backend.app.users.capabilities import install_refusal
+
+        return install_refusal(self.user, noun="models")
 
     def install_refusal(self) -> str | None:
         """Why this account may not install libraries, as for a package: a

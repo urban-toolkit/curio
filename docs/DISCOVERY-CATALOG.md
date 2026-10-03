@@ -107,7 +107,7 @@ A storage source is read when it is first opened, and again when its listing is 
 | **Files** | A storage source's row | Nothing | The row's files, 50 at a time, with thumbnails for a collection's. Pick some and **Add N picked files** adds only those. |
 | **Rescan** | A storage source's page | Nothing | The source is read again, and its rows show what it holds. |
 | **Cache files** | A bucket collection's details, in the Data Catalog | Your account's media folder | Its files are copied to the Curio machine, so nodes can read them. |
-| **Add to Model Catalog** | A Hugging Face models row | Your Model Catalog gains a model | A progress bar, then *"Added `<name>` to your Model Catalog."* with **View model**. |
+| **Add to Model Catalog** | A Hugging Face models row | Your Model Catalog gains a model | A progress bar, then *"Added `<name>` to your Model Catalog."* with **View model**. A guest on a `--deploy` instance is refused before anything downloads. |
 | **View model** | A row marked **In your Model Catalog** | Nothing | The model's details, in the Model Catalog. |
 | **Set a token** | **API Settings** | Your account | The source's card reads **Token set**. |
 

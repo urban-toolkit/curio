@@ -259,6 +259,60 @@ class TestItLandsInTheModelCatalog:
         assert again.status_code == 200
         assert again.get_json()["model"]["id"] == first["id"]
 
+    def _shared_guest_auth(self, db):
+        from utk_curio.backend import config
+        from utk_curio.backend.app.users.models import User, UserSession
+
+        guest = User(username=config.CURIO_SHARED_GUEST_USERNAME, name="Guest",
+                     email="guest@test.com", is_guest=True)
+        db.session.add(guest)
+        db.session.flush()
+        db.session.add(UserSession(user_id=guest.id, token="guest-models"))
+        db.session.commit()
+        return {"Authorization": "Bearer guest-models"}
+
+    def test_a_hosted_guest_is_refused_any_model_before_any_download(self, client, db, live, monkeypatch):
+        """#623: every guest on a --deploy instance is one account on one
+        disk, so a guest adds no model, whatever its runtime needs."""
+        from utk_curio.backend import config
+
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+        fetched = []
+        monkeypatch.setattr(hfm.HuggingFaceModels, "file_url",
+                            lambda self, plan, path: fetched.append(path) or f"{self.base}/x")
+        job = self._add(client, self._shared_guest_auth(db), ONNX_REPO)
+        assert job["status"] == "failed", job
+        assert "guest" in job["error"] and fetched == []
+
+    def test_the_local_guest_still_adds_one(self, client, db, live, monkeypatch):
+        """Without --deploy the shared guest is the one local user."""
+        from utk_curio.backend import config
+
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+        job = self._add(client, self._shared_guest_auth(db), ONNX_REPO)
+        assert job["status"] == "completed", job
+
+    def test_a_refresh_replaces_the_model_and_keeps_its_id(self, app, client, auth, live, user_and_token):
+        """#623: a refresh used to add a second copy under a new id, and keep
+        every earlier one; a node naming the first id kept the stale files."""
+        from utk_curio.backend.app.model_catalog.infrastructure import storage as model_storage
+
+        first = self._add(client, auth, ONNX_REPO)["model"]
+        res = acquire(client, auth, SOURCE, ONNX_REPO, refresh=True)
+        assert res.status_code == 202, res.get_data(as_text=True)
+        again = wait_for(client, auth, res.get_json()["jobId"], timeout=60)
+        assert again["status"] == "completed", again
+        assert again["model"]["id"] == first["id"]
+        listed = client.get("/api/models/catalog", headers=auth).get_json()["items"]
+        downloaded = [item for item in listed if item.get("origin") == "downloaded"]
+        assert [item["id"] for item in downloaded] == [first["id"]]
+        user, _token = user_and_token
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        folders = [p.name for p in model_storage.user_models_dir(_user_dir_key(user)).iterdir()
+                   if not p.name.startswith(".")]
+        assert len(folders) == 1, folders
+
     def test_a_search_row_says_it_is_held(self, client, auth, live):
         model = self._add(client, auth, ONNX_REPO)["model"]
         rows = client.get(f"/api/discovery/sources/{SOURCE}/search?q=segformer", headers=auth).get_json()["resources"]
