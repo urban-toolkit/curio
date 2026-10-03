@@ -73,7 +73,7 @@ def _spec() -> builtin.BuiltinAgentSpec:
 
 
 # Firing dragstart/dragover/drop in one page.evaluate is how the rest of the
-# suite drives a drag (utils.py::_DRAG_TO_CANVAS_JS). That helper fires all four
+# suite drives a drag (utils/canvas_authoring.py::_DRAG_TO_CANVAS_JS). That helper fires all four
 # events back to back, which is right for testing a DROP and useless for testing
 # what is true BETWEEN dragover and drop - so these stop after dragover and keep
 # the DataTransfer on window, because a fresh one would read as a different drag.

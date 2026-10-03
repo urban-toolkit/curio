@@ -157,7 +157,7 @@ In other words: **every pytest invocation starts against an empty database**, an
 
 ## Authenticated test setup
 
-The SPA wraps `/projects` and `/workflow/:id?` in `RequireAuth`, so every E2E test needs an authenticated browser session before it can interact with those pages. Two reusable strategies live in [`utils.py`](utils.py); pick based on what the test is actually asserting.
+The SPA wraps `/projects` and `/workflow/:id?` in `RequireAuth`, so every E2E test needs an authenticated browser session before it can interact with those pages. Two reusable strategies live in [`utils/auth.py`](utils/auth.py) and [`utils/db_stubs.py`](utils/db_stubs.py); pick based on what the test is actually asserting.
 
 ### Strategy A - drive the signup form (UI coverage)
 
@@ -439,7 +439,22 @@ pytest utk_curio/backend/tests/test_frontend/test_workflows.py -k "Vega.json"
 test_frontend/
   conftest.py                 # workflow list, env filtering, pytest_generate_tests hook
   fixtures.py                 # server startup, browser/page fixtures, loaded_workflow (DB-stub login)
-  utils.py                    # FrontendPage, upload_workflow, signup helpers, stub_* helpers
+  utils/                      # helpers, one module per area; `from .utils import X` finds any of them
+    environment.py            # REPO_ROOT, state_root, stack flags, require_* skips, debug_log
+    sandbox.py                # direct sandbox calls, execute_workflow_programmatically
+    vega_svg.py               # Vega-Lite SVG helpers
+    screenshots.py            # save_workflow_test_screenshot, close-ups, mint and re-mint, dismiss_toasts
+    interactions.py           # interaction frames, brush and mark probes
+    servers.py                # ports, e2e_existing_servers
+    auth.py                   # signup helpers, require_owner_view
+    db_stubs.py               # stub_* helpers, api_json
+    palettes.py               # open_tools_palette, close_tools_palette
+    upload.py                 # upload_workflow
+    canvas_authoring.py       # drag_to_canvas, connect_nodes, set_node_code, play_node
+    run_all.py                # Run All state, holding a run open
+    node_drawings.py          # assert_vega_canvas_rendered and the other drawing checks
+    page.py                   # FrontendPage
+    scripted_llm.py           # scripted agent turns
   test_alive.py               # smoke tests: backend, sandbox, frontend are live
   test_auth_flow.py           # signup → projects → signout → signin (UI path)
   test_workflows.py           # TestWorkflowCanvas - DB-stubbed auth via loaded_workflow
@@ -509,7 +524,7 @@ The suite has two configurations with mutually-exclusive UI surfaces:
 - **default** (`CURIO_NO_PROJECT=0`, the implicit value): the SPA exposes a per-user `/projects` page and the File menu offers `New dataflow` / `Load dataflow` / `Save dataflow` / `Save dataflow as` / `Export as notebook` / `Installed libraries` / `Go to projects`.
 - **no-project** (`CURIO_NO_PROJECT=1`): the SPA auto-guest-signs in, routes `/` directly to `/dataflow`, and hides only the project-backed entries (`Save dataflow` and `Go to projects`); `New dataflow`, `Load dataflow`, `Save dataflow as`, `Export as notebook` and `Installed libraries` remain visible.
 
-Tests that depend on either surface call `require_project_page()` / `require_no_project_mode()` from [`utils.py`](utils.py) (both consult the live backend's `/api/config/public` so the pytest process and the `curio start` subprocess never disagree). To exercise the no-project UI explicitly:
+Tests that depend on either surface call `require_project_page()` / `require_no_project_mode()` from [`utils/environment.py`](utils/environment.py) (both consult the live backend's `/api/config/public` so the pytest process and the `curio start` subprocess never disagree). To exercise the no-project UI explicitly:
 
 ```bash
 CURIO_NO_PROJECT=1 pytest \
@@ -897,7 +912,7 @@ the autouse `e2e_clean_db` must not truncate between them.
 | `CURIO_E2E_USE_EXISTING` | Set to `1` to skip server startup and use running servers. Those servers **must** carry `CURIO_TESTING=1` or every `/api/testing/*` call 404s and the autouse `e2e_clean_db` fixture errors on setup; the CI overlays (`docker-compose.ci.yml`, `docker-compose.ci-isolated.yml`) and `scripts/test.sh` set it. `scripts/test.sh` also exports this variable for its whole run, so the backend unit suite does not claim ownership of a DB the running stack is serving from. |
 | `CURIO_E2E_HOST` | Host for existing servers (default: `localhost`) |
 | `CURIO_E2E_BACKEND_PORT` | Backend port for existing servers (default: `5002`) |
-| `CURIO_E2E_SANDBOX_PORT` | Sandbox port for existing servers (default: `2000`). Reaches both the `/live` wait in `e2e_existing_servers` **and** the two helpers that call the sandbox directly, via `utils.py::sandbox_base_url`. |
+| `CURIO_E2E_SANDBOX_PORT` | Sandbox port for existing servers (default: `2000`). Reaches both the `/live` wait in `e2e_existing_servers` **and** the two helpers that call the sandbox directly, via `utils/sandbox.py::sandbox_base_url`. |
 | `CURIO_SANDBOX_TOKEN` | The sandbox's shared secret for `/exec`, `/execJs`, `/get`, `/artifact-meta` and `/monitor` (`sandbox/app/auth.py`). The self-managed path mints one and publishes it to this process; **with `CURIO_E2E_USE_EXISTING=1` you must set it yourself, to the same value the running stack was started with**: `curio.py start` mints a random one otherwise, and nothing can recover it. A mismatch fails with that sentence. |
 | `CURIO_E2E_FRONTEND_PORT` | Frontend port for existing servers (default: `8080`) |
 | `CURIO_E2E_COMPARE_DIR` | Record every screenshot comparison, passing or not, into this directory: one folder each with the expected, created and difference images and `record.json`, which `scripts/ci_report.py` turns into one HTML page. Unset, nothing is recorded. |
