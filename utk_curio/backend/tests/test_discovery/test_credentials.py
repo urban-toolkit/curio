@@ -185,7 +185,7 @@ class TestItReachesThePortalAndNowhereElse:
             def download(self, *a, **k):  # pragma: no cover
                 raise NotImplementedError
 
-        bound = T.CredentialedTransport(Spy(), f"X-App-Token:{SECRET}", hosts=("portal.example",))
+        bound = T.CredentialedTransport(Spy(), f"X-App-Token:{SECRET}", origins=("https://portal.example",))
         bound.json_get("https://portal.example/api/catalog/v1")
         assert seen["credential"] == f"X-App-Token:{SECRET}"
         assert SECRET not in seen["url"]
@@ -207,7 +207,7 @@ class TestItReachesThePortalAndNowhereElse:
             def download(self, url, sink, *, max_bytes, credential=None, **kwargs):
                 seen.append((url, credential))
 
-        bound = T.CredentialedTransport(Spy(), f"X-App-Token:{SECRET}", hosts=("portal.example",))
+        bound = T.CredentialedTransport(Spy(), f"X-App-Token:{SECRET}", origins=("https://portal.example",))
         bound.json_get("https://portal.example.evil.net/api")
         bound.get_page("https://cdn.example/listing")
         bound.download("https://scontent-ord5-1.xx.fbcdn.net/t.jpg", lambda b: None, max_bytes=10)
@@ -229,6 +229,74 @@ class TestItReachesThePortalAndNowhereElse:
         bound = DiscoveryService("alice", user=user)._transport_for(manifest)
         assert bound._for("https://portal.example/api", None) == f"X-App-Token:{SECRET}"
         assert bound._for("https://elsewhere.example/api", None) is None
+
+    @pytest.mark.parametrize("base, url, sent", [
+        ("https://portal.example", "https://portal.example/api", True),
+        # A URL without a port is on the scheme's default one.
+        ("https://portal.example", "https://portal.example:443/api", True),
+        ("https://portal.example", "https://PORTAL.example/api", True),
+        ("https://portal.example:443", "https://portal.example/api", True),
+        ("https://portal.example:8443", "https://portal.example:8443/api", True),
+        # The same host on another scheme or port is another origin.
+        ("https://portal.example", "http://portal.example/api", False),
+        ("https://portal.example", "http://portal.example:443/api", False),
+        ("https://portal.example", "https://portal.example:8443/api", False),
+        ("https://portal.example:8443", "https://portal.example/api", False),
+    ])
+    def test_the_service_sends_it_only_to_the_manifests_origin(
+        self, discovery_dir, app, db, user_and_token, base, url, sent
+    ):
+        """Scheme, host and port, as a browser compares origins. Comparing the
+        host alone sent a key for an https portal over plain http, and to any
+        other port on that host."""
+        from utk_curio.backend.app.discovery.service import DiscoveryService
+
+        write_source(discovery_dir, "source.a.origin@1", a_manifest(
+            id="source.a.origin", name="Origin Portal",
+            provider={"type": "socrata", "baseUrl": base},
+            auth={"mode": "optional-token", "secretId": "socrata.app-token",
+                  "headerName": "X-App-Token"},
+            capabilities={"formats": ["csv"]}))
+        manifest = load_source_manifest(discovery_dir / "source.a.origin@1")
+        user, _token = user_and_token
+        user.socrata_app_token = SECRET
+        db.session.commit()
+        seen = []
+
+        class Spy:
+            def json_get(self, url, *, credential=None, headers=None):
+                seen.append(credential)
+                return "{}"
+
+            def get_page(self, url, *, credential=None, headers=None):
+                seen.append(credential)
+                return "{}", {}
+
+            def download(self, url, sink, *, max_bytes, credential=None, **kwargs):
+                seen.append(credential)
+
+        bound = DiscoveryService("alice", user=user, transport=Spy())._transport_for(manifest)
+        bound.json_get(url)
+        bound.get_page(url)
+        bound.download(url, lambda b: None, max_bytes=10)
+        expected = f"X-App-Token:{SECRET}" if sent else None
+        assert seen == [expected, expected, expected]
+
+    def test_plain_http_defaults_to_port_80(self):
+        """A manifest is https, so this is the binding on its own."""
+        seen = []
+
+        class Spy:
+            def json_get(self, url, *, credential=None, headers=None):
+                seen.append(credential)
+                return "{}"
+
+        bound = T.CredentialedTransport(Spy(), f"X-App-Token:{SECRET}", origins=("http://portal.example",))
+        for url in ("http://portal.example:80/a", "http://portal.example/a", "https://portal.example/a",
+                    "http://portal.example:8080/a", "not a url"):
+            bound.json_get(url)
+        key = f"X-App-Token:{SECRET}"
+        assert seen == [key, key, None, None, None]
 
     def test_a_required_token_source_refuses_rather_than_trying_empty(self, discovery_dir, app, db, user_and_token):
         from utk_curio.backend.app.discovery.application.browse import DiscoveryBrowse
@@ -441,3 +509,84 @@ class TestTheKeysApiSettingsLists:
 
     def test_it_needs_a_signed_in_caller(self, client, shipped_root):
         assert client.get("/api/discovery/keys").status_code == 401
+
+
+class TestTheSharedGuestsKeysUnderDeploy:
+    """Without ``--deploy`` the shared guest is the one local user, and the
+    keys it saves are its own. With ``--deploy`` it is every guest at once, so
+    keys it saved in local mode on the same database are never sent; the
+    deployment's own key still is. Each test runs in both modes."""
+
+    @pytest.fixture()
+    def shared_guest(self, app, db):
+        from utk_curio.backend import config
+        from utk_curio.backend.app.users.models import User, UserSession
+
+        guest = User(username=config.CURIO_SHARED_GUEST_USERNAME, name="Guest",
+                     email="guest@test.com", is_guest=True)
+        # Saved while the instance ran without --deploy.
+        for column in credentials.SLOT_COLUMNS.values():
+            setattr(guest, column, SECRET)
+        db.session.add(guest)
+        db.session.flush()
+        db.session.add(UserSession(user_id=guest.id, token="shared-guest-token"))
+        db.session.commit()
+        return guest
+
+    @staticmethod
+    def _mode(monkeypatch, deploy):
+        from utk_curio.backend import config
+
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", not deploy)
+        monkeypatch.delenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", raising=False)
+
+    @pytest.mark.parametrize("deploy", [False, True], ids=["local", "deploy"])
+    def test_its_saved_keys_are_sent_only_without_deploy(self, shared_guest, monkeypatch, deploy):
+        self._mode(monkeypatch, deploy)
+        for slot in credentials.SLOTS:
+            assert credentials.own_token(shared_guest, slot) == (None if deploy else SECRET), slot
+            assert credentials.token_for_slot(shared_guest, slot) == (None if deploy else SECRET), slot
+            assert credentials.has_token(shared_guest, slot) is (not deploy), slot
+        chicago = load_source_manifest(SHIPPED_ROOT / "source.cityofchicago.data-portal@1")
+        assert credentials.credential_header(shared_guest, chicago) == (
+            None if deploy else f"X-App-Token:{SECRET}"
+        )
+
+    @pytest.mark.parametrize("deploy", [False, True], ids=["local", "deploy"])
+    def test_the_service_binds_none_under_deploy(self, discovery_dir, shared_guest, monkeypatch, deploy):
+        from utk_curio.backend.app.discovery.service import DiscoveryService
+
+        self._mode(monkeypatch, deploy)
+        write_source(discovery_dir, "source.a.tokened@1", a_manifest(
+            id="source.a.tokened", name="Tokened Portal",
+            provider={"type": "socrata", "baseUrl": "https://portal.example"},
+            auth={"mode": "optional-token", "secretId": "socrata.app-token",
+                  "headerName": "X-App-Token"},
+            capabilities={"formats": ["csv"]}))
+        manifest = load_source_manifest(discovery_dir / "source.a.tokened@1")
+        seen = []
+
+        class Spy:
+            def json_get(self, url, *, credential=None, headers=None):
+                seen.append(credential)
+                return "{}"
+
+        DiscoveryService("guest", user=shared_guest, transport=Spy())._transport_for(manifest).json_get(
+            "https://portal.example/api"
+        )
+        assert seen == [None if deploy else f"X-App-Token:{SECRET}"]
+
+    @pytest.mark.parametrize("deploy", [False, True], ids=["local", "deploy"])
+    def test_api_settings_reports_them_only_without_deploy(self, client, shipped_root, shared_guest,
+                                                           monkeypatch, deploy):
+        self._mode(monkeypatch, deploy)
+        res = client.get("/api/discovery/keys", headers={"Authorization": "Bearer shared-guest-token"})
+        assert res.status_code == 200, res.get_data(as_text=True)
+        for row in res.get_json()["keys"]:
+            assert row["present"] is (not deploy), row["slot"]
+        assert SECRET not in res.get_data(as_text=True)
+
+    def test_under_deploy_the_deployments_key_is_sent_instead(self, shared_guest, monkeypatch):
+        self._mode(monkeypatch, True)
+        monkeypatch.setenv("CURIO_DEFAULT_SOCRATA_APP_TOKEN", "deployment-token")
+        assert credentials.token_for_slot(shared_guest, "socrata.app-token") == "deployment-token"

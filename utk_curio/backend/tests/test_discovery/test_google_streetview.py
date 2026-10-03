@@ -249,7 +249,7 @@ class TestTheKeyOnTheWire:
             def download(self, url, sink, *, max_bytes, credential=None, **kwargs):
                 seen.append(credential)
 
-        bound = T.CredentialedTransport(Spy(), self.KEY, hosts=("maps.googleapis.com",))
+        bound = T.CredentialedTransport(Spy(), self.KEY, origins=("https://maps.googleapis.com",))
         bound.download("https://elsewhere.example/x.jpg", lambda b: None, max_bytes=1)
         bound.download(self.URL, lambda b: None, max_bytes=1)
         assert seen == [None, self.KEY]
