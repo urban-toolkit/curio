@@ -31,7 +31,7 @@ import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { ICodeData } from "../../types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
-import { outputMountStyle } from "../../utils/outputMountStyle";
+import { contentMountStyle, outputMountStyle } from "../../utils/outputMountStyle";
 
 type NodeEditorProps = {
     outputId?: string;
@@ -357,7 +357,18 @@ function NodeEditor({
                                                 )}
                                             ></div>
                                         ) : (
-                                            contentComponent
+                                            // The same inset as the Vega
+                                            // mount, so the markers cover no
+                                            // map edge or plot axis (#631).
+                                            <div
+                                                className="curio-content-mount"
+                                                style={contentMountStyle(
+                                                    !dashboardOn && inputMarker,
+                                                    !dashboardOn && outputMarker,
+                                                )}
+                                            >
+                                                {contentComponent}
+                                            </div>
                                         )}
                                     </Tab.Pane>
                                 ) : null}
