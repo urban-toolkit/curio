@@ -363,6 +363,11 @@ Curio ships with **no default LLM endpoint**. Until an operator sets a Deploymen
 | `GUEST_LLM_API_KEY` | `--guest-llm-api-key` | The key of the guest configuration, which every guest on a `--deploy` instance answers with. Unset, it takes `CURIO_DEFAULT_LLM_API_KEY`; with neither, guests get no AI. |
 | `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | none | The guest configuration's provider, endpoint and model. Unset, it takes the deployment's. A guest configuration needs a key and a model. |
 | `CURIO_SEARCH_URL` | `--agent-search-url` | Where the web-search tool looks, as a URL template with `{q}`. Defaults to DuckDuckGo's keyless Instant Answer API; point it at a local SearXNG, SerpAPI, or Google Programmable Search for ranked results. |
+| `CURIO_SOLVE_MAX_ATTEMPTS` | `--solve-max-attempts` | How many times Solve may try one node, counting the first generation. Default 40. |
+| `CURIO_SOLVE_NODE_BUDGET` | `--solve-node-budget` | Wall-clock seconds Solve may spend repairing one node. Default 900. |
+| `CURIO_SOLVE_SESSION_DEADLINE` | `--solve-session-deadline` | Seconds one Solve session keeps managing the dataflow. It also caps each node's budget. Default 900. |
+| `CURIO_SOLVE_BATCH_DEADLINE` | `--solve-batch-deadline` | Seconds a Solve batch may run in all. Default 2700. |
+| `CURIO_VALIDATION_EXEC_TIMEOUT` | `--validation-exec-timeout` | Seconds one node may run when an agent validates code. Default 300. |
 
 Run `python curio.py start --help` for the current list. A flag writes its variable only when passed, so a value already in the environment is not cleared by a start that omits it.
 
