@@ -2,8 +2,8 @@
 
 ``llm-prompts/examples.md`` indexes every dataflow Curio ships, one line each,
 under "Used" or "Not used". A line links its file and says what the dataflow
-shows; the file itself holds the name, task, categories, node types and
-datasets, so the index never repeats them.
+shows; the file itself holds the task, categories, node types and datasets,
+so a line never repeats them.
 
 A run of a mode that takes worked examples (``builtin.gets_worked_examples``)
 gets the "Used" dataflows closest to what it knows: the user's message, the
