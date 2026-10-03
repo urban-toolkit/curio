@@ -199,7 +199,7 @@ def _refuse_unisolated_deploy(exec_user, blockers):
         "and run it as the single-user tool it then is."
     )
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, backend_url=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, backend_url=None, discovery_root=None, models_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -231,15 +231,19 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     os.environ["CURIO_SEED_EXAMPLES"] = "1" if with_examples else "0"
     os.environ["CURIO_RESEED_PACKAGES"] = "1" if reseed else "0"
     os.environ["CURIO_ALLOW_FACTORY_CATALOG_PUBLISH"] = "1" if allow_publish else "0"
-    # No CLI flag: this only seeds the per-node "Save output dataset" toggle,
-    # which every user can flip in the UI, so it is an operator env var rather
-    # than another curio.py argument. Read, never overwritten, so setting it in
-    # a compose ``environment:`` block reaches the backend.
+    # Seeds the per-node "Save output dataset" toggle, which every user can
+    # still flip in the UI.
+    if save_node_outputs is not None:
+        os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] = "1" if save_node_outputs else "0"
     os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] = os.environ.get(
         "CURIO_DEFAULT_SAVE_NODE_OUTPUT", "0"
     )
     if catalog_root:
         os.environ["CURIO_CATALOG_ROOT"] = str(Path(catalog_root).expanduser().resolve())
+    if discovery_root:
+        os.environ["CURIO_DISCOVERY_ROOT"] = str(Path(discovery_root).expanduser().resolve())
+    if models_root:
+        os.environ["CURIO_MODELS_ROOT"] = str(Path(models_root).expanduser().resolve())
     # Respect an already-set CURIO_LAUNCH_CWD / CURIO_SHARED_DATA so the test
     # harness can point the backend at a dedicated workspace (see
     # utk_curio/backend/tests/conftest.py). Only fall back to cwd otherwise.
@@ -345,6 +349,18 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
             )
         os.environ["CURIO_EXEC_TIMEOUT"] = str(exec_timeout)
 
+    # Solve's budgets (agents/application/solve/budgets.py) and the per-node
+    # timeout of an agent's validation run (execution/runner.py).
+    for env_name, value in (
+        ("CURIO_SOLVE_MAX_ATTEMPTS", solve_max_attempts),
+        ("CURIO_SOLVE_NODE_BUDGET", solve_node_budget),
+        ("CURIO_SOLVE_SESSION_DEADLINE", solve_session_deadline),
+        ("CURIO_SOLVE_BATCH_DEADLINE", solve_batch_deadline),
+        ("CURIO_VALIDATION_EXEC_TIMEOUT", validation_exec_timeout),
+    ):
+        if value:
+            os.environ[env_name] = str(value)
+
     # AI provider. Curio ships no endpoint of its own (see backend/config.py):
     # an instance whose operator configures nothing resolves no provider, and
     # the agent surfaces say so rather than reaching a third party nobody chose.
@@ -382,6 +398,10 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     log_always("CURIO_SANDBOX_TOKEN=<set>")
     if catalog_root:
         log_always(f"CURIO_CATALOG_ROOT={os.environ['CURIO_CATALOG_ROOT']}")
+    if discovery_root:
+        log_always(f"CURIO_DISCOVERY_ROOT={os.environ['CURIO_DISCOVERY_ROOT']}")
+    if models_root:
+        log_always(f"CURIO_MODELS_ROOT={os.environ['CURIO_MODELS_ROOT']}")
     log_always(f"ENABLE_COLLAB={os.environ['ENABLE_COLLAB']}")
 
 def seed_duckdb_extensions():
@@ -1841,6 +1861,30 @@ def main():
         ),
     )
     parser.add_argument(
+        "--discovery-root", default=None, metavar="PATH",
+        help=(
+            "Directory the shipped Discovery Catalog sources are read from "
+            "(sets CURIO_DISCOVERY_ROOT). Defaults to <repo_root>/discovery/. "
+            "An operator's own sources stay under .curio/discovery/."
+        ),
+    )
+    parser.add_argument(
+        "--models-root", default=None, metavar="PATH",
+        help=(
+            "Directory the shipped Model Catalog models are read from (sets "
+            "CURIO_MODELS_ROOT). Defaults to <repo_root>/models/. Models a "
+            "user adds stay in that user's own store."
+        ),
+    )
+    parser.add_argument(
+        "--save-node-outputs", action=argparse.BooleanOptionalAction, default=None,
+        help=(
+            "Whether a new node's 'Save output dataset' toggle starts on (sets "
+            "CURIO_DEFAULT_SAVE_NODE_OUTPUT). Default: off. Users can still "
+            "flip it on each node."
+        ),
+    )
+    parser.add_argument(
         "--llm-provider", default=None, choices=["openai_compatible", "anthropic", "gemini"],
         help=(
             "Provider kind of this Curio's own LLM endpoint (sets "
@@ -1886,6 +1930,42 @@ def main():
             "query (sets CURIO_SEARCH_URL). Defaults to DuckDuckGo's "
             "keyless Instant Answer API. Point it at a local SearXNG, "
             "SerpAPI, or Google Programmable Search for ranked web results."
+        ),
+    )
+    parser.add_argument(
+        "--solve-max-attempts", type=int, default=None, metavar="N",
+        help=(
+            "How many times Solve may try one node, counting the first "
+            "generation (sets CURIO_SOLVE_MAX_ATTEMPTS, default 40)."
+        ),
+    )
+    parser.add_argument(
+        "--solve-node-budget", type=int, default=None, metavar="SECONDS",
+        help=(
+            "Wall-clock budget of Solve's repair of one node, in seconds (sets "
+            "CURIO_SOLVE_NODE_BUDGET, default 900)."
+        ),
+    )
+    parser.add_argument(
+        "--solve-session-deadline", type=int, default=None, metavar="SECONDS",
+        help=(
+            "How long one Solve session keeps managing the dataflow, in "
+            "seconds; it also caps each node's budget (sets "
+            "CURIO_SOLVE_SESSION_DEADLINE, default 900)."
+        ),
+    )
+    parser.add_argument(
+        "--solve-batch-deadline", type=int, default=None, metavar="SECONDS",
+        help=(
+            "Outer bound on a Solve batch, in seconds (sets "
+            "CURIO_SOLVE_BATCH_DEADLINE, default 2700)."
+        ),
+    )
+    parser.add_argument(
+        "--validation-exec-timeout", type=int, default=None, metavar="SECONDS",
+        help=(
+            "Per-node timeout of the runs an agent makes to validate code, in "
+            "seconds (sets CURIO_VALIDATION_EXEC_TIMEOUT, default 300)."
         ),
     )
     parser.add_argument(
@@ -1954,6 +2034,14 @@ def main():
         guest_llm_api_key=args.guest_llm_api_key,
         agent_search_url=args.agent_search_url,
         backend_url=args.backend_url,
+        discovery_root=args.discovery_root,
+        models_root=args.models_root,
+        save_node_outputs=args.save_node_outputs,
+        solve_max_attempts=args.solve_max_attempts,
+        solve_node_budget=args.solve_node_budget,
+        solve_session_deadline=args.solve_session_deadline,
+        solve_batch_deadline=args.solve_batch_deadline,
+        validation_exec_timeout=args.validation_exec_timeout,
     )
 
     # Handle standalone rebuild or db init without starting servers. Neither
