@@ -417,7 +417,7 @@ def builtin_lists(manifest: dict) -> dict[str, str]:
 
 
 def preamble_fields(manifest: dict, schema: dict, trill: dict) -> dict:
-    """The generated values ``default_preamble.template.txt`` names."""
+    """The generated values ``default_preamble.template.md`` names."""
     autk_label = _builtin_template(manifest, AUTK_TEMPLATE).get("label", "Autark")
     return {
         "trill.schema": render_trill_block(trill),
@@ -427,15 +427,15 @@ def preamble_fields(manifest: dict, schema: dict, trill: dict) -> dict:
 
 
 def render_default_preamble() -> str:
-    """``default_preamble.txt``: its template with every ``{{field}}`` filled."""
+    """``default_preamble.md``: its template with every ``{{field}}`` filled."""
     root = _repo_root()
-    text = (root / PROMPTS_DIR / "default_preamble.template.txt").read_text(encoding="utf-8")
+    text = (root / PROMPTS_DIR / "default_preamble.template.md").read_text(encoding="utf-8")
     manifest = json.loads((root / BUILTIN_MANIFEST).read_text(encoding="utf-8"))
     trill = json.loads((root / TRILL_SCHEMA).read_text(encoding="utf-8"))
     for key, value in preamble_fields(manifest, load_autk_schema(), trill).items():
         marker = "{{" + key + "}}"
         if marker not in text:
-            raise KeyError(f"default_preamble.template.txt has no {marker}")
+            raise KeyError(f"default_preamble.template.md has no {marker}")
         text = text.replace(marker, value)
     return text
 
@@ -705,7 +705,7 @@ GENERATED_OUTPUTS: dict[str, Callable[[], str]] = {
     "utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts": render_render_causes_ts,
     "utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts": render_autk_grammar_ts,
     "utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts": render_agent_categories_ts,
-    f"{PROMPTS_DIR}/default_preamble.txt": render_default_preamble,
+    f"{PROMPTS_DIR}/default_preamble.md": render_default_preamble,
 }
 
 

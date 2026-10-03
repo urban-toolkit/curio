@@ -118,7 +118,7 @@ Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema),
 - `scripts/test.sh`: boots and runs each suite; CI calls it and `curio test` wraps it.
 - `scripts/clean.sh`: removes build artifacts and runtime data. `scripts/kill-curio.sh`: kills leftover Curio server processes.
 - `scripts/new_package.py`: scaffolds a node package. `scripts/regen_integrity.py`: rewrites a package's `integrity.json`.
-- `scripts/generate_contracts.py`: writes `src/generated/` and `utk_curio/llm-prompts/default_preamble.txt`; `--check` lists stale outputs.
+- `scripts/generate_contracts.py`: writes `src/generated/` and `utk_curio/llm-prompts/default_preamble.md`; `--check` lists stale outputs.
 - `scripts/sync_autk_schema.py`: vendors the Autark grammar schema; `--check` compares it with the release.
 - `scripts/validate_trill.py`: validates dataflow JSON against `docs/schemas/trill.v1.json`.
 - Example builders: `scripts/build_example_*.py`. Test fixtures: `scripts/record_discovery_fixtures.py` and the `generate_*_fixture.py` scripts. CI helpers: `scripts/ci_*.py` and the shard balancers `e2e_*.py`, `unit_durations.py`.
@@ -139,5 +139,5 @@ Generated, vendored or data files:
 - `*.geojson`, `datasets/*/data/`, `models/*/files/`, `vendor/`.
 - `utk_curio/backend/tests/test_discovery/fixtures/` (recorded portal responses).
 - `docs/examples/dataflows/expected_outputs/` (screenshot baselines).
-- `utk_curio/llm-prompts/default_preamble.txt`: generated; edit `default_preamble.template.txt` or `contracts.py`, then run `scripts/generate_contracts.py`.
+- `utk_curio/llm-prompts/default_preamble.md`: generated; edit `default_preamble.template.md` or `contracts.py`, then run `scripts/generate_contracts.py`.
 - `test_feature_tour_video.py`, `test_stress_tour_video.py`, `test_user_stress_video.py` in `test_frontend/`, unless working on the video tours.

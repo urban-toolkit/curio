@@ -204,7 +204,7 @@ class TestMaterialize:
         # After install, the definition + its prompt asset are on disk in the store.
         d = storage.agent_definition_dir(_user_dir_key(user), coord)
         assert (d / "manifest.json").is_file()
-        assert (d / "prompts" / "new_connection_prompt.txt").is_file()
+        assert (d / "prompts" / "new_connection_prompt.md").is_file()
 
     def test_materialized_builtin_is_not_publishable(self, client, user_and_token, tmp_curio):
         # Even after its bytes are in the store, a built-in stays non-publishable.
@@ -363,8 +363,8 @@ class TestMaterializePreamble:
         )
         assert r.status_code == 201, r.get_data(as_text=True)
         d = agents_storage.agent_definition_dir(_user_dir_key(user), coord)
-        assert (d / "prompts/new_connection_prompt.txt").is_file()
-        assert (d / "prompts/default_preamble.txt").is_file()
+        assert (d / "prompts/new_connection_prompt.md").is_file()
+        assert (d / "prompts/default_preamble.md").is_file()
 
 
 class TestBuiltinPromptPropagation:

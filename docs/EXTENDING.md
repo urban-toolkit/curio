@@ -305,7 +305,7 @@ A generic Spatial Join that takes points + polygons and tags each point with a c
 
 This one belongs in `curio.builtin@1`, not `curio.streetvision@1`, because it's reusable for any spatial workflow. Generally: if a capability is reusable outside the package's narrow theme, factor it out into builtin.
 
-The agents' shared preamble describes every `curio.builtin@1` template from this manifest: its label, description, control, port types, how many connections its inputs accept, and interaction support. After adding or changing a built-in template, run `python scripts/generate_contracts.py` and commit the regenerated `utk_curio/llm-prompts/default_preamble.txt` with the manifest; the backend suite fails until you do (see [CONTRIBUTING.md, Generated Files](CONTRIBUTING.md#generated-files)).
+The agents' shared preamble describes every `curio.builtin@1` template from this manifest: its label, description, control, port types, how many connections its inputs accept, and interaction support. After adding or changing a built-in template, run `python scripts/generate_contracts.py` and commit the regenerated `utk_curio/llm-prompts/default_preamble.md` with the manifest; the backend suite fails until you do (see [CONTRIBUTING.md, Generated Files](CONTRIBUTING.md#generated-files)).
 
 ### 4.4 Behavior hooks
 

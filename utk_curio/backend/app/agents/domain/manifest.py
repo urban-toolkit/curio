@@ -13,7 +13,7 @@ Key invariants enforced here (the point of this module):
 * **Capability ids are semantic behavior contracts, never asset paths.** A
   capability id must be two-or-more dot-separated lowercase segments
   (``node.explain``, ``dataflow.orchestrate``, ``package.recommend``) and must
-  not contain a prompt filename, path separator, underscore, or ``.txt``.
+  not contain a prompt filename, path separator, underscore, ``.txt`` or ``.md``.
 * Prompt assets are referenced by *contained* package-relative path — no
   absolute paths and no ``..`` escapes.
 
@@ -33,7 +33,7 @@ AGENT_ID_RE = re.compile(r"^agent\.[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 # Semantic capability id: two or more dot-separated lowercase segments, e.g.
 # 'node.explain', 'dataset.fetch.author', 'package.recommend'. Deliberately
-# excludes underscores, slashes, and '.txt' so a prompt filename can never
+# excludes underscores, slashes, '.txt' and '.md' so a prompt filename can never
 # double as a capability id.
 CAPABILITY_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$")
 
@@ -53,7 +53,7 @@ _TARGET_KINDS = ("node", "canvas", "connection")
 _TRUST_TIERS = ("built-in", "global", "imported")
 
 # Tokens a capability id must never contain (prompt-filename / path leakage).
-_FORBIDDEN_CAPABILITY_SUBSTRINGS = ("_prompt", ".txt", "/", "\\", "_")
+_FORBIDDEN_CAPABILITY_SUBSTRINGS = ("_prompt", ".txt", ".md", "/", "\\", "_")
 
 
 class AgentManifestError(ValueError):

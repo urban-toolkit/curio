@@ -22,7 +22,7 @@ from utk_curio.backend.tests.test_agents.test_routes_proposals import (
 )
 
 _PROMPT_PATH = (
-    Path(__file__).resolve().parents[3] / "llm-prompts" / "package_build_instruction.txt"
+    Path(__file__).resolve().parents[3] / "llm-prompts" / "package_build_instruction.md"
 )
 
 
