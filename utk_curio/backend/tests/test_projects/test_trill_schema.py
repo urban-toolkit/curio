@@ -316,6 +316,16 @@ REJECTED = {
     "data pool setting the pool does not have": lambda d: _node(d)["metadata"].update(
         dataPool={"propagate": "MERGE_OR"}
     ),
+    # A node's widgets (#662): named, typed, and nothing else.
+    "widget without a type": lambda d: _node(d)["metadata"].update(
+        widgets=[{"name": "factor", "default": 1}]
+    ),
+    "widget with an old marker type": lambda d: _node(d)["metadata"].update(
+        widgets=[{"name": "factor", "type": "INPUT_VALUE", "default": 1}]
+    ),
+    "widget named as an old marker": lambda d: _node(d)["metadata"].update(
+        widgets=[{"name": "factor$INPUT_VALUE$1", "type": "number", "default": 1}]
+    ),
     "dataflow without a name": lambda d: d["dataflow"].pop("name"),
     "dataflow without a timestamp": lambda d: d["dataflow"].pop("timestamp"),
     "spec without a dataflow": lambda d: d.pop("dataflow"),
@@ -337,6 +347,12 @@ ACCEPTED = {
     ),
     "empty graph": lambda d: d["dataflow"].update(nodes=[], edges=[]),
     "fractional coordinates": lambda d: _node(d).update(x=12.5, y=-3.25),
+    "widgets with a set value and choices": lambda d: _node(d)["metadata"].update(
+        widgets=[
+            {"name": "factor", "type": "number", "label": "Factor", "default": 1, "value": 2},
+            {"name": "season", "type": "choice", "default": "summer", "options": {"choices": ["summer", "winter"]}},
+        ]
+    ),
 }
 
 
