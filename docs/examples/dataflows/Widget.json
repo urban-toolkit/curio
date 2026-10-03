@@ -20,12 +20,20 @@
         "type": "curio.builtin/computation-analysis",
         "x": 189.7077321723625,
         "y": 628.6117082974511,
-        "content": "# Multiplier widget\r\nnumber_multiplier = [!! Number Multiplier$INPUT_VALUE$10 !!]\r\nreturn {'multiplier': number_multiplier}\r\n",
+        "content": "# Multiplier widget\r\nnumber_multiplier = [!! number_multiplier !!]\r\nreturn {'multiplier': number_multiplier}\r\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "number_multiplier",
+              "type": "number",
+              "label": "Number Multiplier",
+              "default": 10
+            }
+          ]
         }
       },
       {
