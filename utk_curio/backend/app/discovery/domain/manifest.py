@@ -126,11 +126,12 @@ AUTH_SCHEMES = ("header", "query")
 #: readable without the ORM; ``test_credentials.py`` asserts the two agree.
 KNOWN_SECRET_SLOTS = ("socrata.app-token", "huggingface.token", "google.maps-key", "mapillary.token")
 
-#: The formats this catalog can hand to the Data Catalog's importer. A subset
-#: of the Data Catalog's own SUPPORTED_FORMATS: multi-file and archive formats
-#: (shp, bundle) are not acquirable remotely in v1 - a .shp is meaningless
-#: without its sibling .dbf/.shx, and unpacking a remote archive is a
-#: decompression-bomb surface that deserves its own design.
+#: The formats this catalog can hand to the Data Catalog's importer: what a
+#: download lands as. A subset of the Data Catalog's own SUPPORTED_FORMATS: a
+#: bare .shp is meaningless without its sibling .dbf/.shx, and a bundle is a
+#: node output. An archive is how a file travels, not a format: a downloaded
+#: zip or gzip is unpacked (``application/archives.py``) and what it holds is
+#: checked against these, a zipped shapefile and a GTFS feed as parquet.
 DISCOVERY_ACQUIRABLE_FORMATS = ("csv", "geojson", "json", "parquet", "geotiff")
 
 #: What a storage resource can be. ``table`` files are copied into the Data
