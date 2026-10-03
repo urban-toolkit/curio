@@ -6,19 +6,28 @@ defined here exactly once. Python imports it from this module; every other
 consumer receives a GENERATED copy, rendered by the functions below and
 written by ``scripts/generate_contracts.py``.
 
+The built-in prompts are outputs too. A prompt that states something the code
+owns is a template, and each such fact in it is a field that ``PROMPT_FIELDS``
+renders from the code that owns it (see Prompt templates below).
+
 ``GENERATED_OUTPUTS`` is the one registry of committed outputs. The CLI writes
 each entry and ``test_generated_contracts`` re-renders each entry and fails on
 any difference, so a hand edit to an output, or a change here that was never
 regenerated, turns the suite red.
 
-Pure and importable from an installed wheel: no I/O at import time, nothing
-beyond the standard library.
+Importable from an installed wheel, and with no I/O at import time: the module
+imports only the standard library. A renderer reads the files it projects when
+it is called, and a prompt field imports the module that owns its fact inside
+its own function (the built-in agents, the packages layer, the egress policy),
+so importing this module never pulls those in.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
+from functools import cached_property, partial
 from pathlib import Path
 from typing import Callable
 from urllib.parse import unquote
@@ -364,12 +373,19 @@ def _compact_json(value, depth: int = 0) -> str:
     return json.dumps(value)
 
 
+def _is_python_code(template: dict) -> bool:
+    """Whether a node made from *template* is controlled through Python code."""
+    return template.get("editor") == "code" and template.get("engine") != "javascript"
+
+
 def _control(template: dict) -> str:
     editor = template.get("editor")
     if editor == "grammar":
         return "controllable through grammar."
+    if _is_python_code(template):
+        return "controllable through python code."
     if editor == "code":
-        return "controllable through JavaScript code." if template.get("engine") == "javascript" else "controllable through python code."
+        return "controllable through JavaScript code."
     return "uncontrollable."
 
 
@@ -408,36 +424,287 @@ def builtin_lists(manifest: dict) -> dict[str, str]:
             rows["output_count"].append(f"- {label}: {_cardinality(outputs)}")
         if template.get("bidirectional"):
             rows["interaction"].append(f"- {label}")
-    slots = input_capacity(MERGE_TEMPLATE, 1)
-    names = [f'"in_{n}"' for n in range(slots)]
+    names = [f'"{name}"' for name in merge_slot_names()]
     return {
         **{f"builtin.{key}": "\n".join(lines) for key, lines in rows.items()},
         "builtin.merge_slots": ", ".join(names[:-1]) + f" or {names[-1]}" if len(names) > 1 else names[0],
     }
 
 
-def preamble_fields(manifest: dict, schema: dict, trill: dict) -> dict:
-    """The generated values ``default_preamble.template.txt`` names."""
-    autk_label = _builtin_template(manifest, AUTK_TEMPLATE).get("label", "Autark")
-    return {
-        "trill.schema": render_trill_block(trill),
-        **builtin_lists(manifest),
-        "autk.grammar": render_autk_region(schema, autk_label),
-    }
+def merge_slot_names() -> list[str]:
+    """The Merge Flow's input sockets, ``in_0`` up: one per connection it
+    accepts (``input_capacity``)."""
+    from utk_curio.backend.app.packages.application.templates import input_capacity
+
+    return [f"in_{n}" for n in range(input_capacity(MERGE_TEMPLATE, 1))]
+
+
+# --- Prompt templates ---------------------------------------------------------
+#
+# A built-in prompt that states something the code owns is a template:
+# ``<stem>.template.md`` in ``PROMPTS_DIR``, rendered to ``<stem>.md`` beside it.
+# The template holds the hand-written text, and each fact the code owns is a
+# marker, ``{{field}}`` or ``{{field:arg}}``, that ``render_prompt`` fills from
+# ``PROMPT_FIELDS``. Each field is one small function that reads its source
+# when the prompt is rendered, so a change there reaches the prompt through
+# the generator, never through a hand edit.
+
+#: Every prompt rendered from a template, by stem.
+PROMPT_TEMPLATES: tuple[str, ...] = (
+    "default_preamble",
+    "chat_prompt",
+    "discovery_instruction",
+    "evaluate_coherence_subtasks_prompt",
+    "evaluate_generated_content_prompt",
+    "new_content_prompt",
+    "node_build_instruction",
+    "orchestration_instruction",
+    "package_build_instruction",
+    "package_contract",
+    "package_recommendation_instruction",
+    "research_instruction",
+    "researcher_notes_instruction",
+)
+#: The Package Builder's backend contract: a fragment the Package Builder's
+#: instruction includes whole, and a delegated Package Builder receives as an
+#: input (``turns/delegates.py``).
+PACKAGE_CONTRACT = "package_contract"
+
+#: A marker: a field name, then the argument after a colon when it takes one.
+_MARKER_RE = re.compile(r"\{\{([a-z][a-z0-9_.]*)(?::([^{}]+))?\}\}")
+
+
+class PromptTemplateError(ValueError):
+    """A template names a field the registry does not define, gives a field
+    the wrong argument, or renders to text that still holds a marker."""
+
+
+class _Sources:
+    """The files the fields read, each loaded at most once per render."""
+
+    @cached_property
+    def manifest(self) -> dict:
+        return json.loads((_repo_root() / BUILTIN_MANIFEST).read_text(encoding="utf-8"))
+
+    @cached_property
+    def trill(self) -> dict:
+        return json.loads((_repo_root() / TRILL_SCHEMA).read_text(encoding="utf-8"))
+
+    @cached_property
+    def autk(self) -> dict:
+        return load_autk_schema()
+
+    @cached_property
+    def lists(self) -> dict[str, str]:
+        return builtin_lists(self.manifest)
+
+
+@dataclass(frozen=True)
+class PromptField:
+    """One fact a prompt states from code. ``render`` takes the sources, and
+    the marker's argument as well when the field ``takes_arg``."""
+
+    render: Callable[..., str]
+    takes_arg: bool = False
+
+
+def _builtin_list(key: str) -> PromptField:
+    """One of ``builtin_lists``: every built-in template, one line each."""
+    return PromptField(lambda src: src.lists[key])
+
+
+def _agent_name(_src: _Sources, agent_id: str) -> str:
+    """A built-in agent's display name, by its id (``BUILTIN_AGENTS``)."""
+    from utk_curio.backend.app.agents.domain.builtin import BUILTIN_AGENTS
+
+    for spec in BUILTIN_AGENTS:
+        if spec.agent_id == agent_id:
+            return spec.name
+    raise PromptTemplateError(f"no built-in agent has the id {agent_id!r}")
+
+
+def _template_label(src: _Sources, coord: str) -> str:
+    """A built-in template's label, by ``<package id>/<template id>``."""
+    try:
+        return _builtin_template(src.manifest, coord)["label"]
+    except KeyError:
+        raise PromptTemplateError(f"{BUILTIN_MANIFEST} has no labelled template {coord!r}") from None
+
+
+def _merge_range(_src: _Sources) -> str:
+    """The Merge Flow's sockets as a range, first to last."""
+    names = merge_slot_names()
+    return f'"{names[0]}".."{names[-1]}"'
+
+
+def _not_code(src: _Sources) -> str:
+    """The built-in templates whose nodes hold no Python or JavaScript code
+    (``_control`` calls them uncontrollable or grammar), one ``- <label>`` line
+    each: there is no code for the coherence check to judge."""
+    return "\n".join(
+        f"- {template.get('label') or template.get('id')}"
+        for template in src.manifest.get("templates", [])
+        if template.get("editor") != "code"
+    )
+
+
+def _note_palette(_src: _Sources) -> str:
+    """The colour names a node's appearance accepts (``NAMED_COLORS``)."""
+    from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
+
+    return ", ".join(NAMED_COLORS)
+
+
+def _web_calls_per_run(_src: _Sources) -> str:
+    """How many web calls one run may make (``MAX_CALLS_PER_RUN``)."""
+    from utk_curio.backend.app.common.egress_policy import MAX_CALLS_PER_RUN
+
+    return str(MAX_CALLS_PER_RUN)
+
+
+def _rows_per_lane(_src: _Sources) -> str:
+    """How many rows each lane of a candidates card holds."""
+    from utk_curio.backend.app.agents.domain.content import _CANDIDATES_MAX_ROWS_PER_LANE
+
+    return str(_CANDIDATES_MAX_ROWS_PER_LANE)
+
+
+def _runtime_block_keys(_src: _Sources) -> str:
+    """The keys of a node row's ``runtime`` block, as ``{a, b, ...}``."""
+    from utk_curio.backend.app.agents.domain.node_context import RUNTIME_BLOCK_KEYS
+
+    return "{" + ", ".join(RUNTIME_BLOCK_KEYS) + "}"
+
+
+def _input_kind_list(_src: _Sources) -> str:
+    """The ``inputContract`` kind of an ``arg`` that is a list, quoted."""
+    from utk_curio.backend.app.agents.domain.input_contract import KIND_LIST
+
+    return json.dumps(KIND_LIST)
+
+
+def _input_kind_single(_src: _Sources) -> str:
+    """The ``inputContract`` kind of an ``arg`` that is one value, quoted."""
+    from utk_curio.backend.app.agents.domain.input_contract import KIND_SINGLE
+
+    return json.dumps(KIND_SINGLE)
+
+
+def _vega_runtime_field(_src: _Sources, name: str) -> str:
+    """A field Curio adds to every row a Vega-Lite node reads, quoted; the
+    argument must be one of ``RUNTIME_FIELDS``."""
+    from utk_curio.backend.app.agents.domain.document_validation import RUNTIME_FIELDS
+
+    if name not in RUNTIME_FIELDS:
+        raise PromptTemplateError(f"{name!r} is not one of RUNTIME_FIELDS {RUNTIME_FIELDS}")
+    return json.dumps(name)
+
+
+def _handler_pattern(_src: _Sources) -> str:
+    """The pattern a package backend handler's name must match."""
+    from utk_curio.backend.app.packages.domain.backend_contract import HANDLER_NAME_RE
+
+    return HANDLER_NAME_RE.pattern
+
+
+def _timeout_classes(_src: _Sources) -> str:
+    """The timeout classes a handler may declare, quoted, as ``"a"|"b"``."""
+    from utk_curio.backend.app.packages.domain.backend_contract import TIMEOUT_CLASSES
+
+    return "|".join(json.dumps(name) for name in TIMEOUT_CLASSES)
+
+
+def _server_code_permission(_src: _Sources) -> str:
+    """The permission a package with backend code declares."""
+    from utk_curio.backend.app.packages.domain.backend_contract import PERMISSION_SERVER_CODE
+
+    return PERMISSION_SERVER_CODE
+
+
+def _server_network_permission(_src: _Sources) -> str:
+    """The permission a package whose backend code reaches the network declares."""
+    from utk_curio.backend.app.packages.domain.backend_contract import PERMISSION_SERVER_NETWORK
+
+    return PERMISSION_SERVER_NETWORK
+
+
+def _data_dir_env(_src: _Sources) -> str:
+    """The environment variable that names a handler's persistent directory."""
+    from utk_curio.backend.app.packages.domain.backend_contract import DATA_DIR_ENV
+
+    return DATA_DIR_ENV
+
+
+def _package_contract(_src: _Sources) -> str:
+    """The Package Builder's backend contract, rendered, to include whole."""
+    return render_prompt(PACKAGE_CONTRACT).rstrip("\n")
+
+
+#: Every field a prompt template may name, by the name its marker uses.
+PROMPT_FIELDS: dict[str, PromptField] = {
+    "trill.schema": PromptField(lambda src: render_trill_block(src.trill)),
+    **{key: _builtin_list(key) for key in (
+        "builtin.nodes", "builtin.control", "builtin.inputs", "builtin.outputs",
+        "builtin.input_count", "builtin.output_count", "builtin.interaction",
+        "builtin.merge_slots",
+    )},
+    "builtin.merge_range": PromptField(_merge_range),
+    "builtin.not_code": PromptField(_not_code),
+    "autk.grammar": PromptField(
+        lambda src: render_autk_region(src.autk, _template_label(src, AUTK_TEMPLATE))
+    ),
+    "agent.name": PromptField(_agent_name, takes_arg=True),
+    "template.label": PromptField(_template_label, takes_arg=True),
+    "note.palette": PromptField(_note_palette),
+    "egress.calls_per_run": PromptField(_web_calls_per_run),
+    "candidates.rows_per_lane": PromptField(_rows_per_lane),
+    "node_context.runtime_keys": PromptField(_runtime_block_keys),
+    "input_contract.list": PromptField(_input_kind_list),
+    "input_contract.single": PromptField(_input_kind_single),
+    "vega.runtime_field": PromptField(_vega_runtime_field, takes_arg=True),
+    "backend.handler_pattern": PromptField(_handler_pattern),
+    "backend.timeout_classes": PromptField(_timeout_classes),
+    "backend.server_code_permission": PromptField(_server_code_permission),
+    "backend.server_network_permission": PromptField(_server_network_permission),
+    "backend.data_dir_env": PromptField(_data_dir_env),
+    "package.contract": PromptField(_package_contract),
+}
+
+
+def render_template(text: str, name: str = "the template") -> str:
+    """*text* with every marker filled from ``PROMPT_FIELDS``.
+
+    Raises ``PromptTemplateError`` on a field the registry does not define, on
+    a marker whose argument does not fit its field, and on any ``{{`` left in
+    the result."""
+    sources = _Sources()
+
+    def fill(match: re.Match) -> str:
+        key, arg = match.group(1), match.group(2)
+        field = PROMPT_FIELDS.get(key)
+        if field is None:
+            raise PromptTemplateError(f"{name} names {match.group(0)}, which no prompt field defines")
+        if field.takes_arg != (arg is not None):
+            needs = "an argument after a colon" if field.takes_arg else "no argument"
+            raise PromptTemplateError(f"{name} names {match.group(0)}, but {key} takes {needs}")
+        return field.render(sources, arg) if field.takes_arg else field.render(sources)
+
+    text = _MARKER_RE.sub(fill, text)
+    if "{{" in text:
+        at = text.index("{{")
+        raise PromptTemplateError(f"{name} still holds {text[at:at + 40]!r} once rendered")
+    return text
+
+
+def render_prompt(stem: str) -> str:
+    """``<stem>.md``: ``<stem>.template.md`` with every marker filled."""
+    path = _repo_root() / PROMPTS_DIR / f"{stem}.template.md"
+    return render_template(path.read_text(encoding="utf-8"), path.name)
 
 
 def render_default_preamble() -> str:
-    """``default_preamble.txt``: its template with every ``{{field}}`` filled."""
-    root = _repo_root()
-    text = (root / PROMPTS_DIR / "default_preamble.template.txt").read_text(encoding="utf-8")
-    manifest = json.loads((root / BUILTIN_MANIFEST).read_text(encoding="utf-8"))
-    trill = json.loads((root / TRILL_SCHEMA).read_text(encoding="utf-8"))
-    for key, value in preamble_fields(manifest, load_autk_schema(), trill).items():
-        marker = "{{" + key + "}}"
-        if marker not in text:
-            raise KeyError(f"default_preamble.template.txt has no {marker}")
-        text = text.replace(marker, value)
-    return text
+    """``default_preamble.md``, the shared preamble, rendered from its template."""
+    return render_prompt("default_preamble")
 
 
 def render_autk_grammar_ts() -> str:
@@ -705,7 +972,7 @@ GENERATED_OUTPUTS: dict[str, Callable[[], str]] = {
     "utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts": render_render_causes_ts,
     "utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts": render_autk_grammar_ts,
     "utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts": render_agent_categories_ts,
-    f"{PROMPTS_DIR}/default_preamble.txt": render_default_preamble,
+    **{f"{PROMPTS_DIR}/{stem}.md": partial(render_prompt, stem) for stem in PROMPT_TEMPLATES},
 }
 
 

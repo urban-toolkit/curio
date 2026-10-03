@@ -10,10 +10,10 @@ from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 # The dev/06 canonical map: agent id -> its prompt file and capabilities.
 _EXPECTED = {
     # The chat agent explains and diagnoses as well as chatting.
-    "agent.chat-agent": ("chat_prompt.txt", ["conversation.respond", "attachment.refine",
+    "agent.chat-agent": ("chat_prompt.md", ["conversation.respond", "attachment.refine",
                                              "node.explain", "code.debug.diagnose"]),
-    "agent.node-content-builder": ("new_content_prompt.txt", ["node.content.generate"]),
-    "agent.connection-builder": ("new_connection_prompt.txt", ["connection.propose"]),
+    "agent.node-content-builder": ("new_content_prompt.md", ["node.content.generate"]),
+    "agent.connection-builder": ("new_connection_prompt.md", ["connection.propose"]),
 }
 
 #: The merged agents: each capability is a mode that runs its own instruction.
@@ -21,16 +21,16 @@ _EXPECTED = {
 #: dataflow readers the Dataflow Reader.
 _MODES = {
     "agent.dataflow-planner": {
-        "workflow.plan.create": "new_subtasks_prompt.txt",
-        "execution.followup.plan": "new_subtask_from_exec_prompt.txt",
-        "workflow.plan.refresh": "task_refresh_prompt.txt",
-        "workflow.coherence.validate": "evaluate_coherence_subtasks_prompt.txt",
-        "workflow.keyword.bind": "keywords_binding_prompt.txt",
-        "workflow.keywords.extract": "syntax_analysis_prompt.txt",
+        "workflow.plan.create": "new_subtasks_prompt.md",
+        "execution.followup.plan": "new_subtask_from_exec_prompt.md",
+        "workflow.plan.refresh": "task_refresh_prompt.md",
+        "workflow.coherence.validate": "evaluate_coherence_subtasks_prompt.md",
+        "workflow.keyword.bind": "keywords_binding_prompt.md",
+        "workflow.keywords.extract": "syntax_analysis_prompt.md",
     },
     "agent.dataflow-reader": {
-        "dataflow.explain": "explanation_prompt.txt",
-        "workflow.suggest": "workflow_suggestions_prompt.txt",
+        "dataflow.explain": "explanation_prompt.md",
+        "workflow.suggest": "workflow_suggestions_prompt.md",
     },
 }
 
@@ -264,13 +264,13 @@ class TestPreambleAndInputs:
         from utk_curio.backend.app.agents.domain import builtin
 
         for m in builtin.list_builtin_manifests():
-            assert m.prompts["system"].path == "prompts/default_preamble.txt", m.agent_id
-        assert not (builtin.PROMPT_SOURCE_DIR / "syntax_analysis_preamble.txt").exists()
+            assert m.prompts["system"].path == "prompts/default_preamble.md", m.agent_id
+        assert not (builtin.PROMPT_SOURCE_DIR / "syntax_analysis_preamble.md").exists()
 
     def test_prompt_text_is_read_by_key(self):
         coord = "agent.dataflow-planner@1.0.0"
         bind = builtin.read_prompt_text(coord, "workflow.keyword.bind")
-        assert bind == (builtin.PROMPT_SOURCE_DIR / "keywords_binding_prompt.txt").read_text(encoding="utf-8")
+        assert bind == (builtin.PROMPT_SOURCE_DIR / "keywords_binding_prompt.md").read_text(encoding="utf-8")
         # An undeclared key reads nothing, not the preamble.
         assert builtin.read_prompt_text(coord, "workflow.nope") is None
         assert builtin.read_prompt_text("agent.chat-agent@1.0.0", "dataflow.explain") is None
@@ -281,7 +281,7 @@ class TestPreambleAndInputs:
         # bare filenames — the pattern #298's bras_ibge_data.csv reproduced.
         import re
 
-        text = (builtin.PROMPT_SOURCE_DIR / "default_preamble.txt").read_text(encoding="utf-8")
+        text = (builtin.PROMPT_SOURCE_DIR / "default_preamble.md").read_text(encoding="utf-8")
         assert not re.search(r"""read_csv\(f?['"][^'"]+\.csv""", text)
         assert not re.search(r"""read_file\(f?['"][^'"]+\.shp""", text)
         assert not re.search(r"""rasterio\.open\(f?['"]""", text)
@@ -309,7 +309,7 @@ class TestPreambleAndInputs:
         says.
 
         Two agents legitimately sharing a *preamble* is fine and expected
-        (``default_preamble.txt``); it is the instruction that identifies.
+        (``default_preamble.md``); it is the instruction that identifies.
         """
         by_text: dict[str, list[str]] = {}
         for agent_id, key, text in _instructions():
@@ -811,7 +811,7 @@ class TestResearcher:
         # The prompt sha updates only with the dev/95 prompt edit itself.
         import hashlib
 
-        prompt = (builtin.PROMPT_SOURCE_DIR / "orchestration_instruction.txt").read_bytes()
+        prompt = (builtin.PROMPT_SOURCE_DIR / "orchestration_instruction.md").read_bytes()
         assert hashlib.sha256(prompt).hexdigest() == self.DATAFLOW_BUILDER_PROMPT_SHA256
         dfb = builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0")
         assert "agent.researcher" in dfb.delegates_to  # dev/95 Follow-up D

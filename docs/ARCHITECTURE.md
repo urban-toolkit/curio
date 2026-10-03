@@ -831,21 +831,41 @@ Full field reference, ownership rules, and the CLI for checking your own project
 
 Some contracts are read on both sides of the stack: by Python and TypeScript, or by the code and a model prompt. Each one is defined once and every other copy is generated from it, so the copies cannot disagree.
 
-- **Source module.** [`utk_curio/backend/app/agents/domain/contracts.py`](../utk_curio/backend/app/agents/domain/contracts.py) holds each definition and one render function per output. It lives in the app package, so runtime code imports it from an installed wheel, and its module-level imports are the standard library only. Python callers such as `result_shape.py`, `services.py` and `execution/runtime_journal.py` import the values directly.
+- **Source module.** [`utk_curio/backend/app/agents/domain/contracts.py`](../utk_curio/backend/app/agents/domain/contracts.py) holds each definition and one render function per output. It lives in the app package, so runtime code imports it from an installed wheel, and its module-level imports are the standard library only: a prompt field imports the module that owns its fact inside its own function. Python callers such as `result_shape.py`, `services.py` and `execution/runtime_journal.py` import the values directly.
 - **Registry.** `contracts.GENERATED_OUTPUTS` maps each repo-relative output path to the function that renders it. The generator and the drift test both iterate it, so a new output is one entry.
 - **Generator.** [`scripts/generate_contracts.py`](../scripts/generate_contracts.py) is a thin CLI over the registry. It writes every output that differs from a fresh render; with `--check` it writes nothing, lists the stale files and exits non-zero.
-- **Outputs.** Committed to the repository. Code outputs start with a header that names the generator and the source module, and TypeScript outputs pass the frontend's `prettier` and `eslint` configs as generated. A prompt output has no header, since the model reads it verbatim; its hand-written text is a template beside it (`default_preamble.template.txt`), whose `{{...}}` fields are the generated parts.
+- **Outputs.** Committed to the repository. Code outputs start with a header that names the generator and the source module, and TypeScript outputs pass the frontend's `prettier` and `eslint` configs as generated. A prompt output has no header, since the model reads it verbatim; its hand-written text is a template beside it (`<name>.template.md`), whose `{{...}}` markers are the generated parts.
 
   | Output | Contract |
   |---|---|
   | `utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts` | The empty-render kind prefix, the render causes, the `RenderCause` type and which causes blame the document (see [Render Outcomes](#render-outcomes)) |
   | `utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts` | The Autark grammar's top-level families and the name of the layer an Autark node makes of its input (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) |
   | `utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts` | The agent manifest's category vocabulary and the `AgentCategory` type, from `manifest.AGENT_CATEGORIES` |
-  | `utk_curio/llm-prompts/default_preamble.txt` | The shared agent preamble: the Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; every list of built-in templates (description, control, port types, the connections an input accepts, output cardinality, interaction support), read from the built-in manifest and the packages layer's `input_capacity`, and naming each template by its label; the Merge Flow's socket names; and the section on Autark documents, rendered from the vendored schema (see [The Autark Schema](#the-autark-schema)) |
+  | `utk_curio/llm-prompts/default_preamble.md` | The shared agent preamble: the Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; every list of built-in templates (description, control, port types, the connections an input accepts, output cardinality, interaction support), read from the built-in manifest and the packages layer's `input_capacity`, and naming each template by its label; the Merge Flow's socket names; the label of each template its prose names; and the section on Autark documents, rendered from the vendored schema (see [The Autark Schema](#the-autark-schema)) |
+  | `utk_curio/llm-prompts/package_contract.md` | The Package Builder's backend contract: the handler name pattern, the timeout classes, the two permissions and the variable that names a handler's data directory, from `packages/domain/backend_contract.py`. `package_build_instruction.md` includes it whole, and a delegated Package Builder receives the file as its build-request contract's `backendContract` |
+  | Every other prompt in `contracts.PROMPT_TEMPLATES` | What that prompt states from code, through the fields below: the built-in agents' names, the built-in templates' labels, the Merge Flow's socket range, the templates the coherence check skips, the note palette, the web-call budget, the rows per candidates lane, and the node context's runtime keys, `inputContract` kinds and runtime row fields |
+
+- **Prompt fields.** `contracts.PROMPT_FIELDS` is the one registry of what a prompt template may state from code. A marker is `{{field}}`, or `{{field:arg}}` for a field that takes an argument, and each field is one function that reads its source. `contracts.render_prompt` fills the markers a template holds, and raises on a field the registry does not define and on any `{{` left in the result.
+
+  | Field | Renders | Source |
+  |---|---|---|
+  | `trill.schema`, `builtin.nodes`, `builtin.control`, `builtin.inputs`, `builtin.outputs`, `builtin.input_count`, `builtin.output_count`, `builtin.interaction`, `builtin.merge_slots`, `autk.grammar` | The preamble's Trill block, lists of built-in templates and section on Autark documents | The Trill schema, the built-in manifest, `input_capacity`, the vendored Autark schema |
+  | `agent.name:<agent id>` | A built-in agent's display name | `builtin.BUILTIN_AGENTS` |
+  | `template.label:<package id>/<template id>` | A built-in template's label | The built-in manifest |
+  | `builtin.merge_range` | The Merge Flow's sockets, first to last | `input_capacity`, read once with `builtin.merge_slots` |
+  | `builtin.not_code` | The built-in templates whose nodes hold no Python or JavaScript code, one per line | The built-in manifest, by the rule `builtin.control` uses |
+  | `note.palette` | The colour names a node's appearance accepts | `node_appearance.NAMED_COLORS` |
+  | `egress.calls_per_run` | The web calls one run may make | `egress_policy.MAX_CALLS_PER_RUN` |
+  | `candidates.rows_per_lane` | The rows each lane of a candidates card holds | `content._CANDIDATES_MAX_ROWS_PER_LANE` |
+  | `node_context.runtime_keys` | The keys of a node row's `runtime` block | `node_context.RUNTIME_BLOCK_KEYS` |
+  | `input_contract.list`, `input_contract.single` | The `inputContract` kinds a node's `arg` can have | `input_contract.KIND_LIST`, `KIND_SINGLE` |
+  | `vega.runtime_field:<name>` | A field Curio adds to every row a Vega-Lite node reads | `document_validation.RUNTIME_FIELDS` |
+  | `backend.handler_pattern`, `backend.timeout_classes`, `backend.server_code_permission`, `backend.server_network_permission`, `backend.data_dir_env` | The package backend contract's names | `packages/domain/backend_contract.py` |
+  | `package.contract` | `package_contract.md`, whole | `package_contract.template.md` |
 
 - **Drift test.** [`test_generated_contracts.py`](../utk_curio/backend/tests/test_agents/test_generated_contracts.py) re-renders every registered output and fails on any difference, printing the diff and the command to run. It is pure Python, so it runs in the normal backend suite and a hand edit to an output turns it red.
 
-To change a contract, edit `contracts.py`, run `python scripts/generate_contracts.py`, and commit the source and the regenerated outputs together.
+To change a contract, edit `contracts.py`, run `python scripts/generate_contracts.py`, and commit the source and the regenerated outputs together. To change a prompt, edit its `.template.md`, never its `.md`, and regenerate the same way; a code change that moves a field's source needs the regeneration too.
 
 ### The Autark Schema
 
@@ -865,7 +885,7 @@ Every system turn an agent receives is built by one function, `contracts.compose
 
 | Slot | Holds | Owner |
 |---|---|---|
-| preamble | The built-ins' shared `default_preamble.txt`, an imported definition's own `prompts.system`, or none | the repository, or the definition |
+| preamble | The built-ins' shared `default_preamble.md`, an imported definition's own `prompts.system`, or none | the repository, or the definition |
 | instruction | Exactly one: the agent's `instruction` prompt, the invoked mode's, the definition's `autk-grammar` prompt for an Autark document under its reply schema, or the attachment's edited intent | the repository, or the user |
 | configuration | The catalog settings the run reads, framed as data | the user |
 | tool protocol | How to ask for a tool: the granted tools and the `toolRequest` syntax, or on native tools one line on calling them; with the `datasetCandidates` schema for a run that can search the catalog | the runtime |
@@ -893,7 +913,7 @@ What an endpoint can do beyond text is [`chat_capabilities.py`](../utk_curio/bac
 - **The fallback.** An endpoint that answers a request offering tools with a 400 or 422 (`providers.NativeToolsRefused`) gets the same round again on the fenced protocol. `services._RunConversation` keeps the fenced form of every round beside the native one, so the run carries on from where it was. Once that fenced call succeeds, the refusal is recorded for an endpoint the table does not know (`chat_capabilities.record_native_refusal`), and the next run starts fenced.
 - **Records.** The execution record pins `toolProtocol` (`native` or `fenced`) for a run that can call anything, and `nativeToolsRefused` after a fallback. Sessions keep text only, so a conversation moves between protocols and configurations freely. A delegated run is tool-less, so it never changes protocol.
 
-**Reply schemas.** A delegated `node.content.generate` run for a node whose grammar (the template roster's `grammarId`) is `autk-grammar`, by a definition that declares an `autk-grammar` prompt, on a configuration that takes a reply schema, holds the reply to the Autark document's schema ([`reply_schemas.py`](../utk_curio/backend/app/agents/application/reply_schemas.py)). The run's instruction is that prompt (`new_content_autk_prompt.txt` for Node Content Builder), and the pins record the `replySchema` by name and the prompt's `promptSha256`.
+**Reply schemas.** A delegated `node.content.generate` run for a node whose grammar (the template roster's `grammarId`) is `autk-grammar`, by a definition that declares an `autk-grammar` prompt, on a configuration that takes a reply schema, holds the reply to the Autark document's schema ([`reply_schemas.py`](../utk_curio/backend/app/agents/application/reply_schemas.py)). The run's instruction is that prompt (`new_content_autk_prompt.md` for Node Content Builder), and the pins record the `replySchema` by name and the prompt's `promptSha256`.
 
 - **The projection.** Both providers take a subset of JSON Schema, so what is sent is projected from the vendored schema when first asked for: objects closed; a map as a list of `{key, value}` entries; an open object, and a reference into a recursive definition (a GeoJSON geometry), as a JSON string; the conditional unions as `anyOf`; a constant as a one-value enum; every other keyword dropped. OpenAI's strict mode also requires every key, so optional ones may be null; Anthropic keeps them optional. Gemini's SDK schema cannot express the document, so Gemini is never sent one, and neither is an endpoint the capability table does not know.
 - **Decoding.** The reply is decoded back into the document (entries into maps, JSON strings into what they encode, nulls removed) before the correction loop sees it. The vendored schema and `document_validation` decide whether it is valid, including for what the projection drops. A test encodes every shipped Autark document into the projection, checks it validates there, and decodes it back.

@@ -34,7 +34,7 @@ def _valid_manifest() -> dict:
         ],
         "delegatesTo": ["agent.node-builder"],
         "prompts": {
-            "system": {"path": "prompts/default_preamble.txt", "sha256": "abc", "variables": []},
+            "system": {"path": "prompts/default_preamble.md", "sha256": "abc", "variables": []},
             "instruction": {
                 "path": "prompts/single_box_explanation.txt",
                 "sha256": "def",
@@ -182,6 +182,7 @@ class TestCapabilityIdRules:
             "node_explain_prompt",       # underscore + prompt token
             "prompts/single_box.txt",    # path separator + .txt
             "single_box_explanation.txt",  # prompt filename
+            "node.md",                   # .md, a prompt file extension
             "explain",                   # single segment (no namespace)
             "Node.Explain",              # uppercase
             "node..explain",             # empty segment
@@ -288,7 +289,8 @@ class TestToolRequirements:
         ]
 
     def test_tool_id_must_match_the_capability_grammar(self):
-        for bad in ("Search", "catalog", "catalog/search", "catalog_search", "fetch_prompt.txt"):
+        for bad in ("Search", "catalog", "catalog/search", "catalog_search", "fetch_prompt.txt",
+                    "fetch.md"):
             raw = _valid_manifest()
             raw["tools"] = [{"id": bad}]
             with pytest.raises(AgentManifestError, match="tools"):

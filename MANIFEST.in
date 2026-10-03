@@ -15,7 +15,7 @@ recursive-include utk_curio/frontend *
 # hyphen makes it unimportable, so packages.find cannot see it), so without
 # this line an sdist or wheel ships every one of the roster agents with no
 # prompt bytes at all, and builtin.read_prompt_text just returns None.
-recursive-include utk_curio/llm-prompts *.txt
+recursive-include utk_curio/llm-prompts *.md
 
 prune utk_curio/frontend/urban-workflows/node_modules
 

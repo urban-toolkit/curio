@@ -356,17 +356,18 @@ class TestAuthoringInputEnrichment:
 
     def test_authoring_capabilities_gain_the_contract(self):
         from utk_curio.backend.app.agents.application.turns.delegates import (
-            _BUILD_REQUEST_CONTRACT,
+            _build_request_contract,
             _enriched_delegate_inputs,
         )
 
         for capability in ("node.kind.author", "package.build", "package.extend"):
             enriched = _enriched_delegate_inputs(
                 "guest", "p1", {}, capability, {"look": "post-it"})
-            assert enriched["buildRequestContract"] is _BUILD_REQUEST_CONTRACT
+            assert enriched["buildRequestContract"] == _build_request_contract()
+            assert enriched["buildRequestContract"]["backendContract"]
             assert enriched["look"] == "post-it"
         # The contract counters the observed invention explicitly.
-        text = json.dumps(_BUILD_REQUEST_CONTRACT)
+        text = json.dumps(_build_request_contract())
         assert "reverse-DNS" in text
         assert "behaviorKey" in text and "Do NOT invent" in text
         # dev/90 A15: the runtime field contract is spelled out — the live
