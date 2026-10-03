@@ -5,7 +5,7 @@
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  top: 76px;
+  top: calc(var(--curio-top-bar-height) + 11px);
   z-index: 30;
   display: flex;
   gap: 8px;
