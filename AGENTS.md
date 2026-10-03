@@ -75,11 +75,13 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 
 - Backend pytest: `utk_curio/backend/tests/`. `conftest.py` at its root and in `test_agents/`, `test_datasets/`, `test_discovery/`, `test_execution/`, `test_frontend/`, `test_model_catalog/`, `test_monitor/`, `test_packages/`, `test_projects/`, `test_users/`. Shared helpers in `_support/`.
 - E2E (Playwright): `utk_curio/backend/tests/test_frontend/`. Helpers in the `utils/` package (below), scripted walkthroughs in `walkthroughs.py`, runner assignment in `runner_split.py`, author guide in `README.md`.
-- E2E helpers, `test_frontend/utils/`: `from .utils import X` works for every public name; X is defined in one module, and a patch goes on that module:
+- E2E helpers, `test_frontend/utils/`: `from .utils import X` works for every public name; X is defined in one module, and a patch goes on the module whose code calls X (`screenshots.py` for what `save_workflow_test_screenshot` and `frame_nodes` call):
   - `environment.py`: `REPO_ROOT`, `state_root`, stack flags and public config, `require_*` skips, `debug_log`.
   - `sandbox.py`: direct sandbox calls, `load_artifact_as_dict`, `execute_workflow_programmatically`.
   - `vega_svg.py`: Vega-Lite SVG helpers.
-  - `screenshots.py`: `save_workflow_test_screenshot`, `save_node_closeup`, `MAX_DIFF_RATIO`, mint and re-mint, `dismiss_toasts`, `_wait_for_reactflow_ready`.
+  - `capture_waits.py`: what a capture waits for: `_wait_for_reactflow_ready`, `dismiss_toasts`, `_wait_for_webfont`, running nodes. `images.py`: captures, `_compare_images`.
+  - `screenshots.py`: `save_workflow_test_screenshot`, `MAX_DIFF_RATIO`, mint and re-mint, `frame_nodes`, `dump_browser_log`.
+  - `closeups.py`: `save_node_closeup`, the close-up budgets, viewport hints. `dialogs.py`: `accept_confirm_dialog`, `leave_agent_badge`.
   - `interactions.py`: interaction frames, brush and mark probes.
   - `servers.py`: ports, `e2e_existing_servers`.
   - `auth.py`: UI signup, the projects page, `require_owner_view`.
