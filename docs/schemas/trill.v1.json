@@ -233,15 +233,20 @@
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$", "description": "What the code's `[!! name !!]` references name." },
-        "type": { "type": "string", "enum": ["number", "text", "choice", "checkbox", "number-list", "text-list", "range", "file"] },
+        "type": { "type": "string", "enum": ["number", "slider", "text", "choice", "checkbox", "checkbox-group", "multi-select", "datetime", "location", "number-list", "text-list", "range", "file"] },
         "label": { "type": "string", "description": "What the Widgets tab shows beside the control; the name when absent." },
-        "default": { "description": "The value until one is set." },
+        "default": { "description": "The value until one is set. A checkbox group or multi-select holds a list of its choices, a datetime `YYYY-MM-DDTHH:mm:ss` local time, and a location `{\"lat\": ..., \"lon\": ...}` in WGS84." },
         "value": { "description": "The value set in the Widgets tab. A run uses it, else `default`." },
         "options": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "choices": { "type": "array", "items": { "type": "string" }, "description": "A choice widget's options." }
+            "choices": { "type": "array", "items": { "type": "string" }, "description": "A choice, checkbox group or multi-select widget's options." },
+            "display": { "type": "string", "enum": ["dropdown", "radio"], "description": "How a choice widget is drawn; a dropdown when absent." },
+            "min": { "type": "number", "description": "A number or slider widget's smallest value. A slider needs it." },
+            "max": { "type": "number", "description": "A number or slider widget's largest value. A slider needs it." },
+            "step": { "type": "number", "exclusiveMinimum": 0, "description": "A number or slider widget's step." },
+            "units": { "type": "string", "description": "Shown after a number or slider widget's value, such as m or %." }
           }
         }
       }

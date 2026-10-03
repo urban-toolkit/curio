@@ -176,7 +176,7 @@
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
-        "type": { "type": "string", "enum": ["number", "text", "choice", "checkbox", "number-list", "text-list", "range", "file"] },
+        "type": { "type": "string", "enum": ["number", "slider", "text", "choice", "checkbox", "checkbox-group", "multi-select", "datetime", "location", "number-list", "text-list", "range", "file"] },
         "label": { "type": "string" },
         "default": {},
         "value": {},
@@ -184,7 +184,12 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "choices": { "type": "array", "items": { "type": "string" } }
+            "choices": { "type": "array", "items": { "type": "string" } },
+            "display": { "type": "string", "enum": ["dropdown", "radio"] },
+            "min": { "type": "number" },
+            "max": { "type": "number" },
+            "step": { "type": "number", "exclusiveMinimum": 0 },
+            "units": { "type": "string" }
           }
         }
       }
