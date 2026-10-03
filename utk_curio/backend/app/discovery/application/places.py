@@ -1,9 +1,10 @@
 """Place search for the area field: a name in, boxes and OSM area names out.
 
 Every source that takes an ``area`` shares this one search, so a place is
-found the same way whichever source asks. It is Nominatim, OpenStreetMap's
-geocoder, reached through the Discovery Catalog's transport and so through the
-egress policy, with the usage policy Nominatim asks of every client: a named
+found the same way whichever source asks; OpenStreetMap also measures named
+areas with it before loading them (``named_areas_box``). It is Nominatim,
+OpenStreetMap's geocoder, reached through the Discovery Catalog's transport and
+so through the egress policy, with the usage policy Nominatim asks of every client: a named
 User-Agent, at most one request a second from this server, and answers kept
 rather than asked for again.
 
@@ -75,6 +76,28 @@ def search_places(transport, query: str) -> list[dict[str, Any]]:
             _cache.pop(next(iter(_cache)))
         _cache[key] = (time.monotonic(), places)
     return places
+
+
+def named_areas_box(transport, names: dict[str, Any]) -> list[float] | None:
+    """The box around the boundaries *names* asks for, or None when the place
+    search finds none of them.
+
+    Each area is searched as the named-areas field searches it, ``"<area>,
+    <place>"``, so an answer the field already had is not asked for again.
+    Every boundary with exactly that OSM name counts, since the loader takes
+    every relation of that name inside the place. A name with no boundary here
+    is left to the loader, which refuses it by name.
+    """
+    scope = names["geocodeArea"]
+    boxes = [
+        place["box"]
+        for area in names["areas"]
+        for place in search_places(transport, f"{area}, {scope}")
+        if place["boundary"] and place["name"] == area
+    ]
+    if not boxes:
+        return None
+    return [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
 
 
 def reset() -> None:

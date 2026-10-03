@@ -17,8 +17,10 @@ import json
 import re
 import shutil
 import stat
+import subprocess
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -38,6 +40,8 @@ GOLF = {"names": {"geocodeArea": "Illinois", "areas": ["Golf"]}}
 # A box inside Golf, [west, south, east, north]: about 1.8 km2.
 GOLF_BOX = {"box": [-87.8, 42.05, -87.78, 42.06], "label": "Golf"}
 NOWHERE = {"names": {"geocodeArea": "Illinois", "areas": ["Nowhere Land"]}}
+# The City of Chicago's boundary: its box is about 1,450 km2.
+CHICAGO = {"names": {"geocodeArea": "Illinois", "areas": ["Chicago"]}}
 # A box across Chicago's Loop to Lake Shore Drive, about 0.27 km2: roads with
 # speeds, lane counts and clearances.
 LOOP_BOX = {"box": [-87.6295, 41.8805, -87.615, 41.8825], "label": "The Loop"}
@@ -263,6 +267,23 @@ class TestTheAnswersAreChecked:
         assert res.status_code == 400
         assert "25" in res.get_json()["error"]
 
+    def test_a_named_area_over_the_limit_is_refused_before_the_loader_runs(self, client, auth, live, monkeypatch):
+        """A named area is measured as a drawn box is: the place search gives
+        its box, and one over the source's 25 km2 never reaches Node."""
+        started = []
+
+        def no_loader(*args, **kwargs):
+            started.append(args)
+            raise AssertionError("the loader ran for an area over the limit")
+
+        monkeypatch.setattr(autark_osm, "subprocess", SimpleNamespace(Popen=no_loader, PIPE=subprocess.PIPE))
+        res = acquire(client, auth, OSM, "parks", parameters={"area": CHICAGO})
+        assert res.status_code == 202, res.get_data(as_text=True)
+        job = wait_for(client, auth, res.get_json()["jobId"], timeout=60)
+        assert job["status"] == "failed"
+        assert re.search(r"^Area covers [\d,.]+ km2; this source takes at most 25 km2$", job["error"]), job["error"]
+        assert started == []
+
     def test_a_name_that_would_break_the_query_is_refused(self, client, auth, live):
         res = acquire(client, auth, OSM, "parks",
                       parameters={"area": {"names": {"geocodeArea": "Illinois", "areas": ['Golf"];out;']}}})
@@ -477,7 +498,7 @@ class TestItBecomesDatasets:
         assert 'No administrative boundary found in OSM for: "Nowhere Land"' in job["error"]
 
     def test_an_unrecorded_request_fails_loudly(self, client, auth, live):
-        area = {"names": {"geocodeArea": "Illinois", "areas": ["Winnetka"]}}
+        area = {"names": {"geocodeArea": "Illinois", "areas": ["Kenilworth"]}}
         job = wait_for(client, auth, acquire(client, auth, OSM, "parks", parameters={"area": area})
                        .get_json()["jobId"], timeout=120)
         assert job["status"] == "failed"
@@ -574,14 +595,15 @@ def _fake_node(tmp_path: Path, body: str) -> str:
 
 @pytest.fixture()
 def service(monkeypatch):
-    """The source's service as a process with no recorded corpus builds it.
+    """The source's service as a process with no recorded corpus builds it,
+    given a transport that answers its place search from the recorded one.
 
     The CI container sets ``CURIO_DISCOVERY_FIXTURES`` for every test, so the
     variable is cleared here rather than assumed absent."""
     from utk_curio.backend.app.discovery.infrastructure import transport
 
     monkeypatch.delenv(transport.ENV_FIXTURES, raising=False)
-    return build_service(load_source_manifest(SHIPPED_ROOT / OSM))
+    return build_service(load_source_manifest(SHIPPED_ROOT / OSM), transport.FixtureDiscoveryTransport(FIXTURES))
 
 
 class TestTheLoaderContract:
