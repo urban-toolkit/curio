@@ -74,7 +74,7 @@ Under `utk_curio/backend/app/`:
 Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 
 - Backend pytest: `utk_curio/backend/tests/`. `conftest.py` at its root and in `test_agents/`, `test_datasets/`, `test_discovery/`, `test_execution/`, `test_frontend/`, `test_model_catalog/`, `test_monitor/`, `test_packages/`, `test_projects/`, `test_users/`. Shared helpers in `_support/`.
-- E2E (Playwright): `utk_curio/backend/tests/test_frontend/`. Helpers in the `utils/` package (below), scripted walkthroughs in `walkthroughs.py`, runner assignment in `runner_split.py`, author guide in `README.md`.
+- E2E (Playwright): `utk_curio/backend/tests/test_frontend/`. Helpers in the `utils/` package (below), scripted walkthroughs in the `walkthroughs/` package (below), runner assignment in `runner_split.py`, author guide in `README.md`.
 - E2E helpers, `test_frontend/utils/`: `from .utils import X` works for every public name; X is defined in one module, and a patch goes on that module:
   - `environment.py`: `REPO_ROOT`, `state_root`, stack flags and public config, `require_*` skips, `debug_log`.
   - `sandbox.py`: direct sandbox calls, `load_artifact_as_dict`, `execute_workflow_programmatically`.
@@ -89,6 +89,10 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `run_all.py`: Run All state, holding a run open.
   - `node_drawings.py`: `assert_vega_canvas_rendered`, `assert_autark_map_drawn` and the other drawing checks.
   - `scripted_llm.py`: scripted agent turns.
+- Walkthroughs, `test_frontend/walkthroughs/`: importing a scene module registers its scenes in `WALKTHROUGHS`, and `__init__.py` imports them in registry order:
+  - `framework.py`: `Narrator`, `SilentNarrator`, `Ctx`, `Walkthrough`, `FULL_PAGE_DIFF_FLOOR`, `WALKTHROUGHS` and the `@walkthrough` decorator.
+  - `steps.py`: shared steps: `load_example_spec`, `first_node_of_type`, `frame_until_on_top`, the Provenance window, canvas counts.
+  - Scenes, one module per surface: `provenance.py`, `agent_catalog.py`, `cross_catalog.py`, `account_examples.py`, `robustness.py` (dashboard page, Autark without WebGPU, Run All after a failed node), `layout.py`, `visual_claims.py` (#218 to #227), `dataflow_identity.py`, `catalog_chrome.py`, `column_filter.py`, `agent_chat.py`, `simple_view.py`.
 - Sandbox: `utk_curio/sandbox/tests/` (`conftest.py`).
 - Frontend Jest: `src/tests/` (guide in `src/tests/README.md`); `npm test` and `npm run typecheck` in `utk_curio/frontend/urban-workflows/`.
 - Stress harness: `utk_curio/backend/tests/stress/`.
@@ -127,7 +131,7 @@ Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema),
 
 Several files run past 1,500 lines. List their sections, then Read only the range you need:
 
-- `utk_curio/backend/tests/test_frontend/walkthroughs.py`: section banners, `grep -n -A1 '^# ----' <file>`. The e2e helpers are a package of modules, listed under Tests.
+- The e2e helpers (`test_frontend/utils/`) and walkthroughs (`test_frontend/walkthroughs/`) are packages of modules, listed under Tests.
 - Test modules with one class per area: `grep -n '^class Test' <file>`.
 - `src/providers/FlowProvider.tsx`: `grep -n 'useCallback(' <file>` lists its operations; Run All is around `playAllNodes`; collaboration sync starts at the comment `Collaboration: receive-side`.
 

@@ -6,7 +6,7 @@ run going red for the platform it runs on rather than for a change:
 
 The committed baselines are captured by CI, on Linux. Rendered anywhere else,
 the same 1280x720 page differs by 4.5-7.7% of its pixels from text antialiasing
-alone (measured over all 86 captures in ``walkthroughs.py``, macOS,
+alone (measured over all 86 captures in ``walkthroughs/``, macOS,
 2026-09-15). Seven sat above 90% of their budget, one at 97%, so any restyle —
 or any developer on a different machine — produced a failure indistinguishable
 from a regression. That is the attribution cost #308 was filed about.
