@@ -44,6 +44,7 @@ import { normalizeFlowInput } from "../utils/flowOutputRef";
 import { markSelectionEcho, SelectionEchoOptions } from "../utils/selectionEcho";
 import { DEFAULT_SAVE_OUTPUT_DATASET, isNonProducingNodeType, shouldSaveOutputOnRun } from "../utils/saveOutputDataset";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
+import { upstreamErroredMessage } from "../utils/nodeEmptyState";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { authApi } from "../utils/authApi";
 import type { DataflowCategories, HandCategories } from "../utils/dataflowCategories";
@@ -74,6 +75,25 @@ interface PlayAllState {
     levels: string[][];
     currentLevel: number;
     pending: Set<string>;
+    /** The directed edges the run was planned on. */
+    edges: Array<{ source: string; target: string }>;
+    /** Nodes whose run failed in this run. */
+    failed: Set<string>;
+    /** Nodes this run did not run, because a node feeding them failed or was not run. */
+    skipped: Set<string>;
+}
+
+/** How a node's run ended, as the node reports it to the runner. */
+export interface NodeExecOutcome {
+    /** The run failed: the runner runs nothing that depends on this node. */
+    failed?: boolean;
+}
+
+/** The edges a run orders nodes by: every edge but a two-way interaction link. */
+function directedEdgesOf<E extends { sourceHandle?: string | null; targetHandle?: string | null }>(
+    edges: E[],
+): E[] {
+    return edges.filter(e => !(e.sourceHandle === "in/out" && e.targetHandle === "in/out"));
 }
 
 // Play All advances level-by-level only once every node in the active level
@@ -188,7 +208,7 @@ interface FlowContextProps {
     markNodeErrored: (nodeId: string) => void;
     playAllNodes: () => void;
     playNodesUpTo: (targetNodeId: string) => void;
-    signalNodeExecDone: (nodeId: string) => void;
+    signalNodeExecDone: (nodeId: string, outcome?: NodeExecOutcome) => void;
     /** A Run All / run-up-to is in flight. State, not a ref, so buttons can show it (#271). */
     isRunActive: boolean;
     /** Abandon the run in flight: clears the guard so the next play is accepted. */
@@ -326,9 +346,7 @@ export const FlowContext = createContext<FlowContextProps>({
 });
 
 function computeTopologicalLevels(nodes: Node[], edges: Edge[]): string[][] {
-    const directedEdges = edges.filter(
-        e => !(e.sourceHandle === "in/out" && e.targetHandle === "in/out")
-    );
+    const directedEdges = directedEdgesOf(edges);
 
     const inDegree = new Map<string, number>();
     const successors = new Map<string, string[]>();
@@ -398,6 +416,7 @@ const FlowProvider = ({
     const emittedForInputRef = useRef(new Map<string, unknown>());
     const markNodeExecutedRef = useRef<(nodeId: string) => void>(() => {});
     const markNodeStaleRef = useRef<(nodeId: string) => void>(() => {});
+    const markNodeErroredRef = useRef<(nodeId: string) => void>(() => {});
     const markDirtyRef = useRef<() => void>(() => {});
     // Saves the project right after a pin changes (assigned below, next to
     // markDirtyRef). Pinning is the one edit whose entire purpose is to change
@@ -1138,30 +1157,79 @@ const FlowProvider = ({
         }, PLAY_ALL_STALL_TIMEOUT_MS);
     }
 
+    // The reason a node this run does not run shows instead of an outcome: the
+    // node feeding it, by name, failed or was not run either (#603).
+    function skipReason(sourceId: string): string {
+        const source = reactFlow.getNode(sourceId);
+        let name: string | null = null;
+        try {
+            name = source?.data ? resolveNodeDisplayLabel(source.data) : null;
+        } catch {
+            name = null;
+        }
+        return upstreamErroredMessage(name);
+    }
+
     function triggerLevel(levelIndex: number) {
         const state = playAllStateRef.current;
         if (!state) return;
         const levelNodeIds = state.levels[levelIndex];
         if (!levelNodeIds?.length) { finishPlayAll(); return; }
-        state.pending = new Set(levelNodeIds);
         state.currentLevel = levelIndex;
-        armPlayAllStallTimer();
+        // A node fed by one that failed in this run, or by one this run did not
+        // run, is not run either, as the agent runner stops at the first failure
+        // (#603). It still counts as done for its level, so the run moves on.
+        const skipped = new Map<string, string>();
+        for (const id of levelNodeIds) {
+            const stoppedBy = state.edges.find(
+                e => e.target === id && (state.failed.has(e.source) || state.skipped.has(e.source)),
+            );
+            if (stoppedBy) skipped.set(id, skipReason(stoppedBy.source));
+        }
+        const toRun = levelNodeIds.filter(id => !skipped.has(id));
+        state.pending = new Set(toRun);
+        for (const id of skipped.keys()) {
+            state.skipped.add(id);
+            // Errored, so the nodes it feeds read "upstream-errored" by the rule
+            // charts and the Data Pool already use.
+            markNodeErroredRef.current(id);
+        }
         setNodes((nds: Node[]) =>
-            nds.map((node: Node) =>
-                levelNodeIds.includes(node.id)
-                    ? { ...node, data: { ...node.data, triggerExec: (node.data.triggerExec ?? 0) + 1 } }
-                    : node
-            )
+            nds.map((node: Node) => {
+                if (toRun.includes(node.id)) {
+                    return { ...node, data: { ...node.data, triggerExec: (node.data.triggerExec ?? 0) + 1 } };
+                }
+                if (skipped.has(node.id)) {
+                    return {
+                        ...node,
+                        data: {
+                            ...node.data,
+                            skipExec: (node.data.skipExec ?? 0) + 1,
+                            skipReason: skipped.get(node.id),
+                        },
+                    };
+                }
+                return node;
+            })
         );
+        if (toRun.length === 0) {
+            advancePlayAll(state);
+            return;
+        }
+        armPlayAllStallTimer();
     }
 
-    const signalNodeExecDone = useCallback((nodeId: string) => {
+    const signalNodeExecDone = useCallback((nodeId: string, outcome?: NodeExecOutcome) => {
         const state = playAllStateRef.current;
         if (!state) return;
         // Ignore signals from nodes that aren't part of the active level (e.g. a
         // straggler/duplicate from an earlier level) — they must not drain the
         // pending set or reset the watchdog.
         if (!state.pending.delete(nodeId)) return;
+        // The signal that completes a node says whether it failed; a later one
+        // for the same node is ignored above. Carried here rather than read from
+        // the node's exec status, which may not have committed yet (#603).
+        if (outcome?.failed) state.failed.add(nodeId);
         if (state.pending.size === 0) {
             advancePlayAll(state);
         } else {
@@ -1189,9 +1257,20 @@ const FlowProvider = ({
         if (cyclic.length > 0) {
             showToast(`${cyclic.length} node(s) skipped due to cycles in the graph`, "warning");
         }
-        playAllStateRef.current = { levels, currentLevel: 0, pending: new Set() };
+        playAllStateRef.current = newRunState(levels, allEdges);
         setIsRunActive(true);
         triggerLevel(0);
+    }
+
+    function newRunState(levels: string[][], edges: Edge[]): PlayAllState {
+        return {
+            levels,
+            currentLevel: 0,
+            pending: new Set(),
+            edges: directedEdgesOf(edges).map(e => ({ source: e.source, target: e.target })),
+            failed: new Set(),
+            skipped: new Set(),
+        };
     }
 
     function playNodesUpTo(targetNodeId: string) {
@@ -1210,9 +1289,7 @@ const FlowProvider = ({
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
 
-        const directedEdges = currentEdges.filter(
-            e => !(e.sourceHandle === "in/out" && e.targetHandle === "in/out")
-        );
+        const directedEdges = directedEdgesOf(currentEdges);
 
         const predecessors = new Map<string, string[]>();
         for (const n of currentNodes) predecessors.set(n.id, []);
@@ -1296,7 +1373,7 @@ const FlowProvider = ({
         const levels = computeTopologicalLevels(subgraphNodes, subgraphEdges);
         if (!levels.length) return;
 
-        playAllStateRef.current = { levels, currentLevel: 0, pending: new Set() };
+        playAllStateRef.current = newRunState(levels, subgraphEdges);
         setIsRunActive(true);
         triggerLevel(0);
     }
@@ -1658,6 +1735,7 @@ const FlowProvider = ({
 
     markNodeExecutedRef.current = workflowOps.markNodeExecuted;
     markNodeStaleRef.current = workflowOps.markNodeStale;
+    markNodeErroredRef.current = workflowOps.markNodeErrored ?? (() => {});
     markDirtyRef.current = workflowOps.markDirty;
 
     // Debounced so toggling several pins in a row is one save, and so the save
