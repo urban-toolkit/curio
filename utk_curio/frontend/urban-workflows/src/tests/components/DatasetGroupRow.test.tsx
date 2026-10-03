@@ -110,6 +110,32 @@ describe("DatasetGroupRow", () => {
     expect(container.querySelector(".chip_osm")).toBeNull();
   });
 
+  test("a GTFS feed says GTFS, though every layer was downloaded (#608)", async () => {
+    // The tables of one GTFS feed: Parquet, each carrying where it came from,
+    // under a gtfs. group id. Each layer's own row says Parquet; the group is
+    // the feed.
+    const discoverySource = { sourceId: "source.curio.direct-url@1", sourceName: "Direct URL" };
+    const feed: DatasetPaletteGroup = {
+      ...group(),
+      groupId: "gtfs.x3",
+      title: "google_transit",
+      members: group().members.map((m) => ({
+        ...m,
+        groupId: "gtfs.x3",
+        discoverySource,
+      })) as DatasetCatalogItem[],
+    };
+    const { container } = render(<DatasetGroupRow group={feed} />);
+    expect(screen.getByText("GTFS")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Expand google_transit: GTFS import with 3 layers" }),
+    ).toBeInTheDocument();
+    await userEvent.hover(screen.getByText("google_transit"));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("google_transit · GTFS · 3 layers");
+    expect(container.textContent).not.toContain("OSM PBF");
+    expect(container.querySelector(".chip_gtfs")).not.toBeNull();
+  });
+
   test("collapsed by default: shows the OSM PBF parent, hides members", () => {
     render(<DatasetGroupRow group={group()} />);
     expect(screen.getByText("chicago_loop")).toBeInTheDocument();
