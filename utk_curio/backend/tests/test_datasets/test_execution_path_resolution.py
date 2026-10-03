@@ -77,6 +77,29 @@ def test_execution_forwards_resolved_dataset_paths(
     assert dataset_paths[imported["id"]].endswith("cities.csv")
 
 
+def test_execution_forwards_how_each_dataset_is_read(
+    client, user_and_token, tmp_path, monkeypatch
+):
+    """``curio_load_data`` reads a dataset by its format, so the route sends the
+    format of every id it resolved, and only of those."""
+    _, token = user_and_token
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+    imported = _import_csv(client, token)
+    captured = _capture_sandbox(monkeypatch)
+
+    code = (
+        f'    df = curio_load_data("{imported["id"]}")\n'
+        '    other = curio_load_data("imported.xdoesnotexist")\n'
+        "    return df\n"
+    )
+    resp = _exec_code(client, token, code)
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+    body = captured["body"]
+    assert set(body["dataset_paths"]) == {imported["id"]}
+    assert body["dataset_formats"] == {imported["id"]: {"format": "csv"}}
+
+
 def test_execution_without_id_calls_forwards_empty_mapping(
     client, user_and_token, monkeypatch
 ):
