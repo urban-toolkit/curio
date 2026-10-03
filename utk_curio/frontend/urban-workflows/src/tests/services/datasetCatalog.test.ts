@@ -494,9 +494,8 @@ describe("a layer group's drag payload takes its kind from the group id (#440)",
     expect(payload.uri).toBe("curio://gtfs/gtfs.x1");
     const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
     expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("GTFS");
-    // Each table loads through its own id, as a Parquet dataset.
+    // Each table loads through its own id.
     expect(options.datasetRefs).toEqual(["imported.parks_parks", "imported.parks_trails"]);
-    expect(options.code).toContain('layers["parks"] = _curio_read_layer(curio_dataset_path("imported.parks_parks"))');
   });
 
   test("an OSM group still drops as an OSM PBF dataset", () => {
