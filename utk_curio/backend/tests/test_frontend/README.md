@@ -545,13 +545,10 @@ Other things that surprise people here:
 - `curio.builtin@*` is always treated as installed and offers **no** buttons: it
   ships with every instance and can be neither uninstalled nor published.
 - **Export is palette-only** and gated to (user store ∩ project lockfile) minus
-  builtin. The drawer's `MyPackagesList` also renders an export control.
+  builtin.
 - **A plain re-import is expected to 400.** `onPickArchive` never sets
   `replace`, and no UI path does, so re-importing an installed coordinate fails
   by design. Rename the manifest `id` to fork it instead.
-- The **"In project" tab renders `MyPackagesList`, not `PackageCard`**, so the
-  `data-pkg-dir` attribute is absent there; key on the row's `Remove {name}`
-  aria-label.
 - Card roots carry `data-pkg-dir` / `data-dataset-id` / `data-agent-coord`.
   Prefer them over display copy.
 - **Every catalog confirms an add and a remove, with an in-app dialog** (#196,
