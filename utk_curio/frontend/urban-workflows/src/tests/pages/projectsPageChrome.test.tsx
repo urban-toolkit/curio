@@ -103,7 +103,7 @@ beforeEach(() => {
 });
 
 describe('projects page chrome', () => {
-  test('the top bar keeps only API Settings — no Catalog button', async () => {
+  test('the top bar keeps only API Settings, with no Catalog button', async () => {
     const { getByRole, queryByRole } = await renderPage();
 
     expect(getByRole('button', { name: 'API Settings' })).toBeTruthy();
@@ -130,7 +130,7 @@ describe('projects page chrome', () => {
 
     // wait_for_projects_page uses get_by_role("link", name="Projects",
     // exact=True); a second such link would be a strict-mode violation. The
-    // logo link is safe — its accessible name comes from the img alt, "Curio".
+    // logo link is safe: its accessible name comes from the img alt, "Curio".
     expect(screen.getAllByRole('link', { name: 'Projects' })).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Curio' })).toBeTruthy();
   });
@@ -285,7 +285,7 @@ describe('projects filtering', () => {
 describe('project card selection', () => {
   const read = (rel: string) =>
     fs.readFileSync(path.resolve(__dirname, '../../pages', rel), 'utf8');
-  /** The declarations of one rule, found textually — no escaping to get wrong. */
+  /** The declarations of one rule, found textually, so there is no escaping to get wrong. */
   const ruleBody = (css: string, selector: string) => {
     const start = css.indexOf('.' + selector + ' {');
     expect(start).toBeGreaterThan(-1);

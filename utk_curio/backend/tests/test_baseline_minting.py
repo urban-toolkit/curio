@@ -12,11 +12,6 @@ passed, and two ways that bites have both actually happened:
   from what CI renders, the second past its budget, because macOS rasterizes
   text with grayscale antialiasing while the runner uses LCD subpixel.
 
-The switch it replaced, ``CURIO_E2E_REQUIRE_BASELINES``, keyed the decision off
-run shape: mint in a serial run, refuse under xdist. Wrong axis. Serialness says
-nothing about whether a capture deserves to become the reference, and the
-capture that would have broken CI was minted serially.
-
 These tests drive ``save_workflow_test_screenshot``'s control flow directly with
 a stub page, so they need no browser and no stack.
 """
