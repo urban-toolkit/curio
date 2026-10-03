@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
-import type * as CSS from "csstype";
+import clsx from "clsx";
+import menuStyles from "../menus/darkMenu.module.css";
 
 /**
  * The right-click menu a browse card opens, in one place.
@@ -73,7 +74,9 @@ export const CardContextMenu: React.FC<CardContextMenuProps> = ({
       role="menu"
       aria-label={ariaLabel}
       data-curio-card-context-menu="true"
-      style={{ ...menuStyle, top: y, left: x }}
+      className={menuStyles.panel}
+      // At the pointer, over everything on the page.
+      style={{ position: "fixed", top: y, left: x, zIndex: 9999 }}
     >
       {items.map((item) => (
         <button
@@ -81,13 +84,10 @@ export const CardContextMenu: React.FC<CardContextMenuProps> = ({
           type="button"
           role="menuitem"
           disabled={item.disabled}
-          style={
-            item.destructive
-              ? { ...itemStyle, color: "var(--curio-danger)" }
-              : item.disabled
-                ? { ...itemStyle, opacity: 0.5, cursor: "not-allowed" }
-                : itemStyle
-          }
+          className={clsx(menuStyles.item, item.destructive && menuStyles.itemDestructive)}
+          // Inline as well as in the class: the colour is the row's meaning,
+          // and a test without the stylesheet still has to see it.
+          style={item.destructive ? { color: "var(--curio-danger)" } : undefined}
           onClick={() => {
             onSelect(item.id);
             onDismiss();
@@ -101,30 +101,3 @@ export const CardContextMenu: React.FC<CardContextMenuProps> = ({
 };
 
 export default CardContextMenu;
-
-/* ---- Styles ---- */
-
-const menuStyle: CSS.Properties = {
-  position: "fixed",
-  backgroundColor: "var(--curio-top-bar-bg)",
-  border: "1px solid var(--curio-border-context-menu)",
-  borderRadius: "var(--curio-radius-sm)",
-  zIndex: 9999,
-  minWidth: "160px",
-  boxShadow: "var(--curio-shadow-context-menu)",
-};
-
-const itemStyle: CSS.Properties = {
-  // These are <button>s rather than clickable <div>s, so the browser's own
-  // button chrome has to be reset for the row to look as it did. Worth the
-  // extra lines: the divs were unreachable by keyboard and announced as nothing.
-  display: "block",
-  width: "100%",
-  textAlign: "left",
-  background: "none",
-  border: "none",
-  padding: "8px 16px",
-  color: "var(--curio-text-on-dark)",
-  fontSize: "var(--curio-font-size-md)",
-  cursor: "pointer",
-};
