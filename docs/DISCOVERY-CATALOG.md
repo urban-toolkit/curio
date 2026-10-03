@@ -188,10 +188,19 @@ While a download or an add runs, its row shows a progress bar and **Cancel**. Th
 - **A restart loses it.** A download still running when the server restarts is lost, and its row shows it as failed. Start it again.
 - **Downloading again.** A row marked **In your Data Catalog as CSV** has been downloaded in that format; picking CSV offers **View dataset**, and nothing is fetched again, while another format still downloads. A download narrowed by an area is held for that area: the same answers again fetch nothing and keep the dataset you have, and another area downloads again. A file you downloaded by hand and imported from a Dataset Finder row counts too: a download and a hand import of the same bytes are one dataset, whichever arrived first.
 - **Formats.** CSV, GeoJSON, JSON, Parquet, and GeoTIFF, narrowed by what each portal offers. A GeoTIFF download that is not a TIFF file is refused.
-- **Size.** 64 MiB at most. A source may set a lower limit, which its **View details** shows as **Max download**.
-- **Archives** (`.zip`, `.gz`, `.tar` and the like) are refused. Curio downloads single data files and unpacks nothing.
+- **Size.** 64 MiB at most. A source may set a lower limit, which its **View details** shows as **Max download**. For an archive, the limit is on the download, not on what it unpacks to.
+- **Archives.** A `.zip` or a `.gz` is unpacked, and what it holds lands in your Data Catalog:
 
-When a download fails, the row says why in the server's own words, for example that the file is an archive or larger than the limit.
+  | The archive holds | It lands as |
+  |---|---|
+  | One file, gzipped (`wac.csv.gz`) | That file (`wac.csv`) |
+  | One data file (CSV, GeoJSON, JSON, Parquet or GeoTIFF), with documentation such as `.txt`, `.pdf`, `.xml` or `.html` files beside it | That file. The documentation is left out |
+  | A shapefile: its `.shp`, `.dbf` and `.shx`, and its `.prj` and `.cpg` when there are | One GeoParquet dataset, in EPSG:4326 |
+  | A GTFS feed: `stops.txt` and another GTFS table, such as `routes.txt`, at the archive's root or in one top folder | One group, named after the download, with a dataset for each table: `stops` as points, `shapes` as one line per `shape_id`, and every other table (`routes`, `trips`, `stop_times`, ...) as a table. Every column is text, so ids keep their leading zeros, except the coordinates, `stop_sequence` and `shape_pt_sequence`, which are numbers. A stop without coordinates keeps its row, with no point |
+
+  Anything else is refused, and the message names what the archive holds: several data files, for example, or none. A `.tar`, `.tgz`, `.7z`, `.bz2` or `.rar` archive is refused, before it is downloaded when its link or the server says what it is. An archive may hold at most 1,000 files and unpack to at most 4 GiB. A file in it of more than 1 MiB that expands to more than 200 times its compressed size, a link, a file whose path leads outside the archive, and an archive inside the archive are refused.
+
+When a download fails, the row says why in the server's own words, for example that an archive holds several data files or that the file is larger than the limit.
 
 ### Downloading from OpenStreetMap
 
