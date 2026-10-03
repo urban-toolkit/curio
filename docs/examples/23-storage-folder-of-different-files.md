@@ -50,8 +50,7 @@ return df
 ```python
 import geopandas as gpd
 
-dataset_path = curio_data_path("data.curio.storage-parks")
-gdf = gpd.read_file(dataset_path)
+gdf = curio_load_data("data.curio.storage-parks")
 
 return gdf
 ```

@@ -57,7 +57,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 0,
-        "content": "import pandas as pd\n\ndataset_path = curio_data_path(\"data.curio.storage-stations\")\ndf = pd.read_csv(dataset_path)\n\nreturn df\n",
+        "content": "import pandas as pd\n\ndf = curio_load_data(\"data.curio.storage-stations\")\n\nreturn df\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Load where each sensor stands.",

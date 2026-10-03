@@ -36,8 +36,7 @@ anywhere without editing paths.
 ```python
 import geopandas as gpd
 
-dataset_path = curio_data_path("data.utk.chicago-boundary")
-gdf = gpd.read_file(dataset_path)
+gdf = curio_load_data("data.utk.chicago-boundary")
 
 # Downtown: the Loop and its neighbours.
 downtown = ["60601", "60602", "60603", "60604", "60605",

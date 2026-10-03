@@ -92,8 +92,7 @@ import geopandas as gpd
 # Chicago official neighborhoods boundary (98 polygons, `pri_neigh` names),
 # vendored in the Data Catalog so this example runs offline. Any polygon
 # FeatureCollection with a string name property works here.
-dataset_path = curio_data_path("data.cityofchicago.neighborhoods")
-gdf = gpd.read_file(dataset_path)
+gdf = curio_load_data("data.cityofchicago.neighborhoods")
 
 # __dict__, not plain assignment: pandas warns about creating a column via
 # a new attribute name, and that warning lands in this node's output with

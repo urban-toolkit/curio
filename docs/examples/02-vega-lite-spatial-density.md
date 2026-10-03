@@ -31,8 +31,7 @@ appear in the left rail's **Data Catalog** palette when you open it. Source: [Ch
 ```python
 import pandas as pd
 
-dataset_path = curio_data_path("data.cityofchicago.green-roofs")
-df = pd.read_csv(dataset_path)
+df = curio_load_data("data.cityofchicago.green-roofs")
 return df
 ```
 
@@ -96,13 +95,11 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 
-green_roofs_path = curio_data_path("data.cityofchicago.green-roofs")
-green_roofs_df = pd.read_csv(green_roofs_path)
+green_roofs_df = curio_load_data("data.cityofchicago.green-roofs")
 geometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]
 green_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)
 
-chicago_path = curio_data_path("data.utk.chicago-boundary")
-chicago = gpd.read_file(chicago_path)
+chicago = curio_load_data("data.utk.chicago-boundary")
 joined = gpd.sjoin(green_roofs_df, chicago, predicate='within')
 
 return pd.DataFrame(joined[['LONGITUDE', 'LATITUDE', 'VEGETATED_SQFT', 'TOTAL_ROOF_SQFT', 'zip']])

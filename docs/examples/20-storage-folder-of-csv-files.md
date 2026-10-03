@@ -89,8 +89,7 @@ return df
 ```python
 import pandas as pd
 
-dataset_path = curio_data_path("data.curio.storage-stations")
-df = pd.read_csv(dataset_path)
+df = curio_load_data("data.curio.storage-stations")
 
 return df
 ```
