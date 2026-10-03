@@ -87,6 +87,8 @@ There are two pages and a drawer on the canvas, plus an agent that works on the 
 
 On both pages the search is kept in the page address, so a search can be linked and survives a reload. On a storage source's page the search filters its resources by name, description and field values.
 
+GeoSampa, storage sources and services match a search the same way: each word you type on its own, in any order, with or without accents. A word of four letters or more that ends in *s* also finds the word without the *s*. `ponto onibus`, `pontos de ônibus` and `onibus ponto` all find GeoSampa's *Pontos de ônibus*, and `distritos` finds its *Distrito*. GeoSampa lists first the layers whose name or title holds the most of your words. Other portals search in their own way.
+
 A storage source is read when it is first opened, and again when its listing is 15 minutes old. While that runs the page says **Scanning `<source>`…**, and keeps the rows of the last reading. **Rescan** reads it again at once, for files added since. When the source holds files no resource declares, the page says how many.
 
 ### Action matrix
