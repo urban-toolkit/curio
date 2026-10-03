@@ -22,7 +22,7 @@
  *
  * The Node side needs none of this: duckdb-wasm keeps installed extensions
  * under `~/.duckdb/extensions/`, which the launcher seeds from the same
- * vendored file (`utk_curio/main.py::seed_duckdb_extensions`).
+ * vendored file (`utk_curio/cli/dependencies.py::seed_duckdb_extensions`).
  */
 
 const DUCKDB_EXTENSION_CDN = "https://extensions.duckdb.org/";

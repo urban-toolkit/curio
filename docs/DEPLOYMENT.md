@@ -235,7 +235,7 @@ This is where the frontend bundle gets compiled. The first build takes 10-15 min
 > [!WARNING]
 > **Always deploy with both compose files.** `docker-compose.yml` alone starts
 > Curio the way a local dev instance starts: the image's default command has no
-> `--deploy`, so [`main.py`](../utk_curio/main.py) sets `CURIO_NO_AUTH=1` and
+> `--deploy`, so [`cli/environment.py`](../utk_curio/cli/environment.py) sets `CURIO_NO_AUTH=1` and
 > **anyone who can reach the URL gets straight in with no login**. The
 > [`docker-compose.deploy.yml`](../docker-compose.deploy.yml) overlay is what adds
 > `--deploy` (auth + projects on), `--no-allow-publish` (locks the author-only

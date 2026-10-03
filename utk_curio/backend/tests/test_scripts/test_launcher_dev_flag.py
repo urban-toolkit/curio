@@ -18,7 +18,8 @@ import os
 import pytest
 
 import utk_curio.main as main
-from utk_curio.main import NODE_MAJOR
+from utk_curio.cli import frontend_build
+from utk_curio.cli.frontend_build import NODE_MAJOR
 
 
 def _resolve(dev_flag: bool, inherited: str | None, monkeypatch):
@@ -68,7 +69,7 @@ def test_flags_exist_regardless_of_dev_mode(flag, monkeypatch, capsys):
 @pytest.fixture
 def checkout(monkeypatch, tmp_path):
     """A frontend tree at tmp_path, with the build script this repo ships."""
-    monkeypatch.setattr(main, "_frontend_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(frontend_build, "_frontend_dir", lambda: str(tmp_path))
     monkeypatch.delenv("BACKEND_URL", raising=False)
     (tmp_path / "package.json").write_text(
         json.dumps({"scripts": {"build": "webpack --mode production && npm run x"}}),
@@ -81,24 +82,24 @@ def _build(root, stamp: str | None):
     (root / "dist").mkdir(exist_ok=True)
     (root / "dist" / "index.html").write_text("<html></html>", encoding="utf-8")
     if stamp is not None:
-        (root / "dist" / main.BUILD_STAMP).write_text(stamp, encoding="utf-8")
+        (root / "dist" / frontend_build.BUILD_STAMP).write_text(stamp, encoding="utf-8")
 
 
 def test_no_source_means_no_build(monkeypatch, tmp_path):
     """The container ships dist/ and no package.json; it must never run npm."""
-    monkeypatch.setattr(main, "_frontend_dir", lambda: str(tmp_path))
-    assert main._frontend_needs_build() is False
+    monkeypatch.setattr(frontend_build, "_frontend_dir", lambda: str(tmp_path))
+    assert frontend_build._frontend_needs_build() is False
 
 
 def test_fresh_checkout_builds(checkout):
-    assert main._frontend_needs_build() is True
-    assert "not found" in main._build_stamp_reason()
+    assert frontend_build._frontend_needs_build() is True
+    assert "not found" in frontend_build._build_stamp_reason()
 
 
 def test_current_build_is_reused(checkout):
     _build(checkout, "production\n")
-    assert main._build_stamp_reason() is None
-    assert main._frontend_needs_build() is False
+    assert frontend_build._build_stamp_reason() is None
+    assert frontend_build._frontend_needs_build() is False
 
 
 def test_unrecorded_mode_rebuilds(checkout):
@@ -108,13 +109,13 @@ def test_unrecorded_mode_rebuilds(checkout):
     forever.
     """
     _build(checkout, "")
-    assert "mode" in main._build_stamp_reason()
-    assert main._frontend_needs_build() is True
+    assert "mode" in frontend_build._build_stamp_reason()
+    assert frontend_build._frontend_needs_build() is True
 
 
 def test_development_bundle_rebuilds(checkout):
     _build(checkout, "development\n")
-    assert main._build_stamp_reason() == "built in development mode, need production"
+    assert frontend_build._build_stamp_reason() == "built in development mode, need production"
 
 
 def test_a_new_backend_address_reuses_the_build(checkout, monkeypatch):
@@ -122,26 +123,26 @@ def test_a_new_backend_address_reuses_the_build(checkout, monkeypatch):
     serves any address and --backend-port or --backend-url need no rebuild."""
     _build(checkout, "production\n")
     monkeypatch.setenv("BACKEND_URL", "http://127.0.0.1:5002")
-    assert main._build_stamp_reason() is None
+    assert frontend_build._build_stamp_reason() is None
 
     monkeypatch.setenv("BACKEND_URL", "https://curio.example.org/app/api")
-    assert main._build_stamp_reason() is None
-    assert main._frontend_needs_build() is False
+    assert frontend_build._build_stamp_reason() is None
+    assert frontend_build._frontend_needs_build() is False
 
 
 def test_mode_is_read_from_the_build_script(checkout):
-    assert main._frontend_build_mode() == "production"
+    assert frontend_build._frontend_build_mode() == "production"
     (checkout / "package.json").write_text(
         json.dumps({"scripts": {"build": "webpack --mode development"}}),
         encoding="utf-8",
     )
-    assert main._frontend_build_mode() == "development"
+    assert frontend_build._frontend_build_mode() == "development"
 
 
 def test_written_stamp_reads_back_as_current(checkout):
     _build(checkout, None)
-    main._write_build_stamp()
-    assert main._build_stamp_reason() is None
+    frontend_build._write_build_stamp()
+    assert frontend_build._build_stamp_reason() is None
 
 
 def test_stale_tree_is_reinstalled_and_the_bundle_survives(checkout, monkeypatch):
@@ -152,20 +153,20 @@ def test_stale_tree_is_reinstalled_and_the_bundle_survives(checkout, monkeypatch
     must reinstall without dropping a current dist/: which Node ran webpack
     does not change the JavaScript it emitted, and rebuilding costs minutes.
     """
-    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(main, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
+    monkeypatch.setattr(frontend_build.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(frontend_build, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
     ran = []
-    monkeypatch.setattr(main.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
+    monkeypatch.setattr(frontend_build.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
     _build(checkout, "production\n\n")
     (checkout / "dist" / "bundle.js").write_text("the bundle", encoding="utf-8")
     (checkout / "node_modules").mkdir()
-    (checkout / "node_modules" / main.NODE_STAMP).write_text("24", encoding="utf-8")
+    (checkout / "node_modules" / frontend_build.NODE_STAMP).write_text("24", encoding="utf-8")
     (checkout / "node_modules" / "marker").write_text("x", encoding="utf-8")
 
-    assert main._frontend_tree_is_stale() is True
+    assert frontend_build._frontend_tree_is_stale() is True
     cwd = os.getcwd()
     try:
-        main.check_install_build(str(checkout))
+        frontend_build.check_install_build(str(checkout))
     finally:
         os.chdir(cwd)
 
@@ -173,20 +174,20 @@ def test_stale_tree_is_reinstalled_and_the_bundle_survives(checkout, monkeypatch
     assert ["npm", "install"] in ran
     assert ["npm", "run", "build"] not in ran                    # bundle kept
     assert (checkout / "dist" / "bundle.js").read_text() == "the bundle"
-    assert (checkout / "node_modules" / main.NODE_STAMP).read_text() == str(NODE_MAJOR)
+    assert (checkout / "node_modules" / frontend_build.NODE_STAMP).read_text() == str(NODE_MAJOR)
 
 
 def test_force_rebuild_still_drops_the_bundle(checkout, monkeypatch):
     """--force-rebuild is an explicit ask to redo everything, bundle included."""
-    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(main, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
+    monkeypatch.setattr(frontend_build.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(frontend_build, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
     ran = []
-    monkeypatch.setattr(main.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
+    monkeypatch.setattr(frontend_build.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
     _build(checkout, "production\n\n")
 
     cwd = os.getcwd()
     try:
-        main.check_install_build(str(checkout), force_rebuild=True)
+        frontend_build.check_install_build(str(checkout), force_rebuild=True)
     finally:
         os.chdir(cwd)
 
@@ -195,11 +196,11 @@ def test_force_rebuild_still_drops_the_bundle(checkout, monkeypatch):
 
 
 def test_matching_tree_is_not_stale(checkout, monkeypatch):
-    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(main, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
+    monkeypatch.setattr(frontend_build.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(frontend_build, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
     (checkout / "node_modules").mkdir()
-    (checkout / "node_modules" / main.NODE_STAMP).write_text(str(NODE_MAJOR), encoding="utf-8")
-    assert main._frontend_tree_is_stale() is False
+    (checkout / "node_modules" / frontend_build.NODE_STAMP).write_text(str(NODE_MAJOR), encoding="utf-8")
+    assert frontend_build._frontend_tree_is_stale() is False
 
 
 def test_missing_tree_is_not_stale(checkout, monkeypatch):
@@ -207,16 +208,16 @@ def test_missing_tree_is_not_stale(checkout, monkeypatch):
 
     It is also what the container and pip look like, and neither may run npm.
     """
-    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(main, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
-    assert main._frontend_tree_is_stale() is False
+    monkeypatch.setattr(frontend_build.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(frontend_build, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
+    assert frontend_build._frontend_tree_is_stale() is False
 
 
 def test_without_node_nothing_is_stale(checkout, monkeypatch):
-    monkeypatch.setattr(main.shutil, "which", lambda name: None)
+    monkeypatch.setattr(frontend_build.shutil, "which", lambda name: None)
     (checkout / "node_modules").mkdir()
-    (checkout / "node_modules" / main.NODE_STAMP).write_text("24", encoding="utf-8")
-    assert main._frontend_tree_is_stale() is False
+    (checkout / "node_modules" / frontend_build.NODE_STAMP).write_text("24", encoding="utf-8")
+    assert frontend_build._frontend_tree_is_stale() is False
 
 
 def test_old_node_refuses_to_start(monkeypatch, capsys):
@@ -225,11 +226,11 @@ def test_old_node_refuses_to_start(monkeypatch, capsys):
     The sandbox runs autk-db in it (Autark data nodes die mid-download on 24)
     and every npm script fails against it, so nothing starts.
     """
-    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(main, "_read_node_version", lambda: ("v24.9.0", 24))
+    monkeypatch.setattr(frontend_build.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(frontend_build, "_read_node_version", lambda: ("v24.9.0", 24))
 
     with pytest.raises(SystemExit) as exit_info:
-        main._require_supported_node()
+        frontend_build._require_supported_node()
 
     # Non-zero: clean_shutdown's 0 would tell a script the stack came up.
     assert exit_info.value.code == 1
@@ -237,12 +238,12 @@ def test_old_node_refuses_to_start(monkeypatch, capsys):
 
 
 def test_supported_node_starts(monkeypatch):
-    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(main, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
-    main._require_supported_node()
+    monkeypatch.setattr(frontend_build.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(frontend_build, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
+    frontend_build._require_supported_node()
 
 
 def test_no_node_at_all_starts(monkeypatch):
     """A Python-only session is fine; there is no wrong version to object to."""
-    monkeypatch.setattr(main.shutil, "which", lambda name: None)
-    main._require_supported_node()
+    monkeypatch.setattr(frontend_build.shutil, "which", lambda name: None)
+    frontend_build._require_supported_node()

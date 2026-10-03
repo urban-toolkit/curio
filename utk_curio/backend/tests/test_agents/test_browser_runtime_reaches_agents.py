@@ -15,9 +15,7 @@ import json
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.execution import runtime_journal
 from utk_curio.backend.app.projects.services import _user_dir_key
-from utk_curio.backend.tests.test_agents import test_routes as _tr
-
-_auth = _tr._auth
+from utk_curio.backend.tests._support.agent_routes import _auth
 
 VEGA = "curio.builtin/vis-vega"
 POOL = "curio.builtin/data-pool"

@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio import main as curio_main
+from utk_curio.cli import dependencies
 
-REPO = Path(curio_main.__file__).resolve().parent.parent
+REPO = Path(dependencies.__file__).resolve().parents[2]
 VENDORED = REPO / "vendor" / "duckdb-extensions"
 
 # Asks the installed duckdb-wasm, through its Node build, which DuckDB it runs.
@@ -90,7 +90,7 @@ def test_it_lands_where_duckdb_looks(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-    curio_main.seed_duckdb_extensions()
+    dependencies.seed_duckdb_extensions()
 
     target = tmp_path / ".duckdb" / "extensions" / "extensions.duckdb.org"
     seeded = {p.relative_to(target) for p in target.rglob("*.duckdb_extension.wasm")}
@@ -101,11 +101,11 @@ def test_it_lands_where_duckdb_looks(tmp_path, monkeypatch):
 
 def test_it_does_not_recopy_what_is_already_there(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    curio_main.seed_duckdb_extensions()
+    dependencies.seed_duckdb_extensions()
     seeded = next((tmp_path / ".duckdb").rglob("spatial.duckdb_extension.wasm"))
     stamp = seeded.stat().st_mtime_ns
 
-    curio_main.seed_duckdb_extensions()
+    dependencies.seed_duckdb_extensions()
 
     assert seeded.stat().st_mtime_ns == stamp
 
@@ -116,4 +116,4 @@ def test_a_read_only_home_does_not_stop_the_launch(tmp_path, monkeypatch):
     blocked.write_text("not a directory")
     monkeypatch.setattr(Path, "home", lambda: blocked)
 
-    curio_main.seed_duckdb_extensions()  # must not raise
+    dependencies.seed_duckdb_extensions()  # must not raise

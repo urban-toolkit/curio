@@ -532,7 +532,7 @@ dependencies, so nothing shells out to pip. `curio.weather@1`,
 `ai.utk.uhvi@1` and `curio.streetvision@1` pull rasterio / geopandas /
 **torch** through a synchronous call capped at 30 minutes - and worse, the
 resulting user-store copy makes *every later* `curio start` re-resolve those deps
-(`main.py` walks every user store on boot and `sys.exit(1)`s if pip fails). The
+(`utk_curio/cli/dependencies.py` walks every user store on boot and `sys.exit(1)`s if pip fails). The
 e2e suite cannot stub pip: it runs in the backend subprocess, not the pytest
 process. Guard the install endpoint with `page.route` so a mis-targeted click
 fails in milliseconds instead.
@@ -681,7 +681,8 @@ Things worth knowing before adding to these:
   (`dataset.install`, `package.install`, `package.draft.apply`,
   `node.template.create`) each need a real catalog row, or a run of the isolated
   build service; their mints are covered in-process by
-  `test_agents/test_routes.py`, and an agent declaring only those falls through
+  `test_agents/test_routes_turns.py` and `test_agents/test_routes_proposals.py`,
+  and an agent declaring only those falls through
   to the read-tool leg.
 - **A plan is applied per node**, through the planned row's own
   `Create node <title>` button and the `apply-node` route - not the card's
@@ -874,7 +875,7 @@ the recording - `_record` finalizes the video in a `finally`.
 
 - **It installs packages and libraries for real.** When pytest owns the stack,
   `tests/conftest.py` sets `CURIO_LAUNCH_CWD` to the **repo root**, so user
-  package stores land in `<repo>/.curio/users/<id>/` - and `main.py` walks every
+  package stores land in `<repo>/.curio/users/<id>/` - and `utk_curio/cli/dependencies.py` walks every
   user store on boot and `sys.exit(1)`s if pip cannot re-resolve one. Budget
   10-25 minutes for the torch install in `nodes`, and check that
   `python curio.py start` still boots afterwards.

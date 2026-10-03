@@ -12,8 +12,9 @@ disclosure the drawer shows before the click has to match what the server
 actually does on it, and that agreement lives across the wire.
 
 Covered more cheaply elsewhere, and deliberately not re-asserted here:
-``test_agents/test_routes.py`` owns the route contract and the closure's
-server-side refusal, ``test_agents/test_delegation.py`` owns the closure
+``test_agents/test_routes_catalog.py`` and ``test_agents/test_routes_lifecycle.py``
+own the route contract and the closure's server-side refusal,
+``test_agents/test_delegation.py`` owns the closure
 computation, and ``src/tests/catalog/AgentCatalogDrawer.test.tsx`` owns which
 button a card shows for a given prop set.
 

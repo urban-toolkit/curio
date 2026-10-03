@@ -4,7 +4,7 @@ The sandbox executes arbitrary user code. Every route that can run code or
 read artifacts must therefore prove the caller is Curio's own
 backend and not something else that reached the port.
 
-The secret is generated once per launch by ``utk_curio/main.py``
+The secret is generated once per launch by ``utk_curio/cli/environment.py``
 (``set_environment_variables``) and handed to the backend and the sandbox
 through ``CURIO_SANDBOX_TOKEN``. The backend attaches it in ``_sandbox_call``;
 here we check it.
@@ -40,7 +40,7 @@ _warned = False
 def hosted_mode() -> bool:
     """True when the launcher enabled user auth (``--deploy``).
 
-    ``main.py::set_environment_variables`` writes ``CURIO_NO_AUTH=0`` for both,
+    ``cli/environment.py::set_environment_variables`` writes ``CURIO_NO_AUTH=0`` for both,
     and the sandbox inherits it. Absent means a plain local launch.
     """
     return os.environ.get("CURIO_NO_AUTH", "1").strip().lower() in ("0", "false", "no", "off")

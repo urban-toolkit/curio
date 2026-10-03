@@ -75,7 +75,7 @@ def spa_server():
             + "    cd utk_curio/frontend/urban-workflows && npm run build"
         )
 
-    from utk_curio.main import run_spa_static_server
+    from utk_curio.cli.static_server import run_spa_static_server
 
     # Bind :0 to learn a free port, then hand it to the server thread — a fixed
     # port would collide with the suite's own stack.

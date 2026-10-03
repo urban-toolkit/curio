@@ -388,7 +388,7 @@ describe("AgentCatalogDrawer", () => {
   // The "409 from uninstalling a required dependency" case left with the
   // control: this drawer has no uninstall any more. The backend guard is intact
   // and covered where it lives, in
-  // test_agents/test_routes.py::test_uninstalling_a_required_dependency_409s_naming_the_dependent.
+  // test_agents/test_routes_lifecycle.py::test_uninstalling_a_required_dependency_409s_naming_the_dependent.
 
 
   it("header carries the Pin and a Close, like the other catalog drawers", async () => {

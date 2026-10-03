@@ -89,7 +89,7 @@ def standalone_server():
     backend = ThreadingHTTPServer(("127.0.0.1", backend_port), Handler)
     threading.Thread(target=backend.serve_forever, daemon=True).start()
 
-    from utk_curio.main import run_spa_static_server
+    from utk_curio.cli.static_server import run_spa_static_server
 
     port = _free_port()
     threading.Thread(
