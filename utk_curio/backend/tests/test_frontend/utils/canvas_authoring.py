@@ -335,6 +335,19 @@ _HEADER_STATE_JS = """() => ({
 })"""
 
 
+def assert_header_shows_save(page) -> None:
+    """Fail unless the canvas header shows a landed save right now.
+
+    No wait, on purpose: a frame taken without a save shows "Unsaved", or
+    whatever the 30 s autosave last left, and only a check made at the moment
+    of the capture tells the two apart.
+    """
+    seen = page.evaluate(_HEADER_STATE_JS)
+    assert seen["saveState"] == "saved" and seen["catalogBusy"] == "false", (
+        f"the header does not show a landed save at capture time: {seen}"
+    )
+
+
 def frame_node(page, node_id: str, *, zoom: float = 0.9,
                settle_ms: float = 1000) -> None:
     """Pan and zoom the canvas so one node fills the frame.

@@ -66,6 +66,7 @@ from utk_curio.backend.tests.dataset_catalog_coverage import (
 
 from .utils import (
     accept_confirm_dialog,
+    assert_header_shows_save,
     assert_vega_canvas_rendered,
     canvas_node_type,
     connect_nodes,
@@ -316,6 +317,7 @@ def test_dataset_loads_and_feeds_a_consumer(
     # default tolerance (10% of pixels, 30/255 per channel). The helper pins
     # its own fitView first, so the authoring zoom above does not leak into the
     # capture.
+    assert_header_shows_save(page)
     save_workflow_test_screenshot(
         page,
         dataset.slug,

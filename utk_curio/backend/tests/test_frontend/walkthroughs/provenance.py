@@ -1,6 +1,7 @@
 """Scenes on the Provenance window: its graph, panning it, and reverting."""
 from __future__ import annotations
 
+from ..utils import assert_header_shows_save
 from .framework import Ctx, walkthrough
 from .steps import (
     load_example_spec,
@@ -165,6 +166,7 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
         # canvas has nothing to fit.
         ctx.click(page.get_by_role("button", name="Close").last)
         dialog.wait_for(state="hidden", timeout=20000)
+        assert_header_shows_save(page)
         ctx.capture(label, fit_reactflow=nodes > 0)
         if reopen:
             open_provenance(ctx)

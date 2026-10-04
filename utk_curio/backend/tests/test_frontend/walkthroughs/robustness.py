@@ -9,6 +9,7 @@ from playwright.sync_api import expect
 
 from ..utils import (
     assert_autark_map_drawn,
+    assert_header_shows_save,
     dismiss_toasts,
     assert_vega_canvas_rendered,
     frame_node,
@@ -115,6 +116,7 @@ def dashboard_page_renders_pinned_charts(ctx: Ctx) -> None:
     dismiss_toasts(page)
     ctx.click(page.get_by_test_id("share-menu-btn"), force=True)
     page.get_by_test_id("open-dashboard-link").wait_for(state="visible", timeout=10000)
+    assert_header_shows_save(page)
     ctx.capture("share-menu")
     # Close it again: the capture is the only thing that needed it open.
     ctx.click(page.get_by_test_id("share-menu-btn"), force=True)
