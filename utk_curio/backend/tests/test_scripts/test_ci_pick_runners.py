@@ -129,6 +129,16 @@ def test_an_arcade_job_queued_too_long_keeps_every_cpu_job_on_hosted():
     assert any("waited" in line for line in how)
 
 
+def test_the_cpu_pool_is_stuck_only_while_a_runner_should_be_free():
+    queued = _arcade("queued", age_s=picker.STUCK_AFTER_S + 60)
+    # One runner should be free yet the queued job waits: runners are offline.
+    some_running = [_arcade() for _ in range(picker.CPU_RUNNERS - 1)] + [queued]
+    assert picker.busy(some_running, NOW)["arcade_stuck"] is True
+    # Every runner is running a job: the queued one is just waiting its turn.
+    all_running = [_arcade() for _ in range(picker.CPU_RUNNERS)] + [queued]
+    assert picker.busy(all_running, NOW)["arcade_stuck"] is False
+
+
 def test_an_arcade_gpu_job_queued_too_long_sends_test_gpu_to_utk():
     jobs = [_arcade_gpu("queued", age_s=picker.STUCK_AFTER_S + 60)]
     chosen, _ = picker.pick(CPU, GPU, "auto", "auto", lambda: jobs)
