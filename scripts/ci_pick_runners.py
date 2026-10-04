@@ -48,8 +48,8 @@ RUNS_ON = {
 CPU_POOLS = ("arcade", "hosted")
 GPU_POOLS = ("arcade-gpu", "utk")
 
-#: Runners in the arcade CPU pool (arcade-cpu-01..20).
-CPU_RUNNERS = 20
+#: Runners in the arcade CPU pool (arcade-cpu-01..40).
+CPU_RUNNERS = 40
 #: Runners in the arcade GPU pool (arcade-gpu-01..06, all on one H100).
 GPU_RUNNERS = 6
 #: Concurrent GitHub-hosted jobs the organization's plan allows.
