@@ -56,6 +56,16 @@ export function overlapProblem(
   return null;
 }
 
+/**
+ * The scenario whose nodes are exactly *nodeIds*, in any order. Read it on
+ * `liveScenarios`: a member deleted since the last save is still in the list
+ * until then, and would hide the match.
+ */
+export function scenarioHoldingExactly(scenarios: readonly Scenario[], nodeIds: readonly string[]): Scenario | undefined {
+  const wanted = new Set(nodeIds);
+  return scenarios.find((s) => s.nodes.length === wanted.size && s.nodes.every((id) => wanted.has(id)));
+}
+
 /** *scenarios* plus a new one holding *nodeIds*, or why not. */
 export function createScenario(
   scenarios: readonly Scenario[],

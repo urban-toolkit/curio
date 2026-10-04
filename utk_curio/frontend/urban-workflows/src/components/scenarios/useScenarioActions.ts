@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useReactFlow } from "reactflow";
 import { v4 as uuid } from "uuid";
 
@@ -17,10 +17,11 @@ import {
   nextScenarioName,
   overlapProblem,
   removeNodesFromScenarios,
+  scenarioHoldingExactly,
   updateScenario,
   type ScenarioEdit,
 } from "../../utils/scenarios/scenarioEdits";
-import { scenarioParts } from "../../utils/scenarios/scenarioParts";
+import { liveScenarios, scenarioParts } from "../../utils/scenarios/scenarioParts";
 import { useScenarioUi } from "./scenarioUi";
 
 /** Room left between a selection and its duplicate, below it. */
@@ -33,7 +34,11 @@ const DUPLICATE_GAP = 80;
  * `setScenarios`, so the dataflow is dirty until its next save.
  */
 export function useScenarioActions() {
-  const { scenarios, setScenarios, playNodesUpTo, markDirty, workflowNameRef, workflowGoal } = useFlowContext();
+  const { scenarios: saved, nodes, setScenarios, playNodesUpTo, markDirty, workflowNameRef, workflowGoal } =
+    useFlowContext();
+  // Every edit reads, and writes, the members still on the canvas: the list
+  // keeps a deleted node until the next save.
+  const scenarios = useMemo(() => liveScenarios(saved, nodes), [saved, nodes]);
   const { loadTrill } = useCode();
   const reactFlow = useReactFlow();
   const { showToast } = useToastContext();
@@ -89,9 +94,7 @@ export function useScenarioActions() {
         return;
       }
       const chosen = new Set(ids);
-      const already = scenarios.find(
-        (s) => s.nodes.length === ids.length && s.nodes.every((id) => chosen.has(id)),
-      );
+      const already = scenarioHoldingExactly(scenarios, ids);
       if (asScenario && !already) {
         const problem = overlapProblem(scenarios, ids);
         if (problem) {

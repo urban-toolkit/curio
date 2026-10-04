@@ -11,9 +11,11 @@ import {
   nextScenarioColor,
   nextScenarioName,
   removeNodesFromScenarios,
+  scenarioHoldingExactly,
   updateScenario,
 } from "../../utils/scenarios/scenarioEdits";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
+import { liveScenarios } from "../../utils/scenarios/scenarioParts";
 
 const baseline: Scenario = { id: "s1", name: "Baseline", color: SCENARIO_COLORS[0], nodes: ["a", "b"] };
 
@@ -66,6 +68,27 @@ describe("adding and removing nodes", () => {
     const next = removeNodesFromScenarios([baseline, other], ["b"]);
     expect(next[0].nodes).toEqual(["a"]);
     expect(next[1]).toBe(other);
+  });
+});
+
+describe("scenarioHoldingExactly", () => {
+  // Duplicate as scenario keeps a selection that already is a scenario as it
+  // is, and makes only the copy a new one.
+  test("finds the scenario a selection is, in any order", () => {
+    expect(scenarioHoldingExactly([baseline], ["b", "a"])).toBe(baseline);
+    expect(scenarioHoldingExactly([baseline], ["a"])).toBeUndefined();
+    expect(scenarioHoldingExactly([baseline], ["a", "b", "c"])).toBeUndefined();
+  });
+
+  test("read on the live nodes, a member deleted since the save does not hide it", () => {
+    const stale: Scenario = { ...baseline, nodes: ["a", "gone", "b"] };
+    const nodes = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    // The list as saved still names the deleted node, so it hides the match...
+    expect(scenarioHoldingExactly([stale], ["a", "b"])).toBeUndefined();
+    // ...which is why the canvas reads it on the live members.
+    const live = liveScenarios([stale], nodes);
+    expect(scenarioHoldingExactly(live, ["a", "b"])).toEqual({ ...baseline, nodes: ["a", "b"] });
+    expect(createScenario(live, ["c"], { id: "s2" }).error).toBeUndefined();
   });
 });
 
