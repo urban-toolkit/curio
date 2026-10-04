@@ -129,7 +129,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   // Play All path. UniversalNode wires this as `sendCode` so it skips the
   // immediate signalNodeExecDone and shows the "exec" indicator on the pool.
-  // signalNodeExecDone for the pool then fires from FlowProvider.applyNewOutput
+  // signalNodeExecDone for the pool then fires from applyNewOutput (providers/flow/useApplyOutput.ts)
   // *after* processDataAsync has propagated downstream — so the next level
   // only triggers once children's data.input is set. In the common Play All
   // path, the data-input effect above has already published a promise on

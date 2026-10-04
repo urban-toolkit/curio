@@ -147,7 +147,7 @@ class Ctx:
 
 #: Smallest diff budget a FULL-PAGE capture is compared at (#333).
 #:
-#: Above the worst cross-platform cost measured over this file's captures
+#: Above the worst cross-platform cost measured over the walkthroughs' captures
 #: (7.66%), so a developer on a machine that is not the baseline's does not read
 #: a platform difference as a regression. Clipped captures keep their own,
 #: tighter budgets. See ``Walkthrough.effective_max_diff_ratio``.
@@ -216,7 +216,7 @@ class Walkthrough:
         The committed baselines are captured by CI, on Linux. Everywhere else
         the same page renders text slightly differently, and on a full 1280x720
         viewport that alone costs **4.5-7.7% of pixels** (measured across all 86
-        captures in this file on macOS, 2026-09-15: `catalog-tag-chips-are-plain`
+        walkthrough captures on macOS, 2026-09-15: `catalog-tag-chips-are-plain`
         4.85% against its 5% budget, `project-drawer-offers-delete` 7.66%
         against 8%). Seven captures sat above 90% of budget, so any local run
         was one restyle away from a red that looks exactly like a regression --

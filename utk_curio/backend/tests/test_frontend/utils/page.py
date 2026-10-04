@@ -17,7 +17,7 @@ from .environment import debug_log
 class FrontendPage(Page):
     def __init__(self, frontend_server: str, page: Page):  # noqa
         debug_log(
-            "utils.py:FrontendPage.__init__",
+            "utils/page.py:FrontendPage.__init__",
             "FrontendPage created",
             {
                 "frontend_server": frontend_server,
@@ -47,7 +47,7 @@ class FrontendPage(Page):
     def goto_page(self, path):
         url = f"{self.frontend_server}{path}"
         debug_log(
-            "utils.py:goto_page",
+            "utils/page.py:goto_page",
             "About to navigate",
             {
                 "url": url,
@@ -60,7 +60,7 @@ class FrontendPage(Page):
         try:
             result = self.page.goto(f"{self.frontend_server}{path}")
             debug_log(
-                "utils.py:goto_page",
+                "utils/page.py:goto_page",
                 "Navigation succeeded",
                 {
                     "url": url,
@@ -71,7 +71,7 @@ class FrontendPage(Page):
             return result
         except Exception as e:
             debug_log(
-                "utils.py:goto_page",
+                "utils/page.py:goto_page",
                 "Navigation FAILED",
                 {
                     "url": url,

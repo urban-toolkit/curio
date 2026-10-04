@@ -394,8 +394,8 @@ def _report_unimportable_deps(merged, *, block: bool) -> None:
     reported, and waiting is the point of running setup explicitly.
     """
     def _probe() -> None:
-        # Imported here, not at module scope: this file is the launcher and
-        # keeps backend imports lazy, and resolving the attribute at call time
+        # Imported here, not at module scope: the launcher keeps backend
+        # imports lazy, and resolving the attribute at call time
         # is also what lets a test stand in for the probe.
         from utk_curio.backend.app.packages.infrastructure import pip_runner
 

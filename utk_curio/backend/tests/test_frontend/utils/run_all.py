@@ -33,7 +33,7 @@ def run_all_button(page):
 # Record every transition of the run guard, so a test can prove a run STARTED
 # without having to catch it mid-flight. A run whose nodes all report in the
 # tick they were triggered is over before any locator can resolve - there is no
-# minimum in-flight window (FlowProvider sets isRunActive true in playAllNodes
+# minimum in-flight window (providers/flow/usePlayAll.ts sets isRunActive true in playAllNodes
 # and false in finishPlayAll, which fires as soon as the last node of the last
 # level reports). Mutation records survive that; a locator cannot.
 #
