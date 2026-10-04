@@ -6,9 +6,8 @@ import type { Edge, Node, ReactFlowInstance } from "reactflow";
 import type { useToastContext } from "../ToastProvider";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { upstreamErroredMessage } from "../../utils/nodeEmptyState";
-import { nodeRunKey } from "../../utils/widgets/widgetModel";
 import type { NodeExecOutcome } from "./flowTypes";
-import { computeTopologicalLevels, directedEdgesOf } from "./runLevels";
+import { computeTopologicalLevels, directedEdgesOf, nodesToRunUpTo } from "./runLevels";
 
 export interface PlayAllState {
     levels: string[][];
@@ -20,7 +19,12 @@ export interface PlayAllState {
     failed: Set<string>;
     /** Nodes this run did not run, because a node feeding them failed or was not run. */
     skipped: Set<string>;
+    /** Told how each node ended: run, failed, or not run because of the node above it. */
+    onNodeDone?: (nodeId: string, outcome: { failed: boolean; skipReason?: string }) => void;
+    /** Told when the run ends on its own; a cancelled run ends without it. */
+    onFinish?: () => void;
 }
+
 
 // Play All advances level-by-level only once every node in the active level
 // reports it finished. If a node never does — the backend never returns, its
@@ -59,10 +63,12 @@ export function usePlayAll({
     // immediately so the last level's datasets can't be lost to the install-save
     // debounce window (see flushInstallSyncRef / scheduleInstallSyncRef).
     function finishPlayAll() {
+        const onFinish = playAllStateRef.current?.onFinish;
         clearPlayAllStallTimer();
         playAllStateRef.current = null;
         setIsRunActive(false);
         flushInstallSyncRef.current();
+        onFinish?.();
     }
 
     // Abandon the run without the finishing save: a cancelled run has nothing
@@ -135,11 +141,12 @@ export function usePlayAll({
         }
         const toRun = levelNodeIds.filter(id => !skipped.has(id));
         state.pending = new Set(toRun);
-        for (const id of skipped.keys()) {
+        for (const [id, reason] of skipped) {
             state.skipped.add(id);
             // Errored, so the nodes it feeds read "upstream-errored" by the rule
             // charts and the Data Pool already use.
             markNodeErroredRef.current(id);
+            state.onNodeDone?.(id, { failed: true, skipReason: reason });
         }
         setNodes((nds: Node[]) =>
             nds.map((node: Node) => {
@@ -177,6 +184,7 @@ export function usePlayAll({
         // for the same node is ignored above. Carried here rather than read from
         // the node's exec status, which may not have committed yet (#603).
         if (outcome?.failed) state.failed.add(nodeId);
+        state.onNodeDone?.(nodeId, { failed: !!outcome?.failed });
         if (state.pending.size === 0) {
             advancePlayAll(state);
         } else {
@@ -235,97 +243,42 @@ export function usePlayAll({
 
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
-
-        const directedEdges = directedEdgesOf(currentEdges);
-
-        const predecessors = new Map<string, string[]>();
-        for (const n of currentNodes) predecessors.set(n.id, []);
-        for (const e of directedEdges) {
-            predecessors.get(e.target)?.push(e.source);
-        }
-
-        const ancestorIds = new Set<string>();
-        const queue = [targetNodeId];
-        while (queue.length > 0) {
-            const id = queue.shift()!;
-            for (const pred of predecessors.get(id) ?? []) {
-                if (!ancestorIds.has(pred)) {
-                    ancestorIds.add(pred);
-                    queue.push(pred);
-                }
-            }
-        }
-        ancestorIds.add(targetNodeId);
-
-        // Which ancestors actually need to run again.
-        //
-        // "It succeeded once" is not enough: a node whose code has changed since
-        // that run holds an artifact its current source would not produce, and
-        // reusing it made the whole downstream chain report success off stale
-        // data. `executedCode` (mirrored in useNodeState) is the source that
-        // produced the current output, so a mismatch means re-run.
-        //
-        // The last clause is what makes invalidation transitive - a node feeding
-        // off a re-running ancestor must re-run too, or it would pass the old
-        // artifact down while its parent computed a new one.
-        const ancestorNodes = currentNodes.filter(n => ancestorIds.has(n.id));
-        const ancestorEdges = currentEdges.filter(
-            e => ancestorIds.has(e.source) && ancestorIds.has(e.target)
+        const { willRun } = nodesToRunUpTo(
+            targetNodeId, currentNodes, currentEdges, emittedForInputRef.current,
         );
-        const willRun = new Set<string>();
-        const ancestorLevels = computeTopologicalLevels(ancestorNodes, ancestorEdges);
-        // computeTopologicalLevels drops anything inside a cycle. Those nodes
-        // still have to be judged, or a cycle upstream of the target would
-        // silently remove it from the run.
-        const levelled = new Set(ancestorLevels.flat());
-        const decisionOrder = [
-            ...ancestorLevels,
-            ancestorNodes.filter(n => !levelled.has(n.id)).map(n => n.id),
-        ];
-        for (const level of decisionOrder) {
-            for (const nodeId of level) {
-                const node = currentNodes.find(n => n.id === nodeId);
-                if (!node) continue;
-                // A success on node.data.output, or, for the kinds that never
-                // write one there, an emission for the input the node still
-                // has. A node whose last run failed always runs again.
-                const outputCode = node.data.output?.code;
-                const emittedForInput = emittedForInputRef.current;
-                const emittedCurrent =
-                    emittedForInput.has(nodeId) && emittedForInput.get(nodeId) === node.data.input;
-                const neverSucceeded =
-                    outputCode !== "success" && !(outputCode !== "error" && emittedCurrent);
-                // #662: the key covers the node's widget values too, so a
-                // changed value counts as changed code.
-                const codeChanged =
-                    node.data.executedCode !== undefined &&
-                    node.data.executedCode !== nodeRunKey(node.data.code, node.data.widgets);
-                const upstreamRerunning = ancestorEdges.some(
-                    e => e.target === nodeId && willRun.has(e.source)
-                );
-                if (
-                    nodeId === targetNodeId ||
-                    neverSucceeded ||
-                    codeChanged ||
-                    upstreamRerunning
-                ) {
-                    willRun.add(nodeId);
-                }
-            }
+        playNodes([...willRun]);
+    }
+
+    /**
+     * Run the given nodes in the order Run All would, each level once the one
+     * above it has reported. The browser half of a run on the server goes
+     * through here, with *hooks* reporting each node to that run.
+     */
+    function playNodes(
+        nodeIds: string[],
+        hooks: Pick<PlayAllState, "onNodeDone" | "onFinish"> = {},
+    ): boolean {
+        if (playAllStateRef.current != null) {
+            showToast(
+                "A run is already in progress. Wait for it to finish, or cancel it from the Run All button.",
+                "info",
+            );
+            return false;
         }
-        const subgraphNodes = currentNodes.filter(n => willRun.has(n.id));
-        const subgraphNodeIds = new Set(subgraphNodes.map(n => n.id));
-        const subgraphEdges = currentEdges.filter(
-            e => subgraphNodeIds.has(e.source) && subgraphNodeIds.has(e.target)
+        const wanted = new Set(nodeIds);
+        const subgraphNodes = reactFlow.getNodes().filter(n => wanted.has(n.id));
+        const subgraphEdges = reactFlow.getEdges().filter(
+            e => wanted.has(e.source) && wanted.has(e.target)
         );
 
         const levels = computeTopologicalLevels(subgraphNodes, subgraphEdges);
-        if (!levels.length) return;
+        if (!levels.length) return false;
 
-        playAllStateRef.current = newRunState(levels, subgraphEdges);
+        playAllStateRef.current = { ...newRunState(levels, subgraphEdges), ...hooks };
         setIsRunActive(true);
         triggerLevel(0);
+        return true;
     }
 
-    return { cancelRun, signalNodeExecDone, playAllNodes, playNodesUpTo };
+    return { cancelRun, signalNodeExecDone, playAllNodes, playNodesUpTo, playNodes };
 }

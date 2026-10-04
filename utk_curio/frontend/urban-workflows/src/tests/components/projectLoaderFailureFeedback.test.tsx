@@ -33,6 +33,7 @@ jest.mock("../../providers/FlowProvider", () => ({
     hydrateRestoredOutputs: jest.fn(),
     loadParsedTrill: jest.fn(),
     projectId: null,
+    attachLatestRun: jest.fn(),
   }),
 }));
 jest.mock("../../hook/useCode", () => ({

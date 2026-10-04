@@ -1,6 +1,6 @@
 import { NodeType } from "./constants";
 import { NodeTemplateId } from "./registry/types";
-import { formatDate, mapTypes } from "./utils/formatters";
+import { recordExecProvenance } from "./utils/executionResult";
 import { getToken } from "./utils/authApi";
 import { backendUrl } from "./utils/backendUrl";
 import { executionInputRef } from "./utils/flowOutputRef";
@@ -35,7 +35,7 @@ export class PythonInterpreter {
             unifiedLines += "    " + line + "\n";
         }
 
-        let startTime = formatDate(new Date());
+        const startedAt = new Date();
 
         console.log("unifiedLines", unifiedLines);
 
@@ -105,52 +105,15 @@ export class PythonInterpreter {
             })
             .then((json) => {
                 clearTimeout(timeoutId);
-                let endTime = formatDate(new Date());
-
-                let typesInput: string[] = [];
-                // console.log("------------ inputTypes", json.inputTypes)
-                // console.log("------------", json)
-                if (input != "") typesInput = json.input.dataType;//getType([input]);
-
-                let typesOuput: string[] = [];
-
-                if (json.output != "") {
-                    if (json.stderr != "") {
-                        typesOuput = ["error"];
-                    } else {
-                        typesOuput = json.output.dataType;// getType([json.output]);
-                    }
-                }
-
-                nodeExecProv(
-                    startTime,
-                    endTime,
-                    workflow_name,
+                recordExecProvenance(nodeExecProv, {
+                    startedAt,
+                    finishedAt: new Date(),
+                    workflowName: workflow_name,
                     nodeId,
-                    mapTypes(typesInput),
-                    mapTypes(typesOuput),
-                    unresolvedUserCode
-                );
-
-                // fetch(backendUrl()+"/nodeExecProv", {
-                //     method: "POST",
-                //     body: JSON.stringify({
-                //         data: {
-                //             activityexec_start_time: startTime,
-                //             activityexec_end_time: endTime,
-                //             workflow_name,
-                //             activity_name: nodeType+"_"+nodeId,
-                //             types_input: mapTypes(typesInput),
-                //             types_output: mapTypes(typesOuput),
-                //             activity_source_code: userCode
-                //         }
-                //     }),
-                //     headers: {
-                //         "Content-type": "application/json; charset=UTF-8",
-                //     }
-                // }).then((value: any) => {
-                //     updateBoxGraph(workflow_name, nodeType+"_"+nodeId);
-                // })
+                    input,
+                    reply: json,
+                    code: unresolvedUserCode,
+                });
 
                 callback(json);
             })

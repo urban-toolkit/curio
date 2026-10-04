@@ -1,6 +1,7 @@
-// The order Run All runs a dataflow in: the edges it follows, and the levels
-// of nodes it runs one after another.
+// The order Run All runs a dataflow in: the edges it follows, the levels of
+// nodes it runs one after another, and the nodes a play runs.
 import type { Edge, Node } from "reactflow";
+import { nodeRunKey } from "../../utils/widgets/widgetModel";
 
 /** The edges a run orders nodes by: every edge but a two-way interaction link. */
 export function directedEdgesOf<E extends { sourceHandle?: string | null; targetHandle?: string | null }>(
@@ -49,4 +50,94 @@ export function computeTopologicalLevels(nodes: Node[], edges: Edge[]): string[]
         queue = next;
     }
     return levels;
+}
+
+/**
+ * The nodes playing *targetNodeId* runs: the node, and each ancestor whose
+ * output cannot be reused. Read by the in-browser walk and by a run on the
+ * server, which reuses the outputs of the other ancestors.
+ */
+export function nodesToRunUpTo(
+    targetNodeId: string,
+    currentNodes: Node[],
+    currentEdges: Edge[],
+    emittedForInput: Map<string, unknown>,
+): { ancestorIds: Set<string>; willRun: Set<string> } {
+    const directedEdges = directedEdgesOf(currentEdges);
+
+    const predecessors = new Map<string, string[]>();
+    for (const n of currentNodes) predecessors.set(n.id, []);
+    for (const e of directedEdges) {
+        predecessors.get(e.target)?.push(e.source);
+    }
+
+    const ancestorIds = new Set<string>();
+    const queue = [targetNodeId];
+    while (queue.length > 0) {
+        const id = queue.shift()!;
+        for (const pred of predecessors.get(id) ?? []) {
+            if (!ancestorIds.has(pred)) {
+                ancestorIds.add(pred);
+                queue.push(pred);
+            }
+        }
+    }
+    ancestorIds.add(targetNodeId);
+
+    // Which ancestors actually need to run again.
+    //
+    // "It succeeded once" is not enough: a node whose code has changed since
+    // that run holds an artifact its current source would not produce, and
+    // reusing it made the whole downstream chain report success off stale
+    // data. `executedCode` (mirrored in useNodeState) is the source that
+    // produced the current output, so a mismatch means re-run.
+    //
+    // The last clause is what makes invalidation transitive - a node feeding
+    // off a re-running ancestor must re-run too, or it would pass the old
+    // artifact down while its parent computed a new one.
+    const ancestorNodes = currentNodes.filter(n => ancestorIds.has(n.id));
+    const ancestorEdges = currentEdges.filter(
+        e => ancestorIds.has(e.source) && ancestorIds.has(e.target)
+    );
+    const willRun = new Set<string>();
+    const ancestorLevels = computeTopologicalLevels(ancestorNodes, ancestorEdges);
+    // computeTopologicalLevels drops anything inside a cycle. Those nodes
+    // still have to be judged, or a cycle upstream of the target would
+    // silently remove it from the run.
+    const levelled = new Set(ancestorLevels.flat());
+    const decisionOrder = [
+        ...ancestorLevels,
+        ancestorNodes.filter(n => !levelled.has(n.id)).map(n => n.id),
+    ];
+    for (const level of decisionOrder) {
+        for (const nodeId of level) {
+            const node = currentNodes.find(n => n.id === nodeId);
+            if (!node) continue;
+            // A success on node.data.output, or, for the kinds that never
+            // write one there, an emission for the input the node still
+            // has. A node whose last run failed always runs again.
+            const outputCode = node.data.output?.code;
+            const emittedCurrent =
+                emittedForInput.has(nodeId) && emittedForInput.get(nodeId) === node.data.input;
+            const neverSucceeded =
+                outputCode !== "success" && !(outputCode !== "error" && emittedCurrent);
+            // #662: the key covers the node's widget values too, so a
+            // changed value counts as changed code.
+            const codeChanged =
+                node.data.executedCode !== undefined &&
+                node.data.executedCode !== nodeRunKey(node.data.code, node.data.widgets);
+            const upstreamRerunning = ancestorEdges.some(
+                e => e.target === nodeId && willRun.has(e.source)
+            );
+            if (
+                nodeId === targetNodeId ||
+                neverSucceeded ||
+                codeChanged ||
+                upstreamRerunning
+            ) {
+                willRun.add(nodeId);
+            }
+        }
+    }
+    return { ancestorIds, willRun };
 }

@@ -110,10 +110,21 @@ export interface FlowContextProps {
     playAllNodes: () => void;
     playNodesUpTo: (targetNodeId: string) => void;
     signalNodeExecDone: (nodeId: string, outcome?: NodeExecOutcome) => void;
-    /** A Run All / run-up-to is in flight. State, not a ref, so buttons can show it (#271). */
+    /**
+     * The browser is walking a run (Run All, run-up-to, or the nodes a run on
+     * the server left to a tab). State, not a ref, so buttons can show it (#271).
+     */
     isRunActive: boolean;
-    /** Abandon the run in flight: clears the guard so the next play is accepted. */
+    /**
+     * A run on the server is saving, starting or going. Apart from isRunActive
+     * so a chart still draws as its data arrives; a control that means "a run
+     * is going" reads both.
+     */
+    serverRunActive: boolean;
+    /** Stop the run in flight: clears the guard so the next play is accepted. */
     cancelRun: () => void;
+    /** Show the outputs of a just-opened dataflow's last run on the server, and follow it if it goes. */
+    attachLatestRun: (projectId: string, restored: ReadonlySet<string>) => Promise<void>;
     defaultSaveOutputDataset: boolean;
     setDefaultSaveOutputDataset: (value: boolean) => void;
 }

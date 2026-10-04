@@ -127,7 +127,8 @@ const ToolsMenu = memo(function ToolsMenu() {
     const packageTypes = paletteTypes.filter((d) => !isBuiltin(d));
     const coreGroups = groupPaletteTypes(coreTypes);
     const packageGroups = groupPalettePackages(packageTypes);
-    const { playAllNodes, isRunActive, cancelRun } = useFlowContext();
+    const { playAllNodes, isRunActive: browserRunActive, serverRunActive, cancelRun } = useFlowContext();
+    const isRunActive = browserRunActive || serverRunActive;
 
     // Every catalog trigger lives in the left rail and their panels open into
     // the same strip to the right of it, so only one may be open at a time. A

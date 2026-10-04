@@ -9,6 +9,7 @@
   - [Your configurations](#your-configurations)
   - [Keys for node code](#keys-for-node-code)
   - [Guest users](#guest-users)
+- [Running a dataflow](#running-a-dataflow)
 - [Widgets](#widgets)
 - [Node Catalog](#node-catalog)
 - [Vega-Lite node](#vega-lite-node)
@@ -358,6 +359,31 @@ GUEST_LLM_API_TYPE=anthropic
 GUEST_LLM_API_KEY=sk-ant-...
 GUEST_LLM_MODEL=claude-haiku-4-5
 ```
+
+## Running a dataflow
+
+**Run All** runs every node. A node's **Run** button, or Ctrl+Enter (Cmd+Enter
+on a Mac), runs that node and the nodes above it whose output is out of date.
+
+On your own dataflow, a run saves the dataflow first and then runs on the
+server, so it goes on when you close the tab. A dataflow you never saved is
+saved under its title by its first run.
+
+- Charts, maps and the other nodes that draw in the browser draw while the
+  dataflow is open.
+- A node that needs data only the browser makes (an Autark data or compute
+  node, a Spatial Join) runs, with the nodes below it, in a tab. The tab that
+  started the run runs them by itself; otherwise opening the dataflow offers
+  **Finish run**.
+- While a run goes, **Run All** stops it. The run ends before its next node
+  starts; a node already running finishes, and its result is not kept.
+
+A dataflow opened while it runs shows the run going on. Opened afterwards in the
+same browser, every node shows its output; in another browser, or after signing
+in again, the nodes whose **Save output dataset** toggle is on do.
+
+Guests, viewers of a shared dataflow, and a Curio started with `--no-project`
+run dataflows in the browser, and a run stops when its tab closes.
 
 ## Widgets
 

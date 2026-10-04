@@ -14,6 +14,7 @@ import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { shouldSaveOutputOnRun } from "../../utils/saveOutputDataset";
+import { executionResultOutput } from "../../utils/executionResult";
 import { registerRunNodeAction } from "./runNodeMonacoAction";
 import { MissingModuleNotice, type InstallState } from "./MissingModuleNotice";
 import { MIN_PROGRESS_MS, readInstallResponse } from "../../utils/libraryInstall";
@@ -313,49 +314,15 @@ function CodeEditor({
     }, [output.code]);
 
     const processExecutionResult = (result: any) => {
-        const hasOutput = result.output?.path !== "";
-
-        // result.stdout is list[str] from the sandbox; join with newlines so
-        // multi-line autkdb output is readable instead of comma-coerced. Cap
-        // at the last 4000 chars so a runaway log loop can't lock the panel,
-        // and show the tail since errors usually surface there.
-        const STDOUT_CAP = 4000;
-        const stdoutLines: string[] = Array.isArray(result.stdout)
-            ? result.stdout
-            : (result.stdout ? [String(result.stdout)] : []);
-        let stdoutText = stdoutLines.join("\n");
-        let stdoutTruncated = false;
-        if (stdoutText.length > STDOUT_CAP) {
-            stdoutText = stdoutText.slice(-STDOUT_CAP);
-            stdoutTruncated = true;
-        }
-        const stdoutBlock = stdoutText
-            ? "stdout:\n" + (stdoutTruncated
-                ? `... [truncated to last ${STDOUT_CAP} chars]\n` + stdoutText
-                : stdoutText)
-            : "";
-
-        if (hasOutput) {
-            let outputContent = stdoutBlock;
-            if (result.stderr) {
-                outputContent += (outputContent ? "\n" : "") + "stderr:\n" + result.stderr;
-            }
-            outputContent += (outputContent ? "\n" : "") + "Saved to file: " + result.output.path;
-            setOutputCallback({ code: "success", content: outputContent });
+        // The same rule a step of a run on the server goes through (useServerRun).
+        const { shown, artifact } = executionResultOutput(result);
+        setOutputCallback(shown);
+        if (artifact) {
             // outputCallback → applyNewOutput, which centrally auto-installs +
             // surfaces the produced dataset (no manual disk-icon save needed).
-            data.outputCallback(data.nodeId, result.output);
+            data.outputCallback(data.nodeId, artifact);
             markNodeExecuted(data.nodeId);
         } else {
-            let errorContent = "";
-            if (stdoutBlock) errorContent += stdoutBlock + "\n";
-            errorContent += result.stderr || "(no stderr)";
-            // The traceback is unchanged; the notice rides alongside it (#299).
-            setOutputCallback({
-                code: "error",
-                content: errorContent,
-                missingModule: result.missingModule ?? null,
-            });
             // No artifact, so deliberately no outputCallback - nothing is
             // propagated downstream. That left every downstream node unable to
             // tell this apart from "never run", so it advised running the node

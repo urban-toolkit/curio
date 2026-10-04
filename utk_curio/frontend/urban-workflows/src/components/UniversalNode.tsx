@@ -173,6 +173,17 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     });
   }, [data.skipExec]);
 
+  // A step of a run on the server (useServerRun): running, its outcome, or
+  // stopped. Shown through the setter the node's own run uses, so the node
+  // reads, reports and records it the same way.
+  const lastServerOutputRef = useRef<number>(data.serverOutput?.seq ?? 0);
+  useEffect(() => {
+    const next = data.serverOutput;
+    if (!next || next.seq <= lastServerOutputRef.current) return;
+    lastServerOutputRef.current = next.seq;
+    setOutputCallback(next.output);
+  }, [data.serverOutput]);
+
   // ── Drawing from a restored input, with no Play ──────────────────────────
   //
   // A grammar node only draws when something calls its ``applyGrammar``, which
@@ -198,7 +209,8 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // widgets pass, so two toggles in the same batch leave the flag where it
   // started, the marker round trip never happens, and the node sits at "exec"
   // until its watchdog. Whatever a run leaves behind is what this draws from
-  // the next time an input arrives.
+  // the next time an input arrives. A run on the server is not one of these:
+  // nothing compiles the chart then but its input arriving.
   const runInFlight = !!isRunActive;
   const runInFlightRef = useRef(runInFlight);
   runInFlightRef.current = runInFlight;

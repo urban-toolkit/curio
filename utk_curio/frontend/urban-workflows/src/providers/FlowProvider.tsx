@@ -22,6 +22,7 @@ import { useApplyOutput } from "./flow/useApplyOutput";
 import { useInteractions } from "./flow/useInteractions";
 import { useCollaborationSync } from "./flow/useCollaborationSync";
 import { useInstallSave } from "./flow/useInstallSave";
+import { useServerRun } from "./flow/useServerRun";
 import type { IOutput, IInteraction } from "./flow/flowTypes";
 import type { FlowContextProps, NodeActionsContextProps } from "./flow/flowContextTypes";
 import { DEFAULT_WORKFLOW_NAME } from "../constants";
@@ -30,6 +31,8 @@ import { isStandaloneDashboard } from "../standalone/dashboardPayload";
 import { useWorkflowOperations } from "../hook/useWorkflowOperations";
 import { useToastContext } from "./ToastProvider";
 import { useCollab } from "./CollaborationProvider";
+import { useProvenanceContext } from "./ProvenanceProvider";
+import { useUserContext } from "./UserProvider";
 import { DEFAULT_SAVE_OUTPUT_DATASET } from "../utils/saveOutputDataset";
 import { authApi } from "../utils/authApi";
 
@@ -143,7 +146,9 @@ export const FlowContext = createContext<FlowContextProps>({
     playNodesUpTo: () => {},
     signalNodeExecDone: () => {},
     isRunActive: false,
+    serverRunActive: false,
     cancelRun: () => {},
+    attachLatestRun: async () => {},
     defaultSaveOutputDataset: false,
     setDefaultSaveOutputDataset: () => {},
 });
@@ -301,7 +306,7 @@ const FlowProvider = ({
         workflowNameRef, collabRef, outputsRef, propagateDownstreamInputs,
     });
 
-    const { cancelRun, signalNodeExecDone, playAllNodes, playNodesUpTo } = usePlayAll({
+    const { cancelRun, signalNodeExecDone, playAllNodes, playNodesUpTo, playNodes } = usePlayAll({
         playAllStateRef, setIsRunActive, flushInstallSyncRef, showToast, reactFlow,
         markNodeErroredRef, setNodes, emittedForInputRef,
     });
@@ -351,6 +356,31 @@ const FlowProvider = ({
         scheduleInstallSyncRef, dashboardOn, reactFlow, defaultSaveOutputDataset,
         isDashboardSource, workflowOps, flushInstallSyncRef,
     });
+
+    // Runs go to the server for whoever may save the dataflow, since a run
+    // saves it first and records its outputs in it. Hosted guests, viewers of
+    // a shared dataflow and `--no-project` keep the run in the browser, and so
+    // does a canvas with nobody signed in, which cannot save either.
+    const { user, enableUserAuth, skipProjectPage } = useUserContext();
+    const { nodeExecProv } = useProvenanceContext();
+    const runsOnServer =
+        !dashboardOn &&
+        !isStandaloneDashboard() &&
+        !skipProjectPage &&
+        user != null &&
+        !(enableUserAuth && user.is_guest) &&
+        workflowOps.viewerMode === "owner";
+    const serverRun = useServerRun({
+        reactFlow, setNodes, showToast,
+        requestProjectSave: workflowOps.requestProjectSave,
+        applyNewOutput, setOutputs, hydrateRestoredOutputs, markNodeErroredRef,
+        playNodes, playAllStateRef, emittedForInputRef, outputsRef, workflowNameRef,
+        nodeExecProv, flushInstallSyncRef,
+    });
+    // Stop ends whichever run is going, on the server or in the browser.
+    const stopRuns = () => { cancelRun(); serverRun.stopRun(); };
+    // Opening another dataflow leaves a run on the server going.
+    const leaveRuns = () => { cancelRun(); serverRun.detachRun(); };
 
     const nodeActionsValue = useMemo<NodeActionsContextProps>(() => ({
         workflowNameRef,
@@ -404,11 +434,15 @@ const FlowProvider = ({
                 isDashboardSource,
                 applyNewOutput,
                 hydrateRestoredOutputs,
-                playAllNodes,
-                playNodesUpTo,
+                playAllNodes: runsOnServer ? () => { void serverRun.startRun(); } : playAllNodes,
+                playNodesUpTo: runsOnServer
+                    ? (nodeId: string) => { void serverRun.startRun(nodeId); }
+                    : playNodesUpTo,
                 signalNodeExecDone,
                 isRunActive,
-                cancelRun,
+                serverRunActive: serverRun.serverRunActive,
+                cancelRun: stopRuns,
+                attachLatestRun: runsOnServer ? serverRun.attachLatestRun : async () => {},
 
                 // NEW CODE
                 dashboardPins,
@@ -426,10 +460,10 @@ const FlowProvider = ({
                 // A project switch must not inherit a run in flight: the guard
                 // is provider state, and the provider outlives the dataflow
                 // when the user loads another one in place (#271).
-                loadProject: async (id: string) => { cancelRun(); return workflowOps.loadProject(id); },
-                loadSharedProject: async (id: string) => { cancelRun(); return workflowOps.loadSharedProject(id); },
-                cleanCanvas: () => { cancelRun(); workflowOps.cleanCanvas(); },
-                discardProject: () => { cancelRun(); workflowOps.discardProject(); },
+                loadProject: async (id: string) => { leaveRuns(); return workflowOps.loadProject(id); },
+                loadSharedProject: async (id: string) => { leaveRuns(); return workflowOps.loadSharedProject(id); },
+                cleanCanvas: () => { leaveRuns(); workflowOps.cleanCanvas(); },
+                discardProject: () => { leaveRuns(); workflowOps.discardProject(); },
                 applyNodeContent,
                 defaultSaveOutputDataset,
                 setDefaultSaveOutputDataset,
