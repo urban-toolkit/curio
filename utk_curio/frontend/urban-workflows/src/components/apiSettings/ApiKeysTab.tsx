@@ -408,7 +408,6 @@ export const ApiKeysTab: React.FC<{
                   <td className={llmStyles.name}>
                     {config.label}
                     {listing!.default === config.id ? <span className={llmStyles.badge}>Default</span> : null}
-                    {config.origin === "trained" ? <span className={llmStyles.badge}>Trained</span> : null}
                   </td>
                   <td>Language model</td>
                   <td>

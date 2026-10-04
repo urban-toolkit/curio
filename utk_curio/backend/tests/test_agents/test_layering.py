@@ -14,13 +14,13 @@ test is an expected failure until it is.
   ``domain/`` imports nothing from the other layers; ``repositories/`` and
   ``infrastructure/`` import only ``domain`` (and each other's own layer);
   ``application/`` may import every layer beneath it; ``routes/`` (with
-  ``evaluation/`` and ``training/`` as application-level consumers) may import
-  anything but is imported by nothing.
+  ``evaluation/`` as an application-level consumer) may import anything but is
+  imported by nothing.
 - No module under ``agents/`` imports the facade or an ``application`` module
   inside a function — the cycle-hiding pattern the monolith lived on. Outside
-  the package, the two cross-feature boundaries (the app factory registering
-  the blueprint, ``projects/services.py`` seeding a project) keep their lazy
-  imports on purpose.
+  the package, the three cross-feature boundaries (the app factory registering
+  the blueprint, ``projects/services.py`` seeding a project, the monitor's LLM
+  check) keep their lazy imports on purpose.
 - ``service.py`` is a facade: it defines nothing, it re-exports.
 - No function under ``application/`` exceeds 150 lines (the B3 bound).
 - The B1 alias shims and the B2 ``services.py`` compatibility module are gone.
@@ -48,7 +48,6 @@ AGENTS = layering.LayeredPackage(
     lazy_allowed_outside={"__init__.py", "projects/services.py", "monitor/routes.py"},
     lazy_allowed_inside={"utk_curio.backend.app.agents.domain", "utk_curio.backend.app.agents.repositories",
                          "utk_curio.backend.app.agents.infrastructure", 'utk_curio.backend.app.agents.routes.',
-                         "utk_curio.backend.app.agents.evaluation", "utk_curio.backend.app.agents.training",
                          "utk_curio.backend.app.agents.schemas"},
 )
 

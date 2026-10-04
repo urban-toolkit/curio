@@ -117,7 +117,7 @@ def _switch_to_model(client, model: str, tag: str) -> tuple[str | None, str]:
     configuration id)``.
 
     This is how a model that is not active gets measured at all: the Builder
-    answers with the configuration chosen for it, so evaluating a trained model
+    answers with the configuration chosen for it, so evaluating another model
     means choosing one that names it for the duration. The copy is made
     server-side from the configuration the Builder answers with now, so this
     tool never reads a key, and the caller restores the choice and removes the
@@ -176,21 +176,6 @@ def cmd_run(args) -> int:
             print("--price-per-mtoken takes IN,OUT", file=sys.stderr)
             return 2
         price = (float(parts[0]), float(parts[1]))
-    if args.gate_for and not args.model:
-        print(
-            "--gate-for needs --model: an activation gate is about one exact "
-            "trained model id",
-            file=sys.stderr,
-        )
-        return 2
-    if args.gate_for:
-        # A gate is only a gate on the held-out split: measuring on what a
-        # model trained on measures memorisation (DEC-077).
-        fixtures = [f for f in fixtures if f.split == "heldout"]
-        if not fixtures:
-            print("no held-out fixtures to evaluate", file=sys.stderr)
-            return 1
-        tiers = tuple({f.tier for f in fixtures})
 
     report = RunReport(run_id=new_run_id(), mode="live", price_per_mtoken=price)
     client = live_mod.HttpClient(base_url=args.backend_url, token=args.token)
@@ -236,54 +221,7 @@ def cmd_run(args) -> int:
     json_path, markdown_path = report.write(Path(args.out))
     print(markdown_path.read_text(encoding="utf-8"))
     print(f"\nwrote {json_path}\nwrote {markdown_path}")
-
-    if args.gate_for:
-        gate_path = _write_gate(args, fixtures, report, client)
-        print(f"wrote {gate_path}")
     return 0
-
-
-def _write_gate(args, fixtures, report, client) -> Path:
-    """Write the activation gate record beside its training job.
-
-    What it pins is what the gate checks: the exact model, the split, the
-    fixture digests, the run id, and the per-fixture scores — computed by the
-    deterministic comparator, never by a model.
-    """
-    from utk_curio.backend.app.agents.training.gate import (
-        GATE_SPLIT,
-        GateRecord,
-        write_gate,
-    )
-
-    scores = {}
-    categories = {}
-    for attempt in report.attempts:
-        scores[attempt.fixture_id] = round(attempt.total, 4)
-        categories[attempt.fixture_id] = list(attempt.categories)
-    gate = GateRecord(
-        trained_model=args.model,
-        split=GATE_SPLIT,
-        run_id=report.run_id,
-        fixture_digests={f.fixture_id: f.fixture_sha256() for f in fixtures},
-        scores=scores,
-        categories=categories,
-        evaluated_via="agent_eval --model (temporary configuration for the Dataflow Builder)",
-        provider=report.provider.as_dict(),
-    )
-    user_key = _user_key_for(client)
-    return write_gate(user_key, args.gate_for, gate)
-
-
-def _user_key_for(client) -> str:
-    """The storage key for the evaluation account, as the backend spells it."""
-    me = client.json("/api/auth/me")
-    if me.get("is_guest"):
-        return "guest"
-    identifier = me.get("id")
-    if identifier is None:
-        raise SystemExit("the evaluation account has no id; cannot place the gate record")
-    return str(identifier)
 
 
 def cmd_export(args) -> int:
@@ -292,7 +230,6 @@ def cmd_export(args) -> int:
         rows = export_mod.rows_for_split(
             fixtures,
             split=args.split,
-            purpose=args.purpose,
             require_approved=not args.include_unapproved,
         )
     except export_mod.ExportRefused as refusal:
@@ -302,13 +239,8 @@ def cmd_export(args) -> int:
         print(f"nothing to export for split {args.split!r}", file=sys.stderr)
         return 1
     written = export_mod.write_jsonl(rows, Path(args.out))
-    print(f"wrote {written} rows to {args.out} (split {args.split}, {args.purpose})")
-    print(
-        "This file is data. Nothing here trains a model: Curio's provider "
-        "abstraction has no fine-tuning contract, and adding one is its own "
-        "memo (consent, redaction, cost, cancellation, versioning, evaluation "
-        "and rollback)."
-    )
+    print(f"wrote {written} rows to {args.out} (split {args.split})")
+    print("This file is data. Nothing in Curio trains a model on it.")
     return 0
 
 
@@ -341,9 +273,6 @@ def build_parser() -> argparse.ArgumentParser:
                      help="evaluate this model instead of the one the Dataflow "
                           "Builder runs on (a temporary configuration chosen for it, "
                           "always restored)")
-    run.add_argument("--gate-for", default="",
-                     help="write an activation gate record for this training "
-                          "job id; forces the held-out split and needs --model")
     run.set_defaults(func=cmd_run)
 
     exporter = sub.add_parser(
@@ -351,12 +280,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     exporter.add_argument("--split", required=True,
                           choices=list(export_mod.SPLITS))
-    exporter.add_argument("--purpose", default="evaluation",
-                          choices=["evaluation", "training"])
     exporter.add_argument("--out", type=Path, required=True)
     exporter.add_argument("--include-unapproved", action="store_true",
-                          help="export prompts a person has not reviewed "
-                               "(never for training)")
+                          help="export prompts a person has not reviewed")
     exporter.set_defaults(func=cmd_export)
     return parser
 
@@ -368,14 +294,6 @@ def main(argv: list | None = None) -> int:
     args = parser.parse_args(argv)
     if getattr(args, "token", None) is None:
         args.token = os.environ.get("CURIO_EVAL_TOKEN")
-    if getattr(args, "purpose", None) == "training" and getattr(
-        args, "include_unapproved", False
-    ):
-        print(
-            "refused: unreviewed prompts are never training data (DEC-077)",
-            file=sys.stderr,
-        )
-        return 3
     return args.func(args)
 
 

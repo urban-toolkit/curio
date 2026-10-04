@@ -36,8 +36,8 @@ Vega-Lite" is how the walkthroughs read and how a person asks.
 3. A model may draft the prompt from the example and its walkthrough. A person
    then reviews it: `review.status` starts at `pending-owner-review`, and only a
    person moves it to `approved`. The deterministic suite ignores the review,
-   the live report labels it, and the training set leaves out anything that is
-   not approved.
+   the live report labels it, and `agent_eval export` leaves out anything that
+   is not approved.
 4. Tests never generate a prompt or an expected answer at run time.
 
 ## Fields worth understanding
@@ -50,4 +50,4 @@ Vega-Lite" is how the walkthroughs read and how a person asks.
 | `intents` | Per-node meaning checks: words the reconstructed node's intent must mention, and the output kind Solve should record. |
 | `capability.needs` | What this fixture needs beyond plain offline reconstruction. Two of them are package routes: `package-enlist:templates` (the plan cannot name the template until the package is enlisted, as in example 10) and `package-enlist:dependencies` (every node is a built-in template, but the code imports libraries an installed package's manifest owns, as in example 09). Neither is a reason to author a new package. |
 | `capability.skip` | Every exclusion, with a written reason. |
-| `split` | `train`, `validation` or `heldout`. Only approved `train` fixtures are sent for training, and a trained model is evaluated on the held-out ones. |
+| `split` | `train`, `validation` or `heldout`: the split `agent_eval export` writes a fixture under. |
