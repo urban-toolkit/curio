@@ -816,7 +816,8 @@ class DiscoveryService:
         from utk_curio.backend.app.discovery.domain.errors import CapabilityUnsupported
 
         item, manifest = self.collection(dataset_id)
-        if manifest.provider.type == "folder":
+        # A folder's files and a service's downloaded images are local already.
+        if manifest.provider.type == "folder" or manifest.is_service:
             raise CapabilityUnsupported(f"{item['title']} is already on this machine")
         ratelimit.download_slots.acquire(self.user_key)
         job = job_store.jobs.create(self.user_key, manifest.dir_name, f"cache:{dataset_id}")
