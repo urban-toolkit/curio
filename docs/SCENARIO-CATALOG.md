@@ -4,13 +4,12 @@ The Scenario Catalog lists the **scenarios** saved in your projects, across ever
 
 Curio has six catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the Scenario Catalog the scenarios saved in your projects.
 
-This guide is in four parts, plus operator notes:
+This guide is in four parts:
 
 - [1. What is the Scenario Catalog?](#1-what-is-the-scenario-catalog): scenarios, and where they are kept.
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the page, the canvas drawer, the action matrix, and walkthroughs.
 - [3. Reading a scenario](#3-reading-a-scenario): its fixed context, levers and outcomes, and their saved results.
 - [4. Importing, publishing, and sharing](#4-importing-publishing-and-sharing): copies and shared dataflows.
-- [Operator notes](#operator-notes).
 
 ---
 
@@ -80,12 +79,6 @@ A chart or a Data Pool saves nothing itself, so its saved result is the output o
 ## 4. Importing, publishing, and sharing
 
 Scenarios are not imported or published on their own: they travel with their dataflow. **Duplicate** on a project's card makes a copy whose scenarios stay as they are at that moment, while the original's go on changing; the catalog lists both. A dataflow someone shares with you lists its scenarios in your catalog once you save it to your projects with **File → Save dataflow**.
-
----
-
-## Operator notes
-
-The catalog reads each account's projects and needs no setting of its own.
 
 ---
 
