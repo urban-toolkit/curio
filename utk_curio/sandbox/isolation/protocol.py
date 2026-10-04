@@ -342,6 +342,7 @@ def build_exec_request(
     media_dir=None,
     models=None,
     dataset_formats=None,
+    package_modules=None,
 ):
     """Assemble the request the parent hands to the zygote.
 
@@ -363,6 +364,11 @@ def build_exec_request(
     interpreter, which is what an unisolated instance and an older parent both
     mean.
 
+    ``package_modules`` is ``{"root", "names"}`` for a node whose package ships
+    modules beside its templates (#468): ``root`` is the folder they were
+    staged into, relative to ``scratch_dir``, which the child makes importable
+    for the run. None for every other node.
+
     ``wall_timeout`` is enforced by the zygote, not by the parent. The zygote is
     the child's parent process, so while it holds an unreaped child the pid
     cannot be recycled and a kill is guaranteed to hit the right process. The
@@ -380,6 +386,8 @@ def build_exec_request(
         "dataset_paths": dict(dataset_paths or {}),
         # {modelId: staged folder name}, relative to scratch_dir.
         "models": dict(models or {}),
+        # {"root": staged folder, relative to scratch_dir, "names": [...]}.
+        "package_modules": dict(package_modules) if package_modules else None,
         # {datasetId: {"format", "layerType"}}: how curio_load_data reads each.
         "dataset_formats": dict(dataset_formats or {}),
         "collections": dict(collections or {}),

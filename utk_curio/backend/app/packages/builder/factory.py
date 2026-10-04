@@ -65,6 +65,7 @@ from pathlib import Path
 from typing import Any
 
 from utk_curio.backend.app.packages.domain.dependency_scanner import (
+    pypi_name_for_import,
     scan_imports_for_filename,
 )
 from utk_curio.backend.app.packages.domain.manifest import (
@@ -75,6 +76,7 @@ from utk_curio.backend.app.packages.domain.package_id import TEMPLATE_ID_RE
 import tempfile
 from utk_curio.backend.app.packages.repositories.archive import is_non_content_filename
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+from utk_curio.backend.app.packages.repositories.python_modules import module_names
 
 log = logging.getLogger(__name__)
 
@@ -341,21 +343,34 @@ def _detect_dependencies_from_sources(sources: dict[str, dict[str, str]]) -> dic
     }
 
 
+def _own_module_names(installed_dir: Path) -> frozenset[str]:
+    """The modules the package being saved into ships beside its templates
+    (#468). A template importing one is not asking for a PyPI library."""
+    try:
+        return module_names(installed_dir, load_package_manifest(installed_dir))
+    except (ManifestError, OSError):
+        return frozenset()
+
+
 def _apply_detected_dependencies(
     manifest_raw: dict[str, Any],
     sources: dict[str, dict[str, str]],
     declared: dict[str, dict[str, str]] | None = None,
+    own_modules: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """Overwrite manifest ``dependencies.python`` / ``.js`` with source-derived deps.
 
     *declared* is what the package being saved into already declares: every
     name in it stays, with its range, because the scan sees only the draft's
     sources and not the files carried forward with it (``backend/``, sources
-    no template names). ``dependencies.packages`` (inter-package deps) is
-    preserved verbatim — it cannot be derived from source. The mutation
-    happens on a shallow copy.
+    no template names). *own_modules* are that package's own modules, which
+    its templates import and nobody installs. ``dependencies.packages``
+    (inter-package deps) is preserved verbatim: it cannot be derived from
+    source. The mutation happens on a shallow copy.
     """
     detected = _detect_dependencies_from_sources(sources)
+    for name in own_modules:
+        detected["python"].pop(pypi_name_for_import(name), None)
     for kind, ranges in (declared or {}).items():
         detected[kind] = dict(sorted({**detected[kind], **ranges}.items()))
     out = dict(manifest_raw)
@@ -442,6 +457,7 @@ def build_package_archive(draft: dict[str, Any], *, onto: Path | None = None) ->
     # not source-derivable and stays as the draft provided it.
     manifest_with_deps = _apply_detected_dependencies(
         dict(manifest_raw), sources, base.declared if base else None,
+        _own_module_names(onto) if base else frozenset(),
     )
     manifest_authoring = _stamp_manifest_created_at_when_absent(manifest_with_deps)
     manifest = _validate_manifest_dict(manifest_authoring)

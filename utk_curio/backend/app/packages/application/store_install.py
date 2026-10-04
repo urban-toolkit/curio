@@ -23,6 +23,7 @@ from utk_curio.backend.app.packages.domain.manifest import ManifestError
 from utk_curio.backend.app.packages.domain.package_id import BUILTIN_PACKAGE_ID, PACKAGE_DIR_RE, PackageIdError
 from utk_curio.backend.app.packages.repositories import (
     catalog_dir as packages_catalog_dir,
+    python_modules as packages_python_modules,
     seed_state,
 )
 from utk_curio.backend.app.packages.repositories.archive import (
@@ -261,6 +262,7 @@ def install_package_from_archive(
             # between the rmtree and the move, and a seeding pass cannot decide
             # to refresh the old copy and then swap it in over this one.
             with package_seed_lock(user_key):
+                packages_python_modules.refuse_a_module_name_in_use(user_key, staging_root, manifest)
                 replaced = False
                 if final_dest.exists():
                     if not replace:
