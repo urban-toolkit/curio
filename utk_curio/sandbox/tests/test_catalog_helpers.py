@@ -231,3 +231,44 @@ def test_an_isolated_node_loads_by_format(tmp_path):
     result = child.run_node(request, namespace)
     assert result["ok"], result["stderr"]
     assert result["output"]["value"] == 5
+
+
+def test_an_isolated_node_reads_a_shipped_dataset_as_in_process(tmp_path):
+    """#596: the shipped chicago-labels keeps its list columns JSON-encoded and
+    names them in ``chicago-labels.parquet.decode.json``. An isolated node got
+    the parquet without that file, so its ``tags`` came back as JSON strings,
+    where a node run in process gets lists."""
+    from pathlib import Path
+
+    from utk_curio.sandbox.isolation import child
+    from utk_curio.sandbox.util import staging
+    from utk_curio.sandbox.util.catalog_helpers import read_dataset
+
+    dataset_id = "data.projectsidewalk.chicago-labels"
+    source = (Path(__file__).resolve().parents[3] / "datasets" / f"{dataset_id}@1"
+              / "data" / "chicago-labels.parquet")
+    in_process = sorted({type(v).__name__ for v in read_dataset(str(source), "parquet")["tags"]})
+    assert "str" not in in_process, in_process
+
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    request = {
+        "code": (
+            f'    frame = curio_load_data("{dataset_id}")\n'
+            '    return ",".join(sorted({type(v).__name__ for v in frame["tags"]}))\n'
+        ),
+        "node_type": "curio.builtin/computation-analysis", "data_type": "",
+        "scratch_dir": str(scratch), "input": {"kind": "none"},
+        "dataset_paths": staging.stage_dataset_paths({dataset_id: str(source)}, scratch),
+        "dataset_formats": {dataset_id: {"format": "parquet"}},
+        "session_imports": [], "limits": {},
+    }
+
+    def namespace():
+        import numpy as np
+
+        return {"np": np, "pd": pd}
+
+    result = child.run_node(request, namespace)
+    assert result["ok"], result["stderr"]
+    assert result["output"]["value"].split(",") == in_process
