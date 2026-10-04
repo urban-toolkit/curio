@@ -369,7 +369,7 @@
         "widgets": {
           "type": "array",
           "items": { "$ref": "#/$defs/widget" },
-          "description": "The node's widgets (#662), declared in its Widgets tab. Its code places each one as a `[!! name !!]` reference, which a run replaces with the widget's value (`value` when set, else `default`). Emitted only when the node has widgets."
+          "description": "The node's widgets (#662), declared in its Widgets tab. Its code places each one as a `[!! name !!]` reference, which a run replaces with the widget's value (`value` when set, else `default`). A `curio.builtin/parameter` node holds one widget, which any node's code places as `[!! @name !!]`. Emitted only when the node has widgets."
         },
         "dataPool": {
           "type": "object",
