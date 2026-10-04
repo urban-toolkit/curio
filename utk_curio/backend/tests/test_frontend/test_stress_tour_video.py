@@ -2589,7 +2589,8 @@ def chapter_views(run: StressRun) -> None:
         )
 
     with run.step("The provenance window", may_fail=True):
-        tour.click(page.get_by_test_id("provenance-btn"))
+        tour.click(page.get_by_role("button", name="View menu", exact=True))
+        tour.click(page.get_by_test_id("provenance-menu-item"))
         page.wait_for_timeout(2500)
         run.snap("provenance-window")
         _close_modal(page)

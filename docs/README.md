@@ -10,6 +10,7 @@
 - [Agent catalog](AGENT-CATALOG.md): browse, add, and attach Curio's AI agents, and write your own
 - [Discovery Catalog](DISCOVERY-CATALOG.md): search open data portals, open folders, buckets and repositories, ask services such as OpenStreetMap and Mapillary for an area, and bring their datasets into your Data Catalog and their models into your Model Catalog
 - [Model catalog](MODEL-CATALOG.md): the trained models your nodes run, and how a node runs one
+- [Scenario catalog](SCENARIO-CATALOG.md): the scenarios in all your projects, with their fixed context, levers, outcomes and saved results
 - [Real-time collaboration](COLLABORATION.md)
 - [Deployment](DEPLOYMENT.md)
 

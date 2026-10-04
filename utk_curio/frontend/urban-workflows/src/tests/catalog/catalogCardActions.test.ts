@@ -14,6 +14,7 @@ import {
   discoverySourceCardActions,
   modelCardActions,
   packageCardActions,
+  scenarioCardActions,
 } from "../../components/catalog/catalogCardActions";
 
 describe("catalog card actions", () => {
@@ -108,6 +109,19 @@ describe("catalog card actions", () => {
     expect(modelCardActions({ deletable: false }).some((a) => a.destructive)).toBe(false);
   });
 
+  test("a scenario offers its source project, then its details", () => {
+    // Read-only in the catalog: it changes when its project is edited, so the
+    // one action is opening that project. Nothing renames or deletes it here.
+    expect(scenarioCardActions().map((a) => a.id)).toEqual([
+      "open-source-project",
+      "view-details",
+    ]);
+    expect(scenarioCardActions().map((a) => a.label)).toEqual([
+      "Open source project",
+      "View details",
+    ]);
+  });
+
   test("publishing is never a menu row", () => {
     // `CatalogPublishPill` puts a confirmation in front of Publish and
     // Unpublish because both write to the whole deployment's catalog. A menu
@@ -121,6 +135,7 @@ describe("catalog card actions", () => {
       ...packageCardActions({ isInstalled: true, hasUpdate: true }),
       ...discoverySourceCardActions({ browsable: true }),
       ...modelCardActions({ deletable: true }),
+      ...scenarioCardActions(),
     ];
     // Widened on purpose: the two ids are not in `CatalogCardActionId` at all,
     // which is half the guarantee - the other half is that no builder emits one.
@@ -136,6 +151,7 @@ describe("catalog card actions", () => {
       ...agentCardActions({ imported: true }),
       ...packageCardActions({ isInstalled: true, hasUpdate: true }),
       ...discoverySourceCardActions({ browsable: true }),
+      ...scenarioCardActions(),
     ];
     expect(every.every((a) => !a.destructive)).toBe(true);
   });
@@ -148,6 +164,7 @@ describe("catalog card actions", () => {
       discoverySourceCardActions({ browsable: true }),
       modelCardActions({ deletable: true }),
       modelCardActions({ deletable: false }),
+      scenarioCardActions(),
     ]) {
       expect(list[list.length - 1].id).toBe("view-details");
     }
@@ -161,6 +178,7 @@ describe("catalog card actions", () => {
       ...packageCardActions({ isInstalled: true, hasUpdate: true }),
       ...discoverySourceCardActions({ browsable: true }),
       ...modelCardActions({ deletable: true }),
+      ...scenarioCardActions(),
     ]) {
       expect(action.label.trim()).not.toBe("");
     }

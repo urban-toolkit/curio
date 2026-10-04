@@ -90,11 +90,27 @@ export function scenarioParts(
 }
 
 /**
- * The nodes whose outputs the scenarios need saved: each context node and each
- * outcome, so another project can read them. A pass-through (a chart, a Data
- * Pool, a drawing Autark node) saves nothing itself and resolves to the nodes
- * feeding it, the walk pinned dashboard tiles use. A Parameter node's value is
- * in the spec, so it needs nothing.
+ * The nodes whose saved output stands for *id*'s, in canvas order: itself, or
+ * for a pass-through (a chart, a Data Pool, a drawing Autark node), which
+ * saves nothing itself, the nodes feeding it, the walk pinned dashboard tiles
+ * use. A Parameter node's value is in the spec, so it has none. Kept in sync
+ * with `saved_sources` in `scenario_catalog/domain/parts.py`.
+ */
+export function savedSourcesOf(
+  id: string,
+  nodes: readonly FlowNodeLike[],
+  edges: readonly FlowEdgeLike[],
+): string[] {
+  const node = nodes.find((n) => n.id === id);
+  if (!node || isParameterNode(node)) return [];
+  if (!isPassThroughNode(node)) return [id];
+  const feeding = producersFeeding([id], nodes, edges);
+  return nodes.filter((n) => feeding.has(n.id)).map((n) => n.id);
+}
+
+/**
+ * The nodes whose outputs the scenarios need saved: what stands for each
+ * context node and each outcome, so another project can read them.
  */
 export function scenarioSourceNodeIds(
   nodes: readonly FlowNodeLike[],
@@ -102,14 +118,10 @@ export function scenarioSourceNodeIds(
   scenarios: readonly Scenario[],
 ): Set<string> {
   const sources = new Set<string>();
-  const byId = new Map(nodes.map((node) => [node.id, node]));
   for (const scenario of scenarios) {
     const { context, outcomes } = scenarioParts(scenario, nodes, edges);
     for (const id of [...context, ...outcomes]) {
-      const node = byId.get(id);
-      if (!node || isParameterNode(node)) continue;
-      if (isPassThroughNode(node)) producersFeeding([id], nodes, edges).forEach((p) => sources.add(p));
-      else sources.add(id);
+      savedSourcesOf(id, nodes, edges).forEach((source) => sources.add(source));
     }
   }
   return sources;

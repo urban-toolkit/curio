@@ -12,8 +12,9 @@
  * The catalogs differ in their primary action, which is why this is one
  * function each rather than one for all: a dataset is added to every project or
  * detached from it, an agent is imported or un-imported, a package is installed
- * and can then be updated, a Discovery Catalog source is browsed, and a
- * downloaded model can be deleted. Each builder takes the state its drawer
+ * and can then be updated, a Discovery Catalog source is browsed, a
+ * downloaded model can be deleted, and a scenario opens the project it lives
+ * in. Each builder takes the state its drawer
  * already computes, so neither surface decides anything the other cannot see.
  *
  * Publish and Unpublish are deliberately absent. They are not plain buttons in
@@ -36,6 +37,7 @@ export type CatalogCardActionId =
   | "browse-datasets"
   | "add-by-link"
   | "delete"
+  | "open-source-project"
   | "view-details";
 
 export interface CatalogCardAction {
@@ -119,4 +121,10 @@ export function modelCardActions(state: {
     ? [{ id: "delete", label: "Delete", destructive: true }]
     : [];
   return [...primary, VIEW_DETAILS];
+}
+
+export function scenarioCardActions(): CatalogCardAction[] {
+  // A scenario is read-only here: it changes when its project is edited, so
+  // the one thing to do with it is open that project.
+  return [{ id: "open-source-project", label: "Open source project" }, VIEW_DETAILS];
 }

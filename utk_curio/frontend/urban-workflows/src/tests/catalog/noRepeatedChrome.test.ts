@@ -33,6 +33,7 @@ const DRAWERS: [string, string][] = [
   ["node", "components/packages/publishing/NodeCatalogDrawer.tsx"],
   ["agent", "components/agents/catalog/AgentCatalogDrawer.tsx"],
   ["model", "components/models/catalog/ModelCatalogDrawer.tsx"],
+  ["scenario", "components/scenarios/catalog/ScenarioCatalogDrawer.tsx"],
 ];
 
 describe("no catalog repeats its own tab label as a heading", () => {
@@ -111,6 +112,8 @@ describe("every catalog card root carries its identity attribute", () => {
     ["agent drawer", "components/agents/catalog/AgentCatalogDrawer.tsx", "data-agent-coord"],
     ["model browse", "pages/models/ModelCatalogBrowseCard.tsx", "data-model-id"],
     ["model drawer", "components/models/catalog/ModelCard.tsx", "data-model-id"],
+    ["scenario browse", "pages/scenarios/ScenarioCatalogBrowseCard.tsx", "data-scenario-key"],
+    ["scenario drawer", "components/scenarios/catalog/ScenarioCard.tsx", "data-scenario-key"],
   ];
 
   test.each(CARDS)("the %s card exposes %s", (_kind, file, attr) => {
@@ -157,6 +160,7 @@ describe("Escape dismisses every catalog drawer, and every one honours its pin",
     ["node", "components/packages/publishing/NodeCatalogDrawer.tsx"],
     ["agent", "providers/AgentCatalogDrawerProvider.tsx"],
     ["model", "components/models/catalog/ModelCatalogDrawer.tsx"],
+    ["scenario", "components/scenarios/catalog/ScenarioCatalogDrawer.tsx"],
   ];
 
   test.each(ESCAPE_OWNERS)("the %s drawer closes on Escape", (_kind, file) => {

@@ -1,0 +1,83 @@
+/*
+ * The small pieces every Scenario Catalog surface shares: the colour swatch,
+ * and the node lists of the details view.
+ *
+ * A scenario's colour is data, not a theme token: each element that wears it
+ * sets `--scenario-color` on itself and these rules read it.
+ */
+
+.swatch {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--scenario-color, var(--curio-kind-dataflow-fg));
+  vertical-align: baseline;
+}
+
+/* A title with its swatch in front. */
+.named {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The project graph with the scenario marked, in the details view. */
+.detailThumb {
+  height: 180px;
+  margin: 0 0 20px;
+  border: 1px solid var(--curio-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.nodeList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nodeItem {
+  padding: 8px 10px;
+  border: 1px solid var(--curio-border);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--curio-text-primary);
+}
+
+.nodeLabel {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.nodeParameter {
+  margin-left: 8px;
+  font-family: var(--curio-font-mono);
+  font-size: 12px;
+  color: var(--curio-text-secondary);
+}
+
+.resultList {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--curio-text-secondary);
+}
+
+.noOutput {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--curio-text-meta);
+}
+
+.none {
+  margin: 0;
+  font-size: 13px;
+  color: var(--curio-text-meta);
+}
