@@ -85,6 +85,17 @@ MIN_EXEC_MEMORY_MB = 64
 # I/O burns no CPU and would otherwise hang until the backend's own deadline.
 DEFAULT_WALL_TIMEOUT_SECONDS = 300
 
+def usable_cpus():
+    """How many CPUs this process may run on: its affinity mask, else the
+    host's count."""
+    affinity = getattr(os, "sched_getaffinity", None)
+    if affinity is not None:
+        try:
+            return max(1, len(affinity(0)))
+        except OSError:
+            pass
+    return os.cpu_count() or 1
+
 # How long past the child's own deadline the parent waits before deciding
 # the zygote itself has stopped responding. Only a liveness backstop: the
 # zygote enforces the real deadline, so this should never fire.
@@ -378,9 +389,9 @@ def describe_child_death(exit_code, signal_number, timed_out, *, wall_timeout,
         )
     if reason == "cpu":
         return (
-            f"This node exceeded its CPU allowance of {limits.get('cpu_seconds')}s. "
-            "Note this counts CPU time, not wall-clock, so a busy loop hits it "
-            "quickly. Raise --exec-timeout if the work is genuinely this heavy."
+            f"This node used up its CPU allowance of {limits.get('cpu_seconds')} "
+            "CPU-seconds, which counts the time of all its threads. Raise "
+            "--exec-timeout if the work is genuinely this heavy."
         )
     if reason == "signal":
         return f"This node was killed by signal {signal_number}."
