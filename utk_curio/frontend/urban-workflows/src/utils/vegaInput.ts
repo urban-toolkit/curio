@@ -29,6 +29,8 @@ import { inputTableName } from "../generated/autkGrammar";
 
 export { usesNamedDatasets };
 
+const VEGA_LABEL = "the 2D Plot (Vega-Lite)";
+
 export type PreparedVegaInput = {
   values: any[];
   /** Set when the node has nothing to draw and should say why. */
@@ -97,8 +99,17 @@ function prepareFrame(frame: GrammarFrame, spec: any, dataset?: string): Prepare
  */
 export async function prepareVegaInputs(input: any, spec: any): Promise<PreparedVegaInputs> {
   // The gate, the fetch and the refusal are the ones every grammar node uses.
-  const read = await readGrammarInput(input, { label: "the 2D Plot (Vega-Lite)", circles: true });
+  const read = await readGrammarInput(input, { label: VEGA_LABEL, circles: true });
   if (read.emptyReason) return { datasets: [], emptyReason: read.emptyReason, detail: read.detail };
+  if (read.skipped?.length) {
+    // A spec reads an input by its circle's name, so one left out would leave
+    // a name pointing nowhere, or at the next input's rows.
+    return {
+      datasets: [],
+      emptyReason: "input-type-rejected",
+      detail: `${read.skipped.join(", ")} is not a valid input for ${VEGA_LABEL}.`,
+    };
+  }
   if (read.frames.length === 0) return { datasets: [] };
   if (read.frames.length === 1) {
     // One input reaches every unit, as it always has.
@@ -110,13 +121,13 @@ export async function prepareVegaInputs(input: any, spec: any): Promise<Prepared
   }
   const datasets: VegaDataset[] = [];
   let problem: PreparedVegaInput | null = null;
-  read.frames.forEach((frame, position) => {
-    const name = inputTableName(position);
+  read.frames.forEach((frame) => {
+    const name = inputTableName(frame.circle);
     const prepared = prepareFrame(frame, spec, name);
     // Which input a row came from, so a selection is matched only against the
     // first input's rows (`__row_index__` restarts for each).
     prepared.values.forEach((value: any) => {
-      value.__input__ = position;
+      value.__input__ = frame.circle;
     });
     datasets.push({ name, values: prepared.values });
     if (prepared.emptyReason && problem === null) problem = prepared;
