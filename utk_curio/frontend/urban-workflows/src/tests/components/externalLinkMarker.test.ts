@@ -61,7 +61,11 @@ describe("external links", () => {
   });
 
   test("the other arrow is gone", () => {
-    const src = fs.readFileSync(path.join(SRC, "components/ApiSettingsModal.tsx"), "utf8");
-    expect(src).not.toContain("→");
+    // API Settings holds the key links ("Get a Socrata app token ↗").
+    const dir = path.join(SRC, "components/apiSettings");
+    for (const name of fs.readdirSync(dir).filter((f) => f.endsWith(".tsx"))) {
+      const src = fs.readFileSync(path.join(dir, name), "utf8");
+      expect([name, src.includes("→")]).toEqual([name, false]);
+    }
   });
 });

@@ -210,7 +210,7 @@ describe("CodeEditor content sync (dev/70)", () => {
 describe("CodeEditor credential hint (dev/117)", () => {
     const { screen, fireEvent } = require("@testing-library/react");
     const { CREDENTIAL_SCAN_DEBOUNCE_MS } = require("../../../components/editing/CodeEditor");
-    const { subscribeConnectionKeysRequests } = require("../../../components/connectionKeys/connectionKeysRequest");
+    const { subscribeApiSettingsRequests } = require("../../../components/apiSettings/apiSettingsRequest");
     const VALUE = "AbCdEf0123456789xyzXYZ-_";
     const KEYED = `import requests\nurl = "https://api.census.gov/data"\napi_key = "${VALUE}"\nreturn 1`;
     const hint = () => screen.queryByTestId("credential-hint");
@@ -261,11 +261,11 @@ describe("CodeEditor credential hint (dev/117)", () => {
         expect(hint()).toHaveTextContent("Lines 3 and 5 look like API keys.");
     });
 
-    test("Save as connection key asks for the settings form with the code's host and a suggested name", () => {
+    test("Save as API key asks for the settings form with the code's host and a suggested name", () => {
         const seen: unknown[] = [];
-        const off = subscribeConnectionKeysRequests((f: unknown) => seen.push(f));
+        const off = subscribeApiSettingsRequests((f: unknown) => seen.push(f));
         renderCodeEditor(KEYED);
-        fireEvent.click(screen.getByRole("button", { name: "Save this key as a connection key" }));
+        fireEvent.click(screen.getByRole("button", { name: "Save this key in API Settings" }));
         expect(seen).toEqual([{ section: "connection-keys", host: "api.census.gov", suggestedName: "census" }]);
         off();
     });
@@ -273,7 +273,7 @@ describe("CodeEditor credential hint (dev/117)", () => {
     test("a read-only editor shows the text alone", () => {
         renderCodeEditor(KEYED, { readOnly: true });
         expect(hint()).toHaveTextContent("Line 3 looks like an API key.");
-        expect(screen.queryByRole("button", { name: "Save this key as a connection key" })).toBeNull();
+        expect(screen.queryByRole("button", { name: "Save this key in API Settings" })).toBeNull();
         expect(screen.queryByRole("button", { name: "Dismiss this hint" })).toBeNull();
     });
 

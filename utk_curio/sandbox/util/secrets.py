@@ -21,7 +21,7 @@ MAX_VALUE_CHARS = 4096
 
 MISSING_TEMPLATE = (
     "No connection key named '{name}' is saved for this account - save one "
-    "under Settings > Connection keys (its host, and the key itself), then "
+    "in API Settings, API keys (its host, and the key itself), then "
     "run this node again. Node code reaches it only as curio_secret('{name}')."
 )
 

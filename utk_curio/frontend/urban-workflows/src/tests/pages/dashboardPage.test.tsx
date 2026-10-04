@@ -50,8 +50,6 @@ jest.mock("../../components/edges/BiDirectionalEdge", () => ({ __esModule: true,
 jest.mock("../../components/edges/UniDirectionalEdge", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/VersionBadge", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/login/Loading", () => ({ Loading: () => <div data-testid="loading" /> }));
-// The shared top bar is rendered for real; only its modal is stubbed.
-jest.mock("../../components/ApiSettingsModal", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/menus/top/ShareMenu", () => ({
   __esModule: true,
   default: (props: any) => (

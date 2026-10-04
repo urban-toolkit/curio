@@ -6,14 +6,18 @@ import type { CatalogItemKind } from "../../catalog/CatalogKindVisuals";
 import styles from "./DrawerHeader.module.css";
 
 export interface DrawerHeaderProps {
-  pinned: boolean;
-  onPinToggle: () => void;
+  pinned?: boolean;
+  /** Renders the pin button. The catalog drawers pin; API Settings and
+   *  Monitor do not. */
+  onPinToggle?: () => void;
   onClose: () => void;
-  /** Catalog item kind shown as the type icon. Defaults to the Node Catalog. */
-  kind?: CatalogItemKind;
+  /** Catalog item kind shown as the type icon. Defaults to the Node Catalog;
+   *  null shows no icon. */
+  kind?: CatalogItemKind | null;
   title?: string;
   titleId?: string;
-  subtitle?: string;
+  /** null shows no subtitle block. */
+  subtitle?: string | null;
   closeAriaLabel?: string;
   /** Extra controls between the title and the close button. Rendered only
    *  when given, so the Node and Data drawers are unchanged. */
@@ -21,12 +25,11 @@ export interface DrawerHeaderProps {
 }
 
 /**
- * Top bar + subtitle block shared by the Node Catalog and Data Catalog drawers.
- * Renders the pin/close controls, the drawer title with its kind icon, and a
- * one-line subtitle.
+ * Top bar + subtitle block shared by the canvas drawers. Renders the pin/close
+ * controls, the drawer title with its kind icon, and a one-line subtitle.
  */
 export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
-  pinned,
+  pinned = false,
   onPinToggle,
   onClose,
   kind = "package",
@@ -38,19 +41,21 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
 }) => (
   <>
     <header className={styles.topBar}>
-      <button
-        type="button"
-        className={`${styles.iconBtn} ${pinned ? styles.iconBtnActive : ""}`}
-        aria-label={pinned ? "Unpin drawer" : "Pin drawer open"}
-        aria-pressed={pinned}
-        title={pinned ? "Unpin drawer" : "Pin drawer (scrim won't close)"}
-        onClick={onPinToggle}
-      >
-        <FontAwesomeIcon icon={faThumbtack} aria-hidden />
-      </button>
+      {onPinToggle ? (
+        <button
+          type="button"
+          className={`${styles.iconBtn} ${pinned ? styles.iconBtnActive : ""}`}
+          aria-label={pinned ? "Unpin drawer" : "Pin drawer open"}
+          aria-pressed={pinned}
+          title={pinned ? "Unpin drawer" : "Pin drawer (scrim won't close)"}
+          onClick={onPinToggle}
+        >
+          <FontAwesomeIcon icon={faThumbtack} aria-hidden />
+        </button>
+      ) : null}
 
       <div className={styles.drawerTitleRow}>
-        <CatalogKindIcon kind={kind} size="sm" />
+        {kind ? <CatalogKindIcon kind={kind} size="sm" /> : null}
         <h2 id={titleId} className={styles.drawerTitle}>
           {title}
         </h2>
@@ -68,8 +73,10 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
       </button>
     </header>
 
-    <div className={styles.subtitleBlock}>
-      <p className={styles.subtitle}>{subtitle}</p>
-    </div>
+    {subtitle ? (
+      <div className={styles.subtitleBlock}>
+        <p className={styles.subtitle}>{subtitle}</p>
+      </div>
+    ) : null}
   </>
 );

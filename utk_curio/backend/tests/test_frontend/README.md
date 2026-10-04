@@ -796,8 +796,9 @@ invisible and a click would look unmotivated.
 
 ### The agent scenes need a provider
 
-`apisettings` adds an LLM configuration (a base URL, an API key and a model) in
-API Settings on camera, and `agentrun` then asks that endpoint a real question.
+`apisettings` adds an LLM configuration (a base URL, an API key and a model) on
+the API keys tab of API Settings on camera, and `agentrun` then asks that
+endpoint a real question.
 Curio ships no provider of its own and the tour's account starts with no
 configuration, so this is load-bearing rather than decorative.
 

@@ -1,0 +1,14 @@
+/* /settings: the panel in a readable column. The page shell and its scroll
+   region are the monitor page's (../monitor/MonitorPage.module.css). */
+
+.page {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.title {
+  margin: 4px 0 14px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--curio-text-primary);
+}

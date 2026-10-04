@@ -2060,13 +2060,17 @@ def chapter_agents(run: StressRun) -> None:
         cog = drawer.get_by_role("button", name=re.compile("API Settings"))
         assert cog.count(), "the Agent Catalog drawer has no API Settings control"
         tour.click(cog.first)
+        # The API Settings drawer opens over the Agent Catalog one, on the
+        # model each agent runs on.
         expect(
             page.get_by_role("heading", name="API Settings", level=2)
         ).to_be_visible(timeout=20000)
+        expect(page.get_by_test_id("agent-config-tab")).to_be_visible(timeout=20000)
         run.snap("api-settings")
 
     with run.step("Add an LLM configuration"):
-        page.get_by_test_id("llm-configs-section").get_by_role(
+        page.get_by_role("tab", name="API keys", exact=True).click()
+        page.get_by_test_id("api-keys-tab").get_by_role(
             "button", name="Add configuration", exact=True
         ).click()
         expect(page.get_by_test_id("llm-config-editor")).to_be_visible(timeout=15000)
@@ -2110,6 +2114,9 @@ def chapter_agents(run: StressRun) -> None:
         expect(editor).to_have_count(0, timeout=20000)
         page.wait_for_timeout(1500)
         dismiss_toasts(page)
+        # Back to the Agent Catalog drawer under it.
+        page.get_by_role("button", name="Close API Settings", exact=True).click()
+        expect(page.locator('[data-curio-settings-drawer="true"]')).to_have_count(0, timeout=15000)
 
     agents: list[dict] = []
     with run.step("Read the Agent Catalog over the API"):
@@ -2368,17 +2375,21 @@ def chapter_agents(run: StressRun) -> None:
         run.snap("catalog-agents-page")
 
     with run.step("API Settings from the global header"):
-        button = page.get_by_role("button", name="API Settings", exact=True)
-        assert button.count(), "the catalog header has no API Settings button"
-        tour.click(button.first)
+        link = page.get_by_role("link", name="API Settings", exact=True)
+        assert link.count(), "the catalog header has no API Settings link"
+        tour.click(link.first)
         expect(
-            page.get_by_role("heading", name="API Settings", level=2)
+            page.get_by_role("heading", name="API Settings", level=1)
         ).to_be_visible(timeout=20000)
-        hf = ai_field(page, "HuggingFace token")
-        if hf.count():
-            hf.fill("hf_stress_placeholder")
+        add = page.get_by_role("button", name="Add configuration", exact=True)
+        expect(add).to_be_visible(timeout=20000)
+        add.click()
+        kind = page.get_by_label("Kind")
+        if kind.locator('option[value="source:huggingface.token"]').count():
+            kind.select_option("source:huggingface.token")
+            ai_field(page, "HuggingFace token").fill("hf_stress_placeholder")
         run.snap("api-settings-header")
-        page.get_by_role("button", name="Close", exact=True).last.click()
+        page.go_back()
         page.wait_for_timeout(900)
 
 

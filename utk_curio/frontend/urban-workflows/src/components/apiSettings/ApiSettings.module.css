@@ -1,0 +1,85 @@
+/* API Settings: only what is specific to it.
+ *
+ * The field, footer and button vocabulary is ../modal-content.module.css, and
+ * the key list, badges and editor box are ../llmConfigs/LlmConfigs.module.css.
+ */
+
+.panel {
+  font-family: var(--curio-font-family);
+  color: var(--curio-text-primary);
+}
+
+/* The two tabs: the catalog drawers' tab strip, as a tablist. */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 14px;
+  border-bottom: 1px solid var(--curio-border);
+}
+
+.tab {
+  padding: 8px 14px;
+  margin-bottom: -1px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: var(--curio-font-size-md);
+  color: var(--curio-text-secondary);
+  cursor: pointer;
+}
+
+.tab:hover:not(.tabActive) {
+  color: var(--curio-text-primary);
+}
+
+.tabActive {
+  border-bottom-color: var(--curio-top-bar-bg);
+  color: var(--curio-text-primary);
+  font-weight: 600;
+}
+
+.tabBody {
+  min-width: 0;
+}
+
+.optional {
+  font-weight: 400;
+  text-transform: none;
+  color: var(--curio-text-muted);
+  letter-spacing: 0;
+}
+
+.keyLink {
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-role-published-fg);
+  text-decoration: none;
+  margin-top: 2px;
+}
+
+.guestNotice {
+  color: var(--curio-text-secondary);
+  font-size: var(--curio-font-size-lg);
+  margin-bottom: 8px;
+}
+
+/* The local shared guest: everyone on this Curio uses the one account. */
+.sharedNote {
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-page-bg);
+  color: var(--curio-text-secondary);
+  font-size: var(--curio-font-size-sm);
+}
+
+/* Two fields side by side, wrapping on a narrow drawer. */
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.row > * {
+  flex: 1 1 140px;
+}

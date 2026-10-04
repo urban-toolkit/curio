@@ -74,7 +74,6 @@ jest.mock('../../api/projectsApi', () => ({
 }));
 jest.mock('../../NotebookConvertor', () => ({ notebookToTrill: jest.fn() }));
 jest.mock('../../components/DataflowThumbnail', () => ({ __esModule: true, default: () => null }));
-jest.mock('../../components/ApiSettingsModal', () => ({ __esModule: true, default: () => null }));
 jest.mock('../../components/VersionBadge', () => ({ __esModule: true, default: () => null }));
 
 import ProjectsList from '../../pages/projects/ProjectsList';
@@ -106,7 +105,8 @@ describe('projects page chrome', () => {
   test('the top bar keeps only API Settings, with no Catalog button', async () => {
     const { getByRole, queryByRole } = await renderPage();
 
-    expect(getByRole('button', { name: 'API Settings' })).toBeTruthy();
+    // A section page links to the settings page.
+    expect(getByRole('link', { name: 'API Settings' }).getAttribute('href')).toBe('/settings');
     expect(queryByRole('button', { name: /catalog/i })).toBeNull();
   });
 

@@ -24,8 +24,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
@@ -145,11 +147,46 @@ def test_a_source_without_its_key_opens_api_settings_at_its_row(
     expect(details).to_be_visible(timeout=15000)
     details.get_by_role("button", name="Add yours in API Settings").click()
 
+    # From a catalog page it is the settings page, on the key's form.
+    page.wait_for_url(re.compile(r"/settings/keys\?service=mapillary\.token$"), timeout=15000)
+    expect(details).to_have_count(0)
+    expect(page.get_by_label("Kind")).to_have_value("source:mapillary.token")
     field = page.locator("#api-settings-key-mapillary-token")
     expect(field).to_be_focused(timeout=15000)
     # The row it opened at is the Mapillary one, and says who sends it.
     row = page.locator('[data-key-slot="mapillary.token"]')
     expect(row.get_by_text("Used by Mapillary.")).to_be_visible()
+
+
+def test_on_the_canvas_a_source_without_its_key_opens_api_settings_over_the_drawer(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    _enter(page, app_frontend, current_server)
+    page.locator("header[data-curio-menu-bar]").get_by_role(
+        "button", name="Discovery Catalog", exact=True
+    ).click()
+    discovery = page.locator('[data-curio-discovery-catalog-drawer="true"]')
+    expect(discovery).to_have_attribute("aria-hidden", "false", timeout=20000)
+    card = discovery.locator(f'[data-discovery-source="{MAPILLARY}"]')
+    expect(card).to_be_visible(timeout=30000)
+    card.get_by_role("button", name="View details").click()
+    details = page.get_by_role("dialog", name="Source details")
+    expect(details).to_be_visible(timeout=15000)
+    details.get_by_role("button", name="Add yours in API Settings").click()
+
+    # The dataflow stays: API Settings opens as a drawer over the Discovery one.
+    settings = page.locator('[data-curio-settings-drawer="true"]')
+    expect(settings).to_have_attribute("aria-hidden", "false", timeout=20000)
+    assert urlparse(page.url).path.startswith("/dataflow"), page.url
+    expect(details).to_have_count(0)
+    expect(settings.locator("#api-settings-key-mapillary-token")).to_be_focused(timeout=15000)
+
+    # One Escape closes API Settings alone; the Discovery drawer is still open.
+    page.keyboard.press("Escape")
+    expect(page.locator('[data-curio-settings-drawer="true"][aria-hidden="false"]')).to_have_count(
+        0, timeout=10000
+    )
+    expect(discovery).to_have_attribute("aria-hidden", "false")
 
 
 def test_mapillary_images_for_a_box_land_as_one_collection(
