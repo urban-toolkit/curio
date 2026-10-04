@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.projects import concurrency
 from utk_curio.backend.app.projects import repositories as repo
+from utk_curio.backend.app.projects import scenarios
 from utk_curio.backend.app.projects import storage
 from utk_curio.backend.app.projects.shipped import shipped_dataflows
 from utk_curio.backend.app.projects.schemas import (
@@ -444,7 +445,7 @@ def _carry_hand_categories(new_spec, old_spec) -> None:
 
 
 def _to_summary(
-    p, graph_preview=None, spec_revision=None, is_example=False, categories=None,
+    p, graph_preview=None, spec_revision=None, is_example=False, categories=None, scenario_list=None,
 ) -> ProjectSummary:
     """*spec_revision* keeps one meaning for the field across the API (memo
     dev/124): how many times the spec has been written, background writes
@@ -462,6 +463,7 @@ def _to_summary(
         graph_preview=graph_preview,
         is_example=is_example,
         categories=categories or {},
+        scenarios=scenario_list or [],
     )
 
 
@@ -488,6 +490,7 @@ def _to_detail(
         outputs=outputs or [],
         dataset_install_warnings=dataset_install_warnings or [],
         categories=categories or {},
+        scenarios=scenarios.scenario_summaries(spec),
     )
 
 
@@ -710,6 +713,7 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     # undefined workflow name; fill what the client left out (never overwrite).
     _ensure_dataflow_identity(data.spec, data.name)
     _normalize_spec_categories(data.spec)
+    scenarios.normalize_spec_scenarios(data.spec)
 
     storage.write_spec(ukey, project_id, data.spec)
     output_refs = list(data.outputs)
@@ -826,6 +830,8 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
             preserve_dataset_refs(effective_spec, existing_spec)
             _carry_hand_categories(effective_spec, existing_spec)
             _normalize_spec_categories(effective_spec)
+            scenarios.carry_scenarios(effective_spec, existing_spec)
+            scenarios.normalize_spec_scenarios(effective_spec)
             # Same identity backfill as on create: an update may be the first
             # time a spec written elsewhere reaches disk.
             if _ensure_dataflow_identity(effective_spec, data.name or project.name):
@@ -1308,6 +1314,7 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
             categories=_categories(
                 user, p.id, spec, sources=sources, dataset_kind=dataset_kind,
             ),
+            scenario_list=scenarios.scenario_summaries(spec),
         ))
     if dropped_stale_row:
         db.session.commit()

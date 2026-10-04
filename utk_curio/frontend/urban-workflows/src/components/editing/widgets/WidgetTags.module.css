@@ -56,6 +56,14 @@
   color: var(--curio-accent-mint-fg);
 }
 
+/* A shared tag, a Parameter node's widget: amber, like its chips. */
+.sharedTag {
+  composes: tag;
+  border-color: #e8c99a;
+  background: var(--curio-accent-amber-bg);
+  color: var(--curio-accent-amber-fg);
+}
+
 .columnTag {
   composes: tag;
   border-color: #a8d5b1;
@@ -184,6 +192,35 @@
   grid-area: actions;
   display: flex;
   gap: 4px;
+}
+
+/* The dataflow's shared tags, below the node's own widgets: each with the
+   value its Parameter node holds. */
+.shared {
+  margin-top: 10px;
+}
+
+.sharedHeading {
+  margin: 0;
+  color: var(--curio-text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* A Parameter node's list of the nodes whose code uses it. */
+.users {
+  margin: 2px 0 0;
+  padding-left: 16px;
+}
+
+.sharedValue {
+  grid-area: control;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--curio-font-mono);
+  line-height: var(--widget-h);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .control {

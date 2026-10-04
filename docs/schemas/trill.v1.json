@@ -45,6 +45,42 @@
       "maxItems": 20,
       "items": { "type": "string", "minLength": 1, "maxLength": 40 }
     },
+    "scenario": {
+      "type": "object",
+      "description": "One scenario (#662): a named selection of the dataflow's nodes. What enters it from outside is its fixed context, its nodes are its levers, and the outputs of its last nodes are its outcomes.",
+      "required": ["id", "name", "color", "nodes"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "Unique among the dataflow's scenarios." },
+        "name": { "type": "string", "minLength": 1, "description": "What the canvas and the Scenario Catalog call it." },
+        "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Its color on the canvas, as a CSS hex color." },
+        "description": { "type": "string", "description": "What it changes. Emitted only when non-empty." },
+        "nodes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "The ids of its nodes. Empty once its last node is deleted, until the scenario is deleted too."
+        },
+        "collapsed": { "type": "boolean", "description": "Drawn as one box on the canvas. Emitted only when set." },
+        "box": {
+          "type": "object",
+          "required": ["x", "y"],
+          "additionalProperties": false,
+          "properties": { "x": { "type": "number" }, "y": { "type": "number" } },
+          "description": "Where its collapsed box sits on the canvas."
+        },
+        "source": {
+          "type": "object",
+          "required": ["project", "scenario"],
+          "additionalProperties": false,
+          "properties": {
+            "project": { "type": "string", "minLength": 1 },
+            "scenario": { "type": "string", "minLength": 1 }
+          },
+          "description": "The project and scenario it was dragged in from, through the Scenario Catalog."
+        }
+      }
+    },
     "dataflowBase": {
       "type": "object",
       "description": "Every field a dataflow may carry, with no required list of its own. Referenced by 'dataflow' and 'snapshotDataflow', which differ only in what they require - this keeps the property definitions in one place so the two cannot drift.",
@@ -101,6 +137,11 @@
             "topic": { "$ref": "#/$defs/categoryValues" },
             "complexity": { "$ref": "#/$defs/categoryValues", "maxItems": 1 }
           }
+        },
+        "scenarios": {
+          "type": "array",
+          "description": "The dataflow's scenarios (#662): named selections of its nodes, each a lever set compared against the others over the context outside it. A node belongs to at most one scenario, which the backend checks on save (projects/scenarios.py) because this schema cannot say it. A save drops member ids that are not nodes of the dataflow, so deleting a node removes it from its scenario. Written by TrillGenerator.generateTrill when the canvas saves, an empty list clearing them; the backend drops an empty list and keeps the on-disk value when a writer omits the key. Version snapshots and agent views carry it only when there are scenarios.",
+          "items": { "$ref": "#/$defs/scenario" }
         },
         "datasets": {
           "type": "array",
@@ -328,7 +369,13 @@
         "widgets": {
           "type": "array",
           "items": { "$ref": "#/$defs/widget" },
-          "description": "The node's widgets (#662), declared in its Widgets tab. Its code places each one as a `[!! name !!]` reference, which a run replaces with the widget's value (`value` when set, else `default`). Emitted only when the node has widgets."
+          "description": "The node's widgets (#662), declared in its Widgets tab. Its code places each one as a `[!! name !!]` reference, which a run replaces with the widget's value (`value` when set, else `default`). A `curio.builtin/parameter` node holds one widget, which any node's code places as `[!! @name !!]`. Emitted only when the node has widgets."
+        },
+        "copiedFrom": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "description": "Where a copy made by Duplicate selection (#662) comes from: the ids of the nodes it descends from, oldest first, ending with the node it was copied from. Two nodes are the same lever in two scenarios when their ids and these lists meet. Emitted only on a copy."
         },
         "dataPool": {
           "type": "object",

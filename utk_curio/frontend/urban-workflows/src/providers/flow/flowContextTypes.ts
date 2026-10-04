@@ -4,6 +4,7 @@ import type React from "react";
 import type { Connection, Edge, EdgeChange, Node, NodeChange, NodeRemoveChange } from "reactflow";
 import type { InstallSyncOutcome, PendingInstall } from "../../services/datasetCatalog/datasetCatalogTypes";
 import type { DataflowCategories, HandCategories } from "../../utils/dataflowCategories";
+import type { Scenario } from "../../utils/scenarios/scenarioModel";
 import type { IInteraction, IOutput, IPropagation, NodeExecOutcome } from "./flowTypes";
 
 export interface FlowContextProps {
@@ -26,7 +27,8 @@ export interface FlowContextProps {
     /** True while the tree is rendering the dashboard page rather than the canvas. */
     dashboardOn: boolean;
     dashboardLocked: boolean;
-    /** Does a pinned tile depend on this node's output being saved? */
+    /** Does a pinned tile, or a scenario's context or outcomes (#662), need
+     * this node's output saved? */
     isDashboardSource: (nodeId: string) => boolean;
     setDashboardLocked: React.Dispatch<React.SetStateAction<boolean>>;
     applyNewOutput: (output: IOutput) => void;
@@ -52,7 +54,7 @@ export interface FlowContextProps {
     // Reviewed plan removals (dev/62): victims + their edge cascade leave in
     // one operation, without the manual "remove the edges first" guard.
     applyReviewedRemovals: (nodeIds: string[], edgeIds: string[]) => void;
-    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[], categories?: HandCategories) => void;
+    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[], categories?: HandCategories, scenarios?: unknown) => void;
     packages: string[];
     setPackages: (pkgs: string[]) => void;
     addPackage: (pkg: string) => void;
@@ -90,12 +92,17 @@ export interface FlowContextProps {
     workflowCategories: HandCategories;
     /** Source and automatic categories, from the last load or save. */
     serverCategories: DataflowCategories;
+    /** The dataflow's scenarios (#662), saved with it. Member ids of nodes
+     * deleted since the last save are dropped when it saves. */
+    scenarios: Scenario[];
 
     // Project operations
     /** Rename the open dataflow, writing BOTH name stores (#230). False if blank. */
     renameDataflow: (name: string) => boolean;
     /** Replace the hand-set categories; the dataflow is dirty until the next save. */
     updateDataflowCategories: (next: HandCategories) => void;
+    /** Replace the scenarios; the dataflow is dirty until the next save. */
+    setScenarios: (next: Scenario[]) => void;
     saveCurrentProject: (nameOverride?: string, options?: { omitOutputs?: boolean }) => Promise<any>;
     saveAsNewProject: (name: string) => Promise<any>;
     ensureProjectId: () => Promise<string | null>;
@@ -108,7 +115,9 @@ export interface FlowContextProps {
     markNodeStale: (nodeId: string) => void;
     markNodeErrored: (nodeId: string) => void;
     playAllNodes: () => void;
-    playNodesUpTo: (targetNodeId: string) => void;
+    /** Run *target*, or every node of a list (a scenario's levers, #662), and
+     * the ancestors whose output cannot be reused. */
+    playNodesUpTo: (target: string | readonly string[]) => void;
     signalNodeExecDone: (nodeId: string, outcome?: NodeExecOutcome) => void;
     /** A Run All / run-up-to is in flight. State, not a ref, so buttons can show it (#271). */
     isRunActive: boolean;

@@ -1,4 +1,5 @@
 import { TrillGenerator } from "../../TrillGenerator";
+import type { Scenario } from "../../utils/scenarios/scenarioModel";
 import type { AgentAttachment } from "./types";
 import {
   storeOutputFor,
@@ -33,6 +34,9 @@ export interface AgentCanvasState {
    *  `current_output` can name one. Optional — every other caller is
    *  unchanged. */
   outputs?: Array<{ nodeId?: string; output?: unknown }>;
+  /** #662: the dataflow's scenarios, which an agent's view carries only when
+   *  there are some. */
+  scenarios?: Scenario[];
 }
 
 type TrillNode = { id?: string; content?: string; type?: string; goal?: string };
@@ -43,6 +47,11 @@ function liveTrill(canvas: AgentCanvasState): { dataflow?: { nodes?: TrillNode[]
     canvas.edges,
     canvas.workflowName,
     canvas.workflowGoal,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    canvas.scenarios && canvas.scenarios.length > 0 ? canvas.scenarios : undefined,
   );
 }
 

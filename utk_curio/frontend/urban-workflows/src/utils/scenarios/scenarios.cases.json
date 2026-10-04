@@ -1,0 +1,91 @@
+{
+  "about": "What a spec keeps of dataflow.scenarios (#662), given the dataflow's node ids. Read by src/tests/utils/scenarioModel.test.ts and by utk_curio/backend/tests/test_projects/test_scenarios.py: the canvas and the backend keep the same scenarios.",
+  "cases": [
+    {
+      "name": "a member that is not a node is dropped, and the scenario stays",
+      "nodes": ["a", "b"],
+      "scenarios": [{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["a", "gone"]}],
+      "expected": [{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["a"]}]
+    },
+    {
+      "name": "a scenario whose nodes were all deleted keeps its name and color",
+      "nodes": ["a"],
+      "scenarios": [{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["gone"]}],
+      "expected": [{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": []}]
+    },
+    {
+      "name": "a node named by two scenarios stays with the first",
+      "nodes": ["a", "b"],
+      "scenarios": [
+        {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["a"]},
+        {"id": "s2", "name": "Twice as tall", "color": "#e76f51", "nodes": ["a", "b"]}
+      ],
+      "expected": [
+        {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["a"]},
+        {"id": "s2", "name": "Twice as tall", "color": "#e76f51", "nodes": ["b"]}
+      ]
+    },
+    {
+      "name": "members are kept once each, in their order",
+      "nodes": ["a", "b"],
+      "scenarios": [{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["b", "a", "b", 7, ""]}],
+      "expected": [{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["b", "a"]}]
+    },
+    {
+      "name": "an entry without an id, a name or a hex color is dropped",
+      "nodes": ["a"],
+      "scenarios": [
+        {"id": "", "name": "No id", "color": "#2a9d8f", "nodes": ["a"]},
+        {"id": "s2", "name": "  ", "color": "#2a9d8f", "nodes": ["a"]},
+        {"id": "s3", "name": "Named color", "color": "red", "nodes": ["a"]},
+        "not a scenario",
+        {"id": "s4", "name": "Kept", "color": "#ABCDEF", "nodes": ["a"]}
+      ],
+      "expected": [{"id": "s4", "name": "Kept", "color": "#ABCDEF", "nodes": ["a"]}]
+    },
+    {
+      "name": "a second scenario with the same id is dropped",
+      "nodes": ["a", "b"],
+      "scenarios": [
+        {"id": "s1", "name": "First", "color": "#2a9d8f", "nodes": ["a"]},
+        {"id": "s1", "name": "Second", "color": "#e76f51", "nodes": ["b"]}
+      ],
+      "expected": [{"id": "s1", "name": "First", "color": "#2a9d8f", "nodes": ["a"]}]
+    },
+    {
+      "name": "optional fields are kept when well formed",
+      "nodes": ["a"],
+      "scenarios": [{
+        "id": "s1", "name": "Twice as tall", "color": "#e76f51", "description": "Every building doubled",
+        "nodes": ["a"], "collapsed": true, "box": {"x": 120, "y": -40.5},
+        "source": {"project": "p-06", "scenario": "s-tall"}
+      }],
+      "expected": [{
+        "id": "s1", "name": "Twice as tall", "color": "#e76f51", "description": "Every building doubled",
+        "nodes": ["a"], "collapsed": true, "box": {"x": 120, "y": -40.5},
+        "source": {"project": "p-06", "scenario": "s-tall"}
+      }]
+    },
+    {
+      "name": "optional fields that are not well formed are dropped",
+      "nodes": ["a"],
+      "scenarios": [{
+        "id": "s1", "name": "Baseline", "color": "#2a9d8f", "description": "",
+        "nodes": ["a"], "collapsed": "yes", "box": {"x": 1}, "source": {"project": "", "scenario": "s"}
+      }],
+      "expected": [{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["a"]}]
+    },
+    {
+      "name": "a missing node list is an empty one",
+      "nodes": ["a"],
+      "scenarios": [{"id": "s1", "name": "Baseline", "color": "#2a9d8f"}],
+      "expected": [{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": []}]
+    },
+    {
+      "name": "anything but a list is no scenarios",
+      "nodes": ["a"],
+      "scenarios": {"id": "s1"},
+      "expected": []
+    }
+  ]
+}

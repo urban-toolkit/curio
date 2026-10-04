@@ -104,6 +104,31 @@ Act like an assistant for users of a system for building visual analytics datafl
         },
         "task": {
           "type": "string"
+        },
+        "scenarios": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "nodes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["id", "name", "color", "nodes"]
+          }
         }
       },
       "required": ["nodes", "edges", "name", "task"]
@@ -131,6 +156,7 @@ A node's "type" is the id of the template it was made from. A run that can place
 - Autark: Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering, and/or plot rendering in one declarative spec.
 - Spatial Join: Finds the polygon each point falls in. Connect the points to the top input and the polygons to the bottom input, then pick the polygon column to copy onto the points, such as a neighborhood name. The output is either the points, each tagged with its polygon's value, or the polygons, each with a count of the points inside. Points outside every polygon get no value.
 - Merge Flow: The Merge Flow box merges multiple incoming data flows into one.
+- Parameter: One value any node can use. Give it a name, a type and a default. Its tag then shows under Shared in every node's Widgets tab and above every code editor; drag it into a node's code to use the value there. Changing the value makes the nodes that use it run again, and renaming it updates their code. It has no edges, and it lists the nodes that use it.
 
 A Merge Flow node combines its inputs: with one connected input it passes that value straight through, and with more it outputs them as a tuple, in socket order. An edge into a Merge Flow node names the socket it connects to in "targetHandle": "in_0", "in_1", "in_2", "in_3" or "in_4".
 
@@ -156,6 +182,7 @@ Nodes are uncontrollable, controllable through code (python or JavaScript) or co
 - Autark: controllable through grammar.
 - Spatial Join: uncontrollable.
 - Merge Flow: uncontrollable.
+- Parameter: uncontrollable.
 
 An output connection of a node can be connected to the input connection of different nodes.
 
@@ -251,6 +278,7 @@ Input supported:
 - Autark: LIST, JSON, GEODATAFRAME, DATAFRAME
 - Spatial Join: GEODATAFRAME
 - Merge Flow: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
+- Parameter: no input supported
 
 Output supported:
 
@@ -266,6 +294,7 @@ Output supported:
 - Autark: LIST, JSON, GEODATAFRAME, DATAFRAME
 - Spatial Join: GEODATAFRAME
 - Merge Flow: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
+- Parameter: no output supported
 
 Make sure to pay attention to the compatibility between output and input of the nodes.
 

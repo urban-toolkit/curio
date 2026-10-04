@@ -279,7 +279,11 @@ def template_content_kind(template) -> str:
       input port, or an explicit ``containerStyle.noContent``). Asking a model
       for this node's content can only produce something wrong;
     - ``note``    — authored presentation content with no validator: dev/90
-      A14's post-it profile (``editor: "none"`` and NO input port).
+      A14's post-it profile (``editor: "none"``, NO input port and no widgets).
+
+    A template with ``editor: "none"`` that holds widgets (``hasWidgets``, the
+    Parameter node) is set through them, at ``metadata.widgets``: its content
+    is ``none``.
     """
     if bool(template.has_code):
         return CONTENT_KIND_CODE
@@ -289,8 +293,11 @@ def template_content_kind(template) -> str:
         return CONTENT_KIND_NONE
     if str(template.editor or "") == "none":
         # A presentation template with an input renders THAT (a pool, a merge, a
-        # simple view); one without renders what its author wrote (a note).
-        return CONTENT_KIND_NONE if (template.input_ports or []) else CONTENT_KIND_NOTE
+        # simple view), and one with widgets is set through them; one with
+        # neither renders what its author wrote (a note).
+        if (template.input_ports or []) or bool(getattr(template, "has_widgets", False)):
+            return CONTENT_KIND_NONE
+        return CONTENT_KIND_NOTE
     return CONTENT_KIND_NONE
 
 
