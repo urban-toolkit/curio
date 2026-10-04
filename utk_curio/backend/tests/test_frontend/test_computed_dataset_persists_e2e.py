@@ -27,7 +27,7 @@ which of the two is wrong when it fails.
 
 The "about a second" is not folklore: ``applyNewOutput`` ->
 ``scheduleInstallSyncRef`` paints an optimistic "Adding..." row and debounces
-500 ms before the save whose ``.finally`` clears it (``providers/flow/useInstallSave.ts``). So
+500 ms before the save whose ``.then`` clears it (``providers/flow/useInstallSave.ts``). So
 the window the reporter describes is exactly the placeholder's lifetime, and
 anything asserted before that has settled is asserting against a state that has
 not happened yet.
@@ -225,7 +225,7 @@ def test_the_row_survives_a_run_watched_from_an_open_drawer(
     That is not what #217 describes: "shows up for a moment and then
     disappears" is someone with the drawer ALREADY OPEN, seeing the optimistic
     "Adding..." row painted by ``beginPendingInstall`` and then cleared by the
-    save's ``.finally``.
+    save's ``.then``.
 
     So this holds the drawer open across the whole run. If the row the
     placeholder stood for does not take its place, the drawer visibly loses a
