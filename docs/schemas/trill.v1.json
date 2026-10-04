@@ -360,6 +360,19 @@
           "items": { "type": "string" },
           "description": "Ids of the Data Catalog datasets this node consumes. Plain id strings, not objects. Emitted only when non-empty."
         },
+        "modelRefs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "name": { "type": "string" }
+            }
+          },
+          "description": "The Model Catalog model last dropped on this node, by id and name. Emitted only when set. The node runs the model its code names in `curio_load_model(...)`, and a ref counts only while the code names its id."
+        },
         "datasetSource": { "$ref": "#/$defs/datasetSource" },
         "width": {
           "type": "number",

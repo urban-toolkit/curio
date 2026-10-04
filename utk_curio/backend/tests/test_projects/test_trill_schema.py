@@ -326,6 +326,13 @@ REJECTED = {
     "widget named as an old marker": lambda d: _node(d)["metadata"].update(
         widgets=[{"name": "factor$INPUT_VALUE$1", "type": "number", "default": 1}]
     ),
+    # A model ref is the object a Model Catalog drop writes, not a bare id.
+    "model ref as a bare id": lambda d: _node(d)["metadata"].update(
+        modelRefs=["model.curio.ddrnet23-slim"]
+    ),
+    "model ref without an id": lambda d: _node(d)["metadata"].update(
+        modelRefs=[{"name": "DDRNet23-Slim (street scenes)"}]
+    ),
     "dataflow without a name": lambda d: d["dataflow"].pop("name"),
     "dataflow without a timestamp": lambda d: d["dataflow"].pop("timestamp"),
     "spec without a dataflow": lambda d: d.pop("dataflow"),
@@ -522,6 +529,19 @@ WRITER_SHAPES = {
                         "format": "csv",
                         "origin": "imported",
                     },
+                },
+            }
+        ]
+    ),
+    # Written by TrillGenerator after a Model Catalog drop.
+    "model refs on a node": _flow(
+        nodes=[
+            {
+                **AGENT_NODE,
+                "metadata": {
+                    "modelRefs": [
+                        {"id": "model.curio.ddrnet23-slim", "name": "DDRNet23-Slim (street scenes)"}
+                    ],
                 },
             }
         ]
