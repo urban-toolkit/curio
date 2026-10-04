@@ -32,6 +32,7 @@ from utk_curio.backend.app.execution.workflow_spec import (
     resolve_widget_placeholders,
     seed_node_code,
 )
+from utk_curio.backend.app.execution.widget_substitution import WidgetReferenceError
 
 SANDBOX_CONNECT_TIMEOUT_S = 30
 SANDBOX_GET_TIMEOUT_S = int(os.environ.get("CURIO_E2E_SANDBOX_GET_TIMEOUT", "300"))
@@ -401,7 +402,15 @@ def run_through_node(
             report["nodes"][node.id] = {"status": "pass-through", "executed": False}
             continue
         file_path, data_type = _resolve_input(spec, node.id, outputs)
-        resolved = resolve_widget_placeholders(content_text)
+        # #662: an unresolved widget reference is the node's own failure,
+        # reported like a hang, without asking the sandbox.
+        widget_problem = None
+        try:
+            resolved = resolve_widget_placeholders(
+                content_text, node.widgets, "python" if is_py else "javascript"
+            )
+        except WidgetReferenceError as exc:
+            resolved, widget_problem = content_text, str(exc)
         seeded = seed_node_code(resolved, seed)
         payload = {
             "code": textwrap.indent(seeded, "    "),
@@ -440,7 +449,10 @@ def run_through_node(
         started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         t0 = time.monotonic()
         try:
-            result = exec_fn(endpoint, payload)
+            if widget_problem is not None:
+                result = {"stdout": [], "stderr": widget_problem, "output": {"path": "", "dataType": ""}}
+            else:
+                result = exec_fn(endpoint, payload)
         except ExecutionTimeout as exc:
             # dev/115: a hang is the candidate's behaviour — reported as the
             # node's own failure so the correction loop sees it.

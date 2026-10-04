@@ -107,6 +107,12 @@ export const usePackageNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
     const hit = templates.find((t) => t.name === wantedName);
     if (hit?.code) {
       hasInjectedRef.current = true;
+      // #662: the starter's [!! name !!] references need the widgets the
+      // template declares. Seeded beside the code, once, like the code.
+      const node = data as { widgets?: unknown };
+      if (node.widgets === undefined && descriptor.widgets && descriptor.widgets.length > 0) {
+        node.widgets = descriptor.widgets.map((w) => ({ ...w }));
+      }
       setOverride(hit.code);
     }
     // else: templates not loaded yet — wait for the next effect run.

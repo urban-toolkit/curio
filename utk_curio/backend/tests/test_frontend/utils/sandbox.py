@@ -286,7 +286,7 @@ def execute_workflow_programmatically(
             data_type = ref["dataType"]
 
         # Sandbox /exec expects code already indented as a function body
-        resolved = resolve_widget_placeholders(node.content)
+        resolved = resolve_widget_placeholders(node.content, node.widgets)
         seeded = seed_node_code(resolved, seed)
         indented_code = textwrap.indent(seeded, "    ")
         resolution = _catalog_resolution(indented_code, username)

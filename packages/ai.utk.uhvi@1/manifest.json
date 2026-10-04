@@ -46,7 +46,15 @@
           ]
         }
       ],
-      "source": "sources/uhvi-load.py"
+      "source": "sources/uhvi-load.py",
+      "widgets": [
+        {
+          "name": "src",
+          "type": "text",
+          "label": "Raster path",
+          "default": "./milan/Milan_Tmrt_2022_203_1200D.tif"
+        }
+      ]
     },
     {
       "category": "data",
@@ -69,7 +77,15 @@
           ]
         }
       ],
-      "source": "sources/uhvi-zones.py"
+      "source": "sources/uhvi-zones.py",
+      "widgets": [
+        {
+          "name": "path",
+          "type": "text",
+          "label": "Zones path",
+          "default": "./milan/R03_21-11_WGS84_P_SocioDemographics_MILANO_Selected.shp"
+        }
+      ]
     },
     {
       "category": "computation",

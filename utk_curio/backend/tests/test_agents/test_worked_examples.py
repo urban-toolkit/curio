@@ -248,6 +248,74 @@ class TestWhoTakesThem:
             assert "worked" not in json.dumps(builtin.build_builtin_manifest(spec)), spec.agent_id
 
 
+class TestTheBuilderReadsAnyExample:
+    """examples.read in a scripted Dataflow Builder run: the list, one example
+    by key, and an evaluation project's own example refused."""
+
+    @staticmethod
+    def _read_tail(**params) -> str:
+        return "```curio.v1\n" + json.dumps({"toolRequest": {"tool": "examples.read", "params": params}}) + "\n```"
+
+    @staticmethod
+    def _results(messages) -> list[tuple[str, str]]:
+        """``(status, text)`` of each examples.read result, in order. The loop
+        extends one message list, so the last call's holds every result."""
+        prefix = "[tool result] examples.read: "
+        out = []
+        for message in messages:
+            content = message.get("content") or ""
+            if message.get("role") == "user" and content.startswith(prefix):
+                status, _, text = content[len(prefix):].partition("\n")
+                out.append((status, text.split("\nNo further")[0]))
+        return out
+
+    def test_the_builder_lists_the_examples_and_reads_one(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        helper = TestDataflowPlanMint()
+        user, token = user_and_token
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._read_tail(), self._read_tail(key=SIXTEEN), "Read two."],
+        )
+        r = helper._run(client, token, alice_project, att_id, message=IMAGES)
+        assert r.status_code == 200, r.get_data(as_text=True)
+        # The grant reaches the run: the tail's tool list offers it.
+        assert "- examples.read: " in calls[0][0]["content"]
+        (listed_status, listed), (read_status, read) = self._results(calls[-1])
+        assert listed_status == "ok" and read_status == "ok"
+        assert [row["key"] for row in json.loads(listed)["examples"]] == list(_pool())
+        assert read == examples.shown(_pool()[SIXTEEN])
+
+    def test_an_evaluation_project_never_reads_its_own_example(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        from utk_curio.backend.app.agents.evaluation import authorization
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        helper = TestDataflowPlanMint()
+        user, token = user_and_token
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._read_tail(key=NINE), self._read_tail(), "Planned without it."],
+        )
+        key = _user_dir_key(user)
+        spec = projects_storage.read_spec(key, alice_project)
+        projects_storage.write_spec(
+            key, alice_project, authorization.mark_spec(spec, authorization.new_marker("run-1", NINE)),
+        )
+        r = helper._run(client, token, alice_project, att_id, message=MILAN)
+        assert r.status_code == 200, r.get_data(as_text=True)
+        (refused_status, refused), (listed_status, listed) = self._results(calls[-1])
+        nine = _pool()[NINE].entry
+        assert refused_status == "error" and "call examples.read with no key" in refused
+        assert nine.title not in refused and nine.text not in refused
+        assert listed_status == "ok"
+        assert NINE not in [row["key"] for row in json.loads(listed)["examples"]]
+        # The per-run block leaves it out by the same rule.
+        assert nine.line not in calls[0][0]["content"]
+
+
 class TestTheBlockReachesRuns:
     def test_an_attached_run_carries_it_in_its_runtime_slot(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch

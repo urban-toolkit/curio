@@ -6,6 +6,7 @@ import type { Edge, Node, ReactFlowInstance } from "reactflow";
 import type { useToastContext } from "../ToastProvider";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { upstreamErroredMessage } from "../../utils/nodeEmptyState";
+import { nodeRunKey } from "../../utils/widgets/widgetModel";
 import type { NodeExecOutcome } from "./flowTypes";
 import { computeTopologicalLevels, directedEdgesOf } from "./runLevels";
 
@@ -294,9 +295,11 @@ export function usePlayAll({
                     emittedForInput.has(nodeId) && emittedForInput.get(nodeId) === node.data.input;
                 const neverSucceeded =
                     outputCode !== "success" && !(outputCode !== "error" && emittedCurrent);
+                // #662: the key covers the node's widget values too, so a
+                // changed value counts as changed code.
                 const codeChanged =
                     node.data.executedCode !== undefined &&
-                    node.data.executedCode !== node.data.code;
+                    node.data.executedCode !== nodeRunKey(node.data.code, node.data.widgets);
                 const upstreamRerunning = ancestorEdges.some(
                     e => e.target === nodeId && willRun.has(e.source)
                 );

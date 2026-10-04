@@ -58,6 +58,27 @@ node's code, which is `content`, and its ports carry no ids.
 Only a mode other than `OVERWRITE` is written; an absent member, or an absent
 `dataPool`, means `OVERWRITE`.
 
+`metadata.widgets` lists the node's widgets, written only when it has any. Each
+entry is `{name, type, label?, default, value?, options?}`, where `type` is one
+of `number`, `slider`, `text`, `choice`, `checkbox`, `checkbox-group`,
+`multi-select`, `datetime`, `location`, `number-list`, `text-list`, `range`
+and `file`. `options.choices` lists the options of a choice, checkbox group or
+multi-select widget, and `options.display` is `radio` for a choice drawn as
+radio buttons. A number or slider widget takes `options.min`, `max`, `step` and
+`units`; a slider needs `min` and `max`. A checkbox group or multi-select holds a
+list of its choices, a datetime `YYYY-MM-DDTHH:mm:ss` in local time, and a
+location `{"lat": ..., "lon": ...}` in WGS84. A widget without a `default` takes
+its type's: `min` or 0 for a number or slider, `false` for a checkbox, the first
+choice for a choice, `[]` for the list types, `[0, 1]` for a range,
+`1970-01-01T00:00:00` for a datetime, `{"lat": 0, "lon": 0}` for a location, and
+`""` otherwise. The node's
+`content` places a widget as `[!! name !!]`; a run replaces it with `value` when
+set, else `default`. A reference on its own becomes a literal of the code's
+language (quoted text, a number, a list, a boolean, an object); one inside a string literal
+becomes the value's text, escaped for that string. An old
+`[!! name$TYPE$default !!]` marker, or a name the node has no widget for, fails
+the run with a message naming it.
+
 `metadata.comments` carries the node's discussion, written only when non-empty.
 Each entry is `{id, text, author, authorName, createdAt, resolved}`. The author's
 avatar is not stored, because `profile_image` may be a full data URL; `canDelete`

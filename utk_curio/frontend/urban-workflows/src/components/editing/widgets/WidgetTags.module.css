@@ -1,0 +1,197 @@
+/* A node's widgets (#662): the Widgets tab, and the tags dragged into code. */
+
+.tag {
+  composes: chip from "../../../pages/discovery/DiscoveryAddDialog.module.css";
+  cursor: grab;
+  border: 1px solid #c9d3e3;
+  font-family: "Source Code Pro", Consolas, "Courier New", monospace;
+  user-select: none;
+}
+
+.tag:active {
+  cursor: grabbing;
+}
+
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fafafa;
+}
+
+.stripHint {
+  font-size: 10px;
+  color: #666;
+  margin-right: 2px;
+}
+
+.panel {
+  height: 100%;
+  padding: 10px;
+  font-size: 11px;
+  overflow-y: auto;
+}
+
+.empty {
+  color: #666;
+  margin: 0 0 8px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.control input[type="text"],
+.control input[type="number"],
+.control select {
+  width: 100%;
+  font-size: 11px;
+}
+
+.label {
+  font-weight: bold;
+}
+
+.inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.inline input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.units {
+  white-space: nowrap;
+  color: #444;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+
+.choices .choiceItem {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 3px;
+  font-weight: normal;
+}
+
+.multi {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pick {
+  composes: chip from "../../../pages/discovery/DiscoveryAddDialog.module.css";
+}
+
+.location {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.places {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 120px;
+  overflow-y: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+.places button {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+
+.places button:hover {
+  background: #eef3fb;
+}
+
+.hint {
+  color: #666;
+}
+
+.bounds {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rowActions {
+  display: flex;
+  gap: 4px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  margin-bottom: 6px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.formActions {
+  display: flex;
+  gap: 4px;
+}
+
+.problem {
+  color: #c0392b;
+  margin: 2px 0 0;
+}
+
+.problems {
+  color: #c0392b;
+  margin: 8px 0 0;
+  padding-left: 16px;
+}

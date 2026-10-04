@@ -11,6 +11,9 @@ dataflow's task, the attached node's goal and template type, or a delegated
 run's inputs. Plain code: no model call, no network, and the same inputs give
 the same block. The block is per run, so it rides the runtime slot and the
 cached preamble stays fixed.
+
+The ``examples.read`` tool reads the same "Used" dataflows on request: their
+list (``listing``) or one of them by key (``find``), shown as in the block.
 """
 
 from __future__ import annotations
@@ -311,12 +314,46 @@ def render(chosen: list[Example], *, cap: int = MAX_BLOCK_CHARS) -> str | None:
     pieces: list[str] = []
     size = len(HEADING)
     for example in chosen:
-        piece = f"{example.entry.line}\n```json\n{trill_text(example.spec)}\n```"
+        piece = shown(example)
         if size + len(_SEP) + len(piece) > cap:
             continue
         pieces.append(piece)
         size += len(_SEP) + len(piece)
     return _SEP.join([HEADING, *pieces]) if pieces else None
+
+
+def shown(example: Example) -> str:
+    """One example as a run is shown it, in the block or by ``examples.read``: its line, then its Trill."""
+    return f"{example.entry.line}\n```json\n{trill_text(example.spec)}\n```"
+
+
+def listing(*, exclude=()) -> list[dict]:
+    """The "Used" examples a run may read, in index order: each one's key,
+    title and line. *exclude* leaves examples out, as in ``select``."""
+    return [
+        {"key": example.key, "title": example.entry.title, "line": example.entry.text}
+        for example in used_examples()
+        if not any(example.is_named_by(item) for item in exclude)
+    ]
+
+
+def find(key: str, *, exclude=()) -> Example:
+    """The "Used" example *key* names (``Example.is_named_by``).
+
+    Raises ``LookupError`` saying how to list the keys when none does, or when
+    *exclude* names it; the refusal never describes the excluded example.
+    """
+    example = next((e for e in used_examples() if e.is_named_by(key)), None)
+    if example is None:
+        raise LookupError(
+            f"no worked example has the key {key!r}; call examples.read with no key to list the keys"
+        )
+    if any(example.is_named_by(item) for item in exclude):
+        raise LookupError(
+            f"the worked example {key!r} is not available in this project; "
+            "call examples.read with no key to list the ones that are"
+        )
+    return example
 
 
 def trill_text(spec: object) -> str:

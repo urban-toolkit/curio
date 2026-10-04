@@ -6,6 +6,7 @@ import { Starter, useStarterContext } from '../providers/StarterProvider';
 import { useUserContext } from '../providers/UserProvider';
 import { useFlowContext } from '../providers/FlowProvider';
 import { reportFromNodeOutput, reportNodeRuntime } from '../services/nodeRuntimeReport';
+import { nodeRunKey } from '../utils/widgets/widgetModel';
 
 export interface NodeOutput {
   code: string;
@@ -43,7 +44,8 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
   // straight after a load, while identical content compares equal.
   useEffect(() => {
     data.output = output;
-    if (output?.code === 'success') data.executedCode = code;
+    // #662: the key includes the node's widget values, so a new value re-runs it.
+    if (output?.code === 'success') data.executedCode = nodeRunKey(code, data.widgets);
     // dev/135: the node instance already held its own outcome here — and only
     // here, in memory, so an agent asked about a node that had just failed in
     // the BROWSER was told `never-executed` (the owner's `a29d1ad8`). This is

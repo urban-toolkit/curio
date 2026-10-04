@@ -108,6 +108,33 @@ That writes a valid `packages/me.roughness@1/` with a manifest, a Python
 starter, a README, a LICENSE and an `integrity.json`. Install it from the canvas
 via **Node Catalog → Browse Node Catalog + → Browse all → Add to project**.
 
+### Widgets in a template
+
+A template's starter can read values the user sets in the node's **Widgets** tab
+([Widgets](USAGE.md#widgets)). Declare them in the template's `widgets`, and
+place each one in the source as `[!! name !!]`:
+
+```json
+{
+  "id": "roughness",
+  "source": "sources/roughness.py",
+  "hasWidgets": true,
+  "widgets": [
+    { "name": "window", "type": "number", "label": "Window size", "default": 5 },
+    { "name": "method", "type": "choice", "default": "std", "options": { "choices": ["std", "range"] } }
+  ]
+}
+```
+
+```python
+return arg.rolling([!! window !!]).agg([!! method !!])
+```
+
+A node dropped from the palette starts with these widgets and their defaults.
+**Save as package node…** writes the node's widgets into the template, with the
+values it had as the defaults. The shape of each entry is the `widget`
+definition in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json).
+
 ---
 
 ## Tier 2: a node with its own interface

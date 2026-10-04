@@ -32,6 +32,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Iterable
 
+from utk_curio.backend.app.agents.application.turns import examples as worked_examples
 from utk_curio.backend.app.agents.domain import plan_topology
 from utk_curio.backend.app.agents.domain.tool_names import (
     tool_id_of,
@@ -74,6 +75,11 @@ def _map(description: str) -> dict:
 def _no_params() -> dict:
     return _object({})
 
+
+#: models.search bounds: the most rows a call returns, and the most labels per
+#: row. A Transformers checkpoint may name hundreds of classes.
+_MODELS_SEARCH_MAX_ROWS = 40
+_MODEL_LABELS_MAX = 40
 
 _NODE_ID = _text("The node's id. Defaults to the node this agent is attached to.")
 _APPEARANCE = _object({"backgroundColor": _text("A palette name or #RRGGBB.")})
@@ -223,6 +229,56 @@ REGISTRY: dict[str, ToolContract] = {
             "q": _text("Text to search for."),
             "format": _text("A dataset format."),
             "origin": _text("A dataset origin."),
+        }),
+    ),
+    # Consumers: agent.node-builder and agent.node-content-builder. Grounds a
+    # node that runs a model in the real Model Catalog (the model catalog
+    # owns the data and the loader line; this module owns none of its own).
+    "models.search": ToolContract(
+        id="models.search",
+        contract_version="1",
+        effect="read",
+        description=(
+            "Search the Model Catalog: the trained models node code can run. "
+            'Params (all optional): {"q": "<text>", "limit": <1 to '
+            f"{_MODELS_SEARCH_MAX_ROWS}>}}; q matches a model's name, id, "
+            "description, publisher and tags. Returns model rows with id, "
+            "name, task, runtime, origin, description, labels (the classes "
+            "it answers, at most "
+            f"{_MODEL_LABELS_MAX}) and loader. Every row is a model this "
+            'account can run: origin "shipped" comes with Curio, "downloaded" '
+            "is one this account added from the Discovery Catalog. Copy the "
+            "row's `loader` line into the node's code exactly as given "
+            '(model = curio_load_model("<id>")); a model id that is not in '
+            "these results does not run. Reads no network."
+        ),
+        parameters=_object({
+            "q": _text("Text to search for."),
+            "limit": {
+                "type": "integer",
+                "description": f"The most rows to return, 1 to {_MODELS_SEARCH_MAX_ROWS}.",
+            },
+        }),
+    ),
+    # Consumer: agent.dataflow-builder. Any worked example on request, beside
+    # the ones its runs are given (turns/examples owns the index and the view).
+    "examples.read": ToolContract(
+        id="examples.read",
+        contract_version="1",
+        effect="read",
+        description=(
+            "Read Curio's worked examples: shipped dataflows that show how "
+            'nodes, code and specs fit together. Params (optional): {"key": '
+            '"<key from the list>"}. With no key, returns the list: each '
+            "example's key, title and one line on what it shows. With a key, "
+            "returns that example's line and its Trill (name, task, every node "
+            "with its type and content, every edge), without layout. An "
+            "unknown key is an error; call with no key for the keys. The "
+            "datasets and node types a plan uses come from this project, not "
+            "from an example. Reads no network."
+        ),
+        parameters=_object({
+            "key": _text("An example's key, from the list this tool returns with no key. Omit it for the list."),
         }),
     ),
     # Discovery Catalog - consumer: agent.dataset-finder. Three contracts, not
@@ -723,6 +779,70 @@ def _catalog_search_rows(user_key: str, project_id: str, params: dict) -> list[d
     return rows
 
 
+def _row_limit(value: object, bound: int) -> int:
+    """A ``limit`` param as a row count from 1 to *bound*; *bound* when absent or not a whole number.
+    A native call may send ``5.0`` (Gemini's arguments carry every number as a float)."""
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return bound
+    return max(1, min(value, bound))
+
+
+def _models_search_rows(params: dict) -> list[dict]:
+    """Bounded Model Catalog rows for ``models.search``.
+
+    A thin wrapper over the model catalog (`ADR-AG-007`): the same listing the
+    Model Catalog page browses, for the user the request carries, and the
+    catalog's own loader line for each model.
+    """
+    from flask import g
+
+    from utk_curio.backend.app.model_catalog.service import ModelCatalogService, loader_line
+
+    query = params.get("q")
+    query = query.strip()[:_CATALOG_PARAM_MAX_CHARS] if isinstance(query, str) and query.strip() else None
+    listing = ModelCatalogService(getattr(g, "user", None)).list_catalog(q=query)
+    rows = []
+    for item in (listing.get("items") or [])[:_row_limit(params.get("limit"), _MODELS_SEARCH_MAX_ROWS)]:
+        rows.append({
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "task": item.get("task"),
+            "runtime": item.get("runtime"),
+            "origin": item.get("origin"),
+            "description": (item.get("description") or "")[:_CATALOG_DESC_MAX_CHARS],
+            "labels": list(item.get("labels") or [])[:_MODEL_LABELS_MAX],
+            "loader": loader_line(item.get("id")),
+        })
+    return rows
+
+
+def _execute_examples_read(user_key: str, project_id: str, params: dict) -> tuple[str, str]:
+    """``examples.read``: the list of worked examples, or one by key.
+
+    The project's spec decides what is left out, by the rule the per-run block
+    follows (``excluded_by``): an evaluation project never shows the example it
+    is scored against, nor one that shares part of it. A project with no saved
+    spec leaves nothing out.
+    """
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    key = params.get("key")
+    if key is not None and not isinstance(key, str):
+        return "error", "params.key must be an example's key; call examples.read with no key to list the keys"
+    exclude = worked_examples.excluded_by(projects_storage.read_spec(user_key, project_id))
+    if not (key or "").strip():
+        return "ok", _truncate(json.dumps({"examples": worked_examples.listing(exclude=exclude)}, ensure_ascii=False))
+    try:
+        example = worked_examples.find(key.strip(), exclude=exclude)
+    except LookupError as exc:
+        return "error", str(exc)
+    return "ok", _truncate(worked_examples.shown(example))
+
+
 # packages.catalog bounds (dev/84): mirrors the catalog.search posture —
 # plenty for ranking, small enough to never crowd the context.
 _PACKAGES_CATALOG_MAX_ROWS = 40
@@ -991,6 +1111,10 @@ def execute_read_tool(
             if unavailable:
                 payload["unavailableSources"] = unavailable
             return "ok", _truncate(json.dumps(payload, ensure_ascii=False))
+        if tool_id == "models.search":
+            return "ok", _truncate(json.dumps({"models": _models_search_rows(params)}, ensure_ascii=False))
+        if tool_id == "examples.read":
+            return _execute_examples_read(user_key, project_id, params)
         if tool_id == "packages.catalog":
             rows = _packages_catalog_rows(user_key, project_id, params)
             return "ok", _truncate(json.dumps({"packages": rows}, ensure_ascii=False))

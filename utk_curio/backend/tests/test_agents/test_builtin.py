@@ -382,6 +382,7 @@ class TestNodeBuilderComposite:
             "node.runtime.read",  # dev/67-2: diagnose before regenerating
             "node.content.write",  # dev/67-6: modify-existing, reviewed
             "catalog.search",  # dev/114 (DEC-072): the only source of a real local path
+            "models.search",  # the Model Catalog: a model this account can run
         ]
         assert m.provenance.trust == "built-in"
 
@@ -447,6 +448,30 @@ class TestNodeBuilderComposite:
         text = builtin.read_prompt_text(self.COORD, "instruction")
         assert "params.content" in text
         assert "code in your reply is not a node" in text
+
+
+class TestCatalogReadGrants:
+    """Which built-ins hold the catalog read tools that no other agent needs."""
+
+    @staticmethod
+    def _holders(tool_id: str) -> set[str]:
+        return {spec.agent_id for spec in builtin.BUILTIN_AGENTS if tool_id in spec.tools}
+
+    @staticmethod
+    def _granted(agent_id: str) -> list[str]:
+        from utk_curio.backend.app.agents.application import tools
+
+        return tools.resolve_grants(builtin.get_builtin_manifest(f"{agent_id}@1.0.0").tools)
+
+    def test_the_agents_that_write_node_code_search_the_model_catalog(self):
+        writers = {"agent.node-builder", "agent.node-content-builder"}
+        assert self._holders("models.search") == writers
+        for agent_id in writers:
+            assert "models.search" in self._granted(agent_id), agent_id
+
+    def test_the_dataflow_builder_reads_the_worked_examples(self):
+        assert self._holders("examples.read") == {"agent.dataflow-builder"}
+        assert "examples.read" in self._granted("agent.dataflow-builder")
 
 
 class TestDatasetFinderComposite:
@@ -566,6 +591,7 @@ class TestDataflowBuilderComposite:
         assert [t.id for t in m.tools] == [
             "dataflow.read", "dataflow.plan.write", "node.runtime.read",
             "node.create",
+            "examples.read",  # any worked example, beside the ones a run is given
         ]
         assert m.provenance.trust == "built-in"
 
@@ -772,8 +798,9 @@ class TestResearcher:
     # (dev/90 §8 AC-2): a drive-by edit fails HERE, not in a downstream run.
     DATAFLOW_BUILDER_PROMPT_SHA256 = (
         # The plan is named, not called a block: on native tools it is the
-        # dataflow.plan.write call, on the fenced protocol its block.
-        "f180f9bd4c38c9682160cfcc80cadf2c907c9004178bd1f0851f27eef949c5db"
+        # dataflow.plan.write call, on the fenced protocol its block. It names
+        # examples.read, for a worked example beyond the two a run is given.
+        "f14cbf84b7915c990133570e26f65eee92759e1b909f0e360e2d53f01c65386c"
     )
 
     def test_manifest_surface(self):

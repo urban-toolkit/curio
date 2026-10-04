@@ -73,6 +73,11 @@ def model_row(manifest: ModelManifest, *, origin: str, folder: Path) -> dict[str
     return row
 
 
+def loader_line(model_id: str) -> str:
+    """The line node code loads *model_id* with, as ``resolve_exec_models`` finds it."""
+    return f'model = curio_load_model("{model_id}")'
+
+
 def resolve_exec_models(code: str, user=None) -> dict[str, str]:
     """``{modelId: folder}`` for the models *code* runs as ``curio_load_model("<id>")``.
 

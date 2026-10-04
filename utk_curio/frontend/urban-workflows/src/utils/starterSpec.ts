@@ -8,10 +8,23 @@
  * a string, or a zip code from a measurement, is exactly where sniffing goes
  * wrong, and a wrong default locked into the buffer is worse than none.
  *
+ * The roles, the dtype table and each ladder's rules are generated from the
+ * backend's `contracts.py` into `src/generated/visDefaults.ts`, which is also
+ * what the agents' shared preamble states, so the node and the agents cannot
+ * disagree.
+ *
  * Pure, with no grammar import, so it is testable under jest.
  */
 
-export type ColumnRole = "geometry" | "temporal" | "quantitative" | "nominal";
+import {
+  COLUMN_ROLES,
+  DTYPE_ROLES,
+  type ColumnRole,
+  type CountRange,
+  type RoleCounts,
+} from "../generated/visDefaults";
+
+export type { ColumnRole } from "../generated/visDefaults";
 
 export interface ClassifiedColumn {
   name: string;
@@ -33,20 +46,13 @@ const RESERVED = new Set([ROW_INDEX, "interacted"]);
  */
 const ID_HEURISTIC_MIN_ROWS = 10;
 
+/** The role of the first `DTYPE_ROLES` entry that matches the dtype, or null. */
 function roleForDtype(dtype: string): ColumnRole | null {
   const d = dtype.toLowerCase();
-  if (d === "geometry") return "geometry";
-  if (d.startsWith("datetime") || d.startsWith("period") || d.startsWith("timedelta")) {
-    return "temporal";
-  }
-  if (d.startsWith("int") || d.startsWith("uint") || d.startsWith("float")) {
-    return "quantitative";
-  }
-  // `str` is pandas 3's dtype for a string column; pandas 2 said `object`.
-  if (d === "bool" || d === "object" || d === "str" || d === "string" || d === "category") {
-    return "nominal";
-  }
-  return null;
+  const entry = DTYPE_ROLES.find(
+    ({ names, prefixes }) => names.includes(d) || prefixes.some((prefix) => d.startsWith(prefix)),
+  );
+  return entry ? entry.role : null;
 }
 
 /** Value-sniffing fallback, for inline data or a payload with no `schema`. */
@@ -117,6 +123,19 @@ export function groupColumns(columns: ClassifiedColumn[]): Record<ColumnRole, st
   };
   for (const { name, role } of columns) out[role].push(name);
   return out;
+}
+
+/** Is *n* in *range*: at least `least`, and at most `most` when it is set? */
+export function inRange(n: number, range: CountRange): boolean {
+  return n >= range.least && (range.most === undefined || n <= range.most);
+}
+
+/** Do the grouped *columns* hold as many columns of each role as *needs* asks? */
+export function meetsRoles(columns: Record<ColumnRole, string[]>, needs: RoleCounts): boolean {
+  return COLUMN_ROLES.every((role) => {
+    const range = needs[role];
+    return range === undefined || inRange(columns[role].length, range);
+  });
 }
 
 /** Is the editor empty enough to fill without destroying anything? */
