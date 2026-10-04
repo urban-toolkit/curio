@@ -77,6 +77,8 @@ describe("the API Settings drawer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "open on an agent" }));
     const panel = await screen.findByTestId("panel");
+    // Role queries see the drawer only once it is presented.
+    await waitFor(() => expect(drawerRoot("settings")).toHaveAttribute("aria-hidden", "false"));
     expect(panel).toHaveAttribute("data-tab", "agents");
     expect(JSON.parse(panel.getAttribute("data-focus")!)).toEqual({ section: "agent-models", agentId: "agent.chat-agent" });
     // The drawer keeps the tab in its own state.
@@ -93,6 +95,7 @@ describe("the API Settings drawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "open settings" }));
     await screen.findByTestId("panel");
     expect(document.body.style.overflow).toBe("hidden");
+    await waitFor(() => expect(drawerRoot("settings")).toHaveAttribute("aria-hidden", "false"));
     fireEvent.click(screen.getByRole("button", { name: "Dismiss API Settings" }));
     await waitFor(() => expect(drawerRoot("settings")).toBeNull());
     expect(document.body.style.overflow).toBe("");
