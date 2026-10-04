@@ -19,7 +19,6 @@ import { fitPlotToPane } from '../../utils/autkPlotSizing';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
-import { AUTK_UPSTREAM_LAYER } from '../../generated/autkGrammar';
 import {
     autkNeedsInput, autkSourcesFrom, documentTableRefs, inputRow, loadableSource, ownTableNames,
     readAutkInput, tablePositions, type LoadOrder, type PreparedAutkInput,
@@ -222,9 +221,10 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         // autk-db. Capture them before we touch spec.data.
         const specDataSources: any[] = Array.isArray(spec.data) ? spec.data : [];
 
-        // The input as the tables the document reads (utils/autkInput): a single
-        // frame is `upstream`, a bundle's layers keep their own names, and
-        // `upstream` is added only when the document names it. Upstream geojson
+        // The input as the tables the document reads (utils/autkInput): each
+        // input is `input_<k>`, the layers an input carries keep their own
+        // names, and `input_<k>` also names an input of one named layer when
+        // the document names it. Upstream geojson
         // is data the browser already holds, so it stays client-side and is NOT
         // sent to the backend. A data-only document does not read it.
         let upstreamSources: any[] = [];

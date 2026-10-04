@@ -37,6 +37,7 @@ jest.mock("../../utils/webgpuSupport", () => ({
 jest.mock("reactflow", () => ({
   Handle: () => null,
   useEdges: () => [],
+  useUpdateNodeInternals: () => () => undefined,
 }));
 jest.mock("../../components/styles", () => ({
   NodeContainer: ({ children }: any) => <div>{children}</div>,

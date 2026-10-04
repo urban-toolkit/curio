@@ -28,32 +28,31 @@ log = logging.getLogger(__name__)
 _RENDERED_INPUT_CAPACITY: dict[str, int] = {"curio.builtin/merge-flow": 5}
 
 
-def input_capacity(canonical: str, port_count: int) -> int:
-    """How many incoming edges a node of this template accepts: one per
-    rendered input handle, or the rendered slot count where the canvas renders
-    more (DEC-051). The one rule ``maxIncomingEdges`` and the agents' preamble
-    both read."""
-    return _RENDERED_INPUT_CAPACITY.get(canonical, port_count)
+def input_capacity(canonical: str, port_count: int, cardinality: str | None = None) -> int | None:
+    """How many incoming edges a node of this template accepts, or None for
+    any number. A template with one input port takes its declared upper bound
+    (*cardinality*): the canvas draws a new circle for each edge, up to it.
+    Several ports are named circles, one edge each. Merge Flow renders its own
+    slots (DEC-051). The one rule ``maxIncomingEdges`` and the agents' preamble
+    both read, and the canvas's ``maxInputs`` follows."""
+    if canonical in _RENDERED_INPUT_CAPACITY:
+        return _RENDERED_INPUT_CAPACITY[canonical]
+    if port_count == 1 and cardinality is not None:
+        return parse_cardinality(cardinality)[1]
+    return port_count
 
 
-def _input_arity(canonical: str, template) -> tuple[list[dict], int]:
+def _input_arity(canonical: str, template) -> tuple[list[dict], int | None]:
     """Per-port ``{types, min, max}`` rows + the template's incoming-edge
-    capacity.
-
-    ``inputs`` carries the DECLARED cardinalities (parsed to min/max) as
-    metadata. ``maxIncomingEdges`` is the RENDERED truth the canvas actually
-    implements: one edge per rendered input handle — handles are 1:1 with
-    ports, and each holds a single scalar ``data.input`` (a second edge
-    silently overwrites it) — with merge-flow's slot machinery the sole
-    multi-edge surface (5 slots). Declared ``[1,n]`` maxima (e.g.
-    computation-analysis) are aspirational: the input plumbing is scalar per
-    handle, so they are NOT enforceable capacity (DEC-051).
+    capacity (``input_capacity``): one port's declared maximum, one edge per
+    port when there are several.
     """
     inputs: list[dict] = []
     for port in template.input_ports:
         lo, hi = parse_cardinality(port.cardinality)
         inputs.append({"types": list(port.types), "min": lo, "max": hi})
-    return inputs, input_capacity(canonical, len(inputs))
+    single = template.input_ports[0].cardinality if len(template.input_ports) == 1 else None
+    return inputs, input_capacity(canonical, len(inputs), single)
 
 
 # One value, three legal spellings (memo dev/93 D3; the dev/90 A14 family).

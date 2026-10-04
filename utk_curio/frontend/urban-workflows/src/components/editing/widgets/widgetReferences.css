@@ -6,8 +6,16 @@
   border-radius: 3px;
 }
 
-.curio-widget-ref-problem {
+.curio-widget-ref-problem,
+.curio-input-ref-problem {
   background: rgba(192, 57, 43, 0.12);
   border: 1px solid rgba(192, 57, 43, 0.55);
+  border-radius: 3px;
+}
+
+/* An input or column reference: green, so it reads apart from a widget's. */
+.curio-input-ref {
+  background: rgba(30, 132, 73, 0.12);
+  border: 1px solid rgba(30, 132, 73, 0.45);
   border-radius: 3px;
 }

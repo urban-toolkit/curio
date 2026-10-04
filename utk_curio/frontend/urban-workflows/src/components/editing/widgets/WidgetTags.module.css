@@ -28,6 +28,42 @@
   margin-right: 2px;
 }
 
+/* An input's tag and its columns (#662). */
+.inputTag {
+  composes: tag;
+  border-color: #b5d6c3;
+  background: #eef7f1;
+}
+
+.columnTag {
+  composes: tag;
+  border-color: #d3e6da;
+  background: #fff;
+}
+
+.expand {
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  font-size: 10px;
+  color: #444;
+  cursor: pointer;
+}
+
+.columns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding-left: 12px;
+}
+
+.columnFilter {
+  font-size: 10px;
+  width: 110px;
+}
+
 .panel {
   height: 100%;
   padding: 10px;

@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useSyncExternalStore } from 'react';
 import CSS from "csstype";
-import { Handle, Edge, useEdges } from 'reactflow';
+import { Handle, Edge, useEdges, useUpdateNodeInternals } from 'reactflow';
+import { withInputCircles } from '../adapters/node/handleHelpers';
+import { growsInputCircles, inputCapacity, wiredInputSlots } from '../utils/inputSlots';
 import { NodeContainer } from './styles';
 import NodeEditor from './editing/NodeEditor';
 import DescriptionModal from './DescriptionModal';
@@ -86,6 +88,20 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // the hook the compat view (render-time only, never persisted).
   const behavior = adapter.useNodeBehavior(behaviorDataView(data), nodeState);
   const edges = useEdges();
+
+  // A template with one input port that takes several edges grows a circle
+  // per edge (utils/inputSlots). React Flow is told when the circles change,
+  // or an edge to a new circle would have nothing to attach to.
+  const growsCircles = !behavior.handlesOverride && growsInputCircles(descriptor.inputPorts);
+  const wiredSlots = growsCircles ? wiredInputSlots(edges, data.nodeId) : [];
+  const baseHandles = growsCircles
+    ? withInputCircles(adapter.handles, wiredSlots, inputCapacity(descriptor.inputPorts))
+    : adapter.handles;
+  const circleIds = baseHandles.map((h) => h.id).join(",");
+  const updateNodeInternals = useUpdateNodeInternals();
+  useEffect(() => {
+    if (growsCircles) updateNodeInternals(data.nodeId);
+  }, [circleIds]);
 
   const sendCode = behavior.sendCodeOverride ?? nodeState.sendCode;
   const setSendCodeCallback = behavior.setSendCodeCallbackOverride ?? nodeState.setSendCodeCallback;
@@ -297,7 +313,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     nodeState.templateData.custom != undefined && nodeState.templateData.custom === false;
 
   const allHandles = behavior.handlesOverride
-    ?? [...adapter.handles, ...(behavior.dynamicHandles ?? [])];
+    ?? [...baseHandles, ...(behavior.dynamicHandles ?? [])];
 
   return (
     // ``display: contents`` keeps the wrapper invisible to ReactFlow's

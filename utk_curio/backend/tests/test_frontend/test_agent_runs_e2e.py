@@ -520,9 +520,9 @@ AUTK_NODE_ID = "agent-e2e-autk"
 
 #: Drawn from the node's own input, so no source is probed.
 AUTK_DOCUMENT = {
-    "compute": [{"dataRef": "upstream", "wglsFunction": "fn main() {}",
+    "compute": [{"dataRef": "input_0", "wglsFunction": "fn main() {}",
                  "attributes": {"height": "properties.height"}, "outputColumnName": "shade"}],
-    "map": {"layerRefs": [{"dataRef": "upstream"}]},
+    "map": {"layerRefs": [{"dataRef": "input_0"}]},
 }
 
 

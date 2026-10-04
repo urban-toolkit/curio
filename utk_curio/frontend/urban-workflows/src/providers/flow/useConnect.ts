@@ -1,16 +1,24 @@
 // Connecting two nodes: onConnect checks the handles, the node types, merge
-// slots, occupied inputs and cycles, then adds the edge.
+// slots, input circles, occupied inputs and cycles, then adds the edge.
 import React, { useCallback } from "react";
 import { Connection, Edge, Node, ReactFlowInstance, addEdge, getOutgoers, MarkerType } from "reactflow";
 import { ConnectionValidator } from "../../ConnectionValidator";
 import { NodeType, EdgeType } from "../../constants";
 import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../../TrillGenerator";
-import { parseHandleIndex } from "../../utils/mergeFlowUtils";
+import { inputSlotOf, slotHandleId, wiredInputSlots } from "../../utils/inputSlots";
 import type { useToastContext } from "../ToastProvider";
 import type { useCollab } from "../CollaborationProvider";
 import type { IOutput } from "./flowTypes";
 import type { useGraphEdits } from "./useGraphEdits";
+import { nodeGrowsInputs, nodeInputCapacity } from "./growingInputs";
+
+/** *base*, or *base* with a suffix when an edge already has that id. */
+function uniqueEdgeId(base: string, edges: Edge[]): string {
+    let id = base;
+    for (let n = 2; edges.some((e) => e.id === id); n += 1) id = `${base}-${n}`;
+    return id;
+}
 
 export function useConnect({
     markDirtyRef, reactFlow, showToast, markNodeStaleRef, applyOutput, setEdges,
@@ -157,7 +165,7 @@ export function useConnect({
                     );
 
                     let targetHandle = connection.targetHandle;
-                    if (!targetHandle || targetHandle === "in" || parseHandleIndex(targetHandle) < 0) {
+                    if (!targetHandle || targetHandle === "in" || inputSlotOf(targetHandle) < 0) {
                         const nextFree = availableHandles.find((h) => !usedHandles.has(h));
                         if (!nextFree) {
                             showToast(
@@ -189,16 +197,37 @@ export function useConnect({
                 }
 
 
-                // dev/67-3 (DEC-051): one edge per rendered input handle —
-                // the merge slot machinery above is the ONLY multi-edge
-                // surface. Before this guard, a second edge into an occupied
-                // handle silently overwrote `data.input` (last writer wins),
-                // and deleting either edge blanked the input for both. The
-                // load path only warns: persisted edges are surfaced, never
+                // A node that grows its circles takes the edge on a free
+                // circle: the one it was dropped on, or else the free circle
+                // at the bottom, up to the template's maximum. A saved edge
+                // keeps the circle it names.
+                const growing = nodeGrowsInputs(target);
+                if (allowConnection && growing && isInHandle(connection.targetHandle ?? "in")) {
+                    const wired = wiredInputSlots(edges, connection.target as string);
+                    const requested = inputSlotOf(connection.targetHandle);
+                    const bottom = wired.length > 0 ? wired[wired.length - 1] + 1 : 0;
+                    const slot = skipValidation || (requested >= 0 && requested <= bottom && !wired.includes(requested))
+                        ? requested
+                        : bottom;
+                    const capacity = nodeInputCapacity(target);
+                    if (!skipValidation && (slot < 0 || slot >= capacity)) {
+                        showToast(`This node takes at most ${capacity} input${capacity === 1 ? "" : "s"}.`, "warning");
+                        allowConnection = false;
+                    } else {
+                        resolvedConnection = { ...connection, targetHandle: slotHandleId(Math.max(slot, 0)) };
+                    }
+                }
+
+                // dev/67-3 (DEC-051): one edge per rendered input handle.
+                // Before this guard, a second edge into an occupied handle
+                // silently overwrote `data.input` (last writer wins), and
+                // deleting either edge blanked the input for both. The load
+                // path only warns: persisted edges are surfaced, never
                 // dropped.
                 if (
                     allowConnection &&
                     inNodeType !== NodeType.MERGE_FLOW &&
+                    !growing &&
                     isInHandle(connection.targetHandle)
                 ) {
                     const handleOccupied = edges.some(
@@ -236,7 +265,7 @@ export function useConnect({
                 }
 
                 if (allowConnection) {
-                    const conn = inNodeType === NodeType.MERGE_FLOW ? resolvedConnection : connection;
+                    const conn = inNodeType === NodeType.MERGE_FLOW || growing ? resolvedConnection : connection;
                     markNodeStaleRef.current(conn.target as string);
                     applyOutput(
                         inNodeType as NodeType,
@@ -255,8 +284,14 @@ export function useConnect({
                         // Ensure an id exists before storing in provenance — user-dragged
                         // connections arrive as Connection (no id); addEdge assigns one later
                         // but addNewVersionProvenance is called before that.
+                        // Unique, because closing up circles keeps an edge's
+                        // id while its handle changes, so the id built from
+                        // the handles can already be taken.
                         if (!customConnection.id) {
-                            customConnection.id = `reactflow__edge-${conn.source}${conn.sourceHandle || ''}-${conn.target}${conn.targetHandle || ''}`;
+                            customConnection.id = uniqueEdgeId(
+                                `reactflow__edge-${conn.source}${conn.sourceHandle || ''}-${conn.target}${conn.targetHandle || ''}`,
+                                eds,
+                            );
                         }
 
                         if (customConnection.data == undefined)

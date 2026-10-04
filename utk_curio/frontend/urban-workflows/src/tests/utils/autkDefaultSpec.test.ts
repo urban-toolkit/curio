@@ -20,6 +20,7 @@ const frame = (over: Partial<GrammarFrame>): GrammarFrame => ({
   crsName: null,
   fromBundle: false,
   index: 0,
+  circle: 0,
   ...over,
 });
 const geo = (properties: Record<string, unknown>, schema: Record<string, string> | null = null) =>
@@ -46,19 +47,19 @@ describe("autkStarterText", () => {
   test("a layer with a number is coloured by it, explicitly", () => {
     const text = autkStarterText({ frames: [geo({ zone: "n", pop: 3 }, { zone: "str", pop: "int64", geometry: "geometry" })] });
     expect(doc(text)).toEqual({
-      map: { layerRefs: [{ dataRef: "upstream", getFnv: "pop", getFnvType: "quantitative", colorMapInterpolator: "interpolateViridis" }] },
+      map: { layerRefs: [{ dataRef: "input_0", getFnv: "pop", getFnvType: "quantitative", colorMapInterpolator: "interpolateViridis" }] },
     });
   });
 
   test("a layer with only categories is coloured by the first", () => {
     const text = autkStarterText({ frames: [geo({ zone: "n" }, { zone: "str" })] });
     expect(doc(text).map.layerRefs[0]).toEqual({
-      dataRef: "upstream", getFnv: "zone", getFnvType: "categorical", colorMapInterpolator: "schemeTableau10",
+      dataRef: "input_0", getFnv: "zone", getFnvType: "categorical", colorMapInterpolator: "schemeTableau10",
     });
   });
 
   test("geometry alone is a plain layer", () => {
-    expect(doc(autkStarterText({ frames: [geo({})] }))).toEqual({ map: { layerRefs: [{ dataRef: "upstream" }] } });
+    expect(doc(autkStarterText({ frames: [geo({})] }))).toEqual({ map: { layerRefs: [{ dataRef: "input_0" }] } });
   });
 
   test("several layers are drawn together, each under its own name", () => {
@@ -68,7 +69,7 @@ describe("autkStarterText", () => {
         frame({ fromBundle: true, index: 1 }),
       ],
     });
-    expect(doc(text)).toEqual({ map: { layerRefs: [{ dataRef: "table_osm_roads" }, { dataRef: "upstream_1" }] } });
+    expect(doc(text)).toEqual({ map: { layerRefs: [{ dataRef: "table_osm_roads" }, { dataRef: "input_1" }] } });
   });
 
   test("a layer named by its source keeps that name", () => {
