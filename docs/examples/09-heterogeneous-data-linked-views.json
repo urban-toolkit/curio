@@ -137,7 +137,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 3565,
         "y": 430,
-        "content": "{\r\n  \"map\": {\r\n    \"layerRefs\": [\r\n      {\r\n        \"dataRef\": \"upstream\",\r\n        \"getFnv\": \"mean\",\r\n        \"getFnvType\": \"quantitative\",\r\n        \"defaultFnv\": 0,\r\n        \"isPick\": true,\r\n        \"isColorMap\": true\r\n      }\r\n    ]\r\n  }\r\n}",
+        "content": "{\r\n  \"map\": {\r\n    \"layerRefs\": [\r\n      {\r\n        \"dataRef\": \"[!! input 0 !!]\",\r\n        \"getFnv\": \"mean\",\r\n        \"getFnvType\": \"quantitative\",\r\n        \"defaultFnv\": 0,\r\n        \"isPick\": true,\r\n        \"isColorMap\": true\r\n      }\r\n    ]\r\n  }\r\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Render Milan census polygons coloured by mean UTCI value.",

@@ -51,15 +51,15 @@ return gdf[["zip", "area_km2", "geometry"]]
 
 ## Draw it
 
-The frame reaches the Autark document as the table `upstream`; the document
-writes no `data` entry for it.
+The frame reaches the Autark document as the table `input_0`, written with the
+input chip `[!! input 0 !!]`; the document writes no `data` entry for it.
 
 ```json
 {
   "map": {
     "layerRefs": [
       {
-        "dataRef": "upstream",
+        "dataRef": "[!! input 0 !!]",
         "getFnv": "area_km2",
         "getFnvType": "quantitative",
         "colorMapInterpolator": "interpolateViridis",
@@ -122,21 +122,21 @@ centres["geometry"] = gdf.to_crs(26971).centroid.to_crs(4326)
 return gdf, centres
 ```
 
-The two frames arrive as two tables. Unnamed, they are `upstream_0` and
-`upstream_1`, and the document draws both:
+The two frames arrive on one input as two tables. Unnamed, they are named by
+their position, `input_0` and `input_1`, and the document draws both:
 
 ```json
 {
   "map": {
     "layerRefs": [
-      { "dataRef": "upstream_0", "getFnv": "area_km2", "getFnvType": "quantitative", "colorMapInterpolator": "interpolateViridis" },
-      { "dataRef": "upstream_1" }
+      { "dataRef": "input_0", "getFnv": "area_km2", "getFnvType": "quantitative", "colorMapInterpolator": "interpolateViridis" },
+      { "dataRef": "input_1" }
     ]
   }
 }
 ```
 
-A Vega-Lite chart draws one dataset, so it has no counterpart here.
+A Vega-Lite chart draws one dataset from one input, so it has no counterpart here.
 
 ## A chart linked to the map
 
