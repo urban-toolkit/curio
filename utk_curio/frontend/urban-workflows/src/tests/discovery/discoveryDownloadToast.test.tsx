@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { DiscoverySourceDetail } from '../../pages/discovery/DiscoverySourceDetail';
 import { invalidateDiscoveryCatalogCache } from '../../services/discoveryCatalog';
+import { resetDiscoveryAcquisitions } from '../../services/discoveryCatalog/discoveryCatalogHooks';
 
 /**
  * A finished download says so, like an import does.
@@ -96,7 +97,9 @@ beforeEach(() => {
   });
 });
 
-test('a finished download toasts, with a way to the dataset', async () => {
+afterEach(resetDiscoveryAcquisitions);
+
+async function downloadBikeRoutes() {
   render(
     <MemoryRouter initialEntries={['/catalog/discovery/source.a.portal@1?q=bike']}>
       <Routes>
@@ -107,6 +110,10 @@ test('a finished download toasts, with a way to the dataset', async () => {
   const title = await screen.findByText('Bike Routes');
   const card = title.closest('[data-discovery-resource]') as HTMLElement;
   fireEvent.click(within(card).getByRole('button', { name: 'Download' }));
+}
+
+test('a finished download toasts, with a way to the dataset', async () => {
+  await downloadBikeRoutes();
 
   await waitFor(
     () =>
@@ -116,5 +123,39 @@ test('a finished download toasts, with a way to the dataset', async () => {
         { action: expect.objectContaining({ label: 'View details' }) }
       ),
     { timeout: 4000 }
+  );
+});
+
+test('a download that kept only some of its files says how many could not be fetched', async () => {
+  const answer = apiFetch.getMockImplementation() as (path: string) => Promise<unknown>;
+  apiFetch.mockImplementation((path: string) => {
+    if (path.includes('/api/discovery/jobs/')) {
+      return Promise.resolve(
+        job({
+          status: 'completed',
+          datasetId: 'imported.xbikes',
+          dataset: { title: 'Bike Routes' },
+          stageMessage: 'Added to your Data Catalog; 1 could not be fetched',
+          note: '1 could not be fetched',
+        })
+      );
+    }
+    return answer(path);
+  });
+  await downloadBikeRoutes();
+
+  await waitFor(
+    () =>
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Downloaded Bike Routes to your Data Catalog; 1 could not be fetched.',
+        'warning',
+        { action: expect.objectContaining({ label: 'View details' }) }
+      ),
+    { timeout: 4000 }
+  );
+  expect(mockShowToast).not.toHaveBeenCalledWith(
+    'Downloaded Bike Routes to your Data Catalog.',
+    expect.anything(),
+    expect.anything()
   );
 });
