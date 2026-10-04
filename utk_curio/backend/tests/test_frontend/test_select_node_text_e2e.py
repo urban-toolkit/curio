@@ -60,9 +60,27 @@ def _spec() -> dict:
 #: Where a phrase is drawn inside *selector*: the first occurrence whose start
 #: and end the page actually hits there (not covered by anything), after
 #: scrolling the target to its end if no occurrence is in view at first.
-_PHRASE_RECT_JS = r"""([selector, phrase]) => {
+#: Measured only once the target and the canvas transform have held still for
+#: fifteen frames: a canvas still settling after the run moved the text away
+#: between the measurement and the press.
+_PHRASE_RECT_JS = r"""async ([selector, phrase]) => {
     const target = document.querySelector(selector);
     if (!target) return { error: `nothing matches ${selector}` };
+    const viewport = document.querySelector(".react-flow__viewport");
+    const where = () => {
+        const r = target.getBoundingClientRect();
+        return [r.left, r.top, r.width, r.height, viewport ? viewport.style.transform : ""].join(",");
+    };
+    let last = where();
+    let still = 0;
+    const started = performance.now();
+    while (still < 15 && performance.now() - started < 10000) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const now = where();
+        still = now === last ? still + 1 : 0;
+        last = now;
+    }
+    if (still < 15) return { error: `${selector} kept moving for 10 s` };
     const hits = (x, y) => {
         const el = document.elementFromPoint(x, y);
         return !!el && target.contains(el);
