@@ -3,12 +3,14 @@
 import React, { useCallback, useRef } from "react";
 import type { Node, ReactFlowInstance } from "reactflow";
 import { dashboardSourceNodeIds } from "../../utils/dashboardLayout";
+import { savedSourceNodeIds } from "../../utils/scenarios/scenarioParts";
+import type { Scenario } from "../../utils/scenarios/scenarioModel";
 import type { useWorkflowOperations } from "../../hook/useWorkflowOperations";
 import type { useToastContext } from "../ToastProvider";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 
 export function useDashboardPins({
-    reactFlow, setDashboardPins, setNodes, markDirtyRef, savePinChangeRef, showToast,
+    reactFlow, setDashboardPins, setNodes, markDirtyRef, savePinChangeRef, showToast, scenariosNowRef,
 }: {
     reactFlow: ReactFlowInstance;
     setDashboardPins: React.Dispatch<React.SetStateAction<any>>;
@@ -16,21 +18,24 @@ export function useDashboardPins({
     markDirtyRef: React.MutableRefObject<() => void>;
     savePinChangeRef: React.MutableRefObject<() => void>;
     showToast: ReturnType<typeof useToastContext>["showToast"];
+    /** The dataflow's scenarios as they are now, whose context and outcomes save too (#662). */
+    scenariosNowRef?: React.MutableRefObject<() => readonly Scenario[]>;
 }) {
-    // Which nodes a pinned tile depends on. Derived from the live graph rather
-    // than stored: pins and wiring both change, and a stale set would either
-    // save the wrong node's output or none at all.
+    // Which nodes a pinned tile or a scenario (#662) depends on. Derived from
+    // the live graph rather than stored: pins and wiring both change, and a
+    // stale set would either save the wrong node's output or none at all.
     const isDashboardSource = useCallback((nodeId: string) => {
         try {
-            return dashboardSourceNodeIds(
+            return savedSourceNodeIds(
                 reactFlow.getNodes() as any, reactFlow.getEdges() as any,
+                scenariosNowRef?.current() ?? [],
             ).has(nodeId);
         } catch {
             // The graph is the source of truth, not a requirement. If it cannot
             // be read, fall back to the explicit toggle alone.
             return false;
         }
-    }, [reactFlow]);
+    }, [reactFlow, scenariosNowRef]);
 
     const setPinForDashboard = useCallback((nodeId: string, value: boolean) => {
         setDashboardPins((prev: any) => ({ ...prev, [nodeId]: value }));

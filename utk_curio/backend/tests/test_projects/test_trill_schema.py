@@ -349,6 +349,10 @@ REJECTED = {
     "scenario box without a y": lambda d: d["dataflow"].update(
         scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": [], "box": {"x": 1}}]
     ),
+    # #662: a copy's lineage is a list of node ids, written only on a copy.
+    "copiedFrom as a bare id": lambda d: _node(d)["metadata"].update(copiedFrom="n0"),
+    "copiedFrom empty": lambda d: _node(d)["metadata"].update(copiedFrom=[]),
+    "copiedFrom holding an empty id": lambda d: _node(d)["metadata"].update(copiedFrom=[""]),
 }
 
 # Cases that look like they should be rejected but must not be. Each one is a
@@ -382,6 +386,8 @@ ACCEPTED = {
     "a scenario with no nodes left": lambda d: d["dataflow"].update(
         scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": []}]
     ),
+    # A copy of a copy: its lineage, oldest first (Duplicate selection, #662).
+    "a copy's lineage": lambda d: _node(d)["metadata"].update(copiedFrom=["n0", "n0-copy"]),
 }
 
 
@@ -517,6 +523,19 @@ WRITER_SHAPES = {
         scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": [AGENT_NODE["id"]]}],
     ),
     "canvas save clearing its scenarios": _flow(nodes=[AGENT_NODE], scenarios=[]),
+    # Written by TrillGenerator after Duplicate as scenario (#662): the copy
+    # names its original, and both are scenarios.
+    "canvas save with a duplicated scenario": _flow(
+        nodes=[
+            AGENT_NODE,
+            {**AGENT_NODE, "id": "n1-copy", "y": 302, "metadata": {"copiedFrom": [AGENT_NODE["id"]]}},
+        ],
+        scenarios=[
+            {"id": "s1", "name": "Scenario 1", "color": "#3567c7", "nodes": [AGENT_NODE["id"]]},
+            {"id": "s2", "name": "Scenario 2", "color": "#e86a3c", "nodes": ["n1-copy"],
+             "collapsed": True, "box": {"x": 1, "y": 302}},
+        ],
+    ),
     # strip_agent_state removes all three sections from a shared copy, so the
     # stripped result has to stay valid or sharing would produce invalid specs.
     "share-stripped spec": _flow(nodes=[AGENT_NODE]),

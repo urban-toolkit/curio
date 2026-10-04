@@ -37,7 +37,7 @@ export function sharedWidgetsOfSpec(nodes: readonly { type?: string; metadata?: 
 }
 
 /** A canvas node's code as its editor holds it. */
-function nodeCode(node: FlowNodeLike): string {
+export function nodeCode(node: FlowNodeLike): string {
   if (typeof node.data?.code === "string") return node.data.code;
   return typeof node.data?.defaultCode === "string" ? node.data.defaultCode : "";
 }
