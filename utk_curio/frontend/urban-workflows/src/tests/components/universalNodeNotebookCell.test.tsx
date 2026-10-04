@@ -73,7 +73,7 @@ jest.mock("../../registry/nodeRegistry", () => {
     subscribeToRegistry: () => () => {},
   };
 });
-jest.mock("../../registry/packageRegistryBootstrap", () => ({
+jest.mock("../../registry/registryReadiness", () => ({
   isRegistryReady: () => true,
   subscribeToRegistryReady: () => () => {},
 }));
