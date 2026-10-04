@@ -336,3 +336,45 @@ class TestAnImageThatCannotBeFetched:
         assert len(refused) == 20
         assert "kept no street view images: none could be fetched" in job["error"]
         assert SECRET not in json.dumps(job)
+
+
+# ── panorama ids ───────────────────────────────────────────────────────────
+
+
+class _OnePanorama:
+    """Answers every metadata ask with one panorama, and every image with a
+    picture too big to be Google's placeholder."""
+
+    def __init__(self, pano_id):
+        self.pano_id = pano_id
+        self.downloads = []
+
+    def json_get(self, url, *, credential=None, headers=None):
+        return json.dumps({"status": "OK", "pano_id": self.pano_id, "location": {"lat": 41.919, "lng": -87.64}})
+
+    def download(self, url, sink, **kwargs):
+        self.downloads.append(url)
+        sink(b"\xff\xd8" + b"\0" * gsv.PLACEHOLDER_BYTES)
+
+
+class TestAPanoramaIdIsWhole:
+    """A panorama's id names its files, so only an id that is all letters,
+    digits, ``-`` and ``_`` is asked for."""
+
+    def _load(self, transport, tmp_path):
+        service = gsv.GoogleStreetViewService(_manifest(), transport=transport)
+        return service.load(_manifest().resource("images"),
+                            {"area": LINCOLN_PARK, "headings": ["0"], "maxImages": 1}, tmp_path)
+
+    def test_an_id_with_a_trailing_newline_is_not_one(self, tmp_path):
+        transport = _OnePanorama("CurioPano\n")
+        answer = self._load(transport, tmp_path)
+        assert answer.images == [] and answer.found == 0
+        assert transport.downloads == []
+        assert not [p for p in tmp_path.rglob("*") if p.is_file()]
+
+    def test_a_whole_id_is_kept(self, tmp_path):
+        transport = _OnePanorama("CurioPano")
+        answer = self._load(transport, tmp_path)
+        assert [i.image_id for i in answer.images] == ["CurioPano_0"]
+        assert len(transport.downloads) == 1

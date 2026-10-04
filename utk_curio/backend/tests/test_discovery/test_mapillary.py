@@ -484,6 +484,14 @@ class TestItsFilesAreOnThisMachine:
         assert status["cachedFiles"] == status["fileCount"] == 6
         assert dataset["id"] in _collections(client, keyed)
 
+    def test_caching_it_is_refused(self, client, keyed):
+        job = _run(client, keyed)
+        assert job["status"] == "completed", job
+        dataset = job["dataset"]
+        res = client.post(f"/api/discovery/collections/{dataset['id']}/cache", headers=keyed)
+        assert res.status_code == 400, res.get_data(as_text=True)
+        assert res.get_json()["error"] == f"{dataset['title']} is already on this machine"
+
 
 # ── an image that cannot be fetched ────────────────────────────────────────
 
@@ -567,6 +575,19 @@ class TestAnImageThatCannotBeFetched:
         dataset = job["dataset"]
         assert dataset["collection"]["fileCount"] == 5
         assert "; 1 could not be fetched." in dataset["description"]
+
+    def test_the_finished_job_says_how_many(self, client, keyed, monkeypatch):
+        _refuse_downloads(monkeypatch, first_only=True)
+        job = _run(client, keyed)
+        assert job["status"] == "completed", job
+        assert job["note"] == "1 could not be fetched"
+        assert job["stageMessage"] == "Added to your Data Catalog; 1 could not be fetched"
+
+    def test_a_job_with_every_image_fetched_has_no_note(self, client, keyed):
+        job = _run(client, keyed)
+        assert job["status"] == "completed", job
+        assert job["note"] is None
+        assert job["stageMessage"] == "Added to your Data Catalog"
 
     def test_a_job_whose_every_image_fails_is_an_error(self, client, keyed, monkeypatch):
         refused = _refuse_downloads(monkeypatch, first_only=False)
