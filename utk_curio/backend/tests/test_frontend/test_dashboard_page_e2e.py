@@ -16,7 +16,9 @@ What replaced it, and what each test below pins:
   store cannot, which is what makes a visitor's view, or the owner's next
   sign-in, work at all;
 * the page is read-only for everyone but the owner, cannot delete anything, and
-  its one write (Save layout) leaves the dataflow's recorded outputs alone.
+  its one write (Save layout) leaves the dataflow's recorded outputs alone;
+* a dataflow's scenarios each get a column of tiles under a header in their
+  color, and Arrange by scenario puts the tiles back in them (#662).
 
 The dataflow is built here rather than borrowed from ``docs/examples``: three
 nodes, no datasets, so a failure is about this feature and not about a seed.
@@ -462,6 +464,147 @@ def test_editing_the_layout_moves_tiles_and_nothing_else(
         ), f"the dashboard moved {node_id} on the canvas"
     # And the recorded outputs are the canvas's business, not this page's.
     assert after["outputs"] == before["outputs"]
+
+
+SCN_LOAD = "dsc-load"
+SCN_FACTOR = "dsc-factor"
+SCN_BASE = "dsc-base"
+SCN_TALL = "dsc-tall"
+SCN_COMPARE = "dsc-compare"
+SCENARIO_COLORS = {"base": "rgb(42, 157, 143)", "tall": "rgb(232, 106, 60)"}
+
+
+def _scenario_spec() -> dict:
+    """A loader and a shared Parameter node, two scenarios of one node each, and
+    a node reading both outcomes; every node pinned. The canvas puts the two
+    scenarios' nodes in one column, as the distance layout would too."""
+    def pinned(node: dict) -> dict:
+        return {**node, "dashboardPinned": True}
+
+    factor = {
+        "id": SCN_FACTOR, "type": "curio.builtin/parameter", "x": 0, "y": 700, "content": "",
+        "goal": "", "metadata": {"keywords": [], "widgets": [{"name": "factor", "type": "number", "default": 2}]},
+    }
+    edge = lambda source, target, handle="in": {  # noqa: E731
+        "id": f"e-{source}-{target}", "source": source, "target": target,
+        "sourceHandle": "out", "targetHandle": handle,
+    }
+    return {
+        "dataflow": {
+            "name": "Dashboard by scenario",
+            "task": "",
+            "description": "",
+            "packages": [],
+            "datasets": [],
+            "nodes": [
+                pinned(_node(SCN_LOAD, "curio.builtin/data-loading", 0, PRODUCER_CODE)),
+                pinned(factor),
+                pinned(_node(SCN_BASE, "curio.builtin/computation-analysis", 700, "return arg\n")),
+                pinned({**_node(SCN_TALL, "curio.builtin/computation-analysis", 700,
+                                "factor = [!! @factor !!]\nreturn arg\n"), "y": 700}),
+                pinned(_node(SCN_COMPARE, "curio.builtin/computation-analysis", 1400, "return arg\n")),
+            ],
+            "edges": [
+                edge(SCN_LOAD, SCN_BASE),
+                edge(SCN_LOAD, SCN_TALL),
+                edge(SCN_BASE, SCN_COMPARE),
+                edge(SCN_TALL, SCN_COMPARE, "in_1"),
+            ],
+            "scenarios": [
+                {"id": "base", "name": "Baseline", "color": "#2a9d8f", "nodes": [SCN_BASE]},
+                {"id": "tall", "name": "Twice as tall", "color": "#e86a3c", "nodes": [SCN_TALL]},
+            ],
+        },
+    }
+
+
+_TILE_POSITIONS_JS = """() => Object.fromEntries(window.__curio_reactFlow.getNodes()
+    .filter((n) => n.style?.display !== 'none')
+    .map((n) => [n.id, [n.position.x, n.position.y]]))"""
+
+
+def test_scenarios_get_a_column_each_under_a_header_in_their_color(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    """The dashboard by scenario (#662): the shared tiles first, a column per
+    scenario under its header, then what reads their outcomes. Arrange by
+    scenario puts a dragged tile back, and Save layout records the columns."""
+    require_project_page()
+    require_user_auth()
+    session = stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Dashboard Owner",
+        username=f"dash_scn_{uuid.uuid4().hex[:8]}",
+        project_name="Dashboard by scenario",
+        project_spec=_scenario_spec(),
+    )
+    require_owner_view(page)
+    page.wait_for_selector(".react-flow__node", timeout=45000)
+    project_id = session["project"]["id"]
+    before = _project(current_server, session["token"], project_id)
+
+    _open_dashboard(page, app_frontend.base_url, project_id)
+    for node_id in (SCN_LOAD, SCN_FACTOR, SCN_BASE, SCN_TALL, SCN_COMPARE):
+        node_locator(page, node_id).wait_for(state="visible", timeout=45000)
+    opened = page.evaluate(_TILE_POSITIONS_JS)
+    x = {node_id: at[0] for node_id, at in opened.items()}
+    assert x[SCN_LOAD] == x[SCN_FACTOR] < x[SCN_BASE] < x[SCN_TALL] < x[SCN_COMPARE], (
+        f"tile columns {x!r}: the loader and the shared Parameter node first, then "
+        f"one column per scenario, then the node reading both"
+    )
+
+    # The bar floats over the top of the canvas, so a header must be below it.
+    canvas = page.locator(".react-flow").first.bounding_box()
+    bar = page.locator("[data-curio-menu-bar]").first.bounding_box()
+    assert canvas and bar, "the dashboard has no canvas or no bar"
+    top = max(canvas["y"], bar["y"] + bar["height"])
+    for scenario_id, name, member in (("base", "Baseline", SCN_BASE), ("tall", "Twice as tall", SCN_TALL)):
+        header = page.locator(f'[data-scenario-header="{scenario_id}"]')
+        expect(header).to_have_text(name, timeout=20000)
+        chip = header.locator("span").first
+        color = chip.evaluate("(el) => getComputedStyle(el).backgroundColor")
+        assert color == SCENARIO_COLORS[scenario_id], f"{name}'s header is {color}"
+        box = header.bounding_box()
+        tile = node_locator(page, member).bounding_box()
+        assert box and tile, f"{name}'s header or tile has no box"
+        assert top <= box["y"] and box["y"] + box["height"] <= tile["y"], (
+            f"{name}'s header {box!r} is not in view above its tile {tile!r} (view starts at {top})"
+        )
+        assert header.get_by_role("button").count() == 0, "a dashboard header offers a button"
+    assert page.locator("[data-scenario-frame]").count() == 2
+
+    # Drag a scenario's tile away, then put every tile back in its column.
+    page.get_by_test_id("edit-layout-btn").click()
+    handle = page.locator(
+        f'.react-flow__node[data-id="{SCN_BASE}"] .curio-dashboard-tile-handle'
+    ).first
+    grab = handle.bounding_box()
+    assert grab, "the tile's title band has no box to grab"
+    gx, gy = grab["x"] + grab["width"] / 2, grab["y"] + grab["height"] / 2
+    page.mouse.move(gx, gy)
+    page.mouse.down()
+    page.mouse.move(gx + 140, gy + 70, steps=10)
+    page.mouse.up()
+    dragged = page.evaluate(_TILE_POSITIONS_JS)
+    assert dragged[SCN_BASE] != opened[SCN_BASE], "the drag did not move the tile"
+
+    page.get_by_test_id("arrange-by-scenario-btn").click()
+    arranged = page.evaluate(_TILE_POSITIONS_JS)
+    assert arranged == opened, f"Arrange by scenario left {arranged!r}, not the columns {opened!r}"
+
+    page.get_by_test_id("save-layout-btn").click()
+    page.get_by_test_id("save-layout-btn").wait_for(state="detached", timeout=20000)
+    after = _project(current_server, session["token"], project_id)
+    for node_id, (tx, ty) in opened.items():
+        saved = _node_in_spec(after, node_id)
+        assert (saved.get("dashboardX"), saved.get("dashboardY")) == (tx, ty), (
+            f"{node_id} saved at {saved.get('dashboardX')!r}, {saved.get('dashboardY')!r}, not its column's {tx}, {ty}"
+        )
+        assert (saved["x"], saved["y"]) == (
+            _node_in_spec(before, node_id)["x"], _node_in_spec(before, node_id)["y"],
+        ), f"the dashboard moved {node_id} on the canvas"
 
 
 def test_the_dashboard_is_a_layer_only_while_it_is_panned(
