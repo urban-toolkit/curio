@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
   "title": "Curio example prompt fixture (v1)",
-  "description": "One reviewed, checked-in pairing of a natural-language prompt with a shipped example dataflow, used by the example-derived agent validation harness (memo dev/121, DEC-077). The evaluated model receives `prompt` (and `context`) and nothing else: `expected`, `required`, `intents` and `source` are the harness's answer key and must never be sent to it. The format is also the fine-tuning export unit -- `split` and `review` govern that, and held-out fixtures are never training data.",
+  "description": "One reviewed, checked-in pairing of a natural-language prompt with a shipped example dataflow, used by the example-derived agent validation harness (memo dev/121, DEC-077). The evaluated model receives `prompt` (and `context`) and nothing else: `expected`, `required`, `intents` and `source` are the harness's answer key and must never be sent to it. The format is also the unit `agent_eval export` writes, chosen by `split` and `review`.",
   "type": "object",
   "required": [
     "fixtureId",
@@ -430,7 +430,7 @@
         "validation",
         "heldout"
       ],
-      "description": "Fine-tuning export split. Immutable once approved; a heldout fixture is never training data (DEC-077)."
+      "description": "Export split. Immutable once approved."
     },
     "review": {
       "type": "object",
@@ -481,7 +481,7 @@
         "dataContent"
       ],
       "additionalProperties": false,
-      "description": "What a training or evaluation export of this fixture would carry, and under which licence (memo dev/122). Declared rather than assumed: `OQ-010`'s recorded posture treats unclassified context as ineligible for remote egress, so a fixture is eligible for a fine-tuning upload only while `dataContent` is `identifiers-only`. Absent means the shipped corpus's default, and a test asserts every shipped fixture declares it explicitly.",
+      "description": "What an export of this fixture would carry, and under which licence (memo dev/122). Declared rather than assumed: `OQ-010`'s recorded posture treats unclassified context as ineligible for remote egress, so a fixture may leave the install only while `dataContent` is `identifiers-only`. Absent means the shipped corpus's default, and a test asserts every shipped fixture declares it explicitly.",
       "properties": {
         "dataContent": {
           "type": "string",
@@ -489,7 +489,7 @@
             "identifiers-only",
             "user-content"
           ],
-          "description": "`identifiers-only`: the row carries the prompt, the expected graph shape and the plan text plus dataset and package IDENTIFIERS \u2014 no dataset row, column, geometry or file. `user-content`: the row would carry content a person authored in their own dataflow, which needs its own consent surface and is refused by the training-set builder until it has one."
+          "description": "`identifiers-only`: the row carries the prompt, the expected graph shape and the plan text plus dataset and package IDENTIFIERS, and no dataset row, column, geometry or file. `user-content`: the row would carry content a person authored in their own dataflow, which needs its own consent surface first."
         },
         "licence": {
           "type": "string",

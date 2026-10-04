@@ -1,9 +1,9 @@
 """The one user policy an evaluation plays (memo dev/123, ``DEC-079``).
 
 An evaluation has to decide what its "user" does with each proposal the agent
-returns, and that decision cannot vary between callers: a UI run, a remote CLI
-run and a CI run that answered differently would be measuring three different
-things while reporting one number.
+returns, and that decision cannot vary between callers: a remote CLI run and a
+CI run that answered differently would be measuring two different things while
+reporting one number.
 
 The policy, written once:
 

@@ -967,8 +967,8 @@ def render_autk_grammar_ts() -> str:
 
 # --- System turn composition -------------------------------------------------
 #
-# Every system turn, for an attached run, a delegated run or a training
-# example, is composed here from fixed slots in a fixed order. A slot holds one
+# Every system turn, for an attached run or a delegated run, is composed here
+# from fixed slots in a fixed order. A slot holds one
 # kind of text with one owner:
 #
 #   preamble       the built-ins' shared preamble, or a definition's own; optional

@@ -202,35 +202,6 @@ def _assert_guest_can_save(user) -> None:
         raise ProjectError("Guest users cannot save projects", 403)
 
 
-def _assert_evaluation_run_not_writing(
-    user_key: str, existing_spec: Optional[dict]
-) -> None:
-    """Refuse a client save into a project an evaluation is still building.
-
-    The rule and its reasoning live with the marker
-    (``agents/evaluation/authorization``); this reads the run's phase, which
-    the rule needs and cannot look up itself, and translates its refusal into
-    this domain's own error so the route answers 409 with that sentence.
-
-    This is NOT the general staleness rule — that is ``concurrency``, and it
-    applies to every project. This one says only that a run owns the project it
-    created until it reaches a terminal phase.
-    """
-    from utk_curio.backend.app.agents.evaluation import authorization as eval_auth
-    from utk_curio.backend.app.agents.evaluation import records as eval_records
-
-    marker = eval_auth.marker_of(existing_spec or {})
-    if marker is None:
-        return
-    record = eval_records.read(user_key, marker.run_id)
-    if not record or record.phase in eval_records.TERMINAL_PHASES:
-        return
-    try:
-        eval_auth.assert_run_is_not_writing(existing_spec or {})
-    except eval_auth.ClientSaveRefused as refusal:
-        raise ProjectError(str(refusal), 409) from refusal
-
-
 def _humanize_node_type(node_type: Optional[str]) -> Optional[str]:
     """Friendly fallback title from a node type slug, e.g.
     ``curio.builtin/autk-grammar`` → ``Autk Grammar``. Returns ``None`` when no
@@ -743,11 +714,6 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
                 )
             except concurrency.SaveWouldLoseWork as refusal:
                 raise ProjectError(str(refusal), 409) from refusal
-            # An evaluation run owns its project until it finishes; that is
-            # about evaluations rather than about staleness, so it stays its
-            # own rule. Its graph clause is gone — dev/124's rule covers it for
-            # every project.
-            _assert_evaluation_run_not_writing(ukey, existing_spec)
             from utk_curio.backend.app.agents.repositories.project_agents import preserve_agent_state
             from utk_curio.backend.app.agents.application.attachments import prune_orphaned_attachments
             from utk_curio.backend.app.agents.repositories.sessions import delete_session

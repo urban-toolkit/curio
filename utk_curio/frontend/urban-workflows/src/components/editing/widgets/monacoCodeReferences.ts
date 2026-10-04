@@ -12,6 +12,14 @@
  */
 import { useEffect } from "react";
 import "./widgetReferences.css";
+import {
+  chipDecorations,
+  chipSpans,
+  chipToDelete,
+  snapPosition,
+  type ChipMark,
+  type ChipSpan,
+} from "./referenceChips";
 import { effectiveValue, type WidgetDef } from "../../../utils/widgets/widgetModel";
 import {
   findReferences,
@@ -51,14 +59,21 @@ export function offsetToPosition(code: string, offset: number): { lineNumber: nu
   return { lineNumber: line, column: offset - lastBreak };
 }
 
-export interface ReferenceMark {
-  range: LineRange;
+export interface ReferenceMark extends ChipMark {
   /** What stands inside the reference. */
   name: string;
   kind: "widget" | "input";
-  problem: string | null;
-  hover: string;
 }
+
+const toRange = (
+  start: { lineNumber: number; column: number },
+  end: { lineNumber: number; column: number },
+): LineRange => ({
+  startLineNumber: start.lineNumber,
+  startColumn: start.column,
+  endLineNumber: end.lineNumber,
+  endColumn: end.column,
+});
 
 /** What a reference's chip says when nothing is wrong with it. */
 function hoverFor(inner: string, scope: ReferenceScope, language: CodeLanguage): string {
@@ -82,7 +97,7 @@ function hoverFor(inner: string, scope: ReferenceScope, language: CodeLanguage):
   return `input ${parsed.slot}${from}` + (input?.dataType ? ` (${input.dataType})` : "");
 }
 
-/** Every reference in *code*, where it is, and what its chip says. */
+/** Every reference in *code*, where it and its name are, and what its chip says. */
 export function referenceMarks(code: string, scope: ReferenceScope, language: CodeLanguage): ReferenceMark[] {
   const refs = findReferences(code);
   const contexts = referenceContexts(code, refs, language);
@@ -91,22 +106,28 @@ export function referenceMarks(code: string, scope: ReferenceScope, language: Co
     const end = offsetToPosition(code, ref.end);
     const written = code.slice(ref.start, ref.end);
     const problem = referenceProblem(written, ref.inner, scope, contexts[index], language);
+    // The name starts after "[!!" and the spaces that follow it.
+    let nameStart = ref.start + 3;
+    while (nameStart < ref.end && /\s/.test(code[nameStart])) nameStart += 1;
+    const nameStartPos = offsetToPosition(code, nameStart);
+    const nameEndPos = offsetToPosition(code, nameStart + ref.inner.length);
+    const kind = parseReference(ref.inner).kind;
     return {
-      range: {
-        startLineNumber: start.lineNumber,
-        startColumn: start.column,
-        endLineNumber: end.lineNumber,
-        endColumn: end.column,
-      },
+      range: toRange(start, end),
+      nameRange:
+        start.lineNumber === end.lineNumber && ref.inner.length > 0 ? toRange(nameStartPos, nameEndPos) : null,
       name: ref.inner,
-      kind: parseReference(ref.inner).kind,
+      kind,
       problem,
       hover: problem ?? hoverFor(ref.inner, scope, language),
+      // An input or column chip is drawn like a widget's, in green.
+      kindClass: kind === "input" ? chipClass({ kind, problem }) : null,
     };
   });
 }
 
-/** The chip class for *mark*: widget chips keep the classes #670 gave them. */
+/** The class that names *mark*'s kind: widget chips keep the classes #670 gave
+ * them, and input chips carry theirs beside the box's (`referenceChips.ts`). */
 export function chipClass(mark: Pick<ReferenceMark, "kind" | "problem">): string {
   const base = mark.kind === "input" ? "curio-input-ref" : "curio-widget-ref";
   return mark.problem ? `${base}-problem` : base;
@@ -184,22 +205,66 @@ export function useCodeReferences(
   useEffect(() => {
     const collection = editor?.createDecorationsCollection?.([]);
     if (!collection) return;
+    let spans: ChipSpan[] = [];
     const update = () => {
       const code = editor.getModel?.()?.getValue?.() ?? "";
-      collection.set(
-        referenceMarks(code, scope, language).map((m) => ({
-          range: m.range,
-          options: {
-            inlineClassName: chipClass(m),
-            hoverMessage: { value: m.hover },
-          },
-        })),
-      );
+      const marks = referenceMarks(code, scope, language);
+      collection.set(chipDecorations(marks));
+      spans = chipSpans(marks);
     };
     update();
-    const sub = editor.onDidChangeModelContent?.(update);
+    const contentSub = editor.onDidChangeModelContent?.(update);
+
+    // The caret never rests inside a chip: one arrow key steps over it.
+    let previous: { lineNumber: number; column: number } | null = editor.getPosition?.() ?? null;
+    const cursorSub = editor.onDidChangeCursorPosition?.((event: any) => {
+      const snapped = snapPosition(spans, event.position, previous);
+      previous = snapped ?? event.position;
+      if (!snapped) return;
+      const selection = editor.getSelection?.();
+      if (selection && !selection.isEmpty?.()) {
+        editor.setSelection({
+          selectionStartLineNumber: selection.selectionStartLineNumber,
+          selectionStartColumn: selection.selectionStartColumn,
+          positionLineNumber: snapped.lineNumber,
+          positionColumn: snapped.column,
+        });
+      } else {
+        editor.setPosition(snapped);
+      }
+    });
+
+    // Backspace after a chip, or Delete before it, removes the whole reference.
+    const keySub = editor.onKeyDown?.((event: any) => {
+      const key = event.browserEvent?.key;
+      if (key !== "Backspace" && key !== "Delete") return;
+      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      const selection = editor.getSelection?.();
+      const position = editor.getPosition?.();
+      if (!position || (selection && !selection.isEmpty?.())) return;
+      const chip = chipToDelete(spans, position, key);
+      if (!chip) return;
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      editor.pushUndoStop?.();
+      editor.executeEdits("curio-widget-ref", [
+        {
+          range: {
+            startLineNumber: chip.lineNumber,
+            startColumn: chip.startColumn,
+            endLineNumber: chip.lineNumber,
+            endColumn: chip.endColumn,
+          },
+          text: "",
+        },
+      ]);
+      editor.pushUndoStop?.();
+    });
+
     return () => {
-      sub?.dispose?.();
+      contentSub?.dispose?.();
+      cursorSub?.dispose?.();
+      keySub?.dispose?.();
       collection.clear?.();
     };
   }, [editor, scope, language]);

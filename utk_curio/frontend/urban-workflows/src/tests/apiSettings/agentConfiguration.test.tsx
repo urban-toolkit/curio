@@ -12,7 +12,7 @@ import { render, screen, waitFor, fireEvent, within } from "@testing-library/rea
 const WORK = {
   id: "llm-00000000000a", label: "Work", endpoint: "own", apiType: "openai_compatible",
   baseUrl: "https://api.openai.com/v1", baseUrlHost: "api.openai.com", hasApiKey: true,
-  model: "gpt-4o-mini", origin: "user", createdAt: 1, updatedAt: 1,
+  model: "gpt-4o-mini", createdAt: 1, updatedAt: 1,
 };
 const LOCAL = { ...WORK, id: "llm-00000000000b", label: "Local", baseUrl: "http://localhost:11434/v1",
   baseUrlHost: "localhost:11434", hasApiKey: false, model: "llama3" };

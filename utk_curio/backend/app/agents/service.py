@@ -1,8 +1,8 @@
 """Public facade of the agents application layer (memo dev/142, B2; re-derived on enh/agent-catalog).
 
 The implementation lives in the layered ``application/`` subpackages; this
-module is the single stable entry point. Routes, ``projects``, ``evaluation``
-and ``training`` import the service API from here, never from a layer module.
+module is the single stable entry point. Routes and ``projects`` import the
+service API from here, never from a layer module.
 Nothing is defined here. Mirrors ``datasets/service.py`` and ``packages/service.py``.
 """
 
@@ -106,9 +106,6 @@ from utk_curio.backend.app.agents.application.turns.policy import (
     CONTEXT_MAX_CHARS,
     DEPLOYMENT_MAX_OUTPUT_TOKENS,
 )
-from utk_curio.backend.app.agents.application.turns.roster import (
-    roster_block,
-)
 from utk_curio.backend.app.agents.application.turns.titles import (
     TITLE_MAX_OUTPUT_TOKENS,
     TITLE_PROMPT,
@@ -179,7 +176,6 @@ __all__ = [
     "PACKAGE_AUTHORING_CAPABILITIES",
     "CONTEXT_MAX_CHARS",
     "DEPLOYMENT_MAX_OUTPUT_TOKENS",
-    "roster_block",
     "TITLE_MAX_OUTPUT_TOKENS",
     "TITLE_PROMPT",
     "sanitize_title",
