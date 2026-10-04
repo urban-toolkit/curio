@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/04-vega-lite-multi-flow-dashboard.json",
-    "sha256": "dac6cb72995438c8c69920ee262bc695b4d0dd4fdec307ff4ff01ecb0e14708f",
+    "sha256": "5e94ebfbc937a379244851c674d5c2843092168cde3f750e850c960546984a94",
     "walkthrough": "docs/examples/04-vega-lite-multi-flow-dashboard.md"
   },
   "prompt": "Build me a red-light violations dashboard from the Chicago red-light violations table in the Data Catalog. Load it once and branch it into six independent stories, each ending in its own Vega-Lite view: a seasonal trend over time; a monthly heatmap paired with a linked daily trend; a stacked area chart by season and year; the top three intersections per year; camera count against compliance; and a spatial brush linked to a top-N bar chart. Three of those views need two prepared tables combined into one input before the chart can read them, and a couple of the branches need a Python computation step rather than a plain transformation.",
@@ -124,27 +124,6 @@
         "hasContent": true
       },
       {
-        "ref": "merge1",
-        "type": "curio.builtin/merge-flow",
-        "role": "merge",
-        "executable": false,
-        "hasContent": false
-      },
-      {
-        "ref": "merge2",
-        "type": "curio.builtin/merge-flow",
-        "role": "merge",
-        "executable": false,
-        "hasContent": false
-      },
-      {
-        "ref": "merge3",
-        "type": "curio.builtin/merge-flow",
-        "role": "merge",
-        "executable": false,
-        "hasContent": false
-      },
-      {
         "ref": "visualization1",
         "type": "curio.builtin/vis-vega",
         "role": "visualization",
@@ -260,39 +239,36 @@
       },
       {
         "from": "transform4",
-        "to": "merge1",
-        "kind": "data",
-        "slot": 0
+        "to": "analysis1",
+        "kind": "data"
       },
       {
         "from": "transform5",
-        "to": "merge1",
+        "to": "analysis1",
         "kind": "data",
         "slot": 1
       },
       {
         "from": "transform6",
-        "to": "merge2",
-        "kind": "data",
-        "slot": 0
+        "to": "analysis2",
+        "kind": "data"
       },
       {
         "from": "transform7",
-        "to": "merge2",
+        "to": "analysis2",
         "kind": "data",
         "slot": 1
       },
       {
         "from": "transform8",
-        "to": "merge3",
+        "to": "analysis3",
         "kind": "data",
         "slot": 1
       },
       {
         "from": "transform9",
-        "to": "merge3",
-        "kind": "data",
-        "slot": 0
+        "to": "analysis3",
+        "kind": "data"
       },
       {
         "from": "transform9",
@@ -307,21 +283,6 @@
       {
         "from": "transform11",
         "to": "visualization6",
-        "kind": "data"
-      },
-      {
-        "from": "merge1",
-        "to": "analysis1",
-        "kind": "data"
-      },
-      {
-        "from": "merge2",
-        "to": "analysis2",
-        "kind": "data"
-      },
-      {
-        "from": "merge3",
-        "to": "analysis3",
         "kind": "data"
       }
     ],
@@ -346,7 +307,6 @@
   "execution": {
     "mode": "sandbox",
     "browserOnlyKinds": [
-      "curio.builtin/merge-flow",
       "curio.builtin/vis-vega"
     ],
     "notes": null
@@ -380,5 +340,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "The largest curated example: 24 nodes, six branches, three merge points. Prompt describes branches, never node types by id."
+  "notes": "The largest curated example: 24 nodes, six branches, three nodes that each join two inputs. Prompt describes branches, never node types by id."
 }

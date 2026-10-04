@@ -1,13 +1,13 @@
 {
   "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
-  "fixtureId": "Widget",
+  "fixtureId": "MultiInput",
   "version": 1,
   "source": {
-    "path": "docs/examples/dataflows/Widget.json",
-    "sha256": "559ad958abed0b0f7d0bc3c0fb12db9ff2bf935b5ae5bdbbb562b7ffcd71ce23",
+    "path": "docs/examples/dataflows/MultiInput.json",
+    "sha256": "959397596f303f084eb8405821b99c9e56c08a27da65541516cc0ad14fa5881a",
     "walkthrough": null
   },
-  "prompt": "Make a nine-row table of letters and numbers in a Python computation step, and add a second computation step holding a number-input widget that returns its multiplier. Feed the table and the multiplier into one further step, route part of the flow through a fan-out, and in a further computation step multiply the table's numbers by the widget's value. End with a second combining step so the multiplied result can be read alongside the original.",
+  "prompt": "Load two small nine-row tables of the same letters with different numbers, feed both into one step, and in a Python computation step join them on the letter column and add the average of the two number columns. Also pass one of the combined inputs straight through a second computation step unchanged.",
   "context": null,
   "required": {
     "datasets": [],
@@ -31,40 +31,34 @@
         "hasContent": true
       },
       {
-        "ref": "analysis3",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "pool1",
-        "type": "curio.builtin/data-pool",
-        "role": "pool",
-        "executable": false,
-        "hasContent": false
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
       }
     ],
     "edges": [
       {
-        "from": "analysis1",
-        "to": "analysis3",
-        "kind": "data",
-        "slot": 1
-      },
-      {
         "from": "analysis2",
-        "to": "analysis3",
+        "to": "analysis1",
         "kind": "data"
       },
       {
-        "from": "analysis2",
-        "to": "pool1",
+        "from": "loader1",
+        "to": "analysis2",
         "kind": "data"
       },
       {
-        "from": "analysis3",
-        "to": "pool1",
+        "from": "loader2",
+        "to": "analysis2",
         "kind": "data",
         "slot": 1
       }
@@ -79,23 +73,19 @@
     {
       "ref": "analysis2",
       "mustMention": [
-        "multiplier",
-        "widget"
+        "merge",
+        "average"
       ]
     }
   ],
   "execution": {
     "mode": "sandbox",
-    "browserOnlyKinds": [
-      "curio.builtin/data-pool"
-    ],
+    "browserOnlyKinds": [],
     "notes": null
   },
   "capability": {
-    "tier": "T2",
-    "needs": [
-      "widgets"
-    ],
+    "tier": "T0",
+    "needs": [],
     "skip": []
   },
   "thresholds": {
@@ -104,7 +94,7 @@
     "topology": 0.9,
     "dependencies": 1.0
   },
-  "split": "train",
+  "split": "validation",
   "review": {
     "status": "pending-owner-review",
     "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
@@ -116,5 +106,5 @@
     "licence": "MIT (this repository)",
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "The widget-value path plus two nodes with two inputs each; the multiplier arrives as the second input."
+  "notes": "The fan-in case: two loaders into one node's two inputs, in an order that matters."
 }
