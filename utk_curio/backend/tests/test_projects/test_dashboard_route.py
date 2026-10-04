@@ -23,6 +23,9 @@ def _auth(token):
 
 
 def _spec_with_pinned_chart():
+    """A producer feeding a pinned chart, as a dataflow saved from the canvas
+    holds it (``TrillGenerator``): the template id as ``type`` and
+    ``dashboardPinned`` on the node, with no ``data`` block (#693)."""
     return {
         "dataflow": {
             "name": "dash-route-test",
@@ -32,21 +35,16 @@ def _spec_with_pinned_chart():
             "nodes": [
                 {
                     "id": "py",
-                    "type": "__curioUniversalNode",
+                    "type": "curio.builtin/computation-analysis",
                     "x": 0,
                     "y": 0,
-                    "data": {"nodeType": "curio.builtin/computation-analysis"},
                 },
                 {
                     "id": "chart",
-                    "type": "__curioUniversalNode",
+                    "type": "curio.builtin/vis-vega",
                     "x": 300,
                     "y": 0,
                     "dashboardPinned": True,
-                    "data": {
-                        "nodeType": "curio.builtin/vis-vega",
-                        "dashboardPinned": True,
-                    },
                 },
             ],
             "edges": [{"id": "py-chart", "source": "py", "target": "chart"}],

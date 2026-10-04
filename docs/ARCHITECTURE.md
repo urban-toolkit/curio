@@ -1523,6 +1523,43 @@ a full listing for hub and live-output ids. Both paths run the same containment
 check, so an index row pointing outside the allowed read roots is refused rather
 than served.
 
+### Saved outputs and dataflow runs
+
+A dataflow's saved outputs are the `outputs` list of its `manifest.json`: one entry per node with `node_id`, `filename`, `data_type` and `produced_at`. `produced_at` is the time in the output's artifact id (`<ms>_<hex>`), stamped by the server when the output is first recorded and kept while the same file stays recorded.
+
+- A save (`projects/services.py::update_project`) records the outputs it sends and drops the others. When the manifest already holds a newer output for a node, by `produced_at`, that output stays and the older one sent is not installed. An entry without `produced_at` counts as oldest.
+- `record_node_outputs` records outputs without a save: each replaces its node's entry, and the other entries stay. It writes no spec and does not move the dataflow's revision.
+- Both read and write the manifest under the spec lock.
+
+[`execution/save_policy.py`](../utk_curio/backend/app/execution/save_policy.py) decides which outputs a run on the server installs and records, as `utils/saveOutputDataset.ts` decides it on the canvas. `utils/saveOutputDataset.cases.json` holds the cases both sides run.
+
+The run tables `dataflow_run` and `dataflow_run_step` ([`runs/models.py`](../utk_curio/backend/app/runs/models.py), alembic revision `f7a8b9c0d1e2`) hold one row per run and one per node the run touched. A run with no `target_node_id` ran the whole dataflow. `runs/repositories.py` keeps, per dataflow and per kind, the newest 50 runs and every run younger than 30 days, pruning when a run is created. A project's runs and their steps are deleted with it.
+
+#### Runs on the server
+
+A run executes the saved dataflow on a thread of the backend, so it goes on whether or not a browser follows it.
+
+- **Plan.** [`execution/run_engine.py`](../utk_curio/backend/app/execution/run_engine.py)`::plan_run` takes every node, or one node and its ancestors less those whose outputs the canvas sends to reuse. [`execution/run_plan.py`](../utk_curio/backend/app/execution/run_plan.py) orders them: `topological_levels` is the twin of `computeTopologicalLevels` (`providers/flow/runLevels.cases.json` holds the cases both run), and an interaction link, by its type or its `in/out` handles, orders nothing.
+- **Roles.** `node_role` gives each node one of three. `run`: the template is executable. `forward`: the node passes its input on (a chart, a pool, a Simple View, an Autark render, a Data Export), or has nothing to run (a Parameter node, whose value reaches the nodes that name it through their code). `browser`: only the browser makes its data (an Autark data or compute node, a Spatial Join).
+- **Walk.** `run_events` runs one level at a time, every node of a level at once. A node fed by a failed or skipped node is skipped, with the reason naming that node; a node fed by a `browser` node waits, and the run ends `needs_canvas`. Each executed node goes through `node_exec` with its references resolved, every line indented as `PythonInterpreter.ts` indents it, and one upstream's output as it is or several as an `outputs` bundle in circle order. A sandbox that cannot be asked fails that node only.
+- **Thread.** [`runs/service.py`](../utk_curio/backend/app/runs/service.py) records each event in the run tables, records an output as `save_policy` says, and passes the event on. The sign-in token that started the run tags its artifacts and lives on the thread only.
+- **Jobs.** [`common/job_registry.py`](../utk_curio/backend/app/common/job_registry.py) holds live jobs in this process: one per dataflow, two per account (`runs/jobs.py`), keyed by attachment for agent jobs (`agents/infrastructure/agent_jobs.py`). A follower replays a job's events and then tails them; leaving only stops following.
+- **Restarts.** A run another backend process left queued or running becomes `interrupted` when this one starts, and when a run is read. Nothing runs again by itself.
+- **Cancel.** Nothing new starts once a run is cancelled; the node already running finishes and its output is dropped.
+
+`runner.py::run_through_node`, behind Solve's validation and an agent's run through a node, walks a slice one node at a time and stops at the first failure, sending seeded code straight to the sandbox. It takes upstreams, input circles, references, roles and the ancestor slice from the same places as a run; `tests/test_runs/test_run_parity.py` runs both on the same dataflows.
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/api/projects/<id>/runs` | POST | Start a run of the saved dataflow: `{target?, reuse?, specRevision?}`. 202; 409 for a revision that is not the saved one or while the dataflow runs (with `runId`); 429 over the account's two runs; 403 for a hosted guest |
+| `/api/projects/<id>/runs` | GET | The dataflow's runs, newest first; `?kind=all\|node` |
+| `/api/runs` | GET | Every run of the account; `?status=`, `?kind=` |
+| `/api/runs/<id>` | GET | A run with its steps |
+| `/api/runs/<id>/stream` | GET | SSE: a `run` event, then `run_started`, `step_started`, `step_finished` and `run_finished`, replayed and then followed |
+| `/api/runs/<id>/cancel` | POST | Stop before the next node |
+| `/api/runs/<id>/rerun` | POST | Run the same thing again |
+| `/api/runs/<id>/steps/<nodeId>` | POST | A tab reports a node the browser ran: `{status: ok\|error, message?}` |
+
 ### Dataset Routes
 
 Defined in `backend/app/datasets/routes.py`; all require authentication. See [DATA-CATALOG.md](DATA-CATALOG.md) for the user-facing model.
@@ -1758,6 +1795,8 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/datasets/repositories/` | Installed / local / registry / user-store persistence, plus the per-user dataset index |
 | `backend/app/datasets/repositories/index.py` | The dataset index: write-through, disk reconciliation, never-raise `safe_*` wrappers |
 | `backend/app/datasets/models.py` | `DatasetIndexEntry`, the index's SQLAlchemy table |
+| `backend/app/runs/models.py` + `repositories.py` | `DataflowRun` and `DataflowRunStep`, the run tables, and their reads, writes and retention |
+| `backend/app/execution/save_policy.py` | Which outputs a run on the server installs and records, as the canvas decides it |
 | `backend/app/datasets/infrastructure/` | Storage helpers, file metadata, output paths, catalog utilities |
 | `backend/app/datasets/schemas/` | Request and catalog-item serialization schemas |
 | `backend/app/agents/routes/` | `/api/agents/*` endpoints, one module per resource (`catalog`, `lifecycle`, `attachments`, `proposals`, `turns`, `solve`, `llm`); `common.py` holds the blueprint and the shared helpers; the route table is a contract test (`tests/test_agents/route_table.json`) |
