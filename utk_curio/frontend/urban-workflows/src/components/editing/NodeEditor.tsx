@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import Tab from "react-bootstrap/Tab";
 import Tabs from "react-bootstrap/Tabs";
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -30,11 +30,23 @@ import {
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { ICodeData } from "../../types";
 import { useFlowContext } from "../../providers/FlowProvider";
+import { useNotebookViewContext } from "../../providers/flow/notebookViewContext";
 import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
 import { contentMountStyle, outputMountStyle } from "../../utils/outputMountStyle";
 import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
-import type { WidgetLanguage } from "../../utils/widgets/widgetSubstitution";
+import {
+    describeEmptyInputs,
+    describeReferenceProblems,
+    resolveReferences,
+    type CodeLanguage,
+    type InputScope,
+    type ReferenceScope,
+} from "../../utils/references/codeReferences";
+import { useInputScope } from "../../hook/useInputScope";
+
+const NO_WIDGETS: WidgetDef[] = [];
+const NO_INPUTS: InputScope[] = [];
 
 type NodeEditorProps = {
     outputId?: string;
@@ -115,17 +127,39 @@ function NodeEditor({
         markNodeStale?.(data.nodeId);
         markDirty?.();
     };
-    const widgetLanguage: WidgetLanguage = grammar
+    const widgetLanguage: CodeLanguage = grammar
         ? "json"
         : unversionedNodeType(nodeType) === NodeType.JS_COMPUTATION
             ? "javascript"
             : "python";
+
+    // #662: what the node's references name: its widgets and its wired
+    // inputs. Input and column tags sit above Python and JavaScript code.
+    const { inputs, emptyInputs, loadColumns } = useInputScope(data);
+    const scope: ReferenceScope = useMemo(
+        () => ({ widgets: widgetsTab ? widgets : NO_WIDGETS, inputs }),
+        [widgetsTab, widgets, inputs],
+    );
+    const stripInputs = widgetLanguage === "json" ? NO_INPUTS : inputs;
+    // The play callback is registered once, so a run without a Widgets tab
+    // reads the scope from here.
+    const runScopeRef = useRef({ scope, emptyInputs });
+    runScopeRef.current = { scope, emptyInputs };
     // A dashboard tile shows its output, not its editor. Only when it HAS an
     // output pane: a code node's result is the text box under its editor, so
     // forcing the pane unconditionally rendered a pinned code node as an empty
     // tile with nothing reachable on it.
     const hasOutputPane = outputId != undefined || contentComponent != undefined;
-    const effectiveTab = dashboardOn && hasOutputPane ? "output" : activeTab;
+    // A notebook cell shows its input and its output at once: the output pane
+    // stays visible under the input tabs (Node.css), so a run, which would
+    // switch to the Output tab, leaves the input tab in place.
+    const notebook = useNotebookViewContext();
+    const split = notebook.on && !dashboardOn && hasOutputPane && Boolean(code || grammar);
+    const effectiveTab = dashboardOn && hasOutputPane
+        ? "output"
+        : split && activeTab === "output"
+            ? resolveInitialEditorTab({ code, grammar, widgets: widgetsTab })
+            : activeTab;
 
     const contentComponentBypass = useRef(false);
     // Set while a *load* is priming the widgets, so the marker round-trip it
@@ -160,14 +194,18 @@ function NodeEditor({
     const sendCodeToWidgets = (code: string) => {
         setUserCode(code);
         if (!widgetsTab) {
-            // Why: WidgetsEditor is the bridge that resolves widget markers and
+            // Why: WidgetsEditor is the bridge that resolves references and
             // hands the result to CodeEditor (via sendReplacedCode). It only
             // mounts when the widgets tab is enabled, so for code nodes with
             // hasWidgets=false (e.g. js-computation) the markersDirty toggle
             // has no listener and CodeEditor's interpretCode is never reached
-            // — the play spinner spins forever. Forward the code straight to
-            // CodeEditor here so the play flow completes without a widgets tab.
-            sendReplacedCode(code);
+            // — the play spinner spins forever. Resolve here instead, with the
+            // same table, so input chips work in those nodes too.
+            const { scope: runScope, emptyInputs: waiting } = runScopeRef.current;
+            const resolved = resolveReferences(String(code ?? ""), runScope, widgetLanguage);
+            if (waiting.length > 0) resolveError(describeEmptyInputs(waiting, runScope.inputs));
+            else if (resolved.problems.length > 0) resolveError(describeReferenceProblems(resolved.problems));
+            else sendReplacedCode(resolved.code);
             return;
         }
         setMarkersDirty((prev: boolean) => {
@@ -277,6 +315,7 @@ function NodeEditor({
                     <Row style={{ height: "100%" }}>
                         <Col md={12} style={{ height: "100%", padding: 0 }}>
                             <Tab.Content
+                                className={split ? "curio-notebook-split" : undefined}
                                 style={{ ...activeTabContentStyle, zIndex: 10 }}
                             >
                                 {code ? (
@@ -299,7 +338,9 @@ function NodeEditor({
                                             data={data}
                                             output={output}
                                             nodeType={nodeType}
-                                            widgets={widgetsTab ? widgets : []}
+                                            references={scope}
+                                            stripInputs={stripInputs}
+                                            onLoadColumns={loadColumns}
                                             widgetLanguage={widgetLanguage}
                                         />
                                     </Tab.Pane>
@@ -324,6 +365,8 @@ function NodeEditor({
                                             onWidgetsChange={updateWidgets}
                                             language={widgetLanguage}
                                             onResolveError={resolveError}
+                                            inputs={inputs}
+                                            emptyInputs={emptyInputs}
                                         />
                                     </Tab.Pane>
                                 ) : null}
@@ -347,7 +390,9 @@ function NodeEditor({
                                             applyGrammar={applyGrammar}
                                             schema={schema}
                                             setOutputCallback={setOutputCallback}
-                                            widgets={widgetsTab ? widgets : []}
+                                            references={scope}
+                                            stripInputs={stripInputs}
+                                            onLoadColumns={loadColumns}
                                             widgetLanguage={widgetLanguage}
                                         />
                                     </Tab.Pane>
@@ -371,6 +416,7 @@ function NodeEditor({
                                 {(outputId != undefined || contentComponent != undefined) ? (
                                     <Tab.Pane
                                         eventKey="output"
+                                        className={split ? "curio-notebook-output" : undefined}
                                         style={{ height: "100%", overflow: "hidden" }}
                                     >
                                         {outputId != undefined ? (
@@ -519,7 +565,7 @@ function NodeEditor({
                                 </Col>
                             ) : null}
 
-                            {(outputId != undefined || contentComponent != undefined) ? (
+                            {(outputId != undefined || contentComponent != undefined) && !split ? (
                                 <Col>
                                     <OverlayTrigger
                                         placement="right"

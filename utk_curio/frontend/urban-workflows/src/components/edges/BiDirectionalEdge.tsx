@@ -10,9 +10,12 @@ import {
 import { useAgentDropHoverEdge } from "../../hook/useAgentDropHoverEdge";
 import { EDGE_DROP_HOVER_ATTR, edgeDropHighlightStyle } from "./edgeDropHighlight";
 import { EdgeAgentBadges } from "../agents/attach/EdgeAgentBadges";
+import { useEdgePath } from "./useEdgePath";
 
 export default function BiDirectionalEdge({
   id,
+  source,
+  target,
   sourceX,
   sourceY,
   targetX,
@@ -23,7 +26,10 @@ export default function BiDirectionalEdge({
   markerStart,
   data
 }: EdgeProps) {
-  const [edgePath, labelX, labelY] = getBezierPath({
+  const { path: edgePath, labelX, labelY, emphasized } = useEdgePath({
+    id,
+    source,
+    target,
     sourceX,
     sourceY,
     sourcePosition,
@@ -66,7 +72,7 @@ export default function BiDirectionalEdge({
         path={edgePath}
         markerEnd={markerEnd}
         markerStart={markerStart}
-        style={edgeDropHighlightStyle(data?.keywordHighlighted ? 'blue' : 'red', dropHovered)}
+        style={edgeDropHighlightStyle(data?.keywordHighlighted ? 'blue' : emphasized ? 'darkred' : 'red', dropHovered)}
       />
       <EdgeAgentBadges edgeId={id} labelX={labelX} labelY={labelY} />
     </g>

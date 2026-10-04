@@ -10,6 +10,9 @@
   left: 0;
   width: 100%;
   z-index: 100;
+  /* The view switch takes about 60px of the slot; the bar's buttons give it
+     back by 3px a side, so the catalogs keep their labels as long as before. */
+  --curio-bar-button-padding-x: 7px;
 }
 
 /* ── Save state ──────────────────────────────────────────────────────────── */
@@ -52,8 +55,8 @@
    tooltips. Queried against the header's slot rather than the window: the
    account's name is as long as the user's, so the room left over is not a
    function of the window width alone. The slot's controls need about 790px
-   with every label showing, and about 40px more with the collaboration
-   button. */
+   with every catalog label showing and the view switch as icons, and about
+   40px more with the collaboration button. */
 @container (max-width: 800px) {
   .catalogLabel {
     display: none;

@@ -13,6 +13,7 @@
 - [Node Catalog](#node-catalog)
 - [Vega-Lite node](#vega-lite-node)
 - [Autark node](#autark-node)
+- [Notebook view](#notebook-view)
 - [Dashboards](#dashboards)
 - [Data Catalog](#data-catalog)
 - [Discovery Catalog](#discovery-catalog)
@@ -412,7 +413,40 @@ for, or a marker in the older `[!! name$TYPE$default !!]` form, stops the run
 with a message naming it; the **Widgets** tab lists them too.
 
 Widgets are not connections: a value you set is not data from another node. Data
-from the node's input reaches Python as `arg`.
+from the node's inputs reaches its code as `arg`, or through input chips (see
+[Several inputs](#several-inputs)).
+
+## Several inputs
+
+Python Computation, Data Transformation, JS Computation and Data Pool nodes take
+several input edges, and so does a package node whose input port allows more than
+one. Connect an edge to the node's input circle and a new empty circle appears
+below it; each new edge takes the next circle. Circles are numbered from 0, top
+to bottom. A Data Pool shows each input as a tab.
+
+In Python and JavaScript code, each input is a chip:
+
+1. The strip above the code shows a tag for each input: **input 0**,
+   **input 1**, and so on. Hover one to see which node feeds it.
+2. Drag a tag into the code, or click it to insert it at the cursor. It appears
+   as a green chip, written `[!! input 1 !!]`.
+3. Click the arrow beside an input's tag to list its columns, once the node that
+   feeds it has run. Drag a column's tag where a column name goes; it is written
+   `[!! input 1.population !!]`.
+
+When the node runs:
+
+- An input chip becomes the input: `arg` when the node has one input, and
+  `arg[1]` when it has several, counted in circle order.
+- A column chip becomes the column's name: `df[[!! input 0.population !!]]` runs
+  as `df["population"]`, and inside a quoted text it is the plain name.
+
+A node with several inputs runs once every one of them has a value. Deleting an
+edge closes the gap: the circles below it move up one, and their chips in the
+code are renumbered. A chip for the deleted input becomes `[!! input ? !!]` and
+stops the run until you replace it. A chip for a circle with no edge, or for a
+column its input does not have, is drawn in red and stops the run with a message
+naming it.
 
 ## Node Catalog
 
@@ -608,6 +642,27 @@ The first matching rule wins:
 | one layer with a nominal column | a map coloured by the first nominal column, `schemeTableau10` |
 | one layer with geometry only | a plain map |
 | no geometry | the editor stays empty |
+
+## Notebook view
+
+The **Canvas | Notebook** switch in the canvas bar shows a dataflow two ways. **Notebook**
+lists the same nodes as a column of cells, one under the other, and the page scrolls.
+
+- **Order.** A cell comes after every cell it reads from, in the order **File → Export as
+  notebook** writes. The nodes that read from nothing come first.
+- **Cells.** Every cell has the same size and cannot be resized or minimized. A code
+  cell shows its code with its output below; a Vega-Lite or Autark cell shows its spec
+  above its chart or map.
+- **Connections** run in the bar to the right of the cells. Each cell has its dots on its
+  right edge: its inputs at the top, numbered as their chips are (dot 0 is
+  `[!! input 0 !!]`), its interaction dot halfway down, and its output at the bottom.
+  Hover a dot to see what feeds it. Selecting a cell darkens its connections.
+- **Editing** works as on the canvas. Drag from an output dot to an input dot to connect
+  two cells, and select a connection and press Delete to remove it. A node dragged in
+  from the left rail becomes a new cell, and the page scrolls to it.
+- **Nothing is saved** about the view: the dataflow keeps its canvas layout, and
+  **Canvas** shows it as it was. The address carries the view (`?view=notebook`), so a
+  reload, or the address copied from the browser, opens it the same way.
 
 ## Dashboards
 

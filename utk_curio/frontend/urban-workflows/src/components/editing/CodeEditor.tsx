@@ -32,12 +32,12 @@ import { usePackageBackendRun } from "../../hook/usePackageBackendRun";
 import { useGrammarInputState } from "../../hook/useGrammarInputState";
 import { upstreamErroredMessage } from "../../utils/nodeEmptyState";
 import { ICodeData } from "../../types";
-import { WidgetTagStrip } from "./widgets/WidgetTag";
-import { insertReference, useWidgetReferences } from "./widgets/monacoWidgetRefs";
-import type { WidgetDef } from "../../utils/widgets/widgetModel";
-import type { WidgetLanguage } from "../../utils/widgets/widgetSubstitution";
+import { ReferenceStrip } from "./widgets/WidgetTag";
+import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
+import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
 
-const NO_WIDGETS: WidgetDef[] = [];
+const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [] };
+const NO_INPUTS: InputScope[] = [];
 
 type CodeEditorProps = {
     setOutputCallback: any;
@@ -50,9 +50,13 @@ type CodeEditorProps = {
     readOnly: boolean;
     defaultValue?: any;
     floatCode?: any;
-    /** #662: the node's widgets, whose tags sit above the editor. */
-    widgets?: WidgetDef[];
-    widgetLanguage?: WidgetLanguage;
+    /** #662: what the node's references name: its widgets and its inputs. */
+    references?: ReferenceScope;
+    /** The inputs whose tags sit above the editor, with the widgets'. */
+    stripInputs?: InputScope[];
+    /** Read an input's columns for its tags. */
+    onLoadColumns?: (slot: number) => void;
+    widgetLanguage?: CodeLanguage;
 };
 
 /** dev/117: how long after the last keystroke the code is scanned for a credential literal. */
@@ -88,14 +92,16 @@ function CodeEditor({
     readOnly,
     defaultValue,
     floatCode,
-    widgets = NO_WIDGETS,
+    references = NO_REFERENCES,
+    stripInputs = NO_INPUTS,
+    onLoadColumns,
     widgetLanguage = "python",
 }: CodeEditorProps) {
     const [code, setCode] = useState<string>(""); // code with all original markers
     const [execCount, setExecCount] = useState<number>(0);
-    // #662: the mounted editor, for the widget tags and reference chips.
+    // #662: the mounted editor, for the reference tags and chips.
     const [widgetEditor, setWidgetEditor] = useState<{ editor: any; monaco: any } | null>(null);
-    useWidgetReferences(widgetEditor?.editor, widgetEditor?.monaco, widgets, widgetLanguage);
+    useCodeReferences(widgetEditor?.editor, widgetEditor?.monaco, references, widgetLanguage);
 
     const {
         workflowNameRef,
@@ -571,10 +577,12 @@ function CodeEditor({
                     )}
                 </div>
             )}
-            <WidgetTagStrip
-                widgets={widgets}
+            <ReferenceStrip
+                widgets={references.widgets}
+                inputs={stripInputs}
                 disabled={readOnly}
-                onInsert={(name) => insertReference(widgetEditor?.editor, name)}
+                onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
+                onLoadColumns={onLoadColumns}
             />
             <div style={{ flex: 2, minHeight: 0 }}>
                 {/* Uncontrolled on purpose: a per-keystroke `value` round-trip
@@ -598,6 +606,12 @@ function CodeEditor({
                         minimap: { enabled: false },
                         readOnly: readOnly,
                         scrollBeyondLastLine: false,
+                        // A wheel the editor cannot use goes on to the page, so
+                        // the notebook view scrolls past the editor's ends. On
+                        // the canvas the wrapper's `nowheel` keeps it from
+                        // zooming, as before. Monaco reads this option only when
+                        // the editor is created, so it is not tied to the view.
+                        scrollbar: { alwaysConsumeMouseWheel: false },
                     }}
                 />
             </div>

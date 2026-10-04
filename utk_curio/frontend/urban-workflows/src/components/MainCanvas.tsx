@@ -3,6 +3,7 @@ import React, { useMemo, useState, useEffect, useRef, useCallback } from "react"
 import ReactFlow, {
     Background,
     BackgroundVariant,
+    Connection,
     ConnectionMode,
     Controls,
     Edge,
@@ -10,9 +11,17 @@ import ReactFlow, {
     FitViewOptions,
     NodeChange,
     useReactFlow,
+    useStore,
 } from "reactflow";
-import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
+import {
+    CANVAS_TITLE_ATTR,
+    fitViewWithMenuOffset,
+    paletteRailRight,
+    topOverlayBottom,
+} from "../utils/fitViewWithMenuOffset";
 import { computeTranslateExtent } from "../utils/canvasExtent";
+import { notebookFlowProps } from "../utils/notebookLayout";
+import { usePosition } from "../hook/usePosition";
 
 import { useFlowContext } from "../providers/FlowProvider";
 import { useCollab } from "../providers/CollaborationProvider";
@@ -71,6 +80,14 @@ import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentAttachmentsProvider } from "../providers/agents";
 
+const CANVAS_SCROLLER_STYLE: React.CSSProperties = { width: "100%", height: "100%" };
+const NOTEBOOK_SCROLLER_STYLE: React.CSSProperties = {
+    width: "100%",
+    height: "100%",
+    overflowX: "hidden",
+    overflowY: "auto",
+};
+
 export function MainCanvas() {
     const { showToast } = useToastContext();
     const { openDatasetDetails } = useDatasetDetails();
@@ -88,6 +105,11 @@ export function MainCanvas() {
         onNodesDelete,
         markDirty,
         saveCurrentProject,
+        notebookOn,
+        notebookContentHeight,
+        setNotebookPane,
+        registerNotebookScroller,
+        revealNodes,
     } = useFlowContext();
 
     // How far the viewport may pan, tracking the nodes rather than a fixed box
@@ -168,6 +190,68 @@ export function MainCanvas() {
     const reactFlow = useReactFlow();
     const {getZoom, getViewport, setViewport, setCenter, screenToFlowPosition, fitView} = useReactFlow();
     const viewportMotionHint = useViewportMotionHint();
+
+    // The notebook view pins React Flow to its own pane: zoom 1, no gestures,
+    // and a translate extent equal to the pane, so the page scrolls instead.
+    // Memoized on the pane's size, as `translateExtent` is above, because
+    // React Flow re-applies the extent whenever its identity changes.
+    const flowWidth = useStore((s) => s.width);
+    const flowHeight = useStore((s) => s.height);
+    const notebookProps = useMemo(
+        () => (notebookOn ? notebookFlowProps(flowWidth, flowHeight) : null),
+        [notebookOn, flowWidth, flowHeight],
+    );
+    // React Flow measures its pane after the column has made it taller, and d3
+    // constrains the view only when it moves: a view set while the extent was
+    // still the old pane's would stay shifted. So the view is set again each
+    // time the extent changes; React Flow applies the new extent first, in its
+    // own effect.
+    useEffect(() => {
+        if (notebookProps) setViewport({ x: 0, y: 0, zoom: 1 });
+    }, [notebookProps, setViewport]);
+
+    // The element the notebook scrolls in. Its size and the overlays fixed over
+    // it (top bar, title chips, palette rail) decide where the column goes.
+    const scrollerRef = useRef<HTMLDivElement | null>(null);
+    useEffect(() => {
+        const scroller = scrollerRef.current;
+        if (!scroller) return;
+        registerNotebookScroller(scroller);
+        const measure = () => {
+            const rect = scroller.getBoundingClientRect();
+            const top = topOverlayBottom();
+            const rail = paletteRailRight();
+            setNotebookPane({
+                width: scroller.clientWidth,
+                top: top === null ? 0 : Math.max(0, top - rect.top),
+                left: rail === null ? 0 : Math.max(0, rail - rect.left),
+            });
+        };
+        measure();
+        const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+        observer?.observe(scroller);
+        const title = document.querySelector(`[${CANVAS_TITLE_ATTR}]`);
+        if (title) observer?.observe(title);
+        window.addEventListener("resize", measure);
+        return () => {
+            observer?.disconnect();
+            window.removeEventListener("resize", measure);
+            registerNotebookScroller(null);
+        };
+    }, [loading, registerNotebookScroller, setNotebookPane]);
+
+    // Where a dropped node goes. On the canvas, under the pointer. In the
+    // notebook view the pointer is on a page, not on the canvas, so the node
+    // takes the next free canvas spot and its cell is scrolled into view.
+    const { getPosition } = usePosition();
+    const dropPosition = useCallback(
+        (event: React.DragEvent) =>
+            notebookOn ? getPosition() : screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+        [notebookOn, getPosition, screenToFlowPosition],
+    );
+    const revealCreated = useCallback((node: { id: string } | undefined | void) => {
+        if (node && node.id) revealNodes([node.id]);
+    }, [revealNodes]);
 
     // Test hook: expose the ReactFlow instance and a menu-aware fitView so
     // Playwright can force the same shifted viewport the in-app loader uses
@@ -304,8 +388,8 @@ export function MainCanvas() {
         event.stopPropagation();
         const dataset = readDatasetDragPayload(event.dataTransfer);
         if (dataset) {
-            const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-            createCodeNode(NodeType.DATA_LOADING, buildDatasetLoaderNodeOptions(dataset, position));
+            const position = dropPosition(event);
+            revealCreated(createCodeNode(NodeType.DATA_LOADING, buildDatasetLoaderNodeOptions(dataset, position)));
             showToast(
                 `Created a Data Loading node for ${dataset.title}.`,
                 "success",
@@ -313,7 +397,7 @@ export function MainCanvas() {
             );
             markDirty();
         }
-    }, [screenToFlowPosition, createCodeNode, markDirty, showToast, openDatasetDetails]);
+    }, [dropPosition, revealCreated, createCodeNode, markDirty, showToast, openDatasetDetails]);
 
     // A model dropped on the empty canvas becomes a node that runs it, as a
     // dataset becomes a Data Loading node. A drop on a node never gets here:
@@ -342,12 +426,12 @@ export function MainCanvas() {
             );
             return;
         }
-        const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-        createCodeNode(node.nodeType, { position, code: node.code, modelRefs: node.modelRefs });
+        const position = dropPosition(event);
+        revealCreated(createCodeNode(node.nodeType, { position, code: node.code, modelRefs: node.modelRefs }));
         const article = /^[aeiou]/i.test(node.label) ? "an" : "a";
         showToast(`Created ${article} ${node.label} node for ${model.name}.`, "success");
         markDirty();
-    }, [getStarters, screenToFlowPosition, createCodeNode, markDirty, showToast]);
+    }, [getStarters, dropPosition, revealCreated, createCodeNode, markDirty, showToast]);
 
     const handleDrop = useCallback((event: React.DragEvent) => {
         if (hasDatasetDrag(event.dataTransfer)) {
@@ -401,10 +485,10 @@ export function MainCanvas() {
         event.preventDefault();
         const type = event.dataTransfer.getData("application/reactflow") as NodeType;
         if (!type) return;
-        const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-        createCodeNode(type, { position });
+        const position = dropPosition(event);
+        revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then
@@ -432,6 +516,13 @@ export function MainCanvas() {
         onNodesDelete(changes);
         return onNodesChange(changes);
     }, [onNodesDelete, onNodesChange, markDirty]);
+
+    // A connection can move its target further down the notebook's column; the
+    // view follows it there rather than leaving the cell to vanish off screen.
+    const handleConnect = useCallback((connection: Connection) => {
+        onConnect(connection);
+        if (connection.target) revealNodes([connection.target], { ifMoved: true });
+    }, [onConnect, revealNodes]);
 
     const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
         if (changes.some((change) => change.type === "remove")) markDirty();
@@ -532,7 +623,17 @@ export function MainCanvas() {
                 onDragLeave={!isSharedView ? handleDragLeave : undefined}
                 onDrop={!isSharedView ? handleDrop : undefined}
             >
+            {/* Present in both views so switching never remounts React Flow:
+                on the canvas it fills the window and changes nothing; in the
+                notebook view it scrolls, and React Flow is as tall as the column. */}
+            <div
+                ref={scrollerRef}
+                className="curio-flow-scroller"
+                data-curio-notebook={notebookOn ? "true" : undefined}
+                style={notebookOn ? NOTEBOOK_SCROLLER_STYLE : CANVAS_SCROLLER_STYLE}
+            >
             <ReactFlow
+                style={notebookOn ? { height: notebookContentHeight, minHeight: "100%" } : undefined}
                 nodes={nodes}
                 edges={edges}
                 onNodesChange={handleNodesChange}
@@ -541,7 +642,7 @@ export function MainCanvas() {
                 selectionKeyCode={"Shift"}
                 panActivationKeyCode={null}
                 onSelectionChange={handleSelectionChange}
-                onConnect={!isSharedView ? onConnect : undefined}
+                onConnect={!isSharedView ? handleConnect : undefined}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 isValidConnection={isValidConnection}
@@ -559,14 +660,16 @@ export function MainCanvas() {
                 // Delete got no response (#153). useKeyPress bails on isInputDOMNode,
                 // so neither key can fire while the caret is in Monaco or an input.
                 deleteKeyCode={isSharedView ? null : DEFAULT_DELETE_KEY_CODES}
+                {...(notebookProps ?? {})}
                 // The version badge owns the bottom-right corner, and the
                 // attribution drawn there sat under it (#509). The other three
                 // canvases already hide it.
                 proOptions={{ hideAttribution: true }}
             >
-                <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />
-                <Controls />
+                {!notebookOn && <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />}
+                {!notebookOn && <Controls />}
             </ReactFlow>
+            </div>
             {!isSharedView ? <AgentDockOverlay /> : null}
             </div>
 

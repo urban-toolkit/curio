@@ -3,6 +3,7 @@ import CSS from "csstype";
 import { Dropdown, Spinner } from "react-bootstrap";
 
 import { useFlowContext } from "../providers/FlowProvider";
+import { useNotebookViewContext } from "../providers/flow/notebookViewContext";
 import { NodeRemoveChange, useReactFlow, useStore } from "reactflow";
 
 import { CommentsList, IComment } from "./comments/CommentsList";
@@ -166,6 +167,11 @@ export const NodeContainer = ({
         markDirty,
         defaultSaveOutputDataset,
     } = useFlowContext();
+    // A notebook cell has a fixed size and is never minimized or resized: the
+    // size comes from the column, and the node's own size stays its canvas size.
+    // An icon-only node keeps its chip, stretched to a slim row.
+    const notebook = useNotebookViewContext();
+    const notebookCell = notebook.on && !dashboardOn && !noContent;
     const saveOutputDataset = resolveSaveOutputDataset(data, defaultSaveOutputDataset);
     // Nodes created from the dataset palette load an installed listing and can't
     // regenerate a dataset — hide the save toggle and show the dataset chip instead.
@@ -243,6 +249,9 @@ export const NodeContainer = ({
     // Hover state for the minimized chip's delete control (noContent nodes have
     // no header band to put it in).
     const [chipHovered, setChipHovered] = useState(false);
+    const shownMinimized = minimized && !notebookCell;
+    const boxWidth = notebookCell ? nodeWidth : currentNodeWidth;
+    const boxHeight = notebookCell ? nodeHeight : currentNodeHeight;
 
     useEffect(() => {
         if (nodeWidth !== undefined) {
@@ -411,7 +420,9 @@ export const NodeContainer = ({
         return () => {
             resizer.removeEventListener("mousedown", initResize, false);
         };
-    }, [dashboardOn, dashboardLocked]);
+        // notebookCell: the handle unmounts in the notebook view, and the one
+        // mounted on the way back needs its listener.
+    }, [dashboardOn, dashboardLocked, notebookCell]);
 
     const deleteComment = (commentId: string) => {
         commitComments(comments.filter((comment) => comment.id !== commentId));
@@ -630,7 +641,7 @@ export const NodeContainer = ({
                 has never stopped flowing; the indicator was deleted along with
                 the retired AI-mode chrome, which left the channel writing into
                 nothing and a user with no way to see a flagged node. */}
-            {!minimized && Array.isArray(data.warnings) && data.warnings.length > 0 ? (
+            {!shownMinimized && Array.isArray(data.warnings) && data.warnings.length > 0 ? (
                 <div
                     style={{
                         display: "flex",
@@ -673,7 +684,7 @@ export const NodeContainer = ({
                 </div>
             ) : null}
 
-            {(!dashboardOn || !dashboardLocked) && !noContent && <div
+            {(!dashboardOn || !dashboardLocked) && !noContent && !notebookCell && <div
                 id={nodeId + "resizer"}
                 className={"resizer nowheel nodrag"}
                 style={{
@@ -696,9 +707,9 @@ export const NodeContainer = ({
                         category: packageDescriptor?.category,
                     }),
                     ...styles,
-                    width: currentNodeWidth + "px",
-                    height: currentNodeHeight + "px",
-                    ...(minimized ? { display: "none" } : {}),
+                    width: boxWidth + "px",
+                    height: boxHeight + "px",
+                    ...(shownMinimized ? { display: "none" } : {}),
                     ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: 0.5, pointerEvents: "none"} : {}),
                     ...(data.keywordHighlighted ? {backgroundColor: "#1E1F23"} : {}),
                 }}
@@ -747,13 +758,15 @@ export const NodeContainer = ({
                         flexShrink: 0,
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                         }}>
-                        {/* Minimize toggle */}
-                        <HeaderIconButton
-                            icon={faMinus}
-                            style={{ ...headerIconStyle, flexShrink: 0, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
-                            title="Minimize"
-                            onActivate={() => setMinimized(true)}
-                        />
+                        {/* Minimize toggle (a notebook cell keeps its size) */}
+                        {!notebookCell ? (
+                            <HeaderIconButton
+                                icon={faMinus}
+                                style={{ ...headerIconStyle, flexShrink: 0, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
+                                title="Minimize"
+                                onActivate={() => setMinimized(true)}
+                            />
+                        ) : null}
 
                         {/* Node title — editable on package nodes (same visibility as PACKAGE pills) */}
                         <EditableNodeHeaderLabel
@@ -1139,7 +1152,7 @@ export const NodeContainer = ({
                 />
             )}
 
-            {minimized ? (
+            {shownMinimized ? (
                 <div
                     onMouseEnter={() => setChipHovered(true)}
                     onMouseLeave={() => setChipHovered(false)}

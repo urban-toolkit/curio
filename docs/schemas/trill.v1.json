@@ -516,7 +516,7 @@
         },
         "targetHandle": {
           "type": "string",
-          "description": "Explicit target handle id. The observed vocabulary is 'in', 'in/out', the merge-flow slots 'in_0' through 'in_4', and template-specific named ports such as 'in_points' and 'in_polygons'. Deliberately NOT pattern-constrained: the legal set is derived from the template's inputPorts in its package manifest, so a third-party package may name its ports anything. When absent, the reader infers a slot from an 'in_N' substring of edge.id and otherwise falls back to 'in', which cannot recover a named port."
+          "description": "Explicit target handle id. The observed vocabulary is 'in', 'in/out', the input circles 'in_1', 'in_2', ... of a node whose one input port takes several edges ('in' is its first circle, and a node's code reads circle N as [!! input N !!]), the merge-flow slots 'in_0' through 'in_4', and template-specific named ports such as 'in_points' and 'in_polygons'. Deliberately NOT pattern-constrained: the legal set is derived from the template's inputPorts in its package manifest, so a third-party package may name its ports anything. When absent, the reader infers a circle from an 'in_N' suffix of edge.id and otherwise falls back to 'in', which cannot recover a named port."
         },
         "metadata": {
           "type": "object",

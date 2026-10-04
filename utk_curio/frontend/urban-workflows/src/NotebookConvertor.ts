@@ -1,6 +1,10 @@
 import { v4 as uuid } from "uuid";
 import { NodeType } from "./constants";
+import { dataflowOrder } from "./utils/dataflowOrder";
 import { unversionedNodeType } from "./utils/flowNodeCanonicalType";
+import { inputSlotOf } from "./utils/inputSlots";
+import { resolveReferences } from "./utils/references/codeReferences";
+import { normalizeWidgets } from "./utils/widgets/widgetModel";
 
 // ── Trill types ──────────────────────────────────────────────────────────────
 
@@ -15,6 +19,7 @@ interface TrillNode {
   title?: string;
   in?: unknown;
   out?: unknown;
+  metadata?: { widgets?: unknown };
 }
 
 interface TrillEdge {
@@ -22,6 +27,14 @@ interface TrillEdge {
   source: string;
   target: string;
   type?: string;
+  targetHandle?: string;
+}
+
+/** The circle an edge feeds: its handle, or the legacy `in_N` suffix of its id. */
+function edgeSlot(edge: TrillEdge): number {
+  if (edge.targetHandle) return inputSlotOf(edge.targetHandle);
+  const legacy = typeof edge.id === "string" ? edge.id.match(/in_(\d+)$/) : null;
+  return legacy ? parseInt(legacy[1], 10) : 0;
 }
 
 interface TrillDataflow {
@@ -345,41 +358,6 @@ function outputVarName(node: TrillNode): string {
   return `result_${safe}`;
 }
 
-function topologicalSort(nodes: TrillNode[], edges: TrillEdge[]): TrillNode[] {
-  const inDegree = new Map<string, number>(nodes.map((n) => [n.id, 0]));
-  const dependents = new Map<string, string[]>(nodes.map((n) => [n.id, []]));
-
-  for (const edge of edges) {
-    if (edge.type === "Interaction") continue;
-    inDegree.set(edge.target, (inDegree.get(edge.target) ?? 0) + 1);
-    dependents.get(edge.source)?.push(edge.target);
-  }
-
-  const queue = nodes.filter((n) => (inDegree.get(n.id) ?? 0) === 0);
-  const result: TrillNode[] = [];
-
-  while (queue.length > 0) {
-    const node = queue.shift()!;
-    result.push(node);
-    for (const depId of dependents.get(node.id) ?? []) {
-      const newDeg = (inDegree.get(depId) ?? 1) - 1;
-      inDegree.set(depId, newDeg);
-      if (newDeg === 0) {
-        const depNode = nodes.find((n) => n.id === depId);
-        if (depNode) queue.push(depNode);
-      }
-    }
-  }
-
-  // Append any remaining nodes (cycles or disconnected)
-  const visited = new Set(result.map((n) => n.id));
-  for (const node of nodes) {
-    if (!visited.has(node.id)) result.push(node);
-  }
-
-  return result;
-}
-
 /** Templates whose ``content`` is a Python function body, run as ``userCode(arg)``. */
 const PYTHON_BODY_TYPES = new Set<string>([
   NodeType.DATA_LOADING,
@@ -447,12 +425,21 @@ function nodeHeading(node: TrillNode, inputNodes: TrillNode[]): string {
  * returned ``null`` for every type except three, and ``trillToNotebook`` then
  * dropped those nodes without saying so.
  */
-function generateCells(node: TrillNode, inputNodes: TrillNode[]): NotebookCell[] {
-  const content = node.content ?? "";
+function generateCells(node: TrillNode, inputNodes: TrillNode[], inputSlots: number[] = []): NotebookCell[] {
   // Specs saved since the curio.builtin@1 pack carry versioned ids (dev/64),
   // and third-party package ids never match a NodeType at all - so this
   // dispatch always ends in a default branch rather than an enumeration.
   const nodeType = unversionedNodeType(node.type);
+  // The code the canvas runs: its widget, input and column references
+  // resolved, as the browser does before posting it (#662).
+  const language = nodeType === NodeType.VIS_VEGA || nodeType === NodeType.AUTK_GRAMMAR
+    ? "json"
+    : nodeType === NodeType.JS_COMPUTATION ? "javascript" : "python";
+  const content = resolveReferences(
+    node.content ?? "",
+    { widgets: normalizeWidgets(node.metadata?.widgets), inputs: inputSlots.map((slot) => ({ slot })) },
+    language,
+  ).code;
   const outVar = outputVarName(node);
   const heading = markdownCell(nodeHeading(node, inputNodes));
 
@@ -547,22 +534,25 @@ export function trillToNotebook(spec: TrillSpec): Notebook {
   const nodes = spec.dataflow?.nodes ?? [];
   const edges = spec.dataflow?.edges ?? [];
 
-  const inputsOf = new Map<string, string[]>(nodes.map((n) => [n.id, []]));
+  // A node's inputs in circle order: the order the canvas builds `arg` in.
+  const inputsOf = new Map<string, { source: string; slot: number }[]>(nodes.map((n) => [n.id, []]));
   for (const edge of edges) {
     if (edge.type !== "Interaction") {
-      inputsOf.get(edge.target)?.push(edge.source);
+      inputsOf.get(edge.target)?.push({ source: edge.source, slot: edgeSlot(edge) });
     }
   }
+  inputsOf.forEach((list) => list.sort((a, b) => a.slot - b.slot));
 
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
-  const ordered = topologicalSort(nodes, edges);
+  const ordered = dataflowOrder(nodes, edges.filter((edge) => edge.type !== "Interaction"));
 
   const cells: NotebookCell[] = [];
   for (const node of ordered) {
-    const inputNodes = (inputsOf.get(node.id) ?? [])
-      .map((id) => nodeById.get(id))
+    const wired = inputsOf.get(node.id) ?? [];
+    const inputNodes = wired
+      .map((input) => nodeById.get(input.source))
       .filter((n): n is TrillNode => n !== undefined);
-    cells.push(...generateCells(node, inputNodes));
+    cells.push(...generateCells(node, inputNodes, wired.map((input) => input.slot)));
   }
 
   return {
