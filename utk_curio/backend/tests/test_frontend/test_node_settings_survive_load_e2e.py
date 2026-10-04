@@ -88,7 +88,7 @@ def test_the_spatial_join_property_is_live_after_the_load(
     require_owner_view(page)
 
     control = node_locator(page, JOIN_ID).locator(
-        'input[aria-label="Tag each point with this polygon column"]'
+        'select[aria-label="Tag each point with this polygon column"]'
     )
     control.wait_for(state="visible", timeout=45000)
     assert control.input_value() == "zip", (
