@@ -109,6 +109,22 @@ class TestPlayShapesEachNode:
         )]))
         assert recorder.calls["a"]["code"] == "    return 3\n"
 
+    def test_a_parameter_nodes_value_reaches_the_nodes_that_name_it(self):
+        # #662: a Parameter node has no edge; [!! @name !!] reads its widget.
+        recorder, events, finished = run(spec([
+            node("p", "curio.builtin/parameter@1", "",
+                 metadata={"widgets": [{"name": "factor", "type": "number", "default": 2, "value": 5}]}),
+            node("a", content="return [!! @factor !!] * 10"),
+            node("j", "curio.builtin/js-computation", "return [!! @factor !!] + 1;"),
+        ]))
+        assert recorder.calls["a"]["code"] == "    return 5 * 10\n"
+        assert "return 5 + 1;" in recorder.calls["j"]["code"]
+        # The Parameter node itself is never sent to the sandbox: it has
+        # nothing to run, and holds nothing up.
+        assert "p" not in recorder.calls
+        assert finished["p"]["status"] == "forwarded"
+        assert outcome(events)["status"] == "succeeded"
+
     def test_a_reference_that_cannot_resolve_fails_the_node_without_the_sandbox(self):
         recorder, _, finished = run(spec([node("a", content="return [!! input 1 !!]")]))
         assert "a" not in recorder.calls
@@ -161,16 +177,6 @@ class TestNodesTheServerDoesNotRun:
         assert finished["pool"]["status"] == "forwarded"
         assert recorder.calls["b"]["input"] == {"path": "art-a", "dataType": "dataframe"}
 
-    def test_a_merge_passes_its_inputs_on_as_one_bundle(self):
-        recorder, _, _ = run(spec(
-            [node("a"), node("b"), node("m", "curio.builtin/merge-flow", ""), node("c")],
-            [edge("a", "m", "in"), edge("b", "m", "in_1"), edge("m", "c")],
-        ))
-        assert recorder.calls["c"]["input"] == {"dataType": "outputs", "data": [
-            {"path": "art-a", "dataType": "dataframe"},
-            {"path": "art-b", "dataType": "dataframe"},
-        ]}
-
     def test_data_only_the_browser_makes_leaves_the_run_needing_the_canvas(self):
         recorder, events, finished = run(spec(
             [node("osm", "curio.builtin/autk-grammar", DATA_SPEC, title="Load OSM"),
@@ -209,8 +215,9 @@ class TestRunningUpToANode:
             {"path": "art-a", "dataType": "dataframe"},
             {"path": "art-b", "dataType": "dataframe"},
         ]}
+        # A pool on two circles forwards its inputs as one bundle.
         recorder, _, _ = run(
-            spec([node("a"), node("b"), node("m", "curio.builtin/merge-flow", ""), node("c")],
+            spec([node("a"), node("b"), node("m", "curio.builtin/data-pool", ""), node("c")],
                  [edge("a", "m", "in"), edge("b", "m", "in_1"), edge("m", "c")]),
             target_node_id="c",
             reuse={"a": {"path": "art-a", "dataType": "dataframe"},

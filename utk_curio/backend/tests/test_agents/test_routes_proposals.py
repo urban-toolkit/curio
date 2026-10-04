@@ -353,13 +353,6 @@ class TestNodeCreate:
                     "inputPorts": [{"types": ["JSON"], "cardinality": "1"}],
                     "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
                 },
-                {
-                    "id": "merge-flow", "label": "Merge Flow",
-                    "category": "data", "engine": "python", "editor": "none",
-                    "hasCode": False, "description": "Merges multiple flows.",
-                    "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
-                    "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
-                },
             ],
             "createdAt": "2026-06-01T12:00:00Z",
         }
@@ -980,9 +973,9 @@ class TestDataflowPlanMint:
         }
         return f"```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"
 
-    def _setup(self, client, user, token, project_id, monkeypatch, replies=None, coord=None):
+    def _setup(self, client, user, token, project_id, monkeypatch, replies=None, coord=None, templates=None):
         helper = TestNodeCreate()
-        helper._write_builtin_package(self._ukey(user))
+        helper._write_builtin_package(self._ukey(user), templates)
         r = client.put(
             f"/api/projects/{project_id}",
             json={"name": "p", "spec": {"dataflow": {"nodes": [{"id": "n1", "content": "print(1)", "x": 10, "y": 20}], "edges": [], "packages": []}}, "outputs": []},
@@ -1983,10 +1976,26 @@ class TestPerNodePlanApply:
 
 class TestPlanFanInValidation:
     """dev/67-3 (DEC-051) — invalid multi-input topology is unmintable: fan-in
-    validates against the rendered template capacity BEFORE anything
-    materializes, the corrective error names the Merge resolution, and apply
-    assigns real merge slot handles so plan-created merges work WITHOUT a
-    reload."""
+    validates against the template capacity BEFORE anything materializes, the
+    corrective error says how to rewire (one node that takes several inputs),
+    and apply puts each edge into a growing node on a circle of its own, so
+    plan-created fan-in works WITHOUT a reload. The Merge Flow and its slots
+    left with #662."""
+
+    #: The default roster plus a node whose one input port takes at most two
+    #: edges ("[1,2]"): two circles, "in" and "in_1".
+    BOUNDED_TEMPLATES = [
+        {"id": "computation-analysis", "label": "Computation Analysis",
+         "category": "computation", "engine": "python", "editor": "code",
+         "description": "Run python analysis code.",
+         "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
+         "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
+        {"id": "compare-two", "label": "Compare Two",
+         "category": "computation", "engine": "python", "editor": "code",
+         "description": "Compare two tables.",
+         "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,2]"}],
+         "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
+    ]
 
     def _plan_reply(self, plan):
         import json as _json
@@ -1997,15 +2006,17 @@ class TestPlanFanInValidation:
         return {"ref": ref, "nodeType": node_type, "title": ref.upper(),
                 "intent": f"do {ref}"}
 
-    def test_fanin_into_single_input_node_refuses_then_merge_replan_mints(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_fanin_into_single_input_node_refuses_then_a_combining_step_replan_mints(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         helper = TestDataflowPlanMint()
         single = "curio.builtin/data-summary"
         bad = {"goal": "g", "nodes": [self._node("a"), self._node("b"), self._node("c", single)],
                "edges": [{"from": "a", "to": "c"}, {"from": "b", "to": "c"}]}
+        # What the refusal asks for: both flows into one code step that takes
+        # several inputs (one circle each), and that step into the target.
         good = {"goal": "g",
                 "nodes": [self._node("a"), self._node("b"),
-                          self._node("m", "curio.builtin/merge-flow"), self._node("c", single)],
+                          self._node("m"), self._node("c", single)],
                 "edges": [{"from": "a", "to": "m"}, {"from": "b", "to": "m"},
                           {"from": "m", "to": "c"}]}
         att_id, calls = helper._setup(
@@ -2014,10 +2025,14 @@ class TestPlanFanInValidation:
         )
         r = helper._run(client, token, alice_project, att_id)
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        assert proposal["status"] == "pending"  # the merge replan minted
+        assert proposal["status"] == "pending"  # the combining replan minted
         feedback = calls[1][-1]["content"]
-        assert "accepts 1 input" in feedback
-        assert "curio.builtin/merge-flow" in feedback  # the named resolution
+        assert (
+            "target 'C' (curio.builtin/data-summary) accepts 1 input but the plan wires 2: "
+            "wire 'a', 'b' into one node that takes several inputs (a code step that "
+            "combines them), and connect that node to the target"
+        ) in feedback
+        assert "curio.builtin/merge-flow" not in feedback
 
     def test_existing_target_counts_surviving_edges(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
@@ -2039,15 +2054,16 @@ class TestPlanFanInValidation:
         feedback = calls[1][-1]["content"]
         assert "plus 1 existing connection" in feedback
 
-    def test_merge_apply_assigns_real_slot_handles(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_fanin_apply_honors_a_named_circle_and_fills_the_lowest_free(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Successor of the Merge apply (#662): A and B wired straight into a
+        # node that takes several inputs, each edge on a circle of its own.
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
         helper = TestDataflowPlanMint()
         plan = {"goal": "g",
-                "nodes": [self._node("a"), self._node("b"),
-                          self._node("m", "curio.builtin/merge-flow")],
+                "nodes": [self._node("a"), self._node("b"), self._node("m")],
                 "edges": [{"from": "a", "to": "m", "toHandle": "in_3"},
                           {"from": "b", "to": "m"}]}
         att_id, _ = helper._setup(
@@ -2061,15 +2077,16 @@ class TestPlanFanInValidation:
             headers=_auth(token),
         ).get_json()
         applied = body["appliedGraph"]["edges"]
-        # The named slot is honored; the unnamed edge takes the lowest free.
-        assert sorted(e["targetHandle"] for e in applied) == ["in_0", "in_3"]
+        # The named circle is honored; the unnamed edge takes the lowest free,
+        # circle 0, whose handle is the plain "in".
+        assert sorted(e["targetHandle"] for e in applied) == ["in", "in_3"]
         assert all(e["sourceHandle"] == "out" for e in applied)
         # Persisted, not just reported — the reload-heals era is over.
         spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
         spec_handles = sorted(
             e.get("targetHandle") for e in spec["dataflow"]["edges"]
         )
-        assert spec_handles == ["in_0", "in_3"]
+        assert spec_handles == ["in", "in_3"]
 
     def test_fanin_into_a_growing_node_mints_and_takes_a_circle_per_edge(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.projects import storage as projects_storage
@@ -2077,7 +2094,7 @@ class TestPlanFanInValidation:
 
         user, token = user_and_token
         helper = TestDataflowPlanMint()
-        # The computation template declares one "[1,n]" port: no Merge needed.
+        # The computation template declares one "[1,n]" port: one circle per edge.
         plan = {"goal": "g",
                 "nodes": [self._node("a"), self._node("b"), self._node("c"), self._node("t")],
                 "edges": [{"from": "a", "to": "t"}, {"from": "b", "to": "t", "toHandle": "in_2"},
@@ -2098,12 +2115,44 @@ class TestPlanFanInValidation:
         spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
         assert sorted(e.get("targetHandle") for e in spec["dataflow"]["edges"]) == ["in", "in_1", "in_2"]
 
-    def test_bad_merge_slot_name_feeds_correction(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_a_circle_past_a_bounded_nodes_limit_feeds_correction(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Successor of the Merge slot-name check (#662): a node whose one port
+        # takes at most two edges has circles "in" and "in_1" only, and a plan
+        # that wires more than two is told to reduce the fan-in.
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        bounded = "curio.builtin/compare-two"
+        bad = {"goal": "g",
+               "nodes": [self._node("a"), self._node("b"), self._node("c"), self._node("p", bounded)],
+               "edges": [{"from": "a", "to": "p", "toHandle": "in_1"},
+                         {"from": "b", "to": "p", "toHandle": "in_2"},
+                         {"from": "c", "to": "p"}]}
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._plan_reply(bad),
+                     "Fixed.\n" + helper._plan_tail()],
+            templates=self.BOUNDED_TEMPLATES,
+        )
+        r = helper._run(client, token, alice_project, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        assert proposal["status"] == "pending"
+        feedback = calls[1][-1]["content"]
+        assert "edges[1].toHandle 'in_2': this node's inputs are \"in\", \"in_1\"" in feedback
+        assert "edges[0].toHandle" not in feedback  # "in_1" is within the limit
+        assert (
+            "target 'P' (curio.builtin/compare-two) accepts at most 2 inputs but the "
+            "plan wires 3: reduce the fan-in"
+        ) in feedback
+
+    def test_a_handle_that_names_no_circle_feeds_correction(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # A growing node's first circle is "in", never the Merge's old "in_0";
+        # with no limit the refusal lists the first circles and an ellipsis.
         user, token = user_and_token
         helper = TestDataflowPlanMint()
         bad = {"goal": "g",
-               "nodes": [self._node("a"), self._node("m", "curio.builtin/merge-flow")],
-               "edges": [{"from": "a", "to": "m", "toHandle": "in_9"}]}
+               "nodes": [self._node("a"), self._node("b"), self._node("m")],
+               "edges": [{"from": "a", "to": "m", "toHandle": "in_0"},
+                         {"from": "b", "to": "m", "toHandle": "in_1"}]}
         att_id, calls = helper._setup(
             client, user, token, alice_project, monkeypatch,
             replies=[self._plan_reply(bad),
@@ -2112,7 +2161,11 @@ class TestPlanFanInValidation:
         r = helper._run(client, token, alice_project, att_id)
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
         assert proposal["status"] == "pending"
-        assert "merge inputs are in_0..in_4" in calls[1][-1]["content"]
+        feedback = calls[1][-1]["content"]
+        assert (
+            "edges[0].toHandle 'in_0': this node's inputs are \"in\", \"in_1\", \"in_2\", ..."
+        ) in feedback
+        assert "edges[1].toHandle" not in feedback
 
 
 class TestPlanEdgeApply:
@@ -2220,7 +2273,7 @@ class TestPlanEdgeApply:
         edges = self._spec(user, alice_project)["dataflow"]["edges"]
         assert len([e for e in edges if e.get("target") == created_b["createdNode"]["id"]]) == 1
 
-    def test_fanin_refusal_names_the_merge_resolution(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_fanin_refusal_names_the_limit_and_the_existing_count(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.projects import storage as projects_storage
         from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -2272,7 +2325,9 @@ class TestPlanEdgeApply:
         projects_storage.write_spec(key, alice_project, spec)
         body = self._apply_edges(client, token, alice_project, att_id, pid).get_json()
         assert body["results"]["0"]["status"] == "refused"
-        assert "merge-flow" in body["results"]["0"]["reason"]
+        # The whole reason: the target's limit and what it already has. No
+        # Merge Flow to route through any more (#662).
+        assert body["results"]["0"]["reason"] == "'Analyze' accepts at most 1 input and already has 1"
         assert body["status"] == "pending"  # a refused edge never completes
 
 
@@ -2753,27 +2808,24 @@ class TestPlanTopologyMint:
          "editor": "none", "hasCode": False, "description": "d", "bidirectional": True,
          "inputPorts": [{"types": ["JSON"], "cardinality": "1"}],
          "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
-        {"id": "merge-flow", "label": "Merge Flow", "category": "data", "engine": "python",
-         "editor": "none", "hasCode": False, "description": "d",
-         "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
-         "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
         {"id": "vis-vega", "label": "Vega", "category": "visualization", "engine": "javascript",
          "editor": "grammar", "description": "d", "bidirectional": True,
          "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
          "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
     ]
-    # The owner's canvas: Load → Transform → Merge → Pool → Vis.
+    # The owner's canvas, its Merge Flow now the code step that combines
+    # (#662): Load → Transform → Combine → Pool → Vis.
     NODES = [
         {"id": "load", "type": "curio.builtin/computation-analysis", "content": "", "goal": "Fabricate", "x": 0, "y": 0},
         {"id": "xform", "type": "curio.builtin/computation-analysis", "content": "", "goal": "Transform", "x": 400, "y": 0},
-        {"id": "merge", "type": "curio.builtin/merge-flow", "content": "", "goal": "Pool Input Merge", "x": 800, "y": 0},
+        {"id": "combine", "type": "curio.builtin/computation-analysis", "content": "", "goal": "Pool Input Combine", "x": 800, "y": 0},
         {"id": "pool", "type": "curio.builtin/data-pool", "content": "", "goal": "Time Data Pool", "x": 1200, "y": 0},
         {"id": "vis", "type": "curio.builtin/vis-vega", "content": "", "goal": "Metric Distribution", "x": 1600, "y": 0},
     ]
     EDGES = [
         {"id": "e1", "source": "load", "target": "xform", "sourceHandle": "out", "targetHandle": "in"},
-        {"id": "e2", "source": "xform", "target": "merge", "sourceHandle": "out", "targetHandle": "in_0"},
-        {"id": "e3", "source": "merge", "target": "pool", "sourceHandle": "out", "targetHandle": "in"},
+        {"id": "e2", "source": "xform", "target": "combine", "sourceHandle": "out", "targetHandle": "in"},
+        {"id": "e3", "source": "combine", "target": "pool", "sourceHandle": "out", "targetHandle": "in"},
         {"id": "e4", "source": "pool", "target": "vis", "sourceHandle": "out", "targetHandle": "in"},
     ]
 
@@ -2821,16 +2873,16 @@ class TestPlanTopologyMint:
         return next((p for p in body["content"] if p["type"] == "proposal"), None)
 
     def test_the_owners_plan_is_refused_with_the_cycle_named(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        # Round one of the 2026-08-25 session: vis → merge as a data edge.
+        # Round one of the 2026-08-25 session: vis → combine as a data edge.
         user, token = user_and_token
-        owner_plan = {"goal": "interaction loop", "nodes": [], "edges": [{"from": "vis", "to": "merge"}]}
+        owner_plan = {"goal": "interaction loop", "nodes": [], "edges": [{"from": "vis", "to": "combine"}]}
         att_id, calls = self._setup(client, user, token, alice_project, monkeypatch,
                                     replies=["Fix.\n" + self._tail(owner_plan), "I give up."])
         body = self._run(client, token, alice_project, att_id).get_json()
         assert self._proposal(body) is None
         feedback = calls[1][-1]["content"]
         assert "creates a cycle" in feedback
-        assert "Metric Distribution" in feedback and "Pool Input Merge" in feedback
+        assert "Metric Distribution" in feedback and "Pool Input Combine" in feedback
         assert '"kind": "interaction"' in feedback
         # The saved graph is untouched — nothing materialized (DEC-051 discipline).
         from utk_curio.backend.app.projects import storage as projects_storage
@@ -2849,20 +2901,20 @@ class TestPlanTopologyMint:
             "fromLabel": "Metric Distribution", "toLabel": "Time Data Pool",
         }]
 
-    def test_interaction_edge_into_a_merge_is_refused_naming_the_fix(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_interaction_edge_into_a_code_step_is_refused_naming_the_fix(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
-        plan = {"goal": "interaction", "edges": [{"from": "vis", "to": "merge", "kind": "interaction"}]}
+        plan = {"goal": "interaction", "edges": [{"from": "vis", "to": "combine", "kind": "interaction"}]}
         att_id, calls = self._setup(client, user, token, alice_project, monkeypatch,
                                     replies=["Fix.\n" + self._tail(plan), "ok"])
         body = self._run(client, token, alice_project, att_id).get_json()
         assert self._proposal(body) is None
         feedback = calls[1][-1]["content"]
         assert "invalid interaction edges" in feedback
-        assert "'merge' is merge-flow" in feedback and "target the data-pool" in feedback
+        assert "'combine' is computation-analysis" in feedback and "target the data-pool" in feedback
 
     def test_removal_only_plan_that_breaks_a_user_cycle_mints_and_names_the_connection(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
-        cyclic = self.EDGES + [{"id": "e5", "source": "vis", "target": "merge", "sourceHandle": "out", "targetHandle": "in_1"}]
+        cyclic = self.EDGES + [{"id": "e5", "source": "vis", "target": "combine", "sourceHandle": "out", "targetHandle": "in_1"}]
         plan = {"goal": "break", "removeEdges": ["e5"]}
         att_id, _ = self._setup(client, user, token, alice_project, monkeypatch,
                                 replies=["Fix.\n" + self._tail(plan)], edges=cyclic)
@@ -2871,14 +2923,14 @@ class TestPlanTopologyMint:
         assert proposal["summary"] == "Apply plan · 0 nodes, 0 edges, removes 1 connection"
         assert proposal["plan"]["removals"] == []
         assert proposal["plan"]["removedEdges"] == [
-            {"id": "e5", "fromLabel": "Metric Distribution", "toLabel": "Pool Input Merge"},
+            {"id": "e5", "fromLabel": "Metric Distribution", "toLabel": "Pool Input Combine"},
         ]
 
     def test_remove_and_readd_as_data_is_still_refused(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # Rounds two to five of the session: removeEdges the loop edge, add it back as data.
         user, token = user_and_token
-        cyclic = self.EDGES + [{"id": "e5", "source": "vis", "target": "merge", "sourceHandle": "out", "targetHandle": "in_1"}]
-        plan = {"goal": "convert", "nodes": [], "edges": [{"from": "vis", "to": "merge"}], "removeEdges": ["e5"]}
+        cyclic = self.EDGES + [{"id": "e5", "source": "vis", "target": "combine", "sourceHandle": "out", "targetHandle": "in_1"}]
+        plan = {"goal": "convert", "nodes": [], "edges": [{"from": "vis", "to": "combine"}], "removeEdges": ["e5"]}
         att_id, calls = self._setup(client, user, token, alice_project, monkeypatch,
                                     replies=["Fix.\n" + self._tail(plan), "ok"], edges=cyclic)
         assert self._proposal(self._run(client, token, alice_project, att_id).get_json()) is None
@@ -2886,7 +2938,7 @@ class TestPlanTopologyMint:
 
     def test_a_plan_that_leaves_a_user_cycle_alone_is_not_blamed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
-        cyclic = self.EDGES + [{"id": "e5", "source": "vis", "target": "merge", "sourceHandle": "out", "targetHandle": "in_1"}]
+        cyclic = self.EDGES + [{"id": "e5", "source": "vis", "target": "combine", "sourceHandle": "out", "targetHandle": "in_1"}]
         plan = {"goal": "note", "nodes": [{"ref": "n", "nodeType": "curio.builtin/computation-analysis",
                                           "title": "Side", "intent": "unrelated"}], "edges": []}
         att_id, _ = self._setup(client, user, token, alice_project, monkeypatch,
@@ -2916,7 +2968,7 @@ class TestPlanTopologyApply:
 
     def _cyclic_edges(self):
         return TestPlanTopologyMint.EDGES + [
-            {"id": "e5", "source": "vis", "target": "merge", "sourceHandle": "out", "targetHandle": "in_1"},
+            {"id": "e5", "source": "vis", "target": "combine", "sourceHandle": "out", "targetHandle": "in_1"},
         ]
 
     def _apply(self, client, token, project_id, att_id, proposal_id):
@@ -2993,36 +3045,37 @@ class TestPlanTopologyApply:
         self._apply(client, token, alice_project, att_id, proposal["proposalId"])
         applied = next(t for t in self._turn_texts(client, token, alice_project, att_id) if t.startswith("Applied: plan"))
         assert "Topology: cycle through" in applied
-        assert "Metric Distribution" in applied and "Pool Input Merge" in applied
+        assert "Metric Distribution" in applied and "Pool Input Combine" in applied
 
     def test_whole_plan_apply_refuses_drift_that_would_close_a_cycle(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         base = self._base()
-        # Acyclic at mint: load → merge (merge accepts many inputs).
-        plan = {"goal": "wire", "edges": [{"from": "load", "to": "merge"}]}
+        # Acyclic at mint: load → combine (a code step takes many inputs, one
+        # circle each).
+        plan = {"goal": "wire", "edges": [{"from": "load", "to": "combine"}]}
         att_id, _ = base._setup(client, user, token, alice_project, monkeypatch, replies=["Wire.\n" + base._tail(plan)])
         proposal = base._proposal(base._run(client, token, alice_project, att_id).get_json())
-        # The user then draws merge → load; the plan edge load → merge would close it.
+        # The user then draws combine → load; the plan edge load → combine would close it.
         self._drift_but_keep_digest(user, alice_project, att_id,
-                                    {"id": "u1", "source": "merge", "target": "load", "sourceHandle": "out", "targetHandle": "in"})
+                                    {"id": "u1", "source": "combine", "target": "load", "sourceHandle": "out", "targetHandle": "in"})
         r = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
         assert r.status_code == 409
         assert "close a cycle" in r.get_json()["error"]
         # Nothing mutated: the drawn edge is there, the plan edge is not.
         edges = self._spec(user, alice_project)["dataflow"]["edges"]
-        assert any(e["id"] == "u1" for e in edges) and not any(e["source"] == "load" and e["target"] == "merge" for e in edges)
+        assert any(e["id"] == "u1" for e in edges) and not any(e["source"] == "load" and e["target"] == "combine" for e in edges)
 
     def test_per_edge_apply_refuses_a_closing_edge_by_name_and_applies_interaction_edges(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         base = self._base()
         plan = {"goal": "wire", "edges": [
-            {"from": "load", "to": "merge"},
+            {"from": "load", "to": "combine"},
             {"from": "vis", "to": "pool", "kind": "interaction"},
         ]}
         att_id, _ = base._setup(client, user, token, alice_project, monkeypatch, replies=["Wire.\n" + base._tail(plan)])
         proposal = base._proposal(base._run(client, token, alice_project, att_id).get_json())
         self._drift_but_keep_digest(user, alice_project, att_id,
-                                    {"id": "u1", "source": "merge", "target": "load", "sourceHandle": "out", "targetHandle": "in"})
+                                    {"id": "u1", "source": "combine", "target": "load", "sourceHandle": "out", "targetHandle": "in"})
         body = self._apply_edges(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
         assert body["results"]["0"]["status"] == "refused"
         assert body["results"]["0"]["reason"].startswith("closes a cycle: ")

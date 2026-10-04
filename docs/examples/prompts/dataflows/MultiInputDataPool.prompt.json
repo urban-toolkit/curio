@@ -1,13 +1,13 @@
 {
   "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
-  "fixtureId": "MergeFlowDataPool",
+  "fixtureId": "MultiInputDataPool",
   "version": 1,
   "source": {
-    "path": "docs/examples/dataflows/MergeFlowDataPool.json",
-    "sha256": "7c33d240f9d41990fc076ccfc1ba2c8f8a1a4992c582d1df1513e1ec3775ff1b",
+    "path": "docs/examples/dataflows/MultiInputDataPool.json",
+    "sha256": "9bb0e38d5fe62f094e26554269563316ea6f4623cbb572a2b26683303aff866a",
     "walkthrough": null
   },
-  "prompt": "Make three small tables in three separate Python computation steps, each with its own column names, and route one of them through a fan-out. Combine two of them into one input for a further computation step, and combine another pair for a second one, so the flow ends in two computations that each read a merged pair.",
+  "prompt": "Make three small tables in three separate Python computation steps, each with its own column names, and route one of them through a fan-out. Combine two of them into one input for a further computation step, and combine another pair for a second one, so the flow ends in two computations that each read a pair.",
   "context": null,
   "required": {
     "datasets": [],
@@ -57,45 +57,37 @@
         "role": "pool",
         "executable": false,
         "hasContent": false
-      },
-      {
-        "ref": "merge1",
-        "type": "curio.builtin/merge-flow",
-        "role": "merge",
-        "executable": false,
-        "hasContent": false
       }
     ],
     "edges": [
       {
         "from": "analysis1",
-        "to": "merge1",
+        "to": "pool1",
         "kind": "data"
       },
       {
         "from": "analysis2",
-        "to": "merge1",
-        "kind": "data"
+        "to": "pool1",
+        "kind": "data",
+        "slot": 1
       },
       {
         "from": "analysis3",
-        "to": "merge1",
-        "kind": "data"
+        "to": "pool1",
+        "kind": "data",
+        "slot": 2
       },
       {
         "from": "analysis4",
-        "to": "merge1",
-        "kind": "data"
+        "to": "pool1",
+        "kind": "data",
+        "slot": 3
       },
       {
         "from": "analysis5",
-        "to": "merge1",
-        "kind": "data"
-      },
-      {
-        "from": "merge1",
         "to": "pool1",
-        "kind": "data"
+        "kind": "data",
+        "slot": 4
       }
     ],
     "sources": {
@@ -108,8 +100,7 @@
   "execution": {
     "mode": "sandbox",
     "browserOnlyKinds": [
-      "curio.builtin/data-pool",
-      "curio.builtin/merge-flow"
+      "curio.builtin/data-pool"
     ],
     "notes": null
   },
@@ -136,5 +127,5 @@
     "licence": "MIT (this repository)",
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "Two merge points and a fan-out over synthetic tables; a topology test more than a data test."
+  "notes": "Several inputs on one node and a fan-out over synthetic tables; a topology test more than a data test."
 }

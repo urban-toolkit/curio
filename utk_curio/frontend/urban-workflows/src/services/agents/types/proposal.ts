@@ -241,7 +241,7 @@ export interface AgentApplyResult {
       id: string;
       source: string;
       target: string;
-      /** dev/67-3: explicit handles from the apply (merge slots in_N). */
+      /** dev/67-3: explicit handles from the apply (input circles in_N). */
       sourceHandle?: string;
       targetHandle?: string;
       /** dev/112: `"Interaction"` for a feedback edge. */

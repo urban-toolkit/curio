@@ -29,7 +29,6 @@ from utk_curio.backend.app.execution.workflow_spec import (
     PY_CODE_TYPES,
     WorkflowSpec,
     parse_workflow_dict,
-    resolve_code_references,
     seed_node_code,
 )
 from utk_curio.backend.app.execution.code_references import CodeReferenceError
@@ -379,7 +378,7 @@ def run_through_node(
             )
             return report
         if not is_code:
-            # Pass-through semantics (merge/vis/pool) — same as the e2e runner.
+            # Pass-through semantics (vis/pool), same as the e2e runner.
             upstreams = spec.upstream_nodes(node.id)
             if len(upstreams) == 1 and upstreams[0] in outputs:
                 outputs[node.id] = outputs[upstreams[0]]
@@ -395,9 +394,7 @@ def run_through_node(
         # like a hang, without asking the sandbox.
         widget_problem = None
         try:
-            resolved = resolve_code_references(
-                content_text, node.widgets, "python" if is_py else "javascript", spec.input_slots(node.id)
-            )
+            resolved = spec.node_code(node, "python" if is_py else "javascript", content_text)
         except CodeReferenceError as exc:
             resolved, widget_problem = content_text, str(exc)
         seeded = seed_node_code(resolved, seed)

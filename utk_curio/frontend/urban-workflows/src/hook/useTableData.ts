@@ -64,7 +64,7 @@ const useTableData = ({ data }: { data: INodeData }) => {
   // (another pool's propagation), so linked charts highlight rather than redraw.
   const processDataAsync = async (options?: { selectionEcho?: boolean }) => {
     try {
-      // Normalize input wrappers: handle merge outputs
+      // Normalize input wrappers: handle a bundle of several inputs
       let wrappers: any[] = [];
       if (data.input && typeof data.input === "object") {
         if (data.input.dataType === "outputs" && Array.isArray(data.input.data)) {

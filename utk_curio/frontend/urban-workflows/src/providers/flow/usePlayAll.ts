@@ -228,7 +228,9 @@ export function usePlayAll({
         };
     }
 
-    function playNodesUpTo(targetNodeId: string) {
+    // *target* is one node, or a list that all run: a scenario's levers
+    // (#662), with only those of its context that cannot be reused.
+    function playNodesUpTo(target: string | readonly string[]) {
         // Same guard playAllNodes has. Without it a second play click - which
         // the e2e helper issues on its own, retrying up to three times when a
         // node has not visibly acknowledged - overwrites playAllStateRef and
@@ -244,7 +246,7 @@ export function usePlayAll({
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
         const { willRun } = nodesToRunUpTo(
-            targetNodeId, currentNodes, currentEdges, emittedForInputRef.current,
+            target, currentNodes, currentEdges, emittedForInputRef.current,
         );
         playNodes([...willRun]);
     }

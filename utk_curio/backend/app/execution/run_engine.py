@@ -12,7 +12,7 @@ canvas could not reuse, in the levels ``run_plan.topological_levels`` gives.
   names that node, and the other branches go on;
 - a node fed by one only the browser can make waits for a tab;
 - each executed node gets its code and input the way Play shapes them:
-  references resolved (``resolve_code_references``), every line indented by
+  references resolved (``WorkflowSpec.node_code``), every line indented by
   four spaces, one upstream's output as it is, several as an ``outputs``
   bundle in circle order;
 - a sandbox that cannot be asked fails that node, as the browser shows it.
@@ -36,11 +36,7 @@ from typing import Callable, Iterator, Optional
 
 from utk_curio.backend.app.execution.code_references import CodeReferenceError
 from utk_curio.backend.app.execution.run_plan import ancestors, node_role, topological_levels
-from utk_curio.backend.app.execution.workflow_spec import (
-    WorkflowSpec,
-    parse_workflow_dict,
-    resolve_code_references,
-)
+from utk_curio.backend.app.execution.workflow_spec import WorkflowSpec, parse_workflow_dict
 
 #: How much of a node's stdout and stderr an event carries: the end.
 TAIL_CHARS = 4000
@@ -65,7 +61,6 @@ class Step:
     role: str
     node: dict = field(repr=False)
     content: str = field(default="", repr=False)
-    widgets: list = field(default_factory=list, repr=False)
 
 
 @dataclass
@@ -150,7 +145,6 @@ def plan_run(
             role=node_role(node, templates),
             node=node,
             content=parsed.content or "",
-            widgets=list(parsed.widgets or []),
         )
     return Plan(
         spec=spec, steps=steps, levels=levels, unplanned=unplanned,
@@ -194,9 +188,10 @@ def _execute_step(plan: Plan, step: Step, input_ref, execute) -> _Outcome:
     started = time.time()
     language = "javascript" if step.engine == "javascript" else "python"
     try:
-        code = resolve_code_references(
-            step.content, step.widgets, language, plan.spec.input_slots(step.node_id),
-        )
+        # Its widgets, its wired circles and the dataflow's shared tags, as the
+        # canvas and the headless runner resolve them.
+        node = next(n for n in plan.spec.nodes if n.id == step.node_id)
+        code = plan.spec.node_code(node, language, step.content)
     except CodeReferenceError as exc:
         # The node's own failure, reported without asking the sandbox.
         return _Outcome("error", {}, stderr=str(exc), started_at=started, finished_at=time.time())

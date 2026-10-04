@@ -211,9 +211,9 @@ export const ProjectLoader: React.FC<{
           }
           return merged;
         });
-        // Refill downstream data.input (incl. merge slots) from the restored
+        // Refill downstream data.input (incl. input circles) from the restored
         // outputs — otherwise every reload requires rerunning each upstream
-        // node before merges/pools receive anything (dev/64).
+        // node before downstream nodes and pools receive anything (dev/64).
         //
         // Against the edges the load just built, not React Flow's store: the
         // store is written from an effect and still reports nothing at this

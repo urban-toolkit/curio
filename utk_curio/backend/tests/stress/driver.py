@@ -21,7 +21,6 @@ import requests
 from ..test_frontend.workflow_spec import (
     PY_CODE_TYPES,
     propagate_node_input,
-    resolve_code_references,
     resolve_node_input,
     seed_node_code,
 )
@@ -398,10 +397,7 @@ class VirtualUser:
     # -- node execution ---------------------------------------------------
 
     def _run_python(self, node, outputs: dict) -> None:
-        code = seed_node_code(
-            resolve_code_references(node.content, node.widgets, "python", self.workflow.input_slots(node.id)),
-            self.seed,
-        )
+        code = seed_node_code(self.workflow.node_code(node, "python"), self.seed)
         body = self._exec(
             "/processPythonCode", node,
             code=textwrap.indent(code, PY_INDENT),
@@ -416,9 +412,7 @@ class VirtualUser:
     def _run_js(self, node, outputs: dict) -> None:
         body = self._exec(
             "/processJavaScriptCode", node,
-            code=resolve_code_references(
-                node.content, node.widgets, "javascript", self.workflow.input_slots(node.id)
-            ),
+            code=self.workflow.node_code(node, "javascript"),
             input_ref=resolve_node_input(self.workflow, node.id, outputs),
             timeout=JS_TIMEOUT_S,
         )

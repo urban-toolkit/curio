@@ -24,7 +24,7 @@ export function useInstallSave({
     // ── Auto-surface produced datasets without a manual disk-icon save ─────────
     // A dataset is installed when its producing node's output is persisted: for
     // tabular outputs the backend installs during execution, but for many node
-    // types (raster, merge, spatial-join, etc.) the install happens only at SAVE
+    // types (raster, spatial-join, etc.) the install happens only at SAVE
     // time via _auto_install_computed_outputs over the saved output refs. Only
     // CodeEditor previously triggered that, so datasets from other node types
     // stayed invisible until the user clicked Save. Centralize here: applyNewOutput

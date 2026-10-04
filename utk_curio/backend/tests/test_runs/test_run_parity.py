@@ -46,6 +46,15 @@ SCENARIOS = {
         )]),
         "a",
     ),
+    # #662: the value comes from a node with no edge.
+    "a Parameter node's value": (
+        spec([
+            node("p", "curio.builtin/parameter@1", "",
+                 metadata={"widgets": [{"name": "factor", "type": "number", "default": 2, "value": 5}]}),
+            node("a", content="return [!! @factor !!] * 2"),
+        ]),
+        "a",
+    ),
     "a pool in the middle": (
         spec([node("a"), node("pool", POOL, ""), node("b")], [edge("a", "pool"), edge("pool", "b")]),
         "b",

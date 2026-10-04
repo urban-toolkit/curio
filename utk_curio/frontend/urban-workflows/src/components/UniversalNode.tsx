@@ -200,6 +200,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const connected = hasIncomingEdge(flowEdges ?? edges, data.nodeId);
   const hasInput = data.input != null && data.input !== "";
   const specIsEmpty = isEmptySpecBuffer(nodeState.code);
+  // The spec the node was written with: loaded, dropped or put in by an agent.
+  // The buffer above can read empty for a moment when it is not (see below).
+  const writtenSpecIsEmpty = isEmptySpecBuffer(data.defaultCode);
   // Vega compiles its spec against the rows its input names, so a restored input
   // is all it needs - on the canvas as much as on the dashboard. Keyed on the
   // input so a chart behind a Data Pool draws when the pool's fetch lands, and
@@ -226,11 +229,13 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     // fills the buffer with a spec guessed from that input's columns a moment
     // later. Drawing the guess would run the node on connect and pull its
     // editor to the output pane while the author is still typing into it, which
-    // is not what a restore is for. A reload never looks like this, because the
-    // saved spec is in the buffer before the data is. Canvas only: a pinned
-    // tile always opens with its spec already loaded, and the dashboard has no
-    // author to interrupt.
-    if (!dashboardOn && hasInput && specIsEmpty) {
+    // is not what a restore is for. A reload looks like this for a moment, so
+    // the node's written spec decides, not the buffer: the editor mounts on
+    // `{}` and floats it into the buffer until Monaco loads and applies the
+    // saved spec, and a restored input lands in that window (#711). Canvas
+    // only: a pinned tile always opens with its spec already loaded, and the
+    // dashboard has no author to interrupt.
+    if (!dashboardOn && hasInput && specIsEmpty && writtenSpecIsEmpty) {
       starterFillInputRef.current = data.input;
     }
     // Recorded above for either grammar, even before an empty Autark editor can
@@ -262,7 +267,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
       setOutputCallback({ code: "exec", content: "" });
       sendCode(code);
     });
-  }, [kind, drawsFromInput, autarkRender, sendCode, disablePlay, specIsEmpty, hasInput, data.input, runInFlight, dashboardOn]);
+  }, [kind, drawsFromInput, autarkRender, sendCode, disablePlay, specIsEmpty, writtenSpecIsEmpty, hasInput, data.input, runInFlight, dashboardOn]);
 
   // A wired Autark render tile draws by the rule above when its input lands. An
   // unwired one never receives an input, so it is drawn once here, on the
@@ -298,7 +303,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
       }
     }
     // Keyed on the OBJECT, not `output?.code`: a node that errors twice in a
-    // row (e.g. a merge re-triggered by Play with inputs still missing) keeps
+    // row (e.g. a node re-triggered by Play with inputs still missing) keeps
     // code === "error", and a code-keyed effect never re-fires — the run then
     // hangs on the stall watchdog. setOutput always produces a fresh object,
     // and signalNodeExecDone ignores nodes outside the active level, so
@@ -469,7 +474,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           // ``contentComponent`` (the streetvision place-picker, etc.).
           // Without this branch that UI would be silently dropped because
           // ``contentComponent`` is otherwise only rendered inside NodeEditor's
-          // output tab. ``noContent`` containers (merge-flow, spatial-join)
+          // output tab. ``noContent`` containers
           // legitimately return ``undefined`` here — they're icon-only.
           behavior.contentComponent ?? null
         )}

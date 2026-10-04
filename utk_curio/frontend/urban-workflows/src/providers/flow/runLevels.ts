@@ -1,7 +1,7 @@
 // The order Run All runs a dataflow in: the edges it follows, the levels of
 // nodes it runs one after another, and the nodes a play runs.
 import type { Edge, Node } from "reactflow";
-import { nodeRunKey } from "../../utils/widgets/widgetModel";
+import { runKeyWithShared, sharedWidgetsOf } from "../../utils/references/sharedParameters";
 
 /** The edges a run orders nodes by: every edge but a two-way interaction link. */
 export function directedEdgesOf<E extends { sourceHandle?: string | null; targetHandle?: string | null }>(
@@ -53,16 +53,18 @@ export function computeTopologicalLevels(nodes: Node[], edges: Edge[]): string[]
 }
 
 /**
- * The nodes playing *targetNodeId* runs: the node, and each ancestor whose
- * output cannot be reused. Read by the in-browser walk and by a run on the
- * server, which reuses the outputs of the other ancestors.
+ * The nodes playing *target* runs: the node, or every node of a list (a
+ * scenario's levers, #662), and each ancestor whose output cannot be reused.
+ * Read by the in-browser walk and by a run on the server, which reuses the
+ * outputs of the other ancestors.
  */
 export function nodesToRunUpTo(
-    targetNodeId: string,
+    target: string | readonly string[],
     currentNodes: Node[],
     currentEdges: Edge[],
     emittedForInput: Map<string, unknown>,
 ): { ancestorIds: Set<string>; willRun: Set<string> } {
+    const targets = typeof target === "string" ? [target] : [...target];
     const directedEdges = directedEdgesOf(currentEdges);
 
     const predecessors = new Map<string, string[]>();
@@ -72,7 +74,7 @@ export function nodesToRunUpTo(
     }
 
     const ancestorIds = new Set<string>();
-    const queue = [targetNodeId];
+    const queue = [...targets];
     while (queue.length > 0) {
         const id = queue.shift()!;
         for (const pred of predecessors.get(id) ?? []) {
@@ -82,7 +84,7 @@ export function nodesToRunUpTo(
             }
         }
     }
-    ancestorIds.add(targetNodeId);
+    targets.forEach(id => ancestorIds.add(id));
 
     // Which ancestors actually need to run again.
     //
@@ -109,6 +111,9 @@ export function nodesToRunUpTo(
         ...ancestorLevels,
         ancestorNodes.filter(n => !levelled.has(n.id)).map(n => n.id),
     ];
+    // The Parameter nodes' widgets: a node whose code names one runs again
+    // when its value changed, though no edge leads from it.
+    const shared = sharedWidgetsOf(currentNodes);
     for (const level of decisionOrder) {
         for (const nodeId of level) {
             const node = currentNodes.find(n => n.id === nodeId);
@@ -121,16 +126,16 @@ export function nodesToRunUpTo(
                 emittedForInput.has(nodeId) && emittedForInput.get(nodeId) === node.data.input;
             const neverSucceeded =
                 outputCode !== "success" && !(outputCode !== "error" && emittedCurrent);
-            // #662: the key covers the node's widget values too, so a
-            // changed value counts as changed code.
+            // #662: the key covers the node's widget values and the shared
+            // tags it names too, so a changed value counts as changed code.
             const codeChanged =
                 node.data.executedCode !== undefined &&
-                node.data.executedCode !== nodeRunKey(node.data.code, node.data.widgets);
+                node.data.executedCode !== runKeyWithShared(node.data.code, node.data.widgets, shared);
             const upstreamRerunning = ancestorEdges.some(
                 e => e.target === nodeId && willRun.has(e.source)
             );
             if (
-                nodeId === targetNodeId ||
+                targets.includes(nodeId) ||
                 neverSucceeded ||
                 codeChanged ||
                 upstreamRerunning

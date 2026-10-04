@@ -3,7 +3,8 @@ import { NodeType } from "./constants";
 import { unversionedNodeType } from "./utils/flowNodeCanonicalType";
 import { inputSlotOf } from "./utils/inputSlots";
 import { resolveReferences } from "./utils/references/codeReferences";
-import { normalizeWidgets } from "./utils/widgets/widgetModel";
+import { PARAMETER_NODE_TYPE, sharedWidgetsOfSpec } from "./utils/references/sharedParameters";
+import { normalizeWidgets, type WidgetDef } from "./utils/widgets/widgetModel";
 import { namesDataset, usesNamedDatasets } from "./utils/vegaDatasets";
 import { inputTableName } from "./generated/autkGrammar";
 
@@ -428,7 +429,7 @@ function markdownCell(source: string): NotebookCell {
 
 /** How a node names the value it received, mirroring the sandbox's ``arg``.
  *
- * ``worker.py`` hands a merge node a *tuple* of its upstream outputs, so several
+ * ``worker.py`` hands a node a *tuple* of its upstream outputs, so several
  * inputs become a tuple here too. No inputs means the body is a source and gets
  * ``None``.
  */
@@ -461,19 +462,28 @@ function nodeHeading(node: TrillNode, inputNodes: TrillNode[]): string {
  * returned ``null`` for every type except three, and ``trillToNotebook`` then
  * dropped those nodes without saying so.
  */
-function generateCells(node: TrillNode, inputNodes: TrillNode[], inputSlots: number[] = []): NotebookCell[] {
+function generateCells(
+  node: TrillNode,
+  inputNodes: TrillNode[],
+  inputSlots: number[] = [],
+  shared: WidgetDef[] = [],
+): NotebookCell[] {
   // Specs saved since the curio.builtin@1 pack carry versioned ids (dev/64),
   // and third-party package ids never match a NodeType at all - so this
   // dispatch always ends in a default branch rather than an enumeration.
   const nodeType = unversionedNodeType(node.type);
-  // The code the canvas runs: its widget, input and column references
+  // The code the canvas runs: its widget, input, column and shared references
   // resolved, as the browser does before posting it (#662).
   const language = nodeType === NodeType.VIS_VEGA || nodeType === NodeType.AUTK_GRAMMAR
     ? "json"
     : nodeType === NodeType.JS_COMPUTATION ? "javascript" : "python";
   const content = resolveReferences(
     node.content ?? "",
-    { widgets: normalizeWidgets(node.metadata?.widgets), inputs: inputSlots.map((slot) => ({ slot })) },
+    {
+      widgets: normalizeWidgets(node.metadata?.widgets),
+      inputs: inputSlots.map((slot) => ({ slot })),
+      shared,
+    },
     language,
   ).code;
   const outVar = outputVarName(node);
@@ -499,10 +509,6 @@ function generateCells(node: TrillNode, inputNodes: TrillNode[], inputSlots: num
       ? `${outVar} = ${outputVarName(inputNodes[0])}`
       : `${outVar} = None`;
     return [heading, codeCell(source)];
-  }
-
-  if (nodeType === NodeType.MERGE_FLOW) {
-    return [heading, codeCell(`${outVar} = ${argExpression(inputNodes)}`)];
   }
 
   if (nodeType === NodeType.VIS_VEGA) {
@@ -566,9 +572,11 @@ function generateCells(node: TrillNode, inputNodes: TrillNode[], inputSlots: num
         ? "A JavaScript computation. Its source is preserved below; it cannot run in this notebook's Python kernel."
         : nodeType === SPATIAL_JOIN_TYPE
           ? "A spatial join, configured on the canvas rather than in code."
-          : nodeType === NodeType.VIS_SIMPLE
-            ? "A Simple View node, which displays its input rather than computing anything."
-            : "This node is provided by a package and has no Python equivalent here.";
+          : nodeType === PARAMETER_NODE_TYPE
+            ? "A Parameter node. Its value is written into the cells of the nodes that use it."
+            : nodeType === NodeType.VIS_SIMPLE
+              ? "A Simple View node, which displays its input rather than computing anything."
+              : "This node is provided by a package and has no Python equivalent here.";
   const fenced = content.trim()
     ? `\n\n\`\`\`\n${content}\n\`\`\``
     : "";
@@ -590,6 +598,7 @@ export function trillToNotebook(spec: TrillSpec): Notebook {
 
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const ordered = topologicalSort(nodes, edges);
+  const shared = sharedWidgetsOfSpec(nodes);
 
   const cells: NotebookCell[] = [];
   for (const node of ordered) {
@@ -597,7 +606,7 @@ export function trillToNotebook(spec: TrillSpec): Notebook {
     const inputNodes = wired
       .map((input) => nodeById.get(input.source))
       .filter((n): n is TrillNode => n !== undefined);
-    cells.push(...generateCells(node, inputNodes, wired.map((input) => input.slot)));
+    cells.push(...generateCells(node, inputNodes, wired.map((input) => input.slot), shared));
   }
 
   return {

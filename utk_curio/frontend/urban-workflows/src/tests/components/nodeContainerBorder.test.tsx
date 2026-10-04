@@ -84,8 +84,9 @@ describe("getNodeContainerStyles", () => {
   });
 
   test("keeps a flow node neutral, as its pill is", () => {
-    const merge = getNodeContainerStyles("curio.builtin/merge-flow@1", { category: "flow" });
-    expect(merge.borderLeftColor).toBe("var(--curio-category-package-fg)");
+    // No built-in template is in the flow category any more; a package one can be.
+    const flow = getNodeContainerStyles("acme.tools/route-flow@1", { category: "flow" });
+    expect(flow.borderLeftColor).toBe("var(--curio-category-package-fg)");
   });
 
   test("falls back to the type map, then grey, with no resolved descriptor", () => {

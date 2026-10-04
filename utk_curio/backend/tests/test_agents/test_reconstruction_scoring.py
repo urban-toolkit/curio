@@ -50,7 +50,8 @@ LOADER = "curio.builtin/data-loading"
 TRANSFORM = "curio.builtin/data-transformation"
 VEGA = "curio.builtin/vis-vega"
 POOL = "curio.builtin/data-pool"
-MERGE = "curio.builtin/merge-flow"
+#: A node that takes several inputs, one per circle (what a Merge Flow fed).
+ANALYSIS = "curio.builtin/computation-analysis"
 
 UNIVERSE = Universe(
     templates=frozenset(TEMPLATES),
@@ -195,26 +196,29 @@ class TestWrongGraphsFail:
         comparison = compare_graphs(_graph(CHAIN), _graph(loose), universe=UNIVERSE)
         assert score_reconstruction(comparison).dimension("topology").value == 0.0
 
-    def test_a_swapped_merge_slot_is_reported_only_when_order_matters(self):
+    def test_a_swapped_input_circle_is_reported_only_when_order_matters(self):
+        # Successor of the Merge Flow's swapped slot (#662): two inputs wired
+        # straight into one node, each on its own circle ("in", "in_1").
         expected = _spec(
-            [_node("a", LOADER), _node("b", TRANSFORM), _node("m", MERGE, content="")],
-            [_edge("a", "m", targetHandle="in_0"), _edge("b", "m", targetHandle="in_1")],
+            [_node("a", LOADER), _node("b", TRANSFORM), _node("c", ANALYSIS)],
+            [_edge("a", "c", targetHandle="in"), _edge("b", "c", targetHandle="in_1")],
         )
         swapped = _spec(
-            [_node("a", LOADER), _node("b", TRANSFORM), _node("m", MERGE, content="")],
-            [_edge("a", "m", targetHandle="in_1"), _edge("b", "m", targetHandle="in_0")],
+            [_node("a", LOADER), _node("b", TRANSFORM), _node("c", ANALYSIS)],
+            [_edge("a", "c", targetHandle="in_1"), _edge("b", "c", targetHandle="in")],
         )
         expected_graph = _graph(expected)
         refs = expected_graph.default_refs()
         indifferent = compare_graphs(expected_graph, _graph(swapped), universe=UNIVERSE,
                                      expected_refs=refs)
         assert not indifferent.edges.slot_mismatch
-        merge_ref = refs[[n.type for n in expected_graph.nodes].index(MERGE)]
+        assert not indifferent.fabricated  # every template ships
+        target_ref = refs[[n.type for n in expected_graph.nodes].index(ANALYSIS)]
         sensitive = compare_graphs(
             expected_graph, _graph(swapped), universe=UNIVERSE,
-            expected_refs=refs, slot_sensitive_refs=[merge_ref],
+            expected_refs=refs, slot_sensitive_refs=[target_ref],
         )
-        assert sensitive.edges.slot_mismatch
+        assert len(sensitive.edges.slot_mismatch) == 2
         assert "topology" in score_reconstruction(sensitive).categories
 
 

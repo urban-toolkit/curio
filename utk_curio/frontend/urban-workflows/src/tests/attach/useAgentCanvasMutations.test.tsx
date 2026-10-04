@@ -248,7 +248,7 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
     expect(mockOnEdgesChange).toHaveBeenCalledTimes(1);
   });
 
-  it("passes the apply's explicit handles through (merge slots, dev/67-3)", () => {
+  it("passes the apply's explicit handles through (input circles, dev/67-3)", () => {
     render(<Host />);
     act(() =>
       notifyAgentCanvasMutation({
@@ -261,7 +261,7 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
       }),
     );
     const changes = mockOnEdgesChange.mock.calls[0][0];
-    // The merge slot survives; handle-less edges keep loadTrill defaults.
+    // The input circle survives; handle-less edges keep loadTrill defaults.
     expect(changes[0].item).toMatchObject({ id: "e-m", targetHandle: "in_1", sourceHandle: "out" });
     expect(changes[1].item).toMatchObject({ id: "e-plain", targetHandle: "in", sourceHandle: "out" });
   });

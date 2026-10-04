@@ -25,6 +25,7 @@ import { useInstallSave } from "./flow/useInstallSave";
 import { useServerRun } from "./flow/useServerRun";
 import type { IOutput, IInteraction } from "./flow/flowTypes";
 import type { FlowContextProps, NodeActionsContextProps } from "./flow/flowContextTypes";
+import type { Scenario } from "../utils/scenarios/scenarioModel";
 import { DEFAULT_WORKFLOW_NAME } from "../constants";
 import { TrillGenerator } from "../TrillGenerator";
 import { isStandaloneDashboard } from "../standalone/dashboardPayload";
@@ -129,8 +130,10 @@ export const FlowContext = createContext<FlowContextProps>({
     viewerMode: "owner",
     workflowCategories: {},
     serverCategories: {},
+    scenarios: [],
     renameDataflow: () => false,
     updateDataflowCategories: () => {},
+    setScenarios: () => {},
     saveCurrentProject: async () => {},
     saveAsNewProject: async () => {},
     ensureProjectId: async () => null,
@@ -175,10 +178,10 @@ const FlowProvider = ({
     // in the ref, so every play control stayed enabled and a click during (or
     // after a wedged) run silently did nothing (#271).
     const [isRunActive, setIsRunActive] = useState(false);
-    // The input each node had when it last emitted through applyNewOutput. Merge
-    // Flow and the Data Pool never record a success on node.data.output, so
-    // this is how playNodesUpTo tells they are current (#479): their input is
-    // still the object they emitted for. Every delivery builds a new one.
+    // The input each node had when it last emitted through applyNewOutput. The
+    // Data Pool never records a success on node.data.output, so this is how
+    // playNodesUpTo tells it is current (#479): its input is
+    // still the object it emitted for. Every delivery builds a new one.
     const emittedForInputRef = useRef(new Map<string, unknown>());
     const markNodeExecutedRef = useRef<(nodeId: string) => void>(() => {});
     const markNodeStaleRef = useRef<(nodeId: string) => void>(() => {});
@@ -291,8 +294,11 @@ const FlowProvider = ({
         initializeProvenance();
     }, []);
 
+    // The scenarios as they are now, for the save rule a run reads (#662).
+    // Assigned once workflowOps exists, as markDirtyRef is.
+    const scenariosNowRef = useRef<() => readonly Scenario[]>(() => []);
     const { isDashboardSource, setPinForDashboard } = useDashboardPins({
-        reactFlow, setDashboardPins, setNodes, markDirtyRef, savePinChangeRef, showToast,
+        reactFlow, setDashboardPins, setNodes, markDirtyRef, savePinChangeRef, showToast, scenariosNowRef,
     });
 
     const {
@@ -347,6 +353,7 @@ const FlowProvider = ({
     markNodeStaleRef.current = workflowOps.markNodeStale;
     markNodeErroredRef.current = workflowOps.markNodeErrored ?? (() => {});
     markDirtyRef.current = workflowOps.markDirty;
+    scenariosNowRef.current = () => workflowOps.scenariosRef?.current ?? workflowOps.scenarios ?? [];
 
     useDashboardPinSave({
         savePinChangeRef, dashboardOn, workflowOps, showToast,
@@ -435,8 +442,22 @@ const FlowProvider = ({
                 applyNewOutput,
                 hydrateRestoredOutputs,
                 playAllNodes: runsOnServer ? () => { void serverRun.startRun(); } : playAllNodes,
+                // A run on the server takes one target node, so a list (a
+                // scenario's levers) runs in the browser, once no server run
+                // is going.
                 playNodesUpTo: runsOnServer
-                    ? (nodeId: string) => { void serverRun.startRun(nodeId); }
+                    ? (target: string | readonly string[]) => {
+                        if (typeof target === "string") {
+                            void serverRun.startRun(target);
+                        } else if (serverRun.serverRunActive) {
+                            showToast(
+                                "A run is already in progress. Wait for it to finish, or cancel it from the Run All button.",
+                                "info",
+                            );
+                        } else {
+                            playNodesUpTo(target);
+                        }
+                    }
                     : playNodesUpTo,
                 signalNodeExecDone,
                 isRunActive,

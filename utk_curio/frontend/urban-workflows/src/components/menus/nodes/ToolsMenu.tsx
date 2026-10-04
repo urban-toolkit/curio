@@ -69,7 +69,7 @@ const DraggableTool = memo(function DraggableTool({
 });
 
 // Groups (top → bottom) for the BUILT-IN section. vis_grammar and vis_simple
-// share one block; flow nodes (e.g. Merge Flow) live in the top data block.
+// share one block; flow nodes live in the top data block.
 const PALETTE_GROUPS: NodeCategory[][] = [
     ["data", "flow"],
     ["computation"],

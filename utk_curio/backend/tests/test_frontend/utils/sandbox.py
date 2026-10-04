@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
 
-from ..workflow_spec import resolve_code_references, seed_node_code
+from ..workflow_spec import seed_node_code
 from .environment import REPO_ROOT, _backend_base_url_for_config
 
 
@@ -286,7 +286,7 @@ def execute_workflow_programmatically(
             data_type = ref["dataType"]
 
         # Sandbox /exec expects code already indented as a function body
-        resolved = resolve_code_references(node.content, node.widgets, "python", spec.input_slots(node.id))
+        resolved = spec.node_code(node, "python")
         seeded = seed_node_code(resolved, seed)
         indented_code = textwrap.indent(seeded, "    ")
         resolution = _catalog_resolution(indented_code, username)
