@@ -15,7 +15,8 @@ So, on a fresh dataflow at the default 1280x720 viewport:
   slot, and each catalog's label showing, even next to the widest account
   name the bar shows;
 * each catalog button opens its own drawer over the dataflow;
-* API Settings opens from the canvas;
+* Monitor and API Settings open as drawers over the dataflow, which stays
+  where it was;
 * the dataflow's title and the left rail start below the bar.
 
 Run::
@@ -26,6 +27,7 @@ from __future__ import annotations
 
 import uuid
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from playwright.sync_api import expect
 
@@ -196,20 +198,46 @@ def test_each_catalog_button_opens_its_own_drawer(
             expect(page.locator(f'[{other}="true"][aria-hidden="false"]')).to_have_count(0)
 
 
-def test_api_settings_opens_from_the_canvas(
+def _open_header_drawer(page, name: str, attr: str):
+    """Click a bar pill and return its drawer, checking the canvas stayed."""
+    page.locator(BAR).get_by_role("button", name=name, exact=True).click()
+    drawer = page.locator(f'[{attr}="true"]')
+    expect(drawer).to_have_attribute("aria-hidden", "false", timeout=20000)
+    path = urlparse(page.url).path
+    assert path.startswith("/dataflow"), f"{name} left the dataflow for {page.url}"
+    return drawer
+
+
+def _close_header_drawer(page, drawer, name: str, attr: str) -> None:
+    drawer.get_by_role("button", name=f"Close {name}", exact=True).click()
+    expect(page.locator(f'[{attr}="true"][aria-hidden="false"]')).to_have_count(0, timeout=10000)
+    # The marker set on the live canvas: a canvas rendered again after leaving
+    # and coming back would not carry it.
+    expect(page.locator('#tools-menu[data-e2e-kept="yes"]')).to_have_count(1)
+
+
+def test_monitor_and_api_settings_open_as_drawers_over_the_canvas(
     app_frontend: "FrontendPage", frontend_server: str, page
 ):
     require_user_auth()
     require_project_page()
 
     signup_e2e_user(
-        page, frontend_server, name="Canvas Settings",
-        username=f"canvasapi_{uuid.uuid4().hex[:10]}",
+        page, frontend_server, name="Canvas Drawers",
+        username=f"canvasdrw_{uuid.uuid4().hex[:10]}",
     )
     wait_for_projects_page(page, timeout=30000)
     _fresh_canvas(page, app_frontend.base_url)
+    page.locator("#tools-menu").evaluate("(el) => { el.dataset.e2eKept = 'yes'; }")
 
-    page.locator(BAR).get_by_role("button", name="API Settings", exact=True).click()
-    expect(page.get_by_role("heading", name="API Settings", level=2)).to_be_visible(
-        timeout=15000
-    )
+    drawer = _open_header_drawer(page, "Monitor", "data-curio-monitor-drawer")
+    expect(drawer.get_by_test_id("monitor-hardware")).to_be_visible(timeout=20000)
+    _close_header_drawer(page, drawer, "Monitor", "data-curio-monitor-drawer")
+
+    drawer = _open_header_drawer(page, "API Settings", "data-curio-settings-drawer")
+    expect(drawer.get_by_role("heading", name="API Settings", level=2)).to_be_visible()
+    for tab in ("API keys", "Agent configuration"):
+        expect(drawer.get_by_role("tab", name=tab, exact=True)).to_be_visible()
+    drawer.get_by_role("tab", name="Agent configuration", exact=True).click()
+    expect(drawer.get_by_test_id("agent-models-section")).to_be_visible(timeout=15000)
+    _close_header_drawer(page, drawer, "API Settings", "data-curio-settings-drawer")
