@@ -825,7 +825,8 @@ def _execute_examples_read(user_key: str, project_id: str, params: dict) -> tupl
 
     The project's spec decides what is left out, by the rule the per-run block
     follows (``excluded_by``): an evaluation project never shows the example it
-    is scored against. A project with no saved spec leaves nothing out.
+    is scored against, nor one that shares part of it. A project with no saved
+    spec leaves nothing out.
     """
     from utk_curio.backend.app.projects import storage as projects_storage
 

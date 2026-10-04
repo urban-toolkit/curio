@@ -551,12 +551,15 @@ class TestExamplesRead:
         from utk_curio.backend.app.projects import storage as projects_storage
 
         self._mark(self.NINE)
-        # The rule the per-run block follows names it.
-        assert examples.excluded_by(projects_storage.read_spec(self.UKEY, self.PID)) == {self.NINE}
+        # The rule the per-run block follows: the scored example, and every
+        # example that shares a piece of its answer.
+        excluded = examples.excluded_by(projects_storage.read_spec(self.UKEY, self.PID))
+        assert self.NINE in excluded
         status, text = self._read()
         keys = [row["key"] for row in json.loads(text)["examples"]]
         assert status == "ok" and self.NINE not in keys
-        assert keys == [key for key in self._used() if key != self.NINE]
+        assert keys == [key for key in self._used() if key not in excluded]
+        assert keys, "every example is excluded; the readable case below would be vacuous"
         entry = self._used()[self.NINE].entry
         for key in (self.NINE, f"{self.NINE}.json", f"docs/examples/{self.NINE}.json"):
             status, text = self._read({"key": key})
@@ -564,8 +567,10 @@ class TestExamplesRead:
             assert "call examples.read with no key" in text
             # The refusal never describes the answer.
             assert entry.title not in text and entry.text not in text
-        # Every other example stays readable.
-        assert self._read({"key": "dataflows/Regression"})[0] == "ok"
+        # Every excluded example is refused, and every other one stays readable.
+        for key in excluded - {self.NINE}:
+            assert self._read({"key": key})[0] == "error", key
+        assert self._read({"key": keys[0]})[0] == "ok"
 
     def test_the_contract_states_its_param_and_results(self):
         contract = tools.REGISTRY["examples.read"]
