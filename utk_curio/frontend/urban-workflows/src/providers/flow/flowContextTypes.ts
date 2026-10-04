@@ -4,8 +4,10 @@ import type React from "react";
 import type { Connection, Edge, EdgeChange, Node, NodeChange, NodeRemoveChange } from "reactflow";
 import type { InstallSyncOutcome, PendingInstall } from "../../services/datasetCatalog/datasetCatalogTypes";
 import type { DataflowCategories, HandCategories } from "../../utils/dataflowCategories";
+import type { NotebookPane } from "../../utils/notebookLayout";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
 import type { IInteraction, IOutput, IPropagation, NodeExecOutcome } from "./flowTypes";
+import type { CanvasView } from "./useNotebookView";
 
 export interface FlowContextProps {
     nodes: Node[];
@@ -125,6 +127,18 @@ export interface FlowContextProps {
     cancelRun: () => void;
     defaultSaveOutputDataset: boolean;
     setDefaultSaveOutputDataset: (value: boolean) => void;
+
+    /** How the dataflow is shown: the canvas, or a column of notebook cells (`?view=notebook`). */
+    canvasView: CanvasView;
+    setCanvasView: (view: CanvasView) => void;
+    notebookOn: boolean;
+    /** How tall the notebook's column is, so the page can scroll all of it. */
+    notebookContentHeight: number;
+    setNotebookPane: (pane: NotebookPane) => void;
+    registerNotebookScroller: (element: HTMLElement | null) => void;
+    /** In the notebook view, scroll the first of these nodes' cells into view
+     *  (with `ifMoved`, only if the change under way moves it); false on the canvas. */
+    revealNodes: (nodeIds: string[], options?: { ifMoved?: boolean }) => boolean;
 }
 
 // Stable context for NodeContainer — only updates when goal/minimized change, NOT on node drag

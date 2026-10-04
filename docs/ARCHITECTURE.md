@@ -10,6 +10,7 @@ This document describes the internal architecture of Curio for contributors who 
   * [Provider Hierarchy](#provider-hierarchy)
   * [API Settings and the Monitor](#api-settings-and-the-monitor)
   * [FlowProvider: Central Workflow State](#flowprovider-central-workflow-state)
+  * [The notebook view](#the-notebook-view)
   * [Drawing scenarios](#drawing-scenarios)
 * [Nodes: Types and Structure](#nodes-types-and-structure)
   * [Node Packages and Manifests](#node-packages-and-manifests)
@@ -200,9 +201,46 @@ focus in the URL (`settingsPath`, read back by `focusFromSearch`).
 | `interactions` | `IInteraction[]` | Active user selections from visualization nodes |
 | `dashboardPins` | `{[nodeId]: boolean}` | Which nodes are pinned to the dataflow's dashboard page |
 | `dashboardOn` | `boolean` | A PROP, not state: true when this tree is the dashboard page rather than the canvas |
+| `canvasView` | `"canvas" \| "notebook"` | How the canvas shows the dataflow, kept in the address as `?view=notebook`; always `"canvas"` on the dashboard |
 | `scenarios` | `Scenario[]` | The dataflow's scenarios (`dataflow.scenarios`), saved with it |
 
 When a node produces output, it calls `outputCallback(nodeId, output)`, which updates `outputs`. React re-renders cause downstream nodes (those connected by an edge from the node that just executed) to detect the new input and request the data from the backend.
+
+### The notebook view
+
+The notebook view shows the canvas's own nodes and edges as a column of cells, with
+the edges in a bar to the right. It is the same React Flow instance, because Run All,
+output propagation, `onConnect` and saves read its store, so `providers/flow/useNotebookView.ts`
+moves nodes the way the dashboard page does:
+
+- **Positions.** Each node's canvas spot is stamped into `data.workflowPosition`, which
+  `TrillGenerator` saves in place of `position` (`utils/canvasPosition.ts`), and
+  `position` holds the cell's slot. The hook owns a map from node id to canvas spot and
+  writes every stamp from it on each change of the node list, so an update that rebuilt a
+  node's data without its stamp is repaired before a save reads the store. A
+  collaborator's drag goes to the map (`useCollaborationSync`'s `takeCanvasPosition`).
+  Leaving the view restores every position from the map and deletes every stamp; the
+  canvas viewport saved on entry is restored after the canvas props are live.
+- **Order and geometry.** Cells follow `utils/dataflowOrder.ts`, the order Export as
+  notebook writes, over `directedEdgesOf`. `utils/notebookLayout.ts` places the column
+  below the bar and title chips, sets each node's dots on its right edge, gives every
+  edge a lane in the bar (shorter spans inside) and draws the bracket each edge follows;
+  `components/edges/useEdgePath.ts` picks that path over the canvas bezier.
+- **Scrolling.** `MainCanvas` wraps React Flow in a scroller in both views, so switching
+  never remounts it. In the notebook view React Flow is as tall as the column, at zoom 1
+  with no pan or zoom gestures (`notebookFlowProps`), and leaves the wheel to the page. A
+  call that moves its view anyway, such as a load's fit, is put back to the origin.
+  `revealNodes` scrolls to a cell where the canvas would frame a node.
+- **Cells.** `NotebookViewContext` tells nodes and edges the view is on. `UniversalNode`
+  sizes the cell and moves its handles; `NodeEditor` keeps a grammar node's output pane
+  visible under its input tabs (`curio-notebook-split` in `Node.css`) without moving
+  either pane, so a chart or map never remounts.
+- **Switch.** `CanvasViewSwitch` closes `UpMenu`'s slot, pushed to its end beside
+  Monitor; the canvas bar's buttons take `--curio-bar-button-padding-x: 7px` to make room
+  for it.
+- **Scenarios.** They are drawn on the canvas only: `MainCanvas` hands
+  `scenarioCanvasView` no scenarios in the notebook view, so every node is a cell,
+  collapsed or not, and no box or frame is drawn.
 
 ### Drawing scenarios
 
@@ -1761,7 +1799,8 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 |---|---|
 | `src/index.tsx` | App entry point and provider nesting order |
 | `src/providers/FlowProvider.tsx` | Canonical workflow state (nodes, edges, outputs, interactions) |
-| `src/providers/flow/` | FlowProvider's sections as hooks (Run All, connections, graph edits, outputs, interactions, collaboration sync, dashboard pins, auto-install) and its types |
+| `src/providers/flow/` | FlowProvider's sections as hooks (Run All, connections, graph edits, outputs, interactions, collaboration sync, dashboard pins, auto-install, the notebook view) and its types |
+| `src/utils/notebookLayout.ts`, `src/utils/dataflowOrder.ts` | The notebook view's geometry (cells, dots, lanes, edge paths) and the cell order Export as notebook shares |
 | `src/providers/ProvenanceProvider.tsx` | In-memory per-node execution history (saved with the workflow JSON) |
 | `src/components/UniversalNode.tsx` | Single React component that renders all node types |
 | `src/registry/packagesClient.ts` | Fetch installed manifests → build `NodeDescriptor`s → register against `nodeRegistry` |
