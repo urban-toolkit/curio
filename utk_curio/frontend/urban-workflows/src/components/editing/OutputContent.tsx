@@ -56,11 +56,12 @@ function OutputContent({ output }: { output: any; }) {
         }
     }, [output]);
 
-    // `nodrag`: a press in the output or the error selects its text instead
-    // of moving the node; `nowheel` scrolls a long traceback instead of
-    // zooming the canvas.
+    // A press in the output or the error selects its text: `nodrag` keeps it
+    // from moving the node, and `nopan` from panning or zooming the canvas
+    // (react-flow does both inside a node that cannot be dragged, as in a
+    // read-only dataflow). `nowheel` scrolls a long traceback.
     return (
-      <div className="nodrag nowheel">
+      <div className="nodrag nopan nowheel">
       <Tabs
         id="computation-tabs"
         className="mb-2"

@@ -167,10 +167,12 @@ export const NodeOutcomeStrip: React.FC<NodeOutcomeStripProps> = ({
 
   return (
     <div
-      // `nodrag`: a press here selects the text instead of moving the node,
-      // and `nowheel` scrolls the opened strip instead of zooming the canvas.
+      // A press here selects the text: `nodrag` keeps it from moving the
+      // node, and `nopan` from panning or (on a double-click) zooming the
+      // canvas, which react-flow does inside a node that cannot be dragged,
+      // as in a read-only dataflow. `nowheel` scrolls the opened strip.
       className={`${styles.strip} ${outcome.level === "error" ? styles.error : styles.notice}` +
-        (expanded ? ` ${styles.expanded}` : "") + " nodrag nowheel"}
+        (expanded ? ` ${styles.expanded}` : "") + " nodrag nopan nowheel"}
       role="status"
       data-testid={`node-outcome-${nodeId}`}
     >

@@ -19,6 +19,7 @@ describe("OutputContent", () => {
     const traceback = screen.getAllByText(/ValueError: boom/)[0];
     const wrapper = traceback.closest(".nodrag");
     expect(wrapper).not.toBeNull();
+    expect(wrapper?.className).toContain("nopan");
     expect(wrapper?.className).toContain("nowheel");
     expect(traceback).toHaveStyle({ userSelect: "text" });
   });

@@ -607,7 +607,10 @@ function CodeEditor({
             </div>
             <div
                 ref={outputRef}
-                className="nowheel nodrag"
+                // `nopan` as well as `nodrag`: in a node that cannot be
+                // dragged (a read-only dataflow), react-flow pans the canvas
+                // on a press and zooms it on a double-click unless told not to.
+                className="nowheel nodrag nopan"
                 // The wrapper above carries the same class, so a ".nowheel.nodrag"
                 // lookup resolves to it first and picks up Monaco's rendered code
                 // lines. Tests read the result through this attribute instead.
