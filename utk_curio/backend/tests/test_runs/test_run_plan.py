@@ -65,7 +65,7 @@ def test_ancestors_follow_data_edges_only():
     ("curio.builtin/data-loading@1", "", "run"),
     ("curio.builtin/js-computation", "", "run"),
     ("curio.builtin/data-pool", "", "forward"),
-    ("curio.builtin/merge-flow", "", "forward"),
+    ("curio.builtin/parameter@1", "", "forward"),
     ("curio.builtin/vis-vega@1", "{}", "forward"),
     ("curio.builtin/vis-simple", "", "forward"),
     ("curio.builtin/data-export", "", "forward"),
