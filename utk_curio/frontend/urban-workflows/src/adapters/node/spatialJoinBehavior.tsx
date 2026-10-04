@@ -24,8 +24,7 @@ import { backendUrl } from '../../utils/backendUrl';
  * save. The backend also says when no polygon carries the chosen column,
  * instead of silently tagging everything `polygon_<i>`.
  *
- * Mirrors Merge Flow's `dynamicHandles` + `setOutputCallbackOverride`
- * pattern so each handle's value lands in its own slot, then POSTs both
+ * Each input lands in its own slot, by its geometry, and the node POSTs both
  * to the `/spatial_join` backend endpoint when both arrive.
  */
 
@@ -295,11 +294,12 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.input, placeResolved]);
 
-  // Slot-indexed override (Merge-Flow pattern) — the framework calls this
-  // with (value, slotIdx) when each handle's upstream output arrives.
-  const setOutputCallbackOverride = useCallback((val: any, idx = 0) => {
-    if (idx === 0 || idx === 1) setSlot(idx, val);
-  }, [setSlot]);
+  // No `setOutputCallbackOverride`. Both inputs arrive through `data.input`,
+  // above; UniversalNode calls that override with the node's OWN status (the
+  // "exec" a run marks it with, the reason a run skipped it). As a slot setter
+  // it put `{ code: "exec" }` in the points slot the moment a run asked, and
+  // the join posted that as its points: "Tagged 0 of 0 points", and every
+  // chart it fed got 0 rows. Merge Flow keeps one only as a no-op.
 
   // A changed setting joins the same inputs again.
   useEffect(() => {
@@ -421,10 +421,8 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
   // Plus the single output handle on the right. We use `handlesOverride`
   // (not `dynamicHandles`) so the default `standardInOut()` "in" handle from
   // packagesClient is fully replaced — otherwise it leaks through at top:50%
-  // as an unwanted gray circle.
-  //
-  // Input-handle indices here match the slot index the framework passes back
-  // to `setOutputCallbackOverride`.
+  // as an unwanted gray circle. Which slot an input fills is decided by its
+  // geometry (classifyFC), not by the handle it came in on.
   const handlesOverride: HandleDef[] = [
     {
       id: 'in_points',
@@ -460,5 +458,5 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
     },
   ];
 
-  return { handlesOverride, setOutputCallbackOverride, sendCodeOverride, contentComponent };
+  return { handlesOverride, sendCodeOverride, contentComponent };
 };

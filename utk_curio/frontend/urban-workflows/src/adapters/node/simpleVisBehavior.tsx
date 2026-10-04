@@ -135,10 +135,12 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
       setImageColumns(view.imageColumns);
       setTextContent(view.textContent);
 
-      nodeState.setOutput({ code: 'success', content: parsedInput });
+      // Downstream first, then the outcome: the outcome is what tells a Run All
+      // this node is done, and the nodes it feeds must have the rows by then.
       if (typeof data.outputCallback === 'function') {
         data.outputCallback(data.nodeId, data.input);
       }
+      nodeState.setOutput({ code: 'success', content: parsedInput });
     };
 
     handleInput();
