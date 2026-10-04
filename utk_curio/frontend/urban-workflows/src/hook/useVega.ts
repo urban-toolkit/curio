@@ -7,11 +7,12 @@ import { useFlowContext } from "../providers/FlowProvider";
 import { useToastContext } from "../providers/ToastProvider";
 import { applyContainerSizing, createFlipGuard, refitToContainer } from "../utils/vegaSpecSizing";
 import type { RenderCounts } from "../utils/renderOutcome";
-import { injectInputs, prepareVegaInputs, usesNamedDatasets } from "../utils/vegaInput";
+import { injectInputs, prepareVegaInputs, usesNamedDatasets, type VegaDataset } from "../utils/vegaInput";
 import { DEFAULT_INPUT_DATASET } from "../utils/vegaGeoSpec";
+import { inputTableName } from "../generated/autkGrammar";
 import { usableCounts } from "../utils/vegaUsableRows";
 import { matchSelections, objectRows } from "../utils/selectionMatch";
-import { isSelectionEcho } from "../utils/selectionEcho";
+import { echoedCircle } from "../utils/selectionEcho";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
 import { clearEmptyState, writeEmptyState } from "../utils/writeEmptyState";
@@ -110,6 +111,10 @@ export const useVega = ({
   // The rows the view holds, which a direct selection is matched against: the
   // first input's.
   const lastValuesRef = React.useRef<any[]>([]);
+  // Every input's rows the view holds, and the input they came from, which
+  // tells a selection coming back on one input from new data (#662).
+  const heldDatasetsRef = React.useRef<VegaDataset[]>([]);
+  const heldInputRef = React.useRef<any>(undefined);
   // Whether the view reads its inputs as named datasets (#662), which a new
   // input reaches by building the view again rather than by a hot swap.
   const datasetViewRef = React.useRef(false);
@@ -121,9 +126,9 @@ export const useVega = ({
    * keep their `_vgsid_`, so a selection made in this chart still finds its
    * marks afterwards.
    */
-  const setInteracted = (view: any, flagOf: (t: any) => string) =>
+  const setInteracted = (view: any, flagOf: (t: any) => string, dataset: string = DEFAULT_INPUT_DATASET) =>
     view
-      .change(DEFAULT_INPUT_DATASET, vega.changeset().modify(() => true, "interacted", flagOf))
+      .change(dataset, vega.changeset().modify(() => true, "interacted", flagOf))
       .runAsync();
 
   /**
@@ -225,6 +230,26 @@ export const useVega = ({
     // already-compiled view and break the map on the *second* upstream run
     // only -- which is a miserable thing to debug.
     const prepared = await prepareVegaInputs(data.input, lastSpecRef.current);
+    const prevView = currentViewRef.current;
+    const previousInput = heldInputRef.current;
+    heldInputRef.current = data.input;
+
+    // A Data Pool sending a selection back: the same rows with new
+    // `interacted` flags. Fresh rows would get fresh `_vgsid_` ids, and a
+    // selection made in this chart (a hovered bar) would then match none of
+    // them (#535), so only the flags change. The rows stay the view's own.
+    // With several inputs only the input it came back on changes its flags.
+    const echoed = echoedCircle(data.input, previousInput);
+    const dataset = echoed === null ? null : inputTableName(echoed);
+    const echoRows = prepared.datasets.find((d) => d.name === dataset)?.values;
+    const heldRows = heldDatasetsRef.current.find((d) => d.name === dataset)?.values;
+    if (prevView && dataset && Array.isArray(echoRows) && Array.isArray(heldRows) && echoRows.length === heldRows.length) {
+      setEmptyState(prepared);
+      setInteracted(prevView, (t: any) => echoRows[t.__row_index__]?.interacted ?? t.interacted, dataset)
+        .then(() => applyDirectSelection(prevView));
+      return;
+    }
+
     // Several inputs, or a spec that reads its inputs by name: a hot swap
     // reaches one dataset only, so the view is built again from its spec.
     if (datasetViewRef.current || usesNamedDatasets(lastSpecRef.current, prepared.datasets.length)) {
@@ -233,23 +258,8 @@ export const useVega = ({
     }
     setEmptyState(prepared);
     const values = prepared.datasets[0]?.values ?? [];
-    const prevView = currentViewRef.current;
-
-    // A Data Pool sending a selection back: the same rows with new
-    // `interacted` flags. Fresh rows would get fresh `_vgsid_` ids, and a
-    // selection made in this chart (a hovered bar) would then match none of
-    // them (#535), so only the flags change. The rows stay the view's own.
-    if (
-      prevView
-      && isSelectionEcho(data.input)
-      && Array.isArray(values)
-      && values.length === lastValuesRef.current.length
-    ) {
-      setInteracted(prevView, (t: any) => values[t.__row_index__]?.interacted ?? t.interacted)
-        .then(() => applyDirectSelection(prevView));
-      return;
-    }
     lastValuesRef.current = values;
+    heldDatasetsRef.current = prepared.datasets;
 
     let changeset = vega
       .changeset()
@@ -364,6 +374,8 @@ export const useVega = ({
     setEmptyState(prepared);
     const values = prepared.datasets[0]?.values ?? [];
     lastValuesRef.current = values;
+    heldDatasetsRef.current = prepared.datasets;
+    heldInputRef.current = data.input;
     const rowsIn = Array.isArray(values) ? values.length : undefined;
     // dev/137: judged over the fields the input carries; see vegaUsableRows.
     const { usableRows, usableFields } = usableCounts(values, specObj);
