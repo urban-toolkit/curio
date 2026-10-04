@@ -105,7 +105,7 @@ describe("readGrammarInput", () => {
       .toBe("raster is not a valid input type for the 2D Plot (Vega-Lite).");
   });
 
-  test("Vega refuses a bundle; Autark reads it", async () => {
+  test("without `circles` or `bundles` a bundle is refused; Autark reads it", async () => {
     const bundle = {
       dataType: "outputs",
       data: [
@@ -118,13 +118,54 @@ describe("readGrammarInput", () => {
     expect((await readGrammarInput(bundle, VEGA)).emptyReason).toBe("input-type-rejected");
 
     const read = await readGrammarInput(bundle, AUTK);
-    expect(read.frames.map((f) => [f.name, f.dataType, f.index, f.fromBundle])).toEqual([
-      ["roads", "geodataframe", 0, true],
-      [null, "geodataframe", 1, true],
-      [null, "dataframe", 2, true],
+    expect(read.frames.map((f) => [f.name, f.dataType, f.index, f.fromBundle, f.circle])).toEqual([
+      ["roads", "geodataframe", 0, true, 0],
+      [null, "geodataframe", 1, true, 1],
+      [null, "dataframe", 2, true, 2],
     ]);
     expect(read.frames[0].layerType).toBe("roads");
     expect(read.skipped).toEqual(["raster at position 3"]);
+  });
+
+  test("with `circles` (Vega-Lite), several inputs are a frame each; any other bundle is still refused", async () => {
+    const inputs = {
+      dataType: "outputs",
+      data: [
+        { dataType: "dataframe", data: { a: [1] } },
+        { dataType: "geodataframe", data: fc(2) },
+      ],
+    };
+    const read = await readGrammarInput(inputs, { ...VEGA, circles: true });
+    expect(read.frames.map((f) => [f.dataType, f.circle])).toEqual([["dataframe", 0], ["geodataframe", 1]]);
+
+    const tabs = { dataType: "list", data: [{ dataType: "dataframe", data: { a: [1] } }] };
+    expect((await readGrammarInput(tabs, { ...VEGA, circles: true })).detail)
+      .toBe("list is not a valid input type for the 2D Plot (Vega-Lite).");
+  });
+
+  test("an input that holds an Autark node's tables brings each of them, under that input's position", async () => {
+    mockFetchData.mockImplementation(async (path: string) => (path === "art-b"
+      ? {
+          dataType: "list",
+          data: [
+            { dataType: "dict", data: { name: "table_osm_roads", type: "roads", geojson: fc(1) } },
+            { dataType: "dict", data: { name: "table_osm_buildings", type: "buildings", geojson: fc(2) } },
+          ],
+        }
+      : { dataType: "geodataframe", data: fc(3) }));
+    const inputs = {
+      dataType: "outputs",
+      data: [{ path: "art-a", dataType: "geodataframe" }, { path: "art-b", dataType: "list" }],
+    };
+    const read = await readGrammarInput(inputs, AUTK);
+    expect(read.frames.map((f) => [f.name, f.circle])).toEqual([
+      [null, 0],
+      ["table_osm_roads", 1],
+      ["table_osm_buildings", 1],
+    ]);
+    expect(read.frames[1].layerType).toBe("roads");
+    expect(read.skipped).toBeUndefined();
+    mockFetchData.mockReset();
   });
 
   test("an Autark data node's table list keeps each table's name and layer type", async () => {

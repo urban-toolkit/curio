@@ -65,7 +65,7 @@ jest.mock("@urban-toolkit/autk-db", () => ({
 
 import { useVegaBehavior } from "../../adapters/node/vegaBehavior";
 import { useAutkGrammarBehavior } from "../../adapters/node/autkGrammarBehavior";
-import { prepareVegaInput } from "../../utils/vegaInput";
+import { prepareVegaInput, prepareVegaInputs } from "../../utils/vegaInput";
 import { prepareAutkInput } from "../../utils/autkInput";
 import { __resetWebGpuSupportCache } from "../../utils/webgpuSupport";
 
@@ -75,7 +75,7 @@ const LABEL: Record<Grammar, string> = { vega: "the 2D Plot (Vega-Lite)", autk: 
 // A document of each grammar that draws its input's geometry.
 const MAP: Record<Grammar, any> = {
   vega: { mark: "geoshape" },
-  autk: { map: { layerRefs: [{ dataRef: "upstream" }] } },
+  autk: { map: { layerRefs: [{ dataRef: "input_0" }] } },
 };
 
 const polygon = { type: "Polygon", coordinates: [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]] };
@@ -186,18 +186,17 @@ describe("the same input, the same answer", () => {
   });
 
   describe("where they differ", () => {
-    test("several named layers: Autark reads each as a table; a Vega-Lite chart draws one dataset", async () => {
+    test("several inputs: Autark reads each as a table by its layer name; Vega-Lite as the datasets input_0, input_1", async () => {
       const autk = await prepareAutkInput(INPUT.bundle, { map: { layerRefs: [{ dataRef: "zips" }] } });
       expect(autk.tables).toEqual(["zips", "centres"]);
-      expect(await prepare("vega", INPUT.bundle)).toEqual({
-        emptyReason: "input-type-rejected",
-        detail: "outputs is not a valid input type for the 2D Plot (Vega-Lite).",
-      });
+      expect(await prepare("vega", INPUT.bundle)).toEqual({ emptyReason: null, detail: null });
+      const vega = await prepareVegaInputs(fresh(INPUT.bundle), fresh(MAP.vega));
+      expect(vega.datasets.map((d) => [d.name, d.values.length])).toEqual([["input_0", 1], ["input_1", 1]]);
     });
 
     test("no geometry, no drawing: a Vega-Lite bar chart draws the frame no Autark document can", async () => {
       expect(await prepare("vega", INPUT.dfNoGeometry, { mark: "bar" })).toEqual(drawn);
-      const plot = { plot: { dataRef: "upstream", type: "bar" } };
+      const plot = { plot: { dataRef: "input_0", type: "bar" } };
       expect((await prepare("autk", INPUT.dfNoGeometry, plot)).emptyReason).toBe("geometry-unresolved");
     });
   });

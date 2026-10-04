@@ -40,7 +40,7 @@ LOADER_ID = "redraw-loader"
 POOL_ID = "redraw-pool"
 MAP_ID = "redraw-map"
 BAR_ID = "redraw-bar"
-MAP_ON_UPSTREAM = json.dumps({"map": {"layerRefs": [{"dataRef": "upstream"}]}}, indent=2)
+MAP_ON_INPUT = json.dumps({"map": {"layerRefs": [{"dataRef": "input_0"}]}}, indent=2)
 
 LOADER_CODE = (
     "import geopandas as gpd\n"
@@ -125,7 +125,7 @@ def test_an_autark_map_redraws_when_the_node_feeding_it_runs_again(
 ):
     spec = _spec(
         [_node(LOADER_ID, "curio.builtin/data-loading", 0, 0, LOADER_CODE),
-         _node(MAP_ID, "curio.builtin/autk-grammar", 645, 0, MAP_ON_UPSTREAM)],
+         _node(MAP_ID, "curio.builtin/autk-grammar", 645, 0, MAP_ON_INPUT)],
         [_edge(LOADER_ID, MAP_ID)],
     )
     _open(page, app_frontend, current_server, username="autark_redraw_rerun", spec=spec)
@@ -144,7 +144,7 @@ def test_a_pool_selection_highlights_an_autark_map_without_redrawing_it(
     spec = _spec(
         [_node(LOADER_ID, "curio.builtin/data-loading", 0, 0, LOADER_CODE),
          _node(POOL_ID, "curio.builtin/data-pool", 600, 0, ""),
-         _node(MAP_ID, "curio.builtin/autk-grammar", 1200, -300, MAP_ON_UPSTREAM),
+         _node(MAP_ID, "curio.builtin/autk-grammar", 1200, -300, MAP_ON_INPUT),
          _node(BAR_ID, "curio.builtin/vis-vega", 1200, 300, BAR_SPEC)],
         [_edge(LOADER_ID, POOL_ID), _edge(POOL_ID, MAP_ID), _edge(POOL_ID, BAR_ID),
          {"type": "Interaction", "id": f"reactflow__edge-{BAR_ID}in/out-{POOL_ID}in/out",
