@@ -10,6 +10,7 @@
   - [Keys for node code](#keys-for-node-code)
   - [Guest users](#guest-users)
 - [Widgets](#widgets)
+- [Scenarios](#scenarios)
 - [Node Catalog](#node-catalog)
 - [Vega-Lite node](#vega-lite-node)
 - [Autark node](#autark-node)
@@ -473,6 +474,63 @@ code are renumbered. A chip for the deleted input becomes `[!! input ? !!]` and
 stops the run until you replace it. A chip for a circle with no edge, or for a
 column its input does not have, is drawn in red and stops the run with a message
 naming it.
+
+## Scenarios
+
+A scenario is a named selection of a dataflow's nodes, or the whole dataflow, used
+to compare alternatives: the same analysis with buildings twice as tall, say. Its
+boundary splits the dataflow into three parts:
+
+- **Fixed context:** the nodes outside the scenario that it reads, through an edge
+  into it or through a Parameter node's tag its code uses. The scenario takes their
+  outputs as given. A node two alternatives share sits outside both, as their
+  common context.
+- **Levers:** the nodes in the scenario, which is what an alternative changes: its
+  data loaders, widget values, code and specs.
+- **Outcomes:** the outputs of the scenario's last nodes, which is what gets
+  compared.
+
+A node belongs to one scenario at most. A scenario of the whole dataflow has no
+fixed context.
+
+To make one:
+
+1. Select its nodes: hold Shift and drag a box around them.
+2. Choose **View → Save selection as scenario**, or **File → Save dataflow as
+   scenario** for the whole dataflow.
+3. To build an alternative, choose **View → Duplicate as scenario**. The
+   selected nodes are copied below themselves with the edges between them, every
+   edge entering the selection feeds the copy too, and the selection and the copy
+   become two scenarios. **Duplicate selection** copies the nodes without making
+   scenarios.
+
+Then change the copy's levers: a widget value, a line of code. Each copy remembers
+the node it was copied from.
+
+**View → Show scenarios** opens the Scenarios panel. For each scenario it shows
+its fixed context, levers and outcomes, and lets you:
+
+- rename it, recolor it and describe it;
+- **Run scenario**: run its levers, and of its fixed context only the nodes that
+  have not run or have changed since;
+- **Collapse** or **Expand** it;
+- **Add selected** or **Remove selected** nodes;
+- **Delete** it. Its nodes stay on the canvas.
+
+Pointing at a scenario in the panel marks its fixed context on the canvas.
+
+On the canvas, an expanded scenario's nodes wear its color inside a frame, with its
+name and a **Collapse** button above. A collapsed scenario is one box in its color
+that lists its fixed context and its outcomes with their latest output. The edges
+into and out of the scenario are drawn to the box, and dragging the box moves it.
+Double-click the box to expand it. A collapsed scenario's nodes still run with
+**Run All**, and the context they share runs once.
+
+Defining a scenario saves the outputs of its fixed context and outcomes to your Data
+Catalog, whatever their **Save output** setting, as pinning a dashboard tile does. A
+chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios,
+their colors, descriptions, collapsed state and box positions are saved with the
+dataflow. Deleting a node removes it from its scenario.
 
 ## Node Catalog
 

@@ -91,6 +91,11 @@ def create_app(config_class=config_class):
     from utk_curio.backend.app.projects.routes import projects_bp
     app.register_blueprint(projects_bp)
 
+    # The run tables, and the cascade that deletes a project's runs with it.
+    from utk_curio.backend.app.runs import models as _run_models  # noqa: F401
+    from utk_curio.backend.app.runs.routes import runs_bp
+    app.register_blueprint(runs_bp)
+
     from utk_curio.backend.app.notebooks import notebooks_bp
     app.register_blueprint(notebooks_bp)
 
@@ -199,6 +204,15 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.projects.tasks import start_cleanup_scheduler
     start_cleanup_scheduler(app)
+
+    # A run an earlier backend process left going was cut off when it stopped.
+    with app.app_context():
+        try:
+            from utk_curio.backend.app.runs.service import interrupt_runs_of_other_processes
+
+            interrupt_runs_of_other_processes()
+        except Exception:  # noqa: BLE001 - before the migration that makes the tables
+            db.session.rollback()
 
     # Real-time collaboration: opt-in via ENABLE_COLLAB. The collaboration
     # package and flask-socketio are imported only inside this branch so the

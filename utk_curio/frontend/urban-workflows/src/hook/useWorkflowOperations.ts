@@ -28,7 +28,8 @@ import { projectsApi, OutputRef, DatasetInstallWarning } from "../api/projectsAp
 import type { DataflowCategories, HandCategories } from "../utils/dataflowCategories";
 import { normalizeScenarios, type Scenario } from "../utils/scenarios/scenarioModel";
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
-import { dashboardSourceNodeIds, prepareDashboardNodes } from "../utils/dashboardLayout";
+import { prepareDashboardNodes } from "../utils/dashboardLayout";
+import { savedSourceNodeIds } from "../utils/scenarios/scenarioParts";
 import { notifyAgentDockRefresh } from "../services/agents";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
@@ -493,7 +494,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                     }
                 } else {
                     // Accumulate the spec edges connected so far and hand them to
-                    // onConnect, so merge-handle resolution sees the earlier edges
+                    // onConnect, so input circle resolution sees the earlier edges
                     // of this load (in_N occupancy) instead of an empty list.
                     const connectedSoFar: any[] = [];
                     for (const edge of loaded_edges) {
@@ -795,11 +796,12 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 deps.outputsRef.current,
                 reactFlow.getNodes(),
                 defaultSaveOutputDataset,
-                // Whatever feeds a pinned tile is recorded too, whatever its
-                // toggle says: the ref is what lets a reload hand that tile its
-                // data instead of an empty box.
-                dashboardSourceNodeIds(
-                    reactFlow.getNodes() as any, reactFlow.getEdges() as any,
+                // Whatever feeds a pinned tile, and a scenario's context and
+                // outcomes (#662), are recorded too, whatever their toggle says:
+                // the ref is what lets a reload hand that tile its data instead
+                // of an empty box, and another project read the scenario's.
+                savedSourceNodeIds(
+                    reactFlow.getNodes() as any, reactFlow.getEdges() as any, scenariosRef.current,
                 ),
             ) ?? [];
         // Attach each producing node's friendly display label so the save-time
@@ -1454,6 +1456,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         workflowCategories,
         serverCategories,
         scenarios,
+        // For the run's save rule, which must read the list as it is now.
+        scenariosRef,
         packages,
         setPackages,
         addPackage,

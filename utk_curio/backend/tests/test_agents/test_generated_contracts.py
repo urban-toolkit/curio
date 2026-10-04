@@ -155,14 +155,44 @@ class TestThePromptFacts:
         head = "Do not generate warnings for nodes made from these templates:\n\n"
         skipped = text.split(head, 1)[1].split("\n\n", 1)[0].splitlines()
         assert skipped == expected
-        # The four the hand-written list named stay; a code node is never skipped.
-        assert {"- Data Pool", "- Merge Flow", "- Vega-Lite", "- Autark"} <= set(skipped)
+        # The three the hand-written list named that still ship stay, beside
+        # the other templates with no code; a code node is never skipped, and
+        # the Merge Flow left the manifest (#662).
+        assert {"- Data Pool", "- Simple View", "- Vega-Lite", "- Autark"} <= set(skipped)
         assert "- JS Computation" not in skipped
+        assert "- Merge Flow" not in skipped
 
-    def test_the_merge_range_and_the_merge_slots_agree(self):
-        slots = contracts.merge_slot_names()
-        assert f'("{slots[0]}".."{slots[-1]}")' in contracts.render_prompt("orchestration_instruction")
-        assert contracts.builtin_lists(_manifest())["builtin.merge_slots"].endswith(f'or "{slots[-1]}"')
+    def test_the_input_handles_and_the_input_chips_come_from_the_runtime(self):
+        """The circles an edge names and the chips code reads its inputs by
+        are the runtime's own (``slot_handle_id``, ``reference_text``), and
+        the prompts that state them say exactly that. Successor of the Merge
+        Flow's slot names (#662)."""
+        from utk_curio.backend.app.execution.code_references import (
+            input_reference_inner,
+            reference_text,
+        )
+        from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
+
+        handles = contracts.render_template("{{inputs.handles}}")
+        assert handles == ", ".join(f'"{slot_handle_id(k)}"' for k in range(3)) + ", ..."
+        assert handles == '"in", "in_1", "in_2", ...'
+        chip0 = contracts.render_template("{{inputs.chip:0}}")
+        assert chip0 == reference_text(input_reference_inner(0)) == "[!! input 0 !!]"
+        assert contracts.render_template("{{inputs.chip:1}}") == "[!! input 1 !!]"
+        column = contracts.render_template("{{inputs.chip:0.population}}")
+        assert column == reference_text(input_reference_inner(0, "population"))
+        assert column == "[!! input 0.population !!]"
+        with pytest.raises(contracts.PromptTemplateError, match="circle number"):
+            contracts.render_template("{{inputs.chip:population}}")
+        preamble = contracts.render_prompt("default_preamble")
+        assert f'"targetHandle": {handles}, circle 0 first.' in preamble
+        assert f"`{chip0}` is the input on circle 0" in preamble
+        assert f"`{column}`" in preamble
+        orchestration = contracts.render_prompt("orchestration_instruction")
+        assert f'"toHandle" ({handles})' in orchestration
+        assert f"`{chip0}`, `[!! input 1 !!]`, ..." in orchestration
+        lists = contracts.builtin_lists(_manifest())
+        assert "builtin.merge_slots" not in lists
 
     def test_the_note_palette_is_the_named_colors(self):
         from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
@@ -412,8 +442,9 @@ class TestThePreambleVocabulary:
 
     def test_an_input_count_is_the_connections_a_node_accepts(self):
         # One input port takes its declared maximum: a "[1,n]" port grows a
-        # circle per edge on the canvas. Named ports take one edge each, and
-        # the Merge Flow its slots (maxIncomingEdges).
+        # circle per edge on the canvas, up to a bounded "[1,k]" port's k.
+        # Named ports take one edge each. No template is special-cased by id
+        # any more: the Merge Flow and its slots left with #662.
         from utk_curio.backend.app.packages.application.templates import input_capacity
 
         lists = contracts.builtin_lists(_manifest())
@@ -424,9 +455,12 @@ class TestThePreambleVocabulary:
         assert counts["Autark"] == "any number"
         assert counts["Data Summary"] == "1"
         assert counts["Spatial Join"] == "2"
-        assert counts["Merge Flow"] == str(input_capacity(contracts.MERGE_TEMPLATE, 1))
-        slots = input_capacity(contracts.MERGE_TEMPLATE, 1)
-        assert lists["builtin.merge_slots"].endswith(f'or "in_{slots - 1}"')
+        assert "Merge Flow" not in counts
+        assert input_capacity(1, "[1,n]") is None
+        assert input_capacity(1, "[1,2]") == 2
+        assert input_capacity(1, "1") == 1
+        assert input_capacity(2) == 2
+        assert input_capacity(2, None) == 2
 
     def test_the_lists_name_no_template_id(self):
         # The run's roster is the authority on ids; a list to copy them from
@@ -480,27 +514,39 @@ class TestTheTrillBlock:
 
     def test_the_worked_examples_are_valid_trill(self):
         # The worked examples teach the format, so each has to satisfy the
-        # block the preamble shows, and name a merge socket the way the
-        # preamble says to.
+        # block the preamble shows, and wire several inputs into one node the
+        # way the preamble says to: each edge on its own input circle, "in",
+        # "in_1", ... in connection order, with no Merge Flow between (#662).
         import json
         import re
 
         from jsonschema import Draft202012Validator
 
         from utk_curio.backend.app.agents.application.turns import examples
+        from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
 
+        package = _manifest()["id"].split("@")[0]
+        one_port = {
+            f"{package}/{t['id']}" for t in _manifest()["templates"]
+            if len(t.get("inputPorts") or []) == 1
+        }
         block = json.loads(contracts.render_trill_block(_trill()))
         used = [entry for entry in examples.read_index() if entry.section == examples.USED]
         assert used, "the index lists no Used dataflow; this test would be vacuous"
-        merge_edges = []
+        fan_in_edges = []
         for entry in used:
             example = json.loads(entry.path.read_text(encoding="utf-8"))
             assert [e.message for e in Draft202012Validator(block).iter_errors(example)] == [], entry.target
-            merges = {
-                n["id"] for n in example["dataflow"]["nodes"]
-                if re.sub(r"@\d+$", "", n["type"]) == "curio.builtin/merge-flow"
-            }
-            edges = [e for e in example["dataflow"]["edges"] if e["target"] in merges]
-            assert all(str(e.get("targetHandle")).startswith("in_") for e in edges), entry.target
-            merge_edges += edges
-        assert merge_edges
+            types = {n["id"]: re.sub(r"@\d+$", "", n["type"]) for n in example["dataflow"]["nodes"]}
+            assert "curio.builtin/merge-flow" not in types.values(), entry.target
+            into: dict[str, list[dict]] = {}
+            for e in example["dataflow"]["edges"]:
+                if e.get("type") != "Interaction":
+                    into.setdefault(e["target"], []).append(e)
+            for target, edges in into.items():
+                if len(edges) < 2 or types.get(target) not in one_port:
+                    continue
+                handles = sorted(str(e.get("targetHandle")) for e in edges)
+                assert handles == sorted(slot_handle_id(k) for k in range(len(edges))), (entry.target, target, handles)
+                fan_in_edges += edges
+        assert fan_in_edges, "no Used example wires several inputs into one node"

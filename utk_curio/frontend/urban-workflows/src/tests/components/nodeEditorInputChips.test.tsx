@@ -64,6 +64,29 @@ function renderJsNode(inputSlots: unknown[], setOutputCallback = jest.fn()) {
   return { play: (code: string) => act(() => play!(code)), setOutputCallback };
 }
 
+/** Python Computation: it has a Widgets tab, so a run resolves there (the real
+ *  WidgetsEditor), not in NodeEditor itself. */
+function renderPythonNode(inputSlots: unknown[], setOutputCallback = jest.fn()) {
+  let play: ((code: string) => void) | undefined;
+  render(
+    <NodeEditor
+      {...({
+        setSendCodeCallback: (cb: any) => { play = cb; },
+        setOutputCallback,
+        data: { nodeId: "t", inputSlots, outputCallback: jest.fn() },
+        output: { code: "", content: "" },
+        nodeType: "curio.builtin/computation-analysis",
+        readOnly: false,
+        code: true,
+        grammar: false,
+        widgets: true,
+        defaultValue: "",
+      } as any)}
+    />,
+  );
+  return { play: (code: string) => act(() => play!(code)), setOutputCallback };
+}
+
 beforeEach(() => setFlow());
 
 test("a node without a Widgets tab runs its input chips as arg indexed", () => {
@@ -94,4 +117,17 @@ test("a node with several inputs waits until each holds a value", () => {
     code: "error",
     content: "Input 1 (from Parcels) has no value yet. Run the node that feeds it.",
   });
+});
+
+test("a Python node with an empty wired circle runs nothing and names the input it waits for", () => {
+  // Circle 0 empty, circle 1 filled: the run must not go ahead with input 1
+  // alone, and must say which input is missing.
+  const { play, setOutputCallback } = renderPythonNode([undefined, { path: "b" }]);
+  play("return [!! input 1 !!]");
+  expect(setOutputCallback).toHaveBeenCalledTimes(1);
+  expect(setOutputCallback).toHaveBeenCalledWith({
+    code: "error",
+    content: "Input 0 (from Roads) has no value yet. Run the node that feeds it.",
+  });
+  expect(screen.getByTestId("replaced").textContent).toBe("");
 });

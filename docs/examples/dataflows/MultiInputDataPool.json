@@ -55,19 +55,6 @@
         }
       },
       {
-        "id": "ee7503f5-04a7-427c-a61d-86d069eea9fe",
-        "type": "curio.builtin/merge-flow",
-        "x": 880.5541335080813,
-        "y": 1215.0592146265444,
-        "content": "",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "",
-        "metadata": {
-          "keywords": []
-        }
-      },
-      {
         "id": "f0f8183e-ef9f-40ee-a800-5ed974dc71ed",
         "type": "curio.builtin/computation-analysis",
         "x": -20.799358027463768,
@@ -96,40 +83,40 @@
     ],
     "edges": [
       {
-        "id": "reactflow__edge-ee7503f5-04a7-427c-a61d-86d069eea9feout-59367466-92b7-44e1-b85f-deb419863156in",
-        "source": "ee7503f5-04a7-427c-a61d-86d069eea9fe",
-        "target": "59367466-92b7-44e1-b85f-deb419863156"
-      },
-      {
-        "id": "reactflow__edge-f5d5c6d5-c5af-41fa-a5c5-7d1180de358fout-ee7503f5-04a7-427c-a61d-86d069eea9fein_0",
+        "id": "reactflow__edge-f5d5c6d5-c5af-41fa-a5c5-7d1180de358fout-59367466-92b7-44e1-b85f-deb419863156in",
         "source": "f5d5c6d5-c5af-41fa-a5c5-7d1180de358f",
-        "target": "ee7503f5-04a7-427c-a61d-86d069eea9fe"
+        "target": "59367466-92b7-44e1-b85f-deb419863156",
+        "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-f947ea8b-27f7-4968-83cb-bb6b45242498out-ee7503f5-04a7-427c-a61d-86d069eea9fein_1",
+        "id": "reactflow__edge-f947ea8b-27f7-4968-83cb-bb6b45242498out-59367466-92b7-44e1-b85f-deb419863156in_1",
         "source": "f947ea8b-27f7-4968-83cb-bb6b45242498",
-        "target": "ee7503f5-04a7-427c-a61d-86d069eea9fe"
+        "target": "59367466-92b7-44e1-b85f-deb419863156",
+        "targetHandle": "in_1"
       },
       {
-        "id": "reactflow__edge-df45c018-6da7-4a4e-be9c-aca061252358out-ee7503f5-04a7-427c-a61d-86d069eea9fein_2",
+        "id": "reactflow__edge-df45c018-6da7-4a4e-be9c-aca061252358out-59367466-92b7-44e1-b85f-deb419863156in_2",
         "source": "df45c018-6da7-4a4e-be9c-aca061252358",
-        "target": "ee7503f5-04a7-427c-a61d-86d069eea9fe"
+        "target": "59367466-92b7-44e1-b85f-deb419863156",
+        "targetHandle": "in_2"
       },
       {
-        "id": "reactflow__edge-f0f8183e-ef9f-40ee-a800-5ed974dc71edout-ee7503f5-04a7-427c-a61d-86d069eea9fein_3",
+        "id": "reactflow__edge-f0f8183e-ef9f-40ee-a800-5ed974dc71edout-59367466-92b7-44e1-b85f-deb419863156in_3",
         "source": "f0f8183e-ef9f-40ee-a800-5ed974dc71ed",
-        "target": "ee7503f5-04a7-427c-a61d-86d069eea9fe"
+        "target": "59367466-92b7-44e1-b85f-deb419863156",
+        "targetHandle": "in_3"
       },
       {
-        "id": "reactflow__edge-6af4345b-7fa3-4acb-bfde-79470b22aa5cout-ee7503f5-04a7-427c-a61d-86d069eea9fein_4",
+        "id": "reactflow__edge-6af4345b-7fa3-4acb-bfde-79470b22aa5cout-59367466-92b7-44e1-b85f-deb419863156in_4",
         "source": "6af4345b-7fa3-4acb-bfde-79470b22aa5c",
-        "target": "ee7503f5-04a7-427c-a61d-86d069eea9fe"
+        "target": "59367466-92b7-44e1-b85f-deb419863156",
+        "targetHandle": "in_4"
       }
     ],
-    "name": "MergeFlowDataPool",
+    "name": "MultiInputDataPool",
     "task": "",
     "timestamp": 1776883697890,
-    "provenance_id": "MergeFlowDataPool",
+    "provenance_id": "MultiInputDataPool",
     "packages": []
   }
 }

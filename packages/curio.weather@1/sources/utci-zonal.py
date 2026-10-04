@@ -1,10 +1,10 @@
 """Spatially join UTCI pixels into census polygons.
 
-Inputs arrive via a MERGE_FLOW in this order:
+Its input circles, in order:
 
-* ``arg[0]`` — rasterio dataset (carries the CRS / transform).
-* ``arg[1]`` — ``(utci_list, utci_shape)`` from the ``utci-compute`` step.
-* ``arg[2]`` — census polygon GeoDataFrame.
+* input 0: rasterio dataset (carries the CRS / transform).
+* input 1: ``(utci_list, utci_shape)`` from the ``utci-compute`` step.
+* input 2: census polygon GeoDataFrame.
 
 We rebuild the UTCI grid from the list-of-lists + shape, scale the
 raster transform to match the (downsampled) grid, replace NaNs with an
@@ -16,10 +16,10 @@ and attach the per-polygon mean back to the GeoDataFrame.
 import numpy as np
 from rasterstats import zonal_stats
 
-dataset = arg[0]
-utci_list = arg[1][0]
-utci_shape = arg[1][1]
-gdf = arg[2]
+dataset = [!! input 0 !!]
+utci_list = [!! input 1 !!][0]
+utci_shape = [!! input 1 !!][1]
+gdf = [!! input 2 !!]
 
 utci = np.asarray(utci_list, dtype=float)
 if utci.ndim != 2:

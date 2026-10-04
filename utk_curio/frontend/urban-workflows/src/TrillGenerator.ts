@@ -375,6 +375,15 @@ export class TrillGenerator {
                 trill_node.metadata.widgets = widgets;
             }
 
+            // #662: a copy made by Duplicate selection names the nodes it
+            // descends from at metadata.copiedFrom, only when it is one.
+            if(Array.isArray(node.data.copiedFrom) && node.data.copiedFrom.length > 0){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.copiedFrom = [...node.data.copiedFrom];
+            }
+
             if(typeof node.data.title === "string" && node.data.title)
                 trill_node.title = node.data.title;
 

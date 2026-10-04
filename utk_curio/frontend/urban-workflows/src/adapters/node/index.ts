@@ -3,7 +3,6 @@ export { usePackageNodeBehavior, withPackageStarter } from './packageNodeBehavio
 export { useDataExportBehavior } from './dataExportBehavior';
 export { useVegaBehavior } from './vegaBehavior';
 export { useSimpleVisBehavior } from './simpleVisBehavior';
-export { useMergeFlowBehavior } from './mergeFlowBehavior';
 export { useDataPoolBehavior } from './dataPoolBehavior';
 export { useDataSummaryBehavior } from './dataSummaryBehavior';
 export { useAutkGrammarBehavior } from './autkGrammarBehavior';

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/08-autark-spatial-join-regression.json",
-    "sha256": "48de89417369b740515bc492fc0ca324d5156222e0e0d3e2afef7a2e7b360020",
+    "sha256": "a7ff2ad22f20bd69b0105d29a09603e1524435d6d7c2a904fe4bdd2423aaea6b",
     "walkthrough": "docs/examples/08-autark-spatial-join-regression.md"
   },
   "prompt": "I want the per-road warming trend for Niteroi between 2001 and 2024. Two files in this checkout hold the inputs: the OSM extract at docs/examples/data/niteroi.osm.pbf and a 24-band land surface temperature raster at docs/examples/data/niteroi_lst_verao_2001_2024.tif. Load the road network and its context layers from the PBF with Autark, reference the raster in a loading step, sample the raster bands onto the roads with a JavaScript computation using DuckDB, then fit an ordinary least squares regression per road on the GPU. Show a 3D map of the roads coloured by their trend and a scatter plot, linked through a shared fan-out so a selection in one highlights the other.",
@@ -67,21 +67,13 @@
         "role": "analysis",
         "executable": true,
         "hasContent": true
-      },
-      {
-        "ref": "merge1",
-        "type": "curio.builtin/merge-flow",
-        "role": "merge",
-        "executable": false,
-        "hasContent": false
       }
     ],
     "edges": [
       {
         "from": "visualization1",
-        "to": "merge1",
-        "kind": "data",
-        "slot": 0
+        "to": "analysis1",
+        "kind": "data"
       },
       {
         "from": "visualization4",
@@ -90,7 +82,7 @@
       },
       {
         "from": "loader1",
-        "to": "merge1",
+        "to": "analysis1",
         "kind": "data",
         "slot": 1
       },
@@ -117,11 +109,6 @@
       {
         "from": "analysis1",
         "to": "visualization4",
-        "kind": "data"
-      },
-      {
-        "from": "merge1",
-        "to": "analysis1",
         "kind": "data"
       }
     ],
@@ -151,8 +138,7 @@
     "mode": "sandbox",
     "browserOnlyKinds": [
       "curio.builtin/autk-grammar",
-      "curio.builtin/data-pool",
-      "curio.builtin/merge-flow"
+      "curio.builtin/data-pool"
     ],
     "notes": null
   },

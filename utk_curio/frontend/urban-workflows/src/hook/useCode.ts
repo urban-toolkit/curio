@@ -18,6 +18,7 @@ import { canvasTemplateConfigFromSpec } from "../utils/canvasTemplateConfigSpec"
 import { dataPoolFromSpec } from "../utils/dataPoolSpec";
 import { normalizeWidgets, type WidgetDef } from "../utils/widgets/widgetModel";
 import { runKeyWithShared, sharedWidgetsOfSpec } from "../utils/references/sharedParameters";
+import { lineageFromSpec } from "../utils/scenarios/duplicateSelection";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -79,6 +80,8 @@ type CreateCodeNodeOptions = {
     dataPool?: { insideChart?: string; betweenCharts?: string };
     // #662: the node's widgets and their values (metadata.widgets).
     widgets?: WidgetDef[];
+    // #662: the ids a copy descends from, oldest first (metadata.copiedFrom).
+    copiedFrom?: string[];
     // #407: a node whose saved output a project load restored mounts as having
     // run: the output it shows, and the source that produced it.
     output?: { code: string; content: string };
@@ -243,6 +246,10 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && Array.isArray(node.metadata.widgets))
                 nodeMeta.widgets = normalizeWidgets(node.metadata.widgets);
 
+            // #662: and the lineage of a copy Duplicate selection made.
+            if(node.metadata != undefined && Array.isArray(node.metadata.copiedFrom))
+                nodeMeta.copiedFrom = lineageFromSpec(node.metadata.copiedFrom);
+
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
 
@@ -307,7 +314,7 @@ export function useCode(): IUseCode {
             // Respect explicit handle ids in the spec (named handles like
             // `in_points` / `in_polygons` on spatial-join). Fall back to the
             // legacy `in_N` suffix of the edge id, then to the default "in"
-            // handle, as `merge_slot_index` reads them in the runner.
+            // handle, as `named_input_slot` reads them in the runner.
             let targetHandle = edge.targetHandle || "in";
             if (!edge.targetHandle) {
                 const legacy = typeof edge.id === "string" ? edge.id.match(/in_(\d+)$/) : null;
@@ -404,6 +411,7 @@ export function useCode(): IUseCode {
             packageTemplateConfig = undefined,
             dataPool = undefined,
             widgets = undefined,
+            copiedFrom = undefined,
             output = undefined,
             executedCode = undefined,
         } = options;
@@ -453,6 +461,7 @@ export function useCode(): IUseCode {
                 packageTemplateConfig,
                 dataPool,
                 widgets,
+                copiedFrom,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset

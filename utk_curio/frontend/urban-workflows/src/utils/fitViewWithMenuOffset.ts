@@ -1,6 +1,7 @@
 import type { ReactFlowInstance, FitViewOptions, Node } from "reactflow";
 import { getNodesBounds, getViewportForBounds } from "reactflow";
 import { TOOLS_PALETTE_PANEL_ATTR } from "../components/menus/nodes/toolsPaletteDismiss";
+import { isDrawnHidden } from "./hiddenNodes";
 
 // fitView centers content in the full pane, but the palette dock
 // (`#tools-palette-dock`) is a fixed overlay on the left — and with a panel open
@@ -57,10 +58,18 @@ export function fitViewWithMenuOffset(
         .map((n: any) => n?.id)
         .filter((id: unknown): id is string => typeof id === "string");
     const allNodes = rf.getNodes();
-    const targetNodes = requestedIds.length
+    const requested = requestedIds.length
         ? allNodes.filter((n) => requestedIds.includes(n.id))
         : allNodes;
-    if (targetNodes.length === 0) return false;
+    if (requested.length === 0) return false;
+    // A node drawn hidden (a collapsed scenario's member, #662) is never
+    // measured, so waiting for its size would never end. Fit the others; when
+    // every one is hidden, fit where they stand, which is where a collapsed
+    // scenario's box sits.
+    const shown = requested.filter((n) => !isDrawnHidden(n));
+    const targetNodes = shown.length
+        ? shown
+        : requested.map((n) => ({ ...n, width: n.width || 1, height: n.height || 1 }));
 
     // React Flow populates `width`/`height` only after it measures each node in
     // the DOM. Loading a workflow can run this before measurement, when the

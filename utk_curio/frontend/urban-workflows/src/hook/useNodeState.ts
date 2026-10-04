@@ -59,7 +59,7 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
     // here, in memory, so an agent asked about a node that had just failed in
     // the BROWSER was told `never-executed` (the owner's `a29d1ad8`). This is
     // the ONE chokepoint every kind crosses, sandbox and browser alike, so
-    // reporting from it covers Vega, Autark, the pool, the merge, the simple
+    // reporting from it covers Vega, Autark, the pool, the simple
     // view, the spatial join, the export and the render boundary at once — and
     // a kind added later is covered by construction. Fire and forget: nothing
     // is awaited, a repeat is deduplicated, and a failed report is silent.

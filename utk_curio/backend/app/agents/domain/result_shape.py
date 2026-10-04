@@ -59,7 +59,7 @@ def row_count(summary: dict | None) -> int | None:
         count = summary.get("rowCount")
         return int(count) if isinstance(count, int) else None
     if kind == "parts":
-        # A merge hands a LIST of frames: its row count is the total across the
+        # Several inputs are a LIST of frames: the row count is the total across the
         # parts, so "empty" means every part is empty.
         total = 0
         seen = False
@@ -130,7 +130,7 @@ def null_columns(summary: dict | None) -> list[str]:
     """
     if not isinstance(summary, dict):
         return []
-    # A merge hands a LIST of frames; a column is all-null when it is all-null
+    # Several inputs are a LIST of frames; a column is all-null when it is all-null
     # in every part that has it, so the samples are gathered across them.
     samples: list[dict] = [
         row for row in (summary.get("sampleRows") or []) if isinstance(row, dict)
