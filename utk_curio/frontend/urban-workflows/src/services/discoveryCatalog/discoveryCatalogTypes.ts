@@ -565,6 +565,8 @@ export interface DiscoveryAcquireJob {
   dependencies?: { importErrors?: Record<string, string>; dependencyError?: string } | null;
   alreadyPresent: boolean;
   unchanged: boolean;
+  /** A completed image job that kept only some images: "N could not be fetched". */
+  note?: string | null;
   sourceId: string;
   resourceId: string;
   /** Files done and in all, when the work is counted in files. */

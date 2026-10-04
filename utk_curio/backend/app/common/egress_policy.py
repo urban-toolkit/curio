@@ -23,9 +23,10 @@ from __future__ import annotations
 
 import ipaddress
 import socket
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 ALLOWED_SCHEMES = ("https", "http")
+DEFAULT_PORTS = {"https": 443, "http": 80}
 MAX_REDIRECTS = 5
 # The per-run tool budget (enforced by the agent run loop, named here).
 MAX_CALLS_PER_RUN = 4
@@ -92,6 +93,23 @@ def trusted_host_of(url: str) -> tuple[str, int | None] | None:
     if not parsed.hostname:
         return None
     return (parsed.hostname.lower(), parsed.port)
+
+
+def url_origin(url: str) -> tuple[str, str, int | None] | None:
+    """``(scheme, host, port)`` of *url*, the port defaulted by its scheme, or
+    None for a URL that has none (which then matches nothing).
+
+    Where a key may go is decided by this one comparison: a redirect keeps a
+    secret header only on the origin it started at, and a Discovery source's
+    token goes only to its own origin.
+    """
+    try:
+        parts = urlsplit(str(url))
+        scheme, host = parts.scheme.lower(), (parts.hostname or "").lower()
+        port = parts.port if parts.port is not None else DEFAULT_PORTS.get(scheme)
+    except ValueError:
+        return None
+    return (scheme, host, port) if scheme and host else None
 
 
 def check_url(

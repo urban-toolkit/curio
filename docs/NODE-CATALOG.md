@@ -2,7 +2,7 @@
 
 The Node Catalog is where Curio's nodes live. Every node you can drop on the canvas, whether a built-in that ships with the app or an extra you install, comes from a **package**: a small, self-contained folder with a `manifest.json` describing the nodes inside it.
 
-Curio has five catalogs: the Node Catalog holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from.
+Curio has six catalogs: the Node Catalog holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
 
 This guide is in six parts, plus operator notes:
 

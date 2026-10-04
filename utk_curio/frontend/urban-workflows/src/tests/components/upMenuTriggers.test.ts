@@ -8,8 +8,9 @@ import path from "path";
  * a font that has it, and a system without one drew a box.
  *
  * The catalogs are not a menu any more: the old "Data" menu hid all five, and
- * the Discovery Catalog could be reached no other way. Provenance opens one
- * window, so it is a button; its menu held one row with its own name.
+ * the Discovery Catalog could be reached no other way. Provenance is a row of
+ * the View menu, not a menu of its own: its menu held one row with its own
+ * name, and the button that replaced it gave its room to the Scenario Catalog.
  *
  * Source-read like `upMenuRename.test.ts`: UpMenu needs the whole provider
  * stack to render. `HeaderMenu` renders alone, so its trigger is asserted in
@@ -53,9 +54,13 @@ describe("the top bar's menu buttons", () => {
     expect(UP_MENU).not.toContain("intro.js");
   });
 
-  it("put the catalogs and Provenance on the bar itself", () => {
+  it("put the catalogs on the bar itself, and Provenance in the View menu", () => {
     expect(UP_MENU).toContain("<CatalogButtons");
-    expect(UP_MENU).toContain('data-testid="provenance-btn"');
+    const start = UP_MENU.search(/<HeaderMenu\s+label="View"/);
+    const view = UP_MENU.slice(start, UP_MENU.indexOf("</HeaderMenu>", start));
+    expect(view).toMatch(/<HeaderMenuItem[^>]*onClick=\{openTrillProvenanceModal\}[^>]*>\s*Provenance\s*</);
+    expect(view).toContain('testId="provenance-menu-item"');
+    expect(UP_MENU).not.toContain("provenance-btn");
   });
 
   it("write no arrow character", () => {

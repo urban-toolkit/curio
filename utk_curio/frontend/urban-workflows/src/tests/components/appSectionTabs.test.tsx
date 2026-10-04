@@ -29,7 +29,7 @@ function activeLabels(container: HTMLElement): string[] {
 }
 
 describe('AppSectionTabs', () => {
-  test('renders the six sections as sibling links', () => {
+  test('renders the seven sections as sibling links', () => {
     const { getByRole } = renderAt('/projects');
 
     const nav = getByRole('navigation', { name: 'Main sections' });
@@ -45,6 +45,7 @@ describe('AppSectionTabs', () => {
       ['Agent Catalog', '/catalog/agents'],
       ['Discovery Catalog', '/catalog/discovery'],
       ['Model Catalog', '/catalog/models'],
+      ['Scenario Catalog', '/catalog/scenarios'],
     ]);
   });
 
@@ -54,6 +55,7 @@ describe('AppSectionTabs', () => {
     ['/catalog/data', 'Data Catalog'],
     ['/catalog/discovery', 'Discovery Catalog'],
     ['/catalog/models', 'Model Catalog'],
+    ['/catalog/scenarios', 'Scenario Catalog'],
   ])('%s marks exactly %s active', (path, label) => {
     const { container } = renderAt(path);
     expect(activeLabels(container)).toEqual([label]);
@@ -84,5 +86,12 @@ describe('AppSectionTabs', () => {
     // open, so its link is not `end` either.
     const { container } = renderAt('/catalog/models/model.curio.ddrnet23-slim');
     expect(activeLabels(container)).toEqual(['Model Catalog']);
+  });
+
+  test('a scenario detail route keeps Scenario Catalog active', () => {
+    // /catalog/scenarios/:projectId/:scenarioId is the Scenario Catalog with
+    // that scenario's details open.
+    const { container } = renderAt('/catalog/scenarios/p1/s1');
+    expect(activeLabels(container)).toEqual(['Scenario Catalog']);
   });
 });

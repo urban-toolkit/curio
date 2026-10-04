@@ -2,7 +2,7 @@
 
 The Discovery Catalog is where Curio lists the **open data portals**, the **storage**, the **services** and the **models** it can reach: folders on the Curio machine, public S3 buckets, Hugging Face dataset repositories, OpenStreetMap, street-level images from Mapillary and Google Street View, and image segmentation models on Hugging Face. You search a portal and download a dataset, open a storage source and add one of the resources it declares, tell a service where and what and download its answer, or add a model. A dataset lands in your Data Catalog, and a model in your Model Catalog.
 
-Curio has five catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the Discovery Catalog the portals, storage, services and models you take datasets and models from.
+Curio has six catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the Discovery Catalog the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
 
 This guide is in eight parts, plus operator notes:
 
@@ -245,8 +245,8 @@ A way that is tagged as an area but does not close is a line. In **Points of int
 
 - **Mapillary.** A box of at most 25 km². Photos are taken from across the box, newest first, up to **Most images** (at most 1,000). Each one is CC BY-SA 4.0 and keeps its photographer in `creator`, so a figure made from them can credit each photo. Your token goes to Mapillary's API only, never to the hosts the photos come from.
 - **Google Street View.** A box of at most 2 km². Curio asks Google for the panorama nearest each point of a grid with the **Spacing** you set, and keeps each panorama once, outdoor ones only unless you say otherwise. Then it downloads one image per panorama and heading. An image Google answers with its no-image placeholder is skipped. Your key is added to each request as Google's `key` parameter when the request is sent; the URLs a dataset records never hold it. The images are kept in your Data Catalog like any other download. Google's terms allow storing only panorama IDs, so check them before you keep the images.
-- **Both** land as a collection of images whose files are copied to your Data Catalog store. Downloading again with the same answers fetches nothing and keeps the dataset you have.
-- **An image that cannot be fetched** is skipped, and the download keeps the rest. The dataset's description, on its Data Catalog card, says how many could not be fetched. When none can be fetched, the download fails.
+- **Both** land as a collection of images whose files are copied to your Data Catalog store. Downloading again with the same answers fetches nothing and keeps the dataset you have. Such a collection does not offer **Cache files**, and a request to cache it is refused with *"`<title>` is already on this machine"*.
+- **An image that cannot be fetched** is skipped, and the download keeps the rest. The message when the download finishes says how many could not be fetched, and so does the dataset's description on its Data Catalog card. When none can be fetched, the download fails.
 
 ### Adding a model
 

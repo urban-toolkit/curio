@@ -981,15 +981,14 @@ def scene_canvas(ctx: Ctx) -> None:
     tour.hush()
     tour.say(
         "The top bar for the rest",
-        "File, View, Provenance and Share, then the five catalogs.",
+        "File, View and Share, then the six catalogs.",
         hold=2200,
     )
     for label in ("File", "View", "Share"):
         tour.click(_menu(page, label), force=True, hold=1100)
         # Escape closes a bar menu, so there is no second click to close it.
         page.keyboard.press("Escape")
-    tour.focus(page.get_by_test_id("provenance-btn"), hold=600)
-    for name in ("Node", "Data", "Agent", "Discovery", "Model"):
+    for name in ("Node", "Data", "Agent", "Discovery", "Model", "Scenario"):
         tour.focus(page.get_by_role("button", name=f"{name} Catalog", exact=True), hold=500)
     tour.hush()
 
@@ -1633,7 +1632,8 @@ def scene_provenance(ctx: Ctx) -> None:
         "12", "Provenance",
         "Curio tracks how a dataflow got to be the way it is.",
     )
-    tour.click(page.get_by_test_id("provenance-btn"))
+    tour.click(_menu(page, "View"))
+    tour.click(page.get_by_test_id("provenance-menu-item"))
     tour.beat(1500)
     tour.say(
         "Versions of the dataflow, as a graph",

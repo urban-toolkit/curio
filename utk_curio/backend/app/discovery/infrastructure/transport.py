@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from utk_curio.backend.app.agents.infrastructure import egress
+from utk_curio.backend.app.common.egress_policy import url_origin
 from utk_curio.backend.app.discovery.domain.errors import (
     DiscoveryError,
     DownloadTooLarge,
@@ -307,7 +308,7 @@ class CredentialedTransport:
     def __init__(self, inner: DiscoveryTransport, credential: str | None, *, origins) -> None:
         self._inner = inner
         self._credential = credential
-        self._origins = frozenset(o for o in map(_origin, origins) if o)
+        self._origins = frozenset(o for o in map(url_origin, origins) if o)
 
     # Exposed for tests that assert on what was requested; carries no secret.
     @property
@@ -317,7 +318,7 @@ class CredentialedTransport:
     def _for(self, url: str, credential: str | None) -> str | None:
         if credential:
             return credential
-        return self._credential if _origin(url) in self._origins else None
+        return self._credential if url_origin(url) in self._origins else None
 
     def json_get(self, url, *, credential=None, headers=None):
         return self._inner.json_get(
@@ -450,20 +451,3 @@ def _host(url: str) -> str:
         return urlparse(url).hostname or url
     except ValueError:
         return url
-
-
-_DEFAULT_PORTS = {"https": 443, "http": 80}
-
-
-def _origin(url: str) -> tuple[str, str, int | None] | None:
-    """``(scheme, host, port)`` of *url*, the port defaulted by its scheme, or
-    None for a URL that has none (which then matches nothing)."""
-    from urllib.parse import urlsplit
-
-    try:
-        parts = urlsplit(str(url))
-        scheme, host = parts.scheme.lower(), (parts.hostname or "").lower()
-        port = parts.port if parts.port is not None else _DEFAULT_PORTS.get(scheme)
-    except ValueError:
-        return None
-    return (scheme, host, port) if scheme and host else None

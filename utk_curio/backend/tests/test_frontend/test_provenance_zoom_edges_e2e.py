@@ -67,7 +67,8 @@ def _throttled_cpu(page, rate: int):
 
 
 def _open_provenance(page):
-    page.get_by_test_id("provenance-btn").click(force=True)
+    page.get_by_role("button", name="View menu", exact=True).click()
+    page.get_by_test_id("provenance-menu-item").click()
     dialog = page.get_by_role("dialog").filter(has_text="Provenance for")
     dialog.wait_for(state="visible", timeout=20000)
     await_provenance_graph(page)

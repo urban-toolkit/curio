@@ -20,7 +20,7 @@ images kept are looked up after, fifty at a time.
 Thumbnails live on Mapillary's CDN, not the API's host. Each is fetched only
 from a host ``options.imageHosts`` lists (a host or a parent domain), through
 the transport's address policy, and without the token: the transport sends a
-key only to its source's own host. A thumbnail that cannot be fetched is
+key only to its source's own origin (scheme, host and port). A thumbnail that cannot be fetched is
 skipped and counted, and the rest are kept.
 """
 

@@ -28,6 +28,7 @@ const WINDOW_ESCAPE_LISTENERS = [
   "components/datasets/catalog/DatasetCatalogDrawer.tsx",
   "components/discovery/catalog/DiscoveryCatalogDrawer.tsx",
   "components/models/catalog/ModelCatalogDrawer.tsx",
+  "components/scenarios/catalog/ScenarioCatalogDrawer.tsx",
   "providers/AgentCatalogDrawerProvider.tsx",
   "components/agents/attach/AgentChatPanel.tsx",
   "components/packages/ForkFamilyPicker.tsx",

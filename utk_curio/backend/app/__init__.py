@@ -114,6 +114,9 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.model_catalog import models_bp
     app.register_blueprint(models_bp)
+
+    from utk_curio.backend.app.scenario_catalog import scenarios_bp
+    app.register_blueprint(scenarios_bp)
     try:
         from utk_curio.backend.app.discovery.infrastructure.storage import audit_folder_roots
 

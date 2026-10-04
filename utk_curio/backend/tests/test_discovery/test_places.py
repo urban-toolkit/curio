@@ -171,3 +171,24 @@ class TestTheRoute:
 
     def test_it_needs_a_signed_in_caller(self, client):
         assert client.get("/api/discovery/places?q=Loop").status_code == 401
+
+
+class TestTheRecorder:
+    """``scripts/record_discovery_fixtures.py`` asks for every place search the
+    corpus holds, and for nothing else."""
+
+    def test_its_plan_is_the_recorded_place_searches(self):
+        import importlib.util
+        import json
+        from pathlib import Path
+
+        repo = Path(__file__).resolve().parents[4]
+        spec = importlib.util.spec_from_file_location(
+            "record_discovery_fixtures", repo / "scripts" / "record_discovery_fixtures.py"
+        )
+        recorder = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(recorder)
+        index = json.loads((Path(__file__).resolve().parent / "fixtures" / "index.json").read_text(encoding="utf-8"))
+        recorded = {url: entry["file"] for url, entry in index.items() if url.startswith(places.NOMINATIM + "/")}
+        assert recorded
+        assert recorder.place_urls() == recorded

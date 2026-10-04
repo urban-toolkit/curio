@@ -70,8 +70,8 @@ export function useDiscoveryAcquisition({
         return;
       }
       showToast(
-        `${isStorage(job) ? "Added" : "Downloaded"} ${title} to your Data Catalog.`,
-        "success",
+        `${isStorage(job) ? "Added" : "Downloaded"} ${title} to your Data Catalog${job.note ? `; ${job.note}` : ""}.`,
+        job.note ? "warning" : "success",
         viewDatasetDetailsToast(openDatasetDetails, job.datasetId),
       );
     }

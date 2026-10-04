@@ -43,11 +43,15 @@ const DRAWERS = [
  * A model is absent for the same reason: shipped models come with Curio and
  * downloaded ones from the Discovery Catalog, and neither is published back
  * into a shared catalog.
+ *
+ * So is a scenario: it is a selection saved inside one project, and the
+ * catalog only reads it.
  */
 const ALL_DRAWERS = [
   ...DRAWERS,
   "pages/discovery/DiscoveryCatalogBrowseDrawer.tsx",
   "pages/models/ModelCatalogBrowseDrawer.tsx",
+  "pages/scenarios/ScenarioCatalogBrowseDrawer.tsx",
 ];
 
 describe("catalog drawer parity", () => {
