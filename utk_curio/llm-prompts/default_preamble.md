@@ -104,6 +104,31 @@ Act like an assistant for users of a system for building visual analytics datafl
         },
         "task": {
           "type": "string"
+        },
+        "scenarios": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "nodes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["id", "name", "color", "nodes"]
+          }
         }
       },
       "required": ["nodes", "edges", "name", "task"]

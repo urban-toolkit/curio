@@ -460,6 +460,15 @@ class TestTheTrillBlock:
         assert node["properties"]["type"]["pattern"] == _trill()["$defs"]["nodeTypeRef"]["pattern"]
         assert edge["properties"]["type"]["enum"] == ["Interaction"]
 
+    def test_a_scenario_shows_what_an_agent_reads_and_writes(self):
+        # #662: not where its box sits on the canvas or where it came from.
+        import json
+
+        block = json.loads(contracts.render_trill_block(_trill()))
+        scenario = block["properties"]["dataflow"]["properties"]["scenarios"]["items"]
+        assert list(scenario["properties"]) == list(contracts.TRILL_PROMPT_FIELDS["scenario"])
+        assert scenario["required"] == ["id", "name", "color", "nodes"]
+
     def test_it_carries_no_field_the_format_does_not_have(self):
         text = contracts.render_trill_block(_trill())
         for phantom in ('"output"', '"annotations"', '"Data"', '"warnings"'):
