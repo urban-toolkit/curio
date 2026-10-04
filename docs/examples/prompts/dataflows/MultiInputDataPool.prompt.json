@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/MultiInputDataPool.json",
-    "sha256": "61b87870e4f4a2c4481b4f5928fd530287cc9dc682f39d9445da16f47c431442",
+    "sha256": "9bb0e38d5fe62f094e26554269563316ea6f4623cbb572a2b26683303aff866a",
     "walkthrough": null
   },
   "prompt": "Make three small tables in three separate Python computation steps, each with its own column names, and route one of them through a fan-out. Combine two of them into one input for a further computation step, and combine another pair for a second one, so the flow ends in two computations that each read a pair.",

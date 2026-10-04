@@ -116,7 +116,7 @@
     "name": "MultiInputDataPool",
     "task": "",
     "timestamp": 1776883697890,
-    "provenance_id": "MergeFlowDataPool",
+    "provenance_id": "MultiInputDataPool",
     "packages": []
   }
 }
