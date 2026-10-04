@@ -385,7 +385,7 @@
         "nodeHeight": 300,
         "nodeWidth": 460
       },
-      "description": "Finds the polygon each point falls in. Connect the points to the top input and the polygons to the bottom input, then pick the polygon column to copy onto the points, such as a neighborhood name. The output is either the points, each tagged with its polygon's value, or the polygons, each with a count of the points inside. Points outside every polygon get no value.",
+      "description": "Finds the polygon each point falls in. Connect the points to the blue circle at the top and the polygons to the green circle at the bottom, then pick the polygon column to copy onto the points, such as a neighborhood name. The output is either the points, each tagged with its polygon's value, or the polygons, each with a count of the points inside. Points outside every polygon get no value.",
       "editor": "none",
       "engine": "python",
       "hasCode": false,

@@ -129,7 +129,7 @@ A node's "type" is the id of the template it was made from. A run that can place
 - Vega-Lite: The Vega box is responsible for visualizing 2D plots.
 - Simple View: Displays incoming data: a table for DataFrames and GeoDataFrames, or a card per row when the frame carries an image column, showing the image beside that row's values. Other values pass through.
 - Autark: Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering, and/or plot rendering in one declarative spec.
-- Spatial Join: Finds the polygon each point falls in. Connect the points to the top input and the polygons to the bottom input, then pick the polygon column to copy onto the points, such as a neighborhood name. The output is either the points, each tagged with its polygon's value, or the polygons, each with a count of the points inside. Points outside every polygon get no value.
+- Spatial Join: Finds the polygon each point falls in. Connect the points to the blue circle at the top and the polygons to the green circle at the bottom, then pick the polygon column to copy onto the points, such as a neighborhood name. The output is either the points, each tagged with its polygon's value, or the polygons, each with a count of the points inside. Points outside every polygon get no value.
 - Merge Flow: The Merge Flow box merges multiple incoming data flows into one.
 
 A Merge Flow node combines its inputs: with one connected input it passes that value straight through, and with more it outputs them as a tuple, in socket order. An edge into a Merge Flow node names the socket it connects to in "targetHandle": "in_0", "in_1", "in_2", "in_3" or "in_4".
