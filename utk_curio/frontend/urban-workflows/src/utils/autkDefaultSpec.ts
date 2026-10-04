@@ -15,11 +15,18 @@
  *
  * Pure, with no autk import, so it is testable under jest.
  */
+import { AUTK_STARTER_LADDER, type AutkStarterRuleId } from "../generated/visDefaults";
 import { autkTableName } from "./autkInput";
 import { resolveGeometryField } from "./geometryField";
 import type { GrammarFrame, GrammarInput } from "./grammarInput";
 import { toRows } from "./rowSource";
-import { classifyColumns, groupColumns, type ColumnRole } from "./starterSpec";
+import {
+  classifyColumns,
+  groupColumns,
+  inRange,
+  meetsRoles,
+  type ColumnRole,
+} from "./starterSpec";
 
 /** A drawable layer of the input, as the ladder sees it. */
 export type StarterLayer = {
@@ -36,52 +43,51 @@ export interface AutkStarterRule {
   build: (layers: StarterLayer[]) => Record<string, unknown>;
 }
 
-const single = (layers: StarterLayer[]) => layers.length === 1;
+/**
+ * Each rule's document past its family key, by rule id. The rule itself (its
+ * place in the ladder, the layers and columns it needs and the family it
+ * writes) is generated into `AUTK_STARTER_LADDER`, which the agents' shared
+ * preamble states too.
+ */
+export const AUTK_STARTER_BUILDERS: Record<
+  AutkStarterRuleId,
+  (layers: StarterLayer[]) => Record<string, unknown>
+> = {
+  layers: (layers) => ({ layerRefs: layers.map((layer) => ({ dataRef: layer.name })) }),
+  "geometry+quantitative": ([layer]) => ({
+    layerRefs: [{
+      dataRef: layer.name,
+      getFnv: layer.columns.quantitative[0],
+      getFnvType: "quantitative",
+      colorMapInterpolator: "interpolateViridis",
+    }],
+  }),
+  "geometry+nominal": ([layer]) => ({
+    layerRefs: [{
+      dataRef: layer.name,
+      getFnv: layer.columns.nominal[0],
+      getFnvType: "categorical",
+      colorMapInterpolator: "schemeTableau10",
+    }],
+  }),
+  geometry: ([layer]) => ({ layerRefs: [{ dataRef: layer.name }] }),
+};
 
 /**
- * The ladder: first match wins. The prose counterpart is the table in
- * `docs/USAGE.md`; adding or reordering a rule trips `autkDefaultSpec.test.ts`.
+ * The ladder: first match wins, in the generated order. A rule holds when the
+ * input has as many layers as it needs and every layer has the columns it
+ * needs. The prose counterpart is the table in `docs/USAGE.md`; adding or
+ * reordering a rule trips `autkDefaultSpec.test.ts`.
  */
-export const AUTK_STARTER_RULES: AutkStarterRule[] = [
-  {
-    id: "layers",
-    when: (layers) => layers.length >= 2,
-    build: (layers) => ({ map: { layerRefs: layers.map((layer) => ({ dataRef: layer.name })) } }),
-  },
-  {
-    id: "geometry+quantitative",
-    when: (layers) => single(layers) && layers[0].columns.quantitative.length > 0,
-    build: ([layer]) => ({
-      map: {
-        layerRefs: [{
-          dataRef: layer.name,
-          getFnv: layer.columns.quantitative[0],
-          getFnvType: "quantitative",
-          colorMapInterpolator: "interpolateViridis",
-        }],
-      },
-    }),
-  },
-  {
-    id: "geometry+nominal",
-    when: (layers) => single(layers) && layers[0].columns.nominal.length > 0,
-    build: ([layer]) => ({
-      map: {
-        layerRefs: [{
-          dataRef: layer.name,
-          getFnv: layer.columns.nominal[0],
-          getFnvType: "categorical",
-          colorMapInterpolator: "schemeTableau10",
-        }],
-      },
-    }),
-  },
-  {
-    id: "geometry",
-    when: single,
-    build: ([layer]) => ({ map: { layerRefs: [{ dataRef: layer.name }] } }),
-  },
-];
+export const AUTK_STARTER_RULES: AutkStarterRule[] = AUTK_STARTER_LADDER.map(
+  (rule): AutkStarterRule => ({
+    id: rule.id,
+    when: (layers) =>
+      inRange(layers.length, rule.layers) &&
+      layers.every((layer) => meetsRoles(layer.columns, rule.columns)),
+    build: (layers) => ({ [rule.produces]: AUTK_STARTER_BUILDERS[rule.id](layers) }),
+  }),
+);
 
 /** The document for these layers, or `null` when there is nothing to draw. */
 export function chooseAutkStarter(layers: StarterLayer[]): Record<string, unknown> | null {
