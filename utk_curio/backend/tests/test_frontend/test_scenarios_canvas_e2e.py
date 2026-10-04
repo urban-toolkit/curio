@@ -163,6 +163,14 @@ def _saved_spec(current_server: str, session: dict) -> dict:
     return api_json(f"{current_server}/api/projects/{project_id}", session["token"])["spec"]
 
 
+def _latest_run(current_server: str, session: dict) -> dict:
+    """The project's latest run on the server, with its steps."""
+    project_id = session["project"]["id"]
+    runs = api_json(f"{current_server}/api/projects/{project_id}/runs?limit=1", session["token"])["runs"]
+    assert runs, "Run All started no run on the server"
+    return api_json(f"{current_server}/api/runs/{runs[0]['id']}", session["token"])
+
+
 def _record_python_runs(page):
     """The node ids of the Python runs that leave the page from now on: every
     run is one POST naming its node. Returns the list and a stop function."""
@@ -266,12 +274,19 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
     after = box.bounding_box()
     assert after["x"] - before["x"] > 100, f"the box did not follow the drag: {before} -> {after}"
 
-    # 3. Run All with the copy collapsed: the shared loader runs once.
+    # 3. Run All with the copy collapsed: the shared loader runs once. Run All
+    # runs on the server for a signed-in owner, so its own steps say what ran,
+    # and the page runs no Python node itself.
     executed, stop = _record_python_runs(page)
     run_all_and_wait(page, timeout_ms=240000)
     stop()
-    assert sorted(executed) == sorted([LOADER, SCALE, scale_copy]), (
-        f"Run All sent {executed}: the shared loader must run once, and both branches once"
+    assert executed == [], f"the page ran {executed} itself, though Run All runs on the server"
+    ran = [
+        s["nodeId"] for s in _latest_run(current_server, session)["steps"]
+        if s["role"] == "run" and s["status"] == "ok"
+    ]
+    assert sorted(ran) == sorted([LOADER, SCALE, scale_copy]), (
+        f"Run All ran {ran}: the shared loader must run once, and both branches once"
     )
     for node_id in (MAP, map_copy):
         status = wait_for_node_settled(page, node_id, node_type="autk-grammar", timeout_ms=120000)
