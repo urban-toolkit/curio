@@ -493,6 +493,9 @@ a lookup draws another input by naming it, written with that input's chip:
 }
 ```
 
+A Python tuple arrives the same way, one dataset per frame. An input the chart
+cannot read, such as a raster, stops it with a message naming its position.
+
 Each input's geometry is handled in the views that draw it. A selection, a Data
 Pool link and a direct link between charts cover the rows of `input_0`.
 
@@ -621,8 +624,8 @@ no `data` entry for its input; it names the tables the input provides.
   compute step's layer) keeps that name, and `input_<k>` also names it.
 - Several layers keep their own names: a Python tuple, a Data Pool with tabs, or
   the tables of an upstream Autark node. A layer without a name is named after
-  its position, `input_0`, `input_1`, and so on. Two inputs that bring layers of
-  one name are refused, naming both.
+  its position, `input_0`, `input_1`, and so on. When two inputs bring a layer
+  of one name, the second input's is left out and the node names both.
 - A map draws only tables with geometry. A `DataFrame` is read through the one
   column that holds geometries; with none, or with several, the node draws
   nothing and says which. Return a `GeoDataFrame` with its active geometry set.

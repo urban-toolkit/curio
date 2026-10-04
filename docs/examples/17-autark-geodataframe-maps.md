@@ -136,7 +136,8 @@ their position, `input_0` and `input_1`, and the document draws both:
 }
 ```
 
-A Vega-Lite chart draws one dataset from one input, so it has no counterpart here.
+A Vega-Lite chart reads the two frames the same way, as the datasets `input_0`
+and `input_1`.
 
 ## A chart linked to the map
 
