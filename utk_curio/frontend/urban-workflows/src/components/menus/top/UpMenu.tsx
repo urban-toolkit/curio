@@ -70,6 +70,7 @@ export default function UpMenu() {
         renameDataflow,
         workflowCategories,
         serverCategories,
+        scenarios,
         updateDataflowCategories,
         saveCurrentProject,
         saveAsNewProject,
@@ -240,6 +241,8 @@ export default function UpMenu() {
             undefined,
             undefined,
             workflowCategories,
+            // A downloaded file carries scenarios only when there are some.
+            scenarios && scenarios.length > 0 ? scenarios : undefined,
         );
         const content = JSON.stringify(trillSpec, null, 2);
         const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));

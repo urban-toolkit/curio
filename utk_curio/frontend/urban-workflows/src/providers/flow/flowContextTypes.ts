@@ -4,6 +4,7 @@ import type React from "react";
 import type { Connection, Edge, EdgeChange, Node, NodeChange, NodeRemoveChange } from "reactflow";
 import type { InstallSyncOutcome, PendingInstall } from "../../services/datasetCatalog/datasetCatalogTypes";
 import type { DataflowCategories, HandCategories } from "../../utils/dataflowCategories";
+import type { Scenario } from "../../utils/scenarios/scenarioModel";
 import type { IInteraction, IOutput, IPropagation, NodeExecOutcome } from "./flowTypes";
 
 export interface FlowContextProps {
@@ -52,7 +53,7 @@ export interface FlowContextProps {
     // Reviewed plan removals (dev/62): victims + their edge cascade leave in
     // one operation, without the manual "remove the edges first" guard.
     applyReviewedRemovals: (nodeIds: string[], edgeIds: string[]) => void;
-    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[], categories?: HandCategories) => void;
+    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[], categories?: HandCategories, scenarios?: unknown) => void;
     packages: string[];
     setPackages: (pkgs: string[]) => void;
     addPackage: (pkg: string) => void;
@@ -90,12 +91,17 @@ export interface FlowContextProps {
     workflowCategories: HandCategories;
     /** Source and automatic categories, from the last load or save. */
     serverCategories: DataflowCategories;
+    /** The dataflow's scenarios (#662), saved with it. Member ids of nodes
+     * deleted since the last save are dropped when it saves. */
+    scenarios: Scenario[];
 
     // Project operations
     /** Rename the open dataflow, writing BOTH name stores (#230). False if blank. */
     renameDataflow: (name: string) => boolean;
     /** Replace the hand-set categories; the dataflow is dirty until the next save. */
     updateDataflowCategories: (next: HandCategories) => void;
+    /** Replace the scenarios; the dataflow is dirty until the next save. */
+    setScenarios: (next: Scenario[]) => void;
     saveCurrentProject: (nameOverride?: string, options?: { omitOutputs?: boolean }) => Promise<any>;
     saveAsNewProject: (name: string) => Promise<any>;
     ensureProjectId: () => Promise<string | null>;
