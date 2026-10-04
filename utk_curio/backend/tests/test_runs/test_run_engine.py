@@ -109,6 +109,20 @@ class TestPlayShapesEachNode:
         )]))
         assert recorder.calls["a"]["code"] == "    return 3\n"
 
+    def test_a_parameter_nodes_value_reaches_the_nodes_that_name_it(self):
+        # #662: a Parameter node has no edge; [!! @name !!] reads its widget.
+        recorder, events, finished = run(spec([
+            node("p", "curio.builtin/parameter@1", "",
+                 metadata={"widgets": [{"name": "factor", "type": "number", "default": 2, "value": 5}]}),
+            node("a", content="return [!! @factor !!] * 10"),
+            node("j", "curio.builtin/js-computation", "return [!! @factor !!] + 1;"),
+        ]))
+        assert recorder.calls["a"]["code"] == "    return 5 * 10\n"
+        assert "return 5 + 1;" in recorder.calls["j"]["code"]
+        # The Parameter node itself is never sent to the sandbox, and holds nothing up.
+        assert "p" not in recorder.calls
+        assert outcome(events)["status"] == "succeeded"
+
     def test_a_reference_that_cannot_resolve_fails_the_node_without_the_sandbox(self):
         recorder, _, finished = run(spec([node("a", content="return [!! input 1 !!]")]))
         assert "a" not in recorder.calls
