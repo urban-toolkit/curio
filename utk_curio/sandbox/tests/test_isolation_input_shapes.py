@@ -1,10 +1,10 @@
 """The isolated path accepts every input shape the in-process path does.
 
-A merge output reaches a code node in two shapes, both documented on
-``worker._expand_outputs_wrapper``:
+A bundle of several inputs (an ``outputs`` value) reaches a code node in two
+shapes, both documented on ``worker._expand_outputs_wrapper``:
 
 * **live** -- a list literal of ``{'path': id}`` dicts.
-* **reloaded** -- when the upstream merge output was persisted (a project save,
+* **reloaded** -- when the upstream bundle was persisted (a project save,
   or the JS-node round trip through DuckDB), the node receives a single bare ref
   to the stored ``{'dataType': 'outputs', 'data': [refs]}`` envelope.
 
@@ -12,7 +12,7 @@ A merge output reaches a code node in two shapes, both documented on
 Python expression, so an artifact id like ``1787698132616_820e772c`` -- a
 decimal literal followed by a name -- raised ``SyntaxError: invalid decimal
 literal`` and the node failed before running. Found by the isolated CI job
-running Merge.json, which no unit test covered.
+running Merge.json (now MultiInput.json), which no unit test covered.
 
 Run:  pytest utk_curio/sandbox/tests/test_isolation_input_shapes.py -v
 """

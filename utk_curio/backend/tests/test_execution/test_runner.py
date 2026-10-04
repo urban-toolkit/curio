@@ -136,22 +136,87 @@ class TestRunThroughNode:
         assert report["error"] is None, report["error"]
         assert report["ok"] is True
 
-    def test_merge_pass_through_assembles_fan_in(self, tmp_curio):
+    def test_a_node_with_several_inputs_receives_them_in_circle_order(self, tmp_curio):
+        """#662: fan-in goes straight into the node that reads it, one circle per
+        edge, and ``arg`` is assembled in circle order. ``a``'s edge kept the id
+        it had on circle 2 before the canvas renumbered it onto ``in``: the
+        handle, not the id, says which circle it feeds."""
+        import ast
+
         spec = _spec(
-            [_node("a"), _node("b"), _node("m", "curio.builtin/merge-flow", ""),
-             _node("c")],
-            [{"id": "e-a-in_0", "source": "a", "target": "m"},
-             {"id": "e-b-in_1", "source": "b", "target": "m"},
-             {"id": "e3", "source": "m", "target": "c"}],
+            [_node("a"), _node("b"), _node("c", content="return [!! input 1 !!]")],
+            [{"id": "reactflow__edge-aout-cin_2", "source": "a", "target": "c",
+              "targetHandle": "in"},
+             {"id": "reactflow__edge-bout-cin_1", "source": "b", "target": "c",
+              "targetHandle": "in_1"}],
         )
         exec_fn = _RecordingExec()
         report = runner.run_through_node(KEY, PID, spec, "c", exec_fn=exec_fn)
-        assert report["ok"] is True
-        assert report["nodes"]["m"] == {"status": "pass-through", "executed": False}
-        # The consumer receives the assembled outputs list.
+        assert report["ok"] is True, report
+        assert all(record["executed"] for record in report["nodes"].values()), report["nodes"]
         c_payload = exec_fn.calls[-1][1]
         assert c_payload["dataType"] == "outputs"
-        assert "art-1" in c_payload["file_path"] and "art-2" in c_payload["file_path"]
+        assert [ref["path"] for ref in ast.literal_eval(c_payload["file_path"])] == [
+            report["nodes"]["a"]["output"]["path"],
+            report["nodes"]["b"]["output"]["path"],
+        ], c_payload["file_path"]
+        # The chip names circle 1, which is b's: arg[1] in the sent code.
+        assert "return arg[1]" in c_payload["code"] and "[!!" not in c_payload["code"]
+
+    def test_a_pass_through_node_with_several_inputs_forwards_them_in_circle_order(self, tmp_curio):
+        """A Data Pool (or a Vega-Lite chart) takes any number of inputs and runs
+        nothing: what it hands down is the bundle of its inputs, in circle order."""
+        import ast
+
+        spec = _spec(
+            [_node("a"), _node("b"), _node("pool", "curio.builtin/data-pool", ""),
+             _node("c")],
+            [{"id": "e2", "source": "a", "target": "pool", "targetHandle": "in"},
+             {"id": "e1", "source": "b", "target": "pool", "targetHandle": "in_1"},
+             {"id": "e3", "source": "pool", "target": "c", "targetHandle": "in"}],
+        )
+        exec_fn = _RecordingExec()
+        report = runner.run_through_node(KEY, PID, spec, "c", exec_fn=exec_fn)
+        assert report["ok"] is True, report
+        assert report["nodes"]["pool"] == {"status": "pass-through", "executed": False}
+        c_payload = exec_fn.calls[-1][1]
+        assert c_payload["dataType"] == "outputs"
+        assert [ref["path"] for ref in ast.literal_eval(c_payload["file_path"])] == [
+            report["nodes"]["a"]["output"]["path"],
+            report["nodes"]["b"]["output"]["path"],
+        ], c_payload["file_path"]
+
+    def test_the_multi_input_example_runs_both_loaders_into_one_node(self, tmp_curio):
+        """The shipped example that replaced Merge.json: two loaders feed the
+        computation node directly on circles ``in`` and ``in_1``, and the node
+        below it reads ``arg`` as the frame that node returned."""
+        import ast
+        import json
+        from pathlib import Path
+
+        from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+        path = Path(__file__).resolve().parents[4] / "docs" / "examples" / "dataflows" / "MultiInput.json"
+        spec = json.loads(path.read_text(encoding="utf-8"))
+        assert [n["type"] for n in spec["dataflow"]["nodes"]] == (
+            ["curio.builtin/data-loading"] * 2 + ["curio.builtin/computation-analysis"] * 2
+        )
+        first, second, both, last = (n["id"] for n in spec["dataflow"]["nodes"])
+        parsed = parse_workflow_dict(spec)
+        assert parsed.upstream_nodes(both) == [first, second]
+        assert parsed.input_slots(both) == [0, 1]
+
+        exec_fn = _RecordingExec()
+        report = runner.run_through_node(KEY, PID, spec, last, exec_fn=exec_fn)
+        assert report["ok"] is True, report
+        assert all(record["executed"] for record in report["nodes"].values()), report["nodes"]
+        payloads = {node_id: payload for node_id, payload in zip(report["order"], (c[1] for c in exec_fn.calls))}
+        assert payloads[both]["dataType"] == "outputs"
+        assert [ref["path"] for ref in ast.literal_eval(payloads[both]["file_path"])] == [
+            report["nodes"][first]["output"]["path"],
+            report["nodes"][second]["output"]["path"],
+        ], payloads[both]["file_path"]
+        assert payloads[last]["file_path"] == report["nodes"][both]["output"]["path"]
 
     def test_executions_journal_as_validation(self, tmp_curio):
         spec = _chain_spec(["a"])
@@ -340,7 +405,8 @@ class TestDev118NotExecutableTarget:
         for kind in ("curio.builtin/data-loading", "curio.builtin/computation-analysis@1",
                      "curio.builtin/js-computation", "DATA_LOADING"):
             assert is_executable_kind(kind) is True, kind
-        # Data Export is one Download button with no code (#226).
+        # Data Export is one Download button with no code (#226). Merge Flow is
+        # gone (#662): an old spec that still names it must not run it either.
         for kind in ("curio.builtin/vis-vega", "curio.builtin/autk-grammar@1", "curio.builtin/data-pool",
                      "curio.builtin/merge-flow", "curio.builtin/vis-simple", "curio.builtin/data-export@1",
                      "some.pkg/custom-node@1", "", None):
@@ -360,17 +426,20 @@ class TestDev118NotExecutableTarget:
         assert report["order"] == [] and report["nodes"] == {}
 
     def test_an_upstream_pass_through_node_still_forwards(self, tmp_curio):
-        # The refusal is about the TARGET only: a merge upstream of a code
+        # The refusal is about the TARGET only: a view upstream of a code
         # target keeps its pass-through forwarding.
         rec = _RecordingExec()
         spec = _spec(
-            [_node("a"), _node("m", node_type="curio.builtin/merge-flow", content=""), _node("c")],
-            [{"id": "e1", "source": "a", "target": "m"}, {"id": "e2", "source": "m", "target": "c"}],
+            [_node("a"), _node("v", node_type="curio.builtin/vis-simple", content=""), _node("c")],
+            [{"id": "e1", "source": "a", "target": "v"}, {"id": "e2", "source": "v", "target": "c"}],
         )
         report = runner.run_through_node(KEY, PID, spec, "c", exec_fn=rec)
         assert report["ok"] is True and report["notExecutable"] is False
-        assert report["nodes"]["m"]["status"] == "pass-through"
+        assert report["nodes"]["v"]["status"] == "pass-through"
         assert [c[1]["nodeType"] for c in rec.calls] == ["curio.builtin/computation-analysis"] * 2
+        # What reaches c is a's own output, forwarded unchanged.
+        assert rec.calls[-1][1]["file_path"] == report["nodes"]["a"]["output"]["path"]
+        assert rec.calls[-1][1]["dataType"] == report["nodes"]["a"]["output"]["dataType"]
 
 
 class TestDev118PriorOutputs:
@@ -612,7 +681,7 @@ class TestArtifactPreviewIsBounded:
         assert runner.load_artifact_preview("art-1") is None
 
 
-class TestMergeSlotOrderIsTheHandle:
+class TestInputSlotOrderIsTheHandle:
     """dev/128, from a field failure: dataflow `00708324` reported
     *"ed1a326f · solved · pass after 1 round"* and then failed on Play with
     ``KeyError: 'tract_id'``, because validation assembled ``arg`` as
@@ -620,11 +689,13 @@ class TestMergeSlotOrderIsTheHandle:
     ``[boundaries, population]``.
 
     The cause was reading the slot from the edge's ID: the canvas encodes it
-    there (`…78504in_0`), but an AGENT-APPLIED edge has a UUID id and carries
+    there (`…78504in_1`), but an AGENT-APPLIED edge has a UUID id and carries
     the slot in ``targetHandle`` (dev/67-3). Both parsers also dropped the
-    handle entirely, so a plan-created merge was ordered lexicographically by
+    handle entirely, so a plan-created fan-in was ordered lexicographically by
     UUID. The handle is now the authority, the same one
-    `inputSlots.inputSlotOf` reads for Play.
+    `inputSlots.inputSlotOf` reads for Play. Since #662 the fan-in goes
+    straight into the node that reads it: circle 0 is ``in``, circle k is
+    ``in_k``.
     """
 
     #: The owner's own edges: UUID ids, slots in targetHandle, and the id sort
@@ -634,15 +705,13 @@ class TestMergeSlotOrderIsTheHandle:
             "nodes": [
                 {"id": "b", "type": "curio.builtin/data-loading", "content": "return 1"},
                 {"id": "p", "type": "curio.builtin/data-loading", "content": "return 2"},
-                {"id": "m", "type": "curio.builtin/merge-flow", "content": ""},
                 {"id": "t", "type": "curio.builtin/data-transformation", "content": "return arg"},
             ],
             "edges": [
                 {"id": "b396ed2d-3679-4b38-bbf7-5829d1db082c", "source": "b",
-                 "target": "m", "sourceHandle": "out", "targetHandle": "in_0"},
+                 "target": "t", "sourceHandle": "out", "targetHandle": "in"},
                 {"id": "0c05b055-f50e-43f6-9a98-7f66d66e36d9", "source": "p",
-                 "target": "m", "sourceHandle": "out", "targetHandle": "in_1"},
-                {"id": "e-mt", "source": "m", "target": "t", "targetHandle": "in"},
+                 "target": "t", "sourceHandle": "out", "targetHandle": "in_1"},
             ],
         }
     }
@@ -652,55 +721,81 @@ class TestMergeSlotOrderIsTheHandle:
 
         return parse_workflow_dict(raw)
 
-    def test_an_agent_applied_merge_is_ordered_by_its_handles(self):
+    def test_an_agent_applied_fan_in_is_ordered_by_its_handles(self):
         spec = self._spec(self.AGENT_SPEC)
-        assert spec.upstream_nodes("m") == ["b", "p"]
+        assert spec.upstream_nodes("t") == ["b", "p"]
+        assert spec.input_slots("t") == [0, 1]
         # The regression: sorted by id it would be ["p", "b"].
         assert sorted(
-            e["id"] for e in spec.edges if e["target"] == "m"
+            e["id"] for e in spec.edges if e["target"] == "t"
         ) == ["0c05b055-f50e-43f6-9a98-7f66d66e36d9", "b396ed2d-3679-4b38-bbf7-5829d1db082c"]
 
     def test_the_canvas_legacy_id_encoding_still_works(self):
         raw = {"dataflow": {
             "nodes": self.AGENT_SPEC["dataflow"]["nodes"],
             "edges": [
-                {"id": "reactflow__edge-p78504in_1", "source": "p", "target": "m"},
-                {"id": "reactflow__edge-b78504in_0", "source": "b", "target": "m"},
-                {"id": "e-mt", "source": "m", "target": "t"},
+                {"id": "reactflow__edge-p78504in_1", "source": "p", "target": "t"},
+                {"id": "reactflow__edge-b78504in_0", "source": "b", "target": "t"},
             ],
         }}
-        assert self._spec(raw).upstream_nodes("m") == ["b", "p"]
+        assert self._spec(raw).upstream_nodes("t") == ["b", "p"]
 
     def test_the_handle_wins_over_a_conflicting_id_suffix(self):
         raw = {"dataflow": {
             "nodes": self.AGENT_SPEC["dataflow"]["nodes"],
             "edges": [
-                {"id": "x-in_1", "source": "b", "target": "m", "targetHandle": "in_0"},
-                {"id": "y-in_0", "source": "p", "target": "m", "targetHandle": "in_1"},
-                {"id": "e-mt", "source": "m", "target": "t"},
+                {"id": "x-in_1", "source": "b", "target": "t", "targetHandle": "in_0"},
+                {"id": "y-in_0", "source": "p", "target": "t", "targetHandle": "in_1"},
             ],
         }}
-        assert self._spec(raw).upstream_nodes("m") == ["b", "p"]
+        assert self._spec(raw).upstream_nodes("t") == ["b", "p"]
+
+    def test_the_plain_in_handle_wins_over_a_conflicting_id_suffix(self):
+        """``in`` is circle 0 even when the edge id still ends in the ``in_2``
+        of the circle it fed before the canvas renumbered it."""
+        raw = {"dataflow": {
+            "nodes": self.AGENT_SPEC["dataflow"]["nodes"],
+            "edges": [
+                {"id": "x-in_2", "source": "b", "target": "t", "targetHandle": "in"},
+                {"id": "y-in_0", "source": "p", "target": "t", "targetHandle": "in_1"},
+            ],
+        }}
+        spec = self._spec(raw)
+        assert spec.upstream_nodes("t") == ["b", "p"]
+        assert spec.input_slots("t") == [0, 1]
 
     def test_the_handle_survives_the_projection(self):
         spec = self._spec(self.AGENT_SPEC)
-        handles = {e["source"]: e.get("targetHandle") for e in spec.edges if e["target"] == "m"}
-        assert handles == {"b": "in_0", "p": "in_1"}
+        handles = {e["source"]: e.get("targetHandle") for e in spec.edges if e["target"] == "t"}
+        assert handles == {"b": "in", "p": "in_1"}
 
-    def test_the_slot_reader_is_one_function(self):
-        from utk_curio.backend.app.execution.workflow_spec import merge_slot_index
+    def test_named_input_slot_is_the_one_slot_reader(self):
+        from utk_curio.backend.app.execution.workflow_spec import (
+            input_slot,
+            named_input_slot,
+            slot_handle_id,
+        )
 
-        assert merge_slot_index({"targetHandle": "in_2"}) == 2
-        assert merge_slot_index({"target_handle": "in_3"}) == 3
-        assert merge_slot_index({"id": "…78504in_4"}) == 4
-        assert merge_slot_index({"targetHandle": "in", "id": "u"}) is None
-        assert merge_slot_index({"targetHandle": "out_0"}) is None
-        assert merge_slot_index({}) is None
-        assert merge_slot_index(None) is None
+        assert named_input_slot({"targetHandle": "in_2"}) == 2
+        assert named_input_slot({"target_handle": "in_3"}) == 3
+        assert named_input_slot({"id": "…78504in_4"}) == 4
+        # The plain handle is circle 0, whatever the id says.
+        assert named_input_slot({"targetHandle": "in", "id": "u"}) == 0
+        assert named_input_slot({"targetHandle": "in", "id": "…78504in_4"}) == 0
+        assert named_input_slot({"target_handle": "in"}) == 0
+        assert named_input_slot({"targetHandle": "out_0"}) is None
+        assert named_input_slot({}) is None
+        assert named_input_slot(None) is None
+        # The handle the canvas writes for circle k reads back as k.
+        assert slot_handle_id(0) == "in" and slot_handle_id(3) == "in_3"
+        for k in range(5):
+            assert named_input_slot({"targetHandle": slot_handle_id(k)}) == k
+        # No name at all is circle 0 for the ordering.
+        assert input_slot({}) == 0 and input_slot({"targetHandle": "out_0"}) == 0
 
     def test_validation_hands_the_node_the_same_order_play_does(self, monkeypatch):
-        """The end of the disagreement: the runner's own pass-through assembly,
-        driven through a fake sandbox, delivers slot order."""
+        """The end of the disagreement: the runner's own input assembly,
+        driven through a fake sandbox, delivers circle order."""
         seen: list[dict] = []
 
         def _exec(endpoint, payload):
@@ -718,8 +813,8 @@ class TestMergeSlotOrderIsTheHandle:
         )
         assert report["ok"], report
         target = seen[-1]
-        # The merge's assembled list rides the target's file_path as the
-        # stringified outputs list the worker evals back — in SLOT order.
+        # The node's inputs ride its file_path as the stringified outputs
+        # list the worker evals back, in circle order.
         assert target["dataType"] == "outputs"
         assert target["file_path"].index("art-b") < target["file_path"].index("art-p"), (
             target["file_path"]
