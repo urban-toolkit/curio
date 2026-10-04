@@ -389,8 +389,8 @@ def describe_child_death(exit_code, signal_number, timed_out, *, wall_timeout,
         )
     if reason == "cpu":
         return (
-            f"This node used up its CPU allowance of {limits.get('cpu_seconds')} "
-            "CPU-seconds, which counts the time of all its threads. Raise "
+            f"This node used up its CPU allowance of {limits.get('cpu_seconds')}s "
+            "of CPU time, which counts the time of all its threads. Raise "
             "--exec-timeout if the work is genuinely this heavy."
         )
     if reason == "signal":
