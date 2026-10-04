@@ -1,6 +1,13 @@
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 
+// UserProvider imports refreshPackageRegistry, which drags in the registry ->
+// adapters chain that will not load on its own. Same stub the other suites
+// that touch UserContext use.
+jest.mock("../../registry/packageRegistryBootstrap", () => ({
+  refreshPackageRegistry: jest.fn(),
+}));
+
 import { UserContext } from "../../providers/UserProvider";
 import type { UserData } from "../../utils/authApi";
 import type { AgentRemedy } from "../../services/agents";
