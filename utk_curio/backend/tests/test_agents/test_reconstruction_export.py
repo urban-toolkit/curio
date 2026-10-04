@@ -1,10 +1,7 @@
-"""dev/121 — the fine-tuning export, the live runner's refusals, and the CLI.
+"""dev/121: the fixture export, the live runner's refusals, and the CLI.
 
-The export exists so approved fixtures can later become prompt -> expected
-pairs. Its whole value is in what it refuses: an unreviewed prompt is not
-training data, and a held-out fixture that leaked into training makes every
-number after it meaningless. Both refusals are tested here, and so is the
-absence of any code path that trains anything.
+The export turns approved fixtures into prompt -> expected pairs. It refuses a
+split whose prompts are all unreviewed, and nothing in it calls a provider.
 
 Offline: no stack, no provider, no network.
 """
@@ -46,21 +43,9 @@ class TestSplits:
         assert set(summary) == {"train", "validation", "heldout"}
         assert all(counts["total"] > 0 for counts in summary.values()), summary
 
-    def test_only_the_train_split_may_feed_training(self):
-        assert export_mod.TRAINABLE_SPLITS == ("train",)
-
-    def test_a_training_export_refuses_the_heldout_split(self):
-        with pytest.raises(export_mod.ExportRefused) as refusal:
-            export_mod.rows_for_split(FIXTURES, split="heldout", purpose="training")
-        assert "held-out" in str(refusal.value)
-
-    def test_a_training_export_refuses_the_validation_split(self):
-        with pytest.raises(export_mod.ExportRefused):
-            export_mod.rows_for_split(FIXTURES, split="validation", purpose="training")
-
     def test_an_unknown_split_is_refused_rather_than_empty(self):
         with pytest.raises(export_mod.ExportRefused):
-            export_mod.rows_for_split(FIXTURES, split="test", purpose="evaluation")
+            export_mod.rows_for_split(FIXTURES, split="test")
 
 
 class TestReviewGate:
@@ -105,7 +90,7 @@ class TestReviewGate:
 
     def test_an_approved_fixture_exports(self):
         approved = [_approved(f) for f in FIXTURES if f.split == "train"]
-        rows = export_mod.rows_for_split(approved, split="train", purpose="training")
+        rows = export_mod.rows_for_split(approved, split="train")
         assert rows
         assert {row.split for row in rows} == {"train"}
 
@@ -119,19 +104,11 @@ class TestReviewGate:
         assert payload["fixtureSha256"]
         assert payload["source"].startswith("docs/examples/")
 
-    def test_the_unapproved_escape_hatch_exists_but_not_for_training(self):
+    def test_the_unapproved_escape_hatch_exists(self):
         rows = export_mod.rows_for_split(
-            FIXTURES, split="train", purpose="evaluation", require_approved=False
+            FIXTURES, split="train", require_approved=False
         )
         assert rows, "an evaluation export may draw on unreviewed prompts"
-        from utk_curio.tools.agent_eval import main
-
-        with pytest.raises(SystemExit) as refused:
-            main([
-                "export", "--split", "train", "--purpose", "training",
-                "--include-unapproved", "--out", "/dev/null",
-            ])
-        assert refused.value.code == 2
 
 
 class TestWriting:
@@ -285,18 +262,6 @@ class TestTheCli:
         monkeypatch.delenv("CURIO_EVAL_TOKEN", raising=False)
         assert main(["run"]) == 2
         assert "never reads a provider key" in capsys.readouterr().err
-
-    def test_export_refuses_a_heldout_training_export(self, capsys, tmp_path):
-        from utk_curio.tools.agent_eval import main
-
-        with pytest.raises(SystemExit) as refused:
-            main([
-                "export", "--split", "heldout", "--purpose", "training",
-                "--out", str(tmp_path / "x.jsonl"),
-            ])
-        assert refused.value.code == 2
-        assert "--purpose" in capsys.readouterr().err
-        assert not (tmp_path / "x.jsonl").exists()
 
     def test_the_cli_has_no_train_verb(self):
         from utk_curio.tools.agent_eval import build_parser

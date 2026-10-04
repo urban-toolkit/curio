@@ -67,9 +67,8 @@ class TestCompleteness:
         assert len(legacy) == 21
 
     def test_every_split_is_populated_and_heldout_is_a_minority(self):
-        """Splits exist so a later fine-tuning export has somewhere to draw
-        from; a held-out set that swallowed the corpus would leave nothing to
-        train on and nothing to validate with."""
+        """Splits exist so an export has somewhere to draw from; a held-out set
+        that swallowed the corpus would leave the other splits empty."""
         counts: dict = {}
         for fixture in FIXTURES:
             counts[fixture.split] = counts.get(fixture.split, 0) + 1

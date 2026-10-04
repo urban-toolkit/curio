@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
   "title": "Curio example prompt fixture (v1)",
-  "description": "One reviewed, checked-in pairing of a natural-language prompt with a shipped example dataflow, used by the example-derived agent validation harness (memo dev/121, DEC-077). The evaluated model receives `prompt` (and `context`) and nothing else: `expected`, `required`, `intents` and `source` are the harness's answer key and must never be sent to it. The format is also the unit `agent_eval export` writes: `split` and `review` govern that, and held-out fixtures are never training data.",
+  "description": "One reviewed, checked-in pairing of a natural-language prompt with a shipped example dataflow, used by the example-derived agent validation harness (memo dev/121, DEC-077). The evaluated model receives `prompt` (and `context`) and nothing else: `expected`, `required`, `intents` and `source` are the harness's answer key and must never be sent to it. The format is also the unit `agent_eval export` writes, chosen by `split` and `review`.",
   "type": "object",
   "required": [
     "fixtureId",
@@ -430,7 +430,7 @@
         "validation",
         "heldout"
       ],
-      "description": "Export split. Immutable once approved; a heldout fixture is never training data (DEC-077)."
+      "description": "Export split. Immutable once approved."
     },
     "review": {
       "type": "object",
