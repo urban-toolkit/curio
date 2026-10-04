@@ -16,10 +16,12 @@ import {
   chipToDelete,
   snapPosition,
 } from "../../../components/editing/widgets/referenceChips";
-import { referenceMarks, useWidgetReferences } from "../../../components/editing/widgets/monacoWidgetRefs";
+import { referenceMarks, useCodeReferences } from "../../../components/editing/widgets/monacoCodeReferences";
+import type { ReferenceScope } from "../../../utils/references/codeReferences";
 import type { WidgetDef } from "../../../utils/widgets/widgetModel";
 
 const widgets: WidgetDef[] = [{ name: "season", type: "text", default: "summer" }];
+const scope: ReferenceScope = { widgets, inputs: [{ slot: 0, columns: ["height"] }] };
 // "s = " puts the reference at columns 5 to 19, and its name at 9 to 15.
 const CODE = "s = [!! season !!]";
 const line = (startColumn: number, endColumn: number) => ({
@@ -31,7 +33,7 @@ const line = (startColumn: number, endColumn: number) => ({
 
 describe("what a reference is drawn as", () => {
   test("the name in a box; the brackets kept but not drawn", () => {
-    const decorations = chipDecorations(referenceMarks(CODE, widgets, "python"));
+    const decorations = chipDecorations(referenceMarks(CODE, scope, "python"));
     const byClass = (cls: string) =>
       decorations.filter((d) => d.options.inlineClassName === cls).map((d) => d.range);
     expect(byClass(CHIP_HIDDEN_CLASS)).toEqual([line(5, 9), line(15, 19)]);
@@ -44,20 +46,20 @@ describe("what a reference is drawn as", () => {
   });
 
   test("every decoration takes the line off Monaco's fixed-width path", () => {
-    for (const d of chipDecorations(referenceMarks(CODE, widgets, "python"))) {
+    for (const d of chipDecorations(referenceMarks(CODE, scope, "python"))) {
       expect(d.options.inlineClassNameAffectsLetterSpacing).toBe(true);
     }
   });
 
   test("a reference with a problem is drawn whole, in a red box, with nothing hidden", () => {
-    const decorations = chipDecorations(referenceMarks("[!! missing !!]", widgets, "python"));
+    const decorations = chipDecorations(referenceMarks("[!! missing !!]", scope, "python"));
     const classes = decorations.map((d) => d.options.inlineClassName);
     expect(classes).not.toContain(CHIP_HIDDEN_CLASS);
     expect(decorations.find((d) => d.options.inlineClassName === CHIP_PROBLEM_CLASS)?.range).toEqual(line(1, 16));
   });
 
   test("a reference broken over two lines is drawn whole", () => {
-    const [mark] = referenceMarks("[!!\nseason !!]", widgets, "python");
+    const [mark] = referenceMarks("[!!\nseason !!]", scope, "python");
     expect(mark.nameRange).toBeNull();
     const classes = chipDecorations([mark]).map((d) => d.options.inlineClassName);
     expect(classes).not.toContain(CHIP_HIDDEN_CLASS);
@@ -66,13 +68,30 @@ describe("what a reference is drawn as", () => {
   });
 
   test("the name's range skips however many spaces stand before it", () => {
-    const [mark] = referenceMarks("[!!   season!!]", widgets, "python");
+    const [mark] = referenceMarks("[!!   season!!]", scope, "python");
     expect(mark.nameRange).toEqual(line(7, 13));
+  });
+
+  test("an input or column chip is the same box with the input class beside the chip's", () => {
+    // "c = [!! input 0.height !!]": the reference spans 5 to 27, its name 9 to 23.
+    const decorations = chipDecorations(referenceMarks("c = [!! input 0.height !!]", scope, "python"));
+    const box = decorations.find((d) => String(d.options.inlineClassName).split(" ")[0] === CHIP_CLASS);
+    expect(box?.options.inlineClassName).toBe(`${CHIP_CLASS} curio-input-ref`);
+    expect(box?.range).toEqual(line(9, 23));
+    expect(decorations.filter((d) => d.options.inlineClassName === CHIP_HIDDEN_CLASS).map((d) => d.range)).toEqual([
+      line(5, 9),
+      line(23, 27),
+    ]);
+    const [problem] = referenceMarks("[!! input 4 !!]", scope, "python");
+    expect(problem.problem).not.toBeNull();
+    expect(chipDecorations([problem]).map((d) => d.options.inlineClassName)).toContain(
+      `${CHIP_PROBLEM_CLASS} curio-input-ref-problem`,
+    );
   });
 });
 
 describe("the caret steps over a chip", () => {
-  const spans = chipSpans(referenceMarks(CODE, widgets, "python"));
+  const spans = chipSpans(referenceMarks(CODE, scope, "python"));
 
   test("one step right from its start lands at its end, and back", () => {
     expect(snapPosition(spans, { lineNumber: 1, column: 6 }, { lineNumber: 1, column: 5 })).toEqual({
@@ -100,12 +119,12 @@ describe("the caret steps over a chip", () => {
   });
 
   test("a reference with a problem can be edited inside", () => {
-    expect(chipSpans(referenceMarks("[!! missing !!]", widgets, "python"))).toEqual([]);
+    expect(chipSpans(referenceMarks("[!! missing !!]", scope, "python"))).toEqual([]);
   });
 });
 
 describe("Backspace and Delete remove a chip whole", () => {
-  const spans = chipSpans(referenceMarks(CODE, widgets, "python"));
+  const spans = chipSpans(referenceMarks(CODE, scope, "python"));
 
   test("Backspace right after it, Delete right before it", () => {
     expect(chipToDelete(spans, { lineNumber: 1, column: 19 }, "Backspace")).toEqual({
@@ -168,14 +187,14 @@ describe("the editor wiring", () => {
 
   test("the chips are drawn when the hook mounts", () => {
     const editor = fakeEditor(CODE);
-    renderHook(() => useWidgetReferences(editor, undefined, widgets, "python"));
-    expect(editor.collection.set).toHaveBeenCalledWith(chipDecorations(referenceMarks(CODE, widgets, "python")));
+    renderHook(() => useCodeReferences(editor, undefined, scope, "python"));
+    expect(editor.collection.set).toHaveBeenCalledWith(chipDecorations(referenceMarks(CODE, scope, "python")));
   });
 
   test("a caret that lands inside a chip is moved past it", () => {
     const editor = fakeEditor(CODE);
     editor.moveTo({ lineNumber: 1, column: 5 });
-    renderHook(() => useWidgetReferences(editor, undefined, widgets, "python"));
+    renderHook(() => useCodeReferences(editor, undefined, scope, "python"));
     editor.handlers.cursor({ position: { lineNumber: 1, column: 6 } });
     expect(editor.setPosition).toHaveBeenCalledWith({ lineNumber: 1, column: 19 });
   });
@@ -183,7 +202,7 @@ describe("the editor wiring", () => {
   test("Backspace after a chip removes the reference in one undoable edit", () => {
     const editor = fakeEditor(CODE);
     editor.moveTo({ lineNumber: 1, column: 19 });
-    renderHook(() => useWidgetReferences(editor, undefined, widgets, "python"));
+    renderHook(() => useCodeReferences(editor, undefined, scope, "python"));
     const event = keyEvent("Backspace");
     editor.handlers.key(event);
     expect(event.preventDefault).toHaveBeenCalled();
@@ -194,7 +213,7 @@ describe("the editor wiring", () => {
   test("Backspace elsewhere is left to the editor", () => {
     const editor = fakeEditor(CODE);
     editor.moveTo({ lineNumber: 1, column: 3 });
-    renderHook(() => useWidgetReferences(editor, undefined, widgets, "python"));
+    renderHook(() => useCodeReferences(editor, undefined, scope, "python"));
     const event = keyEvent("Backspace");
     editor.handlers.key(event);
     expect(event.preventDefault).not.toHaveBeenCalled();

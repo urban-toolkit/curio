@@ -75,7 +75,7 @@ export const CHOICE_KINDS: readonly WidgetKind[] = ["choice", "checkbox-group", 
 export const NUMERIC_KINDS: readonly WidgetKind[] = ["number", "slider"];
 
 /** A widget name: what a reference names. Kept in sync with
- * `WIDGET_NAME_RE` in `utk_curio/backend/app/execution/widget_substitution.py`. */
+ * `WIDGET_NAME_RE` in `utk_curio/backend/app/execution/code_references.py`. */
 export const WIDGET_NAME_PATTERN = String.raw`^[A-Za-z_][A-Za-z0-9_]{0,63}$`;
 export const WIDGET_NAME_RE = new RegExp(WIDGET_NAME_PATTERN);
 
@@ -87,12 +87,12 @@ export function effectiveValue(widget: WidgetDef): WidgetValue {
 }
 
 /** A date-time widget's value when its widget gives none. Kept in sync with
- * `DATETIME_FALLBACK` in `widget_substitution.py`. */
+ * `DATETIME_FALLBACK` in `code_references.py`. */
 export const DATETIME_FALLBACK = "1970-01-01T00:00:00";
 
 /**
  * A kind's value when a widget gives no default. Kept in sync with
- * `default_value_for` in `widget_substitution.py`, so the browser and the
+ * `default_value_for` in `code_references.py`, so the browser and the
  * runner write the same value for such a widget.
  */
 export function defaultValueFor(kind: WidgetKind, options?: WidgetOptions): WidgetValue {

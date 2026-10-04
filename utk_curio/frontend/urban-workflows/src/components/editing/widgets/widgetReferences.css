@@ -45,3 +45,11 @@
   border-bottom-right-radius: var(--curio-radius-sm);
   padding-right: 4px;
 }
+
+/* An input or column reference: the same box, green, so it reads apart from a
+   widget's. A problem stays red whatever its kind. */
+.monaco-editor .view-line .curio-widget-ref.curio-input-ref {
+  background: var(--curio-accent-mint-bg);
+  border-color: #a8d5b1;
+  color: var(--curio-accent-mint-fg);
+}

@@ -13,7 +13,7 @@
  * the drawn text, where the brackets take no room and the chip has padding.
  *
  * Pure: marks in, decorations, positions and ranges out.
- * `monacoWidgetRefs.ts` applies them to a mounted editor.
+ * `monacoCodeReferences.ts` applies them to a mounted editor.
  */
 
 export interface ChipRange {
@@ -30,6 +30,9 @@ export interface ChipMark {
   nameRange: ChipRange | null;
   problem: string | null;
   hover: string;
+  /** A class naming the reference's kind, drawn on the box beside its own
+   * (an input chip's `curio-input-ref`, which turns the box green). */
+  kindClass?: string | null;
 }
 
 /** One reference drawn as a chip: on one line, from *startColumn* to *endColumn*. */
@@ -74,7 +77,8 @@ export function chipDecorations(marks: ChipMark[]): { range: ChipRange; options:
   const out: { range: ChipRange; options: Record<string, unknown> }[] = [];
   for (const mark of marks) {
     const box = isChip(mark) ? (mark.nameRange as ChipRange) : mark.range;
-    const kind = mark.problem === null ? CHIP_CLASS : CHIP_PROBLEM_CLASS;
+    const base = mark.problem === null ? CHIP_CLASS : CHIP_PROBLEM_CLASS;
+    const kind = mark.kindClass ? `${base} ${mark.kindClass}` : base;
     if (isChip(mark)) {
       const line = mark.range.startLineNumber;
       out.push({ range: onLine(line, mark.range.startColumn, box.startColumn), options: inline(CHIP_HIDDEN_CLASS) });

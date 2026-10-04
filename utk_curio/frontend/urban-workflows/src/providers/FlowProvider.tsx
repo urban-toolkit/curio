@@ -293,7 +293,7 @@ const FlowProvider = ({
     const {
         applyNodeContent, addNode, propagateDownstreamInputs, applyOutput, onEdgesDelete, onNodesDelete,
     } = useGraphEdits({
-        setNodes, reactFlow, workflowNameRef, collabRef, outputsRef, markNodeStaleRef, setOutputs,
+        setNodes, setEdges, reactFlow, workflowNameRef, collabRef, outputsRef, markNodeStaleRef, setOutputs,
     });
 
     const { onConnect, isValidConnection } = useConnect({

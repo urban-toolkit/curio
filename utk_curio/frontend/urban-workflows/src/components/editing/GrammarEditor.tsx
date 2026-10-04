@@ -6,12 +6,12 @@ import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { registerRunNodeAction } from "./runNodeMonacoAction";
 import { describeError } from "../../adapters/node/autkRunSettlement";
-import { WidgetTagStrip } from "./widgets/WidgetTag";
-import { insertReference, useWidgetReferences } from "./widgets/monacoWidgetRefs";
-import type { WidgetDef } from "../../utils/widgets/widgetModel";
-import type { WidgetLanguage } from "../../utils/widgets/widgetSubstitution";
+import { ReferenceStrip } from "./widgets/WidgetTag";
+import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
+import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
 
-const NO_WIDGETS: WidgetDef[] = [];
+const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [] };
+const NO_INPUTS: InputScope[] = [];
 
 type GrammarEditorProps = {
     output: ICodeData;
@@ -26,9 +26,13 @@ type GrammarEditorProps = {
     readOnly: boolean;
     /** Lets a rejected applyGrammar become an error output, so the run ends (#271). */
     setOutputCallback?: (output: { code: string; content: string }) => void;
-    /** #662: the node's widgets, whose tags sit above the editor. */
-    widgets?: WidgetDef[];
-    widgetLanguage?: WidgetLanguage;
+    /** #662: what the node's references name: its widgets and its inputs. */
+    references?: ReferenceScope;
+    /** The inputs whose tags sit above the editor, with the widgets'. */
+    stripInputs?: InputScope[];
+    /** Read an input's columns for its tags. */
+    onLoadColumns?: (slot: number) => void;
+    widgetLanguage?: CodeLanguage;
 };
 
 export default function GrammarEditor({
@@ -43,14 +47,16 @@ export default function GrammarEditor({
     floatCode,
     readOnly,
     setOutputCallback,
-    widgets = NO_WIDGETS,
+    references = NO_REFERENCES,
+    stripInputs = NO_INPUTS,
+    onLoadColumns,
     widgetLanguage = "json",
 }: GrammarEditorProps) {
     const [grammar, _setGrammar] = useState("{}");
-    // #662: the mounted editor, for the widget tags and reference chips. A
+    // #662: the mounted editor, for the reference tags and chips. A
     // reference is not JSON until it is resolved, so the errors it causes are hidden.
     const [widgetEditor, setWidgetEditor] = useState<{ editor: any; monaco: any } | null>(null);
-    useWidgetReferences(widgetEditor?.editor, widgetEditor?.monaco, widgets, widgetLanguage, {
+    useCodeReferences(widgetEditor?.editor, widgetEditor?.monaco, references, widgetLanguage, {
         hideJsonMarkers: true,
     });
     const grammarRef = useRef(grammar);
@@ -249,10 +255,12 @@ export default function GrammarEditor({
                     )}
                 </div>
             )}
-            <WidgetTagStrip
-                widgets={widgets}
+            <ReferenceStrip
+                widgets={references.widgets}
+                inputs={stripInputs}
                 disabled={readOnly}
-                onInsert={(name) => insertReference(widgetEditor?.editor, name)}
+                onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
+                onLoadColumns={onLoadColumns}
             />
             <div style={{ flex: 1, minHeight: 0 }}>
                 {/* Uncontrolled on purpose: a per-keystroke `value` round-trip

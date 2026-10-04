@@ -6,21 +6,39 @@ import { NodeType } from "../../constants";
 import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../../TrillGenerator";
 import {
-    ensureMergeArrays,
-    parseHandleIndex,
-    setMergeSlot,
-    clearMergeSlot,
-    mergeSlotsForSource,
-} from "../../utils/mergeFlowUtils";
+    ensureSlotArrays,
+    inputSlotOf,
+    setSlot,
+    clearSlot,
+    slotsFedBy,
+    wiredInputSlots,
+    nodeInputFromSlots,
+    compactedHandles,
+    withoutSlot,
+} from "../../utils/inputSlots";
+import { renumberInputReferences } from "../../utils/references/codeReferences";
 import type { useCollab } from "../CollaborationProvider";
 import { normalizeFlowInput } from "../../utils/flowOutputRef";
 import { markSelectionEcho, SelectionEchoOptions } from "../../utils/selectionEcho";
 import type { IOutput } from "./flowTypes";
+import { nodeGrowsInputs } from "./growingInputs";
+
+/** A growing node's data with *value* from *sourceId* in each of *slots*. */
+function withSlotValues(node: Node, slots: number[], value: unknown, sourceId: string, edges: any[]): Node {
+    const { inputList, sourceList } = ensureSlotArrays(node.data.inputSlots, node.data.sourceSlots);
+    for (const slot of slots) setSlot(inputList, sourceList, slot, value, sourceId);
+    const wired = Array.from(new Set([...wiredInputSlots(edges, node.id), ...slots])).sort((a, b) => a - b);
+    return {
+        ...node,
+        data: { ...node.data, inputSlots: inputList, sourceSlots: sourceList, input: nodeInputFromSlots(inputList, wired) },
+    };
+}
 
 export function useGraphEdits({
-    setNodes, reactFlow, workflowNameRef, collabRef, outputsRef, markNodeStaleRef, setOutputs,
+    setNodes, setEdges, reactFlow, workflowNameRef, collabRef, outputsRef, markNodeStaleRef, setOutputs,
 }: {
     setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
+    setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
     reactFlow: ReactFlowInstance;
     workflowNameRef: React.MutableRefObject<string>;
     collabRef: React.MutableRefObject<ReturnType<typeof useCollab>>;
@@ -119,19 +137,27 @@ export function useGraphEdits({
                 if (!nodesAffected.includes(node.id)) return node;
 
                 if (getUnversionedFlowNodeType(node) == NodeType.MERGE_FLOW) {
-                    const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
+                    const { inputList, sourceList } = ensureSlotArrays(node.data.input, node.data.source);
                     // Fill EVERY slot this source feeds — one source can be wired
                     // to multiple slots of the same merge node.
-                    const sourceIndices = mergeSlotsForSource(
+                    const sourceIndices = slotsFedBy(
                         currentEdges,
                         node.id,
                         sourceId,
                         sourceList,
                     );
                     for (const sourceIndex of sourceIndices) {
-                        setMergeSlot(inputList, sourceList, sourceIndex, inputPayload, sourceId);
+                        setSlot(inputList, sourceList, sourceIndex, inputPayload, sourceId);
                     }
                     return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
+                }
+
+                if (nodeGrowsInputs(node)) {
+                    // Every circle this source feeds; the node reads them as one
+                    // value once every wired circle holds one.
+                    const prior = ensureSlotArrays(node.data.inputSlots, node.data.sourceSlots).sourceList;
+                    const slots = slotsFedBy(currentEdges, node.id, sourceId, prior);
+                    return withSlotValues(node, slots, inputPayload, sourceId, currentEdges);
                 }
 
                 if (inputPayload === "") {
@@ -169,12 +195,18 @@ export function useGraphEdits({
                 if (node.id !== inId) return node;
 
                 if (inNodeType == NodeType.MERGE_FLOW) {
-                    const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
-                    const handleIndex = parseHandleIndex(targetHandle);
+                    const { inputList, sourceList } = ensureSlotArrays(node.data.input, node.data.source);
+                    const handleIndex = inputSlotOf(targetHandle);
                     if (handleIndex >= 0) {
-                        setMergeSlot(inputList, sourceList, handleIndex, normalized, outId);
+                        setSlot(inputList, sourceList, handleIndex, normalized, outId);
                     }
                     return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
+                }
+
+                if (nodeGrowsInputs(node)) {
+                    // The edge is not in the graph yet: its circle counts as wired.
+                    const slot = inputSlotOf(targetHandle);
+                    return slot >= 0 ? withSlotValues(node, [slot], normalized, outId, reactFlow.getEdges()) : node;
                 }
 
                 return { ...node, data: { ...node.data, input: normalized, source: outId } };
@@ -182,8 +214,79 @@ export function useGraphEdits({
         );
     };
 
+    /**
+     * A growing node's circles close up after some of its edges were deleted:
+     * each surviving edge moves up one circle per deleted circle above it, the
+     * values move with it, and the node's code is rewritten so every input
+     * chip still names the same input. Deleted inputs' chips become
+     * `[!! input ? !!]`. Peers get the moved edges and the new code from here;
+     * they never rewrite on their own, so the code changes once.
+     */
+    const closeUpCircles = (target: Node, deleted: Edge[], deletedIds: Set<string>) => {
+        const removed = deleted
+            .map((e) => inputSlotOf(e.targetHandle))
+            .filter((s) => s >= 0)
+            .sort((a, b) => b - a);
+        if (removed.length === 0) return;
+        const survivors = reactFlow.getEdges().filter((e) => !deletedIds.has(e.id));
+        const moved = new Map<string, string>();
+        const handles = new Map(
+            survivors.filter((e) => e.target === target.id).map((e) => [e.id, e.targetHandle ?? "in"] as [string, string]),
+        );
+        for (const slot of removed) {
+            const step = compactedHandles(
+                Array.from(handles, ([id, targetHandle]) => ({ id, target: target.id, targetHandle })),
+                target.id,
+                slot,
+            );
+            step.forEach((handle, id) => {
+                handles.set(id, handle);
+                moved.set(id, handle);
+            });
+        }
+
+        const code: string = typeof target.data?.code === "string" ? target.data.code : "";
+        const rewritten = removed.reduce((text, slot) => renumberInputReferences(text, slot), code);
+        let inputSlots: unknown[] = target.data?.inputSlots ?? [];
+        let sourceSlots: unknown[] = target.data?.sourceSlots ?? [];
+        for (const slot of removed) {
+            inputSlots = withoutSlot(inputSlots, slot);
+            sourceSlots = withoutSlot(sourceSlots, slot);
+        }
+        const wired = Array.from(new Set(Array.from(handles.values()).map(inputSlotOf).filter((s) => s >= 0)))
+            .sort((a, b) => a - b);
+
+        if (moved.size > 0) {
+            setEdges((eds) => eds.map((e) => (moved.has(e.id) ? { ...e, targetHandle: moved.get(e.id) } : e)));
+            for (const edge of survivors) {
+                if (!moved.has(edge.id)) continue;
+                collabRef.current.broadcastEdgeRemoved(edge.id);
+                collabRef.current.broadcastEdgeAdded({ edgeId: edge.id, edge: { ...edge, targetHandle: moved.get(edge.id) } });
+            }
+        }
+        setNodes((nds) =>
+            nds.map((node) => {
+                if (node.id !== target.id) return node;
+                const data = { ...node.data, inputSlots, sourceSlots, input: nodeInputFromSlots(inputSlots, wired) };
+                if (rewritten !== code) {
+                    data.code = rewritten;
+                    data.defaultCode = rewritten;
+                }
+                return { ...node, data };
+            }),
+        );
+        if (rewritten !== code) {
+            collabRef.current.broadcastNodeUpdated({
+                nodeId: target.id,
+                patch: { data: { code: rewritten, defaultCode: rewritten } },
+            });
+        }
+    };
+
     const onEdgesDelete = useCallback(
         (connections: Edge[]) => {
+            const deletedIds = new Set(connections.map((c) => c.id));
+            const growing = new Map<string, Edge[]>();
             for (const connection of connections) {
                 collabRef.current.broadcastEdgeRemoved(connection.id);
                 const resetInput = connection.target;
@@ -207,15 +310,19 @@ export function useGraphEdits({
                     connection.sourceHandle != "in/out" ||
                     connection.targetHandle != "in/out"
                 ) {
+                    if (nodeGrowsInputs(targetNode)) {
+                        growing.set(connection.target, [...(growing.get(connection.target) ?? []), connection]);
+                        continue;
+                    }
                     setNodes((nds: any) =>
                         nds.map((node: any) => {
                             if (node.id !== resetInput) return node;
 
                             if (getUnversionedFlowNodeType(targetNode) === NodeType.MERGE_FLOW) {
-                                const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
-                                const handleIndex = parseHandleIndex(connection.targetHandle);
+                                const { inputList, sourceList } = ensureSlotArrays(node.data.input, node.data.source);
+                                const handleIndex = inputSlotOf(connection.targetHandle);
                                 if (handleIndex >= 0) {
-                                    clearMergeSlot(inputList, sourceList, handleIndex);
+                                    clearSlot(inputList, sourceList, handleIndex);
                                 }
                                 return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
                             }
@@ -225,8 +332,12 @@ export function useGraphEdits({
                     );
                 }
             }
+            growing.forEach((deleted, targetId) => {
+                const target = reactFlow.getNode(targetId);
+                if (target) closeUpCircles(target, deleted, deletedIds);
+            });
         },
-        [setNodes]
+        [setNodes, setEdges]
     );
 
     const onNodesDelete = useCallback(
