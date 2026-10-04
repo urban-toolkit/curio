@@ -74,6 +74,9 @@ const CHART = "acme.charts/chart@1";
 function descriptor(id: string): NodeDescriptor {
   return {
     id: id as NodeType,
+    // A package's node, so `clearPackageNodes` drops it after each test.
+    source: "package",
+    package: { packageId: "acme.charts", major: 1, version: "1.0.0" },
     category: "data",
     label: id,
     icon: faCircle,
@@ -145,7 +148,9 @@ function advance(ms: number) {
 }
 
 beforeEach(() => {
-  jest.useFakeTimers();
+  // Leave the inline requestAnimationFrame above in place; modern fake timers
+  // would otherwise turn it into a 16 ms timer.
+  jest.useFakeTimers({ doNotFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
   mockFitViewWithMenuOffset.mockClear();
   mockRegistryReady = false;
 });
@@ -184,9 +189,9 @@ test("the fit runs at once when every node is known", async () => {
   registerNode(descriptor(CHART));
   const { result } = render();
   await load(result.current);
-  // Under fake timers React runs the fit's effect on the next tick; well
-  // under one 100 ms wait, so a fit that waited would not have run yet.
-  advance(10);
+  // Let React run the fit's effect: 50 ms is under one 100 ms wait, so a fit
+  // that waited would not have run yet.
+  advance(50);
   expect(mockFitViewWithMenuOffset).toHaveBeenCalled();
 });
 
