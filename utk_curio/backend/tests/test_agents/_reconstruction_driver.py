@@ -559,8 +559,39 @@ def oracle_attempt(
         for intent in fixture.intents
         if intent.get("outputKind")
     }
+    # #662: the runner dispatches a node's code with its chips resolved
+    # (`[!! input 0 !!]` goes out as `arg[0]`), so the declared content is
+    # matched in that form, resolved against the example's own circles.
+    # Matched as written, fixture 08's JS join (whose code reads its inputs
+    # through chips) fell through to the word heuristic below and was
+    # answered "raster".
+    from utk_curio.backend.app.execution.workflow_spec import (
+        CodeReferenceError,
+        parse_workflow_dict,
+        resolve_code_references,
+    )
+
+    example_spec = parse_workflow_dict(example)
+    parsed_by_id = {n.id: n for n in example_spec.nodes}
+    inner = example.get("dataflow") if isinstance(example.get("dataflow"), Mapping) else example
+    raw_nodes = [n for n in (inner.get("nodes") or []) if isinstance(n, Mapping)]
+    refs = [str(n.get("ref")) for n in fixture.expected["nodes"]]
+    node_id_of_ref = {
+        ref: str(raw_nodes[origin].get("id")) for ref, origin in zip(refs, expected_graph.origins)
+    }
+
+    def _as_dispatched(ref: str, code: str) -> str:
+        node = parsed_by_id.get(node_id_of_ref.get(ref, ""))
+        if node is None or node.category != "code":
+            return code  # only code nodes reach the sandbox
+        language = "javascript" if node.engine == "javascript" else "python"  # as the runner picks
+        try:
+            return resolve_code_references(code, node.widgets, language, example_spec.input_slots(node.id))
+        except CodeReferenceError:
+            return code
+
     code_to_kind = {
-        contents[ref]: kind for ref, kind in kinds.items() if ref in contents
+        _as_dispatched(ref, contents[ref]): kind for ref, kind in kinds.items() if ref in contents
     }
 
     # dev/125: matched by CONTAINMENT, not equality. The runtime wraps every

@@ -418,7 +418,20 @@ class TestCanonicalTemplateId:
         text = constants.read_text(encoding="utf-8")
         block = text.split("export enum NodeType {", 1)[1].split("}", 1)[0]
         members = re.findall(r'^\s*([A-Z0-9_]+)\s*=\s*"([^"]+)"', block, re.M)
-        assert len(members) >= 11, f"expected the NodeType roster, parsed {members}"
+        # Ten since Merge Flow left (#662); every member names a template the
+        # built-in package ships, so a stale member fails here too.
+        assert len(members) >= 10, f"expected the NodeType roster, parsed {members}"
+        import json
+
+        manifest = json.loads(
+            (Path(__file__).resolve().parents[4] / "packages" / "curio.builtin@1" / "manifest.json")
+            .read_text(encoding="utf-8")
+        )
+        shipped = {f"curio.builtin/{t['id']}" for t in manifest["templates"]}
+        assert {value for _, value in members} <= shipped, (
+            f"NodeType names templates the built-in package does not ship: "
+            f"{sorted({value for _, value in members} - shipped)}"
+        )
         for key, value in members:
             assert packages_services.canonical_template_id(key) == value, (
                 f"NodeType.{key} = {value!r} does not follow the upper-snake rule "
