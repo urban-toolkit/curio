@@ -6,14 +6,39 @@ import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import type { IInteraction, IPropagation } from "./flowTypes";
 
 export function useInteractions({
-    interactions, nodes, edges, reactFlow, setNodes,
+    interactions, setInteractions, nodes, edges, reactFlow, setNodes,
 }: {
     interactions: IInteraction[];
+    setInteractions: React.Dispatch<React.SetStateAction<IInteraction[]>>;
     nodes: Node[];
     edges: Edge[];
     reactFlow: ReactFlowInstance;
     setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
 }) {
+    // Every node records its selections through this one callback, whether
+    // it was built here or received from a collaborator: the node that
+    // changed gets priority 1, every other node's latest selection 0.
+    const interactionsCallback = useCallback((details: any, nodeId: string) => {
+        setInteractions((prevInteractions: IInteraction[]) => {
+            let newInteractions: IInteraction[] = [];
+            let newNode = true;
+
+            for(const interaction of prevInteractions){
+                if(interaction.nodeId == nodeId){
+                    newInteractions.push({nodeId: nodeId, details: details, priority: 1});
+                    newNode = false;
+                }else{
+                    newInteractions.push({...interaction, priority: 0});
+                }
+            }
+
+            if(newNode)
+                newInteractions.push({nodeId: nodeId, details: details, priority: 1});
+
+            return newInteractions;
+        });
+    }, [setInteractions]);
+
     // responsible for flow of already connected nodes
     const applyNewInteractions = useCallback(() => {
         let newInteractions = interactions.filter((interaction) => {
@@ -181,5 +206,5 @@ export function useInteractions({
         applyNewInteractions();
     }, [interactions]);
 
-    return { applyNewPropagation };
+    return { applyNewPropagation, interactionsCallback };
 }

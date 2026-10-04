@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { Node } from "reactflow";
 import { v4 as uuid } from "uuid";
 
-import { IInteraction, useFlowContext } from "../providers/FlowProvider";
+import { useFlowContext } from "../providers/FlowProvider";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { PythonInterpreter } from "../PythonInterpreter";
 import { JavaScriptInterpreter } from "../JavaScriptInterpreter";
@@ -104,7 +104,7 @@ export function useCode(): IUseCode {
     const {
         addNode,
         setOutputs,
-        setInteractions,
+        interactionsCallback,
         applyNewPropagation,
         applyNewOutput,
         loadParsedTrill,
@@ -120,27 +120,6 @@ export function useCode(): IUseCode {
         },
         [setOutputs]
     );
-
-    const interactionsCallback = useCallback((interactions: any, nodeId: string) => {
-        setInteractions((prevInteractions: IInteraction[]) => {
-            let newInteractions: IInteraction[] = [];
-            let newNode = true;
-
-            for(const interaction of prevInteractions){
-                if(interaction.nodeId == nodeId){
-                    newInteractions.push({nodeId: nodeId, details: interactions, priority: 1});
-                    newNode = false;
-                }else{
-                    newInteractions.push({...interaction, priority: 0});
-                }
-            }
-
-            if(newNode)
-                newInteractions.push({nodeId: nodeId, details: interactions, priority: 1});
-
-            return newInteractions;
-        })
-    }, [setInteractions]);
 
     /**
      * Turn a spec into canvas nodes and edges and hand them to the provider.
