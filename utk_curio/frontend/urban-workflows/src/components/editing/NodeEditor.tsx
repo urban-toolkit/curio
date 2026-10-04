@@ -30,6 +30,7 @@ import {
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { ICodeData } from "../../types";
 import { useFlowContext } from "../../providers/FlowProvider";
+import { useNotebookViewContext } from "../../providers/flow/notebookViewContext";
 import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
 import { contentMountStyle, outputMountStyle } from "../../utils/outputMountStyle";
 import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
@@ -149,7 +150,16 @@ function NodeEditor({
     // forcing the pane unconditionally rendered a pinned code node as an empty
     // tile with nothing reachable on it.
     const hasOutputPane = outputId != undefined || contentComponent != undefined;
-    const effectiveTab = dashboardOn && hasOutputPane ? "output" : activeTab;
+    // A notebook cell shows its input and its output at once: the output pane
+    // stays visible under the input tabs (Node.css), so a run, which would
+    // switch to the Output tab, leaves the input tab in place.
+    const notebook = useNotebookViewContext();
+    const split = notebook.on && !dashboardOn && hasOutputPane && Boolean(code || grammar);
+    const effectiveTab = dashboardOn && hasOutputPane
+        ? "output"
+        : split && activeTab === "output"
+            ? resolveInitialEditorTab({ code, grammar, widgets: widgetsTab })
+            : activeTab;
 
     const contentComponentBypass = useRef(false);
     // Set while a *load* is priming the widgets, so the marker round-trip it
@@ -305,6 +315,7 @@ function NodeEditor({
                     <Row style={{ height: "100%" }}>
                         <Col md={12} style={{ height: "100%", padding: 0 }}>
                             <Tab.Content
+                                className={split ? "curio-notebook-split" : undefined}
                                 style={{ ...activeTabContentStyle, zIndex: 10 }}
                             >
                                 {code ? (
@@ -406,6 +417,7 @@ function NodeEditor({
                                 {(outputId != undefined || contentComponent != undefined) ? (
                                     <Tab.Pane
                                         eventKey="output"
+                                        className={split ? "curio-notebook-output" : undefined}
                                         style={{ height: "100%", overflow: "hidden" }}
                                     >
                                         {outputId != undefined ? (
@@ -554,7 +566,7 @@ function NodeEditor({
                                 </Col>
                             ) : null}
 
-                            {(outputId != undefined || contentComponent != undefined) ? (
+                            {(outputId != undefined || contentComponent != undefined) && !split ? (
                                 <Col>
                                     <OverlayTrigger
                                         placement="right"

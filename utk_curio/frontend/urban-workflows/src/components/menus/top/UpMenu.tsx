@@ -36,6 +36,7 @@ import {
 import { GlobalPageHeader } from "../../layout/GlobalPageHeader";
 import { HeaderMenu, HeaderMenuDivider, HeaderMenuItem } from "./HeaderMenu";
 import { CatalogButtons } from "./CatalogButtons";
+import { CanvasViewSwitch } from "./CanvasViewSwitch";
 import { useNavigate, useParams } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
@@ -85,6 +86,8 @@ export default function UpMenu() {
         packages,
         nodes,
         edges,
+        canvasView,
+        setCanvasView,
     } = useFlowContext();
 
     /** Run *action* now, or ask first when there is unsaved work to lose.
@@ -454,6 +457,7 @@ export default function UpMenu() {
                     onToggle={() => toggleMenu("view")}
                     onClose={closeView}
                 >
+                    {/* A notebook cell keeps its size, so nothing to minimize there. */}
                     <HeaderMenuItem
                         icon={
                             expandStatus === "expanded"
@@ -461,6 +465,7 @@ export default function UpMenu() {
                                 : faUpRightAndDownLeftFromCenter
                         }
                         onClick={toggleExpand}
+                        disabled={canvasView === "notebook"}
                     >
                         {expandStatus === "expanded" ? "Minimize Nodes" : "Expand Nodes"}
                     </HeaderMenuItem>
@@ -592,6 +597,19 @@ export default function UpMenu() {
 
                 <span className={headerStyles.divider} aria-hidden="true" />
                 <CatalogButtons projectId={projectId} crowded={collab.enabled} />
+
+                {/* The canvas, or the same nodes as a column of notebook cells.
+                    Last in the slot and pushed to its end, so it sits beside
+                    Monitor; still in the slot, so it shares its room. */}
+                <CanvasViewSwitch
+                    className={styles.viewSwitch}
+                    value={canvasView}
+                    onChange={(view) => {
+                        setActiveMenu(null);
+                        setCanvasView(view);
+                    }}
+                    crowded={collab.enabled}
+                />
             </GlobalPageHeader>
 
             {/* Editable Workflow Name */}

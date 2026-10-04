@@ -14,6 +14,7 @@
 - [Node Catalog](#node-catalog)
 - [Vega-Lite node](#vega-lite-node)
 - [Autark node](#autark-node)
+- [Notebook view](#notebook-view)
 - [Dashboards](#dashboards)
 - [Data Catalog](#data-catalog)
 - [Discovery Catalog](#discovery-catalog)
@@ -751,6 +752,27 @@ The first matching rule wins:
 | one layer with a nominal column | a map coloured by the first nominal column, `schemeTableau10` |
 | one layer with geometry only | a plain map |
 | no geometry | the editor stays empty |
+
+## Notebook view
+
+The **Canvas | Notebook** switch, at the right of the canvas bar beside **Monitor**, shows a dataflow two ways. **Notebook**
+lists the same nodes as a column of cells, one under the other, and the page scrolls.
+
+- **Order.** A cell comes after every cell it reads from, in the order **File → Export as
+  notebook** writes. The nodes that read from nothing come first.
+- **Cells.** Every cell has the same size and cannot be resized or minimized. A code
+  cell shows its code with its output below; a Vega-Lite or Autark cell shows its spec
+  above its chart or map.
+- **Connections** run in the bar to the right of the cells. Each cell has its dots on its
+  right edge: its inputs at the top, numbered as their chips are (dot 0 is
+  `[!! input 0 !!]`), its interaction dot halfway down, and its output at the bottom.
+  Hover a dot to see what feeds it. Selecting a cell darkens its connections.
+- **Editing** works as on the canvas. Drag from an output dot to an input dot to connect
+  two cells, and select a connection and press Delete to remove it. A node dragged in
+  from the left rail becomes a new cell, and the page scrolls to it.
+- **Nothing is saved** about the view: the dataflow keeps its canvas layout, and
+  **Canvas** shows it as it was. The address carries the view (`?view=notebook`), so a
+  reload, or the address copied from the browser, opens it the same way.
 
 ## Dashboards
 
