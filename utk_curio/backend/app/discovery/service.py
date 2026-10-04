@@ -783,7 +783,8 @@ class DiscoveryService:
     def collection_status(self, dataset_id: str, *, samples: int = 12) -> dict[str, Any]:
         """Where a collection's files are, and a few of them to show.
 
-        A folder's files are all on this machine; a bucket's are once cached.
+        A folder's files and a service's images are all on this machine; a
+        bucket's are once cached.
         """
         import pandas as pd
 
