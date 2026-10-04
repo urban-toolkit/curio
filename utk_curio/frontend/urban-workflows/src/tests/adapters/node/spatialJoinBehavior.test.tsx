@@ -119,7 +119,43 @@ describe('resolveNameProperty / polygonPropertyNames', () => {
     expect(polygonPropertyNames(POLYGONS)).toEqual(['pri_neigh', 'sec_neigh', 'shape_area']);
     expect(polygonPropertyNames(null)).toEqual([]);
   });
+
+  test('lists a column that only a late feature carries', () => {
+    // The list is the only way to pick a column, so a sample of the first
+    // features would put a later one out of reach.
+    const fc = {
+      type: 'FeatureCollection',
+      features: [
+        ...Array.from({ length: 25 }, () => ({ type: 'Feature', geometry: null, properties: { zone: 'A' } })),
+        { type: 'Feature', geometry: null, properties: { zone: 'B', ward: 7 } },
+      ],
+    };
+    expect(polygonPropertyNames(fc)).toEqual(['ward', 'zone']);
+  });
 });
+
+const COLUMN_SELECT = 'select[aria-label="Tag each point with this polygon column"]';
+
+/** The body as it renders now, unmounted again so a test can look twice. */
+function readBody(contentComponent: React.ReactNode) {
+  const { container, unmount } = render(<>{contentComponent}</>);
+  const select = container.querySelector(COLUMN_SELECT) as HTMLSelectElement | null;
+  const label = container.querySelector('[data-curio-spatial-join-column-label]');
+  const read = {
+    select: select && {
+      value: select.value,
+      disabled: select.disabled,
+      options: Array.from(select.options).map(o => [o.value, o.textContent]),
+    },
+    labelText: label?.textContent ?? null,
+    labelSwatches: label
+      ? Array.from(label.querySelectorAll('[data-curio-handle-swatch]')).map(el => el.getAttribute('data-curio-handle-swatch'))
+      : [],
+    status: container.querySelector('[data-curio-spatial-join-status]')?.textContent ?? null,
+  };
+  unmount();
+  return read;
+}
 
 describe('useSpatialJoinBehavior', () => {
   test('sends the default property when none is chosen', async () => {
@@ -143,18 +179,19 @@ describe('useSpatialJoinBehavior', () => {
     expect(body.name_property).toBe('pri_neigh');
   });
 
-  test('committing the control persists the property on the node', async () => {
+  test('picking a column from the list persists it on the node', async () => {
     mockFetch(joined([]));
-    const data = makeData();
-    const { result } = renderHook(() => useSpatialJoinBehavior(data, makeNodeState()));
+    const { result, rerender } = renderJoin();
+    await feedBoth(rerender);
 
     const { container } = render(<>{result.current.contentComponent}</>);
-    const input = container.querySelector('input[aria-label="Tag each point with this polygon column"]') as HTMLInputElement;
-    expect(input).not.toBeNull();
-    expect(input.value).toBe('name');
+    const select = container.querySelector(COLUMN_SELECT) as HTMLSelectElement;
+    expect(select).not.toBeNull();
+    expect(select.disabled).toBe(false);
+    // A dropdown, not a box to type in.
+    expect(container.querySelector('input[type="text"]')).toBeNull();
 
-    fireEvent.change(input, { target: { value: 'pri_neigh' } });
-    fireEvent.blur(input, { target: { value: 'pri_neigh' } });
+    fireEvent.change(select, { target: { value: 'pri_neigh' } });
 
     expect(mockUpdateDataNode).toHaveBeenCalledWith(
       'sj-1',
@@ -162,30 +199,64 @@ describe('useSpatialJoinBehavior', () => {
     );
   });
 
-  test('Enter commits too, and a blank falls back to the default', async () => {
-    mockFetch(joined([]));
-    const data = makeData({ spatialJoin: { nameProperty: 'pri_neigh' } });
-    const { result } = renderHook(() => useSpatialJoinBehavior(data, makeNodeState()));
-
-    const { container } = render(<>{result.current.contentComponent}</>);
-    const input = container.querySelector('input[aria-label="Tag each point with this polygon column"]') as HTMLInputElement;
-    fireEvent.change(input, { target: { value: '   ' } });
-    fireEvent.keyDown(input, { key: 'Enter', target: { value: '   ' } });
-
-    expect(mockUpdateDataNode).toHaveBeenCalledWith(
-      'sj-1',
-      expect.objectContaining({ spatialJoin: { nameProperty: 'name' } }),
-    );
-  });
-
-  test('the datalist offers the polygon input\'s properties', async () => {
+  test('the list holds the polygon columns, and says when the chosen one is not among them', async () => {
     mockFetch(joined([]));
     const { result, rerender } = renderJoin();
     await feedBoth(rerender);
 
-    const { container } = render(<>{result.current.contentComponent}</>);
-    const options = Array.from(container.querySelectorAll('datalist option')).map((o) => (o as HTMLOptionElement).value);
-    expect(options).toEqual(['pri_neigh', 'sec_neigh', 'shape_area']);
+    // The default `name` stays the choice, flagged, rather than the select
+    // showing pri_neigh while the node joins on `name`.
+    expect(readBody(result.current.contentComponent).select).toEqual({
+      value: 'name',
+      disabled: false,
+      options: [
+        ['name', 'name (not in the polygons)'],
+        ['pri_neigh', 'pri_neigh'],
+        ['sec_neigh', 'sec_neigh'],
+        ['shape_area', 'shape_area'],
+      ],
+    });
+  });
+
+  test('a chosen column the polygons carry is listed once', async () => {
+    mockFetch(joined([]));
+    const { result, rerender } = renderJoin({ spatialJoin: { nameProperty: 'sec_neigh' } });
+    await feedBoth(rerender);
+
+    const { select } = readBody(result.current.contentComponent);
+    expect(select!.value).toBe('sec_neigh');
+    expect(select!.options.map(([v]) => v)).toEqual(['pri_neigh', 'sec_neigh', 'shape_area']);
+  });
+
+  test('a saved column is the choice before the polygons arrive', () => {
+    mockFetch(joined([]));
+    const { result } = renderHook(() =>
+      useSpatialJoinBehavior(makeData({ spatialJoin: { nameProperty: 'zip' } }), makeNodeState()),
+    );
+
+    // Nothing to pick from yet: the saved choice shows, and the list waits.
+    expect(readBody(result.current.contentComponent).select).toEqual({
+      value: 'zip',
+      disabled: true,
+      options: [['zip', 'zip']],
+    });
+  });
+
+  test('the column label wears both circles, before and after the join', async () => {
+    mockFetch(joined([{ type: 'Feature', geometry: POINTS.features[0].geometry, properties: { name: 'Loop' } }]));
+    const { result, rerender } = renderJoin();
+
+    const before = readBody(result.current.contentComponent);
+    expect(before.labelText).toMatch(/point.*polygon column/);
+    expect(before.labelSwatches).toEqual(['#3b82f6', '#22c55e']);
+
+    await feedBoth(rerender);
+
+    // The status line no longer names the circles once the join answers; the
+    // label still does.
+    const after = readBody(result.current.contentComponent);
+    expect(after.status).toMatch(/Tagged 1 of 1/);
+    expect(after.labelSwatches).toEqual(['#3b82f6', '#22c55e']);
   });
 
   test('a backend warning reaches the body, the output and a toast; the join still completes', async () => {
@@ -368,9 +439,9 @@ describe('useSpatialJoinBehavior', () => {
     const { result } = renderHook(() => useSpatialJoinBehavior(makeData(), makeNodeState()));
     const { container } = render(<>{result.current.contentComponent}</>);
     expect(container.querySelector('[data-curio-spatial-join-status]')!.textContent).toMatch(/Connect points/);
-    // The words name the handles by colour, and each name carries its swatch.
+    // The words name the input circles by colour, and each name carries its swatch.
     const status = container.querySelector('[data-curio-spatial-join-status]')!;
-    expect(status.textContent).toMatch(/blue handle.*green handle/);
+    expect(status.textContent).toMatch(/blue circle.*green circle/);
     const swatches = Array.from(status.querySelectorAll('[data-curio-handle-swatch]')).map(el => el.getAttribute('data-curio-handle-swatch'));
     expect(swatches).toEqual(['#3b82f6', '#22c55e']);
   });

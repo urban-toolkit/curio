@@ -14,6 +14,7 @@ import {
   type DiscoverySourceRow,
 } from "../../services/discoveryCatalog";
 import { DiscoverySourceIcon } from "./DiscoverySourceIcon";
+import { useHostedGuest } from "../../components/apiSettings/useHostedGuest";
 import { discoverySourceAccessItems, discoverySourceInfoRows } from "./discoverySourceFacts";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 
@@ -63,7 +64,8 @@ const DiscoveryDrawerContent: React.FC<{
 }> = ({ source, onBrowse, onViewDetails, onClose }) => {
   const { auth } = source;
   const blocked = unsearchableReason(source);
-  const access = discoverySourceAccessItems(source);
+  const hostedGuest = useHostedGuest();
+  const access = discoverySourceAccessItems(source, hostedGuest);
 
   return (
     <CatalogBrowseDrawerBody

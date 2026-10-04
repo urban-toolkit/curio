@@ -329,6 +329,56 @@ def record_services(slug_filter: str | None, index: dict) -> None:
             assert token not in json.dumps(entry), "a recorded entry holds the token"
 
 
+#: Place searches (Nominatim): the text a test searches for, and the name its
+#: answer is kept under in ``nominatim/``. Asked as the app asks, one a second
+#: with Curio's User-Agent, as Nominatim's usage policy requires.
+PLACE_PLAN = {
+    "Chicago, Illinois": "chicago-illinois",
+    "Golf, Illinois": "golf-illinois",
+    "Kenilworth, Illinois": "kenilworth-illinois",
+    "Loop, Chicago": "loop-chicago",
+    "Nowhere Land, Illinois": "nowhere-land-illinois",
+    "Nowhere at all": "none",
+}
+
+
+def place_urls() -> dict[str, str]:
+    """Each planned place search's URL, built as the app builds it, and its file."""
+    from utk_curio.backend.app.discovery.application import places
+
+    return {places.search_url(text): f"nominatim/{name}.json" for text, name in PLACE_PLAN.items()}
+
+
+class PlaceRecordingTransport:
+    """Wraps the real transport and keeps each place search under its planned name."""
+
+    def __init__(self, index: dict) -> None:
+        self.index = index
+        self.files = place_urls()
+        self.inner = HttpDiscoveryTransport()
+
+    def json_get(self, url, *, credential=None, headers=None):
+        body = self.inner.json_get(url, credential=credential, headers=headers)
+        name = self.files[url]
+        path = FIXTURES / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        self.index[url] = {"file": name, "status": 200, "headers": {"Content-Type": "application/json"}}
+        print(f"    {len(body):>8}B  {name}  <- {url[:96]}")
+        return body
+
+
+def record_places(slug_filter: str | None, index: dict) -> None:
+    from utk_curio.backend.app.discovery.application import places
+
+    if slug_filter and slug_filter != "nominatim":
+        return
+    print("\n==  OpenStreetMap place search  (nominatim)")
+    transport = PlaceRecordingTransport(index)
+    for text in PLACE_PLAN:
+        print(f"    {text}: {len(places.search_places(transport, text))} places")
+
+
 def record(slug_filter: str | None) -> None:
     index_path = FIXTURES / "index.json"
     index = json.loads(index_path.read_text(encoding="utf-8")) if index_path.is_file() else {}
@@ -366,6 +416,7 @@ def record(slug_filter: str | None) -> None:
     record_storage(slug_filter, index)
     record_services(slug_filter, index)
     record_models(slug_filter, index)
+    record_places(slug_filter, index)
 
     FIXTURES.mkdir(parents=True, exist_ok=True)
     index_path.write_text(json.dumps(index, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -376,6 +427,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--only",
-        help="record one provider slug (socrata, ckan, arcgis, wfs, s3, huggingface, mapillary, huggingface-models)",
+        help="record one provider slug (socrata, ckan, arcgis, wfs, s3, huggingface, mapillary, huggingface-models, nominatim)",
     )
     record(parser.parse_args().only)

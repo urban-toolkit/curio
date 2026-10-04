@@ -62,6 +62,8 @@ class DownloadJob:
     dependencies: dict[str, Any] | None = None
     already_present: bool = False
     unchanged: bool = False
+    #: What a completed job adds to its message: how many images could not be fetched.
+    note: str | None = None
     created_at: float = field(default_factory=time.monotonic)
     finished_at: float | None = None
     _cancel: threading.Event = field(default_factory=threading.Event, repr=False)
@@ -86,6 +88,7 @@ class DownloadJob:
             "dependencies": self.dependencies,
             "alreadyPresent": self.already_present,
             "unchanged": self.unchanged,
+            "note": self.note,
             "sourceId": self.source_dir,
             "resourceId": self.resource_id,
         }

@@ -66,10 +66,11 @@ GeoParquet, read with `gpd.read_parquet`. The spec is no different from the
 geojson one.
 
 The join is a node, not code. `Spatial Join` takes the green-roof points on
-its upper, blue handle and the ZIP polygons on its lower, green handle, and
+its upper, blue circle and the ZIP polygons on its lower, green circle, and
 works out which
 polygon each point falls in. Its two settings are which polygon column is the
-tag (`name` by default; `zip` here) and what comes out: the points, each tagged
+tag, picked from a list of the polygons' columns (`name` by default; `zip`
+here), and what comes out: the points, each tagged
 with that column under its own name, or, as here, the polygons, each with a
 `point_count`. The polygons feed two views. A choropleth first:
 

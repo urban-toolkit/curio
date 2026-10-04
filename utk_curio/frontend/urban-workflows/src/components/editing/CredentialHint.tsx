@@ -2,14 +2,16 @@ import React from "react";
 import styles from "./CredentialHint.module.css";
 import type { CredentialFinding } from "../../services/connectionKeys/credentialLiterals";
 import { requestConnectionKeys, suggestName } from "../apiSettings/apiSettingsRequest";
+import { useHostedGuest } from "../apiSettings/useHostedGuest";
 
 /**
  * dev/117: the quiet bar above a node's code editor when the code holds a
  * credential-shaped literal. A hint, never a block: Play, save and collab are
  * untouched, the code is never rewritten, and the value never leaves the tab
  * (the finding is a name and a line). Save as API key opens API Settings on
- * the node code key form through the dev/116 request bus; a read-only editor
- * shows the text alone.
+ * the node code key form through the dev/116 request bus; a hosted guest, who
+ * cannot save a key, gets no such button. A read-only editor shows the text
+ * alone.
  */
 export const CredentialHint: React.FC<{
   findings: CredentialFinding[];
@@ -18,6 +20,7 @@ export const CredentialHint: React.FC<{
   host?: string | null;
   onDismiss?: () => void;
 }> = ({ findings, readOnly = false, host = null, onDismiss }) => {
+  const hostedGuest = useHostedGuest();
   if (!findings.length) return null;
   const lines = Array.from(new Set(findings.map((f) => f.line))).sort((a, b) => a - b);
   const lead =
@@ -32,17 +35,19 @@ export const CredentialHint: React.FC<{
       </span>
       {!readOnly ? (
         <>
-          <button
-            type="button"
-            className={styles.button}
-            aria-label="Save this key in API Settings"
-            title="Opens API Settings. Paste the key there; it never appears in your dataflow, proposals or chat."
-            onClick={() =>
-              requestConnectionKeys(host ? { host, suggestedName: suggestName(host) } : {})
-            }
-          >
-            Save as API key
-          </button>
+          {!hostedGuest ? (
+            <button
+              type="button"
+              className={styles.button}
+              aria-label="Save this key in API Settings"
+              title="Opens API Settings. Paste the key there; it never appears in your dataflow, proposals or chat."
+              onClick={() =>
+                requestConnectionKeys(host ? { host, suggestedName: suggestName(host) } : {})
+              }
+            >
+              Save as API key
+            </button>
+          ) : null}
           {onDismiss ? (
             <button type="button" className={styles.dismiss} aria-label="Dismiss this hint" onClick={onDismiss}>
               Dismiss

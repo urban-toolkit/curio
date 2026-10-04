@@ -19,10 +19,10 @@ import { backendUrl } from '../../utils/backendUrl';
  * `properties.name`, with the manifest telling the user to rename their field
  * upstream with a Data Transformation node - a workaround presented as the
  * design, while the backend had accepted `name_property` all along. The node
- * now has a small body with the one control: which polygon column carries
- * the tag, persisted at `metadata.spatialJoin.nameProperty` so it survives a
- * save. The backend also says when no polygon carries the chosen column,
- * instead of silently tagging everything `polygon_<i>`.
+ * now has a small body with the one control: a list of the polygons' columns
+ * to pick the tag from, persisted at `metadata.spatialJoin.nameProperty` so it
+ * survives a save. The backend also says when no polygon carries the chosen
+ * column, instead of silently tagging everything `polygon_<i>`.
  *
  * Each input lands in its own slot, by its geometry, and the node POSTs both
  * to the `/spatial_join` backend endpoint when both arrive.
@@ -70,9 +70,13 @@ async function resolveInput(value: any): Promise<any> {
   return unwrap(value);
 }
 
-/** Distinct property names across the first *limit* polygon features, for the datalist. */
-export function polygonPropertyNames(fc: any, limit = 20): string[] {
-  const features = Array.isArray(fc?.features) ? fc.features.slice(0, limit) : [];
+/**
+ * Distinct property names across every polygon feature, for the column list.
+ * All of them, not a sample: the list is the only way to pick a column, so one
+ * that only later features carry would be out of reach.
+ */
+export function polygonPropertyNames(fc: any): string[] {
+  const features = Array.isArray(fc?.features) ? fc.features : [];
   const names = new Set<string>();
   for (const f of features) {
     const props = f?.properties;
@@ -127,13 +131,9 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
   // What the last join reported: how many points found a polygon, and the
   // backend's warnings (e.g. no polygon carries the chosen property).
   const [lastResult, setLastResult] = useState<{ tagged: number; total: number; column: string; output: SpatialJoinOutput; warnings: string[] } | null>(null);
-  // Draft of the property box; committed on blur / Enter.
-  const [draft, setDraft] = useState<string>(nameProperty);
-  useEffect(() => { setDraft(nameProperty); }, [nameProperty]);
 
   const commitNameProperty = useCallback((value: string) => {
     const next = value.trim() || DEFAULT_NAME_PROPERTY;
-    setDraft(next);
     if (next === nameProperty) return;
     // Persisted on the node so TrillGenerator writes it (metadata.spatialJoin).
     updateDataNode(data.nodeId, { ...data, spatialJoin: { ...(data as any).spatialJoin, nameProperty: next } });
@@ -333,12 +333,15 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const polygonProps = useMemo(() => polygonPropertyNames(unwrap(slots[1])), [slots]);
-  const datalistId = `spatial-join-props-${data.nodeId}`;
+  const polygonColumns = useMemo(() => polygonPropertyNames(unwrap(slots[1])), [slots]);
+  // The chosen column stays in the list when the polygons lack it or have not
+  // arrived yet: a select whose value is none of its options shows the first
+  // one while the node joins on another.
+  const columnMissing = !polygonColumns.includes(nameProperty);
 
   const contentComponent = React.useMemo<React.ReactNode>(() => {
-    const blue = <><HandleSwatch color={POINTS_HANDLE_COLOR} />blue handle</>;
-    const green = <><HandleSwatch color={POLYGONS_HANDLE_COLOR} />green handle</>;
+    const blue = <><HandleSwatch color={POINTS_HANDLE_COLOR} />blue circle</>;
+    const green = <><HandleSwatch color={POLYGONS_HANDLE_COLOR} />green circle</>;
     const status: React.ReactNode = lastResult
       ? lastResult.output === 'polygons'
         ? `${lastResult.tagged} of ${lastResult.total} polygons received points; each polygon now carries point_count.`
@@ -357,27 +360,30 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
         style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px', fontSize: 12, lineHeight: 1.4 }}
       >
         <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <span>Tag each point with this polygon column</span>
-          <input
-            type="text"
-            list={datalistId}
-            value={draft}
-            placeholder={DEFAULT_NAME_PROPERTY}
-            aria-label="Tag each point with this polygon column"
-            onChange={e => setDraft(e.target.value)}
-            onBlur={e => commitNameProperty(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') { e.preventDefault(); commitNameProperty((e.target as HTMLInputElement).value); }
-            }}
-            style={{ padding: '3px 6px', fontSize: 12 }}
-          />
-          <datalist id={datalistId}>
-            {polygonProps.map(p => <option key={p} value={p} />)}
-          </datalist>
-          <span style={{ opacity: 0.7, fontSize: 11 }}>
-            <code>{DEFAULT_NAME_PROPERTY}</code> by default; the polygons' columns are
-            suggested once they arrive.
+          {/* Each word wears its circle, whatever the status line says. */}
+          <span data-curio-spatial-join-column-label="true">
+            Tag each <HandleSwatch color={POINTS_HANDLE_COLOR} />point with this{' '}
+            <HandleSwatch color={POLYGONS_HANDLE_COLOR} />polygon column
           </span>
+          <select
+            value={nameProperty}
+            disabled={polygonColumns.length === 0}
+            aria-label="Tag each point with this polygon column"
+            onChange={e => commitNameProperty(e.target.value)}
+            style={{ padding: '3px 6px', fontSize: 12 }}
+          >
+            {columnMissing && (
+              <option value={nameProperty}>
+                {polygonColumns.length > 0 ? `${nameProperty} (not in the polygons)` : nameProperty}
+              </option>
+            )}
+            {polygonColumns.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          {polygonColumns.length === 0 && (
+            <span style={{ opacity: 0.7, fontSize: 11 }}>
+              The polygons' columns are listed once they arrive.
+            </span>
+          )}
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           <span>Output</span>
@@ -414,7 +420,7 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
         ))}
       </div>
     );
-  }, [draft, datalistId, polygonProps, lastResult, nameProperty, outputMode, slots, commitNameProperty, commitOutputMode]);
+  }, [polygonColumns, columnMissing, lastResult, nameProperty, outputMode, slots, commitNameProperty, commitOutputMode]);
 
   // Two distinct input handles on the left edge: points (top), polygons (bottom).
   // Plus the single output handle on the right. We use `handlesOverride`
@@ -432,7 +438,7 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
         boxSizing: 'border-box',
         backgroundColor: pointsConnected ? POINTS_HANDLE_COLOR : '#ffffff',
         // The ring wears the colour before anything is wired, so the text that
-        // says "the blue handle" points at something visibly blue; it fills in
+        // says "the blue circle" points at something visibly blue; it fills in
         // once an edge arrives.
         border: `2px solid ${POINTS_HANDLE_COLOR}`,
         zIndex: 10, pointerEvents: 'auto',

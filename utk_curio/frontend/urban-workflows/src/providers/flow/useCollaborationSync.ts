@@ -8,7 +8,7 @@ import type { SelectionEchoOptions } from "../../utils/selectionEcho";
 import type { IOutput, IPropagation } from "./flowTypes";
 
 export function useCollaborationSync({
-    collab, applyNewOutput, interactionsCallback, applyNewPropagation, setNodes, setEdges,
+    collab, applyNewOutput, interactionsCallback, applyNewPropagation, setNodes, setEdges, takeCanvasPosition,
 }: {
     collab: ReturnType<typeof useCollab>;
     applyNewOutput: (newOutput: IOutput) => void;
@@ -16,6 +16,8 @@ export function useCollaborationSync({
     applyNewPropagation: (propagationObj: IPropagation) => void;
     setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
     setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
+    /** The notebook view keeps canvas spots itself; true when it took this one. */
+    takeCanvasPosition?: (nodeId: string, position: { x: number; y: number }) => boolean;
 }) {
     // -----------------------------------------------------------------
     // Collaboration: receive-side graph synchronization.
@@ -107,12 +109,16 @@ export function useCollaborationSync({
             const id = payload?.nodeId;
             const patch = payload?.patch;
             if (!id || !patch) return;
+            const moved = patch.position && typeof patch.position.x === "number" &&
+                typeof patch.position.y === "number";
+            // In the notebook view the node sits in its cell; the peer moved
+            // its canvas spot, which the view keeps and restores on the way out.
+            const kept = moved && takeCanvasPosition?.(id, patch.position) === true;
             setNodes((nds) =>
                 nds.map((n) => {
                     if (n.id !== id) return n;
                     const next: any = { ...n };
-                    if (patch.position && typeof patch.position.x === "number" &&
-                        typeof patch.position.y === "number") {
+                    if (moved && !kept) {
                         next.position = { x: patch.position.x, y: patch.position.y };
                     }
                     if (patch.data && typeof patch.data === "object") {
@@ -127,5 +133,5 @@ export function useCollaborationSync({
         }));
 
         return () => unsubs.forEach((u) => u());
-    }, [collab.enabled, collab.onRemote, setNodes, setEdges, interactionsCallback]);
+    }, [collab.enabled, collab.onRemote, setNodes, setEdges, interactionsCallback, takeCanvasPosition]);
 }

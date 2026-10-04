@@ -317,7 +317,8 @@ def get_discovery_collection(dataset_id: str):
 def cache_discovery_collection(dataset_id: str):
     """Fetch a bucket collection's files to this machine, so nodes can read them.
 
-    ``202`` with a job, polled like a download.
+    ``202`` with a job, polled like a download. ``400`` for a collection whose
+    files are on this machine already: a folder's, or a service's images.
     """
     return jsonify(_service().start_cache(dataset_id)), 202
 

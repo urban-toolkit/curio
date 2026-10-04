@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 import os
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
 from ..utils import REPO_ROOT, frame_node
 from .framework import Ctx
 
@@ -91,11 +93,57 @@ def open_provenance(ctx: Ctx):
     ctx.click(page.get_by_test_id("provenance-menu-item"))
     dialog = page.get_by_role("dialog").filter(has_text="Provenance for")
     dialog.wait_for(state="visible", timeout=20000)
-    # The graph lays out through dagre on mount; capture after it settles or the
-    # baseline records nodes stacked at the origin.
-    page.wait_for_selector(".react-flow__node", timeout=20000)
+    # The graph lays out through dagre on mount and draws its edges once the
+    # cards are measured; capture after both or the baseline records a graph
+    # half drawn.
+    await_provenance_graph(page)
     ctx.beat(900)
     return dialog
+
+
+#: The Provenance window. It opens over the dataflow canvas, whose own React
+#: Flow nodes and edges a bare selector would count too.
+PROVENANCE_MODAL = '[data-curio-modal-shell="true"]'
+PROVENANCE_CARD = f"{PROVENANCE_MODAL} .react-flow__node"
+PROVENANCE_EDGE_PATH = f"{PROVENANCE_MODAL} .react-flow__edges path.react-flow__edge-path"
+
+_PROVENANCE_COUNTS_JS = """([card, edge]) => ({
+    cards: document.querySelectorAll(card).length,
+    edges: document.querySelectorAll(edge).length,
+})"""
+
+_PROVENANCE_DRAWN_JS = """([card, edge]) => {
+    const cards = document.querySelectorAll(card).length;
+    return cards > 0 && document.querySelectorAll(edge).length === cards - 1;
+}"""
+
+
+def provenance_graph_counts(page) -> dict:
+    """``{cards, edges}`` the Provenance window's version graph shows now."""
+    return page.evaluate(_PROVENANCE_COUNTS_JS, [PROVENANCE_CARD, PROVENANCE_EDGE_PATH])
+
+
+def await_provenance_graph(page, *, timeout: float = 20000) -> dict:
+    """Wait until the Provenance window has drawn its whole version graph.
+
+    React Flow draws an edge only once both of its cards are measured, and
+    every version but the first has one parent edge, so the graph is drawn when
+    it shows one edge per card after the first. Returns ``{cards, edges}``.
+    """
+    try:
+        page.wait_for_function(
+            _PROVENANCE_DRAWN_JS, arg=[PROVENANCE_CARD, PROVENANCE_EDGE_PATH],
+            timeout=timeout,
+        )
+    except PlaywrightTimeoutError:
+        counts = provenance_graph_counts(page)
+        raise AssertionError(
+            f"the Provenance window did not draw its version graph within "
+            f"{timeout / 1000:.0f} s: {counts['cards']} versions and "
+            f"{counts['edges']} edges, where a drawn graph has one edge per "
+            f"version after the first"
+        ) from None
+    return provenance_graph_counts(page)
 
 
 def show_every_version(ctx: Ctx, dialog) -> None:
