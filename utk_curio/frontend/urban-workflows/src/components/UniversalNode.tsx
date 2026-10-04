@@ -1,6 +1,14 @@
 import React, { useEffect, useRef, useSyncExternalStore } from 'react';
 import CSS from "csstype";
-import { Handle, Edge, useEdges, useUpdateNodeInternals } from 'reactflow';
+import { Handle, Edge, Position, useEdges, useUpdateNodeInternals } from 'reactflow';
+import { useNotebookViewContext } from '../providers/flow/notebookViewContext';
+import {
+  NOTEBOOK_CELL_HEIGHT,
+  NOTEBOOK_CELL_WIDTH,
+  notebookHandleOffsets,
+  notebookInputLabel,
+} from '../utils/notebookLayout';
+import { resolveNodeDisplayLabel } from '../utils/palettePackageFactoryDraft';
 import { withInputCircles } from '../adapters/node/handleHelpers';
 import { growsInputCircles, inputCapacity, wiredInputSlots } from '../utils/inputSlots';
 import { NodeContainer } from './styles';
@@ -110,7 +118,12 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const showLoading = behavior.showLoading ?? false;
   const disablePlay = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
 
-  const { signalNodeExecDone, dashboardOn, projectId, edges: flowEdges, isRunActive } = useFlowContext();
+  const { signalNodeExecDone, dashboardOn, projectId, edges: flowEdges, isRunActive, nodes: flowNodes } = useFlowContext();
+  // In the notebook view the node is a cell: a fixed size, its dots on the
+  // right edge where the bar draws its connections, no cardinality markers.
+  const notebook = useNotebookViewContext();
+  const notebookOn = notebook.on && !dashboardOn;
+  const cellHeight = notebook.heights.get(data.nodeId) ?? NOTEBOOK_CELL_HEIGHT;
   const kindConfig = readCanvasTemplateConfig({ data });
   const editorTabs = resolveEditorTabFlags(descriptor, kindConfig);
   const collab = useCollab();
@@ -189,6 +202,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const connected = hasIncomingEdge(flowEdges ?? edges, data.nodeId);
   const hasInput = data.input != null && data.input !== "";
   const specIsEmpty = isEmptySpecBuffer(nodeState.code);
+  // The spec the node was written with: loaded, dropped or put in by an agent.
+  // The buffer above can read empty for a moment when it is not (see below).
+  const writtenSpecIsEmpty = isEmptySpecBuffer(data.defaultCode);
   // Vega compiles its spec against the rows its input names, so a restored input
   // is all it needs - on the canvas as much as on the dashboard. Keyed on the
   // input so a chart behind a Data Pool draws when the pool's fetch lands, and
@@ -214,11 +230,13 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     // fills the buffer with a spec guessed from that input's columns a moment
     // later. Drawing the guess would run the node on connect and pull its
     // editor to the output pane while the author is still typing into it, which
-    // is not what a restore is for. A reload never looks like this, because the
-    // saved spec is in the buffer before the data is. Canvas only: a pinned
-    // tile always opens with its spec already loaded, and the dashboard has no
-    // author to interrupt.
-    if (!dashboardOn && hasInput && specIsEmpty) {
+    // is not what a restore is for. A reload looks like this for a moment, so
+    // the node's written spec decides, not the buffer: the editor mounts on
+    // `{}` and floats it into the buffer until Monaco loads and applies the
+    // saved spec, and a restored input lands in that window (#711). Canvas
+    // only: a pinned tile always opens with its spec already loaded, and the
+    // dashboard has no author to interrupt.
+    if (!dashboardOn && hasInput && specIsEmpty && writtenSpecIsEmpty) {
       starterFillInputRef.current = data.input;
     }
     // Recorded above for either grammar, even before an empty Autark editor can
@@ -250,7 +268,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
       setOutputCallback({ code: "exec", content: "" });
       sendCode(code);
     });
-  }, [kind, drawsFromInput, autarkRender, sendCode, disablePlay, specIsEmpty, hasInput, data.input, runInFlight, dashboardOn]);
+  }, [kind, drawsFromInput, autarkRender, sendCode, disablePlay, specIsEmpty, writtenSpecIsEmpty, hasInput, data.input, runInFlight, dashboardOn]);
 
   // A wired Autark render tile draws by the rule above when its input lands. An
   // unwired one never receives an input, so it is drawn once here, on the
@@ -286,7 +304,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
       }
     }
     // Keyed on the OBJECT, not `output?.code`: a node that errors twice in a
-    // row (e.g. a merge re-triggered by Play with inputs still missing) keeps
+    // row (e.g. a node re-triggered by Play with inputs still missing) keeps
     // code === "error", and a code-keyed effect never re-fires — the run then
     // hangs on the stall watchdog. setOutput always produces a fresh object,
     // and signalNodeExecDone ignores nodes outside the active level, so
@@ -314,6 +332,25 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
 
   const allHandles = behavior.handlesOverride
     ?? [...baseHandles, ...(behavior.dynamicHandles ?? [])];
+  const notebookOffsets = notebookOn
+    ? notebookHandleOffsets(allHandles.map((h: HandleDef) => ({ id: h.id, type: h.type })), cellHeight)
+    : null;
+
+  /** What a dot in the notebook's bar says on hover: which input it is and what feeds it. */
+  const notebookDotTitle = (h: HandleDef): string => {
+    if (h.id === 'in/out') return 'interaction';
+    if (h.type === 'source') return 'output';
+    const edge = edges.find((e: Edge) => e.target === data.nodeId && (e.targetHandle ?? 'in') === h.id);
+    const source = edge ? (flowNodes ?? []).find((n: any) => n.id === edge.source) : undefined;
+    let name: string | null = null;
+    try {
+      name = source ? resolveNodeDisplayLabel(source.data) || null : null;
+    } catch {
+      name = null;
+    }
+    const input = `input ${notebookInputLabel(h.id)}`;
+    return name ? `${input} · ${name}` : input;
+  };
 
   return (
     // ``display: contents`` keeps the wrapper invisible to ReactFlow's
@@ -356,6 +393,26 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             ? h.isConnectableOverride(data, isConnectable, edges)
             : isConnectable;
         const style = h.dynamicStyle ? h.dynamicStyle(data, edges) : h.style;
+        if (notebookOffsets) {
+          // Every dot on the right edge, inputs numbered as the chips count them.
+          const label = h.type === 'target' && h.id !== 'in/out' ? notebookInputLabel(h.id) : '';
+          return (
+            <Handle
+              key={h.id}
+              id={h.id}
+              type={h.type}
+              position={Position.Right}
+              isConnectable={connectable}
+              style={{ ...(style ?? {}), top: notebookOffsets.get(h.id) }}
+              title={notebookDotTitle(h)}
+              className="curio-notebook-dot"
+            >
+              {label.length > 0 && label.length <= 2 ? (
+                <span className="curio-notebook-dot-label">{label}</span>
+              ) : null}
+            </Handle>
+          );
+        }
         return (
           <Handle
             key={h.id}
@@ -384,15 +441,21 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         // canvas, and at that size a tile reads as a stray node rather than as
         // the content of the page. The page fits every tile to the window, so
         // the larger default costs nothing when several are pinned.
+        // A notebook cell has the column's fixed size, and like a tile it never
+        // writes it back: the canvas size stays the node's own.
         nodeWidth={
           dashboardOn
             ? (data.dashboardWidth ?? DASHBOARD_TILE_DEFAULT_WIDTH)
-            : (data.nodeWidth ?? adapter.container.nodeWidth)
+            : notebookOn
+              ? NOTEBOOK_CELL_WIDTH
+              : (data.nodeWidth ?? adapter.container.nodeWidth)
         }
         nodeHeight={
           dashboardOn
             ? (data.dashboardHeight ?? DASHBOARD_TILE_DEFAULT_HEIGHT)
-            : (data.nodeHeight ?? adapter.container.nodeHeight)
+            : notebookOn
+              ? cellHeight
+              : (data.nodeHeight ?? adapter.container.nodeHeight)
         }
         styles={adapter.container.styles as CSS.Properties<0 | (string & {}), string & {}> | undefined}
         disablePlay={disablePlay}
@@ -404,7 +467,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         setOutputCallback={setOutputCallback}
         promptDescription={nodeState.promptDescription}
       >
-        {!dashboardOn && adapter.inputIconType && <InputIcon type={adapter.inputIconType as TIconCardinality} />}
+        {!dashboardOn && !notebookOn && adapter.inputIconType && <InputIcon type={adapter.inputIconType as TIconCardinality} />}
 
         <DescriptionModal
           nodeId={data.nodeId}
@@ -448,8 +511,8 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             readOnly={readOnly || lockedByOther}
             floatCode={nodeState.setCode}
             contentComponent={behavior.contentComponent}
-            inputMarker={!!adapter.inputIconType}
-            outputMarker={!!adapter.outputIconType}
+            inputMarker={!notebookOn && !!adapter.inputIconType}
+            outputMarker={!notebookOn && !!adapter.outputIconType}
           />
         ) : (
           // ``editor: "none"`` in the manifest means there's no tabbed editor
@@ -457,7 +520,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           // ``contentComponent`` (the streetvision place-picker, etc.).
           // Without this branch that UI would be silently dropped because
           // ``contentComponent`` is otherwise only rendered inside NodeEditor's
-          // output tab. ``noContent`` containers (merge-flow, spatial-join)
+          // output tab. ``noContent`` containers
           // legitimately return ``undefined`` here — they're icon-only.
           behavior.contentComponent ?? null
         )}
@@ -476,7 +539,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           />
         )}
 
-        {!dashboardOn && adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}
+        {!dashboardOn && !notebookOn && adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}
       </NodeContainer>
 
       {/* Agents attached to this node render as avatars at its bottom edge. */}

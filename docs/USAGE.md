@@ -10,9 +10,11 @@
   - [Keys for node code](#keys-for-node-code)
   - [Guest users](#guest-users)
 - [Widgets](#widgets)
+- [Scenarios](#scenarios)
 - [Node Catalog](#node-catalog)
 - [Vega-Lite node](#vega-lite-node)
 - [Autark node](#autark-node)
+- [Notebook view](#notebook-view)
 - [Dashboards](#dashboards)
 - [Data Catalog](#data-catalog)
 - [Discovery Catalog](#discovery-catalog)
@@ -323,7 +325,7 @@ leaves your browser. Dismiss it if the value is not a key.
 
 ### Guest users
 
-On a Curio started with `--deploy`, guests cannot add LLM configurations: every guest answers with the **guest configuration** the operator sets. Without `--deploy`, Curio signs you in as the shared guest, which adds configurations and saves its tokens in API Settings like any account; they are shared by everyone using that Curio, and the guest configuration is its Deployment default.
+On a Curio started with `--deploy`, guests cannot add LLM configurations: every guest answers with the **guest configuration** the operator sets. They cannot save data source or node code keys either, and **Add key for** and **Save as API key** do not appear for them. Without `--deploy`, Curio signs you in as the shared guest, which adds configurations and saves its tokens in API Settings like any account; they are shared by everyone using that Curio, and the guest configuration is its Deployment default.
 
 The guest configuration is set through environment variables in **`utk_curio/backend/.env`**. A `.env` at the repo root is read only by Docker Compose, for values like `BACKEND_URL` in `docker-compose.yml`; the backend does not read it.
 
@@ -415,6 +417,25 @@ Widgets are not connections: a value you set is not data from another node. Data
 from the node's inputs reaches its code as `arg`, or through input chips (see
 [Several inputs](#several-inputs)).
 
+### Shared values: the Parameter node
+
+A **Parameter** node holds one widget that any node can use, such as a season
+that several nodes read.
+
+1. Drag **Parameter** from the palette onto the canvas. Give it a name, a type,
+   a label and a default, as for a widget, and click **Add parameter**.
+2. Its tag, **@name**, shows under **Shared** in the strip above every node's
+   code and in every node's **Widgets** tab. Drag it into the code, or click it
+   to insert it at the cursor. In the code it is written `[!! @name !!]` and
+   drawn as an amber chip; it runs as a widget's value does.
+3. Set the value in the Parameter node.
+
+A Parameter node has no edges, and it lists the nodes whose code uses it.
+Changing its value marks those nodes as needing a new run. **Edit** renames it,
+and their code follows the new name. A reference to a name no Parameter node
+has, or that two Parameter nodes have, stops the run with a message naming it.
+Pinned to the dashboard, a Parameter node shows its value.
+
 ## Several inputs
 
 Python Computation, Data Transformation, JS Computation, Data Pool, Vega-Lite and
@@ -454,6 +475,63 @@ code are renumbered. A chip for the deleted input becomes `[!! input ? !!]` and
 stops the run until you replace it. A chip for a circle with no edge, or for a
 column its input does not have, is drawn in red and stops the run with a message
 naming it.
+
+## Scenarios
+
+A scenario is a named selection of a dataflow's nodes, or the whole dataflow, used
+to compare alternatives: the same analysis with buildings twice as tall, say. Its
+boundary splits the dataflow into three parts:
+
+- **Fixed context:** the nodes outside the scenario that it reads, through an edge
+  into it or through a Parameter node's tag its code uses. The scenario takes their
+  outputs as given. A node two alternatives share sits outside both, as their
+  common context.
+- **Levers:** the nodes in the scenario, which is what an alternative changes: its
+  data loaders, widget values, code and specs.
+- **Outcomes:** the outputs of the scenario's last nodes, which is what gets
+  compared.
+
+A node belongs to one scenario at most. A scenario of the whole dataflow has no
+fixed context.
+
+To make one:
+
+1. Select its nodes: hold Shift and drag a box around them.
+2. Choose **View → Save selection as scenario**, or **File → Save dataflow as
+   scenario** for the whole dataflow.
+3. To build an alternative, choose **View → Duplicate as scenario**. The
+   selected nodes are copied below themselves with the edges between them, every
+   edge entering the selection feeds the copy too, and the selection and the copy
+   become two scenarios. **Duplicate selection** copies the nodes without making
+   scenarios.
+
+Then change the copy's levers: a widget value, a line of code. Each copy remembers
+the node it was copied from.
+
+**View → Show scenarios** opens the Scenarios panel. For each scenario it shows
+its fixed context, levers and outcomes, and lets you:
+
+- rename it, recolor it and describe it;
+- **Run scenario**: run its levers, and of its fixed context only the nodes that
+  have not run or have changed since;
+- **Collapse** or **Expand** it;
+- **Add selected** or **Remove selected** nodes;
+- **Delete** it. Its nodes stay on the canvas.
+
+Pointing at a scenario in the panel marks its fixed context on the canvas.
+
+On the canvas, an expanded scenario's nodes wear its color inside a frame, with its
+name and a **Collapse** button above. A collapsed scenario is one box in its color
+that lists its fixed context and its outcomes with their latest output. The edges
+into and out of the scenario are drawn to the box, and dragging the box moves it.
+Double-click the box to expand it. A collapsed scenario's nodes still run with
+**Run All**, and the context they share runs once.
+
+Defining a scenario saves the outputs of its fixed context and outcomes to your Data
+Catalog, whatever their **Save output** setting, as pinning a dashboard tile does. A
+chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios,
+their colors, descriptions, collapsed state and box positions are saved with the
+dataflow. Deleting a node removes it from its scenario.
 
 ## Node Catalog
 
@@ -674,6 +752,27 @@ The first matching rule wins:
 | one layer with a nominal column | a map coloured by the first nominal column, `schemeTableau10` |
 | one layer with geometry only | a plain map |
 | no geometry | the editor stays empty |
+
+## Notebook view
+
+The **Canvas | Notebook** switch, at the right of the canvas bar beside **Monitor**, shows a dataflow two ways. **Notebook**
+lists the same nodes as a column of cells, one under the other, and the page scrolls.
+
+- **Order.** A cell comes after every cell it reads from, in the order **File → Export as
+  notebook** writes. The nodes that read from nothing come first.
+- **Cells.** Every cell has the same size and cannot be resized or minimized. A code
+  cell shows its code with its output below; a Vega-Lite or Autark cell shows its spec
+  above its chart or map.
+- **Connections** run in the bar to the right of the cells. Each cell has its dots on its
+  right edge: its inputs at the top, numbered as their chips are (dot 0 is
+  `[!! input 0 !!]`), its interaction dot halfway down, and its output at the bottom.
+  Hover a dot to see what feeds it. Selecting a cell darkens its connections.
+- **Editing** works as on the canvas. Drag from an output dot to an input dot to connect
+  two cells, and select a connection and press Delete to remove it. A node dragged in
+  from the left rail becomes a new cell, and the page scrolls to it.
+- **Nothing is saved** about the view: the dataflow keeps its canvas layout, and
+  **Canvas** shows it as it was. The address carries the view (`?view=notebook`), so a
+  reload, or the address copied from the browser, opens it the same way.
 
 ## Dashboards
 

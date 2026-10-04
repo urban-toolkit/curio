@@ -358,7 +358,7 @@ When you install a package that ships its own custom node UIs, Curio needs to fi
 
 This means *adding a new package to a running Curio instance does not require rebuilding Curio*, because the package's `scripts/behaviors.js` is loaded dynamically. Authors bundle once; deployments stay decoupled.
 
-The behaviors in `curio.builtin@1` (`code`, `vega`, `merge-flow`, `spatial-join`, `data-pool`, …) are an exception: they live in Curio's main bundle because they must be registered before *any* package registry exists.
+The behaviors in `curio.builtin@1` (`code`, `vega`, `spatial-join`, `data-pool`, …) are an exception: they live in Curio's main bundle because they must be registered before *any* package registry exists.
 
 ## 5. Recipe: add a Flask blueprint
 
@@ -464,7 +464,7 @@ The smallest possible package adds one template plus its behavior hook. Use this
      // Read `data.input` from upstream, push downstream via `data.outputCallback`.
      // Return `{ contentComponent: <YourUI /> }` to render a body, or omit for
      //   icon-only nodes (also set `containerStyle.noContent: true` in the
-     //   manifest; see §2 / §4.4 for examples like merge-flow + spatial-join).
+     //   manifest; see §4.4 for the spatial-join hook).
      return { /* contentComponent: ..., dynamicHandles?, handlesOverride? */ };
    };
    ```

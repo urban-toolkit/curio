@@ -236,7 +236,7 @@ class TestShippedAutarkDocuments:
 
 class TestRouting:
     def test_a_passive_boxes_marker_is_nothing_to_write(self):
-        for kind in ("curio.builtin/merge-flow", "curio.builtin/data-pool",
+        for kind in ("curio.builtin/data-export", "curio.builtin/data-pool",
                      "curio.builtin/vis-simple"):
             verdict = dv.validate(kind, "not controllable")
             assert verdict["status"] == dv.STATUS_UNCHECKED
@@ -246,7 +246,9 @@ class TestRouting:
         # A template that authors nothing is passive, whatever its name.
         assert dv.validate("acme.flows/fan-in", "not controllable",
                            content_kind="none")["passive"] is True
-        assert dv.validate("curio.builtin/merge-flow", "not controllable",
+        # And the roster's kind wins over the offline tables, which call a
+        # data-pool passive.
+        assert dv.validate("curio.builtin/data-pool", "not controllable",
                            content_kind="note")["passive"] is False
 
     def test_an_empty_document_is_now_refused_for_a_grammar_kind(self):
@@ -315,7 +317,7 @@ class TestTheWriteGateInTheLoop:
 
     def test_a_passive_box_marker_stays_passive(self, app, tmp_curio):
         events, outcome, inputs = self._rounds(
-            app, "curio.builtin/merge-flow", ["not controllable"],
+            app, "curio.builtin/vis-simple", ["not controllable"],
         )
         assert (outcome["evidence"] or {}).get("documentPassive") is True
 
@@ -366,9 +368,9 @@ class TestProseIsARefusalNotAnUnchecked:
         assert "I cannot produce a chart" in verdict["detail"]
 
     def test_a_wired_kind_keeps_its_unchecked_and_passive_answer(self):
-        # merge-flow/data-pool have no validator: "unchecked" keeps its narrow
+        # vis-simple/data-pool have no validator: "unchecked" keeps its narrow
         # meaning, and dev/134 stops them being asked at all.
-        for node_type in ("curio.builtin/merge-flow", "curio.builtin/data-pool"):
+        for node_type in ("curio.builtin/vis-simple", "curio.builtin/data-pool"):
             verdict = dv.validate(node_type, "not controllable")
             assert verdict["status"] == dv.STATUS_UNCHECKED
             assert verdict["passive"] is True

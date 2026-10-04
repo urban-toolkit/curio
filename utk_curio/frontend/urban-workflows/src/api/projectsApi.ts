@@ -1,5 +1,6 @@
 import { apiFetch } from "../utils/authApi";
 import type { DataflowCategories, HandCategories } from "../utils/dataflowCategories";
+import type { Scenario } from "../utils/scenarios/scenarioModel";
 
 export interface OutputRef {
   node_id: string;
@@ -51,6 +52,9 @@ export interface ProjectSummary {
   is_example?: boolean;
   /** Source, automatic and hand-set categories - see `utils/dataflowCategories`. */
   categories?: DataflowCategories;
+  /** The dataflow's scenarios (#662), as `projects/scenarios.py` lists them.
+   *  Absent on older responses. */
+  scenarios?: Array<Pick<Scenario, "id" | "name" | "color" | "description" | "nodes">>;
 }
 
 /** A computed output the backend could not auto-install on a save (e.g. its

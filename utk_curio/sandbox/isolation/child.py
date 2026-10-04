@@ -462,9 +462,7 @@ NO_INPUT_MESSAGE = (
     "An upstream node has not run yet, failed, or is not wired "
     "to this node's input handle. Check the nodes feeding this "
     "one: fix any that show an error, run them until each shows "
-    "'Done', then run this node again. If the inputs come "
-    "through a Merge Flow node, give it a moment after the last "
-    "upstream finishes so the merged tuple can propagate."
+    "'Done', then run this node again."
 )
 
 

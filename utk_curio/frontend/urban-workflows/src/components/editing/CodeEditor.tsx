@@ -36,7 +36,7 @@ import { ReferenceStrip } from "./widgets/WidgetTag";
 import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
 
-const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [] };
+const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [], shared: [] };
 const NO_INPUTS: InputScope[] = [];
 
 type CodeEditorProps = {
@@ -584,6 +584,7 @@ function CodeEditor({
             <ReferenceStrip
                 widgets={references.widgets}
                 inputs={stripInputs}
+                shared={references.shared}
                 disabled={readOnly}
                 onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
                 onLoadColumns={onLoadColumns}
@@ -610,6 +611,12 @@ function CodeEditor({
                         minimap: { enabled: false },
                         readOnly: readOnly,
                         scrollBeyondLastLine: false,
+                        // A wheel the editor cannot use goes on to the page, so
+                        // the notebook view scrolls past the editor's ends. On
+                        // the canvas the wrapper's `nowheel` keeps it from
+                        // zooming, as before. Monaco reads this option only when
+                        // the editor is created, so it is not tied to the view.
+                        scrollbar: { alwaysConsumeMouseWheel: false },
                     }}
                 />
             </div>

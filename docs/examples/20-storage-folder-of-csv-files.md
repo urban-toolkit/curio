@@ -32,9 +32,8 @@ earlier rows hold nothing there. This example reads the committed copies,
 ```mermaid
 flowchart LR
   R[`Data Loading`<br/>the readings] --> C[`Vega-Lite`<br/>PM2.5 over time]
-  R --> M[`Merge Flow`]
-  S[`Data Loading`<br/>the stations] --> M
-  M --> J[`Python Computation`<br/>mean per station]
+  R -->|input 0| J[`Python Computation`<br/>mean per station]
+  S[`Data Loading`<br/>the stations] -->|input 1| J
   J --> P[`Vega-Lite`<br/>stations by mean]
 ```
 
@@ -94,10 +93,12 @@ df = curio_load_data("data.curio.storage-stations")
 return df
 ```
 
-**Merge Flow** hands both tables to the next node, readings first:
+Both tables go into one **Python Computation** node, the readings on its first
+input circle and the stations on its second, and its code reads each through an
+input chip (see [Several inputs](../USAGE.md#several-inputs)):
 
 ```python
-readings, stations = arg[0], arg[1]
+readings, stations = [!! input 0 !!], [!! input 1 !!]
 
 means = readings.groupby("sensor", as_index=False)["pm25"].mean()
 return stations.merge(means, on="sensor")

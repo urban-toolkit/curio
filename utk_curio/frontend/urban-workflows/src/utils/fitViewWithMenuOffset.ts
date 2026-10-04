@@ -1,6 +1,7 @@
 import type { ReactFlowInstance, FitViewOptions, Node } from "reactflow";
 import { getNodesBounds, getViewportForBounds } from "reactflow";
 import { TOOLS_PALETTE_PANEL_ATTR } from "../components/menus/nodes/toolsPaletteDismiss";
+import { isDrawnHidden } from "./hiddenNodes";
 
 // fitView centers content in the full pane, but the palette dock
 // (`#tools-palette-dock`) is a fixed overlay on the left — and with a panel open
@@ -33,8 +34,9 @@ export const MENU_BAR_ATTR = "data-curio-menu-bar";
  *  category chips hang below it, so the fit keeps the top node clear of both. */
 export const CANVAS_TITLE_ATTR = "data-curio-canvas-title";
 
-/** The lowest bottom edge of the overlays fixed along the top of the pane. */
-function topOverlayBottom(): number | null {
+/** The lowest bottom edge of the overlays fixed along the top of the pane.
+ *  The notebook view starts its column below the same edge. */
+export function topOverlayBottom(): number | null {
     const overlays = [
         ...document.querySelectorAll<HTMLElement>(`[${MENU_BAR_ATTR}]`),
         ...document.querySelectorAll<HTMLElement>(
@@ -43,6 +45,13 @@ function topOverlayBottom(): number | null {
     ];
     if (overlays.length === 0) return null;
     return Math.max(...overlays.map((el) => el.getBoundingClientRect().bottom));
+}
+
+/** The right edge of the palette rail (`#tools-palette-dock`) without any
+ *  open panel: the notebook view keeps its column clear of it. */
+export function paletteRailRight(): number | null {
+    const dock = document.getElementById("tools-palette-dock");
+    return dock ? dock.getBoundingClientRect().right : null;
 }
 
 const FALLBACK_MIN_ZOOM = 0.05;
@@ -57,10 +66,18 @@ export function fitViewWithMenuOffset(
         .map((n: any) => n?.id)
         .filter((id: unknown): id is string => typeof id === "string");
     const allNodes = rf.getNodes();
-    const targetNodes = requestedIds.length
+    const requested = requestedIds.length
         ? allNodes.filter((n) => requestedIds.includes(n.id))
         : allNodes;
-    if (targetNodes.length === 0) return false;
+    if (requested.length === 0) return false;
+    // A node drawn hidden (a collapsed scenario's member, #662) is never
+    // measured, so waiting for its size would never end. Fit the others; when
+    // every one is hidden, fit where they stand, which is where a collapsed
+    // scenario's box sits.
+    const shown = requested.filter((n) => !isDrawnHidden(n));
+    const targetNodes = shown.length
+        ? shown
+        : requested.map((n) => ({ ...n, width: n.width || 1, height: n.height || 1 }));
 
     // React Flow populates `width`/`height` only after it measures each node in
     // the DOM. Loading a workflow can run this before measurement, when the

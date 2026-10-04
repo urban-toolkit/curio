@@ -87,14 +87,14 @@ describe('normalizeFlowInput', () => {
       .toEqual({ path: 'art_1', dataType: 'dataframe' });
   });
 
-  test('passes through merge output bundles without artifact paths', () => {
-    const mergeOut = {
+  test('passes through bundles of several inputs without artifact paths', () => {
+    const bundle = {
       dataType: 'outputs',
       data: [{ path: 'a', dataType: 'dataframe' }, { path: 'b', dataType: 'dataframe' }],
     };
-    const normalized = normalizeFlowInput(mergeOut);
-    expect(normalized).toEqual(mergeOut);
-    expect(normalized).not.toBe(mergeOut);
+    const normalized = normalizeFlowInput(bundle);
+    expect(normalized).toEqual(bundle);
+    expect(normalized).not.toBe(bundle);
   });
 });
 
@@ -130,11 +130,11 @@ describe('executionInputRef', () => {
     })).toEqual({ dataType: 'dataframe', filename: 'art_1' });
   });
 
-  test('leaves references, merge bundles and unnamed inline rows alone', () => {
+  test('leaves references, bundles of several inputs and unnamed inline rows alone', () => {
     const ref = { path: 'art_1', dataType: 'dataframe' };
     expect(executionInputRef(ref)).toBe(ref);
-    const merge = { dataType: 'outputs', data: [{ path: 'a', dataType: 'dataframe' }] };
-    expect(executionInputRef(merge)).toBe(merge);
+    const bundle = { dataType: 'outputs', data: [{ path: 'a', dataType: 'dataframe' }] };
+    expect(executionInputRef(bundle)).toBe(bundle);
     const inline = { dataType: 'geodataframe', data: { type: 'FeatureCollection', features: [] } };
     expect(executionInputRef(inline)).toBe(inline);
     expect(executionInputRef('')).toBe('');

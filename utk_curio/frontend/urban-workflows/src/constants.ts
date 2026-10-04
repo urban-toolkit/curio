@@ -14,7 +14,7 @@ export const DEFAULT_WORKFLOW_NAME = "DefaultDataflow";
  * but at runtime they emit canonical strings.
  *
  * IMPORTANT: every value here is UNVERSIONED. Nodes dragged from the
- * palette carry the versioned canonical id (`curio.builtin/merge-flow@1`,
+ * palette carry the versioned canonical id (`curio.builtin/data-pool@1`,
  * see `packagesClient.buildDescriptor`) and that form is what gets
  * persisted into the trill spec. There is no load-time normalizer, so any
  * comparison against these values must first strip the `@<major>` suffix
@@ -31,7 +31,6 @@ export enum NodeType {
   VIS_VEGA = "curio.builtin/vis-vega",
   VIS_SIMPLE = "curio.builtin/vis-simple",
   DATA_POOL = "curio.builtin/data-pool",
-  MERGE_FLOW = "curio.builtin/merge-flow",
   JS_COMPUTATION = "curio.builtin/js-computation",
   AUTK_GRAMMAR = "curio.builtin/autk-grammar",
 }

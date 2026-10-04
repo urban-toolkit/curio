@@ -1,0 +1,65 @@
+/* The Canvas | Notebook switch in the canvas bar: one bordered group of two
+   options, the one showing filled, as tall as the bar's other controls. */
+
+.switch {
+  display: inline-flex;
+  align-items: stretch;
+  height: 28px;
+  margin: 0 2px;
+  border: 1px solid var(--curio-top-bar-control-border);
+  border-radius: var(--curio-radius-md);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.option {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 0 7px;
+  background: transparent;
+  border: none;
+  color: var(--curio-text-on-dark-muted);
+  font-family: inherit;
+  font-size: var(--curio-font-size-sm);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.option + .option {
+  border-left: 1px solid var(--curio-top-bar-control-border);
+}
+
+.option:hover,
+.optionChecked {
+  background-color: var(--curio-top-bar-bg-hover);
+  color: var(--curio-text-on-dark);
+}
+
+.option:focus-visible {
+  outline: 2px solid var(--curio-focus-ring);
+  outline-offset: -2px;
+}
+
+.icon {
+  font-size: 12px;
+}
+
+/* The words take about 110px more than the icons, so they go first when the
+   bar's slot runs short, before the catalogs' labels do (UpMenu.module.css).
+   The slot's controls need about 900px with them, and about 40px more with
+   the collaboration button. */
+@container (max-width: 910px) {
+  .label {
+    display: none;
+  }
+}
+
+@container (max-width: 950px) {
+  .switchCrowded .label {
+    display: none;
+  }
+}

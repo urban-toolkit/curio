@@ -10,7 +10,7 @@ import { ReferenceStrip } from "./widgets/WidgetTag";
 import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
 
-const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [] };
+const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [], shared: [] };
 const NO_INPUTS: InputScope[] = [];
 
 type GrammarEditorProps = {
@@ -258,6 +258,7 @@ export default function GrammarEditor({
             <ReferenceStrip
                 widgets={references.widgets}
                 inputs={stripInputs}
+                shared={references.shared}
                 disabled={readOnly}
                 onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
                 onLoadColumns={onLoadColumns}
@@ -285,6 +286,10 @@ export default function GrammarEditor({
                         scrollBeyondLastLine: false,
                         formatOnType: true,
                         autoClosingBrackets: "always",
+                        // As in CodeEditor: a wheel the editor cannot use goes
+                        // on to the page, and `nowheel` on the wrapper keeps the
+                        // canvas from zooming. Read only at creation.
+                        scrollbar: { alwaysConsumeMouseWheel: false },
                     }}
                 />
             </div>

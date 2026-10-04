@@ -121,7 +121,7 @@ const DataflowThumbnail: React.FC<Props> = ({ preview }) => {
       })}
 
       {scaledNodes.map((n) => {
-        // Palette-dragged nodes persist a versioned type (`.../merge-flow@1`);
+        // Palette-dragged nodes persist a versioned type (`.../data-pool@1`);
         // this map is keyed unversioned, so strip the suffix first (#159).
         const color = NODE_COLORS[unversionedType(n.type)] ?? FALLBACK_COLOR;
         return (

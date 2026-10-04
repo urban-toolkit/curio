@@ -6,7 +6,7 @@ import type { Edge, Node, ReactFlowInstance } from "reactflow";
 import type { useToastContext } from "../ToastProvider";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { upstreamErroredMessage } from "../../utils/nodeEmptyState";
-import { nodeRunKey } from "../../utils/widgets/widgetModel";
+import { runKeyWithShared, sharedWidgetsOf } from "../../utils/references/sharedParameters";
 import type { NodeExecOutcome } from "./flowTypes";
 import { computeTopologicalLevels, directedEdgesOf } from "./runLevels";
 
@@ -220,7 +220,10 @@ export function usePlayAll({
         };
     }
 
-    function playNodesUpTo(targetNodeId: string) {
+    // *target* is one node, or a list that all run: a scenario's levers
+    // (#662), with only those of its context that cannot be reused.
+    function playNodesUpTo(target: string | readonly string[]) {
+        const targets = typeof target === "string" ? [target] : [...target];
         // Same guard playAllNodes has. Without it a second play click - which
         // the e2e helper issues on its own, retrying up to three times when a
         // node has not visibly acknowledged - overwrites playAllStateRef and
@@ -245,7 +248,7 @@ export function usePlayAll({
         }
 
         const ancestorIds = new Set<string>();
-        const queue = [targetNodeId];
+        const queue = [...targets];
         while (queue.length > 0) {
             const id = queue.shift()!;
             for (const pred of predecessors.get(id) ?? []) {
@@ -255,7 +258,7 @@ export function usePlayAll({
                 }
             }
         }
-        ancestorIds.add(targetNodeId);
+        targets.forEach(id => ancestorIds.add(id));
 
         // Which ancestors actually need to run again.
         //
@@ -282,6 +285,9 @@ export function usePlayAll({
             ...ancestorLevels,
             ancestorNodes.filter(n => !levelled.has(n.id)).map(n => n.id),
         ];
+        // The Parameter nodes' widgets: a node whose code names one runs again
+        // when its value changed, though no edge leads from it.
+        const shared = sharedWidgetsOf(currentNodes);
         for (const level of decisionOrder) {
             for (const nodeId of level) {
                 const node = currentNodes.find(n => n.id === nodeId);
@@ -295,16 +301,16 @@ export function usePlayAll({
                     emittedForInput.has(nodeId) && emittedForInput.get(nodeId) === node.data.input;
                 const neverSucceeded =
                     outputCode !== "success" && !(outputCode !== "error" && emittedCurrent);
-                // #662: the key covers the node's widget values too, so a
-                // changed value counts as changed code.
+                // #662: the key covers the node's widget values and the shared
+                // tags it names too, so a changed value counts as changed code.
                 const codeChanged =
                     node.data.executedCode !== undefined &&
-                    node.data.executedCode !== nodeRunKey(node.data.code, node.data.widgets);
+                    node.data.executedCode !== runKeyWithShared(node.data.code, node.data.widgets, shared);
                 const upstreamRerunning = ancestorEdges.some(
                     e => e.target === nodeId && willRun.has(e.source)
                 );
                 if (
-                    nodeId === targetNodeId ||
+                    targets.includes(nodeId) ||
                     neverSucceeded ||
                     codeChanged ||
                     upstreamRerunning

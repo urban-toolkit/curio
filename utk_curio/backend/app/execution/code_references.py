@@ -1,14 +1,16 @@
 """Turning a node's references into code (#662): ``[!! season !!]`` names a
 widget, ``[!! input 1 !!]`` an input (by circle, counted from 0),
-``[!! input 1.height !!]`` a column of that input, and ``[!! input 1:roads !!]``
-(or ``[!! input 1:roads.height !!]``) a layer an input carries.
+``[!! input 1.height !!]`` a column of that input, ``[!! input 1:roads !!]``
+(or ``[!! input 1:roads.height !!]``) a layer an input carries, and
+``[!! @season !!]`` a shared tag: the widget of the Parameter node named
+``season``.
 
 The headless twin of ``src/utils/references/codeReferences.ts``, which the
 browser runs before posting a node's code. Both write the same code: one table
 of cases, ``codeReferences.cases.json`` beside the TypeScript module, is read by
 Jest and by ``tests/test_execution/test_code_references.py``.
 
-A widget reference standing on its own becomes a literal of the language;
+A widget or shared reference standing on its own becomes a literal of the language;
 inside a string literal it becomes the value's text, escaped for that string;
 inside a comment, the plain text. A column or layer reference is written like a
 text value: its name. In Python and JavaScript an input reference becomes
@@ -31,6 +33,10 @@ REFERENCE_RE = re.compile(r"\[!!\s*(.*?)\s*!!\]")
 #: What stands inside an input, layer or column reference. Kept in sync with
 #: ``INPUT_REFERENCE_PATTERN`` in ``codeReferences.ts``.
 INPUT_REFERENCE_RE = re.compile(r"^input\s+(\d+|\?)(?::([^.]+))?(?:\.(.+))?$")
+
+#: What a shared reference starts with. Kept in sync with ``SHARED_PREFIX`` in
+#: ``codeReferences.ts``.
+SHARED_PREFIX = "@"
 
 #: What a Vega-Lite or Autark node calls its inputs. Kept in sync with
 #: ``INPUT_TABLE_PREFIX`` in ``agents/domain/contracts.py``.
@@ -125,10 +131,13 @@ def widget_literal(value, language: str) -> str:
 
 
 def parse_reference(inner: str) -> dict:
-    """``{"kind": "widget", "name"}`` or ``{"kind": "input", "slot", "column"?}``;
-    ``slot`` is None for ``input ?``, the input whose edge was deleted."""
+    """``{"kind": "widget", "name"}``, ``{"kind": "shared", "name"}`` or
+    ``{"kind": "input", "slot", "layer"?, "column"?}``; ``slot`` is None for
+    ``input ?``, the input whose edge was deleted."""
     m = INPUT_REFERENCE_RE.match(inner)
     if not m:
+        if inner.startswith(SHARED_PREFIX):
+            return {"kind": "shared", "name": inner[len(SHARED_PREFIX):]}
         return {"kind": "widget", "name": inner}
     parsed = {"kind": "input", "slot": None if m.group(1) == "?" else int(m.group(1))}
     if m.group(2) is not None:
@@ -136,6 +145,21 @@ def parse_reference(inner: str) -> dict:
     if m.group(3) is not None:
         parsed["column"] = m.group(3)
     return parsed
+
+
+def reference_text(inner: str) -> str:
+    """The text of a reference to *inner*; ``referenceText`` in ``codeReferences.ts``."""
+    return f"[!! {inner} !!]"
+
+
+def input_reference_inner(slot: int | None, column: str | None = None, layer: str | None = None) -> str:
+    """What stands inside a reference to input *slot*, to one of its layers, or
+    to a column of either; ``inputReferenceInner`` in ``codeReferences.ts``."""
+    return (
+        f"input {'?' if slot is None else slot}"
+        + (f":{layer}" if layer is not None else "")
+        + (f".{column}" if column is not None else "")
+    )
 
 
 def _text_of(value, language: str) -> str:
@@ -232,11 +256,24 @@ def _write_text(text: str, context: tuple, language: str) -> str:
 
 
 def reference_problem(
-    reference: str, inner: str, widgets: list, inputs: list, context: tuple, language: str
+    reference: str, inner: str, widgets: list, inputs: list, context: tuple, language: str, shared: list = ()
 ) -> str | None:
-    """Why *reference* cannot be resolved against *widgets* and *inputs*,
-    standing in *context*, or None."""
+    """Why *reference* cannot be resolved against *widgets*, *inputs* and the
+    *shared* tags, standing in *context*, or None."""
     parsed = parse_reference(inner)
+    if parsed["kind"] == "shared":
+        name = parsed["name"]
+        if not WIDGET_NAME_RE.match(name):
+            return (
+                f"{reference} does not name a Parameter node. "
+                "Parameter names are letters, digits and underscores."
+            )
+        named = sum(1 for w in shared if w.get("name") == name)
+        if named == 0:
+            return f"{reference}: no Parameter node is named {name}. Add one, or drag a tag from Shared."
+        if named > 1:
+            return f"{reference}: {named} Parameter nodes are named {name}. Rename all but one."
+        return None
     if parsed["kind"] == "input":
         slot = parsed["slot"]
         if slot is None:
@@ -339,8 +376,25 @@ def normalize_widgets(raw) -> list:
     return out
 
 
-def _resolved_text(inner: str, by_name: dict, inputs: list, context: tuple, language: str) -> str:
+def normalize_shared(raw) -> list:
+    """The well-formed widgets in *raw*, one per Parameter node, as
+    :func:`normalize_widgets` reads each. Unlike a node's own widgets, two with
+    one name are both kept, so a reference to that name can say so."""
+    out: list = []
+    for entry in raw if isinstance(raw, (list, tuple)) else []:
+        out.extend(normalize_widgets([entry]))
+    return out
+
+
+def _resolved_text(
+    inner: str, by_name: dict, inputs: list, context: tuple, language: str, shared_by_name: dict
+) -> str:
     parsed = parse_reference(inner)
+    if parsed["kind"] == "shared":
+        value = effective_value(shared_by_name[parsed["name"]])
+        if context[0] == "code":
+            return widget_literal(value, language)
+        return _escape_for(_text_of(value, language), context, language)
     if parsed["kind"] == "input":
         if "column" in parsed:
             return _write_text(parsed["column"], context, language)
@@ -359,35 +413,38 @@ def _resolved_text(inner: str, by_name: dict, inputs: list, context: tuple, lang
 
 
 def resolve_references(
-    code: str, widgets: Iterable = (), language: str = "python", inputs: Iterable = ()
+    code: str, widgets: Iterable = (), language: str = "python", inputs: Iterable = (), shared: Iterable = ()
 ) -> tuple[str, list]:
     """*code* with every reference replaced, and the problems found.
 
     *inputs* are the node's wired inputs, ``{"slot": <circle>, "columns"?: [...]}``
-    each. A reference with a problem is left as written; each problem is
+    each. *shared* are the widgets of the dataflow's Parameter nodes, one per
+    node. A reference with a problem is left as written; each problem is
     ``{"reference": <as written>, "message": <why>}``.
     """
     if language not in LANGUAGES:
         raise ValueError(f"unknown code language {language!r}")
     widgets = normalize_widgets(list(widgets or []))
+    shared = normalize_shared(list(shared or []))
     inputs = sorted((dict(i) for i in inputs or ()), key=lambda i: i.get("slot", 0))
     refs = list(REFERENCE_RE.finditer(code))
     if not refs:
         return code, []
     contexts = _contexts(code, refs, language)
     by_name = {w["name"]: w for w in widgets}
+    shared_by_name = {w["name"]: w for w in shared}
     problems: list = []
     out: list = []
     last = 0
     for ref, context in zip(refs, contexts):
         out.append(code[last:ref.start()])
         written = ref.group(0)
-        problem = reference_problem(written, ref.group(1), widgets, inputs, context, language)
+        problem = reference_problem(written, ref.group(1), widgets, inputs, context, language, shared)
         if problem is not None:
             problems.append({"reference": written, "message": problem})
             out.append(written)
         else:
-            out.append(_resolved_text(ref.group(1), by_name, inputs, context, language))
+            out.append(_resolved_text(ref.group(1), by_name, inputs, context, language, shared_by_name))
         last = ref.end()
     out.append(code[last:])
     return "".join(out), problems
