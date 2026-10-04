@@ -59,11 +59,27 @@ export function resolveNodeBoxSize(node: MeasurableNode): NodeBox {
         };
     }
 
-    const width = finiteNumber(data?.nodeWidth) ?? finiteNumber(container?.nodeWidth);
-    const height = finiteNumber(data?.nodeHeight) ?? finiteNumber(container?.nodeHeight);
+    return clampNodeBox(
+        finiteNumber(data?.nodeWidth) ?? finiteNumber(container?.nodeWidth),
+        finiteNumber(data?.nodeHeight) ?? finiteNumber(container?.nodeHeight),
+    );
+}
 
+/**
+ * The box a node with content takes for the size it asks for: that size, or the
+ * DEFAULT when it asks for none or for less than the minimum.
+ *
+ * `NodeContainer` starts its size from this, so a node's first render is
+ * already its final size. It used to start from the size asked for, undefined
+ * for most built-ins, and reach 525x350 only in a mount effect; the canvas's
+ * load fit could measure the narrow first render and leave the grown nodes
+ * past the window's edge (#683).
+ */
+export function clampNodeBox(width: unknown, height: unknown): NodeBox {
+    const w = finiteNumber(width);
+    const h = finiteNumber(height);
     return {
-        width: width === undefined || width < MIN_NODE_WIDTH ? DEFAULT_NODE_WIDTH : width,
-        height: height === undefined || height < MIN_NODE_HEIGHT ? DEFAULT_NODE_HEIGHT : height,
+        width: w === undefined || w < MIN_NODE_WIDTH ? DEFAULT_NODE_WIDTH : w,
+        height: h === undefined || h < MIN_NODE_HEIGHT ? DEFAULT_NODE_HEIGHT : h,
     };
 }
