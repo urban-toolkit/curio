@@ -133,6 +133,13 @@ Refer to [USAGE.md](USAGE.md) for Docker instructions and frontend build steps.
 * Annotate dataflows to serve as tutorials
 * Contribute to the `examples/` directory
 
+A new dataflow in `docs/examples/` or `docs/examples/dataflows/` ships, so list it in
+[`utk_curio/llm-prompts/examples.md`](../utk_curio/llm-prompts/examples.md): under
+"Used" with one line on what it shows when agents should learn from it, or under
+"Not used" with the reason. The line leaves out the city, topic, node types and
+datasets: they are read from the file. `test_prompt_references.py` fails until the
+dataflow is listed, and checks every "Used" dataflow the way it checks the prompts.
+
 ### Documentation
 
 * Write developer setup instructions or onboarding checklists

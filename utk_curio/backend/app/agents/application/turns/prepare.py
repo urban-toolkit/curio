@@ -23,6 +23,7 @@ from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
+from utk_curio.backend.app.agents.application.turns import examples as agents_examples
 from utk_curio.backend.app.agents.application.turns import policy as agents_policy
 from utk_curio.backend.app.agents.application.turns import prompts as agents_prompts
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
@@ -78,6 +79,10 @@ def _prepare_run(
     # toolRequest paragraph (memos dev/39/41).
     granted = tools.resolve_grants(requested_tools)
     runtime_blocks = _roster_blocks(user_key, project_id, manifest, granted)
+    # Worked examples: the shipped dataflows closest to this run, for an
+    # agent that takes them. Chosen per run, so they ride the runtime slot
+    # beside the roster and the cached preamble stays fixed.
+    runtime_blocks.append(agents_examples.attached_block(coord, spec, record.get("target"), message))
     # Delegation (dev/48, DEC-046): offered only when the manifest names
     # delegates that resolve to visible definitions — server-resolved, never
     # the manifest's raw list.

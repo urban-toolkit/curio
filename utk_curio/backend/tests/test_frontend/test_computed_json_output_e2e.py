@@ -12,7 +12,7 @@ DuckDB ``artifacts`` row), and the single-output installer only knew how to
 hard-link a file.
 
 The chain is invisible from the canvas: ``applyNewOutput`` ->
-``scheduleInstallSyncRef`` (500 ms debounce, ``FlowProvider.tsx``) ->
+``scheduleInstallSyncRef`` (500 ms debounce, ``providers/flow/useInstallSave.ts``) ->
 ``persistDataflowForInstall`` -> a project PUT -> ``_auto_install_computed_outputs``
 -> ``dataset_install_warnings`` in the response -> ``surfaceInstallWarnings`` ->
 the toast. Every hop but the last is server-side or debounced, which is why the

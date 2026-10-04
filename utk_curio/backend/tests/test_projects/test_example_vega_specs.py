@@ -10,8 +10,9 @@ finds them:
   class its route asks for. Example 10's route 1 asks for ``terrain``, but its
   two charts listed ``car`` instead, so terrain took a recycled colour (#628).
 
-The specs are read from the example dataflows, their walkthroughs and the
-default preamble, which shows the agents example 09's scatter.
+The specs are read from the example dataflows, their walkthroughs, the default
+preamble, and the worked examples the builder agents are shown
+(``llm-prompts/examples.md``), which include example 09's scatter.
 """
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+from utk_curio.backend.app.agents.application.turns import examples as worked_examples
 from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.agents.evaluation.fixtures import EXAMPLES_ROOT, example_paths
 
@@ -35,20 +37,18 @@ def _is_vega_lite(spec) -> bool:
     return isinstance(spec, dict) and "vega-lite" in str(spec.get("$schema", ""))
 
 
-def _flow(path: Path) -> dict:
-    doc = json.loads(path.read_text(encoding="utf-8"))
+def _flow_of(doc: dict) -> dict:
     return doc.get("dataflow", doc)
+
+
+def _flow(path: Path) -> dict:
+    return _flow_of(json.loads(path.read_text(encoding="utf-8")))
 
 
 def _node_specs(flow: dict, where: str):
     for node in flow.get("nodes", []):
         if node["type"] == VEGA:
             yield f"{where} node {node['id'][:8]}", json.loads(node["content"])
-
-
-def _preamble_example_dataflow(text: str) -> dict:
-    start = text.index("An example of a dataflow:\n\n") + len("An example of a dataflow:\n\n")
-    return json.loads(text[start:text.index("\nAttention:", start)])["dataflow"]
 
 
 def _block_specs(text: str, where: str):
@@ -68,9 +68,9 @@ def _shipped_specs():
         yield from _node_specs(_flow(path), path.name)
     for path in sorted(Path(EXAMPLES_ROOT).glob("*.md")):
         yield from _block_specs(path.read_text(encoding="utf-8"), path.name)
-    preamble = contracts.render_default_preamble()
-    yield from _block_specs(preamble, "default preamble")
-    yield from _node_specs(_preamble_example_dataflow(preamble), "default preamble example")
+    yield from _block_specs(contracts.render_default_preamble(), "default preamble")
+    for example in worked_examples.used_examples():
+        yield from _node_specs(_flow_of(example.spec), f"worked example {example.key}")
 
 
 def _units(spec: dict, inherited: dict | None = None):
@@ -133,7 +133,7 @@ class TestHollowPoints:
             "09-heterogeneous-data-linked-views.json",
             "09-heterogeneous-data-linked-views.md",
             "default preamble",
-            "default preamble example",
+            "worked example 09-heterogeneous-data-linked-views",
         } <= brushed_points
 
 

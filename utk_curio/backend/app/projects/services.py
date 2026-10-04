@@ -6,6 +6,7 @@ import re
 import shutil
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, List, Optional
 from uuid import uuid4
 
@@ -15,6 +16,7 @@ from utk_curio.backend.extensions import db
 from utk_curio.backend.app.projects import concurrency
 from utk_curio.backend.app.projects import repositories as repo
 from utk_curio.backend.app.projects import storage
+from utk_curio.backend.app.projects.shipped import shipped_dataflows
 from utk_curio.backend.app.projects.schemas import (
     OutputRef,
     ProjectCreate,
@@ -32,6 +34,13 @@ class ProjectError(Exception):
     def __init__(self, message: str, status: int = 400):
         super().__init__(message)
         self.status = status
+
+
+def shipped_dataflow_paths() -> Dict[str, Path]:
+    """Every dataflow Curio ships, by its key (``shipped.shipped_dataflows``),
+    for a feature that reads the files themselves. Empty when this install
+    ships no ``docs/examples`` (a pip install)."""
+    return {s.key: s.path for s in shipped_dataflows()}
 
 
 # Visualization "sink" node types: they consume a dataframe to render and pass
