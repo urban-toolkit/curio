@@ -27,7 +27,7 @@ def _capture(monkeypatch):
         captured["body"] = json.loads(kwargs["data"])
         return resp
 
-    monkeypatch.setattr("utk_curio.backend.app.api.routes._sandbox_call", fake_call)
+    monkeypatch.setattr("utk_curio.backend.app.execution.node_exec.sandbox_request", fake_call)
     return captured
 
 

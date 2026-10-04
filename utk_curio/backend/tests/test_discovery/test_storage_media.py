@@ -267,9 +267,8 @@ class TestExecutionResolution:
     def test_code_that_reads_a_collection_gets_its_root_and_a_media_directory(
         self, client, auth, app, shipped_root, user_and_token
     ):
-        from flask import g
-
-        from utk_curio.backend.app.api.routes import _resolve_exec_collections, _resolve_exec_dataset_paths
+        from utk_curio.backend.app.discovery.application.exec_collections import resolve_exec_collections
+        from utk_curio.backend.app.execution.node_exec import resolve_dataset_paths
         from utk_curio.backend.app.discovery.infrastructure.storage import storage_root
         from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
         from utk_curio.backend.tests.test_discovery.conftest import SHIPPED_ROOT
@@ -278,9 +277,8 @@ class TestExecutionResolution:
         dataset, _index = collection(client, auth, "noise")
         code = f'    frame = curio_load_collection("{dataset["id"]}")\n    x = curio_load_collection("imported.xnone")\n'
         with app.test_request_context():
-            g.user = user
-            collections, media_dir = _resolve_exec_collections(code, str(user.id))
-            paths = _resolve_exec_dataset_paths(code, None)
+            collections, media_dir = resolve_exec_collections(code, str(user.id), user=user)
+            paths = resolve_dataset_paths(code, None, user)
         root = storage_root(load_source_manifest(SHIPPED_ROOT / EXAMPLE))
         assert collections == {dataset["id"]: {"kind": "audio", "root": str(root)}}
         assert media_dir and media_dir.endswith(os.path.join(str(user.id), "media"))
@@ -333,18 +331,15 @@ class TestTheCommittedExampleCollections:
         assert res.status_code == 200 and res.mimetype == "image/jpeg"
 
     def test_node_code_resolves_it_to_the_source_folder(self, app, shipped_root, user_and_token):
-        from flask import g
-
-        from utk_curio.backend.app.api.routes import _resolve_exec_collections
+        from utk_curio.backend.app.discovery.application.exec_collections import resolve_exec_collections
         from utk_curio.backend.app.discovery.infrastructure.storage import storage_root
         from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
         from utk_curio.backend.app.discovery.infrastructure.storage import source_dir
 
         user, _token = user_and_token
         with app.test_request_context():
-            g.user = user
-            collections, media_dir = _resolve_exec_collections(
-                f'media = curio_load_collection("{self.ORTHOS}")', str(user.id)
+            collections, media_dir = resolve_exec_collections(
+                f'media = curio_load_collection("{self.ORTHOS}")', str(user.id), user=user
             )
         root = storage_root(load_source_manifest(source_dir(EXAMPLE)))
         assert collections[self.ORTHOS] == {"kind": "rasters", "root": str(root)}

@@ -23,7 +23,7 @@ def _mock_sandbox(monkeypatch, output):
     resp = MagicMock()
     resp.json.return_value = {"stdout": "", "stderr": "", "output": output}
     monkeypatch.setattr(
-        "utk_curio.backend.app.api.routes._sandbox_call",
+        "utk_curio.backend.app.execution.node_exec.sandbox_request",
         lambda *args, **kwargs: resp,
     )
 

@@ -109,7 +109,7 @@ class TestExecutionSeamWrite:
                 return payload
 
         monkeypatch.setattr(
-            "utk_curio.backend.app.api.routes._sandbox_call",
+            "utk_curio.backend.app.execution.node_exec.sandbox_request",
             lambda *a, **k: _Resp(),
         )
 

@@ -197,7 +197,7 @@ class TestANodeReachesIt:
         assert resolved == {DDRNET: str((SHIPPED / f"{DDRNET}@1").resolve())}
 
     def test_a_run_sends_them_to_the_sandbox(self, client, auth, shipped, monkeypatch):
-        from utk_curio.backend.app.api import routes
+        from utk_curio.backend.app.execution import node_exec
 
         sent = {}
 
@@ -211,7 +211,7 @@ class TestANodeReachesIt:
             sent.update(json.loads(kwargs["data"]))
             return Response()
 
-        monkeypatch.setattr(routes, "_sandbox_call", fake_call)
+        monkeypatch.setattr(node_exec, "sandbox_request", fake_call)
         client.post("/processPythonCode", headers=auth, json={
             "code": f'model = curio_load_model("{DDRNET}")\nreturn 1', "nodeType": "COMPUTATION_ANALYSIS",
             "input": "",
@@ -219,7 +219,7 @@ class TestANodeReachesIt:
         assert sent.get("models") == {DDRNET: str((SHIPPED / f"{DDRNET}@1").resolve())}
 
     def test_code_that_runs_no_model_sends_no_models_key(self, client, auth, shipped, monkeypatch):
-        from utk_curio.backend.app.api import routes
+        from utk_curio.backend.app.execution import node_exec
 
         sent = {}
 
@@ -229,7 +229,7 @@ class TestANodeReachesIt:
             def json(self):
                 return {"stdout": [], "stderr": "", "output": {"path": "", "dataType": "str"}}
 
-        monkeypatch.setattr(routes, "_sandbox_call",
+        monkeypatch.setattr(node_exec, "sandbox_request",
                             lambda method, path, **kw: sent.update(json.loads(kw["data"])) or Response())
         client.post("/processPythonCode", headers=auth, json={
             "code": "return 1", "nodeType": "COMPUTATION_ANALYSIS", "input": "",
