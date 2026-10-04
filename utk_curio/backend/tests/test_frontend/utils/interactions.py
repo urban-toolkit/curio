@@ -191,6 +191,19 @@ def at_fraction(area: dict, fraction) -> tuple[float, float]:
     return (area["x"] + fraction[0] * area["width"], area["y"] + fraction[1] * area["height"])
 
 
+def assert_in_view(page: Page, x: float, y: float, what: str) -> tuple[float, float]:
+    """``(x, y)``, once it is inside the window.
+
+    A pointer sent outside the window reaches no element, so a hover or click
+    aimed there does nothing and the test fails later, on a selection that
+    never came, with nothing saying why. Fail here instead, with the point."""
+    width, height = page.evaluate("() => [window.innerWidth, window.innerHeight]")
+    assert 0 <= x < width and 0 <= y < height, (
+        f"{what} is at ({x:.0f}, {y:.0f}), outside the {width}x{height} window"
+    )
+    return x, y
+
+
 #: An autk-plot mark's fill when it is selected (PlotStyle.highlight, #5dade2),
 #: as getComputedStyle reads it.
 AUTK_PLOT_HIGHLIGHT = "rgb(93, 173, 226)"
