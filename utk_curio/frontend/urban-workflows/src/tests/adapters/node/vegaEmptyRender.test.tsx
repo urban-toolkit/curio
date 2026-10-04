@@ -24,8 +24,13 @@ jest.mock('../../../providers/FlowProvider', () => ({
 }));
 jest.mock('reactflow', () => ({ useEdges: () => [{ source: 'up', target: 'vega-1' }] }));
 
+// The redraw callback the behavior hands useVega, so a test can play a redraw.
+let mockOnRedraw: ((counts: unknown) => void) | undefined;
 jest.mock('../../../hook/useVega', () => ({
-  useVega: () => ({ handleCompileGrammar: mockCompile }),
+  useVega: (args: any) => {
+    mockOnRedraw = args?.onRedraw;
+    return { handleCompileGrammar: mockCompile };
+  },
 }));
 
 jest.mock('../../../providers/ToastProvider', () => ({
@@ -92,6 +97,47 @@ describe('useVegaBehavior — an empty plot is a failed render', () => {
     expect(outputs[0].code).toBe('success');
     const legacy = await applyWith(undefined);
     expect(legacy[0].code).toBe('success');
+  });
+
+  test('a redraw that drew the rows clears a zero-row verdict', async () => {
+    // Run All compiled the chart before its rows arrived; they then reached
+    // the compiled view, which drew them, and the node still said 0 rows.
+    const setOutput = jest.fn();
+    mockCounts = { rowsIn: 0, drawn: 0 };
+    const data: any = { nodeId: 'vega-1', input: '', outputCallback: jest.fn() };
+    let hook: any;
+    await act(async () => {
+      hook = renderHook(() =>
+        useVegaBehavior(data, { code: SPEC, setOutput, templateData: { code: SPEC } } as any),
+      ).result;
+    });
+    await act(async () => {
+      await hook.current.applyGrammar(SPEC);
+    });
+    expect(setOutput.mock.calls[0][0].content).toContain('0 rows arrived');
+
+    expect(typeof mockOnRedraw).toBe('function');
+    act(() => mockOnRedraw!({ rowsIn: 40, drawn: 12 }));
+    expect(setOutput.mock.calls[setOutput.mock.calls.length - 1][0]).toEqual({
+      code: 'success', content: '', outputType: '',
+    });
+  });
+
+  test('a redraw over zero rows is the same error a first draw gives', async () => {
+    const setOutput = jest.fn();
+    mockCounts = { rowsIn: 3, drawn: 3 };
+    const data: any = { nodeId: 'vega-1', input: '', outputCallback: jest.fn() };
+    await act(async () => {
+      renderHook(() =>
+        useVegaBehavior(data, { code: SPEC, setOutput, templateData: { code: SPEC } } as any),
+      );
+    });
+    expect(typeof mockOnRedraw).toBe('function');
+    act(() => mockOnRedraw!({ rowsIn: 0, drawn: 0 }));
+    const last = setOutput.mock.calls[setOutput.mock.calls.length - 1][0];
+    expect(last.code).toBe('error');
+    expect(last.content).toContain('0 rows arrived');
+    expect(last.kind).toBe('empty-render:no-input-rows');
   });
 
   test('a compile failure is still reported as its own error', async () => {
