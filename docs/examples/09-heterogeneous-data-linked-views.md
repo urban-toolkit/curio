@@ -219,17 +219,17 @@ The pool keeps the joined `census` table in shared memory so the next three view
 ## Step 9: Thematic map of UTCI (`autk-grammar`)
 
 The map is an `autk-grammar` node with just a `map` block. The census polygons routed in from the Data
-Pool are auto-injected as the `upstream` source; the layer is coloured by the UTCI `mean` column and
-picking is enabled so the linked scatterplot can highlight selected tracts. No JavaScript and no explicit
-data block, so the grammar reads the upstream GeoDataFrame directly. This is the single-frame case of
-Autark's two upstream-referencing mechanisms; see
+Pool are the node's first input, the table `input_0`, written with the input chip `[!! input 0 !!]`;
+the layer is coloured by the UTCI `mean` column and picking is enabled so the linked scatterplot can
+highlight selected tracts. No JavaScript and no explicit data block, so the grammar reads the upstream
+GeoDataFrame directly. This is the single-frame case of Autark's two upstream-referencing mechanisms; see
 [Referencing Upstream Data in Autark Nodes](../ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
 ```json
 {
   "map": {
     "layerRefs": [
-      { "dataRef": "upstream", "getFnv": "mean", "getFnvType": "quantitative", "defaultFnv": 0, "isPick": true }
+      { "dataRef": "[!! input 0 !!]", "getFnv": "mean", "getFnvType": "quantitative", "defaultFnv": 0, "isPick": true }
     ]
   }
 }

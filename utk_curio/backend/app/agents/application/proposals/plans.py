@@ -35,6 +35,29 @@ _MERGE_HANDLE_RE = _re.compile(r"^in_[0-4]$")
 _MERGE_NODE_TYPE = "curio.builtin/merge-flow"
 
 
+# A growing node's input circles: ``in`` first, then ``in_1``, ``in_2``, ...
+_CIRCLE_HANDLE_RE = _re.compile(r"^in(?:_[1-9][0-9]*)?$")
+
+
+def _grows_circles(entry: dict | None) -> bool:
+    """A template whose one input port takes more than one edge: each edge
+    lands on a circle of its own, as the canvas draws them (``inputSlots``)."""
+    if not entry:
+        return False
+    return len(entry.get("inputs") or []) == 1 and entry.get("maxIncomingEdges") not in (0, 1)
+
+
+def _free_circle(taken: set, wanted) -> str:
+    """The circle a new edge takes: a named free circle wins, else the first
+    free one."""
+    if isinstance(wanted, str) and _CIRCLE_HANDLE_RE.match(wanted) and wanted not in taken:
+        return wanted
+    slot = 0
+    while ("in" if slot == 0 else f"in_{slot}") in taken:
+        slot += 1
+    return "in" if slot == 0 else f"in_{slot}"
+
+
 def _strip_type_version(node_type: str) -> str:
     """``curio.builtin/merge-flow@1`` → ``curio.builtin/merge-flow`` — spec
     node types may carry the versioned form; the template registry is
@@ -894,6 +917,8 @@ def _plan_edge_context(
         incoming_count[target] = incoming_count.get(target, 0) + 1
         if types_by_id.get(target) == _MERGE_NODE_TYPE and isinstance(e.get("targetHandle"), str):
             merge_slots_taken.setdefault(target, set()).add(e["targetHandle"])
+        elif _grows_circles(available.get(types_by_id.get(target))):
+            merge_slots_taken.setdefault(target, set()).add(e.get("targetHandle") or "in")
     return {
         "plan": plan,
         "plan_edges": plan.get("edges", []),
@@ -1020,6 +1045,10 @@ def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
                     **row, "status": "refused",
                     "reason": f"merge node {row['toLabel']!r} has no free input slot",
                 }, None
+        taken.add(target_handle)
+    elif _grows_circles(entry):
+        taken = ctx["merge_slots_taken"].setdefault(target, set())
+        target_handle = _free_circle(taken, plan_edge.get("toHandle"))
         taken.add(target_handle)
     edge = {
         "id": str(uuid.uuid4()),
@@ -1422,11 +1451,20 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
     # unnamed falls to the lowest free) — the bridge passes these through
     # instead of hardcoding "in", which left merge slots unfilled until a
     # reload healed them.
+    from utk_curio.backend.app.packages import service as packages_services
+
     types_by_id = {
         n.get("id"): _strip_type_version(str(n.get("type") or ""))
         for n in nodes
         if isinstance(n, dict)
     }
+    try:
+        available = {
+            t["id"]: t
+            for t in packages_services.available_templates(user_key, project_id)
+        }
+    except Exception:
+        available = {}  # arity metadata unavailable: every edge keeps "in"
     merge_slots_taken: dict[str, set[str]] = {}
     for e in edges:
         if not isinstance(e, dict):
@@ -1435,6 +1473,8 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
             handle = e.get("targetHandle")
             if isinstance(handle, str):
                 merge_slots_taken.setdefault(e.get("target"), set()).add(handle)
+        elif str(e.get("type") or "") != "Interaction" and _grows_circles(available.get(types_by_id.get(e.get("target")))):
+            merge_slots_taken.setdefault(e.get("target"), set()).add(e.get("targetHandle") or "in")
     created_edges: list[dict] = []
     for plan_edge in plan.get("edges", []):
         # dev/59: endpoints resolve through the ref map ∪ existing ids.
@@ -1465,6 +1505,11 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
                         f"merge node {label!r} has no free input slot — "
                         "ask the agent to replan",
                     )
+            taken.add(target_handle)
+        elif _grows_circles(available.get(types_by_id.get(target))):
+            # Each edge into a growing node takes a circle of its own.
+            taken = merge_slots_taken.setdefault(target, set())
+            target_handle = _free_circle(taken, plan_edge.get("toHandle"))
             taken.add(target_handle)
         edge = {
             "id": str(uuid.uuid4()),

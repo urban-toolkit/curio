@@ -343,7 +343,7 @@ class TestTheAutarkRenderers:
         assert "\n" not in shape
         for family in contracts.autk_families(schema):
             assert f'"{family}"' in shape
-        assert f'"dataRef": "{contracts.AUTK_UPSTREAM_LAYER}"' in shape
+        assert f'"dataRef": "{contracts.input_table_name(0)}"' in shape
         # The whole shape survives the refusal's 600-character cut.
         assert shape in dv.validate(contracts.AUTK_TEMPLATE, "not controllable")["detail"]
 
@@ -352,7 +352,7 @@ class TestTheAutarkRenderers:
         region = contracts.render_autk_region(schema, "Autark")
         assert schema["$id"] in region
         assert contracts.AUTK_TEMPLATE in region
-        assert f'"{contracts.AUTK_UPSTREAM_LAYER}"' in region
+        assert f'"{contracts.input_table_name(0)}"' in region
         for union, key in (("DataSourceSpec", "type"), ("PlotSpec", "mark")):
             for values, _ in contracts._variants(schema, union, key):
                 for value in values:
@@ -411,13 +411,18 @@ class TestThePreambleVocabulary:
         assert loading["outputPorts"][0]["cardinality"] in lists["builtin.output_count"]
 
     def test_an_input_count_is_the_connections_a_node_accepts(self):
-        # The declared "[1,n]" of a port is not what the canvas holds: one edge
-        # per input socket, and the Merge Flow's slots (maxIncomingEdges).
+        # One input port takes its declared maximum: a "[1,n]" port grows a
+        # circle per edge on the canvas. Named ports take one edge each, and
+        # the Merge Flow its slots (maxIncomingEdges).
         from utk_curio.backend.app.packages.application.templates import input_capacity
 
         lists = contracts.builtin_lists(_manifest())
         counts = dict(line[2:].split(": ", 1) for line in lists["builtin.input_count"].splitlines())
-        assert counts["Python Computation"] == "1"
+        assert counts["Python Computation"] == "any number"
+        assert counts["JS Computation"] == "any number"
+        assert counts["Vega-Lite"] == "any number"
+        assert counts["Autark"] == "any number"
+        assert counts["Data Summary"] == "1"
         assert counts["Spatial Join"] == "2"
         assert counts["Merge Flow"] == str(input_capacity(contracts.MERGE_TEMPLATE, 1))
         slots = input_capacity(contracts.MERGE_TEMPLATE, 1)

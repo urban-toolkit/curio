@@ -111,7 +111,7 @@ describe('matchSelections', () => {
   test("Autark's map pick is a select like any other", () => {
     const pick = {
       priority: 1,
-      details: { autk_selection: { type: POINT, data: [2], priority: 1, layerRef: 'upstream' } },
+      details: { autk_selection: { type: POINT, data: [2], priority: 1, layerRef: 'input_0' } },
     };
     expect(matchSelections([pick], rows)).toEqual([2]);
   });

@@ -113,7 +113,7 @@ export function upstreamErroredMessage(failedNodeName?: string | null): string {
   return `${copy.title}: ${hint}`;
 }
 
-/** Duck-typed so this module needs no ``reactflow`` import (see mergeFlowUtils). */
+/** Duck-typed so this module needs no ``reactflow`` import (see inputSlots). */
 interface EdgeLike {
   target?: unknown;
   source?: unknown;

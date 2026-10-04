@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/AutkMap.json",
-    "sha256": "df24c38c19994fd19fd6c7a65da9979de10ee93c65f8da39f143a4416635b790",
+    "sha256": "c7fac248f3fec74530b0a3b9d02b4f21c5a640173fc17da496b0f3aff9409ef0",
     "walkthrough": null
   },
   "prompt": "Make me three city-block-sized squares laid out around the Chicago Loop as polygons in a loading step, each carrying a numeric value, and render them on an Autark map coloured by that value.",

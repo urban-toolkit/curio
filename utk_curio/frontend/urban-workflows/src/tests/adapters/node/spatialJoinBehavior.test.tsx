@@ -86,14 +86,22 @@ function makeNodeState(): UseNodeStateReturn {
   } as unknown as UseNodeStateReturn;
 }
 
-async function feedBoth(result: { current: any }) {
-  await act(async () => {
-    result.current.setOutputCallbackOverride!(POINTS, 0);
-    result.current.setOutputCallbackOverride!(POLYGONS, 1);
-  });
-  await act(async () => {
-    await Promise.resolve();
-  });
+/** The node as the canvas holds it: the same data, with `data.input` set by a prop. */
+function renderJoin(overrides: Record<string, unknown> = {}, nodeState: UseNodeStateReturn = makeNodeState()) {
+  const data = makeData(overrides);
+  const hook = renderHook(
+    ({ input }: { input: unknown }) =>
+      useSpatialJoinBehavior({ ...data, input } as unknown as NodeBehaviorData, nodeState),
+    { initialProps: { input: (data as any).input as unknown } },
+  );
+  return { ...hook, data, nodeState };
+}
+
+/** Both inputs, one after the other, through `data.input`, as the canvas delivers them. */
+async function feedBoth(rerender: (props: { input: unknown }) => void) {
+  await act(async () => { rerender({ input: POINTS }); });
+  await act(async () => { rerender({ input: POLYGONS }); });
+  await act(async () => { await Promise.resolve(); });
 }
 
 beforeEach(() => {
@@ -116,9 +124,9 @@ describe('resolveNameProperty / polygonPropertyNames', () => {
 describe('useSpatialJoinBehavior', () => {
   test('sends the default property when none is chosen', async () => {
     const fetchMock = mockFetch(joined([]));
-    const { result } = renderHook(() => useSpatialJoinBehavior(makeData(), makeNodeState()));
+    const { rerender } = renderJoin();
 
-    await feedBoth(result);
+    await feedBoth(rerender);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
@@ -127,11 +135,9 @@ describe('useSpatialJoinBehavior', () => {
 
   test('sends the persisted property', async () => {
     const fetchMock = mockFetch(joined([]));
-    const { result } = renderHook(() =>
-      useSpatialJoinBehavior(makeData({ spatialJoin: { nameProperty: 'pri_neigh' } }), makeNodeState()),
-    );
+    const { rerender } = renderJoin({ spatialJoin: { nameProperty: 'pri_neigh' } });
 
-    await feedBoth(result);
+    await feedBoth(rerender);
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.name_property).toBe('pri_neigh');
@@ -174,8 +180,8 @@ describe('useSpatialJoinBehavior', () => {
 
   test('the datalist offers the polygon input\'s properties', async () => {
     mockFetch(joined([]));
-    const { result } = renderHook(() => useSpatialJoinBehavior(makeData(), makeNodeState()));
-    await feedBoth(result);
+    const { result, rerender } = renderJoin();
+    await feedBoth(rerender);
 
     const { container } = render(<>{result.current.contentComponent}</>);
     const options = Array.from(container.querySelectorAll('datalist option')).map((o) => (o as HTMLOptionElement).value);
@@ -188,11 +194,9 @@ describe('useSpatialJoinBehavior', () => {
       [{ type: 'Feature', geometry: null, properties: { name: 'polygon_0' } }],
       [warning],
     ));
-    const data = makeData();
-    const nodeState = makeNodeState();
-    const { result } = renderHook(() => useSpatialJoinBehavior(data, nodeState));
+    const { result, rerender, data, nodeState } = renderJoin();
 
-    await feedBoth(result);
+    await feedBoth(rerender);
 
     expect(data.outputCallback).toHaveBeenCalledWith('sj-1', expect.objectContaining({ dataType: 'geodataframe' }));
     expect(nodeState.setOutput).toHaveBeenLastCalledWith({ code: 'success', content: warning });
@@ -262,12 +266,9 @@ describe('useSpatialJoinBehavior', () => {
 
   test('the polygon output is sent along and persisted like the property', async () => {
     const fetchMock = mockFetch(joined([]));
-    const nodeState = makeNodeState();
-    const { result } = renderHook(() =>
-      useSpatialJoinBehavior(makeData({ spatialJoin: { nameProperty: 'zip', output: 'polygons' } }), nodeState),
-    );
+    const { result, rerender } = renderJoin({ spatialJoin: { nameProperty: 'zip', output: 'polygons' } });
 
-    await feedBoth(result);
+    await feedBoth(rerender);
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.output).toBe('polygons');
@@ -281,6 +282,85 @@ describe('useSpatialJoinBehavior', () => {
     expect(mockUpdateDataNode).toHaveBeenCalledWith('sj-1', expect.objectContaining({
       spatialJoin: expect.objectContaining({ nameProperty: 'zip', output: 'points' }),
     }));
+  });
+
+  test('a Run All waits for inputs still on their way and for the join they start', async () => {
+    // Example 10 on dev: the run counted the join done the moment it asked,
+    // moved on to the charts, and they compiled before the join had answered
+    // ("0 rows arrived", over a chart that drew a moment later).
+    const { fetchData } = require('../../../services/api');
+    let releasePolygons: (v: unknown) => void = () => {};
+    (fetchData as jest.Mock)
+      .mockResolvedValueOnce({ dataType: 'geodataframe', data: POINTS, schema: {} })
+      .mockImplementationOnce(() => new Promise(resolve => { releasePolygons = resolve; }));
+    let answer: (v: unknown) => void = () => {};
+    const fetchMock = jest.fn(() => new Promise(resolve => { answer = resolve; }));
+    (global as any).fetch = fetchMock;
+    const { result, rerender, data, nodeState } = renderJoin({
+      input: { path: 'points-artifact', dataType: 'geodataframe' },
+    });
+    const order: string[] = [];
+    (data.outputCallback as jest.Mock).mockImplementation(() => order.push('rows downstream'));
+    (nodeState.setOutput as jest.Mock).mockImplementation((o: any) => order.push(`outcome ${o.code}`));
+
+    await waitFor(() => expect(fetchData).toHaveBeenCalledWith('points-artifact'));
+    rerender({ input: { path: 'polygons-artifact', dataType: 'geodataframe' } });
+    await waitFor(() => expect(fetchData).toHaveBeenCalledWith('polygons-artifact'));
+
+    // The run asks while the polygons are still downloading.
+    let done = false;
+    let run: Promise<void> = Promise.resolve();
+    act(() => { run = (result.current.sendCodeOverride as () => Promise<void>)().then(() => { done = true; }); });
+    await act(async () => { releasePolygons({ dataType: 'geodataframe', data: POLYGONS, schema: {} }); });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(done).toBe(false);
+
+    await act(async () => {
+      answer({ ok: true, json: async () => joined([{ type: 'Feature', geometry: POINTS.features[0].geometry, properties: { name: 'Loop' } }]) });
+      await run;
+    });
+    expect(done).toBe(true);
+    // The rows went downstream before the outcome that tells the run it is done.
+    expect(order).toEqual(['rows downstream', 'outcome success']);
+  });
+
+  test('a join that already answered says so again when a run asks', async () => {
+    mockFetch(joined([]));
+    const { result, rerender, nodeState } = renderJoin();
+    await feedBoth(rerender);
+    await waitFor(() => expect(nodeState.setOutput).toHaveBeenCalledWith(expect.objectContaining({ code: 'success' })));
+    (nodeState.setOutput as jest.Mock).mockClear();
+
+    await act(async () => { await (result.current.sendCodeOverride as () => Promise<void>)(); });
+    expect(nodeState.setOutput).toHaveBeenCalledWith({ code: 'success', content: '' });
+  });
+
+  test('a run with an input missing is told which one', async () => {
+    mockFetch(joined([]));
+    const { result, rerender, nodeState } = renderJoin();
+    await act(async () => { rerender({ input: POINTS }); });
+
+    await act(async () => { await (result.current.sendCodeOverride as () => Promise<void>)(); });
+    const last = (nodeState.setOutput as jest.Mock).mock.calls.at(-1)[0];
+    expect(last.code).toBe('error');
+    expect(last.content).toContain('no polygons');
+  });
+
+  test("a run's status for the node never lands in an input slot", async () => {
+    // UniversalNode sets a node's own status through `setOutputCallbackOverride`
+    // when the behavior has one: `{ code: "exec" }` when a run asks it, the
+    // skip reason when a run passes it by. The join's override filled its
+    // points slot with that, and posted it as the points: "Tagged 0 of 0
+    // points" on example 10, and 0 rows for every chart after it. Its inputs
+    // come through `data.input`, so it has no such override.
+    const fetchMock = mockFetch(joined([]));
+    const { result, rerender } = renderJoin();
+    expect(result.current.setOutputCallbackOverride).toBeUndefined();
+
+    await feedBoth(rerender);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.points).toEqual(POINTS);
+    expect(body.polygons).toEqual(POLYGONS);
   });
 
   test('before any input the body says what to connect', () => {

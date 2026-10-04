@@ -38,6 +38,22 @@ export function isSelectionEcho(input: unknown): boolean {
   return !!input && typeof input === "object" && (input as any)[SELECTION_ECHO] === true;
 }
 
+const isBundle = (value: unknown): value is { data: unknown[] } =>
+  !!value && typeof value === "object" && (value as any).dataType === "outputs" && Array.isArray((value as any).data);
+
+/**
+ * Which input circle of a node *input* brings a selection back on, or null.
+ * One input is circle 0. Several inputs arrive as one bundle, rebuilt on
+ * every delivery, so the echo is the one circle whose value changed since
+ * *previous*, and only when that value is an echo (#662).
+ */
+export function echoedCircle(input: unknown, previous: unknown): number | null {
+  if (isSelectionEcho(input)) return 0;
+  if (!isBundle(input) || !isBundle(previous) || input.data.length !== previous.data.length) return null;
+  const changed = input.data.flatMap((value, circle) => (value === previous.data[circle] ? [] : [circle]));
+  return changed.length === 1 && isSelectionEcho(input.data[changed[0]]) ? changed[0] : null;
+}
+
 /** The node whose own selection *input* brings back, if it is one node's. */
 export function selectionEchoSource(input: unknown): string | undefined {
   if (!isSelectionEcho(input)) return undefined;

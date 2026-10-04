@@ -110,7 +110,7 @@ test("a selection echo changes the flags on the rows the view holds", async () =
   const chart = await drawnChart();
   const change = await chart.receive(markSelectionEcho(frame(["0", "1", "0"])));
 
-  expect(change.name).toBe("data");
+  expect(change.name).toBe("input_0");
   expect(change.ops.map((o: any) => o.op)).toEqual(["modify"]);
   const [{ test, field, value }] = change.ops;
   expect(field).toBe("interacted");

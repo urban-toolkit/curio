@@ -301,15 +301,13 @@ export function useCode(): IUseCode {
         for(const edge of trill.dataflow.edges){
 
             // Respect explicit handle ids in the spec (named handles like
-            // `in_points` / `in_polygons` on spatial-join). Fall back to
-            // legacy in_0 / in_1 / ... inference from the edge id, then to
-            // the default "in" handle.
+            // `in_points` / `in_polygons` on spatial-join). Fall back to the
+            // legacy `in_N` suffix of the edge id, then to the default "in"
+            // handle, as `merge_slot_index` reads them in the runner.
             let targetHandle = edge.targetHandle || "in";
             if (!edge.targetHandle) {
-                for(let i = 0; i < 5; i++){
-                    if(edge.id && edge.id.includes("in_"+i))
-                        targetHandle = "in_"+i;
-                }
+                const legacy = typeof edge.id === "string" ? edge.id.match(/in_(\d+)$/) : null;
+                if (legacy) targetHandle = "in_" + legacy[1];
             }
 
             let add_edge: any = {

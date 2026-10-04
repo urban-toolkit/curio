@@ -1,4 +1,4 @@
-import { isSelectionEcho, markSelectionEcho, selectionEchoSource } from '../../utils/selectionEcho';
+import { echoedCircle, isSelectionEcho, markSelectionEcho, selectionEchoSource } from '../../utils/selectionEcho';
 import { normalizeFlowInput } from '../../utils/flowOutputRef';
 
 describe('selectionEcho', () => {
@@ -35,5 +35,33 @@ describe('selectionEcho', () => {
     expect(isSelectionEcho('')).toBe(false);
     expect(isSelectionEcho(null)).toBe(false);
     expect(isSelectionEcho(undefined)).toBe(false);
+  });
+});
+
+describe('echoedCircle (#662)', () => {
+  const frame = () => ({ dataType: 'dataframe', data: { a: [1] } });
+  const bundle = (...data: unknown[]) => ({ dataType: 'outputs', data });
+
+  test('one input that is an echo is circle 0, whatever came before', () => {
+    expect(echoedCircle(markSelectionEcho(frame()), undefined)).toBe(0);
+    expect(echoedCircle(frame(), frame())).toBeNull();
+  });
+
+  test('several inputs: the one circle that changed, when it is an echo', () => {
+    const first = frame();
+    const second = frame();
+    const before = bundle(first, second);
+    expect(echoedCircle(bundle(first, markSelectionEcho(frame())), before)).toBe(1);
+    expect(echoedCircle(bundle(markSelectionEcho(frame()), second), before)).toBe(0);
+  });
+
+  test('new data on a circle, two circles changed, or a different count is not an echo', () => {
+    const first = frame();
+    const second = frame();
+    const before = bundle(first, second);
+    expect(echoedCircle(bundle(first, frame()), before)).toBeNull();
+    expect(echoedCircle(bundle(markSelectionEcho(frame()), frame()), before)).toBeNull();
+    expect(echoedCircle(bundle(first, second, markSelectionEcho(frame())), before)).toBeNull();
+    expect(echoedCircle(bundle(first, markSelectionEcho(frame())), undefined)).toBeNull();
   });
 });

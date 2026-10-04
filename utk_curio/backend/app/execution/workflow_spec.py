@@ -3,7 +3,7 @@ memo dev/67-7).
 
 Single source: the e2e suite imports THIS module through a shim, so the
 headless runner and the browser tests read one semantics — Kahn ordering that
-skips Interaction edges, merge ``in_N`` input ordering, the legacy/namespaced
+skips Interaction edges, ``in_N`` input ordering, the legacy/namespaced
 type mapping, and the code/grammar/datapool/passive classification.
 """
 
@@ -13,18 +13,18 @@ import re
 from dataclasses import dataclass, field
 from collections import deque
 
-from utk_curio.backend.app.execution.widget_substitution import (
-    WidgetReferenceError,
+from utk_curio.backend.app.execution.code_references import (
+    CodeReferenceError,
     normalize_widgets,
-    resolve_widget_references,
+    resolve_references,
 )
 
 
 def merge_slot_index(edge: dict) -> int | None:
-    """Which merge slot an edge feeds: ``in_0`` → 0, or None.
+    """Which input circle an edge feeds: ``in_0`` → 0, or None.
 
     The HANDLE is the authority, exactly as the canvas reads it
-    (``mergeFlowUtils.parseHandleIndex(e.targetHandle)`` → the order Play
+    (``inputSlots.parseHandleIndex(e.targetHandle)`` → the order Play
     assembles ``arg`` in). The edge id's ``in_N`` suffix is the canvas's own
     legacy encoding and stays as a fallback for specs saved that way.
 
@@ -47,6 +47,13 @@ def merge_slot_index(edge: dict) -> int | None:
     # e.g. ``…78504in_0`` (no hyphen before ``in_``) — the canvas's edge ids.
     m = re.search(r"in_(\d+)$", str(edge.get("id") or ""))
     return int(m.group(1)) if m else None
+
+
+def input_slot(edge: dict) -> int:
+    """The circle an edge feeds: ``in_N`` is circle N, and the plain ``in``
+    handle (or none) is circle 0."""
+    index = merge_slot_index(edge)
+    return index if index is not None else 0
 
 
 # ---------------------------------------------------------------------------
@@ -302,31 +309,35 @@ class WorkflowSpec:
         """
         return sum(1 for e in self.edges if e.get("type") == "Interaction")
 
+    def _data_edges_to(self, node_id: str) -> list[dict]:
+        """The data-flow edges into *node_id*, in circle order."""
+        edges_to = [
+            e for e in self.edges
+            if e["target"] == node_id and e.get("type") != "Interaction"
+        ]
+
+        def sort_key(e: dict) -> tuple:
+            idx = merge_slot_index(e)
+            return (idx if idx is not None else 0, str(e.get("id") or ""))
+
+        return sorted(edges_to, key=sort_key)
+
     def upstream_nodes(self, node_id: str) -> list[str]:
         """Return source node IDs feeding into *node_id* (data-flow edges only).
 
         Interaction edges are excluded because they carry selection state,
         not data.
 
-        For ``MERGE_FLOW`` targets, sources are ordered by their input handle
-        ``in_0``, ``in_1``, … — the same authority the canvas uses to build
-        ``arg`` at Play (``mergeFlowUtils``), with the edge id's legacy
+        Sources are ordered by the circle they feed: the plain ``in`` handle
+        first, then ``in_1``, ``in_2``, … — the same authority the canvas uses
+        to build ``arg`` at Play (``inputSlots``), with the edge id's legacy
         ``in_N`` suffix as a fallback (dev/128).
         """
-        node_map = {n.id: n for n in self.nodes}
-        target = node_map.get(node_id)
-        edges_to = [
-            e for e in self.edges
-            if e["target"] == node_id and e.get("type") != "Interaction"
-        ]
-        if target and target.type == "MERGE_FLOW" and len(edges_to) > 1:
+        return [e["source"] for e in self._data_edges_to(node_id)]
 
-            def sort_key(e: dict) -> tuple:
-                idx = merge_slot_index(e)
-                return (idx if idx is not None else 10**9, str(e.get("id") or ""))
-
-            edges_to = sorted(edges_to, key=sort_key)
-        return [e["source"] for e in edges_to]
+    def input_slots(self, node_id: str) -> list[int]:
+        """The circles of *node_id* that have an edge, in order."""
+        return [input_slot(e) for e in self._data_edges_to(node_id)]
 
     def topo_sorted_nodes(self) -> list:
         """Return nodes in topological (dependency) order using Kahn's algorithm.
@@ -563,15 +574,18 @@ def seed_node_code(code: str, seed: int = 42) -> str:
     return _SEED_PREFIX.format(seed=seed) + code
 
 
-def resolve_widget_placeholders(code: str, widgets=(), language: str = "python") -> str:
-    """Replace a node's ``[!! name !!]`` references with its widgets' values,
-    exactly as the frontend does before posting to the sandbox (#662).
+def resolve_code_references(code: str, widgets=(), language: str = "python", input_slots=()) -> str:
+    """Replace a node's references with code, exactly as the frontend does
+    before posting to the sandbox (#662): widget references with their values,
+    input and column references by *input_slots*, the circles that have an
+    edge.
 
-    Raises ``WidgetReferenceError`` naming every reference that cannot be
-    resolved: an old ``[!! name$TYPE$default !!]`` marker, or a name the node
-    has no widget for.
+    Raises ``CodeReferenceError`` naming every reference that cannot be
+    resolved: an old ``[!! name$TYPE$default !!]`` marker, a name the node has
+    no widget for, or an input with no edge.
     """
-    resolved, problems = resolve_widget_references(code, widgets, language)
+    inputs = [{"slot": slot} for slot in input_slots]
+    resolved, problems = resolve_references(code, widgets, language, inputs)
     if problems:
-        raise WidgetReferenceError("\n".join(p["message"] for p in problems))
+        raise CodeReferenceError("\n".join(p["message"] for p in problems))
     return resolved

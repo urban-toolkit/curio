@@ -622,8 +622,8 @@ class TestMergeSlotOrderIsTheHandle:
     there (`…78504in_0`), but an AGENT-APPLIED edge has a UUID id and carries
     the slot in ``targetHandle`` (dev/67-3). Both parsers also dropped the
     handle entirely, so a plan-created merge was ordered lexicographically by
-    UUID. The handle is now the authority — the same one
-    `mergeFlowUtils.parseHandleIndex` uses for Play.
+    UUID. The handle is now the authority, the same one
+    `inputSlots.inputSlotOf` reads for Play.
     """
 
     #: The owner's own edges: UUID ids, slots in targetHandle, and the id sort

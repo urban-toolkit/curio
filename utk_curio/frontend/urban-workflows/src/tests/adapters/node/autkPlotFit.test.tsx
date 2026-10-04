@@ -20,7 +20,7 @@ jest.mock('../../../providers/FlowProvider', () => ({
 jest.mock('../../../providers/ToastProvider', () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
 }));
-// One upstream row, so the plot's `upstream` table resolves and the node gets
+// One upstream row, so the plot's `input_0` table resolves and the node gets
 // as far as running the grammar.
 jest.mock('../../../services/api', () => ({
   fetchData: jest.fn().mockResolvedValue({
@@ -105,7 +105,7 @@ afterEach(() => {
   Object.defineProperty(navigator, 'gpu', { configurable: true, value: undefined });
 });
 
-const BAR = { dataRef: 'upstream', mark: 'bar', axis: ['sunlight'] };
+const BAR = { dataRef: 'input_0', mark: 'bar', axis: ['sunlight'] };
 
 test('a plot the document did not size is drawn at its pane size', async () => {
   const apply = mountNode();

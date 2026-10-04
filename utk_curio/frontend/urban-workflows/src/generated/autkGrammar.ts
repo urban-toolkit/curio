@@ -7,5 +7,10 @@ export const AUTK_FAMILIES = ["compute", "data", "map", "plot"] as const;
 
 export type AutkFamily = (typeof AUTK_FAMILIES)[number];
 
-/** The layer an Autark node makes of its own input when that input is a single frame. */
-export const AUTK_UPSTREAM_LAYER = "upstream";
+/** What a Vega-Lite or Autark node calls its inputs: input_0, input_1, ... in circle order. */
+export const INPUT_TABLE_PREFIX = "input_";
+
+/** The name a grammar node's input at *position* is read by. */
+export function inputTableName(position: number): string {
+  return `${INPUT_TABLE_PREFIX}${position}`;
+}
