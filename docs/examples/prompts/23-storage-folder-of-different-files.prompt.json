@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/23-storage-folder-of-different-files.json",
-    "sha256": "40255817d0b2c30f529994fbbbc8591feda64e58b18f60e71432069c346175ea",
+    "sha256": "4e445d3938e7ba5f3755c0454948739b35528168664ad34707049d1484124d08",
     "walkthrough": "docs/examples/23-storage-folder-of-different-files.md"
   },
   "prompt": "Load two datasets from the Data Catalog: Example roads, a shapefile, and Example parks, a GeoJSON file. Combine them into one GeoDataFrame and draw the parks and the roads together on one Vega-Lite map.",
@@ -41,13 +41,6 @@
         "hasContent": true
       },
       {
-        "ref": "merge1",
-        "type": "curio.builtin/merge-flow",
-        "role": "merge",
-        "executable": false,
-        "hasContent": false
-      },
-      {
         "ref": "visualization1",
         "type": "curio.builtin/vis-vega",
         "role": "visualization",
@@ -63,20 +56,14 @@
       },
       {
         "from": "loader1",
-        "to": "merge1",
-        "kind": "data",
-        "slot": 0
+        "to": "analysis1",
+        "kind": "data"
       },
       {
         "from": "loader2",
-        "to": "merge1",
+        "to": "analysis1",
         "kind": "data",
         "slot": 1
-      },
-      {
-        "from": "merge1",
-        "to": "analysis1",
-        "kind": "data"
       }
     ],
     "sources": {
@@ -92,7 +79,6 @@
   "execution": {
     "mode": "sandbox",
     "browserOnlyKinds": [
-      "curio.builtin/merge-flow",
       "curio.builtin/vis-vega"
     ],
     "notes": null

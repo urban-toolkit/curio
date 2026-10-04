@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/Widget.json",
-    "sha256": "94497e585b63ea85a08158ad2b4705a5ccb585a94726634e5b75f5e3c80ca31b",
+    "sha256": "559ad958abed0b0f7d0bc3c0fb12db9ff2bf935b5ae5bdbbb562b7ffcd71ce23",
     "walkthrough": null
   },
-  "prompt": "Make a nine-row table of letters and numbers in a Python computation step, and add a second computation step holding a number-input widget that returns its multiplier. Combine the table and the multiplier into one input, route part of the flow through a fan-out, and in a further computation step multiply the table's numbers by the widget's value. End with a second combining step so the multiplied result can be read alongside the original.",
+  "prompt": "Make a nine-row table of letters and numbers in a Python computation step, and add a second computation step holding a number-input widget that returns its multiplier. Feed the table and the multiplier into one further step, route part of the flow through a fan-out, and in a further computation step multiply the table's numbers by the widget's value. End with a second combining step so the multiplied result can be read alongside the original.",
   "context": null,
   "required": {
     "datasets": [],
@@ -43,52 +43,30 @@
         "role": "pool",
         "executable": false,
         "hasContent": false
-      },
-      {
-        "ref": "merge1",
-        "type": "curio.builtin/merge-flow",
-        "role": "merge",
-        "executable": false,
-        "hasContent": false
-      },
-      {
-        "ref": "merge2",
-        "type": "curio.builtin/merge-flow",
-        "role": "merge",
-        "executable": false,
-        "hasContent": false
       }
     ],
     "edges": [
       {
         "from": "analysis1",
-        "to": "merge1",
-        "kind": "data"
+        "to": "analysis3",
+        "kind": "data",
+        "slot": 1
       },
       {
         "from": "analysis2",
-        "to": "merge1",
-        "kind": "data"
-      },
-      {
-        "from": "analysis2",
-        "to": "merge2",
-        "kind": "data"
-      },
-      {
-        "from": "analysis3",
-        "to": "merge2",
-        "kind": "data"
-      },
-      {
-        "from": "merge1",
         "to": "analysis3",
         "kind": "data"
       },
       {
-        "from": "merge2",
+        "from": "analysis2",
         "to": "pool1",
         "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "pool1",
+        "kind": "data",
+        "slot": 1
       }
     ],
     "sources": {
@@ -109,8 +87,7 @@
   "execution": {
     "mode": "sandbox",
     "browserOnlyKinds": [
-      "curio.builtin/data-pool",
-      "curio.builtin/merge-flow"
+      "curio.builtin/data-pool"
     ],
     "notes": null
   },
@@ -139,5 +116,5 @@
     "licence": "MIT (this repository)",
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "The widget-value path plus two merges; the multiplier arrives as a merged input."
+  "notes": "The widget-value path plus two nodes with two inputs each; the multiplier arrives as the second input."
 }

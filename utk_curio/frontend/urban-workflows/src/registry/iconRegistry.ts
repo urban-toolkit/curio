@@ -24,6 +24,7 @@ import {
   faObjectGroup,
   faRectangleList,
   faServer,
+  faSliders,
   faStreetView,
   faTable,
   faUpload,
@@ -72,6 +73,7 @@ registerIcon('fa-solid:map-location-dot', faMapLocationDot);
 registerIcon('fa-solid:code-merge', faCodeMerge);
 // curio.builtin@1 + curio.streetvision@1 additions.
 registerIcon('fa-solid:object-group', faObjectGroup);
+registerIcon('fa-solid:sliders', faSliders);
 registerIcon('fa-solid:street-view', faStreetView);
 registerIcon('fa-solid:wand-magic-sparkles', faWandMagicSparkles);
 // curio.media@1.

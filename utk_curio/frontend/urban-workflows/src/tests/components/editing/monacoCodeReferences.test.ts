@@ -28,13 +28,14 @@ function fakeEditor(position: { lineNumber: number; column: number } | null = { 
 }
 
 const widgets: WidgetDef[] = [{ name: "season", type: "text", default: "summer", value: "winter" }];
-const scope: ReferenceScope = { widgets, inputs: [] };
+const scope: ReferenceScope = { widgets, inputs: [], shared: [] };
 const withInputs: ReferenceScope = {
   widgets,
   inputs: [
     { slot: 0, label: "Roads", dataType: "geodataframe", columns: ["length"], dtypes: { length: "float64" } },
     { slot: 1, label: "Parcels" },
   ],
+  shared: [],
 };
 
 describe("inserting a reference", () => {

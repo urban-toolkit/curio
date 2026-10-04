@@ -81,8 +81,8 @@ WORKFLOW_FILES = [
 
     "docs/examples/dataflows/Image.json",
     "docs/examples/dataflows/SimpleView.json",
-    "docs/examples/dataflows/Merge.json",
-    "docs/examples/dataflows/MergeFlowDataPool.json",
+    "docs/examples/dataflows/MultiInput.json",
+    "docs/examples/dataflows/MultiInputDataPool.json",
 
     "docs/examples/dataflows/JSComputation.json",
 

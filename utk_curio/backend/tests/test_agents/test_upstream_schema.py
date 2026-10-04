@@ -1,10 +1,11 @@
 """dev/127: what a node's inputs actually contain.
 
 The owner's failing node had to join two frames and was told neither's columns
-— its own upstream was a merge-flow, which is written but never executed, so
-dev/118's list of "upstreams that passed" was EMPTY. These tests pin both
-halves of the fix: the summary of a preview, and the walk that looks through a
-node with no output of its own in `arg` order.
+as its own upstream was a node with no code (then a Merge Flow, gone with #662),
+which is written but never executed, so dev/118's list of "upstreams that
+passed" was EMPTY. These tests pin both halves of the fix: the summary of a
+preview, and the walk that looks through a node with no output of its own (a
+pool) in `arg` order.
 """
 
 from __future__ import annotations
@@ -59,11 +60,24 @@ class TestSummarize:
         assert s["crs"].endswith("EPSG::4326")
         assert s["sampleRows"][0]["geometry"] == "<MultiPolygon>"
 
-    def test_a_merge_output_is_summarized_part_by_part_in_order(self):
-        # This is what a merge-flow hands the next node as `arg`.
+    def test_several_inputs_are_summarized_part_by_part_in_order(self):
+        # This is what a node with several input circles receives as `arg`
+        # (and what a pool with several inputs hands on), in circle order.
         s = us.summarize({"dataType": "outputs", "data": [BOUNDARIES, POPULATION]})
         assert s["kind"] == "parts"
         assert [p["kind"] for p in s["parts"]] == ["geotable", "table"]
+
+    def test_a_list_is_described_up_to_as_many_parts_as_an_input_contract_lists(self):
+        # The Merge Flow's five-input cap is gone (#662): a node takes as many
+        # inputs as its circles, and the description stops where the input
+        # contract's slot table does.
+        from utk_curio.backend.app.agents.domain.input_contract import MAX_SLOTS
+
+        assert us.MAX_PARTS == MAX_SLOTS
+        parts = [POPULATION] * (MAX_SLOTS + 2)
+        s = us.summarize({"dataType": "outputs", "data": parts})
+        assert len(s["parts"]) == MAX_SLOTS
+        assert len(us.summarize({"dataType": "outputs", "data": [POPULATION] * 6})["parts"]) == 6
 
     def test_an_unknown_shape_says_only_what_it_is(self):
         assert us.summarize({"dataType": "raster", "data": "x.tif"}) == {"kind": "raster"}
@@ -92,21 +106,38 @@ class TestSummarize:
         assert us.describe(None) == ""
 
 
-class TestTheWalkThroughAMerge:
-    """The owner's graph shape: two loaders → merge-flow → analysis."""
+class TestTheWalkThroughAPool:
+    """The owner's graph shape with a node of no output between: two loaders
+    on a pool's circles, the pool into the analysis. (Their Merge Flow left
+    with #662; a pool is the node with no code that is left.)"""
 
     SPEC = {
         "dataflow": {
             "nodes": [
                 {"id": "b", "type": "curio.builtin/data-loading", "goal": "Boundaries"},
                 {"id": "p", "type": "curio.builtin/data-loading", "goal": "Population"},
-                {"id": "m", "type": "curio.builtin/merge-flow", "goal": "Merge"},
+                {"id": "m", "type": "curio.builtin/data-pool", "goal": "Pool"},
                 {"id": "a", "type": "curio.builtin/computation-analysis", "goal": "Density"},
             ],
             "edges": [
-                {"id": "e0", "source": "b", "target": "m", "targetHandle": "in_0"},
+                {"id": "e0", "source": "b", "target": "m", "targetHandle": "in"},
                 {"id": "e1", "source": "p", "target": "m", "targetHandle": "in_1"},
                 {"id": "e2", "source": "m", "target": "a", "targetHandle": "in"},
+            ],
+        }
+    }
+    #: The owner's graph as it is now: both loaders straight into the
+    #: analysis, one circle each; listed and named against circle order.
+    DIRECT_SPEC = {
+        "dataflow": {
+            "nodes": [
+                {"id": "b", "type": "curio.builtin/data-loading", "goal": "Boundaries"},
+                {"id": "p", "type": "curio.builtin/data-loading", "goal": "Population"},
+                {"id": "a", "type": "curio.builtin/computation-analysis", "goal": "Density"},
+            ],
+            "edges": [
+                {"id": "e0", "source": "p", "target": "a", "targetHandle": "in_1"},
+                {"id": "e1", "source": "b", "target": "a", "targetHandle": "in"},
             ],
         }
     }
@@ -119,9 +150,14 @@ class TestTheWalkThroughAMerge:
                   "wave": 1, "output": {"path": "art-p", "dataType": "dataframe"}},
         }
 
-    def test_it_looks_through_the_merge_in_arg_order(self):
+    def test_it_looks_through_the_pool_in_arg_order(self):
         rows = session._upstream_outputs_for(self.SPEC, "a", self._wave_outputs())
-        # dev/118 returned [] here: the merge holds no output of its own.
+        # dev/118 returned [] here: the pool holds no output of its own.
+        assert [r["nodeId"] for r in rows] == ["b", "p"]
+        assert [r["argIndex"] for r in rows] == [0, 1]
+
+    def test_a_node_with_several_circles_reads_them_in_circle_order(self):
+        rows = session._upstream_outputs_for(self.DIRECT_SPEC, "a", self._wave_outputs())
         assert [r["nodeId"] for r in rows] == ["b", "p"]
         assert [r["argIndex"] for r in rows] == [0, 1]
 
@@ -162,15 +198,15 @@ class TestTheWalkThroughAMerge:
         assert "argIndex" not in rows[0]
 
     def test_the_walk_is_depth_bounded(self):
-        # A chain of merges longer than the bound resolves nothing rather than
+        # A chain of pools longer than the bound resolves nothing rather than
         # walking forever.
         nodes = [{"id": "src", "type": "curio.builtin/data-loading", "goal": "S"}]
         edges = []
         prev = "src"
         for i in range(_DEEP := budgets._UPSTREAM_WALK_MAX_DEPTH + 3):
-            nodes.append({"id": f"m{i}", "type": "curio.builtin/merge-flow", "goal": f"M{i}"})
+            nodes.append({"id": f"m{i}", "type": "curio.builtin/data-pool", "goal": f"M{i}"})
             edges.append({"id": f"e{i}", "source": prev, "target": f"m{i}",
-                          "targetHandle": "in_0"})
+                          "targetHandle": "in"})
             prev = f"m{i}"
         nodes.append({"id": "a", "type": "curio.builtin/computation-analysis", "goal": "A"})
         edges.append({"id": "ez", "source": prev, "target": "a", "targetHandle": "in"})

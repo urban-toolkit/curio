@@ -1,8 +1,7 @@
 """Compute the Universal Thermal Climate Index per raster pixel.
 
-`arg` arrives from a MERGE_FLOW: `arg[0]` is the rasterio dataset
-(opened upstream by `mrt-load`), `arg[1]` is the meteorological
-DataFrame (loaded by `weather-load`). The output is a `(grid, shape)`
+Input 0 is the rasterio dataset (opened upstream by `mrt-load`), and
+input 1 the meteorological DataFrame (loaded by `weather-load`). The output is a `(grid, shape)`
 tuple — Curio serialises numpy arrays poorly across the sandbox
 boundary, so we return Python lists + an explicit `[width, height]`
 shape that `utci-zonal` rebuilds on the other side.
@@ -22,8 +21,8 @@ import numpy as np
 from pythermalcomfort import models
 from rasterio.warp import Resampling
 
-src = arg[0]
-sensor = arg[1]
+src = [!! input 0 !!]
+sensor = [!! input 1 !!]
 timestamp = 12
 
 upscale_factor = 1.0

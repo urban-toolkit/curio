@@ -1,0 +1,131 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "MultiInputDataPool",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/MultiInputDataPool.json",
+    "sha256": "9bb0e38d5fe62f094e26554269563316ea6f4623cbb572a2b26683303aff866a",
+    "walkthrough": null
+  },
+  "prompt": "Make three small tables in three separate Python computation steps, each with its own column names, and route one of them through a fan-out. Combine two of them into one input for a further computation step, and combine another pair for a second one, so the flow ends in two computations that each read a pair.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis5",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "pool1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "pool1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis3",
+        "to": "pool1",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis4",
+        "to": "pool1",
+        "kind": "data",
+        "slot": 3
+      },
+      {
+        "from": "analysis5",
+        "to": "pool1",
+        "kind": "data",
+        "slot": 4
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/data-pool"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "Several inputs on one node and a fan-out over synthetic tables; a topology test more than a data test."
+}

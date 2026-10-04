@@ -239,7 +239,7 @@ export const NodeContainer = ({
     const [currentNodeHeight, setCurrentNodeHeight] = useState<number | undefined>(
         () => (noContent ? nodeHeight : clampNodeBox(nodeWidth, nodeHeight).height)
     );
-    // Icon-only nodes (manifest `containerStyle.noContent: true` — merge-flow)
+    // Icon-only nodes (manifest `containerStyle.noContent: true`)
     // start minimized: they have no body to expand and the 50×180 footprint is
     // their default render. (Spatial Join left this set in #262, when it gained
     // a body with the polygon-property control.)
@@ -1188,7 +1188,7 @@ export const NodeContainer = ({
                             ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
                         }}
                     />
-                    {/* A noContent node (merge-flow, spatial-join) is the one
+                    {/* A noContent node is the one
                         shape that never renders the header band, and it can
                         never be expanded to reach one - so without this it has
                         no on-node control at all, and the only way to remove a
@@ -1234,10 +1234,8 @@ export const NodeContainer = ({
                 </div>
             ) : null}
 
-            {/* Maximize button removed: noContent nodes (merge-flow,
-                spatial-join, …) have no body to expand to, so the previous
-                `noContent && nodeType != MERGE_FLOW` dead-code branch is
-                gone. */}
+            {/* No maximize button: noContent nodes have no body to expand
+                to. */}
 
             <NodeSaveAsModal show={saveAsOpen} nodeId={nodeId} onClose={() => setSaveAsOpen(false)} />
             <NodeTemplateConfigModal
@@ -1299,7 +1297,7 @@ export const getNodeContainerStyles = (
     // own title bar shows. Keyed off the type alone, every package node was
     // grey beside a coloured pill (#524). The type map is for a node with no
     // resolved descriptor. `nodeType` arrives versioned for palette-dragged
-    // nodes (`curio.builtin/merge-flow@1`) but the map is keyed unversioned, so
+    // nodes (`curio.builtin/data-pool@1`) but the map is keyed unversioned, so
     // an unnormalized lookup silently falls back to grey (#159).
     const accent = state.category
         ? categoryFg(NODE_CATEGORY_KEY[state.category] ?? "package")

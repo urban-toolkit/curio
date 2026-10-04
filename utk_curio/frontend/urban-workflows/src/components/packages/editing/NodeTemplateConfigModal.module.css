@@ -148,7 +148,7 @@
 }
 
 /* Two columns, so a port declaring all six types is three rows rather than six
-   -- computation-analysis and merge-flow both declare six. */
+   -- computation-analysis declares six. */
 .typeGrid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -216,7 +216,7 @@
         },
         "behavior": {
           "type": "string",
-          "description": "Key into the frontend behaviorRegistry (e.g. 'code', 'vega', 'merge-flow'). See packages/curio.builtin@1/manifest.json for the canonical set."
+          "description": "Key into the frontend behaviorRegistry (e.g. 'code', 'vega', 'data-pool'). See packages/curio.builtin@1/manifest.json for the canonical set."
         },
         "iconRef": {
           "type": "string",
@@ -256,7 +256,7 @@
         },
         "containerStyle": {
           "type": "object",
-          "description": "Overrides for the canvas node container's static layout. Most kinds use defaults; the merge-flow kind uses this to render as a narrow vertical rail.",
+          "description": "Overrides for the canvas node container's static layout. Most kinds use defaults; a kind with noContent renders as a chip of exactly this size, such as a narrow vertical rail.",
           "properties": {
             "nodeWidth": { "type": "integer", "minimum": 1 },
             "nodeHeight": { "type": "integer", "minimum": 1 },

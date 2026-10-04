@@ -1009,7 +1009,7 @@ class TestDataflowPlanRevisionGrammar:
         # dev/67-3: toHandle is optional shape — additive plans byte-identical.
         plan = {"goal": "g", "nodes": [
             {"ref": "a", "nodeType": "t", "title": "A", "intent": "i"},
-            {"ref": "m", "nodeType": "curio.builtin/merge-flow", "title": "M", "intent": "i"},
+            {"ref": "m", "nodeType": "curio.builtin/computation-analysis", "title": "M", "intent": "i"},
         ], "edges": [
             {"from": "a", "to": "m", "toHandle": "in_2"},
         ]}
@@ -1135,10 +1135,14 @@ class TestDataflowPlanEdgeKindGrammar:
         assert part is None
         assert any("edges[0].kind 'feedback'" in e and "'interaction'" in e for e in errors)
 
-    def test_interaction_edge_refuses_a_merge_slot(self):
-        plan = {"goal": "g", "nodes": self._nodes(), "edges": [{"from": "v", "to": "p", "kind": "interaction", "toHandle": "in_0"}]}
-        part, errors = content.parse_dataflow_plan_verbose(plan)
-        assert part is None and any("drop toHandle" in e for e in errors)
+    def test_interaction_edge_refuses_an_input_circle(self):
+        # Every circle a growing node draws ("in", "in_1", ...) is a data
+        # handle: naming one on an interaction edge is refused, with the fix.
+        for handle in ("in", "in_1"):
+            plan = {"goal": "g", "nodes": self._nodes(), "edges": [{"from": "v", "to": "p", "kind": "interaction", "toHandle": handle}]}
+            part, errors = content.parse_dataflow_plan_verbose(plan)
+            assert part is None
+            assert any("edges[0]" in e and "an interaction edge has no input circle: drop toHandle" in e for e in errors), errors
 
     def test_edge_only_plan_is_valid(self):
         # The owner's loop: the model added filler note nodes because this was refused.

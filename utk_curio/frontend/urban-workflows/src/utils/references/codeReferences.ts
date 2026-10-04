@@ -6,15 +6,17 @@
  * - `[!! input 1 !!]` names one of its inputs, by circle, counted from 0;
  * - `[!! input 1.height !!]` names a column of that input;
  * - `[!! input 1:roads !!]` names a layer an input carries (an Autark node's
- *   tables), and `[!! input 1:roads.height !!]` a column of that layer.
+ *   tables), and `[!! input 1:roads.height !!]` a column of that layer;
+ * - `[!! @season !!]` names a shared tag: the widget of the dataflow's
+ *   Parameter node named `season`.
  *
  * The browser (NodeEditor, before a run) and the headless runner
  * (`utk_curio/backend/app/execution/code_references.py`) must write the same
  * code, so both are pinned to one table of cases, `codeReferences.cases.json`,
  * read by Jest and by pytest.
  *
- * A widget reference standing on its own becomes a literal of the editor's
- * language: quoted text, a number, a list, a boolean. Inside a string literal
+ * A widget or shared reference standing on its own becomes a literal of the
+ * editor's language: quoted text, a number, a list, a boolean. Inside a string literal
  * it becomes the value's text, escaped for that string, so
  * `"Season: [!! season !!]"` reads `"Season: winter"`. Inside a comment it is
  * the plain text. A column or layer reference is written the same way as a text
@@ -40,6 +42,10 @@ export const REFERENCE_PATTERN = String.raw`\[!!\s*(.*?)\s*!!\]`;
  * `code_references.py`. */
 export const INPUT_REFERENCE_PATTERN = String.raw`^input\s+(\d+|\?)(?::([^.]+))?(?:\.(.+))?$`;
 const INPUT_REFERENCE_RE = new RegExp(INPUT_REFERENCE_PATTERN);
+
+/** What a shared reference starts with: `[!! @season !!]`. Kept in sync with
+ * `SHARED_PREFIX` in `code_references.py`. */
+export const SHARED_PREFIX = "@";
 
 export interface CodeReference {
   /** Offsets of the whole `[!! ... !!]` in the code. */
@@ -79,23 +85,31 @@ export interface LayerScope {
   dtypes?: Record<string, string>;
 }
 
-/** What a node's references can name: its widgets and its wired inputs. */
+/** What a node's references can name: its widgets, its wired inputs, and the
+ * dataflow's shared tags. */
 export interface ReferenceScope {
   widgets: WidgetDef[];
   /** In circle order. */
   inputs: InputScope[];
+  /** The widget of each Parameter node in the dataflow, one per node. Two
+   * nodes with one name are both listed, so a reference to it says so. */
+  shared: WidgetDef[];
 }
 
 export type ParsedReference =
   | { kind: "widget"; name: string }
   /** `slot` is null for `input ?`, the input whose edge was deleted. */
-  | { kind: "input"; slot: number | null; layer?: string; column?: string };
+  | { kind: "input"; slot: number | null; layer?: string; column?: string }
+  | { kind: "shared"; name: string };
 
 export type ReferenceContext = { kind: "code" } | { kind: "comment" } | { kind: "string"; quote: string };
 
 export function parseReference(inner: string): ParsedReference {
   const m = INPUT_REFERENCE_RE.exec(inner);
-  if (!m) return { kind: "widget", name: inner };
+  if (!m) {
+    if (inner.startsWith(SHARED_PREFIX)) return { kind: "shared", name: inner.slice(SHARED_PREFIX.length) };
+    return { kind: "widget", name: inner };
+  }
   const parsed: ParsedReference = { kind: "input", slot: m[1] === "?" ? null : Number(m[1]) };
   if (m[2] !== undefined) parsed.layer = m[2];
   if (m[3] !== undefined) parsed.column = m[3];
@@ -115,6 +129,11 @@ export function inputReferenceInner(slot: number | null, column?: string, layer?
     + (layer !== undefined ? `:${layer}` : "")
     + (column !== undefined ? `.${column}` : "")
   );
+}
+
+/** What stands inside a reference to the shared tag *name*. */
+export function sharedReferenceInner(name: string): string {
+  return SHARED_PREFIX + name;
 }
 
 /** Whether *name* can ride a layer reference and read back as itself. */
@@ -305,6 +324,19 @@ export function referenceProblem(
     }
     return null;
   }
+  if (parsed.kind === "shared") {
+    if (!WIDGET_NAME_RE.test(parsed.name)) {
+      return `${reference} does not name a Parameter node. Parameter names are letters, digits and underscores.`;
+    }
+    const named = scope.shared.filter((w) => w.name === parsed.name).length;
+    if (named === 0) {
+      return `${reference}: no Parameter node is named ${parsed.name}. Add one, or drag a tag from Shared.`;
+    }
+    if (named > 1) {
+      return `${reference}: ${named} Parameter nodes are named ${parsed.name}. Rename all but one.`;
+    }
+    return null;
+  }
   if (inner.includes("$")) {
     return `${reference} is an old widget marker. Add the widget in the node's Widgets tab and drag its tag into the code.`;
   }
@@ -328,7 +360,9 @@ function resolvedText(inner: string, scope: ReferenceScope, context: ReferenceCo
     if (scope.inputs.length === 1) return "arg";
     return `arg[${position}]`;
   }
-  const widget = scope.widgets.find((w) => w.name === inner) as WidgetDef;
+  const widget = (parsed.kind === "shared" ? scope.shared : scope.widgets).find(
+    (w) => w.name === parsed.name,
+  ) as WidgetDef;
   const value = effectiveValue(widget);
   return context.kind === "code" ? widgetLiteral(value, language) : escapeFor(textOf(value, language), context, language);
 }
@@ -394,6 +428,33 @@ export function renumberInputReferences(code: string, removedSlot: number): stri
     if (parsed.kind !== "input" || parsed.slot === null || parsed.slot < removedSlot) continue;
     const slot = parsed.slot === removedSlot ? null : parsed.slot - 1;
     out += code.slice(last, ref.start) + referenceText(inputReferenceInner(slot, parsed.column, parsed.layer));
+    last = ref.end;
+  }
+  return last === 0 ? code : out + code.slice(last);
+}
+
+/** The names of the shared tags *code* references, each once, in order. */
+export function sharedNamesIn(code: string): string[] {
+  const names: string[] = [];
+  for (const ref of findReferences(code)) {
+    const parsed = parseReference(ref.inner);
+    if (parsed.kind === "shared" && !names.includes(parsed.name)) names.push(parsed.name);
+  }
+  return names;
+}
+
+/**
+ * *code* after the Parameter node named *from* was renamed *to*: its shared
+ * references follow the new name. Other references, and the text around
+ * them, are kept as written.
+ */
+export function renameSharedReferences(code: string, from: string, to: string): string {
+  let out = "";
+  let last = 0;
+  for (const ref of findReferences(code)) {
+    const parsed = parseReference(ref.inner);
+    if (parsed.kind !== "shared" || parsed.name !== from) continue;
+    out += code.slice(last, ref.start) + referenceText(sharedReferenceInner(to));
     last = ref.end;
   }
   return last === 0 ? code : out + code.slice(last);
