@@ -9,8 +9,9 @@
   ``runLevels.cases.json`` beside the TypeScript holds the cases both run.
 - :func:`ancestors` is the slice ``playNodesUpTo`` runs for one node.
 - :func:`node_role`: what a run does with a node. ``run`` executes it in the
-  sandbox; ``forward`` passes its input on, as a chart, a pool, a merge or a
-  download does on the canvas; ``browser`` makes data only the browser can
+  sandbox; ``forward`` passes its input on, as a chart, a pool or a download
+  does on the canvas, or has nothing to run, as a Parameter node, whose value
+  reaches the nodes that name it through their code; ``browser`` makes data only the browser can
   (an Autark data or compute node, a Spatial Join), so nothing below it can run
   until a tab does.
 """
@@ -21,8 +22,9 @@ from typing import Iterable
 INTERACTION_HANDLE = "in/out"
 
 #: Node kinds a run forwards besides the pass-through kinds of a dashboard walk:
-#: a Data Export only offers a download and has nothing to run.
-_FORWARD_KINDS = frozenset({"data-export"})
+#: a Data Export only offers a download, and a Parameter node only holds a
+#: value; neither has anything to run.
+_FORWARD_KINDS = frozenset({"data-export", "parameter"})
 
 
 def is_interaction_edge(edge: dict) -> bool:
