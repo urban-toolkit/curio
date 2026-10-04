@@ -80,7 +80,7 @@ import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentAttachmentsProvider } from "../providers/agents";
 
-const CANVAS_SCROLLER_STYLE: React.CSSProperties = { width: "100%", height: "100%" };
+const FILL_STYLE: React.CSSProperties = { width: "100%", height: "100%" };
 const NOTEBOOK_SCROLLER_STYLE: React.CSSProperties = {
     width: "100%",
     height: "100%",
@@ -624,16 +624,22 @@ export function MainCanvas() {
                 onDrop={!isSharedView ? handleDrop : undefined}
             >
             {/* Present in both views so switching never remounts React Flow:
-                on the canvas it fills the window and changes nothing; in the
-                notebook view it scrolls, and React Flow is as tall as the column. */}
+                on the canvas both fill the window and change nothing; in the
+                notebook view the outer one scrolls and the inner one is as
+                tall as the column. React Flow always fills its parent (its own
+                100% size wins over a `style` passed to it), so the height goes
+                on the parent. */}
             <div
                 ref={scrollerRef}
                 className="curio-flow-scroller"
                 data-curio-notebook={notebookOn ? "true" : undefined}
-                style={notebookOn ? NOTEBOOK_SCROLLER_STYLE : CANVAS_SCROLLER_STYLE}
+                style={notebookOn ? NOTEBOOK_SCROLLER_STYLE : FILL_STYLE}
+            >
+            <div
+                className="curio-flow-sizer"
+                style={notebookOn ? { width: "100%", height: notebookContentHeight, minHeight: "100%" } : FILL_STYLE}
             >
             <ReactFlow
-                style={notebookOn ? { height: notebookContentHeight, minHeight: "100%" } : undefined}
                 nodes={nodes}
                 edges={edges}
                 onNodesChange={handleNodesChange}
@@ -669,6 +675,7 @@ export function MainCanvas() {
                 {!notebookOn && <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />}
                 {!notebookOn && <Controls />}
             </ReactFlow>
+            </div>
             </div>
             {!isSharedView ? <AgentDockOverlay /> : null}
             </div>

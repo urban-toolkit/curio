@@ -709,6 +709,9 @@ export const NodeContainer = ({
                     ...styles,
                     width: boxWidth + "px",
                     height: boxHeight + "px",
+                    // `.resizable` draws the browser's own resize grip, which
+                    // the canvas covers with its resize handle; a cell has none.
+                    ...(notebookCell ? { resize: "none" } : {}),
                     ...(shownMinimized ? { display: "none" } : {}),
                     ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: 0.5, pointerEvents: "none"} : {}),
                     ...(data.keywordHighlighted ? {backgroundColor: "#1E1F23"} : {}),
