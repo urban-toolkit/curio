@@ -92,11 +92,18 @@ export function useServerRun({
 
     // ── What reaches a node ──────────────────────────────────────────────
 
-    /** Show *output* on the node, through the same setter its own run uses (UniversalNode). */
-    const showOnNode = (nodeId: string, output: NodeOutput) => {
+    /**
+     * Show *output* on the node, through the same setter its own run uses
+     * (UniversalNode). With *onlyIfRunning*, the node shows it only while its
+     * own output still reads running: the node holds its current output, which
+     * `data.output` mirrors only after it renders.
+     */
+    const showOnNode = (nodeId: string, output: NodeOutput, { onlyIfRunning = false } = {}) => {
         const seq = ++outputSeqRef.current;
         setNodes((nds) => nds.map((node) =>
-            node.id === nodeId ? { ...node, data: { ...node.data, serverOutput: { seq, output } } } : node,
+            node.id === nodeId
+                ? { ...node, data: { ...node.data, serverOutput: { seq, output, onlyIfRunning } } }
+                : node,
         ));
     };
 
@@ -263,10 +270,11 @@ export function useServerRun({
         return playNodes(walk, {
             onNodeDone: (nodeId, outcome) => {
                 // A kind whose play draws nothing of its own (a Data Export)
-                // never leaves the running state the click gave it.
-                if (played && nodeId === played.nodeId
-                    && reactFlow.getNode(nodeId)?.data?.output?.code === "exec") {
-                    showOnNode(nodeId, played.before ?? { code: "", content: "" });
+                // never leaves the running state the click gave it. The node
+                // decides: an Autark node reports done in the tick it shows
+                // its result, before `data.output` follows.
+                if (played && nodeId === played.nodeId) {
+                    showOnNode(nodeId, played.before ?? { code: "", content: "" }, { onlyIfRunning: true });
                 }
                 if (!reportsToRun(steps.get(nodeId))) return;
                 const shown = reactFlow.getNode(nodeId)?.data?.output?.content;

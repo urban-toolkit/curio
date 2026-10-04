@@ -324,6 +324,24 @@ describe("a run started on the canvas", () => {
     expect(hook.result.current.serverRunActive).toBe(false);
     expect(deps.showToast).toHaveBeenCalledWith(expect.stringContaining("could not be saved"), "error");
   });
+
+  it("a played browser node gets its earlier output back only while it still reads running", async () => {
+    // An Autark node reports done in the tick it shows its result, before
+    // `data.output` follows, so the node itself decides (UniversalNode).
+    const live = stream();
+    const before = { code: "success", content: "Loaded 1 table" };
+    api.start.mockResolvedValue(run("r1", [step("map", { role: "browser" })], { trigger: "node", targetNodeId: "map" }));
+    const { hook, deps, node } = harness([{ id: "map", data: { output: before } }]);
+    await act(async () => { await hook.result.current.startRun("map"); });
+    live.emit({ kind: "step_finished", nodeId: "map", status: "browser" });
+    expect(deps.playNodes).toHaveBeenCalledTimes(1);
+
+    // The node's own play has ended; `data.output` still reads the click's running.
+    node("map")!.data.output = { code: "exec", content: "" };
+    deps.playNodes.mock.calls[0][1].onNodeDone("map", { failed: false });
+
+    expect(node("map")!.data.serverOutput).toMatchObject({ output: before, onlyIfRunning: true });
+  });
 });
 
 describe("a canvas opened after a run", () => {

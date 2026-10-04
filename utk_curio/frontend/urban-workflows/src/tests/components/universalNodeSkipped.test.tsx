@@ -9,7 +9,9 @@
  *
  * Also pinned here: the node's terminal output tells the runner whether it
  * failed, which is what lets the runner stop below a chart or a map as well as
- * below a code node.
+ * below a code node; and a step of a run on the server reaches the node through
+ * the same setter (`serverOutput`), a played node's earlier output only while
+ * the node still reads running.
  */
 import React from "react";
 import { act, render } from "@testing-library/react";
@@ -159,5 +161,48 @@ describe("a node's terminal output tells the runner how it went", () => {
   test("a success reports no failure", async () => {
     await mount(data());
     expect(mockSignalNodeExecDone).toHaveBeenCalledWith("n1", { failed: false });
+  });
+});
+
+describe("a step of a run on the server", () => {
+  const BEFORE = { code: "success", content: "Saved to file: old" };
+
+  test("shows on the node through its own setter", async () => {
+    const utils = await mount(data());
+    const shown = { code: "success", content: "Saved to file: new" };
+
+    await act(async () => {
+      utils.rerender(<UniversalNode data={data({ serverOutput: { seq: 1, output: shown } })} isConnectable />);
+    });
+
+    expect(mockSetOutput).toHaveBeenCalledWith(shown);
+  });
+
+  test("gives a played node its earlier output back while it still reads running", async () => {
+    const running = { code: "exec", content: "" };
+    const utils = await mount(data({ output: running }));
+
+    await act(async () => {
+      utils.rerender(<UniversalNode
+        data={data({ output: running, serverOutput: { seq: 1, output: BEFORE, onlyIfRunning: true } })}
+        isConnectable
+      />);
+    });
+
+    expect(mockSetOutput).toHaveBeenCalledWith(BEFORE);
+  });
+
+  test("keeps the result a played node's own play showed", async () => {
+    const result = { code: "success", content: "Loaded 1 table" };
+    const utils = await mount(data({ output: result }));
+
+    await act(async () => {
+      utils.rerender(<UniversalNode
+        data={data({ output: result, serverOutput: { seq: 1, output: BEFORE, onlyIfRunning: true } })}
+        isConnectable
+      />);
+    });
+
+    expect(mockSetOutput).not.toHaveBeenCalled();
   });
 });

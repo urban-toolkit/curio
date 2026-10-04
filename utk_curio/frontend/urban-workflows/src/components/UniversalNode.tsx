@@ -175,12 +175,14 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
 
   // A step of a run on the server (useServerRun): running, its outcome, or
   // stopped. Shown through the setter the node's own run uses, so the node
-  // reads, reports and records it the same way.
+  // reads, reports and records it the same way. `onlyIfRunning` gives a played
+  // node back its earlier output only if its own play showed nothing.
   const lastServerOutputRef = useRef<number>(data.serverOutput?.seq ?? 0);
   useEffect(() => {
     const next = data.serverOutput;
     if (!next || next.seq <= lastServerOutputRef.current) return;
     lastServerOutputRef.current = next.seq;
+    if (next.onlyIfRunning && output?.code !== "exec") return;
     setOutputCallback(next.output);
   }, [data.serverOutput]);
 
