@@ -20,7 +20,7 @@ jobs:
     runs-on: [self-hosted, gpu, curio]
     timeout-minutes: 40
     env:
-      IMAGE: ghcr.io/urban-toolkit/curio-ci:5a4c0b6cb4ce40aa8ae4f1bec4b68d2b8c4aaf19
+      IMAGE: ghcr.io/urban-toolkit/curio-ci:7674e56ca86cc8e3a73f2860aa9b2548631d6892
     steps:
       - name: 🧹 Reclaim root-owned workspace files
         run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
