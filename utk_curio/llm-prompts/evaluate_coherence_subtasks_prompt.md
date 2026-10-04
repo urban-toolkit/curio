@@ -52,6 +52,7 @@ Do not generate warnings for nodes made from these templates:
 - Autark
 - Spatial Join
 - Merge Flow
+- Parameter
 
 ## Output
 

@@ -48,6 +48,8 @@ class TestTemplateContentKind:
         assert kinds["spatial-join"] == "none"
         # One Download button, nothing written (#226).
         assert kinds["data-export"] == "none"
+        # Set through the widget it holds (#662), not through written content.
+        assert kinds["parameter"] == "none"
 
     def test_a_presentation_template_with_no_input_is_a_note(self):
         """dev/90 A14's post-it profile: authored content, no validator. The

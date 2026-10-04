@@ -79,6 +79,11 @@ becomes the value's text, escaped for that string. An old
 `[!! name$TYPE$default !!]` marker, or a name the node has no widget for, fails
 the run with a message naming it.
 
+A `curio.builtin/parameter` node holds one widget in `metadata.widgets` and has
+no edges. Any node's `content` places it as `[!! @name !!]`, written and
+replaced as its own widgets are. A name no Parameter node has, or that two
+Parameter nodes have, fails the run with a message naming it.
+
 `metadata.comments` carries the node's discussion, written only when non-empty.
 Each entry is `{id, text, author, authorName, createdAt, resolved}`. The author's
 avatar is not stored, because `profile_image` may be a full data URL; `canDelete`

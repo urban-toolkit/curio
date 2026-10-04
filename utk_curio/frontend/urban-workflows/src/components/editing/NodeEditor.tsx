@@ -43,6 +43,7 @@ import {
     type ReferenceScope,
 } from "../../utils/references/codeReferences";
 import { useInputScope } from "../../hook/useInputScope";
+import { useSharedWidgets } from "../../hook/useSharedWidgets";
 
 const NO_WIDGETS: WidgetDef[] = [];
 
@@ -131,12 +132,14 @@ function NodeEditor({
             ? "javascript"
             : "python";
 
-    // #662: what the node's references name: its widgets and its wired
-    // inputs. Input, layer and column tags sit above its code or spec.
+    // #662: what the node's references name: its widgets, its wired inputs
+    // and the Parameter nodes' shared tags. Input, layer, column and shared
+    // tags sit above its code or spec.
     const { inputs, emptyInputs, loadColumns } = useInputScope(data);
+    const shared = useSharedWidgets();
     const scope: ReferenceScope = useMemo(
-        () => ({ widgets: widgetsTab ? widgets : NO_WIDGETS, inputs }),
-        [widgetsTab, widgets, inputs],
+        () => ({ widgets: widgetsTab ? widgets : NO_WIDGETS, inputs, shared }),
+        [widgetsTab, widgets, inputs, shared],
     );
     // The play callback is registered once, so a run without a Widgets tab
     // reads the scope from here.
@@ -364,6 +367,7 @@ function NodeEditor({
                                             onResolveError={resolveError}
                                             inputs={inputs}
                                             emptyInputs={emptyInputs}
+                                            shared={shared}
                                         />
                                     </Tab.Pane>
                                 ) : null}

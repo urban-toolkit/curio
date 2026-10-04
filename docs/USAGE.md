@@ -416,6 +416,25 @@ Widgets are not connections: a value you set is not data from another node. Data
 from the node's inputs reaches its code as `arg`, or through input chips (see
 [Several inputs](#several-inputs)).
 
+### Shared values: the Parameter node
+
+A **Parameter** node holds one widget that any node can use, such as a season
+that several nodes read.
+
+1. Drag **Parameter** from the palette onto the canvas. Give it a name, a type,
+   a label and a default, as for a widget, and click **Add parameter**.
+2. Its tag, **@name**, shows under **Shared** in the strip above every node's
+   code and in every node's **Widgets** tab. Drag it into the code, or click it
+   to insert it at the cursor. In the code it is written `[!! @name !!]` and
+   drawn as an amber chip; it runs as a widget's value does.
+3. Set the value in the Parameter node.
+
+A Parameter node has no edges, and it lists the nodes whose code uses it.
+Changing its value marks those nodes as needing a new run. **Edit** renames it,
+and their code follows the new name. A reference to a name no Parameter node
+has, or that two Parameter nodes have, stops the run with a message naming it.
+Pinned to the dashboard, a Parameter node shows its value.
+
 ## Several inputs
 
 Python Computation, Data Transformation, JS Computation, Data Pool, Vega-Lite and
