@@ -22,7 +22,7 @@ from utk_curio.backend.tests.test_agents.test_routes_proposals import (
 )
 
 _PROMPT_PATH = (
-    Path(__file__).resolve().parents[3] / "llm-prompts" / "package_build_instruction.txt"
+    Path(__file__).resolve().parents[3] / "llm-prompts" / "package_build_instruction.md"
 )
 
 
@@ -111,7 +111,7 @@ class TestPromptCarriesTheBackendContract:
             '{"content": <the node\'s editor text>, "input": <upstream JSON or null>}',
             "CURIO_PKG_DATA_DIR",
             "probe phase",
-            "dev/89 Follow-up B",
+            "naming the Curio activation lifecycle or the deferred secret mediation",
         ):
             assert marker in text, marker
 
@@ -123,9 +123,10 @@ class TestPromptCarriesTheBackendContract:
         assert "eval/exec/compile/__import__/importlib" in text
 
     def test_build_request_contract_teaches_the_backend_keys(self):
-        from utk_curio.backend.app.agents.application.turns.delegates import _BUILD_REQUEST_CONTRACT
+        from utk_curio.backend.app.agents.application.turns.delegates import _build_request_contract
 
-        text = json.dumps(_BUILD_REQUEST_CONTRACT)
+        contract = _build_request_contract()
+        text = json.dumps(contract)
         for marker in (
             "backend/handler.py",
             "timeoutClass",
@@ -134,18 +135,28 @@ class TestPromptCarriesTheBackendContract:
             "server-network",
             "def handle(payload)",
             "CURIO_PKG_DATA_DIR",
-            "Follow-up B",
+            "Curio activation lifecycle",
         ):
             assert marker in text, marker
-        # The shape names the handler grammar and the payload contract.
-        assert "'content': <editor text>" in text
+        # The backend contract names the handler grammar and the payload contract.
+        backend = contract["backendContract"]
+        assert '{"content": <the node\'s editor text>, "input": <upstream JSON or null>}' in backend
+
+    def test_the_delegate_and_the_prompt_share_one_backend_contract(self):
+        from utk_curio.backend.app.agents.application.turns.delegates import _build_request_contract
+        from utk_curio.backend.app.agents.domain import builtin
+
+        shared = (builtin.PROMPT_SOURCE_DIR / builtin.PACKAGE_CONTRACT_FILE).read_text(encoding="utf-8")
+        assert shared.startswith("## Backend contract\n\nServer-side compute follows ONE backend contract")
+        assert _build_request_contract()["backendContract"] == shared
+        assert shared.rstrip("\n") in _PROMPT_PATH.read_text(encoding="utf-8")
 
 
 class TestLazyImportContract:
     """dev/97 (Option A): the probe runs before deps install — a
     module-level import of a DECLARED dep refuses naming the lazy-import
     fix in the model's face, and the lazy version of the same draft passes;
-    prompt and buildRequestContract teach the rule (A15: both places pinned)."""
+    prompt and buildRequestContract teach the rule in one shared text (A15)."""
 
     def _dep_params(self, entry_src: str) -> dict:
         params = TestBackendDraftEndToEnd()._backend_draft_params()
@@ -206,11 +217,12 @@ class TestLazyImportContract:
         assert "DECLARED python dependency" not in refusal  # honest: not declared
 
     def test_prompt_and_contract_teach_the_rule(self):
-        from utk_curio.backend.app.agents.application.turns.delegates import _BUILD_REQUEST_CONTRACT
+        from utk_curio.backend.app.agents.application.turns.delegates import _build_request_contract
 
         text = _PROMPT_PATH.read_text(encoding="utf-8")
         assert "Import declared python dependencies INSIDE your handler function" in text
         assert "fails the probe by construction" in text
-        contract = json.dumps(_BUILD_REQUEST_CONTRACT)
-        assert "INSIDE the handler function" in contract
+        contract = _build_request_contract()["backendContract"]
+        assert "Import declared python dependencies INSIDE your handler function" in contract
         assert "isolated overlay" in contract
+        assert "fails the probe by construction" in contract

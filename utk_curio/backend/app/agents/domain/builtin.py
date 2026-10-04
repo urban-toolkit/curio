@@ -1,7 +1,7 @@
 """Built-in agent definitions: the thirteen agents Curio ships with, ten of them catalog cards.
 
 Data-driven roster generated from the canonical prompt→agent map (plan memo
-``dev/06``) over the existing prompt files in ``utk_curio/llm-prompts/*.txt``,
+``dev/06``) over the existing prompt files in ``utk_curio/llm-prompts/*.md``,
 plus the P5 composites (memo ``dev/48``: ``agent.node-builder``), whose
 instruction assets are net-new but live in the same directory so resolution
 and materialization work unchanged.
@@ -32,7 +32,7 @@ from utk_curio.backend.app.agents.domain.manifest import (
     AgentManifest,
     parse_agent_manifest,
 )
-from utk_curio.backend.app.agents.domain.contracts import AUTK_PROMPT_KEY
+from utk_curio.backend.app.agents.domain.contracts import AUTK_PROMPT_KEY, PACKAGE_CONTRACT
 
 log = logging.getLogger(__name__)
 
@@ -42,9 +42,13 @@ BUILTIN_VERSION = "1.0.0"
 # utk_curio/backend/app/agents/builtin.py, so parents[3] is utk_curio/.
 # domain/builtin.py -> domain -> agents -> app -> backend -> utk_curio/llm-prompts (one deeper since B1)
 PROMPT_SOURCE_DIR = (Path(__file__).resolve().parents[4] / "llm-prompts")
-# The one preamble every built-in composes before its instruction. The
-# contract regions in it are generated (``contracts.render_default_preamble``).
-PREAMBLE_FILE = "default_preamble.txt"
+# The one preamble every built-in composes before its instruction. It is
+# generated, as are the instructions with a ``.template.md`` beside them
+# (``contracts.render_prompt``).
+PREAMBLE_FILE = "default_preamble.md"
+# The Package Builder's backend contract: its instruction includes the text,
+# and a delegated Package Builder receives this file as an input.
+PACKAGE_CONTRACT_FILE = f"{PACKAGE_CONTRACT}.md"
 
 # category -> the single compatible attachment target kind.
 _TARGET_BY_CATEGORY = {
@@ -66,6 +70,9 @@ class BuiltinMode:
     prompt_file: str
     reads: tuple[str, ...]
     required_config: tuple[str, ...] = ()
+    # Whether a run of this mode gets worked examples, the shipped dataflows
+    # closest to its task, in its runtime slot (``turns/examples``).
+    worked_examples: bool = False
 
 
 #: A ``delegates_to`` entry: an agent id, or ``(agent id, capabilities)`` to
@@ -131,6 +138,9 @@ class BuiltinAgentSpec:
     # as (prompts key, file): the Autark document under its reply schema
     # (``reply_schemas.AUTK_PROMPT_KEY``).
     variant_prompts: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    # Whether a run of this agent, under its instruction or a variant, gets
+    # worked examples (``turns/examples``). A mode decides for itself.
+    worked_examples: bool = False
 
     def target_kinds(self) -> tuple[str, ...]:
         return self.targets or (_TARGET_BY_CATEGORY[self.category],)
@@ -170,7 +180,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      "Talk with an assistant about a node or the whole dataflow: it "
                      "explains what they do, diagnoses errors, and helps you define "
                      "what to build.",
-                     "chat_prompt.txt",
+                     "chat_prompt.md",
                      ("conversation.respond", "attachment.refine", "node.explain",
                       "code.debug.diagnose"), ("chat",),
                      targets=("node", "canvas"),
@@ -178,14 +188,15 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      tools=("dataflow.read", "node.read", "node.runtime.read")),
     BuiltinAgentSpec("agent.node-content-builder", "Node Content Builder", "node",
                      "Generate node content for a target.",
-                     "new_content_prompt.txt", ("node.content.generate",), ("authoring",),
+                     "new_content_prompt.md", ("node.content.generate",), ("authoring",),
                      reads=("dataflowContext", "nodeId", "subtask", "workflowGoal"),
                      tools=("dataflow.read", "node.read", "node.content.write",
                             "node.runtime.read"),
-                     variant_prompts=((AUTK_PROMPT_KEY, "new_content_autk_prompt.txt"),)),
+                     variant_prompts=((AUTK_PROMPT_KEY, "new_content_autk_prompt.md"),),
+                     worked_examples=True),
     BuiltinAgentSpec("agent.connection-builder", "Connection Builder", "node",
                      "Suggest and create valid node connections.",
-                     "new_connection_prompt.txt", ("connection.propose",), ("authoring",),
+                     "new_connection_prompt.md", ("connection.propose",), ("authoring",),
                      # Attaches to a node or to a connection. The connection
                      # target is why this agent declares ``connectionSide``:
                      # bound to one edge it knows which end it is reasoning
@@ -198,32 +209,33 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # migrated manifest that gains delegatesTo — a proposed
                      # connection's required packages surface as reviewed
                      # proposals. Its connection.propose capability is unchanged.
-                     delegates_to=("agent.package-recommendation",)),
+                     delegates_to=("agent.package-recommendation",),
+                     worked_examples=True),
     # The planning and keyword agents, merged: six capabilities that shared
     # their tools (none), delegates (none), review and execution, each still
     # running its own instruction as a mode. Internal: a delegate only.
     _merged("agent.dataflow-planner", "Dataflow Planner", "canvas",
             "Plan, refresh and check a dataflow's tasks, and extract and bind "
             "the keywords that describe it.",
-            (BuiltinMode("workflow.plan.create", "new_subtasks_prompt.txt",
+            (BuiltinMode("workflow.plan.create", "new_subtasks_prompt.md",
                          ("currentTask", "dataflowContext")),
-             BuiltinMode("execution.followup.plan", "new_subtask_from_exec_prompt.txt",
+             BuiltinMode("execution.followup.plan", "new_subtask_from_exec_prompt.md",
                          ("nodeContent", "nodeType", "currentTask")),
-             BuiltinMode("workflow.plan.refresh", "task_refresh_prompt.txt",
+             BuiltinMode("workflow.plan.refresh", "task_refresh_prompt.md",
                          ("currentTask", "keywords", "dataflowContext"), ("keywordTypes",)),
-             BuiltinMode("workflow.coherence.validate", "evaluate_coherence_subtasks_prompt.txt",
+             BuiltinMode("workflow.coherence.validate", "evaluate_coherence_subtasks_prompt.md",
                          ("workflowGoal", "dataflowContext")),
-             BuiltinMode("workflow.keyword.bind", "keywords_binding_prompt.txt",
+             BuiltinMode("workflow.keyword.bind", "keywords_binding_prompt.md",
                          ("keywords", "dataflowContext"), ("keywordTypes",)),
-             BuiltinMode("workflow.keywords.extract", "syntax_analysis_prompt.txt",
+             BuiltinMode("workflow.keywords.extract", "syntax_analysis_prompt.md",
                          ("workflowGoal",), ("keywordTypes",))),
             roles=("planning", "validation"), targets=("canvas",)),
     # The two dataflow readers, merged the same way.
     _merged("agent.dataflow-reader", "Dataflow Reader", "canvas",
             "Explain what the whole dataflow does, and suggest its next steps.",
-            (BuiltinMode("dataflow.explain", "explanation_prompt.txt", ("dataflowContext",)),
-             BuiltinMode("workflow.suggest", "workflow_suggestions_prompt.txt",
-                         ("dataflowContext", "workflowGoal"))),
+            (BuiltinMode("dataflow.explain", "explanation_prompt.md", ("dataflowContext",)),
+             BuiltinMode("workflow.suggest", "workflow_suggestions_prompt.md",
+                         ("dataflowContext", "workflowGoal"), worked_examples=True)),
             roles=("explanation", "planning"), targets=("canvas",), tools=("dataflow.read",)),
     # dev/67-4 (DEC-053): the research agent — concise factual verification
     # of external sources (dataset ids, endpoints, schemas) other agents
@@ -232,7 +244,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      "Verify external facts — dataset ids, API endpoints, schemas, "
                      "parameter names — with policy-gated web access; reusable and "
                      "chainable; reports failure to verify as a finding.",
-                     "research_instruction.txt",
+                     "research_instruction.md",
                      ("research.verify", "research.summarize"), ("validation",),
                      targets=("node", "canvas"),
                      reads=("mission", "nodeContext"),
@@ -244,7 +256,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      "Create computation, transform, visualization, or data-fetch nodes as "
                      "reviewable proposals — or modify an existing node through a reviewed "
                      "content replacement; delegates content generation to Node Content Builder.",
-                     "node_build_instruction.txt",
+                     "node_build_instruction.md",
                      ("node.build", "dataset.fetch.author"), ("authoring",),
                      # dev/67-6: node targets lift the dev/48 canvas-only
                      # limitation — the modify-existing posture attaches to
@@ -280,7 +292,8 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # model choice — the Dataset Finder is a hard dependency,
                      # not a preference.
                      requires_agents=("agent.dataset-finder",),
-                     review_policy="review-before-apply"),
+                     review_policy="review-before-apply",
+                     worked_examples=True),
     # The second P5 composite (memo dev/50; spec dev/15 §3.4 + docs/06). Two-
     # lane discovery: catalog picks → reviewed dataset.install; external picks
     # → the DEC-047 user-mediated Node Builder handoff. Never authors fetch
@@ -290,7 +303,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      "Discover and select datasets across connected data portals and the "
                      "Data Catalog; download portal picks into the Data Catalog as a "
                      "reviewed proposal. Never authors fetch code.",
-                     "discovery_instruction.txt",
+                     "discovery_instruction.md",
                      ("dataset.discover", "dataset.select"), ("discovery", "selection"),
                      targets=("node", "canvas"),
                      reads=("mission", "nodeContext", "catalog"),
@@ -317,7 +330,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      "Plan a connected dataflow from a goal as one reviewable proposal; "
                      "solve unresolved nodes through delegated specialists. Never mutates "
                      "without review.",
-                     "orchestration_instruction.txt",
+                     "orchestration_instruction.md",
                      ("dataflow.orchestrate",), ("orchestration",),
                      reads=("mission", "graphContext", "installedTemplates"),
                      # dev/95: node.create is the reviewed lane the delegated
@@ -364,7 +377,8 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                       "agent.dataset-finder", "agent.node-builder"),
                      review_policy="review-before-apply",
                      # dev/115 (DEC-073): Solve is a detached background job.
-                     execution="background"),
+                     execution="background",
+                     worked_examples=True),
     # The fourteenth releasable built-in (memo dev/84; spec dev/16 / DEC-035).
     # Net-new instruction. Deviations recorded in the memo: roster-generated
     # manifest (foreground, no settingsDefaults); the dev/16 installedPackages
@@ -375,7 +389,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      "needs; surface each required-but-uninstalled package as a reviewed "
                      "install proposal against the existing Nodes Catalog. Never installs "
                      "anything itself and never authors a package.",
-                     "package_recommendation_instruction.txt",
+                     "package_recommendation_instruction.md",
                      ("package.recommend", "package.identify"), ("recommendation",),
                      targets=("node", "canvas"),
                      reads=("mission", "targetContext", "installedTemplates"),
@@ -394,7 +408,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      "assumptions say — findings with quoted evidence and an advisory "
                      "verdict. Never approves, never mutates, never replaces "
                      "execution-based validation.",
-                     "evaluate_generated_content_prompt.txt",
+                     "evaluate_generated_content_prompt.md",
                      ("content.quality.evaluate",), ("validation",),
                      targets=("node", "canvas"),
                      reads=("nodeContext", "targetContext"),
@@ -416,7 +430,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      "templates, custom JS behavior, dependencies, assets, integrity — "
                      "as one reviewed, installable draft. Never installs, never "
                      "publishes, never touches read-only packages.",
-                     "package_build_instruction.txt",
+                     "package_build_instruction.md",
                      ("package.build", "package.extend", "node.kind.author"),
                      ("authoring",),
                      targets=("node", "canvas"),
@@ -443,7 +457,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      "the Package Builder with the post-it look requirements. "
                      "Never authors packages itself; distinct from Node "
                      "Researcher (verification).",
-                     "researcher_notes_instruction.txt",
+                     "researcher_notes_instruction.md",
                      ("research.notes.compose",), ("authoring",),
                      targets=("node", "canvas"),
                      reads=("mission", "targetContext", "installedTemplates"),
@@ -532,6 +546,17 @@ def get_builtin_spec(coord: str) -> BuiltinAgentSpec | None:
     return _by_coord().get(coord)
 
 
+def gets_worked_examples(coord: str, capability: str | None = None) -> bool:
+    """Whether a run of the built-in *coord* gets worked examples: in the mode
+    of *capability* when it has one, else as the agent says. Any other
+    definition gets none."""
+    spec = _by_coord().get(coord)
+    if spec is None:
+        return False
+    mode = next((m for m in spec.modes if m.capability == capability), None)
+    return mode.worked_examples if mode is not None else spec.worked_examples
+
+
 def internal_agent_ids() -> frozenset[str]:
     """The built-ins that run only as delegates (``in_catalog`` false)."""
     return frozenset(spec.agent_id for spec in BUILTIN_AGENTS if not spec.in_catalog)
@@ -564,18 +589,24 @@ def read_prompt_text(coord: str, name: str) -> str | None:
     filename = spec.prompt_files().get(name)
     if filename is None:
         return None
+    return read_prompt_file(filename, wanted_by=f"built-in agent {coord}, prompt {name!r},")
+
+
+def read_prompt_file(filename: str, *, wanted_by: str) -> str | None:
+    """Read one file from ``llm-prompts/``, or None when it is missing.
+
+    A missing file is logged: returning None silently would ship an agent
+    with no system or task prompt and no symptom beyond worse answers, which
+    is precisely what an sdist without ``utk_curio/llm-prompts/`` used to do.
+    """
     path = PROMPT_SOURCE_DIR / filename
     if path.is_file():
         return path.read_text(encoding="utf-8")
-    # A roster agent names a file that is not there. Returning None silently
-    # would ship the agent with no system or task prompt and no symptom beyond
-    # worse answers, which is precisely what an sdist without
-    # ``utk_curio/llm-prompts/`` used to do. Say so once, loudly, per file.
     log.error(
-        "built-in agent %s declares prompt %r (%s) but %s is missing; the agent "
-        "will run without it. If this is an installed Curio, the package is "
-        "missing utk_curio/llm-prompts/ (see MANIFEST.in).",
-        coord, name, filename, path,
+        "%s reads %s but %s is missing, so it runs without it. If this is an "
+        "installed Curio, the package is missing utk_curio/llm-prompts/ (see "
+        "MANIFEST.in).",
+        wanted_by, filename, path,
     )
     return None
 

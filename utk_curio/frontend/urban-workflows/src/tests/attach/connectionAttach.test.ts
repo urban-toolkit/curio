@@ -156,7 +156,7 @@ describe("attachAgentOnDrop with a connection target", () => {
 
 describe("the connectionSide fragment", () => {
   it("names both ends in the vocabulary the prompt expects", () => {
-    // new_connection_prompt.txt expects to be "informed if the nodes you are
+    // new_connection_prompt.md expects to be "informed if the nodes you are
     // suggesting will be connected into the input or output of the node", so
     // the fragment speaks in inputs and outputs rather than source/target.
     // Before edge attach existed, connectionSide had no producer at all and

@@ -1,183 +1,36 @@
-"""Screenshot baselines: capture, compare, mint and re-mint, node close-ups,
-and what has to be quiet first (the viewport fit, toasts, running nodes).
+"""Screenshot baselines: compare a capture with its baseline, mint and re-mint,
+frame nodes for a capture, and the browser log kept beside the baselines.
 """
 
 import os
 import json
-from contextlib import contextmanager
 from io import BytesIO
-from typing import NamedTuple
 
 import allure
 import pytest
-from playwright.sync_api import (
-    Page,
-    TimeoutError as PlaywrightTimeoutError,
-    expect,
-)
+from playwright.sync_api import Page
 
 from .. import comparisons
 from .environment import REPO_ROOT
+from .capture_waits import (
+    WEBFONT_FAMILY,
+    _wait_for_no_node_running,
+    _wait_for_reactflow_ready,
+    _wait_for_webfont,
+    dismiss_toasts,
+)
+from .images import (
+    _capture_element,
+    _capture_full_page,
+    _compare_images,
+    _image_to_png_bytes,
+)
 
 
 # PNGs from workflow E2E tests: ``screenshot_{workflow_stem}_{test_name}.png``
 WORKFLOW_SCREENSHOT_EXPECTED_DIR = os.path.join(
     REPO_ROOT, "docs", "examples", "dataflows", "expected_outputs"
 )
-
-
-def _wait_for_reactflow_ready(
-    page: Page,
-    *,
-    padding: float = 0.2,
-    stable_frames: int = 3,
-    timeout_ms: int = 10000,
-    node_ids: list[str] | None = None,
-    max_zoom: float | None = None,
-) -> None:
-    """Force ReactFlow into a deterministic viewport before screenshotting.
-
-    With *node_ids* the fit frames only those nodes, at most *max_zoom*.
-
-    Without this, ``save_workflow_test_screenshot`` races the app-side
-    ``fitView`` call in ``useWorkflowOperations`` (which runs on a
-    ``setTimeout`` after the workflow is uploaded). The screenshot can
-    fire before the transform has been applied, producing a pre-fit
-    canvas where nodes overflow the viewport.
-
-    Strategy:
-
-    1. Wait until at least one ``.react-flow__node`` is on the page.
-    2. Call ``fitView({ padding, duration: 0 })`` on the instance
-       exposed at ``window.__curio_reactFlow`` (see ``MainCanvas.tsx``).
-       ``duration: 0`` skips the ReactFlow animation so the transform
-       is applied synchronously.
-    3. Poll the ``.react-flow__viewport`` ``transform`` attribute until
-       it has stayed identical for ``stable_frames`` consecutive reads
-       (guards against Monaco's layout settling and any late
-       node-size measurements from ReactFlow).
-    """
-    page.wait_for_function(
-        "() => document.querySelectorAll('.react-flow__node').length > 0",
-        timeout=timeout_ms,
-    )
-
-    page.evaluate(
-        """({ padding, nodeIds, maxZoom }) => {
-            const fit = window.__curio_fitViewWithMenuOffset;
-            if (typeof fit === 'function') {
-                const options = { padding, duration: 0, includeHiddenNodes: true };
-                if (nodeIds) options.nodes = nodeIds.map((id) => ({ id }));
-                if (maxZoom !== null) options.maxZoom = maxZoom;
-                fit(options);
-            }
-        }""",
-        {"padding": padding, "nodeIds": node_ids, "maxZoom": max_zoom},
-    )
-
-    page.wait_for_function(
-        """(stable_frames) => {
-            const vp = document.querySelector('.react-flow__viewport');
-            if (!vp) return false;
-            const current = vp.style.transform || '';
-            if (!current) return false;
-            window.__curio_vp_samples = window.__curio_vp_samples || [];
-            const samples = window.__curio_vp_samples;
-            samples.push(current);
-            if (samples.length > stable_frames) samples.shift();
-            if (samples.length < stable_frames) return false;
-            return samples.every((s) => s === samples[0]);
-        }""",
-        arg=stable_frames,
-        timeout=timeout_ms,
-    )
-
-    page.evaluate("delete window.__curio_vp_samples")
-
-
-# Each Autark map canvas gets its own pixels as a CSS background for the length
-# of one capture. On the GPU runner no Chrome screenshot includes a hardware
-# WebGPU canvas (#427): the maps draw, and every frame showed them blank. A CSS
-# background is painted by the page's own compositor, which the screenshot does
-# capture, and it sits under the canvas and the map's overlays. Where the
-# screenshot does include the canvas (a Mac), the opaque map covers it, so the
-# frame is unchanged.
-_PAINT_MAP_CANVASES_JS = """async () => {
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    let painted = 0;
-    for (const c of document.querySelectorAll('canvas[id^="autk-grammar-map-"]')) {
-        let url;
-        try { url = c.toDataURL('image/png'); } catch (e) { continue; }
-        c.dataset.curioCaptureBackground = JSON.stringify(
-            [c.style.backgroundImage, c.style.backgroundSize, c.style.backgroundRepeat]);
-        c.style.backgroundImage = `url("${url}")`;
-        c.style.backgroundSize = '100% 100%';
-        c.style.backgroundRepeat = 'no-repeat';
-        painted += 1;
-    }
-    if (painted) await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    return painted;
-}"""
-
-_UNPAINT_MAP_CANVASES_JS = """() => {
-    for (const c of document.querySelectorAll('canvas[data-curio-capture-background]')) {
-        const [image, size, repeat] = JSON.parse(c.dataset.curioCaptureBackground);
-        c.style.backgroundImage = image;
-        c.style.backgroundSize = size;
-        c.style.backgroundRepeat = repeat;
-        delete c.dataset.curioCaptureBackground;
-    }
-}"""
-
-
-@contextmanager
-def _map_canvases_painted(page: Page):
-    """Autark map canvases carry their own pixels as a background while inside."""
-    painted = page.evaluate(_PAINT_MAP_CANVASES_JS)
-    try:
-        yield painted
-    finally:
-        if painted:
-            page.evaluate(_UNPAINT_MAP_CANVASES_JS)
-
-
-def _capture_full_page(page: Page):
-    """Return a Pillow RGB image of the full scrollable page.
-
-    Scrolls to top-left first so the capture is deterministic, then uses
-    Playwright's ``full_page=True`` to grab everything.
-    """
-    from PIL import Image
-
-    page.evaluate("window.scrollTo(0, 0)")
-    with _map_canvases_painted(page):
-        raw = page.screenshot(full_page=True)
-    return Image.open(BytesIO(raw)).convert("RGB")
-
-
-def _capture_element(page: Page, selector: str):
-    """Return a Pillow RGB image of one element, or raise if it is not there.
-
-    For a baseline whose subject is a panel rather than a page. A full-page
-    capture of, say, an agent chat turn is more than half static canvas and
-    chrome, which does not just waste the image - it dilutes the comparison,
-    since a regression inside the panel is a small fraction of the frame
-    against a 10% budget.
-    """
-    from PIL import Image
-
-    locator = page.locator(selector)
-    locator.wait_for(state="visible", timeout=15000)
-    with _map_canvases_painted(page):
-        raw = locator.screenshot()
-    return Image.open(BytesIO(raw)).convert("RGB")
-
-
-def _image_to_png_bytes(img) -> bytes:
-    """Encode a Pillow image to PNG bytes for Allure attachments."""
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
 
 
 def dump_browser_log(
@@ -237,135 +90,6 @@ def dump_browser_log(
     except Exception:
         pass
     return log_path
-
-
-def accept_confirm_dialog(
-    page: Page,
-    *,
-    title,
-    button: str,
-    timeout: float = 10000,
-):
-    """Accept the in-app confirmation a catalog raises (#196, #197).
-
-    The three catalogs replaced ``window.confirm`` with a ``ConfirmDialog``
-    built on ``ModalShell``, so ``page.once("dialog", ...)`` no longer fires -
-    a test still relying on it clicks the card button and then silently does
-    nothing, and fails later for the wrong reason.
-
-    The drawers are themselves ``role="dialog"``, so a bare
-    ``get_by_role("dialog")`` is ambiguous whenever one is open. The modal is
-    located by its accessible name instead, which ConfirmDialog wires from its
-    heading through ``aria-labelledby``.
-
-    ``title`` takes a string or a compiled pattern; ``button`` is the confirm
-    button's exact label (it often repeats the card's, e.g. "Add to project").
-    Returns the dialog locator so a caller can assert on its body first.
-    """
-    dialog = page.get_by_role("dialog", name=title)
-    expect(dialog).to_be_visible(timeout=timeout)
-    dialog.get_by_role("button", name=button, exact=True).click()
-    expect(dialog).to_have_count(0, timeout=timeout)
-    return dialog
-
-
-def leave_agent_badge(page: Page) -> None:
-    """Take focus and the pointer off the agent's badge after a chat closes.
-
-    Closing the chat hands focus back to the button that opened it, and the
-    badge shows its name label and detach x while it has focus or hover, so
-    both would otherwise sit in a canvas capture.
-    """
-    page.evaluate("document.activeElement && document.activeElement.blur()")
-    page.mouse.move(0, 400)
-    page.wait_for_function(
-        "() => !document.querySelector('[aria-label^=\"Open chat with\"]:focus')",
-        timeout=5000,
-    )
-
-
-def dismiss_toasts(
-    page: Page,
-    *,
-    timeout: float = 3000,
-    quiet_ms: float = 2500,
-    max_rounds: int = 8,
-) -> int:
-    """Close visible toasts and wait for the toast region to go quiet.
-
-    Worth doing before any visual baseline. Toasts are transient, bottom-right,
-    and up to 360px wide, so whether one is on screen at capture time depends on
-    timing rather than on the behaviour under test - and they sit exactly where
-    canvas content usually is. Leaving them in makes the comparison flaky and
-    obscures what the baseline is for.
-
-    The *quiet* wait is the part that matters. A node reaching "Done" does not
-    mean its follow-up work has finished: the dataset install-save is debounced
-    500 ms past it and answers seconds later, so the toasts it raises (a save,
-    an install) arrive well after the status flips. A single sweep dismisses
-    nothing (there is nothing there yet) and the toast then lands in the
-    capture. So sweep, wait ``quiet_ms`` for a late arrival, and sweep again
-    until a full window passes with none.
-
-    Never call this before an ASSERTION about a toast - it erases the evidence.
-    A "couldn't be generated" warning in particular is a bug rather than routine
-    noise (#180); ``test_computed_json_output_e2e.py`` records toasts through a
-    MutationObserver and fails on that one.
-
-    Safe to call when there are none. Bounded by *max_rounds*, so a toast that
-    genuinely re-fires forever costs a few seconds rather than hanging - it just
-    ends up in the screenshot, which is the honest outcome.
-
-    Closes the stack from the bottom up; see the comment on the click for why
-    the top of it may be unreachable.
-    """
-    container = page.locator('[aria-label="Notifications"]')
-    dismissed = 0
-
-    for _ in range(max_rounds):
-        # Each close click re-renders the list, so re-resolve rather than
-        # iterating a stale handle set.
-        for _ in range(12):
-            buttons = container.locator("button.btn-close")
-            if buttons.count() == 0:
-                break
-            # From the BOTTOM of the stack, not the top. The region is anchored
-            # to the bottom of the viewport and grows upward, so once enough
-            # toasts are up the oldest is clipped off the TOP of the screen -
-            # and a position:fixed element off-screen cannot be scrolled into
-            # view, so clicking `first` times out and the sweep returns having
-            # closed nothing. `run-all-survives-a-failed-node` ends with five
-            # error toasts and lost 26.87% of its frame to exactly that. The
-            # last toast is always on screen, and closing it brings the rest
-            # down one slot.
-            try:
-                buttons.last.click(timeout=1000)
-                dismissed += 1
-            except PlaywrightTimeoutError:
-                # Still unreachable - covered, or mid-transition. Close it the
-                # way its own button would, so one stuck toast cannot wedge the
-                # sweep for every toast behind it.
-                try:
-                    buttons.last.evaluate("el => el.click()")
-                    dismissed += 1
-                except Exception:
-                    break
-
-        # Did another arrive during the quiet window? wait_for_function resolving
-        # means one showed up, so loop and clear it; a timeout means quiet.
-        try:
-            page.wait_for_function(
-                "() => !!document.querySelector('[aria-label=\"Notifications\"] .toast')",
-                timeout=quiet_ms,
-            )
-        except PlaywrightTimeoutError:
-            break
-
-    # A close click leaves the pointer where the toast was, often over a card
-    # or button whose hover style would then sit in the capture.
-    if dismissed:
-        page.mouse.move(0, 400)
-    return dismissed
 
 
 #: Whether a missing baseline may be created by this run. Off unless
@@ -514,50 +238,6 @@ def _box_mask(boxes, shape):
             mask[top:bottom, left:right] = True
     return mask
 
-#: The app's first font is Rubik, fetched from Google Fonts at runtime
-#: (src/index.html). Everything after it in the stack is a system fallback, so
-#: whether that fetch lands decides the TYPEFACE, not just the antialiasing: a
-#: baseline minted during a CDN hiccup is rendered in Liberation Sans or
-#: Helvetica and then disagrees with every later run forever, for a reason no
-#: diff percentage explains.
-WEBFONT_FAMILY = "Rubik"
-WEBFONT_TIMEOUT_MS = 15000
-
-
-def _wait_for_webfont(page) -> bool:
-    """Wait for the app's webfont to finish loading. Returns whether it did.
-
-    Never raises. On a comparison run a missing font will show up as a diff,
-    which is the honest outcome; it is the MINT path that must refuse (see
-    :func:`_assert_mintable`). Waiting here rather than only when minting means
-    both sides of a comparison are quiesced the same way.
-    """
-    try:
-        page.wait_for_function(
-            "document.fonts && document.fonts.status === 'loaded'",
-            timeout=WEBFONT_TIMEOUT_MS,
-        )
-    except Exception:  # noqa: BLE001 - a font wait must never fail a test
-        pass
-    # NOT document.fonts.check(): it answers "would this render?", and with the
-    # stylesheet missing there is no @font-face for Rubik at all, so the family
-    # resolves straight to a system fallback and check() reports true. Verified
-    # by blackholing fonts.googleapis.com: check() said true while the capture
-    # came out in a different typeface, 9% off the real baseline.
-    #
-    # The honest signal is whether a FontFace for the family is actually loaded,
-    # which is empty when the stylesheet never arrived.
-    try:
-        return bool(page.evaluate(
-            "(family) => !!document.fonts && "
-            "[...document.fonts].some(f => "
-            "  (f.family || '').replace(/[\"\']/g, '').includes(family) "
-            "  && f.status === 'loaded')",
-            WEBFONT_FAMILY,
-        ))
-    except Exception:  # noqa: BLE001
-        return False
-
 
 def _assert_mintable(image, expected_path: str, page) -> None:
     """Refuse to write a baseline that is obviously not what we came for.
@@ -592,87 +272,6 @@ def _assert_mintable(image, expected_path: str, page) -> None:
 #: noise and none for a screen that changed. A comparison may ask for less,
 #: never more.
 MAX_DIFF_RATIO = 0.10
-
-#: How long a capture waits for the nodes on the canvas to stop running.
-NODE_SETTLE_TIMEOUT_MS = 180_000
-
-_NO_NODE_RUNNING_JS = """(need) => {
-    const running = document.querySelectorAll(
-        '.react-flow__node [data-curio-node-status="running"]').length;
-    window.__curioIdleSamples = running ? 0 : (window.__curioIdleSamples || 0) + 1;
-    return window.__curioIdleSamples >= need;
-}"""
-
-_RUNNING_NODE_IDS_JS = """() => [...document.querySelectorAll('.react-flow__node')]
-    .filter((n) => n.querySelector('[data-curio-node-status="running"]'))
-    .map((n) => n.getAttribute('data-id'))"""
-
-
-def _wait_for_no_node_running(page: Page, *, timeout_ms: int = NODE_SETTLE_TIMEOUT_MS,
-                              report_as: str | None = None) -> None:
-    """Block until no node on the canvas is running, over three samples in a row.
-
-    A view below a node that just ran draws on its own once the new input
-    reaches it, which is after that node reports Done. A capture taken in that
-    gap records the view mid-draw: a spinner and an empty body. The draw starts
-    a few browser tasks after the upstream node settles, so one idle sample is
-    not enough.
-
-    With *report_as*, the nodes found running when the wait begins are noted in
-    the test output and the Allure report under that name, so a run the caller
-    did not start stays visible even when it ends in time.
-    """
-    if report_as:
-        running = page.evaluate(_RUNNING_NODE_IDS_JS)
-        if running:
-            note = f"{report_as}: still running when the wait began: {running}"
-            print(note)
-            try:
-                allure.attach(note, name=report_as, attachment_type=allure.attachment_type.TEXT)
-            except Exception:
-                pass
-    page.evaluate("() => { window.__curioIdleSamples = 0; }")
-    try:
-        page.wait_for_function(_NO_NODE_RUNNING_JS, arg=3, polling=150, timeout=timeout_ms)
-    except PlaywrightTimeoutError:
-        running = page.evaluate(_RUNNING_NODE_IDS_JS)
-        raise AssertionError(
-            f"nodes still running after {timeout_ms} ms, so the capture would "
-            f"show them mid-run: {running}. Pass allow_running=True only when a "
-            "run in progress is what the baseline shows."
-        ) from None
-
-
-class _Comparison(NamedTuple):
-    actual_cmp: object
-    expected_cmp: object
-    diff: object
-    arr: object
-    counted: object
-    mismatched: int
-    total: int
-    ratio: float
-
-
-def _compare_images(actual_img, expected_img, pixel_threshold: int) -> _Comparison:
-    """Count the pixels where *actual_img* and *expected_img* differ by more than
-    *pixel_threshold* in any channel, both resized to the larger of their sizes.
-    """
-    from PIL import Image, ImageChops
-    import numpy as np
-
-    target_w = max(actual_img.width, expected_img.width)
-    target_h = max(actual_img.height, expected_img.height)
-    actual_cmp = actual_img.resize((target_w, target_h), Image.LANCZOS)
-    expected_cmp = expected_img.resize((target_w, target_h), Image.LANCZOS)
-
-    diff = ImageChops.difference(actual_cmp, expected_cmp)
-    arr = np.asarray(diff)
-    total = int(arr.shape[0] * arr.shape[1])
-    counted = (arr > pixel_threshold).any(axis=2)
-    mismatched = int(counted.sum())
-    ratio = mismatched / total if total else 0.0
-    return _Comparison(actual_cmp, expected_cmp, diff, arr, counted, mismatched, total, ratio)
 
 
 def _remint(page, expected_path, capture, *, clip_selector, pixel_threshold,
@@ -956,153 +555,6 @@ def save_workflow_test_screenshot(
             f"See Allure report attachments for visual diff."
         )
     return expected_path
-
-
-#: Per-channel tolerance of a node close-up. A map that drew nothing shows the
-#: node's own gray (242, 242, 242), which is 10 per channel from the pale
-#: background most Autark maps draw (232, 239, 242), so at the default 30 a
-#: blank sparse map counted only its few features: 0.5% of the close-up in
-#: proof run 36788122499. At 5 the same blank is 75%. Two CI captures of every
-#: close-up were byte-identical or 0.02% apart at any tolerance (run 36788096514).
-CLOSEUP_PIXEL_THRESHOLD = 5
-
-#: Budget of a node close-up, tighter than MAX_DIFF_RATIO. A blank plot keeps
-#: its panel and loses only its marks: the tallest-bar histogram blanked to
-#: 9.27% and the scatter to 10.20% (proof run 36789368569), so at 10% one of
-#: them passed. At 5% the smallest blank is 1.85 times the budget. GPU-computed
-#: plots differ between GPUs: example 07's sunlight histogram is 4.29% apart on
-#: an H100 and an RTX PRO 6000 (run 37082234799).
-CLOSEUP_MAX_DIFF_RATIO = 0.05
-
-
-# Sets the canvas viewport's inline will-change; "" hands it back to the stylesheet.
-_VIEWPORT_WILL_CHANGE_JS = """(value) => {
-    const viewport = document.querySelector('.react-flow__viewport');
-    if (viewport) viewport.style.willChange = value;
-}"""
-
-# The page's own flow viewport is the first one: a flow drawn inside a node
-# comes later in document order.
-_VIEWPORT_COMPUTED_WILL_CHANGE_JS = """() => {
-    const viewport = document.querySelector('.react-flow__viewport');
-    return viewport ? getComputedStyle(viewport).willChange : null;
-}"""
-
-# Records whether the viewport ever took a will-change hint from now on: the
-# hint comes with a class on the flow's wrapper (useViewportMotionHint).
-_WATCH_VIEWPORT_HINT_JS = """() => {
-    const flow = document.querySelector('.react-flow');
-    const viewport = document.querySelector('.react-flow__viewport');
-    window.__curio_viewport_hint_seen = [];
-    if (window.__curio_viewport_hint_observer) window.__curio_viewport_hint_observer.disconnect();
-    if (!flow || !viewport) return false;
-    const observer = new MutationObserver(() => {
-        window.__curio_viewport_hint_seen.push(getComputedStyle(viewport).willChange);
-    });
-    observer.observe(flow, { attributes: true, attributeFilter: ['class'] });
-    window.__curio_viewport_hint_observer = observer;
-    return true;
-}"""
-
-# A point beside a node where the pointer meets the bare pane, not a node, an
-# edge or a menu: a press there pans, where a press on a node would drag it.
-_EMPTY_PANE_POINT_JS = """(id) => {
-    const pane = document.querySelector('.react-flow__pane');
-    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    if (!pane || !node) return null;
-    const p = pane.getBoundingClientRect();
-    const n = node.getBoundingClientRect();
-    const midX = n.left + n.width / 2, midY = n.top + n.height / 2;
-    for (let d = 20; d <= 600; d += 20) {
-        for (const [x, y] of [[n.left - d, midY], [n.right + d, midY], [midX, n.top - d], [midX, n.bottom + d]]) {
-            if (x < p.left + 5 || x > p.right - 5 || y < p.top + 5 || y > p.bottom - 5) continue;
-            if (document.elementFromPoint(x, y) === pane) return { x, y };
-        }
-    }
-    return null;
-}"""
-
-#: Long enough for a gesture to settle and drop the viewport's hint: d3 ends a
-#: wheel gesture 150 ms after the last wheel event, and useViewportMotionHint
-#: drops the hint 250 ms after the last move.
-VIEWPORT_SETTLE_WAIT_MS = 1000
-
-
-def empty_pane_point(page: Page, node_id: str) -> tuple[float, float]:
-    """The nearest point beside *node_id* where a press lands on the bare pane."""
-    point = page.evaluate(_EMPTY_PANE_POINT_JS, node_id)
-    assert point, f"no bare pane in view beside node {node_id}"
-    return point["x"], point["y"]
-
-
-def viewport_will_change(page: Page) -> str | None:
-    """The canvas viewport's computed ``will-change``: ``auto`` unless a gesture moves it."""
-    return page.evaluate(_VIEWPORT_COMPUTED_WILL_CHANGE_JS)
-
-
-def watch_viewport_hint(page: Page) -> None:
-    """Start recording each ``will-change`` the viewport takes; read with ``viewport_hints``."""
-    assert page.evaluate(_WATCH_VIEWPORT_HINT_JS), "no React Flow viewport on the page"
-
-
-def viewport_hints(page: Page) -> list:
-    """The computed ``will-change`` of the viewport at each change since ``watch_viewport_hint``."""
-    return page.evaluate("() => window.__curio_viewport_hint_seen || []")
-
-
-@contextmanager
-def canvas_painted_at_shown_zoom(page: Page):
-    """The canvas without a ``will-change`` hint while inside, for strict captures.
-
-    The canvas viewport is a ``will-change: transform`` layer only while a
-    pan or zoom gesture moves it (MainCanvas.css, useViewportMotionHint), and
-    Chrome may keep such a layer painted at the zoom it had before a fit
-    (#533): example 09's close-up once came out soft, its text and the map's
-    tile seams 2.62% off the baseline (run 36791096981). The inline ``auto``
-    keeps a node painted at the zoom it is shown at whatever the stylesheet
-    says. Handing the hint back can start a fresh layer, so every capture
-    compared against another one, on disk or in memory, belongs inside one
-    block.
-    """
-    page.evaluate(_VIEWPORT_WILL_CHANGE_JS, "auto")
-    try:
-        yield
-    finally:
-        page.evaluate(_VIEWPORT_WILL_CHANGE_JS, "")
-
-
-def save_node_closeup(
-    page: Page,
-    workflow_filepath: str,
-    node_id: str,
-    *,
-    test_name: str,
-    sweep_toasts: bool = False,
-) -> str:
-    """Compare one node, framed at up to 100% zoom, against its own baseline.
-
-    For a node whose drawing is the claim: an Autark map or plot. In a
-    full-page frame that node is a thumbnail, so one that drew nothing and
-    left its body blank moves the frame by less than the 10% budget, and the
-    comparison passes. Cropped to the node and compared at
-    ``CLOSEUP_PIXEL_THRESHOLD`` against ``CLOSEUP_MAX_DIFF_RATIO``, the same
-    blank is several times the budget.
-
-    Leaves the viewport on the node; a later full-page capture fits it again.
-    """
-    with canvas_painted_at_shown_zoom(page):
-        frame_nodes(page, [node_id])
-        return save_workflow_test_screenshot(
-            page,
-            workflow_filepath,
-            test_name=test_name,
-            pixel_threshold=CLOSEUP_PIXEL_THRESHOLD,
-            max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
-            clip_selector=f'.react-flow__node[data-id="{node_id}"]',
-            fit_reactflow=False,
-            sweep_toasts=sweep_toasts,
-            closeup=True,
-        )
 
 
 def park_pointer(page: Page) -> None:

@@ -11,6 +11,7 @@ export function InputIcon({ type }: { type: TIconCardinality }) {
 
   return (
     <div
+      data-curio-port-marker="input"
       style={{
         position: "absolute",
         top: 0,

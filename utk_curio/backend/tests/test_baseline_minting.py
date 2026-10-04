@@ -23,6 +23,7 @@ import re
 import pytest
 from PIL import Image
 
+from utk_curio.backend.tests.test_frontend.utils import capture_waits
 from utk_curio.backend.tests.test_frontend.utils import screenshots as e2e_utils
 
 
@@ -347,7 +348,7 @@ class _RunningNodePage:
         return ["node-still-drawing"] if "data-id" in script else None
 
     def wait_for_function(self, *a, **k):
-        raise e2e_utils.PlaywrightTimeoutError("still running")
+        raise capture_waits.PlaywrightTimeoutError("still running")
 
 
 class TestARunningNode:

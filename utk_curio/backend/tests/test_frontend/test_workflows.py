@@ -187,11 +187,14 @@ INTERACTIONS = {
     # scatter's dense band, drawn under thousands of others: in a sweep of 80
     # picks across the map, most changed fewer pixels than a gesture has to
     # (CI run 36809892522). This one, near the map's left edge, lights a tract
-    # with gt_65 232, right of the band, where its point is alone (52 pixels).
+    # with gt_65 232, right of the band, where its point is alone (50 pixels).
+    # The spot moves when the map's size does: once the map kept clear of the
+    # port markers (#631), the old spot lit nothing, and a new sweep of 85
+    # picks found the same tract here (CI run 37154691120).
     "09-heterogeneous-data-linked-views.json": (
         Interaction("scatter-brush", source=EXAMPLE_09_SCATTER, target=EXAMPLE_09_MAP, gesture="brush"),
         Interaction("map-pick", source=EXAMPLE_09_MAP, target=EXAMPLE_09_SCATTER, gesture="pick",
-                    at=(0.05, 0.56)),
+                    at=(0.03, 0.6)),
     ),
     # Autark to Autark: a histogram brush and a building map, through a pool.
     # No pick the other way: at the pair's 86% zoom a building is a few

@@ -48,6 +48,10 @@ DEFAULT_TIMEOUT_CLASS = "standard"
 PERMISSION_SERVER_CODE = "server-code"
 PERMISSION_SERVER_NETWORK = "server-network"
 
+#: The environment variable that hands a handler its capped persistent
+#: directory (set by the runtime, read by the package's own code).
+DATA_DIR_ENV = "CURIO_PKG_DATA_DIR"
+
 #: Size bounds (memo dev/91 §3/§6): checked at the route before any worker
 #: spawns, and on the reply before anything reaches the client.
 PAYLOAD_MAX_BYTES = 2 * 1024 * 1024

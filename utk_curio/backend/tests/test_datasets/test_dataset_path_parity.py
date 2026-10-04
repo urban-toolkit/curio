@@ -155,15 +155,18 @@ def test_the_scanner_finds_every_id_the_curated_examples_reference():
     assert checked, "no example resolves a dataset by id; expected several"
 
 
-def test_the_scanner_finds_every_id_the_preambles_example_references():
-    """The agents' shared preamble carries a worked dataflow that agents
-    copy, so its ids follow the same rule as the curated examples'."""
+def test_the_scanner_finds_every_id_the_worked_examples_reference():
+    """Agents are shown the "Used" dataflows of ``llm-prompts/examples.md`` as
+    worked examples and copy them, so their ids follow the same rule as the
+    curated examples'."""
     import json
 
-    from utk_curio.backend.app.agents.domain import contracts
+    from utk_curio.backend.app.agents.application.turns import examples
 
-    text = contracts.render_default_preamble()
-    start = text.index("An example of a dataflow:\n\n") + len("An example of a dataflow:\n\n")
-    example = json.loads(text[start:text.index("\nAttention:", start)])
-    checked = _check_catalog_helper_ids("the preamble's example", example["dataflow"]["nodes"])
-    assert checked, "the preamble's example resolves no dataset by id; expected three"
+    used = [entry for entry in examples.read_index() if entry.section == examples.USED]
+    assert used, "the index lists no Used dataflow; this test would be vacuous"
+    checked = 0
+    for entry in used:
+        spec = json.loads(entry.path.read_text(encoding="utf-8"))
+        checked += _check_catalog_helper_ids(entry.target, spec["dataflow"]["nodes"])
+    assert checked, "no worked example resolves a dataset by id; expected several"

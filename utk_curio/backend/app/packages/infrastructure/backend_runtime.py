@@ -482,7 +482,7 @@ def invoke_from_files(
         }
         if data_dir is not None:
             data_dir.mkdir(parents=True, exist_ok=True)
-            extra_env["CURIO_PKG_DATA_DIR"] = str(data_dir)
+            extra_env[bc.DATA_DIR_ENV] = str(data_dir)
         if overlay_dir is not None:
             # The reserved §0.1 Option-2 slot: a per-package pip --target
             # overlay rides PYTHONPATH — parameter values, not a redesign.
