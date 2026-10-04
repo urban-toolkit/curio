@@ -13,14 +13,16 @@ import { NodeType } from "../constants";
 
 type NodeSpec = { id: string; type: string; content?: string };
 
-function spec(nodes: NodeSpec[], edges: Array<[string, string]> = []): TrillSpec {
+/** An edge is [source, target], or [source, target, targetHandle] for a circle. */
+function spec(nodes: NodeSpec[], edges: Array<[string, string, string?]> = []): TrillSpec {
   return {
     dataflow: {
       nodes: nodes.map((n, i) => ({ ...n, x: i * 700, y: 0 })),
-      edges: edges.map(([source, target], i) => ({
+      edges: edges.map(([source, target, targetHandle], i) => ({
         id: `e${i}`,
         source,
         target,
+        ...(targetHandle ? { targetHandle } : {}),
       })),
       name: "Test",
       task: "",
@@ -47,7 +49,6 @@ describe("trillToNotebook", () => {
       NodeType.DATA_SUMMARY,
       NodeType.DATA_EXPORT,
       NodeType.DATA_POOL,
-      NodeType.MERGE_FLOW,
       NodeType.VIS_VEGA,
       NodeType.VIS_SIMPLE,
       NodeType.AUTK_GRAMMAR,
@@ -122,22 +123,24 @@ describe("trillToNotebook", () => {
     expect(downstream.source).toContain("result_dst = node_dst(data_src)");
   });
 
-  it("passes several inputs as the tuple the sandbox would hand a merge node", () => {
+  it("passes a node's several inputs as the tuple the sandbox hands it, in circle order", () => {
+    // The edges are listed against circle order on purpose: `a` feeds circle 1
+    // and `b` circle 0, so the tuple must follow the circles, not the edge list.
     const nb = trillToNotebook(
       spec(
         [
           { id: "a", type: NodeType.DATA_LOADING, content: "return 1\n" },
           { id: "b", type: NodeType.DATA_LOADING, content: "return 2\n" },
-          { id: "m", type: NodeType.MERGE_FLOW },
+          { id: "m", type: NodeType.COMPUTATION_ANALYSIS, content: "return arg\n" },
         ],
         [
-          ["a", "m"],
-          ["b", "m"],
+          ["a", "m", "in_1"],
+          ["b", "m", "in"],
         ]
       )
     );
-    const merge = codeCells(nb).find((c) => c.source.startsWith("result_m ="))!;
-    expect(merge.source).toBe("result_m = (data_a, data_b)");
+    const cell = codeCells(nb).find((c) => c.source.includes("def node_m(arg):"))!;
+    expect(cell.source.split("\n").pop()).toBe("result_m = node_m((data_b, data_a))");
   });
 
   it("records a node a Python kernel cannot run instead of dropping it", () => {
