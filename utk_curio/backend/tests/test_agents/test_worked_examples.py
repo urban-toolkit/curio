@@ -140,9 +140,22 @@ class TestAnEvaluationNeverSeesItsExample:
         return authorization.mark_spec(self.PLAIN, authorization.new_marker("run-1", fixture_id))
 
     def test_the_marker_names_the_example_to_leave_out(self):
-        assert examples.excluded_by(self._marked(NINE)) == {NINE}
+        excluded = examples.excluded_by(self._marked(NINE))
+        assert NINE in excluded
         assert examples.excluded_by(self.PLAIN) == set()
-        assert NINE not in _keys(examples.select(MILAN, exclude=examples.excluded_by(self._marked(NINE))))
+        assert NINE not in _keys(examples.select(MILAN, exclude=excluded))
+
+    def test_an_evaluation_is_shown_no_part_of_its_answer(self):
+        # Exactly the examples that share a node or edge id, or a code line of
+        # SHARED_LINE_CHARS or more, with the scored dataflow are left out.
+        answer = examples._answer_parts(_pool()[NINE].spec)
+        assert answer, "example 09 has no answer parts; this test would be vacuous"
+        excluded = examples.excluded_by(self._marked(NINE))
+        for example in _pool().values():
+            shares = bool(examples._answer_parts(example.spec) & answer)
+            assert (example.key in excluded) == shares, example.key
+        block = examples.block_for(MILAN, exclude=excluded) or ""
+        assert not [part for part in answer if part in block]
 
     def test_every_fixture_id_names_its_example(self):
         from utk_curio.backend.app.agents.evaluation.fixtures import load_fixtures

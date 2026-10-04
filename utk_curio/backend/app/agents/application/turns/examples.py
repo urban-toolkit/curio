@@ -72,6 +72,10 @@ HEADING = (
     "examples: a dataset is loaded by its Data Catalog id, never a guessed filename."
 )
 
+#: How long a code line must be to count as part of an evaluation's answer: an
+#: example that shares one with the scored dataflow is not shown to its runs.
+SHARED_LINE_CHARS = 25
+
 # An evaluation marks the project it builds with ``dataflow.evaluation``
 # (``agents/evaluation/authorization.MARKER_KEY``). Its ``fixtureId`` is the
 # stem of the example the run is scored against, so no run in that project is
@@ -192,10 +196,50 @@ def dataset_ids_of(spec: object) -> set[str]:
 
 
 def excluded_by(spec: object) -> set[str]:
-    """What a run in this project must not be shown: the example an evaluation scores it against."""
+    """What a run in this project must not be shown.
+
+    An evaluation scores the run against one shipped dataflow, named by its
+    marker's ``fixtureId``. The run is shown neither that dataflow nor any
+    example that shares a piece of it (a node or edge id, or a code line of
+    ``SHARED_LINE_CHARS`` or more): either would hand the run part of the
+    answer, and the score would measure copying."""
     marker = _dataflow(spec).get(_EVALUATION_KEY)
     fixture_id = marker.get("fixtureId") if isinstance(marker, dict) else None
-    return {fixture_id} if isinstance(fixture_id, str) and fixture_id else set()
+    if not isinstance(fixture_id, str) or not fixture_id:
+        return set()
+    excluded = {fixture_id}
+    answer = _scored_parts(fixture_id)
+    if answer:
+        excluded.update(e.key for e in used_examples() if _answer_parts(e.spec) & answer)
+    return excluded
+
+
+def _scored_parts(fixture_id: str) -> set[str]:
+    """The answer parts of the shipped dataflow *fixture_id* names, if any."""
+    for key, path in projects_services.shipped_dataflow_paths().items():
+        if fixture_id in (key, Path(key).name, path.stem):
+            try:
+                return _answer_parts(json.loads(path.read_text(encoding="utf-8")))
+            except (OSError, ValueError):
+                return set()
+    return set()
+
+
+def _answer_parts(spec: object) -> set[str]:
+    """A dataflow's node and edge ids, and its code lines of ``SHARED_LINE_CHARS`` or more."""
+    dataflow = _dataflow(spec)
+    parts: set[str] = set()
+    for item in [*_dicts(dataflow.get("nodes")), *_dicts(dataflow.get("edges"))]:
+        if isinstance(item.get("id"), str) and item["id"]:
+            parts.add(item["id"])
+    for node in _dicts(dataflow.get("nodes")):
+        content = node.get("content")
+        if isinstance(content, str):
+            parts.update(
+                line.strip() for line in content.splitlines()
+                if len(line.strip()) >= SHARED_LINE_CHARS
+            )
+    return parts
 
 
 def used_examples() -> list[Example]:
