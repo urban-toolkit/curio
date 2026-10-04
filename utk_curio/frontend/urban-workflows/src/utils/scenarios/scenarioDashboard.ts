@@ -81,7 +81,9 @@ export function scenarioDashboard(
     }
   }
 
-  const levels = computeTopologicalLevels(nodes as any, edges as any);
+  const ids = new Set(nodes.map((node) => node.id));
+  const between = edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target));
+  const levels = computeTopologicalLevels(nodes as any, between as any);
   const rank = new Map<string, number>();
   levels.forEach((ids, level) => ids.forEach((id) => rank.set(id, level)));
   const ordered = (group: FlowNodeLike[]) =>
