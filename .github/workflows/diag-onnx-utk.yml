@@ -1,0 +1,57 @@
+name: Diag ONNX on utk
+
+# Diagnostic, never merged: runs example 10's Image Segmentation in an isolated
+# child at the deployment's limits on utk, the host dev runs on, and records
+# how it ends and what it spends (utk_curio/sandbox/tests/test_onnx_utk_probe.py).
+on:
+  push:
+    branches: ["diag/onnx-utk**"]
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: diag-onnx-utk
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: [self-hosted, gpu, curio]
+    timeout-minutes: 40
+    env:
+      IMAGE: ghcr.io/urban-toolkit/curio-ci:5a4c0b6cb4ce40aa8ae4f1bec4b68d2b8c4aaf19
+    steps:
+      - name: 🧹 Reclaim root-owned workspace files
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🔬 Run the probe in main's CI image
+        run: |
+          set -euo pipefail
+          mkdir -p probe-report
+          docker pull "$IMAGE"
+          docker run --rm \
+            -v "$PWD/utk_curio/sandbox/tests/test_onnx_utk_probe.py:/app/utk_curio/sandbox/tests/test_onnx_utk_probe.py:ro" \
+            -v "$PWD/probe-report:/report" \
+            -w /app -e PYTHONPATH=/app \
+            "$IMAGE" \
+            python -m pytest utk_curio/sandbox/tests/test_onnx_utk_probe.py -v -p no:cacheprovider \
+              --junitxml=/report/probe.xml || true
+          test -f probe-report/probe.xml
+
+      - name: 📤 Upload the probe report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: onnx-utk-probe
+          path: probe-report/
+          retention-days: 7
