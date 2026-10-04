@@ -29,7 +29,6 @@ from utk_curio.backend.app.execution.workflow_spec import (
     PY_CODE_TYPES,
     WorkflowSpec,
     parse_workflow_dict,
-    resolve_code_references,
     seed_node_code,
 )
 from utk_curio.backend.app.execution.code_references import CodeReferenceError
@@ -230,22 +229,11 @@ def _resolve_input(spec: WorkflowSpec, node_id: str, outputs: dict) -> tuple[str
 
 
 def _ancestor_slice(spec: WorkflowSpec, target_id: str) -> set[str]:
-    """The target + every data-flow ancestor (reverse BFS — the server twin
-    of ``playNodesUpTo``'s subgraph selection)."""
-    predecessors: dict[str, list[str]] = {}
-    for edge in spec.edges:
-        if edge.get("type") == "Interaction":
-            continue
-        predecessors.setdefault(edge["target"], []).append(edge["source"])
-    wanted = {target_id}
-    frontier = [target_id]
-    while frontier:
-        node_id = frontier.pop()
-        for source in predecessors.get(node_id, []):
-            if source not in wanted:
-                wanted.add(source)
-                frontier.append(source)
-    return wanted
+    """The target and every data-flow ancestor: the same slice a run up to a
+    node takes (``run_plan.ancestors``)."""
+    from utk_curio.backend.app.execution.run_plan import ancestors
+
+    return ancestors(target_id, spec.edges)
 
 
 def run_through_node(
@@ -390,7 +378,7 @@ def run_through_node(
             )
             return report
         if not is_code:
-            # Pass-through semantics (merge/vis/pool) — same as the e2e runner.
+            # Pass-through semantics (vis/pool), same as the e2e runner.
             upstreams = spec.upstream_nodes(node.id)
             if len(upstreams) == 1 and upstreams[0] in outputs:
                 outputs[node.id] = outputs[upstreams[0]]
@@ -406,9 +394,7 @@ def run_through_node(
         # like a hang, without asking the sandbox.
         widget_problem = None
         try:
-            resolved = resolve_code_references(
-                content_text, node.widgets, "python" if is_py else "javascript", spec.input_slots(node.id)
-            )
+            resolved = spec.node_code(node, "python" if is_py else "javascript", content_text)
         except CodeReferenceError as exc:
             resolved, widget_problem = content_text, str(exc)
         seeded = seed_node_code(resolved, seed)

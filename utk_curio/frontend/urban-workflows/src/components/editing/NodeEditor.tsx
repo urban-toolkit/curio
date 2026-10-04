@@ -30,6 +30,7 @@ import {
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { ICodeData } from "../../types";
 import { useFlowContext } from "../../providers/FlowProvider";
+import { useNotebookViewContext } from "../../providers/flow/notebookViewContext";
 import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
 import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
@@ -41,6 +42,7 @@ import {
     type ReferenceScope,
 } from "../../utils/references/codeReferences";
 import { useInputScope } from "../../hook/useInputScope";
+import { useSharedWidgets } from "../../hook/useSharedWidgets";
 
 const NO_WIDGETS: WidgetDef[] = [];
 
@@ -124,12 +126,14 @@ function NodeEditor({
             ? "javascript"
             : "python";
 
-    // #662: what the node's references name: its widgets and its wired
-    // inputs. Input, layer and column tags sit above its code or spec.
+    // #662: what the node's references name: its widgets, its wired inputs
+    // and the Parameter nodes' shared tags. Input, layer, column and shared
+    // tags sit above its code or spec.
     const { inputs, emptyInputs, loadColumns } = useInputScope(data);
+    const shared = useSharedWidgets();
     const scope: ReferenceScope = useMemo(
-        () => ({ widgets: widgetsTab ? widgets : NO_WIDGETS, inputs }),
-        [widgetsTab, widgets, inputs],
+        () => ({ widgets: widgetsTab ? widgets : NO_WIDGETS, inputs, shared }),
+        [widgetsTab, widgets, inputs, shared],
     );
     // The play callback is registered once, so a run without a Widgets tab
     // reads the scope from here.
@@ -140,7 +144,16 @@ function NodeEditor({
     // forcing the pane unconditionally rendered a pinned code node as an empty
     // tile with nothing reachable on it.
     const hasOutputPane = outputId != undefined || contentComponent != undefined;
-    const effectiveTab = dashboardOn && hasOutputPane ? "output" : activeTab;
+    // A notebook cell shows its input and its output at once: the output pane
+    // stays visible under the input tabs (Node.css), so a run, which would
+    // switch to the Output tab, leaves the input tab in place.
+    const notebook = useNotebookViewContext();
+    const split = notebook.on && !dashboardOn && hasOutputPane && Boolean(code || grammar);
+    const effectiveTab = dashboardOn && hasOutputPane
+        ? "output"
+        : split && activeTab === "output"
+            ? resolveInitialEditorTab({ code, grammar, widgets: widgetsTab })
+            : activeTab;
 
     const contentComponentBypass = useRef(false);
     // Set while a *load* is priming the widgets, so the marker round-trip it
@@ -298,6 +311,7 @@ function NodeEditor({
                     <Row className="g-0" style={{ height: "100%" }}>
                         <Col md={12} style={{ height: "100%", padding: 0 }}>
                             <Tab.Content
+                                className={split ? "curio-notebook-split" : undefined}
                                 style={{ ...activeTabContentStyle, zIndex: 10 }}
                             >
                                 {code ? (
@@ -349,6 +363,7 @@ function NodeEditor({
                                             onResolveError={resolveError}
                                             inputs={inputs}
                                             emptyInputs={emptyInputs}
+                                            shared={shared}
                                         />
                                     </Tab.Pane>
                                 ) : null}
@@ -398,6 +413,7 @@ function NodeEditor({
                                 {(outputId != undefined || contentComponent != undefined) ? (
                                     <Tab.Pane
                                         eventKey="output"
+                                        className={split ? "curio-notebook-output" : undefined}
                                         style={{ height: "100%", overflow: "hidden" }}
                                     >
                                         {outputId != undefined ? (
@@ -544,7 +560,7 @@ function NodeEditor({
                                 </Col>
                             ) : null}
 
-                            {(outputId != undefined || contentComponent != undefined) ? (
+                            {(outputId != undefined || contentComponent != undefined) && !split ? (
                                 <Col>
                                     <OverlayTrigger
                                         placement="right"

@@ -99,8 +99,8 @@ _PLAN_INTENT_MAX_CHARS = 300
 _PLAN_NODE_TYPE_MAX_CHARS = 120
 # dev/59 revision fields: existing node/edge ids (uuids in practice).
 _PLAN_REMOVAL_ID_MAX_CHARS = 64
-# dev/67-3: an edge may name the target's input handle (merge slots in_0..in_4;
-# named handles like in_points). The mint validates semantics; this is shape.
+# dev/67-3: an edge may name the target's input handle (input circles in,
+# in_1, ...; named handles like in_points). The mint validates semantics; this is shape.
 _PLAN_TO_HANDLE_MAX_CHARS = 24
 # dev/67-5: an optional one-liner of expected input/output for the plan card.
 _PLAN_EXPECTS_MAX_CHARS = 160
@@ -655,7 +655,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
             kind = kind_norm
         if kind == "interaction" and to_handle:
             errors.append(
-                f"{where}: an interaction edge has no merge slot — drop toHandle"
+                f"{where}: an interaction edge has no input circle: drop toHandle"
             )
             continue
         src, dst = str(src).strip(), str(dst).strip()

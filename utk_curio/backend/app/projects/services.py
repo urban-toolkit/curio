@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.projects import concurrency
 from utk_curio.backend.app.projects import repositories as repo
+from utk_curio.backend.app.projects import scenarios
 from utk_curio.backend.app.projects import storage
 from utk_curio.backend.app.projects.shipped import shipped_dataflows
 from utk_curio.backend.app.projects.schemas import (
@@ -444,7 +445,7 @@ def _carry_hand_categories(new_spec, old_spec) -> None:
 
 
 def _to_summary(
-    p, graph_preview=None, spec_revision=None, is_example=False, categories=None,
+    p, graph_preview=None, spec_revision=None, is_example=False, categories=None, scenario_list=None,
 ) -> ProjectSummary:
     """*spec_revision* keeps one meaning for the field across the API (memo
     dev/124): how many times the spec has been written, background writes
@@ -462,6 +463,7 @@ def _to_summary(
         graph_preview=graph_preview,
         is_example=is_example,
         categories=categories or {},
+        scenarios=scenario_list or [],
     )
 
 
@@ -488,6 +490,7 @@ def _to_detail(
         outputs=outputs or [],
         dataset_install_warnings=dataset_install_warnings or [],
         categories=categories or {},
+        scenarios=scenarios.scenario_summaries(spec),
     )
 
 
@@ -540,6 +543,94 @@ def _persisted_output_refs(
                     ref.node_id,
                 )
     return persisted
+
+
+#: An artifact id, and a node's parquet output, begin with the sandbox's clock
+#: in milliseconds (``sandbox/util/parsers.py::_make_id``).
+_ARTIFACT_TIME_RE = re.compile(r"^(\d{13})_[0-9a-f]{8}(?:[._]|$)")
+
+
+def _produced_at(filename: str) -> str:
+    """When an output was made, as the server knows it: the artifact id's own
+    timestamp, else now. Never the browser's clock."""
+    match = _ARTIFACT_TIME_RE.match(filename or "")
+    if match:
+        moment = datetime.fromtimestamp(int(match.group(1)) / 1000, tz=timezone.utc)
+    else:
+        moment = datetime.now(timezone.utc)
+    return moment.isoformat(timespec="milliseconds")
+
+
+def _is_newer(stamp: Optional[str], than: Optional[str]) -> bool:
+    """Whether *stamp* is later than *than*; a missing stamp is the oldest."""
+    if not stamp:
+        return False
+    if not than:
+        return True
+    try:
+        return datetime.fromisoformat(stamp) > datetime.fromisoformat(than)
+    except ValueError:
+        return False
+
+
+def _manifest_entries(manifest: Optional[dict]) -> Dict[str, dict]:
+    return {
+        o["node_id"]: o
+        for o in (manifest or {}).get("outputs", [])
+        if isinstance(o, dict) and o.get("node_id") and o.get("filename")
+    }
+
+
+def _merge_outputs(
+    incoming: List[OutputRef],
+    manifest: Optional[dict],
+    *,
+    keep_unsent: bool,
+) -> tuple[List[OutputRef], List[OutputRef], Dict[str, Optional[str]]]:
+    """Merge *incoming* output refs into the manifest's, node by node.
+
+    For a node in both, the newer output wins by ``produced_at``, so a tab that
+    never saw a run on the server cannot put back the older output it holds.
+    Returns the merged refs, the incoming refs that won (the only ones to
+    install, so an older output never overwrites a newer installed copy), and
+    each node's ``produced_at``. With *keep_unsent* the manifest's other nodes
+    stay, as when a run records one node; without it they are dropped, as when
+    a save names every output the dataflow keeps.
+    """
+    existing = _manifest_entries(manifest)
+    merged: List[OutputRef] = []
+    to_install: List[OutputRef] = []
+    stamps: Dict[str, Optional[str]] = {}
+    sent = set()
+    for ref in incoming:
+        sent.add(ref.node_id)
+        prior = existing.get(ref.node_id)
+        if prior is not None and prior["filename"] == ref.filename:
+            stamp = prior.get("produced_at")
+        else:
+            stamp = _produced_at(ref.filename)
+        if prior is not None and prior["filename"] != ref.filename and _is_newer(
+            prior.get("produced_at"), stamp
+        ):
+            merged.append(OutputRef(
+                node_id=ref.node_id, filename=prior["filename"],
+                data_type=prior.get("data_type"),
+            ))
+            stamps[ref.node_id] = prior.get("produced_at")
+            continue
+        merged.append(ref)
+        to_install.append(ref)
+        stamps[ref.node_id] = stamp
+    if keep_unsent:
+        for node_id, prior in existing.items():
+            if node_id in sent:
+                continue
+            merged.append(OutputRef(
+                node_id=node_id, filename=prior["filename"],
+                data_type=prior.get("data_type"),
+            ))
+            stamps[node_id] = prior.get("produced_at")
+    return merged, to_install, stamps
 
 
 # ---------------------------------------------------------------------------
@@ -622,6 +713,7 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     # undefined workflow name; fill what the client left out (never overwrite).
     _ensure_dataflow_identity(data.spec, data.name)
     _normalize_spec_categories(data.spec)
+    scenarios.normalize_spec_scenarios(data.spec)
 
     storage.write_spec(ukey, project_id, data.spec)
     output_refs = list(data.outputs)
@@ -661,6 +753,7 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
         name=data.name,
         description=data.description,
         thumbnail_accent=data.thumbnail_accent or "peach",
+        produced_at={ref.node_id: _produced_at(ref.filename) for ref in persisted_refs},
     )
 
     db.session.commit()
@@ -675,7 +768,6 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     project = repo.get_for_user(project_id, user.id)
     ukey = _user_dir_key(user)
     existing_spec = storage.read_spec(ukey, project_id)
-    existing_manifest = storage.read_manifest(ukey, project_id)
 
     folder = str(storage.project_dir(ukey, project_id))
     project = repo.upsert_project(
@@ -738,6 +830,8 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
             preserve_dataset_refs(effective_spec, existing_spec)
             _carry_hand_categories(effective_spec, existing_spec)
             _normalize_spec_categories(effective_spec)
+            scenarios.carry_scenarios(effective_spec, existing_spec)
+            scenarios.normalize_spec_scenarios(effective_spec)
             # Same identity backfill as on create: an update may be the first
             # time a spec written elsewhere reaches disk.
             if _ensure_dataflow_identity(effective_spec, data.name or project.name):
@@ -752,12 +846,19 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
                     session_id = rec.get("sessionId")
                     if isinstance(session_id, str):
                         delete_session(ukey, project_id, session_id)
+        # Read under the lock: a run on the server records outputs under it too.
+        existing_manifest = storage.read_manifest(ukey, project_id)
         if data.outputs is not None:
-            output_refs = list(data.outputs)
+            # A node's newer output already on record (a run on the server
+            # while this tab was open) wins over the one sent, and only the
+            # winners are installed.
+            output_refs, refs_to_install, produced_at = _merge_outputs(
+                list(data.outputs), existing_manifest, keep_unsent=False,
+            )
             # Install into users/<user>/datasets/ and register lean refs in the spec.
             # Do not copy artifacts into project/data/ — that folder is legacy-only.
             updated_spec = _auto_install_computed_outputs(
-                ukey, output_refs, effective_spec, install_warnings,
+                ukey, refs_to_install, effective_spec, install_warnings,
                 dataflow_id=project_id, dataflow_name=(data.name or project.name),
             )
             if updated_spec is not None and updated_spec is not effective_spec:
@@ -765,6 +866,10 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
                 spec_dirty = True
         else:
             output_refs = _output_refs_from_manifest(existing_manifest)
+            produced_at = {
+                node_id: entry.get("produced_at")
+                for node_id, entry in _manifest_entries(existing_manifest).items()
+            }
 
         # NOTE: dataset refs are created ONLY by an explicit install through the
         # dataset endpoints; on a client save the carry-forward above
@@ -806,20 +911,57 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         if data.spec is not None or spec_dirty:
             storage.write_spec(ukey, project_id, effective_spec)
 
-    # Record only outputs the reload path can restore from a durable source so a
-    # swallowed install error can't leave a phantom manifest entry (#144).
-    persisted_refs = _persisted_output_refs(ukey, project_id, output_refs, effective_spec)
-    storage.write_manifest(ukey, project_id, project.spec_revision, persisted_refs,
-        name=project.name,
-        description=project.description,
-        thumbnail_accent=project.thumbnail_accent or "peach",
-    )
+        # Record only outputs the reload path can restore from a durable source so a
+        # swallowed install error can't leave a phantom manifest entry (#144).
+        # Still under the lock, so a run recording an output cannot land between
+        # the read above and this write.
+        persisted_refs = _persisted_output_refs(ukey, project_id, output_refs, effective_spec)
+        storage.write_manifest(ukey, project_id, project.spec_revision, persisted_refs,
+            name=project.name,
+            description=project.description,
+            thumbnail_accent=project.thumbnail_accent or "peach",
+            produced_at=produced_at,
+        )
 
     db.session.commit()
     return _to_detail(project, spec=effective_spec, outputs=persisted_refs,
                       dataset_install_warnings=install_warnings,
                       spec_revision=storage.spec_revision(ukey, project_id),
                       categories=_categories(user, project_id, effective_spec))
+
+
+def record_node_outputs(user, project_id: str, outputs: List[OutputRef]) -> List[OutputRef]:
+    """Record outputs a run on the server produced, without a save.
+
+    The outputs half of :func:`update_project`, node by node: each output is
+    installed in the account's Data Catalog and replaces its node's entry in
+    the manifest, and every other node's entry stays. A newer output already on
+    record for a node is kept. Nothing else is written: not the spec, and not
+    the project's revision, so a canvas open on the dataflow still saves on
+    top of it. Returns the refs the manifest now records.
+    """
+    _assert_guest_can_save(user)
+    project = repo.get_for_user(project_id, user.id)
+    ukey = _user_dir_key(user)
+    install_warnings: list = []
+    with storage.spec_write_lock(ukey, project_id):
+        spec = storage.read_spec(ukey, project_id)
+        manifest = storage.read_manifest(ukey, project_id)
+        output_refs, refs_to_install, produced_at = _merge_outputs(
+            list(outputs), manifest, keep_unsent=True,
+        )
+        _auto_install_computed_outputs(
+            ukey, refs_to_install, spec, install_warnings,
+            dataflow_id=project_id, dataflow_name=project.name,
+        )
+        persisted_refs = _persisted_output_refs(ukey, project_id, output_refs, spec)
+        storage.write_manifest(ukey, project_id, project.spec_revision, persisted_refs,
+            name=project.name,
+            description=project.description,
+            thumbnail_accent=project.thumbnail_accent or "peach",
+            produced_at=produced_at,
+        )
+    return persisted_refs
 
 
 def mutate_dataflow_datasets(user, project_id: str, mutate) -> Optional[dict]:
@@ -1172,6 +1314,7 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
             categories=_categories(
                 user, p.id, spec, sources=sources, dataset_kind=dataset_kind,
             ),
+            scenario_list=scenarios.scenario_summaries(spec),
         ))
     if dropped_stale_row:
         db.session.commit()

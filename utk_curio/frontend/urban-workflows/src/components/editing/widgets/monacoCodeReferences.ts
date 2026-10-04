@@ -38,6 +38,11 @@ export const WIDGET_REF_MIME = "application/x-curio-widget";
 /** What a dragged input or column tag carries: what stands inside its
  * reference, such as `input 1` or `input 1.height`. */
 export const INPUT_REF_MIME = "application/x-curio-input";
+/** What a dragged shared tag carries: what stands inside its reference, such
+ * as `@season`. */
+export const SHARED_REF_MIME = "application/x-curio-shared";
+
+const REFERENCE_MIMES = [WIDGET_REF_MIME, INPUT_REF_MIME, SHARED_REF_MIME];
 
 export interface LineRange {
   startLineNumber: number;
@@ -62,7 +67,7 @@ export function offsetToPosition(code: string, offset: number): { lineNumber: nu
 export interface ReferenceMark extends ChipMark {
   /** What stands inside the reference. */
   name: string;
-  kind: "widget" | "input";
+  kind: "widget" | "input" | "shared";
 }
 
 const toRange = (
@@ -81,6 +86,10 @@ function hoverFor(inner: string, scope: ReferenceScope, language: CodeLanguage):
   if (parsed.kind === "widget") {
     const widget = scope.widgets.find((w) => w.name === inner) as WidgetDef;
     return `${inner} = ${widgetLiteral(effectiveValue(widget), language)}`;
+  }
+  if (parsed.kind === "shared") {
+    const widget = scope.shared.find((w) => w.name === parsed.name) as WidgetDef;
+    return `${inner} = ${widgetLiteral(effectiveValue(widget), language)}, from its Parameter node`;
   }
   const input = scope.inputs.find((i) => i.slot === parsed.slot);
   const from = input?.label ? `, from ${input.label}` : "";
@@ -120,8 +129,9 @@ export function referenceMarks(code: string, scope: ReferenceScope, language: Co
       kind,
       problem,
       hover: problem ?? hoverFor(ref.inner, scope, language),
-      // An input or column chip is drawn like a widget's, in green.
-      kindClass: kind === "input" ? chipClass({ kind, problem }) : null,
+      // An input or column chip is drawn like a widget's, in green; a shared
+      // one in amber.
+      kindClass: kind === "widget" ? null : chipClass({ kind, problem }),
     };
   });
 }
@@ -129,7 +139,8 @@ export function referenceMarks(code: string, scope: ReferenceScope, language: Co
 /** The class that names *mark*'s kind: widget chips keep the classes #670 gave
  * them, and input chips carry theirs beside the box's (`referenceChips.ts`). */
 export function chipClass(mark: Pick<ReferenceMark, "kind" | "problem">): string {
-  const base = mark.kind === "input" ? "curio-input-ref" : "curio-widget-ref";
+  const base =
+    mark.kind === "input" ? "curio-input-ref" : mark.kind === "shared" ? "curio-shared-ref" : "curio-widget-ref";
   return mark.problem ? `${base}-problem` : base;
 }
 
@@ -174,15 +185,14 @@ export function insertReference(
 /** What a drag carries for a reference, or null when it carries none. */
 function draggedReference(event: { dataTransfer?: DataTransfer | null }): string | null {
   const types = Array.from(event.dataTransfer?.types ?? []);
-  if (types.includes(WIDGET_REF_MIME)) return event.dataTransfer?.getData(WIDGET_REF_MIME) || null;
-  if (types.includes(INPUT_REF_MIME)) return event.dataTransfer?.getData(INPUT_REF_MIME) || null;
-  return null;
+  const mime = REFERENCE_MIMES.find((m) => types.includes(m));
+  return mime ? event.dataTransfer?.getData(mime) || null : null;
 }
 
-/** Whether *event* drags a widget, input or column tag. */
+/** Whether *event* drags a widget, input, column or shared tag. */
 export function isReferenceDrag(event: { dataTransfer?: DataTransfer | null }): boolean {
   const types = Array.from(event.dataTransfer?.types ?? []);
-  return types.includes(WIDGET_REF_MIME) || types.includes(INPUT_REF_MIME);
+  return REFERENCE_MIMES.some((m) => types.includes(m));
 }
 
 /** Insert the dragged tag's reference where *event* drops it. */

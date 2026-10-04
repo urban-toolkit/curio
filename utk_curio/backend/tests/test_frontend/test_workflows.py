@@ -837,7 +837,7 @@ class TestWorkflowCanvas:
                 )
 
             else:
-                # passive nodes (MERGE_FLOW, VIS_SIMPLE, …): just verify the
+                # passive nodes (VIS_SIMPLE, COMMENTS, …): just verify the
                 # resizable container rendered
                 resizable = node_el.locator(f'[id="{node.id}resizable"]')
                 assert resizable.count() >= 1, (

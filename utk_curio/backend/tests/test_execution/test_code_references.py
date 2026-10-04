@@ -61,7 +61,7 @@ class TestTheSharedCases:
         mismatches = []
         for case in cases:
             code, problems = resolve_references(
-                case["code"], case["widgets"], case["language"], case.get("inputs", [])
+                case["code"], case["widgets"], case["language"], case.get("inputs", []), case.get("shared", [])
             )
             got = (code, [p["message"] for p in problems])
             want = (case["expected"], case.get("problems", []))
@@ -84,6 +84,9 @@ class TestTheSharedCases:
             "carries several layers",
             "the edge for this input was deleted",
             "has no column",
+            "no Parameter node is named",
+            "Parameter nodes are named",
+            "does not name a Parameter node",
         ):
             assert kind in messages, kind
 
@@ -92,6 +95,12 @@ class TestTheSharedCases:
         for language in ("python", "javascript", "json"):
             codes = " ".join(c["code"] for c in cases if c["language"] == language)
             assert "[!! input 0" in codes or "[!! input 1" in codes, language
+
+    def test_the_table_has_shared_references_in_every_language(self):
+        cases = _cases()
+        for language in ("python", "javascript", "json"):
+            resolved = [c for c in cases if c["language"] == language and "[!! @" in c["code"] and not c.get("problems")]
+            assert resolved, f"no shared reference resolves in a {language} case"
 
 
 class TestNumbersMatchJavaScript:
@@ -362,3 +371,61 @@ class TestSeveralInputs:
         assert rec.calls == []
         assert report["ok"] is False and report["blocker"] == "t"
         assert "input 0 has no edge" in report["nodes"]["t"]["stderrTail"]
+
+
+def _parameter(node_id, widget):
+    return {"id": node_id, "type": "curio.builtin/parameter@1", "content": "", "metadata": {"widgets": [widget]}}
+
+
+SHARED_FACTOR = {"name": "factor", "type": "number", "default": 2, "value": 5}
+
+
+class TestSharedTags:
+    """``[!! @name !!]`` names a Parameter node's widget. A Parameter node has
+    no edge, so the runner reads the dataflow's Parameter nodes, as the canvas
+    does."""
+
+    def test_the_spec_lists_its_parameter_nodes_widgets(self):
+        spec = parse_workflow_dict(_spec([_parameter("p", SHARED_FACTOR), _node("a", "x", FACTOR)]))
+        assert spec.shared_widgets() == [SHARED_FACTOR]
+
+    def test_one_parameter_node_drives_two_nodes(self, tmp_curio):
+        rec = _RecordingExec()
+        spec = _spec([
+            _parameter("p", SHARED_FACTOR),
+            _node("a", "return [!! @factor !!] * 10"),
+            _node("j", "return [!! @factor !!] + 1;", node_type="curio.builtin/js-computation"),
+        ])
+        for target in ("a", "j"):
+            report = runner.run_through_node(KEY, PID, spec, target, exec_fn=rec)
+            assert report["ok"] is True, report
+        # One call per node: the Parameter node itself never reaches the sandbox.
+        assert [endpoint for endpoint, _ in rec.calls] == ["/exec", "/execJs"]
+        assert "return 5 * 10" in rec.calls[0][1]["code"]
+        assert "return 5 + 1;" in rec.calls[1][1]["code"]
+
+    def test_a_widget_of_the_same_name_is_another_value(self, tmp_curio):
+        rec = _RecordingExec()
+        spec = _spec([_parameter("p", SHARED_FACTOR), _node("a", "return [!! @factor !!] - [!! factor !!]", FACTOR)])
+        report = runner.run_through_node(KEY, PID, spec, "a", exec_fn=rec)
+        assert report["ok"] is True
+        assert "return 5 - 3" in rec.calls[0][1]["code"]
+
+    def test_no_parameter_node_of_that_name_fails_the_node_without_the_sandbox(self, tmp_curio):
+        rec = _RecordingExec()
+        spec = _spec([_node("a", "return [!! @factor !!]", FACTOR)])
+        report = runner.run_through_node(KEY, PID, spec, "a", exec_fn=rec)
+        assert rec.calls == []
+        assert report["ok"] is False and report["blocker"] == "a"
+        assert "no Parameter node is named factor" in report["nodes"]["a"]["stderrTail"]
+
+    def test_two_parameter_nodes_of_one_name_fail_the_node(self, tmp_curio):
+        rec = _RecordingExec()
+        spec = _spec([
+            _parameter("p1", SHARED_FACTOR),
+            _parameter("p2", {**SHARED_FACTOR, "value": 7}),
+            _node("a", "return [!! @factor !!]"),
+        ])
+        report = runner.run_through_node(KEY, PID, spec, "a", exec_fn=rec)
+        assert rec.calls == []
+        assert "2 Parameter nodes are named factor" in report["nodes"]["a"]["stderrTail"]

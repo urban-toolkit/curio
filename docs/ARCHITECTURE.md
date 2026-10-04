@@ -10,6 +10,8 @@ This document describes the internal architecture of Curio for contributors who 
   * [Provider Hierarchy](#provider-hierarchy)
   * [API Settings and the Monitor](#api-settings-and-the-monitor)
   * [FlowProvider: Central Workflow State](#flowprovider-central-workflow-state)
+  * [The notebook view](#the-notebook-view)
+  * [Drawing scenarios](#drawing-scenarios)
 * [Nodes: Types and Structure](#nodes-types-and-structure)
   * [Node Packages and Manifests](#node-packages-and-manifests)
   * [NodeDescriptor: Static Metadata](#nodedescriptor-static-metadata)
@@ -199,8 +201,67 @@ focus in the URL (`settingsPath`, read back by `focusFromSearch`).
 | `interactions` | `IInteraction[]` | Active user selections from visualization nodes |
 | `dashboardPins` | `{[nodeId]: boolean}` | Which nodes are pinned to the dataflow's dashboard page |
 | `dashboardOn` | `boolean` | A PROP, not state: true when this tree is the dashboard page rather than the canvas |
+| `canvasView` | `"canvas" \| "notebook"` | How the canvas shows the dataflow, kept in the address as `?view=notebook`; always `"canvas"` on the dashboard |
+| `scenarios` | `Scenario[]` | The dataflow's scenarios (`dataflow.scenarios`), saved with it |
 
 When a node produces output, it calls `outputCallback(nodeId, output)`, which updates `outputs`. React re-renders cause downstream nodes (those connected by an edge from the node that just executed) to detect the new input and request the data from the backend.
+
+### The notebook view
+
+The notebook view shows the canvas's own nodes and edges as a column of cells, with
+the edges in a bar to the right. It is the same React Flow instance, because Run All,
+output propagation, `onConnect` and saves read its store, so `providers/flow/useNotebookView.ts`
+moves nodes the way the dashboard page does:
+
+- **Positions.** Each node's canvas spot is stamped into `data.workflowPosition`, which
+  `TrillGenerator` saves in place of `position` (`utils/canvasPosition.ts`), and
+  `position` holds the cell's slot. The hook owns a map from node id to canvas spot and
+  writes every stamp from it on each change of the node list, so an update that rebuilt a
+  node's data without its stamp is repaired before a save reads the store. A
+  collaborator's drag goes to the map (`useCollaborationSync`'s `takeCanvasPosition`).
+  Leaving the view restores every position from the map and deletes every stamp; the
+  canvas viewport saved on entry is restored after the canvas props are live.
+- **Order and geometry.** Cells follow `utils/dataflowOrder.ts`, the order Export as
+  notebook writes, over `directedEdgesOf`. `utils/notebookLayout.ts` places the column
+  below the bar and title chips, sets each node's dots on its right edge, gives every
+  edge a lane in the bar (shorter spans inside) and draws the bracket each edge follows;
+  `components/edges/useEdgePath.ts` picks that path over the canvas bezier.
+- **Scrolling.** `MainCanvas` wraps React Flow in a scroller in both views, so switching
+  never remounts it. In the notebook view React Flow is as tall as the column, at zoom 1
+  with no pan or zoom gestures (`notebookFlowProps`), and leaves the wheel to the page. A
+  call that moves its view anyway, such as a load's fit, is put back to the origin.
+  `revealNodes` scrolls to a cell where the canvas would frame a node.
+- **Cells.** `NotebookViewContext` tells nodes and edges the view is on. `UniversalNode`
+  sizes the cell and moves its handles; `NodeEditor` keeps a grammar node's output pane
+  visible under its input tabs (`curio-notebook-split` in `Node.css`) without moving
+  either pane, so a chart or map never remounts.
+- **Switch.** `CanvasViewSwitch` closes `UpMenu`'s slot, pushed to its end beside
+  Monitor; the canvas bar's buttons take `--curio-bar-button-padding-x: 7px` to make room
+  for it.
+- **Scenarios.** They are drawn on the canvas only: `MainCanvas` hands
+  `scenarioCanvasView` no scenarios in the notebook view, so every node is a cell,
+  collapsed or not, and no box or frame is drawn.
+
+### Drawing scenarios
+
+How the canvas draws scenarios is not dataflow state. `MainCanvas` passes `nodes`
+and `edges` through `scenarioCanvasView` (`src/utils/scenarios/scenarioCanvasView.ts`)
+on their way to React Flow: a collapsed scenario's members are hidden with
+`hideNode` (`src/utils/hiddenNodes.ts`, which the dashboard uses too) and stay
+mounted, the edges they touch are hidden, and expanded members get a class and their
+color. The boxes, frames and stand-in edges it returns are drawn by
+`components/scenarios/ScenarioLayers.tsx` beside React Flow's renderer, in its
+coordinates, not as React Flow nodes and edges. React Flow's store is what
+`reactFlow.getNodes()` returns to Run All, a save and an agent's view, so it must
+never hold a node that is not in the dataflow.
+
+A node drawn hidden is never measured, so code that needs a node's size or hit-tests
+nodes leaves it out (`isDrawnHidden`): the load fit (`fitViewWithMenuOffset`) and the
+agent drop target do. `src/utils/scenarios/scenarioParts.ts` reads a scenario's fixed
+context, levers and outcomes from the live graph, and `savedSourceNodeIds` there is
+the one rule, read by a run and by a save, for which outputs are saved whatever a
+node's own toggle says: what a pinned tile reads and what a scenario's context and
+outcomes produce.
 
 ---
 
@@ -248,7 +309,6 @@ Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 |---|---|
 | Data | `data-loading`, `data-transformation`, `data-export`, `data-pool`, `spatial-join` |
 | Computation | `computation-analysis`, `data-summary`, `js-computation` |
-| Flow | `merge-flow` |
 | Grammar (Autark) | `autk-grammar`, one node whose UrbanSpec unifies OSM/PBF loading, GPU `compute`, and `map` + `plot` rendering |
 | Chart/table visualization | `vis-vega`, `vis-simple` (a table, or a card per row when the frame carries images) |
 
@@ -311,7 +371,7 @@ The hook can return:
 
 Behaviors register against a single global registry, [`behaviorRegistry.ts::registerBehavior(name, hook)`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts), and the manifest's `behavior` key looks them up by name. Two distribution channels:
 
-**1. Built-in (ships with Curio's main bundle).** [`builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts) calls `registerBehavior(...)` at import time for the hooks every install needs: `useCodeNodeBehavior`, `useVegaBehavior`, `useAutkGrammarBehavior`, `useDataPoolBehavior`, `useMergeFlowBehavior`, `useSpatialJoinBehavior`, and so on. These power `curio.builtin@1`'s templates.
+**1. Built-in (ships with Curio's main bundle).** [`builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts) calls `registerBehavior(...)` at import time for the hooks every install needs: `useCodeNodeBehavior`, `useVegaBehavior`, `useAutkGrammarBehavior`, `useDataPoolBehavior`, `useSpatialJoinBehavior`, and so on. These power `curio.builtin@1`'s templates.
 
 **2. Per-package (dynamic, loaded at boot).** A package whose templates need custom UI can declare `"behaviorScript": "scripts/behaviors.js"` in its manifest and ship a pre-built JS bundle alongside the manifest. At boot, [`packagesClient.ts::loadPackageBehaviorScripts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) fetches each installed package's bundle with the user's Bearer token and injects the response body as an inline `<script>` *before* descriptors are built. The bundle's top-level side-effect calls `window.curio.registerBehavior(...)` for each hook it ships.
 
@@ -516,7 +576,7 @@ A `dataRef` that names an unavailable table, whether an empty layer, a layer tha
 
 - Source port type must be compatible with target port type.
 - Port cardinality is respected (e.g., a `'1'` input port rejects a second incoming edge).
-- `Merge Flow` nodes have special cardinality rules handled by their behavior hook via `dynamicHandles`.
+- A node whose one input port takes more than one edge (`"[1,n]"`) grows an input circle per edge, `in`, then `in_1`, `in_2`, up to the port's maximum. [`growingInputs.ts`](../utk_curio/frontend/urban-workflows/src/providers/flow/growingInputs.ts) reads that from the template, and `useConnect` puts each new edge on the next free circle (see [Several inputs](USAGE.md#several-inputs)).
 
 ---
 
@@ -586,7 +646,7 @@ The harness reads the cause from the `kind`, never from the message. [`result_sh
 [`sandbox/app/worker.py`](../utk_curio/sandbox/app/worker.py)::`execute_code` runs a Python node's code in the sandbox process; under isolation, the confined child in `sandbox/isolation/child.py` does the same in its own process (see [Sandbox Isolation](#sandbox-isolation)). Each run:
 
 - Builds a fresh namespace from the pre-loaded library globals, adds the session's earlier import bindings, `curio_data_path` and `curio_secret`, and defines the code as `def userCode(arg):`.
-- Calls `load_from_duckdb(artifact_id)` to reconstruct the upstream Python object (DataFrame, GeoDataFrame, scalar, tuple, etc.) from the shared DuckDB database, and passes it as `arg`. A Merge Flow's inputs arrive as a list.
+- Calls `load_from_duckdb(artifact_id)` to reconstruct the upstream Python object (DataFrame, GeoDataFrame, scalar, tuple, etc.) from the shared DuckDB database, and passes it as `arg`. A node with several input circles receives them as a list in circle order, and the input chips in its code arrive already written as `arg[k]`.
 - After the code returns, calls `detect_kind(output)` to classify the output. A node's type contract is its template's declared ports, which the canvas enforces when an edge is connected.
 - Calls `save_to_duckdb(output)` to persist the result, and returns the new artifact id and kind.
 
@@ -821,6 +881,12 @@ fails open into a runtime error from the sandbox.
    re-validates it (dict-shaped, stringified, ≤32 entries) and injects
    `curio_data_path` into the user namespace, where an unknown id raises an
    actionable `RuntimeError` instead of returning a foreign path.
+4. Under fork isolation, `stage_dataset_paths`
+   ([`sandbox/util/staging.py`](../utk_curio/sandbox/util/staging.py)) hardlinks
+   each file into the run's scratch as `ds_<i>/<file>`, with the files named
+   after it: a parquet's `<file>.decode.json`, a shapefile's `.shx`, `.dbf` and
+   `.prj`. A bundle is staged as `ds_<i>/data/bundle.json` with the parts its
+   `bundle.json` names, at their paths under the dataset's folder.
 
 The id must satisfy the same safe-id pattern on both sides before it is
 interpolated into generated Python; an id that fails it falls back to a literal
@@ -898,18 +964,19 @@ Some contracts are read on both sides of the stack: by Python and TypeScript, or
   | `utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts` | The Autark grammar's top-level families and the names a grammar node's inputs are read by, `input_<k>` (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) |
   | `utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts` | The agent manifest's category vocabulary and the `AgentCategory` type, from `manifest.AGENT_CATEGORIES` |
   | `utk_curio/frontend/urban-workflows/src/generated/visDefaults.ts` | What a visualization node does with its input by itself, from the tables in `contracts.py`: the column roles and the pandas dtype each role comes from; the Vega-Lite and Autark starter ladders, each rule's id, condition, mark or family and description in ladder order; the Vega-Lite `$schema` URL; and the column names, URL extensions and share of image values behind Simple View's image columns. `starterSpec.ts`, `vegaDefaultSpec.ts`, `autkDefaultSpec.ts` and `imageColumns.ts` read it and keep each rule's builder, keyed by its id, and the matching logic |
-  | `utk_curio/llm-prompts/default_preamble.md` | The shared agent preamble: the Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; every list of built-in templates (description, control, port types, the connections an input accepts, output cardinality, interaction support), read from the built-in manifest and the packages layer's `input_capacity`, and naming each template by its label; the Merge Flow's socket names; the label of each template its prose names; the section on Autark documents, rendered from the vendored schema (see [The Autark Schema](#the-autark-schema)); and the starter ladders, the dtype roles, the Vega-Lite `$schema` URL and the image column names, extensions and share, from the same tables as `visDefaults.ts` |
+  | `utk_curio/llm-prompts/default_preamble.md` | The shared agent preamble: the Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; every list of built-in templates (description, control, port types, the connections an input accepts, output cardinality, interaction support), read from the built-in manifest and the packages layer's `input_capacity`, and naming each template by its label; the handles of a node's input circles and the input chips; the label of each template its prose names; the section on Autark documents, rendered from the vendored schema (see [The Autark Schema](#the-autark-schema)); and the starter ladders, the dtype roles, the Vega-Lite `$schema` URL and the image column names, extensions and share, from the same tables as `visDefaults.ts` |
   | `utk_curio/llm-prompts/package_contract.md` | The Package Builder's backend contract: the handler name pattern, the timeout classes, the two permissions and the variable that names a handler's data directory, from `packages/domain/backend_contract.py`. `package_build_instruction.md` includes it whole, and a delegated Package Builder receives the file as its build-request contract's `backendContract` |
-  | Every other prompt in `contracts.PROMPT_TEMPLATES` | What that prompt states from code, through the fields below: the built-in agents' names, the built-in templates' labels, the Merge Flow's socket range, the templates the coherence check skips, the note palette, the web-call budget, the rows per candidates lane, and the node context's runtime keys, `inputContract` kinds and runtime row fields |
+  | Every other prompt in `contracts.PROMPT_TEMPLATES` | What that prompt states from code, through the fields below: the built-in agents' names, the built-in templates' labels, the input chips and the handles of a node's input circles, the templates the coherence check skips, the note palette, the web-call budget, the rows per candidates lane, and the node context's runtime keys, `inputContract` kinds and runtime row fields |
 
 - **Prompt fields.** `contracts.PROMPT_FIELDS` is the one registry of what a prompt template may state from code. A marker is `{{field}}`, or `{{field:arg}}` for a field that takes an argument, and each field is one function that reads its source. `contracts.render_prompt` fills the markers a template holds, and raises on a field the registry does not define and on any `{{` left in the result.
 
   | Field | Renders | Source |
   |---|---|---|
-  | `trill.schema`, `builtin.nodes`, `builtin.control`, `builtin.inputs`, `builtin.outputs`, `builtin.input_count`, `builtin.output_count`, `builtin.interaction`, `builtin.merge_slots`, `autk.grammar` | The preamble's Trill block, lists of built-in templates and section on Autark documents | The Trill schema, the built-in manifest, `input_capacity`, the vendored Autark schema |
+  | `trill.schema`, `builtin.nodes`, `builtin.control`, `builtin.inputs`, `builtin.outputs`, `builtin.input_count`, `builtin.output_count`, `builtin.interaction`, `autk.grammar` | The preamble's Trill block, lists of built-in templates and section on Autark documents | The Trill schema, the built-in manifest, `input_capacity`, the vendored Autark schema |
   | `agent.name:<agent id>` | A built-in agent's display name | `builtin.BUILTIN_AGENTS` |
   | `template.label:<package id>/<template id>` | A built-in template's label | The built-in manifest |
-  | `builtin.merge_range` | The Merge Flow's sockets, first to last | `input_capacity`, read once with `builtin.merge_slots` |
+  | `inputs.handles` | The handles of a node's input circles, `"in", "in_1", "in_2", ...` | `workflow_spec.slot_handle_id` |
+  | `inputs.chip:<k>`, `inputs.chip:<k>.<column>` | The chip node code reads input *k* by, or a column of it, `[!! input 0 !!]` | `code_references.reference_text` |
   | `builtin.not_code` | The built-in templates whose nodes hold no Python or JavaScript code, one per line | The built-in manifest, by the rule `builtin.control` uses |
   | `note.palette` | The colour names a node's appearance accepts | `node_appearance.NAMED_COLORS` |
   | `egress.calls_per_run` | The web calls one run may make | `egress_policy.MAX_CALLS_PER_RUN` |
@@ -1125,7 +1192,7 @@ What lands in a node is something the runtime has checked. The routing comes fro
 |---|---|---|
 | **Code** the sandbox runs (`hasCode`) | Generates, gates the sources, runs it, and reads the shape of the result. A table or geotable with no rows, produced from inputs that had rows, is a failed round with the diagnosis: the inputs' row counts, their key columns and their sample values. | verified, or a failure naming what happened |
 | A **document** (`hasGrammar`: a Vega-Lite chart, an Autark grammar) | Validates it against its grammar's JSON Schema: the one Vega-Lite publishes, or the vendored autk-grammar schema (see [The Autark Schema](#the-autark-schema)). An invalid document is a correction round; a reply that is not a document at all is refused the same way. | validated as a document, not executed |
-| **Nothing** (a Merge Flow, a Data Pool, a Simple View, a Spatial Join) | Nothing. These nodes are wired, not written: no model is asked for their content. | wired, not written |
+| **Nothing** (a Data Pool, a Simple View, a Spatial Join) | Nothing. These nodes are wired, not written: no model is asked for their content. | wired, not written |
 
 A kind nothing here can validate is not written at all: the node stays pending with the reason.
 
@@ -1138,7 +1205,7 @@ A failing node carries its reason in its own body, one line, expandable, read fr
 
 ### The run journal
 
-Every execution leaves a record wherever it ran. A node's code in the sandbox, a validation run the agent runtime drove, and a render in the browser (a Vega-Lite chart, an Autark map, a Data Pool, a Merge Flow, a Simple View, a Spatial Join, a Data Export) all write the same per-node journal, each stamped with the `origin` that produced it. An agent attached to a node reads that record.
+Every execution leaves a record wherever it ran. A node's code in the sandbox, a validation run the agent runtime drove, and a render in the browser (a Vega-Lite chart, an Autark map, a Data Pool, a Simple View, a Spatial Join, a Data Export) all write the same per-node journal, each stamped with the `origin` that produced it. An agent attached to a node reads that record.
 
 - **A browser record is evidence, never authority.** It carries a status, a short message and the output type the node declares, never the data, and never an artifact id, which only the sandbox can mint.
 - **A render never overwrites a run.** What a node's code did keeps its artifact, its output type and its traceback, and what its picture did is recorded beside it. A node that ran cleanly and drew nothing reports both.
@@ -1154,18 +1221,18 @@ Solve runs from the Dataflow Builder's **Solve** over an applied plan, or from *
 | The run | Then |
 |---|---|
 | passes | An empty plan node gets the content written. A node that already had content is untouched: "verified, no change needed". |
-| fails | The failure goes back to the content generator with the traceback, the previous attempt, the grounded sources, what its inputs contain (the columns, dtypes and row counts of the frames feeding this node, through a merge in `arg` order), and a fresh probe of the URL it fetched (a `400` after a reachable base URL is a wrong request shape, not a dead endpoint). The corrected code is grounded again and re-run. |
+| fails | The failure goes back to the content generator with the traceback, the previous attempt, the grounded sources, what its inputs contain (the columns, dtypes and row counts of the frames feeding this node, in circle order), and a fresh probe of the URL it fetched (a `400` after a reachable base URL is a wrong request shape, not a dead endpoint). The corrected code is grounded again and re-run. |
 | keeps failing | Corrections continue while the node's repair budget allows, 15 minutes by default, as many attempts as fit; the attempt cap sits above what that budget affords. A repeated candidate does not end the loop: after two repeats the next correction is told it repeated itself and must change approach, and only an eighth repeat stops it. Whichever bound stops the loop is named: the round cap, the node's time budget, or a repeated attempt. |
 | still fails | Nothing is written. The node shows failed, and every attempt appears in the chat as its own card, with the exception line, the frame that raised it, and the code that attempt ran. |
 | cannot run (sandbox unreachable) | The node stays pending with the reason, never failed: an outage is not a content failure. |
 
-- **Merge inputs.** A merge hands the next node a list, one item per connected input, in the order of its input handles (`in_0`, `in_1`, ...). Play, Solve's validation runner and the generator's contract all read that order from the handles. The generator receives an `inputContract` for the node, `list` with a slot table (each slot's node, goal and columns) or `single`, and code that treats a list-shaped `arg` as a value (`arg.crs`, or `gdf = arg` then `gdf.to_crs(...)`) is refused before the sandbox runs, with the slot table in the refusal. A merge with one connected input passes its value straight through.
+- **Several inputs.** A node with several input circles receives a list, one item per circle, in circle order (`in`, `in_1`, ...). Play, Solve's validation runner and the generator's contract all read that order from the handles. The generator receives an `inputContract` for the node, `list` with a slot table (each slot's input chip, node, goal and columns) or `single`, and is told to read each input through its chip, `[!! input k !!]`. Code that treats a list-shaped `arg` as a value (`arg.crs`, or `gdf = arg` then `gdf.to_crs(...)`) is refused before the sandbox runs, judged with its chips resolved, with the slot table in the refusal. A node with one connected input is `single`: its chip is that input's value.
 - **Failure lines.** The exception type and its message lead every failure line and are never cut mid-word, an error the generated code raised itself is labeled as such, and "not fixed after N attempts" is always followed by the bound that stopped the loop.
 - **Budgets.** `--solve-node-budget` (default 900 seconds, the bound that normally stops a node), `--solve-max-attempts` (default 40), `--validation-exec-timeout` (one run, default 300 seconds), `--solve-session-deadline` (how long one Solve session keeps managing the dataflow, default 15 minutes, which also caps each node's budget) and `--solve-batch-deadline` (the outer bound on a batch, default 45 minutes). The launcher passes each to the backend as the matching `CURIO_SOLVE_*` or `CURIO_VALIDATION_EXEC_TIMEOUT` variable. An unusable value falls back to the default.
 - **Apply never executes anything** and is never blocked by verification: Apply places the node as proposed, and the card says Solve is what runs it.
 - **Background jobs.** A Solve is a detached job on the server, so closing the chat panel or reloading the page does not stop it. The agent's badge shows a running dot while the job is live, and opening the chat re-attaches to its progress. **Stop** ends the session after the current node finishes; a running fetch cannot be aborted. If the server stops mid-Solve, the session is marked interrupted the next time it is read: nodes that finished keep their content, nothing is replayed, and Retry starts a new execution linked to the interrupted one. This is a single-process job owner; a multi-instance deployment would need a durable one.
 - **Waves.** A batch runs the plan the way Play would: in topological waves, roots first, each wave's nodes in parallel. A wave's verified content is written at the wave boundary, so the next wave generates and executes against the upstream code that ran, and a downstream correction is told what its upstreams produced (`upstreamOutputs`). An upstream that passed earlier in the batch is not run again: its recorded output stands in, and if that artifact has vanished the slice runs whole once before the result counts. A process that dies between waves keeps every persisted wave, and Retry continues.
-- **Executable kinds.** Whether the sandbox can run a node kind is read from its template: a code editor (`hasCode`), a `python` or `javascript` engine, and no `backendHandler`. That covers every built-in Python and JavaScript kind and every package template that declares the same. A template with no code (Vega and Autark specs, merge nodes, data pools, the spatial join) is written and labeled as having no code to run, on the pill, in a review's attempt trail, and on the Node Builder's proposal card. Without a reachable template roster (the end-to-end runner over a raw file), a fallback name table answers instead.
+- **Executable kinds.** Whether the sandbox can run a node kind is read from its template: a code editor (`hasCode`), a `python` or `javascript` engine, and no `backendHandler`. That covers every built-in Python and JavaScript kind and every package template that declares the same. A template with no code (Vega and Autark specs, data pools, the spatial join) is written and labeled as having no code to run, on the pill, in a review's attempt trail, and on the Node Builder's proposal card. Without a reachable template roster (the end-to-end runner over a raw file), a fallback name table answers instead.
 - **Bounds.** The batch deadline is checked at every wave boundary and before every node; what it did not reach stays pending with the reason, the Solve card names it once, and Retry continues from there. A node whose validation would run more nodes than the validation bound (`--validation-node-limit`, default 25; an ancestor whose earlier output is reused and a pass-through node do not count), or whose upstream slice contains a cycle, is skipped with the bound named, and no correction is spent on it. The stale-run marker (15 minutes) is measured from the last completed wave. `verify: false` on the Solve request writes without running, for every kind.
 
 ### Node code keys
@@ -1174,7 +1241,7 @@ A key must never be a literal in node code: the code is saved into the dataflow,
 
 - **At run time.** The runtime resolves the names the code uses, for Play and for Solve alike, and hands the values to the sandbox inside the execution request, where they exist only as that callable in the node's namespace: never an environment variable, never a file, never a log line. A key a node prints is redacted before the output leaves the sandbox. The saved dataflow, the journal, the proposals and the chat carry the name only.
 - **For agents.** A content builder's grounded inputs list `availableSecrets` with the line to copy and how the API expects the key (`query:<param>`, `header:<Name>`, or in the code). The grounding gate accepts `curio_secret("<name>")` for a saved name (the Source block reads *Connection key · census · api.census.gov*), refuses an unknown name listing the saved ones, and refuses a credential-shaped literal before anything runs. When a saved key is bound to the host a failing request targets, Solve probes that request with the key and tells the correction what the keyed request answered, redacted. When no key exists, the content builder declines in one line and the node's failure ends with **Add key for** and the host, which opens the node code key form in API Settings with the host filled in.
-- **Storage.** The store is a 0600 file under the user's own directory (unreadable by isolated node code), written the same way as `llm-configs.json`; it is not encrypted at rest. A published dataflow carries key names, so whoever installs it saves their own key under the same name. The shared guest account (authentication off) shares one key store with every other guest, and API Settings says so. Under `--deploy` no guest has a key store: `storage_key_for` refuses a guest with a 403, and the store lists and resolves nothing for the `guest` key, so keys saved there without `--deploy` are not sent.
+- **Storage.** The store is a 0600 file under the user's own directory (unreadable by isolated node code), written the same way as `llm-configs.json`; it is not encrypted at rest. A published dataflow carries key names, so whoever installs it saves their own key under the same name. The shared guest account (authentication off) shares one key store with every other guest, and API Settings says so. Under `--deploy` no guest has a key store: `storage_key_for` refuses a guest with a 403, and the store lists and resolves nothing for the `guest` key, so keys saved there without `--deploy` are not sent. On the client, `isHostedGuest` (`components/apiSettings/useHostedGuest.ts`, with its hook `useHostedGuest`) is the one check for such a guest: API Settings shows it no key form, and **Add key for** and **Save as API key** do not render for it.
 - **Typed keys.** The code editor watches for a key typed into a node's code and shows a non-blocking hint naming the line, with **Save as API key**, which opens the same form. Nothing is refused, rewritten or sent: the finding stays in the browser tab.
 
 ### Evaluation
@@ -1494,6 +1561,43 @@ a full listing for hub and live-output ids. Both paths run the same containment
 check, so an index row pointing outside the allowed read roots is refused rather
 than served.
 
+### Saved outputs and dataflow runs
+
+A dataflow's saved outputs are the `outputs` list of its `manifest.json`: one entry per node with `node_id`, `filename`, `data_type` and `produced_at`. `produced_at` is the time in the output's artifact id (`<ms>_<hex>`), stamped by the server when the output is first recorded and kept while the same file stays recorded.
+
+- A save (`projects/services.py::update_project`) records the outputs it sends and drops the others. When the manifest already holds a newer output for a node, by `produced_at`, that output stays and the older one sent is not installed. An entry without `produced_at` counts as oldest.
+- `record_node_outputs` records outputs without a save: each replaces its node's entry, and the other entries stay. It writes no spec and does not move the dataflow's revision.
+- Both read and write the manifest under the spec lock.
+
+[`execution/save_policy.py`](../utk_curio/backend/app/execution/save_policy.py) decides which outputs a run on the server installs and records, as `utils/saveOutputDataset.ts` decides it on the canvas. `utils/saveOutputDataset.cases.json` holds the cases both sides run.
+
+The run tables `dataflow_run` and `dataflow_run_step` ([`runs/models.py`](../utk_curio/backend/app/runs/models.py), alembic revision `f7a8b9c0d1e2`) hold one row per run and one per node the run touched. A run with no `target_node_id` ran the whole dataflow. `runs/repositories.py` keeps, per dataflow and per kind, the newest 50 runs and every run younger than 30 days, pruning when a run is created. A project's runs and their steps are deleted with it.
+
+#### Runs on the server
+
+A run executes the saved dataflow on a thread of the backend, so it goes on whether or not a browser follows it.
+
+- **Plan.** [`execution/run_engine.py`](../utk_curio/backend/app/execution/run_engine.py)`::plan_run` takes every node, or one node and its ancestors less those whose outputs the canvas sends to reuse. [`execution/run_plan.py`](../utk_curio/backend/app/execution/run_plan.py) orders them: `topological_levels` is the twin of `computeTopologicalLevels` (`providers/flow/runLevels.cases.json` holds the cases both run), and an interaction link, by its type or its `in/out` handles, orders nothing.
+- **Roles.** `node_role` gives each node one of three. `run`: the template is executable. `forward`: the node passes its input on (a chart, a pool, a Simple View, an Autark render, a Data Export), or has nothing to run (a Parameter node, whose value reaches the nodes that name it through their code). `browser`: only the browser makes its data (an Autark data or compute node, a Spatial Join).
+- **Walk.** `run_events` runs one level at a time, every node of a level at once. A node fed by a failed or skipped node is skipped, with the reason naming that node; a node fed by a `browser` node waits, and the run ends `needs_canvas`. Each executed node goes through `node_exec` with its references resolved, every line indented as `PythonInterpreter.ts` indents it, and one upstream's output as it is or several as an `outputs` bundle in circle order. A sandbox that cannot be asked fails that node only.
+- **Thread.** [`runs/service.py`](../utk_curio/backend/app/runs/service.py) records each event in the run tables, records an output as `save_policy` says, and passes the event on. The sign-in token that started the run tags its artifacts and lives on the thread only.
+- **Jobs.** [`common/job_registry.py`](../utk_curio/backend/app/common/job_registry.py) holds live jobs in this process: one per dataflow, two per account (`runs/jobs.py`), keyed by attachment for agent jobs (`agents/infrastructure/agent_jobs.py`). A follower replays a job's events and then tails them; leaving only stops following.
+- **Restarts.** A run another backend process left queued or running becomes `interrupted` when this one starts, and when a run is read. Nothing runs again by itself.
+- **Cancel.** Nothing new starts once a run is cancelled; the node already running finishes and its output is dropped.
+
+`runner.py::run_through_node`, behind Solve's validation and an agent's run through a node, walks a slice one node at a time and stops at the first failure, sending seeded code straight to the sandbox. It takes upstreams, input circles, references, roles and the ancestor slice from the same places as a run; `tests/test_runs/test_run_parity.py` runs both on the same dataflows.
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/api/projects/<id>/runs` | POST | Start a run of the saved dataflow: `{target?, reuse?, specRevision?}`. 202; 409 for a revision that is not the saved one or while the dataflow runs (with `runId`); 429 over the account's two runs; 403 for a hosted guest |
+| `/api/projects/<id>/runs` | GET | The dataflow's runs, newest first; `?kind=all\|node` |
+| `/api/runs` | GET | Every run of the account; `?status=`, `?kind=` |
+| `/api/runs/<id>` | GET | A run with its steps |
+| `/api/runs/<id>/stream` | GET | SSE: a `run` event, then `run_started`, `step_started`, `step_finished` and `run_finished`, replayed and then followed |
+| `/api/runs/<id>/cancel` | POST | Stop before the next node |
+| `/api/runs/<id>/rerun` | POST | Run the same thing again |
+| `/api/runs/<id>/steps/<nodeId>` | POST | A tab reports a node the browser ran: `{status: ok\|error, message?}` |
+
 ### Dataset Routes
 
 Defined in `backend/app/datasets/routes.py`; all require authentication. See [DATA-CATALOG.md](DATA-CATALOG.md) for the user-facing model.
@@ -1675,7 +1779,8 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 |---|---|
 | `src/index.tsx` | App entry point and provider nesting order |
 | `src/providers/FlowProvider.tsx` | Canonical workflow state (nodes, edges, outputs, interactions) |
-| `src/providers/flow/` | FlowProvider's sections as hooks (Run All, connections, graph edits, outputs, interactions, collaboration sync, dashboard pins, auto-install) and its types |
+| `src/providers/flow/` | FlowProvider's sections as hooks (Run All, connections, graph edits, outputs, interactions, collaboration sync, dashboard pins, auto-install, the notebook view) and its types |
+| `src/utils/notebookLayout.ts`, `src/utils/dataflowOrder.ts` | The notebook view's geometry (cells, dots, lanes, edge paths) and the cell order Export as notebook shares |
 | `src/providers/ProvenanceProvider.tsx` | In-memory per-node execution history (saved with the workflow JSON) |
 | `src/components/UniversalNode.tsx` | Single React component that renders all node types |
 | `src/registry/packagesClient.ts` | Fetch installed manifests → build `NodeDescriptor`s → register against `nodeRegistry` |
@@ -1729,6 +1834,8 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/datasets/repositories/` | Installed / local / registry / user-store persistence, plus the per-user dataset index |
 | `backend/app/datasets/repositories/index.py` | The dataset index: write-through, disk reconciliation, never-raise `safe_*` wrappers |
 | `backend/app/datasets/models.py` | `DatasetIndexEntry`, the index's SQLAlchemy table |
+| `backend/app/runs/models.py` + `repositories.py` | `DataflowRun` and `DataflowRunStep`, the run tables, and their reads, writes and retention |
+| `backend/app/execution/save_policy.py` | Which outputs a run on the server installs and records, as the canvas decides it |
 | `backend/app/datasets/infrastructure/` | Storage helpers, file metadata, output paths, catalog utilities |
 | `backend/app/datasets/schemas/` | Request and catalog-item serialization schemas |
 | `backend/app/agents/routes/` | `/api/agents/*` endpoints, one module per resource (`catalog`, `lifecycle`, `attachments`, `proposals`, `turns`, `solve`, `llm`); `common.py` holds the blueprint and the shared helpers; the route table is a contract test (`tests/test_agents/route_table.json`) |

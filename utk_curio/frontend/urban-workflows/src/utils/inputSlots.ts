@@ -8,9 +8,6 @@
  * `in`, circle k is `in_k`. Deleting an edge closes the gap: the circles below
  * move up one.
  *
- * Merge Flow keeps its five fixed `in_0` to `in_4` slots and its own handles,
- * but its slots are held the same way.
- *
  * Duck-typed edges, so this module needs no `reactflow` import.
  */
 
@@ -80,18 +77,6 @@ export function wiredInputSlots(edges: SlotEdge[], nodeId: string): number[] {
 }
 
 /**
- * The filled values in slot order (`arg[0]`, `arg[1]`, …). Uses positional
- * slots — never `.filter()` on the padded input array, which would drop holes
- * and mis-align args after manual edge connections.
- */
-export function filledSlotValues(input: unknown, edges: SlotEdge[], nodeId: string): unknown[] {
-    const list = Array.isArray(input) ? input : [];
-    return wiredInputSlots(edges, nodeId)
-        .map((i) => list[i])
-        .filter(isFilledSlot);
-}
-
-/**
  * Every slot of *nodeId* that *sourceNodeId* feeds, by prior assignment
  * (`sourceList`) and by current wiring (edge target handles). A single source
  * can feed more than one slot of the same node.
@@ -129,21 +114,6 @@ export function setSlot(
     while (sourceList.length <= index) sourceList.push(undefined);
     inputList[index] = output;
     sourceList[index] = source;
-}
-
-/**
- * Ensure arrays are large enough for `index`, then clear the slot.
- * Mutates the arrays in place (they should be fresh copies from ensureSlotArrays).
- */
-export function clearSlot(
-    inputList: any[],
-    sourceList: any[],
-    index: number
-): void {
-    while (inputList.length <= index) inputList.push(undefined);
-    while (sourceList.length <= index) sourceList.push(undefined);
-    inputList[index] = undefined;
-    sourceList[index] = undefined;
 }
 
 /**

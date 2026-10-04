@@ -94,7 +94,7 @@
     },
     {
       "category": "computation",
-      "description": "Compute the Universal Thermal Climate Index per raster pixel using pythermalcomfort. Reads raster + weather DataFrame via the Curio MERGE_FLOW pattern (arg[0] / arg[1]) and returns the UTCI grid + shape so the zonal-stats step can rebuild it.",
+      "description": "Compute the Universal Thermal Climate Index per raster pixel using pythermalcomfort. Reads raster + weather DataFrame on its two input circles (input 0 / input 1) and returns the UTCI grid + shape so the zonal-stats step can rebuild it.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,

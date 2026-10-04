@@ -1,18 +1,21 @@
 import React from "react";
 import type { AgentRemedy } from "../../services/agents";
 import { remedyFocus, requestConnectionKeys } from "../apiSettings/apiSettingsRequest";
+import { useHostedGuest } from "../apiSettings/useHostedGuest";
 import styles from "./AddKeyAction.module.css";
 
 /**
  * dev/116: the ONE rendering of a `source-missing` remedy. A missing key is a
  * button that opens API Settings' node code key form with the host prefilled; a key
- * that exists but was not used is a sentence (Solve again is the action).
+ * that exists but was not used is a sentence (Solve again is the action). A
+ * hosted guest has no keys for node code and cannot save one, so it gets neither.
  */
 export const AddKeyAction: React.FC<{ remedy?: AgentRemedy | null; className?: string }> = ({
   remedy,
   className,
 }) => {
-  if (!remedy || !remedy.host) return null;
+  const hostedGuest = useHostedGuest();
+  if (hostedGuest || !remedy || !remedy.host) return null;
   if (remedy.kind === "use-connection-key") {
     return (
       <span className={`${styles.note}${className ? ` ${className}` : ""}`}>

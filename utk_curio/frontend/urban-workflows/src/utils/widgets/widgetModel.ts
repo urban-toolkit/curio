@@ -233,12 +233,17 @@ export function checkWidgetValue(
 }
 
 /** What is wrong with a widget being added or edited, or null. *others* are
- * the node's other widgets, whose names it must not reuse. */
-export function checkWidgetDef(def: WidgetDef, others: WidgetDef[]): string | null {
+ * the node's other widgets, whose names it must not reuse; for a Parameter
+ * node's widget (*parameter*), the other Parameter nodes' widgets. */
+export function checkWidgetDef(def: WidgetDef, others: WidgetDef[], parameter = false): string | null {
   if (!WIDGET_NAME_RE.test(def.name)) {
     return "A name is letters, digits and underscores, and does not start with a digit.";
   }
-  if (others.some((w) => w.name === def.name)) return `This node already has a widget named ${def.name}.`;
+  if (others.some((w) => w.name === def.name)) {
+    return parameter
+      ? `Another Parameter node is named ${def.name}.`
+      : `This node already has a widget named ${def.name}.`;
+  }
   if (!(WIDGET_KINDS as readonly string[]).includes(def.type)) return "Pick a widget type.";
   if (CHOICE_KINDS.includes(def.type)) {
     const choices = def.options?.choices ?? [];

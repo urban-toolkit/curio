@@ -10,17 +10,18 @@ def _edge(eid, src, dst, **over):
     return e
 
 
-# The owner's 2026-08-25 canvas: Load → Transform → Merge → Pool → Vis.
+# The owner's 2026-08-25 canvas, with its Merge Flow now the code step that
+# combines (#662): Load, Transform, Combine, Pool, Vis.
 EXISTING = [
     _edge("e1", "load", "xform"),
-    _edge("e2", "xform", "merge", targetHandle="in_0"),
-    _edge("e3", "merge", "pool"),
+    _edge("e2", "xform", "combine"),
+    _edge("e3", "combine", "pool"),
     _edge("e4", "pool", "vis"),
 ]
 TYPES = {
     "load": "curio.builtin/data-loading@1",
     "xform": "curio.builtin/data-transformation@1",
-    "merge": "curio.builtin/merge-flow@1",
+    "combine": "curio.builtin/computation-analysis@1",
     "pool": "curio.builtin/data-pool@1",
     "vis": "curio.builtin/vis-vega@1",
 }
@@ -48,11 +49,11 @@ class TestFindDataCycle:
 
 class TestNetDataEdges:
     def test_the_owners_plan_closes_a_cycle(self):
-        # vis → merge as a DATA edge closes Merge → Pool → Vis → Merge.
-        plan = {"nodes": [], "edges": [{"from": "vis", "to": "merge"}], "removeEdges": []}
+        # vis → combine as a DATA edge closes Combine → Pool → Vis → Combine.
+        plan = {"nodes": [], "edges": [{"from": "vis", "to": "combine"}], "removeEdges": []}
         pairs = pt.net_data_edges(EXISTING, plan, set(), set())
         path = pt.find_data_cycle(pairs)
-        assert path is not None and set(path) == {"merge", "pool", "vis"}
+        assert path is not None and set(path) == {"combine", "pool", "vis"}
 
     def test_the_same_edge_as_interaction_does_not_count(self):
         plan = {"nodes": [], "edges": [{"from": "vis", "to": "pool", "kind": "interaction"}]}
@@ -63,7 +64,7 @@ class TestNetDataEdges:
         assert pt.find_data_cycle(pt.net_data_edges(existing, {"edges": []}, set(), set())) is None
 
     def test_removals_and_cascade_break_cycles(self):
-        cyclic = EXISTING + [_edge("e5", "vis", "merge")]
+        cyclic = EXISTING + [_edge("e5", "vis", "combine", targetHandle="in_1")]
         # Remove-only plan naming the closing edge → acyclic.
         assert pt.find_data_cycle(pt.net_data_edges(cyclic, {"edges": []}, set(), {"e5"})) is None
         # Removing the vis node cascades e4 and e5 away → acyclic.
@@ -72,15 +73,15 @@ class TestNetDataEdges:
         assert pt.find_data_cycle(pt.net_data_edges(cyclic, {"edges": []}, set(), set())) is not None
 
     def test_ref_to_id_maps_plan_refs_to_minted_ids(self):
-        plan = {"nodes": [{"ref": "n1"}], "edges": [{"from": "vis", "to": "n1"}, {"from": "n1", "to": "merge"}]}
+        plan = {"nodes": [{"ref": "n1"}], "edges": [{"from": "vis", "to": "n1"}, {"from": "n1", "to": "combine"}]}
         pairs = pt.net_data_edges(EXISTING, plan, set(), set(), ref_to_id={"n1": "real-1"})
-        assert ("vis", "real-1") in pairs and ("real-1", "merge") in pairs
+        assert ("vis", "real-1") in pairs and ("real-1", "combine") in pairs
         assert pt.find_data_cycle(pairs) is not None
 
     def test_remove_and_readd_the_same_data_edge_is_still_a_cycle(self):
         # The five-round loop: removeEdges the closing edge, add it back as data.
-        cyclic = EXISTING + [_edge("e5", "vis", "merge")]
-        plan = {"nodes": [], "edges": [{"from": "vis", "to": "merge"}], "removeEdges": ["e5"]}
+        cyclic = EXISTING + [_edge("e5", "vis", "combine", targetHandle="in_1")]
+        plan = {"nodes": [], "edges": [{"from": "vis", "to": "combine"}], "removeEdges": ["e5"]}
         assert pt.find_data_cycle(pt.net_data_edges(cyclic, plan, set(), {"e5"})) is not None
 
 
@@ -88,7 +89,7 @@ class TestNetDataEdges:
 ROSTER = {
     "curio.builtin/data-loading": {"category": "data"},
     "curio.builtin/data-transformation": {"category": "data"},
-    "curio.builtin/merge-flow": {"category": "flow"},
+    "curio.builtin/computation-analysis": {"category": "computation"},
     "curio.builtin/data-pool": {"category": "data", "bidirectional": True},
     "curio.builtin/vis-vega": {"category": "vis_grammar", "bidirectional": True},
     "curio.builtin/vis-simple": {"category": "vis_simple", "bidirectional": True},
@@ -104,14 +105,14 @@ class TestInteractionEdgeErrors:
             plan = {"edges": [{"from": src, "to": dst, "kind": "interaction"}]}
             assert pt.interaction_edge_errors(plan, self.type_of, ROSTER) == []
 
-    def test_vis_to_merge_names_the_offender_and_the_fix(self):
-        plan = {"edges": [{"from": "vis", "to": "merge", "kind": "interaction"}]}
+    def test_vis_to_a_code_step_names_the_offender_and_the_fix(self):
+        plan = {"edges": [{"from": "vis", "to": "combine", "kind": "interaction"}]}
         (err,) = pt.interaction_edge_errors(plan, self.type_of, ROSTER)
         assert err.startswith(
             "edges[0]: an interaction edge connects a visualization "
             "(autk-grammar, vis-simple, vis-vega) to a data-pool node"
         )
-        assert "'merge' is merge-flow" in err
+        assert "'combine' is computation-analysis" in err
         assert "target the data-pool" in err
 
     def test_two_visualizations_linked_directly_when_one_highlights(self):
@@ -145,7 +146,7 @@ class TestInteractionEdgeErrors:
         assert pt.interaction_edge_errors(plan, types.get, ROSTER) == []
 
     def test_data_edges_are_never_judged(self):
-        plan = {"edges": [{"from": "vis", "to": "merge"}]}
+        plan = {"edges": [{"from": "vis", "to": "combine"}]}
         assert pt.interaction_edge_errors(plan, self.type_of, ROSTER) == []
 
     def test_a_packages_visualization_is_capable_when_it_declares_it(self):
@@ -179,7 +180,7 @@ class TestInteractionEdgeErrors:
 
 class TestHelpers:
     def test_template_suffix_and_strip(self):
-        assert pt.strip_type_version("curio.builtin/merge-flow@1") == "curio.builtin/merge-flow"
+        assert pt.strip_type_version("curio.builtin/data-pool@1") == "curio.builtin/data-pool"
         assert pt.template_suffix("curio.builtin/vis-vega@1") == "vis-vega"
         assert pt.template_suffix(None) == ""
 

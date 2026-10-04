@@ -13,6 +13,7 @@ import {
 } from "../../../../services/modelCatalog";
 import { modelLabelCount } from "../../../models/catalog/modelFacts";
 import { focusLinkedNodes } from "../../../../utils/focusDatasetNodes";
+import { useNotebookViewContext } from "../../../../providers/flow/notebookViewContext";
 import { useToastContext } from "../../../../providers/ToastProvider";
 import { DetailsButton } from "../../../DetailsButton";
 import packageStyles from "../toolsMenuPackagePalette/ToolsMenuPackagePalette.module.css";
@@ -34,6 +35,7 @@ export const ModelPaletteRow = memo(function ModelPaletteRow({
   onOpenDetails: (model: ModelRow) => void;
 }) {
   const reactFlow = useReactFlow();
+  const { reveal } = useNotebookViewContext();
   const { showToast } = useToastContext();
 
   const selectOnCanvas = useCallback(
@@ -42,11 +44,11 @@ export const ModelPaletteRow = memo(function ModelPaletteRow({
       e.preventDefault();
       const isLinked = (n: { id: string; data: any }) =>
         nodeLinkedModelIds(n.data).includes(model.id);
-      if (focusLinkedNodes(reactFlow, isLinked) === 0) {
+      if (focusLinkedNodes(reactFlow, isLinked, reveal) === 0) {
         showToast("No nodes on the canvas use this model", "info");
       }
     },
-    [model.id, reactFlow, showToast],
+    [model.id, reactFlow, showToast, reveal],
   );
 
   return (

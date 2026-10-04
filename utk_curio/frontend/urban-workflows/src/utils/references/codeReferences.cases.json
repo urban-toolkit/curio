@@ -414,6 +414,71 @@
       "inputs": [{"slot": 0, "columns": ["a"]}],
       "expected": "x = [!! input 0.missing !!]",
       "problems": ["[!! input 0.missing !!]: input 0 has no column missing."]
+    },
+    {
+      "name": "a shared tag takes its Parameter node's set value",
+      "language": "python",
+      "code": "season = [!! @season !!]",
+      "widgets": [],
+      "shared": [{"name": "season", "type": "choice", "options": {"choices": ["summer", "winter"]}, "default": "summer", "value": "winter"}],
+      "expected": "season = \"winter\""
+    },
+    {
+      "name": "a shared tag and a widget of the same name are two values",
+      "language": "javascript",
+      "code": "return [!! @n !!] + [!! n !!];",
+      "widgets": [{"name": "n", "type": "number", "default": 1}],
+      "shared": [{"name": "n", "type": "number", "default": 10}],
+      "expected": "return 10 + 1;"
+    },
+    {
+      "name": "shared tags in a Vega-Lite spec, inside a title and on their own",
+      "language": "json",
+      "code": "{\"title\": \"Season: [!! @season !!]\", \"width\": [!! @width !!]}",
+      "widgets": [],
+      "shared": [
+        {"name": "season", "type": "text", "default": "winter"},
+        {"name": "width", "type": "number", "default": 300}
+      ],
+      "expected": "{\"title\": \"Season: winter\", \"width\": 300}"
+    },
+    {
+      "name": "a shared tag inside a string and a comment",
+      "language": "python",
+      "code": "s = 'It is [!! @season !!]'  # [!! @season !!]",
+      "widgets": [],
+      "shared": [{"name": "season", "type": "text", "default": "Ann's winter"}],
+      "expected": "s = 'It is Ann\\'s winter'  # Ann's winter"
+    },
+    {
+      "name": "a shared tag no Parameter node holds",
+      "language": "python",
+      "code": "x = [!! @missing !!]",
+      "widgets": [{"name": "missing", "type": "number", "default": 1}],
+      "shared": [],
+      "expected": "x = [!! @missing !!]",
+      "problems": ["[!! @missing !!]: no Parameter node is named missing. Add one, or drag a tag from Shared."]
+    },
+    {
+      "name": "two Parameter nodes with one name",
+      "language": "javascript",
+      "code": "const k = [!! @k !!];",
+      "widgets": [],
+      "shared": [
+        {"name": "k", "type": "number", "default": 1},
+        {"name": "k", "type": "number", "default": 2}
+      ],
+      "expected": "const k = [!! @k !!];",
+      "problems": ["[!! @k !!]: 2 Parameter nodes are named k. Rename all but one."]
+    },
+    {
+      "name": "a shared tag that does not name a Parameter node",
+      "language": "json",
+      "code": "{\"a\": [!! @9lives !!]}",
+      "widgets": [],
+      "shared": [],
+      "expected": "{\"a\": [!! @9lives !!]}",
+      "problems": ["[!! @9lives !!] does not name a Parameter node. Parameter names are letters, digits and underscores."]
     }
   ]
 }

@@ -8,7 +8,7 @@
  *    `data.workflowPosition` in preference to `position`, so a save made from
  *    the dashboard must not write tile positions over the authored layout;
  *  - an unpinned node stays MOUNTED. React Flow's own `hidden` unmounts the
- *    component, and an unpinned Data Pool or Merge is exactly what re-derives a
+ *    component, and an unpinned Data Pool is exactly what re-derives a
  *    tile's data from the restored outputs, so unmounting it empties the tile it
  *    was feeding;
  *  - it is pure and idempotent, because a load can run it more than once.
@@ -36,8 +36,8 @@ function node(id: string, nodeType: string, extra: Record<string, unknown> = {})
   } as any;
 }
 
-function edge(source: string, target: string) {
-  return { id: `${source}-${target}`, source, target } as any;
+function edge(source: string, target: string, targetHandle?: string) {
+  return { id: `${source}-${target}`, source, target, ...(targetHandle ? { targetHandle } : {}) } as any;
 }
 
 const RENDER_SPEC = JSON.stringify({ map: { layerRefs: [] } });
@@ -254,17 +254,17 @@ describe("dashboardSourceNodeIds", () => {
     expect([...sources]).toEqual(["py"]);
   });
 
-  test("both branches of a merge", () => {
+  test("both inputs of a Data Pool fed through two circles, two pass-throughs up", () => {
     const nodes = [
       node("x", NodeType.DATA_LOADING),
       node("y", NodeType.DATA_LOADING),
-      node("merge", NodeType.MERGE_FLOW),
+      node("fan", NodeType.DATA_POOL),
       node("pool", NodeType.DATA_POOL),
       node("chart", NodeType.VIS_VEGA, { dashboardPinned: true }),
     ];
 
     const sources = dashboardSourceNodeIds(nodes, [
-      edge("x", "merge"), edge("y", "merge"), edge("merge", "pool"), edge("pool", "chart"),
+      edge("x", "fan", "in"), edge("y", "fan", "in_1"), edge("fan", "pool"), edge("pool", "chart"),
     ]);
 
     expect([...sources].sort()).toEqual(["x", "y"]);

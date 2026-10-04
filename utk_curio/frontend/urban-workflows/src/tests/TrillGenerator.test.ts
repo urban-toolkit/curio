@@ -30,7 +30,7 @@ describe("TrillGenerator", () => {
     });
   });
 
-  test("persists edge handles so UUID-id edges keep their merge slot (dev/64)", () => {
+  test("persists edge handles so UUID-id edges keep their input circle (dev/64)", () => {
     const spec = TrillGenerator.generateTrill(
       [],
       [
@@ -40,7 +40,7 @@ describe("TrillGenerator", () => {
           id: "b1433343-ee39-4d94-b927-d55e5bb6579d",
           source: "loader-node",
           sourceHandle: "out",
-          target: "merge-node",
+          target: "fan-in-node",
           targetHandle: "in_1",
         },
         {

@@ -79,16 +79,20 @@ describe("resolveNodeBoxSize", () => {
     });
 
     test("a noContent template keeps its sub-minimum footprint", () => {
-        // merge-flow. Both resize effects in NodeContainer bail on noContent, so
-        // 50x180 is the literal rendered size -- not clamped up to 200x150, and
-        // not the 525x350 default.
-        registerNode(descriptor("curio.builtin/merge-flow@1", {
-            noContent: true,
-            nodeWidth: 50,
-            nodeHeight: 180,
-        }));
+        // A package template that declares a 50x180 icon-only chip. Both resize
+        // effects in NodeContainer bail on noContent, so 50x180 is the literal
+        // rendered size -- not clamped up to 200x150, and not the 525x350
+        // default. `source: "package"` so afterEach's clearPackageNodes drops it.
+        registerNode({
+            ...descriptor("acme.test/icon-chip@1", {
+                noContent: true,
+                nodeWidth: 50,
+                nodeHeight: 180,
+            }),
+            source: "package",
+        });
 
-        expect(resolveNodeBoxSize(node("curio.builtin/merge-flow@1"))).toEqual({
+        expect(resolveNodeBoxSize(node("acme.test/icon-chip@1"))).toEqual({
             width: 50,
             height: 180,
         });

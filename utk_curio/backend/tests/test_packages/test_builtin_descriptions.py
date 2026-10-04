@@ -52,6 +52,8 @@ def test_spatial_join_says_what_each_port_expects():
 
     assert "points" in text and "polygons" in text, "does not name the two inputs"
     assert "top" in text and "bottom" in text, "does not say which handle is which"
+    # The circles wear the colours the node's own text names them by.
+    assert "blue circle" in text and "green circle" in text, "does not name the input circles by colour"
     assert "comes out" in text or "output" in text, "does not say what the node produces"
     # #262: the tag column is chosen on the node; the "rename it upstream"
     # workaround is no longer the documented design. "column", not "property":

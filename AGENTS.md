@@ -50,6 +50,7 @@ Each backend feature's `service.py` is its public entry point for routes and oth
 Under `utk_curio/backend/app/`:
 
 - `projects/`: dataflows: routes, services, storage, seeding, categories, dashboard payload.
+- `runs/`: dataflow runs on the server: tables and retention (`models.py`, `repositories.py`), starting, following and cancelling one (`service.py`, `routes.py`), live runs (`jobs.py`). The engine is `execution/run_engine.py` with `execution/run_plan.py`; which outputs a run saves is `execution/save_policy.py`.
 - `users/`: accounts, sessions, auth routes, capabilities, connection keys, rate limits.
 - `execution/`: one node run as Play does it (`node_exec.py`, behind `/processPythonCode` and `/processJavaScriptCode`), the sandbox HTTP client (`sandbox_client.py`), headless dataflow runner (`runner.py`), per-node runtime journal, sandbox token.
 - `collaboration/`: real-time co-editing over Socket.IO (`events.py`, `room_state.py`).
@@ -57,11 +58,11 @@ Under `utk_curio/backend/app/`:
 - `notebooks/`: Jupyter notebook import (`analyzer.py`).
 - `api/routes.py`: sandbox proxies, starters, file serving.
 - `testing/`: test-only routes for Playwright, registered only in dev mode.
-- `common/`: shared helpers (safe paths, file locks, owner-only files, user storage, egress policy).
+- `common/`: shared helpers (safe paths, file locks, owner-only files, user storage, egress policy, the background job registry).
 
 ## Frontend core
 
-- `src/providers/FlowProvider.tsx`: workflow state (nodes, edges, outputs, interactions) and `useFlowContext()`. Its sections are hooks in `src/providers/flow/`: `usePlayAll.ts` (Run All), `useConnect.ts` (`onConnect`), `useGraphEdits.ts` (adding and deleting, output propagation), `useApplyOutput.ts`, `useInteractions.ts`, `useCollaborationSync.ts`, `useDashboardPins.ts`, `useInstallSave.ts`; types in `flowTypes.ts` and `flowContextTypes.ts`, Run All levels in `runLevels.ts`.
+- `src/providers/FlowProvider.tsx`: workflow state (nodes, edges, outputs, interactions) and `useFlowContext()`. Its sections are hooks in `src/providers/flow/`: `usePlayAll.ts` (Run All), `useConnect.ts` (`onConnect`), `useGraphEdits.ts` (adding and deleting, output propagation), `useApplyOutput.ts`, `useInteractions.ts`, `useCollaborationSync.ts`, `useDashboardPins.ts`, `useInstallSave.ts`, `useNotebookView.ts` (the notebook view, with `notebookViewContext.ts`); types in `flowTypes.ts` and `flowContextTypes.ts`, Run All levels in `runLevels.ts`.
 - `src/hook/useWorkflowOperations.ts`: workflow operations FlowProvider delegates (Trill loading, canvas management, suggestions).
 - `src/adapters/node/`: one behavior hook per built-in node kind (`codeNodeBehavior.tsx`, `vegaBehavior.ts`, `autkGrammarBehavior.tsx`, `dataPoolBehavior.tsx`, ...), exported from `index.ts`.
 - `src/components/UniversalNode.tsx`: the component that renders every node.
@@ -73,7 +74,7 @@ Under `utk_curio/backend/app/`:
 
 Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 
-- Backend pytest: `utk_curio/backend/tests/`. `conftest.py` at its root and in `test_agents/`, `test_datasets/`, `test_discovery/`, `test_execution/`, `test_frontend/`, `test_model_catalog/`, `test_monitor/`, `test_packages/`, `test_projects/`, `test_users/`. Shared helpers in `_support/`.
+- Backend pytest: `utk_curio/backend/tests/`. `conftest.py` at its root and in `test_agents/`, `test_datasets/`, `test_discovery/`, `test_execution/`, `test_frontend/`, `test_model_catalog/`, `test_monitor/`, `test_packages/`, `test_projects/`, `test_runs/`, `test_users/`. Shared helpers in `_support/`.
 - E2E (Playwright): `utk_curio/backend/tests/test_frontend/`. Helpers in the `utils/` package (below), scripted walkthroughs in the `walkthroughs/` package (below), runner assignment in `runner_split.py`, author guide in `README.md`.
 - E2E helpers, `test_frontend/utils/`: `from .utils import X` works for every public name; X is defined in one module, and a patch goes on the module whose code calls X (`screenshots.py` for what `save_workflow_test_screenshot` and `frame_nodes` call):
   - `environment.py`: `REPO_ROOT`, `state_root`, stack flags and public config, `require_*` skips, `debug_log`.
