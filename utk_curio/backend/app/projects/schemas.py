@@ -12,6 +12,16 @@ def _slugify(name: str) -> str:
     return re.sub(r"[\s_-]+", "-", slug)[:240]
 
 
+def _refuse_scenario_conflicts(spec) -> None:
+    """A spec whose ``dataflow.scenarios`` puts a node in two scenarios, or
+    gives two scenarios one id, is refused (#662)."""
+    from utk_curio.backend.app.projects.scenarios import scenario_conflicts
+
+    conflicts = scenario_conflicts(spec)
+    if conflicts:
+        raise ValueError(" ".join(conflicts))
+
+
 @dataclass
 class OutputRef:
     node_id: str
@@ -39,6 +49,7 @@ class ProjectCreate:
     def __post_init__(self):
         if not self.name or not self.name.strip():
             raise ValueError("name is required")
+        _refuse_scenario_conflicts(self.spec)
         if self.thumbnail_accent not in VALID_ACCENTS:
             self.thumbnail_accent = "peach"
         self.outputs = [
@@ -62,6 +73,8 @@ class ProjectUpdate:
     categories: Optional[dict] = None
 
     def __post_init__(self):
+        if self.spec is not None:
+            _refuse_scenario_conflicts(self.spec)
         if self.thumbnail_accent and self.thumbnail_accent not in VALID_ACCENTS:
             self.thumbnail_accent = None
         if self.categories is not None:
@@ -95,6 +108,9 @@ class ProjectSummary:
     #: ``{"source", "auto": {"tags", "data_type"}, "hand": {...}}`` - see
     #: ``projects/categories.py``.
     categories: dict = field(default_factory=dict)
+    #: The spec's scenarios, ``{id, name, color, description?, nodes}`` each -
+    #: see ``projects/scenarios.py``.
+    scenarios: list = field(default_factory=list)
 
 
 @dataclass

@@ -26,6 +26,7 @@ spec
 │   ├── datasets[]              Data Catalog references    (backend-owned on update)
 │   ├── description
 │   ├── categories              tags, city, topic, complexity set by hand
+│   ├── scenarios[]             named selections of the nodes
 │   ├── agents[]                agent lockfile             (backend-owned, stripped on share)
 │   └── agentAttachments[]      live agent bindings        (backend-owned, stripped on share)
 ├── nodeProvenance              per-node execution history (browser-side only)
@@ -113,6 +114,29 @@ example or a test that ships with Curio), and the tags and data types its nodes
 imply (an Autark node, `import geopandas`, a raster dataset). A save that leaves
 `categories` out keeps the ones already saved.
 
+### Scenarios
+
+`scenarios` lists named selections of the dataflow's nodes. Each one is
+`{id, name, color, description?, nodes, collapsed?, box?, source?}`:
+
+- `id` is unique among the scenarios, `color` a hex color such as `#2a9d8f`, and
+  `nodes` the ids of its nodes.
+- `collapsed` and `box` say whether the canvas draws it as one box, and where.
+- `source` names the project and scenario it was dragged in from.
+
+What enters a scenario from nodes outside it is its fixed context, its nodes are
+what it changes, and the outputs of its last nodes are what it produces.
+
+A node belongs to at most one scenario: a save that puts a node in two, or gives
+two scenarios one id, is refused. A save drops ids that are not nodes of the
+dataflow, so deleting a node removes it from its scenario. A scenario whose last
+node was deleted keeps its name and color until it is deleted itself.
+
+The canvas writes `scenarios` on every save, and an empty list clears them. A
+save that leaves the key out keeps the ones already saved, and a dataflow
+without scenarios has no key. Version snapshots and an agent's view of the
+dataflow carry them only when there are some.
+
 ### Ownership
 
 Three sections are **backend-owned on update**, so the server overwrites whatever
@@ -163,7 +187,8 @@ python scripts/validate_trill.py --all --resolve          # also check types res
 ```
 
 `--resolve` adds the manifest check the schema cannot do: every node type must
-correspond to a template under `packages/`.
+correspond to a template under `packages/`. Every check also refuses a node in
+two scenarios and a scenario member that is not a node.
 
 Snapshots inside `dataflowProvenance.versions` are held to a **relaxed** version
 of the same shape, requiring only `nodes` and `edges`.

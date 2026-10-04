@@ -346,7 +346,9 @@ export function useCode(): IUseCode {
             // Reverting to a historical version: preserve the current provenance graph.
             // latestTrill was already set to the target version by switchProvenanceTrill.
             const savedProv = TrillGenerator.getSerializableDataflowProvenance();
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || []);
+            // #662: a snapshot carries scenarios only when it had some, so an
+            // absent key restores none.
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], undefined, trill.dataflow.scenarios ?? []);
             TrillGenerator.loadDataflowProvenance(savedProv);
             // Reverting puts a DIFFERENT graph on the canvas than the one on
             // disk, so it is an edit. The edge replay inside loadParsedTrill no
@@ -355,7 +357,7 @@ export function useCode(): IUseCode {
             // reach loadParsedTrill identically from there down.
             markDirty();
         } else if(suggestionType == undefined) {
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {});
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {}, trill.dataflow.scenarios ?? []);
             if (trill.nodeProvenance) loadNodeProvenance(rekeyNodeProvenance(trill.nodeProvenance, nodes.map((n) => n.id)));
             if (trill.dataflowProvenance) TrillGenerator.loadDataflowProvenance(trill.dataflowProvenance);
         } else {
