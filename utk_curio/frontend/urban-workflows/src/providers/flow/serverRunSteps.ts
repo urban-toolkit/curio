@@ -66,13 +66,16 @@ export function replyFromTails(step: {
   };
 }
 
-/** A recorded step as the event that finished it. */
+/** A recorded step as the event that finished it, the library it missed included. */
 export function replyFromRecord(step: RunStep): any {
-  return replyFromTails({
-    output: step.outputPath ? { path: step.outputPath, dataType: step.outputType ?? undefined } : null,
-    stdoutTail: step.stdoutTail,
-    stderrTail: step.stderrTail,
-  });
+  return {
+    ...replyFromTails({
+      output: step.outputPath ? { path: step.outputPath, dataType: step.outputType ?? undefined } : null,
+      stdoutTail: step.stdoutTail,
+      stderrTail: step.stderrTail,
+    }),
+    missingModule: step.missingModule ?? null,
+  };
 }
 
 /**

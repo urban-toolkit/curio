@@ -342,6 +342,23 @@ describe("a run started on the canvas", () => {
 
     expect(node("map")!.data.serverOutput).toMatchObject({ output: before, onlyIfRunning: true });
   });
+
+  it("a run read back from its record still names the library a node could not import", async () => {
+    // The stream dropped: the run's record says how it ended, the missing
+    // library included, so the node still offers its install (#299).
+    const missing = { module: "zzz_absent_lib", distribution: "zzz-absent-lib", installable: true };
+    api.start.mockResolvedValue(run("r1", [step("a")]));
+    api.follow.mockResolvedValue(undefined);
+    api.get.mockResolvedValue(run("r1", [
+      step("a", { status: "error", stderrTail: "ModuleNotFoundError: No module named 'zzz_absent_lib'", missingModule: missing as any }),
+    ], { status: "failed" }));
+    const { hook, shown } = harness([{ id: "a" }]);
+
+    await act(async () => { await hook.result.current.startRun(); });
+    await flush();
+
+    expect(shown("a")).toMatchObject({ code: "error", missingModule: missing });
+  });
 });
 
 describe("a canvas opened after a run", () => {

@@ -46,6 +46,8 @@ class FakeSandbox:
     def __init__(self, hold=(), fail=()):
         self.hold = set(hold)
         self.fail = set(fail)
+        # A failed node's stderr, by node id; "Traceback: boom" otherwise.
+        self.stderr = {}
         self.gate = threading.Event()
         self.started = threading.Event()
         self.bodies = {}
@@ -67,7 +69,8 @@ class FakeSandbox:
 
             def json(_self):
                 if node_id in self.fail:
-                    return {"stdout": [], "stderr": "Traceback: boom", "output": {"path": "", "dataType": "str"}}
+                    stderr = self.stderr.get(node_id, "Traceback: boom")
+                    return {"stdout": [], "stderr": stderr, "output": {"path": "", "dataType": "str"}}
                 return {"stdout": [f"ran {node_id}"], "stderr": "",
                         "output": {"path": f"art-{node_id}", "dataType": "dataframe"}}
 
@@ -413,6 +416,23 @@ class TestACanvasOpenedLater:
         steps = {s["nodeId"]: s for s in _get(client, token, run_id)["steps"]}
         assert steps["a"]["codeCurrent"] is True
         assert steps["b"]["codeCurrent"] is False
+
+    def test_a_step_keeps_the_library_its_code_could_not_import(self, client, user_and_token, sandbox):
+        # The reply's missingModule, so a canvas opened later offers the
+        # install the canvas that ran it offered (#299).
+        user, token = user_and_token
+        sandbox.fail.add("a")
+        sandbox.stderr["a"] = (
+            "Traceback (most recent call last):\n"
+            "ModuleNotFoundError: No module named 'zzz_absent_lib'"
+        )
+        project_id, _ = _create(client, token, [_node("a"), _node("b")])
+        run_id = _start(client, token, project_id).get_json()["id"]
+        _wait(run_id)
+        steps = {s["nodeId"]: s for s in _get(client, token, run_id)["steps"]}
+        assert steps["a"]["status"] == "error"
+        assert steps["a"]["missingModule"]["module"] == "zzz_absent_lib", steps["a"]
+        assert steps["b"]["missingModule"] is None
 
 
 def _until(predicate, timeout=10.0):

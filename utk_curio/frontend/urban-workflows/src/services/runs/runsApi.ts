@@ -2,6 +2,7 @@
  * Dataflow runs on the server (`utk_curio/backend/app/runs/routes.py`): start
  * one, follow it, stop it, and report a node only the browser can run.
  */
+import type { MissingModuleNotice } from "../../types/nodeTypes";
 import { apiFetch } from "../../utils/authApi";
 import { postSseStream } from "../../utils/sseStream";
 
@@ -32,6 +33,8 @@ export interface RunStep {
   stdoutTail: string | null;
   stderrTail: string | null;
   skipReason: string | null;
+  /** The library the step's code could not import, as a run's reply names it. */
+  missingModule?: MissingModuleNotice | null;
   /** Read by `getRun`: whether the node still holds the code this step ran. */
   codeCurrent?: boolean;
 }

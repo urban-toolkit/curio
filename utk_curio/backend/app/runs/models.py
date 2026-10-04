@@ -103,6 +103,9 @@ class DataflowRunStep(db.Model):
     stdout_tail = db.Column(db.Text, nullable=True)
     stderr_tail = db.Column(db.Text, nullable=True)
     skip_reason = db.Column(db.Text, nullable=True)
+    # The library the step's code could not import, as the reply's
+    # ``missingModule`` (JSON), so a canvas opened later offers its install.
+    missing_module = db.Column(db.Text, nullable=True)
 
     __table_args__ = (
         db.UniqueConstraint("run_id", "node_id", name="uq_dataflow_run_step_node"),

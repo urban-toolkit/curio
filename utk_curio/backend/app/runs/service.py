@@ -9,6 +9,7 @@ on the thread only, never in a table, an event or a log line.
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Iterator, Optional
@@ -82,6 +83,7 @@ def step_payload(step: DataflowRunStep, current: Optional[dict] = None) -> dict:
         "stdoutTail": step.stdout_tail,
         "stderrTail": step.stderr_tail,
         "skipReason": step.skip_reason,
+        "missingModule": json.loads(step.missing_module) if step.missing_module else None,
     }
     if current is not None:
         payload["codeCurrent"] = bool(step.code_sha256) and current.get(step.node_id) == step.code_sha256
@@ -409,6 +411,7 @@ def _record_step(run_id, step, payload, runtime_journal) -> None:
             code_sha256=runtime_journal.normalized_code_sha256(step.content),
             stdout_tail=payload.get("stdoutTail"),
             stderr_tail=payload.get("stderrTail"),
+            missing_module=json.dumps(reply["missingModule"]) if reply.get("missingModule") else None,
         )
     runs_repo.update_step(run_id, step.node_id, **fields)
 
