@@ -275,6 +275,8 @@ Each entry names a *behavior key* (a string), not a JS module path. The same key
 ]
 ```
 
+An input port's `cardinality` sets how many edges the node takes. `"1"` takes one. A single port whose maximum is more than one (`"[1,2]"`, `"[1,n]"`) gives the node a new input circle for each edge, up to that maximum; its code receives them as a list in circle order and reads each through an input chip, `[!! input 1 !!]` (USAGE.md, "Several inputs"). Several input ports are named circles that take one edge each, as Spatial Join's `in_points` and `in_polygons`.
+
 The template reuses the built-in `code` behavior, so the package ships no JavaScript and no `behaviorScript`. `source` is the starter a new node opens with, [`sources/image-segmentation.py`](../packages/curio.streetvision@1/sources/image-segmentation.py):
 
 ```python
