@@ -10,10 +10,10 @@ So, on a fresh dataflow at the default 1280x720 viewport:
 
 * the bar is the section pages' bar: the same height, the logo link, Monitor,
   API Settings and the account;
-* it holds the dataflow's menus and the five catalogs in one row, with every
-  control inside the bar, none overlapping the next, nothing overflowing its
-  slot, and each catalog's label showing, even next to the widest account
-  name the bar shows;
+* it holds the dataflow's menus, the Canvas | Notebook switch and the five
+  catalogs in one row, with every control inside the bar, none overlapping the
+  next, nothing overflowing its slot, and each catalog's label showing, even
+  next to the widest account name the bar shows;
 * each catalog button opens its own drawer over the dataflow;
 * Monitor and API Settings open as drawers over the dataflow, which stays
   where it was;
@@ -141,6 +141,12 @@ def test_the_canvas_wears_the_shared_bar_with_the_catalogs_in_it(
     # The dataflow's own controls, and every catalog with its label showing.
     for name in ("File menu", "View menu", "Share menu"):
         expect(bar.get_by_role("button", name=name, exact=True)).to_be_visible()
+    # The view switch, on the canvas: both views offered, the canvas checked.
+    expect(bar.get_by_role("radiogroup", name="Dataflow view", exact=True)).to_be_visible()
+    for name, checked in (("Canvas view", "true"), ("Notebook view", "false")):
+        option = bar.get_by_role("radio", name=name, exact=True)
+        expect(option).to_be_visible()
+        expect(option).to_have_attribute("aria-checked", checked)
     expect(bar.get_by_test_id("provenance-btn")).to_be_visible()
     expect(bar.locator("[data-curio-save-state]")).to_be_visible()
     for name, _ in CATALOGS:

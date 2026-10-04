@@ -33,8 +33,9 @@ export const MENU_BAR_ATTR = "data-curio-menu-bar";
  *  category chips hang below it, so the fit keeps the top node clear of both. */
 export const CANVAS_TITLE_ATTR = "data-curio-canvas-title";
 
-/** The lowest bottom edge of the overlays fixed along the top of the pane. */
-function topOverlayBottom(): number | null {
+/** The lowest bottom edge of the overlays fixed along the top of the pane.
+ *  The notebook view starts its column below the same edge. */
+export function topOverlayBottom(): number | null {
     const overlays = [
         ...document.querySelectorAll<HTMLElement>(`[${MENU_BAR_ATTR}]`),
         ...document.querySelectorAll<HTMLElement>(
@@ -43,6 +44,13 @@ function topOverlayBottom(): number | null {
     ];
     if (overlays.length === 0) return null;
     return Math.max(...overlays.map((el) => el.getBoundingClientRect().bottom));
+}
+
+/** The right edge of the palette rail (`#tools-palette-dock`) without any
+ *  open panel: the notebook view keeps its column clear of it. */
+export function paletteRailRight(): number | null {
+    const dock = document.getElementById("tools-palette-dock");
+    return dock ? dock.getBoundingClientRect().right : null;
 }
 
 const FALLBACK_MIN_ZOOM = 0.05;

@@ -13,6 +13,7 @@ import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 // Editor
 import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
+import { useNotebookViewContext } from "../../providers/flow/notebookViewContext";
 import { shouldSaveOutputOnRun } from "../../utils/saveOutputDataset";
 import { registerRunNodeAction } from "./runNodeMonacoAction";
 import { MissingModuleNotice, type InstallState } from "./MissingModuleNotice";
@@ -115,6 +116,7 @@ function CodeEditor({
         playNodesUpTo,
         nodes,
     } = useFlowContext();
+    const notebook = useNotebookViewContext();
     const { nodeExecProv } = useProvenanceContext();
     const collab = useCollab();
     // dev/91: non-null exactly when this template declares a backendHandler.
@@ -606,6 +608,9 @@ function CodeEditor({
                         minimap: { enabled: false },
                         readOnly: readOnly,
                         scrollBeyondLastLine: false,
+                        // In the notebook view the page scrolls on past the
+                        // editor's ends; on the canvas, Monaco's default.
+                        scrollbar: { alwaysConsumeMouseWheel: !notebook.on },
                     }}
                 />
             </div>

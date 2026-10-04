@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useReactFlow } from "reactflow";
 import { useCode } from "../../../hook/useCode";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { useNotebookViewContext } from "../../../providers/flow/notebookViewContext";
 import { fitViewWithMenuOffset } from "../../../utils/fitViewWithMenuOffset";
 import {
   AgentCanvasMutation,
@@ -74,6 +75,7 @@ function appliedEdgeToCanvasEdge(edge: {
 export function useAgentCanvasMutations(): void {
   const { createCodeNode } = useCode();
   const { applyNodeContent, onEdgesChange, applyReviewedRemovals } = useFlowContext();
+  const { reveal } = useNotebookViewContext();
   const reactFlow = useReactFlow();
   const { getNodes, setCenter, getZoom } = reactFlow;
   // Event-level idempotence: survives the store-sync lag between an insert
@@ -168,7 +170,7 @@ export function useAgentCanvasMutations(): void {
         const fresh = mutation.nodes.filter((n) => !live.has(n.id));
         for (const node of fresh) insertNode(node);
         const first = fresh[0] ?? mutation.nodes[0];
-        if (first) {
+        if (first && !reveal([first.id])) {
           setCenter(first.x + NODE_CENTER_X, first.y + NODE_CENTER_Y, {
             zoom: getZoom(),
             duration: CENTER_ANIMATION_MS,
@@ -184,11 +186,14 @@ export function useAgentCanvasMutations(): void {
     const insert = () => {
       insertNode(node);
       // The backend placement is right of the whole graph extent — bring the
-      // node into view so "created" is visible, not off-screen (dev/51).
-      setCenter(node.x + NODE_CENTER_X, node.y + NODE_CENTER_Y, {
-        zoom: getZoom(),
-        duration: CENTER_ANIMATION_MS,
-      });
+      // node into view so "created" is visible, not off-screen (dev/51). In the
+      // notebook view that is its cell, scrolled into view.
+      if (!reveal([node.id])) {
+        setCenter(node.x + NODE_CENTER_X, node.y + NODE_CENTER_Y, {
+          zoom: getZoom(),
+          duration: CENTER_ANIMATION_MS,
+        });
+      }
     };
     if (createdPackageDir) {
       // A brand-new node type (dev/48 §3.2b): make its descriptor

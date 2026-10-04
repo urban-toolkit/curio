@@ -4,6 +4,7 @@ import { ICodeData } from "../../types";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
 import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
 import { useFlowContext } from "../../providers/FlowProvider";
+import { useNotebookViewContext } from "../../providers/flow/notebookViewContext";
 import { registerRunNodeAction } from "./runNodeMonacoAction";
 import { describeError } from "../../adapters/node/autkRunSettlement";
 import { ReferenceStrip } from "./widgets/WidgetTag";
@@ -107,6 +108,7 @@ export default function GrammarEditor({
     // onMount fires once, so the action reads the CURRENT play function through
     // a ref rather than capturing the first render's (#223).
     const { playNodesUpTo } = useFlowContext();
+    const notebook = useNotebookViewContext();
     const runNodeRef = useRef<() => void>(() => {});
     runNodeRef.current = () => playNodesUpTo(nodeId);
 
@@ -284,6 +286,9 @@ export default function GrammarEditor({
                         scrollBeyondLastLine: false,
                         formatOnType: true,
                         autoClosingBrackets: "always",
+                        // In the notebook view the page scrolls on past the
+                        // editor's ends; on the canvas, Monaco's default.
+                        scrollbar: { alwaysConsumeMouseWheel: !notebook.on },
                     }}
                 />
             </div>

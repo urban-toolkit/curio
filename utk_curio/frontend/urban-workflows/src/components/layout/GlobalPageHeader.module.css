@@ -91,13 +91,15 @@
 
 /* ── Borderless controls a page puts in the slot ─────────────────────────── */
 
+/* A page whose slot is full can set --curio-bar-button-padding-x on its bar
+   (the canvas does, to fit its view switch). */
 .barButton {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 32px;
   margin: 0;
-  padding: 0 10px;
+  padding: 0 var(--curio-bar-button-padding-x, 10px);
   background: transparent;
   border: none;
   border-radius: var(--curio-radius-md);

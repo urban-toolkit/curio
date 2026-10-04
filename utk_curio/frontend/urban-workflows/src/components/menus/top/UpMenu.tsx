@@ -32,6 +32,7 @@ import {
 import { GlobalPageHeader } from "../../layout/GlobalPageHeader";
 import { HeaderMenu, HeaderMenuDivider, HeaderMenuItem } from "./HeaderMenu";
 import { CatalogButtons } from "./CatalogButtons";
+import { CanvasViewSwitch } from "./CanvasViewSwitch";
 import { useNavigate, useParams } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
@@ -78,6 +79,8 @@ export default function UpMenu() {
         packages,
         nodes,
         edges,
+        canvasView,
+        setCanvasView,
     } = useFlowContext();
 
     /** Run *action* now, or ask first when there is unsaved work to lose.
@@ -429,6 +432,7 @@ export default function UpMenu() {
                     onToggle={() => toggleMenu("view")}
                     onClose={closeView}
                 >
+                    {/* A notebook cell keeps its size, so nothing to minimize there. */}
                     <HeaderMenuItem
                         icon={
                             expandStatus === "expanded"
@@ -436,10 +440,21 @@ export default function UpMenu() {
                                 : faUpRightAndDownLeftFromCenter
                         }
                         onClick={toggleExpand}
+                        disabled={canvasView === "notebook"}
                     >
                         {expandStatus === "expanded" ? "Minimize Nodes" : "Expand Nodes"}
                     </HeaderMenuItem>
                 </HeaderMenu>
+
+                {/* The canvas, or the same nodes as a column of notebook cells. */}
+                <CanvasViewSwitch
+                    value={canvasView}
+                    onChange={(view) => {
+                        setActiveMenu(null);
+                        setCanvasView(view);
+                    }}
+                    crowded={collab.enabled}
+                />
 
                 {/* One window, so a button rather than a menu: its menu held
                     a single row with its own name. */}
