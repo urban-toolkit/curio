@@ -184,6 +184,9 @@ test("the fit runs at once when every node is known", async () => {
   registerNode(descriptor(CHART));
   const { result } = render();
   await load(result.current);
+  // Under fake timers React runs the fit's effect on the next tick; well
+  // under one 100 ms wait, so a fit that waited would not have run yet.
+  advance(10);
   expect(mockFitViewWithMenuOffset).toHaveBeenCalled();
 });
 
