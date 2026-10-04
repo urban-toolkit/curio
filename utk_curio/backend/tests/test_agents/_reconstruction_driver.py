@@ -145,12 +145,16 @@ class InProcessDriver:
             pip_runner, "import_failures", lambda deps, **kw: dict(failures)
         )
 
-    def create_project(self, name: str = "reconstruction") -> str:
-        body = {
-            "name": name,
-            "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
-            "outputs": [],
-        }
+    def create_project(self, name: str = "reconstruction", fixture_id: str | None = None) -> str:
+        spec = {"dataflow": {"nodes": [], "edges": [], "packages": []}}
+        if fixture_id:
+            # Marked the way an evaluation marks the project it builds
+            # (``evaluation/live.py``), so no run in it is shown the example
+            # it is scored against.
+            from utk_curio.backend.app.agents.evaluation import authorization as auth_mod
+
+            spec = auth_mod.mark_spec(spec, auth_mod.new_marker(name, fixture_id))
+        body = {"name": name, "spec": spec, "outputs": []}
         response = self.client.post("/api/projects", json=body, headers=auth(self.token))
         assert response.status_code in (200, 201), response.get_json()
         self.project_id = response.get_json()["id"]
@@ -514,7 +518,7 @@ def oracle_attempt(
 
     driver.use_scripted_provider()
     driver.stub_pip(import_errors=import_errors)
-    driver.create_project()
+    driver.create_project(fixture_id=fixture.fixture_id)
     driver.install_and_attach()
 
     if provision_datasets:

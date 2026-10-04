@@ -335,12 +335,14 @@
       {
         "id": "reactflow__edge-2704287e-a72c-454d-b6f2-7bca1e521397out-624087f5-cd1f-4348-8b15-ea9eed203770in_0",
         "source": "2704287e-a72c-454d-b6f2-7bca1e521397",
-        "target": "624087f5-cd1f-4348-8b15-ea9eed203770"
+        "target": "624087f5-cd1f-4348-8b15-ea9eed203770",
+        "targetHandle": "in_0"
       },
       {
         "id": "reactflow__edge-f4cb8452-3fbf-48b3-9a4e-42d0607428cbout-624087f5-cd1f-4348-8b15-ea9eed203770in_1",
         "source": "f4cb8452-3fbf-48b3-9a4e-42d0607428cb",
-        "target": "624087f5-cd1f-4348-8b15-ea9eed203770"
+        "target": "624087f5-cd1f-4348-8b15-ea9eed203770",
+        "targetHandle": "in_1"
       },
       {
         "id": "reactflow__edge-624087f5-cd1f-4348-8b15-ea9eed203770out-ab8d8046-b68f-419f-bb36-3454e576afd4in",
@@ -390,12 +392,14 @@
       {
         "id": "reactflow__edge-da73932f-b91a-4542-98df-d731a888b8b4out-04689857-6cf6-4ee9-801d-e7b075c16da5in_0",
         "source": "da73932f-b91a-4542-98df-d731a888b8b4",
-        "target": "04689857-6cf6-4ee9-801d-e7b075c16da5"
+        "target": "04689857-6cf6-4ee9-801d-e7b075c16da5",
+        "targetHandle": "in_0"
       },
       {
         "id": "reactflow__edge-2bbbd05f-f5cb-48a2-b96f-c55a9ac95a34out-04689857-6cf6-4ee9-801d-e7b075c16da5in_1",
         "source": "2bbbd05f-f5cb-48a2-b96f-c55a9ac95a34",
-        "target": "04689857-6cf6-4ee9-801d-e7b075c16da5"
+        "target": "04689857-6cf6-4ee9-801d-e7b075c16da5",
+        "targetHandle": "in_1"
       },
       {
         "id": "reactflow__edge-04689857-6cf6-4ee9-801d-e7b075c16da5out-bed93b38-cdb2-4db3-be54-7e60d68013d9in",
@@ -425,12 +429,14 @@
       {
         "id": "reactflow__edge-be851609-c0f7-4cae-afae-2094965ead93out-412c23ca-fafd-4af8-ab87-abd9df17241ain_0",
         "source": "be851609-c0f7-4cae-afae-2094965ead93",
-        "target": "412c23ca-fafd-4af8-ab87-abd9df17241a"
+        "target": "412c23ca-fafd-4af8-ab87-abd9df17241a",
+        "targetHandle": "in_0"
       },
       {
         "id": "reactflow__edge-18b287f6-0a05-4dbc-92d3-4eb10f177bc5out-412c23ca-fafd-4af8-ab87-abd9df17241ain_1",
         "source": "18b287f6-0a05-4dbc-92d3-4eb10f177bc5",
-        "target": "412c23ca-fafd-4af8-ab87-abd9df17241a"
+        "target": "412c23ca-fafd-4af8-ab87-abd9df17241a",
+        "targetHandle": "in_1"
       },
       {
         "id": "reactflow__edge-412c23ca-fafd-4af8-ab87-abd9df17241aout-0ef770f3-e789-40b0-a6e5-5f5fea079389in",

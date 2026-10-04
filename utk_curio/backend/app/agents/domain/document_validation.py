@@ -103,10 +103,11 @@ def validate_vega_lite(content: str, *, columns: list | None = None) -> dict:
     return {"status": STATUS_VALID}
 
 
-#: dev/134: names Curio's own runtime adds to every row it hands Vega, so an
+#: dev/134: names Curio's own runtime adds to the rows it hands Vega, so an
 #: encoding may use them even though no upstream column is called that.
-#: ``interacted`` is set by the Data Pool / ``useTableData``; ``__row_index__``
-#: by ``useVega.parseInputData``.
+#: ``__row_index__`` is on every row, stamped by ``prepareVegaInput``
+#: (``utils/vegaInput.ts``). ``interacted`` is there only behind a Data Pool
+#: (``useTableData``) or after a direct selection (``useVega``'s ``setInteracted``).
 RUNTIME_FIELDS = ("interacted", "__row_index__")
 
 #: Transforms whose output column names cannot be known from the document

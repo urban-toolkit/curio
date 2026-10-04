@@ -8,7 +8,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `utk_curio/backend/`: Flask API. `app/` has one package per feature, `migrations/` the Alembic migrations, `tests/` the pytest suites.
 - `utk_curio/frontend/urban-workflows/`: React and TypeScript canvas, built with webpack. Frontend paths below start at its `src/`.
 - `utk_curio/sandbox/`: Flask service that runs node Python and JavaScript and stores results as DuckDB artifacts.
-- `utk_curio/llm-prompts/`: built-in agent prompts.
+- `utk_curio/llm-prompts/`: built-in agent prompts, and `examples.md`, the index of shipped dataflows that runs get as worked examples (`agents/application/turns/examples.py`).
 - `utk_curio/common/`: code shared by backend and sandbox (`redaction.py`).
 - `utk_curio/tools/`: operator tools outside the Flask app (`agent_eval.py`, `preview_runner.py`).
 - `packages/`: shipped Node Catalog, one directory per node package (`manifest.json`, `sources/`, `integrity.json`).
@@ -61,7 +61,7 @@ Under `utk_curio/backend/app/`:
 
 ## Frontend core
 
-- `src/providers/FlowProvider.tsx`: workflow state (nodes, edges, outputs, interactions, propagation, Run All) and `useFlowContext()`.
+- `src/providers/FlowProvider.tsx`: workflow state (nodes, edges, outputs, interactions) and `useFlowContext()`. Its sections are hooks in `src/providers/flow/`: `usePlayAll.ts` (Run All), `useConnect.ts` (`onConnect`), `useGraphEdits.ts` (adding and deleting, output propagation), `useApplyOutput.ts`, `useInteractions.ts`, `useCollaborationSync.ts`, `useDashboardPins.ts`, `useInstallSave.ts`; types in `flowTypes.ts` and `flowContextTypes.ts`, Run All levels in `runLevels.ts`.
 - `src/hook/useWorkflowOperations.ts`: workflow operations FlowProvider delegates (Trill loading, canvas management, suggestions).
 - `src/adapters/node/`: one behavior hook per built-in node kind (`codeNodeBehavior.tsx`, `vegaBehavior.ts`, `autkGrammarBehavior.tsx`, `dataPoolBehavior.tsx`, ...), exported from `index.ts`.
 - `src/components/UniversalNode.tsx`: the component that renders every node.
@@ -75,11 +75,13 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 
 - Backend pytest: `utk_curio/backend/tests/`. `conftest.py` at its root and in `test_agents/`, `test_datasets/`, `test_discovery/`, `test_execution/`, `test_frontend/`, `test_model_catalog/`, `test_monitor/`, `test_packages/`, `test_projects/`, `test_users/`. Shared helpers in `_support/`.
 - E2E (Playwright): `utk_curio/backend/tests/test_frontend/`. Helpers in the `utils/` package (below), scripted walkthroughs in the `walkthroughs/` package (below), runner assignment in `runner_split.py`, author guide in `README.md`.
-- E2E helpers, `test_frontend/utils/`: `from .utils import X` works for every public name; X is defined in one module, and a patch goes on that module:
+- E2E helpers, `test_frontend/utils/`: `from .utils import X` works for every public name; X is defined in one module, and a patch goes on the module whose code calls X (`screenshots.py` for what `save_workflow_test_screenshot` and `frame_nodes` call):
   - `environment.py`: `REPO_ROOT`, `state_root`, stack flags and public config, `require_*` skips, `debug_log`.
   - `sandbox.py`: direct sandbox calls, `load_artifact_as_dict`, `execute_workflow_programmatically`.
   - `vega_svg.py`: Vega-Lite SVG helpers.
-  - `screenshots.py`: `save_workflow_test_screenshot`, `save_node_closeup`, `MAX_DIFF_RATIO`, mint and re-mint, `dismiss_toasts`, `_wait_for_reactflow_ready`.
+  - `capture_waits.py`: what a capture waits for: `_wait_for_reactflow_ready`, `dismiss_toasts`, `_wait_for_webfont`, running nodes. `images.py`: captures, `_compare_images`.
+  - `screenshots.py`: `save_workflow_test_screenshot`, `MAX_DIFF_RATIO`, mint and re-mint, `frame_nodes`, `dump_browser_log`.
+  - `closeups.py`: `save_node_closeup`, the close-up budgets, viewport hints. `dialogs.py`: `accept_confirm_dialog`, `leave_agent_badge`.
   - `interactions.py`: interaction frames, brush and mark probes.
   - `servers.py`: ports, `e2e_existing_servers`.
   - `auth.py`: UI signup, the projects page, `require_owner_view`.
@@ -133,7 +135,7 @@ Several files run past 1,500 lines. List their sections, then Read only the rang
 
 - The e2e helpers (`test_frontend/utils/`) and walkthroughs (`test_frontend/walkthroughs/`) are packages of modules, listed under Tests.
 - Test modules with one class per area: `grep -n '^class Test' <file>`.
-- `src/providers/FlowProvider.tsx`: `grep -n 'useCallback(' <file>` lists its operations; Run All is around `playAllNodes`; collaboration sync starts at the comment `Collaboration: receive-side`.
+- FlowProvider's sections are hooks in `src/providers/flow/`, listed under Frontend core.
 
 ## Do not read
 

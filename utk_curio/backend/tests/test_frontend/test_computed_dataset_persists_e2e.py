@@ -27,7 +27,7 @@ which of the two is wrong when it fails.
 
 The "about a second" is not folklore: ``applyNewOutput`` ->
 ``scheduleInstallSyncRef`` paints an optimistic "Adding..." row and debounces
-500 ms before the save whose ``.finally`` clears it (``FlowProvider.tsx``). So
+500 ms before the save whose ``.finally`` clears it (``providers/flow/useInstallSave.ts``). So
 the window the reporter describes is exactly the placeholder's lifetime, and
 anything asserted before that has settled is asserting against a state that has
 not happened yet.

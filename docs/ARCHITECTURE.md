@@ -803,7 +803,7 @@ A Data Pool resolves the selections that reach it with two modes, chosen in the 
 
 A selection is active when it picks something: a point selection with rows, or an interval over at least one column. A select nobody has used, or one that was cleared, takes no part in `MERGE_AND`.
 
-`FlowProvider.applyNewInteractions` hands a pool only the chart that just selected. The pool keeps each linked chart's latest selection itself, keyed by the chart's node id (`dataPoolBehavior`): the newest is priority 1, the others 0, and `utils/selectionMatch.matchSelections` resolves them. `OVERWRITE` resolves the priority-1 entry alone. A chart whose interaction edge to the pool is removed leaves that map. Choosing another mode resolves the selections the pool holds again.
+`applyNewInteractions` (`src/providers/flow/useInteractions.ts`) hands a pool only the chart that just selected. The pool keeps each linked chart's latest selection itself, keyed by the chart's node id (`dataPoolBehavior`): the newest is priority 1, the others 0, and `utils/selectionMatch.matchSelections` resolves them. `OVERWRITE` resolves the priority-1 entry alone. A chart whose interaction edge to the pool is removed leaves that map. Choosing another mode resolves the selections the pool holds again.
 
 The pool writes its `interacted` flags into a copy of its output (`utils/poolFlagCopy`), never into its input or into an output it already sent, which the charts downstream still hold. Its echo names the chart that just selected (`selectionSource`, see `utils/selectionEcho`) under every mode. An Autark node skips an echo of its own selection, so a plot keeps its brush; a Vega chart applies it, which only recolours rows. Every other chart shows the resolved rows, and an Autark plot shows them as its selection in place of its own brush.
 
@@ -889,9 +889,11 @@ Every system turn an agent receives is built by one function, `contracts.compose
 | instruction | Exactly one: the agent's `instruction` prompt, the invoked mode's, the definition's `autk-grammar` prompt for an Autark document under its reply schema, or the attachment's edited intent | the repository, or the user |
 | configuration | The catalog settings the run reads, framed as data | the user |
 | tool protocol | How to ask for a tool: the granted tools and the `toolRequest` syntax, or on native tools one line on calling them; with the `datasetCandidates` schema for a run that can search the catalog | the runtime |
-| runtime | The template roster, the enlistable templates and the delegation paragraph, each its own slot | the runtime |
+| runtime | The template roster, the enlistable templates, the worked examples and the delegation paragraph, each its own slot | the runtime |
 
-A run selects its instruction and never appends to one. An edited intent replaces the instruction slot only, and everything a user wrote precedes every runtime-owned slot. A delegated run carries the first three slots: it is tool-less and depth-1.
+A run selects its instruction and never appends to one. An edited intent replaces the instruction slot only, and everything a user wrote precedes every runtime-owned slot. A delegated run carries the first three slots, plus the worked examples when its mode takes them: it is tool-less and depth-1.
+
+**Worked examples.** [`utk_curio/llm-prompts/examples.md`](../utk_curio/llm-prompts/examples.md) lists every shipped dataflow (`projects/shipped.py`) once, under "Used" or "Not used", with one line on what it shows. [`turns/examples.py`](../utk_curio/backend/app/agents/application/turns/examples.py) reads it on every run and scores each "Used" dataflow by the words it shares with what the run knows: the user's message, the dataflow's task, and the attached node's goal and template type, or for a delegated run its subtask, workflow goal and node context. Its line, file name, task and categories count; short and common words do not. A dataflow that uses the node's template type or one of the project's datasets ranks higher, but only a shared word selects one. The top two become one block: a heading, then each line and its Trill without layout, categories or datasets, up to `MAX_BLOCK_CHARS`; an example that does not fit is left out. The block is chosen per run, so it is a runtime slot and the cached preamble stays the same. A built-in takes it when its `BuiltinAgentSpec` or `BuiltinMode` sets `worked_examples`: the Dataflow Builder, the Node Builder, the Node Content Builder (under either instruction), the Connection Builder and `workflow.suggest`. A project marked by an evaluation (`dataflow.evaluation`) never shows the example its fixture is scored against. An install without `docs/examples` gets no block and logs one warning.
 
 The slots reach the provider apart. `contracts.system_message` puts the joined text in the system message's `content` and the slots beside it, and [`providers.py`](../utk_curio/backend/app/agents/infrastructure/providers.py) maps them per provider: Anthropic receives one text block per slot, with the preamble marked cacheable; Gemini a list of system instructions; an OpenAI-compatible server the one joined system message, since some local chat templates reject several. A system message without slots (the title call) is sent as its text.
 
@@ -1641,6 +1643,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 |---|---|
 | `src/index.tsx` | App entry point and provider nesting order |
 | `src/providers/FlowProvider.tsx` | Canonical workflow state (nodes, edges, outputs, interactions) |
+| `src/providers/flow/` | FlowProvider's sections as hooks (Run All, connections, graph edits, outputs, interactions, collaboration sync, dashboard pins, auto-install) and its types |
 | `src/providers/ProvenanceProvider.tsx` | In-memory per-node execution history (saved with the workflow JSON) |
 | `src/components/UniversalNode.tsx` | Single React component that renders all node types |
 | `src/registry/packagesClient.ts` | Fetch installed manifests → build `NodeDescriptor`s → register against `nodeRegistry` |
@@ -1699,7 +1702,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/agents/application/catalog.py` | Catalog reads: facets, cards, definition bundles, the three listings, the choosable agents, the catalog settings listing |
 | `backend/app/agents/application/attachment_management.py` | Attach, detach, intent/title edits, session read/clear |
 | `backend/app/agents/application/proposals/` | Review-before-apply: `mint.py`, `apply.py`, `plans.py`, `store.py`, `cards.py`, and `acquire.py` (the Discovery Catalog acquisition) |
-| `backend/app/agents/application/turns/` | One chat turn: `attachment_turn.py` (the two entry points), `turn_loop.py` (`AttachmentTurn`: the bounded tool loop once, blocking or streaming), `prepare.py`, `grounding.py`, `delegates.py`, `roster.py`, `policy.py`, `prompts.py`, `titles.py` |
+| `backend/app/agents/application/turns/` | One chat turn: `attachment_turn.py` (the two entry points), `turn_loop.py` (`AttachmentTurn`: the bounded tool loop once, blocking or streaming), `prepare.py`, `grounding.py`, `delegates.py`, `roster.py`, `examples.py` (worked examples), `policy.py`, `prompts.py`, `titles.py` |
 | `backend/app/agents/application/solve/` | Solve: `session.py` (the stream entry points and the session helpers), `batch.py` (`SolveBatch`: passes, waves, the fold, one finish), `rounds.py` (attempts, probes, remedies), `verified_loop.py` (`VerifiedRounds`: the generate → gate → execute → correct loop, one named stage per method), `node_solve.py`, `budgets.py`, `simulation.py` (`SimulationDriver`), `run_node.py`, `validate.py` |
 | `backend/app/agents/application/tool_rounds.py` | The bounded tool loop and the native tool-call machinery (`_RunConversation`) |
 | `backend/app/agents/application/llm_listing.py` | `GET /api/agents/llm`: the account's configurations, the deployment's offer, what answers each agent |

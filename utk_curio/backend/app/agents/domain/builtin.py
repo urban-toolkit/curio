@@ -70,6 +70,9 @@ class BuiltinMode:
     prompt_file: str
     reads: tuple[str, ...]
     required_config: tuple[str, ...] = ()
+    # Whether a run of this mode gets worked examples, the shipped dataflows
+    # closest to its task, in its runtime slot (``turns/examples``).
+    worked_examples: bool = False
 
 
 #: A ``delegates_to`` entry: an agent id, or ``(agent id, capabilities)`` to
@@ -135,6 +138,9 @@ class BuiltinAgentSpec:
     # as (prompts key, file): the Autark document under its reply schema
     # (``reply_schemas.AUTK_PROMPT_KEY``).
     variant_prompts: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    # Whether a run of this agent, under its instruction or a variant, gets
+    # worked examples (``turns/examples``). A mode decides for itself.
+    worked_examples: bool = False
 
     def target_kinds(self) -> tuple[str, ...]:
         return self.targets or (_TARGET_BY_CATEGORY[self.category],)
@@ -186,7 +192,8 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      reads=("dataflowContext", "nodeId", "subtask", "workflowGoal"),
                      tools=("dataflow.read", "node.read", "node.content.write",
                             "node.runtime.read"),
-                     variant_prompts=((AUTK_PROMPT_KEY, "new_content_autk_prompt.md"),)),
+                     variant_prompts=((AUTK_PROMPT_KEY, "new_content_autk_prompt.md"),),
+                     worked_examples=True),
     BuiltinAgentSpec("agent.connection-builder", "Connection Builder", "node",
                      "Suggest and create valid node connections.",
                      "new_connection_prompt.md", ("connection.propose",), ("authoring",),
@@ -202,7 +209,8 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # migrated manifest that gains delegatesTo — a proposed
                      # connection's required packages surface as reviewed
                      # proposals. Its connection.propose capability is unchanged.
-                     delegates_to=("agent.package-recommendation",)),
+                     delegates_to=("agent.package-recommendation",),
+                     worked_examples=True),
     # The planning and keyword agents, merged: six capabilities that shared
     # their tools (none), delegates (none), review and execution, each still
     # running its own instruction as a mode. Internal: a delegate only.
@@ -227,7 +235,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
             "Explain what the whole dataflow does, and suggest its next steps.",
             (BuiltinMode("dataflow.explain", "explanation_prompt.md", ("dataflowContext",)),
              BuiltinMode("workflow.suggest", "workflow_suggestions_prompt.md",
-                         ("dataflowContext", "workflowGoal"))),
+                         ("dataflowContext", "workflowGoal"), worked_examples=True)),
             roles=("explanation", "planning"), targets=("canvas",), tools=("dataflow.read",)),
     # dev/67-4 (DEC-053): the research agent — concise factual verification
     # of external sources (dataset ids, endpoints, schemas) other agents
@@ -284,7 +292,8 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # model choice — the Dataset Finder is a hard dependency,
                      # not a preference.
                      requires_agents=("agent.dataset-finder",),
-                     review_policy="review-before-apply"),
+                     review_policy="review-before-apply",
+                     worked_examples=True),
     # The second P5 composite (memo dev/50; spec dev/15 §3.4 + docs/06). Two-
     # lane discovery: catalog picks → reviewed dataset.install; external picks
     # → the DEC-047 user-mediated Node Builder handoff. Never authors fetch
@@ -368,7 +377,8 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                       "agent.dataset-finder", "agent.node-builder"),
                      review_policy="review-before-apply",
                      # dev/115 (DEC-073): Solve is a detached background job.
-                     execution="background"),
+                     execution="background",
+                     worked_examples=True),
     # The fourteenth releasable built-in (memo dev/84; spec dev/16 / DEC-035).
     # Net-new instruction. Deviations recorded in the memo: roster-generated
     # manifest (foreground, no settingsDefaults); the dev/16 installedPackages
@@ -534,6 +544,17 @@ def _by_coord() -> dict[str, BuiltinAgentSpec]:
 def get_builtin_spec(coord: str) -> BuiltinAgentSpec | None:
     """Resolve a ``<agentId>@<version>`` coordinate to its roster spec, or None."""
     return _by_coord().get(coord)
+
+
+def gets_worked_examples(coord: str, capability: str | None = None) -> bool:
+    """Whether a run of the built-in *coord* gets worked examples: in the mode
+    of *capability* when it has one, else as the agent says. Any other
+    definition gets none."""
+    spec = _by_coord().get(coord)
+    if spec is None:
+        return False
+    mode = next((m for m in spec.modes if m.capability == capability), None)
+    return mode.worked_examples if mode is not None else spec.worked_examples
 
 
 def internal_agent_ids() -> frozenset[str]:

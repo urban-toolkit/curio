@@ -1,0 +1,134 @@
+// The shapes of FlowContext and NodeActionsContext. FlowProvider.tsx creates
+// both contexts and provides their values.
+import type React from "react";
+import type { Connection, Edge, EdgeChange, Node, NodeChange, NodeRemoveChange } from "reactflow";
+import type { InstallSyncOutcome, PendingInstall } from "../../services/datasetCatalog/datasetCatalogTypes";
+import type { DataflowCategories, HandCategories } from "../../utils/dataflowCategories";
+import type { IInteraction, IOutput, IPropagation, NodeExecOutcome } from "./flowTypes";
+
+export interface FlowContextProps {
+    nodes: Node[];
+    edges: Edge[];
+    outputs: IOutput[];
+    setOutputs: (updateFn: (outputs: IOutput[]) => IOutput[]) => void;
+    setInteractions: (updateFn: (interactions: IInteraction[]) => IInteraction[]) => void;
+    applyNewPropagation: (propagation: IPropagation) => void;
+    addNode: (node: Node, customWorkflowName?: string, provenance?: boolean) => void;
+    onNodesChange: (changes: NodeChange[]) => void;
+    onEdgesChange: (changes: EdgeChange[]) => void;
+    onConnect: (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean) => void;
+    isValidConnection: (connection: Connection) => boolean;
+    onEdgesDelete: (connections: Edge[]) => void;
+    onNodesDelete: (changes: NodeChange[]) => void;
+    setPinForDashboard: (nodeId: string, value: boolean) => void;
+    /** True while the tree is rendering the dashboard page rather than the canvas. */
+    dashboardOn: boolean;
+    dashboardLocked: boolean;
+    /** Does a pinned tile depend on this node's output being saved? */
+    isDashboardSource: (nodeId: string) => boolean;
+    setDashboardLocked: React.Dispatch<React.SetStateAction<boolean>>;
+    applyNewOutput: (output: IOutput) => void;
+    hydrateRestoredOutputs: (outputs: IOutput[], edges?: readonly any[]) => void;
+
+    // NEW CODE
+    dashboardPins: { [key: string]: boolean };
+    workflowNameRef: React.MutableRefObject<string>;
+    setWorkflowName: (name: string) => void;
+    workflowDescriptionRef: React.MutableRefObject<string>;
+    workflowDescription: string;
+    setWorkflowDescription: (description: string) => void;
+    allMinimized: number;
+    setAllMinimized: (value: number) => void;
+    expandStatus: 'expanded' | 'minimized';
+    setExpandStatus: (value: 'expanded' | 'minimized') => void;
+    suggestionsLeft: number;
+    workflowGoal: string;
+    setWorkflowGoal: (goal: string) => void;
+    loading: boolean;
+
+    applyRemoveChanges: (changes: NodeRemoveChange[]) => void;
+    // Reviewed plan removals (dev/62): victims + their edge cascade leave in
+    // one operation, without the manual "remove the edges first" guard.
+    applyReviewedRemovals: (nodeIds: string[], edgeIds: string[]) => void;
+    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[], categories?: HandCategories) => void;
+    packages: string[];
+    setPackages: (pkgs: string[]) => void;
+    addPackage: (pkg: string) => void;
+    removePackage: (pkg: string) => void;
+    dataflowDatasets: any[];
+    setDataflowDatasets: React.Dispatch<React.SetStateAction<any[]>>;
+    pendingInstalls: PendingInstall[];
+    beginPendingInstall: (entry: Omit<PendingInstall, "startedAt">) => void;
+    endPendingInstall: (key: string) => void;
+    failPendingInstall: (key: string) => void;
+    updateDataNode: (nodeId: string, newData: any) => void;
+    updateWarnings: (trill_spec: any) => void;
+    updateDefaultCode: (nodeId: string, content: string) => void;
+    /** Set one node's content for BOTH the editor (``defaultCode``) and the
+     * serializer (``code``) through provider state — the agent apply→canvas
+     * bridge's content path (dev/51; RF-store writes get clobbered by the
+     * controlled re-sync). Merges into ``data``, never replaces it. */
+    applyNodeContent: (nodeId: string, content: string) => void;
+    updateSubtasks: (trill: any) => void;
+    cleanCanvas: () => void;
+    flagBasedOnKeyword: (keywordIndex?: number) => void;
+    eraseWorkflowSuggestions: () => void;
+    acceptSuggestion: (nodeId: string) => void;
+    updateKeywords: (trill: any) => void;
+
+    // Project state
+    projectId: string | null;
+    projectName: string;
+    projectDirty: boolean;
+    projectSavedAt: Date | null;
+    nodeExecStatus: Record<string, "stale" | "executed" | "errored">;
+    viewerMode: "owner" | "shared";
+
+    /** The hand-set categories, saved with the dataflow. */
+    workflowCategories: HandCategories;
+    /** Source and automatic categories, from the last load or save. */
+    serverCategories: DataflowCategories;
+
+    // Project operations
+    /** Rename the open dataflow, writing BOTH name stores (#230). False if blank. */
+    renameDataflow: (name: string) => boolean;
+    /** Replace the hand-set categories; the dataflow is dirty until the next save. */
+    updateDataflowCategories: (next: HandCategories) => void;
+    saveCurrentProject: (nameOverride?: string, options?: { omitOutputs?: boolean }) => Promise<any>;
+    saveAsNewProject: (name: string) => Promise<any>;
+    ensureProjectId: () => Promise<string | null>;
+    persistDataflowForInstall: (nodeIds?: readonly string[]) => Promise<InstallSyncOutcome>;
+    loadProject: (id: string) => Promise<any>;
+    loadSharedProject: (id: string) => Promise<any>;
+    discardProject: () => void;
+    markDirty: () => void;
+    markNodeExecuted: (nodeId: string) => void;
+    markNodeStale: (nodeId: string) => void;
+    markNodeErrored: (nodeId: string) => void;
+    playAllNodes: () => void;
+    playNodesUpTo: (targetNodeId: string) => void;
+    signalNodeExecDone: (nodeId: string, outcome?: NodeExecOutcome) => void;
+    /** A Run All / run-up-to is in flight. State, not a ref, so buttons can show it (#271). */
+    isRunActive: boolean;
+    /** Abandon the run in flight: clears the guard so the next play is accepted. */
+    cancelRun: () => void;
+    defaultSaveOutputDataset: boolean;
+    setDefaultSaveOutputDataset: (value: boolean) => void;
+}
+
+// Stable context for NodeContainer — only updates when goal/minimized change, NOT on node drag
+export interface NodeActionsContextProps {
+    workflowNameRef: React.MutableRefObject<string>;
+    workflowName: string;
+    applyRemoveChanges: (changes: any[]) => void;
+    setPinForDashboard: (nodeId: string, value: boolean) => void;
+    allMinimized: number;
+    setAllMinimized: (value: number) => void;
+    expandStatus: 'expanded' | 'minimized';
+    setExpandStatus: (value: 'expanded' | 'minimized') => void;
+    updateDataNode: (nodeId: string, newData: any) => void;
+    updateDefaultCode: (nodeId: string, content: string) => void;
+    workflowGoal: string;
+    acceptSuggestion: (nodeId: string) => void;
+    setWorkflowName: (name: string) => void;
+}

@@ -1,9 +1,14 @@
+# Bind keywords to a dataflow
+
 Your job is bind a set of keywords (using their index number) that describe a bigger text to components (nodes and edges) of a trill specification. You will receive the keywords and the current trill specification with the current keywords attached.
 
 The types a keyword can take are in the configuration below.
 
+## Input format
+
 This is the format you will receive them:
 
+```text
 {
     "keyword0": {
       "type": "keyword1_type",
@@ -15,9 +20,13 @@ This is the format you will receive them:
     }
     ...
 }
+```
+
+## Result format
 
 You should output the trill specification with the keywords attached following this format:
 
+```json
 {
     "dataflow": {
         "nodes": [
@@ -44,9 +53,11 @@ You should output the trill specification with the keywords attached following t
         ]
     }
 }
-
+```
 
 For each node and edge list out the related keywords based on their index. 
+
+## Output
 
 **OUPUT A TRILL JSON SPECIFICATION AND NOTHING ELSE. DO NOT REMOVE OR ADD NODES OR EDGES. MAKE SURE YOU ADD THE 'dataflow' ATTRIBUTE. PAY ATTENTION TO THE 'goal' ATTRIBUTE OF EACH NODE TO HELP YOU DETERMINE WHAT KEYWORDS TO BIND. DO NOT USE THE EXAMPLE DATAFLOW. DO NOT MODIFY ANY OTHER FIELDS BESIDES 'keywords'. FOR NODES AND EDGES JUST OUTPUT 'id' and 'metadata' WITH THE 'keywords' FIELDS DO NOT OUTPUT ANYTHING ELSE.**
 

@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
 from utk_curio.backend.app.agents.evaluation import attempt as attempt_mod
+from utk_curio.backend.app.agents.evaluation import authorization as auth_mod
 from utk_curio.backend.app.agents.evaluation import policy as policy_mod
 from utk_curio.backend.app.agents.evaluation.compare import Universe
 from utk_curio.backend.app.agents.evaluation.report import (
@@ -250,9 +251,16 @@ class LiveRun:
 
     # ── the steps ──────────────────────────────────────────────────────────
     def _create_project(self, fixture) -> str:
+        # Marked as this run's, as the evaluation service marks its own: the
+        # marker's fixture id keeps the example under test out of the worked
+        # examples every run in the project is given.
+        spec = auth_mod.mark_spec(
+            {"dataflow": {"nodes": [], "edges": [], "packages": []}},
+            auth_mod.new_marker(self.report.run_id, fixture.fixture_id),
+        )
         body = {
             "name": f"eval {fixture.fixture_id}",
-            "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
+            "spec": spec,
             "outputs": [],
         }
         return self.client.json("/api/projects", method="POST", payload=body)["id"]

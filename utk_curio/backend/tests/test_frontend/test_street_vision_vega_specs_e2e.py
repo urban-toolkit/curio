@@ -67,7 +67,7 @@ POINTS_CODE = """import geopandas as gpd
 
 polys = gpd.read_file(curio_data_path("data.utk.chicago-boundary"))
 pts = polys.representative_point()
-classes = ["road", "sidewalk", "building", "vegetation", "sky", "car"]
+classes = ["road", "sidewalk", "building", "vegetation", "sky", "terrain"]
 gdf = gpd.GeoDataFrame(
     {
         "image_id": [f"img_{i}" for i in range(len(pts))],

@@ -37,6 +37,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import (
     ReplySchemaRefused,
 )
 from utk_curio.backend.app.agents.application import catalog
+from utk_curio.backend.app.agents.application.turns import examples as worked_examples
 from utk_curio.backend.app.agents.application.turns import policy
 from utk_curio.backend.app.agents.application.turns import prompts
 from utk_curio.backend.app.agents.infrastructure import providers
@@ -295,12 +296,17 @@ def _prepare_child(user_key: str, project_id: str, coord: str, capability: str, 
         if manifest is not None else None
     )
     preamble = prompts._resolve_prompt_text(user_key, coord, "system")
+    spec = projects_storage.read_spec(user_key, project_id)
+    examples_block = worked_examples.delegated_block(coord, capability, spec, inputs)
 
     def _system(text: str) -> dict:
         # Depth-1 structurally: the delegate's own prompts and
-        # configuration, NO tool protocol and no runtime blocks.
+        # configuration, NO tool protocol. Its one runtime block is the
+        # worked examples, for a mode that takes them, under whichever
+        # instruction it runs.
         return contracts.system_message(contracts.compose_system(
             preamble=preamble, instruction=text, configuration=configuration,
+            runtime=(examples_block,),
         ))
 
     # A document with a schema, on a provider that takes one: the reply is
@@ -313,7 +319,6 @@ def _prepare_child(user_key: str, project_id: str, coord: str, capability: str, 
     if not constrained:
         reply = None
     system = _system(constrained or instruction)
-    spec = projects_storage.read_spec(user_key, project_id)
     run_policy = policy._run_policy(user_key, project_id, coord, spec or {})
     admit = dict(run_policy["admit"])
     # Attribution only: the parent's attachment key, never its limits.

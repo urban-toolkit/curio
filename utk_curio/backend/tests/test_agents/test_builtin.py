@@ -279,15 +279,27 @@ class TestPreambleAndInputs:
         # dev/114: the shared preamble's worked dataflow was the ONLY data-
         # loading exemplar every agent saw, and all three of its loaders read
         # bare filenames — the pattern #298's bras_ibge_data.csv reproduced.
+        # The exemplars are now the worked examples (the "Used" dataflows of
+        # llm-prompts/examples.md), so the same rule holds for them.
+        import json
         import re
 
-        text = (builtin.PROMPT_SOURCE_DIR / "default_preamble.md").read_text(encoding="utf-8")
+        from utk_curio.backend.app.agents.application.turns import examples
+
+        used = [entry for entry in examples.read_index() if entry.section == examples.USED]
+        assert used, "the index lists no Used dataflow; this test would be vacuous"
+        text = "\n".join(
+            node.get("content") or ""
+            for entry in used
+            for node in json.loads(entry.path.read_text(encoding="utf-8"))["dataflow"]["nodes"]
+        )
         assert not re.search(r"""read_csv\(f?['"][^'"]+\.csv""", text)
         assert not re.search(r"""read_file\(f?['"][^'"]+\.shp""", text)
         assert not re.search(r"""rasterio\.open\(f?['"]""", text)
-        # All three loaders resolve their dataset by id.
+        # Their loaders resolve their datasets by id.
         assert len(re.findall(r"curio_(?:load_data|data_path)\(", text)) >= 3
-        assert "never a guessed filename" in text
+        # And every run that is shown them is told so.
+        assert "never a guessed filename" in examples.HEADING
 
     def test_preamble_text_readable_for_all_builtins(self):
         from utk_curio.backend.app.agents.domain import builtin
@@ -761,7 +773,7 @@ class TestResearcher:
     DATAFLOW_BUILDER_PROMPT_SHA256 = (
         # The plan is named, not called a block: on native tools it is the
         # dataflow.plan.write call, on the fenced protocol its block.
-        "a5484d129fd049279d57425a68ea200540e7af584da4d21d62cb83957eb66376"
+        "f180f9bd4c38c9682160cfcc80cadf2c907c9004178bd1f0851f27eef949c5db"
     )
 
     def test_manifest_surface(self):

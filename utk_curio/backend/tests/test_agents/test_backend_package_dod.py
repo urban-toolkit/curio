@@ -111,7 +111,7 @@ class TestPromptCarriesTheBackendContract:
             '{"content": <the node\'s editor text>, "input": <upstream JSON or null>}',
             "CURIO_PKG_DATA_DIR",
             "probe phase",
-            "dev/89 Follow-up B",
+            "naming the Curio activation lifecycle or the deferred secret mediation",
         ):
             assert marker in text, marker
 
@@ -135,7 +135,7 @@ class TestPromptCarriesTheBackendContract:
             "server-network",
             "def handle(payload)",
             "CURIO_PKG_DATA_DIR",
-            "Follow-up B",
+            "Curio activation lifecycle",
         ):
             assert marker in text, marker
         # The backend contract names the handler grammar and the payload contract.
@@ -147,7 +147,7 @@ class TestPromptCarriesTheBackendContract:
         from utk_curio.backend.app.agents.domain import builtin
 
         shared = (builtin.PROMPT_SOURCE_DIR / builtin.PACKAGE_CONTRACT_FILE).read_text(encoding="utf-8")
-        assert shared.startswith("Server-side compute follows ONE backend contract")
+        assert shared.startswith("## Backend contract\n\nServer-side compute follows ONE backend contract")
         assert _build_request_contract()["backendContract"] == shared
         assert shared.rstrip("\n") in _PROMPT_PATH.read_text(encoding="utf-8")
 
