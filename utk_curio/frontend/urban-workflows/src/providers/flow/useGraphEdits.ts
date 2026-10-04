@@ -3,13 +3,11 @@
 import React, { useCallback } from "react";
 import type { Edge, Node, NodeChange, ReactFlowInstance } from "reactflow";
 import { NodeType } from "../../constants";
-import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../../TrillGenerator";
 import {
     ensureSlotArrays,
     inputSlotOf,
     setSlot,
-    clearSlot,
     slotsFedBy,
     wiredInputSlots,
     nodeInputFromSlots,
@@ -136,22 +134,6 @@ export function useGraphEdits({
             nds.map((node: any) => {
                 if (!nodesAffected.includes(node.id)) return node;
 
-                if (getUnversionedFlowNodeType(node) == NodeType.MERGE_FLOW) {
-                    const { inputList, sourceList } = ensureSlotArrays(node.data.input, node.data.source);
-                    // Fill EVERY slot this source feeds — one source can be wired
-                    // to multiple slots of the same merge node.
-                    const sourceIndices = slotsFedBy(
-                        currentEdges,
-                        node.id,
-                        sourceId,
-                        sourceList,
-                    );
-                    for (const sourceIndex of sourceIndices) {
-                        setSlot(inputList, sourceList, sourceIndex, inputPayload, sourceId);
-                    }
-                    return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
-                }
-
                 if (nodeGrowsInputs(node)) {
                     // Every circle this source feeds; the node reads them as one
                     // value once every wired circle holds one.
@@ -193,15 +175,6 @@ export function useGraphEdits({
         setNodes((nds: any) =>
             nds.map((node: any) => {
                 if (node.id !== inId) return node;
-
-                if (inNodeType == NodeType.MERGE_FLOW) {
-                    const { inputList, sourceList } = ensureSlotArrays(node.data.input, node.data.source);
-                    const handleIndex = inputSlotOf(targetHandle);
-                    if (handleIndex >= 0) {
-                        setSlot(inputList, sourceList, handleIndex, normalized, outId);
-                    }
-                    return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
-                }
 
                 if (nodeGrowsInputs(node)) {
                     // The edge is not in the graph yet: its circle counts as wired.
@@ -315,20 +288,9 @@ export function useGraphEdits({
                         continue;
                     }
                     setNodes((nds: any) =>
-                        nds.map((node: any) => {
-                            if (node.id !== resetInput) return node;
-
-                            if (getUnversionedFlowNodeType(targetNode) === NodeType.MERGE_FLOW) {
-                                const { inputList, sourceList } = ensureSlotArrays(node.data.input, node.data.source);
-                                const handleIndex = inputSlotOf(connection.targetHandle);
-                                if (handleIndex >= 0) {
-                                    clearSlot(inputList, sourceList, handleIndex);
-                                }
-                                return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
-                            }
-
-                            return { ...node, data: { ...node.data, input: "", source: "" } };
-                        })
+                        nds.map((node: any) =>
+                            node.id !== resetInput ? node : { ...node, data: { ...node.data, input: "", source: "" } },
+                        )
                     );
                 }
             }

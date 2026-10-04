@@ -77,7 +77,7 @@ export interface HandleDef {
   type: 'source' | 'target';
   position: Position;
   style?: React.CSSProperties;
-  /** Compute handle style at render time (used by MergeFlow dynamic handles). */
+  /** Compute handle style at render time. */
   dynamicStyle?: (data: any, edges: Edge[]) => React.CSSProperties;
   /** Override default connectable logic per-handle. */
   isConnectableOverride?: (data: any, isConnectable: boolean, edges: Edge[]) => boolean;
@@ -151,15 +151,15 @@ export interface NodeBehaviorResult {
   showLoading?: boolean;
   /** Custom React subtree rendered inside the NodeEditor content area. */
   contentComponent?: React.ReactNode;
-  /** Replace `nodeState.setOutput` — used when output state is managed locally (DataPool, MergeFlow). */
+  /** Replace `nodeState.setOutput` — used when output state is managed locally (DataPool). */
   setOutputCallbackOverride?: any;
   outputOverride?: ICodeData;
-  /** Extra handles appended to `adapter.handles` at render time (MergeFlow dynamic inputs). */
+  /** Extra handles appended to `adapter.handles` at render time. */
   dynamicHandles?: HandleDef[];
   /**
    * Fully replaces `adapter.handles` at render time. Used by behaviors that
    * want exact control over handle ids / positions (e.g. multi-input nodes
-   * like Spatial Join or MergeFlow where the default `standardInOut()` "in"
+   * like Spatial Join where the default `standardInOut()` "in"
    * handle would leak through and render an unwanted gray circle at top:50%).
    * When set, both `adapter.handles` AND `dynamicHandles` are ignored.
    */

@@ -469,7 +469,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                     }
                 } else {
                     // Accumulate the spec edges connected so far and hand them to
-                    // onConnect, so merge-handle resolution sees the earlier edges
+                    // onConnect, so input circle resolution sees the earlier edges
                     // of this load (in_N occupancy) instead of an empty list.
                     const connectedSoFar: any[] = [];
                     for (const edge of loaded_edges) {

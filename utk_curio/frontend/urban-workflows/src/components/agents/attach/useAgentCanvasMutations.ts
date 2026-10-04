@@ -45,7 +45,7 @@ const CENTER_ANIMATION_MS = 400;
 /** dev/112: ONE materialization of an applied spec edge for the live canvas —
  * parity with loadTrill's `add_edge` (useCode): a Trill `Interaction` edge is
  * bidirectional on `in/out` handles with arrows both ends; a data edge keeps
- * the explicit handles the apply assigned (merge slots, dev/67-3). Both bridge
+ * the explicit handles the apply assigned (input circles, dev/67-3). Both bridge
  * paths (bulk plan, per-edge connect) go through here. */
 function appliedEdgeToCanvasEdge(edge: {
   id: string;
@@ -139,7 +139,7 @@ export function useAgentCanvasMutations(): void {
       onEdgesChange(
         mutation.edges.map((edge) => ({
           type: "add" as const,
-          // dev/67-3: the apply assigns real handles (merge slots in_N) —
+          // dev/67-3: the apply assigns real handles (input circles in_N) —
           // passed through; dev/112: interaction edges become bidirectional.
           item: appliedEdgeToCanvasEdge(edge) as never,
         })),

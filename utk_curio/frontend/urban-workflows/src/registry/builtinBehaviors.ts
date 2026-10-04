@@ -15,7 +15,6 @@ import {
   useDataExportBehavior,
   useVegaBehavior,
   useSimpleVisBehavior,
-  useMergeFlowBehavior,
   useDataPoolBehavior,
   useDataSummaryBehavior,
   useAutkGrammarBehavior,
@@ -30,7 +29,6 @@ registerBehavior('data-summary', useDataSummaryBehavior);
 registerBehavior('vega', useVegaBehavior);
 registerBehavior('simple-vis', useSimpleVisBehavior);
 registerBehavior('autk-grammar', useAutkGrammarBehavior);
-registerBehavior('merge-flow', useMergeFlowBehavior);
 // curio.builtin@1 spatial-join node (stays in core because the builtin
 // package's behaviors must be registered before ANY package registry runs).
 registerBehavior('spatial-join', useSpatialJoinBehavior);

@@ -89,7 +89,7 @@ export function normalizeFlowInput(raw: unknown): FlowNodeInput | Record<string,
 
   const path = sandboxArtifactId(raw);
   if (!path) {
-    // Merge bundles and other in-memory payloads (no DuckDB artifact id).
+    // Input bundles and other in-memory payloads (no DuckDB artifact id).
     if (typeof r.dataType === "string" && r.dataType.trim()) {
       return { ...r };
     }
@@ -111,7 +111,7 @@ export function normalizeFlowInput(raw: unknown): FlowNodeInput | Record<string,
  * an inline payload also names its artifact. The backend reads only
  * `filename` / `path` and `dataType` (routes.py `_parse_input_ref`), so a Data
  * Pool's rows riding along would be shipped in every request for nothing.
- * Merge bundles keep their `data`: for them it is the list of references.
+ * Input bundles keep their `data`: for them it is the list of references.
  */
 export function executionInputRef<T>(input: T): T | Record<string, unknown> {
   if (!input || typeof input !== "object" || Array.isArray(input)) return input;

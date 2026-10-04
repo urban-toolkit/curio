@@ -1,5 +1,5 @@
-// Connecting two nodes: onConnect checks the handles, the node types, merge
-// slots, input circles, occupied inputs and cycles, then adds the edge.
+// Connecting two nodes: onConnect checks the handles, the node types, input
+// circles, occupied inputs and cycles, then adds the edge.
 import React, { useCallback } from "react";
 import { Connection, Edge, Node, ReactFlowInstance, addEdge, getOutgoers, MarkerType } from "reactflow";
 import { ConnectionValidator } from "../../ConnectionValidator";
@@ -50,7 +50,7 @@ export function useConnect({
             // `!== undefined`, not truthiness: loadParsedTrill passes an
             // accumulating array that legitimately starts empty, and `[]` is
             // truthy anyway — the old `custom_edges ? …` made every load-time
-            // merge-handle resolution see an empty graph (dev/64).
+            // input circle resolution see an empty graph (dev/64).
             const edges = custom_edges !== undefined ? custom_edges : reactFlow.getEdges();
             const target = nodes.find(
                 (node: any) => node.id === connection.target
@@ -150,52 +150,7 @@ export function useConnect({
                     showToast("Input and output types of these boxes are not compatible", "warning");
                 }
 
-                // Resolve merge target handle before validation / applyOutput. Imported
-                // trills set `in_0`/`in_1` explicitly; manual drags may omit it.
                 let resolvedConnection: Connection = connection;
-                if (inNodeType === NodeType.MERGE_FLOW && allowConnection) {
-                    const availableHandles = Array(5).fill(1).map((_, i) => `in_${i}`);
-                    const usedHandles = new Set(
-                        edges
-                            .filter((edge: Edge) =>
-                                edge.target === connection.target &&
-                                availableHandles.includes(edge.targetHandle as string)
-                            )
-                            .map((edge: Edge) => edge.targetHandle)
-                    );
-
-                    let targetHandle = connection.targetHandle;
-                    if (!targetHandle || targetHandle === "in" || inputSlotOf(targetHandle) < 0) {
-                        const nextFree = availableHandles.find((h) => !usedHandles.has(h));
-                        if (!nextFree) {
-                            showToast(
-                                "Connection limit reached. Merge nodes can only accept up to 5 input connections.",
-                                "warning",
-                            );
-                            allowConnection = false;
-                        } else {
-                            targetHandle = nextFree;
-                            resolvedConnection = { ...connection, targetHandle };
-                        }
-                    }
-
-                    if (allowConnection) {
-                        if (usedHandles.size >= availableHandles.length) {
-                            showToast(
-                                "Connection limit reached. Merge nodes can only accept up to 5 input connections.",
-                                "warning",
-                            );
-                            allowConnection = false;
-                        } else if (usedHandles.has(resolvedConnection.targetHandle)) {
-                            showToast(
-                                "This input already has a connection. Each input handle can only accept one connection.",
-                                "warning",
-                            );
-                            allowConnection = false;
-                        }
-                    }
-                }
-
 
                 // A node that grows its circles takes the edge on a free
                 // circle: the one it was dropped on, or else the free circle
@@ -226,7 +181,6 @@ export function useConnect({
                 // dropped.
                 if (
                     allowConnection &&
-                    inNodeType !== NodeType.MERGE_FLOW &&
                     !growing &&
                     isInHandle(connection.targetHandle)
                 ) {
@@ -238,14 +192,13 @@ export function useConnect({
                     if (handleOccupied) {
                         if (skipValidation) {
                             console.warn(
-                                `[FlowProvider] persisted multi-input edge into ` +
-                                `${connection.target} (${connection.targetHandle}) — ` +
-                                `only one input is honored at runtime; route flows ` +
-                                `through a Merge node`,
+                                `[FlowProvider] persisted second edge into ` +
+                                `${connection.target} (${connection.targetHandle}): ` +
+                                `only one input is honored at runtime`,
                             );
                         } else {
                             showToast(
-                                "This input already has a connection — route multiple flows through a Merge node.",
+                                "This input already has a connection. The node takes one input here.",
                                 "warning",
                             );
                             allowConnection = false;
@@ -265,7 +218,7 @@ export function useConnect({
                 }
 
                 if (allowConnection) {
-                    const conn = inNodeType === NodeType.MERGE_FLOW || growing ? resolvedConnection : connection;
+                    const conn = growing ? resolvedConnection : connection;
                     markNodeStaleRef.current(conn.target as string);
                     applyOutput(
                         inNodeType as NodeType,
@@ -327,7 +280,7 @@ export function useConnect({
                         const cached = outputsRef.current.find((o) => o.nodeId === sourceId);
                         if (cached?.output != null && cached.output !== "") {
                             // Edge is in the graph now — fan out to all downstream nodes
-                            // (merge slots, multiple pools) using the live edge list.
+                            // (input circles, multiple pools) using the live edge list.
                             queueMicrotask(() => {
                                 propagateDownstreamInputs(sourceId, cached.output);
                             });
