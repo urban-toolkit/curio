@@ -624,7 +624,7 @@ DRAWER_DATA = '[data-curio-dataset-catalog-drawer="true"]'
 DRAWER_NODES = '[data-curio-node-catalog-drawer="true"]'
 DRAWER_AGENTS = '[data-curio-agent-catalog-drawer="true"]'
 
-#: The twelve built-in templates in rail order: PALETTE_GROUPS ([data, flow],
+#: The eleven built-in templates in rail order: PALETTE_GROUPS ([data, flow],
 #: [computation], [vis_grammar, vis_simple]) with each group in manifest
 #: paletteOrder. ToolsMenu gives each tile the id ``tile-<template>``.
 BUILTIN_TILES: tuple[str, ...] = (
@@ -632,7 +632,6 @@ BUILTIN_TILES: tuple[str, ...] = (
     "data-export",
     "data-transformation",
     "spatial-join",
-    "merge-flow",
     "data-pool",
     "computation-analysis",
     "data-summary",
