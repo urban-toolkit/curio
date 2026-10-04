@@ -535,7 +535,10 @@ dataflow. Deleting a node removes it from its scenario.
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
 fixed context, levers and outcomes and the results its project saved. Open it from
 the **Scenario Catalog** tab, or from the **Scenario** button in the canvas's top
-bar. See [docs/SCENARIO-CATALOG.md](SCENARIO-CATALOG.md).
+bar. Drag a scenario from the **Scenario** drawer onto the canvas to bring a copy
+of it into the open dataflow: it arrives collapsed, with its results, and its
+fixed context arrives as Data Loading nodes that read copies of what its project
+saved. See [docs/SCENARIO-CATALOG.md](SCENARIO-CATALOG.md#4-using-a-scenario-in-a-dataflow).
 
 ## Node Catalog
 

@@ -25,10 +25,12 @@ export interface ScenarioCatalogDrawerProps {
  * projects, each a card with its project's graph.
  *
  * Built like the Model drawer (the same shell, header and search row, the same
- * card shape, Escape and pin rules), with less in it: a scenario lives in its
- * project and is edited there, so the cards change nothing and cannot be
- * dragged. What a card offers is its details and the way to its project, which
- * asks first when this dataflow has unsaved changes.
+ * card shape, Escape and pin rules). A scenario lives in its project and is
+ * edited there, so a card changes nothing in it. A card offers its details,
+ * the way to its project, which asks first when this dataflow has unsaved
+ * changes, and a drag onto the canvas, which brings a copy of the scenario
+ * into this dataflow. While a card is dragged, the scrim lets the drag through
+ * to the canvas beneath it.
  */
 export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
   presented,
@@ -50,6 +52,9 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
     setPinned,
     catalog,
     items,
+    dragging,
+    handleScenarioDragStart,
+    handleScenarioDragEnd,
     detailScenario,
     openScenarioDetails,
     closeScenarioDetails,
@@ -95,8 +100,9 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
       <div
         className={`${shell.overlayRoot} ${styles.overlayRoot} ${
           presented ? shell.overlayRootPresented : ""
-        }`}
+        } ${dragging ? styles.overlayRootDragging : ""}`}
         data-curio-scenario-catalog-drawer="true"
+        data-dragging={dragging ? "true" : undefined}
         aria-hidden={!presented}
       >
         <button
@@ -123,7 +129,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
             kind="scenario"
             title="Scenario Catalog"
             titleId="scenario-catalog-title"
-            subtitle="Saved selections of nodes from your projects."
+            subtitle="Saved selections of nodes from your projects. Drag one onto the canvas to copy it here."
             closeAriaLabel="Close Scenario Catalog drawer"
           />
 
@@ -165,6 +171,8 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
                   scenario={scenario}
                   onOpenDetails={openScenarioDetails}
                   onOpenProject={openProject}
+                  onDragStart={(event) => handleScenarioDragStart(scenario, event)}
+                  onDragEnd={handleScenarioDragEnd}
                 />
               ))}
             </div>

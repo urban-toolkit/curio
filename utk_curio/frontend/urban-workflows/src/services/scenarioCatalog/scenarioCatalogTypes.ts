@@ -63,6 +63,74 @@ export interface ScenarioDetails extends ScenarioRow {
   outcomes: ScenarioNodeEntry[];
 }
 
+/** A node of a saved spec, as a copy plan carries it. */
+export interface SpecNodeShape {
+  id: string;
+  type?: string;
+  x?: number;
+  y?: number;
+  content?: string;
+  metadata?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface SpecEdgeShape {
+  id: string;
+  source: string;
+  target: string;
+  type?: string;
+  sourceHandle?: string;
+  targetHandle?: string;
+  [key: string]: unknown;
+}
+
+/** A context node of a scenario being dragged, in its own project. */
+export interface ScenarioCopyContext {
+  nodeId: string;
+  label: string;
+  /** A Parameter node: copied with its value. */
+  parameter?: boolean;
+  /** The node whose saved output stands for this one's, which arrives as data. */
+  source?: { nodeId: string; copiedFrom: string[]; datasetId?: string };
+}
+
+/**
+ * What `GET /api/scenarios/<project>/<scenario>/copy?target=<id>` says a drop
+ * of the scenario into the target copies. Ids are the source project's.
+ */
+export interface ScenarioCopyPlan {
+  scenario: { id: string; name: string; color: string; description: string };
+  project: { id: string; name: string };
+  levers: string[];
+  context: ScenarioCopyContext[];
+  /** Each outcome, with the levers whose saved outputs it shows. */
+  outcomes: { nodeId: string; label: string; sources: string[] }[];
+  /** The levers and the Parameter nodes of the context, and the edges into the levers. */
+  dataflow: { nodes: SpecNodeShape[]; edges: SpecEdgeShape[] };
+  /** Packages the target project gets. */
+  packages: string[];
+  /** Why the scenario cannot be dropped there; empty when it can. */
+  problems: string[];
+}
+
+/** One saved output to copy: the source's node, and its copy's id. */
+export interface ScenarioCopyOutput {
+  source: string;
+  node: string;
+}
+
+/** What `POST /api/scenarios/<project>/<scenario>/copy` did. */
+export interface ScenarioCopyResult {
+  /** The target project's packages, after. */
+  packages: string[];
+  /** Those it added. */
+  added: string[];
+  /** The dataset each context loader reads, by the loader's id. */
+  datasets: Record<string, any>;
+  /** Outputs restored for the copies, as opening a project restores them. */
+  outputs: { node_id: string; filename: string; data_type?: string }[];
+}
+
 export type ScenarioSortMode = "recent" | "name" | "project";
 
 export const SCENARIO_SORT_OPTIONS: { value: ScenarioSortMode; label: string }[] = [
