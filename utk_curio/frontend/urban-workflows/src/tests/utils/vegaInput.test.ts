@@ -7,7 +7,7 @@
  * attaching geometry unconditionally would inline all of it into
  * `spec.data.values` and re-ship it through `changeset()` on every brush.
  */
-import { prepareVegaInput } from "../../utils/vegaInput";
+import { injectInputs, prepareVegaInput, prepareVegaInputs, usesNamedDatasets } from "../../utils/vegaInput";
 
 jest.mock("../../services/api", () => ({
   fetchData: jest.fn(),
@@ -116,6 +116,119 @@ describe("a plain DataFrame carrying geometry", () => {
 
     expect(emptyReason).toBeUndefined();
     expect(values[0].where.type).toBe("Feature");
+  });
+});
+
+describe("several inputs (#662)", () => {
+  const both = { dataType: "outputs", data: [
+    { dataType: "dataframe", data: framePayload },
+    { dataType: "geodataframe", data: geoPayload },
+  ] };
+  // A bar chart of the first input layered over a map of the second.
+  const layered = () => ({
+    layer: [
+      { mark: "bar", encoding: { x: { field: "zip" }, y: { field: "pop" } } },
+      { data: { name: "input_1" }, mark: "geoshape" },
+    ],
+  });
+
+  test("each input is a dataset named by its circle, its rows marked with the input they came from", async () => {
+    const { datasets, emptyReason } = await prepareVegaInputs(both, layered());
+    expect(emptyReason).toBeUndefined();
+    expect(datasets.map((d) => d.name)).toEqual(["input_0", "input_1"]);
+    expect(datasets[0].values.map((v: any) => [v.zip, v.__row_index__, v.__input__]))
+      .toEqual([["60601", 0, 0], ["60602", 1, 0]]);
+    // Row indexes restart for each input.
+    expect(datasets[1].values.map((v: any) => [v.__row_index__, v.__input__])).toEqual([[0, 1], [1, 1]]);
+  });
+
+  test("geometry is attached to an input only when a view draws it", async () => {
+    const spec: any = layered();
+    const { datasets } = await prepareVegaInputs(both, spec);
+    expect(datasets[1].values[0].geometry.type).toBe("Feature");
+    expect(spec.layer[1].encoding.shape).toEqual({ field: "geometry", type: "geojson" });
+
+    // The same map input, read only by a bar chart: no geometry inlined.
+    const bars = { layer: [{ mark: "bar" }, { data: { name: "input_1" }, mark: "bar" }] };
+    const plain = await prepareVegaInputs(both, bars);
+    expect(plain.datasets[1].values[0].geometry).toBeUndefined();
+  });
+
+  test("an input a view draws as a map but that has no geometry says so", async () => {
+    const spec = { layer: [{ mark: "bar" }, { data: { name: "input_1" }, mark: "geoshape" }] };
+    const twoFrames = { dataType: "outputs", data: [both.data[1], both.data[0]] };
+    expect((await prepareVegaInputs(twoFrames, spec)).emptyReason).toBe("geometry-unresolved");
+  });
+
+  test("one input is input_0, read by every view, with no input mark on its rows", async () => {
+    const { datasets } = await prepareVegaInputs({ dataType: "dataframe", data: framePayload }, { mark: "bar" });
+    expect(datasets.map((d) => d.name)).toEqual(["input_0"]);
+    expect(datasets[0].values[0].__input__).toBeUndefined();
+  });
+
+  test("an input it cannot read is refused by its circle, so no name points at another input's rows", async () => {
+    const withRaster = { dataType: "outputs", data: [both.data[0], { dataType: "raster", data: {} }, both.data[0]] };
+    expect(await prepareVegaInputs(withRaster, layered())).toEqual({
+      datasets: [],
+      emptyReason: "input-type-rejected",
+      detail: "raster at position 1 is not a valid input for the 2D Plot (Vega-Lite).",
+    });
+  });
+
+  test("prepareVegaInput hands back the first input's rows", async () => {
+    const { values } = await prepareVegaInput(both, { mark: "bar" });
+    expect(values.map((v: any) => v.zip)).toEqual(["60601", "60602"]);
+  });
+});
+
+describe("injectInputs", () => {
+  const rowsOf = (name: string) => ({ name, values: [{ name }] });
+
+  test("one input read by the whole spec is its top-level data, as before", () => {
+    const spec: any = { mark: "bar", data: { name: "anything" } };
+    expect(injectInputs(spec, [rowsOf("input_0")])).toBe(false);
+    expect(spec.data).toEqual({ values: [{ name: "input_0" }], name: "input_0" });
+    expect(spec.datasets).toBeUndefined();
+  });
+
+  test("several inputs are named datasets, and the top level reads the first unless it names another", () => {
+    const spec: any = { mark: "bar", datasets: { mine: [1] } };
+    expect(injectInputs(spec, [rowsOf("input_0"), rowsOf("input_1")])).toBe(true);
+    expect(spec.datasets).toEqual({ mine: [1], input_0: [{ name: "input_0" }], input_1: [{ name: "input_1" }] });
+    expect(spec.data).toEqual({ name: "input_0" });
+
+    const second: any = { data: { name: "input_1" }, mark: "bar" };
+    injectInputs(second, [rowsOf("input_0"), rowsOf("input_1")]);
+    expect(second.data).toEqual({ name: "input_1" });
+  });
+
+  test("one input that a part of the spec names is a named dataset too", () => {
+    const spec: any = { layer: [{ mark: "bar" }, { data: { name: "input_0" }, mark: "rule" }] };
+    expect(injectInputs(spec, [rowsOf("input_0")])).toBe(true);
+    expect(Object.keys(spec.datasets)).toEqual(["input_0"]);
+    expect(spec.data).toEqual({ name: "input_0" });
+  });
+});
+
+describe("usesNamedDatasets", () => {
+  test("several inputs always do", () => {
+    expect(usesNamedDatasets({ mark: "bar" }, 2)).toBe(true);
+  });
+
+  test("one input does when a layer, a concatenated view, a facet's view or a lookup names a dataset", () => {
+    expect(usesNamedDatasets({ mark: "bar" }, 1)).toBe(false);
+    expect(usesNamedDatasets({ data: { name: "input_0" }, mark: "bar" }, 1)).toBe(false);
+    expect(usesNamedDatasets({ layer: [{ data: { name: "input_0" }, mark: "bar" }] }, 1)).toBe(true);
+    expect(usesNamedDatasets({ hconcat: [{ mark: "bar" }, { data: { name: "input_0" }, mark: "bar" }] }, 1)).toBe(true);
+    expect(usesNamedDatasets({ facet: { row: { field: "a" } }, spec: { data: { name: "input_0" }, mark: "bar" } }, 1)).toBe(true);
+    expect(usesNamedDatasets({
+      mark: "bar",
+      transform: [{ lookup: "zip", from: { data: { name: "input_0" }, key: "zip", fields: ["pop"] } }],
+    }, 1)).toBe(true);
+  });
+
+  test("a view bringing its own rows names no dataset", () => {
+    expect(usesNamedDatasets({ layer: [{ data: { url: "x.json", name: "x" }, mark: "bar" }] }, 1)).toBe(false);
   });
 });
 

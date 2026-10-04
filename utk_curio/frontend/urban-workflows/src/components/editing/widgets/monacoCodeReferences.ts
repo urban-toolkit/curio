@@ -84,6 +84,12 @@ function hoverFor(inner: string, scope: ReferenceScope, language: CodeLanguage):
   }
   const input = scope.inputs.find((i) => i.slot === parsed.slot);
   const from = input?.label ? `, from ${input.label}` : "";
+  if (parsed.layer !== undefined) {
+    const layer = input?.layers?.find((l) => l.name === parsed.layer);
+    if (parsed.column === undefined) return `layer ${parsed.layer} of input ${parsed.slot}${from}`;
+    const dtype = layer?.dtypes?.[parsed.column];
+    return `column ${parsed.column} of layer ${parsed.layer}, input ${parsed.slot}${from}` + (dtype ? ` (${dtype})` : "");
+  }
   if (parsed.column !== undefined) {
     const dtype = input?.dtypes?.[parsed.column];
     return `column ${parsed.column} of input ${parsed.slot}${from}` + (dtype ? ` (${dtype})` : "");

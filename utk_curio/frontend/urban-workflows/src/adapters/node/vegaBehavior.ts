@@ -79,10 +79,10 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
 
 /** The input's 100-row preview: plenty for classifying columns, and cheaper than /get. */
 function readVegaPreview(input: unknown): Promise<GrammarInput> {
-  return readGrammarInput(input, { label: 'the 2D Plot (Vega-Lite)', preview: true });
+  return readGrammarInput(input, { label: 'the 2D Plot (Vega-Lite)', preview: true, circles: true });
 }
 
-/** The Vega-Lite ladder over the input's first frame (utils/vegaDefaultSpec). */
+/** The Vega-Lite ladder over the input's first frame, its first input's (utils/vegaDefaultSpec). */
 function chooseVegaStarter(read: GrammarInput): string | null {
   const frame = read.frames[0];
   if (!frame) return null;

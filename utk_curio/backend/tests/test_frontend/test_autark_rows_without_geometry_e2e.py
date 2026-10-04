@@ -50,7 +50,7 @@ return rows
 MAP_SPEC = {
     "map": {
         "layerRefs": [
-            {"dataRef": "upstream", "getFnv": "value", "getFnvType": "quantitative", "defaultFnv": 0}
+            {"dataRef": "input_0", "getFnv": "value", "getFnvType": "quantitative", "defaultFnv": 0}
         ]
     }
 }

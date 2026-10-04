@@ -75,7 +75,7 @@ describe('useAutkGrammarBehavior defaultValueOverride', () => {
     const { seen, rerender } = renderBehavior(data);
     await waitFor(() => expect(seen[seen.length - 1]).toBeDefined());
     const starter = seen[seen.length - 1]!;
-    expect(JSON.parse(starter).map.layerRefs[0]).toMatchObject({ dataRef: 'upstream', getFnv: 'pop' });
+    expect(JSON.parse(starter).map.layerRefs[0]).toMatchObject({ dataRef: 'input_0', getFnv: 'pop' });
 
     // What useNodeState does once GrammarEditor floats the starter up...
     act(() => {
@@ -99,7 +99,7 @@ describe('useAutkGrammarBehavior defaultValueOverride', () => {
     await waitFor(() => expect(seen[seen.length - 1]).toBeDefined());
 
     act(() => {
-      rerender({ ...data, defaultCode: '{"map":{"layerRefs":[{"dataRef":"upstream"}]}}' }, '');
+      rerender({ ...data, defaultCode: '{"map":{"layerRefs":[{"dataRef":"input_0"}]}}' }, '');
     });
     expect(seen[seen.length - 1]).toBeUndefined();
   });

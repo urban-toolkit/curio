@@ -2,7 +2,13 @@
  * What a node's input references can name (#662): its wired circles, named
  * after the nodes that feed them, with what each holds.
  */
-import { inputScopeFor, inputValueKey } from "../../utils/references/inputScope";
+const mockFetchPreviewData = jest.fn();
+jest.mock("../../services/api", () => ({
+  fetchData: jest.fn(),
+  fetchPreviewData: (...args: any[]) => mockFetchPreviewData(...args),
+}));
+
+import { inputScopeFor, inputValueKey, readInputColumns } from "../../utils/references/inputScope";
 
 const edges = [
   { source: "roads", target: "t", sourceHandle: "out", targetHandle: "in" },
@@ -38,6 +44,48 @@ describe("inputScopeFor", () => {
 
   test("a node with no edge has no inputs", () => {
     expect(inputScopeFor("lonely", edges, nodes, () => undefined, labelOf, () => undefined)).toEqual([]);
+  });
+
+  test("the layers an input carries ride along", () => {
+    const read = { columns: [], dtypes: {}, layers: [{ name: "roads", columns: ["highway"], dtypes: {} }] };
+    const scope = inputScopeFor("t", edges, nodes, () => ({ path: "a" }), labelOf, () => read);
+    expect(scope[0].layers).toEqual([{ name: "roads", columns: ["highway"], dtypes: {} }]);
+  });
+});
+
+describe("readInputColumns (#662)", () => {
+  const fc = (properties: Record<string, unknown>) => ({
+    type: "FeatureCollection",
+    features: [{ type: "Feature", geometry: { type: "Point", coordinates: [0, 0] }, properties }],
+  });
+
+  beforeEach(() => mockFetchPreviewData.mockReset());
+
+  test("a table's columns come from its preview's schema, with their dtypes", async () => {
+    mockFetchPreviewData.mockResolvedValue({
+      dataType: "dataframe", data: { zip: ["a"], pop: [1] }, schema: { zip: "str", pop: "int64" },
+    });
+    expect(await readInputColumns({ path: "art", dataType: "dataframe" }))
+      .toEqual({ columns: ["zip", "pop"], dtypes: { zip: "str", pop: "int64" } });
+    expect(mockFetchPreviewData).toHaveBeenCalledWith("art");
+  });
+
+  test("an input carrying several named layers lists each with its own columns", async () => {
+    mockFetchPreviewData.mockResolvedValue({
+      dataType: "list",
+      data: [
+        { dataType: "dict", data: { name: "table_osm_roads", type: "roads", geojson: fc({ highway: "primary" }) } },
+        { dataType: "dict", data: { name: "table_osm_buildings", type: "buildings", geojson: fc({ height: 9 }) } },
+      ],
+    });
+    expect(await readInputColumns({ path: "art", dataType: "list" })).toEqual({
+      columns: [],
+      dtypes: {},
+      layers: [
+        { name: "table_osm_roads", columns: ["highway"], dtypes: {} },
+        { name: "table_osm_buildings", columns: ["height"], dtypes: {} },
+      ],
+    });
   });
 });
 

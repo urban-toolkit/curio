@@ -82,6 +82,45 @@ describe("input tags", () => {
   });
 });
 
+describe("an input carrying several layers", () => {
+  const layered: InputScope[] = [{
+    slot: 0,
+    label: "OSM",
+    columns: [],
+    layers: [
+      { name: "table_osm_roads", columns: ["highway"], dtypes: { highway: "str" } },
+      { name: "table_osm_buildings", columns: ["height"] },
+    ],
+  }];
+
+  test("in a Vega-Lite or Autark spec it opens to a tag per layer, each with its columns", () => {
+    const onInsert = jest.fn();
+    const view = render(<ReferenceStrip widgets={[]} inputs={layered} onInsert={onInsert} layerChips />);
+    fireEvent.click(screen.getByLabelText("Show the columns of input 0"));
+    const layers = view.container.querySelectorAll("[data-layer-tag]");
+    expect(Array.from(layers).map((t) => t.textContent)).toEqual(["table_osm_roads", "table_osm_buildings"]);
+
+    const drag = dragData();
+    fireEvent.dragStart(layers[0], drag);
+    expect(drag.store.get(INPUT_REF_MIME)).toBe("input 0:table_osm_roads");
+    expect(drag.store.get("text/plain")).toBe("[!! input 0:table_osm_roads !!]");
+
+    const column = view.container.querySelector('[data-column-layer="table_osm_buildings"][data-column-tag="height"]')!;
+    fireEvent.click(column);
+    expect(onInsert).toHaveBeenCalledWith("input 0:table_osm_buildings.height");
+    expect(view.container.querySelector('[data-column-tag="highway"]')!.getAttribute("title"))
+      .toMatch(/^Column of layer table_osm_roads of input 0, str\. /);
+  });
+
+  test("in code it names its layers, with no layer tags", () => {
+    const view = render(<ReferenceStrip widgets={[]} inputs={layered} onInsert={jest.fn()} />);
+    fireEvent.click(screen.getByLabelText("Show the columns of input 0"));
+    expect(screen.getByText("This input carries the layers table_osm_roads, table_osm_buildings.")).toBeTruthy();
+    expect(view.container.querySelector("[data-layer-tag]")).toBeNull();
+    expect(view.container.querySelector("[data-column-tag]")).toBeNull();
+  });
+});
+
 describe("widget tags beside the inputs", () => {
   test("widget tags keep their strip and attributes", () => {
     const view = render(

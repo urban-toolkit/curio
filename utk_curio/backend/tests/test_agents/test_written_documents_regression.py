@@ -79,7 +79,7 @@ VALID_VEGA = json.dumps({
 })
 
 VALID_AUTK = json.dumps({
-    "map": {"layerRefs": [{"dataRef": "upstream", "isPick": True, "isColorMap": True}]},
+    "map": {"layerRefs": [{"dataRef": "input_0", "isPick": True, "isColorMap": True}]},
 })
 
 LOADER = 'import pandas as pd\nreturn pd.DataFrame({"community": ["Loop"], "density": [1.0]})'
@@ -234,7 +234,7 @@ class TestProseNeverBecomesContent:
         body = h.solve()
         contents = h.contents()
         assert json.loads(contents[VEGA])["mark"]["type"] == "bar"
-        assert json.loads(contents[AUTK])["map"]["layerRefs"][0]["dataRef"] == "upstream"
+        assert json.loads(contents[AUTK])["map"]["layerRefs"][0]["dataRef"] == "input_0"
         for grammar in (AUTK, VEGA):
             result = body["results"][h.ids[grammar]]
             assert result["status"] == "solved"
