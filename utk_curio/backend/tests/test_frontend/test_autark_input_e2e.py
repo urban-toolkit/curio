@@ -4,10 +4,12 @@ A fresh Autark node opens empty; wired to a loader it says the loader has not
 run, and when the loader runs it fills with a starter document chosen from the
 input (``utils/autkDefaultSpec.ts``). An input it cannot draw is refused with the
 reason, in the node body and in its error, instead of an empty map under a green
-Done. A DataFrame with a geometry column is drawn.
+Done. A DataFrame with a geometry column is drawn. A node with several inputs
+draws a layer from each (#662).
 
 The first test needs no WebGPU. The others run the Autark node, which does: they
-skip without an adapter unless ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job).
+skip without an adapter unless ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job),
+except the several-inputs test, which fails without one.
 
 Run::
 
@@ -45,7 +47,7 @@ if TYPE_CHECKING:
 
 LOADER_ID = "autk-input-loader"
 AUTK_ID = "autk-input-map"
-MAP_ON_UPSTREAM = json.dumps({"map": {"layerRefs": [{"dataRef": "upstream"}]}}, indent=2)
+MAP_ON_INPUT = json.dumps({"map": {"layerRefs": [{"dataRef": "input_0"}]}}, indent=2)
 
 GDF_LOADER = (
     "import geopandas as gpd\n"
@@ -206,7 +208,7 @@ def test_a_fresh_autark_node_fills_from_its_input(
     starter = json.loads(page.evaluate(_GRAMMAR_EDITOR_JS, AUTK_ID))
     assert starter == {
         "map": {"layerRefs": [{
-            "dataRef": "upstream",
+            "dataRef": "input_0",
             "getFnv": "pop",
             "getFnvType": "quantitative",
             "colorMapInterpolator": "interpolateViridis",
@@ -218,7 +220,7 @@ def test_a_dataframe_without_geometry_is_refused_with_the_reason(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     _open(page, app_frontend, current_server, username="autark_input_refused",
-          spec=_spec(DF_WITHOUT_GEOMETRY, MAP_ON_UPSTREAM))
+          spec=_spec(DF_WITHOUT_GEOMETRY, MAP_ON_INPUT))
     _require_webgpu(page)
 
     run_node_and_wait(page, LOADER_ID, node_type="DATA_LOADING", timeout_ms=120000)
@@ -227,7 +229,7 @@ def test_a_dataframe_without_geometry_is_refused_with_the_reason(
     assert status == "error", "an input with no geometry must not end in Done"
 
     error = read_node_error_text(node_locator(page, AUTK_ID)) or ""
-    assert "upstream has no geometry column" in error, error
+    assert "input_0 has no geometry column" in error, error
     assert "not at fault" in error, error
     _open_output(page, AUTK_ID)
     assert _empty_reason(page, AUTK_ID) == "geometry-unresolved"
@@ -237,7 +239,7 @@ def test_a_dataframe_with_a_geometry_column_is_drawn(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     _open(page, app_frontend, current_server, username="autark_input_dataframe",
-          spec=_spec(DF_WITH_GEOMETRY, MAP_ON_UPSTREAM))
+          spec=_spec(DF_WITH_GEOMETRY, MAP_ON_INPUT))
     _require_webgpu(page)
 
     run_all_and_wait(page, timeout_ms=180000)
@@ -295,8 +297,8 @@ def test_a_frame_that_names_its_layer_buildings_draws_every_building(
             if "no valid height metadata" in message.text or "Invalid Building Layer" in message.text
             else None)
     _open(page, app_frontend, current_server, username="autark_input_buildings", spec=_pairs_spec([
-        ("loader-buildings-typed", TYPED_BUILDINGS, typed_map, MAP_ON_UPSTREAM),
-        ("loader-buildings-untyped", UNTYPED_BUILDINGS, untyped_map, MAP_ON_UPSTREAM),
+        ("loader-buildings-typed", TYPED_BUILDINGS, typed_map, MAP_ON_INPUT),
+        ("loader-buildings-untyped", UNTYPED_BUILDINGS, untyped_map, MAP_ON_INPUT),
     ]))
     _require_webgpu(page)
 
@@ -316,4 +318,54 @@ def test_a_frame_that_names_its_layer_buildings_draws_every_building(
     share = changed_pixels(untyped, typed, threshold=6) / (typed.width * typed.height)
     assert share > 0.01, (
         f"the map drew the frame named buildings as it drew the plain one: {share:.2%} of its pixels differ"
+    )
+
+
+def test_a_map_draws_a_layer_from_each_of_its_inputs(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """#662: an Autark node takes several edges, and its document reads each
+    input as the table ``input_<k>``, written as the chip ``[!! input k !!]``.
+    One loader's footprints feed two maps; a second loader, the same footprints
+    named buildings, feeds the second map's second circle. That map draws both
+    layers, so it differs from the map of the first input alone, which has the
+    same footprints and the same camera."""
+    alone, both = "autk-inputs-alone", "autk-inputs-both"
+    plain, buildings = "loader-inputs-plain", "loader-inputs-buildings"
+    node = lambda node_id, node_type, x, y, content: {  # noqa: E731
+        "id": node_id, "type": node_type, "x": x, "y": y, "content": content,
+        "in": "DEFAULT", "out": "DEFAULT", "goal": "", "metadata": {"keywords": []},
+    }
+    edge = lambda source, target, handle: {  # noqa: E731
+        "id": f"reactflow__edge-{source}out-{target}{handle}",
+        "source": source, "target": target, "targetHandle": handle,
+    }
+    spec = {"dataflow": {
+        "name": "Autark inputs", "task": "", "timestamp": 1789193389280, "provenance_id": "Autark inputs",
+        "nodes": [
+            node(plain, "curio.builtin/data-loading", 0, 0, UNTYPED_BUILDINGS),
+            node(buildings, "curio.builtin/data-loading", 0, 520, TYPED_BUILDINGS),
+            node(alone, "curio.builtin/autk-grammar", 645, 0,
+                 '{"map": {"layerRefs": [{"dataRef": [!! input 0 !!]}]}}'),
+            node(both, "curio.builtin/autk-grammar", 645, 520,
+                 '{"map": {"layerRefs": [{"dataRef": [!! input 0 !!]}, {"dataRef": [!! input 1 !!]}]}}'),
+        ],
+        "edges": [edge(plain, alone, "in"), edge(plain, both, "in"), edge(buildings, both, "in_1")],
+    }}
+    _open(page, app_frontend, current_server, username="autark_inputs_two", spec=spec)
+    assert page.evaluate("async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"), (
+        "drawing an Autark map needs a WebGPU adapter, which CI's GPU job has"
+    )
+
+    run_all_and_wait(page, timeout_ms=180000)
+    drawn = {}
+    for node_id in (alone, both):
+        status = wait_for_node_settled(page, node_id, node_type="autk-grammar", timeout_ms=120000)
+        detail = read_node_error_text(node_locator(page, node_id)) if status == "error" else ""
+        assert status == "done", f"{node_id} did not draw: {detail}"
+        drawn[node_id] = _footprints_drawn(page, node_id)
+
+    share = changed_pixels(drawn[alone], drawn[both], threshold=6) / (drawn[both].width * drawn[both].height)
+    assert share > 0.01, (
+        f"the map of two inputs drew what the map of the first input draws: {share:.2%} of its pixels differ"
     )

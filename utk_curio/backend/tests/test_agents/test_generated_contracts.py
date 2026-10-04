@@ -343,7 +343,7 @@ class TestTheAutarkRenderers:
         assert "\n" not in shape
         for family in contracts.autk_families(schema):
             assert f'"{family}"' in shape
-        assert f'"dataRef": "{contracts.AUTK_UPSTREAM_LAYER}"' in shape
+        assert f'"dataRef": "{contracts.input_table_name(0)}"' in shape
         # The whole shape survives the refusal's 600-character cut.
         assert shape in dv.validate(contracts.AUTK_TEMPLATE, "not controllable")["detail"]
 
@@ -352,7 +352,7 @@ class TestTheAutarkRenderers:
         region = contracts.render_autk_region(schema, "Autark")
         assert schema["$id"] in region
         assert contracts.AUTK_TEMPLATE in region
-        assert f'"{contracts.AUTK_UPSTREAM_LAYER}"' in region
+        assert f'"{contracts.input_table_name(0)}"' in region
         for union, key in (("DataSourceSpec", "type"), ("PlotSpec", "mark")):
             for values, _ in contracts._variants(schema, union, key):
                 for value in values:
