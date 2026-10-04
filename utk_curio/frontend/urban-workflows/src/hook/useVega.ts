@@ -67,6 +67,7 @@ export const useVega = ({
   connected = true,
   upstreamErrored = false,
   hasSpec = true,
+  onRedraw,
 }: {
   data: any;
   code: string;
@@ -76,7 +77,16 @@ export const useVega = ({
   upstreamErrored?: boolean;
   /** Does the editor hold a spec to compile? */
   hasSpec?: boolean;
+  /**
+   * Hears what a redraw drew when new rows reach a chart that is already
+   * compiled. That path never goes through `handleCompileGrammar`, so without
+   * it a chart first compiled over zero rows kept saying so after its rows
+   * arrived and it drew them.
+   */
+  onRedraw?: (counts: RenderCounts) => void;
 }) => {
+  const onRedrawRef = React.useRef(onRedraw);
+  onRedrawRef.current = onRedraw;
   const { showToast } = useToastContext();
   const [interactions, _setInteractions] = useState<any>({}); // {signal: {type: point/interval, data: }} // if type point data contains list of object ids. If type is interval data is an object where each key is an attribute with intervals or lists
 
@@ -240,11 +250,24 @@ export const useVega = ({
       .remove(() => true)
       .insert(values);
 
+    // The same counts compileGrammar returns, so the node judges a redraw by
+    // the rule it judged the first draw by (utils/renderOutcome).
+    const rowsIn = Array.isArray(values) ? values.length : undefined;
+    const { usableRows, usableFields } = usableCounts(values, lastSpecRef.current);
+
     if (prevView) {
       prevView.change("data", changeset).runAsync().then(() => {
         const map = buildVgsidMap(prevView);
         if (map.size > 0) vgsidToIndexRef.current = map;
         applyDirectSelection(prevView);
+        onRedrawRef.current?.(
+          prepared.emptyReason != null
+            ? {
+              rowsIn, drawn: 0, usableRows, usableFields, explanation: prepared.detail,
+              ...(prepared.emptyReason === "input-type-rejected" ? { inputProblem: prepared.detail } : {}),
+            }
+            : { rowsIn, drawn: countDrawnMarks(prevView), usableRows, usableFields },
+        );
       });
     }
 
