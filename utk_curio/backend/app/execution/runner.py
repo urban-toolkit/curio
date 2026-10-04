@@ -4,8 +4,8 @@ report so agents can validate candidate content by ACTUALLY running the
 dataflow through a node.
 
 Execution semantics are byte-equivalent with the e2e runner (which imports
-this module through a shim): topological order over data-flow edges, merge
-``in_N`` input assembly, widget-placeholder resolution, deterministic
+this module through a shim): topological order over data-flow edges,
+``in_N`` input assembly, code-reference resolution, deterministic
 seeding, pass-through for browser-only node types, and the canonical failure
 predicate ``output.path == ""`` (benign warnings land in stderr on successful
 runs — stderr-nonempty is NEVER the predicate).
@@ -29,10 +29,10 @@ from utk_curio.backend.app.execution.workflow_spec import (
     PY_CODE_TYPES,
     WorkflowSpec,
     parse_workflow_dict,
-    resolve_widget_placeholders,
+    resolve_code_references,
     seed_node_code,
 )
-from utk_curio.backend.app.execution.widget_substitution import WidgetReferenceError
+from utk_curio.backend.app.execution.code_references import CodeReferenceError
 
 SANDBOX_CONNECT_TIMEOUT_S = 30
 SANDBOX_GET_TIMEOUT_S = int(os.environ.get("CURIO_E2E_SANDBOX_GET_TIMEOUT", "300"))
@@ -402,14 +402,14 @@ def run_through_node(
             report["nodes"][node.id] = {"status": "pass-through", "executed": False}
             continue
         file_path, data_type = _resolve_input(spec, node.id, outputs)
-        # #662: an unresolved widget reference is the node's own failure,
-        # reported like a hang, without asking the sandbox.
+        # #662: an unresolved reference is the node's own failure, reported
+        # like a hang, without asking the sandbox.
         widget_problem = None
         try:
-            resolved = resolve_widget_placeholders(
-                content_text, node.widgets, "python" if is_py else "javascript"
+            resolved = resolve_code_references(
+                content_text, node.widgets, "python" if is_py else "javascript", spec.input_slots(node.id)
             )
-        except WidgetReferenceError as exc:
+        except CodeReferenceError as exc:
             resolved, widget_problem = content_text, str(exc)
         seeded = seed_node_code(resolved, seed)
         payload = {

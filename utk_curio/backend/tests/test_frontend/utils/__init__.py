@@ -12,7 +12,7 @@ this copy, not what the helpers call.
 # so the non-browser runners -- this module and tests/stress -- can share
 # them. Re-exported here because call sites across the suite import them
 # from utils.
-from ..workflow_spec import resolve_widget_placeholders, seed_node_code  # noqa: F401
+from ..workflow_spec import resolve_code_references, seed_node_code  # noqa: F401
 from .environment import (  # noqa: F401
     REPO_ROOT,
     state_root,

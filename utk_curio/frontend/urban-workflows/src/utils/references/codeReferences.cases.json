@@ -1,5 +1,5 @@
 {
-  "about": "Widget reference substitution cases. Read by src/tests/utils/widgetSubstitution.test.ts and by utk_curio/backend/tests/test_execution/test_widget_substitution.py: the browser and the headless runner must write the same code.",
+  "about": "Code reference cases: widget, input and column references. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their columns when known.",
   "cases": [
     {
       "name": "a number on its own",
@@ -241,6 +241,134 @@
       "widgets": [{"name": "w", "type": "nonsense", "default": 1}],
       "expected": "x = [!! w !!]",
       "problems": ["[!! w !!]: this node has no widget named w. Add it in the Widgets tab."]
+    },
+    {
+      "name": "the only input is arg itself",
+      "language": "python",
+      "code": "df = [!! input 0 !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "df = arg"
+    },
+    {
+      "name": "several inputs index arg in circle order",
+      "language": "python",
+      "code": "a = [!! input 0 !!]\nc = [!! input 2 !!]",
+      "widgets": [],
+      "inputs": [{"slot": 2}, {"slot": 0}, {"slot": 1}],
+      "expected": "a = arg[0]\nc = arg[2]"
+    },
+    {
+      "name": "an empty circle takes no place in arg",
+      "language": "python",
+      "code": "a = [!! input 1 !!]; b = [!! input 2 !!]",
+      "widgets": [],
+      "inputs": [{"slot": 1}, {"slot": 2}],
+      "expected": "a = arg[0]; b = arg[1]"
+    },
+    {
+      "name": "a JavaScript input",
+      "language": "javascript",
+      "code": "const n = [!! input 1 !!].length;",
+      "widgets": [],
+      "inputs": [{"slot": 0}, {"slot": 1}],
+      "expected": "const n = arg[1].length;"
+    },
+    {
+      "name": "a column on its own is its quoted name",
+      "language": "python",
+      "code": "s = arg[[!! input 0.population !!]]",
+      "widgets": [],
+      "inputs": [{"slot": 0, "columns": ["population", "area"]}],
+      "expected": "s = arg[\"population\"]"
+    },
+    {
+      "name": "a column inside a string and a comment is its name",
+      "language": "python",
+      "code": "label = f\"mean of [!! input 0.pop 2020 !!]\"  # [!! input 0.pop 2020 !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "label = f\"mean of pop 2020\"  # pop 2020"
+    },
+    {
+      "name": "a column with a quote inside a single-quoted string",
+      "language": "python",
+      "code": "s = '[!! input 0.Bob's !!]'",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "s = 'Bob\\'s'"
+    },
+    {
+      "name": "a column name takes everything after the first dot",
+      "language": "javascript",
+      "code": "const k = [!! input 1.a.b !!];",
+      "widgets": [],
+      "inputs": [{"slot": 0}, {"slot": 1, "columns": ["a.b"]}],
+      "expected": "const k = \"a.b\";"
+    },
+    {
+      "name": "columns in JSON, on their own and inside a string",
+      "language": "json",
+      "code": "{\"field\": [!! input 0.height !!], \"title\": \"Mean [!! input 0.height !!]\"}",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "{\"field\": \"height\", \"title\": \"Mean height\"}"
+    },
+    {
+      "name": "a widget named input is still a widget",
+      "language": "python",
+      "code": "x = [!! input !!] + [!! input 0 !!]",
+      "widgets": [{"name": "input", "type": "number", "default": 5}],
+      "inputs": [{"slot": 0}],
+      "expected": "x = 5 + arg"
+    },
+    {
+      "name": "an input with no edge",
+      "language": "python",
+      "code": "x = [!! input 3 !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0}, {"slot": 1}],
+      "expected": "x = [!! input 3 !!]",
+      "problems": ["[!! input 3 !!]: input 3 has no edge. Connect one to that circle, or drag one of this node's input chips here."]
+    },
+    {
+      "name": "an input inside a string is not text",
+      "language": "python",
+      "code": "s = \"[!! input 0 !!]\"",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "s = \"[!! input 0 !!]\"",
+      "problems": ["[!! input 0 !!] is an input, not text. Use it outside quotes and comments."]
+    },
+    {
+      "name": "an input chip in JSON",
+      "language": "json",
+      "code": "{\"data\": [!! input 0 !!]}",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "{\"data\": [!! input 0 !!]}",
+      "problems": ["[!! input 0 !!]: an input chip works in Python and JavaScript code."]
+    },
+    {
+      "name": "the chip of a deleted input",
+      "language": "python",
+      "code": "x = [!! input ? !!]; y = [!! input ?.area !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "x = [!! input ? !!]; y = [!! input ?.area !!]",
+      "problems": [
+        "[!! input ? !!]: the edge for this input was deleted. Drag one of this node's input chips here.",
+        "[!! input ?.area !!]: the edge for this input was deleted. Drag one of this node's input chips here."
+      ]
+    },
+    {
+      "name": "a column the input does not have, once its columns are known",
+      "language": "python",
+      "code": "x = [!! input 0.missing !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0, "columns": ["a"]}],
+      "expected": "x = [!! input 0.missing !!]",
+      "problems": ["[!! input 0.missing !!]: input 0 has no column missing."]
     }
   ]
 }
