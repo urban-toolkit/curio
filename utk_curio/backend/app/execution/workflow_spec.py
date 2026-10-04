@@ -515,8 +515,8 @@ def parse_workflow_dict(data: dict, *, name: str = "", templates: dict | None = 
 # outputs for the E2E comparisons) and ``tests/stress`` (the CI load harness).
 # One copy, here, is what stops them drifting apart.
 #
-# The reference shape mirrors ``_parse_input_ref`` in
-# ``backend/app/api/routes.py``: ``{"path": <artifact id | list of refs>,
+# The reference shape mirrors ``parse_input_ref`` in
+# ``backend/app/execution/node_exec.py``: ``{"path": <artifact id | list of refs>,
 # "dataType": <sandbox data type | "outputs">}``.
 
 

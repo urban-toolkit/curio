@@ -205,7 +205,7 @@ def test_process_python_code_auto_installs_outputs_bundle(client, user_and_token
         "output": {"path": parent_id, "dataType": "outputs"},
     }
     monkeypatch.setattr(
-        "utk_curio.backend.app.api.routes._sandbox_call",
+        "utk_curio.backend.app.execution.node_exec.sandbox_request",
         lambda *args, **kwargs: mock_response,
     )
 
@@ -270,7 +270,7 @@ def test_process_python_code_auto_installs_dataset(client, user_and_token, monke
         "output": {"path": "art-1", "dataType": "dataframe", "dataset": parquet_name},
     }
     monkeypatch.setattr(
-        "utk_curio.backend.app.api.routes._sandbox_call",
+        "utk_curio.backend.app.execution.node_exec.sandbox_request",
         lambda *args, **kwargs: mock_response,
     )
 
@@ -320,7 +320,7 @@ def test_process_python_code_titles_computed_dataset_with_node_name(client, user
         "output": {"path": "art-1", "dataType": "dataframe", "dataset": parquet_name},
     }
     monkeypatch.setattr(
-        "utk_curio.backend.app.api.routes._sandbox_call",
+        "utk_curio.backend.app.execution.node_exec.sandbox_request",
         lambda *args, **kwargs: mock_response,
     )
 
@@ -450,7 +450,7 @@ def test_process_python_code_skips_auto_install_when_save_disabled(client, user_
         "output": {"path": "art-1", "dataType": "dataframe"},
     }
     monkeypatch.setattr(
-        "utk_curio.backend.app.api.routes._sandbox_call",
+        "utk_curio.backend.app.execution.node_exec.sandbox_request",
         lambda *args, **kwargs: mock_response,
     )
 
@@ -632,7 +632,7 @@ def test_installed_computed_parquet_loader_is_geoparquet_aware(
         "output": {"path": "art-geo", "dataType": "geodataframe", "dataset": parquet_name},
     }
     monkeypatch.setattr(
-        "utk_curio.backend.app.api.routes._sandbox_call",
+        "utk_curio.backend.app.execution.node_exec.sandbox_request",
         lambda *args, **kwargs: mock_response,
     )
 
@@ -685,7 +685,7 @@ def test_installed_bundle_loader_returns_tuple(client, user_and_token, monkeypat
         "output": {"path": parent_id, "dataType": "outputs"},
     }
     monkeypatch.setattr(
-        "utk_curio.backend.app.api.routes._sandbox_call",
+        "utk_curio.backend.app.execution.node_exec.sandbox_request",
         lambda *args, **kwargs: mock_response,
     )
 
@@ -860,7 +860,7 @@ def test_process_python_code_skips_unresolvable_output_artifact(client, user_and
         "output": {"path": "1781903321396_c8572ee7", "dataType": "dataframe"},
     }
     monkeypatch.setattr(
-        "utk_curio.backend.app.api.routes._sandbox_call",
+        "utk_curio.backend.app.execution.node_exec.sandbox_request",
         lambda *args, **kwargs: mock_response,
     )
 

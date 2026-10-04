@@ -37,7 +37,7 @@ def _capture_sandbox(monkeypatch):
         captured["body"] = json.loads(kwargs["data"])
         return resp
 
-    monkeypatch.setattr("utk_curio.backend.app.api.routes._sandbox_call", fake_call)
+    monkeypatch.setattr("utk_curio.backend.app.execution.node_exec.sandbox_request", fake_call)
     return captured
 
 
@@ -127,7 +127,9 @@ def test_single_quoted_id_call_is_scanned(client, user_and_token, tmp_path, monk
 
 def test_scan_caps_distinct_ids(client, user_and_token, monkeypatch):
     """Pathological code cannot trigger unbounded resolution work."""
-    from utk_curio.backend.app.api.routes import MAX_EXEC_DATASET_IDS
+    from utk_curio.backend.app.datasets.domain.code_refs import (
+        MAX_DATASET_IDS as MAX_EXEC_DATASET_IDS,
+    )
 
     _, token = user_and_token
     _capture_sandbox(monkeypatch)

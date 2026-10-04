@@ -69,7 +69,7 @@ class TestExecutionRelaysTheSandboxReply(unittest.TestCase):
         response.json.return_value = reply
         mock_session.post.return_value = response
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_process_python_code(self, mock_session):
         reply = {
             "stdout": "computed\n", "stderr": "",
@@ -97,7 +97,7 @@ class TestExecutionRelaysTheSandboxReply(unittest.TestCase):
         self.assertEqual(sent['code'], code)
         self.assertEqual(sent['file_path'], test_data["data"]["input"]["path"])
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_process_javascript_code_no_input(self, mock_session):
         """JS execution with no upstream input via /processJavaScriptCode."""
         reply = {"stdout": "", "stderr": "", "output": {"path": "artifact-2", "dataType": "int"}}
@@ -118,7 +118,7 @@ class TestExecutionRelaysTheSandboxReply(unittest.TestCase):
 
 
 class TestSandboxTransportErrors(unittest.TestCase):
-    """Verify _sandbox_call converts requests.Timeout / ConnectionError into
+    """Verify the sandbox client's requests.Timeout / ConnectionError become
     structured JSON error responses (504 / 502) instead of letting them
     propagate as unhandled exceptions that surface to the browser as opaque
     'NetworkError when attempting to fetch resource'.
@@ -152,7 +152,7 @@ class TestSandboxTransportErrors(unittest.TestCase):
 
     # ---- /processPythonCode -------------------------------------------------
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_processPythonCode_504_on_sandbox_timeout(self, mock_session):
         mock_session.post.side_effect = requests.Timeout("simulated read timeout")
         resp = self.client.post(
@@ -171,7 +171,7 @@ class TestSandboxTransportErrors(unittest.TestCase):
         # resource" the browser used to see.
         self.assertIsInstance(body['message'], str)
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_processPythonCode_502_on_sandbox_unreachable(self, mock_session):
         mock_session.post.side_effect = requests.ConnectionError("connection refused")
         resp = self.client.post(
@@ -187,7 +187,7 @@ class TestSandboxTransportErrors(unittest.TestCase):
 
     # ---- /processJavaScriptCode --------------------------------------------
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_processJavaScriptCode_504_on_sandbox_timeout(self, mock_session):
         mock_session.post.side_effect = requests.Timeout("simulated")
         resp = self.client.post(
@@ -203,7 +203,7 @@ class TestSandboxTransportErrors(unittest.TestCase):
 
     # ---- /get --------------------------------------------------------------
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_get_504_on_sandbox_timeout(self, mock_session):
         mock_session.get.side_effect = requests.Timeout("simulated")
         resp = self.client.get(
@@ -216,7 +216,7 @@ class TestSandboxTransportErrors(unittest.TestCase):
         self.assertEqual(body['path'], '/get')
         self.assertEqual(body['timeout_seconds'], 300)
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_get_preview_504_on_sandbox_timeout(self, mock_session):
         mock_session.get.side_effect = requests.Timeout("simulated")
         resp = self.client.get(
@@ -233,7 +233,7 @@ class TestSandboxTransportErrors(unittest.TestCase):
 
     # ---- Smoke test: timeout knobs are wired through to requests.post -----
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_exec_timeout_value_passes_through_to_requests(self, mock_session):
         """Regression test: bumping SANDBOX_EXEC_TIMEOUT must reach the
         underlying `requests.post(timeout=...)` call so the wait actually
@@ -252,12 +252,12 @@ class TestSandboxTransportErrors(unittest.TestCase):
             headers=self._auth_headers(),
         )
 
-        from utk_curio.backend.app.api.routes import SANDBOX_EXEC_TIMEOUT
+        from utk_curio.backend.app.execution.node_exec import SANDBOX_EXEC_TIMEOUT
         _, kwargs = mock_session.post.call_args
         self.assertEqual(kwargs['timeout'], SANDBOX_EXEC_TIMEOUT)
         self.assertEqual(SANDBOX_EXEC_TIMEOUT, 600)
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_get_timeout_value_passes_through_to_requests(self, mock_session):
         mock_response = MagicMock()
         mock_response.json.return_value = {'data': '', 'dataType': 'str'}
@@ -274,7 +274,7 @@ class TestSandboxTransportErrors(unittest.TestCase):
     # ---- Sandbox shared secret ---------------------------------------------
 
     @patch.dict(os.environ, {"CURIO_SANDBOX_TOKEN": "backend-side-token"})
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_exec_attaches_the_sandbox_token(self, mock_session):
         """The sandbox rejects /exec without it (sandbox/app/auth.py)."""
         mock_response = MagicMock()
@@ -315,7 +315,7 @@ class TestSandboxTransportErrors(unittest.TestCase):
         return json.loads(kwargs['data'])
 
     @patch("utk_curio.backend.app.users.connection_keys.default_store")
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_secrets_named_in_the_code_ride_the_exec_body(self, mock_session, mock_store):
         """curio_secret("census") in the code -> the resolved value in the
         sandbox request and nowhere else; unknown names are simply absent."""
@@ -331,21 +331,21 @@ class TestSandboxTransportErrors(unittest.TestCase):
         self.assertEqual(list(names), ["census", "nope"])
 
     @patch("utk_curio.backend.app.users.connection_keys.default_store")
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_no_secret_call_means_no_secrets_key_and_no_store_read(self, mock_session, mock_store):
         body = self._exec_body(mock_session, "    return 1")
         self.assertNotIn("secrets", body)
         mock_store.assert_not_called()
 
     @patch("utk_curio.backend.app.users.connection_keys.default_store")
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_store_failure_fails_open_without_a_secrets_key(self, mock_session, mock_store):
         mock_store.return_value.resolve.side_effect = RuntimeError("disk")
         body = self._exec_body(mock_session, '    return curio_secret("census")')
         self.assertNotIn("secrets", body)  # the sandbox names the missing key
 
     @patch.dict(os.environ, {"CURIO_SANDBOX_TOKEN": "backend-side-token"})
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_token_does_not_clobber_a_callers_own_headers(self, mock_session):
         """/exec sets Content-Type; the arrow path sets Accept."""
         mock_response = MagicMock()
@@ -366,7 +366,7 @@ class TestSandboxTransportErrors(unittest.TestCase):
         self.assertEqual(kwargs['headers']['Content-Type'], 'application/json')
         self.assertIn('X-Curio-Sandbox-Token', kwargs['headers'])
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_no_token_configured_sends_no_header(self, mock_session):
         """A bare `python -m backend.server` pairs with an unguarded sandbox."""
         mock_response = MagicMock()
@@ -389,7 +389,7 @@ class TestSandboxTransportErrors(unittest.TestCase):
         _, kwargs = mock_session.post.call_args
         self.assertNotIn('X-Curio-Sandbox-Token', kwargs['headers'] or {})
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_sandbox_401_becomes_a_clear_error_not_a_500(self, mock_session):
         """A token mismatch must name its cause.
 
@@ -413,7 +413,7 @@ class TestSandboxTransportErrors(unittest.TestCase):
         self.assertEqual(body['path'], '/exec')
         self.assertIn('CURIO_SANDBOX_TOKEN', body['message'])
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_get_401_becomes_a_clear_error(self, mock_session):
         mock_response = MagicMock()
         mock_response.status_code = 401
@@ -467,7 +467,7 @@ class TestMissingModuleReporting(unittest.TestCase):
         )
         return resp.get_json()
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_a_failed_run_names_the_missing_library(self, mock_session):
         body = self._run(
             mock_session,
@@ -481,7 +481,7 @@ class TestMissingModuleReporting(unittest.TestCase):
         # a replacement for what the user was already shown.
         self.assertIn("ModuleNotFoundError", body["stderr"])
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_no_install_is_offered_to_a_caller_who_may_not_install(
         self, mock_session,
     ):
@@ -504,7 +504,7 @@ class TestMissingModuleReporting(unittest.TestCase):
         self.assertEqual(body["missingModule"]["reason"], "install-disabled")
         self.assertIn("guest", body["missingModule"]["detail"].lower())
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_a_successful_run_reports_nothing_even_with_that_text_on_stderr(
         self, mock_session
     ):
@@ -518,14 +518,14 @@ class TestMissingModuleReporting(unittest.TestCase):
         )
         self.assertIsNone(body["missingModule"])
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_an_ordinary_failure_reports_nothing(self, mock_session):
         body = self._run(
             mock_session, stderr="ValueError: not a number", path="",
         )
         self.assertIsNone(body["missingModule"])
 
-    @patch("utk_curio.backend.app.api.routes._sandbox_session")
+    @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")
     def test_the_javascript_route_never_carries_the_field(self, mock_session):
         # The libraries route answers 501 for kind "js", so a button there
         # could only ever fail.

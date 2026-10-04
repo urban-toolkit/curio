@@ -167,7 +167,7 @@ def _catalog_dataset_paths(code: str) -> dict[str, str]:
     """Map every ``curio_data_path("<id>")`` in *code* to its data file.
 
     The browser path gets this mapping from the backend
-    (``_resolve_exec_dataset_paths`` in ``backend/app/api/routes.py``), which
+    (``resolve_dataset_paths`` in ``backend/app/execution/node_exec.py``), which
     posts it to the sandbox as ``dataset_paths``. This helper talks to the
     sandbox directly -- deliberately, so DuckDB keeps a single writer -- so the
     mapping has to come from somewhere.
@@ -219,10 +219,10 @@ def _catalog_resolution(code: str, username: str | None = None) -> dict:
     # Fail loudly rather than letting the sandbox report a generic runtime
     # error: a typo'd id, or one carrying an ``@major`` the catalog lookup does
     # not use, is a test-authoring bug and should name itself.
-    from utk_curio.backend.app.api.routes import _DATASET_PATH_CALL_RE
+    from utk_curio.backend.app.datasets.domain.code_refs import DATASET_PATH_CALL_RE
 
     referenced = {
-        dataset_id for _quote, dataset_id in _DATASET_PATH_CALL_RE.findall(code)
+        dataset_id for _quote, dataset_id in DATASET_PATH_CALL_RE.findall(code)
     }
     missing = sorted(referenced - set(resolved))
     assert not missing, (

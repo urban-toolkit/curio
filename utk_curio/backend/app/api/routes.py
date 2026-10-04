@@ -1,10 +1,13 @@
 from flask import request, abort, jsonify, g, Response, current_app
 
-from utk_curio.backend.app.monitor import counters as _monitor_counters
-from utk_curio.backend.app.monitor import errors as _monitor_errors
-import re
 import requests
 import json
+
+from utk_curio.backend.app.execution import node_exec
+from utk_curio.backend.app.execution.sandbox_client import (
+    SandboxTransportError,
+    sandbox_request,
+)
 
 ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
 
@@ -13,14 +16,9 @@ ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
 # pass it through, and must, or the gate never opens.
 GEOMETRY_ACCEPT_HEADER = "X-Curio-Accept-Geometry"
 
-_sandbox_session = requests.Session()
 
-
-# Per-route timeouts for backend -> sandbox bridge calls (in seconds).
-# These were 120 / 60 historically; bumped here so legitimate long-running
-# nodes (large CSV loads, heavy spatial ops, GPU compute) don't hit the
-# request library's deadline before the sandbox has had a chance to respond.
-SANDBOX_EXEC_TIMEOUT     = 600  # /processPythonCode and /processJavaScriptCode
+# Per-route timeouts for backend -> sandbox bridge calls (in seconds). A node
+# run's own deadline is node_exec.SANDBOX_EXEC_TIMEOUT.
 SANDBOX_GET_TIMEOUT      = 300  # /get (full artifact JSON)
 SANDBOX_PREVIEW_TIMEOUT  = 60   # /get-preview (always small by definition)
 # /version is a cached constant on the sandbox side, and the version badge is
@@ -28,74 +26,19 @@ SANDBOX_PREVIEW_TIMEOUT  = 60   # /get-preview (always small by definition)
 SANDBOX_VERSION_TIMEOUT  = 5
 
 
-# The shared secret lives in execution/sandbox_auth.py so the validation
-# runner sends the same header this bridge does (dev/115 field fix).
-from utk_curio.backend.app.execution.sandbox_auth import (  # noqa: E402
-    SANDBOX_TOKEN_HEADER,
-    sandbox_headers as _sandbox_headers,
-)
-
-
 def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs):
-    """Call the sandbox over `_sandbox_session` with consistent error handling.
-
-    Catches `requests.Timeout` and `requests.ConnectionError` and returns a
-    Flask `(jsonify(...), status)` tuple with a clear error message instead
-    of letting the exception escape (which would otherwise surface to the
-    browser as an opaque 'NetworkError when attempting to fetch resource').
-
-    Also attaches the sandbox shared secret, and translates the sandbox's 401
-    into a clear error rather than letting callers hit it as an unparseable
-    body (`/get` would report it as 'Error loading artifact', `/exec` as
-    'sandbox returned non-JSON' plus a 500).
-
-    On success returns the `requests.Response` object directly so callers can
-    parse the JSON / forward it as before.
+    """:func:`sandbox_request` for a route: a transport failure becomes the
+    Flask ``(jsonify(...), status)`` tuple the browser reads, instead of an
+    exception.
 
     Returns either:
       - `requests.Response` on success
       - `(flask_response, status_code)` tuple on transport-level failure
     """
-    url = api_address + ":" + str(api_port) + path
-    fn = getattr(_sandbox_session, method)
-    kwargs['headers'] = _sandbox_headers(kwargs.get('headers'))
     try:
-        response = fn(url, timeout=timeout, **kwargs)
-    except requests.Timeout as e:
-        print(f"[backend {label}] sandbox call timed out after {timeout}s: {e}", flush=True)
-        return jsonify({
-            'error': 'sandbox_timeout',
-            'message': (f'The sandbox did not respond within {timeout}s on {path}. '
-                        'The node is likely still running - check the sandbox log. '
-                        'For large data loads, consider trimming columns or rows '
-                        'before returning from the node.'),
-            'path': path,
-            'timeout_seconds': timeout,
-        }), 504
-    except requests.ConnectionError as e:
-        print(f"[backend {label}] sandbox connection error on {path}: {e}", flush=True)
-        return jsonify({
-            'error': 'sandbox_unreachable',
-            'message': (f'Could not reach the sandbox on {path}. '
-                        'Check that the sandbox process is running '
-                        f'({api_address}:{api_port}).'),
-            'path': path,
-        }), 502
-
-    if response.status_code == 401:
-        print(f"[backend {label}] sandbox rejected the shared secret on {path}", flush=True)
-        # A streamed call holds its pooled connection until the body is read.
-        response.close()
-        return jsonify({
-            'error': 'sandbox_unauthorized',
-            'message': (f'The sandbox rejected the backend on {path}. The two '
-                        'processes disagree about CURIO_SANDBOX_TOKEN - this '
-                        'usually means one of them was started outside '
-                        "'curio start' or was restarted without the other."),
-            'path': path,
-        }), 502
-
-    return response
+        return sandbox_request(method, path, label=label, timeout=timeout, **kwargs)
+    except SandboxTransportError as e:
+        return jsonify(e.payload), e.status
 
 
 #: Chunk size for relaying a sandbox reply to the browser.
@@ -151,34 +94,10 @@ def _relay_sandbox_reply(resp, *, label, file_name, t0, error_prefix=None):
 from utk_curio.backend.app.users.dependencies import require_auth, get_current_token
 import os
 import time
-from utk_curio.backend.config import (
-    CURIO_DEFAULT_SAVE_NODE_OUTPUT,
-)
 
 # The Flask app
 from utk_curio.backend.app.api import bp
 
-
-# Sandbox address
-api_address='http://'+os.getenv('FLASK_SANDBOX_HOST', '127.0.0.1')
-api_port=int(os.getenv('FLASK_SANDBOX_PORT', 2000))
-
-
-def _parse_input_ref(req_input: dict | None) -> dict:
-    """Normalize the input reference field from execution requests."""
-    result = {'path': '', 'dataType': ''}
-    if not req_input:
-        return result
-    if req_input.get('dataType') == 'outputs' and 'data' in req_input:
-        result['path'] = req_input['data']
-        result['dataType'] = 'outputs'
-    elif 'filename' in req_input:
-        result['path'] = req_input['filename']
-        result['dataType'] = req_input['dataType'] if req_input['dataType'] != 'outputs' else 'file'
-    elif 'path' in req_input:
-        result['path'] = req_input['path']
-        result['dataType'] = req_input['dataType'] if req_input['dataType'] != 'outputs' else 'file'
-    return result
 
 @bp.route('/')
 def root():
@@ -210,9 +129,9 @@ def version():
     isolation = 'unknown'
     isolation_active = 'unknown'
     try:
-        response = _sandbox_session.get(
-            api_address + ":" + str(api_port) + '/version',
-            timeout=SANDBOX_VERSION_TIMEOUT,
+        response = sandbox_request(
+            'get', '/version',
+            label='/version', timeout=SANDBOX_VERSION_TIMEOUT,
         )
         if response.status_code == 200:
             payload = response.json()
@@ -221,7 +140,7 @@ def version():
             # the badge only downgrades on an explicit 'off', so a missing
             # field must not be read as evidence of a failed zygote.
             isolation_active = payload.get('isolation_active', 'unknown')
-    except (requests.RequestException, ValueError):
+    except (SandboxTransportError, requests.RequestException, ValueError):
         pass
 
     return jsonify({
@@ -395,300 +314,14 @@ def get_file_preview():
                                 error_prefix='Error loading preview')
 
 
-# The scan moved to datasets/domain/code_refs.py so the lineage path and this
-# execution path cannot drift: a dataset referenced only in code used to be
-# resolvable here and invisible to the catalog's usage helper (#250). The names
-# stay re-exported because tests and callers import them from this module.
-from utk_curio.backend.app.discovery.application.exec_collections import (  # noqa: E402
-    resolve_exec_collections,
-)
-from utk_curio.backend.app.datasets.domain.code_refs import (  # noqa: E402
-    DATASET_PATH_CALL_RE as _DATASET_PATH_CALL_RE,
-    MAX_DATASET_IDS as MAX_EXEC_DATASET_IDS,
-    dataset_ids_in_code,
-)
-
-
-def _resolve_exec_dataset_paths(code: str, dataflow_id: str | None, formats: dict | None = None) -> dict:
-    """Resolve the dataset ids referenced by *code* to absolute file paths.
-
-    Best-effort and fail-open: an empty mapping never blocks execution - the
-    sandbox's injected ``curio_load_data`` / ``curio_data_path`` raise a clear
-    per-id error for anything missing. Only ids appearing as literal calls are
-    found; a dynamically built id simply won't be in the mapping. *formats*, when
-    given, is filled with how ``curio_load_data`` reads each resolved id.
-    """
-    ids = dataset_ids_in_code(code, limit=MAX_EXEC_DATASET_IDS)
-    if not ids:
-        return {}
-    try:
-        from utk_curio.backend.app.datasets.service import DatasetCatalogService
-
-        service = DatasetCatalogService(getattr(g, "user", None))
-        if formats is None:
-            return service.resolve_execution_paths(ids, dataflow_id=dataflow_id)
-        return service.resolve_execution_paths(ids, dataflow_id=dataflow_id, formats=formats)
-    except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
-        print(f"[processPythonCode] dataset path resolution failed: {e}", flush=True)
-        return {}
-
-
-def _resolve_exec_models(code: str) -> dict:
-    """The Model Catalog folders of the models *code* runs as
-    ``curio_load_model("<id>")``, for this account. Fail-open like dataset paths:
-    the sandbox's ``curio_load_model`` names a model that is not there."""
-    from utk_curio.backend.app.model_catalog.service import resolve_exec_models
-
-    return resolve_exec_models(code, getattr(g, "user", None))
-
-
-def _resolve_exec_collections(code: str, user_key: str | None) -> tuple[dict, str | None]:
-    """:func:`resolve_exec_collections` as the signed-in user (``g.user``)."""
-    return resolve_exec_collections(code, user_key, user=getattr(g, "user", None))
-
-
-def _resolve_exec_secrets(code: str) -> dict:
-    """Resolve the connection keys *code* reaches as ``curio_secret("<name>")``
-    (memo dev/116) to their values — the ``dataset_paths`` twin, minus the disk.
-
-    Best-effort and fail-open like ``_resolve_exec_dataset_paths``: an empty
-    mapping never blocks execution; the sandbox's injected ``curio_secret``
-    names the missing key. Values leave this function only inside the sandbox
-    request body; they are never logged and never echoed to the browser.
-    """
-    from utk_curio.backend.app.users.connection_keys import secret_names
-
-    names = secret_names(code)
-    if not names:
-        return {}
-    try:
-        from utk_curio.backend.app.users.connection_keys import default_store, storage_key_for
-
-        user_key = storage_key_for(getattr(g, "user", None))
-        return default_store().resolve(user_key, names)
-    except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
-        print(f"[processPythonCode] connection-key resolution skipped: {e.__class__.__name__}", flush=True)
-        return {}
-
-
-def _exec_user_key():
-    """The current user's on-disk storage key, or None when there is no user.
-
-    Matches the key ``auto_install_node_output`` files a node's output under,
-    so a user's work directory and their computed datasets agree about who they
-    belong to. Returns None rather than raising: an unauthenticated launch
-    (``CURIO_NO_AUTH=1``) has no user, and the sandbox then falls back to the
-    launch directory exactly as it did before.
-    """
-    try:
-        from utk_curio.backend.app.projects.services import _user_dir_key
-
-        user = getattr(g, "user", None)
-        return _user_dir_key(user) if user is not None else None
-    except Exception:  # noqa: BLE001 - a work directory is a convenience
-        return None
-
-
 @bp.route('/processPythonCode', methods=['POST'])
 @require_auth
 def process_python_code():
-    import time as _time
-    t0 = _time.perf_counter()
-
-    code = request.json['code']
-    nodeType = request.json['nodeType']
-    node_id = request.json.get('nodeId') or None
-    input = _parse_input_ref(request.json.get('input'))
-
-    save_output_dataset = request.json.get(
-        'saveOutputDataset', CURIO_DEFAULT_SAVE_NODE_OUTPUT,
-    )
-    if isinstance(save_output_dataset, str):
-        save_output_dataset = save_output_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
-
-    session_id = get_current_token()
-    dataset_formats: dict = {}
-    dataset_paths = _resolve_exec_dataset_paths(
-        code, request.json.get("dataflowId") or None, dataset_formats,
-    )
-    # Under isolation the sandbox gives each user a persistent work directory,
-    # so a node's relative reads and writes land somewhere that belongs to
-    # them instead of the launch tree. The storage key, not a name, and only
-    # this route knows it: the sandbox has no notion of who is logged in, and
-    # the in-process path ignores it entirely.
-    exec_user_key = _exec_user_key()
-    collections, media_dir = _resolve_exec_collections(code, exec_user_key)
-    exec_secrets = _resolve_exec_secrets(code)
-    exec_models = _resolve_exec_models(code)
-    t1 = _time.perf_counter()
-    # The gauge wraps only the sandbox round trip, which is where a node
-    # actually spends its time. Counting the surrounding parse and JSON work
-    # would report nodes as "running" that are really just being serialised.
-    with _monitor_counters.in_flight():
-        response = _sandbox_call(
-            'post', '/exec',
-            label='/processPythonCode', timeout=SANDBOX_EXEC_TIMEOUT,
-            data=json.dumps({
-                "code": code,
-                "file_path": input['path'],
-                "nodeType": nodeType,
-                "dataType": input['dataType'],
-                "session_id": session_id,
-                "save_dataset": bool(save_output_dataset),
-                "dataset_paths": dataset_paths,
-                "dataset_formats": dataset_formats,
-                "user_key": exec_user_key,
-                "collections": collections,
-                "media_dir": media_dir,
-                # dev/116: present only when the code names a saved key — the
-                # request body is otherwise byte-identical to before.
-                **({"secrets": exec_secrets} if exec_secrets else {}),
-                # Likewise only when the code runs a model.
-                **({"models": exec_models} if exec_models else {}),
-            }),
-            headers={"Content-Type": "application/json"},
-        )
-    if isinstance(response, tuple):
-        return response
-    t2 = _time.perf_counter()
-
+    run = node_exec.NodeRun.from_request_json(request.json)
     try:
-        response_json = response.json()
-    except Exception as e:
-        print(f"[processPythonCode] sandbox /exec returned non-JSON: "
-              f"status={response.status_code} "
-              f"body={response.text[:500]!r}", flush=True)
-        return {
-            'stdout': '',
-            'stderr': f'Sandbox error: {e}',
-            'input': input,
-            'output': {}
-        }, 500
-
-    stdout = response_json['stdout']
-    stderr = response_json['stderr']
-    output = response_json['output']
-
-    t3 = _time.perf_counter()
-    print(
-        f"[backend /processPythonCode] parse={t1-t0:.3f}s"
-        f"  sandbox_rtt={t2-t1:.3f}s"
-        f"  json={t3-t2:.3f}s"
-        f"  total={t3-t0:.3f}s"
-        f"  node={nodeType}",
-        flush=True,
-    )
-
-    # Auto-install into the user store (not the public Data Catalog).
-    from utk_curio.backend.app.datasets.application.auto_install import auto_install_node_output
-
-    installed_dataset = None
-    dataset_diagnostic = None
-    if save_output_dataset and isinstance(output, dict) and node_id:
-        dataset_diagnostic = auto_install_node_output(
-            user=getattr(g, "user", None),
-            node_id=node_id,
-            sandbox_output=output,
-            dataflow_id=request.json.get("dataflowId") or None,
-            node_name=request.json.get("nodeName") or None,
-            node_type=nodeType,
-        )
-        if dataset_diagnostic.get("status") == "installed":
-            installed_dataset = dataset_diagnostic.get("dataset")
-            print(
-                f"[processPythonCode] auto-installed dataset "
-                f"{installed_dataset.get('id')} for node {node_id}",
-                flush=True,
-            )
-        else:
-            print(
-                f"[processPythonCode] node {node_id} produced no computed dataset: "
-                f"{dataset_diagnostic.get('status')} - {dataset_diagnostic.get('reason')}",
-                flush=True,
-            )
-
-    _record_runtime_outcome(
-        node_id=node_id,
-        dataflow_id=request.json.get("dataflowId") or None,
-        code=code, stdout=stdout, stderr=stderr, output=output,
-        duration_ms=(_time.perf_counter() - t0) * 1000.0,
-    )
-
-    # Deliberately a SIBLING of the journal call, not a line inside it:
-    # _record_runtime_outcome returns early whenever node/dataflow/user is
-    # missing, which is every execution from an unsaved canvas. Counters placed
-    # in there would silently under-count exactly the runs a new user makes.
-    _monitor_counters.record_execution(
-        language="python",
-        node_type=nodeType,
-        ok=bool(isinstance(output, dict) and output.get("path")),
-        duration_ms=(_time.perf_counter() - t0) * 1000.0,
-    )
-    if not (isinstance(output, dict) and output.get("path")):
-        # Same canonical predicate as above: an EMPTY output path. A non-empty
-        # stderr is NOT the predicate, because benign warnings land there too
-        # and logging those as errors would bury the real ones.
-        _monitor_errors.record(
-            "node",
-            summary=_monitor_errors.summarise_traceback(stderr) or "Node execution failed",
-            detail=str(stderr or ""),
-            context={"nodeType": nodeType, "language": "python"},
-        )
-
-    # Which library the run was missing, when that is why it failed (#299).
-    # Gated on the canonical failure contract - an EMPTY output path, not a
-    # non-empty stderr, because warnings land in stderr too. `detect` never
-    # raises: a diagnostic that turned one failure into two would be worse than
-    # none, and the traceback is reported either way.
-    missing_module = None
-    if isinstance(output, dict) and not output.get('path'):
-        from utk_curio.backend.app.packages.application import missing_import
-        from utk_curio.backend.app.users.capabilities import library_install_refusal
-        missing_module = missing_import.detect(stderr)
-        # Never offer an install the libraries route would refuse (#309).
-        refusal = library_install_refusal(g.user)
-        if missing_module and missing_module.get("installable") and refusal:
-            missing_module = {
-                **missing_module,
-                "installable": False,
-                "reason": "install-disabled",
-                "detail": refusal,
-            }
-
-    return {
-        'stdout': stdout,
-        'stderr': stderr,
-        'input': input,
-        'output': output,
-        'installedDataset': installed_dataset,
-        'datasetDiagnostic': dataset_diagnostic,
-        'missingModule': missing_module,
-    }
-
-
-def _record_runtime_outcome(*, node_id, dataflow_id, code, stdout, stderr, output, duration_ms):
-    """Per-node runtime journal write (memo dev/67-2, DEC-052).
-
-    Best-effort and observational: agents read this to answer "what ran, what
-    failed, and why" — an execution response is never delayed or failed over
-    it. Skipped when the run has no node/project identity (unsaved canvas)."""
-    import time as _time
-
-    from utk_curio.backend.app.execution import runtime_journal
-    from utk_curio.backend.app.projects.services import _user_dir_key
-
-    user = getattr(g, "user", None)
-    if not node_id or not dataflow_id or user is None:
-        return
-    try:
-        runtime_journal.record_execution(
-            _user_dir_key(user), dataflow_id, node_id,
-            code=code, stdout=stdout, stderr=stderr, output=output,
-            started_at=_time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
-            duration_ms=duration_ms,
-        )
-    except Exception:
-        pass
+        return node_exec.execute_python_node(g.user, get_current_token(), run)
+    except SandboxTransportError as e:
+        return jsonify(e.payload), e.status
 
 
 @bp.route('/nodeRuntime', methods=['POST'])
@@ -796,133 +429,11 @@ def read_node_runtime():
 @bp.route('/processJavaScriptCode', methods=['POST'])
 @require_auth
 def process_javascript_code():
-    import time as _time
-    t0 = _time.perf_counter()
-
-    code = request.json['code']
-    nodeType = request.json['nodeType']
-    node_id = request.json.get('nodeId') or None
-    input = _parse_input_ref(request.json.get('input'))
-
-    save_output_dataset = request.json.get(
-        'saveOutputDataset', CURIO_DEFAULT_SAVE_NODE_OUTPUT,
-    )
-    if isinstance(save_output_dataset, str):
-        save_output_dataset = save_output_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
-
-    session_id = get_current_token()
-    t1 = _time.perf_counter()
-    # The gauge wraps only the sandbox round trip, which is where a node
-    # actually spends its time. Counting the surrounding parse and JSON work
-    # would report nodes as "running" that are really just being serialised.
-    with _monitor_counters.in_flight():
-        response = _sandbox_call(
-            'post', '/execJs',
-            label='/processJavaScriptCode', timeout=SANDBOX_EXEC_TIMEOUT,
-            data=json.dumps({
-                "code": code,
-                "file_path": input['path'],
-                "nodeType": nodeType,
-                "dataType": input['dataType'],
-                "session_id": session_id,
-                "save_dataset": bool(save_output_dataset),
-            }),
-            headers={"Content-Type": "application/json"},
-        )
-    if isinstance(response, tuple):
-        return response
-    t2 = _time.perf_counter()
-
+    run = node_exec.NodeRun.from_request_json(request.json)
     try:
-        response_json = response.json()
-    except Exception as e:
-        print(f"[processJavaScriptCode] sandbox /execJs returned non-JSON: "
-              f"status={response.status_code} "
-              f"body={response.text[:500]!r}", flush=True)
-        return {
-            'stdout': '',
-            'stderr': f'Sandbox error: {e}',
-            'input': input,
-            'output': {}
-        }, 500
-
-    stdout = response_json['stdout']
-    stderr = response_json['stderr']
-    output = response_json['output']
-
-    t3 = _time.perf_counter()
-    print(
-        f"[backend /processJavaScriptCode] parse={t1-t0:.3f}s"
-        f"  sandbox_rtt={t2-t1:.3f}s"
-        f"  json={t3-t2:.3f}s"
-        f"  total={t3-t0:.3f}s"
-        f"  node={nodeType}",
-        flush=True,
-    )
-
-    from utk_curio.backend.app.datasets.application.auto_install import auto_install_node_output
-
-    installed_dataset = None
-    dataset_diagnostic = None
-    if save_output_dataset and isinstance(output, dict) and node_id:
-        dataset_diagnostic = auto_install_node_output(
-            user=getattr(g, "user", None),
-            node_id=node_id,
-            sandbox_output=output,
-            dataflow_id=request.json.get("dataflowId") or None,
-            node_name=request.json.get("nodeName") or None,
-            node_type=nodeType,
-        )
-        if dataset_diagnostic.get("status") == "installed":
-            installed_dataset = dataset_diagnostic.get("dataset")
-            print(
-                f"[processJavaScriptCode] auto-installed dataset "
-                f"{installed_dataset.get('id')} for node {node_id}",
-                flush=True,
-            )
-        else:
-            print(
-                f"[processJavaScriptCode] node {node_id} produced no computed dataset: "
-                f"{dataset_diagnostic.get('status')} - {dataset_diagnostic.get('reason')}",
-                flush=True,
-            )
-
-    _record_runtime_outcome(
-        node_id=node_id,
-        dataflow_id=request.json.get("dataflowId") or None,
-        code=code, stdout=stdout, stderr=stderr, output=output,
-        duration_ms=(_time.perf_counter() - t0) * 1000.0,
-    )
-
-    # Deliberately a SIBLING of the journal call, not a line inside it:
-    # _record_runtime_outcome returns early whenever node/dataflow/user is
-    # missing, which is every execution from an unsaved canvas. Counters placed
-    # in there would silently under-count exactly the runs a new user makes.
-    _monitor_counters.record_execution(
-        language="javascript",
-        node_type=nodeType,
-        ok=bool(isinstance(output, dict) and output.get("path")),
-        duration_ms=(_time.perf_counter() - t0) * 1000.0,
-    )
-    if not (isinstance(output, dict) and output.get("path")):
-        # Same canonical predicate as above: an EMPTY output path. A non-empty
-        # stderr is NOT the predicate, because benign warnings land there too
-        # and logging those as errors would bury the real ones.
-        _monitor_errors.record(
-            "node",
-            summary=_monitor_errors.summarise_traceback(stderr) or "Node execution failed",
-            detail=str(stderr or ""),
-            context={"nodeType": nodeType, "language": "javascript"},
-        )
-
-    return {
-        'stdout': stdout,
-        'stderr': stderr,
-        'input': input,
-        'output': output,
-        'installedDataset': installed_dataset,
-        'datasetDiagnostic': dataset_diagnostic,
-    }
+        return node_exec.execute_js_node(g.user, get_current_token(), run)
+    except SandboxTransportError as e:
+        return jsonify(e.payload), e.status
 
 
 @bp.route("/starters", methods=["GET"])

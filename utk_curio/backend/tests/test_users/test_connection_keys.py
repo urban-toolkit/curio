@@ -285,15 +285,12 @@ class TestKeysTheLocalGuestSaved:
 
     @pytest.mark.parametrize("deploy, sent", MODES, ids=MODE_IDS)
     def test_play_gets_them_only_without_deploy(self, app, db, saved_locally, monkeypatch, deploy, sent):
-        from flask import g
-
-        from utk_curio.backend.app.api import routes as api_routes
+        from utk_curio.backend.app.execution import node_exec
 
         guest = _shared_guest(db)
         _mode(monkeypatch, deploy)
         with app.test_request_context():
-            g.user = guest
-            assert api_routes._resolve_exec_secrets(CENSUS_CODE) == sent
+            assert node_exec.resolve_secrets(CENSUS_CODE, guest) == sent
 
     @pytest.mark.parametrize("deploy", [False, True], ids=MODE_IDS)
     def test_the_routes_serve_them_only_without_deploy(self, client, db, saved_locally, monkeypatch, deploy):
