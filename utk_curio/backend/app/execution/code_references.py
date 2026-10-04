@@ -147,6 +147,17 @@ def parse_reference(inner: str) -> dict:
     return parsed
 
 
+def shared_names_in(code: object) -> list[str]:
+    """The names of the shared tags *code* references, each once, in order.
+    Kept in sync with ``sharedNamesIn`` in ``codeReferences.ts``."""
+    names: list[str] = []
+    for ref in REFERENCE_RE.finditer(code if isinstance(code, str) else ""):
+        parsed = parse_reference(ref.group(1))
+        if parsed["kind"] == "shared" and parsed["name"] not in names:
+            names.append(parsed["name"])
+    return names
+
+
 def _text_of(value, language: str) -> str:
     return value if isinstance(value, str) else widget_literal(value, language)
 
