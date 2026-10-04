@@ -75,7 +75,7 @@ describe("what a reference is drawn as", () => {
   test("an input or column chip is the same box with the input class beside the chip's", () => {
     // "c = [!! input 0.height !!]": the reference spans 5 to 27, its name 9 to 23.
     const decorations = chipDecorations(referenceMarks("c = [!! input 0.height !!]", scope, "python"));
-    const box = decorations.find((d) => String(d.options.inlineClassName).startsWith(CHIP_CLASS));
+    const box = decorations.find((d) => String(d.options.inlineClassName).split(" ")[0] === CHIP_CLASS);
     expect(box?.options.inlineClassName).toBe(`${CHIP_CLASS} curio-input-ref`);
     expect(box?.range).toEqual(line(9, 23));
     expect(decorations.filter((d) => d.options.inlineClassName === CHIP_HIDDEN_CLASS).map((d) => d.range)).toEqual([
