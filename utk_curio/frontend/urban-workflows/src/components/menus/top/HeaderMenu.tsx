@@ -74,13 +74,14 @@ export interface HeaderMenuItemProps {
   icon: IconDefinition;
   onClick?: () => void;
   disabled?: boolean;
+  testId?: string;
   children: React.ReactNode;
 }
 
 /** One row: a real button, its icon in a fixed column. */
-export function HeaderMenuItem({ icon, onClick, disabled, children }: HeaderMenuItemProps) {
+export function HeaderMenuItem({ icon, onClick, disabled, testId, children }: HeaderMenuItemProps) {
   return (
-    <button type="button" className={menuStyles.item} onClick={onClick} disabled={disabled}>
+    <button type="button" className={menuStyles.item} onClick={onClick} disabled={disabled} data-testid={testId}>
       <FontAwesomeIcon className={menuStyles.itemIcon} icon={icon} />
       <span>{children}</span>
     </button>

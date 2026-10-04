@@ -144,6 +144,7 @@ describe("the browse cards are informational, and the drawer acts", () => {
     ["agent", "pages/agents/AgentCatalogBrowseCard.tsx"],
     ["Discovery Catalog", "pages/discovery/DiscoverySourceCard.tsx"],
     ["model", "pages/models/ModelCatalogBrowseCard.tsx"],
+    ["scenario", "pages/scenarios/ScenarioCatalogBrowseCard.tsx"],
   ])("the %s card offers View details and a status, the same shape", (_kind, rel) => {
     const src = read(rel);
     expect(src).toContain("View details");
@@ -477,6 +478,7 @@ describe("all four catalogs have a details view, and it is the same shape", () =
     ["package", "components/packages/publishing/PackageDetailModal.tsx"],
     ["Discovery Catalog", "pages/discovery/DiscoverySourceDetailModal.tsx"],
     ["model", "components/models/catalog/ModelDetailModal.tsx"],
+    ["scenario", "components/scenarios/catalog/ScenarioDetailModal.tsx"],
   ];
 
   test.each(MODALS)("the %s details view fills the panel, not a small box", (_k, rel) => {
@@ -534,6 +536,25 @@ describe("all four catalogs have a details view, and it is the same shape", () =
       "components/models/catalog/ModelDetailModal.tsx",
     ]) {
       expect(read(rel)).toContain("modelInfoRows(model)");
+    }
+  });
+
+  test("the Scenario Catalog has a details view of its own state", () => {
+    // Not wired to the drawer's setter (#189): the card's View details opens
+    // the modal even on a card whose drawer is open.
+    const page = read("pages/scenarios/ScenarioCatalogBrowse.tsx");
+    expect(page).toContain("ScenarioDetailModal");
+    expect(page).toContain("const [detail");
+    expect(page).toContain("onViewDetails={() => viewDetails(scenario)}");
+    expect(read("components/scenarios/catalog/ScenarioDetailModal.tsx")).toContain("ModalShell");
+  });
+
+  test("the scenario drawer and its details view read the same facts", () => {
+    for (const rel of [
+      "pages/scenarios/ScenarioCatalogBrowseDrawer.tsx",
+      "components/scenarios/catalog/ScenarioDetailModal.tsx",
+    ]) {
+      expect(read(rel)).toContain("scenarioInfoRows(scenario");
     }
   });
 
@@ -675,6 +696,7 @@ describe("every details view opens with the same header", () => {
     ["agent", "components/agents/catalog/AgentDetailModal.tsx"],
     ["package", "components/packages/publishing/PackageDetailModal.tsx"],
     ["model", "components/models/catalog/ModelDetailModal.tsx"],
+    ["scenario", "components/scenarios/catalog/ScenarioDetailModal.tsx"],
   ];
 
   test.each(VIEWS)("the %s view renders the shared header", (_k, rel) => {
@@ -755,6 +777,7 @@ describe("every catalog page's rail opens with the same section", () => {
     ...PAGES,
     ["discovery", "pages/discovery/DiscoveryCatalogBrowse.tsx"],
     ["model", "pages/models/ModelCatalogBrowse.tsx"],
+    ["scenario", "pages/scenarios/ScenarioCatalogBrowse.tsx"],
     ["projects", "pages/projects/ProjectsList.tsx"],
   ];
 
@@ -1247,6 +1270,14 @@ describe("user-facing catalog copy uses sentences, not dashes", () => {
     "pages/models/ModelCatalogBrowse.tsx",
     "pages/models/ModelCatalogBrowseCard.tsx",
     "pages/models/ModelCatalogBrowseDrawer.tsx",
+    "components/scenarios/catalog/ScenarioCard.tsx",
+    "components/scenarios/catalog/ScenarioCatalogDrawer.tsx",
+    "components/scenarios/catalog/ScenarioDetailModal.tsx",
+    "components/scenarios/catalog/scenarioFacts.tsx",
+    "components/scenarios/catalog/useScenarioCatalogDrawer.ts",
+    "pages/scenarios/ScenarioCatalogBrowse.tsx",
+    "pages/scenarios/ScenarioCatalogBrowseCard.tsx",
+    "pages/scenarios/ScenarioCatalogBrowseDrawer.tsx",
   ];
 
   test.each(SURFACES)("%s has no dash inside a quoted tooltip or label", (rel) => {

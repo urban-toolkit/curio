@@ -7,11 +7,12 @@ import {
   faCube,
   faDatabase,
   faDiagramProject,
+  faObjectGroup,
   faRobot,
 } from "@fortawesome/free-solid-svg-icons";
 import styles from "./CatalogKindVisuals.module.css";
 
-export type CatalogItemKind = "dataset" | "package" | "dataflow" | "agent" | "source" | "model";
+export type CatalogItemKind = "dataset" | "package" | "dataflow" | "agent" | "source" | "model" | "scenario";
 
 export interface CatalogKindMeta {
   icon: IconDefinition;
@@ -54,6 +55,13 @@ export const CATALOG_KIND_META: Record<CatalogItemKind, CatalogKindMeta> = {
     icon: faBrain,
     label: "Model",
     shortLabel: "Model",
+  },
+  // A Scenario Catalog SCENARIO: a named selection of a project's nodes. The
+  // glyph is the one View > "Save selection as scenario" shows.
+  scenario: {
+    icon: faObjectGroup,
+    label: "Scenario",
+    shortLabel: "Scenario",
   },
 };
 

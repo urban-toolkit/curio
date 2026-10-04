@@ -29,6 +29,7 @@ const CARDS = [
   "pages/catalog/CatalogBrowseDrawerBody.tsx",
   // Born plain, and listed so it stays that way.
   "pages/models/ModelCatalogBrowseCard.tsx",
+  "pages/scenarios/ScenarioCatalogBrowseCard.tsx",
 ];
 
 /** The stylesheets whose `tagAccent_*` rules the cards used to look up. */
@@ -37,6 +38,7 @@ const STYLESHEETS = [
   "pages/agents/AgentCatalogBrowseCard.module.css",
   "pages/catalog/PackageBrowseCard.module.css",
   "pages/models/ModelCatalogBrowseCard.module.css",
+  "pages/scenarios/ScenarioCatalogBrowseCard.module.css",
 ];
 
 describe("catalog tag chips carry no tint (#193)", () => {

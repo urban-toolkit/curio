@@ -336,6 +336,31 @@ class TestASecretStaysOnItsOrigin:
         )
         assert seen[1] == ("https://api.example.org:8443/x", {})
 
+    def test_the_default_port_written_out_is_the_same_origin(self):
+        seen = []
+        egress.fetch(
+            "https://api.example.org/file", resolver=TWO_HOSTS,
+            request_fn=self._redirecting(seen, "https://api.example.org:443/x"),
+            secret_headers=KEY,
+        )
+        assert seen[1] == ("https://api.example.org:443/x", KEY)
+
+    def test_the_other_schemes_default_port_is_another_origin(self):
+        seen = []
+        egress.fetch(
+            "https://api.example.org/file", resolver=TWO_HOSTS,
+            request_fn=self._redirecting(seen, "https://api.example.org:80/x"),
+            secret_headers=KEY,
+        )
+        assert seen[1] == ("https://api.example.org:80/x", {})
+
+    def test_the_discovery_transport_compares_origins_the_same_way(self):
+        from utk_curio.backend.app.common import egress_policy
+        from utk_curio.backend.app.discovery.infrastructure import transport
+
+        assert egress.url_origin is egress_policy.url_origin
+        assert transport.url_origin is egress_policy.url_origin
+
     def test_a_download_redirect_to_another_host_gets_no_key(self):
         seen = []
 

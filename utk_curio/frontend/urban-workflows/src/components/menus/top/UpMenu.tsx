@@ -18,6 +18,7 @@ import clsx from "clsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
     faCircleCheck,
+    faClockRotateLeft,
     faClone,
     faCodeBranch,
     faCubes,
@@ -469,6 +470,16 @@ export default function UpMenu() {
                     >
                         {expandStatus === "expanded" ? "Minimize Nodes" : "Expand Nodes"}
                     </HeaderMenuItem>
+                    {/* The dataflow's versions. Here rather than a button on
+                        the bar, which had no room left for the Scenario
+                        Catalog beside it. Reading, so for a shared viewer too. */}
+                    <HeaderMenuItem
+                        icon={faClockRotateLeft}
+                        onClick={openTrillProvenanceModal}
+                        testId="provenance-menu-item"
+                    >
+                        Provenance
+                    </HeaderMenuItem>
                     {/* Scenarios (#662): save a selection as one, duplicate it
                         as another, and the panel that lists them. Here rather
                         than a menu of their own: the bar has no room for one
@@ -504,17 +515,6 @@ export default function UpMenu() {
                         </>
                     )}
                 </HeaderMenu>
-
-                {/* One window, so a button rather than a menu: its menu held
-                    a single row with its own name. */}
-                <button
-                    type="button"
-                    className={headerStyles.barButton}
-                    data-testid="provenance-btn"
-                    onClick={openTrillProvenanceModal}
-                >
-                    Provenance
-                </button>
 
                 {/* Share: the dataflow's dashboard, and a link to either. Shown
                     to a shared viewer too - passing a link on is not an edit. */}

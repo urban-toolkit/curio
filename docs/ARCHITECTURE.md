@@ -1497,6 +1497,17 @@ Models come from the Discovery Catalog's model family ([Models from the Discover
 
 ---
 
+## Scenario Catalog
+
+The user-facing model is in [SCENARIO-CATALOG.md](SCENARIO-CATALOG.md) and the routes are in [Scenario Catalog Routes](#scenario-catalog-routes). The backend is `backend/app/scenario_catalog/`: `domain/parts.py` (a scenario's fixed context, levers and outcomes, read from a saved spec), `infrastructure/projects.py` (the account's projects and their saved outputs), `service.py` (listing and details) and `routes.py`.
+
+- **No storage of its own.** Scenarios live in their projects' specs (`dataflow.scenarios`, see `projects/scenarios.py`). A listing reads `projects.services.list_projects`, whose summaries carry each project's scenarios and graph preview; a scenario's details read its project's spec. A scenario's id is unique in its project only (a duplicated project keeps its scenarios' ids), so the catalog keys each one as `<projectId>/<scenarioId>`.
+- **Parts.** `scenario_parts` is the twin of `scenarioParts` in `src/utils/scenarios/scenarioParts.ts`, and `saved_sources` the twin of `savedSourcesOf` (the save rule's per-node walk: a chart, a Data Pool or a drawing Autark node stands for the nodes feeding it, the walk pinned dashboard tiles use). Both read `scenarioParts.cases.json`, through Jest and `tests/test_scenario_catalog/test_parts.py`, so the catalog reads a scenario the way its canvas does. Shared tags are found with `code_references.shared_names_in`.
+- **Saved results.** For each node of a scenario's parts, the details name the outputs its project saved: the Data Catalog's computed datasets `computed.<projectId>.<nodeId>` of each node `saved_sources` gives, listed with `DatasetCatalogService.list_dataflow_outputs` (the `computed.<projectId>.` prefix), without file paths.
+- **Frontend.** `services/scenarioCatalog/` (client, types, hooks), the page `pages/scenarios/`, the canvas drawer `components/scenarios/catalog/` opened by `providers/scenarioCatalog/` from the bar's **Scenario** button, and the shared plain-box graph `components/DataflowThumbnail.tsx` with a `highlight`.
+
+---
+
 ## Backend API Reference
 
 The backend is a Flask application in `utk_curio/backend/`. Routes are split across blueprints per domain: sandbox proxies plus the spatial-join handler in `backend/app/api/routes.py`, node packages in `backend/app/packages/routes/` (one module per resource behind one `_map_package_errors`, memo dev/143), datasets in `backend/app/datasets/routes.py`, Discovery Catalog in `backend/app/discovery/routes.py`, agents in `backend/app/agents/routes/` (one module per resource under one blueprint, memo dev/142), projects in `backend/app/projects/routes.py`, and auth in `backend/app/users/routes.py`.
@@ -1684,6 +1695,15 @@ file that cannot be served as asked (no preview, or not a format Curio serves),
 | `/api/models/<id>` | DELETE | Delete a model the account added. **403** for a shipped model |
 
 A model is added only through the Discovery Catalog's acquire route, on a model source's row.
+
+### Scenario Catalog Routes
+
+[Scenario Catalog](#scenario-catalog) describes what these read. Every route needs a signed-in caller and reads only the caller's projects.
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/api/scenarios/catalog` | GET | Every scenario in the account's projects, each with its project and the project's graph preview (`q` filters by name, description and project name) |
+| `/api/scenarios/<projectId>/<scenarioId>` | GET | One scenario: its fixed context, levers and outcomes, each node with the outputs its project saved. **404** for another account's project, a deleted one, or a scenario the project does not have |
 
 ### Agent Routes
 

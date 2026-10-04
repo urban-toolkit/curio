@@ -9,6 +9,7 @@ import { useAgentCatalogDrawerControls } from "../../../providers/AgentCatalogDr
 import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
 import { useModelCatalogDrawer } from "../../../providers/modelCatalog";
 import { useDiscoveryCatalogDrawer } from "../../../providers/discoveryCatalog";
+import { useScenarioCatalogDrawer } from "../../../providers/scenarioCatalog";
 import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
 import styles from "./UpMenu.module.css";
 
@@ -24,10 +25,11 @@ export const CANVAS_CATALOGS: ReadonlyArray<{
   { name: "Agent Catalog", shortName: "Agent", kind: "agent" },
   { name: "Discovery Catalog", shortName: "Discovery", kind: "source" },
   { name: "Model Catalog", shortName: "Model", kind: "model" },
+  { name: "Scenario Catalog", shortName: "Scenario", kind: "scenario" },
 ];
 
 /**
- * The five catalogs, one click each from the canvas bar. They used to sit
+ * The six catalogs, one click each from the canvas bar. They used to sit
  * under a "Data" menu, in another order, and the Discovery Catalog could be
  * reached no other way.
  *
@@ -49,6 +51,7 @@ export function CatalogButtons({
   const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
   const { openModelCatalogDrawer } = useModelCatalogDrawer();
   const { openDiscoveryCatalogDrawer } = useDiscoveryCatalogDrawer();
+  const { openScenarioCatalogDrawer } = useScenarioCatalogDrawer();
 
   const open: Record<CatalogItemKind, (() => void) | undefined> = {
     package: openNodeCatalogDrawer,
@@ -56,6 +59,7 @@ export function CatalogButtons({
     agent: openAgentCatalogDrawer,
     source: openDiscoveryCatalogDrawer,
     model: openModelCatalogDrawer,
+    scenario: openScenarioCatalogDrawer,
     dataflow: undefined,
   };
 

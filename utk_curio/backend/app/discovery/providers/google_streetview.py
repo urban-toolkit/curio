@@ -63,7 +63,7 @@ DEFAULT_PITCH = 0
 DEFAULT_SIZE = "640x640"
 DEFAULT_MAX_IMAGES = 50
 
-_PANO_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_PANO_RE = re.compile(r"[A-Za-z0-9_-]{1,128}")
 _SIZE_RE = re.compile(r"^(\d{2,3})x(\d{2,3})$")
 _METRES_PER_DEGREE = 111_320.0
 
@@ -218,7 +218,7 @@ class GoogleStreetViewService:
                 raise ProviderError(f"Google Street View: {reason or 'an unknown answer'}")
             pano_id = str(payload.get("pano_id") or "")
             location = payload.get("location") or {}
-            if not _PANO_RE.match(pano_id) or pano_id in seen:
+            if not _PANO_RE.fullmatch(pano_id) or pano_id in seen:
                 continue
             try:
                 found_lat, found_lon = float(location["lat"]), float(location["lng"])

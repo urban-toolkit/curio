@@ -559,6 +559,11 @@ chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios,
 their colors, descriptions, collapsed state and box positions are saved with the
 dataflow. Deleting a node removes it from its scenario.
 
+The **Scenario Catalog** lists the scenarios of all your projects, each with its
+fixed context, levers and outcomes and the results its project saved. Open it from
+the **Scenario Catalog** tab, or from the **Scenario** button in the canvas's top
+bar. See [docs/SCENARIO-CATALOG.md](SCENARIO-CATALOG.md).
+
 ## Node Catalog
 
 Curio's nodes ship as **packages**: small, self-contained folders with a `manifest.json` declaring the node kinds inside. The built-in nodes (Data Loading, Vega-Lite, Autark, etc.) live in a pre-installed package called `curio.builtin@1`; you can install more via the **Node Catalog** drawer.

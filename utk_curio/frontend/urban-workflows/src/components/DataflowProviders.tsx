@@ -8,6 +8,7 @@ import { NodeCatalogDrawerProvider } from "../providers/packages";
 import { AgentCatalogDrawerProvider } from "../providers/AgentCatalogDrawerProvider";
 import { DatasetCatalogDrawerProvider } from "../providers/datasetCatalog";
 import { ModelCatalogDrawerProvider } from "../providers/modelCatalog";
+import { ScenarioCatalogDrawerProvider } from "../providers/scenarioCatalog";
 import { DiscoveryCatalogDrawerProvider } from "../providers/discoveryCatalog";
 import { ApiSettingsDrawerProvider } from "../providers/ApiSettingsDrawerProvider";
 import { MonitorDrawerProvider } from "../providers/MonitorDrawerProvider";
@@ -59,6 +60,9 @@ export const DataflowProviders: React.FC<{
             {/* Inside FlowProvider like its peers: a model's details ask
                 before a link leaves a dataflow with unsaved changes. */}
             <ModelCatalogDrawerProvider>
+              {/* Beside the Model drawer's, for the same reason: opening a
+                  scenario's project asks before leaving unsaved changes. */}
+              <ScenarioCatalogDrawerProvider>
               {/* Inside the Model drawer's provider: a model added here is
                   viewed by opening that drawer. */}
               <DiscoveryCatalogDrawerProvider>
@@ -70,6 +74,7 @@ export const DataflowProviders: React.FC<{
                   </ProjectLoader>
                 </StarterProvider>
               </DiscoveryCatalogDrawerProvider>
+              </ScenarioCatalogDrawerProvider>
             </ModelCatalogDrawerProvider>
           </AgentCatalogDrawerProvider>
         </DatasetCatalogDrawerProvider>

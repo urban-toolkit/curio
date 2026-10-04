@@ -725,6 +725,7 @@ class DiscoveryService:
                             stage=_stage,
                         )
                     dataset = result["dataset"]
+                    note = result.get("note")
                     job_store.jobs.finish(
                         job,
                         "completed",
@@ -732,7 +733,8 @@ class DiscoveryService:
                         dataset_id=dataset.get("id"),
                         already_present=result["alreadyPresent"],
                         unchanged=result["unchanged"],
-                        stage_message="Added to your Data Catalog",
+                        note=note,
+                        stage_message="Added to your Data Catalog" + (f"; {note}" if note else ""),
                     )
                 except (_Cancelled, StorageCancelled, ServiceCancelled):
                     job_store.jobs.finish(job, "cancelled", stage_message="Cancelled")
@@ -781,7 +783,8 @@ class DiscoveryService:
     def collection_status(self, dataset_id: str, *, samples: int = 12) -> dict[str, Any]:
         """Where a collection's files are, and a few of them to show.
 
-        A folder's files are all on this machine; a bucket's are once cached.
+        A folder's files and a service's images are all on this machine; a
+        bucket's are once cached.
         """
         import pandas as pd
 
@@ -816,7 +819,8 @@ class DiscoveryService:
         from utk_curio.backend.app.discovery.domain.errors import CapabilityUnsupported
 
         item, manifest = self.collection(dataset_id)
-        if manifest.provider.type == "folder":
+        # A folder's files and a service's downloaded images are local already.
+        if manifest.provider.type == "folder" or manifest.is_service:
             raise CapabilityUnsupported(f"{item['title']} is already on this machine")
         ratelimit.download_slots.acquire(self.user_key)
         job = job_store.jobs.create(self.user_key, manifest.dir_name, f"cache:{dataset_id}")

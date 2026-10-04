@@ -1,5 +1,5 @@
 /**
- * The five catalogs on the canvas bar. They used to sit under a "Data" menu,
+ * The six catalogs on the canvas bar. They used to sit under a "Data" menu,
  * in an order of their own, and the Discovery Catalog could be reached no
  * other way. Now each is one click, in the order the section tabs use on every
  * other page, and each opens its drawer over the dataflow.
@@ -13,6 +13,7 @@ const mockOpen = {
   agent: jest.fn(),
   discovery: jest.fn(),
   model: jest.fn(),
+  scenario: jest.fn(),
 };
 const mockPrefetch = jest.fn();
 
@@ -31,6 +32,9 @@ jest.mock('../../providers/modelCatalog', () => ({
 jest.mock('../../providers/discoveryCatalog', () => ({
   useDiscoveryCatalogDrawer: () => ({ openDiscoveryCatalogDrawer: mockOpen.discovery }),
 }));
+jest.mock('../../providers/scenarioCatalog', () => ({
+  useScenarioCatalogDrawer: () => ({ openScenarioCatalogDrawer: mockOpen.scenario }),
+}));
 jest.mock('../../services/datasetCatalog', () => ({
   prefetchDatasetCatalog: (...args: unknown[]) => mockPrefetch(...args),
 }));
@@ -48,6 +52,7 @@ test('lists the catalogs in the section tabs\' order, by their full names', () =
     'Agent Catalog',
     'Discovery Catalog',
     'Model Catalog',
+    'Scenario Catalog',
   ]);
 });
 
@@ -68,6 +73,7 @@ test.each([
   ['Agent Catalog', 'agent'],
   ['Discovery Catalog', 'discovery'],
   ['Model Catalog', 'model'],
+  ['Scenario Catalog', 'scenario'],
 ] as const)('%s opens its own drawer, and only that one', (name, key) => {
   render(<CatalogButtons projectId="p1" />);
   fireEvent.click(screen.getByRole('button', { name }));
