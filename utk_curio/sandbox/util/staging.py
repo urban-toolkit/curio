@@ -98,7 +98,7 @@ def _read_row(art_id, session_id):
 def stage_input(art_id, scratch_dir, *, session_id=None, slot="in"):
     """Stage the artifact *art_id* into *scratch_dir* and return its input spec.
 
-    *slot* prefixes the staged filenames so a merge node's several inputs do
+    *slot* prefixes the staged filenames so a node's several inputs do
     not collide. Recurses for container kinds, extending the prefix as it goes.
     """
     scratch_dir = Path(scratch_dir)
@@ -196,7 +196,7 @@ def stage_input(art_id, scratch_dir, *, session_id=None, slot="in"):
 
 
 def stage_outputs_list(refs, scratch_dir, *, session_id=None):
-    """Stage a merge node's list of upstream references.
+    """Stage the list of upstream references of a node with several inputs.
 
     ``/exec`` receives ``dataType == 'outputs'`` with a list of ``{'path': id}``
     dicts (or bare ids). This is the entry point for that shape.
@@ -211,9 +211,9 @@ def stage_outputs_list(refs, scratch_dir, *, session_id=None):
 
 
 def read_outputs_wrapper(art_id, *, session_id=None):
-    """Return the inner ref list when *art_id* holds a persisted merge output.
+    """Return the inner ref list when *art_id* holds a persisted input bundle.
 
-    A merge output that was persisted is stored as the whole
+    A bundle that was persisted is stored as the whole
     ``{'dataType': 'outputs', 'data': [refs]}`` envelope, and a node downstream
     of it receives one ref to that envelope rather than the list. The parent
     resolves it here -- reading the store is exactly what the child cannot do --

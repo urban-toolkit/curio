@@ -20,7 +20,7 @@ Design rules:
 
 dev/135: a run is a run wherever it happens. Until now this module had three
 writers and all three were the sandbox, so a Vega-Lite chart, an AUTK map, a
-Data Pool, a Merge Flow, a Simple View, a Spatial Join and a Data Export — every
+Data Pool, a Simple View, a Spatial Join and a Data Export — every
 kind that runs in the BROWSER or through its own service — left no trace at all,
 and every agent reading the journal was told ``never-executed`` about a node the
 user had just watched fail (the owner's `a29d1ad8`). Two facts make room for
