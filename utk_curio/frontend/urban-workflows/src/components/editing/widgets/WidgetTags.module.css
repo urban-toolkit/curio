@@ -1,15 +1,35 @@
-/* A node's widgets (#662): the Widgets tab, and the tags dragged into code. */
+/* A node's widgets (#662): the Widgets tab, and the tags dragged into code.
+   Colours, radii and fonts are the tokens in styles/curioTokens.css. Tags,
+   fields and buttons share one height, --widget-h, so a row's tag, control
+   and buttons line up. */
 
+/* A widget's tag: the same rounded box as its chip in the code
+   (widgetReferences.css). */
 .tag {
-  composes: chip from "../../../pages/discovery/DiscoveryAddDialog.module.css";
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid #b6cbf2;
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-accent-sky-bg);
+  color: var(--curio-accent-sky-fg);
+  font-family: var(--curio-font-mono);
+  font-size: var(--curio-font-size-xs);
+  font-weight: 500;
+  white-space: nowrap;
   cursor: grab;
-  border: 1px solid #c9d3e3;
-  font-family: "Source Code Pro", Consolas, "Courier New", monospace;
   user-select: none;
 }
 
 .tag:active {
   cursor: grabbing;
+}
+
+.tag:focus-visible {
+  outline: 2px solid var(--curio-role-update-fg);
+  outline-offset: 1px;
 }
 
 .strip {
@@ -18,27 +38,29 @@
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  border-bottom: 1px solid #e0e0e0;
-  background: #fafafa;
+  border-bottom: 1px solid var(--curio-border);
+  background: var(--curio-card-bg);
 }
 
 .stripHint {
   font-size: 10px;
-  color: #666;
+  color: var(--curio-text-secondary);
   margin-right: 2px;
 }
 
-/* An input's tag and its columns (#662). */
+/* An input's tag and its columns (#662): green, like their chips in the code. */
 .inputTag {
   composes: tag;
-  border-color: #b5d6c3;
-  background: #eef7f1;
+  border-color: #a8d5b1;
+  background: var(--curio-accent-mint-bg);
+  color: var(--curio-accent-mint-fg);
 }
 
 .columnTag {
   composes: tag;
-  border-color: #d3e6da;
-  background: #fff;
+  border-color: #a8d5b1;
+  background: var(--curio-card-bg);
+  color: var(--curio-accent-mint-fg);
 }
 
 .expand {
@@ -65,41 +87,117 @@
 }
 
 .panel {
+  --widget-h: 22px;
   height: 100%;
-  padding: 10px;
-  font-size: 11px;
+  padding: 8px 10px;
   overflow-y: auto;
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-primary);
+}
+
+/* WidgetsEditor.css gives every label a right margin. */
+.panel label {
+  margin: 0;
+}
+
+.panel input[type="text"],
+.panel input[type="number"],
+.panel input[type="search"],
+.panel input[type="datetime-local"],
+.panel select {
+  box-sizing: border-box;
+  height: var(--widget-h);
+  min-width: 0;
+  padding: 0 6px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  box-shadow: none;
+}
+
+.panel input:focus,
+.panel select:focus {
+  outline: 2px solid var(--curio-role-update-fg);
+  outline-offset: -1px;
+  box-shadow: none;
+}
+
+.panel input[type="checkbox"],
+.panel input[type="radio"] {
+  margin: 0;
+}
+
+.panel input[type="range"] {
+  height: var(--widget-h);
+  margin: 0;
+}
+
+.panel input[type="file"] {
+  font-size: var(--curio-font-size-xs);
 }
 
 .empty {
-  color: #666;
+  color: var(--curio-text-secondary);
   margin: 0 0 8px;
 }
 
+/* One widget: its label above the control, then the tag, the control and
+   the buttons on one line. A control that takes several lines (a checkbox
+   group, a location) grows below that line. */
 .row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    ". label ."
+    "tag control actions";
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: start;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--curio-border);
+}
+
+.row > .tag {
+  grid-area: tag;
+}
+
+.rowLabel {
+  grid-area: label;
+  overflow: hidden;
+  color: var(--curio-text-secondary);
+  font-size: 10px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowControl {
+  grid-area: control;
+  min-width: 0;
+}
+
+.rowActions {
+  grid-area: actions;
+  display: flex;
+  gap: 4px;
 }
 
 .control {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
 }
 
-.control input[type="text"],
-.control input[type="number"],
-.control select {
+.control > input[type="text"],
+.control > input[type="number"],
+.control > input[type="datetime-local"],
+.control > select {
   width: 100%;
-  font-size: 11px;
-}
-
-.label {
-  font-weight: bold;
 }
 
 .inline {
@@ -107,29 +205,35 @@
   align-items: center;
   gap: 4px;
   min-width: 0;
+  min-height: var(--widget-h);
 }
 
-.inline input[type="range"] {
+.inline > input[type="number"],
+.inline > input[type="range"] {
   flex: 1;
+  width: auto;
   min-width: 0;
 }
 
 .units {
   white-space: nowrap;
-  color: #444;
+  color: var(--curio-text-secondary);
 }
 
 .choices {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 10px;
+  gap: 0 10px;
 }
 
 .choices .choiceItem {
   display: inline-flex;
   flex-direction: row;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
+  height: var(--widget-h);
+  color: var(--curio-text-primary);
+  font-size: var(--curio-font-size-xs);
   font-weight: normal;
 }
 
@@ -155,79 +259,150 @@
   gap: 3px;
 }
 
+/* The place search the Discovery dialog shares, at this tab's size. */
+.location > div {
+  gap: 4px;
+  font-size: var(--curio-font-size-xs);
+}
+
+.location > div > button {
+  box-sizing: border-box;
+  height: var(--widget-h);
+  padding: 0 8px;
+  font-size: var(--curio-font-size-xs);
+}
+
+.location p {
+  margin: 0;
+  font-size: 10px;
+}
+
 .places {
   list-style: none;
   margin: 0;
   padding: 0;
   max-height: 120px;
   overflow-y: auto;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-sm);
 }
 
 .places button {
   width: 100%;
-  text-align: left;
-  background: none;
+  padding: 3px 6px;
   border: 0;
-  padding: 2px 4px;
-  font-size: 11px;
+  background: none;
+  color: var(--curio-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .places button:hover {
-  background: #eef3fb;
+  background: var(--curio-surface-muted);
 }
 
 .hint {
-  color: #666;
+  color: var(--curio-text-secondary);
 }
 
-.bounds {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
+/* Buttons, at this tab's size: a white one, a dark one for the main action
+   (as ConfirmDialog's), and a red-text one for Delete. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: var(--widget-h);
+  padding: 0 8px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.button:hover:not(:disabled) {
+  border-color: var(--curio-text-secondary);
 }
 
-.rowActions {
-  display: flex;
-  gap: 4px;
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.primary {
+  composes: button;
+  border-color: var(--curio-top-bar-bg);
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  font-weight: 600;
+}
+
+.primary:hover:not(:disabled) {
+  border-color: var(--curio-top-bar-bg-hover);
+  background: var(--curio-top-bar-bg-hover);
+}
+
+.danger {
+  composes: button;
+  color: var(--curio-danger-text);
+}
+
+.danger:hover:not(:disabled) {
+  border-color: var(--curio-danger-border);
+  background: var(--curio-danger-bg);
+}
+
+.add {
+  margin-top: 8px;
 }
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px;
-  margin-bottom: 6px;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
-  background: #fff;
+  gap: 6px;
+  margin: 6px 0;
+  padding: 8px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  box-shadow: var(--curio-shadow-card);
 }
 
-.form label {
+.form label,
+.field {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  color: var(--curio-text-secondary);
+  font-size: 10px;
+}
+
+.bounds {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
 }
 
 .formActions {
   display: flex;
-  gap: 4px;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .problem {
-  color: #c0392b;
-  margin: 2px 0 0;
+  color: var(--curio-danger-text);
+  margin: 0;
 }
 
 .problems {
-  color: #c0392b;
+  color: var(--curio-danger-text);
   margin: 8px 0 0;
   padding-left: 16px;
 }

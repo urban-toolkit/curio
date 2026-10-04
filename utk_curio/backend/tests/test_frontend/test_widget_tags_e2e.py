@@ -19,7 +19,12 @@ A second test declares the controls SCOUT's widgets need and Curio lacked (a
 slider with bounds and units, a checkbox group, a choice shown as radio
 buttons, a date and time, and a location), sets each one in the panel, and
 checks the values reach Python and come back after a reopen. The location is
-typed: its place search asks Nominatim, which CI does not reach.
+typed: its place search asks Nominatim, which CI does not reach. Its
+close-ups of the Widgets tab, the form and the code are baselines to review.
+
+A third test checks a reference in the code is one chip: the brackets kept
+in the text take no room, the name sits in one rounded box, one arrow key
+steps over it, and one Backspace removes the whole reference.
 
 Run::
 
@@ -45,6 +50,7 @@ from .utils import (
     require_user_auth,
     run_node_and_wait,
     save_dataflow,
+    save_node_closeup,
     set_node_code,
     stub_login_and_enter_workflow,
 )
@@ -278,6 +284,9 @@ def test_a_widget_tag_drives_the_code_and_survives_a_reopen(
     )
 
 
+#: The close-ups' baselines are ``screenshot_widget-controls_<name>.png``.
+CLOSEUP_STEM = "widget-controls"
+
 CONTROLS_CODE = (
     "rain = [!! rain !!]\n"
     "classes = [!! classes !!]\n"
@@ -288,8 +297,9 @@ CONTROLS_CODE = (
 )
 
 
-def _add_widget(page, node_id: str, *, name: str, kind: str, label: str, fill=None) -> None:
-    """Declare a widget in the panel's form; *fill* sets its options and default."""
+def _add_widget(page, node_id: str, *, name: str, kind: str, label: str, fill=None, before_add=None) -> None:
+    """Declare a widget in the panel's form; *fill* sets its options and
+    default, and *before_add* sees the filled form before it is saved."""
     _open_tab(page, node_id, "widgets")
     panel = _panel(page, node_id)
     panel.get_by_role("button", name="Add widget").click()
@@ -299,6 +309,8 @@ def _add_widget(page, node_id: str, *, name: str, kind: str, label: str, fill=No
     form.get_by_label("Widget label").fill(label)
     if fill is not None:
         fill(form)
+    if before_add is not None:
+        before_add(form)
     form.get_by_role("button", name="Add widget").click()
     panel.locator(f'[data-widget-row="{name}"]').wait_for(state="visible", timeout=10000)
 
@@ -355,12 +367,33 @@ def test_scout_controls_reach_python_and_survive_a_reopen(
     set_node_code(page, reader, READER_CODE)
 
     # 1. Each control is declared in the panel's form, with its options.
-    _add_widget(page, source, name="rain", kind="slider", label="Rain", fill=_slider_options)
+    def form_closeup(form) -> None:
+        # Its buttons in view, and no field holding the focus ring.
+        _panel(page, source).evaluate(
+            "el => { document.activeElement && document.activeElement.blur(); el.scrollTop = el.scrollHeight; }"
+        )
+        save_node_closeup(page, CLOSEUP_STEM, source, test_name="add_widget_form")
+
+    _add_widget(
+        page, source, name="rain", kind="slider", label="Rain", fill=_slider_options, before_add=form_closeup,
+    )
     _add_widget(page, source, name="classes", kind="checkbox-group", label="Classes", fill=_classes_options)
     _add_widget(page, source, name="season", kind="choice", label="Season", fill=_season_options)
     _add_widget(page, source, name="when", kind="datetime", label="When", fill=_when_default)
     _add_widget(page, source, name="origin", kind="location", label="Origin", fill=_origin_default)
     set_node_code(page, source, CONTROLS_CODE)
+
+    # The tab, its form and the chips in the code, as close-ups to review:
+    # each row's tag, control and buttons on one line, buttons in Curio's
+    # style, and each reference drawn as one rounded box with its name.
+    _open_tab(page, source, "widgets")
+    _panel(page, source).evaluate("el => { el.scrollTop = 0; }")
+    save_node_closeup(page, CLOSEUP_STEM, source, test_name="widgets_tab")
+    _open_tab(page, source, "code")
+    node_locator(page, source).locator(".monaco-editor .curio-widget-ref").first.wait_for(
+        state="attached", timeout=10000
+    )
+    save_node_closeup(page, CLOSEUP_STEM, source, test_name="code_chips")
 
     # 2. A run writes each default as a Python value.
     run_node_and_wait(page, reader, node_type=NODE_TYPE)
@@ -423,3 +456,105 @@ def test_scout_controls_reach_python_and_survive_a_reopen(
         "when": "2026-12-21T08:30",
         "latitude": "40.7128",
     }, reopened
+
+
+CHIP_CODE = "factor = [!! factor !!]\nreturn factor\n"
+# "factor = " puts the reference at columns 10 to 24 of line 1.
+CHIP_START, CHIP_END = 10, 24
+
+# What the code editor draws for the node's references: the drawn width of the
+# brackets kept in the text, and the chip's text, ends and look.
+_CHIP_GEOMETRY_JS = r"""(nodeId) => {
+    const ed = document.querySelector(`.react-flow__node[data-id="${nodeId}"] .monaco-editor`);
+    if (!ed) return { why: "no code editor" };
+    const hidden = [...ed.querySelectorAll(".curio-widget-ref-hidden")];
+    const chip = [...ed.querySelectorAll(".curio-widget-ref")];
+    const first = ed.querySelector(".curio-widget-ref-first");
+    const style = first ? getComputedStyle(first) : null;
+    return {
+        hiddenSpans: hidden.length,
+        hiddenWidth: Math.round(hidden.reduce((w, e) => w + e.getBoundingClientRect().width, 0) * 10) / 10,
+        chipText: chip.map((e) => e.textContent).join(""),
+        ends: [ed.querySelectorAll(".curio-widget-ref-first").length, ed.querySelectorAll(".curio-widget-ref-last").length],
+        rounded: style ? parseFloat(style.borderTopLeftRadius) > 0 : false,
+        filled: style ? style.backgroundColor !== "rgba(0, 0, 0, 0)" : false,
+    };
+}"""
+
+# Focus the node's editor and put the caret at (line, column); or, with no
+# column, read where the caret is.
+_CARET_JS = r"""({ nodeId, column }) => {
+    const el = document.querySelector(`.react-flow__node[data-id="${nodeId}"] .monaco-editor`);
+    const editors = (window.monaco && window.monaco.editor.getEditors()) || [];
+    const ed = editors.find((e) => el && el.contains(e.getDomNode()));
+    if (!ed) return null;
+    if (column) {
+        ed.focus();
+        ed.setPosition({ lineNumber: 1, column });
+    }
+    return ed.getPosition().column;
+}"""
+
+
+def _caret(page, node_id: str, column: int | None = None) -> int | None:
+    return page.evaluate(_CARET_JS, {"nodeId": node_id, "column": column})
+
+
+def test_a_reference_is_one_chip_that_edits_as_one(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    require_project_page()
+    require_user_auth()
+
+    page.emulate_media(reduced_motion="reduce")
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Widget Chips",
+        username="widget_chips_e2e",
+        project_name="Widget chips",
+    )
+    require_owner_view(page)
+
+    node = drag_to_canvas(page, page.locator(TILE), at=(300, 150))
+    _add_number_widget(page, node, name="factor", label="Factor", default=2)
+    set_node_code(page, node, CHIP_CODE)
+    node_locator(page, node).locator(".monaco-editor .curio-widget-ref").first.wait_for(
+        state="attached", timeout=10000
+    )
+
+    # 1. The name in one rounded box; the brackets stay in the text but take
+    # no room.
+    geometry = page.evaluate(_CHIP_GEOMETRY_JS, node)
+    assert (
+        geometry.get("chipText"),
+        geometry.get("ends"),
+        geometry.get("rounded"),
+        geometry.get("filled"),
+        geometry.get("hiddenSpans", 0) >= 2,
+        geometry.get("hiddenWidth", 99) < 1,
+    ) == ("factor", [1, 1], True, True, True, True), (
+        f"the reference is not drawn as one chip with its name: {geometry}"
+    )
+    assert read_node_code(page, node) == CHIP_CODE
+
+    # 2. One arrow key steps over the chip, either way.
+    assert _caret(page, node, CHIP_START) == CHIP_START
+    page.keyboard.press("ArrowRight")
+    after_right = _caret(page, node)
+    page.keyboard.press("ArrowLeft")
+    after_left = _caret(page, node)
+    assert (after_right, after_left) == (CHIP_END, CHIP_START), (
+        f"from column {CHIP_START}, ArrowRight left the caret at {after_right} and "
+        f"ArrowLeft then at {after_left}; a chip spans columns {CHIP_START} to {CHIP_END}"
+    )
+
+    # 3. One Backspace after the chip removes the whole reference.
+    assert _caret(page, node, CHIP_END) == CHIP_END
+    page.keyboard.press("Backspace")
+    assert read_node_code(page, node) == "factor = \nreturn factor\n", (
+        f"one Backspace after the chip left {read_node_code(page, node)!r}"
+    )

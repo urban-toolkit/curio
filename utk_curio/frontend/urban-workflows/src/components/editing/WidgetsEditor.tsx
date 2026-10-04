@@ -123,9 +123,9 @@ function WidgetsEditor({
                     />
                 ) : (
                     <div key={widget.name} className={styles.row} data-widget-row={widget.name}>
+                        <span className={styles.rowLabel}>{widget.label || widget.name}</span>
                         <WidgetTag name={widget.name} disabled={disableWidgets} />
-                        <span className={styles.control}>
-                            <span className={styles.label}>{widget.label || widget.name}</span>
+                        <span className={styles.rowControl}>
                             <WidgetControl
                                 widget={widget}
                                 value={effectiveValue(widget)}
@@ -136,6 +136,7 @@ function WidgetsEditor({
                         <span className={styles.rowActions}>
                             <button
                                 type="button"
+                                className={styles.button}
                                 aria-label={`Edit widget ${widget.name}`}
                                 disabled={disableWidgets || editing !== null}
                                 onClick={() => setEditing({ mode: "edit", name: widget.name })}
@@ -144,6 +145,7 @@ function WidgetsEditor({
                             </button>
                             <button
                                 type="button"
+                                className={styles.danger}
                                 aria-label={`Delete widget ${widget.name}`}
                                 disabled={disableWidgets || editing !== null}
                                 onClick={() => onWidgetsChange(widgets.filter((w) => w.name !== widget.name))}
@@ -166,6 +168,7 @@ function WidgetsEditor({
             ) : (
                 <button
                     type="button"
+                    className={`${styles.primary} ${styles.add}`}
                     disabled={disableWidgets || editing !== null}
                     onClick={() => setEditing({ mode: "add" })}
                 >
