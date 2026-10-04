@@ -472,7 +472,12 @@ def test_a_dropped_scenario_brings_the_packages_its_levers_need(
     )
     assert "curio.weather@1" in lockfile()
 
-    # The dataflow saves on top of the package the drop added.
+    # The dataflow saves on top of the package the drop added. The drawer
+    # closes first: its scrim lies over the File menu.
+    page.keyboard.press("Escape")
+    page.locator('[data-curio-scenario-catalog-drawer="true"][aria-hidden="true"]').wait_for(
+        state="attached", timeout=10000,
+    )
     save_dataflow(page)
     saved = _saved_spec(current_server, token, target)["dataflow"]
     [dropped] = saved["scenarios"]
