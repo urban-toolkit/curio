@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactFlow, {
   ConnectionMode,
@@ -14,8 +14,10 @@ import BiDirectionalEdge from "../../components/edges/BiDirectionalEdge";
 import UniDirectionalEdge from "../../components/edges/UniDirectionalEdge";
 import { Loading } from "../../components/login/Loading";
 import { useProjectLoadState } from "../../components/ProjectLoader";
+import { DashboardScenarioLayers, FRAME_HEADER_ROOM } from "../../components/scenarios/ScenarioLayers";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { fitViewWithMenuOffset } from "../../utils/fitViewWithMenuOffset";
+import { scenarioDashboard } from "../../utils/scenarios/scenarioDashboard";
 import { dataflowPath } from "../../utils/shareLinks";
 import { useViewportMotionHint } from "../../hook/useViewportMotionHint";
 import DashboardTopBar, { useCanEditLayout, useDashboardLeaveGuard } from "./DashboardTopBar";
@@ -60,6 +62,7 @@ export const DashboardPage: React.FC = () => {
     dashboardLocked,
     updateDataNode,
     markDirty,
+    scenarios,
   } = useFlowContext();
   const loadState = useProjectLoadState();
   const canEditLayout = useCanEditLayout();
@@ -71,7 +74,16 @@ export const DashboardPage: React.FC = () => {
     () => nodes.filter((node) => dashboardPins[node.id]).map((node) => node.id),
     [nodes, dashboardPins],
   );
-  useDashboardFit(pinnedIds, canvasRef);
+  // Each scenario's tiles are framed under a header in its color (#662), and
+  // the fit keeps the headers in view.
+  const frames = useMemo(
+    () => scenarioDashboard(nodes, edges, dashboardPins, scenarios ?? [])?.frames ?? [],
+    [nodes, edges, dashboardPins, scenarios],
+  );
+  const headroom = frames.length > 0 ? FRAME_HEADER_ROOM : 0;
+  const [arranged, setArranged] = useState(0);
+  const onArranged = useCallback(() => setArranged((count) => count + 1), []);
+  useDashboardFit(pinnedIds, canvasRef, { headroom, refitKey: arranged });
 
   const nodeTypes = useMemo(() => ({ [CURIO_UNIVERSAL_NODE_TYPE]: UniversalNode }), []);
   const edgeTypes = useMemo(() => ({
@@ -90,7 +102,7 @@ export const DashboardPage: React.FC = () => {
     (window as any).__curio_fitViewWithMenuOffset = (_options?: FitViewOptions) => {
       const tiles = reactFlow.getNodes().filter((node) => node.style?.display !== "none");
       if (tiles.length === 0) return false;
-      return fitViewWithMenuOffset(reactFlow, { ...DASHBOARD_FIT_OPTIONS, nodes: tiles });
+      return fitViewWithMenuOffset(reactFlow, { ...DASHBOARD_FIT_OPTIONS, headroom, nodes: tiles });
     };
     return () => {
       if ((window as any).__curio_reactFlow === reactFlow) {
@@ -98,7 +110,7 @@ export const DashboardPage: React.FC = () => {
         delete (window as any).__curio_fitViewWithMenuOffset;
       }
     };
-  }, [reactFlow]);
+  }, [reactFlow, headroom]);
 
   /**
    * Tile moves, and nothing else.
@@ -138,7 +150,7 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className={styles.page}>
-      {id ? <DashboardTopBar id={id} /> : null}
+      {id ? <DashboardTopBar id={id} onArranged={onArranged} /> : null}
       {loadState === "loaded" && !canEditLayout ? (
         // The notice the canvas gives a visitor, for the same reason: the page
         // looks editable (tiles, a Share menu) and is not.
@@ -177,7 +189,9 @@ export const DashboardPage: React.FC = () => {
           // shown to whoever holds the link, and the watermark sat on top of
           // the content in the corner.
           proOptions={{ hideAttribution: true }}
-        />
+        >
+          <DashboardScenarioLayers frames={frames} />
+        </ReactFlow>
         {loadState === "loading" || loadState === "idle" ? (
           <div className={styles.state}>
             <Loading />
