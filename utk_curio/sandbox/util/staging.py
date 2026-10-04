@@ -24,6 +24,7 @@ reach it: ``stage_input`` refuses an artifact belonging to another session, the
 same rule ``load_from_duckdb`` enforces.
 """
 
+import glob
 import json
 import os
 import shutil
@@ -236,6 +237,46 @@ def read_outputs_wrapper(art_id, *, session_id=None):
     return None
 
 
+def _stage_with_companions(source: Path, folder: Path) -> None:
+    """Link *source* into *folder* with the files read beside it: those named
+    after it (``labels.parquet.decode.json``, a raster's ``.aux.xml``) or after
+    its stem (a shapefile's ``.shx``, ``.dbf`` and ``.prj``). Only regular
+    files are linked; a file already staged is left as it is."""
+    folder.mkdir(parents=True, exist_ok=True)
+    companions = [
+        path for path in sorted(source.parent.glob(glob.escape(source.stem) + ".*"))
+        if path.name != source.name and path.is_file() and not path.is_symlink()
+    ]
+    for path in [source, *companions]:
+        if not (folder / path.name).exists():
+            _link_or_copy(path, folder / path.name)
+
+
+def _bundle_parts(bundle: Path):
+    """The part files a ``bundle.json`` names, with their paths relative to the
+    folder the reader resolves them against, the dataset's (two levels up).
+    A part outside that folder, or not a regular file, is left out."""
+    base = bundle.parent.parent.resolve()
+    try:
+        spec = json.loads(bundle.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    parts = spec.get("parts") if isinstance(spec, dict) else None
+    found = []
+    for part in parts if isinstance(parts, list) else []:
+        name = part.get("file") if isinstance(part, dict) else None
+        if not isinstance(name, str) or not name:
+            continue
+        path = base / name
+        if path.is_symlink() or not path.is_file():
+            continue
+        resolved = path.resolve()
+        if base not in resolved.parents:
+            continue
+        found.append((resolved, resolved.relative_to(base)))
+    return found
+
+
 def stage_dataset_paths(dataset_paths, scratch_dir):
     """Stage the files behind ``curio_data_path`` calls.
 
@@ -248,6 +289,13 @@ def stage_dataset_paths(dataset_paths, scratch_dir):
     than raised: the injected
     ``curio_data_path`` already raises a clear per-id error, and resolution
     is documented as fail-open (see docs/ARCHITECTURE.md).
+
+    Each dataset gets a folder, ``ds_<i>/``, holding its file and the files
+    read beside it (``_stage_with_companions``), never the rest of the folder
+    the file sits in, which can be a workspace folder or the artifact store. A
+    ``bundle.json`` is staged as ``ds_<i>/data/bundle.json`` with each part it
+    names at the same path relative to ``ds_<i>/`` that it has relative to the
+    dataset's folder, which is where ``curio_load_data`` looks for them.
     """
     scratch_dir = Path(scratch_dir)
     staged = {}
@@ -256,9 +304,13 @@ def stage_dataset_paths(dataset_paths, scratch_dir):
             source_path = Path(source)
             if not source_path.exists():
                 continue
-            name = f"ds_{index}{source_path.suffix}"
-            _link_or_copy(source_path, scratch_dir / name)
-            staged[dataset_id] = name
+            folder = Path(f"ds_{index}")
+            if source_path.name == "bundle.json":
+                for part, relative in _bundle_parts(source_path):
+                    _stage_with_companions(part, scratch_dir / folder / relative.parent)
+                folder = folder / source_path.parent.name
+            _stage_with_companions(source_path, scratch_dir / folder)
+            staged[dataset_id] = (folder / source_path.name).as_posix()
         except OSError:
             continue
     return staged
