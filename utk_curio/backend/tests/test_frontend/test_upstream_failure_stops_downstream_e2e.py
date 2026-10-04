@@ -13,7 +13,8 @@ The same shape here, with a plain ``raise`` upstream. The claims, each read
 off the page:
 
   * the downstream node is never sent to the sandbox (the run's
-    ``/processPythonCode`` requests name only the upstream node);
+    ``/processPythonCode`` requests, or its steps on the server, name only the
+    upstream node);
   * it says which node feeding it failed, and nothing about missing input;
   * the upstream's collapsed strip shows its exception line.
 
@@ -31,6 +32,7 @@ from typing import TYPE_CHECKING
 from playwright.sync_api import expect
 
 from .utils import (
+    SandboxRuns,
     node_locator,
     read_node_error_text,
     run_all_and_wait,
@@ -82,7 +84,7 @@ def test_a_failed_node_stops_the_node_it_feeds(
     # Loaded through the File menu, the way the workflow suite loads its
     # dataflows, so the test runs the same on a stack with user accounts and on
     # the isolated stack, which has none.
-    stub_login_and_enter_workflow(
+    session = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
@@ -102,19 +104,9 @@ def test_a_failed_node_stops_the_node_it_feeds(
     for node_id in (LOADER_ID, COMPUTE_ID):
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
 
-    # Every node execution leaves the browser as one POST naming its node.
-    executed: list[str] = []
-
-    def _record(request) -> None:
-        if request.method != "POST" or not request.url.endswith("/processPythonCode"):
-            return
-        try:
-            body = json.loads(request.post_data or "{}")
-        except ValueError:
-            body = {}
-        executed.append(str(body.get("nodeId")))
-
-    page.on("request", _record)
+    # Every node execution is one POST naming its node from the page, or one
+    # step of a run on the server.
+    sent = SandboxRuns(page, session.get("token"), (session.get("project") or {}).get("id"))
 
     run_all_and_wait(page, timeout_ms=180000)
 
@@ -123,6 +115,7 @@ def test_a_failed_node_stops_the_node_it_feeds(
         page, COMPUTE_ID, node_type="COMPUTATION_ANALYSIS"
     ) == "error"
     reason = read_node_error_text(node_locator(page, COMPUTE_ID)) or ""
+    executed = sent.stop()
 
     # 1. Never sent to the sandbox.
     assert executed == [LOADER_ID], (

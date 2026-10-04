@@ -1,11 +1,12 @@
 """Whole-run (Run All) state, and holding a run open on purpose."""
 
+import json
 import re
 import time
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-from .db_stubs import _get_json, _post_json
+from .db_stubs import _get_json, _post_json, api_json
 
 
 # ---------------------------------------------------------------------------
@@ -263,3 +264,62 @@ def release_node_execution(page) -> int:
     """Let every held execution go and stop holding. Returns how many were let go."""
     in_page = int(page.evaluate(_RELEASE_NODE_EXEC_JS))
     return in_page + hold_server_runs(backend_url_of(page), False)
+
+
+# ---------------------------------------------------------------------------
+# Which nodes went to the sandbox
+# ---------------------------------------------------------------------------
+
+class SandboxRuns:
+    """The Python nodes sent to the sandbox from the moment this is made.
+
+    A run goes to the server for a signed-in owner and stays in the page
+    otherwise (``FlowProvider``'s ``runsOnServer``), so this reads both: each
+    ``/processPythonCode`` post the page makes, and each step a new run on the
+    server executed (role ``run``, ended ``ok`` or ``error``). Without a
+    *token* and *project_id* only the page is read. After :meth:`stop`,
+    ``server_steps`` holds every step of those runs, as the runs API gives it.
+    """
+
+    def __init__(self, page, token: str | None = None, project_id: str | None = None):
+        self._page = page
+        self._backend = backend_url_of(page)
+        self._token = token
+        self._project_id = project_id
+        self._from_page: list[str] = []
+        self.server_steps: list[dict] = []
+        self._earlier_runs = {run["id"] for run in self._runs()}
+        page.on("request", self._record)
+
+    def _record(self, request) -> None:
+        if request.method != "POST" or not request.url.endswith("/processPythonCode"):
+            return
+        try:
+            body = json.loads(request.post_data or "{}")
+        except ValueError:
+            body = {}
+        self._from_page.append(str(body.get("nodeId")))
+
+    def _runs(self) -> list[dict]:
+        if not (self._token and self._project_id):
+            return []
+        url = f"{self._backend}/api/projects/{self._project_id}/runs?limit=50"
+        return api_json(url, self._token)["runs"]
+
+    def new_steps(self) -> list[dict]:
+        """Every step of the runs on the server made since this was made, as they stand now."""
+        steps: list[dict] = []
+        for summary in reversed(self._runs()):
+            if summary["id"] not in self._earlier_runs:
+                steps += api_json(f"{self._backend}/api/runs/{summary['id']}", self._token)["steps"]
+        return steps
+
+    def stop(self) -> list[str]:
+        """Stop reading the page; the node ids sent, the page's first, then each new run's, oldest run first."""
+        self._page.remove_listener("request", self._record)
+        self.server_steps = self.new_steps()
+        on_server = [
+            step["nodeId"] for step in self.server_steps
+            if step["role"] == "run" and step["status"] in ("ok", "error")
+        ]
+        return self._from_page + on_server
