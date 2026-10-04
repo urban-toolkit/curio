@@ -1451,6 +1451,8 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
     # unnamed falls to the lowest free) — the bridge passes these through
     # instead of hardcoding "in", which left merge slots unfilled until a
     # reload healed them.
+    from utk_curio.backend.app.packages import service as packages_services
+
     types_by_id = {
         n.get("id"): _strip_type_version(str(n.get("type") or ""))
         for n in nodes

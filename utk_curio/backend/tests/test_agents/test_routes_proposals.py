@@ -2120,9 +2120,9 @@ class TestPlanEdgeApply:
     plan, validated against the CURRENT spec, partial success honest and
     named; completion flips the proposal to applied."""
 
-    def _mint(self, client, user, token, project_id, monkeypatch):
+    def _mint(self, client, user, token, project_id, monkeypatch, replies=None):
         helper = TestDataflowPlanMint()
-        att_id, _ = helper._setup(client, user, token, project_id, monkeypatch)
+        att_id, _ = helper._setup(client, user, token, project_id, monkeypatch, replies=replies)
         r = helper._run(client, token, project_id, att_id)
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
         return att_id, proposal
@@ -2225,7 +2225,18 @@ class TestPlanEdgeApply:
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user, token = user_and_token
-        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        # The target takes one input: the computation template takes several,
+        # each on a circle of its own, so it would never refuse a second feed.
+        nodes = [
+            {"ref": "a", "nodeType": "curio.builtin/computation-analysis",
+             "title": "Load", "intent": "load the data"},
+            {"ref": "b", "nodeType": "curio.builtin/data-summary",
+             "title": "Analyze", "intent": "compute stats"},
+        ]
+        tail = TestDataflowPlanMint()._plan_tail(nodes=nodes)
+        att_id, proposal = self._mint(
+            client, user, token, alice_project, monkeypatch, replies=["Here is the plan.\n" + tail],
+        )
         pid = proposal["proposalId"]
         refs = [n["ref"] for n in proposal["plan"]["nodes"]]
         self._apply_node(client, token, alice_project, att_id, pid, refs[0])
