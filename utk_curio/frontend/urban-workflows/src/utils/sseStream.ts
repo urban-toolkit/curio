@@ -1,10 +1,10 @@
 /**
- * The agents SSE transport (memo dev/22; shared by the chat, Solve, simulation and job
- * streams — dev/63, dev/115). Split out of `api/agentsApi.ts` (memo dev/142, F1).
+ * The SSE transport (memo dev/22): the agents' chat, Solve, simulation and job
+ * streams (dev/63, dev/115), and a dataflow run's stream (`services/runs`).
  */
 
-import { getToken } from "../../utils/authApi";
-import { backendUrl } from "../../utils/backendUrl";
+import { getToken } from "./authApi";
+import { backendUrl } from "./backendUrl";
 
 const BACKEND_URL = backendUrl();
 
@@ -19,7 +19,7 @@ export async function postSseStream(
   body: unknown,
   onFrame: (event: string, payload: Record<string, unknown>) => void,
   signal?: AbortSignal,
-  /** dev/115: the jobs re-attach stream is a GET (no body). */
+  /** dev/115: a re-attach stream (an agent job, a run) is a GET (no body). */
   method: "POST" | "GET" = "POST"
 ): Promise<void> {
   const token = getToken();

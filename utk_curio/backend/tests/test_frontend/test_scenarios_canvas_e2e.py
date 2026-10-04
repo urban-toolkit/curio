@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from .utils import (
+    SandboxRuns,
     api_json,
     assert_autark_map_drawn,
     frame_nodes,
@@ -163,24 +164,6 @@ def _saved_spec(current_server: str, session: dict) -> dict:
     return api_json(f"{current_server}/api/projects/{project_id}", session["token"])["spec"]
 
 
-def _record_python_runs(page):
-    """The node ids of the Python runs that leave the page from now on: every
-    run is one POST naming its node. Returns the list and a stop function."""
-    executed: list[str] = []
-
-    def _record(request) -> None:
-        if request.method != "POST" or not request.url.endswith("/processPythonCode"):
-            return
-        try:
-            body = json.loads(request.post_data or "{}")
-        except ValueError:
-            body = {}
-        executed.append(str(body.get("nodeId")))
-
-    page.on("request", _record)
-    return executed, lambda: page.remove_listener("request", _record)
-
-
 def _box(page, scenario_id: str):
     return page.get_by_test_id(f"scenario-box-{scenario_id}")
 
@@ -267,9 +250,9 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
     assert after["x"] - before["x"] > 100, f"the box did not follow the drag: {before} -> {after}"
 
     # 3. Run All with the copy collapsed: the shared loader runs once.
-    executed, stop = _record_python_runs(page)
+    sent = SandboxRuns(page, session["token"], session["project"]["id"])
     run_all_and_wait(page, timeout_ms=240000)
-    stop()
+    executed = sent.stop()
     assert sorted(executed) == sorted([LOADER, SCALE, scale_copy]), (
         f"Run All sent {executed}: the shared loader must run once, and both branches once"
     )
@@ -327,11 +310,11 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
     # itself, inside a scenario or not (#711), so run the scenario: its levers
     # run, the restored loader is reused, and the map runs inside the hidden
     # box, its canvas made there.
-    executed, stop = _record_python_runs(page)
+    sent = SandboxRuns(page, session["token"], session["project"]["id"])
     page.get_by_test_id(f"scenario-card-{copy_id}").get_by_role("button", name="Run scenario").click()
     status = wait_for_node_settled(page, map_copy, node_type="autk-grammar", timeout_ms=180000)
     wait_for_run_guard_released(page, timeout_ms=60000)
-    stop()
+    executed = sent.stop()
     detail = read_node_error_text(node_locator(page, map_copy)) if status == "error" else ""
     assert status == "done", f"{map_copy} did not draw inside the collapsed scenario: {detail}"
     assert executed == [scale_copy], (

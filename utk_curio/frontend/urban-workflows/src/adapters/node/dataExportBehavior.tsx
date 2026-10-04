@@ -65,7 +65,8 @@ export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
   // fires when that run is over.
   const [pendingDownload, setPendingDownload] = useState(false);
   const sawRunRef = useRef(false);
-  const { playNodesUpTo, isRunActive } = useFlowContext();
+  const { playNodesUpTo, isRunActive: browserRunActive, serverRunActive } = useFlowContext();
+  const isRunActive = browserRunActive || serverRunActive;
 
   const input = data.input && typeof data.input === 'object' ? (data.input as any) : null;
   const hasInput = Boolean(input?.path);

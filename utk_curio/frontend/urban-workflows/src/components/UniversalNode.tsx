@@ -118,7 +118,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const showLoading = behavior.showLoading ?? false;
   const disablePlay = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
 
-  const { signalNodeExecDone, dashboardOn, projectId, edges: flowEdges, isRunActive, nodes: flowNodes } = useFlowContext();
+  const { signalNodeExecDone, dashboardOn, projectId, edges: flowEdges, isRunActive, serverRunActive, nodes: flowNodes } = useFlowContext();
   // In the notebook view the node is a cell: a fixed size, its dots on the
   // right edge where the bar draws its connections, no cardinality markers.
   const notebook = useNotebookViewContext();
@@ -186,6 +186,19 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     });
   }, [data.skipExec]);
 
+  // A step of a run on the server (useServerRun): running, its outcome, or
+  // stopped. Shown through the setter the node's own run uses, so the node
+  // reads, reports and records it the same way. `onlyIfRunning` gives a played
+  // node back its earlier output only if its own play showed nothing.
+  const lastServerOutputRef = useRef<number>(data.serverOutput?.seq ?? 0);
+  useEffect(() => {
+    const next = data.serverOutput;
+    if (!next || next.seq <= lastServerOutputRef.current) return;
+    lastServerOutputRef.current = next.seq;
+    if (next.onlyIfRunning && output?.code !== "exec") return;
+    setOutputCallback(next.output);
+  }, [data.serverOutput]);
+
   // ── Drawing from a restored input, with no Play ──────────────────────────
   //
   // A grammar node only draws when something calls its ``applyGrammar``, which
@@ -214,8 +227,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // widgets pass, so two toggles in the same batch leave the flag where it
   // started, the marker round trip never happens, and the node sits at "exec"
   // until its watchdog. Whatever a run leaves behind is what this draws from
-  // the next time an input arrives.
-  const runInFlight = !!isRunActive;
+  // the next time an input arrives. A run on the server counts too: its
+  // browser part compiles the maps and charts it walks as Run All does, and a
+  // chart it leaves out draws here once the run ends, from the input that
+  // arrived during it.
+  const runInFlight = !!isRunActive || !!serverRunActive;
   const runInFlightRef = useRef(runInFlight);
   runInFlightRef.current = runInFlight;
   // The grammar nodes that draw from their input on their own, by one rule: a

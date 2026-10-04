@@ -171,6 +171,23 @@ def test_a_traced_failure_keeps_its_chunk(monkeypatch):
     assert "trace.zip" in [os.path.basename(p) for p in written]
 
 
+def test_a_test_on_any_page_leaves_its_browser_log():
+    # Not only workflow_page: a test on the plain `page` fixture leaves its
+    # console too, which is what explains a failure there.
+    page = _Page(nodes=[POOL])
+    handlers = {}
+    page.on = lambda event, handler: handlers.setdefault(event, handler)
+    item = _item(page=page)
+
+    diagnostics.start_trace_chunk(item)
+    handlers["console"](types.SimpleNamespace(type="error", text="boom", location={}))
+    handlers["pageerror"](RuntimeError("bad state"))
+    written = diagnostics.finish(item, failed=True)
+
+    log = open(next(p for p in written if p.endswith("browser-log.txt"))).read()
+    assert "boom" in log and "bad state" in log
+
+
 def test_a_traced_pass_discards_its_chunk(monkeypatch):
     monkeypatch.setenv(diagnostics.TRACE_ENV, "1")
     page = _Page()

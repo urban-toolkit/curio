@@ -41,6 +41,7 @@ from utk_curio.backend.app.users import repositories as user_repo
 from utk_curio.backend.app.users import security
 from utk_curio.backend.app.projects import services as project_services
 from utk_curio.backend.app.projects.schemas import ProjectCreate
+from utk_curio.backend.app.runs import jobs as run_jobs
 
 
 testing_bp = Blueprint("testing", __name__, url_prefix="/api/testing")
@@ -80,6 +81,8 @@ def _guard():
 #: deletes do not trip foreign keys.
 _RESETTABLE_TABLES: tuple[str, ...] = (
     "exec_cache_entry",
+    "dataflow_run_step",
+    "dataflow_run",
     "project",
     "auth_attempt",
     "user_session",
@@ -329,7 +332,29 @@ def reset_db():
     stores_cleared = []
     if body.get("stores", True):
         stores_cleared = _clear_test_user_stores()
+    # A hold a failed test left standing would stop the next test's runs.
+    run_jobs.set_hold(False)
     return jsonify({"truncated": truncated, "stores_cleared": stores_cleared}), 200
+
+
+@testing_bp.route("/run-hold", methods=["GET", "POST"])
+def run_hold():
+    """Hold runs on the server before each node they execute, or release them.
+
+    The server-side twin of holding a page's node requests (``run_all.py``): a
+    run started by the canvas executes on the server, out of the page's reach.
+
+    Body (POST): ``{"hold": true}`` or ``{"hold": false}``.
+    Response: ``{"held": bool, "waiting": n}``. ``waiting`` is how many nodes
+    wait right now; on a release, how many it let go.
+    """
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        if not isinstance(body.get("hold"), bool):
+            return jsonify({"error": "hold must be true or false"}), 400
+        waiting = run_jobs.set_hold(body["hold"])
+        return jsonify({"held": body["hold"], "waiting": waiting}), 200
+    return jsonify(run_jobs.hold_state()), 200
 
 
 @testing_bp.route("/stub-project", methods=["POST"])

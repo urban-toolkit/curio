@@ -29,6 +29,7 @@ const mockSetOutput = jest.fn();
 let mockDashboardOn = false;
 let mockFlowEdges: any[] = [];
 let mockIsRunActive = false;
+let mockServerRunActive = false;
 let mockWebGpuSupported = true;
 jest.mock("../../utils/webgpuSupport", () => ({
   detectWebGpuSupport: () => Promise.resolve({ supported: mockWebGpuSupported }),
@@ -115,6 +116,7 @@ jest.mock("../../providers/FlowProvider", () => ({
     dashboardOn: mockDashboardOn,
     edges: mockFlowEdges,
     isRunActive: mockIsRunActive,
+    serverRunActive: mockServerRunActive,
   }),
 }));
 jest.mock("../../providers/CollaborationProvider", () => ({
@@ -156,6 +158,7 @@ beforeEach(() => {
   mockDashboardOn = false;
   mockFlowEdges = [];
   mockIsRunActive = false;
+  mockServerRunActive = false;
   mockWebGpuSupported = true;
 });
 
@@ -358,6 +361,38 @@ describe.each([
 
     mockIsRunActive = false;
     await next(utils, node({ input: INPUT_A, triggerExec: 1 }));
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
+
+  test("an input a run on the server delivers waits for the run's browser part", async () => {
+    // The browser part triggers the maps and charts it walks; drawing here as
+    // well puts two `sendCode` calls on one node, as in the browser's own run.
+    mockServerRunActive = true;
+    const utils = await open(node({ input: "" }));
+
+    await next(utils, node({ input: INPUT_A }));
+    expect(mockSendCode).not.toHaveBeenCalled();
+
+    // The browser part takes over in the tick the server's part ends, and its
+    // trigger draws the node once.
+    mockServerRunActive = false;
+    mockIsRunActive = true;
+    await next(utils, node({ input: INPUT_A, triggerExec: 1 }));
+    mockIsRunActive = false;
+    await next(utils, node({ input: INPUT_A, triggerExec: 1 }));
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+  });
+
+  test("a node a run on the server leaves out draws its input once the run ends", async () => {
+    mockServerRunActive = true;
+    const utils = await open(node({ input: "" }));
+    await next(utils, node({ input: INPUT_A }));
+    expect(mockSendCode).not.toHaveBeenCalled();
+
+    mockServerRunActive = false;
+    await next(utils, node({ input: INPUT_A }));
 
     expect(mockSendCode).toHaveBeenCalledTimes(1);
   });

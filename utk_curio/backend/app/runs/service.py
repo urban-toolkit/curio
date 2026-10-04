@@ -9,6 +9,7 @@ on the thread only, never in a table, an event or a log line.
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Iterator, Optional
@@ -46,8 +47,26 @@ def _iso(moment: Optional[datetime]) -> Optional[str]:
 # Serialization
 # ---------------------------------------------------------------------------
 
-def step_payload(step: DataflowRunStep) -> dict:
+def current_code_hashes(user, project_id: str) -> dict:
+    """``{nodeId: digest}`` of each node's code in the dataflow as saved now,
+    hashed as a step hashes the code it ran."""
+    from utk_curio.backend.app.execution.runtime_journal import normalized_code_sha256
+    from utk_curio.backend.app.projects import storage
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    spec = storage.read_spec(_user_dir_key(user), project_id) or {}
+    nodes = (spec.get("dataflow") or {}).get("nodes") or []
     return {
+        node["id"]: normalized_code_sha256(node.get("content") or "")
+        for node in nodes if isinstance(node, dict) and node.get("id")
+    }
+
+
+def step_payload(step: DataflowRunStep, current: Optional[dict] = None) -> dict:
+    """*current* (:func:`current_code_hashes`) adds ``codeCurrent``: whether the
+    node still holds the code this step ran, so a canvas opened later can show
+    the step's output as the node's own."""
+    payload = {
         "nodeId": step.node_id,
         "label": step.label,
         "nodeType": step.node_type,
@@ -64,10 +83,15 @@ def step_payload(step: DataflowRunStep) -> dict:
         "stdoutTail": step.stdout_tail,
         "stderrTail": step.stderr_tail,
         "skipReason": step.skip_reason,
+        "missingModule": json.loads(step.missing_module) if step.missing_module else None,
+        "installWarnings": json.loads(step.install_warnings) if step.install_warnings else [],
     }
+    if current is not None:
+        payload["codeCurrent"] = bool(step.code_sha256) and current.get(step.node_id) == step.code_sha256
+    return payload
 
 
-def run_payload(run: DataflowRun, *, steps: bool = False) -> dict:
+def run_payload(run: DataflowRun, *, steps: bool = False, current: Optional[dict] = None) -> dict:
     payload = {
         "id": run.id,
         "projectId": run.project_id,
@@ -89,7 +113,7 @@ def run_payload(run: DataflowRun, *, steps: bool = False) -> dict:
         "live": jobs.REGISTRY.is_live(run.id),
     }
     if steps:
-        payload["steps"] = [step_payload(step) for step in run.steps]
+        payload["steps"] = [step_payload(step, current) for step in run.steps]
     return payload
 
 
@@ -168,6 +192,7 @@ def replay_from_steps(run: DataflowRun) -> Iterator[tuple[str, dict]]:
              if step.output_path else None),
             ("stdoutTail", step.stdout_tail), ("stderrTail", step.stderr_tail),
             ("skipReason", step.skip_reason), ("durationMs", step.duration_ms),
+            ("installWarnings", json.loads(step.install_warnings) if step.install_warnings else None),
         ):
             if value is not None:
                 payload[key] = value
@@ -294,13 +319,18 @@ def _run_thread(app, run_id, user_id, token, project_id, plan, spec) -> Iterator
     from utk_curio.backend.app.projects.dashboard_payload import dashboard_source_node_ids
     from utk_curio.backend.app.projects.schemas import OutputRef
     from utk_curio.backend.app.projects.services import record_node_outputs
+    from utk_curio.backend.app.scenario_catalog.domain.parts import scenario_source_node_ids
     from utk_curio.backend.app.users.models import User
 
     default_save = bool(config.CURIO_DEFAULT_SAVE_NODE_OUTPUT)
-    sources = dashboard_source_node_ids(spec)
+    # What a pinned tile reads and what a scenario's context and outcomes
+    # produce, saved whatever each node's own toggle says: the canvas's
+    # `savedSourceNodeIds`.
+    sources = dashboard_source_node_ids(spec) | scenario_source_node_ids(spec)
     cancelled = jobs.cancel_flag(run_id)
 
     def execute(step, code, input_ref):
+        jobs.hold_point()
         # The request that started the run is gone: load the account here.
         user = db.session.get(User, user_id)
         node_run = node_exec.NodeRun(
@@ -341,14 +371,20 @@ def _run_thread(app, run_id, user_id, token, project_id, plan, spec) -> Iterator
                 if payload["status"] == "ok" and records_output_on_save(
                     step.node, default_save, sources,
                 ):
+                    warnings: list = []
                     try:
                         record_node_outputs(db.session.get(User, user_id), project_id, [OutputRef(
                             node_id=step.node_id,
                             filename=output.get("dataset") or output.get("path"),
                             data_type=output.get("dataType"),
-                        )])
+                        )], warnings=warnings)
                     except Exception:  # noqa: BLE001 - the run goes on; the output is just not recorded
                         log.exception("run %s could not record the output of %s", run_id, step.node_id)
+                    if warnings:
+                        # The output that could not be installed, as a save
+                        # reports it, so the canvas warns as after a save.
+                        runs_repo.update_step(run_id, step.node_id, install_warnings=json.dumps(warnings))
+                        payload = {**payload, "installWarnings": warnings}
             elif kind == "run_finished":
                 runs_repo.update_run(
                     run_id, status=payload["status"], finished_at=datetime.now(timezone.utc),
@@ -387,6 +423,7 @@ def _record_step(run_id, step, payload, runtime_journal) -> None:
             code_sha256=runtime_journal.normalized_code_sha256(step.content),
             stdout_tail=payload.get("stdoutTail"),
             stderr_tail=payload.get("stderrTail"),
+            missing_module=json.dumps(reply["missingModule"]) if reply.get("missingModule") else None,
         )
     runs_repo.update_step(run_id, step.node_id, **fields)
 
