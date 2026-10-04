@@ -1,8 +1,8 @@
 """The modules a package ships, handed to the sandbox when one of its nodes runs (#468).
 
-Application layer of the packages package. What counts as a module, and the
-install-time refusal of a name two packages ship, are
-``repositories/python_modules.py``.
+Application layer of the packages package. What counts as a module is
+``domain/python_modules.py``; the install-time refusal of a name two packages
+ship is ``store_install.refuse_a_module_name_in_use``.
 """
 
 from __future__ import annotations
