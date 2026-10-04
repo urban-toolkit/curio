@@ -798,8 +798,9 @@ class TestResearcher:
     # (dev/90 §8 AC-2): a drive-by edit fails HERE, not in a downstream run.
     DATAFLOW_BUILDER_PROMPT_SHA256 = (
         # The plan is named, not called a block: on native tools it is the
-        # dataflow.plan.write call, on the fenced protocol its block.
-        "f180f9bd4c38c9682160cfcc80cadf2c907c9004178bd1f0851f27eef949c5db"
+        # dataflow.plan.write call, on the fenced protocol its block. It names
+        # examples.read, for a worked example beyond the two a run is given.
+        "f14cbf84b7915c990133570e26f65eee92759e1b909f0e360e2d53f01c65386c"
     )
 
     def test_manifest_surface(self):
