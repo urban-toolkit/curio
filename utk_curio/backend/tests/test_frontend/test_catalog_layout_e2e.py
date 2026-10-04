@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 from playwright.sync_api import expect
 
 from .utils import (
+    api_json,
     require_project_page,
     require_user_auth,
     signup_e2e_user,
@@ -45,6 +46,7 @@ PAGES = (
     ("/catalog/agents", "Agent Catalog", "article"),
     ("/catalog/discovery", "Discovery Catalog", "article"),
     ("/catalog/models", "Model Catalog", "article"),
+    ("/catalog/scenarios", "Scenario Catalog", "article"),
 )
 
 #: The details drawer is 320px wide; with it open, <main> ends left of this.
@@ -83,8 +85,32 @@ _MEASURE = """([cardSelector]) => {
 }"""
 
 
+def _code_node(node_id: str, x: int) -> dict:
+    return {
+        "id": node_id, "type": "curio.builtin/computation-analysis@1",
+        "content": "return 1", "x": x, "y": 0,
+    }
+
+
+def _save_a_scenario(page, backend: str) -> None:
+    """A project with one scenario: a new account has none to list."""
+    token = next(
+        c["value"] for c in page.context.cookies() if c["name"].startswith("session_token")
+    )
+    api_json(f"{backend}/api/projects", token, method="POST", payload={
+        "name": "Layout scenarios",
+        "spec": {"dataflow": {
+            "name": "Layout scenarios",
+            "nodes": [_code_node("a", 0), _code_node("b", 300)],
+            "edges": [{"id": "e1", "source": "a", "target": "b"}],
+            "scenarios": [{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["b"]}],
+        }},
+        "outputs": [],
+    })
+
+
 def test_every_browse_page_paints_its_rail_and_fits_three_columns(
-    app_frontend: "FrontendPage", frontend_server: str, page
+    app_frontend: "FrontendPage", frontend_server: str, current_server: str, page
 ):
     require_user_auth()
     require_project_page()
@@ -96,6 +122,7 @@ def test_every_browse_page_paints_its_rail_and_fits_three_columns(
         username=f"layout_{uuid.uuid4().hex[:10]}",
     )
     wait_for_projects_page(page, timeout=30000)
+    _save_a_scenario(page, current_server)
 
     failures: list[str] = []
     for path, heading, card_selector in PAGES:

@@ -2,7 +2,7 @@
 
 The Discovery Catalog is where Curio lists the **open data portals**, the **storage**, the **services** and the **models** it can reach: folders on the Curio machine, public S3 buckets, Hugging Face dataset repositories, OpenStreetMap, street-level images from Mapillary and Google Street View, and image segmentation models on Hugging Face. You search a portal and download a dataset, open a storage source and add one of the resources it declares, tell a service where and what and download its answer, or add a model. A dataset lands in your Data Catalog, and a model in your Model Catalog.
 
-Curio has five catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, and the Discovery Catalog the portals, storage, services and models you take datasets and models from.
+Curio has six catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the Discovery Catalog the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
 
 This guide is in eight parts, plus operator notes:
 

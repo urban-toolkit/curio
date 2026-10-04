@@ -84,15 +84,11 @@ def frame_until_on_top(page, node_id: str, target, *, attempts: int = 6) -> None
 
 
 def open_provenance(ctx: Ctx):
-    """Open the Provenance modal from the top menu and return its dialog.
-
-    Two clicks: the top-bar dropdown, then its single row. ``force`` on the
-    first mirrors the tour - the canvas chrome overlaps the bar's hit box.
-    """
+    """Open the Provenance modal from the View menu and return its dialog."""
     page = ctx.page
-    # A button on the bar, not a menu: the node editor also has a tab named
-    # "Provenance", so it is found by its test id.
-    ctx.click(page.get_by_test_id("provenance-btn"))
+    ctx.click(page.get_by_role("button", name="View menu", exact=True))
+    # Found by its test id: the node editor also has a tab named "Provenance".
+    ctx.click(page.get_by_test_id("provenance-menu-item"))
     dialog = page.get_by_role("dialog").filter(has_text="Provenance for")
     dialog.wait_for(state="visible", timeout=20000)
     # The graph lays out through dagre on mount; capture after it settles or the

@@ -10,10 +10,11 @@ So, on a fresh dataflow at the default 1280x720 viewport:
 
 * the bar is the section pages' bar: the same height, the logo link, Monitor,
   API Settings and the account;
-* it holds the dataflow's menus and the five catalogs in one row, with every
+* it holds the dataflow's menus and the six catalogs in one row, with every
   control inside the bar, none overlapping the next, nothing overflowing its
   slot, and each catalog's label showing, even next to the widest account
-  name the bar shows;
+  name the bar shows. Provenance is a View menu row, which left the room for
+  the sixth;
 * each catalog button opens its own drawer over the dataflow;
 * Monitor and API Settings open as drawers over the dataflow, which stays
   where it was;
@@ -50,6 +51,7 @@ CATALOGS = (
     ("Agent Catalog", "data-curio-agent-catalog-drawer"),
     ("Discovery Catalog", "data-curio-discovery-catalog-drawer"),
     ("Model Catalog", "data-curio-model-catalog-drawer"),
+    ("Scenario Catalog", "data-curio-scenario-catalog-drawer"),
 )
 
 BAR = "header[data-curio-menu-bar]"
@@ -141,7 +143,12 @@ def test_the_canvas_wears_the_shared_bar_with_the_catalogs_in_it(
     # The dataflow's own controls, and every catalog with its label showing.
     for name in ("File menu", "View menu", "Share menu"):
         expect(bar.get_by_role("button", name=name, exact=True)).to_be_visible()
-    expect(bar.get_by_test_id("provenance-btn")).to_be_visible()
+    # Provenance is one click into the View menu, and gone from the bar.
+    expect(bar.get_by_role("button", name="Provenance", exact=True)).to_have_count(0)
+    bar.get_by_role("button", name="View menu", exact=True).click()
+    expect(bar.get_by_test_id("provenance-menu-item")).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(bar.get_by_test_id("provenance-menu-item")).to_have_count(0)
     expect(bar.locator("[data-curio-save-state]")).to_be_visible()
     for name, _ in CATALOGS:
         button = bar.get_by_role("button", name=name, exact=True)

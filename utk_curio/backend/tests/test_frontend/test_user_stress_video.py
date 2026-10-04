@@ -1347,7 +1347,8 @@ class TestSessionMapsAndInteraction:
 
         with s.step("Open the provenance window",
                     "How this dataflow got to be the way it is."):
-            s.tour.click(page.get_by_test_id("provenance-btn"))
+            s.tour.click(page.get_by_role("button", name="View menu", exact=True))
+            s.tour.click(page.get_by_test_id("provenance-menu-item"))
             s.tour.beat(2200)
             page.keyboard.press("Escape")
             s.tour.beat(700)

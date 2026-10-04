@@ -31,7 +31,7 @@ describe("the scenario commands", () => {
   test.each(["Save selection as scenario", "Duplicate selection", "Duplicate as scenario", "Show scenarios"])(
     "View offers %s, to an editor only",
     (item) => {
-      const view = menuSource("View", 'data-testid="provenance-btn"');
+      const view = menuSource("View", "</HeaderMenu>");
       const scenarios = view.slice(view.search(/\{!isSharedView && \(/));
       expect(view).toMatch(/\{!isSharedView && \(/);
       expect(scenarios).toContain(item);

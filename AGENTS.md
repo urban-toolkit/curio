@@ -40,8 +40,9 @@ Each backend feature's `service.py` is its public entry point for routes and oth
 | Datasets | `datasets/`: `domain/`, `application/`, `infrastructure/`, `repositories/`, `routes.py`, `schemas/`, `service.py`, `install/`, `models.py` | `services/datasetCatalog/`, `pages/dataCatalog/`, `components/datasets/`, `providers/datasetCatalog/` | `docs/DATA-CATALOG.md` |
 | Discovery | `discovery/`: `domain/`, `application/`, `infrastructure/`, `routes.py`, `media_routes.py`, `schemas/`, `service.py`, `providers/` | `services/discoveryCatalog/`, `pages/discovery/`, `components/discovery/`, `providers/discoveryCatalog/` | `docs/DISCOVERY-CATALOG.md` |
 | Models | `model_catalog/`: `domain/`, `infrastructure/`, `routes.py`, `service.py` | `services/modelCatalog/`, `pages/models/`, `components/models/`, `providers/modelCatalog/` | `docs/MODEL-CATALOG.md` |
+| Scenarios | `scenario_catalog/`: `domain/`, `infrastructure/`, `routes.py`, `service.py` (reads the projects' scenarios; no storage of its own) | `services/scenarioCatalog/`, `pages/scenarios/`, `components/scenarios/catalog/`, `providers/scenarioCatalog/` | `docs/SCENARIO-CATALOG.md` |
 
-- Backend tests per feature: `utk_curio/backend/tests/test_agents/`, `test_packages/`, `test_datasets/`, `test_discovery/`, `test_model_catalog/`.
+- Backend tests per feature: `utk_curio/backend/tests/test_agents/`, `test_packages/`, `test_datasets/`, `test_discovery/`, `test_model_catalog/`, `test_scenario_catalog/`.
 - Shared browse UI: `src/pages/catalog/` (`CatalogMasterPage.tsx`, `CatalogRail.tsx`) and `src/components/catalog/`.
 - Layering: `utk_curio/backend/tests/_support/layering.py` is the rule engine, applied by `test_agents/test_layering.py` and `test_packages/test_layering.py`. Frontend: `src/tests/_support/layerRules.ts`, applied by `src/tests/agents/servicesBarrel.test.ts` and `src/tests/packages/servicesBarrel.test.ts`.
 
@@ -73,7 +74,7 @@ Under `utk_curio/backend/app/`:
 
 Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 
-- Backend pytest: `utk_curio/backend/tests/`. `conftest.py` at its root and in `test_agents/`, `test_datasets/`, `test_discovery/`, `test_execution/`, `test_frontend/`, `test_model_catalog/`, `test_monitor/`, `test_packages/`, `test_projects/`, `test_users/`. Shared helpers in `_support/`.
+- Backend pytest: `utk_curio/backend/tests/`. `conftest.py` at its root and in `test_agents/`, `test_datasets/`, `test_discovery/`, `test_execution/`, `test_frontend/`, `test_model_catalog/`, `test_monitor/`, `test_packages/`, `test_projects/`, `test_scenario_catalog/`, `test_users/`. Shared helpers in `_support/`.
 - E2E (Playwright): `utk_curio/backend/tests/test_frontend/`. Helpers in the `utils/` package (below), scripted walkthroughs in the `walkthroughs/` package (below), runner assignment in `runner_split.py`, author guide in `README.md`.
 - E2E helpers, `test_frontend/utils/`: `from .utils import X` works for every public name; X is defined in one module, and a patch goes on the module whose code calls X (`screenshots.py` for what `save_workflow_test_screenshot` and `frame_nodes` call):
   - `environment.py`: `REPO_ROOT`, `state_root`, stack flags and public config, `require_*` skips, `debug_log`.

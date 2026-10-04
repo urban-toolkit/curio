@@ -39,6 +39,10 @@ export function AppSectionTabs() {
       <NavLink to="/catalog/models" className={tabClassName}>
         Model Catalog
       </NavLink>
+      {/* No `end`: /catalog/scenarios/:projectId/:scenarioId keeps this tab active. */}
+      <NavLink to="/catalog/scenarios" className={tabClassName}>
+        Scenario Catalog
+      </NavLink>
     </nav>
   );
 }
