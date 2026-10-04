@@ -18,12 +18,16 @@ test saves can. The assertions guard another way the edges can vanish:
 (``if (!src?.width || !src?.height || ...) return null``), so anything that
 disturbs node measurement silently removes every edge.
 
+Every count is taken inside the modal: the dataflow canvas behind it has edges
+of its own.
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_provenance_zoom_edges_e2e.py -v
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from .utils import (
@@ -34,6 +38,7 @@ from .utils import (
     stub_login_and_enter_workflow,
 )
 from .walkthroughs import load_example_spec
+from .walkthroughs.steps import PROVENANCE_EDGE_PATH, await_provenance_graph
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -42,7 +47,23 @@ if TYPE_CHECKING:
 #: harness makes, not from the spec's own shape.
 EXAMPLE = "01-vega-lite-chained-transforms.json"
 
-EDGE_PATH = ".react-flow__edges path.react-flow__edge-path"
+EDGE_PATH = PROVENANCE_EDGE_PATH
+
+#: How many times slower than the runner Chromium runs while the window opens.
+#: A wait that sleeps a fixed time passes on a fast runner and fails here; a
+#: wait for the drawn graph passes on both.
+CPU_THROTTLE = 4
+
+
+@contextmanager
+def _throttled_cpu(page, rate: int):
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("Emulation.setCPUThrottlingRate", {"rate": rate})
+    try:
+        yield
+    finally:
+        cdp.send("Emulation.setCPUThrottlingRate", {"rate": 1})
+        cdp.detach()
 
 
 def _open_provenance(page):
@@ -50,7 +71,7 @@ def _open_provenance(page):
     page.get_by_test_id("provenance-menu-item").click()
     dialog = page.get_by_role("dialog").filter(has_text="Provenance for")
     dialog.wait_for(state="visible", timeout=20000)
-    page.wait_for_selector(".react-flow__node", timeout=20000)
+    await_provenance_graph(page)
     return dialog
 
 
@@ -89,10 +110,10 @@ def test_provenance_edges_survive_zooming_in(
     require_owner_view(page)
     page.wait_for_selector(".react-flow__node", timeout=45000)
 
-    dialog = _open_provenance(page)
-    page.wait_for_timeout(1200)
-
-    before = _edge_geometry(page)
+    with _throttled_cpu(page, CPU_THROTTLE):
+        dialog = _open_provenance(page)
+        before = _edge_geometry(page)
+        cards = dialog.locator(".react-flow__node").count()
     if len(before) == 0:
         # Only one version means no edges at all, and the test would pass
         # vacuously at every zoom level.
@@ -101,6 +122,12 @@ def test_provenance_edges_survive_zooming_in(
             "cannot tell a zoom bug from an empty chain - the harness needs to "
             "save the dataflow more than once first"
         )
+    # Every version but the first has one parent edge, so a fully drawn graph
+    # shows one edge per card after the first. Zooming is judged against that.
+    assert len(before) == cards - 1, (
+        f"before zooming, the provenance graph shows {len(before)} edges for "
+        f"{cards} versions; a fully drawn graph has {cards - 1}"
+    )
 
     save_workflow_test_screenshot(
         page, "provenance-edges-before-zoom",
