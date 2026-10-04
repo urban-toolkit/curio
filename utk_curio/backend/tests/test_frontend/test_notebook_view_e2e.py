@@ -203,8 +203,9 @@ def _scroll_top(page) -> float:
 
 
 def _settled_viewport(page, *, timeout_ms: int = 15000) -> dict:
-    """The canvas viewport once the load's fit has stopped moving it: two equal
-    reads a few hundred milliseconds apart."""
+    """React Flow's viewport once nothing moves it: two equal reads a few
+    hundred milliseconds apart. React Flow 11 sets a view through a d3
+    transition, so a view set by a switch or a fit lands a frame or two later."""
     read = "() => window.__curio_reactFlow.getViewport()"
     last = page.evaluate(read)
     waited = 0
@@ -445,6 +446,9 @@ def test_back_on_the_canvas_every_node_is_where_it_was(
     require_user_auth()
     session = _enter(page, app_frontend, current_server, prefix="nbv_back")
     project_id = session["project"]["id"]
+    # The load's fit frames these nodes below zoom 1. It can wait for the node
+    # packages first, so the view to bring back is taken once it has moved.
+    page.wait_for_function("() => window.__curio_reactFlow.getViewport().zoom < 1", timeout=20000)
     viewport = _settled_viewport(page)
     before = _positions(page)
 
@@ -458,7 +462,7 @@ def test_back_on_the_canvas_every_node_is_where_it_was(
             f"{node_id} moved on the canvas: {before[node_id]} -> {after[node_id]}"
         )
         assert after[node_id]["canvas"] is None, f"{node_id} kept a notebook stamp"
-    restored = page.evaluate("() => window.__curio_reactFlow.getViewport()")
+    restored = _settled_viewport(page)
     for key in ("x", "y", "zoom"):
         assert abs(restored[key] - viewport[key]) < 0.5, f"the canvas viewport moved: {viewport} -> {restored}"
 
@@ -482,3 +486,9 @@ def test_back_on_the_canvas_every_node_is_where_it_was(
         " return ns.length > 0 && new Set(ns.map((n) => n.position.x)).size === 1; }",
         timeout=20000,
     )
+
+    # A call that frames the canvas while the notebook view is on, like the
+    # load's own fit, leaves the page where it is.
+    page.evaluate("() => window.__curio_fitViewWithMenuOffset({ padding: 0.2 })")
+    held = _settled_viewport(page)
+    assert (held["x"], held["y"], held["zoom"]) == (0, 0, 1), f"a fit moved the notebook view: {held}"

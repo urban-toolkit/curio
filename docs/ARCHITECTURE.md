@@ -225,9 +225,10 @@ moves nodes the way the dashboard page does:
   edge a lane in the bar (shorter spans inside) and draws the bracket each edge follows;
   `components/edges/useEdgePath.ts` picks that path over the canvas bezier.
 - **Scrolling.** `MainCanvas` wraps React Flow in a scroller in both views, so switching
-  never remounts it. In the notebook view React Flow is as tall as the column, pinned at
-  zoom 1 with a translate extent equal to its pane (`notebookFlowProps`), and leaves the
-  wheel to the page. `revealNodes` scrolls to a cell where the canvas would frame a node.
+  never remounts it. In the notebook view React Flow is as tall as the column, at zoom 1
+  with no pan or zoom gestures (`notebookFlowProps`), and leaves the wheel to the page. A
+  call that moves its view anyway, such as a load's fit, is put back to the origin.
+  `revealNodes` scrolls to a cell where the canvas would frame a node.
 - **Cells.** `NotebookViewContext` tells nodes and edges the view is on. `UniversalNode`
   sizes the cell and moves its handles; `NodeEditor` keeps a grammar node's output pane
   visible under its input tabs (`curio-notebook-split` in `Node.css`) without moving

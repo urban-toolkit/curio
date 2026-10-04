@@ -202,8 +202,8 @@ export function notebookArcPath(
 /**
  * The React Flow settings that turn the canvas into a page: zoom held at 1,
  * no gesture moves the view, and the wheel is left to the page so it scrolls.
- * With the translate extent equal to the pane, any fit or center call lands
- * back on the identity viewport.
+ * These hold gestures only; a call that sets the view directly (a fit) is put
+ * back by MainCanvas.
  */
 export function notebookFlowProps(paneWidth: number, paneHeight: number) {
   return {

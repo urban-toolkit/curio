@@ -196,17 +196,17 @@ export function useNotebookView({
     }, [notebookOn, nodes, layout, setNodes]);
 
     // After a switch, in either direction: the handles moved to the other
-    // edge, so React Flow measures them again; then the viewport is set for
-    // the view that is now live (its props are, by the time effects run).
+    // edge, so React Flow measures them again. Leaving the view brings back
+    // the canvas viewport it was entered from, once the canvas props are live
+    // (they are by the time effects run); MainCanvas holds the notebook's own
+    // view at the origin.
     const firstRunRef = useRef(true);
     useEffect(() => {
         const ids = reactFlow.getNodes().map((n) => n.id);
         const frame = window.requestAnimationFrame(() => {
             if (ids.length > 0) updateNodeInternals(ids);
         });
-        if (notebookOn) {
-            reactFlow.setViewport({ x: 0, y: 0, zoom: 1 });
-        } else if (!firstRunRef.current) {
+        if (!notebookOn && !firstRunRef.current) {
             const saved = savedViewportRef.current;
             const sameDataflow = reactFlow.getNodes().some((n) => entryIdsRef.current.has(n.id));
             savedViewportRef.current = null;
@@ -229,7 +229,8 @@ export function useNotebookView({
             spots.clear();
             const slots = layoutFor(current, reactFlow.getEdges(), paneRef.current).positions;
             // Placed in the same update as the switch, so no frame shows the
-            // canvas layout under the notebook's settings.
+            // canvas layout under the notebook's settings. React Flow's view
+            // follows a frame or two later (see MainCanvas).
             setNodes((prev) => placeNotebookNodes(prev, slots, spots));
             const selected = current.find((n) => n.selected);
             if (selected) {

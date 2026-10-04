@@ -12,6 +12,7 @@ import ReactFlow, {
     NodeChange,
     useReactFlow,
     useStore,
+    useStoreApi,
 } from "reactflow";
 import {
     CANVAS_TITLE_ATTR,
@@ -191,7 +192,7 @@ export function MainCanvas() {
     const {getZoom, getViewport, setViewport, setCenter, screenToFlowPosition, fitView} = useReactFlow();
     const viewportMotionHint = useViewportMotionHint();
 
-    // The notebook view pins React Flow to its own pane: zoom 1, no gestures,
+    // The notebook view holds React Flow on its own pane: zoom 1, no gestures,
     // and a translate extent equal to the pane, so the page scrolls instead.
     // Memoized on the pane's size, as `translateExtent` is above, because
     // React Flow re-applies the extent whenever its identity changes.
@@ -201,14 +202,24 @@ export function MainCanvas() {
         () => (notebookOn ? notebookFlowProps(flowWidth, flowHeight) : null),
         [notebookOn, flowWidth, flowHeight],
     );
-    // React Flow measures its pane after the column has made it taller, and d3
-    // constrains the view only when it moves: a view set while the extent was
-    // still the old pane's would stay shifted. So the view is set again each
-    // time the extent changes; React Flow applies the new extent first, in its
-    // own effect.
+    // In the notebook view the page scrolls and React Flow's own view stays at
+    // the origin. The settings above stop gestures but not a call that sets
+    // the view (a load's fit, a framing helper), so a view that moves is put
+    // back. React Flow 11 lands `setViewport` a frame or two later, through a
+    // d3 transition, so the check runs on every change of the view. It also
+    // runs again when `setViewport` changes, which it does once React Flow's
+    // zoom is ready: before that, it does nothing.
+    const flowStore = useStoreApi();
     useEffect(() => {
-        if (notebookProps) setViewport({ x: 0, y: 0, zoom: 1 });
-    }, [notebookProps, setViewport]);
+        if (!notebookOn) return;
+        const hold = ([x, y, zoom]: readonly number[]) => {
+            if (x !== 0 || y !== 0 || zoom !== 1) setViewport({ x: 0, y: 0, zoom: 1 });
+        };
+        hold(flowStore.getState().transform);
+        return flowStore.subscribe((state, prev) => {
+            if (state.transform !== prev.transform) hold(state.transform);
+        });
+    }, [notebookOn, flowStore, setViewport]);
 
     // The element the notebook scrolls in. Its size and the overlays fixed over
     // it (top bar, title chips, palette rail) decide where the column goes.
