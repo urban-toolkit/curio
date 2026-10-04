@@ -37,7 +37,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 import pytest
-from playwright.sync_api import expect
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect
 
 from .utils import (
     VIEWPORT_SETTLE_WAIT_MS,
@@ -523,6 +523,26 @@ _TILE_POSITIONS_JS = """() => Object.fromEntries(window.__curio_reactFlow.getNod
     .map((n) => [n.id, [n.position.x, n.position.y]]))"""
 
 
+def _tiles_settle(page, node_id: str, *, at=None, away_from=None) -> dict:
+    """The tiles' positions once *node_id* is *at* a place, or *away_from* one
+    (React Flow takes a move a render later). On a timeout the caller's
+    assertion says what the positions were."""
+    try:
+        page.wait_for_function(
+            """([id, at, away]) => {
+                const node = window.__curio_reactFlow.getNode(id);
+                if (!node) return false;
+                const same = (p) => p[0] === node.position.x && p[1] === node.position.y;
+                return at ? same(at) : !same(away);
+            }""",
+            arg=[node_id, at, away_from],
+            timeout=10000,
+        )
+    except PlaywrightTimeoutError:
+        pass
+    return page.evaluate(_TILE_POSITIONS_JS)
+
+
 def test_scenarios_get_a_column_each_under_a_header_in_their_color(
     app_frontend: "FrontendPage", current_server, page,
 ):
@@ -587,11 +607,11 @@ def test_scenarios_get_a_column_each_under_a_header_in_their_color(
     page.mouse.down()
     page.mouse.move(gx + 140, gy + 70, steps=10)
     page.mouse.up()
-    dragged = page.evaluate(_TILE_POSITIONS_JS)
+    dragged = _tiles_settle(page, SCN_BASE, away_from=opened[SCN_BASE])
     assert dragged[SCN_BASE] != opened[SCN_BASE], "the drag did not move the tile"
 
     page.get_by_test_id("arrange-by-scenario-btn").click()
-    arranged = page.evaluate(_TILE_POSITIONS_JS)
+    arranged = _tiles_settle(page, SCN_BASE, at=opened[SCN_BASE])
     assert arranged == opened, f"Arrange by scenario left {arranged!r}, not the columns {opened!r}"
 
     page.get_by_test_id("save-layout-btn").click()
