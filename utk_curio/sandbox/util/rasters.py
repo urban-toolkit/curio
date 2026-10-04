@@ -74,7 +74,9 @@ def raster_meta(dataset) -> dict:
     name = epsg_name(crs)
     t = dataset.transform
     nodata = dataset.nodata
-    if nodata is not None and isinstance(nodata, float) and math.isnan(nodata):
+    # NaN or an infinity is no number JSON can carry; autk-db reads every
+    # non-finite cell as nodata anyway.
+    if nodata is not None and not math.isfinite(float(nodata)):
         nodata = None
     return {
         "width": int(dataset.width),

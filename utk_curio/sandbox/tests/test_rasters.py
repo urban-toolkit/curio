@@ -49,6 +49,12 @@ def transform_of(grid):
     return Affine(grid["resX"], 0.0, grid["originX"], 0.0, grid["resY"], grid["originY"])
 
 
+def why(response):
+    """A response's body as text, for an assertion message: a served raster is
+    bytes, not UTF-8, so it is decoded leniently."""
+    return response.get_data().decode("utf-8", "replace")[:500]
+
+
 class StoreTestCase(unittest.TestCase):
     """A sandbox with its own launch directory, store and artifacts."""
 
@@ -211,7 +217,7 @@ class APythonNodeReceivesTheRasterTest(StoreTestCase):
         self.assertEqual(result["stderr"], "")
         self.assertEqual(result["output"]["dataType"], "raster")
         response = app.test_client().get("/raster", query_string={"fileName": result["output"]["path"]})
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.status_code, 200, why(response))
         meta = json.loads(response.headers["X-Curio-Raster"])
         self.assertEqual(meta["crs"], "EPSG:32616")
         self.assertEqual(meta["transform"], list(tuple(transform_of(case["grid"]))[:6]))
@@ -267,7 +273,7 @@ class TheRasterRouteTest(StoreTestCase):
         from rasterio.io import MemoryFile
 
         response = self.get(self.store_fixture())
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.status_code, 200, why(response))
         self.assertEqual(response.mimetype, "image/tiff")
         meta = json.loads(response.headers["X-Curio-Raster"])
         self.assertEqual(meta, {
@@ -340,7 +346,7 @@ class TheRasterRouteTest(StoreTestCase):
         self.assertEqual(dataset.driver, "VRT")
 
         response = self.get(save_to_duckdb(dataset, "mosaic-node"))
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.status_code, 200, why(response))
         with MemoryFile(response.get_data()) as memory, memory.open() as served:
             self.assertEqual(served.driver, "GTiff")
             self.assertEqual(served.crs.to_epsg(), 32616)
