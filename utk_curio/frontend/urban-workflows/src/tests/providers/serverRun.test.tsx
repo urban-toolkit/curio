@@ -144,22 +144,27 @@ describe("what an event does to its node", () => {
 });
 
 describe("which nodes the browser still runs", () => {
-  it("browser and waiting nodes, and the forwarded nodes above them", () => {
-    const steps = new Map([
-      ["code", { role: "run" as const, status: "ok" as const }],
-      ["pool", { role: "forward" as const, status: "forwarded" as const }],
-      ["map", { role: "browser" as const, status: "browser" as const }],
-      ["after", { role: "run" as const, status: "waiting" as const }],
-      ["chart", { role: "forward" as const, status: "forwarded" as const }],
-    ]);
-    const edges: any[] = [
-      { source: "code", target: "pool" }, { source: "pool", target: "map" },
-      { source: "map", target: "after" }, { source: "code", target: "chart" },
-    ];
-    expect(new Set(browserWalk(steps, edges))).toEqual(new Set(["pool", "map", "after"]));
+  const steps = new Map([
+    ["code", { role: "run" as const, status: "ok" as const }],
+    ["pool", { role: "forward" as const, status: "forwarded" as const }],
+    ["map", { role: "browser" as const, status: "browser" as const }],
+    ["after", { role: "run" as const, status: "waiting" as const }],
+    ["chart", { role: "forward" as const, status: "forwarded" as const }],
+  ]);
+  const edges: any[] = [
+    { source: "code", target: "pool" }, { source: "pool", target: "map" },
+    { source: "map", target: "after" }, { source: "code", target: "chart" },
+  ];
+
+  it("a play: browser and waiting nodes, and the forwarded nodes above them", () => {
+    expect(new Set(browserWalk(steps, edges, "after"))).toEqual(new Set(["pool", "map", "after"]));
     // A played chart the run only forwarded is drawn by the browser, as its play draws it.
     expect(browserWalk(new Map([["chart", { role: "forward" as const, status: "forwarded" as const }]]), [], "chart"))
       .toEqual(["chart"]);
+  });
+
+  it("a run of the whole dataflow: every forwarded chart, map and pool too, as Run All plays every node", () => {
+    expect(new Set(browserWalk(steps, edges))).toEqual(new Set(["pool", "map", "after", "chart"]));
   });
 });
 

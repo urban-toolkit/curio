@@ -85,6 +85,10 @@ export function replyFromRecord(step: RunStep): any {
  * Data Pool after a fetch of its own, so the walk includes it and runs a node
  * below it only once that data has arrived, as Run All does.
  *
+ * A run of the whole dataflow also runs every other node it forwarded (each
+ * chart, map and pool), as Run All plays every node: the run ends once they
+ * have drawn, and a map that cannot draw says why.
+ *
  * *played* is the node a play ran up to. When the run only forwarded it (a
  * chart, say), the browser still runs it, as its play button would.
  */
@@ -92,6 +96,7 @@ export function browserWalk(steps: Map<string, TrackedStep>, edges: Edge[], play
   const walk = new Set<string>();
   for (const [nodeId, step] of steps) {
     if (step.status === "browser" || step.status === "waiting") walk.add(nodeId);
+    else if (!played && step.status === "forwarded") walk.add(nodeId);
   }
   if (played && steps.get(played)?.status === "forwarded") walk.add(played);
   if (!walk.size) return [];
