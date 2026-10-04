@@ -95,3 +95,17 @@ def _acting_user():
         return getattr(g, "user", None) if has_request_context() else None
     except Exception:  # noqa: BLE001 — not under Flask
         return None
+
+
+def _acting_token():
+    """The request's sign-in token, or None, captured at a run's entry like
+    :func:`_acting_user`. The sandbox tags every artifact the run makes with
+    it, as it does on Play, so only that session can read them back."""
+    try:
+        from flask import has_request_context
+
+        from utk_curio.backend.app.users.dependencies import get_current_token
+
+        return get_current_token() if has_request_context() else None
+    except Exception:  # noqa: BLE001 - not under Flask
+        return None

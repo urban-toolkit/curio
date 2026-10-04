@@ -369,7 +369,7 @@ class TestItBecomesDatasets:
             sent.update(json.loads(kwargs["data"]))
             return Reply()
 
-        monkeypatch.setattr("utk_curio.backend.app.api.routes._sandbox_call", sandbox)
+        monkeypatch.setattr("utk_curio.backend.app.execution.node_exec.sandbox_request", sandbox)
         played = client.post("/processPythonCode", headers=auth, json={
             "code": f"    {loader}\n    return gdf\n", "nodeType": "PYTHON_COMPUTATION",
             "input": {}, "saveOutputDataset": False,
