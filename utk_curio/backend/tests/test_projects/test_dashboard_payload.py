@@ -32,8 +32,14 @@ COMPUTE_SPEC = json.dumps({"compute": [{"shader": "x"}]})
 DATA_SPEC = json.dumps({"data": [{"type": "osm"}]})
 
 
-def node(node_id, node_type, **data):
-    return {"id": node_id, "type": "__curioUniversalNode", "data": {"nodeType": node_type, **data}}
+def node(node_id, node_type, code=None, **fields):
+    """A node as a dataflow saved from the canvas holds it (``TrillGenerator``):
+    the template id as ``type``, the code as ``content``, and
+    ``dashboardPinned`` and the tile geometry on the node itself (#693)."""
+    saved = {"id": node_id, "type": node_type, **fields}
+    if code is not None:
+        saved["content"] = code
+    return saved
 
 
 def edge(source, target):
@@ -236,7 +242,7 @@ class TestBuildPayload:
         )
 
         assert payload.spec is spec
-        assert payload.to_dict()["spec"]["dataflow"]["nodes"][0]["data"]["dashboardX"] == 40
+        assert payload.to_dict()["spec"]["dataflow"]["nodes"][0]["dashboardX"] == 40
 
 
 class TestATileThatFetchesItsOwnData:
