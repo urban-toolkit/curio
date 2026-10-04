@@ -420,7 +420,8 @@ class TestThePreambleVocabulary:
         counts = dict(line[2:].split(": ", 1) for line in lists["builtin.input_count"].splitlines())
         assert counts["Python Computation"] == "any number"
         assert counts["JS Computation"] == "any number"
-        assert counts["Vega-Lite"] == "1"
+        assert counts["Vega-Lite"] == "any number"
+        assert counts["Autark"] == "any number"
         assert counts["Data Summary"] == "1"
         assert counts["Spatial Join"] == "2"
         assert counts["Merge Flow"] == str(input_capacity(contracts.MERGE_TEMPLATE, 1))

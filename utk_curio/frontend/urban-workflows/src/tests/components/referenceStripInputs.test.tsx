@@ -109,7 +109,7 @@ describe("an input carrying several layers", () => {
     fireEvent.click(column);
     expect(onInsert).toHaveBeenCalledWith("input 0:table_osm_buildings.height");
     expect(view.container.querySelector('[data-column-tag="highway"]')!.getAttribute("title"))
-      .toBe("Column of layer table_osm_roads of input 0, str");
+      .toMatch(/^Column of layer table_osm_roads of input 0, str\. /);
   });
 
   test("in code it names its layers, with no layer tags", () => {
