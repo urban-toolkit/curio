@@ -27,7 +27,8 @@ export interface FlowContextProps {
     /** True while the tree is rendering the dashboard page rather than the canvas. */
     dashboardOn: boolean;
     dashboardLocked: boolean;
-    /** Does a pinned tile depend on this node's output being saved? */
+    /** Does a pinned tile, or a scenario's context or outcomes (#662), need
+     * this node's output saved? */
     isDashboardSource: (nodeId: string) => boolean;
     setDashboardLocked: React.Dispatch<React.SetStateAction<boolean>>;
     applyNewOutput: (output: IOutput) => void;
@@ -114,7 +115,9 @@ export interface FlowContextProps {
     markNodeStale: (nodeId: string) => void;
     markNodeErrored: (nodeId: string) => void;
     playAllNodes: () => void;
-    playNodesUpTo: (targetNodeId: string) => void;
+    /** Run *target*, or every node of a list (a scenario's levers, #662), and
+     * the ancestors whose output cannot be reused. */
+    playNodesUpTo: (target: string | readonly string[]) => void;
     signalNodeExecDone: (nodeId: string, outcome?: NodeExecOutcome) => void;
     /** A Run All / run-up-to is in flight. State, not a ref, so buttons can show it (#271). */
     isRunActive: boolean;

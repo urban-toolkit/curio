@@ -220,7 +220,10 @@ export function usePlayAll({
         };
     }
 
-    function playNodesUpTo(targetNodeId: string) {
+    // *target* is one node, or a list that all run: a scenario's levers
+    // (#662), with only those of its context that cannot be reused.
+    function playNodesUpTo(target: string | readonly string[]) {
+        const targets = typeof target === "string" ? [target] : [...target];
         // Same guard playAllNodes has. Without it a second play click - which
         // the e2e helper issues on its own, retrying up to three times when a
         // node has not visibly acknowledged - overwrites playAllStateRef and
@@ -245,7 +248,7 @@ export function usePlayAll({
         }
 
         const ancestorIds = new Set<string>();
-        const queue = [targetNodeId];
+        const queue = [...targets];
         while (queue.length > 0) {
             const id = queue.shift()!;
             for (const pred of predecessors.get(id) ?? []) {
@@ -255,7 +258,7 @@ export function usePlayAll({
                 }
             }
         }
-        ancestorIds.add(targetNodeId);
+        targets.forEach(id => ancestorIds.add(id));
 
         // Which ancestors actually need to run again.
         //
@@ -307,7 +310,7 @@ export function usePlayAll({
                     e => e.target === nodeId && willRun.has(e.source)
                 );
                 if (
-                    nodeId === targetNodeId ||
+                    targets.includes(nodeId) ||
                     neverSucceeded ||
                     codeChanged ||
                     upstreamRerunning
