@@ -87,7 +87,7 @@ class TestARun:
         with pytest.raises(ValueError):
             runs.update_run(run.id, project_id="another")
         with pytest.raises(ValueError):
-            runs.update_step(run.id, "n", node_id="m")
+            runs.update_step(run.id, "n", role="browser")
 
     def test_a_step_keeps_the_end_of_its_output(self, db, user_and_token):
         from utk_curio.backend.app.runs import repositories as runs
@@ -148,7 +148,15 @@ class TestListing:
 
 class TestRetention:
     def _fill(self, db, project, user, count, **fields):
-        return [_run(project, user, steps=[{"node_id": "n"}], **fields) for _ in range(count)]
+        """*count* finished runs: an active run is never pruned."""
+        from utk_curio.backend.app.runs import repositories as runs
+
+        made = []
+        for _ in range(count):
+            run = _run(project, user, steps=[{"node_id": "n"}], **fields)
+            runs.update_run(run.id, status="succeeded")
+            made.append(run)
+        return made
 
     def test_the_51st_run_older_than_30_days_goes_with_its_steps(self, db, user_and_token):
         from utk_curio.backend.app.runs import repositories as runs
