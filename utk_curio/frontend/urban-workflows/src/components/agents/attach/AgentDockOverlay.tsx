@@ -21,7 +21,7 @@ export const AgentDockOverlay: React.FC = () => {
   const ctx = useAgentAttachmentsContext();
   // dev/129 (porting dev/111): `outputs` rides along so nodeContext's
   // current_output can name the artifact a node produced.
-  const { projectId, workflowGoal, setWorkflowGoal, workflowNameRef, outputs } =
+  const { projectId, workflowGoal, setWorkflowGoal, workflowNameRef, outputs, scenarios } =
     useFlowContext();
   const { getNodes, getEdges } = useReactFlow();
   // The apply→canvas bridge listener (dev/48 §3.3): applied node creations
@@ -190,6 +190,7 @@ export const AgentDockOverlay: React.FC = () => {
                     workflowName: workflowNameRef.current,
                     workflowGoal,
                     outputs,
+                    scenarios,
                   }),
                 )
               }
