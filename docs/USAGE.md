@@ -496,9 +496,9 @@ fixed context.
 To make one:
 
 1. Select its nodes: hold Shift and drag a box around them.
-2. Choose **Scenarios → Save selection as scenario**, or **File → Save dataflow as
+2. Choose **View → Save selection as scenario**, or **File → Save dataflow as
    scenario** for the whole dataflow.
-3. To build an alternative, choose **Scenarios → Duplicate as scenario**. The
+3. To build an alternative, choose **View → Duplicate as scenario**. The
    selected nodes are copied below themselves with the edges between them, every
    edge entering the selection feeds the copy too, and the selection and the copy
    become two scenarios. **Duplicate selection** copies the nodes without making
@@ -507,7 +507,7 @@ To make one:
 Then change the copy's levers: a widget value, a line of code. Each copy remembers
 the node it was copied from.
 
-**Scenarios → Show scenarios** opens the Scenarios panel. For each scenario it shows
+**View → Show scenarios** opens the Scenarios panel. For each scenario it shows
 its fixed context, levers and outcomes, and lets you:
 
 - rename it, recolor it and describe it;

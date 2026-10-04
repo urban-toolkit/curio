@@ -3,7 +3,7 @@
 A loader feeds a branch: a Python node that scales a column, and an Autark map
 of the result. This drives the whole path in a browser:
 
-1. Select the branch (Shift and drag) and choose Scenarios, Duplicate as
+1. Select the branch (Shift and drag) and choose View, Duplicate as
    scenario. The copy reads the same loader, so the loader is the two
    scenarios' fixed context, and each copy names its original.
 2. Collapse the copy: one box, its nodes hidden. Drag the box.
@@ -150,7 +150,8 @@ def _shift_drag_around(page, node_ids: list[str]) -> None:
 
 
 def _scenario_menu(page, item: str) -> None:
-    page.get_by_test_id("scenarios-menu-btn").click()
+    """The scenario commands sit in the View menu."""
+    page.get_by_role("button", name="View menu").click()
     page.get_by_role("button", name=item, exact=True).click()
 
 

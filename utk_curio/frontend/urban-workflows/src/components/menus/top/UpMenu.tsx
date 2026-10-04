@@ -128,7 +128,6 @@ export default function UpMenu() {
     }, []);
     const closeFile = useCallback(() => closeMenu("file"), [closeMenu]);
     const closeView = useCallback(() => closeMenu("view"), [closeMenu]);
-    const closeScenarios = useCallback(() => closeMenu("scenarios"), [closeMenu]);
     const closeShare = useCallback(() => closeMenu("share"), [closeMenu]);
 
     // #662: named selections of the dataflow, compared in the canvas.
@@ -465,6 +464,40 @@ export default function UpMenu() {
                     >
                         {expandStatus === "expanded" ? "Minimize Nodes" : "Expand Nodes"}
                     </HeaderMenuItem>
+                    {/* Scenarios (#662): save a selection as one, duplicate it
+                        as another, and the panel that lists them. Here rather
+                        than a menu of their own: the bar has no room for one
+                        beside every catalog's label. An edit, so not for a
+                        shared viewer. */}
+                    {!isSharedView && (
+                        <>
+                            <HeaderMenuDivider />
+                            <HeaderMenuItem
+                                icon={faObjectGroup}
+                                onClick={scenarioItem(scenarioActions.saveSelectionAsScenario)}
+                            >
+                                Save selection as scenario
+                            </HeaderMenuItem>
+                            <HeaderMenuItem
+                                icon={faClone}
+                                onClick={scenarioItem(() => scenarioActions.duplicate(false))}
+                            >
+                                Duplicate selection
+                            </HeaderMenuItem>
+                            <HeaderMenuItem
+                                icon={faCodeBranch}
+                                onClick={scenarioItem(() => scenarioActions.duplicate(true))}
+                            >
+                                Duplicate as scenario
+                            </HeaderMenuItem>
+                            <HeaderMenuItem
+                                icon={faListUl}
+                                onClick={scenarioItem(() => scenarioUi.setPanelOpen(!scenarioUi.panelOpen))}
+                            >
+                                {scenarioUi.panelOpen ? "Hide scenarios" : "Show scenarios"}
+                            </HeaderMenuItem>
+                        </>
+                    )}
                 </HeaderMenu>
 
                 {/* One window, so a button rather than a menu: its menu held
@@ -477,45 +510,6 @@ export default function UpMenu() {
                 >
                     Provenance
                 </button>
-
-                {/* Scenarios (#662): save a selection as one, duplicate it as
-                    another, and the panel that lists them. An edit, so not for
-                    a shared viewer. */}
-                {!isSharedView && (
-                    <HeaderMenu
-                        label="Scenarios"
-                        testId="scenarios-menu-btn"
-                        open={activeMenu === "scenarios"}
-                        onToggle={() => toggleMenu("scenarios")}
-                        onClose={closeScenarios}
-                    >
-                        <HeaderMenuItem
-                            icon={faObjectGroup}
-                            onClick={scenarioItem(scenarioActions.saveSelectionAsScenario)}
-                        >
-                            Save selection as scenario
-                        </HeaderMenuItem>
-                        <HeaderMenuItem
-                            icon={faClone}
-                            onClick={scenarioItem(() => scenarioActions.duplicate(false))}
-                        >
-                            Duplicate selection
-                        </HeaderMenuItem>
-                        <HeaderMenuItem
-                            icon={faCodeBranch}
-                            onClick={scenarioItem(() => scenarioActions.duplicate(true))}
-                        >
-                            Duplicate as scenario
-                        </HeaderMenuItem>
-                        <HeaderMenuDivider />
-                        <HeaderMenuItem
-                            icon={faListUl}
-                            onClick={scenarioItem(() => scenarioUi.setPanelOpen(!scenarioUi.panelOpen))}
-                        >
-                            {scenarioUi.panelOpen ? "Hide scenarios" : "Show scenarios"}
-                        </HeaderMenuItem>
-                    </HeaderMenu>
-                )}
 
                 {/* Share: the dataflow's dashboard, and a link to either. Shown
                     to a shared viewer too - passing a link on is not an edit. */}
