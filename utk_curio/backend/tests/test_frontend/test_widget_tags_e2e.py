@@ -367,9 +367,15 @@ def test_scout_controls_reach_python_and_survive_a_reopen(
     set_node_code(page, reader, READER_CODE)
 
     # 1. Each control is declared in the panel's form, with its options.
+    def form_closeup(form) -> None:
+        # Its buttons in view, and no field holding the focus ring.
+        _panel(page, source).evaluate(
+            "el => { document.activeElement && document.activeElement.blur(); el.scrollTop = el.scrollHeight; }"
+        )
+        save_node_closeup(page, CLOSEUP_STEM, source, test_name="add_widget_form")
+
     _add_widget(
-        page, source, name="rain", kind="slider", label="Rain", fill=_slider_options,
-        before_add=lambda form: save_node_closeup(page, CLOSEUP_STEM, source, test_name="add_widget_form"),
+        page, source, name="rain", kind="slider", label="Rain", fill=_slider_options, before_add=form_closeup,
     )
     _add_widget(page, source, name="classes", kind="checkbox-group", label="Classes", fill=_classes_options)
     _add_widget(page, source, name="season", kind="choice", label="Season", fill=_season_options)
@@ -381,6 +387,7 @@ def test_scout_controls_reach_python_and_survive_a_reopen(
     # each row's tag, control and buttons on one line, buttons in Curio's
     # style, and each reference drawn as one rounded box with its name.
     _open_tab(page, source, "widgets")
+    _panel(page, source).evaluate("el => { el.scrollTop = 0; }")
     save_node_closeup(page, CLOSEUP_STEM, source, test_name="widgets_tab")
     _open_tab(page, source, "code")
     node_locator(page, source).locator(".monaco-editor .curio-widget-ref").first.wait_for(
