@@ -190,8 +190,10 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      "Generate node content for a target.",
                      "new_content_prompt.md", ("node.content.generate",), ("authoring",),
                      reads=("dataflowContext", "nodeId", "subtask", "workflowGoal"),
+                     # models.search: a node that runs a model loads one
+                     # this account has, by the catalog's own loader line.
                      tools=("dataflow.read", "node.read", "node.content.write",
-                            "node.runtime.read"),
+                            "node.runtime.read", "models.search"),
                      variant_prompts=((AUTK_PROMPT_KEY, "new_content_autk_prompt.md"),),
                      worked_examples=True),
     BuiltinAgentSpec("agent.connection-builder", "Connection Builder", "node",
@@ -266,9 +268,11 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      # dev/114 (DEC-072): catalog.search — the ONLY way a
                      # data-loading node learns a real local path (rows carry
                      # the resolved path); the grounding gate refuses any
-                     # other file the code opens.
+                     # other file the code opens. models.search does the same
+                     # for a node that runs a model.
                      tools=("dataflow.read", "node.create", "node.template.create",
-                            "node.runtime.read", "node.content.write", "catalog.search"),
+                            "node.runtime.read", "node.content.write", "catalog.search",
+                            "models.search"),
                      delegates_to=("agent.node-content-builder",
                                    ("agent.dataflow-planner", ("execution.followup.plan",)),
                                    "agent.node-researcher",
@@ -335,9 +339,10 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      reads=("mission", "graphContext", "installedTemplates"),
                      # dev/95: node.create is the reviewed lane the delegated
                      # Researcher's note proposals mint on (grant-gated —
-                     # nothing lands without the user's Apply).
+                     # nothing lands without the user's Apply). examples.read:
+                     # any worked example, beside the ones a run is given.
                      tools=("dataflow.read", "dataflow.plan.write",
-                            "node.runtime.read", "node.create"),
+                            "node.runtime.read", "node.create", "examples.read"),
                      # dev/73: node-content-builder listed so node.content.generate
                      # is OFFERED in the delegation paragraph — the chat path for
                      # "change this node's content" (the runtime mints the review

@@ -8,6 +8,7 @@ import json
 import pytest
 
 from utk_curio.backend.app.agents.application import tools
+from utk_curio.backend.app.agents.application.turns import examples
 from utk_curio.backend.app.agents.domain.manifest import ToolRequirement
 from utk_curio.backend.app.agents.application.tools import ToolContract
 
@@ -30,6 +31,8 @@ class TestRegistry:
             "package.draft.apply",  # dev/89
             # The Discovery Catalog: roster, live search, reviewed download.
             "discovery.sources", "discovery.search", "discovery.acquire",
+            "models.search",  # the Model Catalog
+            "examples.read",  # the worked examples
         }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
@@ -51,6 +54,8 @@ class TestRegistry:
         assert tools.REGISTRY["packages.resolve"].effect == "read"
         assert tools.REGISTRY["package.install"].effect == "mutate"
         assert tools.REGISTRY["package.draft.apply"].effect == "mutate"  # dev/89
+        assert tools.REGISTRY["models.search"].effect == "read"
+        assert tools.REGISTRY["examples.read"].effect == "read"
 
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):
@@ -390,6 +395,190 @@ class TestCatalogSearchRows:
         assert rows[2]["path"] == "/store/tracts@1/tracts.geojson"
         assert 'gpd.read_file(dataset_path)' in rows[2]["loader"]
         assert "path" in tools.REGISTRY["catalog.search"].description
+
+
+class TestModelsSearch:
+    """models.search: the Model Catalog this account can run, the shipped
+    model and its own download, each with the loader line node code copies."""
+
+    DDRNET = "model.curio.ddrnet23-slim"
+    ROW_KEYS = {"id", "name", "task", "runtime", "origin", "description", "labels", "loader"}
+
+    @pytest.fixture()
+    def catalog(self, app, user_and_token, tmp_path, monkeypatch):
+        """The repo's shipped models plus one download in the user's store."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.model_catalog.infrastructure import storage
+        from utk_curio.backend.app.model_catalog.service import ModelCatalogService
+
+        monkeypatch.setenv(storage.ENV_ROOT, str(Path(__file__).resolve().parents[4] / "models"))
+        user, _ = user_and_token
+        incoming = tmp_path / "incoming"
+        (incoming / "files").mkdir(parents=True)
+        (incoming / "files" / "m.onnx").write_bytes(b"onnx")
+        download = ModelCatalogService(user).install_downloaded(incoming, {
+            "id": "model.example.tiny", "name": "Tiny facades", "version": "1.0.0",
+            "compatibility": {"major": 1}, "license": "MIT", "runtime": "onnx",
+            "task": "semantic-segmentation", "entry": "files/m.onnx",
+            "labels": [f"class {i}" for i in range(60)],
+            "input": {"width": 64, "height": 32, "dtype": "float32", "scale": 0.00392},
+        })
+        return user, download["id"]
+
+    def _rows(self, app, user, params):
+        from flask import g
+
+        with app.test_request_context():
+            g.user = user
+            return tools._models_search_rows(params)
+
+    def test_rows_carry_both_origins_and_the_loader_line(self, app, catalog):
+        from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
+
+        user, download_id = catalog
+        by_id = {row["id"]: row for row in self._rows(app, user, {})}
+        assert {self.DDRNET, download_id} <= set(by_id)
+        for row in by_id.values():
+            assert set(row) == self.ROW_KEYS
+            assert row["loader"] == f'model = curio_load_model("{row["id"]}")'
+            # The line resolves through the runtime's own reading of node code.
+            assert model_ids_in_code(row["loader"]) == [row["id"]]
+        shipped, mine = by_id[self.DDRNET], by_id[download_id]
+        assert (shipped["origin"], shipped["runtime"], shipped["task"]) == ("shipped", "onnx", "semantic-segmentation")
+        assert "vegetation" in shipped["labels"] and len(shipped["labels"]) == 19
+        assert (mine["origin"], mine["name"]) == ("downloaded", "Tiny facades")
+        # Labels are bounded; a checkpoint may name hundreds of classes.
+        assert mine["labels"] == [f"class {i}" for i in range(tools._MODEL_LABELS_MAX)]
+
+    def test_q_filters_and_limit_bounds(self, app, catalog):
+        user, download_id = catalog
+        assert [r["id"] for r in self._rows(app, user, {"q": "  tiny  "})] == [download_id]
+        assert self._rows(app, user, {"q": "no-such-model-zzz"}) == []
+        assert len(self._rows(app, user, {"limit": 1})) == 1
+        assert len(self._rows(app, user, {"limit": "1"})) == 1
+        # A native call may carry every number as a float.
+        assert len(self._rows(app, user, {"limit": 1.0})) == 1
+        everything = self._rows(app, user, {})
+        # A limit that is not a whole number, or is out of range, never hides a row.
+        assert self._rows(app, user, {"limit": "many"}) == everything
+        assert self._rows(app, user, {"limit": 1.5}) == everything
+        assert self._rows(app, user, {"limit": 10_000}) == everything
+        assert len(self._rows(app, user, {"limit": 0})) == 1
+
+    def test_the_executor_returns_the_rows_and_needs_no_project_spec(self, app, catalog):
+        from flask import g
+
+        user, download_id = catalog
+        with app.test_request_context():
+            g.user = user
+            status, text = tools.execute_read_tool(
+                "models.search", user_key="42", project_id="no-such-project", target=None, params={"q": "tiny"},
+            )
+        assert status == "ok"
+        assert [row["id"] for row in json.loads(text)["models"]] == [download_id]
+
+    def test_the_contract_states_its_params_and_rows(self):
+        contract = tools.REGISTRY["models.search"]
+        assert contract.parameters["properties"]["q"]["type"] == "string"
+        assert contract.parameters["properties"]["limit"]["type"] == "integer"
+        assert "required" not in contract.parameters
+        for word in ("id", "name", "task", "origin", "labels", "loader", 'curio_load_model("<id>")'):
+            assert word in contract.description, word
+
+
+class TestExamplesRead:
+    """examples.read: the worked examples' list, one of them by key, and the
+    example an evaluation is scored against left out by the per-run block's rule."""
+
+    UKEY = "42"
+    PID = "p-examples"
+    NINE = "09-heterogeneous-data-linked-views"
+
+    def _read(self, params=None):
+        return tools.execute_read_tool(
+            "examples.read", user_key=self.UKEY, project_id=self.PID, target=None, params=params or {},
+        )
+
+    def _used(self) -> dict:
+        return {example.key: example for example in examples.used_examples()}
+
+    def _mark(self, fixture_id):
+        from utk_curio.backend.app.agents.evaluation import authorization
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        spec = {"dataflow": {"nodes": [], "edges": []}}
+        marker = authorization.new_marker("run-1", fixture_id)
+        projects_storage.write_spec(self.UKEY, self.PID, authorization.mark_spec(spec, marker))
+
+    def test_no_key_lists_every_used_example(self, tmp_curio):
+        # No saved spec: nothing is left out, and that is no error.
+        status, text = self._read()
+        assert status == "ok"
+        rows = json.loads(text)["examples"]
+        used = self._used()
+        assert rows and [row["key"] for row in rows] == list(used)
+        for row in rows:
+            entry = used[row["key"]].entry
+            assert row == {"key": row["key"], "title": entry.title, "line": entry.text}
+        # A "Not used" dataflow is no worked example.
+        assert "dataflows/Widget" not in used
+        assert self._read({"key": "  "}) == (status, text)
+
+    def test_a_key_returns_that_examples_line_and_trill(self, tmp_curio):
+        nine = self._used()[self.NINE]
+        status, text = self._read({"key": self.NINE})
+        assert status == "ok"
+        # The view the per-run block shows: the line, then the Trill.
+        assert text == examples.shown(nine)
+        assert text.startswith(f"{nine.entry.line}\n```json\n")
+        trill = json.loads(text.split("```json\n", 1)[1].rsplit("\n```", 1)[0])["dataflow"]
+        assert len(trill["nodes"]) == len(nine.spec["dataflow"]["nodes"])
+        assert len(trill["edges"]) == len(nine.spec["dataflow"]["edges"])
+        # Its file name names it too, as in the block's exclusion.
+        assert self._read({"key": f"{self.NINE}.json"}) == (status, text)
+        assert self._read({"key": "dataflows/Regression"})[0] == "ok"
+
+    def test_an_unknown_key_says_how_to_list_the_keys(self, tmp_curio):
+        for key in ("no-such-example", "dataflows/Widget"):
+            status, text = self._read({"key": key})
+            assert status == "error", key
+            assert repr(key) in text and "call examples.read with no key to list the keys" in text
+        status, text = self._read({"key": 9})
+        assert status == "error" and "call examples.read with no key to list the keys" in text
+
+    def test_an_evaluation_never_reads_the_example_it_is_scored_against(self, tmp_curio):
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        self._mark(self.NINE)
+        # The rule the per-run block follows: the scored example, and every
+        # example that shares a piece of its answer.
+        excluded = examples.excluded_by(projects_storage.read_spec(self.UKEY, self.PID))
+        assert self.NINE in excluded
+        status, text = self._read()
+        keys = [row["key"] for row in json.loads(text)["examples"]]
+        assert status == "ok" and self.NINE not in keys
+        assert keys == [key for key in self._used() if key not in excluded]
+        assert keys, "every example is excluded; the readable case below would be vacuous"
+        entry = self._used()[self.NINE].entry
+        for key in (self.NINE, f"{self.NINE}.json", f"docs/examples/{self.NINE}.json"):
+            status, text = self._read({"key": key})
+            assert status == "error", key
+            assert "call examples.read with no key" in text
+            # The refusal never describes the answer.
+            assert entry.title not in text and entry.text not in text
+        # Every excluded example is refused, and every other one stays readable.
+        for key in excluded - {self.NINE}:
+            assert self._read({"key": key})[0] == "error", key
+        assert self._read({"key": keys[0]})[0] == "ok"
+
+    def test_the_contract_states_its_param_and_results(self):
+        contract = tools.REGISTRY["examples.read"]
+        assert set(contract.parameters["properties"]) == {"key"}
+        assert contract.parameters["properties"]["key"]["type"] == "string"
+        assert "required" not in contract.parameters
+        for word in ("no key", "key, title and one line", "Trill", "unknown key"):
+            assert word in contract.description, word
 
 
 class TestWebTools:
