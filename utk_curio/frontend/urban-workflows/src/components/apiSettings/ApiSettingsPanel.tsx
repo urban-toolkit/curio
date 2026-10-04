@@ -5,7 +5,7 @@ import { useUserContext } from "../../providers/UserProvider";
 import { AgentConfigTab } from "./AgentConfigTab";
 import { ApiKeysTab } from "./ApiKeysTab";
 import { useLlmListing } from "./useLlmListing";
-import { useHostedGuest } from "./useHostedGuest";
+import { isHostedGuest } from "./useHostedGuest";
 import type { ApiSettingsFocus, ApiSettingsTab } from "./apiSettingsRequest";
 
 const TABS: { key: ApiSettingsTab; label: string }[] = [
@@ -26,8 +26,8 @@ export const ApiSettingsPanel: React.FC<{
   focus?: ApiSettingsFocus | null;
 }> = ({ tab, onTabChange, focus = null }) => {
   const llm = useLlmListing();
-  const { isSharedGuest } = useUserContext();
-  const hostedGuest = useHostedGuest();
+  const { user, isSharedGuest, enableUserAuth } = useUserContext();
+  const hostedGuest = isHostedGuest(user, enableUserAuth);
   const shared = !hostedGuest && (isSharedGuest || Boolean(llm.listing?.shared));
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 

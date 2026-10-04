@@ -1,4 +1,5 @@
-import { useUserContext } from "../../providers/UserProvider";
+import { useUserContext } from "../../providers/userContext";
+import type { UserData } from "../../utils/authApi";
 
 /**
  * Is this a guest under --deploy? Such a guest shares one account with every
@@ -6,7 +7,12 @@ import { useUserContext } from "../../providers/UserProvider";
  * and no button elsewhere opens one for it. Without --deploy the shared guest
  * is the one local user.
  */
+export function isHostedGuest(user: UserData | null, enableUserAuth: boolean): boolean {
+  return Boolean(user?.is_guest) && enableUserAuth;
+}
+
+/** `isHostedGuest` for the signed-in user. */
 export function useHostedGuest(): boolean {
   const { user, enableUserAuth } = useUserContext();
-  return Boolean(user?.is_guest) && enableUserAuth;
+  return isHostedGuest(user, enableUserAuth);
 }
