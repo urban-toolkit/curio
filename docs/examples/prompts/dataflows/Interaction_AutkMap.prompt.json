@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/Interaction_AutkMap.json",
-    "sha256": "c6acad0728c27ec4329633e2883ab578b21cdf21eeb79d57acc7f6ce731b51cd",
+    "sha256": "7ad86813c9b517fcfc54da24de345c59f7798023d7f6bf2a213bbd929ac75175",
     "walkthrough": null
   },
   "prompt": "Build three synthetic city-block squares around the Chicago Loop with a numeric value, route them through a fan-out, and render them on an Autark map coloured by that value.",

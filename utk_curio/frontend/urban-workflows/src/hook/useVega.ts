@@ -7,10 +7,12 @@ import { useFlowContext } from "../providers/FlowProvider";
 import { useToastContext } from "../providers/ToastProvider";
 import { applyContainerSizing, createFlipGuard, refitToContainer } from "../utils/vegaSpecSizing";
 import type { RenderCounts } from "../utils/renderOutcome";
-import { prepareVegaInput } from "../utils/vegaInput";
+import { injectInputs, prepareVegaInputs, usesNamedDatasets, type VegaDataset } from "../utils/vegaInput";
+import { DEFAULT_INPUT_DATASET } from "../utils/vegaGeoSpec";
+import { inputTableName } from "../generated/autkGrammar";
 import { usableCounts } from "../utils/vegaUsableRows";
 import { matchSelections, objectRows } from "../utils/selectionMatch";
-import { isSelectionEcho } from "../utils/selectionEcho";
+import { echoedCircle } from "../utils/selectionEcho";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
 import { clearEmptyState, writeEmptyState } from "../utils/writeEmptyState";
@@ -108,13 +110,24 @@ export const useVega = ({
   // The spec most recently compiled. `processData` needs it to prepare rows the
   // same way `compileGrammar` did -- hot reload never goes through the latter.
   const lastSpecRef = React.useRef<any>(null);
+  // The same spec as it was handed in, before its inputs went into it: a view
+  // built again for new inputs starts from this, not from the last datasets.
+  const authoredSpecRef = React.useRef<string>("null");
 
   // The same spec after container sizing, which says whether the view's width
   // and height follow its mount (#496).
   const sizedSpecRef = React.useRef<Record<string, unknown> | null>(null);
 
-  // The rows the view holds, which a direct selection is matched against.
+  // The rows the view holds, which a direct selection is matched against: the
+  // first input's.
   const lastValuesRef = React.useRef<any[]>([]);
+  // Every input's rows the view holds, and the input they came from, which
+  // tells a selection coming back on one input from new data (#662).
+  const heldDatasetsRef = React.useRef<VegaDataset[]>([]);
+  const heldInputRef = React.useRef<any>(undefined);
+  // Whether the view reads its inputs as named datasets (#662), which a new
+  // input reaches by building the view again rather than by a hot swap.
+  const datasetViewRef = React.useRef(false);
   const incomingSelectionRef = React.useRef<any>(data.interactions);
   incomingSelectionRef.current = data.interactions;
 
@@ -123,9 +136,9 @@ export const useVega = ({
    * keep their `_vgsid_`, so a selection made in this chart still finds its
    * marks afterwards.
    */
-  const setInteracted = (view: any, flagOf: (t: any) => string) =>
+  const setInteracted = (view: any, flagOf: (t: any) => string, dataset: string = DEFAULT_INPUT_DATASET) =>
     view
-      .change("data", vega.changeset().modify(() => true, "interacted", flagOf))
+      .change(dataset, vega.changeset().modify(() => true, "interacted", flagOf))
       .runAsync();
 
   /**
@@ -161,16 +174,18 @@ export const useVega = ({
 
   // Build a tupleid → original-index map by traversing the scene graph.
   // vega-lite derives intermediate datasets (e.g. for sorting) whose items have
-  // different tuple IDs from the source "data" items, so we must read IDs from
+  // different tuple IDs from the source "input_0" items, so we must read IDs from
   // the actual rendered items. Each item's datum carries __row_index__ (injected
   // before handing values to Vega) which propagates to derived items via rederive.
+  // With several inputs only the first input's rows count: a selection reaches
+  // a Data Pool as rows of the first input, and the others' indexes restart.
   const buildVgsidMap = (view: any): Map<number, number> => {
     const map = new Map<number, number>();
     const traverse = (node: any) => {
       if (!node) return;
       if (node.items) {
         for (const item of node.items) {
-          if (item.datum?.__row_index__ !== undefined) {
+          if (item.datum?.__row_index__ !== undefined && (item.datum.__input__ ?? 0) === 0) {
             const id = item.datum['_vgsid_'];
             if (id !== undefined) map.set(id, item.datum.__row_index__);
           }
@@ -224,26 +239,37 @@ export const useVega = ({
     // any other way here would insert bare, un-rewound geometry into an
     // already-compiled view and break the map on the *second* upstream run
     // only -- which is a miserable thing to debug.
-    const prepared = await prepareVegaInput(data.input, lastSpecRef.current);
-    setEmptyState(prepared);
-    const values = prepared.values;
+    const prepared = await prepareVegaInputs(data.input, lastSpecRef.current);
     const prevView = currentViewRef.current;
+    const previousInput = heldInputRef.current;
+    heldInputRef.current = data.input;
 
     // A Data Pool sending a selection back: the same rows with new
     // `interacted` flags. Fresh rows would get fresh `_vgsid_` ids, and a
     // selection made in this chart (a hovered bar) would then match none of
     // them (#535), so only the flags change. The rows stay the view's own.
-    if (
-      prevView
-      && isSelectionEcho(data.input)
-      && Array.isArray(values)
-      && values.length === lastValuesRef.current.length
-    ) {
-      setInteracted(prevView, (t: any) => values[t.__row_index__]?.interacted ?? t.interacted)
+    // With several inputs only the input it came back on changes its flags.
+    const echoed = echoedCircle(data.input, previousInput);
+    const dataset = echoed === null ? null : inputTableName(echoed);
+    const echoRows = prepared.datasets.find((d) => d.name === dataset)?.values;
+    const heldRows = heldDatasetsRef.current.find((d) => d.name === dataset)?.values;
+    if (prevView && dataset && Array.isArray(echoRows) && Array.isArray(heldRows) && echoRows.length === heldRows.length) {
+      setEmptyState(prepared);
+      setInteracted(prevView, (t: any) => echoRows[t.__row_index__]?.interacted ?? t.interacted, dataset)
         .then(() => applyDirectSelection(prevView));
       return;
     }
+
+    // Several inputs, or a spec that reads its inputs by name: a hot swap
+    // reaches one dataset only, so the view is built again from its spec.
+    if (datasetViewRef.current || usesNamedDatasets(lastSpecRef.current, prepared.datasets.length)) {
+      await compileGrammar(JSON.parse(authoredSpecRef.current));
+      return;
+    }
+    setEmptyState(prepared);
+    const values = prepared.datasets[0]?.values ?? [];
     lastValuesRef.current = values;
+    heldDatasetsRef.current = prepared.datasets;
 
     let changeset = vega
       .changeset()
@@ -256,7 +282,7 @@ export const useVega = ({
     const { usableRows, usableFields } = usableCounts(values, lastSpecRef.current);
 
     if (prevView) {
-      prevView.change("data", changeset).runAsync().then(() => {
+      prevView.change(DEFAULT_INPUT_DATASET, changeset).runAsync().then(() => {
         const map = buildVgsidMap(prevView);
         if (map.size > 0) vgsidToIndexRef.current = map;
         applyDirectSelection(prevView);
@@ -366,10 +392,13 @@ export const useVega = ({
     // inject `encoding.shape` and `projection` into `specObj`, and coerces the
     // row values those encodings will read.
     lastSpecRef.current = specObj;
-    const prepared = await prepareVegaInput(data.input, specObj);
+    authoredSpecRef.current = JSON.stringify(specObj);
+    const prepared = await prepareVegaInputs(data.input, specObj);
     setEmptyState(prepared);
-    const values = prepared.values;
+    const values = prepared.datasets[0]?.values ?? [];
     lastValuesRef.current = values;
+    heldDatasetsRef.current = prepared.datasets;
+    heldInputRef.current = data.input;
     const rowsIn = Array.isArray(values) ? values.length : undefined;
     // dev/137: judged over the fields the input carries; see vegaUsableRows.
     const { usableRows, usableFields } = usableCounts(values, specObj);
@@ -391,7 +420,9 @@ export const useVega = ({
       };
     }
 
-    specObj["data"] = { values: values, name: "data" };
+    // Each input as the dataset its name says (`input_0`, `input_1`, ...): one
+    // input as the spec's data, several as named datasets (utils/vegaInput).
+    datasetViewRef.current = injectInputs(specObj, prepared.datasets);
     // Multi-view specs keep their authored size (vega-lite discards a
     // "container" injection there anyway) and the output pane scrolls; unit
     // and layer specs fill the node, unless the author sized them (#202).

@@ -1,13 +1,55 @@
-/* A widget reference drawn as a chip inside Monaco (#662). Global on purpose:
-   Monaco applies decoration class names to its own spans. */
-.curio-widget-ref {
-  background: rgba(26, 115, 232, 0.12);
-  border: 1px solid rgba(26, 115, 232, 0.45);
-  border-radius: 3px;
+/* A widget reference drawn as a chip inside Monaco (#662), the way its tag is
+   drawn above the editor: a rounded box with the widget's name. Global on
+   purpose: Monaco applies decoration class names to its own spans. Scoped
+   under .view-line so these win over Monaco's token colours. The decorations
+   are in referenceChips.ts. */
+
+/* The brackets around the name: kept in the code, not drawn. */
+.monaco-editor .view-line .curio-widget-ref-hidden {
+  font-size: 0;
 }
 
-.curio-widget-ref-problem {
-  background: rgba(192, 57, 43, 0.12);
-  border: 1px solid rgba(192, 57, 43, 0.55);
-  border-radius: 3px;
+.monaco-editor .view-line .curio-widget-ref,
+.monaco-editor .view-line .curio-widget-ref-problem {
+  border-style: solid none;
+  border-width: 1px 0;
+  font-weight: 500;
+}
+
+.monaco-editor .view-line .curio-widget-ref {
+  background: var(--curio-accent-sky-bg);
+  border-color: #b6cbf2;
+  color: var(--curio-accent-sky-fg);
+}
+
+.monaco-editor .view-line .curio-widget-ref-problem {
+  background: var(--curio-danger-bg);
+  border-color: var(--curio-danger-border);
+  color: var(--curio-danger-text);
+}
+
+/* The box's ends, on its first and last character, so the box is one box
+   however many spans Monaco splits its text into. */
+.monaco-editor .view-line .curio-widget-ref-first {
+  border-left-style: solid;
+  border-left-width: 1px;
+  border-top-left-radius: var(--curio-radius-sm);
+  border-bottom-left-radius: var(--curio-radius-sm);
+  padding-left: 4px;
+}
+
+.monaco-editor .view-line .curio-widget-ref-last {
+  border-right-style: solid;
+  border-right-width: 1px;
+  border-top-right-radius: var(--curio-radius-sm);
+  border-bottom-right-radius: var(--curio-radius-sm);
+  padding-right: 4px;
+}
+
+/* An input or column reference: the same box, green, so it reads apart from a
+   widget's. A problem stays red whatever its kind. */
+.monaco-editor .view-line .curio-widget-ref.curio-input-ref {
+  background: var(--curio-accent-mint-bg);
+  border-color: #a8d5b1;
+  color: var(--curio-accent-mint-fg);
 }

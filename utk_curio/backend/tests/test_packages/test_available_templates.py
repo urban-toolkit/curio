@@ -163,9 +163,10 @@ class TestParseCardinality:
 
 
 class TestInputArity:
-    """dev/67-3 (DEC-051) — maxIncomingEdges is the RENDERED truth: one edge
-    per rendered handle (handles = ports); merge-flow's slots are the sole
-    multi-edge surface."""
+    """dev/67-3 (DEC-051) — maxIncomingEdges is the RENDERED truth: a single
+    input port takes its declared maximum (the canvas grows a circle per edge,
+    and None is any number), named ports take one edge each, and merge-flow
+    keeps its five slots."""
 
     def _templates(self, user_and_token, alice_project, tmp_curio):
         from utk_curio.backend.app.projects import services as projects_services
@@ -176,6 +177,10 @@ class TestInputArity:
             _template("data-loading", "Load", input_ports=[]),
             _template("computation-analysis", "Compute",
                       input_ports=[{"types": ["DATAFRAME"], "cardinality": "[1,n]"}]),
+            _template("data-transformation", "Transform",
+                      input_ports=[{"types": ["DATAFRAME"], "cardinality": "[1,2]"}]),
+            _template("vis-vega", "Vega",
+                      input_ports=[{"types": ["DATAFRAME"], "cardinality": "1"}]),
             _template("spatial-join", "Spatial Join",
                       input_ports=[{"types": ["GEODATAFRAME"], "cardinality": "1"},
                                    {"types": ["GEODATAFRAME"], "cardinality": "1"}]),
@@ -190,9 +195,10 @@ class TestInputArity:
     def test_rendered_capacity_rules(self, user_and_token, alice_project, tmp_curio):
         by_id = self._templates(user_and_token, alice_project, tmp_curio)
         assert by_id["curio.builtin/data-loading"]["maxIncomingEdges"] == 0
-        # Declared [1,n] is NOT enforceable capacity — the input plumbing is
-        # scalar per handle (a second edge silently overwrites data.input).
-        assert by_id["curio.builtin/computation-analysis"]["maxIncomingEdges"] == 1
+        # A single port takes its declared maximum: each edge gets a circle.
+        assert by_id["curio.builtin/computation-analysis"]["maxIncomingEdges"] is None
+        assert by_id["curio.builtin/data-transformation"]["maxIncomingEdges"] == 2
+        assert by_id["curio.builtin/vis-vega"]["maxIncomingEdges"] == 1
         assert by_id["curio.builtin/spatial-join"]["maxIncomingEdges"] == 2
         # Merge's rendered slot machinery wins over its declared [1,n].
         assert by_id["curio.builtin/merge-flow"]["maxIncomingEdges"] == 5

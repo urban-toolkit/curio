@@ -37,9 +37,9 @@ PID = "p-reply-schema"
 #: A document every part of which the vendored schema declares, drawn from the
 #: node's own input (no source a grounding gate would probe).
 DOCUMENT = {
-    "compute": [{"dataRef": "upstream", "wglsFunction": "fn main() {}",
+    "compute": [{"dataRef": "input_0", "wglsFunction": "fn main() {}",
                  "attributes": {"height": "properties.height"}, "outputColumnName": "shade"}],
-    "map": {"layerRefs": [{"dataRef": "upstream"}]},
+    "map": {"layerRefs": [{"dataRef": "input_0"}]},
 }
 
 

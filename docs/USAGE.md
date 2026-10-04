@@ -412,13 +412,54 @@ for, or a marker in the older `[!! name$TYPE$default !!]` form, stops the run
 with a message naming it; the **Widgets** tab lists them too.
 
 Widgets are not connections: a value you set is not data from another node. Data
-from the node's input reaches Python as `arg`.
+from the node's inputs reaches its code as `arg`, or through input chips (see
+[Several inputs](#several-inputs)).
+
+## Several inputs
+
+Python Computation, Data Transformation, JS Computation, Data Pool, Vega-Lite and
+Autark nodes take several input edges, and so does a package node whose input port
+allows more than one. Connect an edge to the node's input circle and a new empty
+circle appears below it; each new edge takes the next circle. Circles are numbered
+from 0, top to bottom. A Data Pool shows each input as a tab.
+
+In code and in a Vega-Lite or Autark spec, each input is a chip:
+
+1. The strip above the code shows a tag for each input: **input 0**,
+   **input 1**, and so on. Hover one to see which node feeds it.
+2. Drag a tag into the code, or click it to insert it at the cursor. It appears
+   as a green chip, written `[!! input 1 !!]`.
+3. Click the arrow beside an input's tag to list its columns, once the node that
+   feeds it has run. Drag a column's tag where a column name goes; it is written
+   `[!! input 1.population !!]`.
+4. In an Autark spec, an input that carries several layers (an upstream Autark
+   node's tables) lists a tag for each layer, `[!! input 1:roads !!]`, followed
+   by that layer's columns, `[!! input 1:roads.lanes !!]`.
+
+When the node runs:
+
+- In Python and JavaScript, an input chip becomes the input: `arg` when the node
+  has one input, and `arg[1]` when it has several, counted in circle order.
+- In a Vega-Lite or Autark spec, an input chip becomes the name the input is read
+  by, `"input_1"`: a Vega-Lite dataset or an Autark table (see
+  [Vega-Lite node](#vega-lite-node) and [Autark node](#autark-node)). A layer
+  chip becomes the layer's name.
+- A column chip becomes the column's name: `df[[!! input 0.population !!]]` runs
+  as `df["population"]`, `"field": [!! input 0.population !!]` as
+  `"field": "population"`, and inside a quoted text it is the plain name.
+
+A node with several inputs runs once every one of them has a value. Deleting an
+edge closes the gap: the circles below it move up one, and their chips in the
+code are renumbered. A chip for the deleted input becomes `[!! input ? !!]` and
+stops the run until you replace it. A chip for a circle with no edge, or for a
+column its input does not have, is drawn in red and stops the run with a message
+naming it.
 
 ## Node Catalog
 
 Curio's nodes ship as **packages**: small, self-contained folders with a `manifest.json` declaring the node kinds inside. The built-in nodes (Data Loading, Vega-Lite, Autark, etc.) live in a pre-installed package called `curio.builtin@1`; you can install more via the **Node Catalog** drawer.
 
-One Autark-specific note: an Autark node's document references incoming data by name. A single upstream frame is the table `upstream`, while a layer array from an upstream Autark node exposes each layer under its own table name. See [Autark node](#autark-node).
+One Autark-specific note: an Autark node's document references incoming data by name. Each input is the table `input_0`, `input_1`, and so on, while a layer array from an upstream Autark node exposes each layer under its own table name. See [Autark node](#autark-node).
 
 To open the drawer: in the **Tools panel** on the left edge of the canvas, find the **Node Catalog** dropdown (cube icon) and open it; the **Browse Node Catalog +** button sits in the dropdown's footer. From there you can:
 
@@ -434,6 +475,29 @@ For the full guide, covering the storage layers, the action matrix, **Save as pa
 The `Vega-Lite` node takes the rows of an upstream `DataFrame` or `GeoDataFrame`
 and renders a spec against them. Columns are addressed by their bare pandas
 names: a column `pop` is `{"field": "pop"}`.
+
+### Several inputs
+
+With one input, the spec draws it with no `data` block of its own. With several,
+each input is the dataset `input_0`, `input_1`, and so on, in circle order. The
+spec draws `input_0` unless it names another, and a layer, a concatenated view or
+a lookup draws another input by naming it, written with that input's chip:
+
+```json
+{
+  "layer": [
+    {"mark": "bar", "encoding": {"x": {"field": "month"}, "y": {"field": "rain", "type": "quantitative"}}},
+    {"data": {"name": [!! input 1 !!]}, "mark": "rule",
+     "encoding": {"y": {"field": "normal", "type": "quantitative"}}}
+  ]
+}
+```
+
+A Python tuple arrives the same way, one dataset per frame. An input the chart
+cannot read, such as a raster, stops it with a message naming its position.
+
+Each input's geometry is handled in the views that draw it. A selection, a Data
+Pool link and a direct link between charts cover the rows of `input_0`.
 
 ### Drawing a GeoDataFrame
 
@@ -553,13 +617,15 @@ no `data` entry for its input; it names the tables the input provides.
 
 ### Its input
 
-- A single frame is the table `upstream`: a `GeoDataFrame`, a GeoJSON
-  FeatureCollection, or a `DataFrame` with a geometry column. A frame that
-  arrives under its own name (a Data Pool tab, a compute step's layer) keeps
-  that name, and `upstream` also names it.
-- Several layers keep their own names: a Python tuple, a Data Pool with tabs,
-  the tables of an upstream Autark node, or a Merge of GeoDataFrames. A layer
-  without a name is `upstream_0`, `upstream_1`, and so on.
+- Each input is the table `input_0`, `input_1`, and so on, in the order of the
+  node's input circles: a `GeoDataFrame`, a GeoJSON FeatureCollection, or a
+  `DataFrame` with a geometry column. An input chip, `[!! input 1 !!]`, writes
+  the name for you. A frame that arrives under its own name (a Data Pool tab, a
+  compute step's layer) keeps that name, and `input_<k>` also names it.
+- Several layers keep their own names: a Python tuple, a Data Pool with tabs, or
+  the tables of an upstream Autark node. A layer without a name is named after
+  its position, `input_0`, `input_1`, and so on. When two inputs bring a layer
+  of one name, the second input's is left out and the node names both.
 - A map draws only tables with geometry. A `DataFrame` is read through the one
   column that holds geometries; with none, or with several, the node draws
   nothing and says which. Return a `GeoDataFrame` with its active geometry set.

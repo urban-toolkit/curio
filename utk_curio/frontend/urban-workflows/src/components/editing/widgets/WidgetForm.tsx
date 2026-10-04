@@ -224,11 +224,11 @@ export function WidgetForm({
       </div>
       {problem ? <p className={styles.problem}>{problem}</p> : null}
       <span className={styles.formActions}>
-        <button type="button" disabled={problem !== null} onClick={() => onSave(candidate)}>
-          {initial ? "Save widget" : "Add widget"}
-        </button>
-        <button type="button" onClick={onCancel}>
+        <button type="button" className={styles.button} onClick={onCancel}>
           Cancel
+        </button>
+        <button type="button" className={styles.primary} disabled={problem !== null} onClick={() => onSave(candidate)}>
+          {initial ? "Save widget" : "Add widget"}
         </button>
       </span>
     </div>

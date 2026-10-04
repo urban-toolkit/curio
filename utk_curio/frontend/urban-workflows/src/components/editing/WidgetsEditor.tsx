@@ -9,10 +9,15 @@ import { WidgetControl } from "./widgets/WidgetControl";
 import { WidgetForm } from "./widgets/WidgetForm";
 import { checkWidgetValue, effectiveValue, type WidgetDef } from "../../utils/widgets/widgetModel";
 import {
+    describeEmptyInputs,
     describeReferenceProblems,
-    resolveWidgetReferences,
-    type WidgetLanguage,
-} from "../../utils/widgets/widgetSubstitution";
+    resolveReferences,
+    type CodeLanguage,
+    type InputScope,
+} from "../../utils/references/codeReferences";
+
+const NO_INPUTS: InputScope[] = [];
+const NO_SLOTS: number[] = [];
 
 type WidgetsEditorProps = {
     userCode: any; // grammar or python, references unresolved
@@ -23,9 +28,13 @@ type WidgetsEditorProps = {
     widgets: WidgetDef[];
     onWidgetsChange: (widgets: WidgetDef[]) => void;
     /** The language the node's code is written in, which decides how a value is written into it. */
-    language: WidgetLanguage;
+    language: CodeLanguage;
     /** A reference that cannot be resolved: the run ends with this message. */
     onResolveError: (message: string) => void;
+    /** The node's wired inputs, which its input and column references name. */
+    inputs?: InputScope[];
+    /** Wired circles that hold no value yet: a run waits for them. */
+    emptyInputs?: number[];
     customWidgetsCallback?: any;
     data?: any;
     disableWidgets?: boolean; // freeze the widget controls instead of hiding them
@@ -48,16 +57,20 @@ function WidgetsEditor({
     onWidgetsChange,
     language,
     onResolveError,
+    inputs = NO_INPUTS,
+    emptyInputs = NO_SLOTS,
     customWidgetsCallback,
     disableWidgets,
 }: WidgetsEditorProps) {
     const markersDirtyBypass = useRef(false);
     const [editing, setEditing] = useState<Editing>(null);
+    const scope = useMemo(() => ({ widgets, inputs }), [widgets, inputs]);
 
     useEffect(() => {
         if (markersDirtyBypass.current) {
-            const { code, problems } = resolveWidgetReferences(String(userCode ?? ""), widgets, language);
-            if (problems.length > 0) onResolveError(describeReferenceProblems(problems));
+            const { code, problems } = resolveReferences(String(userCode ?? ""), scope, language);
+            if (emptyInputs.length > 0) onResolveError(describeEmptyInputs(emptyInputs, inputs));
+            else if (problems.length > 0) onResolveError(describeReferenceProblems(problems));
             else sendReplacedCode(code);
         }
         markersDirtyBypass.current = true;
@@ -70,8 +83,8 @@ function WidgetsEditor({
     }, []);
 
     const problems = useMemo(
-        () => resolveWidgetReferences(String(userCode ?? ""), widgets, language).problems,
-        [userCode, widgets, language],
+        () => resolveReferences(String(userCode ?? ""), scope, language).problems,
+        [userCode, scope, language],
     );
 
     const setValue = (name: string, value: any) =>
@@ -110,9 +123,9 @@ function WidgetsEditor({
                     />
                 ) : (
                     <div key={widget.name} className={styles.row} data-widget-row={widget.name}>
+                        <span className={styles.rowLabel}>{widget.label || widget.name}</span>
                         <WidgetTag name={widget.name} disabled={disableWidgets} />
-                        <span className={styles.control}>
-                            <span className={styles.label}>{widget.label || widget.name}</span>
+                        <span className={styles.rowControl}>
                             <WidgetControl
                                 widget={widget}
                                 value={effectiveValue(widget)}
@@ -123,6 +136,7 @@ function WidgetsEditor({
                         <span className={styles.rowActions}>
                             <button
                                 type="button"
+                                className={styles.button}
                                 aria-label={`Edit widget ${widget.name}`}
                                 disabled={disableWidgets || editing !== null}
                                 onClick={() => setEditing({ mode: "edit", name: widget.name })}
@@ -131,6 +145,7 @@ function WidgetsEditor({
                             </button>
                             <button
                                 type="button"
+                                className={styles.danger}
                                 aria-label={`Delete widget ${widget.name}`}
                                 disabled={disableWidgets || editing !== null}
                                 onClick={() => onWidgetsChange(widgets.filter((w) => w.name !== widget.name))}
@@ -153,6 +168,7 @@ function WidgetsEditor({
             ) : (
                 <button
                     type="button"
+                    className={`${styles.primary} ${styles.add}`}
                     disabled={disableWidgets || editing !== null}
                     onClick={() => setEditing({ mode: "add" })}
                 >

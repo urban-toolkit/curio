@@ -1,15 +1,22 @@
-"""Turning a node's ``[!! name !!]`` references into its widgets' values (#662).
+"""Turning a node's references into code (#662): ``[!! season !!]`` names a
+widget, ``[!! input 1 !!]`` an input (by circle, counted from 0),
+``[!! input 1.height !!]`` a column of that input, and ``[!! input 1:roads !!]``
+(or ``[!! input 1:roads.height !!]``) a layer an input carries.
 
-The headless twin of ``src/utils/widgets/widgetSubstitution.ts``, which the
-browser runs before posting a node's code. Both write the same code for the
-same widgets: one table of cases, ``widgetSubstitution.cases.json`` beside the
-TypeScript module, is read by Jest and by
-``tests/test_execution/test_widget_substitution.py``.
+The headless twin of ``src/utils/references/codeReferences.ts``, which the
+browser runs before posting a node's code. Both write the same code: one table
+of cases, ``codeReferences.cases.json`` beside the TypeScript module, is read by
+Jest and by ``tests/test_execution/test_code_references.py``.
 
-A reference standing on its own becomes a literal of the language; inside a
-string literal it becomes the value's text, escaped for that string; inside a
-comment, the plain text. Numbers are written the way JavaScript's ``String()``
-writes them, so a value prints the same in both.
+A widget reference standing on its own becomes a literal of the language;
+inside a string literal it becomes the value's text, escaped for that string;
+inside a comment, the plain text. A column or layer reference is written like a
+text value: its name. In Python and JavaScript an input reference becomes
+``arg`` when the node has one input and ``arg[i]`` when it has several, ``i``
+being its place in circle order; in a Vega-Lite or Autark spec it is the name
+the input is read by, ``input_<i>``, written like a text value.
+Numbers are written the way JavaScript's ``String()`` writes them, so a value
+prints the same in both.
 """
 
 from __future__ import annotations
@@ -18,8 +25,16 @@ import json
 import re
 from typing import Iterable
 
-#: A reference as written. Kept in sync with ``WIDGET_REFERENCE_PATTERN``.
+#: A reference as written. Kept in sync with ``REFERENCE_PATTERN``.
 REFERENCE_RE = re.compile(r"\[!!\s*(.*?)\s*!!\]")
+
+#: What stands inside an input, layer or column reference. Kept in sync with
+#: ``INPUT_REFERENCE_PATTERN`` in ``codeReferences.ts``.
+INPUT_REFERENCE_RE = re.compile(r"^input\s+(\d+|\?)(?::([^.]+))?(?:\.(.+))?$")
+
+#: What a Vega-Lite or Autark node calls its inputs. Kept in sync with
+#: ``INPUT_TABLE_PREFIX`` in ``agents/domain/contracts.py``.
+INPUT_TABLE_PREFIX = "input_"
 
 #: A widget name. Kept in sync with ``WIDGET_NAME_PATTERN`` in ``widgetModel.ts``.
 WIDGET_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
@@ -44,8 +59,8 @@ WIDGET_KINDS = (
 )
 
 
-class WidgetReferenceError(ValueError):
-    """A node's code names widgets it cannot resolve."""
+class CodeReferenceError(ValueError):
+    """A node's code holds references it cannot resolve."""
 
 
 def effective_value(widget: dict):
@@ -107,6 +122,20 @@ def widget_literal(value, language: str) -> str:
             json.dumps(str(k), ensure_ascii=False) + ": " + widget_literal(v, language) for k, v in value.items()
         ) + "}"
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def parse_reference(inner: str) -> dict:
+    """``{"kind": "widget", "name"}`` or ``{"kind": "input", "slot", "column"?}``;
+    ``slot`` is None for ``input ?``, the input whose edge was deleted."""
+    m = INPUT_REFERENCE_RE.match(inner)
+    if not m:
+        return {"kind": "widget", "name": inner}
+    parsed = {"kind": "input", "slot": None if m.group(1) == "?" else int(m.group(1))}
+    if m.group(2) is not None:
+        parsed["layer"] = m.group(2)
+    if m.group(3) is not None:
+        parsed["column"] = m.group(3)
+    return parsed
 
 
 def _text_of(value, language: str) -> str:
@@ -198,8 +227,54 @@ def _contexts(code: str, refs: list, language: str) -> list:
     return contexts
 
 
-def reference_problem(reference: str, inner: str, widgets: list) -> str | None:
-    """Why *reference* cannot be resolved against *widgets*, or None."""
+def _write_text(text: str, context: tuple, language: str) -> str:
+    return widget_literal(text, language) if context[0] == "code" else _escape_for(text, context, language)
+
+
+def reference_problem(
+    reference: str, inner: str, widgets: list, inputs: list, context: tuple, language: str
+) -> str | None:
+    """Why *reference* cannot be resolved against *widgets* and *inputs*,
+    standing in *context*, or None."""
+    parsed = parse_reference(inner)
+    if parsed["kind"] == "input":
+        slot = parsed["slot"]
+        if slot is None:
+            return f"{reference}: the edge for this input was deleted. Drag one of this node's input chips here."
+        found = next((i for i in inputs if i.get("slot") == slot), None)
+        if found is None:
+            return (
+                f"{reference}: input {slot} has no edge. Connect one to that circle, "
+                "or drag one of this node's input chips here."
+            )
+        if "layer" in parsed:
+            if language != "json":
+                return f"{reference}: a layer chip works in Vega-Lite and Autark specs."
+            layers = found.get("layers") if isinstance(found.get("layers"), list) else None
+            layer = next((l for l in layers or [] if l.get("name") == parsed["layer"]), None)
+            if layers is not None and layer is None:
+                return f"{reference}: input {slot} has no layer {parsed['layer']}."
+            columns = layer.get("columns") if layer else None
+            if "column" in parsed and isinstance(columns, list) and parsed["column"] not in columns:
+                return f"{reference}: layer {parsed['layer']} of input {slot} has no column {parsed['column']}."
+            return None
+        if "column" not in parsed:
+            if language == "json":
+                layers = found.get("layers")
+                if isinstance(layers, list) and len(layers) > 1:
+                    names = ", ".join(str(l.get("name")) for l in layers)
+                    return (
+                        f"{reference}: input {slot} carries several layers ({names}). "
+                        "Drag one of its layer chips here."
+                    )
+                return None
+            if context[0] != "code":
+                return f"{reference} is an input, not text. Use it outside quotes and comments."
+            return None
+        columns = found.get("columns")
+        if isinstance(columns, list) and parsed["column"] not in columns:
+            return f"{reference}: input {slot} has no column {parsed['column']}."
+        return None
     if "$" in inner:
         return (
             f"{reference} is an old widget marker. Add the widget in the node's "
@@ -264,15 +339,38 @@ def normalize_widgets(raw) -> list:
     return out
 
 
-def resolve_widget_references(code: str, widgets: Iterable, language: str = "python") -> tuple[str, list]:
+def _resolved_text(inner: str, by_name: dict, inputs: list, context: tuple, language: str) -> str:
+    parsed = parse_reference(inner)
+    if parsed["kind"] == "input":
+        if "column" in parsed:
+            return _write_text(parsed["column"], context, language)
+        if "layer" in parsed:
+            return _write_text(parsed["layer"], context, language)
+        index = next(i for i, entry in enumerate(inputs) if entry.get("slot") == parsed["slot"])
+        if language == "json":
+            return _write_text(f"{INPUT_TABLE_PREFIX}{index}", context, language)
+        if len(inputs) == 1:
+            return "arg"
+        return f"arg[{index}]"
+    value = effective_value(by_name[inner])
+    if context[0] == "code":
+        return widget_literal(value, language)
+    return _escape_for(_text_of(value, language), context, language)
+
+
+def resolve_references(
+    code: str, widgets: Iterable = (), language: str = "python", inputs: Iterable = ()
+) -> tuple[str, list]:
     """*code* with every reference replaced, and the problems found.
 
-    A reference with a problem is left as written; each problem is
+    *inputs* are the node's wired inputs, ``{"slot": <circle>, "columns"?: [...]}``
+    each. A reference with a problem is left as written; each problem is
     ``{"reference": <as written>, "message": <why>}``.
     """
     if language not in LANGUAGES:
-        raise ValueError(f"unknown widget language {language!r}")
+        raise ValueError(f"unknown code language {language!r}")
     widgets = normalize_widgets(list(widgets or []))
+    inputs = sorted((dict(i) for i in inputs or ()), key=lambda i: i.get("slot", 0))
     refs = list(REFERENCE_RE.finditer(code))
     if not refs:
         return code, []
@@ -284,16 +382,12 @@ def resolve_widget_references(code: str, widgets: Iterable, language: str = "pyt
     for ref, context in zip(refs, contexts):
         out.append(code[last:ref.start()])
         written = ref.group(0)
-        problem = reference_problem(written, ref.group(1), widgets)
+        problem = reference_problem(written, ref.group(1), widgets, inputs, context, language)
         if problem is not None:
             problems.append({"reference": written, "message": problem})
             out.append(written)
         else:
-            value = effective_value(by_name[ref.group(1)])
-            if context[0] == "code":
-                out.append(widget_literal(value, language))
-            else:
-                out.append(_escape_for(_text_of(value, language), context, language))
+            out.append(_resolved_text(ref.group(1), by_name, inputs, context, language))
         last = ref.end()
     out.append(code[last:])
     return "".join(out), problems

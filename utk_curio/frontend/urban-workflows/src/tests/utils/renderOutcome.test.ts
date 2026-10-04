@@ -129,11 +129,11 @@ describe("renderOutcome", () => {
   it("says why nothing arrived, when the node knows, and still blames the upstream", () => {
     const outcome = renderOutcome({
       rowsIn: 0,
-      inputProblem: "upstream has no geometry column, so there is nothing to draw. Return a GeoDataFrame.",
+      inputProblem: "input_0 has no geometry column, so there is nothing to draw. Return a GeoDataFrame.",
     });
     expect(outcome.cause).toBe("no-input-rows");
     expect(outcome.message).toBe(
-      "rendered nothing: upstream has no geometry column, so there is nothing to draw. "
+      "rendered nothing: input_0 has no geometry column, so there is nothing to draw. "
       + "Return a GeoDataFrame. The upstream node that feeds it is what must change; "
       + "this document is not at fault.",
     );
