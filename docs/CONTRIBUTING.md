@@ -457,6 +457,14 @@ backend modules each field names, so a change to any of them needs a
 regeneration too. Do not edit an output by hand: edit the template or the
 source, then regenerate and commit both.
 
+Some frontend behaviour is defined in `contracts.py` too, because the preamble
+describes it: the Vega-Lite and Autark starter ladders, the pandas dtype each
+column role comes from, the Vega-Lite `$schema` URL, and the names, extensions
+and share behind Simple View's image columns. The frontend reads them from
+`src/generated/visDefaults.ts`. To add, remove or reorder a starter rule, edit
+its table in `contracts.py`, regenerate, and add or remove its builder in
+`vegaDefaultSpec.ts` or `autkDefaultSpec.ts`, keyed by the rule's id.
+
 ```bash
 # rewrite every generated file
 python scripts/generate_contracts.py

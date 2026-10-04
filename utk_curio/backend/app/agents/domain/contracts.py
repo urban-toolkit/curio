@@ -265,6 +265,154 @@ def render_autk_region(schema: dict, label: str) -> str:
     return "\n".join(lines)
 
 
+# --- Starter specs and image columns ----------------------------------------
+#
+# Two things a visualization node does with its input by itself, which the
+# shared preamble describes so a model writes what the node would. A Vega-Lite
+# or Autark node whose editor is empty fills it with a starter chosen by a
+# ladder of rules over the input's column roles (frontend ``vegaDefaultSpec``,
+# ``autkDefaultSpec``, ``starterSpec``), and a Simple View node draws the
+# columns that hold images as cards (``imageColumns``). The tables are defined
+# here and reach the frontend as ``src/generated/visDefaults.ts``: the frontend
+# keeps each rule's builder, keyed by the rule's id, and the matching logic.
+
+#: The ``$schema`` of a Vega-Lite spec Curio writes.
+VEGA_SCHEMA_URL = "https://vega.github.io/schema/vega-lite/v6.json"
+
+#: The roles a column can have, in the order a ladder groups them.
+COLUMN_ROLES: tuple[str, ...] = ("geometry", "temporal", "quantitative", "nominal")
+
+
+@dataclass(frozen=True)
+class DtypeRole:
+    """The pandas dtypes that give a column one role: those named whole and
+    those that start with one of the prefixes. Matched in lower case."""
+
+    role: str
+    names: tuple[str, ...] = ()
+    prefixes: tuple[str, ...] = ()
+
+
+#: A dtype's role is the first entry's that matches it, in this order, and a
+#: dtype no entry matches gives its column no role. ``str`` is pandas 3's
+#: string dtype; pandas 2 said ``object``.
+DTYPE_ROLES: tuple[DtypeRole, ...] = (
+    DtypeRole("geometry", names=("geometry",)),
+    DtypeRole("temporal", prefixes=("datetime", "period", "timedelta")),
+    DtypeRole("quantitative", prefixes=("int", "uint", "float")),
+    DtypeRole("nominal", names=("bool", "object", "str", "string", "category")),
+)
+
+
+@dataclass(frozen=True)
+class CountRange:
+    """At least ``least``, and at most ``most`` when it is set."""
+
+    least: int
+    most: int | None = None
+
+
+def _roles(**counts: int | CountRange) -> tuple[tuple[str, CountRange], ...]:
+    """Role requirements in the order given; a bare number is a least count."""
+    return tuple(
+        (role, count if isinstance(count, CountRange) else CountRange(count))
+        for role, count in counts.items()
+    )
+
+
+@dataclass(frozen=True)
+class StarterRule:
+    """One rule of a starter ladder. The ladder is tried in order and the first
+    rule whose condition holds writes the starter."""
+
+    #: Stable id: the frontend keys the rule's builder by it.
+    id: str
+    #: The mark a Vega-Lite rule's spec draws, or the family an Autark rule's
+    #: document names.
+    produces: str
+    #: What the starter holds, in one line.
+    description: str
+    #: How many columns of each role the rule needs; for an Autark rule, in
+    #: every layer of the input.
+    columns: tuple[tuple[str, CountRange], ...] = ()
+    #: For an Autark rule, how many layers with geometry the input has.
+    layers: CountRange | None = None
+
+
+#: The Vega-Lite starter ladder.
+VEGA_STARTER_LADDER: tuple[StarterRule, ...] = (
+    StarterRule(
+        "geometry+quantitative", "geoshape",
+        "a choropleth colored by the first quantitative column",
+        columns=_roles(geometry=1, quantitative=1),
+    ),
+    StarterRule(
+        "geometry", "geoshape",
+        "the shapes alone, with no color",
+        columns=_roles(geometry=1),
+    ),
+    StarterRule(
+        "temporal+quantitative", "line",
+        "the first temporal column on x and the first quantitative column on y",
+        columns=_roles(temporal=1, quantitative=1),
+    ),
+    StarterRule(
+        "nominal+quantitative", "bar",
+        'the first nominal column on x, with an EXPLICIT "aggregate": "mean" on y',
+        columns=_roles(nominal=1, quantitative=1),
+    ),
+    StarterRule(
+        "two-quantitative", "point",
+        "a scatter of the first two",
+        columns=_roles(quantitative=2),
+    ),
+    StarterRule(
+        "one-quantitative", "bar",
+        'a histogram, binned x and "aggregate": "count" on y',
+        columns=_roles(quantitative=CountRange(1, 1)),
+    ),
+    StarterRule(
+        "one-nominal", "bar",
+        "the row count per value of the first nominal column",
+        columns=_roles(nominal=1),
+    ),
+)
+
+#: The Autark starter ladder, over the input's layers that have geometry.
+AUTK_STARTER_LADDER: tuple[StarterRule, ...] = (
+    StarterRule(
+        "layers", "map",
+        "one layerRef per table, each named by its table",
+        layers=CountRange(2),
+    ),
+    StarterRule(
+        "geometry+quantitative", "map",
+        'a layer colored by the first quantitative column, with "getFnv": that column, '
+        '"getFnvType": "quantitative" and "colorMapInterpolator": "interpolateViridis"',
+        columns=_roles(quantitative=1), layers=CountRange(1, 1),
+    ),
+    StarterRule(
+        "geometry+nominal", "map",
+        'a layer colored by the first nominal column, with "getFnv": that column, '
+        '"getFnvType": "categorical" and "colorMapInterpolator": "schemeTableau10"',
+        columns=_roles(nominal=1), layers=CountRange(1, 1),
+    ),
+    StarterRule(
+        "geometry", "map",
+        "a plain layer",
+        layers=CountRange(1, 1),
+    ),
+)
+
+#: The column names Simple View checks for images first, in this order.
+IMAGE_COLUMNS: tuple[str, ...] = ("image_content", "image_url", "image", "thumbnail", "overlay_url")
+#: The extensions an image URL has in a column not named above.
+IMAGE_EXTENSIONS: tuple[str, ...] = ("png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif")
+#: The share of a column's non-empty values that must be images for it to
+#: count as an image column.
+IMAGE_MATCH_THRESHOLD = 0.6
+
+
 # --- The preamble's node vocabulary ----------------------------------------
 #
 # The shared preamble describes Trill and the built-in templates. Both halves
@@ -641,6 +789,80 @@ def _package_contract(_src: _Sources) -> str:
     return render_prompt(PACKAGE_CONTRACT).rstrip("\n")
 
 
+_NUMBER_WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+
+
+def _number(n: int) -> str:
+    return _NUMBER_WORDS[n] if 0 <= n < len(_NUMBER_WORDS) else str(n)
+
+
+def _join(words: list[str], last: str) -> str:
+    """``a, b and c``, with *last* as the final joiner."""
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + f" {last} " + words[-1]
+
+
+def _role_phrase(role: str, count: CountRange) -> str:
+    """A role a starter rule needs: the role alone for at least one column."""
+    if count.most is None:
+        return role if count.least == 1 else f"{_number(count.least)} or more {role}"
+    if count.most == count.least:
+        return f"exactly {_number(count.least)} {role}"
+    return f"{_number(count.least)} to {_number(count.most)} {role}"
+
+
+def _layer_phrase(count: CountRange) -> str:
+    """The layers an Autark starter rule needs, such as ``two or more layers``."""
+    noun = "layer" if count.most == 1 else "layers"
+    if count.most is None:
+        return f"{_number(count.least)} or more {noun}"
+    if count.most == count.least:
+        return f"{_number(count.least)} {noun}"
+    return f"{_number(count.least)} to {_number(count.most)} {noun}"
+
+
+def render_starter_ladder(rules: tuple[StarterRule, ...]) -> str:
+    """A starter ladder, one ``- <condition> -> <produces>: <description>`` line
+    per rule in ladder order. The condition joins the layers and the column
+    roles the rule needs with ``+``."""
+    lines = []
+    for rule in rules:
+        terms = [_layer_phrase(rule.layers)] if rule.layers else []
+        terms += [_role_phrase(role, count) for role, count in rule.columns]
+        lines.append(f"- {' + '.join(terms) or 'any input'} -> {rule.produces}: {rule.description}")
+    return "\n".join(lines)
+
+
+def _dtype_roles(_src: _Sources) -> str:
+    """Which pandas dtypes give which column role, in ``DTYPE_ROLES`` order."""
+    parts = []
+    for entry in DTYPE_ROLES:
+        subjects = []
+        if entry.names:
+            subjects.append(_join([f"`{name}`" for name in entry.names], "and"))
+        if entry.prefixes:
+            subjects.append("a dtype that starts with " + _join([f"`{p}`" for p in entry.prefixes], "or"))
+        plural = len(entry.names) > 1 or len(subjects) > 1
+        parts.append(f"{' and '.join(subjects)} {'are' if plural else 'is'} {entry.role}")
+    return "; ".join(parts)
+
+
+def _image_column(_src: _Sources, name: str) -> str:
+    """One of ``IMAGE_COLUMNS``, quoted; the argument must be one of them."""
+    if name not in IMAGE_COLUMNS:
+        raise PromptTemplateError(f"{name!r} is not one of IMAGE_COLUMNS {IMAGE_COLUMNS}")
+    return json.dumps(name)
+
+
+def _image_extensions(_src: _Sources) -> str:
+    """``IMAGE_EXTENSIONS`` as ``.png, .jpg ... or .avif``."""
+    return _join([f".{extension}" for extension in IMAGE_EXTENSIONS], "or")
+
+
+def _image_threshold(_src: _Sources) -> str:
+    """``IMAGE_MATCH_THRESHOLD`` as a percentage."""
+    return f"{IMAGE_MATCH_THRESHOLD:.0%}"
+
+
 #: Every field a prompt template may name, by the name its marker uses.
 PROMPT_FIELDS: dict[str, PromptField] = {
     "trill.schema": PromptField(lambda src: render_trill_block(src.trill)),
@@ -669,6 +891,14 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "backend.server_network_permission": PromptField(_server_network_permission),
     "backend.data_dir_env": PromptField(_data_dir_env),
     "package.contract": PromptField(_package_contract),
+    "vega.schema_url": PromptField(lambda _src: VEGA_SCHEMA_URL),
+    "vega.starter_ladder": PromptField(lambda _src: render_starter_ladder(VEGA_STARTER_LADDER)),
+    "autk.starter_ladder": PromptField(lambda _src: render_starter_ladder(AUTK_STARTER_LADDER)),
+    "starter.dtype_roles": PromptField(_dtype_roles),
+    "image.columns": PromptField(lambda _src: _either(IMAGE_COLUMNS)),
+    "image.column": PromptField(_image_column, takes_arg=True),
+    "image.extensions": PromptField(_image_extensions),
+    "image.threshold": PromptField(_image_threshold),
 }
 
 
@@ -710,15 +940,11 @@ def render_default_preamble() -> str:
 
 def render_autk_grammar_ts() -> str:
     """``src/generated/autkGrammar.ts``: the grammar's families and the input layer name."""
-    names = [_ts_string(f) for f in autk_families(load_autk_schema())]
-    families = f"export const AUTK_FAMILIES = [{', '.join(names)}] as const;\n"
-    if len(families) > 81:  # prettier's 80 columns: one name per line instead
-        families = "export const AUTK_FAMILIES = [\n" + "".join(f"  {n},\n" for n in names) + "] as const;\n"
     return (
         _ts_header()
         + "\n"
         + "/** The top-level keys an Autark document can name, from the vendored schema. */\n"
-        + families
+        + _ts_const("AUTK_FAMILIES", list(autk_families(load_autk_schema())), " as const")
         + "\n"
         + "export type AutkFamily = (typeof AUTK_FAMILIES)[number];\n"
         + "\n"
@@ -920,7 +1146,65 @@ def _ts_header() -> str:
 
 
 def _ts_string(text: str) -> str:
-    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    """*text* as a string literal, quoted as prettier quotes it: in double
+    quotes unless it holds more double quotes than single ones."""
+    quote = "'" if text.count('"') > text.count("'") else '"'
+    return quote + text.replace("\\", "\\\\").replace(quote, "\\" + quote) + quote
+
+
+#: prettier's line width for the frontend's TypeScript (``max_line_length`` in
+#: its ``.editorconfig``), which a generated output keeps to.
+_TS_WIDTH = 100
+
+
+def _ts_flat(value) -> str:
+    """*value* (a string, number, list or dict) as a TypeScript literal on one line."""
+    if isinstance(value, str):
+        return _ts_string(value)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, dict):
+        return "{ " + ", ".join(f"{k}: {_ts_flat(v)}" for k, v in value.items()) + " }" if value else "{}"
+    return "[" + ", ".join(_ts_flat(v) for v in value) + "]"
+
+
+def _ts_broken(value, indent: int) -> str:
+    """A dict or list, opened at *indent*, broken one entry per line as
+    prettier breaks it. A dict in a list is always broken, which prettier
+    keeps; a property stays on one line when it fits."""
+    pad = " " * (indent + 2)
+    if isinstance(value, dict):
+        lines = []
+        for key, item in value.items():
+            flat = _ts_flat(item)
+            if len(pad) + len(key) + 2 + len(flat) + 1 <= _TS_WIDTH:
+                lines.append(f"{pad}{key}: {flat},")
+            elif isinstance(item, str) and len(key) >= 5:
+                # prettier moves a long string under its key, unless the key is short.
+                lines.append(f"{pad}{key}:\n{pad}  {flat},")
+            elif isinstance(item, (dict, list)) and item:
+                lines.append(f"{pad}{key}: {_ts_broken(item, indent + 2)},")
+            else:
+                lines.append(f"{pad}{key}: {flat},")
+        return "{\n" + "\n".join(lines) + "\n" + " " * indent + "}"
+    lines = [
+        f"{pad}{_ts_broken(item, indent + 2) if isinstance(item, dict) else _ts_flat(item)},"
+        for item in value
+    ]
+    return "[\n" + "\n".join(lines) + "\n" + " " * indent + "]"
+
+
+def _ts_const(name: str, value, suffix: str = "") -> str:
+    """``export const <name> = <value><suffix>;``, on one line when it fits."""
+    line = f"export const {name} = {_ts_flat(value)}{suffix};"
+    holds_dicts = isinstance(value, (list, tuple)) and any(isinstance(v, dict) for v in value)
+    if len(line) <= _TS_WIDTH and not holds_dicts:
+        return line + "\n"
+    if isinstance(value, str):
+        return f"export const {name} =\n  {_ts_flat(value)}{suffix};\n"
+    return f"export const {name} = {_ts_broken(value, 0)}{suffix};\n"
 
 
 def render_render_causes_ts() -> str:
@@ -968,11 +1252,114 @@ def render_agent_categories_ts() -> str:
     )
 
 
+def _ts_range(count: CountRange) -> dict:
+    return {"least": count.least, **({"most": count.most} if count.most is not None else {})}
+
+
+def _ts_rule(rule: StarterRule) -> dict:
+    return {
+        "id": rule.id,
+        **({"layers": _ts_range(rule.layers)} if rule.layers else {}),
+        "columns": {role: _ts_range(count) for role, count in rule.columns},
+        "produces": rule.produces,
+        "description": rule.description,
+    }
+
+
+def render_vis_defaults_ts() -> str:
+    """``src/generated/visDefaults.ts``: the starter ladders, the dtype roles,
+    the image column rule's names and constants, and the Vega-Lite schema URL."""
+    return (
+        _ts_header()
+        + "\n"
+        + "/** The `$schema` of a Vega-Lite spec Curio writes. */\n"
+        + _ts_const("VEGA_SCHEMA_URL", VEGA_SCHEMA_URL)
+        + "\n"
+        + "/** The roles a column can have, in the order a ladder groups them. */\n"
+        + _ts_const("COLUMN_ROLES", list(COLUMN_ROLES), " as const")
+        + "\n"
+        + "export type ColumnRole = (typeof COLUMN_ROLES)[number];\n"
+        + "\n"
+        + "/** The pandas dtypes that give a column one role, matched in lower case. */\n"
+        + "export interface DtypeRole {\n"
+        + "  readonly role: ColumnRole;\n"
+        + "  /** Dtypes matched whole. */\n"
+        + "  readonly names: readonly string[];\n"
+        + "  /** Prefixes a dtype starts with. */\n"
+        + "  readonly prefixes: readonly string[];\n"
+        + "}\n"
+        + "\n"
+        + "/**\n"
+        + " * A dtype's role is the first entry's that matches it, in this order, and a\n"
+        + " * dtype no entry matches gives its column no role.\n"
+        + " */\n"
+        + _ts_const(
+            "DTYPE_ROLES: readonly DtypeRole[]",
+            [{"role": e.role, "names": list(e.names), "prefixes": list(e.prefixes)} for e in DTYPE_ROLES],
+        )
+        + "\n"
+        + "/** At least `least`, and at most `most` when it is set. */\n"
+        + "export interface CountRange {\n"
+        + "  readonly least: number;\n"
+        + "  readonly most?: number;\n"
+        + "}\n"
+        + "\n"
+        + "/** How many columns of each role a starter rule needs. */\n"
+        + "export type RoleCounts = Readonly<Partial<Record<ColumnRole, CountRange>>>;\n"
+        + "\n"
+        + "/** One rule of a starter ladder. The first rule whose condition holds wins. */\n"
+        + "export interface LadderRule {\n"
+        + "  /** Stable id: the frontend keys the rule's builder by it. */\n"
+        + "  readonly id: string;\n"
+        + "  /** The columns the rule needs; for an Autark rule, in every layer. */\n"
+        + "  readonly columns: RoleCounts;\n"
+        + "  /** The mark a Vega-Lite spec draws, or the family an Autark document names. */\n"
+        + "  readonly produces: string;\n"
+        + "  /** What the starter holds, in one line. */\n"
+        + "  readonly description: string;\n"
+        + "}\n"
+        + "\n"
+        + "/** An Autark starter rule, which also needs a number of layers with geometry. */\n"
+        + "export interface AutkLadderRule extends LadderRule {\n"
+        + "  readonly layers: CountRange;\n"
+        + "}\n"
+        + "\n"
+        + "/** The Vega-Lite starter ladder, in order. */\n"
+        + _ts_const(
+            "VEGA_STARTER_LADDER", [_ts_rule(r) for r in VEGA_STARTER_LADDER],
+            " as const satisfies readonly LadderRule[]",
+        )
+        + "\n"
+        + "export type VegaStarterRuleId = (typeof VEGA_STARTER_LADDER)[number][\"id\"];\n"
+        + "\n"
+        + "/** The Autark starter ladder, in order, over the input's layers with geometry. */\n"
+        + _ts_const(
+            "AUTK_STARTER_LADDER", [_ts_rule(r) for r in AUTK_STARTER_LADDER],
+            " as const satisfies readonly AutkLadderRule[]",
+        )
+        + "\n"
+        + "export type AutkStarterRuleId = (typeof AUTK_STARTER_LADDER)[number][\"id\"];\n"
+        + "\n"
+        + "/** The column names Simple View checks for images first, in this order. */\n"
+        + _ts_const("IMAGE_COLUMNS", list(IMAGE_COLUMNS), " as const")
+        + "\n"
+        + "/** The extensions an image URL has in a column not named above. */\n"
+        + _ts_const("IMAGE_EXTENSIONS", list(IMAGE_EXTENSIONS), " as const")
+        + "\n"
+        + "/**\n"
+        + " * The share of a column's non-empty values that must be images for it to\n"
+        + " * count as an image column.\n"
+        + " */\n"
+        + _ts_const("IMAGE_MATCH_THRESHOLD", IMAGE_MATCH_THRESHOLD)
+    )
+
+
 #: Every committed output: repo-relative path -> the function that renders it.
 GENERATED_OUTPUTS: dict[str, Callable[[], str]] = {
     "utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts": render_render_causes_ts,
     "utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts": render_autk_grammar_ts,
     "utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts": render_agent_categories_ts,
+    "utk_curio/frontend/urban-workflows/src/generated/visDefaults.ts": render_vis_defaults_ts,
     **{f"{PROMPTS_DIR}/{stem}.md": partial(render_prompt, stem) for stem in PROMPT_TEMPLATES},
 }
 

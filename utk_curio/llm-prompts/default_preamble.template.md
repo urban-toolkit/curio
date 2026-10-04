@@ -18,7 +18,7 @@ A {{template.label:curio.builtin/merge-flow}} node combines its inputs: with one
 
 A {{template.label:curio.builtin/data-pool}} node is represented to the user as a table. Changes made to a {{template.label:curio.builtin/data-pool}} are seen by all connected nodes, which is how interactions are linked between visualizations.
 
-A {{template.label:curio.builtin/vis-simple}} node renders a table for DataFrames/GeoDataFrames, or a card per row when the frame carries images: one image plus that row's other values. A column holds images if it is named "image_url", "image_content", "image", "thumbnail" or "overlay_url" and holds image values, otherwise if its values are data: URIs or URLs ending in an image extension. "image_content" is raw Base64; the others are URLs. Both frame shapes work, so a GeoDataFrame whose features carry an image property displays as images too. Users can click on a card to interact with its row; the interaction will be propagated to a {{template.label:curio.builtin/data-pool}} if connected with an interaction edge.
+A {{template.label:curio.builtin/vis-simple}} node renders a table for DataFrames/GeoDataFrames, or a card per row when the frame carries images: one image plus that row's other values. A column holds images when at least {{image.threshold}} of its non-empty values are images; a value that is a list counts when any of its items is one. The columns named {{image.columns}} are checked first, in that order, and in them an image is a "data:image/" URI, an "/api/" path, any http(s) URL, or bare Base64 image bytes. When any of them holds images, those columns are the image columns and no other column is checked, except that {{image.column:image_url}} is left out when {{image.column:thumbnail}} holds images too, since the thumbnail is the small view of the same file. Otherwise every column is checked, and an image there is a "data:image/" URI, an "/api/" path, or an http(s) URL with an image extension ({{image.extensions}}) at its end or just before a "?" or "#"; bare Base64 does not count there. Both frame shapes work, so a GeoDataFrame whose features carry an image property displays as images too. Users can click on a card to interact with its row; the interaction will be propagated to a {{template.label:curio.builtin/data-pool}} if connected with an interaction edge.
 
 DO NOT CONNECT A MERGE FLOW DIRECTLY TO THE INPUT OF A VEGA-LITE NODE, you need to insert a node before that will filter the correct DataFrame that will feed Vega.
 
@@ -69,7 +69,7 @@ When generating the grammar for Vega-Lite do not include the data field. It will
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "$schema": "{{vega.schema_url}}",
   "mark": "bar",
   "encoding": {
     "x": {"field": "a", "type": "nominal", "axis": {"labelAngle": 0}},
@@ -112,21 +112,15 @@ When a Vega-Lite node is connected to a node that has already run, and its edito
 is still empty, Curio fills it with a starter spec chosen from the input's
 column types. Generate specs that agree with this ladder unless the user asks
 for something else. Otherwise the AI and the node produce different charts for
-the same input, which is worse than either alone. First match wins:
+the same input, which is worse than either alone. Each rule names the column
+roles it needs (at least one column of each, unless it gives a count), then
+the mark it writes and what it shows. First match wins:
 
-- geometry + at least one quantitative column -> geoshape choropleth, colored by
-  the first quantitative column
-- geometry only -> geoshape, no color
-- temporal + quantitative -> line, time on x
-- nominal + quantitative -> bar, with an EXPLICIT "aggregate": "mean" on y
-- two or more quantitative -> point scatter of the first two
-- one quantitative -> bar histogram, binned x and "aggregate": "count" on y
-- one nominal -> bar of counts
+{{vega.starter_ladder}}
 - nothing usable -> no spec at all
 
-Column roles come from pandas dtypes: `geometry` is geometry; `datetime64`,
-`period` and `timedelta` are temporal; `int`, `uint` and `float` are
-quantitative; `bool`, `object`, `str`, `string` and `category` are nominal.
+Column roles come from pandas dtypes, checked in this order:
+{{starter.dtype_roles}}. A column of any other dtype has no role.
 Never chart `__row_index__`, and avoid a nominal column that has one distinct
 value per row: it is an identifier and produces one bar per row.
 
@@ -138,17 +132,12 @@ one bar per row.
 When an Autark node is connected to a node that has already run, and its
 editor is still empty, Curio fills it with a starter document chosen from the
 input's layers, the same way a Vega-Lite node fills itself. Generate documents
-that agree with this ladder unless the user asks for something else. First match
-wins:
+that agree with this ladder unless the user asks for something else. Each rule
+names the layers with geometry it needs and the column roles each of them needs
+(at least one column of each), then the family the document writes and what it
+draws. First match wins:
 
-- two or more layers with geometry -> a map with one layerRef per table, each
-  named by its table
-- one layer with a quantitative column -> a map layer colored by the first
-  quantitative column: "getFnv": that column, "getFnvType": "quantitative",
-  "colorMapInterpolator": "interpolateViridis"
-- one layer with a nominal column -> a map layer colored by the first nominal
-  column: "getFnvType": "categorical", "colorMapInterpolator": "schemeTableau10"
-- one layer with geometry only -> a plain map layer
+{{autk.starter_ladder}}
 - no geometry -> no document at all
 
 A map draws only tables with geometry. A DataFrame input is read through its one
@@ -167,7 +156,7 @@ bar chart over the same frame.
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "$schema": "{{vega.schema_url}}",
   "mark": "geoshape",
   "encoding": { "color": {"field": "pop", "type": "quantitative"} }
 }
@@ -202,7 +191,7 @@ Visualizations can be connected to a {{template.label:curio.builtin/data-pool}} 
 
 ```json
 { 
-  "$schema": "https://vega.github.io/schema/vega-lite/v6.json", 
+  "$schema": "{{vega.schema_url}}", 
   "params": [ {"name": "clickSelect", "select": "interval"} ], 
   "mark": { "type": "point", "cursor": "pointer" }, 
   "encoding": { 
