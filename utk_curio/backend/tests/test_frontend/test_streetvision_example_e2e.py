@@ -34,14 +34,18 @@ import pytest
 
 from .utils import (
     REPO_ROOT,
+    VEGA_CANVAS_PROBE_JS,
     api_json,
     dismiss_toasts,
     node_locator,
+    read_node_error_text,
     require_owner_view,
     require_project_page,
     require_user_auth,
+    run_all_and_wait,
     run_node_and_wait,
     stub_login_and_enter_workflow,
+    wait_for_node_settled,
 )
 
 if TYPE_CHECKING:
@@ -56,6 +60,12 @@ PHOTOS = "5988175e-84aa-4964-84de-aba7d55cf122"
 ROUTE_ONE = "4067fb98-3ed5-497a-97a5-41a98ce1085b"
 ROUTE_ONE_VIEW = "5d2ac264-58a5-431d-83cd-d6785c6fd176"
 SAMPLE_PHOTOS = 40
+#: The three Vega-Lite charts: route one's map and bars, route two's bars.
+CHARTS = (
+    "8aaff248-9894-4ca8-b9a3-3b79216ce592",
+    "1aa27f1a-5ed7-4872-a413-ce6fd1eb2c6b",
+    "e5a27c3f-8d4b-4f16-a9e2-0b3c4d5e6f78",
+)
 
 
 def _example_spec() -> dict:
@@ -207,3 +217,60 @@ def test_route_one_segments_the_sample_with_the_shipped_model(street_vision_canv
     # The results lead each row, so they are what the caption shows.
     caption = view.inner_text() or ""
     assert "dominant_class:" in caption and "vegetation_pct:" in caption, caption[:400]
+
+
+# Every toast the page shows, from a MutationObserver on the toast region, as
+# test_computed_json_output_e2e.py records them: a toast is gone 5 s later.
+_TOAST_RECORDER_JS = r"""() => {
+    if (window.__curioToastLog) return "already";
+    const region = document.querySelector('[aria-label="Notifications"]');
+    if (!region) return "no toast region";
+    window.__curioToastLog = [];
+    const record = () => {
+        region.querySelectorAll('.toast').forEach((t) => {
+            const text = (t.textContent || '').trim();
+            if (text && !window.__curioToastLog.includes(text)) window.__curioToastLog.push(text);
+        });
+    };
+    new MutationObserver(record).observe(region, { childList: true, subtree: true });
+    record();
+    return "ok";
+}"""
+
+
+def test_run_all_draws_every_chart_without_an_empty_render(street_vision_canvas):
+    """Run All over the whole example: every chart draws, and none says 0 rows.
+
+    The report: on dev, after a Run All, a chart said "rendered nothing: 0 rows
+    arrived at this node" while the photos and a chart were on screen. Played
+    node by node, as the workflow suite plays it, each chart compiles after
+    its Spatial Join has answered; Run All moves on by levels.
+    """
+    page = street_vision_canvas
+    for node_id in _segmentation_ids(_example_spec()):
+        node_locator(page, node_id).locator("[data-curio-node-output]").wait_for(
+            state="visible", timeout=300000
+        )
+    page.wait_for_selector('[aria-label="Notifications"]', state="attached", timeout=20000)
+    assert page.evaluate(_TOAST_RECORDER_JS) in ("ok", "already")
+
+    run_all_and_wait(page, timeout_ms=600000)
+    # A chart whose rows land after the run still redraws; give it the time.
+    page.wait_for_timeout(5000)
+
+    charts = {}
+    for chart in CHARTS:
+        status = wait_for_node_settled(page, chart, node_type="VIS_VEGA", timeout_ms=120000)
+        probe = page.evaluate(VEGA_CANVAS_PROBE_JS, f"vega{chart}") or {}
+        charts[chart] = {
+            "status": status,
+            "drew": bool(probe.get("nonBlank")),
+            "error": (read_node_error_text(node_locator(page, chart)) or "") if status == "error" else "",
+        }
+    toasts = page.evaluate("() => window.__curioToastLog || []")
+    empty_renders = [t for t in toasts if "rendered nothing" in t]
+
+    expected = {chart: {"status": "done", "drew": True, "error": ""} for chart in CHARTS}
+    assert (charts, empty_renders) == (expected, []), json.dumps(
+        {"charts": charts, "empty-render toasts": empty_renders, "all toasts": toasts}, indent=2
+    )
