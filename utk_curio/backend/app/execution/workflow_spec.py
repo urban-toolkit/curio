@@ -19,6 +19,11 @@ from utk_curio.backend.app.execution.code_references import (
     resolve_references,
 )
 
+#: The node that holds one shared widget, which any node's code names as
+#: ``[!! @name !!]``. Kept in sync with ``PARAMETER_NODE_TYPE`` in
+#: ``src/utils/references/sharedParameters.ts``.
+PARAMETER_TYPE = "curio.builtin/parameter"
+
 
 def merge_slot_index(edge: dict) -> int | None:
     """Which input circle an edge feeds: ``in_0`` → 0, or None.
@@ -339,6 +344,29 @@ class WorkflowSpec:
         """The circles of *node_id* that have an edge, in order."""
         return [input_slot(e) for e in self._data_edges_to(node_id)]
 
+    def shared_widgets(self) -> list:
+        """The widgets the dataflow's Parameter nodes hold, in node order: what
+        a ``[!! @name !!]`` reference names (#662). A Parameter node has no
+        edge, so its value reaches a node through this list, not an input."""
+        return [
+            widget
+            for n in self.nodes
+            if isinstance(n.raw_type, str) and n.raw_type.split("@", 1)[0] == PARAMETER_TYPE
+            for widget in n.widgets
+        ]
+
+    def node_code(self, node, language: str, content: str | None = None) -> str:
+        """*node*'s code (or *content* in its place) with its references
+        resolved as the canvas resolves them before a run: its widgets, its
+        wired circles and the shared tags. Raises ``CodeReferenceError``."""
+        return resolve_code_references(
+            node.content if content is None else content,
+            node.widgets,
+            language,
+            self.input_slots(node.id),
+            self.shared_widgets(),
+        )
+
     def topo_sorted_nodes(self) -> list:
         """Return nodes in topological (dependency) order using Kahn's algorithm.
 
@@ -574,18 +602,20 @@ def seed_node_code(code: str, seed: int = 42) -> str:
     return _SEED_PREFIX.format(seed=seed) + code
 
 
-def resolve_code_references(code: str, widgets=(), language: str = "python", input_slots=()) -> str:
+def resolve_code_references(code: str, widgets=(), language: str = "python", input_slots=(), shared=()) -> str:
     """Replace a node's references with code, exactly as the frontend does
     before posting to the sandbox (#662): widget references with their values,
     input and column references by *input_slots*, the circles that have an
-    edge.
+    edge, and shared references with the values of the *shared* widgets
+    (``WorkflowSpec.shared_widgets``).
 
     Raises ``CodeReferenceError`` naming every reference that cannot be
     resolved: an old ``[!! name$TYPE$default !!]`` marker, a name the node has
-    no widget for, or an input with no edge.
+    no widget for, an input with no edge, or a Parameter node that is missing
+    or named twice.
     """
     inputs = [{"slot": slot} for slot in input_slots]
-    resolved, problems = resolve_references(code, widgets, language, inputs)
+    resolved, problems = resolve_references(code, widgets, language, inputs, shared)
     if problems:
         raise CodeReferenceError("\n".join(p["message"] for p in problems))
     return resolved

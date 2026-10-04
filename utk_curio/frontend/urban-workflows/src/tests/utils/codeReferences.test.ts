@@ -20,6 +20,7 @@ import {
   type InputScope,
 } from "../../utils/references/codeReferences";
 import { normalizeWidgets } from "../../utils/widgets/widgetModel";
+import { normalizeShared } from "../../utils/references/sharedParameters";
 
 type Case = {
   name: string;
@@ -27,6 +28,7 @@ type Case = {
   code: string;
   widgets: unknown[];
   inputs?: InputScope[];
+  shared?: unknown[];
   expected: string;
   problems?: string[];
 };
@@ -35,7 +37,7 @@ describe("the shared reference cases", () => {
   test.each((cases.cases as Case[]).map((c) => [c.name, c]))("%s", (_name, c) => {
     const result = resolveReferences(
       c.code,
-      { widgets: normalizeWidgets(c.widgets), inputs: c.inputs ?? [] },
+      { widgets: normalizeWidgets(c.widgets), inputs: c.inputs ?? [], shared: normalizeShared(c.shared ?? []) },
       c.language,
     );
     expect(result.code).toBe(c.expected);
@@ -65,7 +67,7 @@ describe("references", () => {
   });
 
   test("problems read as one message, a line each", () => {
-    const { problems } = resolveReferences("[!! a !!] [!! b$X$1 !!]", { widgets: [], inputs: [] }, "python");
+    const { problems } = resolveReferences("[!! a !!] [!! b$X$1 !!]", { widgets: [], inputs: [], shared: [] }, "python");
     expect(describeReferenceProblems(problems).split("\n")).toHaveLength(2);
   });
 
@@ -115,7 +117,11 @@ describe("closing up circles", () => {
     // Inputs 0, 1 and 2 feed the node; input 1 is deleted, so input 2 is now
     // input 1 and is arg[1] of the two that remain.
     const code = renumberInputReferences("return [!! input 2 !!]", 1);
-    const { code: resolved } = resolveReferences(code, { widgets: [], inputs: [{ slot: 0 }, { slot: 1 }] }, "python");
+    const { code: resolved } = resolveReferences(
+      code,
+      { widgets: [], inputs: [{ slot: 0 }, { slot: 1 }], shared: [] },
+      "python",
+    );
     expect(resolved).toBe("return arg[1]");
   });
 });

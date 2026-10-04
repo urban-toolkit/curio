@@ -6,7 +6,8 @@ import { Starter, useStarterContext } from '../providers/StarterProvider';
 import { useUserContext } from '../providers/UserProvider';
 import { useFlowContext } from '../providers/FlowProvider';
 import { reportFromNodeOutput, reportNodeRuntime } from '../services/nodeRuntimeReport';
-import { nodeRunKey } from '../utils/widgets/widgetModel';
+import { runKeyWithShared, sharedWidgetsOf } from '../utils/references/sharedParameters';
+import { noteCodeEdit } from '../utils/references/codeEdits';
 
 export interface NodeOutput {
   code: string;
@@ -27,9 +28,14 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
 
   const { editUserStarter } = useStarterContext();
   const { user } = useUserContext();
-  const { projectId } = useFlowContext();
+  const { projectId, nodes } = useFlowContext();
 
-  useEffect(() => { data.code = code; }, [code]);
+  useEffect(() => {
+    data.code = code;
+    // The flow's state does not see this write, so whatever lists the nodes
+    // that use a shared tag is told here.
+    noteCodeEdit();
+  }, [code]);
 
   // Mirrored by direct mutation rather than setNodes, deliberately: a setNodes
   // per keystroke re-rendered the whole canvas (dev/70). reactFlow.getNodes()
@@ -44,8 +50,11 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
   // straight after a load, while identical content compares equal.
   useEffect(() => {
     data.output = output;
-    // #662: the key includes the node's widget values, so a new value re-runs it.
-    if (output?.code === 'success') data.executedCode = nodeRunKey(code, data.widgets);
+    // #662: the key includes the node's widget values and the shared tags it
+    // names, so a new value re-runs it.
+    if (output?.code === 'success') {
+      data.executedCode = runKeyWithShared(code, data.widgets, sharedWidgetsOf(nodes ?? []));
+    }
     // dev/135: the node instance already held its own outcome here — and only
     // here, in memory, so an agent asked about a node that had just failed in
     // the BROWSER was told `never-executed` (the owner's `a29d1ad8`). This is
