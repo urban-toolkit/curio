@@ -821,6 +821,12 @@ fails open into a runtime error from the sandbox.
    re-validates it (dict-shaped, stringified, ≤32 entries) and injects
    `curio_data_path` into the user namespace, where an unknown id raises an
    actionable `RuntimeError` instead of returning a foreign path.
+4. Under fork isolation, `stage_dataset_paths`
+   ([`sandbox/util/staging.py`](../utk_curio/sandbox/util/staging.py)) hardlinks
+   each file into the run's scratch as `ds_<i>/<file>`, with the files named
+   after it: a parquet's `<file>.decode.json`, a shapefile's `.shx`, `.dbf` and
+   `.prj`. A bundle is staged as `ds_<i>/data/bundle.json` with the parts its
+   `bundle.json` names, at their paths under the dataset's folder.
 
 The id must satisfy the same safe-id pattern on both sides before it is
 interpolated into generated Python; an id that fails it falls back to a literal
