@@ -118,6 +118,40 @@ class TestArgShape:
         assert shape["kind"] == ic.KIND_LIST and shape["length"] == 2
         assert shape["via"] == "pool"
         assert [s["upstreamNodeId"] for s in shape["slots"]] == ["b", "p"]
+        # The node has one input, the pool's list: its items are read by index.
+        assert [s["chip"] for s in shape["slots"]] == ["[!! input 0 !!][0]", "[!! input 0 !!][1]"]
+
+    def test_a_slot_is_read_by_the_chip_of_its_circle_not_its_position(self):
+        # A plan can wire circles with a gap (`in`, `in_3`). The chip names the
+        # circle, so the second input is `[!! input 3 !!]`, which the run turns
+        # into arg[1]; `[!! input 1 !!]` would name a circle with no edge.
+        spec = {"dataflow": {
+            "nodes": MULTI_INPUT_SPEC["dataflow"]["nodes"],
+            "edges": [
+                {"id": "e0", "source": "p", "target": "a", "targetHandle": "in_3"},
+                {"id": "e1", "source": "b", "target": "a", "targetHandle": "in"},
+            ],
+        }}
+        shape = ic.arg_shape(spec, "a")
+        assert shape["circles"] == [0, 3]
+        assert [(s["argIndex"], s["circle"], s["chip"]) for s in shape["slots"]] == [
+            (0, 0, "[!! input 0 !!]"), (1, 3, "[!! input 3 !!]"),
+        ]
+        assert "[!! input 3 !!] = Population Data" in ic.describe(shape)
+        assert ic.check("gdf = [!! input 3 !!]\nreturn gdf.crs", shape) is None
+        violation = ic.check("pop = [!! input 3 !!]\nreturn arg.crs", shape)
+        assert violation == {"attribute": "crs", "name": "arg", "line": 2}
+        refusal = ic.refusal_text(shape, violation)
+        assert "([!! input 0 !!], [!! input 3 !!], ...)" in refusal
+
+    def test_one_input_on_a_later_circle_is_read_by_that_circles_chip(self):
+        spec = {"dataflow": {
+            "nodes": MULTI_INPUT_SPEC["dataflow"]["nodes"],
+            "edges": [{"id": "e0", "source": "p", "target": "a", "targetHandle": "in_1"}],
+        }}
+        assert ic.describe(ic.arg_shape(spec, "a")) == (
+            "[!! input 1 !!] (arg) IS the value Population Data returned"
+        )
 
     def test_describe_reads_as_a_sentence(self):
         line = ic.describe(ic.arg_shape(MULTI_INPUT_SPEC, "a"))

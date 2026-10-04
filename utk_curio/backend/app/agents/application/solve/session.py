@@ -395,8 +395,8 @@ def _upstream_outputs_for(
     the owner's join that guessed ``community_area`` three times).
 
     So the walk goes THROUGH a node that produced nothing, into its own
-    upstreams, in ``in_0…in_n`` order — which is the order the child will index
-    as ``arg[0]``, ``arg[1]`` — and each row carries ``argIndex`` when it
+    upstreams, in circle order (``in``, ``in_1``, ...), which is the order of
+    ``arg`` the child reads through its chips, and each row carries ``argIndex`` when it
     arrived that way. ``schema_fn`` (optional) turns a recorded artifact into
     the columns and dtypes it holds; an artifact it cannot describe leaves the
     row without a schema rather than with a guess.

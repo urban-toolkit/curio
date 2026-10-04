@@ -24,6 +24,7 @@ import json
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 from utk_curio.backend.app.agents.application import source_grounding
+from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
 
 #: The fence the plan grammar recognises (``content.py``); fence-agnostic
 #: recovery exists, but the oracle emits the canonical spelling.
@@ -203,7 +204,7 @@ def plan_for(
                     f"{edge.get('from')} -> {edge.get('to')} declares an input circle on an "
                     "interaction edge; interaction links carry no input port",
                 )
-            entry["toHandle"] = f"in_{int(slot)}"
+            entry["toHandle"] = slot_handle_id(int(slot))
         edges.append(entry)
     return OraclePlan(goal=goal, nodes=tuple(nodes), edges=tuple(edges))
 
