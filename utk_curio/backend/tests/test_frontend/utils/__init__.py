@@ -85,6 +85,7 @@ from .interactions import (  # noqa: F401
     mark_point,
     brush_area,
     at_fraction,
+    assert_in_view,
     AUTK_PLOT_HIGHLIGHT,
     bar_boxes,
     watch_brush,
