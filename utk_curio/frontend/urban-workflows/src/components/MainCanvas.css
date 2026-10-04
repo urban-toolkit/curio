@@ -27,9 +27,9 @@ path.react-flow__edge-path:hover {
 }
 
 /* A node in an expanded scenario wears the scenario's color (#662); the
-   canvas view sets --curio-scenario-color on it. */
+   canvas view sets --scenario-color on it, a per-node value, not a token. */
 .react-flow__node.curio-scenario-member {
-    outline: 3px solid var(--curio-scenario-color);
+    outline: 3px solid var(--scenario-color);
     outline-offset: 3px;
     border-radius: var(--curio-radius-lg);
 }

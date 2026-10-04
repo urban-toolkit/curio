@@ -133,7 +133,7 @@ describe("scenarioCanvasView", () => {
     const view = scenarioCanvasView(NODES, EDGES, [branch()]);
     const a = view.nodes.find((n) => n.id === "a")!;
     expect(a.className).toBe(SCENARIO_MEMBER_CLASS);
-    expect((a.style as Record<string, unknown>)["--curio-scenario-color"]).toBe("#e86a3c");
+    expect((a.style as Record<string, unknown>)["--scenario-color"]).toBe("#e86a3c");
     expect(view.frames).toEqual([{ scenario: branch(), members: ["a", "map"] }]);
     expect(view.boxes).toEqual([]);
     expect(view.edges).toEqual(EDGES);

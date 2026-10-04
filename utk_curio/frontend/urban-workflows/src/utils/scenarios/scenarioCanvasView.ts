@@ -63,7 +63,7 @@ function withClass<N extends Node>(node: N, extra: string): N {
 }
 
 function memberLook<N extends Node>(node: N, scenario: Scenario): N {
-  const style = { ...(node.style ?? {}), "--curio-scenario-color": scenario.color } as CSSProperties;
+  const style = { ...(node.style ?? {}), "--scenario-color": scenario.color } as CSSProperties;
   return { ...withClass(node, SCENARIO_MEMBER_CLASS), style };
 }
 
