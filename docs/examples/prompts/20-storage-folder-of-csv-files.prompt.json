@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/20-storage-folder-of-csv-files.json",
-    "sha256": "dcb64d4f3e41c71a87c455d7db71dec7786da1c558ddbe80d4b375e5c841f7c9",
+    "sha256": "1f5b53677dddf4e9c00f9728d0e037c6b1c789983442aeee242e9b09b66ec9cb",
     "walkthrough": "docs/examples/20-storage-folder-of-csv-files.md"
   },
   "prompt": "Load the Example air quality readings table from the Data Catalog, which combines one CSV file per sensor and day, and chart PM2.5 over time for each sensor in Vega-Lite. Also load the Example air quality stations table, join it with the readings to get the mean PM2.5 of each station, and map the stations by that mean in Vega-Lite.",
@@ -41,13 +41,6 @@
         "hasContent": true
       },
       {
-        "ref": "merge1",
-        "type": "curio.builtin/merge-flow",
-        "role": "merge",
-        "executable": false,
-        "hasContent": false
-      },
-      {
         "ref": "visualization1",
         "type": "curio.builtin/vis-vega",
         "role": "visualization",
@@ -70,24 +63,18 @@
       },
       {
         "from": "loader1",
-        "to": "merge1",
+        "to": "analysis1",
         "kind": "data",
         "slot": 1
       },
       {
         "from": "loader2",
-        "to": "merge1",
-        "kind": "data",
-        "slot": 0
+        "to": "analysis1",
+        "kind": "data"
       },
       {
         "from": "loader2",
         "to": "visualization2",
-        "kind": "data"
-      },
-      {
-        "from": "merge1",
-        "to": "analysis1",
         "kind": "data"
       }
     ],
@@ -104,7 +91,6 @@
   "execution": {
     "mode": "sandbox",
     "browserOnlyKinds": [
-      "curio.builtin/merge-flow",
       "curio.builtin/vis-vega"
     ],
     "notes": null

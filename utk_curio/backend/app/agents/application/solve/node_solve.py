@@ -143,7 +143,7 @@ def _solve_node_events(
     # the only way to fill such a node.
     if kind not in (workflow_spec.CONTENT_KIND_CODE, workflow_spec.CONTENT_KIND_GRAMMAR):
         # dev/118 (DEC-075) → dev/119 → dev/134: a kind that authors nothing at
-        # all (a merge, a pool, a simple view, a spatial join) or presentation
+        # all (a pool, a simple view, a spatial join) or presentation
         # content with no validator. No round, no sandbox, no generation —
         # nothing this loop could verify; say so and change nothing.
         outcome = _not_executable_outcome(node, label, kind)
@@ -185,8 +185,8 @@ def _solve_node_events(
 
 
 def _not_executable_outcome(node: dict, label: str, kind: str) -> dict:
-    """dev/118 (DEC-075) → dev/119 → dev/134: a kind that authors nothing at all (a merge, a pool,
-    a simple view, a spatial join) or presentation content with no validator. No round, no
+    """dev/118 (DEC-075) → dev/119 → dev/134: a kind that authors nothing at all (a pool, a
+    simple view, a spatial join) or presentation content with no validator. No round, no
     sandbox, no generation — nothing this loop could verify; say so and change nothing."""
     reason = (
         f"{label!r} ({node.get('type')}) is wired, not written: this kind has no "

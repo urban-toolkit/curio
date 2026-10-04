@@ -8,8 +8,8 @@ from rasterio.features import geometry_mask
 # here so the upstream loader stays cheap.
 #
 # `arg` is whatever the upstream port produced. Curio normalises it to:
-#   * a list/tuple of two items if two distinct upstream nodes are wired
-#     (typically through a Merge Flow), or
+#   * a list/tuple of two items if two upstream nodes are wired, one on
+#     each input circle, or
 #   * a single artifact if only one upstream is wired.
 # Sort the two inputs by Python type rather than by wire order so the
 # downstream contract is stable regardless of how the user dragged the

@@ -258,18 +258,23 @@ class TestDataflowReadProjection:
     def test_edge_handles_survive_when_present(self, tmp_curio):
         from utk_curio.backend.app.projects import storage as projects_storage
 
+        # Two inputs on one node's circles, "in" and "in_1" (#662).
         spec = {"dataflow": {"nodes": [
             {"id": "a", "type": "t", "content": ""},
-            {"id": "m", "type": "curio.builtin/merge-flow", "content": ""},
+            {"id": "b", "type": "t", "content": ""},
+            {"id": "m", "type": "curio.builtin/computation-analysis", "content": ""},
         ], "edges": [
             {"id": "e1", "source": "a", "target": "m",
-             "sourceHandle": "out", "targetHandle": "in_0"},
+             "sourceHandle": "out", "targetHandle": "in"},
+            {"id": "e2", "source": "b", "target": "m",
+             "sourceHandle": "out", "targetHandle": "in_1"},
         ]}}
         projects_storage.write_spec(self.UKEY, self.PID, spec)
         _, text = tools.execute_read_tool(
             "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
         )
-        assert json.loads(text)["edges"][0]["targetHandle"] == "in_0"
+        handles = {e["id"]: e["targetHandle"] for e in json.loads(text)["edges"]}
+        assert handles == {"e1": "in", "e2": "in_1"}
 
     def test_interaction_edges_are_named_as_such_data_edges_stay_bare(self, tmp_curio):
         """dev/125 §3.6 — the read-back the instruction demands.

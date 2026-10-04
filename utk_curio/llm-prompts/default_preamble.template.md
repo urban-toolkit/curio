@@ -14,13 +14,11 @@ A node's "type" is the id of the template it was made from. A run that can place
 
 {{builtin.nodes}}
 
-A {{template.label:curio.builtin/merge-flow}} node combines its inputs: with one connected input it passes that value straight through, and with more it outputs them as a tuple, in socket order. An edge into a {{template.label:curio.builtin/merge-flow}} node names the socket it connects to in "targetHandle": {{builtin.merge_slots}}.
+A node that accepts more than one connection takes each one on its own input circle, numbered from 0 in the order they were connected. An edge names the circle it connects to in "targetHandle": {{inputs.handles}}, circle 0 first.
 
 A {{template.label:curio.builtin/data-pool}} node is represented to the user as a table. Changes made to a {{template.label:curio.builtin/data-pool}} are seen by all connected nodes, which is how interactions are linked between visualizations.
 
 A {{template.label:curio.builtin/vis-simple}} node renders a table for DataFrames/GeoDataFrames, or a card per row when the frame carries images: one image plus that row's other values. A column holds images when at least {{image.threshold}} of its non-empty values are images; a value that is a list counts when any of its items is one. The columns named {{image.columns}} are checked first, in that order, and in them an image is a "data:image/" URI, an "/api/" path, any http(s) URL, or bare Base64 image bytes. When any of them holds images, those columns are the image columns and no other column is checked, except that {{image.column:image_url}} is left out when {{image.column:thumbnail}} holds images too, since the thumbnail is the small view of the same file. Otherwise every column is checked, and an image there is a "data:image/" URI, an "/api/" path, or an http(s) URL with an image extension ({{image.extensions}}) at its end or just before a "?" or "#"; bare Base64 does not count there. Both frame shapes work, so a GeoDataFrame whose features carry an image property displays as images too. Users can click on a card to interact with its row; the interaction will be propagated to a {{template.label:curio.builtin/data-pool}} if connected with an interaction edge.
-
-DO NOT CONNECT A MERGE FLOW DIRECTLY TO THE INPUT OF A VEGA-LITE NODE, you need to insert a node before that will filter the correct DataFrame that will feed Vega.
 
 ## How nodes are controlled
 
@@ -38,13 +36,15 @@ To pass data forward from a node controllable through python code it is necessar
     return variable1
 ```
 
-To use incoming data in a node controllable through python code you need to access it via a variable called 'arg'. If the previous node is a {{template.label:curio.builtin/merge-flow}} node with more than one connected input, or the previous box outputs a tuple, 'arg' will be a list that can be indexed like: 
+To use incoming data in a node controllable through python code, read each input through its input chip: `{{inputs.chip:0}}` is the input on circle 0, `{{inputs.chip:1}}` the one on circle 1, and so on. A chip becomes the input's value when the node runs, so a node with two inputs can combine them like:
 
 ```python
-    combining_previous_inputs = arg[0] + arg[1]
+    combining_previous_inputs = {{inputs.chip:0}} + {{inputs.chip:1}}
 
     return combining_previous_inputs
 ```
+
+Where a column name is written, a column chip such as `{{inputs.chip:0.population}}` becomes the quoted name of that column of input 0. A chip is code, never text: do not put an input chip inside a string or a comment. If the previous box outputs a tuple, its input is that tuple and can be indexed like any tuple.
 
 But if the previous node outputs a single data like, but not limited to, a dataframe or number or text, 'arg' will contain that value not a indexable list.
 
@@ -96,7 +96,7 @@ Output supported:
 
 Make sure to pay attention to the compatibility between output and input of the nodes.
 
-Number of connections each node accepts into its inputs. A node that accepts any number takes each connection on its own input circle, and its code receives them as `arg`, a list in circle order (`arg[0]`, `arg[1]`, ...); one connection is `arg` itself. To give a node that accepts 1 more than one data unit, either output a tuple with multiple values from the previous node or use a {{template.label:curio.builtin/merge-flow}} node:
+Number of connections each node accepts into its inputs. A node that accepts more than one takes each connection on its own input circle, and its code reads each through its input chip (`{{inputs.chip:0}}`, `{{inputs.chip:1}}`, ...). To give a node that accepts 1 more than one data unit, output a tuple with multiple values from the previous node:
 
 {{builtin.input_count}}
 

@@ -450,9 +450,8 @@ def _play_all(
         )
         tour.click(button, dispatch=True, hold=400)
     if settle:
-        # A Merge Flow node's status stays "idle" after it runs: it hands its
-        # inputs on without an output of its own, so a dataflow that has one
-        # never satisfies the every-node check below.
+        # Only the nodes the scene names: the every-node check below waits
+        # for each node on the canvas to show done or error.
         for node_id, node_type in settle:
             wait_for_node_done(page, node_id, node_type=node_type, timeout_ms=timeout_ms)
         page.wait_for_timeout(1500)
@@ -963,7 +962,7 @@ def scene_canvas(ctx: Ctx) -> None:
     tour.focus(page.locator("#tools-menu"), hold=1600)
     tour.say(
         "The built-in node rail",
-        "Loading, transformation, computation, pooling, maps, charts, merging.",
+        "Loading, transformation, computation, pooling, maps, charts.",
         hold=2600,
     )
     for tile, label in (
@@ -973,7 +972,6 @@ def scene_canvas(ctx: Ctx) -> None:
         ("#tile-data-pool", "Data Pool"),
         ("#tile-autk-grammar", "Autark: 2D and 3D maps, GPU compute"),
         ("#tile-vis-vega", "Vega-Lite charts"),
-        ("#tile-merge-flow", "Merge Flow"),
     ):
         locator = page.locator(tile)
         if not locator.count():

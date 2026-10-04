@@ -1,7 +1,6 @@
 import {
   compactedHandles,
   emptyWiredSlots,
-  filledSlotValues,
   growsInputCircles,
   inputCapacity,
   inputCircleCount,
@@ -13,34 +12,36 @@ import {
   withoutSlot,
 } from '../../utils/inputSlots';
 
-describe('slots held per circle (Merge Flow and growing nodes)', () => {
+describe('slots held per circle (growing nodes)', () => {
   const edges = [
-    { source: 'a', target: 'merge', targetHandle: 'in_0' },
-    { source: 'b', target: 'merge', targetHandle: 'in_1' },
+    { source: 'a', target: 't', targetHandle: 'in_0' },
+    { source: 'b', target: 't', targetHandle: 'in_1' },
   ];
 
-  test('filledSlotValues preserves slot order', () => {
+  test('the wired circles read their values in circle order', () => {
+    // Positional, as the sandbox's `arg[0]`, `arg[1]` are: the edge into
+    // circle 1 is listed first, and the bundle still starts with circle 0.
     const input = [{ id: 'raster' }, { id: 'csv' }];
-    expect(filledSlotValues(input, edges, 'merge')).toEqual([
-      { id: 'raster' },
-      { id: 'csv' },
-    ]);
+    expect(nodeInputFromSlots(input, wiredInputSlots([edges[1], edges[0]], 't'))).toEqual({
+      dataType: 'outputs',
+      data: [{ id: 'raster' }, { id: 'csv' }],
+    });
   });
 
   test('slotsFedBy falls back to edge targetHandle', () => {
-    expect(slotsFedBy(edges, 'merge', 'b', [undefined, undefined])).toEqual([1]);
+    expect(slotsFedBy(edges, 't', 'b', [undefined, undefined])).toEqual([1]);
   });
 
   test('slotsFedBy returns every slot a source feeds (notable B item)', () => {
     const multi = [
-      { source: 'a', target: 'merge', targetHandle: 'in_0' },
-      { source: 'a', target: 'merge', targetHandle: 'in_2' },
+      { source: 'a', target: 't', targetHandle: 'in_0' },
+      { source: 'a', target: 't', targetHandle: 'in_2' },
     ];
-    expect(slotsFedBy(multi, 'merge', 'a', [undefined, undefined, undefined])).toEqual([0, 2]);
+    expect(slotsFedBy(multi, 't', 'a', [undefined, undefined, undefined])).toEqual([0, 2]);
   });
 
   test('wiredInputSlots returns sorted slot ids', () => {
-    expect(wiredInputSlots(edges, 'merge')).toEqual([0, 1]);
+    expect(wiredInputSlots(edges, 't')).toEqual([0, 1]);
   });
 });
 

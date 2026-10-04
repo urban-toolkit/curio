@@ -2,7 +2,7 @@
 
 This example combines OSM road geometry with a 24-band land-surface-temperature (LST) raster to estimate
 the per-road warming trend over Niterói (2001 to 2024). It mixes the Autark grammar with imperative JS/Python
-nodes: an `autk-grammar` **data** node loads roads from a local PBF, a Python node fetches the raster, a JS
+nodes: an `autk-grammar` **data** node loads roads from a local PBF, a Python node loads the raster, a JS
 DuckDB node spatially joins per-band LST averages onto each road, and a second `autk-grammar` node fits a
 per-feature OLS regression on the GPU and feeds a thematic map + brushable scatter linked through a Data Pool.
 
@@ -14,19 +14,12 @@ It is a Curio port of the upstream Autark use case at
 > Autark relies on WebGPU. Run this example in a Chromium-based browser (Chrome / Edge) on a machine
 > with a working GPU stack.
 
-> [!NOTE]
-> **Network access required**
-> Step 2 downloads a 24-band GeoTIFF (~10 MB) from
-> `https://raw.githubusercontent.com/urban-toolkit/autark/main/usecases/public/data/niteroi_lst_verao_2001_2024.tif`.
-> It must be reachable when the dataflow runs.
-
 ## Pipeline overview
 
 ```mermaid
 flowchart LR
-  OSM[autk-grammar data<br/>Niterói OSM PBF] --> MERGE[merge-flow]
-  RASTER[data-loading<br/>24-band LST GeoTIFF] --> MERGE
-  MERGE --> JOIN[js-computation<br/>DuckDB raster spatial join]
+  OSM[autk-grammar data<br/>Niterói OSM PBF] -->|input 0| JOIN[js-computation<br/>DuckDB raster spatial join]
+  RASTER[data-loading<br/>24-band LST GeoTIFF] -->|input 1| JOIN
   JOIN --> OLS[autk-grammar<br/>OLS regression]
   OLS --> POOL[data-pool]
   POOL --> MAP[autk-grammar<br/>thematic 3D map]
@@ -42,8 +35,8 @@ selections back.
 ## Data
 
 `docs/examples/data/niteroi.osm.pbf` is an OSM extract for Niterói (regenerate with
-`scripts/build_example_pbfs.py`). The 24-band LST raster is fetched at run time from the upstream Autark
-repo (Step 2).
+`scripts/build_example_pbfs.py`). `docs/examples/data/niteroi_lst_verao_2001_2024.tif` is the 24-band LST
+raster, from the upstream Autark repo.
 
 ## Step 1: Load OSM layers from a PBF (`autk-grammar`, data block)
 
@@ -62,14 +55,14 @@ A grammar node with only a `data` block loads Niterói's surface, parks, water, 
 The data-only grammar node persists the layer array (`table_osm_surface` / `_parks` / `_water` / `_roads`)
 to the backend and emits a DuckDB reference. The downstream `js-computation` join receives it as the plain
 `[{ name, type, geojson }]` array, and the Curio sandbox resolves the reference automatically before the join's
-`arg` is built, so no manual fetch is needed. Downstream autark nodes reference these layers by name
+code reads it as `[!! input 0 !!]`, so no manual fetch is needed. Downstream autark nodes reference these layers by name
 (`"dataRef": "table_osm_roads"`), the named-layer case of
 [Referencing Upstream Data in Autark Nodes](../ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
 ## Step 2: Reference the LST raster (`data-loading`)
 
-A Python node fetches the 24-band LST GeoTIFF once and embeds the bytes as base64 inside a single-row
-GeoDataFrame, so the join node can reuse them without a second HTTP request.
+A Python node reads the bundled 24-band LST GeoTIFF and embeds the bytes as base64 inside a single-row
+GeoDataFrame, so the join node can load them.
 
 ```python
 import base64
@@ -92,8 +85,9 @@ gdf = gpd.GeoDataFrame(
 return gdf
 ```
 
-The two branches are bundled by a **`merge-flow`** node into a 2-element input: `arg[0]` is the OSM layer
-array, `arg[1]` is the raster row.
+Both branches go straight into the join node: the OSM layer array on its first input circle and the raster
+row on its second. Its code reads them as `[!! input 0 !!]` and `[!! input 1 !!]` (see
+[Several inputs](../USAGE.md#several-inputs)).
 
 ## Step 3: Spatial join LST → roads (`js-computation`, DuckDB)
 
@@ -104,6 +98,9 @@ every road segment. A final `rawQuery` reshapes the per-band averages into a sin
 and re-emits the layer stack (all in EPSG:3395) for a consistent CRS across surface/parks/water/roads.
 
 ```js
+const osmLayers = [!! input 0 !!];
+const rasterFc = [!! input 1 !!];
+// … rasterFc's geotiff_b64 is decoded into geotiffArrayBuffer …
 for (const layer of osmLayers)
   await db.loadGeojson({ geojsonObject: snapLayer(layer.geojson), outputTableName: layer.name, coordinateFormat: 'EPSG:3395', layerType: layer.type });
 await db.loadGeoTiff({ geotiffArrayBuffer, outputTableName: 'lst', coordinateFormat: 'EPSG:4326' });

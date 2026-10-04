@@ -1,7 +1,7 @@
 jest.mock("../../registry/nodeRegistry", () => ({
   getPaletteNodeTypes: () => [
     { id: "curio.builtin/computation-analysis@1", label: "Computation Analysis" },
-    { id: "curio.builtin/merge-flow@1", label: "Merge Flow" },
+    { id: "curio.builtin/data-pool@1", label: "Data Pool" },
   ],
 }));
 

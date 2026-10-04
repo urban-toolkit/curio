@@ -21,9 +21,8 @@ It registers three kinds that together form a complete UHVI workflow:
 [ UHVI Zones  ] ──gdf────┘
 ```
 
-The zonal node receives the raster as `arg[0]` and the zones GeoDataFrame
-as `arg[1]`. Wire the raster edge **first** so it lands at index 0; Curio
-preserves wiring order on multi-edge ports.
+The zonal node takes the raster and the zones GeoDataFrame on its two input
+circles, in either order: its code tells them apart by type.
 
 The defaults assume a workspace layout matching the repo root:
 `./milan/Milan_Tmrt_2022_203_1200D.tif` and

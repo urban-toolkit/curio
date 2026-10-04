@@ -330,7 +330,7 @@ def report_node_runtime():
     """A node reports its own execution outcome from the BROWSER (memo dev/135).
 
     ``DEC-052``'s journal had three writers and all three were the sandbox, so a
-    Vega-Lite chart, an AUTK map, a Data Pool, a Merge Flow, a Simple View, a
+    Vega-Lite chart, an AUTK map, a Data Pool, a Simple View, a
     Spatial Join and a Data Export — every kind that runs in the client or
     through its own service — left no trace, and every agent reading the journal
     was told ``never-executed`` about a node the user had just watched fail.

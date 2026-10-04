@@ -165,8 +165,8 @@ class TestParseCardinality:
 class TestInputArity:
     """dev/67-3 (DEC-051) — maxIncomingEdges is the RENDERED truth: a single
     input port takes its declared maximum (the canvas grows a circle per edge,
-    and None is any number), named ports take one edge each, and merge-flow
-    keeps its five slots."""
+    and None is any number), and named ports take one edge each. No template
+    id is special: since #662 the declared maximum is the only cap."""
 
     def _templates(self, user_and_token, alice_project, tmp_curio):
         from utk_curio.backend.app.projects import services as projects_services
@@ -184,7 +184,11 @@ class TestInputArity:
             _template("spatial-join", "Spatial Join",
                       input_ports=[{"types": ["GEODATAFRAME"], "cardinality": "1"},
                                    {"types": ["GEODATAFRAME"], "cardinality": "1"}]),
-            _template("merge-flow", "Merge",
+            _template("fan-in", "Fan In",
+                      input_ports=[{"types": ["DATAFRAME"], "cardinality": "[1,5]"}]),
+            # The id that once rendered five fixed slots (DEC-051), declared here
+            # by a package that still ships it.
+            _template("merge-flow", "Old Merge",
                       input_ports=[{"types": ["DATAFRAME"], "cardinality": "[1,n]"}]),
         ])
         return {
@@ -200,8 +204,23 @@ class TestInputArity:
         assert by_id["curio.builtin/data-transformation"]["maxIncomingEdges"] == 2
         assert by_id["curio.builtin/vis-vega"]["maxIncomingEdges"] == 1
         assert by_id["curio.builtin/spatial-join"]["maxIncomingEdges"] == 2
-        # Merge's rendered slot machinery wins over its declared [1,n].
-        assert by_id["curio.builtin/merge-flow"]["maxIncomingEdges"] == 5
+        # A growing port with a finite bound stops at it: five circles, no sixth.
+        assert by_id["curio.builtin/fan-in"]["maxIncomingEdges"] == 5
+        # No id overrides what its port declares: [1,n] is any number.
+        assert by_id["curio.builtin/merge-flow"]["maxIncomingEdges"] is None
+
+    def test_input_capacity_is_the_declared_bound_alone(self):
+        """The one rule behind ``maxIncomingEdges`` takes the port count and the
+        single port's cardinality, and nothing that names a template."""
+        from utk_curio.backend.app.packages.application.templates import input_capacity
+
+        assert input_capacity(0) == 0
+        assert input_capacity(1, "1") == 1
+        assert input_capacity(1, "[1,5]") == 5
+        assert input_capacity(1, "[1,n]") is None
+        assert input_capacity(2) == 2
+        # Several ports are named circles, one edge each, whatever one declares.
+        assert input_capacity(2, "[1,n]") == 2
 
     def test_declared_cardinality_survives_as_metadata(self, user_and_token, alice_project, tmp_curio):
         by_id = self._templates(user_and_token, alice_project, tmp_curio)
@@ -399,7 +418,20 @@ class TestCanonicalTemplateId:
         text = constants.read_text(encoding="utf-8")
         block = text.split("export enum NodeType {", 1)[1].split("}", 1)[0]
         members = re.findall(r'^\s*([A-Z0-9_]+)\s*=\s*"([^"]+)"', block, re.M)
-        assert len(members) >= 11, f"expected the NodeType roster, parsed {members}"
+        # Ten since Merge Flow left (#662); every member names a template the
+        # built-in package ships, so a stale member fails here too.
+        assert len(members) >= 10, f"expected the NodeType roster, parsed {members}"
+        import json
+
+        manifest = json.loads(
+            (Path(__file__).resolve().parents[4] / "packages" / "curio.builtin@1" / "manifest.json")
+            .read_text(encoding="utf-8")
+        )
+        shipped = {f"curio.builtin/{t['id']}" for t in manifest["templates"]}
+        assert {value for _, value in members} <= shipped, (
+            f"NodeType names templates the built-in package does not ship: "
+            f"{sorted({value for _, value in members} - shipped)}"
+        )
         for key, value in members:
             assert packages_services.canonical_template_id(key) == value, (
                 f"NodeType.{key} = {value!r} does not follow the upper-snake rule "
