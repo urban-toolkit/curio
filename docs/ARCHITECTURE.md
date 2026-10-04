@@ -1485,6 +1485,18 @@ a full listing for hub and live-output ids. Both paths run the same containment
 check, so an index row pointing outside the allowed read roots is refused rather
 than served.
 
+### Saved outputs and dataflow runs
+
+A dataflow's saved outputs are the `outputs` list of its `manifest.json`: one entry per node with `node_id`, `filename`, `data_type` and `produced_at`. `produced_at` is the time in the output's artifact id (`<ms>_<hex>`), stamped by the server when the output is first recorded and kept while the same file stays recorded.
+
+- A save (`projects/services.py::update_project`) records the outputs it sends and drops the others. When the manifest already holds a newer output for a node, by `produced_at`, that output stays and the older one sent is not installed. An entry without `produced_at` counts as oldest.
+- `record_node_outputs` records outputs without a save: each replaces its node's entry, and the other entries stay. It writes no spec and does not move the dataflow's revision.
+- Both read and write the manifest under the spec lock.
+
+[`execution/save_policy.py`](../utk_curio/backend/app/execution/save_policy.py) decides which outputs a run on the server installs and records, as `utils/saveOutputDataset.ts` decides it on the canvas. `utils/saveOutputDataset.cases.json` holds the cases both sides run.
+
+The run tables `dataflow_run` and `dataflow_run_step` ([`runs/models.py`](../utk_curio/backend/app/runs/models.py), alembic revision `f7a8b9c0d1e2`) hold one row per run and one per node the run touched. A run with no `target_node_id` ran the whole dataflow. `runs/repositories.py` keeps, per dataflow and per kind, the newest 50 runs and every run younger than 30 days, pruning when a run is created. A project's runs and their steps are deleted with it.
+
 ### Dataset Routes
 
 Defined in `backend/app/datasets/routes.py`; all require authentication. See [DATA-CATALOG.md](DATA-CATALOG.md) for the user-facing model.
@@ -1720,6 +1732,8 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/datasets/repositories/` | Installed / local / registry / user-store persistence, plus the per-user dataset index |
 | `backend/app/datasets/repositories/index.py` | The dataset index: write-through, disk reconciliation, never-raise `safe_*` wrappers |
 | `backend/app/datasets/models.py` | `DatasetIndexEntry`, the index's SQLAlchemy table |
+| `backend/app/runs/models.py` + `repositories.py` | `DataflowRun` and `DataflowRunStep`, the run tables, and their reads, writes and retention |
+| `backend/app/execution/save_policy.py` | Which outputs a run on the server installs and records, as the canvas decides it |
 | `backend/app/datasets/infrastructure/` | Storage helpers, file metadata, output paths, catalog utilities |
 | `backend/app/datasets/schemas/` | Request and catalog-item serialization schemas |
 | `backend/app/agents/routes/` | `/api/agents/*` endpoints, one module per resource (`catalog`, `lifecycle`, `attachments`, `proposals`, `turns`, `solve`, `llm`); `common.py` holds the blueprint and the shared helpers; the route table is a contract test (`tests/test_agents/route_table.json`) |
