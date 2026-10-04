@@ -263,6 +263,35 @@ the one rule, read by a run and by a save, for which outputs are saved whatever 
 node's own toggle says: what a pinned tile reads and what a scenario's context and
 outcomes produce.
 
+### Comparing scenarios
+
+The Compare Scenarios node (`curio.builtin/compare-scenarios`) is a Python code
+node whose code it writes itself:
+
+- `src/utils/compare/compareInputs.ts` labels each input circle by the scenario its
+  source node is in (`metadata.compareScenarios.inputs`), and `compareCode.ts` writes
+  the code from the labels, one chip per input. `adapters/node/compareScenariosBehavior.tsx`
+  writes both again when the graph's labels differ from the stored ones, never on the
+  dashboard or a shared view, and not while a load has added the nodes but not yet
+  the edges.
+- The code calls `curio_stack_scenarios` (`utk_curio/sandbox/util/scenario_stack.py`),
+  seeded in the in-process namespace (`worker._globals_cache`) and the isolated one
+  (`zygote.build_namespace_template`). A run on the server runs the node as any
+  executable template; `compareCode.cases.json` pins the written code for Jest and
+  for `test_compare_scenarios_node.py`, which resolves it through
+  `WorkflowSpec.node_code` and runs it.
+- `components/compare/CompareChart.tsx` draws the node's own output with `useVega`,
+  with `recordsProvenance` and `forwardsInput` off: the node's provenance is its
+  code, and its run has already handed the table on. The presets are in
+  `comparePresets.ts`, and `comparePresets.cases.json` holds one spec per preset for
+  Jest and for the Vega-Lite check in `test_compare_scenarios_node.py`.
+- `whatDiffers.ts` reads each compared scenario's parts through `scenarioParts`,
+  pairs levers whose ids and `copiedFrom` lists meet, and compares their widget
+  values and code lines; `contextWarnings` compares their fixed context.
+- A pinned Compare Scenarios node draws its own output, so it is its own dashboard
+  source (`SELF_DRAWN_NODE_TYPES` in `dashboardLayout.ts`, `_SELF_DRAWN_KINDS` in
+  `projects/dashboard_payload.py`), and its inputs are not walked.
+
 ---
 
 ## Nodes: Types and Structure

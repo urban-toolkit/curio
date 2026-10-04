@@ -17,6 +17,7 @@ import { canvasTemplateConfigToSpec } from "./utils/canvasTemplateConfigSpec";
 import { dataPoolToSpec } from "./utils/dataPoolSpec";
 import { normalizeWidgets } from "./utils/widgets/widgetModel";
 import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
+import { normalizeCompareSettings } from "./utils/compare/compareSettings";
 
 export class TrillGenerator {
 
@@ -383,6 +384,16 @@ export class TrillGenerator {
                     trill_node.metadata = {};
 
                 trill_node.metadata.copiedFrom = [...node.data.copiedFrom];
+            }
+
+            // #662: a Compare Scenarios node's input labels and chart persist
+            // at metadata.compareScenarios, only when it has either.
+            const compareScenarios = normalizeCompareSettings(node.data.compareScenarios);
+            if(compareScenarios != undefined){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.compareScenarios = compareScenarios;
             }
 
             if(typeof node.data.title === "string" && node.data.title)

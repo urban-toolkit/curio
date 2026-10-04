@@ -70,6 +70,8 @@ export const useVega = ({
   upstreamErrored = false,
   hasSpec = true,
   onRedraw,
+  recordsProvenance = true,
+  forwardsInput = true,
 }: {
   data: any;
   code: string;
@@ -86,6 +88,19 @@ export const useVega = ({
    * arrived and it drew them.
    */
   onRedraw?: (counts: RenderCounts) => void;
+  /**
+   * Whether a compile is recorded in the node's provenance, its code being the
+   * spec. A Compare Scenarios node (#662) draws its own output: its provenance
+   * is the code that made that output, and a spec there would be offered as a
+   * version of its Python.
+   */
+  recordsProvenance?: boolean;
+  /**
+   * Whether a compile hands the node's input on as its output, as a chart
+   * does. A Compare Scenarios node's chart reads the node's own output, which
+   * its run has already handed on.
+   */
+  forwardsInput?: boolean;
 }) => {
   const onRedrawRef = React.useRef(onRedraw);
   onRedrawRef.current = onRedraw;
@@ -375,15 +390,17 @@ export const useVega = ({
 
     let typesOuput: string[] = [...typesInput];
 
-    nodeExecProv(
-      startTime,
-      endTime,
-      workflowNameRef.current,
-      data.nodeId,
-      mapTypes(typesInput),
-      mapTypes(typesOuput),
-      code
-    );
+    if (recordsProvenance) {
+      nodeExecProv(
+        startTime,
+        endTime,
+        workflowNameRef.current,
+        data.nodeId,
+        mapTypes(typesInput),
+        mapTypes(typesOuput),
+        code
+      );
+    }
 
     // dev/136: the counts travel to the behavior, which decides whether this
     // was a render or an empty panel under a green badge.
@@ -634,7 +651,7 @@ export const useVega = ({
     }
 
     // replicating input to the output
-    data.outputCallback(data.nodeId, data.input);
+    if (forwardsInput) data.outputCallback(data.nodeId, data.input);
 
     // dev/136: what this render actually amounted to. Awaited last, so the
     // listeners above are attached exactly when they were before.
