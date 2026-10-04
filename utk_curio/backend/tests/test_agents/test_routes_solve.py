@@ -897,6 +897,34 @@ class TestProgressiveLifecycle:
         )
         assert record["validation"] is False and record["status"] == "ok"
 
+    def test_run_node_tags_every_artifact_with_the_callers_session(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Play tags each artifact with the browser's sign-in token, and the
+        # sandbox serves a tagged artifact only to that session. An untagged
+        # one is served to any signed-in session that names its id.
+        user, token = user_and_token
+        sent = []
+
+        def _exec(endpoint, payload):
+            sent.append(payload)
+            return {
+                "stdout": ["ran"], "stderr": "",
+                "output": {"path": "art-run", "dataType": "dataframe"},
+            }
+
+        monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _exec)
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        pid = proposal["proposalId"]
+        refs = [n["ref"] for n in proposal["plan"]["nodes"]]
+        self._apply_node(client, token, alice_project, att_id, pid, refs[0])
+        self._apply_node(client, token, alice_project, att_id, pid, refs[1])
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run-node",
+            json={"ref": refs[1]}, headers=_auth(token),
+        )
+        assert TestStreamedSolve()._sse_events(r)[-1][1]["ok"] is True
+        assert len(sent) == 2  # the upstream node and the target
+        assert [payload.get("session_id") for payload in sent] == [token, token]
+
     def test_run_node_failure_reports_honestly(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         monkeypatch.setattr(
