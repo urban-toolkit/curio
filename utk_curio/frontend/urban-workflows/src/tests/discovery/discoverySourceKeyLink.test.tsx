@@ -26,7 +26,7 @@ const gated = (present: boolean): DiscoverySourceRow =>
   }) as unknown as DiscoverySourceRow;
 
 function renderAccess(source: DiscoverySourceRow) {
-  return render(<ul>{discoverySourceAccessItems(source)}</ul>);
+  return render(<ul>{discoverySourceAccessItems(source, false)}</ul>);
 }
 
 describe("a source's key link", () => {
@@ -53,6 +53,6 @@ describe("a source's key link", () => {
       ...gated(false),
       auth: { mode: 'public', required: false, usesToken: false, secretId: null, present: false, helpUrl: null },
     } as unknown as DiscoverySourceRow;
-    expect(discoverySourceAccessItems(open)).toEqual([]);
+    expect(discoverySourceAccessItems(open, false)).toEqual([]);
   });
 });

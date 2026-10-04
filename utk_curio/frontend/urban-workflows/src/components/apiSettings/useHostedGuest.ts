@@ -11,6 +11,9 @@ export function isHostedGuest(user: UserData | null, enableUserAuth: boolean): b
   return Boolean(user?.is_guest) && enableUserAuth;
 }
 
+/** What a hosted guest is told where a key would be saved. */
+export const HOSTED_GUEST_KEYS_NOTE = "Personal keys cannot be saved on a shared guest account.";
+
 /** `isHostedGuest` for the signed-in user. */
 export function useHostedGuest(): boolean {
   const { user, enableUserAuth } = useUserContext();
