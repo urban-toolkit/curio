@@ -8,6 +8,7 @@ import json
 import pytest
 
 from utk_curio.backend.app.agents.application import tools
+from utk_curio.backend.app.agents.application.turns import examples
 from utk_curio.backend.app.agents.domain.manifest import ToolRequirement
 from utk_curio.backend.app.agents.application.tools import ToolContract
 
@@ -31,6 +32,7 @@ class TestRegistry:
             # The Discovery Catalog: roster, live search, reviewed download.
             "discovery.sources", "discovery.search", "discovery.acquire",
             "models.search",  # the Model Catalog
+            "examples.read",  # the worked examples
         }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
@@ -53,6 +55,7 @@ class TestRegistry:
         assert tools.REGISTRY["package.install"].effect == "mutate"
         assert tools.REGISTRY["package.draft.apply"].effect == "mutate"  # dev/89
         assert tools.REGISTRY["models.search"].effect == "read"
+        assert tools.REGISTRY["examples.read"].effect == "read"
 
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):
@@ -481,6 +484,95 @@ class TestModelsSearch:
         assert contract.parameters["properties"]["limit"]["type"] == "integer"
         assert "required" not in contract.parameters
         for word in ("id", "name", "task", "origin", "labels", "loader", 'curio_load_model("<id>")'):
+            assert word in contract.description, word
+
+
+class TestExamplesRead:
+    """examples.read: the worked examples' list, one of them by key, and the
+    example an evaluation is scored against left out by the per-run block's rule."""
+
+    UKEY = "42"
+    PID = "p-examples"
+    NINE = "09-heterogeneous-data-linked-views"
+
+    def _read(self, params=None):
+        return tools.execute_read_tool(
+            "examples.read", user_key=self.UKEY, project_id=self.PID, target=None, params=params or {},
+        )
+
+    def _used(self) -> dict:
+        return {example.key: example for example in examples.used_examples()}
+
+    def _mark(self, fixture_id):
+        from utk_curio.backend.app.agents.evaluation import authorization
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        spec = {"dataflow": {"nodes": [], "edges": []}}
+        marker = authorization.new_marker("run-1", fixture_id)
+        projects_storage.write_spec(self.UKEY, self.PID, authorization.mark_spec(spec, marker))
+
+    def test_no_key_lists_every_used_example(self, tmp_curio):
+        # No saved spec: nothing is left out, and that is no error.
+        status, text = self._read()
+        assert status == "ok"
+        rows = json.loads(text)["examples"]
+        used = self._used()
+        assert rows and [row["key"] for row in rows] == list(used)
+        for row in rows:
+            entry = used[row["key"]].entry
+            assert row == {"key": row["key"], "title": entry.title, "line": entry.text}
+        # A "Not used" dataflow is no worked example.
+        assert "dataflows/Widget" not in used
+        assert self._read({"key": "  "}) == (status, text)
+
+    def test_a_key_returns_that_examples_line_and_trill(self, tmp_curio):
+        nine = self._used()[self.NINE]
+        status, text = self._read({"key": self.NINE})
+        assert status == "ok"
+        # The view the per-run block shows: the line, then the Trill.
+        assert text == examples.shown(nine)
+        assert text.startswith(f"{nine.entry.line}\n```json\n")
+        trill = json.loads(text.split("```json\n", 1)[1].rsplit("\n```", 1)[0])["dataflow"]
+        assert len(trill["nodes"]) == len(nine.spec["dataflow"]["nodes"])
+        assert len(trill["edges"]) == len(nine.spec["dataflow"]["edges"])
+        # Its file name names it too, as in the block's exclusion.
+        assert self._read({"key": f"{self.NINE}.json"}) == (status, text)
+        assert self._read({"key": "dataflows/Regression"})[0] == "ok"
+
+    def test_an_unknown_key_says_how_to_list_the_keys(self, tmp_curio):
+        for key in ("no-such-example", "dataflows/Widget"):
+            status, text = self._read({"key": key})
+            assert status == "error", key
+            assert repr(key) in text and "call examples.read with no key to list the keys" in text
+        status, text = self._read({"key": 9})
+        assert status == "error" and "call examples.read with no key to list the keys" in text
+
+    def test_an_evaluation_never_reads_the_example_it_is_scored_against(self, tmp_curio):
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        self._mark(self.NINE)
+        # The rule the per-run block follows names it.
+        assert examples.excluded_by(projects_storage.read_spec(self.UKEY, self.PID)) == {self.NINE}
+        status, text = self._read()
+        keys = [row["key"] for row in json.loads(text)["examples"]]
+        assert status == "ok" and self.NINE not in keys
+        assert keys == [key for key in self._used() if key != self.NINE]
+        entry = self._used()[self.NINE].entry
+        for key in (self.NINE, f"{self.NINE}.json", f"docs/examples/{self.NINE}.json"):
+            status, text = self._read({"key": key})
+            assert status == "error", key
+            assert "call examples.read with no key" in text
+            # The refusal never describes the answer.
+            assert entry.title not in text and entry.text not in text
+        # Every other example stays readable.
+        assert self._read({"key": "dataflows/Regression"})[0] == "ok"
+
+    def test_the_contract_states_its_param_and_results(self):
+        contract = tools.REGISTRY["examples.read"]
+        assert set(contract.parameters["properties"]) == {"key"}
+        assert contract.parameters["properties"]["key"]["type"] == "string"
+        assert "required" not in contract.parameters
+        for word in ("no key", "key, title and one line", "Trill", "unknown key"):
             assert word in contract.description, word
 
 

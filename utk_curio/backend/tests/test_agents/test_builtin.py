@@ -469,6 +469,10 @@ class TestCatalogReadGrants:
         for agent_id in writers:
             assert "models.search" in self._granted(agent_id), agent_id
 
+    def test_the_dataflow_builder_reads_the_worked_examples(self):
+        assert self._holders("examples.read") == {"agent.dataflow-builder"}
+        assert "examples.read" in self._granted("agent.dataflow-builder")
+
 
 class TestDatasetFinderComposite:
     """The dev/50 roster entry — spec per dev/15 §3.4 + docs/06, minus
@@ -587,6 +591,7 @@ class TestDataflowBuilderComposite:
         assert [t.id for t in m.tools] == [
             "dataflow.read", "dataflow.plan.write", "node.runtime.read",
             "node.create",
+            "examples.read",  # any worked example, beside the ones a run is given
         ]
         assert m.provenance.trust == "built-in"
 

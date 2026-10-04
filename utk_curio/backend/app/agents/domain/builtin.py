@@ -339,9 +339,10 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      reads=("mission", "graphContext", "installedTemplates"),
                      # dev/95: node.create is the reviewed lane the delegated
                      # Researcher's note proposals mint on (grant-gated —
-                     # nothing lands without the user's Apply).
+                     # nothing lands without the user's Apply). examples.read:
+                     # any worked example, beside the ones a run is given.
                      tools=("dataflow.read", "dataflow.plan.write",
-                            "node.runtime.read", "node.create"),
+                            "node.runtime.read", "node.create", "examples.read"),
                      # dev/73: node-content-builder listed so node.content.generate
                      # is OFFERED in the delegation paragraph — the chat path for
                      # "change this node's content" (the runtime mints the review
