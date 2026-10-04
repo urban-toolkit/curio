@@ -1,19 +1,21 @@
 /**
- * Widget references inside Monaco (#662): where a dropped or clicked tag lands,
- * what each chip covers and says, and which JSON errors a reference accounts
- * for. Monaco itself is not mounted under Jest; these are the pure helpers the
+ * References inside Monaco (#662): where a dropped or clicked tag lands, what
+ * each chip covers and says, and which JSON errors a reference accounts for.
+ * Monaco itself is not mounted under Jest; these are the pure helpers the
  * editors wire to it.
  */
 import {
+  INPUT_REF_MIME,
   WIDGET_REF_MIME,
+  chipClass,
   dropReference,
   insertReference,
-  isWidgetDrag,
+  isReferenceDrag,
   markersOutsideReferences,
   offsetToPosition,
   referenceMarks,
-  referenceText,
-} from "../../../components/editing/widgets/monacoWidgetRefs";
+} from "../../../components/editing/widgets/monacoCodeReferences";
+import { referenceText, type ReferenceScope } from "../../../utils/references/codeReferences";
 import type { WidgetDef } from "../../../utils/widgets/widgetModel";
 
 function fakeEditor(position: { lineNumber: number; column: number } | null = { lineNumber: 2, column: 5 }) {
@@ -26,6 +28,14 @@ function fakeEditor(position: { lineNumber: number; column: number } | null = { 
 }
 
 const widgets: WidgetDef[] = [{ name: "season", type: "text", default: "summer", value: "winter" }];
+const scope: ReferenceScope = { widgets, inputs: [] };
+const withInputs: ReferenceScope = {
+  widgets,
+  inputs: [
+    { slot: 0, label: "Roads", dataType: "geodataframe", columns: ["length"], dtypes: { length: "float64" } },
+    { slot: 1, label: "Parcels" },
+  ],
+};
 
 describe("inserting a reference", () => {
   test("a click inserts at the cursor", () => {
@@ -52,7 +62,7 @@ describe("inserting a reference", () => {
       clientY: 20,
       dataTransfer: { types: [WIDGET_REF_MIME], getData: (t: string) => (t === WIDGET_REF_MIME ? "season" : "") },
     } as unknown as DragEvent;
-    expect(isWidgetDrag(event)).toBe(true);
+    expect(isReferenceDrag(event)).toBe(true);
     expect(dropReference(editor, event)).toBe(true);
     expect(editor.getTargetAtClientPoint).toHaveBeenCalledWith(10, 20);
     expect(editor.executeEdits.mock.calls[0][1][0].range).toEqual({
@@ -63,9 +73,21 @@ describe("inserting a reference", () => {
     });
   });
 
+  test("an input or column tag drops its own reference", () => {
+    const editor = fakeEditor();
+    const event = {
+      clientX: 1,
+      clientY: 2,
+      dataTransfer: { types: [INPUT_REF_MIME], getData: (t: string) => (t === INPUT_REF_MIME ? "input 1.area" : "") },
+    } as unknown as DragEvent;
+    expect(isReferenceDrag(event)).toBe(true);
+    expect(dropReference(editor, event)).toBe(true);
+    expect(editor.executeEdits.mock.calls[0][1][0].text).toBe("[!! input 1.area !!]");
+  });
+
   test("other drags are left alone", () => {
     const event = { dataTransfer: { types: ["text/plain"] } } as unknown as DragEvent;
-    expect(isWidgetDrag(event)).toBe(false);
+    expect(isReferenceDrag(event)).toBe(false);
   });
 
   test("the reference text", () => {
@@ -80,16 +102,33 @@ describe("chips", () => {
   });
 
   test("a chip covers its reference and shows the value", () => {
-    const [mark] = referenceMarks('x = 1\ns = [!! season !!]', widgets, "python");
+    const [mark] = referenceMarks('x = 1\ns = [!! season !!]', scope, "python");
     expect(mark.range).toEqual({ startLineNumber: 2, startColumn: 5, endLineNumber: 2, endColumn: 19 });
     expect(mark.problem).toBeNull();
     expect(mark.hover).toBe('season = "winter"');
+    expect(chipClass(mark)).toBe("curio-widget-ref");
   });
 
   test("a chip for a name the node does not have says so", () => {
-    const [mark] = referenceMarks("[!! missing !!]", widgets, "python");
+    const [mark] = referenceMarks("[!! missing !!]", scope, "python");
     expect(mark.problem).toMatch(/no widget named missing/);
     expect(mark.hover).toBe(mark.problem);
+    expect(chipClass(mark)).toBe("curio-widget-ref-problem");
+  });
+
+  test("an input chip names the node that feeds it", () => {
+    const [input, column] = referenceMarks("a = [!! input 0 !!]\nb = [!! input 0.length !!]", withInputs, "python");
+    expect(input.kind).toBe("input");
+    expect(input.hover).toBe("input 0, from Roads (geodataframe)");
+    expect(chipClass(input)).toBe("curio-input-ref");
+    expect(column.hover).toBe("column length of input 0, from Roads (float64)");
+  });
+
+  test("an input chip with no edge, or for a column the input lacks, is a problem chip", () => {
+    const [missing, column] = referenceMarks("[!! input 4 !!] [!! input 0.width !!]", withInputs, "python");
+    expect(missing.problem).toMatch(/input 4 has no edge/);
+    expect(chipClass(missing)).toBe("curio-input-ref-problem");
+    expect(column.problem).toMatch(/input 0 has no column width/);
   });
 });
 

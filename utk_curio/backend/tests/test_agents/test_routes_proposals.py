@@ -333,9 +333,17 @@ class TestNodeCreate:
                     "id": "computation-analysis", "label": "Computation Analysis",
                     "category": "computation", "engine": "python", "editor": "code",
                     "description": "Run python analysis code.",
-                    # Real-manifest parity (dev/67-3): one declared input port
-                    # — rendered capacity 1 (one edge per handle, DEC-051).
+                    # Real-manifest parity (dev/67-3): one declared "[1,n]"
+                    # input port, so any number of edges, each on its circle.
                     "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
+                    "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+                },
+                {
+                    "id": "data-summary", "label": "Data Summary",
+                    "category": "computation", "engine": "python", "editor": "code",
+                    "description": "Summarize a table.",
+                    # Real-manifest parity: one input, one edge.
+                    "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
                     "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
                 },
                 {
@@ -1612,14 +1620,15 @@ class TestDestructiveReplan:
         return {"ref": ref, "nodeType": "curio.builtin/computation-analysis",
                 "title": title, "intent": "fetch from the api"}
 
-    def _setup(self, client, user, token, project_id, monkeypatch, replies):
+    def _setup(self, client, user, token, project_id, monkeypatch, replies,
+               cleaner_type="curio.builtin/computation-analysis"):
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         TestNodeCreate()._write_builtin_package(_user_dir_key(user))
         spec = {"dataflow": {"nodes": [
             {"id": "old-loader", "type": "curio.builtin/computation-analysis",
              "content": "load_csv()", "goal": "Load CSV", "x": 10, "y": 20},
-            {"id": "cleaner", "type": "curio.builtin/computation-analysis",
+            {"id": "cleaner", "type": cleaner_type,
              "content": "clean()", "goal": "Clean", "x": 430, "y": 20},
         ], "edges": [
             {"id": "edge-1", "source": "old-loader", "target": "cleaner"},
@@ -1991,11 +2000,12 @@ class TestPlanFanInValidation:
     def test_fanin_into_single_input_node_refuses_then_merge_replan_mints(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         helper = TestDataflowPlanMint()
-        bad = {"goal": "g", "nodes": [self._node("a"), self._node("b"), self._node("c")],
+        single = "curio.builtin/data-summary"
+        bad = {"goal": "g", "nodes": [self._node("a"), self._node("b"), self._node("c", single)],
                "edges": [{"from": "a", "to": "c"}, {"from": "b", "to": "c"}]}
         good = {"goal": "g",
                 "nodes": [self._node("a"), self._node("b"),
-                          self._node("m", "curio.builtin/merge-flow"), self._node("c")],
+                          self._node("m", "curio.builtin/merge-flow"), self._node("c", single)],
                 "edges": [{"from": "a", "to": "m"}, {"from": "b", "to": "m"},
                           {"from": "m", "to": "c"}]}
         att_id, calls = helper._setup(
@@ -2021,6 +2031,7 @@ class TestPlanFanInValidation:
         )
         att_id, calls = helper._setup(
             client, user, token, alice_project, monkeypatch, replies=[bad, good],
+            cleaner_type="curio.builtin/data-summary",
         )
         proposal = helper._proposal(helper._run(client, token, alice_project, att_id))
         # Removing old-loader frees cleaner's single input — the replan mints.
@@ -2059,6 +2070,33 @@ class TestPlanFanInValidation:
             e.get("targetHandle") for e in spec["dataflow"]["edges"]
         )
         assert spec_handles == ["in_0", "in_3"]
+
+    def test_fanin_into_a_growing_node_mints_and_takes_a_circle_per_edge(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        # The computation template declares one "[1,n]" port: no Merge needed.
+        plan = {"goal": "g",
+                "nodes": [self._node("a"), self._node("b"), self._node("c"), self._node("t")],
+                "edges": [{"from": "a", "to": "t"}, {"from": "b", "to": "t", "toHandle": "in_2"},
+                          {"from": "c", "to": "t"}]}
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._plan_reply(plan)],
+        )
+        r = helper._run(client, token, alice_project, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        assert proposal["status"] == "pending"
+        body = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        ).get_json()
+        # A named free circle is honored; the others take the first free ones.
+        assert sorted(e["targetHandle"] for e in body["appliedGraph"]["edges"]) == ["in", "in_1", "in_2"]
+        spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
+        assert sorted(e.get("targetHandle") for e in spec["dataflow"]["edges"]) == ["in", "in_1", "in_2"]
 
     def test_bad_merge_slot_name_feeds_correction(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
