@@ -159,14 +159,16 @@ class ServiceAcquire:
             incoming = self._incoming_dir()
             try:
                 answer = service.load(spec, values, incoming, stage=stage, cancelled=cancelled)
+                # Said in the dataset's description and in the finished job's message.
+                note = f"{answer.failed:,} could not be fetched" if answer.failed else None
                 dataset = self._add_images(
                     manifest, spec, resource_id, answer, values, values_hash,
                     root=incoming, title=title, stage=stage, cancelled=cancelled,
-                    attribution=getattr(service, "attribution", None),
+                    attribution=getattr(service, "attribution", None), note=note,
                 )
             finally:
                 shutil.rmtree(incoming, ignore_errors=True)
-            return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
+            return {"dataset": dataset, "alreadyPresent": False, "unchanged": False, "note": note}
         work = self._work_dir()
         # Autark's layers are in its workspace CRS; a service that answers in
         # longitude and latitude says so.
@@ -257,7 +259,7 @@ class ServiceAcquire:
 
     def _add_images(
         self, manifest, spec, resource_id, answer, values, values_hash, *, root: Path,
-        title, stage, cancelled, attribution: str | None = None,
+        title, stage, cancelled, attribution: str | None = None, note: str | None = None,
     ) -> dict[str, Any]:
         """A service's images as one collection, its files where a node reads
         a downloaded collection's: ``objects/<datasetId>/<file_id>.<ext>``."""
@@ -309,8 +311,8 @@ class ServiceAcquire:
             stage("Adding to your Data Catalog…")
         label = (title or "").strip() or f"{spec.name}, {place}"
         description = f"{len(files):,} {spec.name.lower()} from {manifest.name} for {place}"
-        if answer.failed:
-            description += f"; {answer.failed:,} could not be fetched"
+        if note:
+            description += f"; {note}"
         if attribution:
             description += f". {attribution}"
         dataset = self._install_path(

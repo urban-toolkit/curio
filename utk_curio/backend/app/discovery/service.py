@@ -725,6 +725,7 @@ class DiscoveryService:
                             stage=_stage,
                         )
                     dataset = result["dataset"]
+                    note = result.get("note")
                     job_store.jobs.finish(
                         job,
                         "completed",
@@ -732,7 +733,8 @@ class DiscoveryService:
                         dataset_id=dataset.get("id"),
                         already_present=result["alreadyPresent"],
                         unchanged=result["unchanged"],
-                        stage_message="Added to your Data Catalog",
+                        note=note,
+                        stage_message="Added to your Data Catalog" + (f"; {note}" if note else ""),
                     )
                 except (_Cancelled, StorageCancelled, ServiceCancelled):
                     job_store.jobs.finish(job, "cancelled", stage_message="Cancelled")
