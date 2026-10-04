@@ -449,6 +449,10 @@ function CodeEditor({
         const onMouseDown = (e: MouseEvent) => {
             if (e.button !== 0) return;
             if (!(e.target instanceof Node) || !el.contains(e.target)) return;
+            // The second press of a double-click (and the third of a triple)
+            // is the browser's: it selects the word, or the line, and that
+            // cannot leave the box. Driving it here cancelled it.
+            if (e.detail > 1) return;
 
             const anchor = caretFromPoint(e.clientX, e.clientY);
             if (!anchor || !el.contains(anchor.node)) return;
@@ -614,7 +618,10 @@ function CodeEditor({
                     overflowY: "auto",
                     backgroundColor: "#f7f7f7",
                     borderTop: "1px solid #e0e0e0",
-                    padding: "4px 8px",
+                    // A failed node's error line (NodeOutcomeStrip) sits over
+                    // the bottom of this box: room below the last line lets it
+                    // scroll clear of the strip.
+                    padding: output.code === "error" ? "4px 8px 32px" : "4px 8px",
                     fontSize: "11px",
                     fontFamily: "'Source Code Pro', Consolas, 'Courier New', monospace",
                     whiteSpace: "pre-wrap",

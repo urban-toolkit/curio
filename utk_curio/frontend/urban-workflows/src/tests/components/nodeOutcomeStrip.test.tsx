@@ -70,6 +70,20 @@ describe("NodeOutcomeStrip", () => {
     expect(strip).toHaveTextContent("Error");
   });
 
+  it("lets a press select its text rather than move the node", () => {
+    // react-flow starts a node drag on any press outside a `nodrag` element,
+    // and the drag cancels the selection: `user-select: text` alone let a
+    // drag across the error move the node instead.
+    (global as any).fetch = jest.fn().mockResolvedValue({ ok: false });
+    render(
+      <NodeOutcomeStrip nodeId="vega-1" projectId="p-1"
+        output={{ code: "error", content: VEGA_ERROR }} />,
+    );
+    const strip = screen.getByTestId("node-outcome-vega-1");
+    expect(strip.className).toContain("nodrag");
+    expect(strip.className).toContain("nowheel");
+  });
+
   it("hydrates from the journal when this tab has no live outcome (a reload)", async () => {
     (global as any).fetch = jest.fn().mockResolvedValue({
       ok: true,

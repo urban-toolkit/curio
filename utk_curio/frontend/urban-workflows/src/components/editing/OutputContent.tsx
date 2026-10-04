@@ -56,7 +56,11 @@ function OutputContent({ output }: { output: any; }) {
         }
     }, [output]);
 
+    // `nodrag`: a press in the output or the error selects its text instead
+    // of moving the node; `nowheel` scrolls a long traceback instead of
+    // zooming the canvas.
     return (
+      <div className="nodrag nowheel">
       <Tabs
         id="computation-tabs"
         className="mb-2"
@@ -141,6 +145,7 @@ function OutputContent({ output }: { output: any; }) {
           </div>
         </Tab>
       </Tabs>
+      </div>
     );
 };
 

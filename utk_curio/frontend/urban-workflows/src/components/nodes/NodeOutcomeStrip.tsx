@@ -167,8 +167,10 @@ export const NodeOutcomeStrip: React.FC<NodeOutcomeStripProps> = ({
 
   return (
     <div
+      // `nodrag`: a press here selects the text instead of moving the node,
+      // and `nowheel` scrolls the opened strip instead of zooming the canvas.
       className={`${styles.strip} ${outcome.level === "error" ? styles.error : styles.notice}` +
-        (expanded ? ` ${styles.expanded}` : "")}
+        (expanded ? ` ${styles.expanded}` : "") + " nodrag nowheel"}
       role="status"
       data-testid={`node-outcome-${nodeId}`}
     >
