@@ -202,8 +202,8 @@ def dataset_paths():
 
     Resolving here fixes that by construction — the answer is computed in the
     process that shares a filesystem with the sandbox — and it reuses
-    ``_resolve_exec_dataset_paths``, so the harness and the real execution path
-    cannot drift.
+    ``node_exec.resolve_dataset_paths``, so the harness and the real execution
+    path cannot drift.
 
     Body (JSON):
       * ``code`` – node source to scan for literal ``curio_load_data`` /
@@ -217,18 +217,20 @@ def dataset_paths():
     Response: ``{"paths": {"<id>": "<absolute path>"}, "formats": {...},
     "collections": {...}, "mediaDir": ..., "models": {...}}``: ``formats`` as
     ``/processPythonCode`` sends them for ``curio_load_data``, ``collections``
-    and ``mediaDir`` as ``_resolve_exec_collections`` gives them for
-    ``curio_load_collection`` calls, ``models`` as ``_resolve_exec_models``
+    and ``mediaDir`` as ``resolve_exec_collections`` gives them for
+    ``curio_load_collection`` calls, ``models`` as ``node_exec.resolve_models``
     does for ``curio_load_model`` calls, as
     that user or the shared guest. Ids that do not resolve are simply absent,
     matching production's fail-open behaviour.
     """
     from flask import g
 
-    from utk_curio.backend.app.api.routes import (
-        _resolve_exec_collections,
-        _resolve_exec_dataset_paths,
-        _resolve_exec_models,
+    from utk_curio.backend.app.discovery.application.exec_collections import (
+        resolve_exec_collections,
+    )
+    from utk_curio.backend.app.execution.node_exec import (
+        resolve_dataset_paths,
+        resolve_models,
     )
     from utk_curio.backend.app.common.user_storage import GUEST_KEY
     from utk_curio.backend.app.projects.services import _user_dir_key
@@ -246,10 +248,10 @@ def dataset_paths():
     g.user = user_repo.user_by_identifier(username) if username else None
 
     formats: dict = {}
-    paths = _resolve_exec_dataset_paths(code, body.get("dataflow_id"), formats)
+    paths = resolve_dataset_paths(code, body.get("dataflow_id"), g.user, formats)
     user_key = _user_dir_key(g.user) if g.user is not None else GUEST_KEY
-    collections, media_dir = _resolve_exec_collections(code, user_key)
-    models = _resolve_exec_models(code)
+    collections, media_dir = resolve_exec_collections(code, user_key, user=g.user)
+    models = resolve_models(code, g.user)
     return jsonify({
         "paths": paths, "formats": formats, "collections": collections, "mediaDir": media_dir,
         "models": models,

@@ -454,7 +454,7 @@ def _expand_outputs_wrapper(input_data, session_id=None):
         `data_type == 'outputs'` branch; passed through here untouched.
       * reloaded - when the upstream merge output was persisted (project save, or
         the JS-node I/O round-trip through DuckDB), the node receives a single ref
-        to it. `_parse_input_ref` remaps that ref's 'outputs' dataType to a plain
+        to it. `parse_input_ref` remaps that ref's 'outputs' dataType to a plain
         load, so `load_from_duckdb` hands back the whole
         `{dataType:'outputs', data:[refs]}` wrapper dict. Without this, user code
         gets the wrapper object (e.g. `const [a,b] = arg` → "arg is not iterable").

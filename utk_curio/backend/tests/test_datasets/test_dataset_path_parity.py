@@ -22,9 +22,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from utk_curio.backend.app.api.routes import (
-    MAX_EXEC_DATASET_IDS,
-    _DATASET_PATH_CALL_RE,
+from utk_curio.backend.app.datasets.domain.code_refs import (
+    DATASET_PATH_CALL_RE as _DATASET_PATH_CALL_RE,
+    MAX_DATASET_IDS as MAX_EXEC_DATASET_IDS,
 )
 from utk_curio.backend.app.datasets.domain.catalog_item import _SAFE_DATASET_ID_RE
 
