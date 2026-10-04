@@ -3,6 +3,7 @@ import { Node, Edge } from 'reactflow';
 import { NodeType } from '../constants';
 import { classifyAutkSpecString } from './autkSpecKind';
 import { getUnversionedFlowNodeType } from './flowNodeCanonicalType';
+import { hideNode } from './hiddenNodes';
 
 interface NodeWithPosition extends Node {
   position: { x: number; y: number };
@@ -134,11 +135,12 @@ export function applyDashboardLayout(
  * Pinned nodes move to their saved slot (``dashboardX``/``dashboardY``) or, when
  * they have none, to the automatic layout.
  *
- * Unpinned nodes stay MOUNTED and are hidden with ``display: none``. React
- * Flow's own ``hidden`` unmounts the node component, which would break every
- * chain that runs through an unpinned Data Pool: its behaviour hook is what
- * re-derives a tile's data from the restored outputs. Edges are hidden
- * the ordinary way, since nothing depends on an edge being rendered.
+ * Unpinned nodes stay MOUNTED and are hidden with ``display: none``
+ * (``hideNode``). React Flow's own ``hidden`` unmounts the node component, which
+ * would break every chain that runs through an unpinned Data Pool: its
+ * behaviour hook is what re-derives a tile's data from the restored outputs.
+ * Edges are hidden the ordinary way, since nothing depends on an edge being
+ * rendered.
  */
 export function prepareDashboardNodes<N extends Node, E extends Edge>(
   nodes: readonly N[],
@@ -168,12 +170,7 @@ export function prepareDashboardNodes<N extends Node, E extends Edge>(
         dragHandle: DASHBOARD_TILE_DRAG_HANDLE,
       };
     }
-    return {
-      ...node,
-      style: { ...(node.style ?? {}), display: 'none' },
-      draggable: false,
-      selectable: false,
-    };
+    return hideNode(node);
   }) as unknown as N[];
 
   return {
@@ -194,7 +191,7 @@ export function prepareDashboardNodes<N extends Node, E extends Edge>(
  * An Autark node is only a pass-through when its spec draws (``map``/``plot``);
  * its data and compute forms produce layers, so they are sources.
  */
-function isPassThroughNode(node: { type?: string | null; data?: any }): boolean {
+export function isPassThroughNode(node: { type?: string | null; data?: any }): boolean {
   const kind = getUnversionedFlowNodeType(node as any);
   if (
     kind === NodeType.VIS_VEGA ||
@@ -227,9 +224,23 @@ export function dashboardSourceNodeIds(
   nodes: readonly { id: string; type?: string | null; data?: any }[],
   edges: readonly { source?: unknown; target?: unknown }[],
 ): Set<string> {
-  const sources = new Set<string>();
   const pinned = nodes.filter((node) => node.data?.dashboardPinned).map((node) => node.id);
-  if (pinned.length === 0) return sources;
+  return producersFeeding(pinned, nodes, edges);
+}
+
+/**
+ * The nodes that make the data reaching *ids*: walking up from each, the first
+ * node on every path that is not a pass-through. *ids* themselves are not in
+ * the set. A pinned tile and a scenario's pass-through context or outcome
+ * (#662) find what to save this way.
+ */
+export function producersFeeding(
+  ids: readonly string[],
+  nodes: readonly { id: string; type?: string | null; data?: any }[],
+  edges: readonly { source?: unknown; target?: unknown }[],
+): Set<string> {
+  const sources = new Set<string>();
+  if (ids.length === 0) return sources;
 
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const incoming = new Map<string, string[]>();
@@ -243,7 +254,7 @@ export function dashboardSourceNodeIds(
   }
 
   // Breadth-first, with a visited set: a cycle (or a diamond) must terminate.
-  const queue = [...pinned];
+  const queue = [...ids];
   const visited = new Set<string>();
   while (queue.length > 0) {
     const id = queue.shift() as string;

@@ -85,6 +85,11 @@ no edges. Any node's `content` places it as `[!! @name !!]`, written and
 replaced as its own widgets are. A name no Parameter node has, or that two
 Parameter nodes have, fails the run with a message naming it.
 
+`metadata.copiedFrom` is written only on a copy made by Duplicate selection: the
+ids of the nodes it descends from, oldest first, ending with the node it was
+copied from. Two nodes are the same lever in two scenarios when their ids and
+these lists meet.
+
 `metadata.comments` carries the node's discussion, written only when non-empty.
 Each entry is `{id, text, author, authorName, createdAt, resolved}`. The author's
 avatar is not stored, because `profile_image` may be a full data URL; `canDelete`
@@ -125,7 +130,8 @@ imply (an Autark node, `import geopandas`, a raster dataset). A save that leaves
 - `source` names the project and scenario it was dragged in from.
 
 What enters a scenario from nodes outside it is its fixed context, its nodes are
-what it changes, and the outputs of its last nodes are what it produces.
+what it changes, and the outputs of its last nodes are what it produces. A
+Parameter node outside it whose tag its nodes' code names is context too.
 
 A node belongs to at most one scenario: a save that puts a node in two, or gives
 two scenarios one id, is refused. A save drops ids that are not nodes of the
