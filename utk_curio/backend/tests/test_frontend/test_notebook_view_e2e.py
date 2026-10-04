@@ -316,11 +316,13 @@ def test_a_run_shows_each_cells_input_and_output_together(
         re.compile(r"\[\d+\]:"), timeout=30000,
     )
 
-    chart_top = page.evaluate(
-        "(id) => window.__curio_reactFlow.getNodes().find((n) => n.id === id).position.y",
-        CHART,
+    # The chart's cell where the first cell sits on the page's top, below the
+    # bar, the title and its chips, as the app scrolls to a cell.
+    first_top, chart_top = page.evaluate(
+        "(ids) => ids.map((id) => window.__curio_reactFlow.getNodes().find((n) => n.id === id).position.y)",
+        [PRODUCER, CHART],
     )
-    _scroll_to(page, max(0, chart_top - 120))
+    _scroll_to(page, chart_top - first_top)
     save_workflow_test_screenshot(
         page, SCREENSHOT_STEM, test_name="notebook_view__chart", fit_reactflow=False,
     )
