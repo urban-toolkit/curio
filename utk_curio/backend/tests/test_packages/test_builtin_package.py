@@ -36,12 +36,13 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
     "autk-grammar",
     "merge-flow",
     "spatial-join",
+    "parameter",
 })
 
 EXPECTED_BEHAVIORS: frozenset[str] = frozenset({
     "code", "data-export", "data-pool", "data-summary", "vega",
     "simple-vis", "autk-grammar",
-    "merge-flow", "spatial-join",
+    "merge-flow", "spatial-join", "parameter",
 })
 
 

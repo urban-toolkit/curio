@@ -21,7 +21,7 @@ import type { ReferenceScope } from "../../../utils/references/codeReferences";
 import type { WidgetDef } from "../../../utils/widgets/widgetModel";
 
 const widgets: WidgetDef[] = [{ name: "season", type: "text", default: "summer" }];
-const scope: ReferenceScope = { widgets, inputs: [{ slot: 0, columns: ["height"] }] };
+const scope: ReferenceScope = { widgets, inputs: [{ slot: 0, columns: ["height"] }], shared: [] };
 // "s = " puts the reference at columns 5 to 19, and its name at 9 to 15.
 const CODE = "s = [!! season !!]";
 const line = (startColumn: number, endColumn: number) => ({

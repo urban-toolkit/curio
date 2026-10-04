@@ -16,7 +16,8 @@ import type { SelectionEchoOptions } from "../utils/selectionEcho";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { canvasTemplateConfigFromSpec } from "../utils/canvasTemplateConfigSpec";
 import { dataPoolFromSpec } from "../utils/dataPoolSpec";
-import { nodeRunKey, normalizeWidgets, type WidgetDef } from "../utils/widgets/widgetModel";
+import { normalizeWidgets, type WidgetDef } from "../utils/widgets/widgetModel";
+import { runKeyWithShared, sharedWidgetsOfSpec } from "../utils/references/sharedParameters";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -143,6 +144,9 @@ export function useCode(): IUseCode {
 
         let nodes = [];
         let edges = [];
+        // #662: the Parameter nodes' widgets, which a restored output's run
+        // key covers, as a run's does.
+        const shared = sharedWidgetsOfSpec(trill.dataflow.nodes);
 
         for(const node of trill.dataflow.nodes){
             let x = node.x;
@@ -272,7 +276,7 @@ export function useCode(): IUseCode {
                 // The same content a run shows (CodeEditor), and the source
                 // playNodesUpTo compares against to tell a valid result.
                 nodeMeta.output = { code: "success", content: "Saved to file: " + restored };
-                nodeMeta.executedCode = nodeRunKey(node.content, nodeMeta.widgets);
+                nodeMeta.executedCode = runKeyWithShared(node.content, nodeMeta.widgets, shared);
             }
 
             nodes.push(generateCodeNode(node.type, nodeMeta));
