@@ -527,8 +527,6 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             readOnly={readOnly || lockedByOther}
             floatCode={nodeState.setCode}
             contentComponent={behavior.contentComponent}
-            inputMarker={!notebookOn && !!adapter.inputIconType}
-            outputMarker={!notebookOn && !!adapter.outputIconType}
           />
         ) : (
           // ``editor: "none"`` in the manifest means there's no tabbed editor
