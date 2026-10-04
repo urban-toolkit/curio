@@ -10,6 +10,8 @@ saved, left and reopened, and the node must draw with nobody pressing Play.
 The map test runs the Autark node, which needs WebGPU: without an adapter it
 skips, unless ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job), where it fails.
 
+The same case, without a browser: ``universalNodeAutoRender.test.tsx``.
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_restored_input_draws_e2e.py -v
