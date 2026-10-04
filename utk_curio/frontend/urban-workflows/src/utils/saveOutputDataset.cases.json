@@ -1,0 +1,65 @@
+{
+  "description": "Which node outputs a run saves. Read by src/tests/utils/saveOutputDatasetCases.test.ts (shouldSaveOutputOnRun and buildSaveableLiveOutputs) and by backend/tests/test_execution/test_save_policy.py (execution/save_policy.py). onRun: the run auto-installs the output. recorded: a save records it in the dataflow's outputs.",
+  "cases": [
+    {
+      "name": "toggle unset, default off",
+      "node": {"nodeType": "curio.builtin/computation-analysis"},
+      "defaultSave": false, "dashboardSource": false,
+      "onRun": false, "recorded": false
+    },
+    {
+      "name": "toggle unset, default on",
+      "node": {"nodeType": "curio.builtin/computation-analysis"},
+      "defaultSave": true, "dashboardSource": false,
+      "onRun": true, "recorded": true
+    },
+    {
+      "name": "toggle on beats default off",
+      "node": {"nodeType": "curio.builtin/data-transformation", "saveOutputDataset": true},
+      "defaultSave": false, "dashboardSource": false,
+      "onRun": true, "recorded": true
+    },
+    {
+      "name": "toggle off beats default on",
+      "node": {"nodeType": "curio.builtin/data-transformation", "saveOutputDataset": false},
+      "defaultSave": true, "dashboardSource": false,
+      "onRun": false, "recorded": false
+    },
+    {
+      "name": "feeding a pinned tile saves despite toggle off",
+      "node": {"nodeType": "curio.builtin/data-loading@1", "saveOutputDataset": false},
+      "defaultSave": false, "dashboardSource": true,
+      "onRun": true, "recorded": true
+    },
+    {
+      "name": "a dataset-palette node never auto-installs",
+      "node": {"nodeType": "curio.builtin/data-loading", "saveOutputDataset": true, "datasetSource": true},
+      "defaultSave": true, "dashboardSource": false,
+      "onRun": false, "recorded": false
+    },
+    {
+      "name": "a dataset-palette node feeding a pinned tile is recorded but not installed",
+      "node": {"nodeType": "curio.builtin/data-loading", "datasetSource": true},
+      "defaultSave": false, "dashboardSource": true,
+      "onRun": false, "recorded": true
+    },
+    {
+      "name": "a Vega-Lite sink is never recorded",
+      "node": {"nodeType": "curio.builtin/vis-vega", "saveOutputDataset": true},
+      "defaultSave": true, "dashboardSource": false,
+      "onRun": true, "recorded": false
+    },
+    {
+      "name": "a versioned sink is never recorded",
+      "node": {"nodeType": "curio.builtin/vis-vega@1", "saveOutputDataset": true},
+      "defaultSave": false, "dashboardSource": false,
+      "onRun": true, "recorded": false
+    },
+    {
+      "name": "a sink feeding a pinned tile is still not recorded",
+      "node": {"nodeType": "curio.builtin/vis-simple"},
+      "defaultSave": false, "dashboardSource": true,
+      "onRun": true, "recorded": false
+    }
+  ]
+}
