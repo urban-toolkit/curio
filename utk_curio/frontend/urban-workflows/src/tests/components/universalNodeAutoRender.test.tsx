@@ -292,6 +292,20 @@ describe.each([
     expect(mockSendCode).toHaveBeenCalledWith(spec);
   });
 
+  test(`a reopened node is not held back that way, though its input lands before its ${docWord} (#711)`, async () => {
+    // On a reopen the editor mounts on `{}` and floats it into the buffer
+    // until Monaco loads and applies the saved document, and the restored
+    // input lands in that window. The node was written with its document, so
+    // nobody is wiring an empty node: it draws once the document is back.
+    const utils = await open(node({ code: "{}", defaultCode: spec, input: INPUT_A }));
+    expect(mockSendCode).not.toHaveBeenCalled();
+
+    await next(utils, node({ defaultCode: spec, input: INPUT_A }));
+
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+    expect(mockSendCode).toHaveBeenCalledWith(spec);
+  });
+
   test(`a tile is never held back that way; it opens with its ${docWord} loaded`, async () => {
     // The dashboard has no author to interrupt, and a pinned tile's document
     // comes back from the save before its data does.
