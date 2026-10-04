@@ -1,15 +1,10 @@
 /**
- * A content node's output stays clear of the port markers, as a Vega-Lite
- * chart's does (#631).
+ * A content node's output (an Autark map or plot, a Data Pool table, ...)
+ * fills its pane, as a Vega-Lite chart's does (#631, #668).
  *
- * The markers are 17 px boxes at the node's edges, over its 5 px padding, so
- * each covers 12 px of the output pane. #522 inset the Vega mount by
- * PORT_MARKER_INSET; an Autark map or plot, a Data Pool table and the other
- * content components were drawn straight into the pane, under the markers.
- *
- * The geometry half of the Vega mount's contract is in
- * nodeEditorOutputScroll.test.tsx; this is the same contract for
- * `contentComponent`.
+ * The node body keeps every pane clear of the port markers
+ * (nodeEditorPanesInBody.test.tsx), so the mount adds no inset of its own.
+ * The Vega mount's half of this contract is in nodeEditorOutputScroll.test.tsx.
  */
 import React from 'react';
 import { render, screen } from '@testing-library/react';
@@ -83,36 +78,23 @@ afterEach(() => {
 });
 
 describe("a content node's output mount", () => {
-  test('stays clear of the port markers at both edges', () => {
-    render(<NodeEditor {...baseProps} inputMarker outputMarker />);
+  test.each([
+    ['on the canvas', false],
+    ['on a dashboard tile', true],
+  ])('fills its pane %s, with no inset of its own', (_, dashboardOn) => {
+    mockDashboardOn = dashboardOn;
+    render(<NodeEditor {...baseProps} />);
     const el = mount();
-    expect(el.style.marginLeft).toBe('14px');
-    expect(el.style.marginRight).toBe('14px');
-    expect(el.style.width).toBe('calc(100% - 28px)');
     expect(el.style.height).toBe('100%');
-  });
-
-  test('insets only the side that has a marker', () => {
-    render(<NodeEditor {...baseProps} outputMarker />);
-    const el = mount();
-    expect(el.style.marginLeft).toBe('0px');
-    expect(el.style.marginRight).toBe('14px');
-    expect(el.style.width).toBe('calc(100% - 14px)');
-  });
-
-  test('fills a dashboard tile, which shows no markers', () => {
-    mockDashboardOn = true;
-    render(<NodeEditor {...baseProps} inputMarker outputMarker />);
-    const el = mount();
-    expect(el.style.marginLeft).toBe('0px');
-    expect(el.style.marginRight).toBe('0px');
-    expect(el.style.width).toBe('100%');
+    expect(el.style.width).toBe('');
+    expect(el.style.marginLeft).toBe('');
+    expect(el.style.marginRight).toBe('');
   });
 
   test('leaves alignment and scrolling to the content component', () => {
     // The Vega mount centres its chart and scrolls it; a table or a map body
     // does both its own way, so the content mount must not.
-    render(<NodeEditor {...baseProps} inputMarker outputMarker />);
+    render(<NodeEditor {...baseProps} />);
     const el = mount();
     expect(el).toHaveClass('curio-content-mount');
     expect(el.style.textAlign).toBe('');
@@ -120,7 +102,7 @@ describe("a content node's output mount", () => {
   });
 
   test('sits in the clamped output pane', () => {
-    render(<NodeEditor {...baseProps} inputMarker outputMarker />);
+    render(<NodeEditor {...baseProps} />);
     const pane = mount().parentElement as HTMLElement;
     expect(pane).toHaveClass('tab-pane');
     expect(pane.style.overflow).toBe('hidden');

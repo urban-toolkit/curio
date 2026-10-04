@@ -31,7 +31,6 @@ import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { ICodeData } from "../../types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
-import { contentMountStyle, outputMountStyle } from "../../utils/outputMountStyle";
 import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
 import {
@@ -64,9 +63,6 @@ type NodeEditorProps = {
     customWidgetsCallback?: any;
     contentComponent?: any;
     disableWidgets?: boolean; // Added prop to freeze widget buttons
-    /** The node draws an input / output marker at its edge (#522). */
-    inputMarker?: boolean;
-    outputMarker?: boolean;
 };
 
 function NodeEditor({
@@ -88,8 +84,6 @@ function NodeEditor({
     customWidgetsCallback,
     contentComponent,
     disableWidgets,
-    inputMarker = false,
-    outputMarker = false,
 }: NodeEditorProps) {
     const [userCode, setUserCode] = useState<string>(""); // python or grammar with marks unresolved
     // Seed from the prop so the editors receive the real content on their
@@ -299,7 +293,9 @@ function NodeEditor({
                 }}
             >
                 <Tab.Container activeKey={effectiveTab} onSelect={handleTabSelect}>
-                    <Row style={{ height: "100%" }}>
+                    {/* No gutter: its negative margins pulled every pane out of
+                        the node body, under the port markers (#668). */}
+                    <Row className="g-0" style={{ height: "100%" }}>
                         <Col md={12} style={{ height: "100%", padding: 0 }}>
                             <Tab.Content
                                 style={{ ...activeTabContentStyle, zIndex: 10 }}
@@ -423,21 +419,19 @@ function NodeEditor({
                                             <div
                                                 id={outputId}
                                                 className="nodrag nowheel curio-vega-mount"
-                                                style={outputMountStyle(
-                                                    !dashboardOn && inputMarker,
-                                                    !dashboardOn && outputMarker,
-                                                )}
+                                                style={{
+                                                    textAlign: "center",
+                                                    width: "100%",
+                                                    height: "100%",
+                                                    overflow: "auto",
+                                                }}
                                             ></div>
                                         ) : (
-                                            // The same inset as the Vega
-                                            // mount, so the markers cover no
-                                            // map edge or plot axis (#631).
+                                            // Each content component lays out
+                                            // and scrolls its own body.
                                             <div
                                                 className="curio-content-mount"
-                                                style={contentMountStyle(
-                                                    !dashboardOn && inputMarker,
-                                                    !dashboardOn && outputMarker,
-                                                )}
+                                                style={{ height: "100%" }}
                                             >
                                                 {contentComponent}
                                             </div>

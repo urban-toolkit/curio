@@ -215,9 +215,9 @@ _AUTK_DRAWING_FIT_JS = """(id) => {
 def assert_autark_drawing_fits(page, node_id: str, *, timeout: float = 5000) -> None:
     """Assert an Autark node's map or plot fills its node body, clear of the markers.
 
-    The body is the content mount, inset from each edge with a port marker
-    (#631): drawn in the full pane, the markers covered about 12 px of a map's
-    edge or a plot's axis. A drawing taller than the body runs on under the
+    The body is the content mount, which fills the editor pane; the node body
+    keeps that pane clear of the port markers (#631, #668), which once covered
+    a map's edge or a plot's axis. A drawing taller than the body runs on under the
     node's footer, where it cannot be seen or picked, and a map is then centred
     below the middle of what shows (#534). A node with no drawing is left to
     the checks that expect one.
@@ -255,6 +255,51 @@ def assert_autark_drawing_fits(page, node_id: str, *, timeout: float = 5000) -> 
     assert not covered, (
         f"Autark node {node_id}: the port markers cover its {fit['kind']} "
         f"(screen px per marker: {covered})"
+    )
+
+
+# Each shown node's editor panes (NodeEditor's Tab.Content, the first one in the
+# node; an output can hold its own) and its port markers, on screen.
+_EDITOR_PANES_JS = """() => [...document.querySelectorAll('.react-flow__node')].map((node) => {
+    const rect = (el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 ? [r.left, r.top, r.right, r.bottom] : null;
+    };
+    const panes = node.querySelector('.tab-content');
+    return {
+        id: node.dataset.id,
+        panes: panes ? rect(panes) : null,
+        markers: [...node.querySelectorAll('[data-curio-port-marker]')]
+            .map((m) => ({side: m.dataset.curioPortMarker, box: rect(m)}))
+            .filter((m) => m.box),
+    };
+})"""
+
+
+def assert_editor_panes_clear_of_markers(page, *, expect_some: bool = True) -> None:
+    """Assert no port marker covers any part of a node's editor panes.
+
+    The panes (code, grammar, widgets, provenance, output) sit in the node
+    body, which is inset from the node's edges further than the markers reach
+    (#668). ``expect_some`` asserts at least one node with a marker was
+    measured, so a dataflow whose editors never showed cannot pass.
+    """
+    nodes = page.evaluate(_EDITOR_PANES_JS)
+    measured = [n for n in nodes if n["panes"] and n["markers"]]
+    covered = {}
+    for n in measured:
+        left, top, right, bottom = n["panes"]
+        for m in n["markers"]:
+            m_left, m_top, m_right, m_bottom = m["box"]
+            width = min(right, m_right) - max(left, m_left)
+            height = min(bottom, m_bottom) - max(top, m_top)
+            if width > 0 and height > 0:
+                covered[f"{n['id']} {m['side']}"] = round(width, 1)
+    assert not expect_some or measured, (
+        "No node shows both editor panes and a port marker, so nothing shows the markers clear them"
+    )
+    assert not covered, (
+        f"The port markers cover the editor panes (screen px across, per node and marker: {covered})"
     )
 
 
