@@ -6,6 +6,8 @@
   ships a module of the same top-level name, naming both and the module.
 - What a run of one of its nodes is handed: the package's ``sources/`` folder
   and its module names, for the sandbox to make importable.
+- Save into a package and the Package Builder do not declare the package's
+  own modules as PyPI dependencies.
 
 New code is imported inside each test, so a checkout without it fails each
 test on its own instead of the whole module at collection.
@@ -283,6 +285,45 @@ def test_saving_into_a_package_does_not_declare_its_modules_as_libraries(tmp_cur
     assert "building_height" not in built.manifest.python_deps
     with zipfile.ZipFile(io.BytesIO(built.archive)) as zf:
         assert "sources/building_height/convert_to_raster.py" in zf.namelist()
+
+
+class TestThePackageBuilderLeavesTheOwnModulesOut:
+    """The agent Package Builder scans every file it is handed. An import of
+    the package's own module is no PyPI dependency there either: an install
+    would otherwise fetch whatever PyPI package has that name."""
+
+    @staticmethod
+    def _request(files):
+        from utk_curio.backend.app.packages.builder.models import parse_build_request
+
+        return parse_build_request({
+            "mode": "create",
+            "target": "ai.test.heights@1",
+            "manifest": {
+                "id": "ai.test.heights", "compatibility": {"major": 1},
+                "templates": [{"id": "caller", "source": "sources/caller.py"}],
+            },
+            "files": {path: {"text": text} for path, text in files.items()},
+        })
+
+    def test_a_module_the_draft_ships_is_not_a_dependency(self):
+        from utk_curio.backend.app.packages.builder.deps import merge_declared_and_detected
+
+        request = self._request({
+            "sources/caller.py": "import numpy\nfrom scripts.convert import convert\nreturn convert(arg)\n",
+            "sources/scripts/convert.py": "import shapely\nimport scripts.scale\nfrom .scale import FACTOR\n",
+            "sources/scripts/scale.py": "FACTOR = 2\n",
+        })
+        python, _js, findings = merge_declared_and_detected(request)
+        assert sorted(python) == ["numpy", "shapely"]
+        assert [f.message for f in findings if "scripts" in f.message] == []
+
+    def test_a_module_the_extended_package_keeps_is_not_a_dependency(self):
+        from utk_curio.backend.app.packages.builder.deps import merge_declared_and_detected
+
+        request = self._request({"sources/caller.py": "from scripts.convert import convert\nreturn convert(arg)\n"})
+        python, _js, _findings = merge_declared_and_detected(request, ("sources/scripts/convert.py",))
+        assert python == {}
 
 
 # ---------------------------------------------------------------------------

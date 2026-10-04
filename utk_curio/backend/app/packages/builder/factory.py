@@ -65,7 +65,6 @@ from pathlib import Path
 from typing import Any
 
 from utk_curio.backend.app.packages.domain.dependency_scanner import (
-    pypi_name_for_import,
     scan_imports_for_filename,
 )
 from utk_curio.backend.app.packages.domain.manifest import (
@@ -76,7 +75,7 @@ from utk_curio.backend.app.packages.domain.package_id import TEMPLATE_ID_RE
 import tempfile
 from utk_curio.backend.app.packages.repositories.archive import is_non_content_filename
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
-from utk_curio.backend.app.packages.repositories.python_modules import module_names
+from utk_curio.backend.app.packages.domain.python_modules import module_names_in
 
 log = logging.getLogger(__name__)
 
@@ -316,14 +315,17 @@ def _validate_sources(
     return out
 
 
-def _detect_dependencies_from_sources(sources: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+def _detect_dependencies_from_sources(
+    sources: dict[str, dict[str, str]], own_modules: frozenset[str] = frozenset(),
+) -> dict[str, dict[str, str]]:
     """Scan every source body for top-level imports; return manifest-shaped deps.
 
     Replaces the manual Python/JS dependency entry that used to live in the
     Node Factory wizard. Each detected name is pinned to ``"*"`` — version
     pinning is a follow-up enhancement (no UI for it today since the wizard
     is gone). Inter-package (``packages``) deps are not source-derivable and
-    must come from the draft.
+    must come from the draft. *own_modules* are left out, as the Package
+    Builder leaves them out (#468).
     """
     py: set[str] = set()
     js: set[str] = set()
@@ -334,22 +336,13 @@ def _detect_dependencies_from_sources(sources: dict[str, dict[str, str]]) -> dic
         code = entry.get("code")
         if not isinstance(filename, str) or not isinstance(code, str):
             continue
-        py_hits, js_hits = scan_imports_for_filename(filename, code)
+        py_hits, js_hits = scan_imports_for_filename(filename, code, own_modules)
         py.update(py_hits)
         js.update(js_hits)
     return {
         "python": {name: "*" for name in sorted(py)},
         "js": {name: "*" for name in sorted(js)},
     }
-
-
-def _own_module_names(installed_dir: Path) -> frozenset[str]:
-    """The modules the package being saved into ships beside its templates
-    (#468). A template importing one is not asking for a PyPI library."""
-    try:
-        return module_names(installed_dir, load_package_manifest(installed_dir))
-    except (ManifestError, OSError):
-        return frozenset()
 
 
 def _apply_detected_dependencies(
@@ -368,9 +361,7 @@ def _apply_detected_dependencies(
     (inter-package deps) is preserved verbatim: it cannot be derived from
     source. The mutation happens on a shallow copy.
     """
-    detected = _detect_dependencies_from_sources(sources)
-    for name in own_modules:
-        detected["python"].pop(pypi_name_for_import(name), None)
+    detected = _detect_dependencies_from_sources(sources, own_modules)
     for kind, ranges in (declared or {}).items():
         detected[kind] = dict(sorted({**detected[kind], **ranges}.items()))
     out = dict(manifest_raw)
@@ -457,7 +448,10 @@ def build_package_archive(draft: dict[str, Any], *, onto: Path | None = None) ->
     # not source-derivable and stays as the draft provided it.
     manifest_with_deps = _apply_detected_dependencies(
         dict(manifest_raw), sources, base.declared if base else None,
-        _own_module_names(onto) if base else frozenset(),
+        # The modules the package being saved into carries forward (#468).
+        module_names_in(base.files if base else (), [
+            t.get("source") for t in manifest_raw.get("templates") or [] if isinstance(t, dict)
+        ]),
     )
     manifest_authoring = _stamp_manifest_created_at_when_absent(manifest_with_deps)
     manifest = _validate_manifest_dict(manifest_authoring)
