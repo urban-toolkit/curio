@@ -45,6 +45,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     run_node_and_wait,
+    save_dataflow,
     save_workflow_test_screenshot,
     set_node_code,
     require_owner_view,
@@ -243,16 +244,10 @@ def test_build_and_run_dataflow_from_scratch(
     assert "Saved to file:" in transform_output, transform_output
 
     # 7. PERSIST. Server truth alongside the DOM: what the canvas built is what
-    #    a reload would get back.
-    file_btn = page.get_by_role("button", name=re.compile("File"))
-    file_btn.wait_for(state="visible", timeout=15000)
-    file_btn.click(force=True)
-    save_btn = page.get_by_role("button", name="Save dataflow", exact=True)
-    save_btn.wait_for(state="visible", timeout=10000)
-    save_btn.click()
-    # handleSave closes the File menu once the save round-trip completes, so the
-    # button going hidden is the signal that the write finished.
-    save_btn.wait_for(state="hidden", timeout=30000)
+    #    a reload would get back. File > Save dataflow, gated on the save's own
+    #    response: the menu can close before the PUT is answered, and a read
+    #    made then sees the spec from before the save (no nodes).
+    save_dataflow(page)
 
     spec = api_json(f"{current_server}/api/projects/{project_id}", token)["spec"]
     dataflow = spec["dataflow"]
