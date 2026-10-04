@@ -13,7 +13,6 @@ import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 // Editor
 import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
-import { useNotebookViewContext } from "../../providers/flow/notebookViewContext";
 import { shouldSaveOutputOnRun } from "../../utils/saveOutputDataset";
 import { registerRunNodeAction } from "./runNodeMonacoAction";
 import { MissingModuleNotice, type InstallState } from "./MissingModuleNotice";
@@ -116,7 +115,6 @@ function CodeEditor({
         playNodesUpTo,
         nodes,
     } = useFlowContext();
-    const notebook = useNotebookViewContext();
     const { nodeExecProv } = useProvenanceContext();
     const collab = useCollab();
     // dev/91: non-null exactly when this template declares a backendHandler.
@@ -608,9 +606,12 @@ function CodeEditor({
                         minimap: { enabled: false },
                         readOnly: readOnly,
                         scrollBeyondLastLine: false,
-                        // In the notebook view the page scrolls on past the
-                        // editor's ends; on the canvas, Monaco's default.
-                        scrollbar: { alwaysConsumeMouseWheel: !notebook.on },
+                        // A wheel the editor cannot use goes on to the page, so
+                        // the notebook view scrolls past the editor's ends. On
+                        // the canvas the wrapper's `nowheel` keeps it from
+                        // zooming, as before. Monaco reads this option only when
+                        // the editor is created, so it is not tied to the view.
+                        scrollbar: { alwaysConsumeMouseWheel: false },
                     }}
                 />
             </div>

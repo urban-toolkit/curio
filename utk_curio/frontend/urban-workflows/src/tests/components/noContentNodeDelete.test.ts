@@ -42,7 +42,11 @@ describe("noContent nodes", () => {
 
   it("render a delete control on the minimized chip", () => {
     const source = read("components/styles.tsx");
-    const minimizedBranch = source.slice(source.indexOf("{minimized ? ("));
+    // `shownMinimized`: the minimized state, except for a notebook cell, which
+    // never shows minimized. An icon-only node keeps its chip there too.
+    const start = source.indexOf("{shownMinimized ? (");
+    expect(start).toBeGreaterThan(-1);
+    const minimizedBranch = source.slice(start);
     expect(minimizedBranch).toContain("noContent && !dashboardOn");
     expect(minimizedBranch).toContain('title="Delete node"');
     expect(minimizedBranch).toContain("onActivate={onDelete}");

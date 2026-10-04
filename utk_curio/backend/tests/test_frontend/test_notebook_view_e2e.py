@@ -202,6 +202,22 @@ def _scroll_top(page) -> float:
     return page.locator(SCROLLER).evaluate("(el) => el.scrollTop")
 
 
+def _settled_viewport(page, *, timeout_ms: int = 15000) -> dict:
+    """The canvas viewport once the load's fit has stopped moving it: two equal
+    reads a few hundred milliseconds apart."""
+    read = "() => window.__curio_reactFlow.getViewport()"
+    last = page.evaluate(read)
+    waited = 0
+    while waited < timeout_ms:
+        page.wait_for_timeout(300)
+        waited += 300
+        now = page.evaluate(read)
+        if all(abs(now[key] - last[key]) < 0.01 for key in ("x", "y", "zoom")):
+            return now
+        last = now
+    raise AssertionError(f"the canvas viewport kept moving: last read {last}")
+
+
 def _save(page) -> None:
     """Save through the status icon and wait until the dataflow is on disk."""
     page.locator("[data-curio-save-state]").first.click(force=True)
@@ -339,24 +355,44 @@ def test_connections_are_made_and_removed_in_the_bar(
     _enter(page, app_frontend, current_server, prefix="nbv_connect")
     _show(page, "notebook")
 
-    # The producer's output dot and the next cell's input dot, both in view and
-    # clear of the bar fixed over the top of the page.
-    out_dot = page.locator(f'.react-flow__node[data-id="{PRODUCER}"] .react-flow__handle[data-handleid="out"]')
+    # EXTRA's output dot and the next cell's free input circle (TRANSFORM is
+    # wired on circle 0), both in view and clear of the bar fixed over the top
+    # of the page. Feeding TRANSFORM a second input leaves the order as it is,
+    # so neither cell moves while the test works on them.
+    out_dot = page.locator(f'.react-flow__node[data-id="{EXTRA}"] .react-flow__handle[data-handleid="out"]')
     box = out_dot.bounding_box()
-    assert box, "the producer has no output dot"
+    assert box, "the cell has no output dot"
     _scroll_to(page, max(0, _scroll_top(page) + box["y"] - 300))
 
-    edge_id = connect_nodes(page, PRODUCER, EXTRA)
+    edge_id = connect_nodes(page, EXTRA, TRANSFORM, target_handle="in_1")
     arc = page.locator(f'.react-flow__edge[data-testid="rf__edge-{edge_id}"]')
     expect(arc).to_have_count(1)
     expect(page.locator(".react-flow__edge")).to_have_count(3)
+    placed = _positions(page)
+    assert [placed[n]["y"] for n in ORDER] == sorted(placed[n]["y"] for n in ORDER), (
+        f"connecting moved the cells out of {ORDER}: {placed}"
+    )
 
-    # Select the arc where it runs along its lane, then delete it. The arc's
-    # right edge is its 20px hit stroke around the lane, so the lane itself is
-    # 10px in; a click there stays clear of the next lane out's hit stroke.
-    arc_box = arc.bounding_box()
-    assert arc_box, "the new connection has no arc"
-    page.mouse.click(arc_box["x"] + arc_box["width"] - 10, arc_box["y"] + arc_box["height"] / 2)
+    # Select the arc where it runs along its lane: halfway along the path is on
+    # the lane, since the lane is most of a bracket's length. Then delete it.
+    point = page.evaluate(
+        """(id) => {
+            const path = document.querySelector(
+                `.react-flow__edge[data-testid="rf__edge-${id}"] path.react-flow__edge-path`);
+            if (!path) return null;
+            const p = path.getPointAtLength(path.getTotalLength() / 2);
+            const m = path.getScreenCTM();
+            return { x: p.x * m.a + p.y * m.c + m.e, y: p.x * m.b + p.y * m.d + m.f };
+        }""",
+        edge_id,
+    )
+    assert point, "the new connection has no path"
+    bar_bottom = page.locator(BAR).bounding_box()["y"] + page.locator(BAR).bounding_box()["height"]
+    viewport = page.viewport_size
+    assert 0 <= point["x"] < viewport["width"] and bar_bottom < point["y"] < viewport["height"], (
+        f"the arc's midpoint {point} is not in the window"
+    )
+    page.mouse.click(point["x"], point["y"])
     page.keyboard.press("Delete")
     expect(arc).to_have_count(0, timeout=10000)
     expect(page.locator(".react-flow__edge")).to_have_count(2)
@@ -399,8 +435,8 @@ def test_back_on_the_canvas_every_node_is_where_it_was(
     require_user_auth()
     session = _enter(page, app_frontend, current_server, prefix="nbv_back")
     project_id = session["project"]["id"]
+    viewport = _settled_viewport(page)
     before = _positions(page)
-    viewport = page.evaluate("() => window.__curio_reactFlow.getViewport()")
 
     _show(page, "notebook")
     _show(page, "canvas")
@@ -416,11 +452,14 @@ def test_back_on_the_canvas_every_node_is_where_it_was(
     for key in ("x", "y", "zoom"):
         assert abs(restored[key] - viewport[key]) < 0.5, f"the canvas viewport moved: {viewport} -> {restored}"
 
-    # A save from the notebook view writes the canvas layout.
+    # A save from the notebook view writes the canvas layout: the positions the
+    # nodes had on the canvas, read from the store before the switch.
     _show(page, "notebook")
     _save(page)
-    saved = {n["id"]: (n["x"], n["y"]) for n in _project(current_server, session["token"], project_id)["spec"]["dataflow"]["nodes"]}
-    assert saved == CANVAS, f"the save wrote the cells' positions: {saved}"
+    nodes = _project(current_server, session["token"], project_id)["spec"]["dataflow"]["nodes"]
+    saved = {n["id"]: (n["x"], n["y"]) for n in nodes}
+    expected = {node_id: (spot["x"], spot["y"]) for node_id, spot in before.items()}
+    assert saved == expected, f"the save wrote the cells' positions: {saved}, not {expected}"
 
     # The address keeps the view across a reload.
     page.reload()
