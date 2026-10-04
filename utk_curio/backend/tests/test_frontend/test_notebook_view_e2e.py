@@ -408,13 +408,23 @@ def test_a_tile_dropped_on_the_notebook_becomes_a_cell_in_view(
 
     new_id = drag_to_canvas(page, page.locator("#tile-data-transformation"))
 
+    # The node exists once the drop lands; it becomes a cell, stamped and
+    # moved into the column, on the next pass.
+    page.wait_for_function(
+        """([id, column]) => {
+            const n = window.__curio_reactFlow.getNodes().find((node) => node.id === id);
+            const col = window.__curio_reactFlow.getNodes().find((node) => node.id === column);
+            return !!n && !!col && !!(n.data && n.data.workflowPosition) && n.position.x === col.position.x;
+        }""",
+        arg=[new_id, PRODUCER],
+        timeout=10000,
+    )
     # Placed on the canvas past every other node, as a drop with no point would be.
     placed = _positions(page)[new_id]
     max_x = max(x for x, _ in CANVAS.values())
     max_y = max(y for _, y in CANVAS.values())
     assert placed["canvas"] == {"x": max_x + 800, "y": max_y}, placed
-    # A cell in the column, scrolled into view below the bar.
-    assert placed["x"] == _positions(page)[PRODUCER]["x"], placed
+    # Scrolled into view below the bar.
     page.wait_for_function(
         """(id) => {
             const el = document.querySelector(`.react-flow__node[data-id="${id}"]`);
