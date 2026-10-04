@@ -5,6 +5,7 @@ import { useUserContext } from "../../providers/UserProvider";
 import { AgentConfigTab } from "./AgentConfigTab";
 import { ApiKeysTab } from "./ApiKeysTab";
 import { useLlmListing } from "./useLlmListing";
+import { isHostedGuest } from "./useHostedGuest";
 import type { ApiSettingsFocus, ApiSettingsTab } from "./apiSettingsRequest";
 
 const TABS: { key: ApiSettingsTab; label: string }[] = [
@@ -26,9 +27,7 @@ export const ApiSettingsPanel: React.FC<{
 }> = ({ tab, onTabChange, focus = null }) => {
   const llm = useLlmListing();
   const { user, isSharedGuest, enableUserAuth } = useUserContext();
-  // A guest under --deploy shares one account with every visitor, so it saves
-  // nothing personal. Without --deploy the shared guest is the one local user.
-  const hostedGuest = Boolean(user?.is_guest) && enableUserAuth;
+  const hostedGuest = isHostedGuest(user, enableUserAuth);
   const shared = !hostedGuest && (isSharedGuest || Boolean(llm.listing?.shared));
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
