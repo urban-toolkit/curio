@@ -141,12 +141,13 @@ def test_the_committed_examples_are_already_tidy():
 def test_every_committed_example_clears_the_gutter():
     """Independent of the script's own arithmetic: re-measure the files.
 
-    Sizes here use only the two template overrides that exist today, so this
-    check cannot pass by sharing a bug with ``resolve_size``.
+    Sizes here are written out by hand, so this check cannot pass by sharing a
+    bug with ``resolve_size``. Only the Spatial Join template's size is used;
+    every other node counts at the 525x350 default, which is never smaller
+    than a template's own size and so can only make the check stricter.
     """
     overrides = {
         "curio.builtin/spatial-join": (460, 300),
-        "curio.builtin/merge-flow": (50, 180),
     }
     import glob
 
@@ -369,22 +370,49 @@ def test_a_metadata_height_is_packed_on(tmp_path):
     assert _separation(boxes[0], boxes[1]) >= 60
 
 
-def test_a_merge_flow_sliver_keeps_its_real_footprint(tmp_path):
-    """``merge-flow`` is 50x180, not 525x350. Packing it as the default would
-    leave a 475px hole in every column it appears in."""
+def test_a_sliver_template_keeps_its_real_footprint(tmp_path):
+    """A template whose ``containerStyle`` says 50x180 is packed at 50x180, not
+    525x350. Packing it as the default would leave a 475px hole in every column
+    it appears in.
+
+    No shipped template is that narrow any more, so the fixture brings its own:
+    a copy of the script next to a ``packages/`` that holds one package with a
+    content-less 50x180 template, read through the script's own template index.
+    """
+    root = tmp_path / "repo"
+    (root / "scripts").mkdir(parents=True)
+    script = root / "scripts" / "tidy_example_layout.py"
+    shutil.copyfile(SCRIPT, script)
+    package = root / "packages" / "fixture.layout@1"
+    package.mkdir(parents=True)
+    (package / "manifest.json").write_text(json.dumps({
+        "id": "fixture.layout",
+        "templates": [{
+            "id": "sliver",
+            "containerStyle": {"noContent": True, "nodeHeight": 180, "nodeWidth": 50},
+        }],
+    }), encoding="utf-8")
+
     target = tmp_path / "sliver.json"
     _write_spec(target, _spec(
         [
             _node("a", 0, 0),
-            _node("m", 0, 0, node_type="curio.builtin/merge-flow"),
+            _node("m", 0, 0, node_type="fixture.layout/sliver@1"),
             _node("b", 0, 0),
         ],
         [_edge("a", "m"), _edge("m", "b")],
     ))
 
-    assert _run(str(target), "--write").returncode == 0
+    # The copy finds its packages next to itself and utk_curio on PYTHONPATH.
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(p for p in (REPO_ROOT, env.get("PYTHONPATH")) if p)
+    result = subprocess.run(
+        [sys.executable, str(script), str(target), "--write"],
+        capture_output=True, text=True, cwd=REPO_ROOT, env=env,
+    )
+    assert result.returncode == 0, result.stderr
     with open(target, encoding="utf-8") as fh:
         nodes = {n["id"]: n for n in json.load(fh)["dataflow"]["nodes"]}
-    # 525 + 120 gutter, plus the merge node centred in its own 50px slot.
+    # 525 + 120 gutter, plus the sliver centred in its own 50px slot.
     assert nodes["m"]["x"] - (nodes["a"]["x"] + 525) == 120
     assert nodes["b"]["x"] - (nodes["m"]["x"] + 50) == 120

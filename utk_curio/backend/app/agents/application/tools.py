@@ -427,7 +427,7 @@ REGISTRY: dict[str, ToolContract] = {
                             "from": _text("A ref from this plan, or an existing node's id."),
                             "to": _text("A ref from this plan, or an existing node's id."),
                             "kind": {"type": "string", "enum": ["data", "interaction"]},
-                            "toHandle": _text("The target's input slot, such as in_0. Data edges only."),
+                            "toHandle": _text("The target's input circle: in, in_1, in_2, ... Data edges only."),
                         },
                         "from", "to",
                     ),

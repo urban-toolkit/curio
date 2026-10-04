@@ -286,7 +286,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
       }
     }
     // Keyed on the OBJECT, not `output?.code`: a node that errors twice in a
-    // row (e.g. a merge re-triggered by Play with inputs still missing) keeps
+    // row (e.g. a node re-triggered by Play with inputs still missing) keeps
     // code === "error", and a code-keyed effect never re-fires — the run then
     // hangs on the stall watchdog. setOutput always produces a fresh object,
     // and signalNodeExecDone ignores nodes outside the active level, so
@@ -457,7 +457,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           // ``contentComponent`` (the streetvision place-picker, etc.).
           // Without this branch that UI would be silently dropped because
           // ``contentComponent`` is otherwise only rendered inside NodeEditor's
-          // output tab. ``noContent`` containers (merge-flow, spatial-join)
+          // output tab. ``noContent`` containers
           // legitimately return ``undefined`` here — they're icon-only.
           behavior.contentComponent ?? null
         )}

@@ -144,8 +144,8 @@ class VerifiedRounds:
         self._seed_from_carry_forward()
         # dev/128: what ``arg`` IS for this node — a fact of the graph, computed
         # once (it cannot change mid-loop), handed to the child as an input, and
-        # enforced before the sandbox. The owner's report: a node fed through a
-        # merge received ``arg`` and treated it as a frame.
+        # enforced before the sandbox. The owner's report: a node with several
+        # inputs received ``arg`` and treated it as a frame.
         self.arg_contract = input_contract.arg_shape(spec, self.node_id)
         if (extra_inputs or {}).get("upstreamOutputs"):
             self.arg_contract = input_contract.with_schemas(

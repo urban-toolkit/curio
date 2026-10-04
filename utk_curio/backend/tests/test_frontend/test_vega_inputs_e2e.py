@@ -7,8 +7,8 @@ the bars name their columns through column chips. In the browser the chips are
 ``"input_1"`` and the column names, and each input is the Vega dataset
 ``input_0`` or ``input_1``.
 
-Before, a Vega-Lite node held one input, injected as the dataset ``data``: a
-second edge was refused and pointed at a Merge Flow node.
+Before, a Vega-Lite node held one input, injected as the dataset ``data``, and
+a second edge was refused.
 
 Run::
 

@@ -5,7 +5,8 @@ disk three nodes held the literal sentence ``not controllable`` as their content
 (a merge-flow, a data-pool and an autk-grammar) while the vis-vega node held a
 document that dev/129's own validator calls invalid. Every scripted reply below
 is what the field log recorded, so the test fails if the write gate is ever
-routed around again.
+routed around again. The Merge Flow left with #662; a Simple View, another
+kind wired and never written, takes its place in the plan.
 """
 
 from __future__ import annotations
@@ -20,10 +21,9 @@ from utk_curio.backend.tests.test_agents.test_verified_rounds import TEMPLATES a
 #: declares them — a document carries ``hasGrammar`` + ``grammarId``, and a
 #: wired box has ``editor: "none"`` with an input port (dev/134's derivation).
 TEMPLATES = _CODE_TEMPLATES + [
-    {"id": "merge-flow", "label": "Merge Flow", "category": "flow", "engine": "python",
-     "editor": "none", "hasCode": False, "description": "Combine flows.",
-     "containerStyle": {"noContent": True},
-     "inputPorts": [{"types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "[1,n]"}],
+    {"id": "vis-simple", "label": "Simple View", "category": "vis_simple", "engine": "python",
+     "editor": "none", "hasCode": False, "description": "Display incoming data.",
+     "inputPorts": [{"types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "1"}],
      "outputPorts": [{"types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "1"}]},
     {"id": "data-pool", "label": "Data Pool", "category": "data", "engine": "python",
      "editor": "none", "hasCode": False, "description": "Store data for interactions.",
@@ -44,7 +44,7 @@ TEMPLATES = _CODE_TEMPLATES + [
 DFB = "agent.dataflow-builder@1.0.0"
 NCB = "agent.node-content-builder@1.0.0"
 DL = "curio.builtin/data-loading"
-MERGE = "curio.builtin/merge-flow"
+TABLE = "curio.builtin/vis-simple"
 POOL = "curio.builtin/data-pool"
 AUTK = "curio.builtin/autk-grammar"
 VEGA = "curio.builtin/vis-vega"
@@ -86,7 +86,8 @@ LOADER = 'import pandas as pd\nreturn pd.DataFrame({"community": ["Loop"], "dens
 
 
 class _Harness:
-    """The owner's plan: a loader, a merge, a pool, an AUTK map and a chart."""
+    """The owner's plan: a loader, a table view (where their Merge Flow stood),
+    a pool, an AUTK map and a chart."""
 
     def __init__(self, client, user, token, monkeypatch, *, replies):
         from utk_curio.backend.app.projects.services import _user_dir_key
@@ -107,8 +108,8 @@ class _Harness:
         plan = {"goal": "compare chicago neighborhoods", "nodes": [
             {"ref": "load", "nodeType": DL, "title": "Boundaries",
              "intent": "load the community areas"},
-            {"ref": "merge", "nodeType": MERGE, "title": "Merge",
-             "intent": "combine the sources"},
+            {"ref": "table", "nodeType": TABLE, "title": "Table",
+             "intent": "show the community areas"},
             {"ref": "pool", "nodeType": POOL, "title": "Pool",
              "intent": "store the joined data for interactions"},
             {"ref": "map", "nodeType": AUTK, "title": "Density Map",
@@ -116,8 +117,8 @@ class _Harness:
             {"ref": "chart", "nodeType": VEGA, "title": "Density Ranking",
              "intent": "rank neighborhoods by density"},
         ], "edges": [
-            {"from": "load", "to": "merge"},
-            {"from": "merge", "to": "pool"},
+            {"from": "load", "to": "table"},
+            {"from": "table", "to": "pool"},
             {"from": "pool", "to": "map"},
             {"from": "pool", "to": "chart"},
         ]}
@@ -192,15 +193,15 @@ class TestProseNeverBecomesContent:
         # 1. NOTHING holds prose. This is the assertion the field failure needs.
         assert NOT_CONTROLLABLE not in contents.values()
         assert contents[AUTK] == ""       # refused, so nothing was written
-        assert contents[MERGE] == ""      # never even asked
+        assert contents[TABLE] == ""      # never even asked
         assert contents[POOL] == ""
 
         # 2. The wired kinds were never sent to a model.
-        assert not any(f'"nodeType": "{MERGE}"' in f for f in h.frames)
+        assert not any(f'"nodeType": "{TABLE}"' in f for f in h.frames)
         assert not any(f'"nodeType": "{POOL}"' in f for f in h.frames)
 
         # 3. They are resolved, and they say why there was nothing to write.
-        for wired in (MERGE, POOL):
+        for wired in (TABLE, POOL):
             result = body["results"][h.ids[wired]]
             assert result["status"] == "solved"
             assert result["verification"]["status"] == "no-content"

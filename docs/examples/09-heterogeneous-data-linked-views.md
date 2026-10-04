@@ -1,6 +1,6 @@
 # Example: Heterogeneous data + cross-grammar linked views
 
-This example combines three different data sources, a high-resolution thermal raster, a tabular meteorological feed, and a sociodemographic GeoDataFrame, into a single pipeline that derives the Universal Thermal Climate Index (UTCI) per Milan census tract, and then renders the result through coordinated `autk-grammar` map, Vega-Lite scatter, and Vega-Lite boxplot views with cross-grammar Interaction edges. The use case is heat exposure of older adults in Milan; the framework story is that Curio's `Merge Flow` and `Data Pool` let you fan a heterogeneous join out to multiple linked views regardless of the visualization grammar.
+This example combines three different data sources, a high-resolution thermal raster, a tabular meteorological feed, and a sociodemographic GeoDataFrame, into a single pipeline that derives the Universal Thermal Climate Index (UTCI) per Milan census tract, and then renders the result through coordinated `autk-grammar` map, Vega-Lite scatter, and Vega-Lite boxplot views with cross-grammar Interaction edges. The use case is heat exposure of older adults in Milan; the framework story is that nodes with several inputs join heterogeneous data and a `Data Pool` fans the result out to multiple linked views, regardless of the visualization grammar.
 
 > [!NOTE]
 > **WebGPU required**
@@ -18,13 +18,12 @@ flowchart LR
   W[`Data Loading`<br/>meteo CSV]
   S[`Data Loading`<br/>census polygons]
 
-  R --> MG[`Merge Flow`<br/>2 inputs]
-  W --> MG --> U[`Python Computation`<br/>UTCI]
+  R -->|input 0| U[`Python Computation`<br/>UTCI]
+  W -->|input 1| U
 
-  U --> MZ[`Merge Flow`<br/>3 inputs]
-  R --> MZ
-  S --> MZ
-  MZ --> Z[`Python Computation`<br/>zonal stats]
+  R -->|input 0| Z[`Python Computation`<br/>zonal stats]
+  U -->|input 1| Z
+  S -->|input 2| Z
   Z --> T[`Data Transformation`<br/>reproject + filter] --> P[`Data Pool`]
 
   P --> M[autk-grammar<br/>thematic map + picking]
@@ -81,13 +80,19 @@ sensor = curio_load_data("data.utk.milan-era5-weather")
 return sensor
 ```
 
-## Step 3: Bundle the raster and meteo inputs (`Merge Flow`)
+## Step 3: Load census polygons (`Data Loading`)
 
-The merge node has no code of its own; it exposes the raster as `arg[0]` and the meteo DataFrame as `arg[1]` to the next compute node.
+A separate branch loads the sociodemographic GeoJSON that carries the `gt_65` column (the count of residents older than 65 per polygon).
+
+```python
+import geopandas as gpd
+gdf = curio_load_data("data.utk.milan-census-gt65")
+return gdf
+```
 
 ## Step 4: Compute UTCI on the raster grid (`Python Computation`)
 
-Read the noon weather row and call `pythermalcomfort.models.utci` to produce a UTCI value per pixel. Two non-obvious details in this node:
+The raster goes into this node's first input circle and the meteo table into its second; the code reads them as `[!! input 0 !!]` and `[!! input 1 !!]` (see [Several inputs](../USAGE.md#several-inputs)). Read the noon weather row and call `pythermalcomfort.models.utci` to produce a UTCI value per pixel. Two non-obvious details in this node:
 
 - `data.filled(np.nan)` collapses the rasterio MaskedArray to a plain float array with NaN for nodata, regardless of the raster's nodata sentinel.
 - `limit_inputs=False` keeps UTCI valid when `tr − tdb > 30` (common at noon in Milan, where MRT is regularly 60 to 70 °C while air temperature stays around 30 °C). With the default `limit_inputs=True`, those pixels would silently come back as NaN and the map would render half-empty.
@@ -101,8 +106,8 @@ import numpy as np
 from pythermalcomfort import models
 from rasterio.warp import Resampling
 
-src = arg[0]
-sensor = arg[1]
+src = [!! input 0 !!]
+sensor = [!! input 1 !!]
 
 timestamp = 12
 
@@ -140,19 +145,9 @@ utci_shape = [utci_grid.shape[1], utci_grid.shape[0]]
 return (utci_list, utci_shape)
 ```
 
-## Step 5: Load census polygons (`Data Loading`)
+## Step 5: Spatially join UTCI into census polygons (`Python Computation`)
 
-A separate branch loads the sociodemographic GeoJSON that carries the `gt_65` column (the count of residents older than 65 per polygon).
-
-```python
-import geopandas as gpd
-gdf = curio_load_data("data.utk.milan-census-gt65")
-return gdf
-```
-
-## Step 6: Spatially join UTCI into census polygons (`Python Computation`)
-
-Receive the original raster (for its CRS / transform), the UTCI tuple from Step 4, and the census polygons from Step 5. Run `rasterstats.zonal_stats` to compute per-polygon UTCI statistics and attach the mean to each polygon.
+The node's three input circles take the original raster (for its CRS / transform), the UTCI tuple from Step 4, and the census polygons from Step 3, read as `[!! input 0 !!]`, `[!! input 1 !!]` and `[!! input 2 !!]`. Run `rasterstats.zonal_stats` to compute per-polygon UTCI statistics and attach the mean to each polygon.
 
 ```python
 # Step 5 - Zonal Statistics
@@ -160,10 +155,10 @@ Receive the original raster (for its CRS / transform), the UTCI tuple from Step 
 from rasterstats import zonal_stats
 import numpy as np
 
-dataset = arg[0]
-utci_list = arg[1][0]
-utci_shape = arg[1][1]
-gdf = arg[2]
+dataset = [!! input 0 !!]
+utci_list = [!! input 1 !!][0]
+utci_shape = [!! input 1 !!][1]
+gdf = [!! input 2 !!]
 
 utci = np.asarray(utci_list, dtype=float)
 shape = utci_shape
@@ -195,7 +190,7 @@ result = gdf.loc[:, [gdf.geometry.name, "mean", "gt_65"]]
 return result
 ```
 
-## Step 7: Reproject and filter (`Data Transformation`)
+## Step 6: Reproject and filter (`Data Transformation`)
 
 Drop polygons with non-positive UTCI and reproject to EPSG:3395 so the `autk-grammar` map downstream sees the CRS its tile pipeline expects. The `metadata.name` keeps the table referenceable as `census` throughout the rest of the dataflow.
 
@@ -212,11 +207,11 @@ filtered_gdf.__dict__['metadata'] = {'name': 'census'}
 return filtered_gdf
 ```
 
-## Step 8: Fan out via `Data Pool` (`Data Pool`)
+## Step 7: Fan out via `Data Pool` (`Data Pool`)
 
 The pool keeps the joined `census` table in shared memory so the next three views can read it without re-running the spatial join.
 
-## Step 9: Thematic map of UTCI (`autk-grammar`)
+## Step 8: Thematic map of UTCI (`autk-grammar`)
 
 The map is an `autk-grammar` node with just a `map` block. The census polygons routed in from the Data
 Pool are the node's first input, the table `input_0`, written with the input chip `[!! input 0 !!]`;
@@ -239,9 +234,9 @@ GeoDataFrame directly. This is the single-frame case of Autark's two upstream-re
 `interacted` flag through the pool, which the Vega scatter and boxplot consume on the next propagation
 cycle.
 
-## Step 10: Linked scatterplot of UTCI vs. older adults (`Vega-Lite`)
+## Step 9: Linked scatterplot of UTCI vs. older adults (`Vega-Lite`)
 
-A Vega-Lite scatter of `gt_65` vs `mean` UTCI. The interval selection on this view, combined with the Interaction edges added in Step 12, marks each polygon as `interacted` so the map can re-render with the selected tracts highlighted.
+A Vega-Lite scatter of `gt_65` vs `mean` UTCI. The interval selection on this view, combined with the Interaction edges added in Step 11, marks each polygon as `interacted` so the map can re-render with the selected tracts highlighted.
 
 ```json
 {
@@ -260,9 +255,9 @@ A Vega-Lite scatter of `gt_65` vs `mean` UTCI. The interval selection on this vi
 }
 ```
 
-## Step 11: Linked boxplot of older-adult population (`Vega-Lite`)
+## Step 10: Linked boxplot of older-adult population (`Vega-Lite`)
 
-Add a `Data Transformation` node that drops everything but `gt_65`, then a Vega-Lite boxplot reading from it. This view summarises the distribution of older-adult counts independent of UTCI; with the Interaction edges from Step 12 wired up, brushing on the map or scatter narrows the boxplot to the selected polygons.
+Add a `Data Transformation` node that drops everything but `gt_65`, then a Vega-Lite boxplot reading from it. This view summarises the distribution of older-adult counts independent of UTCI; with the Interaction edges from Step 11 wired up, brushing on the map or scatter narrows the boxplot to the selected polygons.
 
 ```python
 gdf = arg
@@ -281,7 +276,7 @@ return gdf.loc[:, ["gt_65"]]
 }
 ```
 
-## Step 12: Wire the linked interaction (Interaction edges)
+## Step 11: Wire the linked interaction (Interaction edges)
 
 Connect the `autk-grammar` map, `Vega-Lite` (scatter), and `Vega-Lite` (boxplot) to the shared `Data Pool` with edges of `type: "Interaction"`. Brushing in any one view propagates an `interacted` flag through the census table the pool holds; the other views re-style by reading that column on the next propagation cycle. This is the cross-grammar piece: the same Interaction wiring works between Vega-Lite and Autark views without either side knowing about the other.
 
@@ -292,4 +287,4 @@ This example wires two pool-anchored Interaction edges:
 
 ## Final result
 
-The map answers "where is heat exposure worst?", the scatter answers "is heat correlated with where older adults live?", and the boxplot anchors the older-adult distribution for context. Brushing any one view updates the others through the Interaction edges, regardless of whether the view is rendered through Vega-Lite or Autark. The pattern generalizes: any heterogeneous merge → fan-out via `Data Pool` → mixed Autark + Vega-Lite views with Interaction edges, and you get coordinated cross-grammar exploration for free.
+The map answers "where is heat exposure worst?", the scatter answers "is heat correlated with where older adults live?", and the boxplot anchors the older-adult distribution for context. Brushing any one view updates the others through the Interaction edges, regardless of whether the view is rendered through Vega-Lite or Autark. The pattern generalizes: any heterogeneous join → fan-out via `Data Pool` → mixed Autark + Vega-Lite views with Interaction edges, and you get coordinated cross-grammar exploration for free.

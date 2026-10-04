@@ -21,28 +21,19 @@ from utk_curio.backend.app.packages.application.seeding import BUILTIN_PACKAGE_I
 log = logging.getLogger(__name__)
 
 
-# DEC-051 (dev/67-3): where a template's DECLARED cardinality and its RENDERED
-# input capacity disagree, the rendered capacity is the enforceable truth —
-# merge-flow declares one "[1,n]" port but the canvas renders exactly 5 slots
-# (mergeFlowBehavior MERGE_SLOT_COUNT), so 5 is what a graph can actually hold.
-_RENDERED_INPUT_CAPACITY: dict[str, int] = {"curio.builtin/merge-flow": 5}
-
-
-def input_capacity(canonical: str, port_count: int, cardinality: str | None = None) -> int | None:
+def input_capacity(port_count: int, cardinality: str | None = None) -> int | None:
     """How many incoming edges a node of this template accepts, or None for
     any number. A template with one input port takes its declared upper bound
     (*cardinality*): the canvas draws a new circle for each edge, up to it.
-    Several ports are named circles, one edge each. Merge Flow renders its own
-    slots (DEC-051). The one rule ``maxIncomingEdges`` and the agents' preamble
-    both read, and the canvas's ``maxInputs`` follows."""
-    if canonical in _RENDERED_INPUT_CAPACITY:
-        return _RENDERED_INPUT_CAPACITY[canonical]
+    Several ports are named circles, one edge each. The one rule
+    ``maxIncomingEdges`` and the agents' preamble both read, and the canvas's
+    ``maxInputs`` follows."""
     if port_count == 1 and cardinality is not None:
         return parse_cardinality(cardinality)[1]
     return port_count
 
 
-def _input_arity(canonical: str, template) -> tuple[list[dict], int | None]:
+def _input_arity(template) -> tuple[list[dict], int | None]:
     """Per-port ``{types, min, max}`` rows + the template's incoming-edge
     capacity (``input_capacity``): one port's declared maximum, one edge per
     port when there are several.
@@ -52,7 +43,7 @@ def _input_arity(canonical: str, template) -> tuple[list[dict], int | None]:
         lo, hi = parse_cardinality(port.cardinality)
         inputs.append({"types": list(port.types), "min": lo, "max": hi})
     single = template.input_ports[0].cardinality if len(template.input_ports) == 1 else None
-    return inputs, input_capacity(canonical, len(inputs), single)
+    return inputs, input_capacity(len(inputs), single)
 
 
 # One value, three legal spellings (memo dev/93 D3; the dev/90 A14 family).
@@ -204,7 +195,7 @@ def _template_entry(package_id: str, template) -> dict:
     listing in this module returns (memo dev/48; arity per dev/67-3, DEC-051).
     """
     canonical = f"{package_id}/{template.template_id}"
-    inputs, max_incoming = _input_arity(canonical, template)
+    inputs, max_incoming = _input_arity(template)
     return {
         "id": canonical,
         "label": template.label,
@@ -292,9 +283,9 @@ def template_content_kind(template) -> str:
     if (template.container_style or {}).get("noContent"):
         return CONTENT_KIND_NONE
     if str(template.editor or "") == "none":
-        # A presentation template with an input renders THAT (a pool, a merge, a
-        # simple view), and one with widgets is set through them; one with
-        # neither renders what its author wrote (a note).
+        # A presentation template with an input renders THAT (a pool, a simple
+        # view), and one with widgets is set through them; one with neither
+        # renders what its author wrote (a note).
         if (template.input_ports or []) or bool(getattr(template, "has_widgets", False)):
             return CONTENT_KIND_NONE
         return CONTENT_KIND_NOTE

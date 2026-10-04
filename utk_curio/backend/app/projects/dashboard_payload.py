@@ -46,7 +46,6 @@ _PASS_THROUGH_KINDS = frozenset(
         "vis-vega",
         "vis-simple",
         "data-pool",
-        "merge-flow",
     }
 )
 

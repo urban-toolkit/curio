@@ -775,12 +775,12 @@ def chapter_access(run: StressRun) -> None:
 def chapter_canvas(run: StressRun) -> None:
     page, tour = run.page, run.tour
     tour.chapter("Chapter 2", "The canvas",
-                 "All twelve built-in nodes, their editors, and the guards.")
+                 "All eleven built-in nodes, their editors, and the guards.")
 
     with run.step("Open a fresh dataflow"):
         _enter_project(run, name="Stress: canvas")
 
-    with run.step("Drag all twelve built-in node types onto the canvas"):
+    with run.step("Drag all eleven built-in node types onto the canvas"):
         reset_zoom(page)
         sources = [
             (template, builtin_tile(page, template))
@@ -788,7 +788,7 @@ def chapter_canvas(run: StressRun) -> None:
         ]
         placed = _drop_grid(run, sources)
         run.state["placed"] = dict(placed)
-        assert len(placed) == 12, f"only {len(placed)} of 12 tiles produced a node"
+        assert len(placed) == 11, f"only {len(placed)} of 11 tiles produced a node"
         fit_view(page)
         run.snap("all-builtin-nodes")
 
@@ -1096,8 +1096,8 @@ def chapter_canvas(run: StressRun) -> None:
 
     with run.step("Run every node from the rail"):
         play_all(run, timeout_ms=300000)
-        # This canvas is deliberately a mess of unwired nodes by now - a Merge
-        # Flow with no inputs and two bare transformations - so a red node here
+        # This canvas is deliberately a mess of unwired nodes by now - nodes
+        # with no inputs and two bare transformations - so a red node here
         # is the expected outcome, not a finding. The examples chapter is where
         # an errored node means something.
         errored = report_errored_nodes(
@@ -2450,12 +2450,12 @@ EXAMPLE_RUNS: tuple[tuple[str, int, bool], ...] = (
     ("01-vega-lite-chained-transforms.json", 6, False),
     ("02-vega-lite-spatial-density.json", 8, False),
     ("03-vega-lite-linked-temporal-charts.json", 4, False),
-    ("04-vega-lite-multi-flow-dashboard.json", 24, False),
+    ("04-vega-lite-multi-flow-dashboard.json", 21, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, False),
-    ("09-heterogeneous-data-linked-views.json", 13, False),
+    ("09-heterogeneous-data-linked-views.json", 11, False),
     ("06-autark-what-if-shadow-study.json", 6, True),
     ("07-autark-gpu-shader.json", 5, True),
-    ("08-autark-spatial-join-regression.json", 8, True),
+    ("08-autark-spatial-join-regression.json", 7, True),
     ("11-autark-pbf-loading.json", 2, True),
     # Needs curio.streetvision, which the `nodes` chapter installs.
     ("10-street-vision-cv-analysis.json", 12, False),
@@ -2527,10 +2527,10 @@ def chapter_views(run: StressRun) -> None:
                     page.wait_for_timeout(220)
                 run.snap("data-pool-scrolled")
 
-    with run.step("A Merge Flow dataflow", may_fail=True):
-        load_example(run, os.path.join(DATAFLOWS, "Merge.json"), expected_nodes=5)
+    with run.step("A node with several inputs", may_fail=True):
+        load_example(run, os.path.join(DATAFLOWS, "MultiInput.json"), expected_nodes=4)
         play_all(run, timeout_ms=300000)
-        report_errored_nodes(run, "A Merge Flow dataflow")
+        report_errored_nodes(run, "A node with several inputs")
 
     with run.step("A JavaScript computation node", may_fail=True):
         load_example(run, os.path.join(DATAFLOWS, "JSComputation.json"),
@@ -2540,14 +2540,14 @@ def chapter_views(run: StressRun) -> None:
         run.snap("js-computation")
 
     with run.step("Widgets drive a node", may_fail=True):
-        load_example(run, os.path.join(DATAFLOWS, "Widget.json"), expected_nodes=6)
+        load_example(run, os.path.join(DATAFLOWS, "Widget.json"), expected_nodes=4)
         play_all(run, timeout_ms=300000)
         run.snap("widgets")
 
     with run.step("Dashboard: pin, save, open the page, edit its layout, come back"):
         load_example(run, os.path.join(EXAMPLES,
                                        "04-vega-lite-multi-flow-dashboard.json"),
-                     expected_nodes=24)
+                     expected_nodes=21)
         play_all(run, timeout_ms=420000)
         before = len(canvas_nodes(page))
         for node in canvas_nodes(page)[:2]:

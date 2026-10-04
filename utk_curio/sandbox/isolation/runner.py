@@ -110,14 +110,14 @@ def _persist_output(descriptor, *, node_type, session_id, save_dataset):
 
 
 def _parse_outputs_refs(file_path):
-    """Return the list of refs a merge input names, or None if it names one.
+    """Return the list of refs a bundled input names, or None if it names one.
 
-    A merge output reaches a node in two shapes, both documented on
+    A bundle of several inputs reaches a node in two shapes, both documented on
     ``worker._expand_outputs_wrapper``:
 
     * **live** -- a list literal of ``{'path': id}`` dicts, which is what the
       ``eval`` here was written for.
-    * **reloaded** -- when the upstream merge output was persisted (a project
+    * **reloaded** -- when the upstream bundle was persisted (a project
       save, or the JS-node round trip through DuckDB), the node receives a
       single bare ref to it instead.
 

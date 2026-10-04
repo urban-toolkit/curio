@@ -158,6 +158,21 @@ def shared_names_in(code: object) -> list[str]:
     return names
 
 
+def reference_text(inner: str) -> str:
+    """The text of a reference to *inner*; ``referenceText`` in ``codeReferences.ts``."""
+    return f"[!! {inner} !!]"
+
+
+def input_reference_inner(slot: int | None, column: str | None = None, layer: str | None = None) -> str:
+    """What stands inside a reference to input *slot*, to one of its layers, or
+    to a column of either; ``inputReferenceInner`` in ``codeReferences.ts``."""
+    return (
+        f"input {'?' if slot is None else slot}"
+        + (f":{layer}" if layer is not None else "")
+        + (f".{column}" if column is not None else "")
+    )
+
+
 def _text_of(value, language: str) -> str:
     return value if isinstance(value, str) else widget_literal(value, language)
 

@@ -7,7 +7,7 @@ import type { EMPTY_RENDER_KIND } from "../generated/renderCauses";
  *
  * `DEC-052`'s journal had three writers and all three were the sandbox, so
  * every kind that runs in the BROWSER or through its own service — a Vega-Lite
- * chart, an AUTK map, a Data Pool, a Merge Flow, a Simple View, a Spatial Join,
+ * chart, an AUTK map, a Data Pool, a Simple View, a Spatial Join,
  * a Data Export, and any node that trips the render boundary — left no trace,
  * and every agent reading the journal was told `never-executed` about a node
  * the user had just watched fail (the owner's `a29d1ad8`).
