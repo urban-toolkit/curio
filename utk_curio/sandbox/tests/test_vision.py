@@ -182,7 +182,10 @@ def test_a_transformers_model_without_its_libraries_says_what_to_install(tmp_pat
     (model / "files").mkdir(parents=True)
     (model / "manifest.json").write_text(json.dumps({"runtime": "transformers", "entry": "files"}), encoding="utf-8")
     frame, _helpers = photos
-    # The way out it names has to exist: adding the model is what installs them.
-    with pytest.raises(RuntimeError, match="runs on Transformers.*add it again from the Discovery "
-                                           "Catalog.*torch, transformers and safetensors"):
+    with pytest.raises(RuntimeError, match="runs on Transformers.*ask whoever runs this Curio "
+                                           "to install torch, transformers and safetensors") as raised:
         make_curio_segment(None)(frame, _loaded(model), None)
+    # Deleting the model and adding it again gives it a new id, and every node
+    # that names the old one stops finding it.
+    message = str(raised.value)
+    assert "delete" not in message and "again" not in message

@@ -74,7 +74,10 @@ def test_two_models_get_two_folders(model, scratch, tmp_path):
 def test_the_resolver_names_a_missing_model():
     model_folder = make_model_folder({"a": "/models/a@1"})
     assert model_folder("a") == "/models/a@1"
-    with pytest.raises(RuntimeError, match="Model 'b' is not available.*Model Catalog"):
+    # The way out is a drag, which rewrites the id the node names: a model
+    # added again gets a new id, which this node still does not name.
+    with pytest.raises(RuntimeError, match="Model 'b' is not available in this environment - "
+                                           "drag a model from the Model Catalog onto this node"):
         model_folder("b")
 
 
