@@ -571,6 +571,89 @@ def test_the_limits_are_actually_applied_in_the_child(isolated):
     assert limits["core"] == 0, limits
 
 
+#: Burns CPU on every CPU this process may use, with threads that release the
+#: GIL (hashlib does for large buffers), until it has spent CPU_GOAL seconds
+#: of CPU time or WALL_CAP seconds of wall time.
+_BURN_EVERY_CPU = r'''
+    import hashlib, os, resource, threading, time
+    block = os.urandom(1 << 20)
+    start = time.monotonic()
+    def cpu():
+        ru = resource.getrusage(resource.RUSAGE_SELF)
+        return ru.ru_utime + ru.ru_stime
+    def burn():
+        while cpu() < CPU_GOAL and time.monotonic() - start < WALL_CAP:
+            for _ in range(64):
+                hashlib.sha256(block).digest()
+    threads = [threading.Thread(target=burn) for _ in os.sched_getaffinity(0)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return {"cpu": cpu(), "wall": time.monotonic() - start, "threads": len(threads)}
+'''
+
+
+def test_a_node_may_spend_more_cpu_time_than_its_wall_allowance(isolated):
+    """A node busy on every CPU for half its wall allowance must finish.
+
+    RLIMIT_CPU counts every thread, and it was set to the wall allowance, so
+    a node whose library runs a thread per core was killed long before its
+    wall clock ran out: example 10's Image Segmentation spent its 300 CPU-
+    seconds in 9 s on the 64-CPU deploy host. The kill was a SIGKILL, which
+    the node then reported as the memory limit.
+    """
+    if len(os.sched_getaffinity(0)) < 2:
+        pytest.skip("needs at least two CPUs to spend CPU time faster than wall time")
+    wall_allowance = isolated.wall_timeout
+    code = (_BURN_EVERY_CPU
+            .replace("CPU_GOAL", str(1.5 * wall_allowance))
+            .replace("WALL_CAP", str(0.75 * wall_allowance)))
+    result = run_isolated(isolated, code)
+    assert result["stderr"] == "", result["stderr"]
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    spent = load_from_duckdb(result["output"]["path"])
+    # The claim is only made when the node really outran the wall clock.
+    assert spent["cpu"] > wall_allowance, spent
+    assert spent["wall"] < wall_allowance, spent
+
+
+def test_a_node_past_its_cpu_allowance_is_told_so(isolated):
+    """The kernel warns at the soft limit and kills at the hard one.
+
+    With the two equal, its first signal was SIGKILL, which the node reported
+    as the memory limit. With the hard limit above the soft one, SIGXCPU
+    comes first, and the node says which allowance it ran out of.
+    """
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    probe = run_isolated(
+        isolated,
+        "    import resource\n"
+        "    return list(resource.getrlimit(resource.RLIMIT_CPU))\n",
+    )
+    assert probe["stderr"] == "", probe["stderr"]
+    soft, hard = load_from_duckdb(probe["output"]["path"])
+    assert soft == isolated.limits["cpu_seconds"], (soft, hard)
+    assert hard > soft, f"RLIMIT_CPU soft {soft} and hard {hard}: the first signal is SIGKILL"
+
+    # And SIGXCPU reaches the node's message: a node that lowers its own soft
+    # limit (always allowed) and then burns past it is told about CPU time.
+    burn = (
+        "    import resource\n"
+        "    soft, hard = resource.getrlimit(resource.RLIMIT_CPU)\n"
+        "    resource.setrlimit(resource.RLIMIT_CPU, (1, hard))\n"
+        "    while True:\n"
+        "        pass\n"
+    )
+    result = run_isolated(isolated, burn)
+    assert result["output"]["path"] == ""
+    assert "CPU allowance" in result["stderr"], result["stderr"]
+    assert "memory" not in result["stderr"], result["stderr"]
+
+
 def resource_unlimited():
     import resource
 
