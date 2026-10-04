@@ -152,6 +152,21 @@ class TestWhichOutputsAreNeeded:
 
         assert dashboard_source_node_ids(spec) == set()
 
+    def test_a_pinned_compare_scenarios_node_is_its_own_source(self):
+        # Its tile charts the table its own run stacked (#662), so that table
+        # travels, and what feeds the node does not.
+        spec = spec_of(
+            [
+                node("a", "curio.builtin/computation-analysis"),
+                node("b", "curio.builtin/computation-analysis"),
+                node("compare", "curio.builtin/compare-scenarios@1", dashboardPinned=True),
+                node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
+            ],
+            [edge("a", "compare"), edge("b", "compare"), edge("a", "chart")],
+        )
+
+        assert dashboard_source_node_ids(spec) == {"compare", "a"}
+
     def test_nothing_pinned_needs_nothing(self):
         spec = spec_of(
             [node("py", "curio.builtin/computation-analysis")],
