@@ -485,6 +485,7 @@ export function useCode(): IUseCode {
     const createCodeNode = useCallback((nodeType: string, options: CreateCodeNodeOptions = {}) => {
         let node = generateCodeNode(nodeType, options);
         addNode(node, undefined, true);
+        return node;
     }, [addNode, outputCallback, getPosition]);
 
     return { createCodeNode, loadTrill };

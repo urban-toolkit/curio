@@ -23,6 +23,8 @@ import { useInteractions } from "./flow/useInteractions";
 import { useCollaborationSync } from "./flow/useCollaborationSync";
 import { useInstallSave } from "./flow/useInstallSave";
 import { useServerRun } from "./flow/useServerRun";
+import { useNotebookView } from "./flow/useNotebookView";
+import { NotebookViewContext } from "./flow/notebookViewContext";
 import type { IOutput, IInteraction } from "./flow/flowTypes";
 import type { FlowContextProps, NodeActionsContextProps } from "./flow/flowContextTypes";
 import type { Scenario } from "../utils/scenarios/scenarioModel";
@@ -154,6 +156,14 @@ export const FlowContext = createContext<FlowContextProps>({
     attachLatestRun: async () => {},
     defaultSaveOutputDataset: false,
     setDefaultSaveOutputDataset: () => {},
+
+    canvasView: "canvas",
+    setCanvasView: () => {},
+    notebookOn: false,
+    notebookContentHeight: 0,
+    setNotebookPane: () => {},
+    registerNotebookScroller: () => {},
+    revealNodes: () => false,
 });
 
 /**
@@ -260,6 +270,8 @@ const FlowProvider = ({
     const reactFlow = useReactFlow();
     const [loading, setLoading] = useState<boolean>(false);
 
+    const notebook = useNotebookView({ nodes, edges, setNodes, reactFlow, dashboardOn });
+
     const [workflowName, _setWorkflowName] = useState<string>(DEFAULT_WORKFLOW_NAME);
     const workflowNameRef = React.useRef(workflowName);
     const setWorkflowName = useCallback((data: any) => {
@@ -328,6 +340,7 @@ const FlowProvider = ({
 
     useCollaborationSync({
         collab, applyNewOutput, interactionsCallback, applyNewPropagation, setNodes, setEdges,
+        takeCanvasPosition: notebook.takeCanvasPosition,
     });
     // NEW CODE
 
@@ -489,9 +502,18 @@ const FlowProvider = ({
                 defaultSaveOutputDataset,
                 setDefaultSaveOutputDataset,
 
+                canvasView: notebook.canvasView,
+                setCanvasView: notebook.setCanvasView,
+                notebookOn: notebook.notebookOn,
+                notebookContentHeight: notebook.notebookContentHeight,
+                setNotebookPane: notebook.setNotebookPane,
+                registerNotebookScroller: notebook.registerNotebookScroller,
+                revealNodes: notebook.revealNodes,
             }}
         >
-            {children}
+            <NotebookViewContext.Provider value={notebook.notebookViewValue}>
+                {children}
+            </NotebookViewContext.Provider>
         </FlowContext.Provider>
         </NodeActionsContext.Provider>
     );

@@ -10,6 +10,7 @@ This document describes the internal architecture of Curio for contributors who 
   * [Provider Hierarchy](#provider-hierarchy)
   * [API Settings and the Monitor](#api-settings-and-the-monitor)
   * [FlowProvider: Central Workflow State](#flowprovider-central-workflow-state)
+  * [The notebook view](#the-notebook-view)
   * [Drawing scenarios](#drawing-scenarios)
 * [Nodes: Types and Structure](#nodes-types-and-structure)
   * [Node Packages and Manifests](#node-packages-and-manifests)
@@ -200,9 +201,46 @@ focus in the URL (`settingsPath`, read back by `focusFromSearch`).
 | `interactions` | `IInteraction[]` | Active user selections from visualization nodes |
 | `dashboardPins` | `{[nodeId]: boolean}` | Which nodes are pinned to the dataflow's dashboard page |
 | `dashboardOn` | `boolean` | A PROP, not state: true when this tree is the dashboard page rather than the canvas |
+| `canvasView` | `"canvas" \| "notebook"` | How the canvas shows the dataflow, kept in the address as `?view=notebook`; always `"canvas"` on the dashboard |
 | `scenarios` | `Scenario[]` | The dataflow's scenarios (`dataflow.scenarios`), saved with it |
 
 When a node produces output, it calls `outputCallback(nodeId, output)`, which updates `outputs`. React re-renders cause downstream nodes (those connected by an edge from the node that just executed) to detect the new input and request the data from the backend.
+
+### The notebook view
+
+The notebook view shows the canvas's own nodes and edges as a column of cells, with
+the edges in a bar to the right. It is the same React Flow instance, because Run All,
+output propagation, `onConnect` and saves read its store, so `providers/flow/useNotebookView.ts`
+moves nodes the way the dashboard page does:
+
+- **Positions.** Each node's canvas spot is stamped into `data.workflowPosition`, which
+  `TrillGenerator` saves in place of `position` (`utils/canvasPosition.ts`), and
+  `position` holds the cell's slot. The hook owns a map from node id to canvas spot and
+  writes every stamp from it on each change of the node list, so an update that rebuilt a
+  node's data without its stamp is repaired before a save reads the store. A
+  collaborator's drag goes to the map (`useCollaborationSync`'s `takeCanvasPosition`).
+  Leaving the view restores every position from the map and deletes every stamp; the
+  canvas viewport saved on entry is restored after the canvas props are live.
+- **Order and geometry.** Cells follow `utils/dataflowOrder.ts`, the order Export as
+  notebook writes, over `directedEdgesOf`. `utils/notebookLayout.ts` places the column
+  below the bar and title chips, sets each node's dots on its right edge, gives every
+  edge a lane in the bar (shorter spans inside) and draws the bracket each edge follows;
+  `components/edges/useEdgePath.ts` picks that path over the canvas bezier.
+- **Scrolling.** `MainCanvas` wraps React Flow in a scroller in both views, so switching
+  never remounts it. In the notebook view React Flow is as tall as the column, at zoom 1
+  with no pan or zoom gestures (`notebookFlowProps`), and leaves the wheel to the page. A
+  call that moves its view anyway, such as a load's fit, is put back to the origin.
+  `revealNodes` scrolls to a cell where the canvas would frame a node.
+- **Cells.** `NotebookViewContext` tells nodes and edges the view is on. `UniversalNode`
+  sizes the cell and moves its handles; `NodeEditor` keeps a grammar node's output pane
+  visible under its input tabs (`curio-notebook-split` in `Node.css`) without moving
+  either pane, so a chart or map never remounts.
+- **Switch.** `CanvasViewSwitch` closes `UpMenu`'s slot, pushed to its end beside
+  Monitor; the canvas bar's buttons take `--curio-bar-button-padding-x: 7px` to make room
+  for it.
+- **Scenarios.** They are drawn on the canvas only: `MainCanvas` hands
+  `scenarioCanvasView` no scenarios in the notebook view, so every node is a cell,
+  collapsed or not, and no box or frame is drawn.
 
 ### Drawing scenarios
 
@@ -1203,7 +1241,7 @@ A key must never be a literal in node code: the code is saved into the dataflow,
 
 - **At run time.** The runtime resolves the names the code uses, for Play and for Solve alike, and hands the values to the sandbox inside the execution request, where they exist only as that callable in the node's namespace: never an environment variable, never a file, never a log line. A key a node prints is redacted before the output leaves the sandbox. The saved dataflow, the journal, the proposals and the chat carry the name only.
 - **For agents.** A content builder's grounded inputs list `availableSecrets` with the line to copy and how the API expects the key (`query:<param>`, `header:<Name>`, or in the code). The grounding gate accepts `curio_secret("<name>")` for a saved name (the Source block reads *Connection key · census · api.census.gov*), refuses an unknown name listing the saved ones, and refuses a credential-shaped literal before anything runs. When a saved key is bound to the host a failing request targets, Solve probes that request with the key and tells the correction what the keyed request answered, redacted. When no key exists, the content builder declines in one line and the node's failure ends with **Add key for** and the host, which opens the node code key form in API Settings with the host filled in.
-- **Storage.** The store is a 0600 file under the user's own directory (unreadable by isolated node code), written the same way as `llm-configs.json`; it is not encrypted at rest. A published dataflow carries key names, so whoever installs it saves their own key under the same name. The shared guest account (authentication off) shares one key store with every other guest, and API Settings says so. Under `--deploy` no guest has a key store: `storage_key_for` refuses a guest with a 403, and the store lists and resolves nothing for the `guest` key, so keys saved there without `--deploy` are not sent.
+- **Storage.** The store is a 0600 file under the user's own directory (unreadable by isolated node code), written the same way as `llm-configs.json`; it is not encrypted at rest. A published dataflow carries key names, so whoever installs it saves their own key under the same name. The shared guest account (authentication off) shares one key store with every other guest, and API Settings says so. Under `--deploy` no guest has a key store: `storage_key_for` refuses a guest with a 403, and the store lists and resolves nothing for the `guest` key, so keys saved there without `--deploy` are not sent. On the client, `isHostedGuest` (`components/apiSettings/useHostedGuest.ts`, with its hook `useHostedGuest`) is the one check for such a guest: API Settings shows it no key form, and **Add key for** and **Save as API key** do not render for it.
 - **Typed keys.** The code editor watches for a key typed into a node's code and shows a non-blocking hint naming the line, with **Save as API key**, which opens the same form. Nothing is refused, rewritten or sent: the finding stays in the browser tab.
 
 ### Evaluation
@@ -1750,7 +1788,8 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 |---|---|
 | `src/index.tsx` | App entry point and provider nesting order |
 | `src/providers/FlowProvider.tsx` | Canonical workflow state (nodes, edges, outputs, interactions) |
-| `src/providers/flow/` | FlowProvider's sections as hooks (Run All, connections, graph edits, outputs, interactions, collaboration sync, dashboard pins, auto-install) and its types |
+| `src/providers/flow/` | FlowProvider's sections as hooks (Run All, connections, graph edits, outputs, interactions, collaboration sync, dashboard pins, auto-install, the notebook view) and its types |
+| `src/utils/notebookLayout.ts`, `src/utils/dataflowOrder.ts` | The notebook view's geometry (cells, dots, lanes, edge paths) and the cell order Export as notebook shares |
 | `src/providers/ProvenanceProvider.tsx` | In-memory per-node execution history (saved with the workflow JSON) |
 | `src/components/UniversalNode.tsx` | Single React component that renders all node types |
 | `src/registry/packagesClient.ts` | Fetch installed manifests → build `NodeDescriptor`s → register against `nodeRegistry` |

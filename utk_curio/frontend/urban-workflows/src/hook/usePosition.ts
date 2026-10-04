@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { useFlowContext } from "../providers/FlowProvider";
+import { canvasPositionOf } from "../utils/canvasPosition";
 
 interface IUsePosition {
   getPosition: () => { x: number; y: number };
@@ -15,8 +16,9 @@ export function usePosition(): IUsePosition {
         y: 100,
       };
     }
-    const maxX = Math.max(...nodes.map((node) => node.position.x));
-    const maxY = Math.max(...nodes.map((node) => node.position.y));
+    // Canvas spots, not the notebook view's cell slots: the new node is placed on the canvas.
+    const maxX = Math.max(...nodes.map((node) => canvasPositionOf(node).x));
+    const maxY = Math.max(...nodes.map((node) => canvasPositionOf(node).y));
     return {
       x: maxX + 800,
       y: maxY,

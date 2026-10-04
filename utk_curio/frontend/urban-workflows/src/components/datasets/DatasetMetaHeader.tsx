@@ -11,6 +11,7 @@ import {
 import { useDatasetPalette } from "../../providers/DatasetPaletteContext";
 import { useHeaderIconDragClick } from "../../utils/headerIconDragClick";
 import { focusLinkedNodes } from "../../utils/focusDatasetNodes";
+import { useNotebookViewContext } from "../../providers/flow/notebookViewContext";
 import styles from "./DatasetMetaHeader.module.css";
 
 export interface DatasetMetaHeaderProps {
@@ -38,6 +39,7 @@ export function DatasetMetaHeader({
 }: DatasetMetaHeaderProps) {
   const { setDatasetRevealId, installedComputedByProducer } = useDatasetPalette();
   const reactFlow = useReactFlow();
+  const { reveal } = useNotebookViewContext();
   const isProducer = variant === "producer";
   const label = isProducer ? "OUTPUT" : "DATASET";
   const badgeClassName = `${styles.datasetBadge} ${selected ? styles.datasetBadgeSelected : ""}`;
@@ -63,9 +65,9 @@ export function DatasetMetaHeader({
     const isLinked = (n: { id: string; data: any }) =>
       isNodeLinkedToAnyDataset(n.data, [source.datasetId]) ||
       installedComputedByProducer.get(n.id)?.id === source.datasetId;
-    focusLinkedNodes(reactFlow, isLinked);
+    focusLinkedNodes(reactFlow, isLinked, reveal);
     setDatasetRevealId(source.datasetId);
-  }, [source.datasetId, setDatasetRevealId, installedComputedByProducer, reactFlow, suggestionActive]);
+  }, [source.datasetId, setDatasetRevealId, installedComputedByProducer, reactFlow, suggestionActive, reveal]);
 
   const badgeClick = useHeaderIconDragClick(revealInPalette);
 
