@@ -4,15 +4,14 @@ The Agent Catalog is where Curio's **hookable agents** live: the assistants you 
 
 Curio has five catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the [Model Catalog](MODEL-CATALOG.md) the models they run, the Agent Catalog the assistants you attach to them, and the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from.
 
-This guide is in seven parts, plus operator notes:
+This guide is in six parts, plus operator notes:
 
 - [1. What is the Agent Catalog?](#1-what-is-the-agent-catalog): agents, what ships, and the storage layers.
 - [2. Surfaces and workflows](#2-surfaces-and-workflows): the three places you manage agents, the action matrix, walkthroughs, and catalog settings.
 - [3. Using an agent in a dataflow](#3-using-an-agent-in-a-dataflow): adding, attaching, and the difference between the two.
 - [4. LLM configurations](#4-llm-configurations): which model answers, and where it is set.
-- [5. Measuring the agents against the shipped examples](#5-measuring-the-agents-against-the-shipped-examples): whether a model can rebuild an example from a prompt, and training a model on those examples.
-- [6. Importing, publishing, and sharing](#6-importing-publishing-and-sharing): your own definitions, and offering them to everyone.
-- [7. The manifest](#7-the-manifest): writing your own agent.
+- [5. Importing, publishing, and sharing](#5-importing-publishing-and-sharing): your own definitions, and offering them to everyone.
+- [6. The manifest](#6-the-manifest): writing your own agent.
 - [Operator notes](#operator-notes): the Deployment default and launcher flags.
 
 ---
@@ -111,7 +110,7 @@ Nothing in this table deletes an agent definition from disk.
 
 **I want to browse without opening a dataflow.** Go to `/projects` and pick the **Agent Catalog** tab. Filter by status or category in the left rail, and click **View details** on a card to read everything about it.
 
-**I want to write my own agent.** Author a `manifest.json` and its prompt files ([part 7](#7-the-manifest)), then use **Import agent** in the drawer's footer. It is listed on `/catalog/agents` beside the built-in and published agents, where **Publish** offers it to everyone on the install. Adding it to a dataflow and publishing it are separate actions.
+**I want to write my own agent.** Author a `manifest.json` and its prompt files ([part 6](#6-the-manifest)), then use **Import agent** in the drawer's footer. It is listed on `/catalog/agents` beside the built-in and published agents, where **Publish** offers it to everyone on the install. Adding it to a dataflow and publishing it are separate actions.
 
 ### Catalog settings
 
@@ -175,7 +174,7 @@ The **Dataset Finder** can search the portals in the [Discovery Catalog](DISCOVE
 
 ## 4. LLM configurations
 
-Every agent, on every dataflow, answers with an **LLM configuration**: the one chosen for it in **API Settings**, else your default. Configurations belong to your account and are edited in **API Settings**: the button in the page header on `/projects` and the catalog pages, or in the Agent Catalog drawer's header on the canvas. A configuration is:
+Every agent, on every dataflow, answers with an **LLM configuration**: the one chosen for it in **API Settings**, else your default. Configurations belong to your account. **API Settings** is in the top bar: on `/projects` and the catalog pages it opens the settings page; on the canvas and the dashboard it opens on the right side, and the dataflow stays open. The **API Settings** button in the Agent Catalog drawer's header opens it on the **Agent configuration** tab. Configurations are the rows of kind **Language model** on the **API keys** tab. A configuration is:
 
 | Field | What it is |
 |---|---|
@@ -185,24 +184,33 @@ Every agent, on every dataflow, answers with an **LLM configuration**: the one c
 | API key | Write-only, and held for this configuration's endpoint only. Editing leaves it in place unless you type a new one or remove it; changing the provider, or the base URL's scheme, host or port, needs it again. This Curio install uses the operator's key, which you never see. |
 | Model | Which model answers. **Fetch models** suggests what the endpoint serves. |
 
-**Add configuration** opens the editor, and **Make this my default** is ticked for your first configuration. Each row offers **Edit**, **Duplicate** (the copy keeps the key), **Make default** and **Remove**; an account holds up to 32. The **Default** badge marks your default, **Chosen for** lists the agents chosen to run on a configuration, and **Trained** marks one made from a model trained in Curio (see [Model training](#model-training)). The **Deployment default** row is the operator's own configuration: read-only, shown when the operator configured one, and the one that answers while you have no default of your own. Its **Make default**, or removing your own default, goes back to it.
+To add a configuration:
 
-### Agent models
+1. Get an API key from the provider (see [USAGE.md](USAGE.md#your-configurations) for each provider's link).
+2. Open **API Settings** from the top bar (on the canvas it opens on the right).
+3. On the **API keys** tab, click **Add configuration**.
+4. In **Kind**, choose **Language model**.
+5. Type a **Label**, choose the **Provider**, paste the **API key**, and type the **Model**, or click **Fetch models** and pick one. **Custom** also asks for the **Base URL**.
+6. Click **Add configuration**. The configuration's row shows in the list, with **saved** in its **Key** column when you gave a key.
 
-**Agent models**, below the configurations, lists the ten catalog agents plus your imported and published agents, each with a select: **Default** (your default configuration), any of your configurations, or the Deployment default. A change is saved at once. Which configuration answers a run:
+**Make this my default** is ticked for your first configuration. Each row offers **Edit**, **Duplicate** (the copy keeps the key) and **Remove**; an account holds up to 32. Its **Details** show the provider, the model and the host, and **Chosen for** lists the agents chosen to run on it. The **Default** badge marks your default, and **Trained** marks one made from a model trained in Curio. The **Deployment default** row is the operator's own configuration: read-only, with **set by this Curio** in its **Key** column, shown when the operator configured one, and the one that answers while you have no default of your own. Choosing it in **Default for agents**, or removing your own default, goes back to it.
+
+### Default and Agent models
+
+The **Agent configuration** tab chooses which configuration answers. Its **Default** section names what answers your agents (**Answering now:** a label and a model) and sets your default in **Default for agents**: the Deployment default or any of your configurations. Below it, **Agent models** lists the ten catalog agents plus your imported and published agents, each with a select: **Default** (your default configuration), any of your configurations, or the Deployment default. A change is saved at once. Which configuration answers a run:
 
 | Run | Configuration |
 |---|---|
-| An agent you attach (chat, Solve, Simulation, the per-node Solve, Evaluation mode) | Its choice, else your default, else the Deployment default |
+| An agent you attach (chat, Solve, Simulation, the per-node Solve) | Its choice, else your default, else the Deployment default |
 | An agent another agent calls | Its choice, else its caller's |
 | An internal helper (the Dataflow Planner, the Dataflow Reader, the content evaluator) | Always its caller's |
 | A guest on a `--deploy` instance | The guest configuration, for every agent |
 
-A choice that names nothing, such as a removed configuration or a Deployment default the operator withdrew, refuses the run with **Open API Settings** on that agent's row; it never falls back to another configuration. Removing a configuration sends the agents chosen for it back to the default, and its confirmation names them.
+A choice that names nothing, such as a removed configuration or a Deployment default the operator withdrew, refuses the run with **Open API Settings**, which opens the **Agent configuration** tab on that agent's row; it never falls back to another configuration. Removing a configuration sends the agents chosen for it back to the default, and its confirmation names them.
 
 A Solve of the Dataflow Builder runs on the Builder's configuration, and writes each node's content through Node Content Builder and each source through Dataset Finder, each on its own choice. The choices a Solve needs are checked before it starts, and one that names nothing refuses it. After a dataset selection, the node is built on its builder's configuration, not the Dataset Finder's.
 
-The choice is per account, for every version of the agent and every project. A shared project carries none, so it runs on the configurations of whoever runs it. An agent's details show what it runs on, with **Change in API Settings**; a reply's status line says, on hover, which configuration and model answered it; and a delegated task in the chat names what the delegate ran on.
+The choice is per account, for every version of the agent and every project. A shared project carries none, so it runs on the configurations of whoever runs it. An agent's details show what it runs on, with **Change in API Settings**, which opens the **Agent configuration** tab on its row; a reply's status line says, on hover, which configuration and model answered it; and a delegated task in the chat names what the delegate ran on.
 
 An agent's tools (reading the dataflow, proposing a node or a plan, handing a task to another agent) work the same on every configuration, and every change waits for your review. For a Custom endpoint, Curio asks once per model whether it calls tools, the first time an agent with tools runs on it: one short request, billed like any other and kept in the usage record.
 
@@ -225,38 +233,7 @@ Whoever runs the install can set a Deployment default with `curio.py start` flag
 
 ---
 
-## 5. Measuring the agents against the shipped examples
-
-Every shipped example has a **prompt fixture** under [`docs/examples/prompts/`](examples/prompts/README.md): a reviewed natural-language prompt paired with what the example contains. An evaluation sends the prompt, and only the prompt, to the Dataflow Builder, then compares the dataflow it built with the saved example. The comparison is deterministic code, not a model, and its score is a report: nothing in Curio passes or fails on it.
-
-**Evaluation mode** and **Model training** are sections of API Settings. A signed-in account sees them, and so does the shared guest a Curio started without `--deploy` signs you in as. A guest on a `--deploy` instance does not.
-
-### Evaluation mode
-
-Open **API Settings → Evaluation mode**. Pick an example, read the prompt that will be sent, and click **Run evaluation**.
-
-The run creates a **project of its own** (yours are untouched), adds and attaches the Dataflow Builder with the agents it requires, sends the prompt on the configuration **your** Dataflow Builder runs on, applies the plan, and solves. The panel names each step while it happens, and the run keeps going if you close the panel. Before you run, the panel names the model and configuration that will answer, and every other configuration the run uses.
-
-The run applies the plan without your click only inside the project it created, and only for the plan and the agents the example requires. Everywhere else, changes wait for your review as usual.
-
-When it finishes you get the overall accuracy, a score per category, the failure categories, and **Open the generated dataflow ↗**. The Dataflow Builder's chat in that project carries the whole run: the prompt, the plan it proposed, what was applied, what Solve verified, and the report. A category that was not measured says so.
-
-Each prompt was drafted by a model and needs a person's approval before training can use it. **Approve this prompt** records yours, and **Withdraw approval** takes it back. A guest, the local shared guest included, cannot record an approval, because an approval names who made it.
-
-### Model training
-
-**API Settings → Model training** fine-tunes a model on the approved examples, on an endpoint that offers fine-tuning. Curio asks the endpoint of the configuration you train on, and when it cannot tune, the section shows that endpoint's reason.
-
-- **Train on** lists your configurations that hold your own API key, with the one the Dataflow Builder runs on selected. A This Curio install configuration is never offered.
-- Before anything is sent, you see the row count, the byte count, the examples by name, their licences, and the host they go to: the endpoint of the configuration you train on. A row carries the prompt, the expected graph shape and the plan text, plus dataset and package identifiers; no dataset rows, columns, geometry or files. Tick the consent box and click **Start training**.
-- The provider owns the job. Its status carries the time it was read, and **Cancel** asks the endpoint to stop it. Closing the panel or restarting the server loses nothing.
-- A trained model can be switched on only after an evaluation of that exact model on the held-out examples it never trained on. **Use this model** then adds an LLM configuration marked **Trained** and chooses it for the Dataflow Builder; **Go back to the previous model** restores the Builder's earlier choice.
-
-Training uses only Curio's shipped examples, and the endpoint does the training: Curio trains nothing locally.
-
----
-
-## 6. Importing, publishing, and sharing
+## 5. Importing, publishing, and sharing
 
 **Import agent**, in the drawer's footer or the `/catalog/agents` header, takes a `manifest.json` and its `.md` or `.txt` prompt files, not an archive. The prompt files must match what the manifest references, size limits apply, and a definition whose id and version you already have is refused: a change is a new version.
 
@@ -264,7 +241,7 @@ Training uses only Curio's shipped examples, and the endpoint does the training:
 
 ---
 
-## 7. The manifest
+## 6. The manifest
 
 An agent package is a folder named `<agentId>@<version>` holding a `manifest.json` and a `prompts/` directory. The manifest uses **camelCase** field names; [`docs/schemas/agent-package.v1.json`](schemas/agent-package.v1.json) (JSON Schema Draft 2020-12) is the full reference.
 
@@ -346,13 +323,13 @@ When another agent delegates `node.output.interpret`, the run uses `prompts/inte
 
 A definition that declares `node.content.generate` may also declare an `autk-grammar` prompt. A run that writes an Autark document on a provider that takes a reply schema uses it in place of the capability's instruction, and holds the reply to the Autark schema. Without that prompt, its runs are never held to the schema.
 
-Once written, import the package with the drawer's **Import agent** button ([part 6](#6-importing-publishing-and-sharing)).
+Once written, import the package with the drawer's **Import agent** button ([part 5](#5-importing-publishing-and-sharing)).
 
 ---
 
 ## Operator notes
 
-Curio ships with **no default LLM endpoint**. Until an operator sets a Deployment default, or a user adds an LLM configuration in **API Settings**, that user's agents stop with the error *"No LLM configuration answers this run."* and a link to API Settings.
+Curio ships with **no default LLM endpoint**. Until an operator sets a Deployment default, or a user adds an LLM configuration on the **API keys** tab of **API Settings**, that user's agents stop with the error *"No LLM configuration answers this run."* and a link to API Settings.
 
 | Variable | Flag | Effect |
 |---|---|---|
@@ -383,7 +360,7 @@ Run `python curio.py start --help` for the current list. A flag writes its varia
 - [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the node package catalog, whose storage and publish model this one mirrors.
 - [`docs/DATA-CATALOG.md`](DATA-CATALOG.md): the dataset catalog, the closest peer to this one.
 - [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md): the data portals the Dataset Finder can search.
-- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#agent-runtime): how Solve, source grounding, connection keys and evaluation work, the agent routes, and the backend layout.
+- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#agent-runtime): how Solve, source grounding, node code keys and evaluation work, the agent routes, and the backend layout.
 - [`docs/schemas/agent-package.v1.json`](schemas/agent-package.v1.json): the manifest JSON Schema.
-- [`docs/examples/prompts/README.md`](examples/prompts/README.md): the prompt fixtures behind [part 5](#5-measuring-the-agents-against-the-shipped-examples), and how to write one.
+- [`docs/examples/prompts/README.md`](examples/prompts/README.md): the prompt fixtures, a reviewed prompt for each shipped example, and how to write one.
 - [`utk_curio/backend/app/agents/`](../utk_curio/backend/app/agents/): the implementation.
