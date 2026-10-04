@@ -105,8 +105,10 @@ def _run_node_events(
         progress_queue: _queue.Queue = _queue.Queue()
         # Resolved here, in the request context the stream carries, before
         # the worker thread starts; the models are looked up on that thread,
-        # so it gets the account too.
+        # so it gets the account too, and the token its artifacts are tagged
+        # with. An untagged artifact is readable by any signed-in session.
         acting_user = agents_spec_reads._acting_user()
+        artifact_session = agents_spec_reads._acting_token()
         collections, media_dir = resolve_spec_collections(spec, user_key, user=acting_user)
 
         def _run():
@@ -114,6 +116,7 @@ def _run_node_events(
                 report = runner.run_through_node(
                     user_key, project_id, spec, node_id,
                     candidate_content=None,
+                    session_id=artifact_session,
                     exec_fn=exec_fn,
                     acting_user=acting_user,
                     collections=collections, media_dir=media_dir,

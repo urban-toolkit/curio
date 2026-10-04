@@ -136,7 +136,7 @@ class TestVersionPassesTheSandboxIsolationFields:
 
         import requests
 
-        from utk_curio.backend.app.api import routes
+        from utk_curio.backend.app.execution import sandbox_client
 
         class _Response:
             status_code = status
@@ -150,7 +150,7 @@ class TestVersionPassesTheSandboxIsolationFields:
                 raise boom
             return _Response()
 
-        with mock.patch.object(routes._sandbox_session, "get", _fake_get):
+        with mock.patch.object(sandbox_client._sandbox_session, "get", _fake_get):
             return app.test_client().get("/version").get_json()
 
     def test_both_fields_are_forwarded(self, app):

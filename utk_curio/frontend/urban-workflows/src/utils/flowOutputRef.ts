@@ -109,7 +109,7 @@ export function normalizeFlowInput(raw: unknown): FlowNodeInput | Record<string,
 /**
  * What a code node sends the backend as its input: the reference alone, when
  * an inline payload also names its artifact. The backend reads only
- * `filename` / `path` and `dataType` (routes.py `_parse_input_ref`), so a Data
+ * `filename` / `path` and `dataType` (node_exec.py `parse_input_ref`), so a Data
  * Pool's rows riding along would be shipped in every request for nothing.
  * Merge bundles keep their `data`: for them it is the list of references.
  */

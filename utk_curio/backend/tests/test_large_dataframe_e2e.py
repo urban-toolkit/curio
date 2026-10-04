@@ -185,15 +185,15 @@ class TestLargeDataFrameE2E(unittest.TestCase):
 
         # Build a Flask app with just the API blueprint and point it at the live sandbox.
         from utk_curio.backend.app.api.routes import bp
-        from utk_curio.backend.app.api import routes as routes_module
+        from utk_curio.backend.app.execution import sandbox_client
 
-        cls._original_api_port = routes_module.api_port
-        routes_module.api_port = cls.sandbox_port
+        cls._original_api_port = sandbox_client.api_port
+        sandbox_client.api_port = cls.sandbox_port
 
         cls.app = Flask(__name__)
         cls.app.register_blueprint(bp)
         cls.client = cls.app.test_client()
-        cls._routes_module = routes_module
+        cls._sandbox_client = sandbox_client
 
         # Stub auth — same pattern as TestSandboxTransportErrors.
         cls._user_patch = patch(
@@ -206,10 +206,10 @@ class TestLargeDataFrameE2E(unittest.TestCase):
     def tearDownClass(cls):
         _shutdown_sandbox(cls.sandbox_proc)
 
-        # Restore the routes module's port so subsequent tests in the same
+        # Restore the sandbox client's port so subsequent tests in the same
         # process see the original value.
-        if hasattr(cls, "_routes_module") and hasattr(cls, "_original_api_port"):
-            cls._routes_module.api_port = cls._original_api_port
+        if hasattr(cls, "_sandbox_client") and hasattr(cls, "_original_api_port"):
+            cls._sandbox_client.api_port = cls._original_api_port
 
         if hasattr(cls, "_user_patch"):
             cls._user_patch.stop()

@@ -534,7 +534,7 @@ When a user clicks the play button on a node, the following sequence occurs:
    POST /processJavaScriptCode (Backend) [JS Computation nodes]
    Body: { code, nodeType, input: { filename: <artifact_id>, dataType: <kind> } }
 
-3. Backend proxies to Sandbox
+3. Backend proxies to Sandbox (execution/node_exec.py)
    POST {SANDBOX_HOST}:{SANDBOX_PORT}/exec    [Python nodes]
    POST {SANDBOX_HOST}:{SANDBOX_PORT}/execJs  [JS Computation nodes]
    Body: { code, nodeType, file_path: <artifact_id>, dataType: <kind>,
@@ -561,6 +561,8 @@ When a user clicks the play button on a node, the following sequence occurs:
 7. ProvenanceProvider.nodeExecProv()
    records timestamps, types, source; in-browser only, no backend call
 ```
+
+**Backend side:** both routes only parse the request and call [`execution/node_exec.py`](../utk_curio/backend/app/execution/node_exec.py). Its `execute_python_node` and `execute_js_node` take the account and the session token as arguments, so a node runs the same way from a route or from a thread with no request: they resolve dataset paths, collections, connection keys and models, call the sandbox, auto-install the output, write the runtime journal and count the run on the monitor. The HTTP session to the sandbox is in [`execution/sandbox_client.py`](../utk_curio/backend/app/execution/sandbox_client.py): `sandbox_request` raises `SandboxTransportError` when the sandbox times out, cannot be reached or refuses the shared secret, and the routes answer it as JSON with a 504 or 502.
 
 **JavaScript execution detail:** `JS Computation` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed; the Node subprocess is per-request and fully isolated.
 
@@ -599,7 +601,7 @@ The sandbox runs as a separate Flask process. It:
 - Requires a shared secret on every route that can run code or read artifacts
   (`/exec`, `/execJs`, `/get`). The secret is minted per launch by
   `cli/environment.py::set_environment_variables` into `CURIO_SANDBOX_TOKEN`, attached by
-  the backend in `_sandbox_call`, and checked in `sandbox/app/auth.py`. An
+  the backend in `execution/sandbox_client.py`, and checked in `sandbox/app/auth.py`. An
   instance started with `--deploy` refuses to boot without one.
 - Sends no CORS headers, because no browser calls it directly.
 - Caches repeated executions of identical code + input combinations (`sandbox/app/utils/cache.py`).
@@ -1358,7 +1360,7 @@ The model family (`huggingface-models`) is searched like a portal and added like
 
 `curio_load_collection`, `curio_derived_file` and `curio_output_file` come from one function, `make_collection_helpers` ([`sandbox/util/collections.py`](../utk_curio/sandbox/util/collections.py)), injected in process and in the isolated child, so the two paths cannot disagree.
 
-- **Resolution.** `code_refs.py` finds `curio_load_collection("<id>")` calls with `curio_data_path` ones, within the same 32-id cap, so the index resolves and stages like any dataset file. `_resolve_exec_collections` in `api/routes.py` adds, per collection, the folder root or the bucket cache directory, and sends `media_dir` to every node, since a node downstream of the loader writes the frames without naming the collection.
+- **Resolution.** `code_refs.py` finds `curio_load_collection("<id>")` calls with `curio_data_path` ones, within the same 32-id cap, so the index resolves and stages like any dataset file. `resolve_exec_collections`, called for every node run by `execution/node_exec.py`, adds, per collection, the folder root or the bucket cache directory, and sends `media_dir` to every node, since a node downstream of the loader writes the frames without naming the collection.
 - **Rows.** `curio_load_collection` adds `dataset_id`, `path` (the file, the cached copy, or `None`; the column `curio_segment` reads), `thumbnail` and `image_url` (the columns Simple View shows) and `audio_url`.
 - **Derived files.** `curio_derived_file` names `<media_dir>/<frames|clips|overlays>/<datasetId>/<fileId>/<t_ms>.<ext>` and the row the media route serves it back under, `<fileId>@<t_ms>`. `curio_segment` ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) writes each image's overlay this way (kind `image`, `t_ms` 0). `curio_output_file` names a file a node returns, in the run's scratch directory under isolation, because a RASTER output must be flat-named there.
 
