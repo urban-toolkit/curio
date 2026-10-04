@@ -665,7 +665,7 @@ class TestSessionFirstHour:
             s.tour.beat(800)
 
         with s.step("Look over the node rail to see what is on offer",
-                    "Twelve built-in tiles, grouped data / computation / views."):
+                    "Eleven built-in tiles, grouped data / computation / views."):
             wrong_tile: list[str] = []
             nameless: list[str] = []
             for template_id in PALETTE_ICON_CLASS:

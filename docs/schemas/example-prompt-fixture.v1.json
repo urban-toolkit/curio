@@ -148,7 +148,6 @@
                   "visualization",
                   "grammar",
                   "pool",
-                  "merge",
                   "export",
                   "endpoint",
                   "presentation"
@@ -194,8 +193,7 @@
                   "null"
                 ],
                 "minimum": 0,
-                "maximum": 4,
-                "description": "Merge-flow input index parsed from targetHandle in_N; null for a single-input port."
+                "description": "Input circle parsed from targetHandle in_N; null for a single-input port or circle 0 (in)."
               }
             }
           }
@@ -276,7 +274,7 @@
           "slotOrderMatters": {
             "type": "boolean",
             "default": false,
-            "description": "Set on a merge target whose input order changes the result; otherwise slot mismatches on that node are not penalised."
+            "description": "Set on a node with several inputs whose input order changes the result; otherwise slot mismatches on that node are not penalised."
           }
         }
       }

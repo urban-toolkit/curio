@@ -36,7 +36,7 @@ import { ReferenceStrip } from "./widgets/WidgetTag";
 import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
 
-const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [] };
+const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [], shared: [] };
 const NO_INPUTS: InputScope[] = [];
 
 type CodeEditorProps = {
@@ -584,6 +584,7 @@ function CodeEditor({
             <ReferenceStrip
                 widgets={references.widgets}
                 inputs={stripInputs}
+                shared={references.shared}
                 disabled={readOnly}
                 onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
                 onLoadColumns={onLoadColumns}

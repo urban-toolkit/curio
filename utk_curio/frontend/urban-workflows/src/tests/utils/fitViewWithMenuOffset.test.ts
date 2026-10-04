@@ -5,7 +5,7 @@ import {
   fitViewWithMenuOffset,
   MENU_BAR_ATTR,
 } from '../../utils/fitViewWithMenuOffset';
-import { getViewportForBounds } from 'reactflow';
+import { getNodesBounds, getViewportForBounds } from 'reactflow';
 
 // react-flow's geometry helpers are mocked: getNodesBounds/getViewportForBounds
 // are pure math we don't need to re-derive, only that the function routes
@@ -264,5 +264,33 @@ describe('fitViewWithMenuOffset', () => {
       { x: 5 + 400, y: 6, zoom: 1 },
       undefined,
     );
+  });
+
+  // A collapsed scenario's members are drawn with display: none (#662) and
+  // React Flow never measures them: a reopened dataflow must still be framed.
+  test('a node drawn hidden is left out, so its missing size does not stall the fit', () => {
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 800, height: 600, left: 0, top: 0 }) as DOMRect;
+
+    const shown = { id: 'a', width: 120, height: 80 };
+    const hidden = { id: 'b', width: null, height: null, style: { display: 'none' } };
+    const rf = makeRf([shown, hidden as any]);
+    expect(fitViewWithMenuOffset(rf)).toBe(true);
+    expect(getNodesBounds).toHaveBeenLastCalledWith([shown]);
+  });
+
+  test('when every node is drawn hidden, the fit frames where they stand', () => {
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 800, height: 600, left: 0, top: 0 }) as DOMRect;
+
+    const rf = makeRf([{ id: 'b', width: null, height: null, style: { display: 'none' } } as any]);
+    expect(fitViewWithMenuOffset(rf)).toBe(true);
+    expect(rf.setViewport).toHaveBeenCalledTimes(1);
   });
 });

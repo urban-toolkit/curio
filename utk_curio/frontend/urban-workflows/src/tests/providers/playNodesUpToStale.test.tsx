@@ -15,7 +15,8 @@
  */
 import React from 'react';
 import { render, act } from '@testing-library/react';
-import { ReactFlow, ReactFlowProvider } from 'reactflow';
+import { Position, ReactFlow, ReactFlowProvider } from 'reactflow';
+import { faCircle } from '@fortawesome/free-solid-svg-icons';
 
 class ResizeObserverStub {
   observe() {}
@@ -82,6 +83,38 @@ jest.mock('vega', () => ({}), { virtual: true });
 jest.mock('vega-lite', () => ({}), { virtual: true });
 
 import FlowProvider, { useFlowContext } from '../../providers/FlowProvider';
+import { NodeType, SupportedType } from '../../constants';
+import { registerNode } from '../../registry/nodeRegistry';
+import type { NodeDescriptor } from '../../registry/types';
+
+// The Data Pool as the shipped manifest declares its input (`[1,n]`), so it
+// holds a value per circle and reads several as one bundle.
+beforeAll(() => {
+  const pool: NodeDescriptor = {
+    id: 'curio.builtin/data-pool@1' as NodeType,
+    category: 'data',
+    label: 'Data Pool',
+    icon: faCircle,
+    inputPorts: [{ types: [SupportedType.DATAFRAME], cardinality: '[1,n]' }],
+    outputPorts: [{ types: [SupportedType.DATAFRAME] }],
+    editor: 'none',
+    inPalette: true,
+    description: '',
+    hasCode: false,
+    hasWidgets: false,
+    hasGrammar: false,
+    adapter: {
+      handles: [
+        { id: 'in', type: 'target', position: Position.Left },
+        { id: 'out', type: 'source', position: Position.Right },
+      ],
+      editor: null,
+      container: {},
+      useNodeBehavior: () => ({}),
+    },
+  };
+  registerNode(pool);
+});
 
 type FlowApi = ReturnType<typeof useFlowContext>;
 let api: FlowApi;
@@ -133,17 +166,18 @@ async function flush() {
   });
 }
 
-async function seed(nodes: any[], edges: Array<[string, string]>) {
+/** Each edge is [source, target], into `in`, or [source, target, targetHandle]. */
+async function seed(nodes: any[], edges: Array<[string, string, string?]>) {
   await act(async () => {
     nodes.forEach((n) => api.addNode(n, undefined, false));
   });
   await flush();
-  for (const [source, target] of edges) {
+  for (const [source, target, targetHandle = 'in'] of edges) {
     await act(async () => {
       api.onEdgesChange([
         {
           type: 'add',
-          item: { id: `${source}->${target}`, source, target, sourceHandle: 'out', targetHandle: 'in' },
+          item: { id: `${source}->${target}`, source, target, sourceHandle: 'out', targetHandle },
         } as any,
       ]);
     });
@@ -246,30 +280,50 @@ describe('playNodesUpTo — stale ancestors', () => {
 
 /**
  * A node that emits through applyNewOutput and never writes a success of its
- * own on node.data.output, as Merge Flow and the Data Pool do.
+ * own on node.data.output, as the Data Pool does. Fed through two circles, it
+ * holds A's and A2's values and reads them as one bundle, as a delivery leaves
+ * it.
  */
-function emitterNode(id: string, type: string) {
+function emitterNode(id: string, type: string, circles: number) {
+  const a1 = { path: 'a-1', dataType: 'dataframe' };
+  const fanIn = circles > 1
+    ? {
+        inputSlots: [a1, { path: 'a2-1', dataType: 'dataframe' }],
+        sourceSlots: ['A', 'A2'],
+        input: { dataType: 'outputs', data: [a1, { path: 'a2-1', dataType: 'dataframe' }] },
+      }
+    : { input: a1 };
   return {
     id,
     type,
     position: { x: 0, y: 0 },
-    data: { nodeId: id, nodeType: type, input: { path: 'a-1', dataType: 'dataframe' }, output: { code: '', content: '' } },
+    data: { nodeId: id, nodeType: type, ...fanIn, output: { code: '', content: '' } },
   } as any;
 }
 
-describe('playNodesUpTo — Merge Flow and Data Pool (#479)', () => {
-  const kinds = [
-    ['a Merge Flow', 'curio.builtin/merge-flow'],
-    ['a Data Pool', 'curio.builtin/data-pool'],
+describe('playNodesUpTo: Data Pool, alone and fed through several circles (#479)', () => {
+  const kinds: Array<[string, string, number]> = [
+    ['a Data Pool fed through two circles', 'curio.builtin/data-pool@1', 2],
+    ['a Data Pool', 'curio.builtin/data-pool', 1],
   ];
 
-  async function seedChain(type: string) {
+  async function seedChain(type: string, circles: number) {
     renderFlow();
     await flush();
-    await seed([ranNode('A', 'return 1'), emitterNode('M', type), ranNode('B', 'return arg')], [
-      ['A', 'M'],
-      ['M', 'B'],
-    ]);
+    const fanIn = circles > 1;
+    await seed(
+      [
+        ranNode('A', 'return 1'),
+        ...(fanIn ? [ranNode('A2', 'return 2')] : []),
+        emitterNode('M', type, circles),
+        ranNode('B', 'return arg'),
+      ],
+      [
+        ['A', 'M', 'in'],
+        ...(fanIn ? [['A2', 'M', 'in_1'] as [string, string, string]] : []),
+        ['M', 'B'],
+      ],
+    );
   }
 
   async function emit(nodeId: string, path: string) {
@@ -286,8 +340,8 @@ describe('playNodesUpTo — Merge Flow and Data Pool (#479)', () => {
     await flush();
   }
 
-  test.each(kinds)('%s that emitted for the input it still has is not run again', async (_label, type) => {
-    await seedChain(type);
+  test.each(kinds)('%s that emitted for the input it still has is not run again', async (_label, type, circles) => {
+    await seedChain(type, circles);
     await emit('M', 'm-1');
 
     await play('B');
@@ -298,10 +352,16 @@ describe('playNodesUpTo — Merge Flow and Data Pool (#479)', () => {
     expect(triggerExecOf('B')).toBe(1);
   });
 
-  test.each(kinds)('%s runs again once a new input has reached it', async (_label, type) => {
-    await seedChain(type);
+  test.each(kinds)('%s runs again once a new input has reached it', async (_label, type, circles) => {
+    await seedChain(type, circles);
     await emit('M', 'm-1');
     await emit('A', 'a-2'); // A ran again since, and delivered to M
+
+    // A new value, not an emptied one: with two circles M now reads a new
+    // bundle holding a-2 and A2's value.
+    const input = api.nodes.find((x: any) => x.id === 'M')?.data?.input;
+    expect(circles > 1 ? input?.data?.[0] : input).toMatchObject({ path: 'a-2' });
+    if (circles > 1) expect(input?.data?.[1]).toMatchObject({ path: 'a2-1' });
 
     await play('B');
 
@@ -309,8 +369,8 @@ describe('playNodesUpTo — Merge Flow and Data Pool (#479)', () => {
     expect(triggerExecOf('B')).toBe(0);
   });
 
-  test.each(kinds)('%s that never emitted runs', async (_label, type) => {
-    await seedChain(type);
+  test.each(kinds)('%s that never emitted runs', async (_label, type, circles) => {
+    await seedChain(type, circles);
 
     await play('B');
 

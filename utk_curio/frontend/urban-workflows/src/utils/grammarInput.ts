@@ -135,7 +135,7 @@ function asFeatureCollection(value: any): any | null {
  * adds around a persisted artifact. No gate and no aliasing: the Autark node
  * also reads its own backend-loaded tables through this.
  *
- * Bundle items that are references (a Merge node's slots) come back in
+ * Bundle items that are references (a node's input circles) come back in
  * `refs` for the caller to fetch.
  */
 export function framesFromPayload(value: any): {

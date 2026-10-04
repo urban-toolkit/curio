@@ -46,7 +46,6 @@ _PASS_THROUGH_KINDS = frozenset(
         "vis-vega",
         "vis-simple",
         "data-pool",
-        "merge-flow",
     }
 )
 
@@ -169,6 +168,17 @@ class DashboardCannotBeStandaloneError(Exception):
         )
 
 
+def _node_kind(node: dict) -> str:
+    """A saved node's bare kind. ``TrillGenerator`` writes the template id as
+    the node's ``type``, its code as ``content``, and ``dashboardPinned`` on the
+    node itself; a saved node has no ``data`` block."""
+    return _unversioned(node.get("type"))
+
+
+def _is_pinned(node: dict) -> bool:
+    return bool(node.get("dashboardPinned"))
+
+
 def _autark_spec_has_data_sources(node: dict) -> bool:
     """True when an Autark tile would run its own data section to draw.
 
@@ -177,8 +187,7 @@ def _autark_spec_has_data_sources(node: dict) -> bool:
     compiled and executed when it draws, which on a published page means a call
     to a server that is not supposed to be needed.
     """
-    data = node.get("data") or {}
-    text = data.get("code") or data.get("defaultCode")
+    text = node.get("content")
     if not isinstance(text, str) or not text.strip():
         return False
     try:
@@ -192,12 +201,11 @@ def _autark_spec_has_data_sources(node: dict) -> bool:
 
 
 def _is_pass_through(node: dict) -> bool:
-    data = node.get("data") or {}
-    kind = _unversioned(data.get("nodeType") or node.get("type"))
+    kind = _node_kind(node)
     if kind in _PASS_THROUGH_KINDS:
         return True
     if kind == _AUTK_GRAMMAR_KIND:
-        return _classify_autk_spec(data.get("code") or data.get("defaultCode")) == "render"
+        return _classify_autk_spec(node.get("content")) == "render"
     return False
 
 
@@ -213,11 +221,7 @@ def dashboard_source_node_ids(spec: dict) -> Set[str]:
     edges = dataflow.get("edges") or []
 
     by_id = {node.get("id"): node for node in nodes if node.get("id")}
-    pinned = [
-        node["id"]
-        for node in nodes
-        if node.get("id") and ((node.get("data") or {}).get("dashboardPinned"))
-    ]
+    pinned = [node["id"] for node in nodes if node.get("id") and _is_pinned(node)]
     sources: Set[str] = set()
     if not pinned:
         return sources
@@ -253,10 +257,9 @@ def _refuse_tiles_that_fetch_their_own_data(spec: dict) -> None:
     dataflow = (spec or {}).get("dataflow") or {}
     offenders: List[str] = []
     for node in dataflow.get("nodes") or []:
-        data = node.get("data") or {}
-        if not data.get("dashboardPinned"):
+        if not _is_pinned(node):
             continue
-        if _unversioned(data.get("nodeType") or node.get("type")) != _AUTK_GRAMMAR_KIND:
+        if _node_kind(node) != _AUTK_GRAMMAR_KIND:
             continue
         if _autark_spec_has_data_sources(node):
             offenders.append(str(node.get("id") or "a tile"))

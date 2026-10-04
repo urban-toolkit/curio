@@ -389,14 +389,14 @@ def _upstream_outputs_for(
     """What the nodes feeding this one actually produced (dev/118, dev/127).
 
     dev/118 listed the direct upstreams that had passed earlier in the batch —
-    which skipped the case that mattered: a ``merge-flow`` is written but never
-    executed (``DEC-075``), so it holds no output, so a node fed THROUGH one
+    which skipped the case that mattered: a node with no code (a pool) is written
+    but never executed (``DEC-075``), so it holds no output, so a node fed THROUGH one
     was handed an empty list and had to invent its inputs (memo dev/127 §1 D5,
     the owner's join that guessed ``community_area`` three times).
 
     So the walk goes THROUGH a node that produced nothing, into its own
-    upstreams, in ``in_0…in_n`` order — which is the order the child will index
-    as ``arg[0]``, ``arg[1]`` — and each row carries ``argIndex`` when it
+    upstreams, in circle order (``in``, ``in_1``, ...), which is the order of
+    ``arg`` the child reads through its chips, and each row carries ``argIndex`` when it
     arrived that way. ``schema_fn`` (optional) turns a recorded artifact into
     the columns and dtypes it holds; an artifact it cannot describe leaves the
     row without a schema rather than with a guess.
@@ -440,8 +440,8 @@ def _upstream_outputs_for(
             if up in wave_outputs:
                 rows.append(_row(up, slot))
             else:
-                # A node with no recorded output of its own (a merge, a pool,
-                # or one that has not run): look through it, keeping the slot
+                # A node with no recorded output of its own (a pool, or one
+                # that has not run): look through it, keeping the slot
                 # order the child will index by.
                 rows.extend(_walk(up, slot, depth + 1))
         return rows

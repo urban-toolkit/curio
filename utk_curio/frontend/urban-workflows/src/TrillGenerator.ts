@@ -15,6 +15,7 @@ import type { HandCategories } from "./utils/dataflowCategories";
 import { canvasTemplateConfigToSpec } from "./utils/canvasTemplateConfigSpec";
 import { dataPoolToSpec } from "./utils/dataPoolSpec";
 import { normalizeWidgets } from "./utils/widgets/widgetModel";
+import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
 
 export class TrillGenerator {
 
@@ -28,10 +29,15 @@ export class TrillGenerator {
 
     static list_of_trills: any = {}; // [workflowName_timestamp] -> trill_spec
 
+    /** #662: the canvas's scenarios, so a version snapshot carries them. The
+     * flow's `setScenarios` keeps this current; `reset` clears it. */
+    static scenarios: Scenario[] = [];
+
     static reset() {
         this.provenanceJSON = { id: "", nodes: [], edges: [] };
         this.latestTrill = "";
         this.list_of_trills = {};
+        this.scenarios = [];
     }
 
     static _extractGraphPreview(trill: any): { nodes: any[]; edges: any[] } {
@@ -97,7 +103,11 @@ export class TrillGenerator {
 
         console.log("adding new provenance version for Trill");
 
-        let new_trill = this.generateTrill(nodes, edges, name, task);
+        // A snapshot carries the scenarios only when there are some.
+        let new_trill = this.generateTrill(
+            nodes, edges, name, task, undefined, undefined, undefined, undefined,
+            this.scenarios.length > 0 ? this.scenarios : undefined,
+        );
         
         console.log("new_trill", new_trill);
 
@@ -168,8 +178,12 @@ export class TrillGenerator {
      * a save, where the canvas's value is the truth and `{}` clears them; leave
      * them out anywhere else, and the key is not written, so the server keeps
      * what is on disk.
+     *
+     * *scenarios* (`dataflow.scenarios`, #662) follow the same rule: a save
+     * passes the canvas's list and `[]` clears them. Their members are kept
+     * only when they are among *nodes*.
      */
-    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = [], description: string = "", datasets: any[] = [], categories?: HandCategories){
+    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = [], description: string = "", datasets: any[] = [], categories?: HandCategories, scenarios?: Scenario[]){
 
         let trill: any = {
             dataflow: {
@@ -361,6 +375,15 @@ export class TrillGenerator {
                 trill_node.metadata.widgets = widgets;
             }
 
+            // #662: a copy made by Duplicate selection names the nodes it
+            // descends from at metadata.copiedFrom, only when it is one.
+            if(Array.isArray(node.data.copiedFrom) && node.data.copiedFrom.length > 0){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.copiedFrom = [...node.data.copiedFrom];
+            }
+
             if(typeof node.data.title === "string" && node.data.title)
                 trill_node.title = node.data.title;
 
@@ -406,6 +429,13 @@ export class TrillGenerator {
             }
 
             trill.dataflow.edges.push(trill_edge);
+        }
+
+        if (scenarios) {
+            trill.dataflow.scenarios = normalizeScenarios(
+                scenarios,
+                trill.dataflow.nodes.map((n: any) => n.id),
+            );
         }
 
         return trill
