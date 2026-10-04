@@ -166,11 +166,15 @@ export function ScenarioLayers({ view, labelOf, statusOf, onExpand, onCollapse, 
     start.moved = true;
     setDrag({ id: start.id, dx, dy });
   };
-  const endDrag = (box: ScenarioBox) => () => {
+  // Where the pointer is let go, not where the last drawn move put the box.
+  const endDrag = (box: ScenarioBox) => (event: React.PointerEvent) => {
     const start = dragStart.current;
     dragStart.current = null;
-    if (start?.moved && drag && drag.id === box.scenario.id) {
-      onMoveBox(box.scenario.id, { x: box.x + drag.dx, y: box.y + drag.dy });
+    if (start?.moved && start.id === box.scenario.id) {
+      onMoveBox(box.scenario.id, {
+        x: box.x + (event.clientX - start.clientX) / zoom,
+        y: box.y + (event.clientY - start.clientY) / zoom,
+      });
     }
     setDrag(null);
   };
