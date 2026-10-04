@@ -29,10 +29,13 @@ def _edge(source, target):
     return {"id": f"{source}-{target}", "source": source, "target": target}
 
 
-def _create(client, token, nodes, edges=(), name="Run routes"):
+def _create(client, token, nodes, edges=(), name="Run routes", scenarios=None):
+    dataflow = {"name": name, "nodes": list(nodes), "edges": list(edges)}
+    if scenarios is not None:
+        dataflow["scenarios"] = list(scenarios)
     resp = client.post("/api/projects", data=json.dumps({
         "name": name,
-        "spec": {"dataflow": {"name": name, "nodes": list(nodes), "edges": list(edges)}},
+        "spec": {"dataflow": dataflow},
         "outputs": [],
     }), headers=_auth(token))
     assert resp.status_code == 201, resp.get_data(as_text=True)
@@ -354,6 +357,40 @@ class TestWhatARunSaves:
         assert sandbox.bodies["plain"]["save_dataset"] is False
         assert sandbox.bodies["feeds"]["save_dataset"] is True  # a pinned tile reads it
         assert sorted(recorded) == ["feeds", "kept"]
+
+    def test_a_scenarios_context_and_outcomes_are_saved_as_the_canvas_saves_them(
+        self, client, user_and_token, sandbox, monkeypatch,
+    ):
+        # #662: another project reads a scenario's fixed context and its
+        # outcomes, so a run saves them whatever their own toggle says, by the
+        # canvas's rule (`savedSourceNodeIds`).
+        from utk_curio.backend.app.datasets.application import auto_install
+        from utk_curio.backend.app.projects import services as project_services
+
+        monkeypatch.setattr(
+            auto_install, "auto_install_node_output",
+            lambda **kwargs: {"status": "skipped", "nodeId": kwargs.get("node_id")},
+        )
+        recorded = []
+        monkeypatch.setattr(
+            project_services, "record_node_outputs",
+            lambda user, project_id, outputs: recorded.extend(o.node_id for o in outputs) or [],
+        )
+        user, token = user_and_token
+        project_id, _ = _create(client, token, [
+            _node("context", saveOutputDataset=False),
+            _node("lever", saveOutputDataset=False),
+            _node("outside", saveOutputDataset=False),
+        ], [_edge("context", "lever")], scenarios=[
+            {"id": "s1", "name": "Scenario", "color": "#336699", "nodes": ["lever"]},
+        ])
+        run_id = _start(client, token, project_id).get_json()["id"]
+        _wait(run_id)
+
+        assert sandbox.bodies["context"]["save_dataset"] is True  # its fixed context
+        assert sandbox.bodies["lever"]["save_dataset"] is True  # its outcome
+        assert sandbox.bodies["outside"]["save_dataset"] is False
+        assert sorted(recorded) == ["context", "lever"]
 
 
 class TestNodesTheBrowserRuns:
