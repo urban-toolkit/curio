@@ -314,7 +314,7 @@ export function useCode(): IUseCode {
             // Respect explicit handle ids in the spec (named handles like
             // `in_points` / `in_polygons` on spatial-join). Fall back to the
             // legacy `in_N` suffix of the edge id, then to the default "in"
-            // handle, as `merge_slot_index` reads them in the runner.
+            // handle, as `named_input_slot` reads them in the runner.
             let targetHandle = edge.targetHandle || "in";
             if (!edge.targetHandle) {
                 const legacy = typeof edge.id === "string" ? edge.id.match(/in_(\d+)$/) : null;

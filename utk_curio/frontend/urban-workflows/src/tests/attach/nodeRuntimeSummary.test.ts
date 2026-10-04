@@ -18,7 +18,7 @@ describe("summarizeNodeInput", () => {
     ).toBe("geodataframe from artifact art-77");
   });
 
-  it("names a merge input slot by slot", () => {
+  it("names a list input slot by slot", () => {
     const text = summarizeNodeInput({
       input: [
         { dataType: "geodataframe", path: "art-b" },

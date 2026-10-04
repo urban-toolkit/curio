@@ -14,7 +14,7 @@ everything else has to match it.
   2. Five examples had no ``dataflow.description`` at all, so their gallery cards
      were blank even though README has a blurb for all eleven.
   3. Three mermaid pipeline diagrams drew a different graph than their JSON
-     (04 duplicated a shared node, 09 drew one Merge Flow where there are two,
+     (04 duplicated a shared node, 09 drew one node where there were two,
      10 omitted a Data Transformation node).
   4. Markdown code blocks had drifted from the node bodies they document.
 
@@ -138,7 +138,7 @@ def test_the_mermaid_diagram_draws_as_many_nodes_as_the_json_has(stem: str):
     """A diagram that shows a different graph is the most literal reading of #148.
 
     Counting rather than matching shapes: it caught all three real cases (04 drew
-    a shared node twice, 09 collapsed two Merge Flows into one, 10 dropped a
+    a shared node twice, 09 collapsed two of its nodes into one, 10 dropped a
     Data Transformation) without needing to model mermaid's syntax.
     """
     md = _markdown(stem)
@@ -202,11 +202,26 @@ def _is_subset(small, big) -> bool:
     return small == big
 
 
+#: A node reference as written in code (``[!! input 1 !!]``), the same pattern as
+#: ``REFERENCE_RE`` in ``utk_curio/backend/app/execution/code_references.py``.
+_REFERENCE = re.compile(r"\[!!\s*(.*?)\s*!!\]")
+
+
+def _references_as_names(code: str) -> str:
+    """*code* with each reference replaced by a name made from its text.
+
+    A reference is not Python, so code that reads its inputs through chips
+    would not parse, and its block would be skipped as an illustration. As a
+    name it parses, and two blocks still differ when their references do.
+    """
+    return _REFERENCE.sub(lambda m: "__curio_ref_" + m.group(1).encode("utf-8").hex(), code)
+
+
 def _py_equivalent(a: str, b: str) -> bool:
     """Compare Python by AST, so comments and layout do not count as drift."""
     try:
-        return ast.dump(ast.parse(textwrap.dedent(a))) == ast.dump(
-            ast.parse(textwrap.dedent(b))
+        return ast.dump(ast.parse(textwrap.dedent(_references_as_names(a)))) == ast.dump(
+            ast.parse(textwrap.dedent(_references_as_names(b)))
         )
     except SyntaxError:
         return False
@@ -249,7 +264,7 @@ def test_markdown_code_blocks_do_not_contradict_the_nodes(stem: str):
             )
         else:
             try:
-                ast.parse(textwrap.dedent(block))
+                ast.parse(textwrap.dedent(_references_as_names(block)))
             except SyntaxError:
                 # An illustrative snippet, not runnable node code.
                 continue

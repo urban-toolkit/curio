@@ -3,7 +3,7 @@ be judged on (memo dev/121).
 
 What survives normalization: the canonical unversioned template id of every
 node, its derived role, whether the sandbox can run it, whether it carries
-content, and the edges with their kind (data or interaction) and merge slot.
+content, and the edges with their kind (data or interaction) and input circle.
 
 What is dropped, because a model cannot be asked to reproduce it and a person
 would not care: node and edge ids (the runtime mints its own), positions,
@@ -45,7 +45,8 @@ from utk_curio.backend.app.packages.service import (
 INTERACTION_EDGE_TYPE = "Interaction"
 _SYMMETRIC_HANDLE = "in/out"
 
-#: A single-input port. Merge slots are ``in_0``..``in_4`` (DEC-051 arity).
+#: A single-input port, or circle 0 of a node with several (``in``); its
+#: other circles are ``in_1``, ``in_2``, ...
 _DEFAULT_HANDLES = ("", "in", "out", "DEFAULT", "default")
 
 ROLES = (
@@ -55,7 +56,6 @@ ROLES = (
     "visualization",
     "grammar",
     "pool",
-    "merge",
     "export",
     "endpoint",
     "presentation",
@@ -239,8 +239,6 @@ def role_for_template(
     behavior = (facts.behavior or "").strip()
     if behavior == "data-pool":
         return "pool"
-    if facts.category == "flow" or behavior == "merge-flow":
-        return "merge"
     if behavior == "data-export":
         return "export"
     if facts.category in ("vis_grammar", "vis_simple"):
@@ -277,7 +275,7 @@ def edge_kind(edge: Mapping) -> str:
 
 
 def edge_slot(edge: Mapping) -> int | None:
-    """The merge input index from ``targetHandle: "in_N"``; ``None`` for a
+    """The input circle from ``targetHandle: "in_N"``; ``None`` for a
     single-input port (``DEFAULT``, ``in``, absent, or a symmetric handle)."""
     handle = edge.get("targetHandle")
     if not isinstance(handle, str):

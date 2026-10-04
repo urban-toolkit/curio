@@ -20,7 +20,7 @@ export const NEVER_EXECUTED = "never-executed";
 
 const ARTIFACT_CHARS = 60;
 const ERROR_CHARS = 240;
-const MERGE_SLOTS = 6;
+const LISTED_SLOTS = 6;
 
 type NodeData = {
     input?: unknown;
@@ -49,7 +49,7 @@ function summarizeValue(value: unknown): string {
     if (typeof value === "number" || typeof value === "boolean") return typeof value;
     if (Array.isArray(value)) {
         const slots = value
-            .slice(0, MERGE_SLOTS)
+            .slice(0, LISTED_SLOTS)
             .map((slot, i) => `[${i}] ${slot === undefined || slot === null ? "empty" : summarizeValue(slot)}`);
         return `MULTIPLE (${value.length} slots): ${slots.join("; ")}`;
     }

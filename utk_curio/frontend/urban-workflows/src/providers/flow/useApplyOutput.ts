@@ -51,7 +51,7 @@ export function useApplyOutput({
         signalNodeExecDone(newOutput.nodeId);
     };
 
-    // Refill downstream `data.input` (incl. merge `in_N` slots) from the outputs
+    // Refill downstream `data.input` (incl. input circles `in_N`) from the outputs
     // restored by a project load. Live propagation only happens on execution and
     // on new connections, so without this every reload leaves inputs empty until
     // the user manually reruns each upstream node (dev/64). Deferred one tick so

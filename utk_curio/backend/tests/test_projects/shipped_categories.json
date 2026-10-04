@@ -364,7 +364,7 @@
     "tags": [],
     "data_type": []
   },
-  "dataflows/Merge": {
+  "dataflows/MultiInput": {
     "tags": [
       "Pandas"
     ],
@@ -372,7 +372,7 @@
       "Tables"
     ]
   },
-  "dataflows/MergeFlowDataPool": {
+  "dataflows/MultiInputDataPool": {
     "tags": [
       "Pandas"
     ],

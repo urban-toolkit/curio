@@ -35,9 +35,9 @@ function finiteNumber(value: unknown): number | undefined {
  *
  * Two rules here are easy to get wrong and both matter:
  *
- * 1. A `noContent` template (merge-flow) mounts minimized and bails out of BOTH
- *    resize effects, so its manifest size is its literal footprint -- 50x180,
- *    sub-minimum and staying that way.
+ * 1. A `noContent` template mounts minimized and bails out of BOTH resize
+ *    effects, so its manifest size is its literal footprint -- a 50x180 one is
+ *    sub-minimum and stays that way.
  * 2. The mount clamp snaps a sub-minimum size to the DEFAULT, not to the
  *    minimum. A node asking for `nodeWidth: 120` renders at 525, not 200.
  *

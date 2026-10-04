@@ -155,16 +155,13 @@ A node's "type" is the id of the template it was made from. A run that can place
 - Simple View: Displays incoming data: a table for DataFrames and GeoDataFrames, or a card per row when the frame carries an image column, showing the image beside that row's values. Other values pass through.
 - Autark: Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering, and/or plot rendering in one declarative spec.
 - Spatial Join: Finds the polygon each point falls in. Connect the points to the top input and the polygons to the bottom input, then pick the polygon column to copy onto the points, such as a neighborhood name. The output is either the points, each tagged with its polygon's value, or the polygons, each with a count of the points inside. Points outside every polygon get no value.
-- Merge Flow: The Merge Flow box merges multiple incoming data flows into one.
 - Parameter: One value any node can use. Give it a name, a type and a default. Its tag then shows under Shared in every node's Widgets tab and above every code editor; drag it into a node's code to use the value there. Changing the value makes the nodes that use it run again, and renaming it updates their code. It has no edges, and it lists the nodes that use it.
 
-A Merge Flow node combines its inputs: with one connected input it passes that value straight through, and with more it outputs them as a tuple, in socket order. An edge into a Merge Flow node names the socket it connects to in "targetHandle": "in_0", "in_1", "in_2", "in_3" or "in_4".
+A node that accepts more than one connection takes each one on its own input circle, numbered from 0 in the order they were connected. An edge names the circle it connects to in "targetHandle": "in", "in_1", "in_2", ..., circle 0 first.
 
 A Data Pool node is represented to the user as a table. Changes made to a Data Pool are seen by all connected nodes, which is how interactions are linked between visualizations.
 
 A Simple View node renders a table for DataFrames/GeoDataFrames, or a card per row when the frame carries images: one image plus that row's other values. A column holds images when at least 60% of its non-empty values are images; a value that is a list counts when any of its items is one. The columns named "image_content", "image_url", "image", "thumbnail" or "overlay_url" are checked first, in that order, and in them an image is a "data:image/" URI, an "/api/" path, any http(s) URL, or bare Base64 image bytes. When any of them holds images, those columns are the image columns and no other column is checked, except that "image_url" is left out when "thumbnail" holds images too, since the thumbnail is the small view of the same file. Otherwise every column is checked, and an image there is a "data:image/" URI, an "/api/" path, or an http(s) URL with an image extension (.png, .jpg, .jpeg, .gif, .webp, .svg, .bmp or .avif) at its end or just before a "?" or "#"; bare Base64 does not count there. Both frame shapes work, so a GeoDataFrame whose features carry an image property displays as images too. Users can click on a card to interact with its row; the interaction will be propagated to a Data Pool if connected with an interaction edge.
-
-DO NOT CONNECT A MERGE FLOW DIRECTLY TO THE INPUT OF A VEGA-LITE NODE, you need to insert a node before that will filter the correct DataFrame that will feed Vega.
 
 ## How nodes are controlled
 
@@ -181,7 +178,6 @@ Nodes are uncontrollable, controllable through code (python or JavaScript) or co
 - Simple View: uncontrollable.
 - Autark: controllable through grammar.
 - Spatial Join: uncontrollable.
-- Merge Flow: uncontrollable.
 - Parameter: uncontrollable.
 
 An output connection of a node can be connected to the input connection of different nodes.
@@ -194,13 +190,15 @@ To pass data forward from a node controllable through python code it is necessar
     return variable1
 ```
 
-To use incoming data in a node controllable through python code you need to access it via a variable called 'arg'. If the previous node is a Merge Flow node with more than one connected input, or the previous box outputs a tuple, 'arg' will be a list that can be indexed like: 
+To use incoming data in a node controllable through python code, read each input through its input chip: `[!! input 0 !!]` is the input on circle 0, `[!! input 1 !!]` the one on circle 1, and so on. A chip becomes the input's value when the node runs, so a node with two inputs can combine them like:
 
 ```python
-    combining_previous_inputs = arg[0] + arg[1]
+    combining_previous_inputs = [!! input 0 !!] + [!! input 1 !!]
 
     return combining_previous_inputs
 ```
+
+Where a column name is written, a column chip such as `[!! input 0.population !!]` becomes the quoted name of that column of input 0. A chip is code, never text: do not put an input chip inside a string or a comment. If the previous box outputs a tuple, its input is that tuple and can be indexed like any tuple.
 
 But if the previous node outputs a single data like, but not limited to, a dataframe or number or text, 'arg' will contain that value not a indexable list.
 
@@ -277,7 +275,6 @@ Input supported:
 - Simple View: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - Autark: LIST, JSON, GEODATAFRAME, DATAFRAME
 - Spatial Join: GEODATAFRAME
-- Merge Flow: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - Parameter: no input supported
 
 Output supported:
@@ -293,12 +290,11 @@ Output supported:
 - Simple View: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - Autark: LIST, JSON, GEODATAFRAME, DATAFRAME
 - Spatial Join: GEODATAFRAME
-- Merge Flow: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - Parameter: no output supported
 
 Make sure to pay attention to the compatibility between output and input of the nodes.
 
-Number of connections each node accepts into its inputs. A node that accepts any number takes each connection on its own input circle, and its code receives them as `arg`, a list in circle order (`arg[0]`, `arg[1]`, ...); one connection is `arg` itself. To give a node that accepts 1 more than one data unit, either output a tuple with multiple values from the previous node or use a Merge Flow node:
+Number of connections each node accepts into its inputs. A node that accepts more than one takes each connection on its own input circle, and its code reads each through its input chip (`[!! input 0 !!]`, `[!! input 1 !!]`, ...). To give a node that accepts 1 more than one data unit, output a tuple with multiple values from the previous node:
 
 - Data Export: 1
 - Data Transformation: any number
@@ -310,7 +306,6 @@ Number of connections each node accepts into its inputs. A node that accepts any
 - Simple View: 1
 - Autark: any number
 - Spatial Join: 2
-- Merge Flow: 5
 
 Number of outputs possible for each node (if you want to output more than one data unit you need to use a tuple):
 
@@ -324,7 +319,6 @@ Number of outputs possible for each node (if you want to output more than one da
 - Simple View: 1
 - Autark: [0,1]
 - Spatial Join: 1
-- Merge Flow: 1
 
 Note that there is no problem connecting the output of a node into the input of multiple nodes.
 

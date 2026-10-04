@@ -3,8 +3,8 @@
  * `NodeType` enum, fed the VERSIONED id a palette drag actually produces.
  *
  * Both forms coexist in real canvases — a palette drag stores
- * `curio.builtin/merge-flow@1`, the Jupyter converter and legacy trills store
- * `curio.builtin/merge-flow` — and nothing normalizes them at load time. So
+ * `curio.builtin/data-pool@1`, the Jupyter converter and legacy trills store
+ * `curio.builtin/data-pool`, and nothing normalizes them at load time. So
  * every unversioned-keyed map has to be read through a normalizer, or versioned
  * nodes silently take the fallback branch.
  *
@@ -60,8 +60,7 @@ describe('getUnversionedFlowNodeType', () => {
 describe('colour maps resolve both id forms', () => {
   // Both maps are static mirrors of the built-in package keyed by unversioned
   // ids. A versioned miss is not a crash, it is a silently grey node — exactly
-  // the kind of regression a type check cannot catch. Merge Flow is not here:
-  // its category is `flow`, which is the neutral grey itself (#524).
+  // the kind of regression a type check cannot catch.
   const COLOURED: NodeType[] = [
     NodeType.DATA_LOADING,
     NodeType.DATA_TRANSFORMATION,

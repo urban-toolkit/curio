@@ -207,9 +207,7 @@ NO_INPUT_MESSAGE = (
     "An upstream node has not run yet, failed, or is not wired "
     "to this node's input handle. Check the nodes feeding this "
     "one: fix any that show an error, run them until each shows "
-    "'Done', then run this node again. If the inputs come "
-    "through a Merge Flow node, give it a moment after the last "
-    "upstream finishes so the merged tuple can propagate."
+    "'Done', then run this node again."
 )
 
 
@@ -423,8 +421,8 @@ def _worker_init():
 def _resolve_outputs_elem(elem, session_id=None):
     """Resolve one element of an 'outputs' bundle to its concrete Python value.
 
-    An 'outputs' input - from a Merge Flow, or a Data Pool's multi-layer wrapper -
-    bundles one entry per connected slot / layer. An entry is one of:
+    An 'outputs' input - from a node's several input circles, or a Data Pool's
+    multi-layer wrapper - bundles one entry per connected circle / layer. An entry is one of:
       * a DuckDB reference: a `{'path', ...}` dict, or a bare artifact-id/filename
         string (a project restored from persisted outputs seeds the latter) -
         loaded from DuckDB;
@@ -447,12 +445,12 @@ def _resolve_outputs_elem(elem, session_id=None):
 
 
 def _expand_outputs_wrapper(input_data, session_id=None):
-    """Resolve a merge ('outputs') input to the per-slot list user code expects.
+    """Resolve a bundled ('outputs') input to the per-circle list user code expects.
 
-    A merge output reaches a code node in one of two shapes:
+    A bundle reaches a code node in one of two shapes:
       * live  - an inline list of refs, already expanded by the caller's
         `data_type == 'outputs'` branch; passed through here untouched.
-      * reloaded - when the upstream merge output was persisted (project save, or
+      * reloaded - when the upstream bundle was persisted (project save, or
         the JS-node I/O round-trip through DuckDB), the node receives a single ref
         to it. `parse_input_ref` remaps that ref's 'outputs' dataType to a plain
         load, so `load_from_duckdb` hands back the whole
@@ -594,8 +592,8 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 # confusing `'NoneType' object is not subscriptable` from the
                 # first `arg[…]`. Fail fast here with a message that points the
                 # user at the actual cause (unwired/unrun upstream, or a stale
-                # `data.input` because the merge-flow output effect hadn't
-                # propagated yet). The check is an AST walk rather than a
+                # `data.input` because an upstream output hadn't propagated
+                # yet). The check is an AST walk rather than a
                 # substring test, so a node that never reads an input is not
                 # refused for merely containing the letters "arg" (#273).
                 if incomingInput is None and _code_reads_arg(code):

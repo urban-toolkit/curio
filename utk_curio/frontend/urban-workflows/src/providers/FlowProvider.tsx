@@ -183,10 +183,10 @@ const FlowProvider = ({
     // in the ref, so every play control stayed enabled and a click during (or
     // after a wedged) run silently did nothing (#271).
     const [isRunActive, setIsRunActive] = useState(false);
-    // The input each node had when it last emitted through applyNewOutput. Merge
-    // Flow and the Data Pool never record a success on node.data.output, so
-    // this is how playNodesUpTo tells they are current (#479): their input is
-    // still the object they emitted for. Every delivery builds a new one.
+    // The input each node had when it last emitted through applyNewOutput. The
+    // Data Pool never records a success on node.data.output, so this is how
+    // playNodesUpTo tells it is current (#479): its input is
+    // still the object it emitted for. Every delivery builds a new one.
     const emittedForInputRef = useRef(new Map<string, unknown>());
     const markNodeExecutedRef = useRef<(nodeId: string) => void>(() => {});
     const markNodeStaleRef = useRef<(nodeId: string) => void>(() => {});

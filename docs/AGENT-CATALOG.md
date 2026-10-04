@@ -158,13 +158,13 @@ The reverse holds too. Removing an agent that another added agent requires is re
 
 The **Dataflow Builder** plans a whole dataflow. Once you apply its plan, **Solve** in its strip fills in the planned nodes in one batch, and **Solve this node**, in the chat of an agent attached to a node, does the same for one node.
 
-Solve runs what it writes. A node with code is generated, run in the sandbox, corrected when the run fails, and written only once a run passes. The nodes run in waves, the loaders first and then what depends on them, and the strip shows which wave is running (*wave 2 of 3*). A chart or map document is checked against its grammar's schema and reported as validated, not executed. A node with nothing to write, such as a Merge Flow, a Data Pool or a Spatial Join, is left wired as it is.
+Solve runs what it writes. A node with code is generated, run in the sandbox, corrected when the run fails, and written only once a run passes. The nodes run in waves, the loaders first and then what depends on them, and the strip shows which wave is running (*wave 2 of 3*). A chart or map document is checked against its grammar's schema and reported as validated, not executed. A node with nothing to write, such as a Data Pool or a Spatial Join, is left wired as it is.
 
 When Solve cannot fix a node, nothing is written, and the chat shows every attempt as its own row: the exception, where it was raised, and the code that attempt ran. The message names what stopped the loop, normally the node's 15-minute repair budget. A Solve keeps working for up to 15 minutes, and runs on if you close the chat or reload the page. **Stop** ends it after the current node, and what was written stays. What it did not reach stays *pending* with the reason, and **Solve** continues from there; after a failure or a server restart, the same button reads **Retry**.
 
 Applying a plan gives every created node a **Node Builder**, and every data-loading node a **Dataset Finder** too. When a data-loading node's source is not settled, Solve asks that Dataset Finder for candidates: they appear in its chat, and the node stays pending, *awaiting your dataset selection*, with an **Open Dataset Finder** button. **Confirm source for this node** records your choice, and the next Solve builds the loader from that source.
 
-A node fed by a **Merge Flow** receives a list, `arg[0]`, `arg[1]` and so on, in the order of the merge's input handles, and the agent is told which dataset sits in each slot. Code that does not index it is refused before it runs.
+A node with several inputs reads each through its input chip, `[!! input 0 !!]`, `[!! input 1 !!]` and so on, in the order of its input circles (see [Several inputs](USAGE.md#several-inputs)), and the agent is told which dataset sits on each circle. Code that treats the inputs as one value is refused before it runs.
 
 ### Finding data in portals
 

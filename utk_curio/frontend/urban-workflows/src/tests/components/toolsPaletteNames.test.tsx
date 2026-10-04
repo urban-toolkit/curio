@@ -36,14 +36,13 @@ jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
     OVERLAY_TRIGGER_DELAY_PROPS: {},
 }));
 
-/** The twelve built-in templates, as packages/curio.builtin@1/manifest.json has them.
+/** The eleven built-in templates, as packages/curio.builtin@1/manifest.json has them.
  *  Prefixed `mock` so jest's hoisted mock factory may reference it. */
 const mockBuiltin = [
     { id: "curio.builtin/data-loading@1", label: "Data Loading", category: "data" },
     { id: "curio.builtin/data-export@1", label: "Data Export", category: "data" },
     { id: "curio.builtin/data-transformation@1", label: "Data Transformation", category: "data" },
     { id: "curio.builtin/spatial-join@1", label: "Spatial Join", category: "data" },
-    { id: "curio.builtin/merge-flow@1", label: "Merge Flow", category: "flow" },
     { id: "curio.builtin/data-pool@1", label: "Data Pool", category: "data" },
     { id: "curio.builtin/computation-analysis@1", label: "Python Computation", category: "computation" },
     { id: "curio.builtin/data-summary@1", label: "Data Summary", category: "computation" },

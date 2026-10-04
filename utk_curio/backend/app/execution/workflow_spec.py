@@ -25,17 +25,18 @@ from utk_curio.backend.app.execution.code_references import (
 PARAMETER_TYPE = "curio.builtin/parameter"
 
 
-def merge_slot_index(edge: dict) -> int | None:
-    """Which input circle an edge feeds: ``in_0`` → 0, or None.
+def named_input_slot(edge: dict) -> int | None:
+    """Which input circle an edge names: ``in`` → 0, ``in_N`` → N, or None.
 
     The HANDLE is the authority, exactly as the canvas reads it
-    (``inputSlots.parseHandleIndex(e.targetHandle)`` → the order Play
-    assembles ``arg`` in). The edge id's ``in_N`` suffix is the canvas's own
-    legacy encoding and stays as a fallback for specs saved that way.
+    (``inputSlots.inputSlotOf(e.targetHandle)`` → the order Play assembles
+    ``arg`` in). The edge id's ``in_N`` suffix is the canvas's own legacy
+    encoding and stays as a fallback for specs saved with no handle; an edge
+    whose handle is ``in`` is circle 0 whatever its id says.
 
     dev/128, from a field failure: agent-applied edges carry a UUID id and the
     slot in ``targetHandle`` (dev/67-3 made handles explicit), so reading only
-    the id left every plan-created merge unordered — sorted lexicographically
+    the id left every plan-created fan-in unordered, sorted lexicographically
     by UUID. A node then validated against ``arg`` in one order and ran at Play
     in another: dataflow ``00708324`` passed *"solved · pass after 1 round"* and
     failed on Play with ``KeyError: 'tract_id'``, because validation handed it
@@ -46,10 +47,13 @@ def merge_slot_index(edge: dict) -> int | None:
     for key in ("targetHandle", "target_handle"):
         handle = edge.get(key)
         if isinstance(handle, str):
-            m = re.match(r"^in_(\d+)$", handle.strip())
+            text = handle.strip()
+            if text == "in":
+                return 0
+            m = re.match(r"^in_(\d+)$", text)
             if m:
                 return int(m.group(1))
-    # e.g. ``…78504in_0`` (no hyphen before ``in_``) — the canvas's edge ids.
+    # e.g. ``...78504in_1`` (no hyphen before ``in_``): the canvas's edge ids.
     m = re.search(r"in_(\d+)$", str(edge.get("id") or ""))
     return int(m.group(1)) if m else None
 
@@ -57,8 +61,13 @@ def merge_slot_index(edge: dict) -> int | None:
 def input_slot(edge: dict) -> int:
     """The circle an edge feeds: ``in_N`` is circle N, and the plain ``in``
     handle (or none) is circle 0."""
-    index = merge_slot_index(edge)
+    index = named_input_slot(edge)
     return index if index is not None else 0
+
+
+def slot_handle_id(slot: int) -> str:
+    """The handle id of circle *slot*; ``slotHandleId`` in ``utils/inputSlots.ts``."""
+    return "in" if slot == 0 else f"in_{slot}"
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +114,6 @@ NAMESPACED_TO_LEGACY: dict[str, str] = {
     "curio.builtin/vis-vega":             "VIS_VEGA",
     "curio.builtin/vis-simple":           "VIS_SIMPLE",
     "curio.builtin/data-pool":            "DATA_POOL",
-    "curio.builtin/merge-flow":           "MERGE_FLOW",
     "curio.builtin/autk-grammar":         "AUTK_GRAMMAR",
 }
 
@@ -227,7 +235,7 @@ def classify_node(node_type: str) -> str:
         "code"     – has a Monaco code editor and a play button
         "grammar"  – has a JSON / grammar editor and a play button
         "datapool" – has ``#data-tabs`` but NO play button
-        "passive"  – no standard editor and no play button (e.g. MERGE_FLOW, VIS_SIMPLE)
+        "passive"  : no standard editor and no play button (e.g. VIS_SIMPLE)
     """
     if node_type in GRAMMAR_TYPES:
         return "grammar"
@@ -235,7 +243,7 @@ def classify_node(node_type: str) -> str:
         return "datapool"
     if node_type in CODE_TYPES:
         return "code"
-    # MERGE_FLOW, VIS_SIMPLE, COMMENTS, or any unknown type
+    # VIS_SIMPLE, COMMENTS, or any unknown type
     return "passive"
 
 
@@ -322,8 +330,7 @@ class WorkflowSpec:
         ]
 
         def sort_key(e: dict) -> tuple:
-            idx = merge_slot_index(e)
-            return (idx if idx is not None else 0, str(e.get("id") or ""))
+            return (input_slot(e), str(e.get("id") or ""))
 
         return sorted(edges_to, key=sort_key)
 
@@ -451,8 +458,8 @@ def parse_workflow(filepath: str) -> WorkflowSpec:
             "source": e["source"],
             "target": e["target"],
             "type": e.get("type"),
-            # dev/128: the input handle is what orders a merge's inputs, and
-            # dropping it here is what made an agent-applied merge unordered.
+            # dev/128: the input handle is what orders a node's inputs, and
+            # dropping it here is what made an agent-applied fan-in unordered.
             "targetHandle": e.get("targetHandle") or e.get("target_handle"),
             "sourceHandle": e.get("sourceHandle") or e.get("source_handle"),
         }
@@ -521,7 +528,7 @@ def parse_workflow_dict(data: dict, *, name: str = "", templates: dict | None = 
             "source": e.get("source"),
             "target": e.get("target"),
             "type": e.get("type"),
-            # dev/128: see the twin projection above — the handle is the merge's
+            # dev/128: see the twin projection above: the handle is the node's
             # slot authority, the same one the canvas uses at Play.
             "targetHandle": e.get("targetHandle") or e.get("target_handle"),
             "sourceHandle": e.get("sourceHandle") or e.get("source_handle"),
@@ -566,7 +573,7 @@ def resolve_node_input(spec, node_id: str, outputs: dict) -> dict:
 def propagate_node_input(spec, node_id: str, outputs: dict) -> dict | None:
     """Return what a *non-executing* node passes downstream, or ``None``.
 
-    Passive and browser-only nodes (VIS_*, MERGE_FLOW, a JS node in a Python
+    Passive and browser-only nodes (VIS_*, DATA_POOL, a JS node in a Python
     runner) produce nothing of their own, so they forward what is above them.
     Unlike ``resolve_node_input`` this tolerates gaps: whole branches of a
     dataflow may never have run in the runner that is asking.
