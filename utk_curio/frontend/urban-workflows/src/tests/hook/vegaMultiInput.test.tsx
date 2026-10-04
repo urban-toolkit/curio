@@ -56,6 +56,7 @@ jest.mock("../../providers/ToastProvider", () => ({
 jest.mock("../../services/api", () => ({ fetchData: jest.fn(), fetchPreviewData: jest.fn() }));
 
 import { useVega } from "../../hook/useVega";
+import { markSelectionEcho } from "../../utils/selectionEcho";
 
 const vegaMock = () => jest.requireMock("vega") as any;
 
@@ -147,6 +148,24 @@ test("a second input arriving, then leaving, builds the view from the spec as wr
   expect(one.datasets).toBeUndefined();
   expect(one.data.name).toBe("input_0");
   expect(one.data.values.map((row: any) => row.value)).toEqual([1, 2]);
+});
+
+test("a selection coming back on one input changes that input's flags in the view, not the view (#535)", async () => {
+  const flagged = (flags: string[]) => frame({ label: ["a", "b"], value: [1, 2], interacted: flags });
+  const { hook, view } = await drawn(both(flagged(["0", "0"]), INCOME), LAYERED);
+  const views = vegaMock().__views;
+  const count = views.length;
+
+  await act(async () => {
+    hook.rerender({ input: both(markSelectionEcho(flagged(["0", "1"])), INCOME) });
+  });
+  await waitFor(() => expect(view.changes.length).toBeGreaterThan(0));
+  expect(views.length).toBe(count);
+  const [change] = view.changes;
+  expect(change.name).toBe("input_0");
+  expect(change.ops.map((o: any) => o.op)).toEqual(["modify"]);
+  const held = [0, 1].map((i) => ({ __row_index__: i, interacted: "0" }));
+  expect(held.map(change.ops[0].value)).toEqual(["0", "1"]);
 });
 
 test("a pick on a mark of the second input is not sent on as a row of the first", async () => {

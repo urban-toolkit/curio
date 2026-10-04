@@ -166,6 +166,15 @@ describe("several inputs (#662)", () => {
     expect(datasets[0].values[0].__input__).toBeUndefined();
   });
 
+  test("an input it cannot read is refused by its circle, so no name points at another input's rows", async () => {
+    const withRaster = { dataType: "outputs", data: [both.data[0], { dataType: "raster", data: {} }, both.data[0]] };
+    expect(await prepareVegaInputs(withRaster, layered())).toEqual({
+      datasets: [],
+      emptyReason: "input-type-rejected",
+      detail: "raster at position 1 is not a valid input for the 2D Plot (Vega-Lite).",
+    });
+  });
+
   test("prepareVegaInput hands back the first input's rows", async () => {
     const { values } = await prepareVegaInput(both, { mark: "bar" });
     expect(values.map((v: any) => v.zip)).toEqual(["60601", "60602"]);
