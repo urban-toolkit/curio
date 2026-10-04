@@ -430,7 +430,6 @@ PALETTE_LABELS: dict[str, str] = {
     "data-export": "Data Export",
     "data-transformation": "Data Transformation",
     "spatial-join": "Spatial Join",
-    "merge-flow": "Merge Flow",
     "data-pool": "Data Pool",
     "computation-analysis": "Python Computation",
     "data-summary": "Data Summary",
@@ -470,7 +469,6 @@ PALETTE_ICON_CLASS: dict[str, str] = {
     "vis-simple": "fa-table",
     "autk-grammar": "fa-city",
     "spatial-join": "fa-object-group",
-    "merge-flow": "fa-code-merge",
 }
 
 

@@ -45,7 +45,7 @@ Vega-Lite" is how the walkthroughs read and how a person asks.
 | Field | What it does |
 |---|---|
 | `source.sha256` | Drift guard. Editing an example fails the suite until someone re-reviews this fixture. |
-| `expected` | The example, normalized: canonical template ids, roles, edges with `kind` and merge `slot`, and the sources the code reads. The suite recomputes it and compares, so it is never edited by hand. |
+| `expected` | The example, normalized: canonical template ids, roles, edges with `kind` and input circle `slot`, and the sources the code reads. The suite recomputes it and compares, so it is never edited by hand. |
 | `required` | The dependencies, copied from the example's own `dataflow.datasets` and `dataflow.packages`, plus `paths` for a committed file the prompt names. |
 | `intents` | Per-node meaning checks: words the reconstructed node's intent must mention, and the output kind Solve should record. |
 | `capability.needs` | What this fixture needs beyond plain offline reconstruction. Two of them are package routes: `package-enlist:templates` (the plan cannot name the template until the package is enlisted, as in example 10) and `package-enlist:dependencies` (every node is a built-in template, but the code imports libraries an installed package's manifest owns, as in example 09). Neither is a reason to author a new package. |

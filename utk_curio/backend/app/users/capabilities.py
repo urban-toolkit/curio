@@ -122,6 +122,25 @@ def settings_refusal(user) -> str | None:
     return None
 
 
+def run_refusal(user) -> str | None:
+    """Why *user* may not run a dataflow on the server, or ``None``.
+
+    A run on the server runs the saved dataflow and records its outputs in it,
+    so it needs the right to save one. A hosted guest has none and runs in the
+    browser; without ``--deploy`` the shared guest is the one local user.
+    """
+    from utk_curio.backend import config
+
+    if user is None or config.CURIO_NO_AUTH:
+        return None
+    if getattr(user, "is_guest", False):
+        return (
+            "Runs on the server are not available to guests on this Curio, because "
+            "a guest cannot save a dataflow. Sign in with an account to use them."
+        )
+    return None
+
+
 def llm_config_refusal(user) -> str | None:
     """Why *user* may not change LLM configurations, or ``None``.
 

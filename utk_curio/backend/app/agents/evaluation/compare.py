@@ -73,7 +73,7 @@ class EdgeDiff:
     missing: tuple = ()          # expected edges with no counterpart
     extra: tuple = ()            # built edges nobody asked for
     kind_mismatch: tuple = ()    # right endpoints, wrong kind
-    slot_mismatch: tuple = ()    # right endpoints and kind, wrong merge slot
+    slot_mismatch: tuple = ()    # right endpoints and kind, wrong input circle
     expected_total: int = 0
     actual_total: int = 0
 
@@ -422,7 +422,7 @@ def compare_graphs(
     ``unexpressible_kinds`` names edge kinds the agent contract cannot express
     in this run (``"interaction"`` on this branch): those expected edges become
     capability gaps instead of topology failures. ``slot_sensitive_refs`` names
-    expected nodes whose merge input ORDER matters, per the fixture -- elsewhere
+    expected nodes whose input ORDER matters, per the fixture -- elsewhere
     a swapped slot is not a defect.
     """
     universe = universe or Universe()

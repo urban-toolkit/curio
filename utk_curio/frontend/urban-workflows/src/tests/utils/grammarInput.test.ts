@@ -192,18 +192,18 @@ describe("readGrammarInput", () => {
     expect(read.frames.map((f) => f.name)).toEqual(["lots"]);
   });
 
-  test("a Merge bundle's references are fetched one by one", async () => {
+  test("a bundle of several inputs has its references fetched one by one", async () => {
     mockFetchData.mockImplementation(async (path: string) =>
       path === "a" ? { dataType: "geodataframe", data: fc(1) } : { dataType: "raster", data: {} },
     );
-    const merge = {
+    const bundle = {
       dataType: "outputs",
       data: [
         { path: "a", dataType: "geodataframe" },
         { path: "b", dataType: "raster" },
       ],
     };
-    const read = await readGrammarInput(merge, AUTK);
+    const read = await readGrammarInput(bundle, AUTK);
     expect(mockFetchData.mock.calls.map((c) => c[0])).toEqual(["a", "b"]);
     expect(read.frames.map((f) => [f.index, f.dataType])).toEqual([[0, "geodataframe"]]);
     expect(read.skipped).toEqual(["raster at position 1"]);

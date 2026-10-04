@@ -83,7 +83,7 @@ function deriveView(parsedInput: any): {
 
 export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   // Which of the empty states this is depends on whether anything is wired in,
-  // which only the graph knows. Same read as mergeFlowBehavior.
+  // which only the graph knows.
   const edges = useEdges();
   const connected = hasIncomingEdge(edges, data.nodeId);
   // Lazy init: if input is already present on mount (e.g. in tests) seed the

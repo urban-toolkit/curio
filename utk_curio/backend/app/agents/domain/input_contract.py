@@ -7,23 +7,25 @@ attempts always used `arg` alone; when I changed it to `arg[0]`, it worked
 correctly."*
 
 The runtime knows this per node. ``runner.run_through_node`` decides it in one
-place: a node with no code of its own (a merge, a pool, a passive view) passes
-ONE upstream's value straight through, and assembles MORE than one into a list
-tagged ``dataType: "outputs"``; ``workflow_spec.upstream_nodes`` already orders
-those sources by ``in_0``, ``in_1``, … — which is the owner's sentence exactly.
-So the shape of ``arg`` is a fact available before a line is generated, and
-this module is the ONE place that reads it.
+place: a node with ONE input gets that upstream's value (through a node with
+no code of its own, a pool or a passive view, which passes it straight
+through), and a node with several input circles gets them as a list tagged
+``dataType: "outputs"``; ``workflow_spec.upstream_nodes`` orders those sources
+by circle, ``in``, ``in_1``, … So the shape of ``arg`` is a fact available
+before a line is generated, and this module is the ONE place that reads it.
+Code reads each input through its chip, ``[!! input k !!]``, which the run
+turns into ``arg`` or ``arg[k]``.
 
 Two halves, both deterministic:
 
-- ``arg_shape`` — ``list`` (with its slots, in handle order), ``single`` or
-  ``none``. A merge with ONE connected input is ``single``, because that is
-  what the runner does; the naive "upstream is a merge → index it" rule would
-  produce the mirror bug.
+- ``arg_shape``: ``list`` (with its slots, in circle order), ``single`` or
+  ``none``. A node with ONE connected input is ``single``, because that is
+  what the runner does.
 - ``check`` — with a list-shaped ``arg``, an attribute access on it (``arg.crs``,
   or ``gdf = arg`` followed by ``gdf.to_crs(...)``, the owner's exact code) is
   provably wrong: a list has no such attribute. Refused BEFORE the sandbox
   runs, in the ``DEC-072`` pattern, and the refusal is the next round's error.
+  The code is judged as it runs, with its input chips resolved.
 
 Legitimate uses of a list are never refused: ``arg[0]``, ``arg[0].crs``,
 iteration, ``len(arg)``, ``pd.concat(arg)``, returning it.
@@ -42,7 +44,7 @@ KIND_NONE = "none"
 
 #: How far to look through nodes that hold no code of their own.
 _WALK_MAX_DEPTH = 4
-#: Slots described in a refusal / an input (a merge takes at most five).
+#: Slots described in a refusal / an input.
 MAX_SLOTS = 8
 #: Bounds for the text that rides a prompt.
 _GOAL_CHARS = 120
@@ -61,9 +63,12 @@ def _graph(spec: dict | None):
 def arg_shape(spec: dict | None, node_id: str) -> dict:
     """What ``arg`` will be for *node_id*, read the way the runner reads it.
 
-    ``{"kind": "list", "length": N, "slots": [{argIndex, upstreamNodeId, goal,
-    upstreamNodeType}], "via": "<pass-through node id>"}``, ``{"kind":
-    "single", upstreamNodeId, goal, upstreamNodeType}`` or ``{"kind": "none"}``.
+    ``{"kind": "list", "length": N, "circles": [...], "slots": [{argIndex,
+    circle, chip, upstreamNodeId, goal, upstreamNodeType}], "via": "<node id>"}``,
+    ``{"kind": "single", upstreamNodeId, goal, upstreamNodeType}`` or
+    ``{"kind": "none"}``. ``argIndex`` is the position in ``arg``; ``circle``
+    is the circle the edge feeds, which is what a chip names, so a node wired
+    on ``in`` and ``in_3`` reads its second input as ``[!! input 3 !!]``.
     """
     graph = _graph(spec)
     if graph is None:
@@ -91,6 +96,13 @@ def arg_shape(spec: dict | None, node_id: str) -> dict:
             row["argIndex"] = arg_index
         return row
 
+    try:
+        own_circles = graph.input_slots(node_id)
+    except Exception:
+        own_circles = []
+    # The chip the node's code reads its one input by, when it has one.
+    own_chip = _chip(own_circles[0] if own_circles else 0)
+
     def _resolve(target: str, depth: int) -> dict:
         try:
             ups = graph.upstream_nodes(target)
@@ -99,19 +111,33 @@ def arg_shape(spec: dict | None, node_id: str) -> dict:
         if not ups:
             return {"kind": KIND_NONE}
         if len(ups) > 1:
-            # Only a merge accepts several inputs; the runner assembles them.
+            # Several input circles: the runner hands them over as a list. On
+            # the node itself each is read by its circle's chip; through a
+            # pass-through the node has one input, the list, read by index.
+            direct = target == node_id
+            circles = graph.input_slots(target) if direct else own_circles
+            slots = []
+            for i, upstream in enumerate(ups[:MAX_SLOTS]):
+                row = _describe(upstream, i)
+                if direct:
+                    row["circle"] = circles[i]
+                    row["chip"] = _chip(circles[i])
+                else:
+                    row["chip"] = f"{own_chip}[{i}]"
+                slots.append(row)
             return {
                 "kind": KIND_LIST,
                 "length": len(ups),
+                "circles": circles,
                 "via": target,
-                "slots": [_describe(u, i) for i, u in enumerate(ups[:MAX_SLOTS])],
+                "slots": slots,
             }
         upstream = ups[0]
         node = nodes.get(upstream)
         if node is not None and getattr(node, "category", "code") != "code" and depth < _WALK_MAX_DEPTH:
             # A pass-through: what IT receives is what this node receives.
             return _resolve(upstream, depth + 1)
-        return {"kind": KIND_SINGLE, **_describe(upstream)}
+        return {"kind": KIND_SINGLE, **_describe(upstream), "chip": own_chip}
 
     return _resolve(node_id, 0)
 
@@ -168,13 +194,28 @@ def describe(shape: dict | None) -> str:
                 if schema else ""
             )
             parts.append(
-                f"arg[{slot.get('argIndex')}] = {label}" + (f" ({columns})" if columns else "")
+                f"{_slot_chip(slot)} = {label}" + (f" ({columns})" if columns else "")
             )
-        return f"arg is a list of {shape.get('length')} inputs — " + "; ".join(parts)
+        return f"arg is a list of {shape.get('length')} inputs: " + "; ".join(parts)
     if shape.get("kind") == KIND_SINGLE:
         label = shape.get("goal") or shape.get("upstreamNodeId") or "the upstream node"
-        return f"arg IS the value {label} returned"
+        return f"{shape.get('chip') or _chip(0)} (arg) IS the value {label} returned"
     return "this node has no input"
+
+
+def _slot_chip(slot: dict) -> str:
+    """The chip a slot of a list-shaped ``arg`` is read by."""
+    return slot.get("chip") or _chip(slot.get("argIndex"))
+
+
+def _chip(position) -> str:
+    """The chip code reads input *position* by."""
+    from utk_curio.backend.app.execution.code_references import (
+        input_reference_inner,
+        reference_text,
+    )
+
+    return reference_text(input_reference_inner(position if isinstance(position, int) else None))
 
 
 # ── the check ────────────────────────────────────────────────────────────────
@@ -205,13 +246,21 @@ def check(code: object, shape: dict | None) -> dict | None:
     """The ONE rule: with a list-shaped ``arg``, an attribute access on it is
     wrong. Returns ``{"attribute", "name", "line"}`` or None.
 
-    Only ``kind: list`` is judged. A syntax error is not this gate's business
-    (the sandbox reports it), and a candidate that never mentions ``arg``
-    cannot violate a contract about it.
+    Only ``kind: list`` is judged, on the code as it runs: its input chips
+    become ``arg[k]``. A syntax error is not this gate's business (the
+    sandbox reports it), and a candidate that never mentions ``arg`` cannot
+    violate a contract about it.
     """
     if not isinstance(shape, dict) or shape.get("kind") != KIND_LIST:
         return None
-    if not isinstance(code, str) or "arg" not in code:
+    if not isinstance(code, str):
+        return None
+    from utk_curio.backend.app.execution.code_references import resolve_references
+
+    circles = shape.get("circles") or range(int(shape.get("length") or 0))
+    inputs = [{"slot": circle} for circle in circles]
+    code, _ = resolve_references(code, (), "python", inputs)
+    if "arg" not in code:
         return None
     try:
         tree = ast.parse(code)
@@ -249,14 +298,13 @@ def refusal_text(shape: dict, violation: dict) -> str:
             )
             kind = schema.get("kind") or ""
             detail = f" — {kind}" + (f": {columns}" if columns else "")
-        slots.append(f"arg[{slot.get('argIndex')}] = {label}{detail}")
+        slots.append(f"{_slot_chip(slot)} = {label}{detail}")
     body = "; ".join(slots)
-    via = shape.get("via")
+    chips = [_slot_chip(slot) for slot in (shape.get("slots") or [])[:2]] or [_chip(0), _chip(1)]
     return (
-        f"input contract refused — this node is fed through a merge"
-        + (f" ({via})" if via else "")
-        + f", so `arg` is a LIST of {shape.get('length')} inputs in the merge's "
-        "input-handle order: " + body + ". "
+        f"input contract refused: this node has {shape.get('length')} inputs, so "
+        "`arg` is a LIST of them in circle order: " + body + ". "
         f"Your code used `{used}`: a list has no attribute {attribute!r}. "
-        "Index the slot you need (`arg[0]`, `arg[1]`, …) — `arg` alone is the list itself."
+        f"Read the input you need through its chip ({', '.join(chips)}, ...): "
+        "`arg` alone is the list itself."
     )

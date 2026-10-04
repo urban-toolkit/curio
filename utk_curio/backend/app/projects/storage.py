@@ -23,7 +23,7 @@ import shutil
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from utk_curio.backend.app.common.file_locks import exclusive_lock
 
@@ -467,7 +467,10 @@ def write_manifest(
     name: str = "",
     description: Optional[str] = None,
     thumbnail_accent: str = "peach",
+    produced_at: Optional[Dict[str, Optional[str]]] = None,
 ) -> Path:
+    """Write ``manifest.json``. *produced_at* maps a node id to when the server
+    first saw that node's output; an entry without one counts as oldest."""
     d = ensure_project_dir(user_key, project_id)
     p = d / "manifest.json"
     entries: List[Dict] = []
@@ -477,6 +480,9 @@ def write_manifest(
         entry: Dict = {"node_id": ref.node_id, "filename": ref.filename}
         if getattr(ref, "data_type", None):
             entry["data_type"] = ref.data_type
+        stamp = (produced_at or {}).get(ref.node_id)
+        if stamp:
+            entry["produced_at"] = stamp
         if fp.exists():
             stat = fp.stat()
             entry["size"] = stat.st_size

@@ -58,8 +58,8 @@ jest.mock('../../../components/editing/OutputContent', () => {
   return { __esModule: true, default: () => mockReact.createElement('div', null, 'output') };
 });
 
-// `useEdges()` is settable per test so a Play-All test can wire the merge's
-// input slots. Defaults to [] for every other behavior test; reset in afterEach.
+// `useEdges()` is settable per test so a test can wire a node's input
+// circles. Defaults to [] for every other behavior test; reset in afterEach.
 let mockEdges: any[] = [];
 let mockNodes: Record<string, any> = {};
 jest.mock('reactflow', () => ({
@@ -126,7 +126,7 @@ import { useDataExportBehavior } from '../../../adapters/node/dataExportBehavior
 import { triggerBlobDownload } from '../../../services/packages/packagesBlobTransport';
 import { useVegaBehavior } from '../../../adapters/node/vegaBehavior';
 import { useSimpleVisBehavior } from '../../../adapters/node/simpleVisBehavior';
-import { useMergeFlowBehavior } from '../../../adapters/node/mergeFlowBehavior';
+import { standardInOut, withInputCircles } from '../../../adapters/node/handleHelpers';
 import { useDataPoolBehavior } from '../../../adapters/node/dataPoolBehavior';
 import { useAutkGrammarBehavior, requestedLayerTables, SANDBOX_BACKEND_URL_TOKEN, classifyAutkSpec, classifyAutkSpecString } from '../../../adapters/node/autkGrammarBehavior';
 import { attachMapInteractionZoomFix } from '../../../adapters/node/autkMapZoom';
@@ -568,110 +568,112 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     });
   });
 
-  describe('useMergeFlowBehavior', () => {
-    test('returns handlesOverride and setOutputCallbackOverride', async () => {
-      const result = await callBehavior(useMergeFlowBehavior);
-      assertValidBehaviorResult(result.current);
-      expect(Array.isArray(result.current.handlesOverride)).toBe(true);
-      // 5 input slots + 1 output handle (fully replaces adapter.handles).
-      expect(result.current.handlesOverride!.length).toBe(6);
-      expect(typeof result.current.setOutputCallbackOverride).toBe('function');
+  // A node whose one input port takes several edges grows a circle per edge
+  // (#662): UniversalNode replaces the template's `in` handle with them
+  // (`withInputCircles`), unless the behavior replaces the handles itself.
+  describe('growing nodes: input circles', () => {
+    test('growing behaviors leave handlesOverride unset, so the node draws a circle per wired input plus a free one', async () => {
+      for (const hook of [useCodeNodeBehavior, useVegaBehavior, useDataPoolBehavior]) {
+        const result = await callBehavior(hook);
+        assertValidBehaviorResult(result.current);
+        // A handlesOverride would hide the circles (UniversalNode skips them).
+        expect(result.current.handlesOverride).toBeUndefined();
+      }
+      // 4 wired circles + 1 free circle + 1 output handle.
+      const handles = withInputCircles(standardInOut(), [0, 1, 2, 3], Infinity);
+      expect(handles).toHaveLength(6);
+      // The pass-through a fan-in goes through keeps its output state locally.
+      const pool = await callBehavior(useDataPoolBehavior);
+      expect(typeof pool.current.setOutputCallbackOverride).toBe('function');
     });
 
-    test('handles override has correct ids and positions', async () => {
-      const result = await callBehavior(useMergeFlowBehavior);
-      const handles = result.current.handlesOverride!;
+    test('input circles have their ids and positions, and stop at the template maximum', async () => {
+      const handles = withInputCircles(standardInOut(), [0, 1, 2, 3], Infinity);
 
       const inputs = handles.slice(0, 5);
       inputs.forEach((h, i) => {
-        expect(h.id).toBe(`in_${i}`);
+        // Circle 0 keeps the plain `in`, so a node with one input draws as before.
+        expect(h.id).toBe(i === 0 ? 'in' : `in_${i}`);
         expect(h.type).toBe('target');
         expect(h.position).toBe('left');
+        // Spread down the left edge in circle order.
+        expect(h.style?.top).toBe(`${((i + 1) * 100) / 6}%`);
       });
 
       const output = handles[5];
       expect(output.id).toBe('out');
       expect(output.type).toBe('source');
       expect(output.position).toBe('right');
-    });
 
-    // Regression for #151: Merge Flow must not set `disablePlay`. When it did,
-    // UniversalNode's Play-All handler short-circuited (signalNodeExecDone +
-    // return) before invoking `sendCode`, so the run advanced to the downstream
-    // level before the merged output was propagated — downstream nodes then ran
-    // with stale/empty input. Routing Play All through `sendCodeOverride`
-    // (which emits synchronously, then signals done) is what fixes it.
-    test('does not disable Play and exposes sendCodeOverride for Play All', async () => {
-      const result = await callBehavior(useMergeFlowBehavior);
-      expect(result.current.disablePlay).toBeFalsy();
-      expect(typeof result.current.sendCodeOverride).toBe('function');
-    });
-
-    afterEach(() => {
-      mockEdges = [];
-    });
-
-    // The actual #151 bug was about ORDERING: Play All must propagate the merged
-    // output downstream *synchronously* (before the run advances). This drives
-    // sendCodeOverride and asserts outputCallback fires synchronously with the
-    // full merged array — so a regression where sendCodeOverride stops emitting
-    // synchronously (e.g. becomes async) is caught, not just re-adding disablePlay.
-    test('sendCodeOverride emits the merged output synchronously when all slots are ready', async () => {
-      mockEdges = [
-        { source: 'a', target: 'merge-1', targetHandle: 'in_0' },
-        { source: 'b', target: 'merge-1', targetHandle: 'in_1' },
-      ];
-      const outputCallback = jest.fn();
-      const setOutput = jest.fn();
-      const result = await callBehavior(
-        useMergeFlowBehavior,
-        { nodeId: 'merge-1', outputCallback, input: [{ id: 'a-data' }, { id: 'b-data' }] },
-        { setOutput },
-      );
-
-      // Ignore any emission from the mount effect; assert only the Play-All call.
-      outputCallback.mockClear();
-      act(() => {
-        result.current.sendCodeOverride!('print(1)');
-      });
-
-      // Propagated synchronously (we assert right after the sync act, no await)
-      // with the merged slot array — and no "inputs not ready" error.
-      expect(outputCallback).toHaveBeenCalledTimes(1);
-      expect(outputCallback).toHaveBeenCalledWith('merge-1', {
-        data: [{ id: 'a-data' }, { id: 'b-data' }],
-        dataType: 'outputs',
-      });
-      expect(setOutput).not.toHaveBeenCalled();
-    });
-
-    // The flip side: Play All must NOT emit stale/partial input when a wired slot
-    // is still empty — it surfaces an error instead of propagating downstream.
-    test('sendCodeOverride does not propagate partial input; reports inputs-not-ready', async () => {
-      mockEdges = [
-        { source: 'a', target: 'merge-2', targetHandle: 'in_0' },
-        { source: 'b', target: 'merge-2', targetHandle: 'in_1' },
-      ];
-      const outputCallback = jest.fn();
-      const setOutput = jest.fn();
-      const result = await callBehavior(
-        useMergeFlowBehavior,
-        { nodeId: 'merge-2', outputCallback, input: [{ id: 'a-data' }] }, // only 1 of 2 ready
-        { setOutput },
-      );
-
-      outputCallback.mockClear();
-      act(() => {
-        result.current.sendCodeOverride!('print(1)');
-      });
-
-      expect(outputCallback).not.toHaveBeenCalled();
-      expect(setOutput).toHaveBeenCalledTimes(1);
-      expect(setOutput.mock.calls[0][0].code).toBe('error');
+      // At a `[1,2]` template's maximum there is no free circle left to offer.
+      const full = withInputCircles(standardInOut(), [0, 1], 2);
+      expect(full.map((h) => h.id)).toEqual(['in', 'in_1', 'out']);
     });
   });
 
   describe('useDataPoolBehavior', () => {
+    afterEach(() => {
+      mockEdges = [];
+    });
+
+    // Regression for #151: a pass-through node must not set `disablePlay`.
+    // When Merge Flow did, UniversalNode's Play-All handler short-circuited
+    // (signalNodeExecDone + return) before invoking `sendCode`, so the run
+    // advanced to the downstream level before the node's output was
+    // propagated, and downstream nodes ran with stale or empty input. Routing
+    // Play All through `sendCodeOverride` is what keeps the order. The Data
+    // Pool is the pass-through a fan-in goes through now.
+    test('does not disable Play and exposes sendCodeOverride for Play All', async () => {
+      const result = await callBehavior(useDataPoolBehavior);
+      expect(result.current.disablePlay).toBeFalsy();
+      expect(typeof result.current.sendCodeOverride).toBe('function');
+    });
+
+    // The actual #151 bug was about ORDERING: Play All must propagate the
+    // node's output downstream before the run advances. This drives
+    // sendCodeOverride on a pool fed through two circles and asserts
+    // outputCallback fires with both inputs, in circle order, before the
+    // returned run settles.
+    test('fed through two circles, Play All emits both inputs in circle order before its run settles', async () => {
+      mockEdges = [
+        { source: 'a', target: 'pool-1', targetHandle: 'in' },
+        { source: 'b', target: 'pool-1', targetHandle: 'in_1' },
+      ];
+      const first = { dataType: 'dataframe', data: { first: { 0: 1, 1: 2 } } };
+      const second = { dataType: 'dataframe', data: { second: { 0: 3 } } };
+      const outputCallback = jest.fn();
+      const result = await callBehavior(useDataPoolBehavior, {
+        nodeId: 'pool-1',
+        outputCallback,
+        // What the growing node reads once both circles hold a value.
+        input: { dataType: 'outputs', data: [first, second] } as any,
+      });
+      // Let the run the input started on mount finish (its result lands in the
+      // pool's own output), so the Play-All call below starts its own run
+      // instead of returning that one.
+      await waitFor(() => expect(result.current.outputOverride).toMatchObject({ code: 'success' }));
+      expect(outputCallback).toHaveBeenCalled();
+
+      outputCallback.mockClear();
+      let settled = false;
+      const settledWhenEmitted: boolean[] = [];
+      outputCallback.mockImplementation(() => settledWhenEmitted.push(settled));
+      await act(async () => {
+        await result.current.sendCodeOverride!('');
+        settled = true;
+      });
+
+      expect(outputCallback).toHaveBeenCalledTimes(1);
+      expect(settledWhenEmitted).toEqual([false]);
+      const [nodeId, emitted] = outputCallback.mock.calls[0];
+      expect(nodeId).toBe('pool-1');
+      expect(emitted.dataType).toBe('outputs');
+      expect(emitted.data).toHaveLength(2);
+      expect(emitted.data[0]).toMatchObject({ dataType: 'dataframe', data: { first: { 0: 1, 1: 2 } } });
+      expect(emitted.data[1]).toMatchObject({ dataType: 'dataframe', data: { second: { 0: 3 } } });
+      expect(result.current.outputOverride).toMatchObject({ code: 'success', content: { dataType: 'outputs' } });
+    });
+
     test('returns contentComponent and overrides, and no widgets callback', async () => {
       const result = await callBehavior(useDataPoolBehavior);
       assertValidBehaviorResult(result.current);

@@ -800,7 +800,9 @@ class TestResearcher:
         # The plan is named, not called a block: on native tools it is the
         # dataflow.plan.write call, on the fenced protocol its block. It names
         # examples.read, for a worked example beyond the two a run is given.
-        "f14cbf84b7915c990133570e26f65eee92759e1b909f0e360e2d53f01c65386c"
+        # #662: fan-in goes straight onto a node's input circles, read
+        # through chips; no Merge Flow to route through.
+        "caa3a01c6c6088448dc838839f875a90156dc8b219e1d5b8a679c943c4c4efd1"
     )
 
     def test_manifest_surface(self):

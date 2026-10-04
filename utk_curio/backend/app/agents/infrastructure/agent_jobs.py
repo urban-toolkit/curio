@@ -21,20 +21,17 @@ default posture): a job is alive iff this process holds it. A multi-instance
 deployment needs a durable owner and stays gated by OQ-009 — the registry is
 never the source of truth for anything but liveness and the event log; the
 persisted ``builderSession`` remains the record.
+
+The registry itself is ``common/job_registry.py``, shared with dataflow runs;
+this module keys it by attachment.
 """
 
 from __future__ import annotations
 
-import logging
-import queue
-import threading
 import time
-import traceback
-from collections import deque
-from dataclasses import dataclass, field
 from typing import Any, Iterator
 
-log = logging.getLogger(__name__)
+from utk_curio.backend.app.common.job_registry import Job, JobRefused, JobRegistry
 
 JOB_KINDS = ("solve-batch", "solve-node")
 
@@ -45,114 +42,50 @@ FINISHED_TTL_SECONDS = 15 * 60
 #: The bounded event log per job (a 25-node batch with rounds fits easily).
 MAX_EVENTS_PER_JOB = 2000
 
-_SENTINEL = None
+__all__ = ["JobRefused"]
 
-
-class JobRefused(ValueError):
-    """A job could not start: one already runs for the attachment, or the
-    user is at the backpressure cap. Carries the HTTP status routes use."""
-
-    def __init__(self, message: str, status: int = 409):
-        super().__init__(message)
-        self.status = status
-
-
-@dataclass
-class AgentJob:
-    job_id: str  # = the execution id — identity and correlation id
-    kind: str
-    user_key: str
-    project_id: str
-    attachment_id: str
-    status: str = "running"  # running | done | error
-    started_at: float = field(default_factory=time.time)
-    finished_at: float | None = None
-    heartbeat_at: float = field(default_factory=time.time)
-    events: deque = field(default_factory=lambda: deque(maxlen=MAX_EVENTS_PER_JOB))
-    subscribers: list = field(default_factory=list)
-    lock: threading.Lock = field(default_factory=threading.Lock)
-    thread: threading.Thread | None = None
-    # Secret values (the job's LLM key) taken out of a failure before it is
-    # published or logged.
-    redact_values: dict = field(default_factory=dict, repr=False)
-
-    @property
-    def live(self) -> bool:
-        return self.status == "running"
-
-    def to_payload(self) -> dict[str, Any]:
-        """The liveness projection the attachment card carries (docs/11:178's
-        "dock running dots") — no event bodies."""
-        return {
-            "executionId": self.job_id,
-            "kind": self.kind,
-            "status": self.status,
-            "startedAt": self.started_at,
-            "heartbeatAt": self.heartbeat_at,
-            "finishedAt": self.finished_at,
-            "events": len(self.events),
-        }
-
-
-_LOCK = threading.Lock()
-_JOBS: dict[str, AgentJob] = {}
-_BY_ATTACHMENT: dict[tuple[str, str], str] = {}
+_REGISTRY = JobRegistry(
+    name="agent",
+    kinds=JOB_KINDS,
+    max_active_per_user=MAX_ACTIVE_JOBS_PER_USER,
+    finished_ttl_seconds=FINISHED_TTL_SECONDS,
+    max_events=MAX_EVENTS_PER_JOB,
+    busy_message="a job is already running for this attachment",
+    cap_message=(
+        f"at most {MAX_ACTIVE_JOBS_PER_USER} background jobs may run at once; "
+        "wait for one to finish"
+    ),
+)
 
 
 def reset_registry() -> None:
     """Test seam: drop every job (threads already running finish unobserved)."""
-    with _LOCK:
-        _JOBS.clear()
-        _BY_ATTACHMENT.clear()
+    _REGISTRY.reset()
 
 
 def is_live(job_id: object) -> bool:
     """True iff THIS process holds a running job with that id."""
-    if not isinstance(job_id, str) or not job_id:
-        return False
-    with _LOCK:
-        job = _JOBS.get(job_id)
-    return job is not None and job.live
+    return _REGISTRY.is_live(job_id)
 
 
-def live_job(user_key: str, attachment_id: str) -> AgentJob | None:
-    with _LOCK:
-        job_id = _BY_ATTACHMENT.get((user_key, attachment_id))
-        job = _JOBS.get(job_id) if job_id else None
-    return job if job is not None and job.live else None
+def live_job(user_key: str, attachment_id: str) -> Job | None:
+    return _REGISTRY.live_job(user_key, attachment_id)
 
 
-def latest_job(user_key: str, attachment_id: str) -> AgentJob | None:
+def latest_job(user_key: str, attachment_id: str) -> Job | None:
     """The attachment's running job, or its most recent finished one still
     within the replay TTL."""
-    sweep_finished()
-    with _LOCK:
-        job_id = _BY_ATTACHMENT.get((user_key, attachment_id))
-        return _JOBS.get(job_id) if job_id else None
+    return _REGISTRY.latest_job(user_key, attachment_id)
 
 
-def get_job(job_id: str) -> AgentJob | None:
-    with _LOCK:
-        return _JOBS.get(job_id)
-
-
-def _active_count(user_key: str) -> int:
-    return sum(1 for job in _JOBS.values() if job.user_key == user_key and job.live)
+def get_job(job_id: str) -> Job | None:
+    return _REGISTRY.get_job(job_id)
 
 
 def check_can_start(user_key: str, attachment_id: str) -> None:
     """Raise :class:`JobRefused` when a job may not start — called BEFORE the
     caller persists any in-flight state, so a refusal leaves nothing behind."""
-    sweep_finished()
-    with _LOCK:
-        current = _BY_ATTACHMENT.get((user_key, attachment_id))
-        if current and (job := _JOBS.get(current)) is not None and job.live:
-            raise JobRefused("a job is already running for this attachment", 409)
-        if _active_count(user_key) >= MAX_ACTIVE_JOBS_PER_USER:
-            raise JobRefused(
-                f"at most {MAX_ACTIVE_JOBS_PER_USER} background jobs may run at once — "
-                "wait for one to finish", 429,
-            )
+    _REGISTRY.check_can_start(user_key, attachment_id)
 
 
 def start_job(
@@ -165,7 +98,7 @@ def start_job(
     events: Iterator[tuple[str, Any]],
     app_context=None,
     redact_values: dict | None = None,
-) -> AgentJob:
+) -> Job:
     """Register *job_id* and drive *events* (a ``(kind, payload)`` generator)
     in a daemon thread. Every item is appended to the job's log and fanned
     out to live subscribers; the generator's own ``finally`` blocks (the
@@ -173,115 +106,28 @@ def start_job(
     inside the request. An exception in the generator becomes a terminal
     ``error`` event, never a lost job, with *redact_values* taken out of its
     text."""
-    if kind not in JOB_KINDS:
-        raise ValueError(f"unknown job kind {kind!r}")
-    check_can_start(user_key, attachment_id)
-    job = AgentJob(job_id=job_id, kind=kind, user_key=user_key,
-                   project_id=project_id, attachment_id=attachment_id,
-                   redact_values=dict(redact_values or {}))
-    with _LOCK:
-        _JOBS[job_id] = job
-        _BY_ATTACHMENT[(user_key, attachment_id)] = job_id
-    if app_context is None:
-        # The generator runs outside the request; give it the app context the
-        # request had (config, extensions) when one is available.
-        try:
-            from flask import current_app, has_app_context
-
-            if has_app_context():
-                app_context = current_app._get_current_object().app_context
-        except Exception:  # not under Flask (unit tests, tools) — run bare
-            app_context = None
-    thread = threading.Thread(target=_run, args=(job, events, app_context), daemon=True,
-                              name=f"agent-job-{kind}-{job_id[:8]}")
-    job.thread = thread
-    thread.start()
-    return job
+    return _REGISTRY.start(
+        user_key=user_key, project_id=project_id, key=attachment_id, kind=kind,
+        job_id=job_id, events=events, app_context=app_context,
+        redact_values=redact_values,
+    )
 
 
-def _run(job: AgentJob, events: Iterator[tuple[str, Any]], app_context=None) -> None:
-    status = "done"
-    try:
-        if app_context is not None:
-            with app_context():
-                for item in events:
-                    _publish(job, item)
-        else:
-            for item in events:
-                _publish(job, item)
-    except Exception as exc:  # the generator's failure is an EVENT, not a lost job
-        from utk_curio.common.redaction import redact
-
-        log.error("agent job %s (%s) failed:\n%s", job.job_id, job.kind,
-                  redact(traceback.format_exc(), job.redact_values))
-        _publish(job, ("error", f"job failed: {(redact(str(exc), job.redact_values) or '')[:300]}"))
-        status = "error"
-    finally:
-        with job.lock:
-            job.status = status
-            job.finished_at = time.time()
-            job.heartbeat_at = job.finished_at
-            for q in job.subscribers:
-                q.put(_SENTINEL)
-            job.subscribers.clear()
-
-
-def _publish(job: AgentJob, item: tuple[str, Any]) -> None:
-    with job.lock:
-        job.events.append(item)
-        job.heartbeat_at = time.time()
-        for q in job.subscribers:
-            q.put(item)
-
-
-def heartbeat(job: AgentJob) -> None:
+def heartbeat(job: Job) -> None:
     """Touch the job's liveness clock without an event (a long sandbox run)."""
-    with job.lock:
-        job.heartbeat_at = time.time()
+    JobRegistry.heartbeat(job)
 
 
-def subscribe(job: AgentJob) -> Iterator[tuple[str, Any]]:
+def subscribe(job: Job) -> Iterator[tuple[str, Any]]:
     """Replay the job's log, then tail live events until the job finishes.
     A finished job replays and ends. Leaving the generator early (a client
     disconnect) only unsubscribes — the job keeps running."""
-    q: queue.Queue = queue.Queue()
-    with job.lock:
-        snapshot = list(job.events)
-        finished = not job.live
-        if not finished:
-            job.subscribers.append(q)
-    try:
-        for item in snapshot:
-            yield item
-        if finished:
-            return
-        while True:
-            item = q.get()
-            if item is _SENTINEL:
-                return
-            yield item
-    finally:
-        with job.lock:
-            if q in job.subscribers:
-                job.subscribers.remove(q)
+    return JobRegistry.subscribe(job)
 
 
 def sweep_finished(now: float | None = None) -> int:
     """Drop finished jobs older than the replay TTL. Returns how many."""
-    now = time.time() if now is None else now
-    dropped = 0
-    with _LOCK:
-        for job_id in [
-            jid for jid, job in _JOBS.items()
-            if not job.live and job.finished_at is not None
-            and now - job.finished_at > FINISHED_TTL_SECONDS
-        ]:
-            job = _JOBS.pop(job_id)
-            key = (job.user_key, job.attachment_id)
-            if _BY_ATTACHMENT.get(key) == job_id:
-                _BY_ATTACHMENT.pop(key, None)
-            dropped += 1
-    return dropped
+    return _REGISTRY.sweep_finished(now)
 
 
 def reconcile_builder_session(session: dict, now: float | None = None) -> bool:

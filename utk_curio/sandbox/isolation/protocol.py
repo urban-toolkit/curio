@@ -60,7 +60,7 @@ class ProtocolError(ValueError):
 #   {"kind": "sequence", "container": "list"|"tuple", "items": [spec, ...]}
 #   {"kind": "mapping", "items": {"key": spec, ...}}
 #
-# 'sequence' with container 'tuple' is how an upstream merge ('outputs') and a
+# 'sequence' with container 'tuple' is how several inputs ('outputs') and a
 # stored tuple both arrive; the child rebuilds the right container so user code
 # sees exactly what the in-process path would have handed it.
 # ---------------------------------------------------------------------------

@@ -1146,11 +1146,11 @@ class SolveBatch:
             if self.content_kind(node) == workflow_spec.CONTENT_KIND_NONE:
                 # dev/134: this kind authors NOTHING — it renders or
                 # forwards its input and everything it does comes from
-                # the wiring (a merge, a pool, a simple view, a spatial
-                # join). Asking a model for its content spends a call
-                # to produce something that can only be wrong: the
-                # owner's `e72c7080` wrote the reply "not controllable"
-                # into a merge-flow and a data-pool as their content.
+                # the wiring (a pool, a simple view, a spatial join).
+                # Asking a model for its content spends a call to
+                # produce something that can only be wrong: the owner's
+                # `e72c7080` wrote the reply "not controllable" into a
+                # data-pool as its content.
                 queue.put((node_id, "no-content", None, None))
                 return
             # dev/67-6: the ONE context composer — the child sees the
