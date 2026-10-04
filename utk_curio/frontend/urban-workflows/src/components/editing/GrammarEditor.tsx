@@ -286,6 +286,10 @@ export default function GrammarEditor({
                         scrollBeyondLastLine: false,
                         formatOnType: true,
                         autoClosingBrackets: "always",
+                        // As in CodeEditor: a wheel the editor cannot use goes
+                        // on to the page, and `nowheel` on the wrapper keeps the
+                        // canvas from zooming. Read only at creation.
+                        scrollbar: { alwaysConsumeMouseWheel: false },
                     }}
                 />
             </div>

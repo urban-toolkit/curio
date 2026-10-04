@@ -49,6 +49,44 @@
   border-radius: 50%;
 }
 
+/* Notebook view: a cell's dots in the connections bar keep the right-handle
+   rules above; an input dot carries the number its chips use. */
+.curio-notebook-dot-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Notebook view: a cell shows its input and its output together. The active
+   input tab takes the top of the cell; the output pane, which Bootstrap hides
+   (display) and fades out (opacity) while another tab is active, stays
+   visible below it. */
+.tab-content.curio-notebook-split {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tab-content.curio-notebook-split > .tab-pane.active {
+  flex: 0 0 42%;
+  min-height: 0;
+}
+
+.tab-content.curio-notebook-split > .tab-pane.curio-notebook-output {
+  display: block !important;
+  opacity: 1 !important;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
 .handle_top_left {
   left: -20px !important;
   width: 20px;

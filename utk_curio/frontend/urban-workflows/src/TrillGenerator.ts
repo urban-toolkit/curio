@@ -12,6 +12,7 @@
  * `loadTrill` in `hook/useCode.ts` is the matching reader.
  */
 import type { HandCategories } from "./utils/dataflowCategories";
+import { canvasPositionOf } from "./utils/canvasPosition";
 import { canvasTemplateConfigToSpec } from "./utils/canvasTemplateConfigSpec";
 import { dataPoolToSpec } from "./utils/dataPoolSpec";
 import { normalizeWidgets } from "./utils/widgets/widgetModel";
@@ -216,8 +217,8 @@ export class TrillGenerator {
             // Persist dispatcher id (`data.nodeType`); RF `type` stays a sentinel for all UniversalNode-backed templates.
             trill_node.type = node.data?.nodeType ?? node.type;
 
-            // Use workflow position so saving in dashboard mode doesn't corrupt the layout
-            const workflowPos = node.data.workflowPosition ?? node.position;
+            // The canvas spot, so a save from the dashboard or the notebook view doesn't corrupt the layout
+            const workflowPos = canvasPositionOf(node);
             trill_node.x = workflowPos.x;
             trill_node.y = workflowPos.y;
 
