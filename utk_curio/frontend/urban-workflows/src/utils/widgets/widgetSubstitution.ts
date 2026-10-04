@@ -132,6 +132,17 @@ export function widgetLiteral(value: WidgetValue | undefined, language: WidgetLa
   if (Array.isArray(value)) {
     return "[" + (value as WidgetValue[]).map((v) => widgetLiteral(v, language)).join(", ") + "]";
   }
+  if (typeof value === "object") {
+    // A location's {"lat": ..., "lon": ...}: a dict in Python, an object in
+    // JavaScript and JSON.
+    return (
+      "{" +
+      Object.entries(value as unknown as Record<string, WidgetValue>)
+        .map(([k, v]) => JSON.stringify(k) + ": " + widgetLiteral(v, language))
+        .join(", ") +
+      "}"
+    );
+  }
   return JSON.stringify(value);
 }
 

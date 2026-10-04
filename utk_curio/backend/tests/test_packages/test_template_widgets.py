@@ -71,6 +71,17 @@ class TestTheSchema:
     def test_declared_widgets_validate(self):
         assert not self._errors(WIDGETS)
 
+    def test_every_control_validates(self):
+        assert not self._errors([
+            {"name": "rain", "type": "slider", "default": 0, "options": {"min": 0, "max": 50, "step": 0.5, "units": "mm"}},
+            {"name": "k", "type": "number", "default": 1, "options": {"min": 1, "max": 3}},
+            {"name": "year", "type": "choice", "default": "2050", "options": {"choices": ["2050", "2100"], "display": "radio"}},
+            {"name": "classes", "type": "checkbox-group", "default": ["water"], "options": {"choices": ["water", "forest"]}},
+            {"name": "modes", "type": "multi-select", "default": [], "options": {"choices": ["walk", "bike"]}},
+            {"name": "when", "type": "datetime", "default": "2026-06-21T12:00:00"},
+            {"name": "origin", "type": "location", "default": {"lat": 41.8781, "lon": -87.6298}},
+        ])
+
     @pytest.mark.parametrize(
         "widget",
         [
@@ -78,8 +89,21 @@ class TestTheSchema:
             {"name": "src", "type": "INPUT_TEXT", "default": ""},
             {"name": "src", "type": "text", "default": "", "marker": "src$INPUT_TEXT$"},
             {"name": "src", "type": "choice", "default": "a", "options": {"choices": [1, 2]}},
+            {"name": "s", "type": "choice", "default": "a", "options": {"choices": ["a"], "display": "carousel"}},
+            {"name": "s", "type": "slider", "default": 0, "options": {"min": 0, "max": 1, "step": 0}},
+            {"name": "s", "type": "slider", "default": 0, "options": {"min": "0", "max": 1}},
+            {"name": "s", "type": "slider", "default": 0, "options": {"units": 5}},
         ],
-        ids=["name with a space", "unknown type", "unknown key", "choices that are not text"],
+        ids=[
+            "name with a space",
+            "unknown type",
+            "unknown key",
+            "choices that are not text",
+            "unknown display",
+            "a step of zero",
+            "a bound that is not a number",
+            "units that are not text",
+        ],
     )
     def test_a_malformed_widget_is_refused(self, widget):
         assert self._errors([widget])

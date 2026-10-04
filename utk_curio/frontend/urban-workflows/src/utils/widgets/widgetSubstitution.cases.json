@@ -180,6 +180,67 @@
       "widgets": [{"name": "n", "type": "number", "default": 1}],
       "expected": "x = [!! 2 bad !!] + 1",
       "problems": ["[!! 2 bad !!] does not name a widget. Widget names are letters, digits and underscores."]
+    },
+    {
+      "name": "a slider, a radio choice, a checkbox group and a multi-select in Python",
+      "language": "python",
+      "code": "a = [!! a !!]; b = [!! b !!]; c = [!! c !!]; d = [!! d !!]",
+      "widgets": [
+        {"name": "a", "type": "slider", "default": 5, "value": 7.5, "options": {"min": 0, "max": 10, "step": 0.5, "units": "m"}},
+        {"name": "b", "type": "choice", "default": "winter", "options": {"choices": ["summer", "winter"], "display": "radio"}},
+        {"name": "c", "type": "checkbox-group", "default": ["x"], "value": ["x", "y"], "options": {"choices": ["x", "y"]}},
+        {"name": "d", "type": "multi-select", "default": [], "options": {"choices": ["p", "q"]}}
+      ],
+      "expected": "a = 7.5; b = \"winter\"; c = [\"x\", \"y\"]; d = []"
+    },
+    {
+      "name": "a date and time on its own and inside an f-string",
+      "language": "python",
+      "code": "t = [!! t !!]\nlabel = f\"at [!! t !!]\"",
+      "widgets": [{"name": "t", "type": "datetime", "default": "2026-06-21T12:00:00"}],
+      "expected": "t = \"2026-06-21T12:00:00\"\nlabel = f\"at 2026-06-21T12:00:00\""
+    },
+    {
+      "name": "a location is a dict in Python",
+      "language": "python",
+      "code": "origin = [!! origin !!]",
+      "widgets": [{"name": "origin", "type": "location", "default": {"lat": 41.8781, "lon": -87.6298}}],
+      "expected": "origin = {\"lat\": 41.8781, \"lon\": -87.6298}"
+    },
+    {
+      "name": "a location in JavaScript, on its own and inside a template literal",
+      "language": "javascript",
+      "code": "const p = [!! loc !!];\nconst s = `at [!! loc !!]`;",
+      "widgets": [{"name": "loc", "type": "location", "default": {"lat": 0, "lon": 0}, "value": {"lat": 41.8781, "lon": -87.6298}}],
+      "expected": "const p = {\"lat\": 41.8781, \"lon\": -87.6298};\nconst s = `at {\"lat\": 41.8781, \"lon\": -87.6298}`;"
+    },
+    {
+      "name": "a location in JSON, on its own and inside a string",
+      "language": "json",
+      "code": "{\"center\": [!! loc !!], \"title\": \"Near [!! loc !!]\"}",
+      "widgets": [{"name": "loc", "type": "location", "default": {"lat": 41.8781, "lon": -87.6298}}],
+      "expected": "{\"center\": {\"lat\": 41.8781, \"lon\": -87.6298}, \"title\": \"Near {\\\"lat\\\": 41.8781, \\\"lon\\\": -87.6298}\"}"
+    },
+    {
+      "name": "a widget without a default takes its kind's",
+      "language": "python",
+      "code": "a = [!! a !!]; b = [!! b !!]; c = [!! c !!]; d = [!! d !!]; e = [!! e !!]",
+      "widgets": [
+        {"name": "a", "type": "slider", "options": {"min": 2, "max": 9}},
+        {"name": "b", "type": "choice", "options": {"choices": ["u", "v"]}},
+        {"name": "c", "type": "location"},
+        {"name": "d", "type": "datetime", "default": null},
+        {"name": "e", "type": "checkbox-group", "options": {"choices": ["u"]}}
+      ],
+      "expected": "a = 2; b = \"u\"; c = {\"lat\": 0, \"lon\": 0}; d = \"1970-01-01T00:00:00\"; e = []"
+    },
+    {
+      "name": "a widget of an unknown kind is no widget",
+      "language": "python",
+      "code": "x = [!! w !!]",
+      "widgets": [{"name": "w", "type": "nonsense", "default": 1}],
+      "expected": "x = [!! w !!]",
+      "problems": ["[!! w !!]: this node has no widget named w. Add it in the Widgets tab."]
     }
   ]
 }

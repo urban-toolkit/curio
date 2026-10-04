@@ -26,6 +26,23 @@ WIDGET_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
 LANGUAGES = ("python", "javascript", "json")
 
+#: The widget kinds. Kept in sync with ``WIDGET_KINDS`` in ``widgetModel.ts``.
+WIDGET_KINDS = (
+    "number",
+    "slider",
+    "text",
+    "choice",
+    "checkbox",
+    "checkbox-group",
+    "multi-select",
+    "datetime",
+    "location",
+    "number-list",
+    "text-list",
+    "range",
+    "file",
+)
+
 
 class WidgetReferenceError(ValueError):
     """A node's code names widgets it cannot resolve."""
@@ -83,6 +100,12 @@ def widget_literal(value, language: str) -> str:
         return json.dumps(value, ensure_ascii=False)
     if isinstance(value, list):
         return "[" + ", ".join(widget_literal(v, language) for v in value) + "]"
+    if isinstance(value, dict):
+        # A location's {"lat": ..., "lon": ...}: a dict in Python, an object in
+        # JavaScript and JSON.
+        return "{" + ", ".join(
+            json.dumps(str(k), ensure_ascii=False) + ": " + widget_literal(v, language) for k, v in value.items()
+        ) + "}"
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -189,8 +212,40 @@ def reference_problem(reference: str, inner: str, widgets: list) -> str | None:
     return None
 
 
+#: A date-time widget's value when its widget gives none. Kept in sync with
+#: ``DATETIME_FALLBACK`` in ``widgetModel.ts``.
+DATETIME_FALLBACK = "1970-01-01T00:00:00"
+
+
+def _finite(x) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and x == x and x not in (float("inf"), float("-inf"))
+
+
+def default_value_for(kind, options) -> object:
+    """A kind's value when a widget gives no default, as ``defaultValueFor`` in
+    ``widgetModel.ts`` writes it."""
+    options = options if isinstance(options, dict) else {}
+    if kind in ("number", "slider"):
+        return options["min"] if _finite(options.get("min")) else 0
+    if kind == "checkbox":
+        return False
+    if kind == "choice":
+        choices = [c for c in options.get("choices") or [] if isinstance(c, str)]
+        return choices[0] if choices else ""
+    if kind in ("checkbox-group", "multi-select", "number-list", "text-list"):
+        return []
+    if kind == "range":
+        return [0, 1]
+    if kind == "datetime":
+        return DATETIME_FALLBACK
+    if kind == "location":
+        return {"lat": 0, "lon": 0}
+    return ""
+
+
 def normalize_widgets(raw) -> list:
-    """The well-formed widgets in *raw* (a spec's ``metadata.widgets``)."""
+    """The well-formed widgets in *raw* (a spec's ``metadata.widgets``). A
+    widget without a default gets its kind's, as the browser gives it."""
     if not isinstance(raw, list):
         return []
     out, seen = [], set()
@@ -200,7 +255,11 @@ def normalize_widgets(raw) -> list:
         name = entry.get("name")
         if not isinstance(name, str) or not WIDGET_NAME_RE.match(name) or name in seen:
             continue
+        if entry.get("type") not in WIDGET_KINDS:
+            continue
         seen.add(name)
+        if entry.get("default") is None:
+            entry = {**entry, "default": default_value_for(entry.get("type"), entry.get("options"))}
         out.append(entry)
     return out
 
