@@ -18,6 +18,9 @@ test saves can. The assertions guard another way the edges can vanish:
 (``if (!src?.width || !src?.height || ...) return null``), so anything that
 disturbs node measurement silently removes every edge.
 
+Every count is taken inside the modal: the dataflow canvas behind it has edges
+of its own.
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_provenance_zoom_edges_e2e.py -v
@@ -35,6 +38,7 @@ from .utils import (
     stub_login_and_enter_workflow,
 )
 from .walkthroughs import load_example_spec
+from .walkthroughs.steps import PROVENANCE_EDGE_PATH, await_provenance_graph
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -43,7 +47,7 @@ if TYPE_CHECKING:
 #: harness makes, not from the spec's own shape.
 EXAMPLE = "01-vega-lite-chained-transforms.json"
 
-EDGE_PATH = ".react-flow__edges path.react-flow__edge-path"
+EDGE_PATH = PROVENANCE_EDGE_PATH
 
 #: How many times slower than the runner Chromium runs while the window opens.
 #: A wait that sleeps a fixed time passes on a fast runner and fails here; a
@@ -66,7 +70,7 @@ def _open_provenance(page):
     page.get_by_test_id("provenance-btn").click(force=True)
     dialog = page.get_by_role("dialog").filter(has_text="Provenance for")
     dialog.wait_for(state="visible", timeout=20000)
-    page.wait_for_selector(".react-flow__node", timeout=20000)
+    await_provenance_graph(page)
     return dialog
 
 
@@ -107,8 +111,6 @@ def test_provenance_edges_survive_zooming_in(
 
     with _throttled_cpu(page, CPU_THROTTLE):
         dialog = _open_provenance(page)
-        page.wait_for_timeout(1200)
-
         before = _edge_geometry(page)
         cards = dialog.locator(".react-flow__node").count()
     if len(before) == 0:
