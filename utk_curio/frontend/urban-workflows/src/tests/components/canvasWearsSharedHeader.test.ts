@@ -7,8 +7,10 @@ import path from "path";
  * API Settings and no Monitor, and hid every catalog under a menu.
  *
  * One consequence is checked here too: the bar hosts the one
- * ConnectionKeysModalHost on a page. The canvas used to mount a second one in
- * the agent dock, so with both, one "add a key" request would open two modals.
+ * ApiSettingsRequestHost on a page. The canvas used to mount a second one in
+ * the agent dock, so with both, one "add a key" request was answered twice.
+ * And the two drawers the bar opens on the canvas and the dashboard are
+ * mounted by the dataflow's provider stack, which both routes share.
  *
  * Source-read: UpMenu and the dashboard need the whole provider stack to
  * render. The rendered bar is checked in globalPageHeader.test.tsx and
@@ -51,8 +53,31 @@ describe("the canvas and the dashboard", () => {
 describe("the API Settings request host", () => {
   it("is mounted by the shared header and by nothing else", () => {
     const mounts = sourceFiles(SRC)
-      .filter((file) => /<ConnectionKeysModalHost\b/.test(fs.readFileSync(file, "utf8")))
+      .filter((file) => /<ApiSettingsRequestHost\b/.test(fs.readFileSync(file, "utf8")))
       .map((file) => path.relative(SRC, file));
     expect(mounts).toEqual(["components/layout/GlobalPageHeader.tsx"]);
+  });
+});
+
+describe("the bar's drawers", () => {
+  it.each(["ApiSettingsDrawerProvider", "MonitorDrawerProvider"])(
+    "%s is mounted by DataflowProviders and by nothing else",
+    (provider) => {
+      const pattern = new RegExp(`<${provider}\\b`);
+      const mounts = sourceFiles(SRC)
+        .filter((file) => pattern.test(fs.readFileSync(file, "utf8")))
+        .map((file) => path.relative(SRC, file));
+      expect(mounts).toEqual(["components/DataflowProviders.tsx"]);
+    },
+  );
+
+  it("API Settings is one panel, on the page and in the drawer", () => {
+    expect(read("pages/settings/SettingsPage.tsx")).toMatch(/<ApiSettingsPanel\b/);
+    expect(read("components/apiSettings/ApiSettingsDrawer.tsx")).toMatch(/<ApiSettingsPanel\b/);
+  });
+
+  it("the monitor is one content component, on the page and in the drawer", () => {
+    expect(read("pages/monitor/MonitorPage.tsx")).toMatch(/<MonitorContent\b/);
+    expect(read("pages/monitor/MonitorDrawer.tsx")).toMatch(/<MonitorContent\b/);
   });
 });

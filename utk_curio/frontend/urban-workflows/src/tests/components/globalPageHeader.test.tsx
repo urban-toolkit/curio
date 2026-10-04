@@ -1,10 +1,11 @@
 /**
  * The top bar every signed-in page wears: the section pages, the dataflow
- * canvas and its dashboard. Its Monitor link sits left of API Settings.
+ * canvas and its dashboard. Monitor sits left of API Settings; both go to their
+ * pages from a section page and open drawers on the canvas and the dashboard.
  */
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
 // No user and no auth by default, the state a laptop instance starts in. The
 // monitor exists on every instance, not only a --deploy one, so if someone
@@ -18,33 +19,57 @@ jest.mock('../../providers/UserProvider', () => ({
 jest.mock('../../standalone/dashboardPayload', () => ({
   isStandaloneDashboard: () => mockStandalone,
 }));
-jest.mock('../../components/ApiSettingsModal', () => ({ __esModule: true, default: () => null }));
+// The canvas and the dashboard mount the two drawers' providers; a section
+// page does not. Null stands for a section page.
+let mockSettingsDrawer: { openApiSettings: jest.Mock } | null = null;
+let mockMonitorDrawer: { openMonitor: jest.Mock } | null = null;
+jest.mock('../../providers/ApiSettingsDrawerProvider', () => ({
+  useApiSettingsDrawerOptional: () => mockSettingsDrawer,
+}));
+jest.mock('../../providers/MonitorDrawerProvider', () => ({
+  useMonitorDrawerOptional: () => mockMonitorDrawer,
+}));
 
 import { GlobalPageHeader } from '../../components/layout/GlobalPageHeader';
+import { requestAgentModel, requestSourceKey } from '../../components/apiSettings/apiSettingsRequest';
+
+function Where() {
+  const location = useLocation();
+  return <div data-testid="settings-page">{location.pathname + location.search}</div>;
+}
 
 function renderAt(path: string, header: React.ReactElement = <GlobalPageHeader />) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/projects" element={<div data-testid="projects-page" />} />
+        <Route path="/settings/:tab" element={<Where />} />
         <Route path="*" element={header} />
       </Routes>
     </MemoryRouter>
   );
 }
 
+const onTheCanvas = () => {
+  mockSettingsDrawer = { openApiSettings: jest.fn() };
+  mockMonitorDrawer = { openMonitor: jest.fn() };
+};
+
 beforeEach(() => {
   mockUser = { user: null, signout: jest.fn(), enableUserAuth: false };
   mockStandalone = false;
+  mockSettingsDrawer = null;
+  mockMonitorDrawer = null;
 });
 
 describe('GlobalPageHeader', () => {
-  test('links Monitor, unconditionally, just left of API Settings', () => {
+  test('on a section page, links Monitor, unconditionally, just left of API Settings', () => {
     const { getByRole } = renderAt('/monitor');
     const monitor = getByRole('link', { name: 'Monitor' });
-    const apiSettings = getByRole('button', { name: 'API Settings' });
+    const apiSettings = getByRole('link', { name: 'API Settings' });
 
     expect(monitor.getAttribute('href')).toBe('/monitor');
+    expect(apiSettings.getAttribute('href')).toBe('/settings');
     expect(monitor.parentElement).toBe(apiSettings.parentElement);
     expect(monitor.nextElementSibling).toBe(apiSettings);
   });
@@ -57,9 +82,53 @@ describe('GlobalPageHeader', () => {
     expect(getByRole('link', { name: 'Monitor' }).getAttribute('aria-current')).toBe(current);
   });
 
+  test('on the settings page the API Settings link is current', () => {
+    // The header renders on the page itself, so render it under /settings.
+    render(
+      <MemoryRouter initialEntries={['/settings/agents']}>
+        <GlobalPageHeader />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: 'API Settings' }).getAttribute('aria-current')).toBe('page');
+  });
+
   test('carries the attribute the canvas fit measures the bar by', () => {
     const { container } = renderAt('/monitor');
     expect(container.querySelector('header[data-curio-menu-bar="true"]')).not.toBeNull();
+  });
+});
+
+describe('on the canvas and the dashboard', () => {
+  test('Monitor and API Settings open their drawers and never leave the page', () => {
+    onTheCanvas();
+    renderAt('/dataflow/new');
+    expect(screen.queryByRole('link', { name: 'Monitor' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'API Settings' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Monitor' }));
+    expect(mockMonitorDrawer!.openMonitor).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'API Settings' }));
+    expect(mockSettingsDrawer!.openApiSettings).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('settings-page')).toBeNull();
+  });
+
+  test("a card's request opens the drawer on the place it asked for", () => {
+    onTheCanvas();
+    renderAt('/dataflow/new');
+    act(() => requestAgentModel('agent.dataflow-builder'));
+    expect(mockSettingsDrawer!.openApiSettings).toHaveBeenCalledWith({
+      section: 'agent-models',
+      agentId: 'agent.dataflow-builder',
+    });
+    expect(screen.queryByTestId('settings-page')).toBeNull();
+  });
+});
+
+describe("a card's request on a section page", () => {
+  test('goes to the settings page on the place it asked for', () => {
+    renderAt('/catalog/discovery');
+    act(() => requestSourceKey('mapillary.token'));
+    expect(screen.getByTestId('settings-page').textContent).toBe('/settings/keys?service=mapillary.token');
   });
 });
 
@@ -73,7 +142,7 @@ describe('the page slot', () => {
     );
     const logo = screen.getByRole('link', { name: 'Curio' });
     const control = screen.getByRole('button', { name: 'File menu' });
-    const apiSettings = screen.getByRole('button', { name: 'API Settings' });
+    const apiSettings = screen.getByRole('link', { name: 'API Settings' });
 
     const follows = (a: Node, b: Node) =>
       Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
@@ -137,8 +206,11 @@ describe('a standalone dashboard', () => {
   test('has no server to monitor and no keys to set', () => {
     mockStandalone = true;
     mockUser = { user: { name: 'Viewer', username: 'guest_shared' }, signout: jest.fn(), enableUserAuth: false };
+    onTheCanvas();
     renderAt('/dashboard/x');
     expect(screen.queryByRole('link', { name: 'Monitor' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Monitor' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'API Settings' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'API Settings' })).toBeNull();
     expect(screen.getByTestId('user-menu')).toBeTruthy();
   });

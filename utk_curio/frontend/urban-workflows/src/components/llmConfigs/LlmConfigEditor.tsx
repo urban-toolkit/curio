@@ -28,9 +28,11 @@ export const LlmConfigEditor: React.FC<{
   deployment: LlmDeployment;
   /** For a new configuration: whether "Make this my default" starts checked. */
   defaultChecked?: boolean;
+  /** API keys' "Kind" select, when "Add configuration" opened this editor. */
+  kindPicker?: React.ReactNode;
   onSaved: (config: LlmConfig, makeDefault: boolean) => void;
   onCancel: () => void;
-}> = ({ initial, deployment, defaultChecked = false, onSaved, onCancel }) => {
+}> = ({ initial, deployment, defaultChecked = false, kindPicker, onSaved, onCancel }) => {
   const [label, setLabel] = useState(initial?.label ?? "");
   const [mode, setMode] = useState<UiMode>(initial ? uiModeOf(initial) : "openai");
   const [baseUrl, setBaseUrl] = useState(
@@ -138,6 +140,7 @@ export const LlmConfigEditor: React.FC<{
   return (
     <div className={styles.editor} data-testid="llm-config-editor">
       <h4 className={styles.editorTitle}>{initial ? `Edit ${initial.label}` : "Add a configuration"}</h4>
+      {kindPicker}
 
       <div className={modal.field}>
         <label className={modal.label} htmlFor={`${idBase}-label`}>Label</label>

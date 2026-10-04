@@ -25,6 +25,7 @@ Run::
 """
 from __future__ import annotations
 
+import re
 import uuid
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -117,13 +118,23 @@ def test_the_canvas_wears_the_shared_bar_with_the_catalogs_in_it(
     section_bar = page.locator(BAR)
     expect(section_bar).to_be_visible(timeout=20000)
     section_height = section_bar.evaluate("(b) => b.getBoundingClientRect().height")
+    # A section page's Monitor and API Settings go to their pages.
+    expect(section_bar.get_by_role("link", name="Monitor", exact=True)).to_have_attribute(
+        "href", re.compile(r"/monitor$")
+    )
+    expect(section_bar.get_by_role("link", name="API Settings", exact=True)).to_have_attribute(
+        "href", re.compile(r"/settings$")
+    )
 
     _fresh_canvas(page, app_frontend.base_url)
     bar = page.locator(BAR)
 
     # The section pages' bar, not a look-alike: the same parts and height.
+    # Monitor and API Settings are links on a section page and buttons that
+    # open drawers here.
+    expect(bar.get_by_role("link", name="Monitor", exact=True)).to_have_count(0)
     expect(bar.get_by_role("link", name="Curio", exact=True)).to_be_visible()
-    expect(bar.get_by_role("link", name="Monitor", exact=True)).to_be_visible()
+    expect(bar.get_by_role("button", name="Monitor", exact=True)).to_be_visible()
     expect(bar.get_by_role("button", name="API Settings", exact=True)).to_be_visible()
     expect(bar.get_by_test_id("user-menu")).to_be_visible()
 

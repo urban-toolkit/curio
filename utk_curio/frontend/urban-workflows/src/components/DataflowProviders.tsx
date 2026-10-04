@@ -9,6 +9,8 @@ import { AgentCatalogDrawerProvider } from "../providers/AgentCatalogDrawerProvi
 import { DatasetCatalogDrawerProvider } from "../providers/datasetCatalog";
 import { ModelCatalogDrawerProvider } from "../providers/modelCatalog";
 import { DiscoveryCatalogDrawerProvider } from "../providers/discoveryCatalog";
+import { ApiSettingsDrawerProvider } from "../providers/ApiSettingsDrawerProvider";
+import { MonitorDrawerProvider } from "../providers/MonitorDrawerProvider";
 import { PackagePaletteProvider } from "../providers/packages";
 import { DatasetPaletteProvider } from "../providers/DatasetPaletteContext";
 import { ProjectLoader } from "./ProjectLoader";
@@ -42,6 +44,10 @@ export const DataflowProviders: React.FC<{
       {/* Above the drawers and the palettes: every one of them opens a
           dataset's details through it, and the modal reads the live graph. */}
       <CanvasDatasetDetailsProvider>
+      {/* The top bar's API Settings and Monitor open these drawers here, in
+          place of their pages, so the dataflow stays open. */}
+      <ApiSettingsDrawerProvider>
+      <MonitorDrawerProvider>
       {/* NodeCatalogDrawerProvider must sit INSIDE FlowProvider: the drawer
           calls useFlowContext to auto-save unsaved dataflows on Install, and
           a portal preserves React tree context, not DOM position. Outside
@@ -68,6 +74,8 @@ export const DataflowProviders: React.FC<{
           </AgentCatalogDrawerProvider>
         </DatasetCatalogDrawerProvider>
       </NodeCatalogDrawerProvider>
+      </MonitorDrawerProvider>
+      </ApiSettingsDrawerProvider>
       </CanvasDatasetDetailsProvider>
     </FlowProvider>
   );

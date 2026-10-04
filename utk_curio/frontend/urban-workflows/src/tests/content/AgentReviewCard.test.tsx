@@ -1,5 +1,5 @@
 import React from "react";
-import { subscribeConnectionKeysRequests } from "../../components/connectionKeys/connectionKeysRequest";
+import { subscribeApiSettingsRequests } from "../../components/apiSettings/apiSettingsRequest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 import { AgentReviewCard, nodeKindExecutable } from "../../components/agents/content/AgentReviewCard";
@@ -993,7 +993,7 @@ describe("AgentReviewCard — dev/116 connection keys", () => {
 
   it("a failed attempt with a missing-key remedy offers Add key for the host, which asks for the settings form", () => {
     const seen: unknown[] = [];
-    const off = subscribeConnectionKeysRequests((f) => seen.push(f));
+    const off = subscribeApiSettingsRequests((f) => seen.push(f));
     const failed: AgentProposalPart = {
       ...part(), tool: "node.content.write",
       validation: { verdict: "fail", rounds: 2, evidence: { kind: "source-missing", detail: "the content builder declined: needs a key" },

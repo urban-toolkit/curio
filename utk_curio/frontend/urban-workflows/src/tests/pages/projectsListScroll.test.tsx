@@ -56,7 +56,6 @@ jest.mock('../../api/projectsApi', () => ({
 }));
 jest.mock('../../NotebookConvertor', () => ({ notebookToTrill: jest.fn() }));
 jest.mock('../../components/DataflowThumbnail', () => ({ __esModule: true, default: () => null }));
-jest.mock('../../components/ApiSettingsModal', () => ({ __esModule: true, default: () => null }));
 jest.mock('../../components/VersionBadge', () => ({ __esModule: true, default: () => null }));
 jest.mock('react-router-dom', () => ({
   useNavigate: () => jest.fn(),

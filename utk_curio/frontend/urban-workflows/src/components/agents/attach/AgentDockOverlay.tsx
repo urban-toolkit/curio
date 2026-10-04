@@ -145,8 +145,8 @@ export const AgentDockOverlay: React.FC = () => {
   return (
     <>
       {/* "Add key for <host>" from a card opens API Settings through the
-          top bar's ConnectionKeysModalHost (GlobalPageHeader): one host per
-          page, or one request would open two modals. */}
+          top bar's ApiSettingsRequestHost (GlobalPageHeader): one host per
+          page, or one request would be answered twice. */}
       <AgentDock
         attachments={canvasAttachments}
         selectedId={ctx.selectedId}

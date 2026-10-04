@@ -40,6 +40,7 @@ describe("overlay / layering scale (curioTokens.css)", () => {
         // High band: anything that can stack over the canvas.
         "agent-drawer",
         "dataset-drawer",
+        "header-drawer",
         "dialog",
         "modal",
         "modal-backdrop",
@@ -71,6 +72,7 @@ describe("overlay / layering scale (curioTokens.css)", () => {
     const overlayBand = [
       layers["node-drawer"],
       layers["dataset-drawer"],
+      layers["header-drawer"],
       layers["modal-backdrop"],
       layers["modal"],
       layers["dialog"],
@@ -85,6 +87,11 @@ describe("overlay / layering scale (curioTokens.css)", () => {
     // the node drawer. (DatasetDetailModal opens on top of the drawer.)
     expect(layers["node-drawer"]).toBeLessThan(layers["dataset-drawer"]);
     expect(layers["dataset-drawer"]).toBeLessThan(layers["modal-backdrop"]);
+    // API Settings opens over any catalog drawer, and under any modal.
+    for (const drawer of ["node-drawer", "dataset-drawer", "agent-drawer"]) {
+      expect(layers[drawer]).toBeLessThan(layers["header-drawer"]);
+    }
+    expect(layers["header-drawer"]).toBeLessThan(layers["modal-backdrop"]);
     expect(layers["modal-backdrop"]).toBeLessThan(layers["modal"]);
     expect(layers["modal"]).toBeLessThan(layers["dialog"]);
   });

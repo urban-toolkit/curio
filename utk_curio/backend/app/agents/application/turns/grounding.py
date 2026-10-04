@@ -174,7 +174,7 @@ def _source_missing_remedy(remedy: dict | None) -> str:
     """The one sentence a ``source-missing`` failure ends with (dev/116)."""
     if isinstance(remedy, dict) and remedy.get("kind") == "connection-key" and remedy.get("host"):
         return (
-            f" — add a connection key for {remedy['host']} (Settings → Connection keys), "
+            f" — add a connection key for {remedy['host']} (API Settings, API keys), "
             "then Solve again"
         )
     if isinstance(remedy, dict) and remedy.get("kind") == "use-connection-key" and remedy.get("host"):
