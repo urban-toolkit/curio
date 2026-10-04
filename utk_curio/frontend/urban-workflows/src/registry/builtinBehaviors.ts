@@ -19,6 +19,7 @@ import {
   useDataSummaryBehavior,
   useAutkGrammarBehavior,
   useSpatialJoinBehavior,
+  useParameterBehavior,
 } from '../adapters/node';
 import { registerBehavior } from './behaviorRegistry';
 
@@ -32,6 +33,9 @@ registerBehavior('autk-grammar', useAutkGrammarBehavior);
 // curio.builtin@1 spatial-join node (stays in core because the builtin
 // package's behaviors must be registered before ANY package registry runs).
 registerBehavior('spatial-join', useSpatialJoinBehavior);
+// curio.builtin@1 parameter node: one widget any node's code names as
+// [!! @name !!] (#662).
+registerBehavior('parameter', useParameterBehavior);
 //
 // A package's own behaviors are NOT registered here: they ship as a
 // pre-built `behaviors.js` bundle inside the package directory and

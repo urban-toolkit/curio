@@ -16,7 +16,8 @@ import type { SelectionEchoOptions } from "../utils/selectionEcho";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { canvasTemplateConfigFromSpec } from "../utils/canvasTemplateConfigSpec";
 import { dataPoolFromSpec } from "../utils/dataPoolSpec";
-import { nodeRunKey, normalizeWidgets, type WidgetDef } from "../utils/widgets/widgetModel";
+import { normalizeWidgets, type WidgetDef } from "../utils/widgets/widgetModel";
+import { runKeyWithShared, sharedWidgetsOfSpec } from "../utils/references/sharedParameters";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -143,6 +144,9 @@ export function useCode(): IUseCode {
 
         let nodes = [];
         let edges = [];
+        // #662: the Parameter nodes' widgets, which a restored output's run
+        // key covers, as a run's does.
+        const shared = sharedWidgetsOfSpec(trill.dataflow.nodes);
 
         for(const node of trill.dataflow.nodes){
             let x = node.x;
@@ -272,7 +276,7 @@ export function useCode(): IUseCode {
                 // The same content a run shows (CodeEditor), and the source
                 // playNodesUpTo compares against to tell a valid result.
                 nodeMeta.output = { code: "success", content: "Saved to file: " + restored };
-                nodeMeta.executedCode = nodeRunKey(node.content, nodeMeta.widgets);
+                nodeMeta.executedCode = runKeyWithShared(node.content, nodeMeta.widgets, shared);
             }
 
             nodes.push(generateCodeNode(node.type, nodeMeta));
@@ -342,7 +346,9 @@ export function useCode(): IUseCode {
             // Reverting to a historical version: preserve the current provenance graph.
             // latestTrill was already set to the target version by switchProvenanceTrill.
             const savedProv = TrillGenerator.getSerializableDataflowProvenance();
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || []);
+            // #662: a snapshot carries scenarios only when it had some, so an
+            // absent key restores none.
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], undefined, trill.dataflow.scenarios ?? []);
             TrillGenerator.loadDataflowProvenance(savedProv);
             // Reverting puts a DIFFERENT graph on the canvas than the one on
             // disk, so it is an edit. The edge replay inside loadParsedTrill no
@@ -351,7 +357,7 @@ export function useCode(): IUseCode {
             // reach loadParsedTrill identically from there down.
             markDirty();
         } else if(suggestionType == undefined) {
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {});
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {}, trill.dataflow.scenarios ?? []);
             if (trill.nodeProvenance) loadNodeProvenance(rekeyNodeProvenance(trill.nodeProvenance, nodes.map((n) => n.id)));
             if (trill.dataflowProvenance) TrillGenerator.loadDataflowProvenance(trill.dataflowProvenance);
         } else {

@@ -568,7 +568,6 @@ def oracle_attempt(
     from utk_curio.backend.app.execution.workflow_spec import (
         CodeReferenceError,
         parse_workflow_dict,
-        resolve_code_references,
     )
 
     example_spec = parse_workflow_dict(example)
@@ -586,7 +585,7 @@ def oracle_attempt(
             return code  # only code nodes reach the sandbox
         language = "javascript" if node.engine == "javascript" else "python"  # as the runner picks
         try:
-            return resolve_code_references(code, node.widgets, language, example_spec.input_slots(node.id))
+            return example_spec.node_code(node, language, code)
         except CodeReferenceError:
             return code
 

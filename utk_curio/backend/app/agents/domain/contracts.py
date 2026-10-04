@@ -436,10 +436,13 @@ TRILL_SCHEMA = "docs/schemas/trill.v1.json"
 #: The Trill fields the preamble shows, per definition: what an agent reads in
 #: a dataflow or writes into one. The rest of the schema is bookkeeping.
 TRILL_PROMPT_FIELDS: dict[str, tuple[str, ...]] = {
-    "dataflowBase": ("nodes", "edges", "name", "task"),
+    "dataflowBase": ("nodes", "edges", "name", "task", "scenarios"),
     "node": ("id", "type", "content", "goal", "title", "x", "y", "in", "out", "metadata"),
     "nodeMetadata": ("keywords",),
     "edge": ("id", "source", "target", "type", "sourceHandle", "targetHandle", "metadata"),
+    # Where a scenario sits on the canvas and where it came from are the
+    # canvas's own bookkeeping, and its description is for people.
+    "scenario": ("id", "name", "color", "nodes"),
 }
 #: The JSON Schema keywords a projection keeps.
 _PROJECTED_KEYWORDS = ("type", "enum", "pattern", "items", "properties", "required")

@@ -47,13 +47,15 @@ class TestTemplateContentKind:
         assert kinds["spatial-join"] == "none"
         # One Download button, nothing written (#226).
         assert kinds["data-export"] == "none"
+        # Set through the widget it holds (#662), not through written content.
+        assert kinds["parameter"] == "none"
         # Every shipped template is routed above, and no other ships: the
         # Merge Flow left the manifest (#662), its fan-in now lands on the
         # input circles of the node it fed.
         assert set(kinds) == {
             "data-loading", "data-export", "data-transformation", "data-pool",
             "computation-analysis", "data-summary", "js-computation",
-            "vis-vega", "vis-simple", "autk-grammar", "spatial-join",
+            "vis-vega", "vis-simple", "autk-grammar", "spatial-join", "parameter",
         }
 
     def test_no_content_makes_a_presentation_without_input_author_nothing(self):

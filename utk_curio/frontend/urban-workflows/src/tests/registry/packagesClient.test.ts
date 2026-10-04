@@ -154,6 +154,32 @@ describe('registerPackageTemplates → NodeDescriptor', () => {
   });
 });
 
+describe('a template with no port (#662, the Parameter node)', () => {
+  beforeEach(() => clearPackageNodes());
+
+  test('has no handle, so no edge reaches it or leaves it', () => {
+    const parameter = {
+      ...FIXTURE_PACK.templates[0],
+      id: 'curio.builtin/parameter@1',
+      templateId: 'parameter',
+      label: 'Parameter',
+      category: 'flow',
+      iconRef: 'fa-solid:sliders',
+      behavior: 'parameter',
+      paletteOrder: 12,
+      editor: 'none' as const,
+      hasCode: false,
+      inputPorts: [],
+      outputPorts: [],
+    };
+    const [descriptor] = registerPackageTemplates([{ ...FIXTURE_PACK, templates: [parameter] }]);
+    expect(descriptor.adapter.handles).toEqual([]);
+    expect(descriptor.adapter.inputIconType).toBeUndefined();
+    expect(descriptor.adapter.outputIconType).toBeUndefined();
+    expect(descriptor.adapter.editor).toBeNull();
+  });
+});
+
 describe('backendHandler dispatch key (memo dev/91 commit 5)', () => {
   afterEach(() => clearPackageNodes());
 

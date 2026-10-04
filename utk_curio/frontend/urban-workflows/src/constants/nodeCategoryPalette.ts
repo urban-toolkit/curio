@@ -70,6 +70,7 @@ export const NODE_TYPE_CATEGORY: Record<string, NodeCategoryKey> = {
   "curio.builtin/computation-analysis": "computation",
   "curio.builtin/data-summary": "computation",
   "curio.builtin/js-computation": "computation",
+  "curio.builtin/parameter": "package",
   "curio.builtin/vis-vega": "vis",
   "curio.builtin/vis-simple": "vis",
   "curio.builtin/autk-grammar": "vis",

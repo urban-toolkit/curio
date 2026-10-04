@@ -336,6 +336,19 @@ REJECTED = {
     "dataflow without a name": lambda d: d["dataflow"].pop("name"),
     "dataflow without a timestamp": lambda d: d["dataflow"].pop("timestamp"),
     "spec without a dataflow": lambda d: d.pop("dataflow"),
+    # #662: a scenario is a named, colored selection of node ids.
+    "scenario color as a name": lambda d: d["dataflow"].update(
+        scenarios=[{"id": "s1", "name": "Baseline", "color": "green", "nodes": ["n1"]}]
+    ),
+    "scenario without its nodes": lambda d: d["dataflow"].update(
+        scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f"}]
+    ),
+    "scenario with a field the format does not have": lambda d: d["dataflow"].update(
+        scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["n1"], "members": ["n1"]}]
+    ),
+    "scenario box without a y": lambda d: d["dataflow"].update(
+        scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": [], "box": {"x": 1}}]
+    ),
 }
 
 # Cases that look like they should be rejected but must not be. Each one is a
@@ -360,7 +373,48 @@ ACCEPTED = {
             {"name": "season", "type": "choice", "default": "summer", "options": {"choices": ["summer", "winter"]}},
         ]
     ),
+    "a scenario with every field": lambda d: d["dataflow"].update(scenarios=[{
+        "id": "s1", "name": "Twice as tall", "color": "#e76f51", "description": "Every building doubled",
+        "nodes": ["n1"], "collapsed": True, "box": {"x": 120, "y": -40.5},
+        "source": {"project": "p-06", "scenario": "s-tall"},
+    }]),
+    # Its last node was deleted; it keeps its name until it is deleted too.
+    "a scenario with no nodes left": lambda d: d["dataflow"].update(
+        scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": []}]
+    ),
 }
+
+
+class TestScenariosBeyondTheSchema:
+    """What the schema cannot say about ``dataflow.scenarios`` (#662): a node in
+    at most one scenario, and every member a node of the dataflow. One checker
+    says it, for the save path, ``scripts/validate_trill.py`` and this corpus."""
+
+    def test_an_overlap_has_the_shape_but_is_refused(self):
+        from utk_curio.backend.app.projects.scenarios import scenario_problems
+
+        doc = _good()
+        doc["dataflow"]["scenarios"] = [
+            {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["n1"]},
+            {"id": "s2", "name": "Twice as tall", "color": "#e76f51", "nodes": ["n1"]},
+        ]
+        assert not _errors(doc), "the overlap is a valid shape; the checker is what refuses it"
+        assert scenario_problems(doc) == [
+            "Node n1 is in two scenarios, Baseline and Twice as tall. A node belongs to at most one scenario."
+        ]
+
+    def test_a_member_that_is_not_a_node_is_named(self):
+        from utk_curio.backend.app.projects.scenarios import scenario_problems
+
+        doc = _good()
+        doc["dataflow"]["scenarios"] = [{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["n9"]}]
+        assert scenario_problems(doc) == ["Scenario Baseline names node n9, which the dataflow does not have."]
+
+    def test_every_committed_spec_has_sound_scenarios(self):
+        from utk_curio.backend.app.projects.scenarios import scenario_problems
+
+        unsound = {_stem(path): scenario_problems(_spec(path)) for path in CORPUS}
+        assert not {stem: p for stem, p in unsound.items() if p}
 
 
 def test_the_baseline_fixture_validates():
@@ -457,6 +511,12 @@ WRITER_SHAPES = {
     "canvas-scoped attachment": _flow(
         agentAttachments=[_attachment(target={"kind": "canvas"})]
     ),
+    # TrillGenerator.generateTrill on a save, #662: an empty list clears them.
+    "canvas save with scenarios": _flow(
+        nodes=[AGENT_NODE],
+        scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": [AGENT_NODE["id"]]}],
+    ),
+    "canvas save clearing its scenarios": _flow(nodes=[AGENT_NODE], scenarios=[]),
     # strip_agent_state removes all three sections from a shared copy, so the
     # stripped result has to stay valid or sharing would produce invalid specs.
     "share-stripped spec": _flow(nodes=[AGENT_NODE]),

@@ -412,6 +412,26 @@
         }
       ],
       "paletteOrder": 4
+    },
+    {
+      "category": "flow",
+      "containerStyle": {
+        "nodeHeight": 230,
+        "nodeWidth": 360
+      },
+      "description": "One value any node can use. Give it a name, a type and a default. Its tag then shows under Shared in every node's Widgets tab and above every code editor; drag it into a node's code to use the value there. Changing the value makes the nodes that use it run again, and renaming it updates their code. It has no edges, and it lists the nodes that use it.",
+      "editor": "none",
+      "engine": "python",
+      "hasCode": false,
+      "hasGrammar": false,
+      "hasWidgets": true,
+      "iconRef": "fa-solid:sliders",
+      "id": "parameter",
+      "inputPorts": [],
+      "label": "Parameter",
+      "behavior": "parameter",
+      "outputPorts": [],
+      "paletteOrder": 12
     }
   ],
   "version": "1.0.2"

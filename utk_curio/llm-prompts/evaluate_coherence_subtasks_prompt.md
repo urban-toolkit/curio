@@ -51,6 +51,7 @@ Do not generate warnings for nodes made from these templates:
 - Simple View
 - Autark
 - Spatial Join
+- Parameter
 
 ## Output
 
