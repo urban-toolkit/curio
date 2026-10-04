@@ -24,6 +24,7 @@ Run::
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from .utils import (
@@ -43,6 +44,22 @@ if TYPE_CHECKING:
 EXAMPLE = "01-vega-lite-chained-transforms.json"
 
 EDGE_PATH = ".react-flow__edges path.react-flow__edge-path"
+
+#: How many times slower than the runner Chromium runs while the window opens.
+#: A wait that sleeps a fixed time passes on a fast runner and fails here; a
+#: wait for the drawn graph passes on both.
+CPU_THROTTLE = 4
+
+
+@contextmanager
+def _throttled_cpu(page, rate: int):
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("Emulation.setCPUThrottlingRate", {"rate": rate})
+    try:
+        yield
+    finally:
+        cdp.send("Emulation.setCPUThrottlingRate", {"rate": 1})
+        cdp.detach()
 
 
 def _open_provenance(page):
@@ -88,10 +105,12 @@ def test_provenance_edges_survive_zooming_in(
     require_owner_view(page)
     page.wait_for_selector(".react-flow__node", timeout=45000)
 
-    dialog = _open_provenance(page)
-    page.wait_for_timeout(1200)
+    with _throttled_cpu(page, CPU_THROTTLE):
+        dialog = _open_provenance(page)
+        page.wait_for_timeout(1200)
 
-    before = _edge_geometry(page)
+        before = _edge_geometry(page)
+        cards = dialog.locator(".react-flow__node").count()
     if len(before) == 0:
         # Only one version means no edges at all, and the test would pass
         # vacuously at every zoom level.
@@ -100,6 +119,12 @@ def test_provenance_edges_survive_zooming_in(
             "cannot tell a zoom bug from an empty chain - the harness needs to "
             "save the dataflow more than once first"
         )
+    # Every version but the first has one parent edge, so a fully drawn graph
+    # shows one edge per card after the first. Zooming is judged against that.
+    assert len(before) == cards - 1, (
+        f"before zooming, the provenance graph shows {len(before)} edges for "
+        f"{cards} versions; a fully drawn graph has {cards - 1}"
+    )
 
     save_workflow_test_screenshot(
         page, "provenance-edges-before-zoom",
