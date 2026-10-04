@@ -267,5 +267,6 @@ class TestRunsGoWithTheirDataflow:
 
         assert cleanup_expired_guest_projects(app) == 1
 
+        db.session.rollback()  # the cleanup committed on a connection of its own
         assert db.session.query(DataflowRun).filter_by(id=run_id).count() == 0
         assert _step_count(db, run_id) == 0
