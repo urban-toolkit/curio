@@ -126,10 +126,12 @@ class TestReviewGate:
         assert rows, "an evaluation export may draw on unreviewed prompts"
         from utk_curio.tools.agent_eval import main
 
-        assert main([
-            "export", "--split", "train", "--purpose", "training",
-            "--include-unapproved", "--out", "/dev/null",
-        ]) == 3
+        with pytest.raises(SystemExit) as refused:
+            main([
+                "export", "--split", "train", "--purpose", "training",
+                "--include-unapproved", "--out", "/dev/null",
+            ])
+        assert refused.value.code == 2
 
 
 class TestWriting:
@@ -287,11 +289,14 @@ class TestTheCli:
     def test_export_refuses_a_heldout_training_export(self, capsys, tmp_path):
         from utk_curio.tools.agent_eval import main
 
-        assert main([
-            "export", "--split", "heldout", "--purpose", "training",
-            "--out", str(tmp_path / "x.jsonl"),
-        ]) == 3
-        assert "held-out" in capsys.readouterr().err
+        with pytest.raises(SystemExit) as refused:
+            main([
+                "export", "--split", "heldout", "--purpose", "training",
+                "--out", str(tmp_path / "x.jsonl"),
+            ])
+        assert refused.value.code == 2
+        assert "--purpose" in capsys.readouterr().err
+        assert not (tmp_path / "x.jsonl").exists()
 
     def test_the_cli_has_no_train_verb(self):
         from utk_curio.tools.agent_eval import build_parser

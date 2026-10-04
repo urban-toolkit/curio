@@ -14,62 +14,6 @@
   "endpoint": "agents_api.read_definition"
  },
  {
-  "rule": "/api/agents/evaluation/fixtures",
-  "methods": [
-   "GET"
-  ],
-  "endpoint": "agents_api.evaluation_fixtures"
- },
- {
-  "rule": "/api/agents/evaluation/fixtures/<fixture_id>/review",
-  "methods": [
-   "POST"
-  ],
-  "endpoint": "agents_api.evaluation_review_fixture"
- },
- {
-  "rule": "/api/agents/evaluation/readiness",
-  "methods": [
-   "GET"
-  ],
-  "endpoint": "agents_api.evaluation_readiness"
- },
- {
-  "rule": "/api/agents/evaluation/runs",
-  "methods": [
-   "GET"
-  ],
-  "endpoint": "agents_api.evaluation_list_runs"
- },
- {
-  "rule": "/api/agents/evaluation/runs",
-  "methods": [
-   "POST"
-  ],
-  "endpoint": "agents_api.evaluation_start_run"
- },
- {
-  "rule": "/api/agents/evaluation/runs/<run_id>",
-  "methods": [
-   "GET"
-  ],
-  "endpoint": "agents_api.evaluation_run_status"
- },
- {
-  "rule": "/api/agents/evaluation/runs/<run_id>/cancel",
-  "methods": [
-   "POST"
-  ],
-  "endpoint": "agents_api.evaluation_cancel_run"
- },
- {
-  "rule": "/api/agents/evaluation/runs/<run_id>/stream",
-  "methods": [
-   "GET"
-  ],
-  "endpoint": "agents_api.evaluation_run_stream"
- },
- {
   "rule": "/api/agents/imports",
   "methods": [
    "GET"
@@ -362,61 +306,5 @@
    "PUT"
   ],
   "endpoint": "agents_api.put_catalog_settings"
- },
- {
-  "rule": "/api/agents/training/capability",
-  "methods": [
-   "GET"
-  ],
-  "endpoint": "agents_api.training_capability"
- },
- {
-  "rule": "/api/agents/training/dataset/preview",
-  "methods": [
-   "POST"
-  ],
-  "endpoint": "agents_api.training_dataset_preview"
- },
- {
-  "rule": "/api/agents/training/jobs",
-  "methods": [
-   "GET"
-  ],
-  "endpoint": "agents_api.training_list_jobs"
- },
- {
-  "rule": "/api/agents/training/jobs",
-  "methods": [
-   "POST"
-  ],
-  "endpoint": "agents_api.training_start_job"
- },
- {
-  "rule": "/api/agents/training/jobs/<job_id>",
-  "methods": [
-   "GET"
-  ],
-  "endpoint": "agents_api.training_job_status"
- },
- {
-  "rule": "/api/agents/training/jobs/<job_id>/activate",
-  "methods": [
-   "POST"
-  ],
-  "endpoint": "agents_api.training_activate"
- },
- {
-  "rule": "/api/agents/training/jobs/<job_id>/cancel",
-  "methods": [
-   "POST"
-  ],
-  "endpoint": "agents_api.training_cancel_job"
- },
- {
-  "rule": "/api/agents/training/jobs/<job_id>/rollback",
-  "methods": [
-   "POST"
-  ],
-  "endpoint": "agents_api.training_rollback"
  }
 ]

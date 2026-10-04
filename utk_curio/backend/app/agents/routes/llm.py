@@ -38,12 +38,6 @@ def _deployment_offered() -> bool:
     ) is not None
 
 
-def _training_locked_ids() -> frozenset:
-    from utk_curio.backend.app.agents.training import service as training_service
-
-    return frozenset(training_service.running_config_ids(_user_dir_key(g.user)))
-
-
 @agents_bp.route("/llm", methods=["GET"])
 @require_auth
 def get_llm():
@@ -87,7 +81,7 @@ def update_llm_config(config_id: str):
     try:
         config = agents_llm_configs.default_store().update(
             _user_dir_key(g.user), config_id, request.get_json(silent=True),
-            deployment_offered=_deployment_offered(), locked_ids=_training_locked_ids(),
+            deployment_offered=_deployment_offered(),
         )
     except agents_llm_configs.LlmConfigError as exc:
         return _llm_error(exc)
@@ -104,9 +98,7 @@ def delete_llm_config(config_id: str):
     if refusal:
         return _error(refusal, 403)
     try:
-        result = agents_llm_configs.default_store().delete(
-            _user_dir_key(g.user), config_id, locked_ids=_training_locked_ids()
-        )
+        result = agents_llm_configs.default_store().delete(_user_dir_key(g.user), config_id)
     except agents_llm_configs.LlmConfigError as exc:
         return _llm_error(exc)
     return jsonify(result), 200

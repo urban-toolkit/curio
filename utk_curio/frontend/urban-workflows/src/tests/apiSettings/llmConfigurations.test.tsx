@@ -33,7 +33,7 @@ const listingOf = (overrides: Record<string, unknown> = {}) => ({
 const MINE = {
   id: "llm-00000000000a", label: "Work", endpoint: "own", apiType: "openai_compatible",
   baseUrl: "https://api.openai.com/v1", baseUrlHost: "api.openai.com", hasApiKey: true,
-  model: "gpt-4o-mini", origin: "user", createdAt: 1, updatedAt: 1,
+  model: "gpt-4o-mini", createdAt: 1, updatedAt: 1,
 };
 
 let mockListing: Record<string, unknown> = listingOf();
