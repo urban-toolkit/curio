@@ -34,7 +34,7 @@ const mockEndPendingInstall = jest.fn();
 const mockFailPendingInstall = jest.fn();
 const mockShowToast = jest.fn();
 
-// Watchdog timeout in FlowProvider (PLAY_ALL_STALL_TIMEOUT_MS). Kept in sync here
+// Watchdog timeout in providers/flow/usePlayAll.ts (PLAY_ALL_STALL_TIMEOUT_MS). Kept in sync here
 // so the recovery test advances just past it.
 const STALL_TIMEOUT_MS = 600_000;
 

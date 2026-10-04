@@ -16,5 +16,3 @@ Produce an explanation summarizing logic, purpose, and expected behavior.
 
 **DO NOT PRODUCE MORE THAN 500 WORDS**
 
-**DO NOT PROVIDE EXPLANATIONS FOR THE EXAMPLE DATAFLOW**
-

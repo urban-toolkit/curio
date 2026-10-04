@@ -176,12 +176,14 @@
       {
         "id": "reactflow__edge-c80722e7-8960-4308-8f1d-90b121acf126out-289b82c8-734e-4c66-a01d-9b0097f2a7bfin_0",
         "source": "c80722e7-8960-4308-8f1d-90b121acf126",
-        "target": "289b82c8-734e-4c66-a01d-9b0097f2a7bf"
+        "target": "289b82c8-734e-4c66-a01d-9b0097f2a7bf",
+        "targetHandle": "in_0"
       },
       {
         "id": "reactflow__edge-48a522cd-b1d7-4947-98c2-fb50e07f1d82out-289b82c8-734e-4c66-a01d-9b0097f2a7bfin_1",
         "source": "48a522cd-b1d7-4947-98c2-fb50e07f1d82",
-        "target": "289b82c8-734e-4c66-a01d-9b0097f2a7bf"
+        "target": "289b82c8-734e-4c66-a01d-9b0097f2a7bf",
+        "targetHandle": "in_1"
       },
       {
         "id": "reactflow__edge-289b82c8-734e-4c66-a01d-9b0097f2a7bfout-ea821796-827b-47ac-8104-4bfb4dc5eb63in",
@@ -191,7 +193,8 @@
       {
         "id": "reactflow__edge-ea821796-827b-47ac-8104-4bfb4dc5eb63out-964b380b-559b-4fa3-a9f7-4dcb12878504in_1",
         "source": "ea821796-827b-47ac-8104-4bfb4dc5eb63",
-        "target": "964b380b-559b-4fa3-a9f7-4dcb12878504"
+        "target": "964b380b-559b-4fa3-a9f7-4dcb12878504",
+        "targetHandle": "in_1"
       },
       {
         "id": "reactflow__edge-964b380b-559b-4fa3-a9f7-4dcb12878504out-cdb373b6-1b35-47db-bfd7-fe4ae1e9efdcin",
@@ -201,12 +204,14 @@
       {
         "id": "reactflow__edge-c80722e7-8960-4308-8f1d-90b121acf126out-964b380b-559b-4fa3-a9f7-4dcb12878504in_0",
         "source": "c80722e7-8960-4308-8f1d-90b121acf126",
-        "target": "964b380b-559b-4fa3-a9f7-4dcb12878504"
+        "target": "964b380b-559b-4fa3-a9f7-4dcb12878504",
+        "targetHandle": "in_0"
       },
       {
         "id": "reactflow__edge-4b7c2234-d107-4531-b890-5c582efbe444out-964b380b-559b-4fa3-a9f7-4dcb12878504in_2",
         "source": "4b7c2234-d107-4531-b890-5c582efbe444",
-        "target": "964b380b-559b-4fa3-a9f7-4dcb12878504"
+        "target": "964b380b-559b-4fa3-a9f7-4dcb12878504",
+        "targetHandle": "in_2"
       },
       {
         "id": "reactflow__edge-cdb373b6-1b35-47db-bfd7-fe4ae1e9efdcout-3cc268ee-ec4b-4921-ac69-6d0bb3691cb4in",

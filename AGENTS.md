@@ -8,7 +8,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `utk_curio/backend/`: Flask API. `app/` has one package per feature, `migrations/` the Alembic migrations, `tests/` the pytest suites.
 - `utk_curio/frontend/urban-workflows/`: React and TypeScript canvas, built with webpack. Frontend paths below start at its `src/`.
 - `utk_curio/sandbox/`: Flask service that runs node Python and JavaScript and stores results as DuckDB artifacts.
-- `utk_curio/llm-prompts/`: built-in agent prompts.
+- `utk_curio/llm-prompts/`: built-in agent prompts, and `examples.md`, the index of shipped dataflows that runs get as worked examples (`agents/application/turns/examples.py`).
 - `utk_curio/common/`: code shared by backend and sandbox (`redaction.py`).
 - `utk_curio/tools/`: operator tools outside the Flask app (`agent_eval.py`, `preview_runner.py`).
 - `packages/`: shipped Node Catalog, one directory per node package (`manifest.json`, `sources/`, `integrity.json`).
@@ -61,7 +61,7 @@ Under `utk_curio/backend/app/`:
 
 ## Frontend core
 
-- `src/providers/FlowProvider.tsx`: workflow state (nodes, edges, outputs, interactions, propagation, Run All) and `useFlowContext()`.
+- `src/providers/FlowProvider.tsx`: workflow state (nodes, edges, outputs, interactions) and `useFlowContext()`. Its sections are hooks in `src/providers/flow/`: `usePlayAll.ts` (Run All), `useConnect.ts` (`onConnect`), `useGraphEdits.ts` (adding and deleting, output propagation), `useApplyOutput.ts`, `useInteractions.ts`, `useCollaborationSync.ts`, `useDashboardPins.ts`, `useInstallSave.ts`; types in `flowTypes.ts` and `flowContextTypes.ts`, Run All levels in `runLevels.ts`.
 - `src/hook/useWorkflowOperations.ts`: workflow operations FlowProvider delegates (Trill loading, canvas management, suggestions).
 - `src/adapters/node/`: one behavior hook per built-in node kind (`codeNodeBehavior.tsx`, `vegaBehavior.ts`, `autkGrammarBehavior.tsx`, `dataPoolBehavior.tsx`, ...), exported from `index.ts`.
 - `src/components/UniversalNode.tsx`: the component that renders every node.
@@ -135,7 +135,7 @@ Several files run past 1,500 lines. List their sections, then Read only the rang
 
 - The e2e helpers (`test_frontend/utils/`) and walkthroughs (`test_frontend/walkthroughs/`) are packages of modules, listed under Tests.
 - Test modules with one class per area: `grep -n '^class Test' <file>`.
-- `src/providers/FlowProvider.tsx`: `grep -n 'useCallback(' <file>` lists its operations; Run All is around `playAllNodes`; collaboration sync starts at the comment `Collaboration: receive-side`.
+- FlowProvider's sections are hooks in `src/providers/flow/`, listed under Frontend core.
 
 ## Do not read
 
