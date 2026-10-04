@@ -755,7 +755,7 @@ The first matching rule wins:
 
 ## Notebook view
 
-The **Canvas | Notebook** switch in the canvas bar shows a dataflow two ways. **Notebook**
+The **Canvas | Notebook** switch, at the right of the canvas bar beside **Monitor**, shows a dataflow two ways. **Notebook**
 lists the same nodes as a column of cells, one under the other, and the page scrolls.
 
 - **Order.** A cell comes after every cell it reads from, in the order **File → Export as

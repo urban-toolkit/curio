@@ -69,6 +69,15 @@
   }
 }
 
+/* ── The view switch ─────────────────────────────────────────────────────── */
+
+/* At the slot's end, against Monitor: the auto margin takes whatever room the
+   slot has left, and the bar's own gap separates it from Monitor. */
+.canvasHeader .viewSwitch {
+  margin-left: auto;
+  margin-right: 0;
+}
+
 /* ── Collaboration ───────────────────────────────────────────────────────── */
 
 .peerCount {

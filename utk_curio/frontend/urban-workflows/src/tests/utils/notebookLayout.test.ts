@@ -89,10 +89,10 @@ describe("the dots on a cell's right edge", () => {
     expect(offsets.get("in_13")!).toBeLessThan(NOTEBOOK_CELL_HEIGHT / 2);
   });
 
-  test("a short row still fits Merge Flow's five circles above its output", () => {
-    const merge = ["in_0", "in_1", "in_2", "in_3", "in_4"].map((id) => ({ id, type: "target" as const }));
-    const offsets = notebookHandleOffsets([...merge, { id: "out", type: "source" }], NOTEBOOK_SLIM_HEIGHT);
-    const tops = merge.map((h) => offsets.get(h.id)!);
+  test("a short row still fits five input circles above its output", () => {
+    const inputs = ["in_0", "in_1", "in_2", "in_3", "in_4"].map((id) => ({ id, type: "target" as const }));
+    const offsets = notebookHandleOffsets([...inputs, { id: "out", type: "source" }], NOTEBOOK_SLIM_HEIGHT);
+    const tops = inputs.map((h) => offsets.get(h.id)!);
     expect(tops).toEqual([...tops].sort((a, b) => a - b));
     expect(tops[4]).toBeLessThan(offsets.get("out")!);
     expect(offsets.get("out")!).toBeLessThan(NOTEBOOK_SLIM_HEIGHT);

@@ -505,16 +505,6 @@ export default function UpMenu() {
                     )}
                 </HeaderMenu>
 
-                {/* The canvas, or the same nodes as a column of notebook cells. */}
-                <CanvasViewSwitch
-                    value={canvasView}
-                    onChange={(view) => {
-                        setActiveMenu(null);
-                        setCanvasView(view);
-                    }}
-                    crowded={collab.enabled}
-                />
-
                 {/* One window, so a button rather than a menu: its menu held
                     a single row with its own name. */}
                 <button
@@ -607,6 +597,19 @@ export default function UpMenu() {
 
                 <span className={headerStyles.divider} aria-hidden="true" />
                 <CatalogButtons projectId={projectId} crowded={collab.enabled} />
+
+                {/* The canvas, or the same nodes as a column of notebook cells.
+                    Last in the slot and pushed to its end, so it sits beside
+                    Monitor; still in the slot, so it shares its room. */}
+                <CanvasViewSwitch
+                    className={styles.viewSwitch}
+                    value={canvasView}
+                    onChange={(view) => {
+                        setActiveMenu(null);
+                        setCanvasView(view);
+                    }}
+                    crowded={collab.enabled}
+                />
             </GlobalPageHeader>
 
             {/* Editable Workflow Name */}

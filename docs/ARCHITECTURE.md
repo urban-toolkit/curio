@@ -235,8 +235,9 @@ moves nodes the way the dashboard page does:
   sizes the cell and moves its handles; `NodeEditor` keeps a grammar node's output pane
   visible under its input tabs (`curio-notebook-split` in `Node.css`) without moving
   either pane, so a chart or map never remounts.
-- **Switch.** `CanvasViewSwitch` sits in `UpMenu`'s slot; the canvas bar's buttons take
-  `--curio-bar-button-padding-x: 7px` to make room for it.
+- **Switch.** `CanvasViewSwitch` closes `UpMenu`'s slot, pushed to its end beside
+  Monitor; the canvas bar's buttons take `--curio-bar-button-padding-x: 7px` to make room
+  for it.
 - **Scenarios.** They are drawn on the canvas only: `MainCanvas` hands
   `scenarioCanvasView` no scenarios in the notebook view, so every node is a cell,
   collapsed or not, and no box or frame is drawn.

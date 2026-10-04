@@ -109,7 +109,7 @@ These functions handle environment setup, server startup, and process management
 The `mainCanvas` component (located here: `utk_curio/frontend/urban-workflows/src/components/MainCanvas.tsx`) is responsible for building and rendering the entire editor canvas. Inside the `components` folder, you will find modular subcomponents. For example:
 
 - `ToolsMenu` → the left rail: built-in node icons, plus the Node Catalog and Data Catalog dropdowns
-- `UpMenu` → the canvas's controls in the top bar (File, View, the Canvas | Notebook switch, Provenance, Share, the save state and the catalog buttons), rendered inside `GlobalPageHeader`, the bar every page shares
+- `UpMenu` → the canvas's controls in the top bar (File, View, Provenance, Share, the save state, the catalog buttons, and the Canvas | Notebook switch beside Monitor), rendered inside `GlobalPageHeader`, the bar every page shares
 - `UniversalNode` → the single component every node type renders through
 
 If you scroll to the component's `return (`, currently around line 471, you will see something similar to:

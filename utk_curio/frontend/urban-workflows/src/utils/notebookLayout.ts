@@ -9,7 +9,7 @@ import { inputSlotOf } from "./inputSlots";
  */
 export const NOTEBOOK_CELL_WIDTH = 880;
 export const NOTEBOOK_CELL_HEIGHT = 560;
-/** An icon-only node has no body, so it gets a row with room for Merge Flow's five circles. */
+/** An icon-only node (a package whose container is `noContent`) has no body, so it gets a short row, with room for five input circles. */
 export const NOTEBOOK_SLIM_HEIGHT = 120;
 export const NOTEBOOK_CELL_GAP = 32;
 /** The strip right of the cells where the dots sit and the connections run. */
