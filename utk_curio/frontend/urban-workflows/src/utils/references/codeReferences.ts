@@ -4,7 +4,9 @@
  *
  * - `[!! season !!]` names one of the node's widgets;
  * - `[!! input 1 !!]` names one of its inputs, by circle, counted from 0;
- * - `[!! input 1.height !!]` names a column of that input.
+ * - `[!! input 1.height !!]` names a column of that input;
+ * - `[!! input 1:roads !!]` names a layer an input carries (an Autark node's
+ *   tables), and `[!! input 1:roads.height !!]` a column of that layer.
  *
  * The browser (NodeEditor, before a run) and the headless runner
  * (`utk_curio/backend/app/execution/code_references.py`) must write the same
@@ -15,12 +17,15 @@
  * language: quoted text, a number, a list, a boolean. Inside a string literal
  * it becomes the value's text, escaped for that string, so
  * `"Season: [!! season !!]"` reads `"Season: winter"`. Inside a comment it is
- * the plain text. A column reference is written the same way as a text value:
- * its name. An input reference becomes `arg` when the node has one input and
- * `arg[i]` when it has several, `i` being the input's place in circle order.
+ * the plain text. A column or layer reference is written the same way as a text
+ * value: its name. In Python and JavaScript an input reference becomes `arg`
+ * when the node has one input and `arg[i]` when it has several, `i` being the
+ * input's place in circle order. In a Vega-Lite or Autark spec it is the name
+ * that input is read by, `input_<i>`, written like a text value too.
  */
 
 import { WIDGET_NAME_RE, effectiveValue, type WidgetDef, type WidgetValue } from "../widgets/widgetModel";
+import { inputTableName } from "../../generated/autkGrammar";
 
 export type CodeLanguage = "python" | "javascript" | "json";
 
@@ -28,10 +33,12 @@ export type CodeLanguage = "python" | "javascript" | "json";
  * in `code_references.py`. */
 export const REFERENCE_PATTERN = String.raw`\[!!\s*(.*?)\s*!!\]`;
 
-/** What stands inside an input or column reference: `input 1`,
- * `input 1.height`, or `input ?` once its edge was deleted. Kept in sync with
- * `INPUT_REFERENCE_RE` in `code_references.py`. */
-export const INPUT_REFERENCE_PATTERN = String.raw`^input\s+(\d+|\?)(?:\.(.+))?$`;
+/** What stands inside an input, layer or column reference: `input 1`,
+ * `input 1.height`, `input 1:roads`, `input 1:roads.height`, or `input ?`
+ * once its edge was deleted. A layer name holds no dot; a column name is all
+ * the text after the first one. Kept in sync with `INPUT_REFERENCE_RE` in
+ * `code_references.py`. */
+export const INPUT_REFERENCE_PATTERN = String.raw`^input\s+(\d+|\?)(?::([^.]+))?(?:\.(.+))?$`;
 const INPUT_REFERENCE_RE = new RegExp(INPUT_REFERENCE_PATTERN);
 
 export interface CodeReference {
@@ -60,6 +67,16 @@ export interface InputScope {
   columns?: string[] | null;
   /** Each column's dtype, when the input names them. */
   dtypes?: Record<string, string>;
+  /** The layers it carries, once known, when it carries several (an Autark
+   * node's tables). */
+  layers?: LayerScope[] | null;
+}
+
+/** One layer an input carries. */
+export interface LayerScope {
+  name: string;
+  columns?: string[] | null;
+  dtypes?: Record<string, string>;
 }
 
 /** What a node's references can name: its widgets and its wired inputs. */
@@ -72,15 +89,17 @@ export interface ReferenceScope {
 export type ParsedReference =
   | { kind: "widget"; name: string }
   /** `slot` is null for `input ?`, the input whose edge was deleted. */
-  | { kind: "input"; slot: number | null; column?: string };
+  | { kind: "input"; slot: number | null; layer?: string; column?: string };
 
 export type ReferenceContext = { kind: "code" } | { kind: "comment" } | { kind: "string"; quote: string };
 
 export function parseReference(inner: string): ParsedReference {
   const m = INPUT_REFERENCE_RE.exec(inner);
   if (!m) return { kind: "widget", name: inner };
-  const slot = m[1] === "?" ? null : Number(m[1]);
-  return m[2] !== undefined ? { kind: "input", slot, column: m[2] } : { kind: "input", slot };
+  const parsed: ParsedReference = { kind: "input", slot: m[1] === "?" ? null : Number(m[1]) };
+  if (m[2] !== undefined) parsed.layer = m[2];
+  if (m[3] !== undefined) parsed.column = m[3];
+  return parsed;
 }
 
 /** The text of a reference to *inner*. */
@@ -88,9 +107,19 @@ export function referenceText(inner: string): string {
   return `[!! ${inner} !!]`;
 }
 
-/** What stands inside a reference to input *slot*, or to one of its columns. */
-export function inputReferenceInner(slot: number | null, column?: string): string {
-  return `input ${slot === null ? "?" : slot}` + (column !== undefined ? `.${column}` : "");
+/** What stands inside a reference to input *slot*, to one of its layers, or to
+ * a column of either. */
+export function inputReferenceInner(slot: number | null, column?: string, layer?: string): string {
+  return (
+    `input ${slot === null ? "?" : slot}`
+    + (layer !== undefined ? `:${layer}` : "")
+    + (column !== undefined ? `.${column}` : "")
+  );
+}
+
+/** Whether *name* can ride a layer reference and read back as itself. */
+export function isReferenceableLayer(name: string): boolean {
+  return isReferenceableColumn(name) && !name.includes(".");
 }
 
 /** Whether *name* can ride a column reference and read back as itself. */
@@ -246,8 +275,26 @@ export function referenceProblem(
     if (input === undefined) {
       return `${reference}: input ${parsed.slot} has no edge. Connect one to that circle, or drag one of this node's input chips here.`;
     }
+    if (parsed.layer !== undefined) {
+      if (language !== "json") return `${reference}: a layer chip works in Vega-Lite and Autark specs.`;
+      const layers = Array.isArray(input.layers) ? input.layers : null;
+      const layer = layers?.find((l) => l.name === parsed.layer);
+      if (layers !== null && layer === undefined) {
+        return `${reference}: input ${parsed.slot} has no layer ${parsed.layer}.`;
+      }
+      if (parsed.column !== undefined && Array.isArray(layer?.columns) && !layer!.columns!.includes(parsed.column)) {
+        return `${reference}: layer ${parsed.layer} of input ${parsed.slot} has no column ${parsed.column}.`;
+      }
+      return null;
+    }
     if (parsed.column === undefined) {
-      if (language === "json") return `${reference}: an input chip works in Python and JavaScript code.`;
+      if (language === "json") {
+        if (Array.isArray(input.layers) && input.layers.length > 1) {
+          const names = input.layers.map((l) => l.name).join(", ");
+          return `${reference}: input ${parsed.slot} carries several layers (${names}). Drag one of its layer chips here.`;
+        }
+        return null;
+      }
       if (context.kind !== "code") {
         return `${reference} is an input, not text. Use it outside quotes and comments.`;
       }
@@ -275,8 +322,11 @@ function resolvedText(inner: string, scope: ReferenceScope, context: ReferenceCo
   const parsed = parseReference(inner);
   if (parsed.kind === "input") {
     if (parsed.column !== undefined) return writeText(parsed.column, context, language);
+    if (parsed.layer !== undefined) return writeText(parsed.layer, context, language);
+    const position = scope.inputs.findIndex((i) => i.slot === parsed.slot);
+    if (language === "json") return writeText(inputTableName(position), context, language);
     if (scope.inputs.length === 1) return "arg";
-    return `arg[${scope.inputs.findIndex((i) => i.slot === parsed.slot)}]`;
+    return `arg[${position}]`;
   }
   const widget = scope.widgets.find((w) => w.name === inner) as WidgetDef;
   const value = effectiveValue(widget);
@@ -343,7 +393,7 @@ export function renumberInputReferences(code: string, removedSlot: number): stri
     const parsed = parseReference(ref.inner);
     if (parsed.kind !== "input" || parsed.slot === null || parsed.slot < removedSlot) continue;
     const slot = parsed.slot === removedSlot ? null : parsed.slot - 1;
-    out += code.slice(last, ref.start) + referenceText(inputReferenceInner(slot, parsed.column));
+    out += code.slice(last, ref.start) + referenceText(inputReferenceInner(slot, parsed.column, parsed.layer));
     last = ref.end;
   }
   return last === 0 ? code : out + code.slice(last);

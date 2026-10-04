@@ -3,10 +3,10 @@
  * the name of the node that feeds it, its data type, and its columns once they
  * have been read.
  */
-import type { InputScope } from "./codeReferences";
-import { isReferenceableColumn } from "./codeReferences";
+import type { InputScope, LayerScope } from "./codeReferences";
+import { isReferenceableColumn, isReferenceableLayer } from "./codeReferences";
 import { inputSlotOf, isDataEdge, wiredInputSlots } from "../inputSlots";
-import { readGrammarInput } from "../grammarInput";
+import { readGrammarInput, type GrammarFrame } from "../grammarInput";
 import { toRows } from "../rowSource";
 
 type ScopeEdge = {
@@ -20,6 +20,8 @@ type ScopeNode = { id: string; data?: any };
 export interface InputColumns {
     columns: string[];
     dtypes: Record<string, string>;
+    /** The named layers it carries, when it carries several. */
+    layers?: LayerScope[];
 }
 
 /** What identifies an input's value, so its columns are read once per value. */
@@ -60,6 +62,7 @@ export function inputScopeFor(
         if (read) {
             scope.columns = read.columns;
             scope.dtypes = read.dtypes;
+            if (read.layers) scope.layers = read.layers;
         } else if (value == null || value === "") {
             // Nothing has arrived yet, so there is nothing to read.
             scope.columns = null;
@@ -68,14 +71,8 @@ export function inputScopeFor(
     });
 }
 
-/**
- * The columns of an input's value, from its 100-row preview, as starter specs
- * read it. An input that is not a table has none.
- */
-export async function readInputColumns(value: unknown): Promise<InputColumns> {
-    const read = await readGrammarInput(value, { label: "this input", preview: true });
-    const frame = read.frames[0];
-    if (!frame) return { columns: [], dtypes: {} };
+/** A frame's columns and their dtypes. */
+function frameColumns(frame: GrammarFrame): { columns: string[]; dtypes: Record<string, string> } {
     let names: string[];
     if (frame.schema) {
         names = Object.keys(frame.schema);
@@ -91,4 +88,21 @@ export async function readInputColumns(value: unknown): Promise<InputColumns> {
         if (typeof dtype === "string") dtypes[name] = dtype;
     }
     return { columns, dtypes };
+}
+
+/**
+ * The columns of an input's value, from its 100-row preview, as starter specs
+ * read it, or the named layers it carries with theirs (an Autark node's
+ * tables). An input that is not a table has none.
+ */
+export async function readInputColumns(value: unknown): Promise<InputColumns> {
+    const read = await readGrammarInput(value, { label: "this input", preview: true, bundles: true });
+    if (read.frames.length > 1) {
+        const layers = read.frames
+            .filter((frame) => typeof frame.name === "string" && isReferenceableLayer(frame.name))
+            .map((frame) => ({ name: frame.name as string, ...frameColumns(frame) }));
+        return { columns: [], dtypes: {}, layers };
+    }
+    const frame = read.frames[0];
+    return frame ? frameColumns(frame) : { columns: [], dtypes: {} };
 }

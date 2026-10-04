@@ -261,6 +261,7 @@ export default function GrammarEditor({
                 disabled={readOnly}
                 onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
                 onLoadColumns={onLoadColumns}
+                layerChips
             />
             <div style={{ flex: 1, minHeight: 0 }}>
                 {/* Uncontrolled on purpose: a per-keystroke `value` round-trip
