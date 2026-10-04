@@ -38,7 +38,7 @@ jest.mock("../../components/styles", () => ({
 jest.mock("../../components/editing/NodeEditor", () => ({
   __esModule: true,
   default: (props: any) => (
-    <div data-testid="editor" data-input-marker={String(props.inputMarker)} data-output-marker={String(props.outputMarker)} />
+    <div data-testid="editor" />
   ),
 }));
 jest.mock("../../components/DescriptionModal", () => ({ __esModule: true, default: () => null }));
@@ -159,8 +159,6 @@ describe("a node shown as a notebook cell", () => {
     await mount(true);
     expect(screen.queryByTestId("input-marker")).toBeNull();
     expect(screen.queryByTestId("output-marker")).toBeNull();
-    expect(screen.getByTestId("editor")).toHaveAttribute("data-input-marker", "false");
-    expect(screen.getByTestId("editor")).toHaveAttribute("data-output-marker", "false");
   });
 });
 
@@ -174,6 +172,6 @@ describe("the same node on the canvas", () => {
     expect(screen.getByTestId("handle-in/out")).toHaveAttribute("data-position", "top");
     expect(screen.getByTestId("handle-in")).not.toHaveAttribute("title");
     expect(screen.getByTestId("input-marker")).toBeInTheDocument();
-    expect(screen.getByTestId("editor")).toHaveAttribute("data-input-marker", "true");
+    expect(screen.getByTestId("output-marker")).toBeInTheDocument();
   });
 });

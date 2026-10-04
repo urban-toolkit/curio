@@ -108,24 +108,17 @@ describe('the Vega output mount', () => {
     expect(el.style.height).toBe('100%');
   });
 
-  test('stays clear of the port markers at the edges (#522)', () => {
-    // The markers are 17 px boxes over the node's 5 px padding, so they sat on
-    // the chart's y-axis title. A margin, not padding: vega sizes a
-    // "container" chart from the mount's clientWidth, which counts padding.
-    render(<NodeEditor {...baseProps} inputMarker outputMarker />);
+  test('is not inset, since the node body keeps its pane clear of the port markers (#522, #668)', () => {
+    // An inset here would come on top of the body's own. No padding either:
+    // vega sizes a "container" chart from the mount's clientWidth, which
+    // counts padding, so the chart would overflow by exactly that much.
+    // nodeEditorPanesInBody.test.tsx checks the pane stays in the body.
+    render(<NodeEditor {...baseProps} />);
     const el = mountDiv();
-    expect(el.style.marginLeft).toBe('14px');
-    expect(el.style.marginRight).toBe('14px');
-    expect(el.style.width).toBe('calc(100% - 28px)');
+    expect(el.style.marginLeft).toBe('');
+    expect(el.style.marginRight).toBe('');
     expect(el.style.paddingLeft).toBe('');
-  });
-
-  test('insets only the side that has a marker', () => {
-    render(<NodeEditor {...baseProps} inputMarker />);
-    const el = mountDiv();
-    expect(el.style.marginLeft).toBe('14px');
-    expect(el.style.marginRight).toBe('0px');
-    expect(el.style.width).toBe('calc(100% - 14px)');
+    expect(el.style.paddingRight).toBe('');
   });
 
   test('the pane around it stays clamped, so the node box cannot spill', () => {
