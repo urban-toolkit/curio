@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import styles from "./WidgetTags.module.css";
-import { INPUT_REF_MIME, WIDGET_REF_MIME } from "./monacoCodeReferences";
+import { INPUT_REF_MIME, SHARED_REF_MIME, WIDGET_REF_MIME } from "./monacoCodeReferences";
 import type { WidgetDef } from "../../../utils/widgets/widgetModel";
 import {
   inputReferenceInner,
   referenceText,
+  sharedReferenceInner,
   type InputScope,
 } from "../../../utils/references/codeReferences";
 
@@ -30,6 +31,37 @@ export function WidgetTag({
       disabled={disabled}
     />
   );
+}
+
+/** A shared tag (#662): a Parameter node's widget, which any node's code can
+ * name as `[!! @name !!]`. */
+export function SharedTag({
+  name,
+  onInsert,
+  disabled = false,
+}: {
+  name: string;
+  onInsert?: (inner: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <ReferenceTag
+      className={styles.sharedTag}
+      mime={SHARED_REF_MIME}
+      inner={sharedReferenceInner(name)}
+      text={sharedReferenceInner(name)}
+      title={`The value of the Parameter node ${name}`}
+      dataAttributes={{ "data-shared-tag": name }}
+      onInsert={onInsert}
+      disabled={disabled}
+    />
+  );
+}
+
+/** One tag per shared name, in order: two Parameter nodes with one name are
+ * one tag, whose reference reports the clash. */
+export function uniqueSharedNames(shared: WidgetDef[]): string[] {
+  return Array.from(new Set(shared.map((w) => w.name)));
 }
 
 /** A tag that drags (or, clicked, inserts) the reference to *inner*. */
@@ -241,12 +273,13 @@ function InputTags({
 
 /**
  * The tags above a code or grammar editor: the node's inputs, each opening to
- * its columns (or, with *layerChips*, its layers), then its widgets. Nothing
- * when it has neither.
+ * its columns (or, with *layerChips*, its layers), then its widgets, then the
+ * dataflow's shared tags. Nothing when there are none.
  */
 export function ReferenceStrip({
   widgets,
   inputs = [],
+  shared = [],
   onInsert,
   onLoadColumns,
   layerChips = false,
@@ -254,12 +287,14 @@ export function ReferenceStrip({
 }: {
   widgets: WidgetDef[];
   inputs?: InputScope[];
+  shared?: WidgetDef[];
   onInsert: (inner: string) => void;
   onLoadColumns?: (slot: number) => void;
   layerChips?: boolean;
   disabled?: boolean;
 }) {
-  if (widgets.length === 0 && inputs.length === 0) return null;
+  const sharedNames = uniqueSharedNames(shared);
+  if (widgets.length === 0 && inputs.length === 0 && sharedNames.length === 0) return null;
   return (
     <div className={styles.strip} aria-label="Reference tags" data-widget-strip="true">
       {inputs.length > 0 ? (
@@ -282,6 +317,14 @@ export function ReferenceStrip({
           <span className={styles.stripHint}>Widgets</span>
           {widgets.map((w) => (
             <WidgetTag key={w.name} name={w.name} onInsert={onInsert} disabled={disabled} />
+          ))}
+        </>
+      ) : null}
+      {sharedNames.length > 0 ? (
+        <>
+          <span className={styles.stripHint} data-shared-strip="true">Shared</span>
+          {sharedNames.map((name) => (
+            <SharedTag key={name} name={name} onInsert={onInsert} disabled={disabled} />
           ))}
         </>
       ) : null}
