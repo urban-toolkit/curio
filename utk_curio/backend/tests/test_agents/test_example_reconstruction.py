@@ -141,6 +141,23 @@ class TestReachability:
         # reads the answer out of the failure.
         assert "data" in caught.value.detail and "interaction" in caught.value.detail
 
+    def test_the_widgets_gap_is_exactly_the_examples_with_widgets(self):
+        """#662: a node's widgets live in ``metadata.widgets``, which no plan
+        or content reply can write yet, so an example with widgets is a named
+        gap. The gap may not spread: a fixture declares it only when its
+        example has widgets, and every example with widgets declares it."""
+        with_widgets = {
+            f.fixture_id
+            for f in FIXTURES
+            if any((n.get("metadata") or {}).get("widgets") for n in _example(f)["dataflow"]["nodes"])
+        }
+        declared = {f.fixture_id for f in FIXTURES if oracle.WIDGETS_NEED in f.needs}
+        assert with_widgets == declared == {"Widget"}
+        with pytest.raises(oracle.Unrepresentable) as caught:
+            oracle.require_writable_widgets(_example(_by_id("Widget")))
+        assert caught.value.need == "widgets"
+        oracle.require_writable_widgets(_example(ONE))
+
 
 class TestTheModelSeesOnlyThePrompt:
     """The fixture is an answer key. If any of it travelled, the score would

@@ -1,0 +1,13 @@
+/* A widget reference drawn as a chip inside Monaco (#662). Global on purpose:
+   Monaco applies decoration class names to its own spans. */
+.curio-widget-ref {
+  background: rgba(26, 115, 232, 0.12);
+  border: 1px solid rgba(26, 115, 232, 0.45);
+  border-radius: 3px;
+}
+
+.curio-widget-ref-problem {
+  background: rgba(192, 57, 43, 0.12);
+  border: 1px solid rgba(192, 57, 43, 0.55);
+  border-radius: 3px;
+}

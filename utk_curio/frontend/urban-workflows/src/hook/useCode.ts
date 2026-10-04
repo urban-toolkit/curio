@@ -16,6 +16,7 @@ import type { SelectionEchoOptions } from "../utils/selectionEcho";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { canvasTemplateConfigFromSpec } from "../utils/canvasTemplateConfigSpec";
 import { dataPoolFromSpec } from "../utils/dataPoolSpec";
+import { nodeRunKey, normalizeWidgets, type WidgetDef } from "../utils/widgets/widgetModel";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -75,6 +76,8 @@ type CreateCodeNodeOptions = {
     packageTemplateConfig?: Partial<CanvasTemplateConfig>;
     // #581: a Data Pool's conflict modes (metadata.dataPool).
     dataPool?: { insideChart?: string; betweenCharts?: string };
+    // #662: the node's widgets and their values (metadata.widgets).
+    widgets?: WidgetDef[];
     // #407: a node whose saved output a project load restored mounts as having
     // run: the output it shows, and the source that produced it.
     output?: { code: string; content: string };
@@ -253,6 +256,10 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && node.metadata.dataPool != undefined)
                 nodeMeta.dataPool = dataPoolFromSpec(node.metadata.dataPool);
 
+            // #662: and the node's widgets, with the values they were saved with.
+            if(node.metadata != undefined && Array.isArray(node.metadata.widgets))
+                nodeMeta.widgets = normalizeWidgets(node.metadata.widgets);
+
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
 
@@ -286,7 +293,7 @@ export function useCode(): IUseCode {
                 // The same content a run shows (CodeEditor), and the source
                 // playNodesUpTo compares against to tell a valid result.
                 nodeMeta.output = { code: "success", content: "Saved to file: " + restored };
-                nodeMeta.executedCode = node.content;
+                nodeMeta.executedCode = nodeRunKey(node.content, nodeMeta.widgets);
             }
 
             nodes.push(generateCodeNode(node.type, nodeMeta));
@@ -413,6 +420,7 @@ export function useCode(): IUseCode {
             packageTemplateLabel = undefined,
             packageTemplateConfig = undefined,
             dataPool = undefined,
+            widgets = undefined,
             output = undefined,
             executedCode = undefined,
         } = options;
@@ -461,6 +469,7 @@ export function useCode(): IUseCode {
                 packageTemplateLabel,
                 packageTemplateConfig,
                 dataPool,
+                widgets,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset

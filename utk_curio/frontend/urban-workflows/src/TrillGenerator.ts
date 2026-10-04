@@ -14,6 +14,7 @@
 import type { HandCategories } from "./utils/dataflowCategories";
 import { canvasTemplateConfigToSpec } from "./utils/canvasTemplateConfigSpec";
 import { dataPoolToSpec } from "./utils/dataPoolSpec";
+import { normalizeWidgets } from "./utils/widgets/widgetModel";
 
 export class TrillGenerator {
 
@@ -347,6 +348,17 @@ export class TrillGenerator {
                     trill_node.metadata = {};
 
                 trill_node.metadata.dataPool = dataPool;
+            }
+
+            // #662: the node's widgets and their values persist at
+            // metadata.widgets, only when it has any, so a node without
+            // widgets serializes as it did before.
+            const widgets = normalizeWidgets(node.data.widgets);
+            if(widgets.length > 0){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.widgets = widgets;
             }
 
             if(typeof node.data.title === "string" && node.data.title)

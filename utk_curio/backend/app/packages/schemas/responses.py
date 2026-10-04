@@ -74,6 +74,8 @@ def package_payload(manifest: PackageManifest, *, package_mtime_path: Path | Non
                 # dev/91: the declared backend handler this template's Run
                 # invokes through the package backend sandbox (null = none).
                 "backendHandler": tpl.backend_handler,
+                # #662: the widgets a freshly dropped node starts with.
+                "widgets": tpl.widgets,
             }
         )
     payload = {

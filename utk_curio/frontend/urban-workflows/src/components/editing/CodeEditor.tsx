@@ -32,6 +32,12 @@ import { usePackageBackendRun } from "../../hook/usePackageBackendRun";
 import { useGrammarInputState } from "../../hook/useGrammarInputState";
 import { upstreamErroredMessage } from "../../utils/nodeEmptyState";
 import { ICodeData } from "../../types";
+import { WidgetTagStrip } from "./widgets/WidgetTag";
+import { insertReference, useWidgetReferences } from "./widgets/monacoWidgetRefs";
+import type { WidgetDef } from "../../utils/widgets/widgetModel";
+import type { WidgetLanguage } from "../../utils/widgets/widgetSubstitution";
+
+const NO_WIDGETS: WidgetDef[] = [];
 
 type CodeEditorProps = {
     setOutputCallback: any;
@@ -44,6 +50,9 @@ type CodeEditorProps = {
     readOnly: boolean;
     defaultValue?: any;
     floatCode?: any;
+    /** #662: the node's widgets, whose tags sit above the editor. */
+    widgets?: WidgetDef[];
+    widgetLanguage?: WidgetLanguage;
 };
 
 /** dev/117: how long after the last keystroke the code is scanned for a credential literal. */
@@ -79,9 +88,14 @@ function CodeEditor({
     readOnly,
     defaultValue,
     floatCode,
+    widgets = NO_WIDGETS,
+    widgetLanguage = "python",
 }: CodeEditorProps) {
     const [code, setCode] = useState<string>(""); // code with all original markers
     const [execCount, setExecCount] = useState<number>(0);
+    // #662: the mounted editor, for the widget tags and reference chips.
+    const [widgetEditor, setWidgetEditor] = useState<{ editor: any; monaco: any } | null>(null);
+    useWidgetReferences(widgetEditor?.editor, widgetEditor?.monaco, widgets, widgetLanguage);
 
     const {
         workflowNameRef,
@@ -248,6 +262,7 @@ function CodeEditor({
         attachEditor(editor);
         monacoRef.current = monaco;
         editorInstanceRef.current = editor;
+        setWidgetEditor({ editor, monaco });
         editor.onDidBlurEditorText(proposeOnBlur);
         // Ctrl/Cmd+Enter. Registered here rather than on the window because
         // Monaco owns the chord while the editor has focus — and already bound
@@ -556,6 +571,11 @@ function CodeEditor({
                     )}
                 </div>
             )}
+            <WidgetTagStrip
+                widgets={widgets}
+                disabled={readOnly}
+                onInsert={(name) => insertReference(widgetEditor?.editor, name)}
+            />
             <div style={{ flex: 2, minHeight: 0 }}>
                 {/* Uncontrolled on purpose: a per-keystroke `value` round-trip
                     lets a render that lands with a stale string do a full-model

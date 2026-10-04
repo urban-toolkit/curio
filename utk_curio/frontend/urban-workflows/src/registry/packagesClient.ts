@@ -55,6 +55,7 @@ import type {
   PortDef,
 } from './types';
 import { backendUrl } from '../utils/backendUrl';
+import { normalizeWidgets } from '../utils/widgets/widgetModel';
 
 interface RawPackageTemplate {
   id: string; // canonical "<packageId>/<templateId>@<major>"
@@ -77,6 +78,8 @@ interface RawPackageTemplate {
   outputPorts: Array<{ types: string[]; cardinality?: string }>;
   /** Optional package-relative path to a single starter source file. */
   source: string | null;
+  /** #662: the widgets a freshly dropped node starts with (metadata.widgets shape). */
+  widgets?: unknown[] | null;
   bidirectional: boolean;
   containerStyle: {
     nodeWidth?: number;
@@ -269,6 +272,7 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
     hasGrammar: template.hasGrammar,
     ...(template.hasProvenance !== null ? { hasProvenance: template.hasProvenance } : {}),
     ...(template.backendHandler ? { backendHandler: template.backendHandler } : {}),
+    ...(normalizeWidgets(template.widgets).length > 0 ? { widgets: normalizeWidgets(template.widgets) } : {}),
     ...(template.grammarId ? { grammarId: template.grammarId } : {}),
     ...(template.badge ? { badge: template.badge } : isBuiltin ? {} : { badge: 'PACKAGE' as const }),
     adapter: {

@@ -6,6 +6,7 @@ import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
 import { BUILTIN_PACKAGE_ID } from "../registry/packageKeys";
 import { getFlowNodeCanonicalType } from "./flowNodeCanonicalType";
 import { normalizePortTypes } from "../constants/supportedPortTypes";
+import { normalizeWidgets } from "./widgets/widgetModel";
 import {
   applyCanvasTemplateConfigToTemplateDraft,
   readCanvasTemplateConfig,
@@ -248,7 +249,13 @@ function templateDraftFromCanvasNode(
   const label = canvasTemplateLabelFromNode(node, desc);
   const base = descriptorToTemplateDraft(desc, body, kindIdOverride, label);
   const config = readCanvasTemplateConfig(node);
-  return applyCanvasTemplateConfigToTemplateDraft(base, config, label);
+  const draft = applyCanvasTemplateConfigToTemplateDraft(base, config, label);
+  // #662: the node's widgets travel with its code, so the package's source
+  // resolves its references. Set values become the template's defaults.
+  const widgets = normalizeWidgets(node.data?.widgets).map(({ value, ...w }) =>
+    value !== undefined ? { ...w, default: value } : w,
+  );
+  return widgets.length > 0 ? { ...draft, widgets } : draft;
 }
 
 function categoryFromPackageTemplate(cat: string): Category {
@@ -308,6 +315,8 @@ function packageTemplatePayloadToTemplateDraft(template: PackageTemplatePayload,
     paletteOrder: typeof template.paletteOrder === "number" ? template.paletteOrder : undefined,
     sourceFilename,
     sourceCode: seedCodeForPackageTemplatePayload(template, getStarters),
+    // #662: a Save As keeps the widgets the existing template declares.
+    ...(normalizeWidgets(template.widgets).length > 0 ? { widgets: normalizeWidgets(template.widgets) } : {}),
   };
 }
 

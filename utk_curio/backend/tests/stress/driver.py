@@ -398,7 +398,7 @@ class VirtualUser:
     # -- node execution ---------------------------------------------------
 
     def _run_python(self, node, outputs: dict) -> None:
-        code = seed_node_code(resolve_widget_placeholders(node.content), self.seed)
+        code = seed_node_code(resolve_widget_placeholders(node.content, node.widgets), self.seed)
         body = self._exec(
             "/processPythonCode", node,
             code=textwrap.indent(code, PY_INDENT),
@@ -413,7 +413,7 @@ class VirtualUser:
     def _run_js(self, node, outputs: dict) -> None:
         body = self._exec(
             "/processJavaScriptCode", node,
-            code=resolve_widget_placeholders(node.content),
+            code=resolve_widget_placeholders(node.content, node.widgets, "javascript"),
             input_ref=resolve_node_input(self.workflow, node.id, outputs),
             timeout=JS_TIMEOUT_S,
         )

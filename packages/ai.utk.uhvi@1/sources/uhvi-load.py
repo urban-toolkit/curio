@@ -9,5 +9,5 @@ import rasterio
 # because numpy.ndarray has no save-side branch. Do not wrap this in a
 # `with` block either — the file must stay open until the worker reads
 # `src.name` after the box finishes.
-src = rasterio.open([!! src$INPUT_TEXT$./milan/Milan_Tmrt_2022_203_1200D.tif !!])
+src = rasterio.open([!! src !!])
 return src

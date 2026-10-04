@@ -4,7 +4,7 @@ import geopandas as gpd
 # downstream. The default points at the Milan socio-demographics layer
 # bundled with the spike fixtures; swap it for any polygon dataset whose
 # units you want UHVI summarised against.
-path = [!! path$INPUT_TEXT$./milan/R03_21-11_WGS84_P_SocioDemographics_MILANO_Selected.shp !!]
+path = [!! path !!]
 gdf = gpd.read_file(path)
 
 # Tag the layer so downstream visualisers (grammar nodes) can label it.

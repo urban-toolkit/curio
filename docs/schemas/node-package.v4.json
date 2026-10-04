@@ -169,6 +169,26 @@
       },
       "additionalProperties": false
     },
+    "widget": {
+      "type": "object",
+      "description": "One widget of a node (#662), in the shape of a dataflow node's metadata.widgets entries (docs/schemas/trill.v1.json).",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+        "type": { "type": "string", "enum": ["number", "text", "choice", "checkbox", "number-list", "text-list", "range", "file"] },
+        "label": { "type": "string" },
+        "default": {},
+        "value": {},
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "choices": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
     "template": {
       "type": "object",
       "required": ["id", "label", "category", "engine", "editor", "inputPorts", "outputPorts"],
@@ -248,6 +268,11 @@
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]{0,63}$",
           "description": "Name of a declared backend handler this template's Run invokes through the package backend sandbox (memo dev/91). Must appear in the package's backend.handlers."
+        },
+        "widgets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/widget" },
+          "description": "The widgets a freshly dropped node of this template starts with (#662). The template's source places each one as a `[!! name !!]` reference."
         }
       },
       "additionalProperties": true

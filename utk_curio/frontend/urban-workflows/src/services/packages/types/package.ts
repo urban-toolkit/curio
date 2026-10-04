@@ -37,6 +37,8 @@ export interface PackageTemplatePayload {
   outputPorts: PortPayload[];
   /** Package-relative path to the optional starter source file. */
   source: string | null;
+  /** #662: the widgets a freshly dropped node starts with (metadata.widgets shape). */
+  widgets?: unknown[] | null;
   /** Adds a third `'in/out'` handle on top of the standard in/out pair (interaction-loop templates). */
   bidirectional: boolean;
   /** Overrides for the canvas container layout (size, no-content, play-button gate). */

@@ -32,6 +32,9 @@ import { ICodeData } from "../../types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
 import { contentMountStyle, outputMountStyle } from "../../utils/outputMountStyle";
+import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
+import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
+import type { WidgetLanguage } from "../../utils/widgets/widgetSubstitution";
 
 type NodeEditorProps = {
     outputId?: string;
@@ -61,7 +64,7 @@ function NodeEditor({
     outputId,
     setSendCodeCallback,
     code,
-    widgets,
+    widgets: widgetsTab,
     grammar,
     setOutputCallback,
     data,
@@ -93,9 +96,30 @@ function NodeEditor({
     // hasCode:false) have no code pane, so hardcoding it left NO pane active on
     // mount and the editor rendered inside a display:none tab (#157).
     const [activeTab, setActiveTab] = useState<string>(
-        () => resolveInitialEditorTab({ code, grammar, widgets })
+        () => resolveInitialEditorTab({ code, grammar, widgets: widgetsTab })
     );
-    const { dashboardOn } = useFlowContext();
+    const { dashboardOn, markDirty, markNodeStale } = useFlowContext();
+
+    // #662: the node's widgets. Node data holds them (TrillGenerator saves
+    // data.widgets), set directly as data.code is, so a value change does not
+    // re-render the canvas; this state re-renders the editors.
+    const [widgets, setWidgets] = useState<WidgetDef[]>(() => normalizeWidgets(data.widgets));
+    const dataWidgets = data.widgets;
+    useEffect(() => {
+        // Replaced from outside: a package template's widgets seeded on drop.
+        setWidgets(normalizeWidgets(dataWidgets));
+    }, [dataWidgets]);
+    const updateWidgets = (next: WidgetDef[]) => {
+        data.widgets = next;
+        setWidgets(next);
+        markNodeStale?.(data.nodeId);
+        markDirty?.();
+    };
+    const widgetLanguage: WidgetLanguage = grammar
+        ? "json"
+        : unversionedNodeType(nodeType) === NodeType.JS_COMPUTATION
+            ? "javascript"
+            : "python";
     // A dashboard tile shows its output, not its editor. Only when it HAS an
     // output pane: a code node's result is the text box under its editor, so
     // forcing the pane unconditionally rendered a pinned code node as an empty
@@ -124,9 +148,18 @@ function NodeEditor({
         });
     };
 
+    /** A reference that does not resolve: on a run, the run ends with the
+     * message; on a load, the Widgets tab lists it and nothing else happens. */
+    const resolveError = (message: string) => {
+        const priming = primingWidgetsRef.current;
+        primingWidgetsRef.current = false;
+        if (priming) return;
+        setOutputCallback?.({ code: "error", content: message });
+    };
+
     const sendCodeToWidgets = (code: string) => {
         setUserCode(code);
-        if (!widgets) {
+        if (!widgetsTab) {
             // Why: WidgetsEditor is the bridge that resolves widget markers and
             // hands the result to CodeEditor (via sendReplacedCode). It only
             // mounts when the widgets tab is enabled, so for code nodes with
@@ -266,11 +299,13 @@ function NodeEditor({
                                             data={data}
                                             output={output}
                                             nodeType={nodeType}
+                                            widgets={widgetsTab ? widgets : []}
+                                            widgetLanguage={widgetLanguage}
                                         />
                                     </Tab.Pane>
                                 ) : null}
 
-                                {widgets ? (
+                                {widgetsTab ? (
                                     <Tab.Pane
                                         eventKey="widgets"
                                         style={{ height: "100%" }}
@@ -285,6 +320,10 @@ function NodeEditor({
                                             nodeId={data.nodeId}
                                             data={{...data, nodeType}}
                                             disableWidgets={disableWidgets}
+                                            widgets={widgets}
+                                            onWidgetsChange={updateWidgets}
+                                            language={widgetLanguage}
+                                            onResolveError={resolveError}
                                         />
                                     </Tab.Pane>
                                 ) : null}
@@ -308,6 +347,8 @@ function NodeEditor({
                                             applyGrammar={applyGrammar}
                                             schema={schema}
                                             setOutputCallback={setOutputCallback}
+                                            widgets={widgetsTab ? widgets : []}
+                                            widgetLanguage={widgetLanguage}
                                         />
                                     </Tab.Pane>
                                 ) : null}
@@ -415,7 +456,7 @@ function NodeEditor({
                                 </Col>
                             ) : null}
 
-                            {widgets ? (
+                            {widgetsTab ? (
                                 <Col>
                                     <OverlayTrigger
                                         placement="right"

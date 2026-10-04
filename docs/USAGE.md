@@ -9,6 +9,7 @@
   - [Your configurations](#your-configurations)
   - [Connection keys](#connection-keys)
   - [Guest users](#guest-users)
+- [Widgets](#widgets)
 - [Node Catalog](#node-catalog)
 - [Vega-Lite node](#vega-lite-node)
 - [Autark node](#autark-node)
@@ -327,6 +328,48 @@ GUEST_LLM_API_TYPE=anthropic
 GUEST_LLM_API_KEY=sk-ant-...
 GUEST_LLM_MODEL=claude-haiku-4-5
 ```
+
+## Widgets
+
+A widget is a value a node's code reads that you set in a form, without editing
+the code: a threshold, a season, a list of years. Python, Vega-Lite and Autark
+nodes have them.
+
+1. Open the node's **Widgets** tab (toolbox icon) and click **Add widget**.
+2. Give it a name (letters, digits and underscores), a type, a label, and a
+   default. A **Choice** also takes its choices, separated by commas.
+3. Drag the widget's tag from the strip above the code into the code, or click
+   the tag to insert it at the cursor. It appears as a chip; hover it to see the
+   value it stands for.
+4. Set the value in the **Widgets** tab and run the node.
+
+| Type | Value |
+|---|---|
+| Number | a number |
+| Text | a text |
+| Choice | one of its choices |
+| Checkbox | true or false |
+| List of numbers | such as `[1, 2.5]` |
+| List of texts | such as `["a", "b"]` |
+| Range | two numbers, the first not larger than the second |
+| Text file | the text of a file you pick (up to 1,000,000 characters) |
+
+In the code, a widget is written `[!! name !!]`. When the node runs, each one is
+replaced by its value:
+
+- On its own, it becomes a value of the code's language: `season = [!! season !!]`
+  runs as `season = "winter"` in Python, and `"opacity": [!! opacity !!]` as
+  `"opacity": 0.5` in a Vega-Lite spec.
+- Inside a quoted text, it becomes the value's text: `"Season: [!! season !!]"`
+  runs as `"Season: winter"`.
+
+Values are saved with the dataflow. Changing one marks the node as needing a
+new run, so **Run** and **Run All** run it again. A name the node has no widget
+for, or a marker in the older `[!! name$TYPE$default !!]` form, stops the run
+with a message naming it; the **Widgets** tab lists them too.
+
+Widgets are not connections: a value you set is not data from another node. Data
+from the node's input reaches Python as `arg`.
 
 ## Node Catalog
 

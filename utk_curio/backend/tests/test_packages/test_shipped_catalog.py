@@ -164,13 +164,21 @@ def test_sources_do_not_read_the_examples_data_directory(package_root: Path):
 # ---------------------------------------------------------------------------
 
 UHVI_DIR = CATALOG / "ai.utk.uhvi@1"
-_INPUT_TEXT_DEFAULT_RE = re.compile(r"\[!!\s*\w+\$INPUT_TEXT\$(.+?)\s*!!\]")
 
 
 def _input_text_default(source: Path) -> str:
-    """The default of the one ``[!! name$INPUT_TEXT$default !!]`` marker in *source*."""
-    (default,) = _INPUT_TEXT_DEFAULT_RE.findall(source.read_text(encoding="utf-8"))
-    return default
+    """The default of the one text widget *source* references (#662).
+
+    The default lives in the manifest's template ``widgets``; *source* names
+    the widget with one ``[!! name !!]`` reference.
+    """
+    manifest = json.loads((source.parent.parent / "manifest.json").read_text(encoding="utf-8"))
+    rel = f"sources/{source.name}"
+    (template,) = [t for t in manifest["templates"] if t.get("source") == rel]
+    (widget,) = [w for w in template.get("widgets", []) if w.get("type") == "text"]
+    refs = re.findall(r"\[!!\s*(\w+)\s*!!\]", source.read_text(encoding="utf-8"))
+    assert refs == [widget["name"]], (source.name, refs)
+    return widget["default"]
 
 
 def test_uhvi_loader_defaults_share_one_folder_and_match_the_readme():
