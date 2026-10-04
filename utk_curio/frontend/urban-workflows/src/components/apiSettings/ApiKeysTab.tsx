@@ -16,6 +16,7 @@ import { NodeKeyForm, deliveryText, formatUsed } from "./NodeKeyForm";
 import { SourceKeyForm, usedByText } from "./SourceKeyForm";
 import type { ApiSettingsFocus } from "./apiSettingsRequest";
 import type { LlmListingState } from "./useLlmListing";
+import { HOSTED_GUEST_KEYS_NOTE } from "./useHostedGuest";
 
 /** "A", "A and B", "A, B and C". */
 export function listNames(names: string[]): string {
@@ -363,7 +364,7 @@ export const ApiKeysTab: React.FC<{
         </>
       ) : null}
       {hostedGuest ? (
-        <p className={styles.guestNotice}>Personal keys cannot be saved on a shared guest account.</p>
+        <p className={styles.guestNotice}>{HOSTED_GUEST_KEYS_NOTE}</p>
       ) : null}
       {sourceError ? <p className={modal.error} role="alert">{sourceError}</p> : null}
       {nodeError ? <p className={modal.error} role="alert">{nodeError}</p> : null}

@@ -9,6 +9,7 @@ import {
   unsearchableReason,
   type DiscoverySourceRow,
 } from "../../services/discoveryCatalog";
+import { useHostedGuest } from "../../components/apiSettings/useHostedGuest";
 import { discoverySourceAccessItems, discoverySourceInfoRows } from "./discoverySourceFacts";
 import styles from "../../components/agents/catalog/AgentDetailModal.module.css";
 
@@ -34,7 +35,8 @@ export const DiscoverySourceDetailModal: React.FC<DiscoverySourceDetailModalProp
   onClose,
 }) => {
   const blocked = unsearchableReason(source);
-  const access = discoverySourceAccessItems(source, onClose);
+  const hostedGuest = useHostedGuest();
+  const access = discoverySourceAccessItems(source, hostedGuest, onClose);
   const rows = [...discoverySourceInfoRows(source), { label: "Identifier", value: source.sourceId }];
 
   return (

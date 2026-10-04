@@ -123,7 +123,7 @@ return gdf
 
 ## Step 5: Tag each photo and chart it (`Spatial Join`, `Vega-Lite`)
 
-The Spatial Join node (built-in, in `curio.builtin@1`) has two input handles on its left edge, each a hollow ring that fills in once wired: **points** (the upper, blue one) and **polygons** (the lower, green one). Wire the `Simple View` output to the points handle and the `Data Transformation` output to the polygons handle, and type `neighborhood` in its **Tag each point with this polygon column** field.
+The Spatial Join node (built-in, in `curio.builtin@1`) has two input circles on its left edge, each a hollow ring that fills in once wired: **points** (the upper, blue one) and **polygons** (the lower, green one). Wire the `Simple View` output to the blue circle and the `Data Transformation` output to the green circle, run them, and pick `neighborhood` in its **Tag each point with this polygon column** list, which shows the polygons' columns once they arrive.
 
 The node emits the input points augmented with:
 
