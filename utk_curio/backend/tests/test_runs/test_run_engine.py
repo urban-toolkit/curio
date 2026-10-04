@@ -134,6 +134,13 @@ class TestPlayShapesEachNode:
         recorder, _, _ = run(spec([node("j", "curio.builtin/js-computation", "return 1;")]))
         assert recorder.calls["j"]["engine"] == "javascript"
 
+    def test_a_javascript_nodes_code_is_sent_as_written(self):
+        # As JavaScriptInterpreter.ts posts it: an indented import is no longer
+        # a module's own (example 08's join).
+        code = "import { AutkDb } from '@urban-toolkit/autk-db';\n\nreturn 1;"
+        recorder, _, _ = run(spec([node("j", "curio.builtin/js-computation", code)]))
+        assert recorder.calls["j"]["code"] == code
+
 
 class TestFailuresStayOnTheirBranch:
     def test_a_failure_skips_what_it_feeds_and_the_other_branch_finishes(self):
