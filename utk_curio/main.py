@@ -169,8 +169,9 @@ def main():
     parser.add_argument(
         "--exec-timeout", type=int, default=None,
         help=(
-            "Wall-clock and CPU allowance per isolated node, in seconds (sets "
-            "CURIO_EXEC_TIMEOUT, default 300). Keep it below the backend's "
+            "Wall-clock allowance per isolated node, in seconds (sets "
+            "CURIO_EXEC_TIMEOUT, default 300); its CPU time may reach this "
+            "times the CPUs the sandbox can use. Keep it below the backend's "
             "600s deadline so a slow node reports a clear message."
         ),
     )

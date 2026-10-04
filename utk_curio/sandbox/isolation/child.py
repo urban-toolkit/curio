@@ -49,6 +49,12 @@ from utk_curio.sandbox.util.secrets import make_curio_secret, shape_secrets
 
 RESULT_FILENAME = "result.json"
 
+# How far RLIMIT_CPU's hard limit sits above its soft one, in CPU-seconds. The
+# kernel sends SIGXCPU at the soft limit and SIGKILL at the hard one, checking
+# the hard one first: with the two equal, a node that ran out of CPU time was
+# SIGKILLed and reported as the memory limit.
+CPU_HARD_LIMIT_GRACE_SECONDS = 60
+
 # Kept in step with protocol.MAX_* so a child never writes a manifest the
 # parent will reject wholesale for being oversized.
 _MAX_STDOUT_LINES = 5_000
@@ -189,11 +195,11 @@ def _apply_rlimits(limits):
     """
     import resource
 
-    def _set(what, value, name):
+    def _set(what, value, name, hard=None):
         if value is None:
             return
         try:
-            resource.setrlimit(what, (value, value))
+            resource.setrlimit(what, (value, value if hard is None else hard))
         except (ValueError, OSError) as exc:
             raise ChildSetupError(f"could not set {name}: {exc}") from exc
 
@@ -211,8 +217,11 @@ def _apply_rlimits(limits):
         # The malloc arenas this budget allows are capped in the zygote's
         # environment, which every child inherits: lifecycle.zygote_environment.
 
+    # The hard limit above the soft one, so the kernel's first signal is
+    # SIGXCPU, which the node reports as its CPU allowance, and not SIGKILL.
     cpu_seconds = limits.get("cpu_seconds")
-    _set(resource.RLIMIT_CPU, cpu_seconds, "RLIMIT_CPU")
+    _set(resource.RLIMIT_CPU, cpu_seconds, "RLIMIT_CPU",
+         hard=cpu_seconds + CPU_HARD_LIMIT_GRACE_SECONDS if cpu_seconds else None)
 
     _set(resource.RLIMIT_NPROC, limits.get("nproc"), "RLIMIT_NPROC")
 
