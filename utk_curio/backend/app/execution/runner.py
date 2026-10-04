@@ -389,7 +389,7 @@ def run_through_node(
             )
             return report
         if not is_code:
-            # Pass-through semantics (merge/vis/pool) — same as the e2e runner.
+            # Pass-through semantics (vis/pool), same as the e2e runner.
             upstreams = spec.upstream_nodes(node.id)
             if len(upstreams) == 1 and upstreams[0] in outputs:
                 outputs[node.id] = outputs[upstreams[0]]

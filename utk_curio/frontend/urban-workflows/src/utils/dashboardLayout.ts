@@ -137,10 +137,10 @@ export function applyDashboardLayout(
  *
  * Unpinned nodes stay MOUNTED and are hidden with ``display: none``
  * (``hideNode``). React Flow's own ``hidden`` unmounts the node component, which
- * would break every chain that runs through an unpinned Data Pool or Merge:
- * their behaviour hooks are what re-derive a tile's data from the restored
- * outputs. Edges are hidden the ordinary way, since nothing depends on an edge
- * being rendered.
+ * would break every chain that runs through an unpinned Data Pool: its
+ * behaviour hook is what re-derives a tile's data from the restored outputs.
+ * Edges are hidden the ordinary way, since nothing depends on an edge being
+ * rendered.
  */
 export function prepareDashboardNodes<N extends Node, E extends Edge>(
   nodes: readonly N[],
@@ -196,8 +196,7 @@ export function isPassThroughNode(node: { type?: string | null; data?: any }): b
   if (
     kind === NodeType.VIS_VEGA ||
     kind === NodeType.VIS_SIMPLE ||
-    kind === NodeType.DATA_POOL ||
-    kind === NodeType.MERGE_FLOW
+    kind === NodeType.DATA_POOL
   ) {
     return true;
   }

@@ -17,8 +17,7 @@ This drives the whole path in a browser:
    ``arg``.
 5. Save and reopen: the circles and the chips are back.
 
-Before, a node held one input: a second edge was refused and pointed at a Merge
-Flow node, whose list the code indexed as ``arg[0]``, ``arg[1]``.
+Before, a node held one input, and a second edge was refused.
 
 Run::
 

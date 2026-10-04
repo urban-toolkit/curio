@@ -1,25 +1,27 @@
 /**
- * Regression tests for #159 — the `@1` version suffix broke Merge Flow.
+ * The #159 class of bug on a node with several inputs: the `@1` version suffix
+ * must not change how a growing node takes its inputs.
  *
  * A node dragged off the tool rail carries the *versioned* canonical id
- * (`curio.builtin/merge-flow@1`, minted by `manifest.canonical_for` and
- * persisted verbatim by TrillGenerator), while `NodeType.MERGE_FLOW` is
- * unversioned. FlowProvider's merge branches compared the two with `===`, so a
- * palette-dragged merge node matched none of them: `propagateDownstreamInputs`
- * fell through to the scalar branch, `data.input` never became a slot array,
- * `buildMergeOutputArray` returned `[]`, the merge node never emitted, and the
- * downstream Python node hit the sandbox's "received no input but references
- * `arg`" guard.
+ * (`curio.builtin/data-pool@1`, minted by `manifest.canonical_for` and
+ * persisted verbatim by TrillGenerator), while `NodeType.DATA_POOL` and the
+ * Jupyter converter's and legacy trills' ids are unversioned. #159 was a
+ * lookup that matched only one form: the versioned node fell through to the
+ * single-input branch, each producer overwrote the whole `data.input`, and the
+ * node never held both inputs. A node grows its circles when its descriptor
+ * says so (`nodeGrowsInputs` -> `tryGetNodeDescriptor`), so both forms must
+ * resolve to the same `@1` descriptor and take the same path.
  *
- * Both id forms are parametrized: the bare form worked before this fix and must
- * keep working, and the versioned form is the bug.
+ * Both id forms are parametrized: the bare form is what old specs carry, and
+ * the versioned form is what the palette produces.
  *
- * Drives the REAL FlowProvider (applyNewOutput -> propagateDownstreamInputs and
- * onConnect -> applyOutput). The harness mirrors playAllFlakiness.test.tsx.
+ * Drives the REAL FlowProvider (applyNewOutput -> propagateDownstreamInputs).
+ * The harness mirrors playAllFlakiness.test.tsx.
  */
 import React from 'react';
 import { render, act } from '@testing-library/react';
-import { ReactFlow, ReactFlowProvider } from 'reactflow';
+import { Position, ReactFlow, ReactFlowProvider } from 'reactflow';
+import { faCircle } from '@fortawesome/free-solid-svg-icons';
 
 class ResizeObserverStub {
   observe() {}
@@ -80,8 +82,42 @@ jest.mock('vega', () => ({}), { virtual: true });
 jest.mock('vega-lite', () => ({}), { virtual: true });
 
 import FlowProvider, { useFlowContext } from '../../providers/FlowProvider';
-import { NodeType } from '../../constants';
+import { NodeType, SupportedType } from '../../constants';
 import { normalizeFlowInput } from '../../utils/flowOutputRef';
+import { registerNode } from '../../registry/nodeRegistry';
+import type { NodeDescriptor } from '../../registry/types';
+
+// The whole point of the bug: `@1` is what the palette actually produces.
+const VERSIONED = `${NodeType.DATA_POOL}@1`;
+
+beforeAll(() => {
+  // Registered under the versioned id only, as the package registry does; the
+  // bare form has to find it through the registry's unversioned lookup.
+  const descriptor: NodeDescriptor = {
+    id: VERSIONED as NodeType,
+    category: 'data',
+    label: 'Data Pool',
+    icon: faCircle,
+    inputPorts: [{ types: [SupportedType.DATAFRAME], cardinality: '[1,n]' }],
+    outputPorts: [{ types: [SupportedType.DATAFRAME] }],
+    editor: 'none',
+    inPalette: true,
+    description: '',
+    hasCode: false,
+    hasWidgets: false,
+    hasGrammar: false,
+    adapter: {
+      handles: [
+        { id: 'in', type: 'target', position: Position.Left },
+        { id: 'out', type: 'source', position: Position.Right },
+      ],
+      editor: null,
+      container: {},
+      useNodeBehavior: () => ({}),
+    },
+  };
+  registerNode(descriptor);
+});
 
 type FlowApi = ReturnType<typeof useFlowContext>;
 let api: FlowApi;
@@ -129,8 +165,8 @@ async function addNodes(nodes: any[]) {
   await flush();
 }
 
-/** Wire source -> merge slot `in_<slot>` the way onConnect does at runtime. */
-async function connectToMergeSlot(source: string, target: string, slot: number) {
+/** Wire source -> circle *slot* the way onConnect does at runtime. */
+async function connectToCircle(source: string, target: string, slot: number) {
   await act(async () => {
     api.onEdgesChange([
       {
@@ -140,7 +176,7 @@ async function connectToMergeSlot(source: string, target: string, slot: number) 
           source,
           target,
           sourceHandle: 'out',
-          targetHandle: `in_${slot}`,
+          targetHandle: slot === 0 ? 'in' : `in_${slot}`,
         },
       } as any,
     ]);
@@ -150,23 +186,21 @@ async function connectToMergeSlot(source: string, target: string, slot: number) 
 
 const dataOf = (id: string) => api.nodes.find((n: any) => n.id === id)?.data as any;
 
-// The whole point of the bug: `@1` is what the palette actually produces.
-const VERSIONED = `${NodeType.MERGE_FLOW}@1`;
 const FORMS: Array<[string, string]> = [
-  ['unversioned (converter / legacy trill)', NodeType.MERGE_FLOW],
+  ['unversioned (converter / legacy trill)', NodeType.DATA_POOL],
   ['versioned (palette drag)', VERSIONED],
 ];
 
-describe.each(FORMS)('merge-flow input plumbing — %s', (_label, mergeType) => {
-  test('a produced output lands in the merge slot rather than overwriting data.input', async () => {
+describe.each(FORMS)('growing node input plumbing: %s', (_label, poolType) => {
+  test('a produced output lands in its own circle rather than overwriting data.input', async () => {
     renderFlow();
     await addNodes([
       node('src-a', NodeType.DATA_LOADING),
       node('src-b', NodeType.DATA_LOADING),
-      node('merge', mergeType),
+      node('pool', poolType),
     ]);
-    await connectToMergeSlot('src-a', 'merge', 0);
-    await connectToMergeSlot('src-b', 'merge', 1);
+    await connectToCircle('src-a', 'pool', 0);
+    await connectToCircle('src-b', 'pool', 1);
 
     await act(async () => {
       api.applyNewOutput({ nodeId: 'src-a', output: 'artifact-a' } as any);
@@ -176,27 +210,30 @@ describe.each(FORMS)('merge-flow input plumbing — %s', (_label, mergeType) => 
     const refA = normalizeFlowInput('artifact-a');
     const refB = normalizeFlowInput('artifact-b');
 
-    const afterFirst = dataOf('merge');
-    expect(Array.isArray(afterFirst.input)).toBe(true);
-    expect(afterFirst.input[0]).toEqual(refA);
-    expect(afterFirst.source[0]).toBe('src-a');
+    const afterFirst = dataOf('pool');
+    expect(Array.isArray(afterFirst.inputSlots)).toBe(true);
+    expect(afterFirst.inputSlots[0]).toEqual(refA);
+    expect(afterFirst.sourceSlots[0]).toBe('src-a');
+    // Circle 1 is wired and empty, so the node reads nothing yet; the
+    // single-input branch would have handed it src-a's output alone.
+    expect(afterFirst.input).toBe('');
 
-    // The second producer must fill its OWN slot, not clobber the first. This is
-    // the assertion that fails with `@1` pre-fix: the scalar branch replaced the
-    // whole of data.input, so slot 0 was lost and the merge never had both inputs.
+    // The second producer must fill its OWN circle, not clobber the first. This
+    // is the assertion the single-input branch fails: it replaces the whole of
+    // data.input, so circle 0 is lost and the node never has both inputs.
     await act(async () => {
       api.applyNewOutput({ nodeId: 'src-b', output: 'artifact-b' } as any);
     });
     await flush();
 
-    const afterSecond = dataOf('merge');
-    expect(Array.isArray(afterSecond.input)).toBe(true);
-    expect(afterSecond.input[0]).toEqual(refA);
-    expect(afterSecond.input[1]).toEqual(refB);
-    expect(afterSecond.source.slice(0, 2)).toEqual(['src-a', 'src-b']);
+    const afterSecond = dataOf('pool');
+    expect(afterSecond.inputSlots[0]).toEqual(refA);
+    expect(afterSecond.inputSlots[1]).toEqual(refB);
+    expect(afterSecond.sourceSlots.slice(0, 2)).toEqual(['src-a', 'src-b']);
+    expect(afterSecond.input).toEqual({ dataType: 'outputs', data: [refA, refB] });
   });
 
-  test('a non-merge downstream node still receives a scalar input', async () => {
+  test('a node that does not grow circles still receives a scalar input', async () => {
     renderFlow();
     await addNodes([
       node('src-a', NodeType.DATA_LOADING),

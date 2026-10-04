@@ -3,7 +3,7 @@
 Memo dev/127. The owner's failing node had to join two frames and was told
 neither's columns: ``_upstream_outputs_for`` supplied ``outputDataType:
 dataframe`` and nothing else, and only for upstreams that had EXECUTED — its
-own upstream was a ``merge-flow``, written but never executed (``DEC-075``), so
+own upstream was a node with no code, written but never executed (``DEC-075``), so
 the list was empty. Three correction rounds went into guessing a join key
 (``community_area``), then raising the code's own ``KeyError('No common column
 found…')``, then asking a plain ``DataFrame`` for ``.crs``.
@@ -22,13 +22,16 @@ from __future__ import annotations
 
 import logging
 
+from utk_curio.backend.app.agents.domain.input_contract import MAX_SLOTS
+
 log = logging.getLogger(__name__)
 
 #: Bounds. A schema is a description, never a copy of the data.
 MAX_COLUMNS = 60
 MAX_SAMPLE_ROWS = 3
 MAX_VALUE_CHARS = 80
-MAX_MERGE_PARTS = 5
+#: The parts of a list described: as many inputs as an input contract lists.
+MAX_PARTS = MAX_SLOTS
 
 
 def _clip(value: object) -> object:
@@ -126,8 +129,8 @@ def summarize(preview: object) -> dict | None:
 
     Handles the three shapes the sandbox's ``parseOutput`` produces for node
     output: a dataframe (columns → lists), a geodataframe (GeoJSON), and
-    ``outputs`` — a tuple/list, which is what a ``merge-flow`` hands the next
-    node as ``arg``. Anything else yields its ``dataType`` alone: honest
+    ``outputs``, a tuple/list, which is what a node with several inputs
+    receives as ``arg``. Anything else yields its ``dataType`` alone: honest
     absence beats a description of a shape this module does not know.
     """
     if not isinstance(preview, dict):
@@ -141,7 +144,7 @@ def summarize(preview: object) -> dict | None:
         if data_type == "geodataframe" and isinstance(data, dict):
             return _from_geojson(data)
         if data_type in ("outputs", "list", "tuple") and isinstance(data, list):
-            parts = [summarize(part) for part in data[:MAX_MERGE_PARTS]]
+            parts = [summarize(part) for part in data[:MAX_PARTS]]
             parts = [p for p in parts if p]
             if not parts:
                 return {"kind": data_type or "list", "parts": []}
@@ -194,7 +197,7 @@ def columns_of(upstream_outputs: list | None) -> list[str]:
             name = column.get("name") if isinstance(column, dict) else None
             if isinstance(name, str) and name and name not in names:
                 names.append(name)
-        # A merge hands a LIST of frames (``kind: "parts"``); each part's own
+        # Several inputs are a LIST of frames (``kind: "parts"``); each part's own
         # columns are what a downstream document could read.
         for part in schema.get("parts") or []:
             for column in (part or {}).get("columns") or []:

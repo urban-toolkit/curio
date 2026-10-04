@@ -120,8 +120,6 @@ def is_document_at_fault(cause: object) -> bool:
 AUTK_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "autk-grammar.v1.json"
 #: The template whose content is an Autark document.
 AUTK_TEMPLATE = "curio.builtin/autk-grammar"
-#: The template that merges flows; its input sockets are named ``in_<n>``.
-MERGE_TEMPLATE = "curio.builtin/merge-flow"
 #: What a Vega-Lite or Autark node calls its inputs: ``input_0``, ``input_1``,
 #: ... in circle order. An upstream Autark node's layers keep their table names.
 INPUT_TABLE_PREFIX = "input_"
@@ -563,7 +561,6 @@ def builtin_lists(manifest: dict) -> dict[str, str]:
     one port's declared maximum, or one per port when there are several."""
     from utk_curio.backend.app.packages.application.templates import input_capacity
 
-    package = manifest.get("id", "").split("@")[0]
     rows: dict[str, list[str]] = {
         "nodes": [], "control": [], "inputs": [], "outputs": [],
         "input_count": [], "output_count": [], "interaction": [],
@@ -577,25 +574,13 @@ def builtin_lists(manifest: dict) -> dict[str, str]:
         rows["outputs"].append(f"- {label}: {_types(outputs) or 'no output supported'}")
         if inputs:
             single = inputs[0].get("cardinality") if len(inputs) == 1 else None
-            capacity = input_capacity(f"{package}/{template.get('id')}", len(inputs), single)
+            capacity = input_capacity(len(inputs), single)
             rows["input_count"].append(f"- {label}: {'any number' if capacity is None else capacity}")
         if outputs:
             rows["output_count"].append(f"- {label}: {_cardinality(outputs)}")
         if template.get("bidirectional"):
             rows["interaction"].append(f"- {label}")
-    names = [f'"{name}"' for name in merge_slot_names()]
-    return {
-        **{f"builtin.{key}": "\n".join(lines) for key, lines in rows.items()},
-        "builtin.merge_slots": ", ".join(names[:-1]) + f" or {names[-1]}" if len(names) > 1 else names[0],
-    }
-
-
-def merge_slot_names() -> list[str]:
-    """The Merge Flow's input sockets, ``in_0`` up: one per connection it
-    accepts (``input_capacity``)."""
-    from utk_curio.backend.app.packages.application.templates import input_capacity
-
-    return [f"in_{n}" for n in range(input_capacity(MERGE_TEMPLATE, 1))]
+    return {f"builtin.{key}": "\n".join(lines) for key, lines in rows.items()}
 
 
 # --- Prompt templates ---------------------------------------------------------
@@ -690,10 +675,26 @@ def _template_label(src: _Sources, coord: str) -> str:
         raise PromptTemplateError(f"{BUILTIN_MANIFEST} has no labelled template {coord!r}") from None
 
 
-def _merge_range(_src: _Sources) -> str:
-    """The Merge Flow's sockets as a range, first to last."""
-    names = merge_slot_names()
-    return f'"{names[0]}".."{names[-1]}"'
+def _input_handles(_src: _Sources) -> str:
+    """The handles of a node's input circles, first ones then an ellipsis
+    (``slot_handle_id``)."""
+    from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
+
+    return ", ".join(f'"{slot_handle_id(k)}"' for k in range(3)) + ", ..."
+
+
+def _input_chip(_src: _Sources, text: str) -> str:
+    """The chip node code reads an input by: ``0`` is input 0, ``0.height``
+    a column of it (``reference_text``)."""
+    from utk_curio.backend.app.execution.code_references import (
+        input_reference_inner,
+        reference_text,
+    )
+
+    slot, _, column = text.partition(".")
+    if not slot.strip().isdigit():
+        raise PromptTemplateError(f"an input chip names a circle number, not {text!r}")
+    return reference_text(input_reference_inner(int(slot), column or None))
 
 
 def _not_code(src: _Sources) -> str:
@@ -879,9 +880,9 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     **{key: _builtin_list(key) for key in (
         "builtin.nodes", "builtin.control", "builtin.inputs", "builtin.outputs",
         "builtin.input_count", "builtin.output_count", "builtin.interaction",
-        "builtin.merge_slots",
     )},
-    "builtin.merge_range": PromptField(_merge_range),
+    "inputs.handles": PromptField(_input_handles),
+    "inputs.chip": PromptField(_input_chip, takes_arg=True),
     "builtin.not_code": PromptField(_not_code),
     "autk.grammar": PromptField(
         lambda src: render_autk_region(src.autk, _template_label(src, AUTK_TEMPLATE))

@@ -429,7 +429,7 @@ function markdownCell(source: string): NotebookCell {
 
 /** How a node names the value it received, mirroring the sandbox's ``arg``.
  *
- * ``worker.py`` hands a merge node a *tuple* of its upstream outputs, so several
+ * ``worker.py`` hands a node a *tuple* of its upstream outputs, so several
  * inputs become a tuple here too. No inputs means the body is a source and gets
  * ``None``.
  */
@@ -509,10 +509,6 @@ function generateCells(
       ? `${outVar} = ${outputVarName(inputNodes[0])}`
       : `${outVar} = None`;
     return [heading, codeCell(source)];
-  }
-
-  if (nodeType === NodeType.MERGE_FLOW) {
-    return [heading, codeCell(`${outVar} = ${argExpression(inputNodes)}`)];
   }
 
   if (nodeType === NodeType.VIS_VEGA) {

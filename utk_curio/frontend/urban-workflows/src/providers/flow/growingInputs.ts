@@ -1,15 +1,12 @@
 // Which nodes grow an input circle per edge, read from their template's input
-// port (utils/inputSlots). Merge Flow keeps its own five slots.
-import { NodeType } from "../../constants";
+// port (utils/inputSlots).
 import { tryGetNodeDescriptor } from "../../registry/nodeRegistry";
-import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import { growsInputCircles, inputCapacity } from "../../utils/inputSlots";
 
 type FlowNodeLike = { data?: { nodeType?: string } & Record<string, any> } | null | undefined;
 
 export function nodeGrowsInputs(node: FlowNodeLike): boolean {
     if (!node?.data?.nodeType) return false;
-    if (getUnversionedFlowNodeType(node as any) === NodeType.MERGE_FLOW) return false;
     const descriptor = tryGetNodeDescriptor(node.data.nodeType as any);
     return descriptor !== undefined && growsInputCircles(descriptor.inputPorts);
 }

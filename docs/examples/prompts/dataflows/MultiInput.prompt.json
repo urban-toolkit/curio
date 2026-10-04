@@ -1,13 +1,13 @@
 {
   "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
-  "fixtureId": "Merge",
+  "fixtureId": "MultiInput",
   "version": 1,
   "source": {
-    "path": "docs/examples/dataflows/Merge.json",
-    "sha256": "cd93cf8ea7455fc070d33e74501c433d773290e44d13aa24e4391fa6c85d5b5d",
+    "path": "docs/examples/dataflows/MultiInput.json",
+    "sha256": "764ff73ca382b6c6628e088901cfa4ab0e92794d846bb80c79bad80319930540",
     "walkthrough": null
   },
-  "prompt": "Load two small nine-row tables of the same letters with different numbers, combine them into one input, and in a Python computation step join them on the letter column and add the average of the two number columns. Also pass one of the combined inputs straight through a second computation step unchanged.",
+  "prompt": "Load two small nine-row tables of the same letters with different numbers, feed both into one step, and in a Python computation step join them on the letter column and add the average of the two number columns. Also pass one of the combined inputs straight through a second computation step unchanged.",
   "context": null,
   "required": {
     "datasets": [],
@@ -43,13 +43,6 @@
         "role": "loader",
         "executable": true,
         "hasContent": true
-      },
-      {
-        "ref": "merge1",
-        "type": "curio.builtin/merge-flow",
-        "role": "merge",
-        "executable": false,
-        "hasContent": false
       }
     ],
     "edges": [
@@ -60,20 +53,14 @@
       },
       {
         "from": "loader1",
-        "to": "merge1",
-        "kind": "data",
-        "slot": 1
+        "to": "analysis2",
+        "kind": "data"
       },
       {
         "from": "loader2",
-        "to": "merge1",
-        "kind": "data",
-        "slot": 2
-      },
-      {
-        "from": "merge1",
         "to": "analysis2",
-        "kind": "data"
+        "kind": "data",
+        "slot": 1
       }
     ],
     "sources": {
@@ -93,9 +80,7 @@
   ],
   "execution": {
     "mode": "sandbox",
-    "browserOnlyKinds": [
-      "curio.builtin/merge-flow"
-    ],
+    "browserOnlyKinds": [],
     "notes": null
   },
   "capability": {
@@ -121,5 +106,5 @@
     "licence": "MIT (this repository)",
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "The merge fan-in case: two loaders into one merge, with slots that matter."
+  "notes": "The fan-in case: two loaders into one node's two inputs, in an order that matters."
 }

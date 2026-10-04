@@ -175,8 +175,7 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
   // still being fetched, the join they start, and the join's last outcome.
   // Without them the run counted the join as done the moment it asked, moved
   // on to the charts, and they compiled before the join had answered: "0 rows
-  // arrived", over a chart that drew a moment later (mergeFlowBehavior has the
-  // same note, #151).
+  // arrived", over a chart that drew a moment later (#151).
   const slotsRef = useRef<[any | undefined, any | undefined]>([undefined, undefined]);
   const pendingInputsRef = useRef<Set<Promise<unknown>>>(new Set());
   const inflightRef = useRef<Promise<void> | null>(null);
@@ -299,7 +298,7 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
   // "exec" a run marks it with, the reason a run skipped it). As a slot setter
   // it put `{ code: "exec" }` in the points slot the moment a run asked, and
   // the join posted that as its points: "Tagged 0 of 0 points", and every
-  // chart it fed got 0 rows. Merge Flow keeps one only as a no-op.
+  // chart it fed got 0 rows.
 
   // A changed setting joins the same inputs again.
   useEffect(() => {

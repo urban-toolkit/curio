@@ -195,7 +195,7 @@ def resolve_size(node: dict, templates: dict[str, dict]) -> tuple[float, float]:
     metadata.nodeWidth`` into ``data.nodeWidth``; ``UniversalNode.tsx`` then does
     ``data.nodeWidth ?? adapter.container.nodeWidth``; ``styles.tsx`` falls back
     to 525x350. Today only ``curio.builtin/spatial-join`` (460x300) and
-    ``curio.builtin/merge-flow`` (50x180) set a template size.
+    ``curio.builtin/data-export`` (320x170) set a template size.
     """
     meta = node.get("metadata")
     meta = meta if isinstance(meta, dict) else {}
@@ -469,8 +469,8 @@ def tidy_layout(dataflow: dict, templates: dict[str, dict], *,
         top = 0.0
         for node in slot:
             # Centre a narrow node in its slot rather than left-aligning it: a
-            # 50px merge-flow sharing a rank with 525px charts would otherwise
-            # strand its output handle 475px from the lane edge.
+            # 460px Spatial Join sharing a rank with 525px charts would otherwise
+            # strand its output handle 65px from the lane edge.
             x[node] = cursor + (slot_width - size[node][0]) / 2
             y[node] = top
             top += size[node][1] + v_gutter

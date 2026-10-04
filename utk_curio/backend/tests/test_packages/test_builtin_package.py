@@ -1,6 +1,6 @@
 """Smoke tests for the committed ``packages/curio.builtin@1`` catalog entry.
 
-The built-in package is auto-installed for every user and provides the 14
+The built-in package is auto-installed for every user and provides the 11
 default node templates. A regression in its manifest would silently strand
 users with an empty palette, so we exercise the load + payload-serialize
 paths against the on-disk artefact.
@@ -34,15 +34,13 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
     "vis-vega",
     "vis-simple",
     "autk-grammar",
-    "merge-flow",
     "spatial-join",
     "parameter",
 })
 
 EXPECTED_BEHAVIORS: frozenset[str] = frozenset({
     "code", "data-export", "data-pool", "data-summary", "vega",
-    "simple-vis", "autk-grammar",
-    "merge-flow", "spatial-join", "parameter",
+    "simple-vis", "autk-grammar", "spatial-join", "parameter",
 })
 
 

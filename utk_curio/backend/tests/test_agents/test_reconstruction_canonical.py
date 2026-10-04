@@ -82,7 +82,8 @@ LOADER = "curio.builtin/data-loading"
 TRANSFORM = "curio.builtin/data-transformation"
 VEGA = "curio.builtin/vis-vega"
 POOL = "curio.builtin/data-pool"
-MERGE = "curio.builtin/merge-flow"
+#: A node that takes several inputs, one per circle (what a Merge Flow fed).
+ANALYSIS = "curio.builtin/computation-analysis"
 
 
 class TestTheSchemaItself:
@@ -216,10 +217,13 @@ class TestEdgeKindAndSlot:
 
     @pytest.mark.parametrize(
         "handle,expected",
-        [("in_0", 0), ("in_4", 4), ("in", None), ("DEFAULT", None), (None, None),
-         ("out", None), ("in/out", None), ("in_x", None), ("", None)],
+        [("in_0", 0), ("in_1", 1), ("in_4", 4), ("in_12", 12), ("in", None),
+         ("DEFAULT", None), (None, None), ("out", None), ("in/out", None),
+         ("in_x", None), ("", None)],
     )
-    def test_merge_slots_come_from_the_target_handle(self, handle, expected):
+    def test_input_circles_come_from_the_target_handle(self, handle, expected):
+        # Circle 0 is the plain "in" handle, a single-input port's own; the
+        # circles after it are "in_1", "in_2", ...
         assert edge_slot({"targetHandle": handle}) == expected
 
     def test_an_interaction_edge_is_kept_as_such_in_the_graph(self):
@@ -252,13 +256,30 @@ class TestRoles:
         assert role_for_template(TEMPLATES[LOADER], has_incoming_data_edge=True) == "transform"
         assert role_for_template(TEMPLATES[VEGA], has_incoming_data_edge=True) == "visualization"
         assert role_for_template(TEMPLATES[POOL], has_incoming_data_edge=True) == "pool"
-        assert role_for_template(TEMPLATES[MERGE], has_incoming_data_edge=True) == "merge"
         assert role_for_template(
             TEMPLATES["curio.builtin/computation-analysis"], has_incoming_data_edge=True
         ) == "analysis"
         assert role_for_template(
             TEMPLATES["curio.builtin/data-export"], has_incoming_data_edge=True
         ) == "export"
+
+    def test_a_flow_template_falls_through_to_the_generic_rules(self):
+        """The ``merge`` role left with the Merge Flow (#662): no template
+        derives it, and a ``flow``-category template is judged like any
+        other, by its code."""
+        from utk_curio.backend.app.agents.evaluation.canonical import ROLES
+
+        assert "merge" not in ROLES
+        assert "curio.builtin/merge-flow" not in TEMPLATES
+        no_code = TemplateFacts(template_id="fan-in", category="flow", editor="none",
+                                behavior="merge-flow")
+        assert role_for_template(no_code, has_incoming_data_edge=True) == "endpoint"
+        assert role_for_template(no_code, has_incoming_data_edge=False) == "endpoint"
+        coded = TemplateFacts(template_id="fan-in", category="flow", has_code=True)
+        assert role_for_template(coded, has_incoming_data_edge=True) == "analysis"
+        for facts in TEMPLATES.values():
+            for incoming in (False, True):
+                assert role_for_template(facts, has_incoming_data_edge=incoming) in ROLES, facts
 
     def test_a_template_with_no_code_is_an_endpoint_never_executable(self):
         """dev/119 (DEC-076): spatial-join has no code the sandbox could run --
@@ -419,17 +440,18 @@ class TestExpectedBlockRoundTrip:
         graph = CanonicalGraph(
             nodes=(
                 CNode(type=LOADER, role="loader", executable=True, has_content=True),
-                CNode(type=MERGE, role="merge", executable=False, has_content=False),
+                CNode(type=ANALYSIS, role="analysis", executable=True, has_content=True),
             ),
+            # The loader feeds the analysis node's second circle, "in_1".
             edges=(CEdge(src=0, dst=1, kind="data", slot=1),),
             sources=Sources(dataset_ids=("data.x",)),
         )
         block = graph.as_expected_dict()
         # Default refs are readable and role-derived, so an intent can name a
         # node a person can find in the walkthrough.
-        assert [n["ref"] for n in block["nodes"]] == ["loader1", "merge1"]
+        assert [n["ref"] for n in block["nodes"]] == ["loader1", "analysis1"]
         assert block["edges"] == [
-            {"from": "loader1", "to": "merge1", "kind": "data", "slot": 1}
+            {"from": "loader1", "to": "analysis1", "kind": "data", "slot": 1}
         ]
         assert block["sources"]["datasetIds"] == ["data.x"]
 
@@ -495,22 +517,24 @@ class TestCanonicalLabeling:
             canonical_graph_from_spec(swapped, templates=TEMPLATES)
         )
 
-    def test_merge_slots_are_part_of_the_labeling(self):
-        """Two inputs into the same merge are NOT interchangeable when the
-        slots differ -- the labeling must see the slot, or a swapped wiring
-        would canonicalize identically and the comparator could never report
-        it."""
+    def test_input_circles_are_part_of_the_labeling(self):
+        """Two inputs into the same node are NOT interchangeable when their
+        circles differ -- the labeling must see the circle, or a swapped
+        wiring would canonicalize identically and the comparator could never
+        report it. Successor of the Merge Flow's slots (#662)."""
         wired = _spec(
-            [_node("a", LOADER), _node("b", TRANSFORM), _node("m", MERGE, content="")],
-            [_edge("a", "m", targetHandle="in_0"), _edge("b", "m", targetHandle="in_1")],
+            [_node("a", LOADER), _node("b", TRANSFORM), _node("c", ANALYSIS)],
+            [_edge("a", "c", targetHandle="in"), _edge("b", "c", targetHandle="in_1")],
         )
         swapped = _spec(
-            [_node("a", LOADER), _node("b", TRANSFORM), _node("m", MERGE, content="")],
-            [_edge("a", "m", targetHandle="in_1"), _edge("b", "m", targetHandle="in_0")],
+            [_node("a", LOADER), _node("b", TRANSFORM), _node("c", ANALYSIS)],
+            [_edge("a", "c", targetHandle="in_1"), _edge("b", "c", targetHandle="in")],
         )
-        assert canonical_graph_from_spec(wired, templates=TEMPLATES) != (
-            canonical_graph_from_spec(swapped, templates=TEMPLATES)
-        )
+        one = canonical_graph_from_spec(wired, templates=TEMPLATES)
+        other = canonical_graph_from_spec(swapped, templates=TEMPLATES)
+        assert one != other
+        assert sorted(e.slot is None for e in one.edges) == [False, True]
+        assert {n.role for n in one.nodes if n.type == ANALYSIS} == {"analysis"}
 
     @pytest.mark.parametrize("path", example_paths(), ids=lambda p: p.stem)
     def test_the_labeling_is_exact_for_every_shipped_example(self, path):

@@ -26,9 +26,8 @@ reads the committed copies, **Example roads** and **Example parks**.
 
 ```mermaid
 flowchart LR
-  R[`Data Loading`<br/>the roads] --> M[`Merge Flow`]
-  P[`Data Loading`<br/>the parks] --> M
-  M --> C[`Python Computation`<br/>one GeoDataFrame]
+  R[`Data Loading`<br/>the roads] -->|input 0| C[`Python Computation`<br/>one GeoDataFrame]
+  P[`Data Loading`<br/>the parks] -->|input 1| C
   C --> V[`Vega-Lite`<br/>parks and roads]
 ```
 
@@ -57,13 +56,15 @@ return gdf
 
 ## One map
 
-**Merge Flow** hands both layers to the next node, roads first:
+Both layers go into one **Python Computation** node, the roads on its first
+input circle and the parks on its second, and its code reads each through an
+input chip (see [Several inputs](../USAGE.md#several-inputs)):
 
 ```python
 import geopandas as gpd
 import pandas as pd
 
-roads, parks = arg[0], arg[1]
+roads, parks = [!! input 0 !!], [!! input 1 !!]
 roads = roads.assign(layer="road")
 parks = parks.assign(layer="park")
 

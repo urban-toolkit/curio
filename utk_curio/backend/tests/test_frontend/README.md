@@ -353,7 +353,7 @@ Two families of baseline live in that folder:
   `agent-catalog-drawer`, `agent-run` (one per built-in agent, plus a
   `_chat` companion for the four that mutate), `agent-review-card`,
   `dataset-export`, `dataset-lineage`, `autark-grammar-edit`,
-  `merge-flow-authoring`, `canvas-delete-key`, `projects-page-scroll`,
+  `multi-input-authoring`, `canvas-delete-key`, `projects-page-scroll`,
   `global-imports`, `uhvi-install`, `data-pool-scroll`,
   `computed-json-output` and `workflow-deps-import`. These guard what the semantic assertions cannot see -
   most usefully that an edge is actually *drawn*, not merely present in the
@@ -484,7 +484,7 @@ test_frontend/
   test_package_export_import.py   # palette export download -> re-import (dup + renamed clone)
   test_save_as_package.py     # node -> Save as package -> Export -> load back
   test_canvas_authoring_e2e.py     # build by hand: dataset -> drag -> connect -> run
-  test_merge_flow_authoring_e2e.py # palette-dragged Merge Flow feeds `arg` downstream (#159)
+  test_multi_input_authoring_e2e.py # two palette-dragged producers wired into one node's circles (#159, #662)
   test_canvas_delete_key_e2e.py    # Delete and Backspace both delete; neither does inside Monaco (#153)
   test_autark_grammar_edit_e2e.py  # a mid-document grammar edit sticks on the first keystroke (#157)
   test_project_page_scroll_e2e.py  # the projects grid scrolls inside the viewport (#161) - no canvas
@@ -856,11 +856,11 @@ file and the next run dies at conftest import with `PermissionError: [WinError
 | Chapter | What it drives |
 |---|---|
 | `access` | signup validation, real signup, the persona picker, sign out, a wrong password, sign in; the projects page - search, all three sorts, grid/list, card click / Enter / Space / right-click, Duplicate, Rename, Delete, the detail drawer; Jupyter notebook import |
-| `canvas` | all twelve built-in tiles dropped and identity-checked; header band, resize, comments, pin; every editor tab; Node settings including the port editor; invalid connections and cycles; the guarded delete; Backspace inside Monaco; box select; zoom; minimize/expand all; a node that raises; Play All; Save-as JSON and notebook export |
+| `canvas` | all eleven built-in tiles dropped and identity-checked; header band, resize, comments, pin; every editor tab; Node settings including the port editor; invalid connections and cycles; the guarded delete; Backspace inside Monaco; box select; zoom; minimize/expand all; a node that raises; Play All; Save-as JSON and notebook export |
 | `nodes` | the Node Catalog drawer's four tabs; **a real install of every catalog package** (`curio.weather`, `ai.utk.uhvi`, `curio.streetvision` each shell out to pip); every template those packages ship dropped onto the canvas; **authoring a new node type** through Node settings -> Save as package node -> a new package, then dragging it back out of the palette; package metadata; export, re-import (400 by design), the library manager (a real `titlecase` install, then a JS install that 501s) |
 | `data` | the Data Catalog drawer's four tabs; **every hub dataset added to the dataflow**; the detail panel's four tabs; **a real import of every format** - CSV, Parquet, GeoJSON, GeoTIFF, an OSM PBF (split per layer) and a shapefile the chapter synthesises, since the repo ships none; dataset drag to canvas; a computed dataset and its lineage; the catalog pages and a deliberately bad dataset id |
 | `agents` | API Settings from both of its entry points, a new LLM configuration with all four provider tabs and Fetch models, the HF token; **every agent in the catalog installed**; all three attach targets (node, connection, canvas); the chat panel's controls; **one live turn per attached agent** against the configured provider; applying a proposal |
-| `views` | all eleven bundled examples loaded and run, Autark/WebGPU among them; linked brushing; the Data Pool scroll; Merge Flow; JS Computation; widgets; the dashboard page and its layout editing; the provenance window and a node's provenance tab |
+| `views` | all eleven bundled examples loaded and run, Autark/WebGPU among them; linked brushing; the Data Pool scroll; a node with several inputs; JS Computation; widgets; the dashboard page and its layout editing; the provenance window and a node's provenance tab |
 
 ### What it produces
 

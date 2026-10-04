@@ -263,7 +263,9 @@ def test_the_checks_find_what_the_prompts_name():
     every_id = {i for name in PROMPT_FILES for i in _ids(name)}
     assert {"catalog.search", "node.content.generate", "dataflow.plan.write"} <= every_id
     corpus = "\n".join(_text(name) for name in PROMPT_FILES)
-    assert "curio.builtin/merge-flow" in _TEMPLATE_RE.findall(corpus)
+    # The preamble names the Autark template by id (the Merge Flow it used to
+    # name here left with #662).
+    assert "curio.builtin/autk-grammar" in _TEMPLATE_RE.findall(corpus)
     assert "curio_load_data" in _HELPER_RE.findall(corpus)
     # The dataset calls a run is shown live in the worked examples now, not
     # in a prompt, so this scan must find them there.
@@ -343,7 +345,8 @@ def test_the_checks_find_what_the_used_dataflows_name():
     """The same guard for the worked examples: each scan above must find
     something in the "Used" dataflows, or it passes trivially."""
     corpus = "\n".join(_node_text(entry) for entry in USED)
-    assert "curio.builtin/merge-flow" in _TEMPLATE_RE.findall(corpus)
+    # The node that takes several inputs now that the Merge Flow is gone (#662).
+    assert "curio.builtin/computation-analysis" in _TEMPLATE_RE.findall(corpus)
     assert "curio_load_data" in _HELPER_RE.findall(corpus)
     assert DATASET_PATH_CALL_RE.findall(corpus)
     assert MODEL_CALL_RE.findall(corpus)
