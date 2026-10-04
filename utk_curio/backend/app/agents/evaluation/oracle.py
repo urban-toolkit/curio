@@ -46,7 +46,6 @@ _ROLE_TITLES = {
     "visualization": "Visualise",
     "grammar": "Render",
     "pool": "Fan out",
-    "merge": "Combine",
     "export": "Export",
     "endpoint": "Process",
     "presentation": "Note",
@@ -195,13 +194,13 @@ def plan_for(
             entry["kind"] = kind
         slot = edge.get("slot")
         if slot is not None:
-            # An interaction edge takes no merge slot (the grammar refuses
+            # An interaction edge takes no input circle (the grammar refuses
             # toHandle on one); a fixture that declares both is malformed and
             # should fail loudly here rather than mint a plan the parser drops.
             if kind == "interaction":
                 raise Unrepresentable(
                     "interaction-edge",
-                    f"{edge.get('from')} -> {edge.get('to')} declares a merge slot on an "
+                    f"{edge.get('from')} -> {edge.get('to')} declares an input circle on an "
                     "interaction edge; interaction links carry no input port",
                 )
             entry["toHandle"] = f"in_{int(slot)}"

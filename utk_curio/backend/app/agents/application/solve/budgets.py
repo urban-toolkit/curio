@@ -123,7 +123,7 @@ MAX_SOLVE_ATTEMPTS = 40
 
 
 #: dev/127: how far the walk looks through nodes that produced no artifact of
-#: their own (a merge-flow, a data pool) before giving up.
+#: their own (a data pool, a simple view) before giving up.
 _UPSTREAM_WALK_MAX_DEPTH = 4
 
 

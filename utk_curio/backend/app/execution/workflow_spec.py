@@ -31,7 +31,7 @@ def named_input_slot(edge: dict) -> int | None:
 
     dev/128, from a field failure: agent-applied edges carry a UUID id and the
     slot in ``targetHandle`` (dev/67-3 made handles explicit), so reading only
-    the id left every plan-created fan-in unordered — sorted lexicographically
+    the id left every plan-created fan-in unordered, sorted lexicographically
     by UUID. A node then validated against ``arg`` in one order and ran at Play
     in another: dataflow ``00708324`` passed *"solved · pass after 1 round"* and
     failed on Play with ``KeyError: 'tract_id'``, because validation handed it
@@ -48,7 +48,7 @@ def named_input_slot(edge: dict) -> int | None:
             m = re.match(r"^in_(\d+)$", text)
             if m:
                 return int(m.group(1))
-    # e.g. ``…78504in_1`` (no hyphen before ``in_``) — the canvas's edge ids.
+    # e.g. ``...78504in_1`` (no hyphen before ``in_``): the canvas's edge ids.
     m = re.search(r"in_(\d+)$", str(edge.get("id") or ""))
     return int(m.group(1)) if m else None
 
@@ -58,6 +58,11 @@ def input_slot(edge: dict) -> int:
     handle (or none) is circle 0."""
     index = named_input_slot(edge)
     return index if index is not None else 0
+
+
+def slot_handle_id(slot: int) -> str:
+    """The handle id of circle *slot*; ``slotHandleId`` in ``utils/inputSlots.ts``."""
+    return "in" if slot == 0 else f"in_{slot}"
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +230,7 @@ def classify_node(node_type: str) -> str:
         "code"     – has a Monaco code editor and a play button
         "grammar"  – has a JSON / grammar editor and a play button
         "datapool" – has ``#data-tabs`` but NO play button
-        "passive"  – no standard editor and no play button (e.g. VIS_SIMPLE)
+        "passive"  : no standard editor and no play button (e.g. VIS_SIMPLE)
     """
     if node_type in GRAMMAR_TYPES:
         return "grammar"
@@ -495,7 +500,7 @@ def parse_workflow_dict(data: dict, *, name: str = "", templates: dict | None = 
             "source": e.get("source"),
             "target": e.get("target"),
             "type": e.get("type"),
-            # dev/128: see the twin projection above — the handle is the node's
+            # dev/128: see the twin projection above: the handle is the node's
             # slot authority, the same one the canvas uses at Play.
             "targetHandle": e.get("targetHandle") or e.get("target_handle"),
             "sourceHandle": e.get("sourceHandle") or e.get("source_handle"),

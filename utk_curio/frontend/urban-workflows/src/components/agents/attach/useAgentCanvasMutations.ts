@@ -139,7 +139,7 @@ export function useAgentCanvasMutations(): void {
       onEdgesChange(
         mutation.edges.map((edge) => ({
           type: "add" as const,
-          // dev/67-3: the apply assigns real handles (input circles in_N) —
+          // dev/67-3: the apply assigns real handles (input circles in_N),
           // passed through; dev/112: interaction edges become bidirectional.
           item: appliedEdgeToCanvasEdge(edge) as never,
         })),

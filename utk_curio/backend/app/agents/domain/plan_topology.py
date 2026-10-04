@@ -57,7 +57,7 @@ def interaction_highlighters(templates: dict) -> frozenset[str]:
 
 
 def strip_type_version(node_type: object) -> str:
-    """``curio.builtin/merge-flow@1`` → ``curio.builtin/merge-flow``."""
+    """``curio.builtin/data-pool@1`` → ``curio.builtin/data-pool``."""
     return node_type.split("@", 1)[0] if isinstance(node_type, str) else ""
 
 

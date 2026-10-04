@@ -46,8 +46,8 @@ This file indexes the dataflows Curio ships, for the built-in agents. A run of a
 - [Interaction_Vega_Autark](../../docs/examples/dataflows/Interaction_Vega_Autark.json): checks brushing between a chart and a map through a pool, on a repository file read by path instead of a catalog dataset.
 - [Interaction_Vega_Simple](../../docs/examples/dataflows/Interaction_Vega_Simple.json): checks a point selection on a five-row hand-typed frame.
 - [JSComputation](../../docs/examples/dataflows/JSComputation.json): checks the JavaScript runner on a list of three numbers.
-- [Merge](../../docs/examples/dataflows/Merge.json): checks the input order of a merge, on two hand-typed frames.
-- [MergeFlowDataPool](../../docs/examples/dataflows/MergeFlowDataPool.json): checks merges and pools feeding each other, on hand-typed frames.
+- [MultiInput](../../docs/examples/dataflows/MultiInput.json): checks the input order of a node with two inputs, on two hand-typed frames.
+- [MultiInputDataPool](../../docs/examples/dataflows/MultiInputDataPool.json): checks a pool with five inputs, on hand-typed frames.
 - [SimpleView](../../docs/examples/dataflows/SimpleView.json): checks the table view on a three-row hand-typed frame.
 - [Vega](../../docs/examples/dataflows/Vega.json): checks the chart renderer on a hand-typed bar chart.
 - [Widget](../../docs/examples/dataflows/Widget.json): checks the widget input syntax in node code.

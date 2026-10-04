@@ -151,7 +151,7 @@ export interface NodeBehaviorResult {
   showLoading?: boolean;
   /** Custom React subtree rendered inside the NodeEditor content area. */
   contentComponent?: React.ReactNode;
-  /** Replace `nodeState.setOutput` — used when output state is managed locally (DataPool). */
+  /** Replace `nodeState.setOutput`, used when output state is managed locally (DataPool). */
   setOutputCallbackOverride?: any;
   outputOverride?: ICodeData;
   /** Extra handles appended to `adapter.handles` at render time. */

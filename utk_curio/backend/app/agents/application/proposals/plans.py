@@ -22,17 +22,11 @@ from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
+from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
-
-
-# Merge slot handles as the canvas renders them (mergeFlowBehavior in_0..in_4).
-_MERGE_HANDLE_RE = _re.compile(r"^in_[0-4]$")
-
-
-_MERGE_NODE_TYPE = "curio.builtin/merge-flow"
 
 
 # A growing node's input circles: ``in`` first, then ``in_1``, ``in_2``, ...
@@ -53,13 +47,27 @@ def _free_circle(taken: set, wanted) -> str:
     if isinstance(wanted, str) and _CIRCLE_HANDLE_RE.match(wanted) and wanted not in taken:
         return wanted
     slot = 0
-    while ("in" if slot == 0 else f"in_{slot}") in taken:
+    while slot_handle_id(slot) in taken:
         slot += 1
-    return "in" if slot == 0 else f"in_{slot}"
+    return slot_handle_id(slot)
+
+
+def _circle_index(handle: str) -> int:
+    """The circle a handle names (``in`` is 0, ``in_k`` is k), or -1."""
+    if not _CIRCLE_HANDLE_RE.match(handle):
+        return -1
+    return 0 if handle == "in" else int(handle[3:])
+
+
+def _circle_names(max_in: int | None) -> str:
+    """A growing node's circles as the handles an edge may name."""
+    shown = range(3) if max_in is None else range(max_in)
+    names = ", ".join(f'"{slot_handle_id(k)}"' for k in shown)
+    return names + (", ..." if max_in is None else "")
 
 
 def _strip_type_version(node_type: str) -> str:
-    """``curio.builtin/merge-flow@1`` → ``curio.builtin/merge-flow`` — spec
+    """``curio.builtin/data-pool@1`` → ``curio.builtin/data-pool``: spec
     node types may carry the versioned form; the template registry is
     unversioned-canonical."""
     return node_type.split("@", 1)[0] if isinstance(node_type, str) else node_type
@@ -75,9 +83,9 @@ def _validate_plan_fanin(
 ) -> list[str]:
     """dev/67-3 (DEC-051): every edge target must accept its NET incoming
     degree — plan edges plus the SURVIVING existing edges (dev/59 victims
-    excluded) — against the template registry's rendered capacity. Refusals
-    name the Merge resolution so the corrective round can replan; unknown or
-    out-of-scope templates fail open (no arity metadata → no refusal)."""
+    excluded), against the template registry's capacity. Refusals say how
+    to rewire so the corrective round can replan; unknown or out-of-scope
+    templates fail open (no arity metadata → no refusal)."""
     errors: list[str] = []
     plan_nodes = {n["ref"]: n for n in plan.get("nodes", [])}
     surviving_in: dict[str, int] = {}
@@ -127,15 +135,14 @@ def _validate_plan_fanin(
         elif max_in == 1:
             errors.append(
                 f"target {label!r} ({node_type}) accepts 1 input but the plan wires "
-                f"{total}{existing_note} — route {src_list} through a "
-                f"{_MERGE_NODE_TYPE} node instead (A → Merge, B → Merge, "
-                "Merge → target)"
+                f"{total}{existing_note}: wire {src_list} into one node that takes "
+                "several inputs (a code step that combines them), and connect that "
+                "node to the target"
             )
         else:
             errors.append(
                 f"target {label!r} ({node_type}) accepts at most {max_in} inputs "
-                f"but the plan wires {total}{existing_note} — reduce the fan-in "
-                "or stage merges"
+                f"but the plan wires {total}{existing_note}: reduce the fan-in"
             )
     for i, edge in enumerate(plan.get("edges", [])):
         handle = edge.get("toHandle")
@@ -148,9 +155,14 @@ def _validate_plan_fanin(
             node_type = _strip_type_version(
                 str((existing_nodes.get(target) or {}).get("type") or "")
             )
-        if node_type == _MERGE_NODE_TYPE and not _MERGE_HANDLE_RE.match(handle):
+        entry = available.get(node_type)
+        if not _grows_circles(entry):
+            continue
+        max_in = entry.get("maxIncomingEdges")
+        index = _circle_index(handle)
+        if index < 0 or (max_in is not None and index >= max_in):
             errors.append(
-                f"edges[{i}].toHandle {handle!r}: merge inputs are in_0..in_4"
+                f"edges[{i}].toHandle {handle!r}: this node's inputs are {_circle_names(max_in)}"
             )
     return errors
 
@@ -268,7 +280,7 @@ def _mint_dataflow_plan(
     remove_node_set = set(remove_nodes)
     # dev/67-3 (DEC-051): fan-in validates BEFORE anything materializes — an
     # invalid multi-input topology is unmintable, and the corrective error
-    # names the Merge resolution.
+    # says how to rewire it.
     fanin_errors = _validate_plan_fanin(
         plan, available, existing_nodes, existing_edges,
         remove_node_set, set(remove_edges),
@@ -906,7 +918,7 @@ def _plan_edge_context(
         for n in nodes
         if isinstance(n, dict)
     }
-    merge_slots_taken: dict[str, set[str]] = {}
+    circles_taken: dict[str, set[str]] = {}
     incoming_count: dict[str, int] = {}
     for e in edges:
         if not isinstance(e, dict):
@@ -915,10 +927,8 @@ def _plan_edge_context(
         if str(e.get("type") or "") == "Interaction":
             continue
         incoming_count[target] = incoming_count.get(target, 0) + 1
-        if types_by_id.get(target) == _MERGE_NODE_TYPE and isinstance(e.get("targetHandle"), str):
-            merge_slots_taken.setdefault(target, set()).add(e["targetHandle"])
-        elif _grows_circles(available.get(types_by_id.get(target))):
-            merge_slots_taken.setdefault(target, set()).add(e.get("targetHandle") or "in")
+        if _grows_circles(available.get(types_by_id.get(target))):
+            circles_taken.setdefault(target, set()).add(e.get("targetHandle") or "in")
     return {
         "plan": plan,
         "plan_edges": plan.get("edges", []),
@@ -929,14 +939,14 @@ def _plan_edge_context(
         "edges": edges,
         "available": available,
         "types_by_id": types_by_id,
-        "merge_slots_taken": merge_slots_taken,
+        "circles_taken": circles_taken,
         "incoming_count": incoming_count,
     }
 
 
 def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
     """Apply ONE plan edge against the CURRENT spec (the 67-8 policy: endpoint
-    resolution, already-connected no-op, DEC-051 fan-in, merge slots).
+    resolution, already-connected no-op, DEC-051 fan-in, input circles).
     Returns ``(result_row | None, created_edge | None)`` — ``None`` result when
     an endpoint is missing and ``record_missing`` is False (the progressive
     sweep skips not-yet-created endpoints silently; the explicit connect
@@ -993,7 +1003,7 @@ def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
             "note": "already connected",
         }, None
     if wants_interaction:
-        # dev/112: feedback edge — no input port, no merge slot, no cycle
+        # dev/112: feedback edge: no input port, no input circle, no cycle
         # question (interaction edges never carry data flow).
         edge = _interaction_spec_edge(source, target)
         ctx["edges"].append(edge)
@@ -1015,7 +1025,7 @@ def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
             **row, "status": "refused",
             "reason": "closes a cycle: " + plan_topology.format_cycle(path, lambda x: labels.get(x, x)),
         }, None
-    # Fan-in against the CURRENT spec (DEC-051 rendered capacity).
+    # Fan-in against the CURRENT spec (DEC-051 capacity).
     target_type = ctx["types_by_id"].get(target, "")
     entry = ctx["available"].get(target_type)
     max_in = entry.get("maxIncomingEdges") if entry else None
@@ -1024,30 +1034,13 @@ def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
         reason = (
             f"{row['toLabel']!r} accepts "
             + ("no inputs" if max_in == 0 else f"at most {max_in} input{'s' if max_in != 1 else ''}")
-            + f" and already has {incoming.get(target, 0)} — "
-            f"route through a {_MERGE_NODE_TYPE} node instead"
+            + f" and already has {incoming.get(target, 0)}"
         )
         edge_states[key] = "refused"
         return {**row, "status": "refused", "reason": reason}, None
     target_handle = plan_edge.get("toHandle") or "in"
-    if target_type == _MERGE_NODE_TYPE:
-        taken = ctx["merge_slots_taken"].setdefault(target, set())
-        wanted_handle = plan_edge.get("toHandle")
-        if isinstance(wanted_handle, str) and _MERGE_HANDLE_RE.match(wanted_handle) and wanted_handle not in taken:
-            target_handle = wanted_handle
-        else:
-            target_handle = next(
-                (f"in_{i}" for i in range(5) if f"in_{i}" not in taken), None
-            )
-            if target_handle is None:
-                edge_states[key] = "refused"
-                return {
-                    **row, "status": "refused",
-                    "reason": f"merge node {row['toLabel']!r} has no free input slot",
-                }, None
-        taken.add(target_handle)
-    elif _grows_circles(entry):
-        taken = ctx["merge_slots_taken"].setdefault(target, set())
+    if _grows_circles(entry):
+        taken = ctx["circles_taken"].setdefault(target, set())
         target_handle = _free_circle(taken, plan_edge.get("toHandle"))
         taken.add(target_handle)
     edge = {
@@ -1444,13 +1437,13 @@ def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: 
 def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: dict, session_id, plan: dict,
                        nodes: list, edges: list, ref_to_id: dict, spec_nodes_by_id: dict) -> list:
     """The plan's edges: endpoints resolve through the ref map ∪ existing ids (dev/59); handles are
-    explicit end-to-end (DEC-051) — merge targets get a deterministic free in_N slot; an interaction
-    edge (dev/112) takes no port and no slot."""
-    # dev/67-3 (DEC-051): handles are explicit end-to-end. Merge targets get a
-    # deterministic free in_N slot (a named free toHandle wins; occupied or
-    # unnamed falls to the lowest free) — the bridge passes these through
-    # instead of hardcoding "in", which left merge slots unfilled until a
-    # reload healed them.
+    explicit end-to-end (DEC-051): an edge into a node with several inputs gets a deterministic
+    free circle; an interaction edge (dev/112) takes no port and no circle."""
+    # dev/67-3 (DEC-051): handles are explicit end-to-end. An edge into a
+    # growing node gets a deterministic free circle (a named free toHandle
+    # wins; occupied or unnamed falls to the lowest free); the bridge passes
+    # these through instead of hardcoding "in", which left circles unfilled
+    # until a reload healed them.
     from utk_curio.backend.app.packages import service as packages_services
 
     types_by_id = {
@@ -1465,16 +1458,12 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
         }
     except Exception:
         available = {}  # arity metadata unavailable: every edge keeps "in"
-    merge_slots_taken: dict[str, set[str]] = {}
+    circles_taken: dict[str, set[str]] = {}
     for e in edges:
         if not isinstance(e, dict):
             continue
-        if types_by_id.get(e.get("target")) == _MERGE_NODE_TYPE:
-            handle = e.get("targetHandle")
-            if isinstance(handle, str):
-                merge_slots_taken.setdefault(e.get("target"), set()).add(handle)
-        elif str(e.get("type") or "") != "Interaction" and _grows_circles(available.get(types_by_id.get(e.get("target")))):
-            merge_slots_taken.setdefault(e.get("target"), set()).add(e.get("targetHandle") or "in")
+        if str(e.get("type") or "") != "Interaction" and _grows_circles(available.get(types_by_id.get(e.get("target")))):
+            circles_taken.setdefault(e.get("target"), set()).add(e.get("targetHandle") or "in")
     created_edges: list[dict] = []
     for plan_edge in plan.get("edges", []):
         # dev/59: endpoints resolve through the ref map ∪ existing ids.
@@ -1483,32 +1472,15 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
         if plan_topology.is_interaction_edge(plan_edge):
             # dev/112: the Trill's feedback edge — in/out handles both ends,
             # type Interaction (what loadTrill/TrillGenerator round-trip); no
-            # input port, no merge slot.
+            # input port, no input circle.
             edge = _interaction_spec_edge(source, target)
             edges.append(edge)
             created_edges.append(edge)
             continue
         target_handle = plan_edge.get("toHandle") or "in"
-        if types_by_id.get(target) == _MERGE_NODE_TYPE:
-            taken = merge_slots_taken.setdefault(target, set())
-            wanted = plan_edge.get("toHandle")
-            if isinstance(wanted, str) and _MERGE_HANDLE_RE.match(wanted) and wanted not in taken:
-                target_handle = wanted
-            else:
-                target_handle = next(
-                    (f"in_{i}" for i in range(5) if f"in_{i}" not in taken), None
-                )
-                if target_handle is None:
-                    label = ((spec_nodes_by_id.get(target) or {}).get("goal") or target)[:60]
-                    raise agents_store._mark_stale(
-                        user_key, project_id, proposal_id, spec, proposal, session_id,
-                        f"merge node {label!r} has no free input slot — "
-                        "ask the agent to replan",
-                    )
-            taken.add(target_handle)
-        elif _grows_circles(available.get(types_by_id.get(target))):
+        if _grows_circles(available.get(types_by_id.get(target))):
             # Each edge into a growing node takes a circle of its own.
-            taken = merge_slots_taken.setdefault(target, set())
+            taken = circles_taken.setdefault(target, set())
             target_handle = _free_circle(taken, plan_edge.get("toHandle"))
             taken.add(target_handle)
         edge = {
