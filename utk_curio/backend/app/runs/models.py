@@ -106,6 +106,9 @@ class DataflowRunStep(db.Model):
     # The library the step's code could not import, as the reply's
     # ``missingModule`` (JSON), so a canvas opened later offers its install.
     missing_module = db.Column(db.Text, nullable=True)
+    # The outputs the run could not install in the Data Catalog, as a save's
+    # ``dataset_install_warnings`` lists them (JSON).
+    install_warnings = db.Column(db.Text, nullable=True)
 
     __table_args__ = (
         db.UniqueConstraint("run_id", "node_id", name="uq_dataflow_run_step_node"),

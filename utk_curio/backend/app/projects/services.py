@@ -930,7 +930,9 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
                       categories=_categories(user, project_id, effective_spec))
 
 
-def record_node_outputs(user, project_id: str, outputs: List[OutputRef]) -> List[OutputRef]:
+def record_node_outputs(
+    user, project_id: str, outputs: List[OutputRef], warnings: Optional[list] = None,
+) -> List[OutputRef]:
     """Record outputs a run on the server produced, without a save.
 
     The outputs half of :func:`update_project`, node by node: each output is
@@ -938,12 +940,14 @@ def record_node_outputs(user, project_id: str, outputs: List[OutputRef]) -> List
     the manifest, and every other node's entry stays. A newer output already on
     record for a node is kept. Nothing else is written: not the spec, and not
     the project's revision, so a canvas open on the dataflow still saves on
-    top of it. Returns the refs the manifest now records.
+    top of it. Returns the refs the manifest now records; an output that could
+    not be installed is added to *warnings*, as a save's
+    ``dataset_install_warnings`` lists it.
     """
     _assert_guest_can_save(user)
     project = repo.get_for_user(project_id, user.id)
     ukey = _user_dir_key(user)
-    install_warnings: list = []
+    install_warnings: list = warnings if warnings is not None else []
     with storage.spec_write_lock(ukey, project_id):
         spec = storage.read_spec(ukey, project_id)
         manifest = storage.read_manifest(ukey, project_id)

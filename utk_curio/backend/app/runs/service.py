@@ -84,6 +84,7 @@ def step_payload(step: DataflowRunStep, current: Optional[dict] = None) -> dict:
         "stderrTail": step.stderr_tail,
         "skipReason": step.skip_reason,
         "missingModule": json.loads(step.missing_module) if step.missing_module else None,
+        "installWarnings": json.loads(step.install_warnings) if step.install_warnings else [],
     }
     if current is not None:
         payload["codeCurrent"] = bool(step.code_sha256) and current.get(step.node_id) == step.code_sha256
@@ -191,6 +192,7 @@ def replay_from_steps(run: DataflowRun) -> Iterator[tuple[str, dict]]:
              if step.output_path else None),
             ("stdoutTail", step.stdout_tail), ("stderrTail", step.stderr_tail),
             ("skipReason", step.skip_reason), ("durationMs", step.duration_ms),
+            ("installWarnings", json.loads(step.install_warnings) if step.install_warnings else None),
         ):
             if value is not None:
                 payload[key] = value
@@ -369,14 +371,20 @@ def _run_thread(app, run_id, user_id, token, project_id, plan, spec) -> Iterator
                 if payload["status"] == "ok" and records_output_on_save(
                     step.node, default_save, sources,
                 ):
+                    warnings: list = []
                     try:
                         record_node_outputs(db.session.get(User, user_id), project_id, [OutputRef(
                             node_id=step.node_id,
                             filename=output.get("dataset") or output.get("path"),
                             data_type=output.get("dataType"),
-                        )])
+                        )], warnings=warnings)
                     except Exception:  # noqa: BLE001 - the run goes on; the output is just not recorded
                         log.exception("run %s could not record the output of %s", run_id, step.node_id)
+                    if warnings:
+                        # The output that could not be installed, as a save
+                        # reports it, so the canvas warns as after a save.
+                        runs_repo.update_step(run_id, step.node_id, install_warnings=json.dumps(warnings))
+                        payload = {**payload, "installWarnings": warnings}
             elif kind == "run_finished":
                 runs_repo.update_run(
                     run_id, status=payload["status"], finished_at=datetime.now(timezone.utc),

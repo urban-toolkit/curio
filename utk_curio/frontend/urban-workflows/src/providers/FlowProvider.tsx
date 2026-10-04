@@ -396,6 +396,7 @@ const FlowProvider = ({
         applyNewOutput, setOutputs, hydrateRestoredOutputs, markNodeErroredRef,
         playNodes, playAllStateRef, emittedForInputRef, outputsRef, workflowNameRef,
         nodeExecProv, flushInstallSyncRef,
+        surfaceInstallWarnings: workflowOps.surfaceInstallWarnings,
     });
     // Stop ends whichever run is going, on the server or in the browser.
     const stopRuns = () => { cancelRun(); serverRun.stopRun(); };

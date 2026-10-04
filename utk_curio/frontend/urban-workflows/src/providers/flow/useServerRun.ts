@@ -13,6 +13,7 @@ import type { useToastContext } from "../ToastProvider";
 import { ACTIVE_RUN_STATUSES, runsApi } from "../../services/runs/runsApi";
 import type { Run, RunEvent, RunStatus } from "../../services/runs/runsApi";
 import type { NodeOutput } from "../../hook/useNodeState";
+import type { DatasetInstallWarning } from "../../api/projectsApi";
 import { executionResultOutput, recordExecProvenance } from "../../utils/executionResult";
 import type { IOutput } from "./flowTypes";
 import type { PlayAllState } from "./usePlayAll";
@@ -69,6 +70,7 @@ export function useServerRun({
     reactFlow, setNodes, showToast, requestProjectSave, applyNewOutput, setOutputs,
     hydrateRestoredOutputs, markNodeErroredRef, playNodes, playAllStateRef,
     emittedForInputRef, outputsRef, workflowNameRef, nodeExecProv, flushInstallSyncRef,
+    surfaceInstallWarnings,
 }: {
     reactFlow: ReactFlowInstance;
     setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
@@ -85,6 +87,11 @@ export function useServerRun({
     workflowNameRef: React.MutableRefObject<string>;
     nodeExecProv: (...args: any[]) => void;
     flushInstallSyncRef: React.MutableRefObject<() => void>;
+    /** The warning a save's `dataset_install_warnings` raises, for an output a run could not install. */
+    surfaceInstallWarnings?: (
+        detail: { dataset_install_warnings?: DatasetInstallWarning[] } | undefined,
+        scopeNodeIds?: readonly string[],
+    ) => void;
 }) {
     // True from the click until the server's part ends. UniversalNode reads it
     // with isRunActive: a map or chart draws in the run's browser part, or from
@@ -199,7 +206,12 @@ export function useServerRun({
         if (event.kind !== "step_started" && event.kind !== "step_finished") return;
         const step = run.steps.get(event.nodeId);
         if (step) step.status = event.kind === "step_started" ? "running" : event.status;
+        const firstOutcome = event.kind === "step_finished" && !run.applied.has(event.nodeId);
         applyChange(run, event.nodeId, nodeChangeFor(event, step, { started: run.started.has(event.nodeId) }));
+        // An output the run could not install warns as it does after a save.
+        if (firstOutcome && run.startedHere && event.kind === "step_finished" && event.installWarnings?.length) {
+            surfaceInstallWarnings?.({ dataset_install_warnings: event.installWarnings }, [event.nodeId]);
+        }
         if (event.kind !== "step_finished" || !step) return;
         run.settled.add(event.nodeId);
         // Every step has an outcome: the run is over, whatever its record

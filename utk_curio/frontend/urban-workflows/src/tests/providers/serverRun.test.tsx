@@ -86,6 +86,7 @@ function harness(initial: Array<{ id: string; data?: any }>, edges: any[] = []) 
     workflowNameRef: { current: "Flow" },
     nodeExecProv: jest.fn(),
     flushInstallSyncRef: { current: jest.fn() },
+    surfaceInstallWarnings: jest.fn(),
   };
   const hook = renderHook(() => useServerRun(deps as any));
   const shown = (id: string) => nodes.find((n) => n.id === id)?.data?.serverOutput?.output;
@@ -346,6 +347,27 @@ describe("a run started on the canvas", () => {
     deps.playNodes.mock.calls[0][1].onNodeDone("map", { failed: false });
 
     expect(node("map")!.data.serverOutput).toMatchObject({ output: before, onlyIfRunning: true });
+  });
+
+  it("an output the run could not install warns as after a save, once", async () => {
+    // #180: a save answers `dataset_install_warnings` and the canvas warns; a
+    // run on the server sends the same warnings with the step's event.
+    const live = stream();
+    api.start.mockResolvedValue(run("r1", [step("a")]));
+    const { hook, deps } = harness([{ id: "a" }]);
+    await act(async () => { await hook.result.current.startRun(); });
+    const warning = { node_id: "a", filename: "art-a", reason: "unsupported type" };
+    const finished = {
+      kind: "step_finished" as const, nodeId: "a", status: "ok" as const,
+      reply: { stdout: [], stderr: "", output: { path: "art-a", dataType: "dataframe" } },
+      installWarnings: [warning],
+    };
+
+    live.emit(finished);
+    live.emit(finished);
+
+    expect(deps.surfaceInstallWarnings).toHaveBeenCalledTimes(1);
+    expect(deps.surfaceInstallWarnings).toHaveBeenCalledWith({ dataset_install_warnings: [warning] }, ["a"]);
   });
 
   it("a run read back from its record still names the library a node could not import", async () => {

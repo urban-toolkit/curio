@@ -341,7 +341,7 @@ class TestWhatARunSaves:
         recorded = []
         monkeypatch.setattr(
             project_services, "record_node_outputs",
-            lambda user, project_id, outputs: recorded.extend(o.node_id for o in outputs) or [],
+            lambda user, project_id, outputs, warnings=None: recorded.extend(o.node_id for o in outputs) or [],
         )
         user, token = user_and_token
         project_id, _ = _create(client, token, [
@@ -374,7 +374,7 @@ class TestWhatARunSaves:
         recorded = []
         monkeypatch.setattr(
             project_services, "record_node_outputs",
-            lambda user, project_id, outputs: recorded.extend(o.node_id for o in outputs) or [],
+            lambda user, project_id, outputs, warnings=None: recorded.extend(o.node_id for o in outputs) or [],
         )
         user, token = user_and_token
         project_id, _ = _create(client, token, [
@@ -391,6 +391,39 @@ class TestWhatARunSaves:
         assert sandbox.bodies["lever"]["save_dataset"] is True  # its outcome
         assert sandbox.bodies["outside"]["save_dataset"] is False
         assert sorted(recorded) == ["context", "lever"]
+
+    def test_an_output_the_run_could_not_install_is_on_its_step_and_event(
+        self, client, user_and_token, sandbox, monkeypatch,
+    ):
+        # #180's warning: what a save answers in `dataset_install_warnings`, a
+        # run records on the step and sends with its event, so the canvas warns
+        # as it does after a save.
+        from utk_curio.backend.app.datasets.application import auto_install
+        from utk_curio.backend.app.projects import services as project_services
+
+        monkeypatch.setattr(
+            auto_install, "auto_install_node_output",
+            lambda **kwargs: {"status": "skipped", "nodeId": kwargs.get("node_id")},
+        )
+        warning = {"node_id": "kept", "filename": "art-kept", "reason": "unsupported type"}
+
+        def record(user, project_id, outputs, warnings=None):
+            if warnings is not None:
+                warnings.append(warning)
+            return []
+
+        monkeypatch.setattr(project_services, "record_node_outputs", record)
+        user, token = user_and_token
+        project_id, _ = _create(client, token, [_node("kept", saveOutputDataset=True), _node("plain")])
+        run_id = _start(client, token, project_id).get_json()["id"]
+        _wait(run_id)
+
+        steps = {s["nodeId"]: s for s in _get(client, token, run_id)["steps"]}
+        assert steps["kept"]["installWarnings"] == [warning]
+        assert steps["plain"]["installWarnings"] == []
+        finished = {data["nodeId"]: data for kind, data in _events(client, token, run_id) if kind == "step_finished"}
+        assert finished["kept"].get("installWarnings") == [warning]
+        assert "installWarnings" not in finished["plain"]
 
 
 class TestNodesTheBrowserRuns:

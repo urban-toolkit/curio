@@ -2,6 +2,7 @@
  * Dataflow runs on the server (`utk_curio/backend/app/runs/routes.py`): start
  * one, follow it, stop it, and report a node only the browser can run.
  */
+import type { DatasetInstallWarning } from "../../api/projectsApi";
 import type { MissingModuleNotice } from "../../types/nodeTypes";
 import { apiFetch } from "../../utils/authApi";
 import { postSseStream } from "../../utils/sseStream";
@@ -35,6 +36,8 @@ export interface RunStep {
   skipReason: string | null;
   /** The library the step's code could not import, as a run's reply names it. */
   missingModule?: MissingModuleNotice | null;
+  /** The outputs the run could not install in the Data Catalog, as a save reports them. */
+  installWarnings?: DatasetInstallWarning[];
   /** Read by `getRun`: whether the node still holds the code this step ran. */
   codeCurrent?: boolean;
 }
@@ -76,6 +79,8 @@ export type RunEvent =
       skipReason?: string;
       /** The reply Play would have had, stdout and stderr cut to their tails. */
       reply?: Record<string, unknown>;
+      /** The outputs the run could not install, as a save's `dataset_install_warnings`. */
+      installWarnings?: DatasetInstallWarning[];
       startedAt?: number;
       finishedAt?: number;
       durationMs?: number;
