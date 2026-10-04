@@ -42,10 +42,12 @@ jobs:
           docker run --rm \
             -v "$PWD/utk_curio/sandbox/tests/test_onnx_utk_probe.py:/app/utk_curio/sandbox/tests/test_onnx_utk_probe.py:ro" \
             -v "$PWD/probe-report:/report" \
-            -w /app -e PYTHONPATH=/app \
+            -w /app -e PYTHONPATH=/app -e CURIO_SEED_EXAMPLES=1 \
             "$IMAGE" \
-            python -m pytest utk_curio/sandbox/tests/test_onnx_utk_probe.py -v -p no:cacheprovider \
-              --junitxml=/report/probe.xml || true
+            bash -c 'python -c "from utk_curio.cli.dependencies import install_manifest_dependencies as i; i()" \
+              && pip install -q pytest \
+              && python -m pytest utk_curio/sandbox/tests/test_onnx_utk_probe.py -v -p no:cacheprovider \
+                   --junitxml=/report/probe.xml' || true
           test -f probe-report/probe.xml
 
       - name: 📤 Upload the probe report
