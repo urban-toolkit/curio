@@ -21,6 +21,7 @@ GEOMETRY_ACCEPT_HEADER = "X-Curio-Accept-Geometry"
 # run's own deadline is node_exec.SANDBOX_EXEC_TIMEOUT.
 SANDBOX_GET_TIMEOUT      = 300  # /get (full artifact JSON)
 SANDBOX_PREVIEW_TIMEOUT  = 60   # /get-preview (always small by definition)
+SANDBOX_RASTER_TIMEOUT   = 120  # /raster (a GeoTIFF an Autark map can hold)
 # /version is a cached constant on the sandbox side, and the version badge is
 # waiting on it, so it gets a short deadline rather than a generous one.
 SANDBOX_VERSION_TIMEOUT  = 5
@@ -312,6 +313,38 @@ def get_file_preview():
         return resp
     return _relay_sandbox_reply(resp, label='/get-preview', file_name=file_name, t0=t0,
                                 error_prefix='Error loading preview')
+
+
+@bp.route('/raster', methods=['GET'])
+@require_auth
+def get_raster():
+    """A raster artifact as GeoTIFF bytes, for an Autark node to load.
+
+    Asked by artifact id, never by path, and read by the sandbox under the
+    caller's session as ``/get`` is. The description rides in the
+    ``X-Curio-Raster`` header; a raster larger than ``maxCells`` or ``maxSide``
+    is a 413 with its size. Statuses and bodies pass through as the sandbox
+    gives them, so the node can say why a raster was not drawn.
+    """
+    file_name = request.args.get('fileName')
+
+    if not file_name:
+        return 'No artifact id specified', 400
+
+    params = {"fileName": file_name, "sessionId": get_current_token()}
+    for key in ('part', 'maxCells', 'maxSide'):
+        value = request.args.get(key)
+        if value is not None:
+            params[key] = value
+    t0 = time.perf_counter()
+    resp = _sandbox_call(
+        'get', '/raster',
+        label='/raster', timeout=SANDBOX_RASTER_TIMEOUT, stream=True,
+        params=params,
+    )
+    if isinstance(resp, tuple):
+        return resp
+    return _relay_sandbox_reply(resp, label='/raster', file_name=file_name, t0=t0)
 
 
 @bp.route('/processPythonCode', methods=['POST'])
