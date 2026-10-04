@@ -1,0 +1,92 @@
+{
+  "description": "The levels a run executes. Read by src/tests/providers/runLevelsCases.test.ts (computeTopologicalLevels) and by backend/tests/test_runs/test_run_plan.py (execution/run_plan.topological_levels). A node in a cycle is in no level.",
+  "cases": [
+    {
+      "name": "a chain runs one node per level",
+      "nodes": ["a", "b", "c"],
+      "edges": [
+        {"id": "ab", "source": "a", "target": "b"},
+        {"id": "bc", "source": "b", "target": "c"}
+      ],
+      "levels": [["a"], ["b"], ["c"]]
+    },
+    {
+      "name": "a node with no edge runs first, before the roots",
+      "nodes": ["x", "a", "b"],
+      "edges": [{"id": "ab", "source": "a", "target": "b"}],
+      "levels": [["x"], ["a"], ["b"]]
+    },
+    {
+      "name": "a diamond runs its two branches together",
+      "nodes": ["a", "b", "c", "d"],
+      "edges": [
+        {"id": "ab", "source": "a", "target": "b"},
+        {"id": "ac", "source": "a", "target": "c"},
+        {"id": "bd", "source": "b", "target": "d"},
+        {"id": "cd", "source": "c", "target": "d"}
+      ],
+      "levels": [["a"], ["b", "c"], ["d"]]
+    },
+    {
+      "name": "two roots feeding one node",
+      "nodes": ["a", "b", "c"],
+      "edges": [
+        {"id": "ac", "source": "a", "target": "c", "targetHandle": "in"},
+        {"id": "bc", "source": "b", "target": "c", "targetHandle": "in_1"}
+      ],
+      "levels": [["a", "b"], ["c"]]
+    },
+    {
+      "name": "one node feeding two circles of another",
+      "nodes": ["a", "b"],
+      "edges": [
+        {"id": "ab0", "source": "a", "target": "b", "targetHandle": "in"},
+        {"id": "ab1", "source": "a", "target": "b", "targetHandle": "in_1"}
+      ],
+      "levels": [["a"], ["b"]]
+    },
+    {
+      "name": "an interaction link as a dataflow saves it orders nothing",
+      "nodes": ["a", "b", "c"],
+      "edges": [
+        {"id": "ab", "source": "a", "target": "b"},
+        {"id": "bc", "source": "b", "target": "c", "type": "Interaction", "sourceHandle": "in/out", "targetHandle": "in/out"}
+      ],
+      "levels": [["c"], ["a"], ["b"]]
+    },
+    {
+      "name": "an interaction link as the canvas holds it orders nothing",
+      "nodes": ["a", "b", "c"],
+      "edges": [
+        {"id": "ab", "source": "a", "target": "b"},
+        {"id": "bc", "source": "b", "target": "c", "sourceHandle": "in/out", "targetHandle": "in/out"}
+      ],
+      "levels": [["c"], ["a"], ["b"]]
+    },
+    {
+      "name": "a cycle is left out, the rest runs",
+      "nodes": ["a", "b", "c"],
+      "edges": [
+        {"id": "ab", "source": "a", "target": "b"},
+        {"id": "ba", "source": "b", "target": "a"}
+      ],
+      "levels": [["c"]]
+    },
+    {
+      "name": "a cycle below a root stops the walk there",
+      "nodes": ["s", "a", "b"],
+      "edges": [
+        {"id": "sa", "source": "s", "target": "a"},
+        {"id": "ab", "source": "a", "target": "b"},
+        {"id": "ba", "source": "b", "target": "a"}
+      ],
+      "levels": [["s"]]
+    },
+    {
+      "name": "an empty dataflow has no levels",
+      "nodes": [],
+      "edges": [],
+      "levels": []
+    }
+  ]
+}
