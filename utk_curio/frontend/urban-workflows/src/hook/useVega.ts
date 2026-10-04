@@ -263,8 +263,10 @@ export const useVega = ({
     // Several inputs, or a spec that reads its inputs by name: a hot swap
     // reaches one dataset only, so the view is built again from its spec.
     if (datasetViewRef.current || usesNamedDatasets(lastSpecRef.current, prepared.datasets.length)) {
-      // A rebuild is a redraw too, and says what it drew.
-      onRedrawRef.current?.(await compileGrammar(JSON.parse(authoredSpecRef.current)));
+      // A rebuild is a redraw too, and says what it drew. Built first, in its
+      // own statement: `f?.(g())` never calls g when there is no f.
+      const counts = await compileGrammar(JSON.parse(authoredSpecRef.current));
+      onRedrawRef.current?.(counts);
       return;
     }
     setEmptyState(prepared);
