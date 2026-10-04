@@ -67,9 +67,8 @@ class TestCompleteness:
         assert len(legacy) == 21
 
     def test_every_split_is_populated_and_heldout_is_a_minority(self):
-        """Splits exist so a later fine-tuning export has somewhere to draw
-        from; a held-out set that swallowed the corpus would leave nothing to
-        train on and nothing to validate with."""
+        """Splits exist so an export has somewhere to draw from; a held-out set
+        that swallowed the corpus would leave the other splits empty."""
         counts: dict = {}
         for fixture in FIXTURES:
             counts[fixture.split] = counts.get(fixture.split, 0) + 1
@@ -305,3 +304,45 @@ class TestFixturesAreNotMistakenForDataflows:
         assert len(curated) == 23
         assert len(legacy) == 21
         assert not any(".prompt.json" in p.name for p in curated + legacy)
+
+
+class TestTheShippedFixturesDeclareTheirClassification:
+    @pytest.mark.parametrize("fixture", FIXTURES, ids=FIXTURE_IDS)
+    def test_every_fixture_declares_identifiers_only_and_its_licence(self, fixture):
+        consent = fixture.data.get("consent")
+        assert isinstance(consent, dict), "a fixture must declare what an export carries"
+        assert consent["dataContent"] == "identifiers-only"
+        assert consent["licence"]
+
+    @pytest.mark.parametrize(
+        "fixture",
+        [f for f in FIXTURES if f.required["datasets"]],
+        ids=lambda f: f.fixture_id,
+    )
+    def test_a_fixture_that_names_datasets_records_their_licences(self, fixture):
+        """Recorded so a reader can see they were considered; they are not
+        implicated by an export that carries identifiers only."""
+        declared = {
+            row["datasetId"]: row["licence"]
+            for row in fixture.data["consent"].get("sourceLicences") or []
+        }
+        assert set(declared) == set(fixture.required["datasets"])
+        catalog = {}
+        for manifest in (REPO_ROOT / "datasets").glob("*/manifest.json"):
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            if data.get("id"):
+                catalog[data["id"]] = data.get("license") or ""
+        for dataset_id, licence in declared.items():
+            assert licence == catalog.get(dataset_id), dataset_id
+
+    def test_the_schema_declares_consent_and_still_forbids_unknown_keys(self):
+        schema = json.loads(
+            (REPO_ROOT / "docs/schemas/example-prompt-fixture.v1.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert "consent" in schema["properties"]
+        assert schema["additionalProperties"] is False
+        assert schema["properties"]["consent"]["properties"]["dataContent"]["enum"] == [
+            "identifiers-only", "user-content",
+        ]

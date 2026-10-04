@@ -72,6 +72,7 @@ import {
     MINIMIZED_NODE_WIDTH,
     SupportedType,
 } from "../constants";
+import { clampNodeBox } from "../utils/nodeBoxSize";
 import { getNodeDescriptor, tryGetNodeDescriptor } from "../registry";
 import { NodeCategory, NodeTemplateId } from "../registry/types";
 import {
@@ -235,12 +236,15 @@ export const NodeContainer = ({
     const [expectedInputType, setExpectedInputType] = useState(data.in);
     const [expectedOutputType, setExpectedOutputType] = useState(data.out);
     const [showWarnings, setShowWarnings] = useState<boolean>(false);
+    // A node with content starts at the size the mount clamp below gives it, so
+    // its first render is already its final size: the canvas measures that
+    // render for its load fit (#683). An icon-only node keeps its own footprint.
     const [currentNodeWidth, setCurrentNodeWidth] = useState<number | undefined>(
-        nodeWidth
+        () => (noContent ? nodeWidth : clampNodeBox(nodeWidth, nodeHeight).width)
     );
-    const [currentNodeHeight, setCurrentNodeHeight] = useState<
-        number | undefined
-    >(nodeHeight);
+    const [currentNodeHeight, setCurrentNodeHeight] = useState<number | undefined>(
+        () => (noContent ? nodeHeight : clampNodeBox(nodeWidth, nodeHeight).height)
+    );
     // Icon-only nodes (manifest `containerStyle.noContent: true` — merge-flow)
     // start minimized: they have no body to expand and the 50×180 footprint is
     // their default render. (Spatial Join left this set in #262, when it gained
