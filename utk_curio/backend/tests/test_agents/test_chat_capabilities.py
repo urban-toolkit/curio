@@ -1,8 +1,8 @@
 """What a chat endpoint can do beyond text, and where the answer comes from.
 
 ``chat_capabilities`` answers from the table (Anthropic, Gemini, OpenAI's own
-endpoint), from training (a model trained in Curio stays fenced), from the
-script (the scripted provider, fenced unless a test says otherwise), or from a
+endpoint), from the script (the scripted provider, fenced unless a test says
+otherwise), or from a
 charged trial that asks any other OpenAI-compatible server once per model and
 remembers the answer per account. Nothing refuses a run for want of a
 capability: ``providerRequirements`` is a preference.
@@ -82,12 +82,6 @@ class TestTheTable:
         assert found.protocol == "native"
         assert trial.requests == []
 
-    def test_a_model_trained_in_curio_stays_fenced(self, tmp_curio, monkeypatch):
-        trial = _Trial(monkeypatch)
-        found = cc.chat_capabilities(_cfg(base_url="https://api.openai.com/v1", trained=True), USER)
-        assert (found.protocol, found.source) == ("fenced", "trained")
-        assert trial.requests == []
-
 
 class TestTheScript:
     def test_the_scripted_provider_is_fenced_unless_scripted(self, tmp_curio):
@@ -157,6 +151,14 @@ class TestTheTrial:
         _Trial(monkeypatch, error=ConnectionError("refused for sk-local-key-0123456789"))
         found = cc.chat_capabilities(_cfg(), USER)
         assert "sk-local-key-0123456789" not in found.reason
+
+    def test_a_corrupt_sidecar_is_an_empty_one(self, tmp_curio):
+        path = model_catalog._sidecar_path(USER, model_catalog._CHAT_CAPABILITIES_FILENAME)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{not json", encoding="utf-8")
+        assert model_catalog.remembered_chat_capabilities(
+            USER, "openai_compatible", "http://localhost:11434/v1", "llama3"
+        ) is None
 
 
 @pytest.fixture()

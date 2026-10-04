@@ -482,7 +482,7 @@ class TestRecordingARefusal:
         assert model_catalog.remembered_chat_capabilities(
             "7", "openai_compatible", "http://localhost:11434/v1", "m")["tools"] is False
         for config in (self._cfg(api_type="anthropic"), self._cfg(base_url="https://api.openai.com/v1"),
-                       self._cfg(api_type="testing"), self._cfg(model="t", trained=True)):
+                       self._cfg(api_type="testing")):
             chat_capabilities.record_native_refusal(config, "7", "no tools")
             assert model_catalog.remembered_chat_capabilities(
                 "7", config.api_type, config.base_url, config.model) is None

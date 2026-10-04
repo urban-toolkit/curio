@@ -7,7 +7,7 @@ import DescriptionModal from './DescriptionModal';
 import { OutputIcon } from './edges/OutputIcon';
 import { InputIcon } from './edges/InputIcon';
 import { getNodeDescriptor, tryGetNodeDescriptor, subscribeToRegistry } from '../registry/nodeRegistry';
-import { isRegistryReady, subscribeToRegistryReady } from '../registry/packageRegistryBootstrap';
+import { isRegistryReady, subscribeToRegistryReady } from '../registry/registryReadiness';
 import { UnresolvedNode } from './UnresolvedNode';
 import { behaviorDataView } from "../utils/behaviorDataView";
 import { isSelectionEcho } from "../utils/selectionEcho";

@@ -567,3 +567,18 @@ class TestReport:
     def test_the_roster_digest_is_order_independent(self):
         assert digest_of(["b", "a"]) == digest_of(["a", "b"])
         assert digest_of(["a"]) != digest_of(["a", "b"])
+
+
+class TestCachedInputInTheReport:
+    def test_the_cli_report_says_how_much_input_was_cached(self):
+        report = RunReport(run_id="r", mode="live")
+        report.add(AttemptRecord(fixture_id="f", usage={
+            "inputTokens": 100, "outputTokens": 5, "cacheReadTokens": 80}))
+        report.add(AttemptRecord(fixture_id="g", usage={
+            "inputTokens": 100, "outputTokens": 5, "cacheWriteTokens": 90}))
+        assert "- Cached input: 80 tokens read, 90 written (counted in the input tokens)" in report.as_markdown()
+
+    def test_a_provider_that_reports_no_cache_adds_no_line(self):
+        report = RunReport(run_id="r", mode="live")
+        report.add(AttemptRecord(fixture_id="f"))
+        assert "Cached input" not in report.as_markdown()

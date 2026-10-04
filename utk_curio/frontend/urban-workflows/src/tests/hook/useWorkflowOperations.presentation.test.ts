@@ -27,6 +27,12 @@ jest.mock("reactflow", () => ({
   }),
   useNodesInitialized: () => true,
 }));
+// The package registry has loaded, so the fit has nothing to wait for
+// (useWorkflowOperations.loadFit.test.ts covers the wait).
+jest.mock("../../registry/registryReadiness", () => ({
+  isRegistryReady: () => true,
+  subscribeToRegistryReady: () => () => {},
+}));
 jest.mock("../../providers/ProvenanceProvider", () => ({
   useProvenanceContext: () => ({ getAllNodeProvenance: () => ({}) }),
 }));

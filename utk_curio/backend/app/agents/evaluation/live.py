@@ -251,9 +251,8 @@ class LiveRun:
 
     # ── the steps ──────────────────────────────────────────────────────────
     def _create_project(self, fixture) -> str:
-        # Marked as this run's, as the evaluation service marks its own: the
-        # marker's fixture id keeps the example under test out of the worked
-        # examples every run in the project is given.
+        # Marked as this run's: the marker's fixture id keeps the example under
+        # test out of the worked examples every run in the project is given.
         spec = auth_mod.mark_spec(
             {"dataflow": {"nodes": [], "edges": [], "packages": []}},
             auth_mod.new_marker(self.report.run_id, fixture.fixture_id),
@@ -300,10 +299,9 @@ class LiveRun:
         """Apply what the shared policy allows, over HTTP.
 
         The DECISION lives in ``evaluation/policy.py`` (memo dev/123) — the one
-        copy, shared with the in-process evaluation service and the
-        deterministic test driver, because three callers deciding separately
-        would measure three things and report one number. This method is the
-        transport for that decision and nothing else.
+        copy, shared with the deterministic test driver, because two callers
+        deciding separately would measure two things and report one number.
+        This method is the transport for that decision and nothing else.
         """
         policy = policy_mod.UserPolicy.for_fixture(fixture)
         base = f"/api/agents/projects/{project_id}/attachments/{attachment_id}"
