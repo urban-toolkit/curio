@@ -308,12 +308,23 @@ def save_dataflow_and_settle_header(page, *, timeout: float = 30000) -> dict:
     Returns the saved project as the server answered it.
     """
     detail = save_dataflow(page, timeout=timeout)
-    categories = detail.get("categories") or {}
+    park_pointer(page)
+    settle_header_after_save(page, detail, timeout=timeout)
+    return detail
+
+
+def settle_header_after_save(page, saved_project: dict, *, timeout: float = 30000) -> None:
+    """Wait until the canvas header shows the save that answered *saved_project*.
+
+    For a save made any way (File menu, status icon): the save icon, the Data
+    Catalog count and, when the save gave the dataflow automatic categories,
+    their chips.
+    """
+    categories = saved_project.get("categories") or {}
     auto = categories.get("auto") or {}
     want_auto_chips = bool(
         categories.get("source") or auto.get("tags") or auto.get("data_type")
     )
-    park_pointer(page)
     try:
         page.wait_for_function(_HEADER_SHOWS_SAVE_JS, arg=want_auto_chips, timeout=timeout)
     except PlaywrightTimeoutError:
@@ -322,7 +333,6 @@ def save_dataflow_and_settle_header(page, *, timeout: float = 30000) -> dict:
             f"the header never showed the save within {timeout / 1000:.0f} s: {seen} "
             f"(automatic category chips expected: {want_auto_chips})"
         ) from None
-    return detail
 
 
 _HEADER_STATE_JS = """() => ({

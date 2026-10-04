@@ -78,6 +78,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     run_node_and_wait,
+    save_dataflow_and_settle_header,
     save_workflow_test_screenshot,
     set_canvas_zoom,
     set_node_code,
@@ -316,7 +317,10 @@ def test_dataset_loads_and_feeds_a_consumer(
     # drew bars and the edges are actually rendered. Compared at the suite's
     # default tolerance (10% of pixels, 30/255 per channel). The helper pins
     # its own fitView first, so the authoring zoom above does not leak into the
-    # capture.
+    # capture. Saved first, as test_workflows.py does: the header shows a save's
+    # icon, chips and catalog count, and without one the frame shows whatever
+    # the 30 s autosave last reached (#584).
+    save_dataflow_and_settle_header(page)
     assert_header_shows_save(page)
     save_workflow_test_screenshot(
         page,
