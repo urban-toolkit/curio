@@ -10,9 +10,11 @@ of the result. This drives the whole path in a browser:
 3. Run All with it collapsed: the shared loader runs once, and both branches
    run, the hidden one included.
 4. Double-click the box: it expands in place and its map is drawn.
-5. Collapse it again, save and reopen: the scenarios, the collapsed state and
-   the box's place are back. The map, first mounted inside the hidden box this
-   time, is drawn once the box is expanded.
+5. Collapse it again, save and reopen: the scenarios, the collapsed state, the
+   box's place and the saved outputs are back. Run scenario runs the copy's
+   lever and reuses the restored loader; the map, mounted inside the hidden
+   box this time, is drawn once the box is expanded. (A reopened canvas Autark
+   map does not draw by itself from its restored input, scenario or not: #711.)
 
 It runs the Autark node, which needs WebGPU: without an adapter it skips,
 unless ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job), where it fails.
@@ -43,6 +45,7 @@ from .utils import (
     save_dataflow,
     stub_login_and_enter_workflow,
     wait_for_node_settled,
+    wait_for_run_guard_released,
 )
 
 if TYPE_CHECKING:
@@ -160,6 +163,24 @@ def _saved_spec(current_server: str, session: dict) -> dict:
     return api_json(f"{current_server}/api/projects/{project_id}", session["token"])["spec"]
 
 
+def _record_python_runs(page):
+    """The node ids of the Python runs that leave the page from now on: every
+    run is one POST naming its node. Returns the list and a stop function."""
+    executed: list[str] = []
+
+    def _record(request) -> None:
+        if request.method != "POST" or not request.url.endswith("/processPythonCode"):
+            return
+        try:
+            body = json.loads(request.post_data or "{}")
+        except ValueError:
+            body = {}
+        executed.append(str(body.get("nodeId")))
+
+    page.on("request", _record)
+    return executed, lambda: page.remove_listener("request", _record)
+
+
 def _box(page, scenario_id: str):
     return page.get_by_test_id(f"scenario-box-{scenario_id}")
 
@@ -246,20 +267,9 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
     assert after["x"] - before["x"] > 100, f"the box did not follow the drag: {before} -> {after}"
 
     # 3. Run All with the copy collapsed: the shared loader runs once.
-    executed: list[str] = []
-
-    def _record(request) -> None:
-        if request.method != "POST" or not request.url.endswith("/processPythonCode"):
-            return
-        try:
-            body = json.loads(request.post_data or "{}")
-        except ValueError:
-            body = {}
-        executed.append(str(body.get("nodeId")))
-
-    page.on("request", _record)
+    executed, stop = _record_python_runs(page)
     run_all_and_wait(page, timeout_ms=240000)
-    page.remove_listener("request", _record)
+    stop()
     assert sorted(executed) == sorted([LOADER, SCALE, scale_copy]), (
         f"Run All sent {executed}: the shared loader must run once, and both branches once"
     )
@@ -305,11 +315,32 @@ def test_a_branch_duplicated_as_a_scenario_collapses_runs_and_expands(
     _scenario_menu(page, "Show scenarios")
     for scenario_id in (original_id, copy_id):
         page.get_by_test_id(f"scenario-card-{scenario_id}").wait_for(state="visible", timeout=10000)
+    # The outputs the scenario saved are back: its context and the node that
+    # feeds its map read as having run.
+    for node_id in (LOADER, scale_copy):
+        status = node_locator(page, node_id).locator("[data-curio-node-status]").first.get_attribute(
+            "data-curio-node-status", timeout=30000
+        )
+        assert status == "done", f"{node_id} reads {status!r} after a reopen: its saved output was not restored"
 
-    # The map was mounted inside the hidden box this time, and draws from the
-    # outputs the scenario saved once the box is expanded.
+    # A reopened canvas Autark map does not draw from its restored input by
+    # itself, inside a scenario or not (#711), so run the scenario: its levers
+    # run, the restored loader is reused, and the map runs inside the hidden
+    # box, its canvas made there.
+    executed, stop = _record_python_runs(page)
+    page.get_by_test_id(f"scenario-card-{copy_id}").get_by_role("button", name="Run scenario").click()
+    status = wait_for_node_settled(page, map_copy, node_type="autk-grammar", timeout_ms=180000)
+    wait_for_run_guard_released(page, timeout_ms=60000)
+    stop()
+    detail = read_node_error_text(node_locator(page, map_copy)) if status == "error" else ""
+    assert status == "done", f"{map_copy} did not draw inside the collapsed scenario: {detail}"
+    assert executed == [scale_copy], (
+        f"Run scenario sent {executed}: only its lever should run, and its restored context be reused"
+    )
+
+    # Expanded, the map made inside the hidden box is drawn.
     box = _frame_box(page, copy_id, [scale_copy, map_copy])
     box.dblclick()
     node_locator(page, map_copy).wait_for(state="visible", timeout=10000)
     frame_nodes(page, [map_copy])
-    assert_autark_map_drawn(page, map_copy, timeout=90000, attach_as="expanded after a reopen")
+    assert_autark_map_drawn(page, map_copy, timeout=60000, attach_as="mounted hidden, then expanded")
