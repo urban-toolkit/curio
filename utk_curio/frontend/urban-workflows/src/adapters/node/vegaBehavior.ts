@@ -5,7 +5,7 @@ import { useGrammarInputState } from '../../hook/useGrammarInputState';
 import { useStarterSpec } from '../../hook/useStarterSpec';
 import { useFlowContext } from '../../providers/FlowProvider';
 import { useToastContext } from '../../providers/ToastProvider';
-import { emptyRenderKind, renderOutcome } from '../../utils/renderOutcome';
+import { emptyRenderKind, renderOutcome, type RenderCounts } from '../../utils/renderOutcome';
 import { defaultSpecText } from '../../utils/vegaDefaultSpec';
 import { isEmptySpecBuffer } from '../../utils/starterSpec';
 import { toRows } from '../../utils/rowSource';
@@ -28,6 +28,28 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     choose: chooseVegaStarter,
   });
 
+  // dev/136: compiling is not drawing. A schema-valid spec over zero rows
+  // renders its axes and nothing else, and a spec whose encoded field is
+  // entirely null renders an empty panel — both used to land as `success`, so
+  // the node showed a green Done over a blank chart and every agent reading
+  // the journal was told the node was fine. The same judgement for a chart's
+  // first draw and for every redraw its new rows cause.
+  const reportDrawn = (counts: RenderCounts | undefined) => {
+    const outcome = renderOutcome(counts ?? {});
+    if (outcome.empty) {
+      nodeState.setOutput({
+        code: 'error', content: outcome.message, outputType: '',
+        // dev/136: the harness reads this rather than the prose — the
+        // cause rides the kind, because the fix differs per cause.
+        kind: emptyRenderKind(outcome.cause),
+      } as any);
+      showToast(outcome.message, 'error');
+      markNodeErrored?.(data.nodeId);
+      return;
+    }
+    nodeState.setOutput({ code: 'success', content: '', outputType: '' });
+  };
+
   const { handleCompileGrammar } = useVega({
     data,
     code: nodeState.code,
@@ -35,29 +57,14 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     upstreamErrored,
     // What the editor holds now, typing included.
     hasSpec: !isEmptySpecBuffer(nodeState.code) || generatedSpec !== undefined,
+    // A chart first drawn over zero rows said so; when its rows arrive and it
+    // draws them, that has to be said too.
+    onRedraw: reportDrawn,
   });
 
   const applyGrammar = async (spec: string) => {
     try {
-      const counts = await handleCompileGrammar(spec);
-      // dev/136: compiling is not drawing. A schema-valid spec over zero rows
-      // renders its axes and nothing else, and a spec whose encoded field is
-      // entirely null renders an empty panel — both used to land here as
-      // `success`, so the node showed a green Done over a blank chart and
-      // every agent reading the journal was told the node was fine.
-      const outcome = renderOutcome(counts ?? {});
-      if (outcome.empty) {
-        nodeState.setOutput({
-          code: 'error', content: outcome.message, outputType: '',
-          // dev/136: the harness reads this rather than the prose — the
-          // cause rides the kind, because the fix differs per cause.
-          kind: emptyRenderKind(outcome.cause),
-        } as any);
-        showToast(outcome.message, 'error');
-        markNodeErrored?.(data.nodeId);
-        return;
-      }
-      nodeState.setOutput({ code: 'success', content: '', outputType: '' });
+      reportDrawn(await handleCompileGrammar(spec));
     } catch (error: any) {
       nodeState.setOutput({ code: 'error', content: error.message, outputType: '' });
       showToast(error.message, 'error');

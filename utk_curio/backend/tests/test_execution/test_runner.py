@@ -304,11 +304,10 @@ class TestSandboxSharedSecret:
         assert "/get" in str(exc.value)
 
     def test_the_bridge_and_the_runner_share_one_helper(self):
-        from utk_curio.backend.app.api import routes
-        from utk_curio.backend.app.execution import sandbox_auth
+        from utk_curio.backend.app.execution import sandbox_auth, sandbox_client
 
-        assert routes._sandbox_headers is sandbox_auth.sandbox_headers
-        assert routes.SANDBOX_TOKEN_HEADER == sandbox_auth.SANDBOX_TOKEN_HEADER
+        assert sandbox_client.sandbox_headers is sandbox_auth.sandbox_headers
+        assert runner.sandbox_headers is sandbox_auth.sandbox_headers
 
 
 class TestDev116SecretsPayload:
@@ -623,8 +622,8 @@ class TestMergeSlotOrderIsTheHandle:
     there (`…78504in_0`), but an AGENT-APPLIED edge has a UUID id and carries
     the slot in ``targetHandle`` (dev/67-3). Both parsers also dropped the
     handle entirely, so a plan-created merge was ordered lexicographically by
-    UUID. The handle is now the authority — the same one
-    `mergeFlowUtils.parseHandleIndex` uses for Play.
+    UUID. The handle is now the authority, the same one
+    `inputSlots.inputSlotOf` reads for Play.
     """
 
     #: The owner's own edges: UUID ids, slots in targetHandle, and the id sort
