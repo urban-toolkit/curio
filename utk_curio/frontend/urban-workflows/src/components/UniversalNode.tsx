@@ -118,7 +118,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const showLoading = behavior.showLoading ?? false;
   const disablePlay = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
 
-  const { signalNodeExecDone, dashboardOn, projectId, edges: flowEdges, isRunActive, nodes: flowNodes } = useFlowContext();
+  const { signalNodeExecDone, dashboardOn, projectId, edges: flowEdges, isRunActive, serverRunActive, nodes: flowNodes } = useFlowContext();
   // In the notebook view the node is a cell: a fixed size, its dots on the
   // right edge where the bar draws its connections, no cardinality markers.
   const notebook = useNotebookViewContext();
@@ -227,9 +227,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // widgets pass, so two toggles in the same batch leave the flag where it
   // started, the marker round trip never happens, and the node sits at "exec"
   // until its watchdog. Whatever a run leaves behind is what this draws from
-  // the next time an input arrives. A run on the server is not one of these:
-  // nothing compiles the chart then but its input arriving.
-  const runInFlight = !!isRunActive;
+  // the next time an input arrives. A run on the server counts too: its
+  // browser part compiles the maps and charts it walks as Run All does, and a
+  // chart it leaves out draws here once the run ends, from the input that
+  // arrived during it.
+  const runInFlight = !!isRunActive || !!serverRunActive;
   const runInFlightRef = useRef(runInFlight);
   runInFlightRef.current = runInFlight;
   // The grammar nodes that draw from their input on their own, by one rule: a
