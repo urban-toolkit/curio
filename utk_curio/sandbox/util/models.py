@@ -27,8 +27,7 @@ def make_model_folder(models, *, base=None):
         if folder is None:
             raise RuntimeError(
                 f"Model '{model_id}' is not available in this environment - "
-                "add it from the Model Catalog (or the Discovery Catalog's model "
-                "sources), then run this node again."
+                "drag a model from the Model Catalog onto this node, then run it again."
             )
         return os.path.join(base, folder) if base else folder
 

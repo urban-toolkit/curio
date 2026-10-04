@@ -60,6 +60,7 @@ export const FlowContext = createContext<FlowContextProps>({
     outputs: [],
     setOutputs: () => { },
     setInteractions: () => { },
+    interactionsCallback: () => { },
     applyNewPropagation: () => { },
     addNode: () => { },
     onNodesChange: () => { },
@@ -310,12 +311,12 @@ const FlowProvider = ({
         markNodeExecutedRef, scheduleInstallSyncRef, signalNodeExecDone,
     });
 
-    const { applyNewPropagation } = useInteractions({
-        interactions, nodes, edges, reactFlow, setNodes,
+    const { applyNewPropagation, interactionsCallback } = useInteractions({
+        interactions, setInteractions, nodes, edges, reactFlow, setNodes,
     });
 
     useCollaborationSync({
-        collab, applyNewOutput, setInteractions, applyNewPropagation, setNodes, setEdges,
+        collab, applyNewOutput, interactionsCallback, applyNewPropagation, setNodes, setEdges,
     });
     // NEW CODE
 
@@ -390,6 +391,7 @@ const FlowProvider = ({
                 outputs,
                 setOutputs,
                 setInteractions,
+                interactionsCallback,
                 applyNewPropagation,
                 addNode,
                 onNodesChange,

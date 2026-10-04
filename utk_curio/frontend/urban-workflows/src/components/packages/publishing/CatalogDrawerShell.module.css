@@ -60,6 +60,12 @@
     will-change: transform;
 }
 
+/* API Settings and Monitor: tables and tile grids need more room than a list
+   of catalog cards. */
+.drawerWide {
+    width: min(720px, 100vw);
+}
+
 .overlayRootPresented .scrim {
     opacity: 1;
 }

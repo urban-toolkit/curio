@@ -1062,7 +1062,7 @@ class TestDataflowPlanMint:
         user, token = user_and_token
         # The candidate row below carries a URL, and the Dataset Finder gate
         # probes one for real; the suite's netguard refuses that. Stubbed as
-        # the verification tests in this file stub it.
+        # the verification tests in test_routes_turns.py stub it.
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **kw: {"status": "verified", "httpStatus": 200, "checkedAt": "now"},

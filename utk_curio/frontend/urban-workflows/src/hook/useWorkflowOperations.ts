@@ -1089,7 +1089,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // never appeared — the "Play All didn't generate all datasets" symptom.
     //
     // ``scopeNodeIds`` is the set of nodes THIS install-sync covered
-    // (FlowProvider.runInstallSyncNow passes installSyncPendingIdsRef's contents).
+    // (runInstallSyncNow in providers/flow/useInstallSave.ts passes
+    // installSyncPendingIdsRef's contents).
     // It is load-bearing: buildOutputRefs rebuilds refs for EVERY toggle-enabled
     // node on every install-save, and ProjectLoader repopulates outputsRef from
     // the saved refs on load, so a save triggered by node C used to toast

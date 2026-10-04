@@ -68,7 +68,7 @@ discovery/
 | Layer | On disk | Written by |
 |---|---|---|
 | **Sources**, the portals and storage this install can reach | `<repo_root>/discovery/<sourceId>@<major>/`, or the directory `--discovery-root` names, and `.curio/discovery/` for an operator's own | The operator. Nothing in the app writes here. |
-| **Your token**, for sources that take one | Your account | You, in **API Settings**. |
+| **Your token**, for sources that take one | Your account | You, on the **API keys** tab of **API Settings**. |
 | **Downloaded and added datasets** | Your Data Catalog store, `.curio/users/<user-key>/datasets/` | **Download** and **Add to Data Catalog**. A table is an ordinary imported dataset; a collection is its index. |
 | **A collection's files** | Where the source keeps them | Nobody. Curio reads them in place. |
 | **A service's images**, from Mapillary or Google Street View | Your Data Catalog store, with the collection | **Download**. |
@@ -113,7 +113,7 @@ A storage source is read when it is first opened, and again when its listing is 
 | **Cache files** | A bucket collection's details, in the Data Catalog | Your account's media folder | Its files are copied to the Curio machine, so nodes can read them. |
 | **Add to Model Catalog** | A Hugging Face models row | Your Model Catalog gains a model | A progress bar, then *"Added `<name>` to your Model Catalog."* with **View model**. A guest on a `--deploy` instance is refused before anything downloads. |
 | **View model** | A row marked **In your Model Catalog** | Nothing | The model's details, in the Model Catalog. |
-| **Set a token** | **API Settings** | Your account | The source's card reads **Token set**. |
+| **Set a token** | **API Settings**, **API keys** tab | Your account | The source's card reads **Token set**. |
 
 ### Workflows
 
@@ -139,7 +139,7 @@ A storage source is read when it is first opened, and again when its listing is 
 
 **I have a link to a file.** Click **Add by link** on the Direct URL card, paste the link into **Link to a file**, and click **Download**. The link gets a row of its own, which offers **View dataset** once the file is in your Data Catalog.
 
-**A source needs a token.** Get one from the source (its **View details** links to its instructions), paste it into **API Settings**, and save. [Part 5](#5-api-tokens) walks through it step by step.
+**A source needs a token.** Get one from the source (its **View details** links to its instructions), add it with **Add configuration** on the **API keys** tab of **API Settings**, and save. [Part 5](#5-api-tokens) walks through it step by step.
 
 **I want to know where a downloaded dataset came from.** Open the dataset's details in the Data Catalog. **Downloaded from** names the portal, links the resource on the portal's site, lists what the download was narrowed by (its **Area**, for one), and says when it was downloaded. A table added from a storage source says **Added from** instead, and how many files it was combined from. A collection has a **Collection** section: its kind, **Indexed from** the source and resource, how many files of each kind it holds, what its **Path fields** cover, the **Coverage** of its footprints or positions, and its rasters' **Raster CRS**.
 
@@ -275,19 +275,20 @@ Some sources take an API key. Mapillary and Google Street View need one. The Cit
 
 ### Set a key, step by step
 
-1. **Get the key** from the service. Each row in API Settings links to where you get one, and so does the source's **View details**.
+1. **Get the key** from the service. The key's form in API Settings links to where you get one (**Get a Mapillary access token**, for example), and so does the source's **View details**.
    - **Mapillary access token**: sign in at [mapillary.com/dashboard/developers](https://www.mapillary.com/dashboard/developers), register an application, and copy its **Client Token**. It starts with `MLY|`.
    - **Google Maps API key**: in the [Google Cloud console](https://developers.google.com/maps/documentation/streetview/get-api-key), create an API key and enable the **Street View Static API** for its project. Google bills its requests to you.
    - **Hugging Face token**: at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens), create a token with read access.
    - **Socrata app token**: sign up at [evergreen.data.socrata.com](https://evergreen.data.socrata.com/signup) and create an app token.
-2. **Open API Settings**: the button in the page header, or in the Agent Catalog drawer's header on the canvas. A source's **Add yours in API Settings** opens it at that source's row.
-3. **Find the row** under **Discovery Catalog**: **Socrata app token**, **Hugging Face token**, **Google Maps API key** or **Mapillary access token**. The row says which sources use it.
-4. **Paste the key** into the row's field and click the row's **Save**. The field then reads *(saved - leave blank to keep)*.
-5. **Check the card.** In the Discovery Catalog, the source's card reads **Token set** as soon as you save, also on a page that was already open, and its rows download.
+2. **Open API Settings** from the top bar. On `/projects` and the catalog pages it opens the settings page; on the canvas it opens on the right side. A source's **Add yours in API Settings** (**Change it in API Settings** once a key is saved), in its details, opens API Settings on that key's form.
+3. On the **API keys** tab, click **Add configuration**.
+4. In **Kind**, under **Data source**, choose the key's name: **Socrata app token**, **Hugging Face token**, **Google Maps API key** or **Mapillary access token**. The form says which sources use it.
+5. **Paste the key** into the field and click **Save**. A line confirms it, for example *Saved the Mapillary access token.*
+6. **Check the list and the card.** The key's row shows **saved** in its **Key** column. In the Discovery Catalog, the source's card reads **Token set** as soon as you save, also on a page that was already open, and its rows download.
 
 ### Your key and your account
 
-A key belongs to your account, and is sent only to the source's own address. **Remove saved key** clears a saved one. A row reads *(inherited - leave blank to use it)* when whoever runs this Curio set one for everyone; your own key overrides the inherited one.
+A key belongs to your account, and is sent only to the source's own address. A saved key's row offers **Replace** and **Remove**. When whoever runs this Curio set one for everyone, the key is listed with **set by this Curio** in its **Key** column, and its **Override** saves your own key, which takes its place for your account.
 
 A guest on a Curio started with `--deploy` cannot save a token. Without `--deploy`, the shared guest saves one like any account, and everyone using that Curio shares it.
 

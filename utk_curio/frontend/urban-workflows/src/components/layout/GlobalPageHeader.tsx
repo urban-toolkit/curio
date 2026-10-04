@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import clsx from "clsx";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import logo from "assets/curio-2.png";
 import { useUserContext } from "../../providers/UserProvider";
-import ApiSettingsModal from "../ApiSettingsModal";
-import { ConnectionKeysModalHost } from "../connectionKeys/ConnectionKeysModalHost";
+import { useApiSettingsDrawerOptional } from "../../providers/ApiSettingsDrawerProvider";
+import { useMonitorDrawerOptional } from "../../providers/MonitorDrawerProvider";
+import { ApiSettingsRequestHost } from "../apiSettings/ApiSettingsRequestHost";
 import { isStandaloneDashboard } from "../../standalone/dashboardPayload";
 import styles from "./GlobalPageHeader.module.css";
 
@@ -22,12 +23,16 @@ export interface GlobalPageHeaderProps {
 
 /**
  * The top bar of every signed-in page: the section pages, the dataflow canvas
- * and the dashboard all render this one, so they cannot drift apart. The canvas
- * used to build a bar of its own, with no API Settings and no Monitor.
+ * and the dashboard all render this one, so they cannot drift apart.
+ *
+ * Monitor and API Settings go to their pages from a section page. On the
+ * canvas and the dashboard, which mount their drawers, they open those
+ * instead, so the dataflow stays open.
  */
 export function GlobalPageHeader({ children, onLeave, className }: GlobalPageHeaderProps) {
   const navigate = useNavigate();
-  const [apiSettingsOpen, setApiSettingsOpen] = useState(false);
+  const settingsDrawer = useApiSettingsDrawerOptional();
+  const monitorDrawer = useMonitorDrawerOptional();
   // A standalone dashboard is a document carrying its own data: there is no
   // server behind it to monitor, and no account whose keys could be set.
   const standalone = isStandaloneDashboard();
@@ -58,39 +63,47 @@ export function GlobalPageHeader({ children, onLeave, className }: GlobalPageHea
           <>
             {/* Unconditional: the monitor exists on every instance, not only a
                 --deploy one, so there is no flag to read here. */}
-            <NavLink
-              to="/monitor"
-              end
-              className={({ isActive }) => clsx(styles.pill, isActive && styles.pillCurrent)}
-            >
-              Monitor
-            </NavLink>
-            {/* The account's one credentials surface: its LLM configurations,
-                the HuggingFace token, and the data-portal tokens the Discovery
-                Catalog uses. The name has lagged the contents twice now (it was
-                "LLM Settings" before the HuggingFace token); renaming it
-                reaches about a hundred references, so it is worth its own
-                change rather than a feature's. */}
-            <button
-              className={clsx(styles.pill, styles.apiSettings)}
-              type="button"
-              onClick={() => setApiSettingsOpen(true)}
-            >
-              API Settings
-            </button>
+            {monitorDrawer ? (
+              <button className={styles.pill} type="button" onClick={monitorDrawer.openMonitor}>
+                Monitor
+              </button>
+            ) : (
+              <NavLink
+                to="/monitor"
+                end
+                className={({ isActive }) => clsx(styles.pill, isActive && styles.pillCurrent)}
+              >
+                Monitor
+              </NavLink>
+            )}
+            {/* The account's one credentials surface: every key it uses, and
+                the model each agent runs on. */}
+            {settingsDrawer ? (
+              <button
+                className={clsx(styles.pill, styles.apiSettings)}
+                type="button"
+                onClick={() => settingsDrawer.openApiSettings()}
+              >
+                API Settings
+              </button>
+            ) : (
+              <NavLink
+                to="/settings"
+                className={({ isActive }) =>
+                  clsx(styles.pill, styles.apiSettings, isActive && styles.pillCurrent)
+                }
+              >
+                API Settings
+              </NavLink>
+            )}
           </>
         )}
         <AccountBlock />
       </div>
-      {!standalone && (
-        <>
-          <ApiSettingsModal isOpen={apiSettingsOpen} onClose={() => setApiSettingsOpen(false)} />
-          {/* Opens API Settings on the section a card asks for, such as an
-              agent's model from its details. The one host on any page, the
-              canvas included: two would open two modals for one request. */}
-          <ConnectionKeysModalHost />
-        </>
-      )}
+      {/* Opens API Settings on the place a card asks for, such as an agent's
+          model from its details. The one host on any page, the canvas
+          included: two would answer one request twice. */}
+      {!standalone && <ApiSettingsRequestHost />}
     </header>
   );
 }

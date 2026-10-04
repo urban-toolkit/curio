@@ -19,8 +19,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .utils import (
+    assert_in_view,
     at_fraction,
     brush_area,
+    frame_nodes,
     node_locator,
     require_owner_view,
     require_project_page,
@@ -328,7 +330,8 @@ def _hover_bars_and_measure(page) -> tuple[bool, dict, int]:
     saw_highlight = False
     y = box["y"] + box["height"] * 0.75
     for fraction in (0.85, 0.7, 0.55, 0.4, 0.25):
-        page.mouse.move(box["x"] + box["width"] * fraction, y)
+        page.mouse.move(*assert_in_view(
+            page, box["x"] + box["width"] * fraction, y, f"the bar chart at {fraction:.0%} across"))
         for _ in range(20):
             page.wait_for_timeout(250)
             if _red_pixels(page, SCATTER_ID) > 0:
@@ -362,6 +365,10 @@ def _open(page, app_frontend, current_server, *, username: str, spec: dict) -> N
         page.locator(f"#vega{node_id} canvas").first.wait_for(state="attached", timeout=60000)
     # Let the post-run renders settle before recording which canvases exist.
     page.wait_for_timeout(1500)
+    # Frame the two charts. The canvas fits itself when the dataflow loads, and
+    # that fit can see the nodes before they reach their full size, so a chart
+    # may end past the window's edge, where a hover reaches nothing.
+    frame_nodes(page, [BAR_ID, SCATTER_ID])
     assert _red_pixels(page, SCATTER_ID) == 0, "a row was marked before any selection"
 
 
@@ -428,9 +435,10 @@ def test_merge_or_in_the_pool_keeps_both_charts_selections(
     assert area, "the scatterplot drew no points to brush"
     canvas = page.locator(f"#vega{SCATTER_ID} canvas").first.bounding_box()
     assert canvas, "the scatterplot has no canvas box"
-    page.mouse.move(*at_fraction(area, (0.35, 0.5)))
+    page.mouse.move(*assert_in_view(page, *at_fraction(area, (0.35, 0.5)), "the brush's start"))
     page.mouse.down()
-    page.mouse.move(canvas["x"] + 3, canvas["y"] + 3, steps=8)
+    page.mouse.move(*assert_in_view(
+        page, canvas["x"] + 3, canvas["y"] + 3, "the scatterplot's corner"), steps=8)
     page.mouse.up()
     bars = _red_bars_once(page, 2)
     grey_brushed = page.evaluate(_BRUSH_GREY_JS, SCATTER_ID)
@@ -439,7 +447,7 @@ def test_merge_or_in_the_pool_keeps_both_charts_selections(
     )
 
     # Then the bar chart: the rightmost bar is Charlie (50), outside the brush.
-    page.mouse.move(bars[-1]["x"], bars[-1]["y"])
+    page.mouse.move(*assert_in_view(page, bars[-1]["x"], bars[-1]["y"], "Charlie's bar"))
     bars = _red_bars_once(page, 3)
     assert [b["red"] for b in bars] == [True, True, False, False, True], (
         f"the bar chart lit the wrong bars: {bars}"

@@ -369,6 +369,9 @@
   --curio-z-node-drawer: 10040;
   --curio-z-dataset-drawer: 10045;
   --curio-z-agent-drawer: 10048;
+  /* API Settings and Monitor on the canvas: above the catalog drawers, since a
+     catalog card can open API Settings, and below the modals. */
+  --curio-z-header-drawer: 10050;
   --curio-z-modal-backdrop: 10054;
   --curio-z-modal: 10055;
   --curio-z-dialog: 10060;

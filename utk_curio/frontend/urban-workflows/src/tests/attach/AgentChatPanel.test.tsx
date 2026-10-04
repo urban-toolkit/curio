@@ -1203,9 +1203,9 @@ describe("AgentChatPanel — dev/115 the per-node Solve row", () => {
 
 describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
   it("a source-missing outcome with a remedy offers Add key for the host", async () => {
-    const { subscribeConnectionKeysRequests } = await import("../../components/connectionKeys/connectionKeysRequest");
+    const { subscribeApiSettingsRequests } = await import("../../components/apiSettings/apiSettingsRequest");
     const seen: unknown[] = [];
-    const off = subscribeConnectionKeysRequests((f) => seen.push(f));
+    const off = subscribeApiSettingsRequests((f) => seen.push(f));
     const onSolveNode = jest.fn().mockResolvedValue({
       verdict: "fail", rounds: 2,
       remedy: { kind: "connection-key", host: "api.census.gov", suggestedName: "census" },

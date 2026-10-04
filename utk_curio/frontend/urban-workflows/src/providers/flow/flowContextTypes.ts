@@ -12,6 +12,8 @@ export interface FlowContextProps {
     outputs: IOutput[];
     setOutputs: (updateFn: (outputs: IOutput[]) => IOutput[]) => void;
     setInteractions: (updateFn: (interactions: IInteraction[]) => IInteraction[]) => void;
+    /** Record a node's selection; the one callback every node's data carries. */
+    interactionsCallback: (interactions: any, nodeId: string) => void;
     applyNewPropagation: (propagation: IPropagation) => void;
     addNode: (node: Node, customWorkflowName?: string, provenance?: boolean) => void;
     onNodesChange: (changes: NodeChange[]) => void;

@@ -30,7 +30,7 @@ class TestSecretResolver(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             resolver("noaa")
         self.assertIn("'noaa'", str(ctx.exception))
-        self.assertIn("Settings > Connection keys", str(ctx.exception))
+        self.assertIn("API Settings, API keys", str(ctx.exception))
         self.assertNotIn(VALUE, repr(resolver))
         self.assertFalse(hasattr(resolver, "__dict__"))
 
@@ -60,7 +60,7 @@ class TestWorkerInjection(unittest.TestCase):
     def test_missing_name_is_the_nodes_error_with_the_key_named(self):
         result = self._run('    return curio_secret("noaa")\n', {"census": VALUE})
         self.assertIn("'noaa'", result["stderr"])
-        self.assertIn("Connection keys", result["stderr"])
+        self.assertIn("API Settings, API keys", result["stderr"])
         result = self._run('    return curio_secret("noaa")\n', None)
         self.assertIn("'noaa'", result["stderr"])
 

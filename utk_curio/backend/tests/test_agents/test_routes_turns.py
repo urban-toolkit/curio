@@ -605,6 +605,40 @@ class TestToolGrants:
         ).get_json()["turns"]
         assert turns[1]["execution"]["pins"]["tools"] == []
 
+    def test_unknown_optional_tools_are_dropped_with_a_warning(self, client, user_and_token, tmp_curio, alice_project, monkeypatch, caplog):
+        """An agent saved when the Discovery tools were datalake.* still runs
+        without them, and the log names each tool it does not get."""
+        import logging
+
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn',
+            lambda c, m, **kw: "ok",
+        )
+        _, token = user_and_token
+        att_id = self._upload_install_attach(
+            client, token, alice_project,
+            [{"id": "datalake.search", "required": False}, {"id": "datalake.acquire", "required": False}],
+        )
+        with caplog.at_level(logging.WARNING):
+            r = client.post(
+                f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+                json={"message": "q1"}, headers=_auth(token),
+            )
+        assert r.status_code == 200
+        warnings = [
+            rec.getMessage() for rec in caplog.records
+            if rec.levelno == logging.WARNING and "datalake.search" in rec.getMessage()
+        ]
+        assert len(warnings) == 1, caplog.text
+        assert "datalake.acquire" in warnings[0]
+        assert "agent.tooled@1.0.0" in warnings[0]
+        assert "discovery." in warnings[0]
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        assert turns[1]["execution"]["pins"]["tools"] == []
+
     def test_registered_read_tool_is_granted_and_pinned(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.agents.application import tools as tools_mod
         from utk_curio.backend.app.agents.application.tools import ToolContract

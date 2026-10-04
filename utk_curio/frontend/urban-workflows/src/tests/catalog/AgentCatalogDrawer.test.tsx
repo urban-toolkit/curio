@@ -23,6 +23,7 @@ jest.mock("../../providers/ToastProvider", () => ({
 
 import { agentsApi } from "../../services/agents";
 import { AgentCatalogDrawer } from "../../components/agents/catalog/AgentCatalogDrawer";
+import { API_SETTINGS_EVENT } from "../../components/apiSettings/apiSettingsRequest";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
 
@@ -75,15 +76,6 @@ beforeEach(() => {
   api.publish.mockResolvedValue({ coord: "x", published: true } as any);
 });
 
-// API Settings reads UserProvider, which reaches the package registry and
-// through it vega (ESM, unloadable under jest). projectsPageChrome and
-// projectsListScroll mock it for the same reason. What this file asserts is
-// that the cog opens it - not what it contains.
-jest.mock("../../components/ApiSettingsModal", () => ({
-  __esModule: true,
-  default: ({ isOpen }: { isOpen: boolean }) =>
-    isOpen ? <div data-testid="api-settings-modal">API Settings</div> : null,
-}));
 
 describe("AgentCatalogDrawer", () => {
   it("is hidden (not accessible) when not presented", () => {
@@ -434,18 +426,21 @@ describe("AgentCatalogDrawer", () => {
     }
   });
 
-  it("the header cog opens API Settings, which owns the account scope", async () => {
-    // The account policy moved into API Settings, on its "Agent limits" tab,
-    // beside the provider those limits apply to. The drawer opens that one
-    // surface instead of a second modal holding half the answer. API Settings
-    // is loaded lazily here (a static import would pull UserProvider, the
-    // package registry and vega into every canvas), so the assertion waits.
-    render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
-    await waitFor(() => expect(screen.getByText("my-explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /api settings/i }));
-    await waitFor(() =>
-      expect(screen.getByTestId("api-settings-modal")).toBeInTheDocument(),
-    );
+  it("the header cog asks for API Settings' Agent configuration tab", async () => {
+    // The model each agent runs on lives in API Settings. The drawer asks the
+    // page's one request host for it, which opens the API Settings drawer
+    // over this one, rather than mounting a second copy of its own.
+    const asked: unknown[] = [];
+    const listener = (event: Event) => asked.push((event as CustomEvent).detail);
+    window.addEventListener(API_SETTINGS_EVENT, listener);
+    try {
+      render(<AgentCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText("my-explainer")).toBeInTheDocument());
+      fireEvent.click(screen.getByRole("button", { name: /api settings/i }));
+      expect(asked).toEqual([{ section: "agent-models", agentId: undefined }]);
+    } finally {
+      window.removeEventListener(API_SETTINGS_EVENT, listener);
+    }
   });
 
   it("the footer Import agent button opens the upload modal", async () => {

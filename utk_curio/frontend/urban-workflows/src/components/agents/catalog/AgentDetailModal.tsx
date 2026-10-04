@@ -3,7 +3,7 @@ import ModalShell from "../../ModalShell";
 import { CatalogDetailHeader } from "../../catalog/CatalogDetailHeader";
 import { agentsApi, type AgentCard } from "../../../services/agents";
 import { llmConfigsApi } from "../../../api/llmConfigsApi";
-import { requestAgentModel } from "../../connectionKeys/connectionKeysRequest";
+import { requestAgentModel } from "../../apiSettings/apiSettingsRequest";
 import { triggerBlobDownload } from "../../../services/packages";
 import styles from "./AgentDetailModal.module.css";
 
