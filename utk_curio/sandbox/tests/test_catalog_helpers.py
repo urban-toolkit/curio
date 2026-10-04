@@ -61,6 +61,20 @@ class TestLoadData:
         frame = _helpers({"d": path}, {"d": {"format": "parquet"}})["curio_load_data"]("d")
         assert frame["tags"].iloc[0] == {"k": "v"}
 
+    def test_a_parquet_restores_the_metadata_it_was_saved_with(self, tmp_path):
+        """A saved frame's name and Autark layer type sit in the same sidecar,
+        and come back on the frame, as a saved scenario context needs (#662)."""
+        import geopandas as gpd
+        from shapely.geometry import Point
+
+        path = tmp_path / "roads.parquet"
+        gpd.GeoDataFrame({"n": [1]}, geometry=[Point(0, 0)], crs="EPSG:4326").to_parquet(path)
+        (tmp_path / "roads.parquet.decode.json").write_text(
+            json.dumps({"frame_metadata": {"name": "table_osm_roads", "layerType": "roads"}}), encoding="utf-8"
+        )
+        load = _helpers({"d": path}, {"d": {"format": "parquet"}})["curio_load_data"]
+        assert load("d").metadata == {"name": "table_osm_roads", "layerType": "roads"}
+
     def test_a_geoparquet_is_a_geodataframe_and_a_plain_one_a_table(self, tmp_path):
         """A computed geo dataset reloads with the type the producing node
         emitted; a table without geometry stays a DataFrame."""
