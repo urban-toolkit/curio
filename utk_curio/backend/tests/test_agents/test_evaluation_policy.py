@@ -1,9 +1,9 @@
-"""dev/123 — one user policy, three callers.
+"""dev/123: one user policy, two callers.
 
 The policy an evaluation plays used to exist twice: in the remote CLI driver
 and in the deterministic test driver. Two copies of a rule is one rule that
-will drift, and a UI run, a CLI run and a CI run that decided differently would
-be measuring three things while reporting one number.
+will drift, and a CLI run and a CI run that decided differently would be
+measuring two things while reporting one number.
 
 These tests pin the decisions, and pin that every caller resolves the same one.
 """
@@ -101,6 +101,17 @@ class TestTheDecisions:
         assert [d.tool for d in decisions] == [
             "dataflow.plan.write", "node.content.write",
         ]
+
+    def test_no_agents_review_policy_was_widened(self):
+        """Nothing global changed: the Dataflow Builder still reviews before
+        applying, everywhere."""
+        from utk_curio.backend.app.agents.domain import builtin
+
+        spec = next(
+            s for s in builtin.BUILTIN_AGENTS
+            if s.agent_id == "agent.dataflow-builder"
+        )
+        assert spec.review_policy == "review-before-apply"
 
 
 class TestEveryCallerSharesIt:

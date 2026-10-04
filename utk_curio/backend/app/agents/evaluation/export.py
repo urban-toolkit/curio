@@ -1,22 +1,11 @@
-"""Fine-tuning export (memo dev/121, ``DEC-077``).
+"""Fixture export for evaluation (memo dev/121, ``DEC-077``).
 
 Turns approved fixtures into prompt -> expected-dataflow pairs, one JSON object
-per line, for a split the caller names. That is the whole feature: there is no
-train verb here and no provider call anywhere in this module, because Curio has
-no fine-tuning contract to call (``providers.py`` exposes completions and a
-model listing, nothing else) and building one is its own memo with its own
-consent, redaction, cost, cancellation, versioning, evaluation and rollback
-questions.
+per line, for a split the caller names. There is no provider call anywhere in
+this module.
 
-Two refusals are the point of the module.
-
-*Unapproved prompts never export.* A prompt drafted by a model and not yet
-reviewed by a person is fine for measuring; it is not fine as training data
-that shapes a model's behaviour.
-
-*Held-out fixtures are never training data.* A held-out set that leaked into
-training measures nothing afterwards, and the leak is invisible in the
-resulting numbers -- so the request is refused rather than filtered.
+*Unapproved prompts never export* unless the caller asks for them: a prompt
+drafted by a model and not yet reviewed by a person is refused by default.
 """
 
 from __future__ import annotations
@@ -28,12 +17,9 @@ from typing import Iterable
 
 SPLITS = ("train", "validation", "heldout")
 
-#: Splits a training export may draw from. ``heldout`` is deliberately absent.
-TRAINABLE_SPLITS = ("train",)
-
 
 class ExportRefused(Exception):
-    """The export would have leaked evaluation data or unreviewed prompts."""
+    """The export would have been empty or would have drawn on an unknown split."""
 
 
 @dataclass(frozen=True)
@@ -64,26 +50,12 @@ def rows_for_split(
     fixtures: Iterable,
     *,
     split: str,
-    purpose: str = "evaluation",
     require_approved: bool = True,
 ) -> list:
-    """The export rows for one split.
-
-    ``purpose`` is ``"training"`` or ``"evaluation"``. A training export may
-    only draw from :data:`TRAINABLE_SPLITS`; asking it for the held-out split
-    is refused, not silently narrowed.
-    """
+    """The export rows for one split."""
     if split not in SPLITS:
         raise ExportRefused(
             f"unknown split {split!r}; expected one of {', '.join(SPLITS)}"
-        )
-    if purpose not in ("training", "evaluation"):
-        raise ExportRefused(f"unknown purpose {purpose!r}")
-    if purpose == "training" and split not in TRAINABLE_SPLITS:
-        raise ExportRefused(
-            f"a training export may not draw from the {split!r} split: held-out "
-            "and validation fixtures are how a trained model is judged, and a "
-            "set that leaked into training cannot judge anything (DEC-077)"
         )
     rows: list = []
     unapproved: list = []
@@ -108,10 +80,10 @@ def rows_for_split(
     if unapproved and require_approved and not rows:
         raise ExportRefused(
             "nothing to export: every fixture in this split is still awaiting "
-            "review — "
+            "review: "
             + ", ".join(sorted(unapproved))
             + ". A model may draft a prompt; a person approves it before it "
-            "becomes training or evaluation data."
+            "becomes evaluation data."
         )
     return rows
 

@@ -107,7 +107,6 @@ def deployment_config(user_key: str, *, guest: bool | None = None) -> ProviderCo
 def build_config(user_key: str, config_id: str, record: dict, *, source: str,
                  guest: bool | None = None, agent_id: str | None = None) -> ProviderConfig:
     """The ProviderConfig one stored configuration answers with."""
-    trained = record.get("origin") == llm_configs.ORIGIN_TRAINED
     label = record.get("label") or ""
     if record.get("endpoint") == llm_configs.ENDPOINT_DEPLOYMENT:
         endpoint = deployment_endpoint(user_key, guest=guest)
@@ -124,7 +123,7 @@ def build_config(user_key: str, config_id: str, record: dict, *, source: str,
         api_key = record.get("apiKey") or ""
     return ProviderConfig(
         api_key=api_key, api_type=api_type, base_url=base_url, model=record.get("model") or "",
-        config_id=config_id, label=label, source=source, trained=trained,
+        config_id=config_id, label=label, source=source,
     )
 
 

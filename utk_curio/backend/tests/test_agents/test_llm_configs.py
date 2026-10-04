@@ -6,7 +6,6 @@ Covers ``agents/llm_configs.py`` and the ``/api/agents/llm`` routes:
 - no response carries a key, and a key never follows its configuration to
   another endpoint;
 - the validation matrix, duplicate, delete and the default;
-- a configuration a running training job uses keeps its endpoint and key;
 - a hosted guest reads the guest configuration and writes nothing, while the
   local guest owns its configurations;
 - the model listing borrows a stored key only for that key's own endpoint;
@@ -100,6 +99,20 @@ class TestNoResponseCarriesAKey:
         listing = responses[-1].get_json()
         assert all(c["hasApiKey"] for c in listing["configs"])
         assert listing["configs"][0]["baseUrlHost"] == "api.openai.com"
+
+    def test_the_shown_host_carries_no_path_and_no_key(self):
+        shown = llm_configs.base_url_host(
+            "https://api.example.com/v1?api_key=sk-secret-value-1234", "openai_compatible"
+        )
+        assert shown == "api.example.com"
+        assert llm_configs.base_url_host("http://192.168.1.9:11434/v1") == "192.168.1.9:11434"
+        assert llm_configs.base_url_host("localhost:8000/v1") == "localhost:8000"
+
+    def test_an_endpoint_with_no_base_url_is_named_by_kind(self):
+        assert llm_configs.base_url_host("", "openai_compatible") == (
+            "the default openai_compatible endpoint"
+        )
+        assert llm_configs.base_url_host("", "") == ""
 
 
 class TestKeysStayWithTheirEndpoint:
@@ -230,7 +243,7 @@ class TestDuplicateDeleteAndDefault:
         copy = client.post(f"{BASE}/configs/{source['id']}/duplicate", json={"model": "gpt-4o"},
                            headers=_auth(token)).get_json()["config"]
         assert copy["id"] != source["id"]
-        assert copy["label"] == "OpenAI copy" and copy["model"] == "gpt-4o" and copy["origin"] == "user"
+        assert copy["label"] == "OpenAI copy" and copy["model"] == "gpt-4o" and "origin" not in copy
         assert llm_configs.default_store().record(_user_dir_key(user), copy["id"])["apiKey"] == KEY
 
     def test_deleting_the_default_resets_it(self, client, user_and_token, tmp_curio):
@@ -261,28 +274,6 @@ class TestDuplicateDeleteAndDefault:
         }
         assert listing["editable"] is True and listing["shared"] is False
         assert listing["active"]["source"] == "deployment"
-
-
-class TestTrainingLocksItsConfiguration:
-    def _running_job_on(self, user_key, config_id):
-        from utk_curio.backend.app.agents.training import records as records_mod
-
-        record = records_mod.TrainingRecord(job_id=records_mod.new_job_id(), config_id=config_id)
-        record.append("submitted", providerJobId="ftjob-1", baseModel="gpt-4o-mini")
-        record.status = "running"
-        records_mod.write(user_key, record)
-
-    def test_its_endpoint_key_and_existence_are_frozen(self, client, user_and_token, tmp_curio):
-        user, token = user_and_token
-        config_id = _create(client, token).get_json()["config"]["id"]
-        self._running_job_on(_user_dir_key(user), config_id)
-        assert client.delete(f"{BASE}/configs/{config_id}", headers=_auth(token)).status_code == 409
-        assert client.patch(f"{BASE}/configs/{config_id}", json={"apiKey": "sk-other-000000"},
-                            headers=_auth(token)).status_code == 409
-        assert client.patch(f"{BASE}/configs/{config_id}",
-                            json={"baseUrl": "https://api.openai.com/v2"}, headers=_auth(token)).status_code == 200
-        assert client.patch(f"{BASE}/configs/{config_id}", json={"label": "Still fine", "model": "gpt-4o"},
-                            headers=_auth(token)).status_code == 200
 
 
 class TestGuests:

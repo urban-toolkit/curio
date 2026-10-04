@@ -36,11 +36,7 @@ from typing import Any, Iterator
 
 log = logging.getLogger(__name__)
 
-#: dev/123: ``evaluation-run`` joins the two Solve kinds so an evaluation gets
-#: the same detached-job machinery — event replay, per-user backpressure, SSE
-#: re-attachment and the liveness-is-the-lease rule — instead of a second
-#: liveness model, which would pre-empt ``OQ-009``.
-JOB_KINDS = ("solve-batch", "solve-node", "evaluation-run")
+JOB_KINDS = ("solve-batch", "solve-node")
 
 #: Backpressure: concurrent live jobs per user (each drives ≤3 sandbox runs).
 MAX_ACTIVE_JOBS_PER_USER = 2

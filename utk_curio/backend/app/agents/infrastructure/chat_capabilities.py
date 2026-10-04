@@ -13,8 +13,6 @@ support varies per model, so the answer comes from one of:
   tool, means the fenced protocol. The answer is recorded per account
   (``model_catalog.remember_chat_capabilities``) and the trial's tokens go to
   the ledger with the configuration's id;
-- **training**: a configuration whose model was trained in Curio stays on the
-  fenced protocol, because its training set taught it that shape;
 - **the script**: the scripted provider answers what a test scripted, fenced by
   default (``testing_provider.scripted_chat_capabilities``).
 
@@ -39,7 +37,6 @@ from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 SOURCE_TABLE = "table"
 SOURCE_TRIAL = "trial"
 SOURCE_REMEMBERED = "remembered"
-SOURCE_TRAINED = "trained"
 SOURCE_SCRIPTED = "scripted"
 SOURCE_UNKNOWN = "unknown"
 
@@ -108,11 +105,6 @@ def chat_capabilities(config: ProviderConfig, user_key: str, *, refresh: bool = 
             bool(scripted.get("tools")), bool(scripted.get("structuredOutput")),
             SOURCE_SCRIPTED, "the scripted provider",
         )
-    if config.trained:
-        return ChatCapabilities(
-            False, False, SOURCE_TRAINED,
-            "this model was trained in Curio on the fenced protocol, so it keeps it",
-        )
     known = _from_table(config)
     if known is not None:
         return known
@@ -152,7 +144,7 @@ def record_native_refusal(config: ProviderConfig, user_key: str, reason: str) ->
 
     from utk_curio.backend.app.agents.repositories import model_catalog
 
-    if config.api_type == "testing" or config.trained:
+    if config.api_type == "testing":
         return
     if _from_table(config) is not None:
         logging.getLogger(__name__).warning(

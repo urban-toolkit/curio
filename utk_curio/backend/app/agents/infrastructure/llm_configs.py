@@ -6,7 +6,7 @@ two-layer lock)::
 
     {"version": 1,
      "configs": {"<id>": {label, endpoint, apiType, baseUrl, apiKey, model,
-                          origin, jobId?, sourceId?, createdAt, updatedAt}},
+                          createdAt, updatedAt}},
      "default": "<id>" | null,
      "agents": {"<agentId>": "<id>" | "deployment"}}
 
@@ -55,8 +55,6 @@ ENDPOINT_OWN = "own"
 ENDPOINT_DEPLOYMENT = "deployment"
 #: The choice of the Deployment default for an agent.
 CHOICE_DEPLOYMENT = "deployment"
-ORIGIN_USER = "user"
-ORIGIN_TRAINED = "trained"
 
 #: The provider types a configuration may name. ``testing`` (the scripted
 #: provider) is accepted only while it is enabled.
@@ -145,15 +143,23 @@ def _now() -> int:
 
 
 def base_url_host(base_url: str, api_type: str = "") -> str:
-    """What may be shown of an endpoint: its host and port, never a path or a key."""
-    from utk_curio.backend.app.agents.evaluation.training_host import host_of
+    """What may be shown of an endpoint: its host and port, never a path or a key.
 
-    return host_of(base_url, api_type)
+    A base URL can carry a key in its query string, so only the network
+    location leaves the server. An endpoint with no base URL is named by its
+    provider type."""
+    text = (base_url or "").strip()
+    if text:
+        parsed = urlsplit(text if "//" in text else f"//{text}")
+        if parsed.netloc:
+            return parsed.netloc
+    kind = (api_type or "").strip()
+    return f"the default {kind} endpoint" if kind else ""
 
 
 def public(config_id: str, record: dict) -> dict:
     """A configuration as every response carries it: the key reduced to ``hasApiKey``."""
-    payload = {
+    return {
         "id": config_id,
         "label": record.get("label") or "",
         "endpoint": record.get("endpoint") or ENDPOINT_OWN,
@@ -162,14 +168,9 @@ def public(config_id: str, record: dict) -> dict:
         "baseUrlHost": base_url_host(record.get("baseUrl") or "", record.get("apiType") or ""),
         "hasApiKey": bool(record.get("apiKey")),
         "model": record.get("model") or "",
-        "origin": record.get("origin") or ORIGIN_USER,
         "createdAt": record.get("createdAt"),
         "updatedAt": record.get("updatedAt"),
     }
-    for key in ("jobId", "sourceId"):
-        if record.get(key):
-            payload[key] = record[key]
-    return payload
 
 
 class LlmConfigStore:
@@ -273,8 +274,7 @@ class LlmConfigStore:
             raise LlmConfigError(f"{_KEY_REQUIRED[api_type]} configuration needs its API key")
         return {"apiType": api_type, "baseUrl": url, "apiKey": api_key}
 
-    def create(self, user_key: str, body: object, *, deployment_offered: bool,
-               origin: str = ORIGIN_USER, extra: dict | None = None) -> dict:
+    def create(self, user_key: str, body: object, *, deployment_offered: bool) -> dict:
         """Add a configuration and return its ref."""
         body = self._check_fields(body, _CREATE_FIELDS)
         endpoint = body.get("endpoint") or ENDPOINT_OWN
@@ -302,13 +302,13 @@ class LlmConfigStore:
             now = _now()
             doc["configs"][config_id] = {
                 "label": label, "endpoint": endpoint, "model": model, **fields,
-                "origin": origin, **(extra or {}), "createdAt": now, "updatedAt": now,
+                "createdAt": now, "updatedAt": now,
             }
             self._write(user_key, doc)
             return public(config_id, doc["configs"][config_id])
 
     def update(self, user_key: str, config_id: str, body: object, *,
-               deployment_offered: bool, locked_ids: frozenset = frozenset()) -> dict:
+               deployment_offered: bool) -> dict:
         """Change a configuration and return its ref. A blank key keeps the
         stored one; ``clearApiKey`` removes it. A key never follows its
         configuration to another endpoint: changing the type, or the URL's
@@ -355,22 +355,12 @@ class LlmConfigStore:
                     )
                 record = candidate
             record["endpoint"] = endpoint
-            touches_endpoint = (
-                record.get("endpoint") != current.get("endpoint")
-                or _endpoint_identity(record) != _endpoint_identity(current)
-                or record.get("apiKey") != current.get("apiKey")
-            )
-            if touches_endpoint and config_id in locked_ids:
-                raise LlmConfigError(
-                    "a training job is running on this configuration; its endpoint and key "
-                    "cannot change until it ends", 409,
-                )
             record["updatedAt"] = _now()
             doc["configs"][config_id] = record
             self._write(user_key, doc)
             return public(config_id, record)
 
-    def delete(self, user_key: str, config_id: str, *, locked_ids: frozenset = frozenset()) -> dict:
+    def delete(self, user_key: str, config_id: str) -> dict:
         """Remove a configuration, in one write with what pointed at it: the
         agents chosen to run on it go back to their rules (``moved``), and a
         removed default resets to the deployment's. Returns ``{deleted, moved,
@@ -379,11 +369,6 @@ class LlmConfigStore:
             doc = self.read(user_key)
             if config_id not in doc["configs"]:
                 raise LlmConfigError(f"no LLM configuration {config_id!r}", 404)
-            if config_id in locked_ids:
-                raise LlmConfigError(
-                    "a training job is running on this configuration; it cannot be removed "
-                    "until the job ends", 409,
-                )
             del doc["configs"][config_id]
             if doc["default"] == config_id:
                 doc["default"] = None
@@ -394,8 +379,7 @@ class LlmConfigStore:
             return {"deleted": config_id, "moved": moved, "default": doc["default"]}
 
     def duplicate(self, user_key: str, config_id: str, *, label: str | None = None,
-                  model: str | None = None, origin: str = ORIGIN_USER,
-                  extra: dict | None = None) -> dict:
+                  model: str | None = None) -> dict:
         """Copy a configuration, its key included (the copy is made here, so
         the key never travels), under a new id and a free label."""
         with self._locked(user_key):
@@ -410,13 +394,12 @@ class LlmConfigStore:
                 self._check_label(doc["configs"], wanted)
             else:
                 wanted = self._free_label(doc["configs"], f"{source.get('label') or 'Configuration'} copy")
-            record = {k: v for k, v in source.items() if k not in ("jobId", "sourceId")}
+            record = dict(source)
             if model is not None:
                 record["model"] = _one_line(model, "model", MAX_MODEL_CHARS, required=True)
             new_id = self._new_id(doc["configs"])
             now = _now()
-            record.update({"label": wanted, "origin": origin, **(extra or {}),
-                           "createdAt": now, "updatedAt": now})
+            record.update({"label": wanted, "createdAt": now, "updatedAt": now})
             doc["configs"][new_id] = record
             self._write(user_key, doc)
             return public(new_id, record)
@@ -461,7 +444,7 @@ class LlmConfigStore:
 
     def set_choice(self, user_key: str, agent_id: str, chosen: str | None) -> None:
         """Set or clear one agent's choice with no checks on the agent id. For
-        the server's own writes (activating a trained model), never a request."""
+        the server's own writes, never a request."""
         with self._locked(user_key):
             doc = self.read(user_key)
             if chosen is None:
@@ -471,10 +454,6 @@ class LlmConfigStore:
             else:
                 doc["agents"][agent_id] = chosen
             self._write(user_key, doc)
-
-    def free_label(self, user_key: str, base: str) -> str:
-        """*base*, or *base* with a number after it, whichever no configuration uses."""
-        return self._free_label(self.read(user_key)["configs"], base)
 
     @staticmethod
     def _new_id(configs: dict) -> str:

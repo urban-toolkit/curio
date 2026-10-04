@@ -933,7 +933,7 @@ Everything Curio says about Autark documents is read from that file:
 
 ## Agent Prompt Composition
 
-Every system turn an agent receives is built by one function, `contracts.compose_system`, from fixed slots in a fixed order. The attached run (`services._prepare_run`), the delegated run (`delegation.run_delegate`) and a training example (`training/dataset.py`) all call it.
+Every system turn an agent receives is built by one function, `contracts.compose_system`, from fixed slots in a fixed order. The attached run (`services._prepare_run`) and the delegated run (`delegation.run_delegate`) both call it.
 
 | Slot | Holds | Owner |
 |---|---|---|
@@ -951,9 +951,9 @@ The slots reach the provider apart. `contracts.system_message` puts the joined t
 
 A run loop takes a typed turn, `providers.ChatTurn` (text, native tool calls, stop reason), from `run_chat_turn` or `stream_chat_turn`; a bare string is a text turn, which is what a scripted test fake returns. `run_chat_completion` and `stream_chat_completion` are the text-only forms. The services module binds the two turn functions once, and the title call goes through the same seam, so one test fake answers a whole run.
 
-Usage counts every input token as `inputTokens`, cached or not (Anthropic reports cache reads and writes apart from its input count), plus `cacheReadTokens` and `cacheWriteTokens` when the provider reports them. The ledger, a run's execution record and the evaluation record keep them.
+Usage counts every input token as `inputTokens`, cached or not (Anthropic reports cache reads and writes apart from its input count), plus `cacheReadTokens` and `cacheWriteTokens` when the provider reports them. The ledger, a run's execution record and the evaluation report keep them.
 
-What an endpoint can do beyond text is [`chat_capabilities.py`](../utk_curio/backend/app/agents/infrastructure/chat_capabilities.py)'s answer: native tools and a reply schema. Anthropic, Gemini and OpenAI's own endpoint are known from their APIs; any other OpenAI-compatible server is asked once per model with a charged one-tool trial (`providers.probe_native_tools`), recorded per account in `.curio/users/<u>/chat-capabilities.json`, its tokens on the ledger with the configuration's id. A model trained in Curio stays on the fenced protocol, and the scripted provider answers what a test scripted, fenced by default. A manifest's `providerRequirements` is a preference: nothing refuses a run over it.
+What an endpoint can do beyond text is [`chat_capabilities.py`](../utk_curio/backend/app/agents/infrastructure/chat_capabilities.py)'s answer: native tools and a reply schema. Anthropic, Gemini and OpenAI's own endpoint are known from their APIs; any other OpenAI-compatible server is asked once per model with a charged one-tool trial (`providers.probe_native_tools`), recorded per account in `.curio/users/<u>/chat-capabilities.json`, its tokens on the ledger with the configuration's id. The scripted provider answers what a test scripted, fenced by default. A manifest's `providerRequirements` is a preference: nothing refuses a run over it.
 
 - **Modes.** A capability that names an `instruction` (a `prompts` key) is a mode. A delegated run of it runs that prompt in place of the agent's `instruction`, and pins that prompt's digest. Two internal agents are built this way: each of the Dataflow Planner's six capabilities and the Dataflow Reader's two keeps its own prompt file (`builtin.BuiltinMode`).
 - **Scoped delegation.** A `delegatesTo` entry may name the capabilities it delegates (`{"id", "capabilities"}`). `delegation.resolve` and the delegation paragraph honour the scope, and the capability fallback never reaches an internal agent, which is reached only through a parent that delegates it.
@@ -1039,14 +1039,11 @@ Where it is called:
 - `choosable_agents` lists who may have a choice: the catalog cards, published
   definitions and the account's imports, one row per agent id.
 
-The resolved `ProviderConfig` carries `config_id`, `label`, `source` and
-`trained`, and its `api_key` is left out of its `repr`. Run pins record
+The resolved `ProviderConfig` carries `config_id`, `label` and `source`, and
+its `api_key` is left out of its `repr`. Run pins record
 `llm: {configId, label, baseUrlHost, source}`, ledger entries record
 `llmConfigId`, and provider error text is redacted with the call's own key
-before it is streamed, persisted, logged or returned. Training runs only on a
-configuration that holds the user's own key (by default, the Dataflow Builder's),
-and activating a trained model adds a configuration with `origin: "trained"`
-and chooses it for the Dataflow Builder.
+before it is streamed, persisted, logged or returned.
 
 ---
 
@@ -1171,48 +1168,22 @@ A key must never be a literal in node code: the code is saved into the dataflow,
 - **Storage.** The store is a 0600 file under the user's own directory (unreadable by isolated node code), written the same way as `llm-configs.json`; it is not encrypted at rest. A published dataflow carries key names, so whoever installs it saves their own key under the same name. The shared guest account (authentication off) shares one key store with every other guest, and API Settings says so. Under `--deploy` no guest has a key store: `storage_key_for` refuses a guest with a 403, and the store lists and resolves nothing for the `guest` key, so keys saved there without `--deploy` are not sent.
 - **Typed keys.** The code editor watches for a key typed into a node's code and shows a non-blocking hint naming the line, with **Save as API key**, which opens the same form. Nothing is refused, rewritten or sent: the finding stays in the browser tab.
 
-### Evaluation and training
+### Evaluation
 
-Every shipped example has a prompt fixture under [`docs/examples/prompts/`](examples/prompts/README.md): a reviewed prompt paired with the example's digest, its declared datasets and packages, its normalized expected graph, node intents, an execution mode, a capability tier and scoring thresholds. During an evaluation the agent receives the prompt and nothing else, never the example JSON, the node ids, the code or the expected graph, which a test enforces.
-
-The run is the ordinary product path: an empty project, the Dataflow Builder attached, one message, the plan's review card, Apply, then Solve. What lands on disk is compared semantically: canonical template ids and their roles, topology with edge kinds and merge slots, the declared dataset and package references, the absence of invented templates, packages, datasets, paths and URLs, node intents, and Solve's own verdicts. Regenerated ids, layout, formatting and behaviourally equivalent code are ignored, and a graph built in a different order scores the same. Three rules hold:
-
-- **No expectation is weakened to pass.** A construct the agent contract cannot express is reported as a named capability gap, and the fixture keeps it.
-- **Nothing is gated on a model.** A live-model run writes an evaluation report, opt-in and never in CI.
-- **No agent grades an agent.** The comparison is deterministic code; the Generated Content Evaluator is advisory and has no authority here.
-
-An evaluation run creates its own project, installs and attaches the Dataflow Builder through the normal install flow with the agents it requires, sends the prompt through the normal runtime on the configuration the user's Dataflow Builder runs on, applies the plan through the Apply endpoint, and solves; the comparison runs server-side, so the reference never reaches the model. The automated apply is granted only inside the project that run created, only for the plan and the installs the example requires, refused for anything a person should decide, and recorded per apply. A save that would delete a node, a connection or a node's code that the browser never saw is refused and says what would be lost, which protects the graph an evaluation built from a canvas that was open before the run finished. A run is recorded per account under `.curio/users/<key>/agents/evaluation/`, with the fixture, the configuration, provider and model, the prompt and agent digests, the generated project id, the phases, latency, token usage, the comparison and the score, and never a key.
+`agents/evaluation/` is an offline library that the reconstruction tests and `utk_curio/tools/agent_eval.py` use to measure whether the Dataflow Builder can rebuild a shipped example from its prompt fixture under [`docs/examples/prompts/`](examples/prompts/README.md). The agent receives the prompt and nothing else. The run is the ordinary product path in a project marked with `dataflow.evaluation` (the Dataflow Builder attached, one message, Apply, then Solve), and deterministic code compares what lands on disk with the example: template ids and roles, topology, dataset and package references, invented names, node intents and Solve's verdicts. A construct the agent contract cannot express is a named capability gap, and a live run writes a report that gates nothing. `agent_eval run` writes `.curio/eval/<runId>/report.json` and `report.md`; `--model` runs on a temporary copy of the Dataflow Builder's configuration with that model and puts the Builder's choice back afterwards.
 
 ```bash
-# the deterministic tiers (offline, no stack, seconds)
+# the deterministic tiers (offline, no stack)
 pytest utk_curio/backend/tests/test_agents/test_example_fixtures.py \
-       utk_curio/backend/tests/test_agents/test_example_reconstruction.py \
-       utk_curio/backend/tests/test_agents/test_evaluation_service.py
+       utk_curio/backend/tests/test_agents/test_example_reconstruction.py
 
 # what the fixtures say
 python -m utk_curio.tools.agent_eval list
 
-# the same evaluation against a remote stack, from a terminal
+# a live evaluation against a running stack
 export CURIO_EVAL_LIVE=1
 python -m utk_curio.tools.agent_eval run --token "$CURIO_EVAL_TOKEN" --tier T0
 ```
-
-The command-line runner writes `.curio/eval/<runId>/report.json` (provider, model, prompt and instruction digests, attempts, latency, token usage, redacted transcripts, the generated dataflow, the diff, the score and its failure categories) and `report.md`, the same as a table. No USD figure is computed unless a rate is supplied: Curio has no price table.
-
-Training asks the endpoint of the configuration it trains on whether it can fine-tune. An Anthropic key (no tuning endpoint), a local Ollama or LM Studio (chat routes only) and a key without the scope to list tuning jobs each get their own sentence; the last one says the endpoint may still support tuning. When the endpoint cannot be asked, its last answer is replayed with the date it was true.
-
-- **What is sent.** Only fixtures on the `train` split that a person approved. Each row is the system turn a real run carries, the fixture's prompt, and the plan block the runtime's own parser accepts; an example whose graph the plan contract cannot express is excluded with that reason. Every row is scrubbed and re-checked, and anything still resembling a credential stops the upload. No dataset row, column, geometry or file is included.
-- **Consent.** The dataset preview returns the row and byte counts, the examples, their licences and the host, with the digest of that exact set. Starting a job echoes the digest and the host, the consent record is written before the first byte leaves, and a set that would go elsewhere is refused.
-- **The job.** The provider owns it: Curio holds its id and asks the endpoint when the job's status is read, and every status carries the time it was read. Cancel asks the endpoint and reports its answer. Trained tokens are reported as the provider gave them.
-- **Switching on.** A trained model can be used only after an evaluation of that exact model on the held-out examples, whose fixture digests still match the corpus; there are four refusals, each naming what to fix, and no pass mark. Switching adds an LLM configuration with `origin: "trained"` and chooses it for the Dataflow Builder, whose prompts built the training set. The Builder's previous choice is recorded, and a rollback restores it until that choice is changed by hand.
-
-```bash
-export CURIO_EVAL_LIVE=1
-python -m utk_curio.tools.agent_eval run \
-    --model ft:your-base:curio-plans:abc --gate-for train-20260909T161200Z-a1b2
-```
-
-`--model` runs on a temporary copy of the Dataflow Builder's configuration with that model, chosen for the Builder for the run, and puts its choice back afterwards.
 
 ---
 
@@ -1606,7 +1577,7 @@ Catalog and account scope:
 | `/api/agents/catalog` | GET | List the agent definitions available to add: the catalog cards and published definitions, never an internal built-in (`projectId` marks those already in that dataflow). Returns `{items, agents, facets}`, the same envelope the dataset catalog returns |
 | `/api/agents/llm` | GET | The account's LLM configurations (never a key: `hasApiKey` and `baseUrlHost` instead), its default, what the deployment offers, what answers a run now, and the agents whose configuration may be chosen, each with its choice and what it answers with. A hosted guest gets the guest configuration and `editable: false` |
 | `/api/agents/llm/configs` | POST | Add a configuration. **400** on an unknown field or an invalid one, **403** for a hosted guest |
-| `/api/agents/llm/configs/<id>` | PATCH, DELETE | Change one (a blank key keeps the stored one; a new endpoint needs the key again) or remove it, which resets a removed default and clears the agents chosen for it (`moved`). **409** while a training job runs on it: for a change, when the change touches its endpoint or key |
+| `/api/agents/llm/configs/<id>` | PATCH, DELETE | Change one (a blank key keeps the stored one; a new endpoint needs the key again) or remove it, which resets a removed default and clears the agents chosen for it (`moved`) |
 | `/api/agents/llm/configs/<id>/duplicate` | POST | Copy one, its key included, server-side; `{label?, model?}` |
 | `/api/agents/llm/default` | PUT | Choose the default, `{configId}`; `null` is the Deployment default |
 | `/api/agents/llm/assignments` | PUT | Choose agents' configurations: a partial map of agent id to a configuration id, `"deployment"` or `null` (clears). Nothing is written unless every entry is valid; an internal agent is refused; **403** for a hosted guest |
@@ -1750,7 +1721,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/datasets/models.py` | `DatasetIndexEntry`, the index's SQLAlchemy table |
 | `backend/app/datasets/infrastructure/` | Storage helpers, file metadata, output paths, catalog utilities |
 | `backend/app/datasets/schemas/` | Request and catalog-item serialization schemas |
-| `backend/app/agents/routes/` | `/api/agents/*` endpoints, one module per resource (`catalog`, `lifecycle`, `attachments`, `proposals`, `turns`, `solve`, `llm`, `training`, `evaluation`); `common.py` holds the blueprint and the shared helpers; the route table is a contract test (`tests/test_agents/route_table.json`) |
+| `backend/app/agents/routes/` | `/api/agents/*` endpoints, one module per resource (`catalog`, `lifecycle`, `attachments`, `proposals`, `turns`, `solve`, `llm`); `common.py` holds the blueprint and the shared helpers; the route table is a contract test (`tests/test_agents/route_table.json`) |
 | `backend/app/agents/domain/contracts.py` | The single source of every generated contract, and the registry of its outputs (see [Generated Contracts](#generated-contracts)) |
 | `backend/app/agents/schemas/autk-grammar.v1.json` | The vendored Autark grammar schema, with its release record beside it (see [The Autark Schema](#the-autark-schema)) |
 | `backend/app/agents/domain/document_validation.py` | Validates the documents agents write (Vega-Lite, Autark) before they reach a node |
@@ -1776,7 +1747,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/agents/infrastructure/providers.py` | Provider-neutral dispatch port; the only place an LLM SDK is imported. Typed turns and their text forms, streaming, the system slots per provider, native tools per provider and their refusal, cache usage, the native-tools trial, and the live model listing |
 | `backend/app/agents/application/tools.py` | The tool registry: each contract's effect, description and params schema, grant resolution, the read executors, and the native tools a run is offered |
 | `backend/app/agents/application/reply_schemas.py` | The Autark document's reply schema, projected from the vendored schema per provider flavor; decoding a reply; which runs send one |
-| `backend/app/agents/infrastructure/chat_capabilities.py` | What an endpoint can do beyond text (native tools, a reply schema): the table, the per-model trial and its record, trained and scripted configurations |
+| `backend/app/agents/infrastructure/chat_capabilities.py` | What an endpoint can do beyond text (native tools, a reply schema): the table, the per-model trial and its record, and the scripted provider |
 | `backend/app/agents/repositories/model_catalog.py` | Per-account record of what each provider endpoint last reported, replayed when a live listing is impossible. Derived from the API, never hand-authored; a suggestion, never an allowlist |
 | `backend/app/agents/infrastructure/testing_provider.py` | Scripted provider under `CURIO_TESTING`, re-guarded at call time; what e2e drives. A reply is text, native tool calls, or an endpoint error |
 | `backend/app/agents/repositories/ledger.py` | Append-only per-day record of runs and tokens; flock-guarded. A record, not a gate |
