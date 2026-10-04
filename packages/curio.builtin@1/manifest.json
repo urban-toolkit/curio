@@ -278,7 +278,7 @@
       "id": "vis-vega",
       "inputPorts": [
         {
-          "cardinality": "1",
+          "cardinality": "[1,n]",
           "types": [
             "DATAFRAME",
             "GEODATAFRAME"
@@ -355,7 +355,7 @@
       "id": "autk-grammar",
       "inputPorts": [
         {
-          "cardinality": "[0,1]",
+          "cardinality": "[0,n]",
           "types": [
             "LIST",
             "JSON",

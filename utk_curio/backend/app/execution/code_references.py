@@ -1,6 +1,7 @@
 """Turning a node's references into code (#662): ``[!! season !!]`` names a
-widget, ``[!! input 1 !!]`` an input (by circle, counted from 0) and
-``[!! input 1.height !!]`` a column of that input.
+widget, ``[!! input 1 !!]`` an input (by circle, counted from 0),
+``[!! input 1.height !!]`` a column of that input, and ``[!! input 1:roads !!]``
+(or ``[!! input 1:roads.height !!]``) a layer an input carries.
 
 The headless twin of ``src/utils/references/codeReferences.ts``, which the
 browser runs before posting a node's code. Both write the same code: one table
@@ -9,9 +10,11 @@ Jest and by ``tests/test_execution/test_code_references.py``.
 
 A widget reference standing on its own becomes a literal of the language;
 inside a string literal it becomes the value's text, escaped for that string;
-inside a comment, the plain text. A column reference is written like a text
-value: its name. An input reference becomes ``arg`` when the node has one input
-and ``arg[i]`` when it has several, ``i`` being its place in circle order.
+inside a comment, the plain text. A column or layer reference is written like a
+text value: its name. In Python and JavaScript an input reference becomes
+``arg`` when the node has one input and ``arg[i]`` when it has several, ``i``
+being its place in circle order; in a Vega-Lite or Autark spec it is the name
+the input is read by, ``input_<i>``, written like a text value.
 Numbers are written the way JavaScript's ``String()`` writes them, so a value
 prints the same in both.
 """
@@ -25,9 +28,13 @@ from typing import Iterable
 #: A reference as written. Kept in sync with ``REFERENCE_PATTERN``.
 REFERENCE_RE = re.compile(r"\[!!\s*(.*?)\s*!!\]")
 
-#: What stands inside an input or column reference. Kept in sync with
+#: What stands inside an input, layer or column reference. Kept in sync with
 #: ``INPUT_REFERENCE_PATTERN`` in ``codeReferences.ts``.
-INPUT_REFERENCE_RE = re.compile(r"^input\s+(\d+|\?)(?:\.(.+))?$")
+INPUT_REFERENCE_RE = re.compile(r"^input\s+(\d+|\?)(?::([^.]+))?(?:\.(.+))?$")
+
+#: What a Vega-Lite or Autark node calls its inputs. Kept in sync with
+#: ``INPUT_TABLE_PREFIX`` in ``agents/domain/contracts.py``.
+INPUT_TABLE_PREFIX = "input_"
 
 #: A widget name. Kept in sync with ``WIDGET_NAME_PATTERN`` in ``widgetModel.ts``.
 WIDGET_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
@@ -125,7 +132,9 @@ def parse_reference(inner: str) -> dict:
         return {"kind": "widget", "name": inner}
     parsed = {"kind": "input", "slot": None if m.group(1) == "?" else int(m.group(1))}
     if m.group(2) is not None:
-        parsed["column"] = m.group(2)
+        parsed["layer"] = m.group(2)
+    if m.group(3) is not None:
+        parsed["column"] = m.group(3)
     return parsed
 
 
@@ -238,9 +247,27 @@ def reference_problem(
                 f"{reference}: input {slot} has no edge. Connect one to that circle, "
                 "or drag one of this node's input chips here."
             )
+        if "layer" in parsed:
+            if language != "json":
+                return f"{reference}: a layer chip works in Vega-Lite and Autark specs."
+            layers = found.get("layers") if isinstance(found.get("layers"), list) else None
+            layer = next((l for l in layers or [] if l.get("name") == parsed["layer"]), None)
+            if layers is not None and layer is None:
+                return f"{reference}: input {slot} has no layer {parsed['layer']}."
+            columns = layer.get("columns") if layer else None
+            if "column" in parsed and isinstance(columns, list) and parsed["column"] not in columns:
+                return f"{reference}: layer {parsed['layer']} of input {slot} has no column {parsed['column']}."
+            return None
         if "column" not in parsed:
             if language == "json":
-                return f"{reference}: an input chip works in Python and JavaScript code."
+                layers = found.get("layers")
+                if isinstance(layers, list) and len(layers) > 1:
+                    names = ", ".join(str(l.get("name")) for l in layers)
+                    return (
+                        f"{reference}: input {slot} carries several layers ({names}). "
+                        "Drag one of its layer chips here."
+                    )
+                return None
             if context[0] != "code":
                 return f"{reference} is an input, not text. Use it outside quotes and comments."
             return None
@@ -317,9 +344,13 @@ def _resolved_text(inner: str, by_name: dict, inputs: list, context: tuple, lang
     if parsed["kind"] == "input":
         if "column" in parsed:
             return _write_text(parsed["column"], context, language)
+        if "layer" in parsed:
+            return _write_text(parsed["layer"], context, language)
+        index = next(i for i, entry in enumerate(inputs) if entry.get("slot") == parsed["slot"])
+        if language == "json":
+            return _write_text(f"{INPUT_TABLE_PREFIX}{index}", context, language)
         if len(inputs) == 1:
             return "arg"
-        index = next(i for i, entry in enumerate(inputs) if entry.get("slot") == parsed["slot"])
         return f"arg[{index}]"
     value = effective_value(by_name[inner])
     if context[0] == "code":

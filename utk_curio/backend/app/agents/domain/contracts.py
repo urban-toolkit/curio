@@ -122,9 +122,14 @@ AUTK_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "autk-gr
 AUTK_TEMPLATE = "curio.builtin/autk-grammar"
 #: The template that merges flows; its input sockets are named ``in_<n>``.
 MERGE_TEMPLATE = "curio.builtin/merge-flow"
-#: The layer an Autark node makes of its own input when that input is a single
-#: frame. An upstream Autark node's layers keep their table names instead.
-AUTK_UPSTREAM_LAYER = "upstream"
+#: What a Vega-Lite or Autark node calls its inputs: ``input_0``, ``input_1``,
+#: ... in circle order. An upstream Autark node's layers keep their table names.
+INPUT_TABLE_PREFIX = "input_"
+
+
+def input_table_name(position: int) -> str:
+    """The name a grammar node's input at *position* is read by."""
+    return f"{INPUT_TABLE_PREFIX}{position}"
 
 
 def load_autk_schema(path: Path = AUTK_SCHEMA_PATH) -> dict:
@@ -201,10 +206,11 @@ def render_autk_shape(schema: dict) -> str:
     layers, layer_required = map_layers(schema)
     common, either = _compute_required(schema)
     source_types = _definition(schema, "DataSourceSpec").get("properties", {}).get("type", {}).get("enum", [])
-    example_layer = ", ".join(f'"{field}": "{AUTK_UPSTREAM_LAYER}"' for field in layer_required)
+    first = input_table_name(0)
+    example_layer = ", ".join(f'"{field}": "{first}"' for field in layer_required)
     return (
         f'an Autark grammar JSON document, such as the map {{"map": {{"{layers}": [{{{example_layer}}}]}}}}, '
-        f'where "{AUTK_UPSTREAM_LAYER}" is this node\'s own input. A document names at least one of '
+        f'where "{first}" is this node\'s first input. A document names at least one of '
         f"{_either(autk_families(schema))}; a plot needs {_every(_plot_required(schema))}; "
         f"a compute pass needs {_every(common)}, plus {_either(either)}; "
         f'a loader is {{"data": [{{"type": "{source_types[0] if source_types else ""}", ...}}]}}'
@@ -231,9 +237,10 @@ def render_autk_region(schema: dict, label: str) -> str:
         f"is one JSON document that follows the Autark grammar's JSON Schema ({schema.get('$id')}). "
         f"Keys the schema does not name are allowed. A document names at least one of "
         f"{_either(autk_families(schema))}.",
-        f'In the document, the node\'s own input is the layer named "{AUTK_UPSTREAM_LAYER}"; the '
-        f'layers an upstream {label} node produces keep their table names, such as '
-        f'"table_osm_buildings". The document writes no "data" entry for its input.',
+        f'In the document, the node\'s inputs are the layers named "{input_table_name(0)}", '
+        f'"{input_table_name(1)}", ... in the order of its input circles; the layers an upstream '
+        f'{label} node produces keep their table names, such as "table_osm_buildings". The '
+        f'document writes no "data" entry for its inputs.',
         "",
         f'- "data": {props.get("data", {}).get("description", "")} Each entry\'s "type" selects its fields:',
     ]
@@ -948,8 +955,13 @@ def render_autk_grammar_ts() -> str:
         + "\n"
         + "export type AutkFamily = (typeof AUTK_FAMILIES)[number];\n"
         + "\n"
-        + "/** The layer an Autark node makes of its own input when that input is a single frame. */\n"
-        + f"export const AUTK_UPSTREAM_LAYER = {_ts_string(AUTK_UPSTREAM_LAYER)};\n"
+        + "/** What a Vega-Lite or Autark node calls its inputs: input_0, input_1, ... in circle order. */\n"
+        + f"export const INPUT_TABLE_PREFIX = {_ts_string(INPUT_TABLE_PREFIX)};\n"
+        + "\n"
+        + "/** The name a grammar node's input at *position* is read by. */\n"
+        + "export function inputTableName(position: number): string {\n"
+        + "  return `${INPUT_TABLE_PREFIX}${position}`;\n"
+        + "}\n"
     )
 
 

@@ -79,7 +79,9 @@ class TestTheSharedCases:
             "has no widget named",
             "has no edge",
             "is an input, not text",
-            "an input chip works in Python and JavaScript code",
+            "a layer chip works in Vega-Lite and Autark specs",
+            "has no layer",
+            "carries several layers",
             "the edge for this input was deleted",
             "has no column",
         ):

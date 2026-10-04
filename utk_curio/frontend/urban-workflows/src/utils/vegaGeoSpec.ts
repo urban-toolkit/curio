@@ -87,21 +87,34 @@ function hasOwnData(unit: any): boolean {
   return data.url !== undefined || data.values !== undefined;
 }
 
-type UnitVisit = { unit: any; ancestorHasProjection: boolean };
+/**
+ * The input a node's spec reads by default, and the dataset each of its inputs
+ * becomes (#662): `input_0`, `input_1`, ... in circle order.
+ */
+export const DEFAULT_INPUT_DATASET = "input_0";
+
+/** `unit` read by its named dataset (null for a unit bringing its own data). */
+type UnitVisit = { unit: any; ancestorHasProjection: boolean; dataset: string | null };
 
 /**
  * Collect leaf unit specs (anything with a `mark`), remembering whether any
- * ancestor already declared a `projection`.
+ * ancestor already declared a `projection`, and which named dataset the unit
+ * reads: its own `{"name": ...}`, else its nearest ancestor's, else the node's
+ * first input. Vega-Lite passes `data` down to every kind of child.
  */
 function collectUnits(
   spec: any,
   ancestorHasProjection: boolean,
   out: UnitVisit[],
+  inheritedDataset: string | null = DEFAULT_INPUT_DATASET,
 ): void {
   if (!isObject(spec)) return;
 
+  const ownName = isObject(spec.data) && typeof spec.data.name === "string" ? spec.data.name : undefined;
+  const dataset = hasOwnData(spec) ? null : (ownName ?? inheritedDataset);
+
   if (spec.mark !== undefined) {
-    out.push({ unit: spec, ancestorHasProjection });
+    out.push({ unit: spec, ancestorHasProjection, dataset });
     return;
   }
 
@@ -112,22 +125,30 @@ function collectUnits(
   const layerInherits = ancestorHasProjection || spec.projection != null;
 
   if (Array.isArray(spec.layer)) {
-    for (const child of spec.layer) collectUnits(child, layerInherits, out);
+    for (const child of spec.layer) collectUnits(child, layerInherits, out, dataset);
   }
 
   for (const key of CHILD_ARRAY_KEYS) {
     if (key === "layer") continue;
     const children = spec[key];
     if (Array.isArray(children)) {
-      for (const child of children) collectUnits(child, false, out);
+      for (const child of children) collectUnits(child, false, out, dataset);
     }
   }
   // facet / repeat wrap a single child under `spec`.
-  if (isObject(spec.spec)) collectUnits(spec.spec, false, out);
+  if (isObject(spec.spec)) collectUnits(spec.spec, false, out, dataset);
+}
+
+/** The units of *spec*, or only those reading *dataset* when one is named. */
+function unitsOf(spec: any, dataset?: string): UnitVisit[] {
+  const units: UnitVisit[] = [];
+  collectUnits(spec, false, units);
+  return dataset === undefined ? units : units.filter((visit) => visit.dataset === dataset);
 }
 
 /**
  * True when the spec draws geometry, and therefore needs it on the wire.
+ * With *dataset*, only the units reading that input count.
  *
  * This is the payload gate. A spec that does not pass it never enters the geo
  * path at all and its `data.values` stays byte-identical to what it is today --
@@ -135,9 +156,8 @@ function collectUnits(
  * charts, and attaching geometry unconditionally would inline all of it and
  * re-ship it through `changeset()` on every brush.
  */
-export function specNeedsGeometry(spec: any): boolean {
-  const units: UnitVisit[] = [];
-  collectUnits(spec, false, units);
+export function specNeedsGeometry(spec: any, dataset?: string): boolean {
+  const units = unitsOf(spec, dataset);
   return units.some(({ unit }) => {
     if (markType(unit) === "geoshape") return true;
     const shape = unit?.encoding?.shape;
@@ -210,17 +230,18 @@ function rewindPolygon(rings: any): void {
 
 /**
  * Resolve geometry for a spec, injecting what vega-lite needs and coercing the
- * values it will read. Mutates and returns `spec`.
+ * values it will read. Mutates and returns `spec`. With `opts.dataset`, only
+ * the units reading that input are touched: a node with several inputs runs
+ * this once per input, with that input's rows.
  */
 export function normalizeGeoSpec(
   spec: any,
   values: any[],
-  opts: { geometryName?: string | null; crsName?: string | null } = {},
+  opts: { geometryName?: string | null; crsName?: string | null; dataset?: string } = {},
 ): NormalizeGeoResult {
   if (!isObject(spec)) return { spec };
 
-  const units: UnitVisit[] = [];
-  collectUnits(spec, false, units);
+  const units = unitsOf(spec, opts.dataset);
   if (units.length === 0) return { spec };
 
   const { field, candidates } = resolveGeometryField(values, opts.geometryName);

@@ -86,16 +86,61 @@ function ReferenceTag({
 /** More columns than this get a filter box. */
 const COLUMN_FILTER_FROM = 12;
 
-/** One input's tag, and its columns when expanded (#662). */
+/** The tags of one column list: its layer's (or its input's) columns. */
+function ColumnTags({
+  slot,
+  columns,
+  dtypes,
+  layer,
+  filter,
+  onInsert,
+  disabled,
+}: {
+  slot: number;
+  columns: string[];
+  dtypes?: Record<string, string>;
+  layer?: string;
+  filter: string;
+  onInsert: (inner: string) => void;
+  disabled: boolean;
+}) {
+  const owner = layer !== undefined ? `layer ${layer} of input ${slot}` : `input ${slot}`;
+  const shown = columns.filter((c) => c.toLowerCase().includes(filter.trim().toLowerCase()));
+  return (
+    <>
+      {shown.map((column) => (
+        <ReferenceTag
+          key={`${layer ?? ""}.${column}`}
+          className={styles.columnTag}
+          mime={INPUT_REF_MIME}
+          inner={inputReferenceInner(slot, column, layer)}
+          text={column}
+          title={dtypes?.[column] ? `Column of ${owner}, ${dtypes[column]}` : `Column of ${owner}`}
+          dataAttributes={{ "data-column-tag": column, ...(layer !== undefined ? { "data-column-layer": layer } : {}) }}
+          onInsert={onInsert}
+          disabled={disabled}
+        />
+      ))}
+    </>
+  );
+}
+
+/**
+ * One input's tag, and its columns when expanded (#662). In a Vega-Lite or
+ * Autark spec (*layerChips*), an input carrying several layers opens to a tag
+ * per layer instead, each followed by that layer's columns.
+ */
 function InputTags({
   input,
   onInsert,
   onLoadColumns,
+  layerChips,
   disabled,
 }: {
   input: InputScope;
   onInsert: (inner: string) => void;
   onLoadColumns?: (slot: number) => void;
+  layerChips: boolean;
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -104,7 +149,10 @@ function InputTags({
   useEffect(() => {
     if (open && columns === undefined) onLoadColumns?.(input.slot);
   }, [open, columns, input.slot]);
-  const shown = (columns ?? []).filter((c) => c.toLowerCase().includes(filter.trim().toLowerCase()));
+  const layers = Array.isArray(input.layers) && input.layers.length > 0 ? input.layers : null;
+  const count = layers
+    ? layers.reduce((n, l) => n + 1 + (l.columns?.length ?? 0), 0)
+    : (columns ?? []).length;
   return (
     <>
       <ReferenceTag
@@ -132,10 +180,15 @@ function InputTags({
           {columns === null ? (
             <span className={styles.stripHint}>Run the node that feeds this input to see its columns.</span>
           ) : null}
-          {Array.isArray(columns) && columns.length === 0 ? (
+          {layers && !layerChips ? (
+            <span className={styles.stripHint}>
+              This input carries the layers {layers.map((l) => l.name).join(", ")}.
+            </span>
+          ) : null}
+          {!layers && Array.isArray(columns) && columns.length === 0 ? (
             <span className={styles.stripHint}>This input has no columns.</span>
           ) : null}
-          {Array.isArray(columns) && columns.length > COLUMN_FILTER_FROM ? (
+          {count > COLUMN_FILTER_FROM && (layerChips || !layers) ? (
             <input
               type="search"
               className={styles.columnFilter}
@@ -145,19 +198,41 @@ function InputTags({
               onChange={(event) => setFilter(event.target.value)}
             />
           ) : null}
-          {shown.map((column) => (
-            <ReferenceTag
-              key={column}
-              className={styles.columnTag}
-              mime={INPUT_REF_MIME}
-              inner={inputReferenceInner(input.slot, column)}
-              text={column}
-              title={input.dtypes?.[column] ? `Column of input ${input.slot}, ${input.dtypes[column]}` : `Column of input ${input.slot}`}
-              dataAttributes={{ "data-column-tag": column }}
+          {layers && layerChips
+            ? layers.map((layer) => (
+                <React.Fragment key={layer.name}>
+                  <ReferenceTag
+                    className={styles.inputTag}
+                    mime={INPUT_REF_MIME}
+                    inner={inputReferenceInner(input.slot, undefined, layer.name)}
+                    text={layer.name}
+                    title={`Layer of input ${input.slot}`}
+                    dataAttributes={{ "data-layer-tag": layer.name }}
+                    onInsert={onInsert}
+                    disabled={disabled}
+                  />
+                  <ColumnTags
+                    slot={input.slot}
+                    columns={layer.columns ?? []}
+                    dtypes={layer.dtypes}
+                    layer={layer.name}
+                    filter={filter}
+                    onInsert={onInsert}
+                    disabled={disabled}
+                  />
+                </React.Fragment>
+              ))
+            : null}
+          {!layers ? (
+            <ColumnTags
+              slot={input.slot}
+              columns={columns ?? []}
+              dtypes={input.dtypes}
+              filter={filter}
               onInsert={onInsert}
               disabled={disabled}
             />
-          ))}
+          ) : null}
         </span>
       ) : null}
     </>
@@ -166,19 +241,22 @@ function InputTags({
 
 /**
  * The tags above a code or grammar editor: the node's inputs, each opening to
- * its columns, then its widgets. Nothing when it has neither.
+ * its columns (or, with *layerChips*, its layers), then its widgets. Nothing
+ * when it has neither.
  */
 export function ReferenceStrip({
   widgets,
   inputs = [],
   onInsert,
   onLoadColumns,
+  layerChips = false,
   disabled = false,
 }: {
   widgets: WidgetDef[];
   inputs?: InputScope[];
   onInsert: (inner: string) => void;
   onLoadColumns?: (slot: number) => void;
+  layerChips?: boolean;
   disabled?: boolean;
 }) {
   if (widgets.length === 0 && inputs.length === 0) return null;
@@ -193,6 +271,7 @@ export function ReferenceStrip({
               input={input}
               onInsert={onInsert}
               onLoadColumns={onLoadColumns}
+              layerChips={layerChips}
               disabled={disabled}
             />
           ))}

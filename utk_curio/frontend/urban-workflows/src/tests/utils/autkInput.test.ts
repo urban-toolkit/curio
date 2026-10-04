@@ -37,6 +37,7 @@ function frame(over: Partial<GrammarFrame>): GrammarFrame {
     crsName: null,
     fromBundle: false,
     index: 0,
+    circle: 0,
     ...over,
   };
 }
@@ -67,7 +68,7 @@ describe("autkNeedsInput", () => {
   });
 
   test("a document naming a table it does not create reads its input", () => {
-    expect(autkNeedsInput(MAP_ON("upstream"))).toBe(true);
+    expect(autkNeedsInput(MAP_ON("input_0"))).toBe(true);
     expect(autkNeedsInput({ data: [osm], ...MAP_ON("t_roads", "table_osm_water") })).toBe(true);
   });
 
@@ -100,35 +101,35 @@ describe("autkSourcesFrom", () => {
     expect(loadableSource(prepared.sources[1]).order).toEqual({ load: null, map: null });
   });
 
-  test("a single frame is the table `upstream`, in the CRS it declares", () => {
+  test("a single frame is the table `input_0`, in the CRS it declares", () => {
     const prepared = autkSourcesFrom(
       read(frame({ payload: fc([point(1, 1)], "urn:ogc:def:crs:EPSG::32632") })),
-      MAP_ON("upstream"),
+      MAP_ON("input_0"),
     );
     expect(prepared.sources.map((s) => [s.outputTableName, s.coordinateFormat])).toEqual([
-      ["upstream", "EPSG:32632"],
+      ["input_0", "EPSG:32632"],
     ]);
     expect(prepared.rowsIn).toBe(1);
   });
 
-  test("a named frame keeps its name; `upstream` is added only when the document reads it", () => {
+  test("a named frame keeps its name; `input_0` is added only when the document reads it", () => {
     const named = read(frame({ name: "census" }));
     expect(autkSourcesFrom(named, MAP_ON("census")).sources.map((s) => s.outputTableName))
       .toEqual(["census"]);
-    expect(autkSourcesFrom(named, MAP_ON("upstream")).sources.map((s) => s.outputTableName))
-      .toEqual(["upstream", "census"]);
-    expect(autkSourcesFrom(named, MAP_ON("upstream"), { alias: false }).sources.map((s) => s.outputTableName))
+    expect(autkSourcesFrom(named, MAP_ON("input_0")).sources.map((s) => s.outputTableName))
+      .toEqual(["input_0", "census"]);
+    expect(autkSourcesFrom(named, MAP_ON("input_0"), { alias: false }).sources.map((s) => s.outputTableName))
       .toEqual(["census"]);
   });
 
-  test("several layers keep their own names: `upstream` names none of them (#483)", () => {
+  test("several layers keep their own names: `input_0` names none of them (#483)", () => {
     // USAGE: "Several layers keep their own names". The alias used to point
-    // `upstream` at layer 0 as well, which no doc said.
+    // `upstream` (now `input_0`) at layer 0 as well, which no doc said.
     const layers = read(
       frame({ name: "parks", fromBundle: true, index: 0 }),
       frame({ fromBundle: true, index: 1 }),
     );
-    expect(autkSourcesFrom(layers, MAP_ON("upstream")).tables).toEqual(["parks", "upstream_1"]);
+    expect(autkSourcesFrom(layers, MAP_ON("input_0")).tables).toEqual(["parks", "input_1"]);
   });
 
   test("a bundle's unnamed layers are named by position, and keep their layer type", () => {
@@ -141,8 +142,50 @@ describe("autkSourcesFrom", () => {
     );
     expect(prepared.sources.map((s) => [s.outputTableName, s.layerType])).toEqual([
       ["table_osm_roads", "roads"],
-      ["upstream_1", undefined],
+      ["input_1", undefined],
     ]);
+  });
+
+  describe("several input circles (#662)", () => {
+    // What readGrammarInput hands over for a node with several inputs: each
+    // frame carries the circle it came through.
+    const on = (circle: number, over: Partial<GrammarFrame> = {}) =>
+      frame({ fromBundle: true, index: circle, circle, ...over });
+
+    test("each input is the table `input_<k>`; one holding a single named layer is also `input_<k>` when read so", () => {
+      const inputs = read(on(0, { name: "census" }), on(1));
+      expect(autkSourcesFrom(inputs, MAP_ON("input_0", "input_1")).tables)
+        .toEqual(["input_0", "census", "input_1"]);
+      expect(autkSourcesFrom(inputs, MAP_ON("census", "input_1")).tables).toEqual(["census", "input_1"]);
+    });
+
+    test("an input carrying several layers keeps their names, and `input_<k>` names none of them", () => {
+      const inputs = read(
+        on(0),
+        on(1, { name: "table_osm_roads", layerType: "roads" }),
+        on(1, { name: "table_osm_buildings", layerType: "buildings" }),
+      );
+      const prepared = autkSourcesFrom(inputs, MAP_ON("input_1", "table_osm_roads"));
+      expect(prepared.tables).toEqual(["input_0", "table_osm_roads", "table_osm_buildings"]);
+      expect(prepared.inputProblem).toBeUndefined();
+    });
+
+    test("a layer name two inputs bring is drawn from the first, and the problem names both", () => {
+      const prepared = autkSourcesFrom(
+        read(on(0, { name: "roads" }), on(1, { name: "roads", payload: fc([point(2, 2), point(3, 3)]) })),
+        MAP_ON("roads"),
+      );
+      expect(prepared.tables).toEqual(["roads"]);
+      expect(prepared.rowsIn).toBe(1);
+      expect(prepared.inputProblem).toBe(
+        "Inputs 0 and 1 both bring a layer named roads; the one from input 1 is left out. Rename one of them.",
+      );
+    });
+
+    test("several unnamed layers on one input are told apart by count", () => {
+      expect(autkSourcesFrom(read(on(0), on(1), on(1)), MAP_ON("input_1")).tables)
+        .toEqual(["input_0", "input_1", "input_1_1"]);
+    });
   });
 
   test("a buildings table gets heights autk-map can read, one feature per row", () => {
@@ -157,8 +200,8 @@ describe("autkSourcesFrom", () => {
       type: "FeatureCollection",
       features: rows.map((properties) => ({ type: "Feature", geometry: point(1, 1), properties })),
     };
-    const prepared = autkSourcesFrom(read(frame({ layerType: "buildings", payload })), MAP_ON("upstream"));
-    expect(prepared.sources.map((s) => [s.outputTableName, s.layerType])).toEqual([["upstream", "buildings"]]);
+    const prepared = autkSourcesFrom(read(frame({ layerType: "buildings", payload })), MAP_ON("input_0"));
+    expect(prepared.sources.map((s) => [s.outputTableName, s.layerType])).toEqual([["input_0", "buildings"]]);
     const features = prepared.sources[0].geojsonObject.features as any[];
     expect(features.map((f) => f.properties.height)).toEqual([30, 8 * 3.4, 6]);
     // The first already reads right, so it is the same feature; the input is not changed.
@@ -172,7 +215,7 @@ describe("autkSourcesFrom", () => {
       features: [{ type: "Feature", geometry: point(1, 1), properties: { height: null, "building:levels": 8 } }],
     };
     for (const layerType of [undefined, "polygons"]) {
-      const prepared = autkSourcesFrom(read(frame({ layerType, payload })), MAP_ON("upstream"));
+      const prepared = autkSourcesFrom(read(frame({ layerType, payload })), MAP_ON("input_0"));
       expect(prepared.sources[0].geojsonObject).toBe(payload);
     }
   });
@@ -184,7 +227,7 @@ describe("autkSourcesFrom", () => {
         geometryName: null,
         payload: { zone: ["n", "s", "e"], where: [point(0, 0), null, point(2, 2)] },
       })),
-      MAP_ON("upstream"),
+      MAP_ON("input_0"),
     );
     const features = prepared.sources[0].geojsonObject.features as any[];
     expect(features.map((f) => f.geometry)).toEqual([point(0, 0), null, point(2, 2)]);
@@ -195,13 +238,13 @@ describe("autkSourcesFrom", () => {
   test("a DataFrame with no geometry column is refused the way Vega refuses a geoshape", () => {
     const prepared = autkSourcesFrom(
       read(frame({ dataType: "dataframe", geometryName: null, payload: { zone: ["n"], pop: [3] } })),
-      MAP_ON("upstream"),
+      MAP_ON("input_0"),
     );
     expect(prepared).toMatchObject({
       sources: [],
-      unusable: ["upstream"],
+      unusable: ["input_0"],
       emptyReason: "geometry-unresolved",
-      detail: "upstream has no geometry column, so there is nothing to draw. Return a GeoDataFrame.",
+      detail: "input_0 has no geometry column, so there is nothing to draw. Return a GeoDataFrame.",
     });
     expect(prepared.inputProblem).toBe(prepared.detail);
   });
@@ -213,16 +256,16 @@ describe("autkSourcesFrom", () => {
         geometryName: null,
         payload: { a: [point(0, 0)], b: [point(1, 1)] },
       })),
-      MAP_ON("upstream"),
+      MAP_ON("input_0"),
     );
     expect(prepared.emptyReason).toBe("geometry-ambiguous");
     expect(prepared.detail).toContain("(a, b)");
   });
 
   test("a frame with no geometry in any row cannot be drawn", () => {
-    const prepared = autkSourcesFrom(read(frame({ payload: fc([null, null]) })), MAP_ON("upstream"));
-    expect(prepared.unusable).toEqual(["upstream"]);
-    expect(prepared.detail).toBe("No row of upstream has a geometry, so there is nothing to draw.");
+    const prepared = autkSourcesFrom(read(frame({ payload: fc([null, null]) })), MAP_ON("input_0"));
+    expect(prepared.unusable).toEqual(["input_0"]);
+    expect(prepared.detail).toBe("No row of input_0 has a geometry, so there is nothing to draw.");
   });
 
   test("what draws is drawn; what does not is named", () => {
@@ -245,13 +288,13 @@ describe("autkSourcesFrom", () => {
     );
   });
 
-  test("a refused input is the table `upstream`, unusable, with the refusal as its reason", () => {
+  test("a refused input is the table `input_0`, unusable, with the refusal as its reason", () => {
     const prepared = autkSourcesFrom(
       { frames: [], emptyReason: "input-type-rejected", detail: "raster is not a valid input type for the Autark node." },
-      MAP_ON("upstream"),
+      MAP_ON("input_0"),
     );
     expect(prepared).toMatchObject({
-      unusable: ["upstream"],
+      unusable: ["input_0"],
       emptyReason: "input-type-rejected",
       inputProblem: "raster is not a valid input type for the Autark node.",
     });
@@ -262,7 +305,7 @@ describe("loadableSource", () => {
   const source = (geoms: any[]) => ({
     type: "geojson" as const,
     geojsonObject: fc(geoms) as any,
-    outputTableName: "upstream",
+    outputTableName: "input_0",
     coordinateFormat: "EPSG:4326",
   });
 
@@ -293,7 +336,7 @@ describe("loadableSource", () => {
 
 test("prepareAutkInput reads the input through the shared reader", async () => {
   mockFetchData.mockResolvedValue({ dataType: "geodataframe", data: fc([point(1, 1)]) });
-  const prepared = await prepareAutkInput({ path: "art", dataType: "geodataframe" }, MAP_ON("upstream"));
+  const prepared = await prepareAutkInput({ path: "art", dataType: "geodataframe" }, MAP_ON("input_0"));
   expect(mockFetchData).toHaveBeenCalledWith("art");
-  expect(prepared.tables).toEqual(["upstream"]);
+  expect(prepared.tables).toEqual(["input_0"]);
 });

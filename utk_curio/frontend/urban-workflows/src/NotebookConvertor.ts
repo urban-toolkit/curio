@@ -5,6 +5,8 @@ import { unversionedNodeType } from "./utils/flowNodeCanonicalType";
 import { inputSlotOf } from "./utils/inputSlots";
 import { resolveReferences } from "./utils/references/codeReferences";
 import { normalizeWidgets } from "./utils/widgets/widgetModel";
+import { namesDataset, usesNamedDatasets } from "./utils/vegaDatasets";
+import { inputTableName } from "./generated/autkGrammar";
 
 // ── Trill types ──────────────────────────────────────────────────────────────
 
@@ -496,12 +498,21 @@ function generateCells(node: TrillNode, inputNodes: TrillNode[], inputSlots: num
       "",
       `_spec = ${JSON.stringify(spec, null, 2)}`,
     ];
-    if (inputNodes.length) {
+    if (inputNodes.length && !usesNamedDatasets(spec, inputNodes.length)) {
       lines.push(
         "",
         "# Attach the upstream rows the canvas would have supplied.",
         `_spec["data"] = {"values": ${outputVarName(inputNodes[0])}.to_dict(orient="records")}`
       );
+    } else if (inputNodes.length) {
+      // Several inputs, or a spec naming one: each is the dataset input_<k>,
+      // in circle order, as on the canvas (utils/vegaDatasets).
+      lines.push("", "# Attach the upstream rows the canvas would have supplied, one dataset per input.");
+      lines.push('_spec.setdefault("datasets", {})');
+      inputNodes.forEach((input, position) => {
+        lines.push(`_spec["datasets"]["${inputTableName(position)}"] = ${outputVarName(input)}.to_dict(orient="records")`);
+      });
+      if (!namesDataset((spec as any)?.data)) lines.push(`_spec["data"] = {"name": "${inputTableName(0)}"}`);
     }
     lines.push(
       "",

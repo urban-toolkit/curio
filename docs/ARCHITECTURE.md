@@ -464,11 +464,18 @@ The `vis-vega` and `autk-grammar` nodes read their input through one path,
 [`grammarInput.ts`](../utk_curio/frontend/urban-workflows/src/utils/grammarInput.ts):
 the same gate on the input's type and the same refusal sentence, the same fetch
 (Arrow first, JSON as the fallback), and frames that carry the payload, its
-`schema` and its declared geometry column. [`vegaInput.ts`](../utk_curio/frontend/urban-workflows/src/utils/vegaInput.ts)
-turns the one frame a Vega-Lite spec draws into rows;
+`schema` and its declared geometry column. Several input circles arrive as an
+`outputs` bundle, one frame per circle, each recording its circle; an Autark
+input that is itself a bundle of layers is expanded into them.
+[`vegaInput.ts`](../utk_curio/frontend/urban-workflows/src/utils/vegaInput.ts)
+turns each input into the rows of the dataset `input_<k>`, and
+[`vegaDatasets.ts`](../utk_curio/frontend/urban-workflows/src/utils/vegaDatasets.ts)
+decides whether they go in as the spec's own `data` (one input read by the whole
+spec) or as named `datasets`;
 [`autkInput.ts`](../utk_curio/frontend/urban-workflows/src/utils/autkInput.ts)
-turns a frame or a bundle of named layers into the tables an Autark document
-names. A `DataFrame`'s geometry column is found by value in both, through
+turns the frames into the tables an Autark document names. Both name an input
+`input_<k>` through `inputTableName`, generated from `contracts.py`. A
+`DataFrame`'s geometry column is found by value in both, through
 [`geometryField.ts`](../utk_curio/frontend/urban-workflows/src/utils/geometryField.ts).
 
 The rest is shared too. Both nodes resolve their pre-run state with
@@ -515,13 +522,13 @@ charts, and the rows are re-shipped through `changeset()` on every brush.
 
 The `autk-grammar` node consumes upstream data differently from Python nodes: its UrbanSpec refers to data **by name**, through `dataRef` strings in `map.layerRefs[]`, `plot.dataRef` (and `plot.mapRef`), `compute[].dataRef`, and `fromFeature.layer` inside compute uniforms. Before the grammar runs, the behavior hook ([`autkGrammarBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkGrammarBehavior.tsx)) reads the input once, through the path shared with the Vega-Lite node (see [Reading a Grammar Node's Input](#reading-a-grammar-nodes-input)), and injects it as named `geojson` sources the spec can reference. A document that only loads data of its own does not read its input. Upstream geojson is data the browser already holds, so it stays client-side; only the spec's own authored `data` sources (OSM / PBF / CSV and the like) run in the backend sandbox. There are two cases:
 
-**1. Single frame, the `upstream` keyword.** A single upstream frame (e.g. a Python GeoDataFrame from a computation node, or one routed through a Data Pool) is injected as one source named `upstream`:
+**1. A frame per input, `input_<k>`.** Each input frame (e.g. a Python GeoDataFrame from a computation node, or one routed through a Data Pool) is injected as one source named after its input, `input_0`, `input_1`, ... in circle order; an input chip writes the name:
 
 ```json
-"map": { "layerRefs": [{ "dataRef": "upstream", "getFnv": "mean", "getFnvType": "quantitative" }] }
+"map": { "layerRefs": [{ "dataRef": "[!! input 0 !!]", "getFnv": "mean", "getFnvType": "quantitative" }] }
 ```
 
-**2. Layer array, named layer references.** A multi-layer array (emitted by an upstream data-only `autk-grammar` node, e.g. one whose `data` block loads an OSM/PBF stack with `autoLoadLayers`) exposes each layer under its own table name, so the spec can target layers individually:
+**2. Layer array, named layer references.** A multi-layer array (emitted by an upstream data-only `autk-grammar` node, e.g. one whose `data` block loads an OSM/PBF stack with `autoLoadLayers`) exposes each layer under its own table name, so the spec can target layers individually, with layer chips (`[!! input 0:table_osm_roads !!]`) or by name. An input holding one named layer also answers to `input_<k>`, and a name two inputs bring is refused:
 
 ```json
 "map": { "layerRefs": [{ "dataRef": "table_osm_buildings" }, { "dataRef": "table_osm_roads" }] }
@@ -531,11 +538,11 @@ A source loads as the autk-db layer type its frame carries: a layer record's `ty
 
 A `DataFrame` becomes a FeatureCollection from its one geometry column; with none or several, it is refused with a reason, as is an input type the node cannot read, and the tables the document expected from it count as zero rows from upstream (`no-input-rows`, with the reason). A feature without a geometry keeps its place in the table. autk-db refuses a collection whose first feature has none, so that one trades places with the first that has one, and a map leaves such features out: map picks, plot selections and highlights go through the table's load order (`loadableSource`), so a position always names the input's row.
 
-The name `upstream` is defined once, as `AUTK_UPSTREAM_LAYER` in `contracts.py`; the behavior hook imports the generated copy, and the preamble states it (see [Generated Contracts](#generated-contracts)).
+The names `input_<k>` are defined once, as `INPUT_TABLE_PREFIX` and `input_table_name` in `contracts.py`; the Vega-Lite and Autark paths import the generated `inputTableName`, and the preamble states it (see [Generated Contracts](#generated-contracts)).
 
 A `dataRef` that names an unavailable table, whether an empty layer, a layer that was never loaded, or one dropped by an upstream node, is dropped before the grammar executes: the behavior removes the `map.layerRefs` entry or `plot` block and logs a console warning, which for a missing table lists the non-empty table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. A map that keeps some of its layers renders them, and its success output notes the ones it lost, naming an empty table apart from one the dataflow does not produce. One left with nothing to draw is reported as an empty render (see [Render Outcomes](#render-outcomes)), and a reference to a table that exists but holds no rows is blamed on that table's source rather than on the reference.
 
-[Example 09](examples/09-heterogeneous-data-linked-views.md) demonstrates the `upstream` keyword; [Example 11](examples/11-autark-pbf-loading.md) demonstrates named layer references.
+[Example 09](examples/09-heterogeneous-data-linked-views.md) demonstrates an input chip; [Example 11](examples/11-autark-pbf-loading.md) demonstrates named layer references.
 
 ### Connection Validation
 
@@ -920,7 +927,7 @@ Some contracts are read on both sides of the stack: by Python and TypeScript, or
   | Output | Contract |
   |---|---|
   | `utk_curio/frontend/urban-workflows/src/generated/renderCauses.ts` | The empty-render kind prefix, the render causes, the `RenderCause` type and which causes blame the document (see [Render Outcomes](#render-outcomes)) |
-  | `utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts` | The Autark grammar's top-level families and the name of the layer an Autark node makes of its input (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) |
+  | `utk_curio/frontend/urban-workflows/src/generated/autkGrammar.ts` | The Autark grammar's top-level families and the names a grammar node's inputs are read by, `input_<k>` (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) |
   | `utk_curio/frontend/urban-workflows/src/generated/agentCategories.ts` | The agent manifest's category vocabulary and the `AgentCategory` type, from `manifest.AGENT_CATEGORIES` |
   | `utk_curio/frontend/urban-workflows/src/generated/visDefaults.ts` | What a visualization node does with its input by itself, from the tables in `contracts.py`: the column roles and the pandas dtype each role comes from; the Vega-Lite and Autark starter ladders, each rule's id, condition, mark or family and description in ladder order; the Vega-Lite `$schema` URL; and the column names, URL extensions and share of image values behind Simple View's image columns. `starterSpec.ts`, `vegaDefaultSpec.ts`, `autkDefaultSpec.ts` and `imageColumns.ts` read it and keep each rule's builder, keyed by its id, and the matching logic |
   | `utk_curio/llm-prompts/default_preamble.md` | The shared agent preamble: the Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; every list of built-in templates (description, control, port types, the connections an input accepts, output cardinality, interaction support), read from the built-in manifest and the packages layer's `input_capacity`, and naming each template by its label; the Merge Flow's socket names; the label of each template its prose names; the section on Autark documents, rendered from the vendored schema (see [The Autark Schema](#the-autark-schema)); and the starter ladders, the dtype roles, the Vega-Lite `$schema` URL and the image column names, extensions and share, from the same tables as `visDefaults.ts` |

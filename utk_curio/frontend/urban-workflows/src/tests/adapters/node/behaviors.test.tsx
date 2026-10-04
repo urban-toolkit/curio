@@ -743,7 +743,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       });
       await waitFor(() => expect(rendered.result.current.defaultValueOverride).toBeDefined());
       const starter = rendered.result.current.defaultValueOverride;
-      expect(JSON.parse(starter).map.layerRefs[0].dataRef).toBe('upstream');
+      expect(JSON.parse(starter).map.layerRefs[0].dataRef).toBe('input_0');
 
       // Editor floats a keystroke back into the mutable node data.
       (stableData as any).code = '{"user":"typed"}';
@@ -927,7 +927,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         dataType: 'geodataframe',
         data: { type: 'FeatureCollection', features: [0, 1, 2].map((i) => ({ type: 'Feature', geometry: point(i), properties: { i } })) },
       };
-      const MAP = JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } });
+      const MAP = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0' }] } });
       const grammarMock = () => jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
 
       test('a selection across a direct interaction edge highlights the matching feature, without a redraw', async () => {
@@ -948,7 +948,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const selection = [{ nodeId: 'bar', details: { highlight: { type: 'POINT', data: [1], priority: 1 } }, priority: 1 }];
         await act(async () => { rerender({ d: { ...base, interactions: selection } }); });
 
-        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('upstream', [1]));
+        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [1]));
         expect(grammarMock().AutkGrammar.mock.calls.length).toBe(constructed);
       });
 
@@ -958,7 +958,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         grammarMock().AutkGrammar.mockImplementationOnce(() => ({
           run: jest.fn().mockResolvedValue(undefined), data: {}, setPlotSelection, clearHighlightOnPlot,
         }));
-        const PLOT = JSON.stringify({ plot: { dataRef: 'upstream', mark: 'bar', axis: ['i', '@transform'],
+        const PLOT = JSON.stringify({ plot: { dataRef: 'input_0', mark: 'bar', axis: ['i', '@transform'],
           transform: { preset: 'binning-1d' }, events: ['brushX'] } });
         const base = makeMockData({ nodeId: 'plot-1', outputCallback: jest.fn(), input: INPUT } as any);
         const state = makeMockNodeState();
@@ -980,7 +980,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         await act(async () => { rerender({ d: { ...base, input: markSelectionEcho(flagged(null), 'plot-1') } }); });
         // Then a map's selection of row 1.
         await act(async () => { rerender({ d: { ...base, input: markSelectionEcho(flagged(1), 'map-1') } }); });
-        await waitFor(() => expect(setPlotSelection).toHaveBeenCalledWith('upstream', [1]));
+        await waitFor(() => expect(setPlotSelection).toHaveBeenCalledWith('input_0', [1]));
         await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
         expect(clearHighlightOnPlot).not.toHaveBeenCalled();
       });
@@ -988,7 +988,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       test('a run asked for while one is under way runs once more afterwards, with the latest document', async () => {
         const base = makeMockData({ outputCallback: jest.fn(), input: INPUT } as any);
         const result = await callBehavior(useAutkGrammarBehavior, base as any);
-        const latest = JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream', opacity: 0.5 }] } });
+        const latest = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0', opacity: 0.5 }] } });
         const before = grammarMock().AutkGrammar.mock.results.length;
 
         await act(async () => {
@@ -1006,7 +1006,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     });
 
     describe('what an Autark node says before it draws, as a Vega chart does', () => {
-      const MAP_ON_UPSTREAM = JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } });
+      const MAP_ON_UPSTREAM = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0' }] } });
       const body = async (code: string, data: any = {}) => {
         const result = await callBehavior(useAutkGrammarBehavior, { code, ...data } as any, { code } as any);
         const { container } = render(<>{result.current.contentComponent}</>);
@@ -1055,7 +1055,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         });
         const empty = container.querySelector('[data-curio-node-empty]');
         expect(empty?.getAttribute('data-curio-node-empty')).toBe('geometry-unresolved');
-        expect(empty?.textContent).toContain('upstream has no geometry column');
+        expect(empty?.textContent).toContain('input_0 has no geometry column');
       });
 
       test("typing does not change the body's identity, so the editor keeps its tab", async () => {
@@ -1067,7 +1067,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           () => useAutkGrammarBehavior(stableData, makeMockNodeState({ code, output } as any)),
         );
         const before = result.current.contentComponent;
-        code = JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream', getFnv: 'v' }] } });
+        code = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0', getFnv: 'v' }] } });
         rerender();
         expect(result.current.contentComponent).toBe(before);
       });
@@ -1088,20 +1088,20 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         api().fetchData.mockResolvedValue({ data: {}, dataType: 'dataframe' });
       });
 
-      test('a DataFrame with a geometry column reaches the map as the table upstream', async () => {
+      test('a DataFrame with a geometry column reaches the map as the table input_0', async () => {
         const result = await callBehavior(useAutkGrammarBehavior, {
           outputCallback: jest.fn(),
           input: { dataType: 'dataframe', data: { zone: ['n', 's'], where: [point(0, 0), point(1, 1)] } } as any,
         });
         await act(async () => {
-          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } }));
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0' }] } }));
         });
-        const upstream = lastRunSpec()?.data?.find((s: any) => s.outputTableName === 'upstream');
+        const upstream = lastRunSpec()?.data?.find((s: any) => s.outputTableName === 'input_0');
         expect(upstream?.type).toBe('geojson');
         expect(upstream?.geojsonObject.features.map((f: any) => f.properties.zone)).toEqual(['n', 's']);
       });
 
-      test('upstream is added only when the document names it', async () => {
+      test('input_0 is added only when the document names it', async () => {
         const layer = (name: string) => ({
           dataType: 'geodataframe', layerName: name,
           data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: point(0, 0), properties: {} }] },
@@ -1144,11 +1144,11 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
         const constructed = AutkGrammar.mock.calls.length;
         await act(async () => {
-          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } }));
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0' }] } }));
         });
         const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
         expect(errCall![0].kind).toBe('empty-render:no-input-rows');
-        expect(errCall![0].content).toContain('upstream has no geometry column');
+        expect(errCall![0].content).toContain('input_0 has no geometry column');
         expect(errCall![0].content).toContain('not at fault');
         // Nothing drawable, so the grammar is never handed the document.
         expect(AutkGrammar.mock.calls.length).toBe(constructed);
@@ -1162,7 +1162,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           { setOutput },
         );
         await act(async () => {
-          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'upstream' }] } }));
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0' }] } }));
         });
         const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
         expect(errCall![0].content).toContain('raster is not a valid input type for the Autark node.');

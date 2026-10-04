@@ -3,10 +3,12 @@
  *
  * The Vega-Lite and Autark nodes read their input here: the same gate on what
  * they accept and the same sentence when they refuse, the same fetch (Arrow
- * first, JSON as the fallback), the same schema and geometry column. A
- * Vega-Lite spec draws one dataset. An Autark document also takes a bundle of
- * named layers (a tuple, a Data Pool with tabs, an upstream Autark node's
- * tables), and that is the only thing it asks of this module that Vega does not.
+ * first, JSON as the fallback), the same schema and geometry column. Both take
+ * several inputs, one per input circle, which arrive as an `outputs` bundle:
+ * each becomes its own frame. An Autark document also takes an input that is
+ * itself a bundle of named layers (a tuple, a Data Pool with tabs, an upstream
+ * Autark node's tables), and that is the only thing it asks of this module that
+ * Vega does not.
  *
  * Never throws for an input problem: a refusal comes back as an `emptyReason`
  * and a `detail` the node shows in its body.
@@ -39,6 +41,9 @@ export type GrammarFrame = {
   fromBundle: boolean;
   /** Its position in the bundle. */
   index: number;
+  /** The position of the input it came from, among the node's inputs: its
+   * bundle position, or 0 for a single input and for the layers of one. */
+  circle: number;
 };
 
 export type GrammarInput = {
@@ -54,8 +59,12 @@ export type GrammarInput = {
 export type ReadOptions = {
   /** What the node is called in a refusal: "the 2D Plot (Vega-Lite)". */
   label: string;
-  /** Accept bundles of named layers (Autark). */
+  /** Accept bundles of named layers (Autark), and expand an input that holds
+   * layers into them. */
   bundles?: boolean;
+  /** Accept several inputs, one frame each (an `outputs` bundle), but no
+   * other bundle (Vega-Lite). */
+  circles?: boolean;
   /** Read the 100-row preview instead of the whole artifact (starter specs). */
   preview?: boolean;
 };
@@ -89,7 +98,7 @@ function frameOf(
   payload: any,
   envelope: any,
   input: any,
-  place: { fromBundle: boolean; index: number; name?: string | null; layerType?: string },
+  place: { fromBundle: boolean; index: number; circle?: number; name?: string | null; layerType?: string },
 ): GrammarFrame {
   const geo = dataType === "geodataframe";
   return {
@@ -104,6 +113,7 @@ function frameOf(
     layerType: place.layerType ?? envelope?.layerType ?? (geo ? declaredLayerType(payload) : undefined),
     fromBundle: place.fromBundle,
     index: place.index,
+    circle: place.circle ?? 0,
   };
 }
 
@@ -163,7 +173,7 @@ export function framesFromPayload(value: any): {
       if (isObject(item) && typeof item.path === "string" && item.path) {
         refs.push({ index, ref: item });
       } else if (isObject(item) && FRAME_TYPES.has(item.dataType) && item.data != null) {
-        frames.push(frameOf(item.dataType, item.data, item, null, { fromBundle: true, index }));
+        frames.push(frameOf(item.dataType, item.data, item, null, { fromBundle: true, index, circle: index }));
       } else {
         skipped.push(`${isObject(item) ? item.dataType ?? "an item" : "an item"} at position ${index}`);
       }
@@ -202,7 +212,11 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
   if (input == null || input === "") return { frames: [] };
 
   const accepts = (type: unknown) =>
-    typeof type === "string" && (FRAME_TYPES.has(type) || (!!opts.bundles && BUNDLE_TYPES.has(type)));
+    typeof type === "string" && (
+      FRAME_TYPES.has(type)
+      || (!!opts.bundles && BUNDLE_TYPES.has(type))
+      || (!!opts.circles && type === "outputs")
+    );
 
   // A reference that names its type is gated before anything is fetched.
   const declared: string | undefined = isObject(input) && typeof input.dataType === "string"
@@ -232,12 +246,20 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
     const fetched = await read(ref.path);
     const type = ref.dataType ?? fetched?.dataType;
     if (FRAME_TYPES.has(type) && fetched?.data != null) {
-      frames.push(frameOf(type, fetched.data, fetched, ref, { fromBundle: true, index }));
+      frames.push(frameOf(type, fetched.data, fetched, ref, { fromBundle: true, index, circle: index }));
+      continue;
+    }
+    // An input that is itself a bundle of layers (an Autark node's tables, a
+    // tuple, a pool with tabs) brings each of them, under the input's position.
+    const inner = opts.bundles && fetched != null ? framesFromPayload(fetched).frames : [];
+    if (inner.length > 0) {
+      for (const frame of inner) frames.push({ ...frame, fromBundle: true, index, circle: index });
     } else {
       skipped.push(`${type ?? "an item"} at position ${index}`);
     }
   }
-  frames.sort((a, b) => a.index - b.index);
+  // Stable, so the layers one input brought keep their order.
+  frames.sort((a, b) => a.circle - b.circle || a.index - b.index);
 
   if (frames.length === 0) {
     return {

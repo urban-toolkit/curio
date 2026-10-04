@@ -40,13 +40,11 @@ import {
     describeReferenceProblems,
     resolveReferences,
     type CodeLanguage,
-    type InputScope,
     type ReferenceScope,
 } from "../../utils/references/codeReferences";
 import { useInputScope } from "../../hook/useInputScope";
 
 const NO_WIDGETS: WidgetDef[] = [];
-const NO_INPUTS: InputScope[] = [];
 
 type NodeEditorProps = {
     outputId?: string;
@@ -134,13 +132,12 @@ function NodeEditor({
             : "python";
 
     // #662: what the node's references name: its widgets and its wired
-    // inputs. Input and column tags sit above Python and JavaScript code.
+    // inputs. Input, layer and column tags sit above its code or spec.
     const { inputs, emptyInputs, loadColumns } = useInputScope(data);
     const scope: ReferenceScope = useMemo(
         () => ({ widgets: widgetsTab ? widgets : NO_WIDGETS, inputs }),
         [widgetsTab, widgets, inputs],
     );
-    const stripInputs = widgetLanguage === "json" ? NO_INPUTS : inputs;
     // The play callback is registered once, so a run without a Widgets tab
     // reads the scope from here.
     const runScopeRef = useRef({ scope, emptyInputs });
@@ -339,7 +336,7 @@ function NodeEditor({
                                             output={output}
                                             nodeType={nodeType}
                                             references={scope}
-                                            stripInputs={stripInputs}
+                                            stripInputs={inputs}
                                             onLoadColumns={loadColumns}
                                             widgetLanguage={widgetLanguage}
                                         />
@@ -391,7 +388,7 @@ function NodeEditor({
                                             schema={schema}
                                             setOutputCallback={setOutputCallback}
                                             references={scope}
-                                            stripInputs={stripInputs}
+                                            stripInputs={inputs}
                                             onLoadColumns={loadColumns}
                                             widgetLanguage={widgetLanguage}
                                         />

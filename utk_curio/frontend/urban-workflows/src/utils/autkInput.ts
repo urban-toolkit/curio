@@ -3,16 +3,17 @@
  *
  * Read through the same path as the Vega-Lite node's (utils/grammarInput): the
  * same gate, fetch, schema and geometry column, and the same refusals. Two
- * things are Autark's own. A document reads tables by name, so a single frame is
- * the table `upstream` and a bundle's layers keep their names. And a table needs
- * geometry to be drawn at all, so a DataFrame becomes a FeatureCollection from
- * its geometry column, or is refused the way Vega refuses a geoshape over data
- * with no geometry.
+ * things are Autark's own. A document reads tables by name, so each input is
+ * the table `input_0`, `input_1`, ... in circle order, the names Vega-Lite's
+ * datasets have too (#662), while the layers an input carries keep their own
+ * names. And a table needs geometry to be drawn at all, so a DataFrame becomes
+ * a FeatureCollection from its geometry column, or is refused the way Vega
+ * refuses a geoshape over data with no geometry.
  *
  * No autk import here: this stays testable under jest.
  */
 import type { FeatureCollection } from "geojson";
-import { AUTK_UPSTREAM_LAYER } from "../generated/autkGrammar";
+import { inputTableName } from "../generated/autkGrammar";
 import { requestedLayerTables } from "../adapters/node/autkDataCompile";
 import { readableBuildingProperties } from "./buildingHeight";
 import { detectCoordinateFormat } from "./geoCrs";
@@ -32,7 +33,8 @@ export type AutkSource = {
 };
 
 export type PreparedAutkInput = {
-  /** One geojson source per table the input provides, plus `upstream` when the document names it. */
+  /** One geojson source per table the input provides, plus `input_<k>` for an
+   * input holding one named layer, when the document names it. */
   sources: AutkSource[];
   /** The tables the input provides, by name. */
   tables: string[];
@@ -106,10 +108,11 @@ export function autkNeedsInput(spec: any): boolean {
   return documentTableRefs(spec).some((name) => !own.has(name));
 }
 
-/** The table a frame becomes: its own name, else `upstream` (`upstream_<i>` in a bundle). */
+/** The table a frame becomes: its own name, else `input_<k>`, after its place
+ * among the node's inputs (or in the one bundle it arrived in). */
 export function autkTableName(frame: GrammarFrame): string {
   if (frame.name) return frame.name;
-  return frame.fromBundle ? `${AUTK_UPSTREAM_LAYER}_${frame.index}` : AUTK_UPSTREAM_LAYER;
+  return inputTableName(frame.fromBundle ? frame.index : 0);
 }
 
 type FrameResult =
@@ -233,8 +236,8 @@ export function readAutkInput(input: any, opts: { preview?: boolean } = {}): Pro
 
 /**
  * The geojson sources a document reads from an input already read.
- * `alias: false` leaves `upstream` out: a compute step passes its layers on
- * under their own names.
+ * `alias: false` leaves the `input_<k>` names of named layers out: a compute
+ * step passes its layers on under their own names.
  */
 export function autkSourcesFrom(
   read: GrammarInput,
@@ -245,7 +248,7 @@ export function autkSourcesFrom(
     return {
       sources: [],
       tables: [],
-      unusable: [AUTK_UPSTREAM_LAYER],
+      unusable: [inputTableName(0)],
       emptyReason: read.emptyReason,
       detail: read.detail,
       inputProblem: read.detail,
@@ -258,9 +261,27 @@ export function autkSourcesFrom(
   const problems: string[] = [];
   let firstRefusal: { reason: NodeEmptyReason; detail: string } | null = null;
   let rowsIn = 0;
+  // Which input brought each table, so a name two inputs bring is caught.
+  const broughtBy = new Map<string, number>();
 
   for (const frame of read.frames) {
-    const name = autkTableName(frame);
+    let name = autkTableName(frame);
+    const earlier = broughtBy.get(name);
+    if (earlier !== undefined) {
+      if (!frame.name) {
+        // Several unnamed frames on one input are told apart by count.
+        let n = 1;
+        while (broughtBy.has(`${name}_${n}`)) n += 1;
+        name = `${name}_${n}`;
+      } else {
+        problems.push(
+          `Inputs ${earlier} and ${frame.circle} both bring a layer named ${name}; `
+          + `the one from input ${frame.circle} is left out. Rename one of them.`,
+        );
+        continue;
+      }
+    }
+    broughtBy.set(name, frame.circle);
     const result = featuresOf(frame, name);
     if ("reason" in result) {
       unusable.push(name);
@@ -284,14 +305,21 @@ export function autkSourcesFrom(
 
   if (read.skipped?.length) problems.push(`Left out: ${read.skipped.join(", ")}.`);
 
-  // `upstream` names the node's own input when that input is a single frame.
-  // It is added only when the document reads it, as the Vega-Lite node attaches
-  // geometry only when the spec draws it. Several layers keep their own names.
+  // `input_<k>` also names an input that holds one named layer. It is added
+  // only when the document reads it, as the Vega-Lite node attaches geometry
+  // only when the spec draws it. An input of several layers keeps their names.
   const refs = new Set(documentTableRefs(spec));
-  if (opts.alias !== false && read.frames.length === 1 && refs.has(AUTK_UPSTREAM_LAYER)
-      && !sources.some((s) => s.outputTableName === AUTK_UPSTREAM_LAYER)) {
-    if (sources.length > 0) sources.unshift({ ...sources[0], outputTableName: AUTK_UPSTREAM_LAYER });
-    else if (unusable.length > 0 && !unusable.includes(AUTK_UPSTREAM_LAYER)) unusable.push(AUTK_UPSTREAM_LAYER);
+  if (opts.alias !== false) {
+    const byCircle = new Map<number, GrammarFrame[]>();
+    for (const frame of read.frames) byCircle.set(frame.circle, [...(byCircle.get(frame.circle) ?? []), frame]);
+    byCircle.forEach((frames, circle) => {
+      const alias = inputTableName(circle);
+      if (frames.length !== 1 || !frames[0].name || !refs.has(alias)) return;
+      if (sources.some((s) => s.outputTableName === alias)) return;
+      const own = sources.find((s) => s.outputTableName === frames[0].name);
+      if (own) sources.unshift({ ...own, outputTableName: alias });
+      else if (unusable.includes(frames[0].name) && !unusable.includes(alias)) unusable.push(alias);
+    });
   }
 
   const prepared: PreparedAutkInput = {
