@@ -3,7 +3,7 @@
 // outputs a reopened canvas takes from the run, and which ancestor outputs a
 // play reuses. useServerRun applies them.
 import type { Edge, Node } from "reactflow";
-import type { RunEvent, RunStep, StepRole, StepStatus } from "../../services/runs/runsApi";
+import type { RunEvent, RunStatus, RunStep, StepRole, StepStatus } from "../../services/runs/runsApi";
 import type { IOutput } from "./flowTypes";
 import { directedEdgesOf, nodesToRunUpTo } from "./runLevels";
 
@@ -109,6 +109,20 @@ export function browserWalk(steps: Map<string, TrackedStep>, edges: Edge[], play
     }
   }
   return [...walk];
+}
+
+/**
+ * How a run ended once every step has finished, by the rule the engine writes
+ * it (`run_engine.run_events`): stopped, else failed, else waiting for the
+ * canvas, else succeeded.
+ */
+export function settledStatus(steps: Map<string, TrackedStep>): RunStatus {
+  const statuses = new Set([...steps.values()].map((s) => s.status));
+  if (statuses.has("cancelled")) return "cancelled";
+  if (statuses.has("interrupted")) return "interrupted";
+  if (statuses.has("error")) return "failed";
+  if (statuses.has("waiting")) return "needs_canvas";
+  return "succeeded";
 }
 
 /** Whether the browser's outcome for this step is the run's to record. */

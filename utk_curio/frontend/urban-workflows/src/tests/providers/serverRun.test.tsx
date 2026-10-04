@@ -180,8 +180,11 @@ describe("a run started on the canvas", () => {
 
   it("turns each event into the node state a run in the browser leaves", async () => {
     const live = stream();
-    api.start.mockResolvedValue(run("r1", [step("a"), step("b"), step("c")]));
-    const { hook, deps, shown, node } = harness([{ id: "a", data: { code: "return 1" } }, { id: "b" }, { id: "c" }]);
+    // "d" keeps the run going to the end of the test.
+    api.start.mockResolvedValue(run("r1", [step("a"), step("b"), step("c"), step("d", { level: 1 })]));
+    const { hook, deps, shown, node } = harness([
+      { id: "a", data: { code: "return 1" } }, { id: "b" }, { id: "c" }, { id: "d" },
+    ]);
     await act(async () => { await hook.result.current.startRun(); });
 
     live.emit({ kind: "step_started", nodeId: "a", startedAt: 1700000000 });
@@ -208,22 +211,26 @@ describe("a run started on the canvas", () => {
     // A replayed event is not applied twice.
     live.emit({ kind: "step_finished", nodeId: "a", status: "ok", reply: { output: { path: "art-a" } } });
     expect(deps.applyNewOutput).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.serverRunActive).toBe(true);
   });
 
-  it("starts the browser's part in the tick the server's ends, and reports each node", async () => {
+  it("ends as its last step lands, starting the browser's part in that tick, and reports each node", async () => {
     const live = stream();
     api.start.mockResolvedValue(run("r1", [step("osm", { role: "browser" }), step("count", { level: 1 })]));
     const { hook, deps } = harness([{ id: "osm" }, { id: "count" }], [{ source: "osm", target: "count" }]);
     await act(async () => { await hook.result.current.startRun(); });
 
     live.emit({ kind: "step_finished", nodeId: "osm", status: "browser" });
-    live.emit({ kind: "step_finished", nodeId: "count", status: "waiting", skipReason: "Waits for the canvas" });
     expect(deps.playNodes).not.toHaveBeenCalled();
-    live.emit({ kind: "run_finished", status: "needs_canvas", ok: 0, failed: 0, skipped: 0, waiting: 1 });
+    expect(hook.result.current.serverRunActive).toBe(true);
+    // The last step: the run is over, before the record's own run_finished.
+    live.emit({ kind: "step_finished", nodeId: "count", status: "waiting", skipReason: "Waits for the canvas" });
 
     expect(hook.result.current.serverRunActive).toBe(false);
     expect(deps.playNodes).toHaveBeenCalledTimes(1);
     expect(new Set(deps.playNodes.mock.calls[0][0])).toEqual(new Set(["osm", "count"]));
+    live.emit({ kind: "run_finished", status: "needs_canvas", ok: 0, failed: 0, skipped: 0, waiting: 1 });
+    expect(deps.playNodes).toHaveBeenCalledTimes(1);
 
     const { onNodeDone } = deps.playNodes.mock.calls[0][1];
     onNodeDone("osm", { failed: false });
@@ -263,6 +270,41 @@ describe("a run started on the canvas", () => {
     expect(live.runIds).toEqual(["r9"]);
     expect(hook.result.current.serverRunActive).toBe(true);
     expect(deps.showToast).not.toHaveBeenCalled();
+  });
+
+  it("follows a run of an earlier version as a run opened later, and says so", async () => {
+    const live = stream();
+    api.start.mockRejectedValue(Object.assign(new Error("This dataflow is already running."), {
+      status: 409, body: { runId: "r8" },
+    }));
+    api.get.mockResolvedValue(run("r8", [step("osm", { role: "browser" })], { status: "running", specRevision: 2 }));
+    const { hook, deps } = harness([{ id: "osm" }]);
+
+    await act(async () => { await hook.result.current.startRun(); });
+
+    expect(live.runIds).toEqual(["r8"]);
+    expect(deps.showToast).toHaveBeenCalledWith(expect.stringContaining("earlier version"), "info");
+    // Not this click's run: the browser's part is left to Finish run.
+    live.emit({ kind: "step_finished", nodeId: "osm", status: "browser" });
+    expect(hook.result.current.serverRunActive).toBe(false);
+    expect(deps.playNodes).not.toHaveBeenCalled();
+  });
+
+  it("sends a browser node's report again while the server still writes the run's end", async () => {
+    const live = stream();
+    api.start.mockResolvedValue(run("r1", [step("osm", { role: "browser" })]));
+    api.reportStep
+      .mockRejectedValueOnce(Object.assign(new Error("The run is still going"), { status: 409 }))
+      .mockResolvedValue(run("r1", []));
+    const { hook, deps } = harness([{ id: "osm" }]);
+    await act(async () => { await hook.result.current.startRun(); });
+    live.emit({ kind: "step_finished", nodeId: "osm", status: "browser" });
+
+    deps.playNodes.mock.calls[0][1].onNodeDone("osm", { failed: false });
+    await act(async () => { await new Promise((r) => setTimeout(r, 700)); });
+
+    expect(api.reportStep).toHaveBeenCalledTimes(2);
+    expect(api.reportStep).toHaveBeenLastCalledWith("r1", "osm", { status: "ok" });
   });
 
   it("a played node says it runs from the click, and gets its output back if the save fails", async () => {

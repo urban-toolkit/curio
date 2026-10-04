@@ -81,6 +81,10 @@ export const ProjectLoader: React.FC<{
     projectId,
     attachLatestRun,
   } = useFlowContext();
+  // Read when the load answers, not when it started: whether this canvas runs
+  // on the server depends on the signed-in user, which can arrive in between.
+  const attachLatestRunRef = useRef(attachLatestRun);
+  attachLatestRunRef.current = attachLatestRun;
   const { loadTrill } = useCode();
   // Warn + auto-install missing Python deps. SECURITY: only called for the
   // OWNER's own project below — never for a foreign/shared spec, since the
@@ -265,7 +269,7 @@ export const ProjectLoader: React.FC<{
         // The outputs its last run on the server made that the saved ones do
         // not hold, and that run itself if it is still going. Canvas only: a
         // dashboard draws from what was saved.
-        if (!presentation) void attachLatestRun(id, restored);
+        if (!presentation) void attachLatestRunRef.current(id, restored);
       } catch (err) {
         // 404 from the owner-scoped endpoint means either the project doesn't
         // exist or the current user isn't its owner. Try the shared (link-based)

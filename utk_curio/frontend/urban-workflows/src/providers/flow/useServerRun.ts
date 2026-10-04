@@ -23,6 +23,7 @@ import {
     replyFromRecord,
     reportsToRun,
     reuseFor,
+    settledStatus,
     stepsToRestore,
     type NodeChange,
     type TrackedStep,
@@ -30,6 +31,8 @@ import {
 
 /** How often the tab follows a run again after its stream dropped while it was going. */
 const MAX_REFOLLOWS = 5;
+/** How often a browser node's report is sent while the server still writes the run's end. */
+const MAX_REPORT_ATTEMPTS = 6;
 
 interface FollowedRun {
     runId: string;
@@ -38,6 +41,8 @@ interface FollowedRun {
     applied: Set<string>;
     /** Nodes this run showed as running. */
     started: Set<string>;
+    /** Nodes whose step finished, by the stream's own events. */
+    settled: Set<string>;
     /**
      * Started here (or asked for here and already going): outputs pass on as a
      * run's do, and this tab runs the nodes only a browser can. A run the tab
@@ -179,6 +184,13 @@ export function useServerRun({
         const step = run.steps.get(event.nodeId);
         if (step) step.status = event.kind === "step_started" ? "running" : event.status;
         applyChange(run, event.nodeId, nodeChangeFor(event, step, { started: run.started.has(event.nodeId) }));
+        if (event.kind !== "step_finished" || !step) return;
+        run.settled.add(event.nodeId);
+        // Every step has an outcome: the run is over, whatever its record
+        // still says. Ending here, as the last node's own outcome lands, is
+        // what a run in the browser does; the record's `run_finished` comes
+        // after the server has written the run's outcome.
+        if (run.settled.size >= run.steps.size) finish(run, settledStatus(run.steps));
     };
 
     const follow = (run: FollowedRun) => {
@@ -228,6 +240,7 @@ export function useServerRun({
             applied: new Set(),
             // The played node shows as running from the click on.
             started: new Set(played ? [played.nodeId] : []),
+            settled: new Set(),
             startedHere,
             played,
             controller: new AbortController(),
@@ -257,12 +270,22 @@ export function useServerRun({
                 }
                 if (!reportsToRun(steps.get(nodeId))) return;
                 const shown = reactFlow.getNode(nodeId)?.data?.output?.content;
-                void runsApi
-                    .reportStep(runId, nodeId, outcome.failed
-                        ? { status: "error", message: outcome.skipReason ?? String(shown ?? "") }
-                        : { status: "ok" })
-                    .catch(() => { /* the run keeps the node waiting; Finish run offers it again */ });
+                report(runId, nodeId, outcome.failed
+                    ? { status: "error", message: outcome.skipReason ?? String(shown ?? "") }
+                    : { status: "ok" });
             },
+        });
+    };
+
+    // The tab can end a run as its last step lands, a moment before the server
+    // has written the run's outcome, and the server takes no report until it
+    // has (409): such a report is sent again shortly.
+    const report = (
+        runId: string, nodeId: string, body: { status: "ok" | "error"; message?: string }, attempt = 1,
+    ) => {
+        runsApi.reportStep(runId, nodeId, body).catch((err) => {
+            if (err?.status !== 409 || attempt >= MAX_REPORT_ATTEMPTS) return;
+            window.setTimeout(() => report(runId, nodeId, body, attempt + 1), 500 * attempt);
         });
     };
 
@@ -365,7 +388,9 @@ export function useServerRun({
                 giveUp(starting.stopped ? undefined : (err?.message || "The run could not start."));
                 return;
             }
-            // The dataflow already runs: follow that run instead.
+            // The dataflow already runs: follow that run. Only one of the
+            // revision just saved is this click's run; one of an earlier
+            // version is shown as a run opened later is, and says so.
             try {
                 record = await runsApi.get(runningId);
             } catch (readErr: any) {
@@ -374,7 +399,14 @@ export function useServerRun({
             }
             if (startingRef.current === starting) startingRef.current = null;
             unmark();
-            attach(record, { startedHere: true });
+            const current = record.specRevision === (saved?.spec_revision ?? null);
+            if (!current) {
+                showToast(
+                    "An earlier version of this dataflow is still running, and its outputs show as it goes. Run it again when it ends.",
+                    "info",
+                );
+            }
+            attach(record, { startedHere: current });
             return;
         }
         if (startingRef.current === starting) startingRef.current = null;
@@ -432,7 +464,7 @@ export function useServerRun({
             return;
         }
         const run: FollowedRun = {
-            runId: record.id, steps: new Map(), applied: new Set(), started: new Set(),
+            runId: record.id, steps: new Map(), applied: new Set(), started: new Set(), settled: new Set(),
             startedHere: false, played: null, controller: new AbortController(), done: true, refollows: 0,
         };
         for (const step of stepsToRestore(record.steps ?? [], restored)) {
