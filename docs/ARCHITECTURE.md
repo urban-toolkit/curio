@@ -11,6 +11,7 @@ This document describes the internal architecture of Curio for contributors who 
   * [API Settings and the Monitor](#api-settings-and-the-monitor)
   * [FlowProvider: Central Workflow State](#flowprovider-central-workflow-state)
   * [The notebook view](#the-notebook-view)
+  * [Drawing scenarios](#drawing-scenarios)
 * [Nodes: Types and Structure](#nodes-types-and-structure)
   * [Node Packages and Manifests](#node-packages-and-manifests)
   * [NodeDescriptor: Static Metadata](#nodedescriptor-static-metadata)
@@ -201,6 +202,7 @@ focus in the URL (`settingsPath`, read back by `focusFromSearch`).
 | `dashboardPins` | `{[nodeId]: boolean}` | Which nodes are pinned to the dataflow's dashboard page |
 | `dashboardOn` | `boolean` | A PROP, not state: true when this tree is the dashboard page rather than the canvas |
 | `canvasView` | `"canvas" \| "notebook"` | How the canvas shows the dataflow, kept in the address as `?view=notebook`; always `"canvas"` on the dashboard |
+| `scenarios` | `Scenario[]` | The dataflow's scenarios (`dataflow.scenarios`), saved with it |
 
 When a node produces output, it calls `outputCallback(nodeId, output)`, which updates `outputs`. React re-renders cause downstream nodes (those connected by an edge from the node that just executed) to detect the new input and request the data from the backend.
 
@@ -235,6 +237,30 @@ moves nodes the way the dashboard page does:
   either pane, so a chart or map never remounts.
 - **Switch.** `CanvasViewSwitch` sits in `UpMenu`'s slot; the canvas bar's buttons take
   `--curio-bar-button-padding-x: 7px` to make room for it.
+- **Scenarios.** They are drawn on the canvas only: `MainCanvas` hands
+  `scenarioCanvasView` no scenarios in the notebook view, so every node is a cell,
+  collapsed or not, and no box or frame is drawn.
+
+### Drawing scenarios
+
+How the canvas draws scenarios is not dataflow state. `MainCanvas` passes `nodes`
+and `edges` through `scenarioCanvasView` (`src/utils/scenarios/scenarioCanvasView.ts`)
+on their way to React Flow: a collapsed scenario's members are hidden with
+`hideNode` (`src/utils/hiddenNodes.ts`, which the dashboard uses too) and stay
+mounted, the edges they touch are hidden, and expanded members get a class and their
+color. The boxes, frames and stand-in edges it returns are drawn by
+`components/scenarios/ScenarioLayers.tsx` beside React Flow's renderer, in its
+coordinates, not as React Flow nodes and edges. React Flow's store is what
+`reactFlow.getNodes()` returns to Run All, a save and an agent's view, so it must
+never hold a node that is not in the dataflow.
+
+A node drawn hidden is never measured, so code that needs a node's size or hit-tests
+nodes leaves it out (`isDrawnHidden`): the load fit (`fitViewWithMenuOffset`) and the
+agent drop target do. `src/utils/scenarios/scenarioParts.ts` reads a scenario's fixed
+context, levers and outcomes from the live graph, and `savedSourceNodeIds` there is
+the one rule, read by a run and by a save, for which outputs are saved whatever a
+node's own toggle says: what a pinned tile reads and what a scenario's context and
+outcomes produce.
 
 ---
 

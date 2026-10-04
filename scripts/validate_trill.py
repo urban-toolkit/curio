@@ -46,6 +46,7 @@ if str(REPO_ROOT) not in sys.path:
 from jsonschema import Draft202012Validator  # noqa: E402
 
 from utk_curio.backend.app.packages.service import unversioned_node_type
+from utk_curio.backend.app.projects.scenarios import scenario_problems
 
 SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "trill.v1.json"
 DEFAULT_MAX_ERRORS = 5
@@ -230,6 +231,10 @@ def _validate_one(
         f"references"
         for pkg in undeclared
     ]
+
+    # What the schema cannot say about scenarios: a node in at most one, and
+    # every member a node of this dataflow.
+    problems += [f"dataflow.scenarios: {p}" for p in scenario_problems(doc)]
 
     if not problems:
         if not quiet:

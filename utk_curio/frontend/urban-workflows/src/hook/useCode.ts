@@ -18,6 +18,7 @@ import { canvasTemplateConfigFromSpec } from "../utils/canvasTemplateConfigSpec"
 import { dataPoolFromSpec } from "../utils/dataPoolSpec";
 import { normalizeWidgets, type WidgetDef } from "../utils/widgets/widgetModel";
 import { runKeyWithShared, sharedWidgetsOfSpec } from "../utils/references/sharedParameters";
+import { lineageFromSpec } from "../utils/scenarios/duplicateSelection";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -79,6 +80,8 @@ type CreateCodeNodeOptions = {
     dataPool?: { insideChart?: string; betweenCharts?: string };
     // #662: the node's widgets and their values (metadata.widgets).
     widgets?: WidgetDef[];
+    // #662: the ids a copy descends from, oldest first (metadata.copiedFrom).
+    copiedFrom?: string[];
     // #407: a node whose saved output a project load restored mounts as having
     // run: the output it shows, and the source that produced it.
     output?: { code: string; content: string };
@@ -243,6 +246,10 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && Array.isArray(node.metadata.widgets))
                 nodeMeta.widgets = normalizeWidgets(node.metadata.widgets);
 
+            // #662: and the lineage of a copy Duplicate selection made.
+            if(node.metadata != undefined && Array.isArray(node.metadata.copiedFrom))
+                nodeMeta.copiedFrom = lineageFromSpec(node.metadata.copiedFrom);
+
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
 
@@ -346,7 +353,9 @@ export function useCode(): IUseCode {
             // Reverting to a historical version: preserve the current provenance graph.
             // latestTrill was already set to the target version by switchProvenanceTrill.
             const savedProv = TrillGenerator.getSerializableDataflowProvenance();
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || []);
+            // #662: a snapshot carries scenarios only when it had some, so an
+            // absent key restores none.
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], undefined, trill.dataflow.scenarios ?? []);
             TrillGenerator.loadDataflowProvenance(savedProv);
             // Reverting puts a DIFFERENT graph on the canvas than the one on
             // disk, so it is an edit. The edge replay inside loadParsedTrill no
@@ -355,7 +364,7 @@ export function useCode(): IUseCode {
             // reach loadParsedTrill identically from there down.
             markDirty();
         } else if(suggestionType == undefined) {
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {});
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {}, trill.dataflow.scenarios ?? []);
             if (trill.nodeProvenance) loadNodeProvenance(rekeyNodeProvenance(trill.nodeProvenance, nodes.map((n) => n.id)));
             if (trill.dataflowProvenance) TrillGenerator.loadDataflowProvenance(trill.dataflowProvenance);
         } else {
@@ -402,6 +411,7 @@ export function useCode(): IUseCode {
             packageTemplateConfig = undefined,
             dataPool = undefined,
             widgets = undefined,
+            copiedFrom = undefined,
             output = undefined,
             executedCode = undefined,
         } = options;
@@ -451,6 +461,7 @@ export function useCode(): IUseCode {
                 packageTemplateConfig,
                 dataPool,
                 widgets,
+                copiedFrom,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset

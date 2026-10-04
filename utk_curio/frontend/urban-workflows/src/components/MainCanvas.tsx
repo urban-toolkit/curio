@@ -80,6 +80,11 @@ import { clearAgentDropHover, setAgentDropHoverEdgeId } from "../utils/agentDrop
 import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentAttachmentsProvider } from "../providers/agents";
+import { isDrawnHidden } from "../utils/hiddenNodes";
+import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
+import { BOX_WIDTH, boxLayout, CanvasScenarioLayers } from "./scenarios/ScenarioLayers";
+import { ScenariosPanel } from "./scenarios/ScenariosPanel";
+import { ScenarioUiContext, type ScenarioUi } from "./scenarios/scenarioUi";
 
 const FILL_STYLE: React.CSSProperties = { width: "100%", height: "100%" };
 const NOTEBOOK_SCROLLER_STYLE: React.CSSProperties = {
@@ -111,7 +116,29 @@ export function MainCanvas() {
         setNotebookPane,
         registerNotebookScroller,
         revealNodes,
+        scenarios,
     } = useFlowContext();
+
+    // The Scenarios panel, and the scenario it highlights (#662). Never saved.
+    const [scenarioPanelOpen, setScenarioPanelOpen] = useState(false);
+    const [highlightedScenario, setHighlightedScenario] = useState<string | null>(null);
+    const scenarioUi = useMemo<ScenarioUi>(() => ({
+        panelOpen: scenarioPanelOpen,
+        setPanelOpen: setScenarioPanelOpen,
+        highlighted: highlightedScenario,
+        setHighlighted: setHighlightedScenario,
+    }), [scenarioPanelOpen, highlightedScenario]);
+
+    // What React Flow draws: the flow's own nodes and edges, with collapsed
+    // scenarios hidden and their members marked, plus the boxes, frames and
+    // stand-in edges the scenario layers draw beside it. The flow's state
+    // itself never holds any of it (#662). The notebook view shows every node
+    // as a cell: a hidden member would leave an empty slot, and the boxes and
+    // frames are placed by canvas positions the cells do not have.
+    const scenarioView = useMemo(
+        () => scenarioCanvasView(nodes, edges, notebookOn ? [] : scenarios ?? [], { fixedFor: highlightedScenario }),
+        [nodes, edges, scenarios, highlightedScenario, notebookOn],
+    );
 
     // How far the viewport may pan, tracking the nodes rather than a fixed box
     // (#234). Two memos on purpose: React Flow re-applies `translateExtent`
@@ -119,11 +146,21 @@ export function MainCanvas() {
     // array every render would call `d3Zoom.translateExtent()` on every frame
     // of a drag. `computeTranslateExtent` rounds to a coarse grid, and keying
     // the tuple on those four numbers keeps the identity stable until a node
-    // actually crosses a boundary.
+    // actually crosses a boundary. A collapsed scenario's box counts as a node.
     const [extentMinX, extentMinY, extentMaxX, extentMaxY] = useMemo(() => {
-        const [[minX, minY], [maxX, maxY]] = computeTranslateExtent(nodes);
+        const boxes = scenarioView.boxes.map((box) => ({
+            id: box.scenario.id,
+            position: { x: box.x, y: box.y },
+            positionAbsolute: { x: box.x, y: box.y },
+            width: BOX_WIDTH,
+            height: boxLayout(box).height,
+            data: {},
+        }));
+        const [[minX, minY], [maxX, maxY]] = computeTranslateExtent(
+            boxes.length > 0 ? [...nodes, ...boxes] : nodes,
+        );
         return [minX, minY, maxX, maxY];
-    }, [nodes]);
+    }, [nodes, scenarioView.boxes]);
     const translateExtent = useMemo(
         () =>
             [
@@ -357,7 +394,8 @@ export function MainCanvas() {
         if (last && last.x === event.clientX && last.y === event.clientY) return;
         lastDragPointRef.current = { x: event.clientX, y: event.clientY };
         const target = resolveAgentDropTarget({
-            nodes: reactFlow.getNodes(),
+            // A collapsed scenario's members keep their old size while hidden.
+            nodes: reactFlow.getNodes().filter((n) => !isDrawnHidden(n)),
             flowPoint: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
             clientX: event.clientX,
             clientY: event.clientY,
@@ -464,7 +502,7 @@ export function MainCanvas() {
             // drag-over highlight, so what lights up under the pointer and what
             // actually receives the drop cannot disagree (#296).
             const target: AgentDropTarget = resolveAgentDropTarget({
-                nodes: reactFlow.getNodes(),
+                nodes: reactFlow.getNodes().filter((n) => !isDrawnHidden(n)),
                 flowPoint: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
                 clientX: event.clientX,
                 clientY: event.clientY,
@@ -610,7 +648,7 @@ export function MainCanvas() {
 
     return (
         <AgentAttachmentsProvider enabled={!isSharedView}>
-        <>
+        <ScenarioUiContext.Provider value={scenarioUi}>
         {!loading ? <div
             style={{ width: "100vw", height: "100vh", backgroundColor: "#f0f0f0" }}
             // onWheelCapture={handleWheel}
@@ -627,6 +665,7 @@ export function MainCanvas() {
             <ToolsMenu />
             <UpMenu />
             <CollaborationSidePanel />
+            {!isSharedView ? <ScenariosPanel /> : null}
             <div
                 className="curio-canvas-drop-target"
                 style={{ width: "100%", height: "100%" }}
@@ -651,8 +690,8 @@ export function MainCanvas() {
                 style={notebookOn ? { width: "100%", height: notebookContentHeight, minHeight: "100%" } : FILL_STYLE}
             >
             <ReactFlow
-                nodes={nodes}
-                edges={edges}
+                nodes={scenarioView.nodes}
+                edges={scenarioView.edges}
                 onNodesChange={handleNodesChange}
                 onEdgesChange={handleEdgesChange}
                 onEdgesDelete={handleEdgesDelete}
@@ -685,6 +724,7 @@ export function MainCanvas() {
             >
                 {!notebookOn && <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />}
                 {!notebookOn && <Controls />}
+                {!notebookOn && <CanvasScenarioLayers view={scenarioView} editable={!isSharedView} />}
             </ReactFlow>
             </div>
             </div>
@@ -693,7 +733,7 @@ export function MainCanvas() {
 
         </div> : loadingAnimation() }
         <VersionBadge />
-        </>
+        </ScenarioUiContext.Provider>
         </AgentAttachmentsProvider>
     );
 }

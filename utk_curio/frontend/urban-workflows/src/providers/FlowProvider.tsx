@@ -26,6 +26,7 @@ import { useNotebookView } from "./flow/useNotebookView";
 import { NotebookViewContext } from "./flow/notebookViewContext";
 import type { IOutput, IInteraction } from "./flow/flowTypes";
 import type { FlowContextProps, NodeActionsContextProps } from "./flow/flowContextTypes";
+import type { Scenario } from "../utils/scenarios/scenarioModel";
 import { DEFAULT_WORKFLOW_NAME } from "../constants";
 import { TrillGenerator } from "../TrillGenerator";
 import { isStandaloneDashboard } from "../standalone/dashboardPayload";
@@ -128,8 +129,10 @@ export const FlowContext = createContext<FlowContextProps>({
     viewerMode: "owner",
     workflowCategories: {},
     serverCategories: {},
+    scenarios: [],
     renameDataflow: () => false,
     updateDataflowCategories: () => {},
+    setScenarios: () => {},
     saveCurrentProject: async () => {},
     saveAsNewProject: async () => {},
     ensureProjectId: async () => null,
@@ -298,8 +301,11 @@ const FlowProvider = ({
         initializeProvenance();
     }, []);
 
+    // The scenarios as they are now, for the save rule a run reads (#662).
+    // Assigned once workflowOps exists, as markDirtyRef is.
+    const scenariosNowRef = useRef<() => readonly Scenario[]>(() => []);
     const { isDashboardSource, setPinForDashboard } = useDashboardPins({
-        reactFlow, setDashboardPins, setNodes, markDirtyRef, savePinChangeRef, showToast,
+        reactFlow, setDashboardPins, setNodes, markDirtyRef, savePinChangeRef, showToast, scenariosNowRef,
     });
 
     const {
@@ -355,6 +361,7 @@ const FlowProvider = ({
     markNodeStaleRef.current = workflowOps.markNodeStale;
     markNodeErroredRef.current = workflowOps.markNodeErrored ?? (() => {});
     markDirtyRef.current = workflowOps.markDirty;
+    scenariosNowRef.current = () => workflowOps.scenariosRef?.current ?? workflowOps.scenarios ?? [];
 
     useDashboardPinSave({
         savePinChangeRef, dashboardOn, workflowOps, showToast,

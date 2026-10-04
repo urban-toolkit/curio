@@ -18,7 +18,11 @@ import clsx from "clsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
     faCircleCheck,
+    faClone,
+    faCodeBranch,
     faCubes,
+    faListUl,
+    faObjectGroup,
     faFileArrowDown,
     faFileImport,
     faFileExport,
@@ -49,6 +53,8 @@ import ShareMenu from "./ShareMenu";
 import DataflowCategoryInput from "../../projects/DataflowCategoryInput";
 import { projectsApi, type ProjectSummary } from "../../../api/projectsApi";
 import { SHARE_UUID_RE } from "../../../utils/shareLinks";
+import { useScenarioActions } from "../../scenarios/useScenarioActions";
+import { useScenarioUi } from "../../scenarios/scenarioUi";
 
 export default function UpMenu() {
     const [isEditing, setIsEditing] = useState(false);
@@ -71,6 +77,7 @@ export default function UpMenu() {
         renameDataflow,
         workflowCategories,
         serverCategories,
+        scenarios,
         updateDataflowCategories,
         saveCurrentProject,
         saveAsNewProject,
@@ -125,6 +132,14 @@ export default function UpMenu() {
     const closeFile = useCallback(() => closeMenu("file"), [closeMenu]);
     const closeView = useCallback(() => closeMenu("view"), [closeMenu]);
     const closeShare = useCallback(() => closeMenu("share"), [closeMenu]);
+
+    // #662: named selections of the dataflow, compared in the canvas.
+    const scenarioActions = useScenarioActions();
+    const scenarioUi = useScenarioUi();
+    const scenarioItem = (action: () => void) => () => {
+        setActiveMenu(null);
+        action();
+    };
 
     // The account's other dataflows, for the category suggestions. Fetched the
     // first time "+ Category" opens, not on every canvas load.
@@ -243,6 +258,8 @@ export default function UpMenu() {
             undefined,
             undefined,
             workflowCategories,
+            // A downloaded file carries scenarios only when there are some.
+            scenarios && scenarios.length > 0 ? scenarios : undefined,
         );
         const content = JSON.stringify(trillSpec, null, 2);
         const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
@@ -393,6 +410,14 @@ export default function UpMenu() {
                     <HeaderMenuItem icon={faFileExport} onClick={exportAsJupyterNotebook}>
                         Export as notebook
                     </HeaderMenuItem>
+                    {!isSharedView && (
+                        <HeaderMenuItem
+                            icon={faCodeBranch}
+                            onClick={scenarioItem(scenarioActions.saveDataflowAsScenario)}
+                        >
+                            Save dataflow as scenario
+                        </HeaderMenuItem>
+                    )}
                     <HeaderMenuDivider />
                     {/* The Python environment the nodes run in. Not a
                         catalog, so not among the catalog buttons. */}
@@ -444,6 +469,40 @@ export default function UpMenu() {
                     >
                         {expandStatus === "expanded" ? "Minimize Nodes" : "Expand Nodes"}
                     </HeaderMenuItem>
+                    {/* Scenarios (#662): save a selection as one, duplicate it
+                        as another, and the panel that lists them. Here rather
+                        than a menu of their own: the bar has no room for one
+                        beside every catalog's label. An edit, so not for a
+                        shared viewer. */}
+                    {!isSharedView && (
+                        <>
+                            <HeaderMenuDivider />
+                            <HeaderMenuItem
+                                icon={faObjectGroup}
+                                onClick={scenarioItem(scenarioActions.saveSelectionAsScenario)}
+                            >
+                                Save selection as scenario
+                            </HeaderMenuItem>
+                            <HeaderMenuItem
+                                icon={faClone}
+                                onClick={scenarioItem(() => scenarioActions.duplicate(false))}
+                            >
+                                Duplicate selection
+                            </HeaderMenuItem>
+                            <HeaderMenuItem
+                                icon={faCodeBranch}
+                                onClick={scenarioItem(() => scenarioActions.duplicate(true))}
+                            >
+                                Duplicate as scenario
+                            </HeaderMenuItem>
+                            <HeaderMenuItem
+                                icon={faListUl}
+                                onClick={scenarioItem(() => scenarioUi.setPanelOpen(!scenarioUi.panelOpen))}
+                            >
+                                {scenarioUi.panelOpen ? "Hide scenarios" : "Show scenarios"}
+                            </HeaderMenuItem>
+                        </>
+                    )}
                 </HeaderMenu>
 
                 {/* The canvas, or the same nodes as a column of notebook cells. */}
