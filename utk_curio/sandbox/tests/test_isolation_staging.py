@@ -306,6 +306,94 @@ def test_staging_a_dataset_path_links_it_into_scratch(workspace, scratch):
     assert (scratch / staged["my.dataset"]).exists()
 
 
+def _read(path, fmt):
+    """What `curio_load_data` hands a node for the file at *path* (#640)."""
+    from utk_curio.sandbox.util.catalog_helpers import read_dataset
+
+    return read_dataset(str(path), fmt)
+
+
+def test_a_parquet_is_staged_with_its_decode_sidecar(workspace, scratch):
+    """#596: object columns are JSON-encoded on save, and the columns are named
+    in ``<file>.decode.json`` beside the parquet. Staged alone, the parquet came
+    back with those columns as JSON strings under isolation, and decoded in
+    process (the shipped data.projectsidewalk.chicago-labels has one)."""
+    folder = workspace / "datasets" / "imported.labels@1" / "data"
+    folder.mkdir(parents=True)
+    source = folder / "labels.parquet"
+    pd.DataFrame({"tags": ['["curb", "ramp"]', "[]"], "n": [1, 2]}).to_parquet(source)
+    (folder / "labels.parquet.decode.json").write_text(
+        json.dumps({"encoded_object_columns": ["tags"]}), encoding="utf-8"
+    )
+
+    staged = staging.stage_dataset_paths({"imported.labels": str(source)}, scratch)
+    frame = _read(scratch / staged["imported.labels"], "parquet")
+    assert list(frame["tags"]) == [["curb", "ramp"], []]
+    assert list(frame["tags"]) == list(_read(source, "parquet")["tags"])
+
+
+def test_a_bundle_is_staged_with_the_parts_it_names(workspace, scratch):
+    """A multi-output result saved as a dataset is ``data/bundle.json`` naming
+    ``data/parts/*``, which the reader finds from the dataset's folder. Staged
+    alone, the bundle's parts were all missing."""
+    data = workspace / "datasets" / "computed.bundle@1" / "data"
+    (data / "parts").mkdir(parents=True)
+    pd.DataFrame({"a": [1, 2]}).to_parquet(data / "parts" / "00_frame.parquet")
+    (data / "parts" / "01_value.json").write_text(json.dumps({"value": 7}), encoding="utf-8")
+    (data / "bundle.json").write_text(json.dumps({"parts": [
+        {"index": 0, "format": "parquet", "kind": "dataframe", "file": "data/parts/00_frame.parquet"},
+        {"index": 1, "format": "json", "kind": "int", "file": "data/parts/01_value.json"},
+    ]}), encoding="utf-8")
+
+    staged = staging.stage_dataset_paths({"computed.bundle": str(data / "bundle.json")}, scratch)
+    frame, value = _read(scratch / staged["computed.bundle"], "bundle")
+    assert list(frame["a"]) == [1, 2]
+    assert value == 7
+
+
+def test_a_shapefile_is_staged_with_its_parts(workspace, scratch):
+    """A ``.shp`` is read with its ``.shx``, ``.dbf`` and ``.prj`` beside it."""
+    folder = workspace / "shapes"
+    folder.mkdir()
+    gpd.GeoDataFrame({"name": ["a"]}, geometry=[Point(-87.6, 41.8)], crs="EPSG:4326").to_file(
+        folder / "points.shp"
+    )
+
+    staged = staging.stage_dataset_paths({"imported.points": str(folder / "points.shp")}, scratch)
+    frame = _read(scratch / staged["imported.points"], "shp")
+    assert list(frame["name"]) == ["a"]
+    assert frame.crs.to_epsg() == 4326
+
+
+def test_only_the_files_that_go_with_a_dataset_are_staged(workspace, scratch):
+    """A dataset can sit in a folder it shares with others; only its own file
+    and the files named after it travel, never the whole folder."""
+    folder = workspace / "shared"
+    folder.mkdir()
+    source = folder / "trips.csv"
+    source.write_text("a\n1\n", encoding="utf-8")
+    (folder / "trips.csv.meta.json").write_text("{}", encoding="utf-8")
+    (folder / "other.csv").write_text("b\n2\n", encoding="utf-8")
+
+    staged = staging.stage_dataset_paths({"imported.trips": str(source)}, scratch)
+    beside = sorted(p.name for p in (scratch / staged["imported.trips"]).parent.iterdir())
+    assert beside == ["trips.csv", "trips.csv.meta.json"]
+
+
+def test_a_bundle_part_outside_its_dataset_is_not_staged(workspace, scratch):
+    """A bundle names its parts by path; one that climbs out of the dataset's
+    folder is not linked into the child's scratch."""
+    data = workspace / "datasets" / "computed.climb@1" / "data"
+    data.mkdir(parents=True)
+    (workspace / "secret.json").write_text(json.dumps({"value": 1}), encoding="utf-8")
+    (data / "bundle.json").write_text(json.dumps({"parts": [
+        {"index": 0, "format": "json", "kind": "int", "file": "../../secret.json"},
+    ]}), encoding="utf-8")
+
+    staging.stage_dataset_paths({"computed.climb": str(data / "bundle.json")}, scratch)
+    assert not [p for p in scratch.rglob("*") if p.name == "secret.json"]
+
+
 def test_staging_a_missing_dataset_path_is_dropped_not_raised(workspace, scratch):
     """Resolution is documented as fail-open; the child raises a clear error."""
     staged = staging.stage_dataset_paths({"gone": str(workspace / "nope.parquet")},
