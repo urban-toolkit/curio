@@ -803,7 +803,7 @@ A Data Pool resolves the selections that reach it with two modes, chosen in the 
 
 A selection is active when it picks something: a point selection with rows, or an interval over at least one column. A select nobody has used, or one that was cleared, takes no part in `MERGE_AND`.
 
-`FlowProvider.applyNewInteractions` hands a pool only the chart that just selected. The pool keeps each linked chart's latest selection itself, keyed by the chart's node id (`dataPoolBehavior`): the newest is priority 1, the others 0, and `utils/selectionMatch.matchSelections` resolves them. `OVERWRITE` resolves the priority-1 entry alone. A chart whose interaction edge to the pool is removed leaves that map. Choosing another mode resolves the selections the pool holds again.
+`applyNewInteractions` (`src/providers/flow/useInteractions.ts`) hands a pool only the chart that just selected. The pool keeps each linked chart's latest selection itself, keyed by the chart's node id (`dataPoolBehavior`): the newest is priority 1, the others 0, and `utils/selectionMatch.matchSelections` resolves them. `OVERWRITE` resolves the priority-1 entry alone. A chart whose interaction edge to the pool is removed leaves that map. Choosing another mode resolves the selections the pool holds again.
 
 The pool writes its `interacted` flags into a copy of its output (`utils/poolFlagCopy`), never into its input or into an output it already sent, which the charts downstream still hold. Its echo names the chart that just selected (`selectionSource`, see `utils/selectionEcho`) under every mode. An Autark node skips an echo of its own selection, so a plot keeps its brush; a Vega chart applies it, which only recolours rows. Every other chart shows the resolved rows, and an Autark plot shows them as its selection in place of its own brush.
 
@@ -1643,6 +1643,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 |---|---|
 | `src/index.tsx` | App entry point and provider nesting order |
 | `src/providers/FlowProvider.tsx` | Canonical workflow state (nodes, edges, outputs, interactions) |
+| `src/providers/flow/` | FlowProvider's sections as hooks (Run All, connections, graph edits, outputs, interactions, collaboration sync, dashboard pins, auto-install) and its types |
 | `src/providers/ProvenanceProvider.tsx` | In-memory per-node execution history (saved with the workflow JSON) |
 | `src/components/UniversalNode.tsx` | Single React component that renders all node types |
 | `src/registry/packagesClient.ts` | Fetch installed manifests → build `NodeDescriptor`s → register against `nodeRegistry` |
