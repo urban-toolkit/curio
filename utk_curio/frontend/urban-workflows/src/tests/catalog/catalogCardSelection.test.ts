@@ -48,6 +48,13 @@ const LOCAL_COMPOUND_CARDS = [
     localImport: "cardStyles",
     keys: ["model"],
   },
+  {
+    label: "scenario",
+    component: "pages/scenarios/ScenarioCatalogBrowseCard.tsx",
+    stylesheet: "pages/scenarios/ScenarioCatalogBrowseCard.module.css",
+    localImport: "cardStyles",
+    keys: ["scenario"],
+  },
 ];
 
 describe.each(LOCAL_COMPOUND_CARDS)(

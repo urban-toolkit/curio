@@ -29,6 +29,7 @@ const GRIDS = [
   "pages/dataCatalog/DataCatalogBrowse.tsx",
   "pages/agents/AgentCatalogBrowse.tsx",
   "pages/models/ModelCatalogBrowse.tsx",
+  "pages/scenarios/ScenarioCatalogBrowse.tsx",
 ];
 
 const CARDS = [
@@ -36,6 +37,7 @@ const CARDS = [
   "pages/dataCatalog/DataCatalogBrowseCard.tsx",
   "pages/agents/AgentCatalogBrowseCard.tsx",
   "pages/models/ModelCatalogBrowseCard.tsx",
+  "pages/scenarios/ScenarioCatalogBrowseCard.tsx",
 ];
 
 describe("CardContextMenu", () => {

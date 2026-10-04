@@ -35,8 +35,26 @@ const PAD = 16;
 const NODE_W = 28;
 const NODE_H = 16;
 
+// What a highlight paints: a scenario's own nodes in its colour, the nodes
+// that feed it with a dark dashed outline, and everything else faded.
+const CONTEXT_STROKE = "#2f3034";
+const FADED_OPACITY = 0.3;
+
+/** A scenario marked on its project's graph. */
+export interface ThumbnailHighlight {
+  /** The scenario's colour. */
+  color: string;
+  /** Its nodes: outlined and tinted in `color`. */
+  members: readonly string[];
+  /** The nodes that feed them: a dark dashed outline. */
+  context?: readonly string[];
+}
+
 interface Props {
   preview?: GraphPreview | null;
+  /** Marks a scenario's nodes. Without it the drawing is the Projects page's,
+   *  attribute for attribute. */
+  highlight?: ThumbnailHighlight | null;
 }
 
 /**
@@ -46,7 +64,7 @@ interface Props {
  * from `project.thumbnail_accent`; `accentColor` was never read, and `bgColor`
  * only tinted the empty state.
  */
-const DataflowThumbnail: React.FC<Props> = ({ preview }) => {
+const DataflowThumbnail: React.FC<Props> = ({ preview, highlight }) => {
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const { scaledNodes, nodeCenter } = useMemo(() => {
     const nodes = preview?.nodes ?? [];
@@ -95,6 +113,40 @@ const DataflowThumbnail: React.FC<Props> = ({ preview }) => {
 
   const { edges } = preview;
 
+  // Only with a highlight: the extra attributes each element takes. Without
+  // one every spread below is empty, so the plain drawing cannot move.
+  const members = new Set(highlight?.members ?? []);
+  const context = new Set(highlight?.context ?? []);
+  const roleOf = (id: string) =>
+    members.has(id) ? "member" : context.has(id) ? "context" : "faded";
+  const edgeMarks = (source: string, target: string) => {
+    if (!highlight) return {};
+    if (members.has(source) && members.has(target)) {
+      return { stroke: highlight.color, strokeWidth: 1.5, "data-thumbnail-role": "member" };
+    }
+    // An edge stays as it is while both its ends are marked; any other fades.
+    return roleOf(source) === "faded" || roleOf(target) === "faded"
+      ? { opacity: FADED_OPACITY, "data-thumbnail-role": "faded" }
+      : { "data-thumbnail-role": "context" };
+  };
+  const nodeMarks = (id: string) => {
+    if (!highlight) return { group: {}, box: {} };
+    const role = roleOf(id);
+    if (role === "member") {
+      return {
+        group: { "data-thumbnail-role": role },
+        box: { fill: highlight.color, fillOpacity: 0.18, stroke: highlight.color, strokeWidth: 1.5 },
+      };
+    }
+    if (role === "context") {
+      return {
+        group: { "data-thumbnail-role": role },
+        box: { stroke: CONTEXT_STROKE, strokeWidth: 1, strokeDasharray: "2 1.5" },
+      };
+    }
+    return { group: { "data-thumbnail-role": role, opacity: FADED_OPACITY }, box: {} };
+  };
+
   return (
     <svg
       viewBox={`0 0 ${VB_W} ${VB_H}`}
@@ -102,6 +154,7 @@ const DataflowThumbnail: React.FC<Props> = ({ preview }) => {
       height="100%"
       preserveAspectRatio="xMidYMid meet"
       style={{ display: "block" }}
+      {...(highlight ? { "data-thumbnail-highlight": "true" } : {})}
     >
       <rect x={0} y={0} width={VB_W} height={VB_H} fill="#f5f5f5" />
 
@@ -116,6 +169,7 @@ const DataflowThumbnail: React.FC<Props> = ({ preview }) => {
             x2={tgt.cx} y2={tgt.cy}
             stroke="#c8c8c8"
             strokeWidth={1}
+            {...edgeMarks(e.source, e.target)}
           />
         );
       })}
@@ -124,9 +178,10 @@ const DataflowThumbnail: React.FC<Props> = ({ preview }) => {
         // Palette-dragged nodes persist a versioned type (`.../merge-flow@1`);
         // this map is keyed unversioned, so strip the suffix first (#159).
         const color = NODE_COLORS[unversionedType(n.type)] ?? FALLBACK_COLOR;
+        const marks = nodeMarks(n.id);
         return (
-          <g key={n.id}>
-            <rect x={n.sx} y={n.sy} width={NODE_W} height={NODE_H} rx={2} fill="#ffffff" stroke="#e0e0e0" strokeWidth={0.5} />
+          <g key={n.id} {...marks.group}>
+            <rect x={n.sx} y={n.sy} width={NODE_W} height={NODE_H} rx={2} fill="#ffffff" stroke="#e0e0e0" strokeWidth={0.5} {...marks.box} />
             <rect x={n.sx} y={n.sy} width={3} height={NODE_H} rx={1} fill={color} />
           </g>
         );

@@ -31,6 +31,7 @@ const CANVAS_DRAWERS = [
   "components/datasets/catalog/DatasetCatalogDrawer.tsx",
   "components/agents/catalog/AgentCatalogDrawer.tsx",
   "components/models/catalog/ModelCatalogDrawer.tsx",
+  "components/scenarios/catalog/ScenarioCatalogDrawer.tsx",
   "components/discovery/catalog/DiscoveryCatalogDrawer.tsx",
   // API Settings and Monitor, opened from the top bar.
   "components/layout/HeaderDrawer.tsx",
@@ -44,6 +45,7 @@ const DRAWER_HOOKS = [
   "components/agents/catalog/useAgentCatalogDrawer.ts",
   "components/models/catalog/useModelCatalogDrawer.ts",
   "components/models/catalog/useModelDelete.ts",
+  "components/scenarios/catalog/useScenarioCatalogDrawer.ts",
 ];
 
 const PROVIDERS = [
@@ -51,6 +53,7 @@ const PROVIDERS = [
   "providers/datasetCatalog/DatasetCatalogDrawerProvider.tsx",
   "providers/AgentCatalogDrawerProvider.tsx",
   "providers/modelCatalog/ModelCatalogDrawerProvider.tsx",
+  "providers/scenarioCatalog/ScenarioCatalogDrawerProvider.tsx",
   "providers/discoveryCatalog/DiscoveryCatalogDrawerProvider.tsx",
   "providers/ApiSettingsDrawerProvider.tsx",
   "providers/MonitorDrawerProvider.tsx",
