@@ -12,8 +12,9 @@ every test, and on failure this writes, per test, into
                       its ``data-curio-node-error`` when it failed, and
                        visible text, which is what shows *which* node was
                        stuck and what it displayed
-- ``browser-log.txt``  console and pageerror events, when the page captured
-                       them (``workflow_page`` does)
+- ``browser-log.txt``  console and pageerror events: ``workflow_page`` collects
+                       them, and :func:`start_trace_chunk` starts collecting
+                       them on any other test's page
 - ``trace.zip``        a Playwright trace of the test, with ``CURIO_E2E_TRACE``
                        set. ``1`` records DOM snapshots and the action log,
                        which is cheap enough to leave on in CI; ``full`` adds a
@@ -100,9 +101,38 @@ def page_for(item):
     return None
 
 
+def watch_browser_log(page):
+    """Collect *page*'s console and pageerror events into
+    ``page._curio_browser_log``, as ``workflow_page`` does, so a failing test
+    on any page leaves its ``browser-log.txt``."""
+    if page is None or hasattr(page, "_curio_browser_log"):
+        return
+    try:
+        page._curio_browser_log = []
+
+        def _on_console(msg):
+            try:
+                location = msg.location
+            except Exception:
+                location = {}
+            page._curio_browser_log.append(
+                {"kind": "console", "type": msg.type, "text": msg.text, "location": location}
+            )
+
+        def _on_pageerror(exc):
+            page._curio_browser_log.append({"kind": "pageerror", "message": str(exc)})
+
+        page.on("console", _on_console)
+        page.on("pageerror", _on_pageerror)
+    except Exception as exc:
+        print(f"[e2e-diagnostics] could not watch the browser log: {exc}")
+
+
 def start_trace_chunk(item):
-    """Begin this test's trace chunk, when its page is being traced."""
+    """Begin this test's trace chunk, when its page is being traced, and its
+    browser log."""
     page = page_for(item)
+    watch_browser_log(page)
     context = getattr(page, "context", None)
     if context is None or not getattr(context, "_curio_tracing", False):
         return

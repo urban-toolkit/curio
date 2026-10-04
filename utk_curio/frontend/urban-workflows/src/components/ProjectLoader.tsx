@@ -79,7 +79,12 @@ export const ProjectLoader: React.FC<{
     hydrateRestoredOutputs,
     loadParsedTrill,
     projectId,
+    attachLatestRun,
   } = useFlowContext();
+  // Read when the load answers, not when it started: whether this canvas runs
+  // on the server depends on the signed-in user, which can arrive in between.
+  const attachLatestRunRef = useRef(attachLatestRun);
+  attachLatestRunRef.current = attachLatestRun;
   const { loadTrill } = useCode();
   // Warn + auto-install missing Python deps. SECURITY: only called for the
   // OWNER's own project below — never for a foreign/shared spec, since the
@@ -147,16 +152,18 @@ export const ProjectLoader: React.FC<{
     // flow state as "never saved" and creating a second dataflow (#340).
     beginProjectLoad(id);
 
+    /** Apply a loaded project; returns the nodes whose saved output it restored. */
     const applyResult = (
       result: {
         spec: unknown;
         outputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
       },
       { trusted }: { trusted: boolean }
-    ) => {
+    ): Set<string> => {
       const { spec, outputs } = result;
 
       let loaded: { nodes: any[]; edges: any[] } | null = null;
+      const restoredIds = new Set<string>();
       if (spec) {
         if (!hasLoadableDataflow(spec)) {
           throw new Error(
@@ -169,6 +176,7 @@ export const ProjectLoader: React.FC<{
         for (const o of outputs ?? []) {
           if (o?.node_id && o.filename) restored[o.node_id] = o.filename;
         }
+        for (const nodeId of Object.keys(restored)) restoredIds.add(nodeId);
         loaded = loadTrill(spec, undefined, undefined, restored);
         // Auto-install missing deps only for the owner's own project — never
         // for a foreign shared spec (see ensureWorkflowDeps' SECURITY note), and
@@ -213,6 +221,7 @@ export const ProjectLoader: React.FC<{
         // dashboard tile draws from, and it has no Play to fall back on.
         hydrateRestoredOutputs(newOutputs, loaded?.edges);
       }
+      return restoredIds;
     };
 
     setLoadState("loading");
@@ -255,8 +264,12 @@ export const ProjectLoader: React.FC<{
 
       try {
         const result = await loadProject(id);
-        applyResult(result, { trusted: true });
+        const restored = applyResult(result, { trusted: true });
         setLoadState("loaded");
+        // The outputs its last run on the server made that the saved ones do
+        // not hold, and that run itself if it is still going. Canvas only: a
+        // dashboard draws from what was saved.
+        if (!presentation) void attachLatestRunRef.current(id, restored);
       } catch (err) {
         // 404 from the owner-scoped endpoint means either the project doesn't
         // exist or the current user isn't its owner. Try the shared (link-based)

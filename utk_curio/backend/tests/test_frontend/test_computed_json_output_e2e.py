@@ -23,7 +23,8 @@ This test pins the chain from the only place it is observable end to end:
 
   * the save that carried the node's output ref answers with
     ``dataset_install_warnings: []`` - the deterministic signal, read off the
-    response rather than the DOM;
+    response rather than the DOM; for a run on the server, the node's step
+    records no ``installWarnings`` and the dataset it installed;
   * no "couldn't be generated" toast is raised, recorded from a MutationObserver
     so a toast that appeared and auto-dismissed still counts as a failure;
   * the dataset genuinely exists, is ``format: "json"``, and **downloads as real
@@ -46,12 +47,14 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import TYPE_CHECKING
 
 import pytest
 from playwright.sync_api import expect
 
 from .utils import (
+    SandboxRuns,
     _wait_for_reactflow_ready,
     api_json,
     canvas_node_type,
@@ -284,20 +287,46 @@ def _enable_save_toggle(page, node_id: str) -> None:
     )
 
 
-def _run_and_capture_save(page, project_id: str, node_id: str) -> tuple[str, dict]:
-    """Run one node and return ``(output text, parsed save response)``.
+def _run_and_capture_save(page, token: str, project_id: str, node_id: str) -> tuple[str, dict]:
+    """Run one node and return ``(output text, install outcome)``, the outcome
+    carrying ``dataset_install_warnings``.
 
-    The waiter is armed BEFORE the run on purpose. ``wait_for_node_done`` only
-    watches ``data-curio-node-status``, which flips in the same synchronous block
-    that calls ``applyNewOutput``, while the install-save is 500 ms debounced
-    after that plus a round trip. Asserting anything the moment the node says
-    Done is asserting against a state that has not happened yet.
+    A run in the page installs at the save that carries the node's output ref,
+    so the outcome is that save's response. Its listener is armed BEFORE the run
+    on purpose: ``wait_for_node_done`` only watches ``data-curio-node-status``,
+    which flips in the same synchronous block that calls ``applyNewOutput``,
+    while the install-save is 500 ms debounced after that plus a round trip.
+
+    A run on the server (a signed-in owner's) installs as it records the node's
+    output, and the node's step carries the same warnings (``installWarnings``)
+    and the dataset it installed.
     """
-    with page.expect_response(
-        _install_save_response(project_id, node_id), timeout=180000
-    ) as save_info:
+    saves = []
+    is_install_save = _install_save_response(project_id, node_id)
+
+    def _on_response(response) -> None:
+        if is_install_save(response):
+            saves.append(response)
+
+    page.on("response", _on_response)
+    sent = SandboxRuns(page, token, project_id)
+    try:
         output = run_node_and_wait(page, node_id, node_type=ANALYSIS_TYPE)
-    response = save_info.value
+        steps = [s for s in sent.new_steps() if s["nodeId"] == node_id and s["status"] == "ok"]
+        if steps:
+            step = steps[-1]
+            assert step.get("installedDatasetId"), (
+                "the run on the server installed no dataset for {}: {}".format(node_id, step)
+            )
+            return output, {"dataset_install_warnings": step.get("installWarnings") or []}
+        deadline = time.monotonic() + 180
+        while not saves:
+            assert time.monotonic() < deadline, "no save carried {}'s output ref".format(node_id)
+            page.wait_for_timeout(250)
+    finally:
+        page.remove_listener("response", _on_response)
+        sent.stop()
+    response = saves[-1]
     assert response.ok, "install-save failed: {} {}".format(response.status, response.url)
     return output, response.json()
 
@@ -346,7 +375,7 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
         delete_computed_datasets(token, dataset_id)
 
     # 1. The dict node.
-    dict_output, dict_save = _run_and_capture_save(page, project_id, dict_node)
+    dict_output, dict_save = _run_and_capture_save(page, token, project_id, dict_node)
     assert "Saved to file:" in dict_output, dict_output
     assert dict_save.get("dataset_install_warnings") == [], (
         "the save that carried {}'s output reported install warnings {!r}; a dict "
@@ -357,7 +386,7 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
     # 2. The scalar node. Run second and assert separately rather than relying on
     #    the 500 ms debounce to collapse both: the two runs are seconds apart, so
     #    which save covers which node is not something to guess at.
-    scalar_output, scalar_save = _run_and_capture_save(page, project_id, scalar_node)
+    scalar_output, scalar_save = _run_and_capture_save(page, token, project_id, scalar_node)
     assert "Saved to file:" in scalar_output, scalar_output
     assert scalar_save.get("dataset_install_warnings") == [], (
         "the save that carried {}'s output reported install warnings {!r}; a "

@@ -32,6 +32,7 @@ Run::
 from __future__ import annotations
 
 import re
+import time
 import urllib.error
 
 import pytest
@@ -39,6 +40,7 @@ from playwright.sync_api import expect
 
 from .test_library_install_integration import library_teardown  # noqa: F401
 from .utils import (
+    SandboxRuns,
     _wait_for_reactflow_ready,
     api_json,
     install_session_cookie,
@@ -48,6 +50,8 @@ from .utils import (
     require_project_page,
     require_user_auth,
     stub_db_user,
+    wait_for_node_done,
+    wait_for_node_settled,
 )
 
 USERNAME = "missingmodule"
@@ -144,19 +148,59 @@ def _open_node_dataflow(page, frontend_server, current_server, module: str):
     return token, project["id"]
 
 
-def _run_the_node(page):
-    """Press the node's play control and wait for the execution to come back.
+def _reply_to(page, token: str, project_id: str, start, *, until_done: bool = False) -> dict:
+    """Start the node's run with *start* and return the reply the run got.
+
+    A run stays in the page or goes to the server (a signed-in owner's does):
+    the reply is the page's ``/processPythonCode`` answer, or else the step the
+    run on the server recorded, which keeps the reply's ``missingModule``. The
+    node is then waited for: settled, or with *until_done*, a success.
+    """
+    answers = []
+
+    def _answer(response) -> None:
+        if response.url.endswith("/processPythonCode") and response.request.method == "POST":
+            answers.append(response)
+
+    page.on("response", _answer)
+    sent = SandboxRuns(page, token, project_id)
+    step = None
+    try:
+        start()
+        deadline = time.monotonic() + 120
+        while not answers:
+            step = next((
+                s for s in reversed(sent.new_steps())
+                if s["nodeId"] == NODE_ID and s["status"] in ("ok", "error")
+            ), None)
+            if step is not None:
+                break
+            assert time.monotonic() < deadline, "the node's run never answered, in the page or on the server"
+            page.wait_for_timeout(250)
+    finally:
+        page.remove_listener("response", _answer)
+        sent.stop()
+    if until_done:
+        wait_for_node_done(page, NODE_ID, timeout_ms=60000)
+    else:
+        wait_for_node_settled(page, NODE_ID, timeout_ms=60000)
+    if answers:
+        return answers[-1].json()
+    return {
+        "output": {"path": step["outputPath"] or ""},
+        "stderr": step["stderrTail"] or "",
+        "missingModule": step.get("missingModule"),
+    }
+
+
+def _run_the_node(page, token: str, project_id: str) -> dict:
+    """Press the node's play control and return the reply its run got.
 
     ``play_node`` rather than a click of our own: the control is an ``<svg>``
     inside React Flow's transformed viewport, and the helper already owns the
     dispatch that survives that.
     """
-    with page.expect_response(
-        lambda r: r.url.endswith("/processPythonCode") and r.request.method == "POST",
-        timeout=120000,
-    ) as info:
-        play_node(page, NODE_ID)
-    return info.value
+    return _reply_to(page, token, project_id, lambda: play_node(page, NODE_ID))
 
 
 def _notice(page):
@@ -170,10 +214,9 @@ class TestMissingModuleNotice:
         self, workflow_page, frontend_server, current_server
     ):
         page = workflow_page
-        _open_node_dataflow(page, frontend_server, current_server, ABSENT_MODULE)
+        token, project_id = _open_node_dataflow(page, frontend_server, current_server, ABSENT_MODULE)
 
-        response = _run_the_node(page)
-        body = response.json()
+        body = _run_the_node(page, token, project_id)
 
         # The backend's half of the claim.
         assert body["missingModule"], f"no missingModule on a failed run: {body}"
@@ -194,8 +237,8 @@ class TestMissingModuleNotice:
         self, workflow_page, frontend_server, current_server, pip_behaviour
     ):
         page = workflow_page
-        _open_node_dataflow(page, frontend_server, current_server, ABSENT_MODULE)
-        _run_the_node(page)
+        token, project_id = _open_node_dataflow(page, frontend_server, current_server, ABSENT_MODULE)
+        _run_the_node(page, token, project_id)
 
         # pip exits non-zero. The route answers 502, and the panel must say so
         # rather than claiming an install that did not happen.
@@ -218,8 +261,8 @@ class TestMissingModuleNotice:
         self, workflow_page, frontend_server, current_server, pip_behaviour
     ):
         page = workflow_page
-        _open_node_dataflow(page, frontend_server, current_server, ABSENT_MODULE)
-        _run_the_node(page)
+        token, project_id = _open_node_dataflow(page, frontend_server, current_server, ABSENT_MODULE)
+        _run_the_node(page, token, project_id)
 
         # A requirement pip's grammar rejects is a 400, not a 502 - the
         # distinction the route exists to hold, and the panel must not blur it
@@ -247,7 +290,7 @@ def test_installing_from_the_node_panel_then_rerunning_succeeds(
     the failure, run again, succeed - without leaving the canvas.
     """
     page = workflow_page
-    token, _project_id = _open_node_dataflow(
+    token, project_id = _open_node_dataflow(
         page, frontend_server, current_server, REAL_LIB
     )
 
@@ -263,8 +306,7 @@ def test_installing_from_the_node_panel_then_rerunning_succeeds(
     except urllib.error.HTTPError:
         pass
 
-    response = _run_the_node(page)
-    body = response.json()
+    body = _run_the_node(page, token, project_id)
     if not body.get("missingModule"):
         pytest.skip(
             f"{REAL_LIB} is already importable in this sandbox; the negative "
@@ -287,12 +329,11 @@ def test_installing_from_the_node_panel_then_rerunning_succeeds(
 
     # And the same node now runs. This is the whole point: the user never left
     # the canvas and never opened a modal.
-    with page.expect_response(
-        lambda r: r.url.endswith("/processPythonCode") and r.request.method == "POST",
-        timeout=120000,
-    ) as rerun:
-        notice.get_by_role("button", name="Run node").click()
-    after = rerun.value.json()
+    after = _reply_to(
+        page, token, project_id,
+        lambda: notice.get_by_role("button", name="Run node").click(),
+        until_done=True,
+    )
     assert after["output"]["path"], (
         f"{REAL_LIB} still not importable after a confirmed install; "
         f"stderr: {after['stderr'][:400]}"

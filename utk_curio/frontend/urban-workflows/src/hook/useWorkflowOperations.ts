@@ -1499,6 +1499,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         saveAsNewProject,
         ensureProjectId,
         persistDataflowForInstall,
+        surfaceInstallWarnings,
         requestProjectSave,
         loadProject,
         loadSharedProject,

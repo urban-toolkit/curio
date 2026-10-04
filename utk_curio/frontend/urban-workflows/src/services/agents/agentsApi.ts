@@ -14,7 +14,7 @@
 import { apiFetch } from "../../utils/authApi";
 import { backendUrl } from "../../utils/backendUrl";
 
-import { postSseStream } from "./agentStream";
+import { postSseStream } from "../../utils/sseStream";
 import type {
   AgentApplyResult,
   AgentAttachment,

@@ -8,6 +8,7 @@ from playwright.sync_api import (
     expect,
 )
 
+from .run_all import wait_for_run_guard_released
 from .screenshots import park_pointer
 
 
@@ -794,7 +795,13 @@ def play_node(page, node_id: str, *, max_attempts: int = 3) -> None:
     ``dispatch_event("click")`` sends a bubbling synthetic ``MouseEvent``
     that React's onClick picks up regardless of where the element actually
     sits on screen.
+
+    It first waits for any run already going to end. A click during one is
+    refused with a toast, and a node that already reads Done would then pass
+    the acknowledgement below on its previous run's output. A run on the server
+    ends a moment after its last node shows its result.
     """
+    wait_for_run_guard_released(page, timeout_ms=300000)
     node_el = node_locator(page, node_id)
     node_el.scroll_into_view_if_needed()
     play_btn = node_el.locator("svg.fa-circle-play")

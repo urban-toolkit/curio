@@ -102,7 +102,8 @@ export const AgentBuilderStrip: React.FC<{
   onCancelSimulate,
   simulationActivity,
 }) => {
-  const { playAllNodes, isRunActive } = useFlowContext();
+  const { playAllNodes, isRunActive: browserRunActive, serverRunActive } = useFlowContext();
+  const isRunActive = browserRunActive || serverRunActive;
   const [solving, setSolving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);

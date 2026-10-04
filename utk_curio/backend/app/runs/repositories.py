@@ -42,7 +42,7 @@ _RUN_FIELDS = frozenset({
 _STEP_FIELDS = frozenset({
     "status", "started_at", "finished_at", "duration_ms", "output_path",
     "output_type", "installed_dataset_id", "code_sha256", "stdout_tail",
-    "stderr_tail", "skip_reason",
+    "stderr_tail", "skip_reason", "missing_module", "install_warnings",
 })
 
 

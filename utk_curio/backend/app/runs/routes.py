@@ -89,7 +89,8 @@ def get_run(run_id: str):
         run = service.get_run(g.user, run_id)
     except RunError as exc:
         return _error(exc)
-    return jsonify(service.run_payload(run, steps=True))
+    current = service.current_code_hashes(g.user, run.project_id)
+    return jsonify(service.run_payload(run, steps=True, current=current))
 
 
 @runs_bp.route("/api/runs/<run_id>/stream", methods=["GET"])
