@@ -54,6 +54,7 @@ from utk_curio.backend.app.common.egress_policy import (  # noqa: F401 - re-expo
     check_url,
     confirm_peer,
     trusted_host_of,
+    url_origin,
 )
 
 MAX_BODY_BYTES = 256 * 1024
@@ -255,13 +256,6 @@ def _content_type(headers: dict) -> str:
     return str(headers.get("Content-Type") or headers.get("content-type") or "")
 
 
-def _origin(url: str) -> tuple[str, str, int | None]:
-    from urllib.parse import urlsplit
-
-    parts = urlsplit(url)
-    return parts.scheme.lower(), (parts.hostname or "").lower(), parts.port
-
-
 def _hop_headers(headers: dict | None, secret_headers: dict | None, current: str, first: str) -> dict:
     """What one hop sends: *headers* always, *secret_headers* only while the
     hop is on the origin the request started at.
@@ -271,7 +265,8 @@ def _hop_headers(headers: dict | None, secret_headers: dict | None, current: str
     on a cross-origin redirect.
     """
     sent = dict(headers or {})
-    if secret_headers and _origin(current) == _origin(first):
+    here = url_origin(current)
+    if secret_headers and here is not None and here == url_origin(first):
         sent.update(secret_headers)
     return sent
 
