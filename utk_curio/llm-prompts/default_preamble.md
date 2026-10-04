@@ -210,7 +210,7 @@ When generating the grammar for Vega-Lite do not include the data field. It will
 ## Autark documents
 
 Autark nodes (curio.builtin/autk-grammar) are controlled through grammar: their content is one JSON document that follows the Autark grammar's JSON Schema (https://autarkjs.org/schema/autk-grammar/v1.json). Keys the schema does not name are allowed. A document names at least one of "compute", "data", "map" or "plot".
-In the document, the node's own input is the layer named "upstream"; the layers an upstream Autark node produces keep their table names, such as "table_osm_buildings". The document writes no "data" entry for its input.
+In the document, the node's inputs are the layers named "input_0", "input_1", ... in the order of its input circles; the layers an upstream Autark node produces keep their table names, such as "table_osm_buildings". The document writes no "data" entry for its inputs.
 
 - "data": Tables to load, in order. Each entry's "type" selects its fields:
   - "osm": Loads OpenStreetMap data for a named area, from Overpass or from a PBF extract. Requires "outputTableName" and "queryArea".
@@ -277,9 +277,9 @@ Number of connections each node accepts into its inputs. A node that accepts any
 - Python Computation: any number
 - Data Summary: 1
 - JS Computation: any number
-- Vega-Lite: 1
+- Vega-Lite: any number
 - Simple View: 1
-- Autark: 1
+- Autark: any number
 - Spatial Join: 2
 - Merge Flow: 5
 
