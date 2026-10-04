@@ -126,6 +126,40 @@ def test_a_row_without_its_file_says_so(photos):
     assert out["dominant_class"].iloc[1] in STREET
 
 
+def _unreadable(kind, tmp_path, photo):
+    """A file the row points at that is not an image Pillow can read: bytes
+    that are no image at all (refused at open), or the first half of a real
+    photo (opened, then refused when its pixels are read)."""
+    target = tmp_path / f"{kind}.jpg"
+    if kind == "garbage":
+        target.write_bytes(b"these bytes are not an image\n" * 64)
+    else:
+        whole = Path(photo).read_bytes()
+        target.write_bytes(whole[: len(whole) // 2])
+    return str(target)
+
+
+@pytest.mark.parametrize("kind", ["garbage", "truncated"])
+def test_an_unreadable_image_says_so_and_the_rest_are_labelled(kind, tmp_path, photos):
+    frame, helpers = photos
+    frame = frame.copy()
+    frame.loc[frame.index[0], "path"] = _unreadable(kind, tmp_path, frame["path"].iloc[0])
+    out = make_curio_segment(helpers["curio_derived_file"])(frame, _loaded(DDRNET), STREET)
+    assert out["segment_error"].iloc[0] == "the image could not be read"
+    assert pd.isna(out["dominant_class"].iloc[0]) and pd.isna(out["overlay_url"].iloc[0])
+    assert out["dominant_class"].iloc[1] in STREET and pd.isna(out["segment_error"].iloc[1])
+
+
+def test_an_image_too_large_to_decode_says_it_could_not_be_read(photos, monkeypatch):
+    from PIL import Image
+
+    frame, helpers = photos
+    # Every photo is now over Pillow's decompression bomb limit.
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1)
+    out = make_curio_segment(helpers["curio_derived_file"])(frame, _loaded(DDRNET), STREET)
+    assert list(out["segment_error"]) == ["the image could not be read"] * len(frame)
+
+
 def test_rows_without_paths_are_refused():
     with pytest.raises(ValueError, match="rows with a path"):
         make_curio_segment(None)(pd.DataFrame({"x": [1]}), _loaded(DDRNET))
