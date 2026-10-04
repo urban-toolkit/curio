@@ -33,6 +33,10 @@ import {
 const MAX_REFOLLOWS = 5;
 /** How often a browser node's report is sent while the server still writes the run's end. */
 const MAX_REPORT_ATTEMPTS = 6;
+/** How often a start is tried while the server still writes the end of the run this tab saw end. */
+const MAX_START_ATTEMPTS = 3;
+/** How long, in reads a quarter second apart, a start waits for the server to write that end. */
+const END_WAIT_READS = 40;
 
 interface FollowedRun {
     runId: string;
@@ -82,10 +86,15 @@ export function useServerRun({
     nodeExecProv: (...args: any[]) => void;
     flushInstallSyncRef: React.MutableRefObject<() => void>;
 }) {
-    // True from the click until the server's part ends. UniversalNode reads
-    // isRunActive, not this, so a chart draws as its data arrives.
+    // True from the click until the server's part ends. UniversalNode reads it
+    // with isRunActive: a map or chart draws in the run's browser part, or from
+    // its input once the run ends, never twice.
     const [serverRunActive, setServerRunActive] = useState(false);
     const followedRef = useRef<FollowedRun | null>(null);
+    // The run this tab last saw end. It ends here as its last step lands, a
+    // moment before the server writes its end, and a start in that moment is
+    // refused naming it.
+    const endedRunRef = useRef<string | null>(null);
     // Between the click and the run's answer: the save, then the start.
     const startingRef = useRef<{ stopped: boolean } | null>(null);
     const outputSeqRef = useRef(0);
@@ -318,6 +327,7 @@ export function useServerRun({
     const finish = (run: FollowedRun, status: RunStatus) => {
         if (run.done) return;
         run.done = true;
+        endedRunRef.current = run.runId;
         run.controller.abort();
         followedRef.current = null;
         // In the same tick the flag goes down, so the Run All button never reads
@@ -342,6 +352,20 @@ export function useServerRun({
     };
 
     // ── What the canvas calls ────────────────────────────────────────────
+
+    /** Wait until the server has written *runId*'s end; false when it has not in time. */
+    const serverWroteEnd = async (runId: string): Promise<boolean> => {
+        for (let read = 0; read < END_WAIT_READS; read++) {
+            try {
+                const record = await runsApi.get(runId);
+                if (!ACTIVE_RUN_STATUSES.has(record.status)) return true;
+            } catch {
+                return false;
+            }
+            await new Promise((resolve) => window.setTimeout(resolve, 250));
+        }
+        return false;
+    };
 
     /** Save, then run the whole dataflow or *targetNodeId* and the ancestors it needs. */
     const startRun = async (targetNodeId?: string) => {
@@ -384,13 +408,25 @@ export function useServerRun({
         if (starting.stopped) { giveUp(); return; }
         const projectId: string | undefined = saved?.id;
         if (!projectId) { giveUp("The dataflow was not run, because it could not be saved."); return; }
-        let record: Run;
-        try {
-            record = await runsApi.start(projectId, {
-                ...(targetNodeId ? { target: targetNodeId, reuse } : {}),
-                specRevision: saved?.spec_revision ?? null,
-            });
-        } catch (err: any) {
+        let record: Run | null = null;
+        let refused: any = null;
+        for (let attempt = 1; attempt <= MAX_START_ATTEMPTS && !record; attempt++) {
+            try {
+                record = await runsApi.start(projectId, {
+                    ...(targetNodeId ? { target: targetNodeId, reuse } : {}),
+                    specRevision: saved?.spec_revision ?? null,
+                });
+            } catch (err: any) {
+                refused = err;
+                // Refused naming the run this tab just saw end: the server is
+                // still writing its end. Start again once it has.
+                const endingId = err?.status === 409 ? err?.body?.runId : null;
+                if (!endingId || endingId !== endedRunRef.current || starting.stopped) break;
+                if (!(await serverWroteEnd(endingId))) break;
+            }
+        }
+        if (!record) {
+            const err = refused;
             const runningId = err?.status === 409 ? err?.body?.runId : null;
             if (!runningId || starting.stopped) {
                 giveUp(starting.stopped ? undefined : (err?.message || "The run could not start."));

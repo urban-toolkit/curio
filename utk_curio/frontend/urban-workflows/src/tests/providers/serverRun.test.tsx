@@ -359,6 +359,35 @@ describe("a run started on the canvas", () => {
 
     expect(shown("a")).toMatchObject({ code: "error", missingModule: missing });
   });
+
+  it("a play in the moment before the server writes the last run's end waits for it, then starts", async () => {
+    // The run ends here as its last step lands; the server writes its end a
+    // moment later and refuses a start until then, naming that run.
+    const live = stream();
+    api.start.mockResolvedValueOnce(run("r1", [step("a")]));
+    const { hook, deps } = harness([{ id: "a" }]);
+    await act(async () => { await hook.result.current.startRun(); });
+    live.emit({
+      kind: "step_finished", nodeId: "a", status: "ok",
+      reply: { stdout: [], stderr: "", output: { path: "art-a", dataType: "dataframe" } },
+    });
+    expect(hook.result.current.serverRunActive).toBe(false);
+
+    api.start
+      .mockRejectedValueOnce(Object.assign(new Error("This dataflow is already running."), {
+        status: 409, body: { runId: "r1" },
+      }))
+      .mockResolvedValueOnce(run("r2", [step("a")]));
+    api.get
+      .mockResolvedValueOnce(run("r1", [step("a", { status: "ok" })], { status: "running" }))
+      .mockResolvedValueOnce(run("r1", [step("a", { status: "ok" })], { status: "succeeded" }));
+
+    await act(async () => { await hook.result.current.startRun("a"); });
+
+    expect(api.start).toHaveBeenCalledTimes(3);
+    expect(live.runIds).toEqual(["r1", "r2"]);
+    expect(deps.showToast).not.toHaveBeenCalledWith(expect.stringContaining("earlier version"), "info");
+  });
 });
 
 describe("a canvas opened after a run", () => {
