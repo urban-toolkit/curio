@@ -115,12 +115,14 @@
       {
         "id": "reactflow__edge-niteroi-osmout-niteroi-mergein_0",
         "source": "niteroi-osm",
-        "target": "niteroi-merge"
+        "target": "niteroi-merge",
+        "targetHandle": "in_0"
       },
       {
         "id": "reactflow__edge-niteroi-rasterout-niteroi-mergein_1",
         "source": "niteroi-raster",
-        "target": "niteroi-merge"
+        "target": "niteroi-merge",
+        "targetHandle": "in_1"
       },
       {
         "id": "reactflow__edge-niteroi-mergeout-niteroi-joinin",
