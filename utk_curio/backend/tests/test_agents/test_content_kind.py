@@ -42,12 +42,37 @@ class TestTemplateContentKind:
         assert kinds["autk-grammar"] == "grammar"
         # Wired, not written — the three nodes the field log found holding prose
         # plus the two that would have been next.
-        assert kinds["merge-flow"] == "none"      # containerStyle.noContent
         assert kinds["data-pool"] == "none"       # editor none + an input port
         assert kinds["vis-simple"] == "none"
         assert kinds["spatial-join"] == "none"
         # One Download button, nothing written (#226).
         assert kinds["data-export"] == "none"
+        # Every shipped template is routed above, and no other ships: the
+        # Merge Flow left the manifest (#662), its fan-in now lands on the
+        # input circles of the node it fed.
+        assert set(kinds) == {
+            "data-loading", "data-export", "data-transformation", "data-pool",
+            "computation-analysis", "data-summary", "js-computation",
+            "vis-vega", "vis-simple", "autk-grammar", "spatial-join",
+        }
+
+    def test_no_content_makes_a_presentation_without_input_author_nothing(self):
+        """``containerStyle.noContent`` (the route the Merge Flow took) decides
+        even where the editor alone would make a note: a template with
+        ``editor: "none"`` and no input port authors a note, and the same
+        template marked noContent authors nothing."""
+
+        class _Fake:
+            has_code = False
+            has_grammar = False
+            editor = "none"
+            container_style = None
+            input_ports: list = []
+            grammar_id = None
+
+        assert pkg_services.template_content_kind(_Fake()) == "note"
+        _Fake.container_style = {"noContent": True}
+        assert pkg_services.template_content_kind(_Fake()) == "none"
 
     def test_a_presentation_template_with_no_input_is_a_note(self):
         """dev/90 A14's post-it profile: authored content, no validator. The
@@ -107,7 +132,7 @@ class TestContentKindOverTheRoster:
     def test_without_a_roster_the_legacy_tables_answer(self):
         assert ws.content_kind("curio.builtin/data-loading") == "code"
         assert ws.content_kind("curio.builtin/vis-vega") == "grammar"
-        assert ws.content_kind("curio.builtin/merge-flow") == "none"
+        assert ws.content_kind("curio.builtin/vis-simple") == "none"  # passive
         assert ws.content_kind("curio.builtin/data-pool") == "none"
         assert ws.grammar_id_of("curio.builtin/vis-vega") == "vega-lite"
         assert ws.grammar_id_of("curio.builtin/data-loading") is None
