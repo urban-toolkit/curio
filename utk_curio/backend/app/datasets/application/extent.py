@@ -72,6 +72,8 @@ def _parquet_extent(path: Path):
             return None
         bbox = list(frame.total_bounds)
         crs = frame.crs.to_json_dict() if frame.crs is not None else crs
+    if len(bbox) == 6:  # with z: minx, miny, minz, maxx, maxy, maxz
+        bbox = [bbox[0], bbox[1], bbox[3], bbox[4]]
     return [float(v) for v in bbox[:4]], crs
 
 
