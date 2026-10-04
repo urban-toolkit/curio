@@ -16,14 +16,18 @@ from utk_curio.backend.app import upgrade_notices
 
 
 @pytest.fixture(autouse=True)
-def _clean(monkeypatch):
+def _clean(monkeypatch, tmp_path):
     for name in (
         "HUGGINGFACE_TOKEN",
         "CURIO_DEFAULT_HUGGINGFACE_TOKEN",
         "STREETVISION_CACHE_DIR",
         "STREETVISION_MODEL_CACHE_DIR",
+        "CURIO_DATALAKE_ROOT",
+        "CURIO_STATE_DIR",
     ):
         monkeypatch.delenv(name, raising=False)
+    # A .curio of the test's own, so no leftover folder speaks for it.
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
 
 
 def _run(caplog):
@@ -56,6 +60,27 @@ class TestLegacyEnvVars:
         monkeypatch.setattr(cfg, "GUEST_LLM_API_KEY", "")
         assert _run(caplog) == []
         assert caplog.text == ""
+
+
+class TestTheOldDataLake:
+    """The Data Lake Catalog became the Discovery Catalog. Its root setting and
+    its folder for an operator's own sources are not read, and nothing moves
+    them, so a source left there leaves the catalog."""
+
+    def test_the_old_root_setting_is_called_out(self, caplog, monkeypatch):
+        monkeypatch.setenv("CURIO_DATALAKE_ROOT", "/srv/lakes")
+        assert "CURIO_DATALAKE_ROOT" in _run(caplog)
+        assert "--discovery-root" in caplog.text
+
+    def test_the_old_sources_folder_is_called_out(self, caplog):
+        from utk_curio.backend.app.common.user_storage import curio_root
+
+        old = curio_root() / "datalakes"
+        old.mkdir(parents=True)
+        assert ".curio/datalakes" in _run(caplog)
+        assert str(old) in caplog.text
+        # A moved lake.* folder is skipped as a malformed name: say how to rename it.
+        assert "source." in caplog.text
 
 
 class TestGuestModel:

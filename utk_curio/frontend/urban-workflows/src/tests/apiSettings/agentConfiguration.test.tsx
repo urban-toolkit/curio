@@ -2,11 +2,11 @@ import React from "react";
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 
 /**
- * API Settings → Agent models: the configuration each agent runs on, chosen
- * from the account's configurations, the Deployment default, or Default
- * (follow the default configuration). Saved on change; the configurations
- * table says which agents each one is chosen for, and removing one names the
- * agents that go back to the default.
+ * API Settings, Agent configuration: the configuration each agent runs on,
+ * chosen from the account's configurations, the Deployment default, or Default
+ * (follow the default configuration). Saved on change; the key list says which
+ * agents each configuration is chosen for, and removing one names the agents
+ * that go back to the default.
  */
 
 const WORK = {
@@ -60,8 +60,30 @@ jest.mock("../../api/llmConfigsApi", () => ({
       (mockApi as Record<string, (...a: unknown[]) => unknown>)[name](...args),
   }),
 }));
+jest.mock("../../providers/UserProvider", () => ({
+  useUserContext: () => ({
+    user: { is_guest: false }, updateTokens: jest.fn(), isSharedGuest: false, enableUserAuth: true,
+  }),
+}));
+jest.mock("../../api/connectionKeysApi", () => ({
+  connectionKeysApi: { list: () => Promise.resolve({ keys: [] }) },
+}));
+jest.mock("../../services/discoveryCatalog", () => {
+  const actual = jest.requireActual("../../services/discoveryCatalog");
+  return {
+    ...actual,
+    discoveryCatalogApi: { ...actual.discoveryCatalogApi, listKeys: () => Promise.resolve({ keys: [] }) },
+    notifyDiscoveryCatalogRefresh: () => undefined,
+  };
+});
 
-import { LlmConfigsSection } from "../../components/llmConfigs/LlmConfigsSection";
+import { ApiSettingsPanel } from "../../components/apiSettings/ApiSettingsPanel";
+import type { ApiSettingsFocus, ApiSettingsTab } from "../../components/apiSettings/apiSettingsRequest";
+
+function Panel({ initial = "agents", focus = null }: { initial?: ApiSettingsTab; focus?: ApiSettingsFocus | null }) {
+  const [tab, setTab] = React.useState<ApiSettingsTab>(initial);
+  return <ApiSettingsPanel tab={tab} onTabChange={setTab} focus={focus} />;
+}
 
 beforeEach(() => {
   mockListing = listingOf();
@@ -74,9 +96,28 @@ beforeEach(() => {
 const models = async () => within(await screen.findByTestId("agent-models-section"));
 const select = (name: string) => screen.getByLabelText(name) as HTMLSelectElement;
 
-describe("Agent models", () => {
+describe("Agent configuration", () => {
+  it("is the second tab, and the first one a page or drawer can open on", async () => {
+    render(<Panel />);
+    const tabs = screen.getAllByRole("tab").map((t) => [t.textContent, t.getAttribute("aria-selected")]);
+    expect(tabs).toEqual([
+      ["API keys", "false"],
+      ["Agent configuration", "true"],
+    ]);
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "api-settings-tab-agents");
+    await models();
+  });
+
+  it("arrow keys move between the tabs", async () => {
+    render(<Panel />);
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Agent configuration" }), { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "API keys" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "API keys" })).toHaveFocus();
+    await screen.findByRole("table");
+  });
+
   it("lists every agent with its choice and what it runs on", async () => {
-    render(<LlmConfigsSection />);
+    render(<Panel />);
     const section = await models();
     expect(section.getAllByRole("combobox")).toHaveLength(3);
     expect(select("Chat").value).toBe("");
@@ -85,7 +126,7 @@ describe("Agent models", () => {
   });
 
   it("offers Default, every configuration and the Deployment default", async () => {
-    render(<LlmConfigsSection />);
+    render(<Panel />);
     await models();
     const options = Array.from(select("Chat").options).map((o) => [o.value, o.textContent]);
     expect(options).toEqual([
@@ -97,7 +138,7 @@ describe("Agent models", () => {
   });
 
   it("saves a choice on change, and Default clears it", async () => {
-    render(<LlmConfigsSection />);
+    render(<Panel />);
     await models();
     fireEvent.change(select("Chat"), { target: { value: LOCAL.id } });
     await waitFor(() => expect(mockApi.setAssignments).toHaveBeenCalledWith({ "agent.chat-agent": LOCAL.id }));
@@ -109,7 +150,7 @@ describe("Agent models", () => {
   });
 
   it("says what the Dataflow Builder's Solve also runs, and the rules", async () => {
-    render(<LlmConfigsSection />);
+    render(<Panel />);
     const section = await models();
     expect(section.getByText(/Its Solve also runs Node Content Builder and Dataset Finder/)).toBeInTheDocument();
     expect(section.getByText(/on its choice, else on its caller's/)).toBeInTheDocument();
@@ -120,29 +161,29 @@ describe("Agent models", () => {
       agents: [{ id: "agent.chat-agent", name: "Chat", category: "chat", choice: "llm-gone",
         answers: { source: null, error: "The LLM configuration chosen for agent.chat-agent no longer exists." } }],
     });
-    render(<LlmConfigsSection />);
+    render(<Panel />);
     const section = await models();
     expect(section.getByText(/no longer exists/)).toBeInTheDocument();
   });
 
   it("opens on the agent a card asked about", async () => {
-    render(<LlmConfigsSection focus={{ section: "agent-models", agentId: "agent.dataflow-builder" }} />);
+    render(<Panel focus={{ section: "agent-models", agentId: "agent.dataflow-builder" }} />);
     await models();
     await waitFor(() => expect(select("Dataflow Builder")).toHaveFocus());
   });
 });
 
-describe("the configurations table and the choices", () => {
+describe("the key list and the choices", () => {
   it("says which agents each configuration is chosen for", async () => {
-    render(<LlmConfigsSection />);
-    const table = within(await screen.findByTestId("llm-configs-section")).getByRole("table");
-    await waitFor(() => expect(table).toHaveTextContent("Local"));
-    const local = within(table).getByText("Local").closest("tr")!;
-    expect(local).toHaveTextContent("Node Content Builder");
+    render(<Panel initial="keys" />);
+    const list = await screen.findByRole("table");
+    await waitFor(() => expect(list).toHaveTextContent("Local"));
+    const local = within(list).getByText("Local").closest("tr")!;
+    expect(local).toHaveTextContent("Chosen for Node Content Builder");
   });
 
   it("names the agents that go back to the default when one is removed", async () => {
-    render(<LlmConfigsSection />);
+    render(<Panel initial="keys" />);
     fireEvent.click(await screen.findByRole("button", { name: "Remove Local" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Remove Local? Node Content Builder goes back to the default.",
@@ -152,7 +193,7 @@ describe("the configurations table and the choices", () => {
   });
 
   it("opens the editor of the configuration a card asked about", async () => {
-    render(<LlmConfigsSection focus={{ section: "llm-configs", configId: LOCAL.id }} />);
+    render(<Panel initial="keys" focus={{ section: "llm-configs", configId: LOCAL.id }} />);
     expect(await screen.findByText("Edit Local")).toBeInTheDocument();
   });
 });

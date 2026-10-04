@@ -5,14 +5,14 @@ import type { Edge, Node } from "reactflow";
 import type { useCollab } from "../CollaborationProvider";
 import { pythonInterpreter, jsInterpreter } from "../../hook/useCode";
 import type { SelectionEchoOptions } from "../../utils/selectionEcho";
-import type { IInteraction, IOutput, IPropagation } from "./flowTypes";
+import type { IOutput, IPropagation } from "./flowTypes";
 
 export function useCollaborationSync({
-    collab, applyNewOutput, setInteractions, applyNewPropagation, setNodes, setEdges,
+    collab, applyNewOutput, interactionsCallback, applyNewPropagation, setNodes, setEdges,
 }: {
     collab: ReturnType<typeof useCollab>;
     applyNewOutput: (newOutput: IOutput) => void;
-    setInteractions: React.Dispatch<React.SetStateAction<IInteraction[]>>;
+    interactionsCallback: (interactions: any, nodeId: string) => void;
     applyNewPropagation: (propagationObj: IPropagation) => void;
     setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
     setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
@@ -39,17 +39,10 @@ export function useCollaborationSync({
         const localOutputCallback = (nodeId: string, output: any, options?: SelectionEchoOptions) => {
             applyNewOutput({ nodeId, output, ...options });
         };
-        const localInteractionsCallback = (newInteractions: any, nodeId: string) => {
-            setInteractions((prev: IInteraction[]) => {
-                const next = prev.filter((i) => i.nodeId !== nodeId);
-                next.push({ nodeId, details: newInteractions, priority: 0 });
-                return next;
-            });
-        };
         const rebuildNodeData = (data: any) => ({
             ...data,
             outputCallback: localOutputCallback,
-            interactionsCallback: localInteractionsCallback,
+            interactionsCallback,
             propagationCallback: applyNewPropagation,
             pythonInterpreter,
             jsInterpreter,
@@ -134,5 +127,5 @@ export function useCollaborationSync({
         }));
 
         return () => unsubs.forEach((u) => u());
-    }, [collab.enabled, collab.onRemote, setNodes, setEdges, setInteractions]);
+    }, [collab.enabled, collab.onRemote, setNodes, setEdges, interactionsCallback]);
 }

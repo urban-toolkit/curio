@@ -311,14 +311,13 @@ export CURIO_EVAL_LIVE=1
 python -m utk_curio.tools.agent_eval run --token "$CURIO_EVAL_TOKEN" --tier T0
 ```
 
-See [AGENT-CATALOG.md](AGENT-CATALOG.md#5-measuring-the-agents-against-the-shipped-examples)
-for what the score means, and [ARCHITECTURE.md](ARCHITECTURE.md#evaluation-and-training)
-for how an evaluation runs.
+See [ARCHITECTURE.md](ARCHITECTURE.md#evaluation-and-training) for how an
+evaluation runs and what the score means.
 
-The same fixtures drive **Model training** (API Settings → Model training). Its
-whole lane (the capability probe, the training set, consent, the job, the
-evaluation gate, activation and rollback) runs offline against the scripted
-provider, so none of these tests costs money or waits on a fine-tune:
+The same fixtures drive model training. Its whole lane (the capability probe,
+the training set, consent, the job, the evaluation gate, activation and
+rollback) runs offline against the scripted provider, so none of these tests
+costs money or waits on a fine-tune:
 
 ```bash
 pytest utk_curio/backend/tests/test_agents/test_fine_tuning_provider.py \
@@ -343,19 +342,18 @@ pytest utk_curio/backend/tests/test_projects/test_save_concurrency.py \
        utk_curio/backend/tests/test_projects/test_routes.py
 ```
 
-**Evaluation mode** (API Settings → Evaluation mode) runs an example through the
-real lifecycle on the configuration the user's Dataflow Builder runs on. Its
-whole orchestration (the isolated project, the required-closure install, the
-narrow automated approval, the phases, the record) is covered offline against
-the scripted provider:
+An evaluation run takes an example through the real lifecycle on the
+configuration the user's Dataflow Builder runs on. Its whole orchestration (the
+isolated project, the required-closure install, the narrow automated approval,
+the phases, the record) is covered offline against the scripted provider:
 
 ```bash
 pytest utk_curio/backend/tests/test_agents/test_evaluation_service.py \
        utk_curio/backend/tests/test_agents/test_evaluation_policy.py
 ```
 
-Real-provider evaluations are user-triggered from the panel and never part of
-default CI.
+Real-provider evaluations are run by hand with `agent_eval` and are never part
+of default CI.
 
 ### Frontend Unit Tests
 

@@ -544,7 +544,8 @@ describe("all four catalogs have a details view, and it is the same shape", () =
     ]) {
       const src = read(rel);
       expect(src).toContain("discoverySourceInfoRows(source)");
-      expect(src).toContain("discoverySourceAccessItems(source)");
+      // The modal also passes its own close, run before it asks for API Settings.
+      expect(src).toMatch(/discoverySourceAccessItems\(source(, onClose)?\)/);
     }
   });
 

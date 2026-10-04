@@ -353,17 +353,21 @@ def test_gallery_modals(gallery, owner, app_frontend, page):
     except (PlaywrightTimeoutError, AssertionError) as exc:
         gallery.miss("modal-dataset-detail", str(exc))
 
-    # API Settings, captured from the projects page. The canvas wears the same
-    # top bar, and its Agent Catalog drawer's cog opens the same modal.
+    # API Settings, reached from the projects page's top bar: its two tabs. The
+    # canvas opens the same panel in a drawer.
     try:
         page.goto(app_frontend.base_url + "/projects")
         expect(page.get_by_role("heading", name="Projects", level=1)).to_be_visible(
             timeout=20000
         )
-        page.get_by_role("button", name="API Settings", exact=True).click(timeout=15000)
+        page.get_by_role("link", name="API Settings", exact=True).click(timeout=15000)
         expect(
-            page.get_by_role("heading", name="API Settings", level=2)
+            page.get_by_role("heading", name="API Settings", level=1)
         ).to_be_visible(timeout=15000)
-        gallery.shot("modal-api-settings")
+        expect(page.get_by_role("button", name="Add configuration")).to_be_visible(timeout=15000)
+        gallery.shot("page-api-settings-keys")
+        page.get_by_role("tab", name="Agent configuration", exact=True).click()
+        expect(page.get_by_test_id("agent-config-tab")).to_be_visible(timeout=15000)
+        gallery.shot("page-api-settings-agents")
     except (PlaywrightTimeoutError, AssertionError) as exc:
-        gallery.miss("modal-api-settings", str(exc))
+        gallery.miss("page-api-settings", str(exc))

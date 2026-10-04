@@ -34,7 +34,7 @@ export const DiscoverySourceDetailModal: React.FC<DiscoverySourceDetailModalProp
   onClose,
 }) => {
   const blocked = unsearchableReason(source);
-  const access = discoverySourceAccessItems(source);
+  const access = discoverySourceAccessItems(source, onClose);
   const rows = [...discoverySourceInfoRows(source), { label: "Identifier", value: source.sourceId }];
 
   return (

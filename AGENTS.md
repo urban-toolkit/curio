@@ -67,7 +67,7 @@ Under `utk_curio/backend/app/`:
 - `src/components/UniversalNode.tsx`: the component that renders every node.
 - `src/registry/`: node descriptors and behaviors, built from installed package manifests.
 - `src/generated/`: contracts written by `scripts/generate_contracts.py` from `utk_curio/backend/app/agents/domain/contracts.py`; never edited by hand.
-- `src/api/`: REST clients (projects, connection keys, LLM configurations, monitor, evaluation, training).
+- `src/api/`: REST clients (projects, connection keys, LLM configurations, monitor).
 
 ## Tests
 

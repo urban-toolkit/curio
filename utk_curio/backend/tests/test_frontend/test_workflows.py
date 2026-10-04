@@ -26,6 +26,7 @@ from .utils import (
     _wait_for_reactflow_ready,
     assert_autark_drawing_fits,
     assert_autark_map_drawn,
+    assert_in_view,
     at_fraction,
     bar_boxes,
     brush_area,
@@ -1244,7 +1245,9 @@ class TestWorkflowCanvas:
         # click on a d3 brush's overlay, away from the brush, clears it.
         if on_vega:
             box = page.locator(source_drawing).first.bounding_box()
-            page.mouse.dblclick(box["x"] + box["width"] - 2, box["y"] + 2)
+            page.mouse.dblclick(*assert_in_view(
+                page, box["x"] + box["width"] - 2, box["y"] + 2,
+                f"taking back {where}: the corner of {step.source}'s chart"))
         elif step.gesture == "pick":
             page.mouse.dblclick(point["x"], point["y"])
         else:

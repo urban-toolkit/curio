@@ -226,11 +226,15 @@ The bar chart for this route names no colours, so it draws whatever classes the 
 The sample is a fixed set of photos. To take photos of another place from Mapillary:
 
 1. Get a Mapillary access token: sign in at [mapillary.com/dashboard/developers](https://www.mapillary.com/dashboard/developers), register an application, and copy its **Client Token** (it starts with `MLY|`).
-2. Open **API Settings** in the page header. Under **Discovery Catalog**, find the **Mapillary access token** row, paste the token, and click **Save**. The row then reads *(saved - leave blank to keep)*, and the Mapillary card in the Discovery Catalog reads **Token set**.
-3. Open the **Discovery Catalog**, choose **Mapillary**, and click **Download** on **Street-level images**.
-4. Set the **Area**: a place, coordinates or a dataset's extent give the box to take photos from, of at most 25 km². Choose how many photos with **Most images**, and how large with **Size**. Photos are taken from across the box, newest first.
-5. Click **Download**. The photos land in the Data Catalog as a collection of their own, each with its creator.
-6. In the example's first node, replace `data.curio.mapillary-sample` with the new collection's id (drag the collection from the Data Catalog onto the node to do it), and run the dataflow.
+2. Open **API Settings** from the top bar (on the canvas it opens on the right).
+3. On the **API keys** tab, click **Add configuration**.
+4. In **Kind**, choose **Mapillary access token**.
+5. Paste the token and click **Save**.
+6. The key's row shows **saved** in the list, and the Mapillary card in the Discovery Catalog reads **Token set**.
+7. Open the **Discovery Catalog**, choose **Mapillary**, and click **Download** on **Street-level images**.
+8. Set the **Area**: a place, coordinates or a dataset's extent give the box to take photos from, of at most 25 km². Choose how many photos with **Most images**, and how large with **Size**. Photos are taken from across the box, newest first.
+9. Click **Download**. The photos land in the Data Catalog as a collection of their own, each with its creator.
+10. In the example's first node, replace `data.curio.mapillary-sample` with the new collection's id (drag the collection from the Data Catalog onto the node to do it), and run the dataflow.
 
 For another city, swap the neighborhood polygons in Step 4 for that city's, and rename its name column to `neighborhood` in the `Data Transformation`: NYC's boroughs file calls it `BoroName`.
 

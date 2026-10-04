@@ -1,11 +1,11 @@
 import React from "react";
 import type { AgentRemedy } from "../../services/agents";
-import { remedyFocus, requestConnectionKeys } from "./connectionKeysRequest";
+import { remedyFocus, requestConnectionKeys } from "../apiSettings/apiSettingsRequest";
 import styles from "./AddKeyAction.module.css";
 
 /**
  * dev/116: the ONE rendering of a `source-missing` remedy. A missing key is a
- * button that opens Settings → Connection keys with the host prefilled; a key
+ * button that opens API Settings' node code key form with the host prefilled; a key
  * that exists but was not used is a sentence (Solve again is the action).
  */
 export const AddKeyAction: React.FC<{ remedy?: AgentRemedy | null; className?: string }> = ({
@@ -27,7 +27,7 @@ export const AddKeyAction: React.FC<{ remedy?: AgentRemedy | null; className?: s
     <button
       type="button"
       className={`${styles.button}${className ? ` ${className}` : ""}`}
-      title="Opens Settings → Connection keys with this host filled in. The key never appears in your dataflow, proposals or chat."
+      title="Opens API Settings with this host filled in. The key never appears in your dataflow, proposals or chat."
       onClick={() => requestConnectionKeys(focus)}
     >
       Add key for {remedy.host}

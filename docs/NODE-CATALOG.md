@@ -88,7 +88,7 @@ There are two places you manage packages:
 
 Once a package is in the open project, its nodes are in the palette: the built-in nodes sit in the left Tools panel, and nodes from other packages in its **Node Catalog** dropdown. Drag one onto the canvas.
 
-A Python node that calls a key-gated API reads the key by name, never as a literal: `api_key = curio_secret("<name>")` returns the connection key saved under that name in **API Settings → Connection keys** (see [USAGE.md](USAGE.md#connection-keys)). Like `curio_data_path("<id>")`, the name travels with the dataflow, and the value reaches the sandbox for the run only.
+A Python node that calls a key-gated API reads the key by name, never as a literal: `api_key = curio_secret("<name>")` returns the key saved under that name as a **Node code** key on the **API keys** tab of **API Settings** (see [USAGE.md](USAGE.md#keys-for-node-code)). Like `curio_data_path("<id>")`, the name travels with the dataflow, and the value reaches the sandbox for the run only.
 
 ---
 

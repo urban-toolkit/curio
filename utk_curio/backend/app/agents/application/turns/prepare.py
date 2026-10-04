@@ -78,6 +78,11 @@ def _prepare_run(
     # Grant-less runs keep the T2 tail byte-identical; granted runs get the
     # toolRequest paragraph (memos dev/39/41).
     granted = tools.resolve_grants(requested_tools)
+    dropped = sorted({req.id for req in requested_tools} - set(granted))
+    if dropped:
+        renamed = any(t.startswith("datalake.") for t in dropped)
+        log.warning("Agent %s runs without tools Curio does not have: %s%s", coord, ", ".join(dropped),
+                    " (the datalake.* tools are discovery.* now)" if renamed else "")
     runtime_blocks = _roster_blocks(user_key, project_id, manifest, granted)
     # Worked examples: the shipped dataflows closest to this run, for an
     # agent that takes them. Chosen per run, so they ride the runtime slot

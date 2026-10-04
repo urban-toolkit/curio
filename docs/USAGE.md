@@ -7,7 +7,7 @@
   - [Installing manually (with `curio.py`)](#installing-manually-with-curiopy)
 - [LLM configurations](#llm-configurations)
   - [Your configurations](#your-configurations)
-  - [Connection keys](#connection-keys)
+  - [Keys for node code](#keys-for-node-code)
   - [Guest users](#guest-users)
 - [Widgets](#widgets)
 - [Node Catalog](#node-catalog)
@@ -245,7 +245,23 @@ Curio ships no endpoint of its own. Until you add a configuration, or the operat
 
 ### Your configurations
 
-**API Settings** is reachable from the **Projects page** and the catalog pages via the top navigation bar, and on the canvas from the Agent Catalog drawer's header. Its **LLM configurations** table lists yours, each a label, an endpoint and a model, and **Add configuration** opens the editor. **Agent models**, below the table, chooses the configuration each agent runs on. Configurations and choices belong to your account and apply to all of your projects; the fields, the row actions and which configuration answers a run are in [AGENT-CATALOG.md part 4](AGENT-CATALOG.md#4-llm-configurations).
+**API Settings** is in the top bar. On the **Projects page**, the catalog pages and **Monitor** it opens the settings page, `/settings`; on the canvas and the dashboard it opens on the right side, and the dataflow stays open. It has two tabs:
+
+- **API keys** lists every key your account uses in one table, with the columns **Name**, **Kind**, **Details**, **Key** and **Actions**. Your LLM configurations are of kind **Language model**, the keys the Discovery Catalog sends to data sources are of kind **Data source**, and the keys your node code reads are of kind **Node code**. **Add configuration**, under the table, adds any of them.
+- **Agent configuration** chooses your default configuration in **Default for agents**, and the configuration each agent runs on in **Agent models**.
+
+A button elsewhere that opens API Settings, such as **Add key for** a host or **Change in API Settings**, opens it on one form or row: from the Projects page or a catalog page it goes to the settings page, and on the canvas it opens API Settings on the right side.
+
+To add an LLM configuration:
+
+1. Get an API key from the provider (the table below links to the OpenAI, Anthropic and Gemini key pages).
+2. Open **API Settings** from the top bar (on the canvas it opens on the right).
+3. On the **API keys** tab, click **Add configuration**.
+4. In **Kind**, choose **Language model**.
+5. Type a **Label**, choose the **Provider**, paste the **API key**, and type the **Model**, or click **Fetch models** and pick one. **Custom** also asks for the **Base URL**.
+6. Click **Add configuration**. The configuration's row shows in the list, with **saved** in its **Key** column when you gave a key.
+
+Configurations and choices belong to your account and apply to all of your projects; the fields, the row actions and which configuration answers a run are in [AGENT-CATALOG.md part 4](AGENT-CATALOG.md#4-llm-configurations).
 
 Keys are write-only: once saved, a key is never shown again, and the table says only whether one is saved. Keys are kept per account in a file readable by the server only; they are not encrypted at rest.
 
@@ -258,14 +274,28 @@ The following providers are supported:
 | **Gemini** | Uses the Gemini API. Requires an API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey). |
 | **Custom** | Any OpenAI-compatible endpoint. Covers self-hosted models (Ollama, LM Studio, vLLM), Groq, Azure OpenAI, and others. Provide the base URL of the endpoint; the API key is optional for keyless local servers. |
 
-API Settings groups keys by the catalog that uses them. The **Agent Catalog** part holds the LLM configurations above and the connection keys below. The **Discovery Catalog** part has one row per key a source can send: the Socrata app token, the Hugging Face token, the Google Maps API key and the Mapillary access token. Each row says which sources send it, and has its own **Save** and **Remove saved key**. [DISCOVERY-CATALOG.md part 5](DISCOVERY-CATALOG.md#5-api-tokens) walks through setting one, step by step.
+A **Data source** key is one the Discovery Catalog sends to a source: the Socrata app token, the Hugging Face token, the Google Maps API key or the Mapillary access token. In **Add configuration**, the **Kind** list offers each one you have not saved, under **Data source**. A saved one is listed with **Replace** and **Remove**, and its **Details** say which sources use it. A key whoever runs this Curio set for everyone is listed with **set by this Curio** in its **Key** column, and **Override** saves your own. [DISCOVERY-CATALOG.md part 5](DISCOVERY-CATALOG.md#5-api-tokens) walks through setting one, step by step.
 
-### Connection keys
+### Keys for node code
 
-**Connection keys**, in the same panel, are API keys a node's code reaches by
-name. Save a key once: a name, the host it is for, how the API expects it (in
-the code, as a query parameter, or as a header), and the key itself, in a masked
-field that is never read back. Then write, in the node's code:
+A **Node code** key is an API key a node's code reaches by name. It holds a
+name, the host it is for, how the API expects it (in the code, as a query
+parameter, or as an HTTP header), and the key itself, in a masked field that is
+never read back. To save one:
+
+1. Get the key from the API's provider.
+2. Open **API Settings** from the top bar (on the canvas it opens on the right).
+3. On the **API keys** tab, click **Add configuration**.
+4. In **Kind**, choose **Another API, for node code**.
+5. Type a **Name** (for example `census`) and the **Host** (for example
+   `api.census.gov`), choose how it is **Sent as** (with the **Parameter name**
+   or **Header name** when it is not sent in the code), and paste the **Key**.
+6. Click **Save key**. The key's row shows in the list, with **saved** in its
+   **Key** column; its **Details** show the host, how the key is sent and when
+   it was last used. When the name is already saved for another host, the form
+   offers **Replace the host binding**.
+
+Then write, in the node's code:
 
 ```python
 api_key = curio_secret("census")
@@ -277,7 +307,7 @@ appears in your saved dataflow, in proposals, in the chat or in the run log, and
 a key the code prints is redacted. A node that names a key you have not saved
 fails with one sentence naming the key. When an agent's Solve reaches an
 endpoint that wants a key you have not saved, the failure offers **Add key for
-<host>**, which opens this section with the host filled in.
+<host>**, which opens this form with the host filled in.
 
 Keys are stored per account in a file readable by the server only; they are not
 encrypted at rest. A dataflow you publish carries the key names, and whoever
@@ -286,8 +316,8 @@ off, every guest shares one key store.
 
 If the code you type or paste holds something shaped like an API key (a long
 token assigned to a name like `api_key`, `token` or `Authorization`), a bar
-above the editor names the line and offers **Save as connection key**, which
-opens this section with the host from the code filled in. It is a hint: Play
+above the editor names the line and offers **Save as API key**, which
+opens this form with the host from the code filled in. It is a hint: Play
 and save work, the code is never changed for you, and the detected text never
 leaves your browser. Dismiss it if the value is not a key.
 
@@ -703,8 +733,8 @@ Agents are AI assistants you attach to your dataflow. The catalog lists ten:
 **Chat**, which explains a node or the whole dataflow, diagnoses errors and
 helps you define what to build, and nine that build dataflows and nodes, find
 data, connect nodes, research, and recommend or author packages. Each agent
-answers with the LLM configuration chosen for it in **API Settings** above, else
-your default.
+answers with the LLM configuration chosen for it on the **Agent configuration**
+tab of **API Settings** (above), else your default.
 
 There are two scopes:
 

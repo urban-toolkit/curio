@@ -205,10 +205,20 @@ describe("nodeLinkedModelIds", () => {
     expect(
       nodeLinkedModelIds({
         modelRefs: [{ id: "m.bound", name: "Bound" }],
-        code: 'curio_load_model("m.code")',
+        code: 'curio_load_model("m.code")\ncurio_load_model("m.bound")',
         defaultCode: "curio_load_model('m.template')",
       }),
     ).toEqual(["m.bound", "m.code", "m.template"]);
+  });
+
+  test("a binding whose model the code no longer names is left out", () => {
+    // A drop of DDRNet, then a hand edit to SegFormer, saved and reopened: the
+    // loader puts the saved code in both fields and keeps the drop's binding.
+    const dropped = applyModelToNodeData({ code: 'm = curio_load_model("x")' }, ddrnet);
+    const edited = 'm = curio_load_model("imported.xabc123def456")';
+    const reopened = { ...dropped, code: edited, defaultCode: edited };
+    expect(reopened.modelRefs).toEqual([{ id: ddrnet.id, name: ddrnet.name }]);
+    expect(nodeLinkedModelIds(reopened)).toEqual([segformer.id]);
   });
 });
 

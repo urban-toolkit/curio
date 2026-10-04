@@ -130,7 +130,7 @@ test("a selection's echo names the chart it came from, so that chart can leave i
   );
   await waitFor(() => expect(outputCallback).toHaveBeenCalledTimes(1));
 
-  // As FlowProvider.applyNewInteractions hands a pool the latest selection: an
+  // As applyNewInteractions (providers/flow/useInteractions.ts) hands a pool the latest selection: an
   // empty one, from a press between two bars, after the plot selected row 0.
   const interactions = [
     { nodeId: "plot-1", details: { autk_selection: { type: VisInteractionType.POINT, data: [0], priority: 1 } }, priority: 1 },
@@ -235,7 +235,7 @@ const linkEdge = (chart: string) => ({
 /**
  * A mounted pool, and the two things that happen to one: its node data
  * changes, and a chart selects. A selection arrives as
- * FlowProvider.applyNewInteractions hands it over: the chart that just
+ * applyNewInteractions (providers/flow/useInteractions.ts) hands it over: the chart that just
  * selected, alone, with priority 1 and its node id.
  */
 function mountPool(input: any, extra: Record<string, unknown> = {}) {

@@ -1,0 +1,5 @@
+/* API Settings and Monitor on the canvas. The panel is the shared
+   ../packages/publishing/CatalogDrawerShell.module.css; this sets its tier. */
+.overlayRoot {
+  --curio-drawer-z: var(--curio-z-header-drawer);
+}

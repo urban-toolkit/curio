@@ -1,6 +1,6 @@
 import React from "react";
 
-import { requestSourceKey } from "../../components/connectionKeys/connectionKeysRequest";
+import { requestSourceKey } from "../../components/apiSettings/apiSettingsRequest";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
 import { DISCOVERY_PROVIDER_LABEL, type DiscoverySourceRow } from "../../services/discoveryCatalog";
 
@@ -54,8 +54,13 @@ export function discoverySourceInfoRows(source: DiscoverySourceRow): DiscoverySo
   return rows.filter((row): row is DiscoverySourceFact => row != null);
 }
 
-/** The Access list, or an empty one for a source that takes no token. */
-export function discoverySourceAccessItems(source: DiscoverySourceRow): React.ReactNode[] {
+/** The Access list, or an empty one for a source that takes no token.
+ *  `beforeKeyRequest` runs before API Settings is asked for the key: a modal
+ *  closes itself there, since it would sit above the API Settings drawer. */
+export function discoverySourceAccessItems(
+  source: DiscoverySourceRow,
+  beforeKeyRequest?: () => void,
+): React.ReactNode[] {
   const { auth } = source;
   if (!auth.usesToken) return [];
   return [
@@ -71,7 +76,10 @@ export function discoverySourceAccessItems(source: DiscoverySourceRow): React.Re
         <button
           type="button"
           className={browseStyles.linkButton}
-          onClick={() => requestSourceKey(auth.secretId as string)}
+          onClick={() => {
+            beforeKeyRequest?.();
+            requestSourceKey(auth.secretId as string);
+          }}
         >
           {auth.present ? "Change it in API Settings" : "Add yours in API Settings"}
         </button>

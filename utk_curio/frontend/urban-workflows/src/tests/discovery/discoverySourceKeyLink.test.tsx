@@ -3,9 +3,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 
 import { discoverySourceAccessItems } from '../../pages/discovery/discoverySourceFacts';
 import {
-  CONNECTION_KEYS_EVENT,
-  type ConnectionKeysFocus,
-} from '../../components/connectionKeys/connectionKeysRequest';
+  API_SETTINGS_EVENT,
+  type ApiSettingsFocus,
+} from '../../components/apiSettings/apiSettingsRequest';
 import type { DiscoverySourceRow } from '../../services/discoveryCatalog';
 
 /**
@@ -31,14 +31,14 @@ function renderAccess(source: DiscoverySourceRow) {
 
 describe("a source's key link", () => {
   test('asks API Settings for that key, and says Add when none is saved', () => {
-    const seen: ConnectionKeysFocus[] = [];
-    const listener = (event: Event) => seen.push((event as CustomEvent<ConnectionKeysFocus>).detail);
-    window.addEventListener(CONNECTION_KEYS_EVENT, listener);
+    const seen: ApiSettingsFocus[] = [];
+    const listener = (event: Event) => seen.push((event as CustomEvent<ApiSettingsFocus>).detail);
+    window.addEventListener(API_SETTINGS_EVENT, listener);
     try {
       renderAccess(gated(false));
       fireEvent.click(screen.getByRole('button', { name: 'Add yours in API Settings' }));
     } finally {
-      window.removeEventListener(CONNECTION_KEYS_EVENT, listener);
+      window.removeEventListener(API_SETTINGS_EVENT, listener);
     }
     expect(seen).toEqual([{ section: 'source-key', slot: 'socrata.app-token' }]);
   });

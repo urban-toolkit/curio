@@ -91,6 +91,7 @@ import { SHARE_UUID_RE } from "./utils/shareLinks";
 import { basePath } from "./utils/basePath";
 import { backendUrl } from "./utils/backendUrl";
 import MonitorPage from "./pages/monitor/MonitorPage";
+import SettingsPage from "./pages/settings/SettingsPage";
 import { installClientErrorReporter } from "./utils/clientErrorReporter";
 
 const MainCanvasRoute: React.FC = () => (
@@ -207,6 +208,15 @@ const App: React.FC = () => {
                         public, so whoever is hitting a problem can read it and
                         share it without an account. */}
                     <Route path="/monitor" element={<MonitorPage />} />
+                    {/* API Settings: /settings/keys and /settings/agents. */}
+                    <Route
+                      path="/settings/:tab?"
+                      element={
+                        <RequireAuth>
+                          <SettingsPage />
+                        </RequireAuth>
+                      }
+                    />
                     <Route
                       path="/workflow/:id?"
                       element={<LegacyWorkflowRedirect />}

@@ -10,9 +10,9 @@ Covers the panel's lasting promises:
   whether it holds a key and never the key; the editor says "saved" only on the
   configuration's own endpoint, and moving the configuration elsewhere never
   carries the key along.
-- The default chosen here is the configuration that answers the next run, and
-  an agent given a configuration of its own in Agent models runs on it, even
-  when another agent delegates to it.
+- The default chosen on Agent configuration is the configuration that answers
+  the next run, and an agent given a configuration of its own there runs on
+  it, even when another agent delegates to it.
 
 Nothing here reaches a provider. The #241 cases use the no-key short circuit
 (the backend refuses without opening a socket) and stubbed responses for the
@@ -56,11 +56,10 @@ SAVED = "(saved - leave blank to keep)"
 
 @pytest.fixture()
 def signed_in(app_frontend: "FrontendPage", current_server: str, page, request):
-    """Sign in and land on the projects page, whose header opens API Settings.
+    """Sign in and land on the projects page, whose header links API Settings.
 
-    The header button is the entry point that exists on /projects; on the canvas
-    the only route is the Agent Catalog drawer's cog, which is more machinery
-    than these assertions need.
+    From a section page the header goes to the settings page, which holds the
+    same panel the canvas opens in a drawer (test_canvas_header_e2e.py).
     """
     require_project_page()
     require_user_auth()
@@ -79,14 +78,26 @@ def signed_in(app_frontend: "FrontendPage", current_server: str, page, request):
     return SimpleNamespace(page=page, token=login["token"], backend=current_server)
 
 
-def _open_api_settings(page):
-    page.get_by_role("button", name="API Settings", exact=True).first.click()
+def _wait_for_keys(page):
     expect(
-        page.get_by_role("heading", name="API Settings", level=2)
+        page.get_by_role("heading", name="API Settings", level=1)
     ).to_be_visible(timeout=15000)
-    # The table has loaded once its Add button is there.
+    # The list has loaded once its Add button is there.
     expect(_section(page).get_by_role("button", name="Add configuration")).to_be_visible(
         timeout=15000
+    )
+
+
+def _open_api_settings(page):
+    page.get_by_role("link", name="API Settings", exact=True).click()
+    page.wait_for_url(re.compile(r"/settings/keys$"), timeout=15000)
+    _wait_for_keys(page)
+
+
+def _show_tab(page, name: str):
+    page.get_by_role("tab", name=name, exact=True).click()
+    expect(page.get_by_role("tab", name=name, exact=True)).to_have_attribute(
+        "aria-selected", "true"
     )
 
 
@@ -97,7 +108,7 @@ def api_settings(signed_in):
 
 
 def _section(page):
-    return page.get_by_test_id("llm-configs-section")
+    return page.get_by_test_id("api-keys-tab")
 
 
 def _editor(page):
@@ -289,11 +300,13 @@ def test_a_configuration_is_saved_and_its_key_never_reaches_the_page(api_setting
     assert config["apiType"] == "gemini" and config["hasApiKey"] is True, config
     assert "apiKey" not in config
 
-    # The first configuration becomes the default, and the table says so.
+    # The first configuration becomes the default, and the list says so.
     row = _row(page, "Work Gemini")
     expect(row).to_contain_text("Default", timeout=15000)
     expect(row).to_contain_text("saved")
-    expect(page.get_by_test_id("llm-active")).to_contain_text("Work Gemini")
+    expect(row).to_contain_text("Language model")
+    _show_tab(page, "Agent configuration")
+    expect(page.get_by_test_id("llm-active")).to_contain_text("Work Gemini", timeout=15000)
 
     listing = _listing(api_settings)
     [saved] = [c for c in listing["configs"] if c["id"] == config["id"]]
@@ -405,13 +418,17 @@ def test_the_default_chosen_here_answers_the_next_run(signed_in):
 
     page = session.page
     _open_api_settings(page)
-    make_default = _section(page).get_by_role("button", name="Make Scripted B the default")
+    _show_tab(page, "Agent configuration")
+    default = page.get_by_label("Default for agents", exact=True)
+    expect(default).to_have_value(made["Scripted A"]["id"], timeout=15000)
     with page.expect_response(
         lambda r: r.url.endswith("/api/agents/llm/default") and r.request.method == "PUT",
         timeout=30000,
     ) as chosen:
-        make_default.click()
+        default.select_option(made["Scripted B"]["id"])
     assert chosen.value.ok, chosen.value.text()
+    expect(page.get_by_test_id("llm-active")).to_contain_text("Scripted B", timeout=15000)
+    _show_tab(page, "API keys")
     expect(_row(page, "Scripted B")).to_contain_text("Default", timeout=15000)
 
     project = api_json(
@@ -469,6 +486,7 @@ def test_each_agent_runs_on_the_configuration_chosen_for_it(signed_in):
 
     page = session.page
     _open_api_settings(page)
+    _show_tab(page, "Agent configuration")
     models = page.get_by_test_id("agent-models-section")
     for agent, label in (("Dataflow Builder", "Scripted A"), ("Node Content Builder", "Scripted B")):
         with page.expect_response(
@@ -479,9 +497,9 @@ def test_each_agent_runs_on_the_configuration_chosen_for_it(signed_in):
         assert chosen.value.ok, chosen.value.text()
         expect(models.get_by_label(agent, exact=True)).to_be_enabled(timeout=15000)
 
+    # The tab is in the URL, so a reload lands back on it.
+    page.wait_for_url(re.compile(r"/settings/agents$"), timeout=15000)
     page.reload()
-    wait_for_projects_page(page, timeout=15000)
-    _open_api_settings(page)
     models = page.get_by_test_id("agent-models-section")
     expect(models.get_by_label("Dataflow Builder", exact=True)).to_have_value(made["Scripted A"]["id"])
     expect(models.get_by_label("Node Content Builder", exact=True)).to_have_value(made["Scripted B"]["id"])
