@@ -23,10 +23,13 @@ from pathlib import Path
 import pytest
 
 from utk_curio.backend.app.execution import runner
-from utk_curio.backend.app.execution.workflow_spec import (
-    parse_workflow_dict,
-    resolve_code_references,
-)
+from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+
+def resolve_code_references(*args, **kwargs):
+    from utk_curio.backend.app.execution.workflow_spec import resolve_code_references as resolve
+
+    return resolve(*args, **kwargs)
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SRC_DIR = REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows" / "src"
