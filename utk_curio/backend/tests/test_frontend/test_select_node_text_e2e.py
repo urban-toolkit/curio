@@ -163,6 +163,14 @@ def test_a_nodes_output_and_error_can_be_selected(
     run_all_and_wait(page, timeout_ms=180000)
     assert wait_for_node_settled(page, OK_ID, node_type="COMPUTATION_ANALYSIS") == "success"
     assert wait_for_node_settled(page, ERR_ID, node_type="COMPUTATION_ANALYSIS") == "error"
+    # The output pane is on the code tab, as read_node_error_text finds it.
+    for node_id in (OK_ID, ERR_ID):
+        code_tab = node_locator(page, node_id).locator('.nav-link[data-rr-ui-event-key="code"]').first
+        if code_tab.count() and "active" not in (code_tab.get_attribute("class") or ""):
+            code_tab.click(force=True)
+        node_locator(page, node_id).locator("[data-curio-node-output]").first.wait_for(
+            state="visible", timeout=10000
+        )
 
     output = '.react-flow__node[data-id="{}"] [data-curio-node-output="true"]'
     strip = '[data-testid="node-outcome-{}"]'
