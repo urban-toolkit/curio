@@ -91,6 +91,9 @@ def create_app(config_class=config_class):
     from utk_curio.backend.app.projects.routes import projects_bp
     app.register_blueprint(projects_bp)
 
+    # The run tables, and the cascade that deletes a project's runs with it.
+    from utk_curio.backend.app.runs import models as _run_models  # noqa: F401
+
     from utk_curio.backend.app.notebooks import notebooks_bp
     app.register_blueprint(notebooks_bp)
 
