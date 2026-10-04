@@ -1024,6 +1024,9 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             // Cheap: track the parent every tick so the 100% canvas fills the node.
             const w = target.clientWidth, h = target.clientHeight;
             if (w > 0 && h > 0) { wrapper.style.width = w + 'px'; wrapper.style.height = h + 'px'; }
+            // Hidden (a collapsed scenario's member, #662): shown again, even at
+            // the size it had, the map gets its one GPU resize.
+            else { lastW = -1; lastH = -1; }
             // Expensive: debounce the GPU rebuild until the drag settles.
             if (timer) clearTimeout(timer);
             timer = setTimeout(commit, 150);

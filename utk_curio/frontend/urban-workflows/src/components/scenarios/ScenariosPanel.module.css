@@ -1,0 +1,165 @@
+/* The Scenarios panel (#662): docked on the right, under the top bar. */
+
+.panel {
+  position: absolute;
+  top: var(--curio-top-bar-height);
+  right: 0;
+  z-index: 20;
+  width: 300px;
+  max-height: calc(100vh - var(--curio-top-bar-height) - 16px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--curio-card-bg);
+  border-left: 1px solid var(--curio-border);
+  box-shadow: -2px 0 6px rgba(0, 0, 0, 0.08);
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-primary);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--curio-font-size-lg);
+  font-weight: 600;
+}
+
+.close {
+  border: none;
+  background: none;
+  color: var(--curio-text-secondary);
+  cursor: pointer;
+  padding: 4px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.action,
+.buttons button {
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  line-height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-pill);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  cursor: pointer;
+}
+
+.action:hover,
+.buttons button:hover:not(:disabled) {
+  background: var(--curio-surface-muted);
+}
+
+.buttons button:disabled {
+  color: var(--curio-text-muted);
+  cursor: default;
+}
+
+.buttons .danger {
+  color: var(--curio-danger-text);
+}
+
+.empty {
+  margin: 0;
+  color: var(--curio-text-secondary);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--curio-border);
+  border-left: 4px solid;
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.color {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.name,
+.description {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: var(--curio-font-size-md);
+  padding: 4px 6px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-sm);
+}
+
+.name {
+  font-weight: 600;
+}
+
+.description {
+  resize: vertical;
+  font-size: var(--curio-font-size-sm);
+}
+
+.part {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.partTitle {
+  font-size: var(--curio-font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--curio-text-secondary);
+}
+
+.partEmpty {
+  color: var(--curio-text-muted);
+}
+
+.partList {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
