@@ -402,3 +402,22 @@ class NprocScalesWithParallelismTest(unittest.TestCase):
             {"CURIO_EXEC_PARALLELISM": "8", "CURIO_EXEC_NPROC": "300"}
         )
         self.assertEqual(config.limits["nproc"], 300)
+
+
+class CpuAllowanceCountsEveryCpuTest(unittest.TestCase):
+    """RLIMIT_CPU counts the CPU time of all a process's threads.
+
+    A node whose library runs a thread per core spends CPU time that many
+    times faster than wall time: example 10's Image Segmentation spent 399
+    CPU-seconds in 11 s on the 64-CPU deploy host, and an allowance equal to
+    the 300 s wall allowance killed it after 9 s.
+    """
+
+    def test_the_cpu_allowance_is_the_wall_allowance_on_every_cpu(self):
+        from utk_curio.sandbox.isolation.runner import IsolationConfig
+
+        affinity = getattr(os, "sched_getaffinity", None)
+        cpus = len(affinity(0)) if affinity else (os.cpu_count() or 1)
+        config = IsolationConfig.from_environment({"CURIO_EXEC_TIMEOUT": "20"})
+        self.assertEqual(config.wall_timeout, 20)
+        self.assertEqual(config.limits["cpu_seconds"], 20 * cpus)
