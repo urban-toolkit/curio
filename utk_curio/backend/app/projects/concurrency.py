@@ -3,11 +3,10 @@
 A project's spec has two kinds of writer that do not know about each other.
 The canvas sends the whole document — React Flow's live nodes and edges,
 serialised by ``TrillGenerator`` — and the backend writes the same file on its
-own from an agent apply, from each wave of a verified Solve (``DEC-075``), from
-a dataset or package install, and from the evaluation service. Neither carries
-a basis, so the file is last-writer-wins, and a browser that loaded a project
-before a background write erases it on its next save. That is not hypothetical:
-it is how an evaluation run finished with a score and an empty canvas.
+own from an agent apply, from each wave of a verified Solve (``DEC-075``), and
+from a dataset or package install. Neither carries a basis, so the file is
+last-writer-wins, and a browser that loaded a project before a background write
+erases it on its next save.
 
 **The rule refuses loss, not divergence.** Refusing every save whose basis is
 stale is the obvious design and the wrong one: a canvas is told about an

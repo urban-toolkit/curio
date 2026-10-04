@@ -17,9 +17,9 @@ jest.mock("../../api/llmConfigsApi", () => ({
 
 import { AgentDetailModal } from "../../components/agents/catalog/AgentDetailModal";
 import {
-  CONNECTION_KEYS_EVENT,
-  type ConnectionKeysFocus,
-} from "../../components/connectionKeys/connectionKeysRequest";
+  API_SETTINGS_EVENT,
+  type ApiSettingsFocus,
+} from "../../components/apiSettings/apiSettingsRequest";
 
 const AGENT = {
   id: "agent.node-content-builder", version: "1.0.0", dirName: "agent.node-content-builder@1.0.0",
@@ -43,15 +43,15 @@ const listingWith = (editable: boolean) => ({
 it("names what the agent runs on and opens API Settings on its row", async () => {
   mockListing = listingWith(true);
   const onClose = jest.fn();
-  const asked: ConnectionKeysFocus[] = [];
-  const listener = (event: Event) => asked.push((event as CustomEvent<ConnectionKeysFocus>).detail);
-  window.addEventListener(CONNECTION_KEYS_EVENT, listener);
+  const asked: ApiSettingsFocus[] = [];
+  const listener = (event: Event) => asked.push((event as CustomEvent<ApiSettingsFocus>).detail);
+  window.addEventListener(API_SETTINGS_EVENT, listener);
   render(<AgentDetailModal agent={AGENT} onClose={onClose} />);
   expect(await screen.findByText("Local · llama3")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Change in API Settings" }));
   await waitFor(() => expect(asked).toEqual([{ section: "agent-models", agentId: "agent.node-content-builder" }]));
   expect(onClose).toHaveBeenCalled();
-  window.removeEventListener(CONNECTION_KEYS_EVENT, listener);
+  window.removeEventListener(API_SETTINGS_EVENT, listener);
 });
 
 it("offers no change when this account cannot choose one", async () => {

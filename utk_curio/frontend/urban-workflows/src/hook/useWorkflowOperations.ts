@@ -40,6 +40,13 @@ import {
     subscribe as subscribeProjectPackages,
     whenProjectSettled,
 } from "../registry/projectPackagesStore";
+import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
+import { isRegistryReady } from "../registry/registryReadiness";
+
+/** How long the load fit waits for the package registry to give every node
+ *  its descriptor. Without a session the registry never loads, so the wait
+ *  must end on its own. */
+export const LOAD_FIT_REGISTRY_WAIT_MS = 4000;
 
 export interface WorkflowOperationsDeps {
     nodes: Node[];
@@ -254,6 +261,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         let timeoutId: number | undefined;
         let frameId = 0;
         let attempts = 0;
+        const startedAt = Date.now();
 
         const fitOptions = { padding: 0.2 };
 
@@ -265,6 +273,18 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
             if (currentNodes.length === 0) {
                 setFitViewOnLoad(false);
+                return;
+            }
+
+            // A node whose package has not registered yet is a small
+            // placeholder that grows to its full size when the descriptor
+            // lands. Fitting the placeholders leaves the grown nodes past the
+            // window's edge (#683), so wait for the registry, within a bound.
+            const waitingOnPackages =
+                !isRegistryReady() &&
+                currentNodes.some((node) => !tryGetNodeDescriptor(node.data?.nodeType));
+            if (waitingOnPackages && Date.now() - startedAt < LOAD_FIT_REGISTRY_WAIT_MS) {
+                timeoutId = window.setTimeout(attemptFitView, 100);
                 return;
             }
 
@@ -1089,7 +1109,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // never appeared — the "Play All didn't generate all datasets" symptom.
     //
     // ``scopeNodeIds`` is the set of nodes THIS install-sync covered
-    // (FlowProvider.runInstallSyncNow passes installSyncPendingIdsRef's contents).
+    // (runInstallSyncNow in providers/flow/useInstallSave.ts passes
+    // installSyncPendingIdsRef's contents).
     // It is load-bearing: buildOutputRefs rebuilds refs for EVERY toggle-enabled
     // node on every install-save, and ProjectLoader repopulates outputsRef from
     // the saved refs on load, so a save triggered by node C used to toast

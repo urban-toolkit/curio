@@ -97,7 +97,7 @@ return curio_segment(arg, model, classes)
 | `dominant_class`, `dominant_pct` | Of the classes the node asks for, the one that covers most of the image, and its share of the pixels, in percent. |
 | `<class>_pct` | Each class asked for, as its share of all the image's pixels, in percent. |
 | `overlay_url` | The image tinted by class, which **Simple View** shows beside the image. |
-| `segment_error` | Empty, or *the image is not on this machine* when the row's file is missing. |
+| `segment_error` | Empty, or why the row was skipped: *the image is not on this machine* when the row's file is missing, *the image could not be read* when the file is not an image Curio can open or is cut short. |
 
 Every input column follows. A class the model does not label stops the node, with a message naming the labels it has.
 

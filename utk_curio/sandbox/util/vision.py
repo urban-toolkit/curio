@@ -75,9 +75,7 @@ class _TransformersRunner:
         except ImportError as exc:
             raise RuntimeError(
                 "This model runs on Transformers, and torch or transformers is not installed "
-                "here. They install when the model is added: delete it from your Model Catalog "
-                "and add it again from the Discovery Catalog, or ask whoever runs this Curio "
-                "to install torch, transformers and safetensors."
+                "here: ask whoever runs this Curio to install torch, transformers and safetensors."
             ) from exc
         checkpoint = os.path.join(folder, manifest.get("entry") or "files")
         self.torch = torch
@@ -175,17 +173,29 @@ def make_curio_segment(curio_derived_file=None):
 
         shares = {name: [] for name in wanted}
         dominant, dominant_pct, overlay_urls, errors = [], [], [], []
+
+        def skip(reason):
+            for name in wanted:
+                shares[name].append(None)
+            dominant.append(None)
+            dominant_pct.append(None)
+            overlay_urls.append(None)
+            errors.append(reason)
+
         for _, row in images.iterrows():
             path = row.get("path")
             if not isinstance(path, str) or not os.path.isfile(path):
-                for name in wanted:
-                    shares[name].append(None)
-                dominant.append(None)
-                dominant_pct.append(None)
-                overlay_urls.append(None)
-                errors.append("the image is not on this machine")
+                skip("the image is not on this machine")
                 continue
-            image = Image.open(path).convert("RGB")
+            # One file that is not an image, or is cut short, or decodes to more
+            # pixels than Pillow allows, is that row's error; the model's own
+            # errors still stop the node.
+            try:
+                with Image.open(path) as source:
+                    image = source.convert("RGB")
+            except (OSError, Image.DecompressionBombError):
+                skip("the image could not be read")
+                continue
             ids = np.asarray(runner(image))
             counts = np.bincount(ids.ravel().astype(np.int64), minlength=len(labels)) / ids.size
             for name in wanted:

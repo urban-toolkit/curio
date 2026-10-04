@@ -35,7 +35,7 @@ Each backend feature's `service.py` is its public entry point for routes and oth
 
 | Feature | Backend, under `utk_curio/backend/app/` | Frontend, under `src/`: services, pages, components, providers | Guide |
 |---|---|---|---|
-| Agents | `agents/`: `domain/`, `application/`, `infrastructure/`, `repositories/`, `routes/`, `schemas/`, `service.py`, `evaluation/`, `training/` | `services/agents/`, `pages/agents/`, `components/agents/`, `providers/agents/` | `docs/AGENT-CATALOG.md` |
+| Agents | `agents/`: `domain/`, `application/`, `infrastructure/`, `repositories/`, `routes/`, `schemas/`, `service.py`, `evaluation/` (the offline reconstruction library behind `agent_eval.py`) | `services/agents/`, `pages/agents/`, `components/agents/`, `providers/agents/` | `docs/AGENT-CATALOG.md` |
 | Node packages | `packages/`: `domain/`, `application/`, `infrastructure/`, `repositories/`, `routes/`, `schemas/`, `service.py`, `builder/` | `services/packages/`, `pages/catalog/`, `components/packages/`, `providers/packages/` | `docs/NODE-CATALOG.md` |
 | Datasets | `datasets/`: `domain/`, `application/`, `infrastructure/`, `repositories/`, `routes.py`, `schemas/`, `service.py`, `install/`, `models.py` | `services/datasetCatalog/`, `pages/dataCatalog/`, `components/datasets/`, `providers/datasetCatalog/` | `docs/DATA-CATALOG.md` |
 | Discovery | `discovery/`: `domain/`, `application/`, `infrastructure/`, `routes.py`, `media_routes.py`, `schemas/`, `service.py`, `providers/` | `services/discoveryCatalog/`, `pages/discovery/`, `components/discovery/`, `providers/discoveryCatalog/` | `docs/DISCOVERY-CATALOG.md` |
@@ -67,7 +67,7 @@ Under `utk_curio/backend/app/`:
 - `src/components/UniversalNode.tsx`: the component that renders every node.
 - `src/registry/`: node descriptors and behaviors, built from installed package manifests.
 - `src/generated/`: contracts written by `scripts/generate_contracts.py` from `utk_curio/backend/app/agents/domain/contracts.py`; never edited by hand.
-- `src/api/`: REST clients (projects, connection keys, LLM configurations, monitor, evaluation, training).
+- `src/api/`: REST clients (projects, connection keys, LLM configurations, monitor).
 
 ## Tests
 

@@ -1,7 +1,7 @@
 /**
  * Regression test for #229 — a freshly loaded dataflow reported unsaved changes.
  *
- * `FlowProvider.onConnect` marks the project dirty as its first statement, which
+ * `onConnect` (providers/flow/useConnect.ts) marks the project dirty as its first statement, which
  * is right: a user connecting two nodes IS an edit. But the LOAD path replays
  * every persisted edge through that same `onConnect`, once per edge, so any
  * dataflow with at least one edge finished hydrating dirty. `loadProject` clears
@@ -69,7 +69,7 @@ const EDGES = [makeEdge("a", "b"), makeEdge("b", "c")];
  * The hook's `markDirty` reaches `onConnect` through FlowProvider's
  * `markDirtyRef`, which the provider assigns after both are built. The fake
  * closes that loop: it calls back into the live `markDirty`, exactly as
- * `FlowProvider.onConnect` does at its first statement.
+ * `onConnect` in providers/flow/useConnect.ts does at its first statement.
  */
 function makeDeps(hookRef: { current: any }, over: Record<string, unknown> = {}) {
   return {

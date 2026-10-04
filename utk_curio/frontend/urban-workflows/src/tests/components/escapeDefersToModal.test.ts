@@ -25,6 +25,9 @@ const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 /** Every file that closes something on a `window` keydown Escape. */
 const WINDOW_ESCAPE_LISTENERS = [
   "components/packages/publishing/NodeCatalogDrawer.tsx",
+  "components/datasets/catalog/DatasetCatalogDrawer.tsx",
+  "components/discovery/catalog/DiscoveryCatalogDrawer.tsx",
+  "components/models/catalog/ModelCatalogDrawer.tsx",
   "providers/AgentCatalogDrawerProvider.tsx",
   "components/agents/attach/AgentChatPanel.tsx",
   "components/packages/ForkFamilyPicker.tsx",
@@ -48,6 +51,17 @@ describe("window Escape listeners defer to an open modal", () => {
       expect(source).toContain('"Escape"');
     },
   );
+
+  test("the top bar's drawers hold a layer, so everything under them stands down", () => {
+    // API Settings opens over a catalog drawer (Discovery's "Add yours in API
+    // Settings") or the agent chat panel. Holding a layer of the stack is what
+    // makes the listeners above stand down; the drawer itself then answers
+    // Escape only while it is the one layer.
+    const source = read("components/layout/HeaderDrawer.tsx");
+    expect(source).toContain("holdModalStack()");
+    expect(source).toContain("if (modalStackDepth() > 1) return;");
+    expect(source).toContain('window.addEventListener("keydown"');
+  });
 
   test("ModalShell still exports the depth the guards read", () => {
     // Two competing Escape implementations reached main in parallel and only

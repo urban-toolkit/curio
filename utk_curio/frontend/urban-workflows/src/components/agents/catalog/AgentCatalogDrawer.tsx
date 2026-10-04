@@ -9,13 +9,7 @@ import {
   type AgentCard,
 } from "../../../services/agents";
 
-/**
- * Loaded on demand. A static import would pull API Settings' whole module
- * graph - it reads UserProvider, which reaches the package registry and
- * through it vega - into every canvas that mounts this drawer, to render a
- * modal that is usually closed.
- */
-const ApiSettingsModal = React.lazy(() => import("../../ApiSettingsModal"));
+import { requestAgentModel } from "../../apiSettings/apiSettingsRequest";
 import { AgentImportModal } from "./AgentImportModal";
 import { AgentDetailModal } from "./AgentDetailModal";
 import { PackageSearchRow } from "../../packages/publishing/PackageSearchRow";
@@ -95,8 +89,6 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
 }) => {
   const c = useAgentCatalogDrawer(presented, projectId, onEnsureProject);
   const panelRef = useRef<HTMLElement>(null);
-  // The header cog opens API Settings, which owns the account scope.
-  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   // Upload-import (dev/36), opened from the footer's Import package button.
   const [importOpen, setImportOpen] = useState(false);
   const [detailCard, setDetailCard] = useState<AgentCard | null>(null);
@@ -230,11 +222,13 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
         onPinToggle={onPinToggle}
         onClose={() => onRequestClose?.()}
         actions={
+          // The model each agent runs on lives in API Settings' Agent
+          // configuration tab, which opens over this drawer.
           <button
             type="button"
             className={styles.headerSettingsBtn}
             aria-haspopup="dialog"
-            onClick={() => setAccountSettingsOpen(true)}
+            onClick={() => requestAgentModel()}
           >
             <FontAwesomeIcon icon={faGear} aria-hidden /> API Settings
           </button>
@@ -347,15 +341,6 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
             void c.reload();
           }}
         />
-      ) : null}
-      {accountSettingsOpen ? (
-        /* The account scope lives in API Settings now, beside the provider it
-           applies to. This drawer opens that one surface rather than a second
-           modal for half the answer, so it is one click from here as well as
-           from the top bar. */
-        <React.Suspense fallback={null}>
-          <ApiSettingsModal isOpen onClose={() => setAccountSettingsOpen(false)} />
-        </React.Suspense>
       ) : null}
       {confirmAction ? (
         <ConfirmDialog

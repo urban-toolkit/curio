@@ -51,7 +51,7 @@ class TestChild(unittest.TestCase):
                                 namespace_factory)
         self.assertFalse(result["ok"])
         self.assertIn("'noaa'", result["stderr"])
-        self.assertIn("Connection keys", result["stderr"])
+        self.assertIn("API Settings, API keys", result["stderr"])
 
     def test_printed_and_raised_values_are_redacted_before_the_manifest(self):
         req = request(

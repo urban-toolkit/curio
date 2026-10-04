@@ -154,14 +154,16 @@ export function modelNodeForCanvas(
  * Every model id a canvas node is linked to: the `modelRefs` a drop wrote, and
  * every literal call in its code and its template's. Mirrors
  * `nodeLinkedDatasetIds`, for the same reason: code that was typed or generated
- * names a model without any binding at all.
+ * names a model without any binding at all. A ref counts only while the code
+ * still names its id: a hand edit to another model leaves the drop's
+ * `modelRefs` behind, saved with the node.
  */
 export function nodeLinkedModelIds(data: any): string[] {
+  const named = [...modelIdsInCode(data?.code), ...modelIdsInCode(data?.defaultCode)];
   const ids = new Set<string>();
   for (const ref of data?.modelRefs || []) {
-    if (typeof ref?.id === "string" && ref.id) ids.add(ref.id);
+    if (typeof ref?.id === "string" && named.includes(ref.id)) ids.add(ref.id);
   }
-  for (const id of modelIdsInCode(data?.code)) ids.add(id);
-  for (const id of modelIdsInCode(data?.defaultCode)) ids.add(id);
+  for (const id of named) ids.add(id);
   return Array.from(ids);
 }

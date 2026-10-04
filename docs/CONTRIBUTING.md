@@ -295,6 +295,7 @@ run offline in seconds and need no stack:
 pytest utk_curio/backend/tests/test_agents/test_example_fixtures.py \
        utk_curio/backend/tests/test_agents/test_reconstruction_canonical.py \
        utk_curio/backend/tests/test_agents/test_reconstruction_scoring.py \
+       utk_curio/backend/tests/test_agents/test_evaluation_policy.py \
        utk_curio/backend/tests/test_agents/test_example_reconstruction.py
 
 python -m utk_curio.tools.agent_eval list      # the fixtures and their splits
@@ -311,24 +312,8 @@ export CURIO_EVAL_LIVE=1
 python -m utk_curio.tools.agent_eval run --token "$CURIO_EVAL_TOKEN" --tier T0
 ```
 
-See [AGENT-CATALOG.md](AGENT-CATALOG.md#5-measuring-the-agents-against-the-shipped-examples)
-for what the score means, and [ARCHITECTURE.md](ARCHITECTURE.md#evaluation-and-training)
-for how an evaluation runs.
-
-The same fixtures drive **Model training** (API Settings → Model training). Its
-whole lane (the capability probe, the training set, consent, the job, the
-evaluation gate, activation and rollback) runs offline against the scripted
-provider, so none of these tests costs money or waits on a fine-tune:
-
-```bash
-pytest utk_curio/backend/tests/test_agents/test_fine_tuning_provider.py \
-       utk_curio/backend/tests/test_agents/test_training_dataset.py \
-       utk_curio/backend/tests/test_agents/test_training_routes.py \
-       utk_curio/backend/tests/test_agents/test_training_gate.py
-```
-
-A real fine-tune is run by hand: it costs money, takes hours, and needs an
-endpoint that offers fine-tuning.
+See [ARCHITECTURE.md](ARCHITECTURE.md#evaluation) for how an evaluation runs
+and what the score means.
 
 **Saving a project** goes through a guard: every write of a spec bumps a
 counter at the one chokepoint that writes it, a client sends the revision it
@@ -342,20 +327,6 @@ that saves one, send the basis.
 pytest utk_curio/backend/tests/test_projects/test_save_concurrency.py \
        utk_curio/backend/tests/test_projects/test_routes.py
 ```
-
-**Evaluation mode** (API Settings → Evaluation mode) runs an example through the
-real lifecycle on the configuration the user's Dataflow Builder runs on. Its
-whole orchestration (the isolated project, the required-closure install, the
-narrow automated approval, the phases, the record) is covered offline against
-the scripted provider:
-
-```bash
-pytest utk_curio/backend/tests/test_agents/test_evaluation_service.py \
-       utk_curio/backend/tests/test_agents/test_evaluation_policy.py
-```
-
-Real-provider evaluations are user-triggered from the panel and never part of
-default CI.
 
 ### Frontend Unit Tests
 

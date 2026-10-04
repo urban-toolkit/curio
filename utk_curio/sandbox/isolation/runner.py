@@ -396,9 +396,13 @@ class IsolationConfig:
         wall_timeout = _int(
             "CURIO_EXEC_TIMEOUT", supervisor.DEFAULT_WALL_TIMEOUT_SECONDS
         )
-        # CPU time tracks the wall allowance: a node allowed 300s of wall time
-        # should not be killed at 60s of CPU, and vice versa.
-        limits["cpu_seconds"] = wall_timeout
+        # RLIMIT_CPU counts the CPU time of every thread, so a node busy on
+        # every CPU spends it that many times faster than wall time. The
+        # allowance is the wall allowance on every CPU: the wall clock is what
+        # stops a node, and this is a backstop behind it. Equal to the wall
+        # allowance, it killed example 10's Image Segmentation after 9 s of
+        # its 300 on the 64-CPU deploy host.
+        limits["cpu_seconds"] = wall_timeout * supervisor.usable_cpus()
 
         return cls(
             socket_path=env.get("CURIO_EXEC_SOCKET")

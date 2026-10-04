@@ -36,6 +36,26 @@ class TestTheExtent:
         _frame().to_parquet(path)
         assert dataset_extent(path, "parquet") == [-87.64, 41.875, -87.62, 41.89]
 
+    def test_a_3d_geoparquet_box_is_read_from_its_metadata(self, tmp_path):
+        """With z values a GeoParquet bbox holds six: minx, miny, minz, maxx, maxy, maxz."""
+        import geopandas as gpd
+        import pyarrow.parquet as pq
+        from shapely.geometry import Point
+
+        path = tmp_path / "points3d.parquet"
+        frame = gpd.GeoDataFrame(
+            {"n": [1, 2]}, geometry=[Point(-87.64, 41.875, 10.0), Point(-87.62, 41.89, 20.0)], crs="EPSG:4326",
+        )
+        frame.to_parquet(path)
+        # GeoPandas writes a 2D bbox even for 3D points, so the file gets the
+        # six-value box another writer would give it.
+        table = pq.read_table(path)
+        geo = json.loads(table.schema.metadata[b"geo"])
+        geo["columns"][geo["primary_column"]]["bbox"] = [-87.64, 41.875, 10.0, -87.62, 41.89, 20.0]
+        metadata = {**table.schema.metadata, b"geo": json.dumps(geo).encode()}
+        pq.write_table(table.replace_schema_metadata(metadata), path)
+        assert dataset_extent(path, "parquet") == [-87.64, 41.875, -87.62, 41.89]
+
     def test_a_projected_geoparquet_comes_back_in_wgs84(self, tmp_path):
         path = tmp_path / "mercator.parquet"
         _frame("EPSG:3857").to_parquet(path)

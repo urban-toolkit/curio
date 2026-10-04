@@ -1,6 +1,6 @@
 import React from "react";
 import type { AgentRemedy } from "../../services/agents";
-import { requestAgentModel } from "../connectionKeys/connectionKeysRequest";
+import { requestAgentModel } from "../apiSettings/apiSettingsRequest";
 import styles from "../connectionKeys/AddKeyAction.module.css";
 
 /** The remedy a refused request carries (`apiFetch` keeps the body), or null. */

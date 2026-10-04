@@ -119,7 +119,7 @@ variables the backend reads at start:
 | `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_API_KEY`, `GUEST_LLM_MODEL` | The **guest configuration**, which every guest answers with. Each one that is unset takes the matching `CURIO_DEFAULT_LLM_*` value, and the configuration needs a key and a model. |
 
 With a model and an endpoint or a key set, the Deployment default is a
-read-only row in every user's API Settings, and it answers for any user who has not chosen a default of their
+read-only row on the **API keys** tab of every user's API Settings, and it answers for any user who has not chosen a default of their
 own. With an endpoint or a key set, users are also offered **This Curio
 install**: a configuration of their own that runs on the deployment's endpoint
 with its key and a model they choose. The key never reaches a browser.
@@ -354,7 +354,9 @@ To roll back, dispatch Deploy with `ref` set to the previous tag and `target: st
 
 Every instance serves `/monitor`, a page that reports what the deployment is
 doing and what has recently gone wrong. It exists on a laptop and on a server
-alike; there is no flag to turn it on.
+alike; there is no flag to turn it on. The top bar's **Monitor** opens it; on
+the canvas and the dashboard it opens the same content on the right side, and
+the dataflow stays open.
 
 It shows:
 
@@ -429,7 +431,7 @@ flooding it cannot push real errors out of the log.
 - Keep `--no-allow-publish` (the overlay supplies it). Without it, any signed-in user can publish into the shared node catalog, including over a package already there. See [NODE-CATALOG.md § Operator notes](NODE-CATALOG.md#operator-notes).
 - `--no-allow-publish` covers the shared Data Catalog too. Without it, any signed-in user other than a guest can publish a dataset there; only the original publisher can unpublish or delete it. See [DATA-CATALOG.md](DATA-CATALOG.md#operator-notes).
 - **Library installs are on, and scoped per user.** With isolation on (below), an install goes to `.curio/exec-overlays/users/<key>/` rather than the interpreter every user's nodes share. Three limits: a user's tree is readable by other users' node code (the execution account is shared), there is no size quota, so disk is the operator's to watch, and the shared guest cannot install at all.
-- **Keys saved without `--deploy` are not used with it.** Without `--deploy`, Curio signs everyone in as the shared guest, which saves Discovery source keys and connection keys like any account. Started with `--deploy` on the same `.curio/` and database, Curio sends none of them, and guests cannot save new ones. The keys stay where they are, and a later run without `--deploy` uses them again.
+- **Keys saved without `--deploy` are not used with it.** Without `--deploy`, Curio signs everyone in as the shared guest, which saves data source keys and node code keys like any account. Started with `--deploy` on the same `.curio/` and database, Curio sends none of them, and guests cannot save new ones. The keys stay where they are, and a later run without `--deploy` uses them again.
 - **A deployment that cannot isolate does not start.** `--deploy` needs Linux, fork, setrlimit, pyseccomp and the `curio-exec` account; without them it exits with what is missing instead of serving accounts that share one interpreter. Run the Docker image, which has all of it, or drop `--deploy` and run Curio as the single-user tool it then is.
 - **Verify the sandbox is not exposed**: `docker compose ps` must not list a published port for 2000. The sandbox executes arbitrary node code; only the backend inside the container should reach it. The image binds it to `127.0.0.1` and publishes nothing, so a published 2000 means a local override added one.
 - **Verify the sandbox token is set**: `docker compose logs curio | grep CURIO_SANDBOX_TOKEN` must print `CURIO_SANDBOX_TOKEN=<set>` (the value itself is never logged). A deployment with auth on refuses to start without it.

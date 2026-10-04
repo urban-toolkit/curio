@@ -519,16 +519,38 @@ def _editor_field(page, label):
 def _open_api_settings(ctx: Ctx) -> None:
     """Open API Settings from the top bar.
 
-    The bar is ``GlobalPageHeader`` on every page, the canvas included, so the
-    scene can share a run with the canvas scenes whichever landing page
-    ``CURIO_TOUR_SCENES`` picks. (The Agent Catalog drawer's cog is a second way
-    in, shown by the agent scenes.)
+    The bar is ``GlobalPageHeader`` on every page, so the scene can share a run
+    with the canvas scenes whichever landing page ``CURIO_TOUR_SCENES`` picks:
+    on the canvas the pill opens a drawer, from a section page it goes to the
+    settings page.
     """
     page, tour = ctx.page, ctx.tour
-    tour.click(page.get_by_role("button", name="API Settings", exact=True).first)
-    expect(
-        page.get_by_role("heading", name="API Settings", level=2)
-    ).to_be_visible(timeout=15000)
+    bar = page.locator("header[data-curio-menu-bar]")
+    button = bar.get_by_role("button", name="API Settings", exact=True)
+    if button.count():
+        tour.click(button)
+        expect(
+            page.get_by_role("heading", name="API Settings", level=2)
+        ).to_be_visible(timeout=15000)
+    else:
+        tour.click(bar.get_by_role("link", name="API Settings", exact=True))
+        expect(
+            page.get_by_role("heading", name="API Settings", level=1)
+        ).to_be_visible(timeout=15000)
+
+
+def _close_api_settings(ctx: Ctx) -> None:
+    """Close the drawer, or go back from the settings page."""
+    page, tour = ctx.page, ctx.tour
+    closer = page.get_by_role("button", name="Close API Settings", exact=True)
+    if closer.count():
+        tour.click(closer)
+        expect(page.locator('[data-curio-settings-drawer="true"]')).to_have_count(0, timeout=15000)
+    else:
+        page.go_back()
+        expect(
+            page.get_by_role("heading", name="API Settings", level=1)
+        ).to_have_count(0, timeout=15000)
 
 
 # ---------------------------------------------------------------------------
@@ -824,16 +846,16 @@ def scene_api_settings(ctx: Ctx) -> None:
             hold=3000,
         )
         tour.hush()
-        tour.click(page.get_by_role("button", name="Close", exact=True))
+        _close_api_settings(ctx)
         return
 
     _open_api_settings(ctx)
     tour.say(
         "Per-account, not per-dataflow",
-        "Name as many endpoints as you like; your default answers the agents and chat.",
+        "Every key in one list; your default answers the agents and chat.",
         hold=2600,
     )
-    section = page.get_by_test_id("llm-configs-section")
+    section = page.get_by_test_id("api-keys-tab")
     tour.click(section.get_by_role("button", name="Add configuration", exact=True))
     editor = page.locator(_EDITOR)
     expect(editor).to_be_visible(timeout=15000)
@@ -910,16 +932,14 @@ def scene_api_settings(ctx: Ctx) -> None:
     tour.focus(row, hold=1500)
     tour.say(
         "The key is saved, and never sent back",
-        "The table only knows that one exists.",
+        "The list only knows that one exists.",
         hold=3000,
     )
-    expect(page.get_by_test_id("llm-active")).to_contain_text("Lab server")
+    tour.click(page.get_by_role("tab", name="Agent configuration", exact=True))
+    expect(page.get_by_test_id("llm-active")).to_contain_text("Lab server", timeout=15000)
     tour.focus(page.get_by_test_id("llm-active"), hold=1500)
     tour.hush()
-    tour.click(page.get_by_role("button", name="Close", exact=True).last)
-    expect(
-        page.get_by_role("heading", name="API Settings", level=2)
-    ).to_have_count(0, timeout=15000)
+    _close_api_settings(ctx)
     # If the drawer was the way in (canvas), put it back so the next scene
     # starts on a clean canvas rather than behind a panel it did not open.
     closer = page.get_by_role("button", name="Close Agent Catalog drawer")
@@ -1320,7 +1340,7 @@ def scene_agent_catalog(ctx: Ctx) -> None:
         tour.focus(settings.first, hold=1500)
         tour.say(
             "The provider lives one click away",
-            "On the canvas this cog is the only route to API Settings.",
+            "This cog opens API Settings on the model each agent runs on.",
             hold=2600,
         )
         tour.hush()

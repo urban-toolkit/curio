@@ -21,10 +21,6 @@ export interface LlmConfig {
   baseUrlHost: string;
   hasApiKey: boolean;
   model: string;
-  /** `trained`: made by activating a model trained in Curio. */
-  origin: "user" | "trained";
-  jobId?: string;
-  sourceId?: string;
   createdAt: number | null;
   updatedAt: number | null;
 }

@@ -365,8 +365,8 @@ class InProcessDriver:
         """Apply what the shared policy allows, through the test client.
 
         The DECISION is ``evaluation/policy.py``'s (memo dev/123) — the same
-        one the in-process evaluation service and the remote CLI use, so this
-        tier cannot drift away from what a UI run does. This method is the
+        one the remote CLI uses, so this tier cannot drift away from what a
+        live run does. This method is the
         transport, and it keeps ``left_pending``'s ``(tool, target)`` shape so
         every existing assertion still reads.
         """

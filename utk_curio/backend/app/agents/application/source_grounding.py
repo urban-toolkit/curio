@@ -839,7 +839,7 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
             listed = f"saved: {', '.join(saved_names)}" if saved_names else "none saved"
             violations.append(
                 f"curio_secret({name!r}) (line {line}): no connection key named {name!r} "
-                f"({listed}) — save one under Settings → Connection keys, then keep "
+                f"({listed}) — save one in API Settings, API keys, then keep "
                 "the call as written"
             )
         else:
@@ -855,7 +855,7 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
     for name, line in credential_literals(code, engine):
         violations.append(
             f"{name} (line {line}): a credential literal in node code — save it as a "
-            "connection key (Settings → Connection keys) and write "
+            "connection key (API Settings, API keys) and write "
             'curio_secret("<name>") instead; a key value is never written into a node'
         )
     if not refs and ctx.is_data_loading:

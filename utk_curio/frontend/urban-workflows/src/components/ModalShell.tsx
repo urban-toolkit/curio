@@ -18,9 +18,20 @@ import styles from "./ModalShell.module.css";
  */
 const modalStack = new Set<symbol>();
 
-/** How many ModalShell dialogs are currently open. */
+/** How many ModalShell dialogs, and drawers holding the stack, are open. */
 export function modalStackDepth(): number {
   return modalStack.size;
+}
+
+/** Count a drawer that opens over the catalog drawers (API Settings, Monitor)
+ *  as one more layer, so every Escape listener below it stands down. Returns
+ *  the release, for an effect's cleanup. */
+export function holdModalStack(): () => void {
+  const token = Symbol("curio-header-drawer");
+  modalStack.add(token);
+  return () => {
+    modalStack.delete(token);
+  };
 }
 
 interface ModalShellProps {

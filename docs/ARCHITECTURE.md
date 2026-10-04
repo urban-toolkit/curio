@@ -8,6 +8,7 @@ This document describes the internal architecture of Curio for contributors who 
 * [Three-Tier Architecture](#three-tier-architecture)
 * [Frontend: Workflow Canvas](#frontend-workflow-canvas)
   * [Provider Hierarchy](#provider-hierarchy)
+  * [API Settings and the Monitor](#api-settings-and-the-monitor)
   * [FlowProvider: Central Workflow State](#flowprovider-central-workflow-state)
 * [Nodes: Types and Structure](#nodes-types-and-structure)
   * [Node Packages and Manifests](#node-packages-and-manifests)
@@ -114,20 +115,26 @@ App-wide, in `src/index.tsx`:
 6. `UserProvider`: auth / user profile
 7. `Routes`: every route lives below this point
 
-Per dataflow route, inside `MainCanvasRoute` in the same file:
+Per dataflow route, in `DataflowProviders` (`src/components/DataflowProviders.tsx`),
+which `MainCanvasRoute` and `DashboardRoute` in `src/index.tsx` both render:
 
 1. `DialogProvider`: modal dialogs
-2. `CollaborationProvider`: presence, locks, proposals
+2. `CollaborationProvider`: presence, locks, proposals; left out on the dashboard
 3. `FlowProvider`: nodes, edges, outputs, interactions. The primary state
-4. `NodeCatalogDrawerProvider`
-5. `DatasetCatalogDrawerProvider`
-6. `AgentCatalogDrawerProvider`
-7. `StarterProvider`: per-template starter source snippets
-8. `ProjectLoader`
-9. `PackagePaletteProvider`
-10. `DatasetPaletteProvider`
-11. `MainCanvas`
-12. `AgentAttachmentsProvider` (`src/providers/agents/`): the attached agents, mounted in `MainCanvas.tsx`
+4. `CanvasDatasetDetailsProvider`: a dataset's details, opened from any drawer or palette
+5. `ApiSettingsDrawerProvider`: API Settings as a drawer (see [API Settings and the Monitor](#api-settings-and-the-monitor))
+6. `MonitorDrawerProvider`: the monitor as a drawer
+7. `NodeCatalogDrawerProvider`
+8. `DatasetCatalogDrawerProvider`
+9. `AgentCatalogDrawerProvider`
+10. `ModelCatalogDrawerProvider`
+11. `DiscoveryCatalogDrawerProvider`
+12. `StarterProvider`: per-template starter source snippets
+13. `ProjectLoader`
+14. `PackagePaletteProvider`
+15. `DatasetPaletteProvider`
+16. `MainCanvas`, or `DashboardPage` on the dashboard
+17. `AgentAttachmentsProvider` (`src/providers/agents/`), on the canvas only: the attached agents, mounted in `MainCanvas.tsx`
     rather than `index.tsx` because it needs React Flow's instance and only
     applies where there is a dataflow to attach agents to
 
@@ -136,11 +143,49 @@ Two of these orderings are load-bearing rather than incidental:
 - `CollaborationProvider` must wrap `FlowProvider`. Outside it, FlowProvider's
   mutation paths get the no-op default context and silently drop every peer
   edit.
-- The three catalog drawer providers must sit inside `FlowProvider`, because a
+- The catalog drawer providers must sit inside `FlowProvider`, because a
   drawer's Install writes to the open dataflow. Outside it, `useFlowContext`
   returns no-op defaults and Install appears to succeed while doing nothing.
 
 Each provider exposes its context via a custom hook (e.g., `useFlow()`, `useProvenance()`). Components call these hooks rather than reaching into global variables.
+
+### API Settings and the Monitor
+
+`GlobalPageHeader` (`src/components/layout/`) is the top bar of every signed-in
+page: the section pages, the canvas and the dashboard. Its **Monitor** and
+**API Settings** read `useMonitorDrawerOptional()` and
+`useApiSettingsDrawerOptional()`. Where `DataflowProviders` mounts
+`MonitorDrawerProvider` and `ApiSettingsDrawerProvider` (the canvas and the
+dashboard), they are buttons that open those drawers, built on `HeaderDrawer`,
+and the dataflow stays open. On every other page there is no provider, and they
+are links to `/monitor` and `/settings`. The monitor's content is
+`MonitorContent` (`src/pages/monitor/`), which the `/monitor` page and
+`MonitorDrawer` both render.
+
+API Settings is `ApiSettingsPanel` (`src/components/apiSettings/`), which the
+settings page (`src/pages/settings/SettingsPage.tsx`, at `/settings/keys` and
+`/settings/agents`) and `ApiSettingsDrawer` both render. The page keeps the tab
+in its URL, the drawer in its state. Its two tabs:
+
+- **API keys** (`ApiKeysTab`): one table of every key the account uses. Its
+  **Language model** rows come from `GET /api/agents/llm` (the Deployment
+  default and each LLM configuration), its **Data source** rows from
+  `GET /api/discovery/keys` (a slot is listed when a key is saved or inherited),
+  and its **Node code** rows from `/api/users/me/connection-keys`.
+  **Add configuration** opens one editor whose **Kind** select picks the form:
+  `LlmConfigEditor`, `SourceKeyForm` for a slot without a saved key, or
+  `NodeKeyForm`.
+- **Agent configuration** (`AgentConfigTab`): the default
+  (`PUT /api/agents/llm/default`) and `AgentModelsSection`, the configuration
+  each agent runs on (`PUT /api/agents/llm/assignments`).
+
+A card elsewhere asks for a place in API Settings without importing it.
+`apiSettingsRequest.ts` dispatches a `curio:api-settings` window event carrying
+a focus: the node code key form with a host filled in, a data source key's
+form, an LLM configuration's editor, or an agent's row. The one
+`ApiSettingsRequestHost` on the page, mounted by the top bar, opens the drawer
+on it where there is one, and otherwise navigates to the settings page with the
+focus in the URL (`settingsPath`, read back by `focusFromSearch`).
 
 ### FlowProvider: Central Workflow State
 
@@ -888,7 +933,7 @@ Everything Curio says about Autark documents is read from that file:
 
 ## Agent Prompt Composition
 
-Every system turn an agent receives is built by one function, `contracts.compose_system`, from fixed slots in a fixed order. The attached run (`services._prepare_run`), the delegated run (`delegation.run_delegate`) and a training example (`training/dataset.py`) all call it.
+Every system turn an agent receives is built by one function, `contracts.compose_system`, from fixed slots in a fixed order. The attached run (`services._prepare_run`) and the delegated run (`delegation.run_delegate`) both call it.
 
 | Slot | Holds | Owner |
 |---|---|---|
@@ -906,9 +951,9 @@ The slots reach the provider apart. `contracts.system_message` puts the joined t
 
 A run loop takes a typed turn, `providers.ChatTurn` (text, native tool calls, stop reason), from `run_chat_turn` or `stream_chat_turn`; a bare string is a text turn, which is what a scripted test fake returns. `run_chat_completion` and `stream_chat_completion` are the text-only forms. The services module binds the two turn functions once, and the title call goes through the same seam, so one test fake answers a whole run.
 
-Usage counts every input token as `inputTokens`, cached or not (Anthropic reports cache reads and writes apart from its input count), plus `cacheReadTokens` and `cacheWriteTokens` when the provider reports them. The ledger, a run's execution record and the evaluation record keep them.
+Usage counts every input token as `inputTokens`, cached or not (Anthropic reports cache reads and writes apart from its input count), plus `cacheReadTokens` and `cacheWriteTokens` when the provider reports them. The ledger, a run's execution record and the evaluation report keep them.
 
-What an endpoint can do beyond text is [`chat_capabilities.py`](../utk_curio/backend/app/agents/infrastructure/chat_capabilities.py)'s answer: native tools and a reply schema. Anthropic, Gemini and OpenAI's own endpoint are known from their APIs; any other OpenAI-compatible server is asked once per model with a charged one-tool trial (`providers.probe_native_tools`), recorded per account in `.curio/users/<u>/chat-capabilities.json`, its tokens on the ledger with the configuration's id. A model trained in Curio stays on the fenced protocol, and the scripted provider answers what a test scripted, fenced by default. A manifest's `providerRequirements` is a preference: nothing refuses a run over it.
+What an endpoint can do beyond text is [`chat_capabilities.py`](../utk_curio/backend/app/agents/infrastructure/chat_capabilities.py)'s answer: native tools and a reply schema. Anthropic, Gemini and OpenAI's own endpoint are known from their APIs; any other OpenAI-compatible server is asked once per model with a charged one-tool trial (`providers.probe_native_tools`), recorded per account in `.curio/users/<u>/chat-capabilities.json`, its tokens on the ledger with the configuration's id. The scripted provider answers what a test scripted, fenced by default. A manifest's `providerRequirements` is a preference: nothing refuses a run over it.
 
 - **Modes.** A capability that names an `instruction` (a `prompts` key) is a mode. A delegated run of it runs that prompt in place of the agent's `instruction`, and pins that prompt's digest. Two internal agents are built this way: each of the Dataflow Planner's six capabilities and the Dataflow Reader's two keeps its own prompt file (`builtin.BuiltinMode`).
 - **Scoped delegation.** A `delegatesTo` entry may name the capabilities it delegates (`{"id", "capabilities"}`). `delegation.resolve` and the delegation paragraph honour the scope, and the capability fallback never reaches an internal agent, which is reached only through a parent that delegates it.
@@ -994,20 +1039,17 @@ Where it is called:
 - `choosable_agents` lists who may have a choice: the catalog cards, published
   definitions and the account's imports, one row per agent id.
 
-The resolved `ProviderConfig` carries `config_id`, `label`, `source` and
-`trained`, and its `api_key` is left out of its `repr`. Run pins record
+The resolved `ProviderConfig` carries `config_id`, `label` and `source`, and
+its `api_key` is left out of its `repr`. Run pins record
 `llm: {configId, label, baseUrlHost, source}`, ledger entries record
 `llmConfigId`, and provider error text is redacted with the call's own key
-before it is streamed, persisted, logged or returned. Training runs only on a
-configuration that holds the user's own key (by default, the Dataflow Builder's),
-and activating a trained model adds a configuration with `origin: "trained"`
-and chooses it for the Dataflow Builder.
+before it is streamed, persisted, logged or returned.
 
 ---
 
 ## Agent Runtime
 
-What an agent may change, what Solve checks before anything lands in a node, how connection keys reach node code, and how an evaluation measures a model. The user-facing side is in [AGENT-CATALOG.md](AGENT-CATALOG.md) and [USAGE.md](USAGE.md).
+What an agent may change, what Solve checks before anything lands in a node, how saved keys reach node code, and how an evaluation measures a model. The user-facing side is in [AGENT-CATALOG.md](AGENT-CATALOG.md) and [USAGE.md](USAGE.md).
 
 ### Dataflow plans
 
@@ -1117,57 +1159,31 @@ Solve runs from the Dataflow Builder's **Solve** over an applied plan, or from *
 - **Executable kinds.** Whether the sandbox can run a node kind is read from its template: a code editor (`hasCode`), a `python` or `javascript` engine, and no `backendHandler`. That covers every built-in Python and JavaScript kind and every package template that declares the same. A template with no code (Vega and Autark specs, merge nodes, data pools, the spatial join) is written and labeled as having no code to run, on the pill, in a review's attempt trail, and on the Node Builder's proposal card. Without a reachable template roster (the end-to-end runner over a raw file), a fallback name table answers instead.
 - **Bounds.** The batch deadline is checked at every wave boundary and before every node; what it did not reach stays pending with the reason, the Solve card names it once, and Retry continues from there. A node whose validation would run more nodes than the validation bound (`--validation-node-limit`, default 25; an ancestor whose earlier output is reused and a pass-through node do not count), or whose upstream slice contains a cycle, is skipped with the bound named, and no correction is spent on it. The stale-run marker (15 minutes) is measured from the last completed wave. `verify: false` on the Solve request writes without running, for every kind.
 
-### Connection keys
+### Node code keys
 
-A key must never be a literal in node code: the code is saved into the dataflow, replayed in every proposal preview, recorded by the runtime journal on every run and exported with the project. A **connection key** is saved once under a name bound to a host, in **API Settings → Connection keys**, through a masked field that never reads the value back, and node code reaches it only as `curio_secret("<name>")`.
+A key must never be a literal in node code: the code is saved into the dataflow, replayed in every proposal preview, recorded by the runtime journal on every run and exported with the project. A key node code reads (a connection key in the backend, [`users/connection_keys.py`](../utk_curio/backend/app/users/connection_keys.py)) is saved once under a name bound to a host, as a **Node code** key on the **API keys** tab of API Settings, through a masked field that never reads the value back, and node code reaches it only as `curio_secret("<name>")`. Saving a name already bound to another host is refused with 409 unless the request says `replace`, which the form's **Replace the host binding** sends.
 
 - **At run time.** The runtime resolves the names the code uses, for Play and for Solve alike, and hands the values to the sandbox inside the execution request, where they exist only as that callable in the node's namespace: never an environment variable, never a file, never a log line. A key a node prints is redacted before the output leaves the sandbox. The saved dataflow, the journal, the proposals and the chat carry the name only.
-- **For agents.** A content builder's grounded inputs list `availableSecrets` with the line to copy and how the API expects the key (`query:<param>`, `header:<Name>`, or in the code). The grounding gate accepts `curio_secret("<name>")` for a saved name (the Source block reads *Connection key · census · api.census.gov*), refuses an unknown name listing the saved ones, and refuses a credential-shaped literal before anything runs. When a saved key is bound to the host a failing request targets, Solve probes that request with the key and tells the correction what the keyed request answered, redacted. When no key exists, the content builder declines in one line and the node's failure ends with **Add key for** and the host, which opens the settings section with the host filled in.
-- **Storage.** The store is a 0600 file under the user's own directory (unreadable by isolated node code), written the same way as `llm-configs.json`; it is not encrypted at rest. A published dataflow carries key names, so whoever installs it saves their own key under the same name. The shared guest account (authentication off) shares one key store with every other guest, and the section says so. Under `--deploy` no guest has a key store: `storage_key_for` refuses a guest with a 403, and the store lists and resolves nothing for the `guest` key, so keys saved there without `--deploy` are not sent.
-- **Typed keys.** The code editor watches for a key typed into a node's code and shows a non-blocking hint naming the line, with **Save as connection key**. Nothing is refused, rewritten or sent: the finding stays in the browser tab.
+- **For agents.** A content builder's grounded inputs list `availableSecrets` with the line to copy and how the API expects the key (`query:<param>`, `header:<Name>`, or in the code). The grounding gate accepts `curio_secret("<name>")` for a saved name (the Source block reads *Connection key · census · api.census.gov*), refuses an unknown name listing the saved ones, and refuses a credential-shaped literal before anything runs. When a saved key is bound to the host a failing request targets, Solve probes that request with the key and tells the correction what the keyed request answered, redacted. When no key exists, the content builder declines in one line and the node's failure ends with **Add key for** and the host, which opens the node code key form in API Settings with the host filled in.
+- **Storage.** The store is a 0600 file under the user's own directory (unreadable by isolated node code), written the same way as `llm-configs.json`; it is not encrypted at rest. A published dataflow carries key names, so whoever installs it saves their own key under the same name. The shared guest account (authentication off) shares one key store with every other guest, and API Settings says so. Under `--deploy` no guest has a key store: `storage_key_for` refuses a guest with a 403, and the store lists and resolves nothing for the `guest` key, so keys saved there without `--deploy` are not sent.
+- **Typed keys.** The code editor watches for a key typed into a node's code and shows a non-blocking hint naming the line, with **Save as API key**, which opens the same form. Nothing is refused, rewritten or sent: the finding stays in the browser tab.
 
-### Evaluation and training
+### Evaluation
 
-Every shipped example has a prompt fixture under [`docs/examples/prompts/`](examples/prompts/README.md): a reviewed prompt paired with the example's digest, its declared datasets and packages, its normalized expected graph, node intents, an execution mode, a capability tier and scoring thresholds. During an evaluation the agent receives the prompt and nothing else, never the example JSON, the node ids, the code or the expected graph, which a test enforces.
-
-The run is the ordinary product path: an empty project, the Dataflow Builder attached, one message, the plan's review card, Apply, then Solve. What lands on disk is compared semantically: canonical template ids and their roles, topology with edge kinds and merge slots, the declared dataset and package references, the absence of invented templates, packages, datasets, paths and URLs, node intents, and Solve's own verdicts. Regenerated ids, layout, formatting and behaviourally equivalent code are ignored, and a graph built in a different order scores the same. Three rules hold:
-
-- **No expectation is weakened to pass.** A construct the agent contract cannot express is reported as a named capability gap, and the fixture keeps it.
-- **Nothing is gated on a model.** A live-model run writes an evaluation report, opt-in and never in CI.
-- **No agent grades an agent.** The comparison is deterministic code; the Generated Content Evaluator is advisory and has no authority here.
-
-**Evaluation mode** creates its own project, installs and attaches the Dataflow Builder through the normal install flow with the agents it requires, sends the prompt through the normal runtime on the configuration the user's Dataflow Builder runs on, applies the plan through the Apply endpoint, and solves; the comparison runs server-side, so the reference never reaches the model. The automated apply is granted only inside the project that run created, only for the plan and the installs the example requires, refused for anything a person should decide, and recorded per apply. A save that would delete a node, a connection or a node's code that the browser never saw is refused and says what would be lost, which protects the graph an evaluation built from a canvas that was open before the run finished. A run is recorded per account under `.curio/users/<key>/agents/evaluation/`, with the fixture, the configuration, provider and model, the prompt and agent digests, the generated project id, the phases, latency, token usage, the comparison and the score, and never a key.
+`agents/evaluation/` is an offline library that the reconstruction tests and `utk_curio/tools/agent_eval.py` use to measure whether the Dataflow Builder can rebuild a shipped example from its prompt fixture under [`docs/examples/prompts/`](examples/prompts/README.md). The agent receives the prompt and nothing else. The run is the ordinary product path in a project marked with `dataflow.evaluation` (the Dataflow Builder attached, one message, Apply, then Solve), and deterministic code compares what lands on disk with the example: template ids and roles, topology, dataset and package references, invented names, node intents and Solve's verdicts. A construct the agent contract cannot express is a named capability gap, and a live run writes a report that gates nothing. `agent_eval run` writes `.curio/eval/<runId>/report.json` and `report.md`; `--model` runs on a temporary copy of the Dataflow Builder's configuration with that model and puts the Builder's choice back afterwards.
 
 ```bash
-# the deterministic tiers (offline, no stack, seconds)
+# the deterministic tiers (offline, no stack)
 pytest utk_curio/backend/tests/test_agents/test_example_fixtures.py \
-       utk_curio/backend/tests/test_agents/test_example_reconstruction.py \
-       utk_curio/backend/tests/test_agents/test_evaluation_service.py
+       utk_curio/backend/tests/test_agents/test_example_reconstruction.py
 
 # what the fixtures say
 python -m utk_curio.tools.agent_eval list
 
-# the same evaluation against a remote stack, from a terminal
+# a live evaluation against a running stack
 export CURIO_EVAL_LIVE=1
 python -m utk_curio.tools.agent_eval run --token "$CURIO_EVAL_TOKEN" --tier T0
 ```
-
-The command-line runner writes `.curio/eval/<runId>/report.json` (provider, model, prompt and instruction digests, attempts, latency, token usage, redacted transcripts, the generated dataflow, the diff, the score and its failure categories) and `report.md`, the same as a table. No USD figure is computed unless a rate is supplied: Curio has no price table.
-
-**Model training** asks the endpoint of the configuration it trains on whether it can fine-tune. An Anthropic key (no tuning endpoint), a local Ollama or LM Studio (chat routes only) and a key without the scope to list tuning jobs each get their own sentence; the last one says the endpoint may still support tuning. When the endpoint cannot be asked, its last answer is replayed with the date it was true.
-
-- **What is sent.** Only fixtures on the `train` split that a person approved. Each row is the system turn a real run carries, the fixture's prompt, and the plan block the runtime's own parser accepts; an example whose graph the plan contract cannot express is excluded with that reason. Every row is scrubbed and re-checked, and anything still resembling a credential stops the upload. No dataset row, column, geometry or file is included.
-- **Consent.** The user sees the row and byte counts, the examples, their licences and the host. Consent is a tick plus the digest of that exact set, recorded before the first byte leaves; Start sends back the host the user was shown, and a set that would go elsewhere is refused.
-- **The job.** The provider owns it: Curio holds its id and asks the endpoint when the panel is open, and every status carries the time it was read. Cancel asks the endpoint and reports its answer. Trained tokens are shown as the provider reported them.
-- **Switching on.** A trained model can be used only after an evaluation of that exact model on the held-out examples, whose fixture digests still match the corpus; there are four refusals, each naming what to fix, and no pass mark. Switching adds an LLM configuration with `origin: "trained"` and chooses it for the Dataflow Builder, whose prompts built the training set. The Builder's previous choice is recorded, so going back is one click until that choice is changed by hand.
-
-```bash
-export CURIO_EVAL_LIVE=1
-python -m utk_curio.tools.agent_eval run \
-    --model ft:your-base:curio-plans:abc --gate-for train-20260909T161200Z-a1b2
-```
-
-`--model` runs on a temporary copy of the Dataflow Builder's configuration with that model, chosen for the Builder for the run, and puts its choice back afterwards.
 
 ---
 
@@ -1343,7 +1359,7 @@ The model family (`huggingface-models`) is searched like a portal and added like
 
 ### Credentials
 
-[`infrastructure/credentials.py`](../utk_curio/backend/app/discovery/infrastructure/credentials.py) owns the registry of credential slots, `SLOTS`, one `KeySlot` per slot: the column on the `user` row, a label, a help link, a placeholder, an optional note, a deployment-wide fallback, and the other features that read the column. The slots are `socrata.app-token`, `huggingface.token` (the `huggingface_token` column, which the Hugging Face sources send), `google.maps-key` and `mapillary.token`. `SLOT_COLUMNS` and `SLOT_DEFAULTS` derive from it, and `GET /api/discovery/keys` lists every slot for API Settings, which draws one row each. Adding a slot is a column, a migration, a field in `PATCH /api/auth/me`, one entry there, and its id in `KNOWN_SECRET_SLOTS` in `domain/manifest.py`.
+[`infrastructure/credentials.py`](../utk_curio/backend/app/discovery/infrastructure/credentials.py) owns the registry of credential slots, `SLOTS`, one `KeySlot` per slot: the column on the `user` row, a label, a help link, a placeholder, an optional note, a deployment-wide fallback, and the other features that read the column. The slots are `socrata.app-token`, `huggingface.token` (the `huggingface_token` column, which the Hugging Face sources send), `google.maps-key` and `mapillary.token`. `SLOT_COLUMNS` and `SLOT_DEFAULTS` derive from it, and `GET /api/discovery/keys` lists every slot for API Settings, which lists a slot once a key is saved or inherited and offers the others in the **Kind** select of **Add configuration**. Adding a slot is a column, a migration, a field in `PATCH /api/auth/me`, one entry there, and its id in `KNOWN_SECRET_SLOTS` in `domain/manifest.py`.
 
 - A key is saved through `PATCH /api/auth/me` and read back only as a boolean. A guest on a `--deploy` instance is refused with a 403, and `own_token` answers nothing for a guest there, so a key the shared guest saved without `--deploy` is not sent.
 - `CURIO_DEFAULT_SOCRATA_APP_TOKEN` is inherited by every account that has not saved its own.
@@ -1522,7 +1538,7 @@ content digest, so one file is one dataset.
 | `/api/datasets/<id>/media/<file_id>/link` | POST | A signed URL for `<video>` and `<audio>`, valid 10 minutes |
 | `/api/media/<token>` | GET | The one file a signed link names, with Range. No bearer token |
 | `/api/discovery/places` | GET | Places for the area field (`q`), from Nominatim: name, label, box, and whether each is a boundary |
-| `/api/discovery/keys` | GET | Every key slot API Settings lists: label, field, help link, `present` and `inherited` as booleans, and the sources and features that use it |
+| `/api/discovery/keys` | GET | Every key slot, for API Settings: label, field, help link, `present` and `inherited` as booleans, and the sources and features that use it |
 | `/api/datasets/<id>/extent` | GET | The box around a geo dataset, in EPSG:4326, for the area field |
 | `/api/discovery/jobs/<id>` | GET | Job progress. Per account: another user's id is indistinguishable from an unknown one |
 | `/api/discovery/jobs/<id>` | DELETE | Ask a download to stop; checked between chunks |
@@ -1561,11 +1577,11 @@ Catalog and account scope:
 | `/api/agents/catalog` | GET | List the agent definitions available to add: the catalog cards and published definitions, never an internal built-in (`projectId` marks those already in that dataflow). Returns `{items, agents, facets}`, the same envelope the dataset catalog returns |
 | `/api/agents/llm` | GET | The account's LLM configurations (never a key: `hasApiKey` and `baseUrlHost` instead), its default, what the deployment offers, what answers a run now, and the agents whose configuration may be chosen, each with its choice and what it answers with. A hosted guest gets the guest configuration and `editable: false` |
 | `/api/agents/llm/configs` | POST | Add a configuration. **400** on an unknown field or an invalid one, **403** for a hosted guest |
-| `/api/agents/llm/configs/<id>` | PATCH, DELETE | Change one (a blank key keeps the stored one; a new endpoint needs the key again) or remove it, which resets a removed default and clears the agents chosen for it (`moved`). **409** while a training job runs on it: for a change, when the change touches its endpoint or key |
+| `/api/agents/llm/configs/<id>` | PATCH, DELETE | Change one (a blank key keeps the stored one; a new endpoint needs the key again) or remove it, which resets a removed default and clears the agents chosen for it (`moved`) |
 | `/api/agents/llm/configs/<id>/duplicate` | POST | Copy one, its key included, server-side; `{label?, model?}` |
 | `/api/agents/llm/default` | PUT | Choose the default, `{configId}`; `null` is the Deployment default |
 | `/api/agents/llm/assignments` | PUT | Choose agents' configurations: a partial map of agent id to a configuration id, `"deployment"` or `null` (clears). Nothing is written unless every entry is valid; an internal agent is refused; **403** for a hosted guest |
-| `/api/agents/provider-models` | POST | The models API Settings can offer for the endpoint being configured. POST because the panel asks *before* the user saves, carrying the provider, base URL and key on screen. A stored key is borrowed only with `configId`, and only while the endpoint on screen is still that configuration's own, or with `endpoint: "deployment"`; with neither, no key is borrowed. Hybrid, both halves from the API: the live listing (OpenAI-compatible, Anthropic and Gemini, all via `agents/providers.py`), falling back to what that endpoint last reported, recorded per account by `agents/model_catalog.py`. Answers `{models, listable, source, remembered, rememberedAt, warning}`; a failed listing is a 200 with `source: "remembered"` unless nothing was ever recorded, which is a 400 |
+| `/api/agents/provider-models` | POST | The models API Settings can offer for the endpoint being configured. POST because the editor asks *before* the user saves, carrying the provider, base URL and key on screen. A stored key is borrowed only with `configId`, and only while the endpoint on screen is still that configuration's own, or with `endpoint: "deployment"`; with neither, no key is borrowed. Hybrid, both halves from the API: the live listing (OpenAI-compatible, Anthropic and Gemini, all via `agents/providers.py`), falling back to what that endpoint last reported, recorded per account by `agents/model_catalog.py`. Answers `{models, listable, source, remembered, rememberedAt, warning}`; a failed listing is a 200 with `source: "remembered"` unless nothing was ever recorded, which is a 400 |
 | `/api/agents/settings` | GET, PUT | The catalog settings: each one's schema, default, the account's value and the agents that read it, plus whether this account may change them. `PUT` takes key to value (`null` restores the default) and saves nothing unless every value is valid; **403** for a hosted guest |
 | `/api/agents/imports` | GET | List the account's imported definitions, as cards |
 | `/api/agents/imports` | POST | Record `<id>@<version>` in My imports. Never adds to a dataflow |
@@ -1658,6 +1674,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/registry/behaviorRegistry.ts` | `behavior` key → hook lookup (built-in + package-shipped) |
 | `src/registry/nodeRegistry.ts` | Singleton store of all `NodeDescriptor`s; subscribed by the palette + canvas |
 | `src/registry/packageRegistryBootstrap.ts` | Boot-time orchestration: load installed packages, inject behavior bundles, build descriptors |
+| `src/registry/registryReadiness.ts` | Whether the registry has finished a load: a placeholder node waits on it, and the canvas's load fit waits on it while a node has no descriptor |
 | `src/registry/index.ts` | Exposes `window.curio.registerBehavior` + `window.curio.backendUrl` for package bundles |
 | `src/registry/types.ts` | TypeScript interfaces for descriptors, adapters, behavior hooks |
 | `src/constants.ts` | `SupportedType` and `EdgeType` enums, and `NodeType`, the built-in template ids (node types live in package manifests) |
@@ -1665,7 +1682,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/utils/renderOutcome.ts` | The empty-render decision every browser renderer calls (see [Render Outcomes](#render-outcomes)) |
 | `src/generated/` | Contract copies written by `scripts/generate_contracts.py`; never edited by hand |
 | `src/ConnectionValidator.ts` | Edge validation logic |
-| `src/api/` | API client wrappers (`projectsApi`, `connectionKeysApi`, `evaluationApi`, `trainingApi`); `authApi` lives at `src/utils/authApi.ts` and the packages client in `src/services/packages/` |
+| `src/api/` | API client wrappers (`projectsApi`, `connectionKeysApi`, `llmConfigsApi`, `monitorApi`); `authApi` lives at `src/utils/authApi.ts` and the packages client in `src/services/packages/` |
 | `src/services/packages/` | The node-package service layer (memo dev/143): `packagesApi` (the request object) + `packagesBlobTransport` (sideload, archive download, factory build, `triggerBlobDownload`) + `packageBackendApi` (the only transports), `usePackageCatalog` (THE catalog hook the canvas drawer and the `/catalog/nodes` page both render, scope as an option, with `probeInstallConflicts` the one pre-install probe), the pure logic the surfaces share (`packageListUtils`, `forkPackageLineage`, `packageDependencyNotice`, `packageRestartCopy`, `factoryDraft`) and every package type by concern under `types/` (`SortMode` included). Import from its barrel, `services/packages`; `tests/packages/servicesBarrel.test.ts` enforces that the layer renders nothing, that no node-catalog surface reaches transport, and that the layer never imports `registry/` at runtime: the registry consumes the layer, never the reverse |
 | `src/providers/packages/` | `NodeCatalogDrawerProvider` and `PackagePaletteContext`, plus the two hooks that compose the layer with the node-kind registry (`usePackageArchiveImport`, the one sideload pathway, and `useEnsureWorkflowDeps`). `index.tsx` composes from the barrel; other consumers name the module (the barrel carries a rendering provider beside registry-touching hooks) |
 | `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog: a rendering surface over `usePackageCatalog({ kind: "project" })`; `pages/catalog/useNodeCatalogBrowse.ts` is the page's adapter over the same hook |
@@ -1673,8 +1690,13 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/providers/agents/` | `AgentAttachmentsProvider` composing `useAgentSession`, `useAgentProposals`, `useAgentSolve`, `useAgentSimulation` and `useAgentNodeRuns`; imported from its barrel, `providers/agents` |
 | `src/components/agents/catalog/AgentCatalogDrawer.tsx` | The canvas drawer that adds agents to the open dataflow |
 | `src/pages/agents/AgentCatalogBrowse.tsx` | The `/catalog/agents` browse page, the account-scope peer of the other two catalogs |
-| `src/components/ApiSettingsModal.tsx` | API Settings: the account's LLM configurations, tokens, connection keys, Evaluation mode and Model training |
-| `src/components/llmConfigs/` | The LLM configurations table, its editor, Agent models and the `llm-config` remedy button, over `src/api/llmConfigsApi.ts` |
+| `src/components/layout/GlobalPageHeader.tsx` | The top bar of every signed-in page; its Monitor and API Settings open a page, or a drawer on the canvas and the dashboard (see [API Settings and the Monitor](#api-settings-and-the-monitor)) |
+| `src/components/layout/HeaderDrawer.tsx` | The drawer shell API Settings and the Monitor open in on the canvas and the dashboard |
+| `src/providers/ApiSettingsDrawerProvider.tsx`, `src/providers/MonitorDrawerProvider.tsx` | Mount those two drawers, inside `DataflowProviders` |
+| `src/components/apiSettings/` | API Settings: `ApiSettingsPanel` (the two tabs), `ApiKeysTab`, `AgentConfigTab`, `SourceKeyForm`, `NodeKeyForm`, `ApiSettingsDrawer`, `ApiSettingsRequestHost` and `apiSettingsRequest.ts` (the `curio:api-settings` request event) |
+| `src/pages/settings/SettingsPage.tsx` | The settings page, `/settings/keys` and `/settings/agents` |
+| `src/pages/monitor/MonitorContent.tsx`, `MonitorDrawer.tsx` | The monitor's content, rendered by the `/monitor` page and by its drawer |
+| `src/components/llmConfigs/` | The LLM configuration editor, Agent models and the `llm-config` remedy button, over `src/api/llmConfigsApi.ts` |
 | `src/components/menus/libraries/LibraryManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 
 ### Backend
@@ -1700,7 +1722,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/datasets/models.py` | `DatasetIndexEntry`, the index's SQLAlchemy table |
 | `backend/app/datasets/infrastructure/` | Storage helpers, file metadata, output paths, catalog utilities |
 | `backend/app/datasets/schemas/` | Request and catalog-item serialization schemas |
-| `backend/app/agents/routes/` | `/api/agents/*` endpoints, one module per resource (`catalog`, `lifecycle`, `attachments`, `proposals`, `turns`, `solve`, `llm`, `training`, `evaluation`); `common.py` holds the blueprint and the shared helpers; the route table is a contract test (`tests/test_agents/route_table.json`) |
+| `backend/app/agents/routes/` | `/api/agents/*` endpoints, one module per resource (`catalog`, `lifecycle`, `attachments`, `proposals`, `turns`, `solve`, `llm`); `common.py` holds the blueprint and the shared helpers; the route table is a contract test (`tests/test_agents/route_table.json`) |
 | `backend/app/agents/domain/contracts.py` | The single source of every generated contract, and the registry of its outputs (see [Generated Contracts](#generated-contracts)) |
 | `backend/app/agents/schemas/autk-grammar.v1.json` | The vendored Autark grammar schema, with its release record beside it (see [The Autark Schema](#the-autark-schema)) |
 | `backend/app/agents/domain/document_validation.py` | Validates the documents agents write (Vega-Lite, Autark) before they reach a node |
@@ -1726,7 +1748,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `backend/app/agents/infrastructure/providers.py` | Provider-neutral dispatch port; the only place an LLM SDK is imported. Typed turns and their text forms, streaming, the system slots per provider, native tools per provider and their refusal, cache usage, the native-tools trial, and the live model listing |
 | `backend/app/agents/application/tools.py` | The tool registry: each contract's effect, description and params schema, grant resolution, the read executors, and the native tools a run is offered |
 | `backend/app/agents/application/reply_schemas.py` | The Autark document's reply schema, projected from the vendored schema per provider flavor; decoding a reply; which runs send one |
-| `backend/app/agents/infrastructure/chat_capabilities.py` | What an endpoint can do beyond text (native tools, a reply schema): the table, the per-model trial and its record, trained and scripted configurations |
+| `backend/app/agents/infrastructure/chat_capabilities.py` | What an endpoint can do beyond text (native tools, a reply schema): the table, the per-model trial and its record, and the scripted provider |
 | `backend/app/agents/repositories/model_catalog.py` | Per-account record of what each provider endpoint last reported, replayed when a live listing is impossible. Derived from the API, never hand-authored; a suggestion, never an allowlist |
 | `backend/app/agents/infrastructure/testing_provider.py` | Scripted provider under `CURIO_TESTING`, re-guarded at call time; what e2e drives. A reply is text, native tool calls, or an endpoint error |
 | `backend/app/agents/repositories/ledger.py` | Append-only per-day record of runs and tokens; flock-guarded. A record, not a gate |
