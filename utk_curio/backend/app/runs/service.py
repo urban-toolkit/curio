@@ -46,8 +46,26 @@ def _iso(moment: Optional[datetime]) -> Optional[str]:
 # Serialization
 # ---------------------------------------------------------------------------
 
-def step_payload(step: DataflowRunStep) -> dict:
+def current_code_hashes(user, project_id: str) -> dict:
+    """``{nodeId: digest}`` of each node's code in the dataflow as saved now,
+    hashed as a step hashes the code it ran."""
+    from utk_curio.backend.app.execution.runtime_journal import normalized_code_sha256
+    from utk_curio.backend.app.projects import storage
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    spec = storage.read_spec(_user_dir_key(user), project_id) or {}
+    nodes = (spec.get("dataflow") or {}).get("nodes") or []
     return {
+        node["id"]: normalized_code_sha256(node.get("content") or "")
+        for node in nodes if isinstance(node, dict) and node.get("id")
+    }
+
+
+def step_payload(step: DataflowRunStep, current: Optional[dict] = None) -> dict:
+    """*current* (:func:`current_code_hashes`) adds ``codeCurrent``: whether the
+    node still holds the code this step ran, so a canvas opened later can show
+    the step's output as the node's own."""
+    payload = {
         "nodeId": step.node_id,
         "label": step.label,
         "nodeType": step.node_type,
@@ -65,9 +83,12 @@ def step_payload(step: DataflowRunStep) -> dict:
         "stderrTail": step.stderr_tail,
         "skipReason": step.skip_reason,
     }
+    if current is not None:
+        payload["codeCurrent"] = bool(step.code_sha256) and current.get(step.node_id) == step.code_sha256
+    return payload
 
 
-def run_payload(run: DataflowRun, *, steps: bool = False) -> dict:
+def run_payload(run: DataflowRun, *, steps: bool = False, current: Optional[dict] = None) -> dict:
     payload = {
         "id": run.id,
         "projectId": run.project_id,
@@ -89,7 +110,7 @@ def run_payload(run: DataflowRun, *, steps: bool = False) -> dict:
         "live": jobs.REGISTRY.is_live(run.id),
     }
     if steps:
-        payload["steps"] = [step_payload(step) for step in run.steps]
+        payload["steps"] = [step_payload(step, current) for step in run.steps]
     return payload
 
 
@@ -301,6 +322,7 @@ def _run_thread(app, run_id, user_id, token, project_id, plan, spec) -> Iterator
     cancelled = jobs.cancel_flag(run_id)
 
     def execute(step, code, input_ref):
+        jobs.hold_point()
         # The request that started the run is gone: load the account here.
         user = db.session.get(User, user_id)
         node_run = node_exec.NodeRun(

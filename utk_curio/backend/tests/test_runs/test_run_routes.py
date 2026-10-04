@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 
 import pytest
 
@@ -389,3 +390,79 @@ class TestNodesTheBrowserRuns:
         assert early.status_code == 409
         sandbox.release()
         _wait(run_id)
+
+
+class TestACanvasOpenedLater:
+    def test_a_step_says_whether_its_node_still_holds_the_code_it_ran(self, client, user_and_token, sandbox):
+        user, token = user_and_token
+        nodes = [_node("a"), _node("b")]
+        project_id, _ = _create(client, token, nodes, [_edge("a", "b")])
+        run_id = _start(client, token, project_id).get_json()["id"]
+        _wait(run_id)
+        steps = {s["nodeId"]: s for s in _get(client, token, run_id)["steps"]}
+        assert steps["a"]["codeCurrent"] is True and steps["b"]["codeCurrent"] is True
+
+        # b's code changes and is saved; a's only moves, which is not a change.
+        edited = [{**_node("a"), "content": "    # node a\n    return arg\n"},
+                  {**_node("b"), "content": "# node b\nreturn arg * 2"}]
+        saved = client.put(f"/api/projects/{project_id}", data=json.dumps({
+            "name": "Run routes",
+            "spec": {"dataflow": {"name": "Run routes", "nodes": edited, "edges": [_edge("a", "b")]}},
+        }), headers=_auth(token))
+        assert saved.status_code == 200, saved.get_data(as_text=True)
+        steps = {s["nodeId"]: s for s in _get(client, token, run_id)["steps"]}
+        assert steps["a"]["codeCurrent"] is True
+        assert steps["b"]["codeCurrent"] is False
+
+
+def _until(predicate, timeout=10.0):
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        assert time.monotonic() < deadline, "the condition never came true"
+        time.sleep(0.02)
+
+
+def _hold(client, on):
+    resp = client.post("/api/testing/run-hold", data=json.dumps({"hold": on}),
+                       content_type="application/json")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    return resp.get_json()
+
+
+class TestTheTestRigHold:
+    def test_a_held_run_waits_before_its_node_until_released(self, client, user_and_token, sandbox):
+        from utk_curio.backend.app.runs import jobs
+
+        user, token = user_and_token
+        project_id, _ = _create(client, token, [_node("a"), _node("b")], [_edge("a", "b")])
+        _hold(client, True)
+        try:
+            run_id = _start(client, token, project_id).get_json()["id"]
+            _until(lambda: jobs.hold_state()["waiting"] == 1)
+            assert not sandbox.started.is_set()
+            # Stop does not end the wait, as Stop does not answer a request a
+            # page holds: a test can still see the node held after it.
+            assert client.post(f"/api/runs/{run_id}/cancel", headers=_auth(token)).status_code == 202
+            assert client.get("/api/testing/run-hold").get_json() == {"held": True, "waiting": 1}
+        finally:
+            released = _hold(client, False)
+        assert released["waiting"] == 1
+        _wait(run_id)
+        run = _get(client, token, run_id)
+        assert run["status"] == "cancelled"
+        assert "b" not in sandbox.bodies
+
+    def test_outside_a_test_rig_a_hold_holds_nothing(self, client, user_and_token, sandbox, monkeypatch):
+        from utk_curio.backend import config
+        from utk_curio.backend.app.runs import jobs
+
+        monkeypatch.setattr(config, "_is_testing", lambda: False)
+        user, token = user_and_token
+        project_id, _ = _create(client, token, [_node("a")])
+        jobs.set_hold(True)
+        try:
+            run_id = _start(client, token, project_id).get_json()["id"]
+            _wait(run_id)
+        finally:
+            jobs.set_hold(False)
+        assert _get(client, token, run_id)["status"] == "succeeded"

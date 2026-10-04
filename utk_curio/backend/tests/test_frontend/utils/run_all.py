@@ -1,8 +1,11 @@
 """Whole-run (Run All) state, and holding a run open on purpose."""
 
 import re
+import time
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+from .db_stubs import _get_json, _post_json
 
 
 # ---------------------------------------------------------------------------
@@ -150,16 +153,26 @@ def wait_for_run_guard_released(page, *, timeout_ms: int) -> None:
 # Holding a run open on purpose
 # ---------------------------------------------------------------------------
 
-# Every node execution leaves the browser as one POST: Python and data-loading
-# nodes through ``/processPythonCode`` (PythonInterpreter.ts) and an Autark data
-# section through ``/processJavaScriptCode`` (JavaScriptInterpreter.ts). A level
-# cannot advance until its nodes report, so holding those requests holds the
+# A run executes its nodes in two places, and a hold holds both:
+#
+# - On the server, for a signed-in owner: the canvas saves and starts a run the
+#   backend executes, out of the page's reach. ``/api/testing/run-hold`` makes
+#   each node such a run is about to execute wait for the release
+#   (``runs/jobs.py``). Stop does not end that wait, as it does not answer a
+#   request the page holds.
+# - In the page: every node execution leaves the browser as one POST, Python
+#   and data-loading nodes through ``/processPythonCode`` (PythonInterpreter.ts)
+#   and an Autark data section through ``/processJavaScriptCode``
+#   (JavaScriptInterpreter.ts). That is a guest's whole run, and the part of a
+#   server run that only a browser can do.
+#
+# A level cannot advance until its nodes report, so holding those holds the
 # run - which is how a test that needs the button to say "Cancel run" gets a
 # window it owns instead of one it races.
 #
-# Wrapped in the page rather than through ``page.route``: the sync API runs a
-# route handler on the dispatcher thread, so blocking in one blocks the very
-# wait it was supposed to make winnable.
+# The page's requests are wrapped in the page rather than through
+# ``page.route``: the sync API runs a route handler on the dispatcher thread, so
+# blocking in one blocks the very wait it was supposed to make winnable.
 _HOLD_NODE_EXEC_JS = r"""() => {
     if (window.__curioHeldExec) return true;
     const real = window.fetch.bind(window);
@@ -187,15 +200,35 @@ _RELEASE_NODE_EXEC_JS = """() => {
 }"""
 
 
+def backend_url_of(page) -> str:
+    """The backend *page* talks to, read the way ``utils/backendUrl.ts`` reads it."""
+    return str(page.evaluate(
+        "() => window.__CURIO_BACKEND_URL__"
+        " || document.querySelector('meta[name=\"curio-backend-url\"]')?.getAttribute('content')"
+        " || window.location.origin"
+    )).rstrip("/")
+
+
+def hold_server_runs(backend_url: str, hold: bool) -> int:
+    """Hold or release runs on the server. Returns how many nodes were waiting."""
+    return int(_post_json(f"{backend_url}/api/testing/run-hold", {"hold": hold})["waiting"])
+
+
+def held_server_nodes(backend_url: str) -> int:
+    """How many nodes of runs on the server are held right now."""
+    return int(_get_json(f"{backend_url}/api/testing/run-hold")["waiting"])
+
+
 def hold_node_execution(page) -> None:
-    """Hold every node-execution request in the page until it is released.
+    """Hold every node execution until it is released, on the server and in the page.
 
     Gives the caller a run that provably cannot end: the level's nodes are
-    waiting on a request that has not been sent yet. Always pair it with
+    waiting on a release that has not come yet. Always pair it with
     :func:`release_node_execution`, including on the failure path - a hold left
     standing costs the run its whole timeout.
     """
     page.evaluate(_HOLD_NODE_EXEC_JS)
+    hold_server_runs(backend_url_of(page), True)
 
 
 def wait_for_held_node_execution(page, *, count: int = 1,
@@ -203,31 +236,30 @@ def wait_for_held_node_execution(page, *, count: int = 1,
     """Wait until at least *count* node executions are being held.
 
     Also the tripwire for the hold itself: if node execution ever stops going
-    through ``fetch``, this fails loudly instead of quietly leaving the test
-    racing the run again.
+    through the server's hold or the page's ``fetch``, this fails loudly
+    instead of quietly leaving the test racing the run again.
     """
-    try:
-        page.wait_for_function(
-            "(n) => (window.__curioHeldExec?.held.length || 0) >= n",
-            arg=count,
-            timeout=timeout_ms,
-        )
-    except PlaywrightTimeoutError:
-        raise AssertionError(
-            f"no run was held: {held_node_executions(page)} of {count} node "
-            "execution(s) are waiting. Either the run never started, or node "
-            "execution no longer goes out over window.fetch as "
-            "/processPythonCode or /processJavaScriptCode."
-        ) from None
+    deadline = time.monotonic() + timeout_ms / 1000
+    while held_node_executions(page) < count:
+        if time.monotonic() >= deadline:
+            raise AssertionError(
+                f"no run was held: {held_node_executions(page)} of {count} node "
+                "execution(s) are waiting. Either the run never started, or node "
+                "execution no longer waits at the server's run hold or goes out "
+                "over window.fetch as /processPythonCode or /processJavaScriptCode."
+            )
+        page.wait_for_timeout(100)
 
 
 def held_node_executions(page) -> int:
     """How many node executions are held right now (0 when not holding)."""
-    return int(page.evaluate(
+    in_page = int(page.evaluate(
         "() => window.__curioHeldExec ? window.__curioHeldExec.held.length : 0"
     ))
+    return in_page + held_server_nodes(backend_url_of(page))
 
 
 def release_node_execution(page) -> int:
-    """Send every held request and stop holding. Returns how many were let go."""
-    return int(page.evaluate(_RELEASE_NODE_EXEC_JS))
+    """Let every held execution go and stop holding. Returns how many were let go."""
+    in_page = int(page.evaluate(_RELEASE_NODE_EXEC_JS))
+    return in_page + hold_server_runs(backend_url_of(page), False)
