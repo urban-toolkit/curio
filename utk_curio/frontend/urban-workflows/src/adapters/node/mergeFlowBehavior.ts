@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useCallback } from 'react';
 import { useEdges, Edge, Position } from 'reactflow';
 import { NodeBehaviorHook, HandleDef } from '../../registry/types';
-import { buildMergeOutputArray, connectedMergeSlotIndices } from '../../utils/mergeFlowUtils';
+import { filledSlotValues, wiredInputSlots } from '../../utils/inputSlots';
 
 const MERGE_SLOT_COUNT = 5;
 
@@ -12,12 +12,12 @@ export const useMergeFlowBehavior: NodeBehaviorHook = (data, nodeState) => {
   const edges = useEdges();
 
   const connectedCount = useMemo(
-    () => connectedMergeSlotIndices(edges, data.nodeId).length,
+    () => wiredInputSlots(edges, data.nodeId).length,
     [edges, data.nodeId],
   );
 
   const tryEmitMergedOutput = useCallback(() => {
-    const outArr = buildMergeOutputArray(data.input, edges, data.nodeId);
+    const outArr = filledSlotValues(data.input, edges, data.nodeId);
     if (connectedCount > 0 && outArr.length === connectedCount) {
       if (typeof data.outputCallback === 'function') {
         data.outputCallback(data.nodeId, { data: outArr, dataType: 'outputs' });
@@ -36,7 +36,7 @@ export const useMergeFlowBehavior: NodeBehaviorHook = (data, nodeState) => {
   // `data.input` before Play All advances past this merge level.
   const sendCodeOverride = useCallback((_code?: string) => {
     if (tryEmitMergedOutput()) return;
-    const outArr = buildMergeOutputArray(data.input, edges, data.nodeId);
+    const outArr = filledSlotValues(data.input, edges, data.nodeId);
     nodeState.setOutput({
       code: 'error',
       content:

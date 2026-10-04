@@ -96,7 +96,7 @@ Output supported:
 
 Make sure to pay attention to the compatibility between output and input of the nodes.
 
-Number of connections each node accepts into its inputs, one per input socket (to give a node more than one data unit, either output a tuple with multiple values from the previous node or use a {{template.label:curio.builtin/merge-flow}} node):
+Number of connections each node accepts into its inputs. A node that accepts any number takes each connection on its own input circle, and its code receives them as `arg`, a list in circle order (`arg[0]`, `arg[1]`, ...); one connection is `arg` itself. To give a node that accepts 1 more than one data unit, either output a tuple with multiple values from the previous node or use a {{template.label:curio.builtin/merge-flow}} node:
 
 {{builtin.input_count}}
 

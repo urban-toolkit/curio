@@ -401,8 +401,8 @@ def _cardinality(port_list: list) -> str:
 def builtin_lists(manifest: dict) -> dict[str, str]:
     """The preamble's lists of built-in templates, one line per template in
     manifest order, keyed by the ``{{builtin.<list>}}`` field each fills. An
-    input count is the connections a node accepts (``maxIncomingEdges``), not
-    the cardinality a port declares."""
+    input count is the connections a node accepts (``maxIncomingEdges``):
+    one port's declared maximum, or one per port when there are several."""
     from utk_curio.backend.app.packages.application.templates import input_capacity
 
     package = manifest.get("id", "").split("@")[0]
@@ -418,8 +418,9 @@ def builtin_lists(manifest: dict) -> dict[str, str]:
         rows["inputs"].append(f"- {label}: {_types(inputs) or 'no input supported'}")
         rows["outputs"].append(f"- {label}: {_types(outputs) or 'no output supported'}")
         if inputs:
-            capacity = input_capacity(f"{package}/{template.get('id')}", len(inputs))
-            rows["input_count"].append(f"- {label}: {capacity}")
+            single = inputs[0].get("cardinality") if len(inputs) == 1 else None
+            capacity = input_capacity(f"{package}/{template.get('id')}", len(inputs), single)
+            rows["input_count"].append(f"- {label}: {'any number' if capacity is None else capacity}")
         if outputs:
             rows["output_count"].append(f"- {label}: {_cardinality(outputs)}")
         if template.get("bidirectional"):

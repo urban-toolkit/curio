@@ -269,14 +269,14 @@ Output supported:
 
 Make sure to pay attention to the compatibility between output and input of the nodes.
 
-Number of connections each node accepts into its inputs, one per input socket (to give a node more than one data unit, either output a tuple with multiple values from the previous node or use a Merge Flow node):
+Number of connections each node accepts into its inputs. A node that accepts any number takes each connection on its own input circle, and its code receives them as `arg`, a list in circle order (`arg[0]`, `arg[1]`, ...); one connection is `arg` itself. To give a node that accepts 1 more than one data unit, either output a tuple with multiple values from the previous node or use a Merge Flow node:
 
 - Data Export: 1
-- Data Transformation: 1
-- Data Pool: 1
-- Python Computation: 1
+- Data Transformation: any number
+- Data Pool: any number
+- Python Computation: any number
 - Data Summary: 1
-- JS Computation: 1
+- JS Computation: any number
 - Vega-Lite: 1
 - Simple View: 1
 - Autark: 1
