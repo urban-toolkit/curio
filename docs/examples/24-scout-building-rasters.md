@@ -134,9 +134,8 @@ An Autark map reads the first part of the node's output, the raster, as
 }
 ```
 
-`"isColorMap": false` leaves this map without a legend: the 3D map's legend
-reads for both, as a cell holds its building's height rounded to SCOUT's
-steps of 550/255 = 2.16 m. A cell of 0, the ground, is left clear.
+A cell holds its building's height, rounded to SCOUT's steps of
+550/255 = 2.16 m. A cell of 0, the ground, is left clear.
 
 ## Predict the shadows
 
@@ -221,7 +220,7 @@ A third Autark map reads the shadow raster as `input_0`:
 }
 ```
 
-The brightest cells are the street canyons between the towers the height
+The darkest cells are the street canyons between the towers the height
 mosaic shows.
 
 ## Good to know
