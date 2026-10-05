@@ -830,6 +830,11 @@ running anything.
   spec: the page shows what is on disk.
 - **Edit layout** (owner only) unlocks the tiles to drag by their title band and resize,
   and **Save layout** records where they sit, without touching the canvas positions.
+- **Scenarios** each get a column, framed under a header in the scenario's color. The
+  tiles they share (their fixed context, and pinned Parameter nodes outside them) come
+  first, and tiles that read their outcomes, such as a comparison, come last. Tiles
+  without a saved place are laid out this way when the page opens; while editing the
+  layout, **Arrange by scenario** puts every tile back in its column.
 - **Sharing** works like a `/dataflow/<id>` link, read-only for everyone but the owner.
   The page is served with its data inside it, so a viewer needs no account and the
   dashboard keeps working if the server is unreachable.

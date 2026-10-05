@@ -1,6 +1,7 @@
 """Scenes on the Provenance window: its graph, panning it, and reverting."""
 from __future__ import annotations
 
+from ..utils import assert_header_shows_save, save_dataflow_and_settle_header
 from .framework import Ctx, walkthrough
 from .steps import (
     load_example_spec,
@@ -125,7 +126,8 @@ def provenance_graph_navigation(ctx: Ctx) -> None:
     example=PROVENANCE_EXAMPLE,
     refs=[195],
     title="Reverting a dataflow to an earlier version",
-    premise="Step back through the version graph and watch the canvas follow.",
+    premise="Step back through the version graph, saving each version, and "
+            "watch the canvas follow.",
     note="onConnect resolved its target with `nodes.find(...) as Node` and never "
          "checked it, so reverting to a version whose edges named nodes it does "
          "not hold tore the canvas down. Such an edge is now dropped instead.",
@@ -165,6 +167,12 @@ def provenance_reverting_to_a_previous_version(ctx: Ctx) -> None:
         # canvas has nothing to fit.
         ctx.click(page.get_by_role("button", name="Close").last)
         dialog.wait_for(state="hidden", timeout=20000)
+        # A revert is an edit, so the header reads "Unsaved" until the 30 s
+        # autosave, which lands on whichever frame the runner's speed puts it
+        # near. Save the version on the canvas so every frame shows its own
+        # saved header and categories. A save adds no version to the graph.
+        save_dataflow_and_settle_header(page)
+        assert_header_shows_save(page)
         ctx.capture(label, fit_reactflow=nodes > 0)
         if reopen:
             open_provenance(ctx)
