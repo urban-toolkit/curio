@@ -5,6 +5,7 @@
   "format": "onnx",
   "description": "Deep Umbra, SCOUT's shadow model: a generator network that predicts how much of a season's day the ground spends in shadow, from zoom-16 building height tiles (8-bit gray, 255 is 550 m), the tile's latitude and the season. Exported at fp32 from SCOUT's TensorFlow checkpoint ckpt-44 by scripts/scout/export_deep_umbra.py: three float32 inputs, height, latitude and date, and one output, shadow, each 1 by 512 by 512 by 1. The Accumulated Shadow node of scout.shadow@1 runs it. It ships in the Curio repository but not in the pip package. Used with the permission of SCOUT's authors.",
   "publisher": "SCOUT (urban-toolkit/scout)",
+  "license": "",
   "tags": [
     "model",
     "onnx",
