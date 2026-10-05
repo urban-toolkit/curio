@@ -368,7 +368,7 @@ describe("AgentReviewCard: #662 a plan's widgets and scenarios", () => {
     expect(twin).toHaveTextContent("a copy of Real heights · Shadows · sets height_factor 2");
     expect(twin).toHaveTextContent("every building doubled");
     // Counted at a glance, and the effect line says what Apply saves.
-    expect(screen.getByText(/2 scenarios/)).toBeInTheDocument();
+    expect(screen.getByText(/· 2 scenarios ·/)).toBeInTheDocument();
     expect(screen.getByText(/It saves 2 scenarios\./)).toBeInTheDocument();
   });
 

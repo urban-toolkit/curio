@@ -32,7 +32,6 @@ from .utils import (
     dismiss_toasts,
     install_session_cookie,
     leave_agent_badge,
-    load_artifact_as_dict,
     node_locator,
     play_node,
     read_node_code,
@@ -75,6 +74,10 @@ PLAN = {
     ],
 }
 
+#: The inline output box shows stdout and "Saved to file: ...", never the
+#: return value, so the comparison prints its two means after this marker.
+MEANS_MARKER = "CURIO_E2E_MEANS"
+
 #: What Solve's per-node calls answer, keyed by a part of each node's intent.
 #: The copy has its original's intent, so one answer fills both.
 CONTENT = {
@@ -95,9 +98,12 @@ CONTENT = {
     ),
     "mean shadow of each scenario": (
         "import pandas as pd\n\n"
+        "real = [!! input 0 !!]['shadow_m'].mean()\n"
+        "taller = [!! input 1 !!]['shadow_m'].mean()\n"
+        f"print('{MEANS_MARKER}', real, taller)\n"
         "return pd.DataFrame({\n"
         "    'scenario': ['Real heights', 'Twice as tall'],\n"
-        "    'mean_shadow_m': [[!! input 0 !!]['shadow_m'].mean(), [!! input 1 !!]['shadow_m'].mean()],\n"
+        "    'mean_shadow_m': [real, taller],\n"
         "})\n"
     ),
 }
@@ -185,7 +191,9 @@ class TestTheDataflowBuilderBuildsTwoScenarios:
         page.goto(f"{session['frontend']}/dataflow/{project_id}", timeout=120000)
         page.wait_for_url(f"**/dataflow/{project_id}", timeout=20000)
         require_owner_view(page)
-        _wait_for_reactflow_ready(page)
+        # The canvas is empty, so wait for React Flow itself: the fit wait
+        # (_wait_for_reactflow_ready) needs at least one node.
+        page.wait_for_function("() => !!window.__curio_reactFlow", timeout=30000)
         dismiss_toasts(page)
         panel = _open_chat(page)
         panel.get_by_role("textbox", name="Message this agent").fill(
@@ -253,9 +261,9 @@ class TestTheDataflowBuilderBuildsTwoScenarios:
         play_node(page, compare["id"])
         wait_for_node_done(page, compare["id"], node_type=CA)
         output = read_node_output_text(page, compare["id"])
-        match = re.search(r"Saved to file:\s(\w+_\w+)", output)
-        assert match, f"the comparison saved no output: {output!r}"
-        real, taller = load_artifact_as_dict(match.group(1))["data"]["mean_shadow_m"]
+        match = re.search(rf"{MEANS_MARKER} (\S+) (\S+)", output)
+        assert match, f"the comparison printed no means: {output!r}"
+        real, taller = float(match.group(1)), float(match.group(2))
         assert real > 0 and taller == pytest.approx(2 * real), (real, taller)
 
         # 5. After a reload, both scenarios are listed, and the copy keeps its lever.
