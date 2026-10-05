@@ -399,6 +399,12 @@
       "OpenStreetMap"
     ]
   },
+  "dataflows/ScoutShadows": {
+    "tags": [],
+    "data_type": [
+      "Geometries"
+    ]
+  },
   "dataflows/SimpleView": {
     "tags": [
       "Pandas"

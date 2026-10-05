@@ -145,6 +145,14 @@ def test_dataset_parses_and_yields_expectations(dataset: CatalogDataset):
         missing = [r for r in relpaths if not (root / r).is_file()]
         assert not missing, f"{dataset.dataset_id} indexes files its source does not hold: {missing}"
         assert int(markers["CURIO_E2E_ROWS"]) == len(relpaths)
+    elif fmt == "onnx":
+        from utk_curio.backend.app.datasets.domain.onnx_model import is_onnx_model
+
+        with open(dataset.data_file, "rb") as handle:
+            assert is_onnx_model(handle, dataset.data_file.stat().st_size), (
+                f"{dataset.data_file} is not an ONNX model"
+            )
+        assert markers["CURIO_E2E_INPUTS"] and markers["CURIO_E2E_OUTPUTS"], markers
     else:  # pragma: no cover - plan_for() gates this
         pytest.fail(
             f"format {fmt!r} has a FormatPlan but no parse check here; add one "

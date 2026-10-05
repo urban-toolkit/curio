@@ -515,3 +515,53 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
     assert grid == "3395 512 256", grid
     assert names == "16_16814_24356,16_16815_24356", names
     assert result["output"]["dataType"] == "outputs", result["output"]
+
+
+#: ``scout.shadow@1``'s modules and SCOUT's Deep Umbra model, in the image; a
+#: shipped test dataflow (``ScoutShadows.json``) declares both.
+SHADOW_SOURCES = LAUNCH_DIR + "/packages/scout.shadow@1/sources"
+DEEP_UMBRA = "data.scout.deep-umbra"
+#: SCOUT's committed height tiles of its high-rise example's first scenario.
+SCOUT_A_RASTERS = LAUNCH_DIR + "/utk_curio/backend/tests/test_packages/fixtures/scout/A_rasters"
+
+
+def test_scouts_shadow_model_runs_as_the_exec_user():
+    """The Accumulated Shadow node's code, as the execution user: the model
+    reaches the child staged like any dataset, onnxruntime opens it and runs
+    it there under the stack's limits, and the node returns its mosaic and its
+    metrics: SCOUT's mean accumulated shadow for these tiles, 128.6 minutes."""
+    body = textwrap.indent(textwrap.dedent("""
+        import base64
+        import os
+
+        import pandas as pd
+        from scout_shadow.node_outputs import accumulated_shadow, open_model
+
+        rows = []
+        for name in sorted(os.listdir(%r)):
+            zoom, x, y = (int(part) for part in name[:-4].split("_"))
+            with open(os.path.join(%r, name), "rb") as handle:
+                png = base64.b64encode(handle.read()).decode("ascii")
+            rows.append({"zoom": zoom, "x": x, "y": y, "png": png})
+        model = open_model(lambda: curio_load_data("data.scout.deep-umbra"))
+        mosaic, metrics = accumulated_shadow(pd.DataFrame(rows), "summer", model, curio_output_file)
+        print(mosaic.crs.to_epsg(), mosaic.width, mosaic.height)
+        print(round(float(metrics["mean_minutes"].iloc[0]), 2))
+        return mosaic, metrics
+    """ % (SCOUT_A_RASTERS, SCOUT_A_RASTERS)).strip("\n"), "    ")
+    result = assert_ran(_request("/exec", {
+        "code": body + "\n",
+        "file_path": "",
+        "nodeType": "scout.shadow/accumulated-shadow",
+        "dataType": "",
+        "user_key": USER_KEY,
+        "save_dataset": False,
+        "package_modules": {"root": SHADOW_SOURCES, "names": ["scout_shadow"]},
+        "dataset_paths": {DEEP_UMBRA: LAUNCH_DIR + "/datasets/" + DEEP_UMBRA + "@1/data/deep_umbra.onnx"},
+        "dataset_formats": {DEEP_UMBRA: {"format": "onnx"}},
+    }), "running Deep Umbra")
+    grid, mean = printed(result).splitlines()[-2:]
+    assert grid == "3395 512 512", grid
+    # SCOUT's A_shadows_metric.csv holds 128.63593.
+    assert abs(float(mean) - 128.63593) <= 0.05, mean
+    assert result["output"]["dataType"] == "outputs", result["output"]

@@ -267,6 +267,11 @@ def test_dataset_loads_and_feeds_a_consumer(
     assert f'{call}("{dataset.dataset_id}")' in loader_code, (
         f"loader does not resolve the dataset by id:\n{loader_code}"
     )
+    if plan.loader_suffix:
+        # The format's value stays in the loader's own code (an onnxruntime
+        # session cannot cross an edge), so the loader uses it there and
+        # returns a table for its consumer.
+        set_node_code(page, loader_id, loader_code.rstrip("\n") + "\n" + plan.loader_suffix)
 
     # 3. A CONSUMER, wired to it. The edge id is derived, not random, so it
     #    doubles as an assertion that the handles the drag hit were the

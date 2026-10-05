@@ -32,7 +32,9 @@ USER_KEY = "guest"
 
 
 def _declared_from_disk() -> set[str]:
-    """The union of ``dataflow.datasets[].dirName`` across the committed examples.
+    """The union of ``dataflow.datasets[].dirName`` across the committed
+    dataflows: the curated examples and the test dataflows beside them, every
+    dataflow the seeder seeds.
 
     Computed independently of the function under test, so the assertion compares
     two readings of the same source rather than a function against itself.
@@ -41,7 +43,7 @@ def _declared_from_disk() -> set[str]:
 
     examples = Path(__file__).resolve().parents[4] / "docs" / "examples"
     found: set[str] = set()
-    for path in examples.glob("*.json"):
+    for path in [*examples.glob("*.json"), *(examples / "dataflows").glob("*.json")]:
         spec = json.loads(path.read_text(encoding="utf-8"))
         for ref in spec.get("dataflow", {}).get("datasets") or []:
             if ref.get("dirName"):
