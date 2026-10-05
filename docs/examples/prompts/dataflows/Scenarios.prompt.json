@@ -1,0 +1,160 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "Scenarios",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/Scenarios.json",
+    "sha256": "85e3643b1f9d81455a5adc6de2b45fa608ec3278a5aaaae508324cb999afde64",
+    "walkthrough": null
+  },
+  "prompt": "In Python, make a frame of six buildings and their heights. From it, compute each building's shadow length in a step whose height factor is a number widget, and draw the shadows as a bar chart. Make that step and its chart one scenario, then add a second scenario that copies them with the height factor set to 2. Finally compare the two scenarios in a step that reads both shadow results and returns the mean shadow of each, drawn as bars.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis4",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization3",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "analysis2",
+      "mustMention": [
+        "shadow",
+        "widget"
+      ]
+    },
+    {
+      "ref": "analysis4",
+      "mustMention": [
+        "mean",
+        "scenario"
+      ]
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON, 2026-10-05",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the data is six made-up buildings typed into the example."
+  },
+  "notes": "Two scenarios over one shared context: a widget lever, a copy that sets it to 2 and names its original, and a step with two inputs that compares their outcomes."
+}

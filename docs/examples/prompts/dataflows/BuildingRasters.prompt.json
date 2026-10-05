@@ -82,10 +82,9 @@
     "notes": null
   },
   "capability": {
-    "tier": "T2",
+    "tier": "T1",
     "needs": [
-      "package-enlist:templates",
-      "widgets"
+      "package-enlist:templates"
     ],
     "skip": []
   },

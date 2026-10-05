@@ -329,6 +329,45 @@ class TestTheWriteGateInTheLoop:
         assert (outcome["evidence"] or {}).get("documentValidated") == "autk-grammar"
         assert outcome["candidate"] == OWNERS_AUTK
 
+    # #662: a document is checked as it is drawn, its references resolved.
+    _WITH_WIDGET = (
+        '{"$schema": "https://vega.github.io/schema/vega-lite/v6.json", '
+        '"mark": {"type": "bar", "opacity": [!! opacity !!]}, '
+        '"title": "Season: [!! season !!]", '
+        '"encoding": {"x": {"field": "density", "type": "quantitative"}}}'
+    )
+
+    def _widget_rounds(self, app, replies):
+        from utk_curio.backend.tests.test_agents.test_verified_rounds import _Exec, _rounds
+
+        node = {
+            "id": "n1", "type": VEGA, "goal": "Density chart", "content": "",
+            "metadata": {"widgets": [
+                {"name": "opacity", "type": "slider", "default": 0.5, "options": {"min": 0, "max": 1}},
+                {"name": "season", "type": "text", "default": "winter"},
+            ]},
+        }
+        spec = {"dataflow": {"nodes": [node], "edges": [], "name": "wf", "task": "t"}}
+        return _rounds(app, node, replies=replies, exec_fn=_Exec(), spec=spec)
+
+    def test_a_document_that_places_its_widgets_is_checked_with_their_values(self, app, tmp_curio):
+        """Unresolved, a bare reference is not JSON and the document was refused;
+        resolved, it is the document the canvas draws, and it is valid. What is
+        written keeps the references, so the Widgets tab still sets them."""
+        events, outcome, inputs = self._widget_rounds(app, [self._WITH_WIDGET])
+        assert "document-invalid" not in [a.get("kind") for a in outcome["attempts"]]
+        assert len(inputs) == 1, "the first document was accepted: no correction round"
+        assert (outcome["evidence"] or {}).get("documentValidated") == "vis-vega"
+        assert outcome["candidate"] == self._WITH_WIDGET
+
+    def test_a_reference_the_node_cannot_resolve_is_a_round_naming_it(self, app, tmp_curio):
+        broken = self._WITH_WIDGET.replace("[!! opacity !!]", "[!! alpha !!]")
+        events, outcome, inputs = self._widget_rounds(app, [broken, self._WITH_WIDGET])
+        assert [a["kind"] for a in outcome["attempts"]][0] == "document-invalid"
+        assert "this node has no widget named alpha" in outcome["attempts"][0]["detail"]
+        assert "this node has no widget named alpha" in inputs[1]["validationError"]
+        assert outcome["candidate"] == self._WITH_WIDGET
+
 
 class TestProseIsARefusalNotAnUnchecked:
     """dev/134, from `e72c7080`: the child replied the sentence "not

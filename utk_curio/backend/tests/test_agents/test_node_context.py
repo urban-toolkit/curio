@@ -60,6 +60,32 @@ class TestComposeNodeContext:
         assert len(ctx["currentContent"]) < 9000
         assert "truncated" in ctx["currentContent"]
 
+    def test_a_nodes_widgets_and_the_shared_tags_ride_the_context(self, tmp_curio):
+        """#662: what the node's code may place as references: its own
+        widgets, and the values the dataflow's Parameter nodes hold."""
+        spec = _spec()
+        spec["dataflow"]["nodes"][1]["metadata"] = {"widgets": [
+            {"name": "factor", "type": "number", "label": "Factor", "default": 1, "value": 2},
+        ]}
+        spec["dataflow"]["nodes"].append({
+            "id": "p", "type": "curio.builtin/parameter@1", "goal": "Season",
+            "metadata": {"widgets": [
+                {"name": "season", "type": "choice", "default": "winter",
+                 "options": {"choices": ["winter", "summer"]}},
+            ]},
+        })
+        ctx = node_context.compose_node_context(KEY, PID, spec, "n1")
+        assert ctx["widgets"] == [{"name": "factor", "type": "number", "label": "Factor", "value": 2}]
+        assert ctx["sharedTags"] == [
+            {"name": "season", "type": "choice", "value": "winter", "options": {"choices": ["winter", "summer"]}},
+        ]
+        # A Parameter node's own widget is its shared tag, not a widget its code places.
+        assert "widgets" not in node_context.compose_node_context(KEY, PID, spec, "p")
+
+    def test_a_node_without_widgets_is_described_as_before(self, tmp_curio):
+        ctx = node_context.compose_node_context(KEY, PID, _spec(), "n1")
+        assert "widgets" not in ctx and "sharedTags" not in ctx
+
     def test_missing_node_is_none_and_datasets_project(self, tmp_curio):
         assert node_context.compose_node_context(KEY, PID, _spec(), "ghost") is None
         spec = _spec(datasets=[{"id": "d1", "name": "Heat 2024", "path": "secret"}])

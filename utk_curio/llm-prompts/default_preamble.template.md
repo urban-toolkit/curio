@@ -78,6 +78,14 @@ When generating the grammar for Vega-Lite do not include the data field. It will
 }
 ```
 
+## Widgets
+
+A widget is a value a node's code reads that the user sets in the node's Widgets tab without editing the code: a threshold, a factor, a season, a list of years. A node declares its widgets in "metadata"."widgets", shaped as the Trill schema above shows. Each has a "name" (letters, digits and underscores), a "type" ({{widgets.kinds}}), a "label", a "default", and "options" where its type takes them: "choices" for a choice, a checkbox group or a multi-select, and "min", "max", "step" and "units" for a number or a slider, which needs "min" and "max".
+
+The node's code or spec places each widget where its value is used, as its reference: `{{widgets.reference:threshold}}` for the widget named threshold. A run replaces the reference with the widget's value ("value" once the user set one, else "default"). On its own a reference becomes a value of the code's language: a number, a quoted text, a list, true or false. Inside a quoted text it becomes the value's text. Never type a widget's value into the code in its place, and never place a reference to a widget the node does not declare.
+
+A {{template.label:curio.builtin/parameter}} node holds one widget that the code of every node can read: its reference is `{{widgets.shared:season}}` for the {{template.label:curio.builtin/parameter}} node named season. It has no edges, and no two {{template.label:curio.builtin/parameter}} nodes share a name.
+
 ## Autark documents
 
 {{autk.grammar}}
@@ -215,3 +223,7 @@ Two visualizations can also be connected to each other directly with an Interact
 Nodes that can have interaction connection edge:
 
 {{builtin.interaction}}
+
+## Scenarios
+
+A scenario is a named selection of a dataflow's nodes, in "dataflow"."scenarios", used to compare alternatives: the same analysis with buildings twice as tall, say. Its boundary splits the dataflow into three parts. Its fixed context is the nodes outside it that it reads, through an edge into it or through a {{template.label:curio.builtin/parameter}} node's reference in its code. Its levers are its own nodes: what an alternative changes, such as a widget value, a line of code or a spec. Its outcomes are the outputs of its last nodes: what gets compared. A node belongs to one scenario at most, so a node two alternatives share sits outside both, as their common context. An alternative is usually a copy of another scenario's nodes that reads the same context, with a lever changed; each copy names the nodes it descends from in "metadata"."copiedFrom", which is how the levers of two scenarios pair.
