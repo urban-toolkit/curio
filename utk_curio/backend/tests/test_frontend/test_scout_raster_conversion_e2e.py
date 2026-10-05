@@ -1,11 +1,16 @@
 """SCOUT's building rasterizer on the canvas, drawn by an Autark map (#662, step 17).
 
-The shipped test dataflow ``BuildingRasters.json``: four buildings built in
+The shipped test dataflow ``BuildingRasters.json``: twelve buildings built in
 code, the ``scout.raster-conversion@1`` package's Rasterize Buildings node with
 the widgets its template declares, and an Autark map whose document draws
 ``input_0``, band ``band_1``. The map is wired straight to the package node, so
 it reads the first part of the node's ``(mosaic, tiles)``, a raster, through the
 Autark node's raster path (#718); no node in between picks the raster out.
+
+The buildings have twelve heights, so the mosaic holds thirteen values with
+the ground's, and the map drawn from it holds more colours than the eight
+``assert_autark_map_drawn`` takes for a map: a blank map, or one raster value
+spread over the canvas, holds fewer.
 
 The package is in every account's store and its libraries are installed
 because the stack starts with ``--with-examples`` and this dataflow declares
