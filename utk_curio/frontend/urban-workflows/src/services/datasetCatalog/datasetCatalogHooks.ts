@@ -29,6 +29,8 @@ const EMPTY_RESPONSE: DatasetCatalogResponse = {
       gpkg: 0,
       gtfs: 0,
       collection: 0,
+      onnx: 0,
+      netcdf: 0,
     },
   },
 };
