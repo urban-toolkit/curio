@@ -2,7 +2,8 @@
 
 A node's widgets live at ``metadata.widgets`` and its code places each one as a
 ``[!! name !!]`` reference; its inputs are placed as ``[!! input 1 !!]`` and
-their columns as ``[!! input 1.height !!]``. The browser resolves them in
+their columns as ``[!! input 1.height !!]``; its selection tags, at
+``metadata.selections``, as ``[!! selection name !!]``. The browser resolves them in
 ``src/utils/references/codeReferences.ts``; the runner resolves them in
 ``execution/code_references.py``. Both read the same table of cases, so a
 node validated headless runs the code the canvas would run.
@@ -61,7 +62,8 @@ class TestTheSharedCases:
         mismatches = []
         for case in cases:
             code, problems = resolve_references(
-                case["code"], case["widgets"], case["language"], case.get("inputs", []), case.get("shared", [])
+                case["code"], case["widgets"], case["language"], case.get("inputs", []), case.get("shared", []),
+                case.get("selections", []),
             )
             got = (code, [p["message"] for p in problems])
             want = (case["expected"], case.get("problems", []))
@@ -87,6 +89,9 @@ class TestTheSharedCases:
             "no Parameter node is named",
             "Parameter nodes are named",
             "does not name a Parameter node",
+            "has no selection tag named",
+            "does not name a selection tag",
+            "a selection tag takes",
         ):
             assert kind in messages, kind
 
@@ -101,6 +106,15 @@ class TestTheSharedCases:
         for language in ("python", "javascript", "json"):
             resolved = [c for c in cases if c["language"] == language and "[!! @" in c["code"] and not c.get("problems")]
             assert resolved, f"no shared reference resolves in a {language} case"
+
+    def test_the_table_has_selection_references_in_every_language(self):
+        cases = _cases()
+        for language in ("python", "javascript", "json"):
+            resolved = [
+                c for c in cases
+                if c["language"] == language and "[!! selection " in c["code"] and not c.get("problems")
+            ]
+            assert resolved, f"no selection reference resolves in a {language} case"
 
 
 class TestNumbersMatchJavaScript:
@@ -165,6 +179,31 @@ class TestThePatternsAreShared:
         for inner in ("input 0", "input 12", "input 0.height", "input ?", "input ?.a"):
             assert INPUT_REFERENCE_RE.match(inner), inner
             assert not WIDGET_NAME_RE.match(inner), inner
+
+    def test_the_selection_reference_pattern(self):
+        from utk_curio.backend.app.execution.code_references import SELECTION_REFERENCE_RE
+
+        written = re.search(
+            r"SELECTION_REFERENCE_PATTERN = String\.raw`(.*?)`", self._ts("codeReferences.ts", REFERENCES_DIR)
+        )
+        assert written and written.group(1) == SELECTION_REFERENCE_RE.pattern
+
+    def test_a_selection_reference_is_never_a_widget_or_an_input(self):
+        from utk_curio.backend.app.execution.code_references import parse_reference
+
+        assert parse_reference("selection picked") == {"kind": "selection", "name": "picked"}
+        for inner, kind in (("selection", "widget"), ("selection_2", "widget"), ("@selection", "shared")):
+            assert parse_reference(inner)["kind"] == kind, inner
+
+    def test_the_selection_cap_is_one_number(self):
+        from utk_curio.backend.app.execution.code_references import SELECTION_ID_CAP
+
+        written = re.search(r"SELECTION_ID_CAP = (\d+);", self._ts("selectionTags.ts", REFERENCES_DIR))
+        assert written and int(written.group(1)) == SELECTION_ID_CAP
+        trill = json.loads((REPO_ROOT / "docs/schemas/trill.v1.json").read_text(encoding="utf-8"))
+        tag = trill["$defs"]["selectionTag"]["properties"]
+        assert tag["ids"]["maxItems"] == SELECTION_ID_CAP
+        assert tag["count"]["minimum"] == SELECTION_ID_CAP + 1
 
     def test_the_name_pattern(self):
         from utk_curio.backend.app.execution.code_references import WIDGET_NAME_RE
@@ -429,3 +468,79 @@ class TestSharedTags:
         report = runner.run_through_node(KEY, PID, spec, "a", exec_fn=rec)
         assert rec.calls == []
         assert "2 Parameter nodes are named factor" in report["nodes"]["a"]["stderrTail"]
+
+
+PICKED = {"name": "picked", "node": "chart", "column": "osm_id", "ids": [101, 104]}
+
+
+def _picker(node_id, content, selections, node_type="curio.builtin/computation-analysis"):
+    return {"id": node_id, "type": node_type, "content": content, "goal": "", "metadata": {"selections": selections}}
+
+
+class TestSelectionTags:
+    """``[!! selection name !!]`` names one of the node's selection tags, which
+    holds the ids of the rows a view's selection picks (``metadata.selections``).
+    The ids are saved with the dataflow, so the runner reads the ones the canvas
+    showed."""
+
+    def test_metadata_selections_reach_the_node(self):
+        from utk_curio.backend.app.execution.code_references import normalize_selections
+
+        spec = parse_workflow_dict(_spec([_picker("a", "x", [PICKED]), _node("b", "x")]))
+        by_id = {n.id: n for n in spec.nodes}
+        assert by_id["a"].selections == [PICKED]
+        assert by_id["b"].selections == []
+        raw = [
+            PICKED,
+            {**PICKED, "ids": [1]},
+            {"name": "many", "node": "chart", "column": "osm_id", "count": 20000},
+            {"name": "no_ids", "node": "chart", "column": "osm_id"},
+            {"name": "no_view", "column": "osm_id", "ids": []},
+            "not an object",
+        ]
+        assert normalize_selections(raw) == [PICKED, raw[2]]
+
+    def test_the_sandbox_gets_the_ids(self, tmp_curio):
+        rec = _RecordingExec()
+        spec = _spec([_picker("a", "picked = [!! selection picked !!]\nreturn len(picked)", [PICKED])])
+        report = runner.run_through_node(KEY, PID, spec, "a", exec_fn=rec)
+        assert report["ok"] is True
+        assert "picked = [101, 104]" in rec.calls[0][1]["code"]
+        assert "[!!" not in rec.calls[0][1]["code"]
+
+    def test_a_javascript_node_gets_a_javascript_list(self, tmp_curio):
+        rec = _RecordingExec()
+        tag = {**PICKED, "ids": ["w12", 7]}
+        spec = _spec([_picker("j", "return [!! selection picked !!].length;", [tag], "curio.builtin/js-computation")])
+        report = runner.run_through_node(KEY, PID, spec, "j", exec_fn=rec)
+        assert report["ok"] is True
+        assert 'return ["w12", 7].length;' in rec.calls[0][1]["code"]
+
+    def test_a_selection_over_the_cap_fails_the_node_without_the_sandbox(self, tmp_curio):
+        from utk_curio.backend.app.execution.code_references import SELECTION_ID_CAP
+
+        rec = _RecordingExec()
+        over = {"name": "picked", "node": "chart", "column": "osm_id", "count": 25000}
+        spec = _spec([_picker("a", "return [!! selection picked !!]", [over])])
+        report = runner.run_through_node(KEY, PID, spec, "a", exec_fn=rec)
+        assert rec.calls == []
+        assert report["ok"] is False and report["blocker"] == "a"
+        assert (
+            f"the selection holds 25000 ids, more than the {SELECTION_ID_CAP} a selection tag takes"
+            in report["nodes"]["a"]["stderrTail"]
+        )
+
+    def test_a_hand_edited_list_longer_than_the_cap_is_refused_the_same_way(self):
+        from utk_curio.backend.app.execution.code_references import SELECTION_ID_CAP
+
+        tag = {**PICKED, "ids": list(range(SELECTION_ID_CAP + 1))}
+        with pytest.raises(_reference_error()) as exc:
+            resolve_code_references("x = [!! selection picked !!]", (), "python", (), (), [tag])
+        assert f"holds {SELECTION_ID_CAP + 1} ids, more than the {SELECTION_ID_CAP}" in str(exc.value)
+
+    def test_a_tag_the_node_does_not_have_fails_the_node(self, tmp_curio):
+        rec = _RecordingExec()
+        spec = _spec([_picker("a", "return [!! selection other !!]", [PICKED])])
+        report = runner.run_through_node(KEY, PID, spec, "a", exec_fn=rec)
+        assert rec.calls == []
+        assert "this node has no selection tag named other" in report["nodes"]["a"]["stderrTail"]

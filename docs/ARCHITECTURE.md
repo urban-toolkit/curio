@@ -447,8 +447,8 @@ interface INodeData {
   nodeType: string;
   input?: ICodeDataContent;       // reference to upstream output file
   outputCallback?: Function;      // push output to FlowProvider
-  interactionsCallback?: Function; // push user interactions upstream
-  propagationCallback?: Function;  // receive interactions from upstream
+  interactionsCallback?: Function; // report the node's selection to FlowProvider
+  propagationCallback?: Function;  // a Data Pool hands its row flags to the pools linked to it
   interactions?: IInteraction[];
   propagation?: any;
 }
@@ -939,7 +939,7 @@ quoted path. See [DATA-CATALOG.md](DATA-CATALOG.md) for the authoring view.
 
 ## Interactions and Propagation
 
-Visualization nodes (`Autark`, `Vega-Lite`, `Simple View`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
+Visualization nodes (`Autark`, `Vega-Lite`, `Simple View`) report the user's selections (clicks, hovers, brushes, picks). A selection travels over interaction edges, to a Data Pool or straight to another chart, and each of them highlights the rows it picks; no node runs again for it. A node's code reads a view's selection through a selection tag (below).
 
 ### IInteraction
 
@@ -972,7 +972,16 @@ A selection is active when it picks something: a point selection with rows, or a
 
 The pool writes its `interacted` flags into a copy of its output (`utils/poolFlagCopy`), never into its input or into an output it already sent, which the charts downstream still hold. Its echo names the chart that just selected (`selectionSource`, see `utils/selectionEcho`) under every mode. An Autark node skips an echo of its own selection, so a plot keeps its brush; a Vega chart applies it, which only recolours rows. Every other chart shows the resolved rows, and an Autark plot shows them as its selection in place of its own brush.
 
-The propagation counter (`INodeData.propagation`) is incremented each time an interaction change needs to trigger a re-execution, allowing nodes to detect when they need to re-run without comparing the full interaction payload.
+A Data Pool linked to another Data Pool by an interaction edge hands it the flags of the rows its `linked` column names (`INodeData.propagation`, through `applyNewPropagation`), and flips that pool's `newPropagation`, so the other pool flags those rows too.
+
+### Selection tags
+
+A node's code reads a view's current selection as `[!! selection name !!]`: the ids of the selected rows, a list. The tag lives on the node that reads it, in `data.selections` and in the spec at `metadata.selections` (`{name, node, column, ids}`), so a run on the server and the headless runner read the ids from the saved dataflow, as the browser does.
+
+- **Rows.** A view hands over the rows it matches selections against (`utils/references/viewSelections.provideViewRows`): a Vega-Lite node the rows it draws, whose positions its point selections name; an Autark node the features of each layer it reads, whose positions its picks name. Nothing is fetched again.
+- **Ids.** `utils/references/selectionTags.selectedIds` resolves the view's latest select with `matchSelections`, as a Data Pool in its default mode does, and reads the tag's column from those rows, each value once. `_vgsid_` and row positions are never stored: a node reads its own upstream artifact, where they mean nothing. `idColumns` offers `osm_id` and `building_id`, then any column whose values are all text or numbers and all different. More than `SELECTION_ID_CAP` (10,000) ids are stored as a `count`, which fails the run with a message.
+- **Updates.** `providers/flow/useSelectionTags` records each view's latest selection. On one the user made, or cleared (`changesSelection`: a select at priority 1 that holds a selection, or that empties one the view held), it rewrites the ids of every tag on that view and marks the nodes holding them stale. A chart declaring its selects as it compiles, or reporting them empty as its signal listeners hear the first pulse, changes nothing, so a reload or a redraw keeps the saved ids. `runKeyWithShared` takes the node's tags, so the run cache keys on the ids its code names.
+- **Resolution.** The selection kind is one more kind in the reference module (`codeReferences.ts`, `execution/code_references.py`), pinned by the shared cases table. `WorkflowSpec.node_code` passes a node's tags, which `run_engine` and `runner` both call.
 
 ---
 

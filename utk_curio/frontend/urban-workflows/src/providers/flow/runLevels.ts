@@ -126,11 +126,13 @@ export function nodesToRunUpTo(
                 emittedForInput.has(nodeId) && emittedForInput.get(nodeId) === node.data.input;
             const neverSucceeded =
                 outputCode !== "success" && !(outputCode !== "error" && emittedCurrent);
-            // #662: the key covers the node's widget values and the shared
-            // tags it names too, so a changed value counts as changed code.
+            // #662: the key covers the node's widget values, the shared tags
+            // it names and its selection tags' ids too, so a changed value or
+            // a new selection counts as changed code.
             const codeChanged =
                 node.data.executedCode !== undefined &&
-                node.data.executedCode !== runKeyWithShared(node.data.code, node.data.widgets, shared);
+                node.data.executedCode !==
+                    runKeyWithShared(node.data.code, node.data.widgets, shared, node.data.selections);
             const upstreamRerunning = ancestorEdges.some(
                 e => e.target === nodeId && willRun.has(e.source)
             );

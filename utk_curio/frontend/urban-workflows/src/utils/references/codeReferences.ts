@@ -8,15 +8,18 @@
  * - `[!! input 1:roads !!]` names a layer an input carries (an Autark node's
  *   tables), and `[!! input 1:roads.height !!]` a column of that layer;
  * - `[!! @season !!]` names a shared tag: the widget of the dataflow's
- *   Parameter node named `season`.
+ *   Parameter node named `season`;
+ * - `[!! selection picked !!]` names one of the node's selection tags: the ids
+ *   of the rows a view's selection picks (`selectionTags.ts`).
  *
  * The browser (NodeEditor, before a run) and the headless runner
  * (`utk_curio/backend/app/execution/code_references.py`) must write the same
  * code, so both are pinned to one table of cases, `codeReferences.cases.json`,
  * read by Jest and by pytest.
  *
- * A widget or shared reference standing on its own becomes a literal of the
- * editor's language: quoted text, a number, a list, a boolean. Inside a string literal
+ * A widget, shared or selection reference standing on its own becomes a literal
+ * of the editor's language: quoted text, a number, a list, a boolean (a
+ * selection's ids are a list). Inside a string literal
  * it becomes the value's text, escaped for that string, so
  * `"Season: [!! season !!]"` reads `"Season: winter"`. Inside a comment it is
  * the plain text. A column or layer reference is written the same way as a text
@@ -28,6 +31,7 @@
 
 import { WIDGET_NAME_RE, effectiveValue, type WidgetDef, type WidgetValue } from "../widgets/widgetModel";
 import { inputTableName } from "../../generated/autkGrammar";
+import { isOverCap, overCapText, selectionSize, type SelectionTag } from "./selectionTags";
 
 export type CodeLanguage = "python" | "javascript" | "json";
 
@@ -46,6 +50,11 @@ const INPUT_REFERENCE_RE = new RegExp(INPUT_REFERENCE_PATTERN);
 /** What a shared reference starts with: `[!! @season !!]`. Kept in sync with
  * `SHARED_PREFIX` in `code_references.py`. */
 export const SHARED_PREFIX = "@";
+
+/** What stands inside a selection reference: `selection picked`. Kept in sync
+ * with `SELECTION_REFERENCE_RE` in `code_references.py`. */
+export const SELECTION_REFERENCE_PATTERN = String.raw`^selection\s+(.+)$`;
+const SELECTION_REFERENCE_RE = new RegExp(SELECTION_REFERENCE_PATTERN);
 
 export interface CodeReference {
   /** Offsets of the whole `[!! ... !!]` in the code. */
@@ -85,8 +94,8 @@ export interface LayerScope {
   dtypes?: Record<string, string>;
 }
 
-/** What a node's references can name: its widgets, its wired inputs, and the
- * dataflow's shared tags. */
+/** What a node's references can name: its widgets, its wired inputs, the
+ * dataflow's shared tags, and its selection tags. */
 export interface ReferenceScope {
   widgets: WidgetDef[];
   /** In circle order. */
@@ -94,19 +103,24 @@ export interface ReferenceScope {
   /** The widget of each Parameter node in the dataflow, one per node. Two
    * nodes with one name are both listed, so a reference to it says so. */
   shared: WidgetDef[];
+  /** The node's selection tags, with the ids each holds. None when absent. */
+  selections?: SelectionTag[];
 }
 
 export type ParsedReference =
   | { kind: "widget"; name: string }
   /** `slot` is null for `input ?`, the input whose edge was deleted. */
   | { kind: "input"; slot: number | null; layer?: string; column?: string }
-  | { kind: "shared"; name: string };
+  | { kind: "shared"; name: string }
+  | { kind: "selection"; name: string };
 
 export type ReferenceContext = { kind: "code" } | { kind: "comment" } | { kind: "string"; quote: string };
 
 export function parseReference(inner: string): ParsedReference {
   const m = INPUT_REFERENCE_RE.exec(inner);
   if (!m) {
+    const selection = SELECTION_REFERENCE_RE.exec(inner);
+    if (selection) return { kind: "selection", name: selection[1] };
     if (inner.startsWith(SHARED_PREFIX)) return { kind: "shared", name: inner.slice(SHARED_PREFIX.length) };
     return { kind: "widget", name: inner };
   }
@@ -134,6 +148,11 @@ export function inputReferenceInner(slot: number | null, column?: string, layer?
 /** What stands inside a reference to the shared tag *name*. */
 export function sharedReferenceInner(name: string): string {
   return SHARED_PREFIX + name;
+}
+
+/** What stands inside a reference to the selection tag *name*. */
+export function selectionReferenceInner(name: string): string {
+  return `selection ${name}`;
 }
 
 /** Whether *name* can ride a layer reference and read back as itself. */
@@ -337,6 +356,17 @@ export function referenceProblem(
     }
     return null;
   }
+  if (parsed.kind === "selection") {
+    if (!WIDGET_NAME_RE.test(parsed.name)) {
+      return `${reference} does not name a selection tag. Selection tag names are letters, digits and underscores.`;
+    }
+    const tag = (scope.selections ?? []).find((t) => t.name === parsed.name);
+    if (tag === undefined) {
+      return `${reference}: this node has no selection tag named ${parsed.name}. Add it in the Widgets tab.`;
+    }
+    if (isOverCap(tag)) return `${reference}: ${overCapText(selectionSize(tag))}`;
+    return null;
+  }
   if (inner.includes("$")) {
     return `${reference} is an old widget marker. Add the widget in the node's Widgets tab and drag its tag into the code.`;
   }
@@ -360,10 +390,12 @@ function resolvedText(inner: string, scope: ReferenceScope, context: ReferenceCo
     if (scope.inputs.length === 1) return "arg";
     return `arg[${position}]`;
   }
-  const widget = (parsed.kind === "shared" ? scope.shared : scope.widgets).find(
-    (w) => w.name === parsed.name,
-  ) as WidgetDef;
-  const value = effectiveValue(widget);
+  const value =
+    parsed.kind === "selection"
+      ? ((scope.selections ?? []).find((t) => t.name === parsed.name) as SelectionTag).ids as WidgetValue
+      : effectiveValue(
+          (parsed.kind === "shared" ? scope.shared : scope.widgets).find((w) => w.name === parsed.name) as WidgetDef,
+        );
   return context.kind === "code" ? widgetLiteral(value, language) : escapeFor(textOf(value, language), context, language);
 }
 
@@ -435,10 +467,20 @@ export function renumberInputReferences(code: string, removedSlot: number): stri
 
 /** The names of the shared tags *code* references, each once, in order. */
 export function sharedNamesIn(code: string): string[] {
+  return namesOfKindIn(code, "shared");
+}
+
+/** The names of the selection tags *code* references, each once, in order.
+ * Kept in sync with `selection_names_in` in `code_references.py`. */
+export function selectionNamesIn(code: string): string[] {
+  return namesOfKindIn(code, "selection");
+}
+
+function namesOfKindIn(code: string, kind: "shared" | "selection"): string[] {
   const names: string[] = [];
   for (const ref of findReferences(code)) {
     const parsed = parseReference(ref.inner);
-    if (parsed.kind === "shared" && !names.includes(parsed.name)) names.push(parsed.name);
+    if (parsed.kind === kind && !names.includes(parsed.name)) names.push(parsed.name);
   }
   return names;
 }

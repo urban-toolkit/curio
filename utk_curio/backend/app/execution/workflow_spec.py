@@ -15,6 +15,7 @@ from collections import deque
 
 from utk_curio.backend.app.execution.code_references import (
     CodeReferenceError,
+    normalize_selections,
     normalize_widgets,
     resolve_references,
 )
@@ -265,6 +266,9 @@ class NodeSpec:
     #: #662: the node's widgets (``metadata.widgets``), which its
     #: ``[!! name !!]`` references resolve against.
     widgets: list = field(default_factory=list)
+    #: #662: the node's selection tags (``metadata.selections``), each holding
+    #: the ids its ``[!! selection name !!]`` references resolve to.
+    selections: list = field(default_factory=list)
 
     @property
     def has_play_button(self) -> bool:
@@ -365,13 +369,15 @@ class WorkflowSpec:
     def node_code(self, node, language: str, content: str | None = None) -> str:
         """*node*'s code (or *content* in its place) with its references
         resolved as the canvas resolves them before a run: its widgets, its
-        wired circles and the shared tags. Raises ``CodeReferenceError``."""
+        wired circles, the shared tags and its selection tags. Raises
+        ``CodeReferenceError``."""
         return resolve_code_references(
             node.content if content is None else content,
             node.widgets,
             language,
             self.input_slots(node.id),
             self.shared_widgets(),
+            node.selections,
         )
 
     def topo_sorted_nodes(self) -> list:
@@ -448,6 +454,7 @@ def parse_workflow(filepath: str) -> WorkflowSpec:
             out_type=n.get("out", "DEFAULT"),
             category=classify_node(normalize_type(n["type"])),
             widgets=normalize_widgets((n.get("metadata") or {}).get("widgets")),
+            selections=normalize_selections((n.get("metadata") or {}).get("selections")),
         )
         for n in dataflow["nodes"]
     ]
@@ -521,6 +528,7 @@ def parse_workflow_dict(data: dict, *, name: str = "", templates: dict | None = 
             category=category,
             engine=engine,
             widgets=normalize_widgets((n.get("metadata") or {}).get("widgets")),
+            selections=normalize_selections((n.get("metadata") or {}).get("selections")),
         ))
     edges = [
         {
@@ -609,20 +617,24 @@ def seed_node_code(code: str, seed: int = 42) -> str:
     return _SEED_PREFIX.format(seed=seed) + code
 
 
-def resolve_code_references(code: str, widgets=(), language: str = "python", input_slots=(), shared=()) -> str:
+def resolve_code_references(
+    code: str, widgets=(), language: str = "python", input_slots=(), shared=(), selections=()
+) -> str:
     """Replace a node's references with code, exactly as the frontend does
     before posting to the sandbox (#662): widget references with their values,
     input and column references by *input_slots*, the circles that have an
-    edge, and shared references with the values of the *shared* widgets
-    (``WorkflowSpec.shared_widgets``).
+    edge, shared references with the values of the *shared* widgets
+    (``WorkflowSpec.shared_widgets``), and selection references with the ids
+    the node's *selections* hold (``metadata.selections``).
 
     Raises ``CodeReferenceError`` naming every reference that cannot be
     resolved: an old ``[!! name$TYPE$default !!]`` marker, a name the node has
-    no widget for, an input with no edge, or a Parameter node that is missing
-    or named twice.
+    no widget or selection tag for, an input with no edge, a Parameter node
+    that is missing or named twice, or a selection holding more ids than a tag
+    takes.
     """
     inputs = [{"slot": slot} for slot in input_slots]
-    resolved, problems = resolve_references(code, widgets, language, inputs, shared)
+    resolved, problems = resolve_references(code, widgets, language, inputs, shared, selections)
     if problems:
         raise CodeReferenceError("\n".join(p["message"] for p in problems))
     return resolved

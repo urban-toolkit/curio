@@ -18,6 +18,7 @@ import { canvasTemplateConfigFromSpec } from "../utils/canvasTemplateConfigSpec"
 import { dataPoolFromSpec } from "../utils/dataPoolSpec";
 import { normalizeWidgets, type WidgetDef } from "../utils/widgets/widgetModel";
 import { runKeyWithShared, sharedWidgetsOfSpec } from "../utils/references/sharedParameters";
+import { normalizeSelections, type SelectionTag } from "../utils/references/selectionTags";
 import { lineageFromSpec } from "../utils/scenarios/duplicateSelection";
 import { normalizeCompareSettings, type CompareSettings } from "../utils/compare/compareSettings";
 
@@ -83,6 +84,8 @@ type CreateCodeNodeOptions = {
     widgets?: WidgetDef[];
     // #662: the ids a copy descends from, oldest first (metadata.copiedFrom).
     copiedFrom?: string[];
+    // #662: the node's selection tags and the ids they hold (metadata.selections).
+    selections?: SelectionTag[];
     // #662: a Compare Scenarios node's input labels and chart
     // (metadata.compareScenarios).
     compareScenarios?: CompareSettings;
@@ -254,6 +257,10 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && Array.isArray(node.metadata.copiedFrom))
                 nodeMeta.copiedFrom = lineageFromSpec(node.metadata.copiedFrom);
 
+            // #662: and the node's selection tags, with the ids they held.
+            if(node.metadata != undefined && Array.isArray(node.metadata.selections))
+                nodeMeta.selections = normalizeSelections(node.metadata.selections);
+
             // #662: and a Compare Scenarios node's input labels and chart.
             if(node.metadata != undefined && node.metadata.compareScenarios != undefined)
                 nodeMeta.compareScenarios = normalizeCompareSettings(node.metadata.compareScenarios);
@@ -291,7 +298,7 @@ export function useCode(): IUseCode {
                 // The same content a run shows (CodeEditor), and the source
                 // playNodesUpTo compares against to tell a valid result.
                 nodeMeta.output = { code: "success", content: "Saved to file: " + restored };
-                nodeMeta.executedCode = runKeyWithShared(node.content, nodeMeta.widgets, shared);
+                nodeMeta.executedCode = runKeyWithShared(node.content, nodeMeta.widgets, shared, nodeMeta.selections);
             }
 
             nodes.push(generateCodeNode(node.type, nodeMeta));
@@ -420,6 +427,7 @@ export function useCode(): IUseCode {
             dataPool = undefined,
             widgets = undefined,
             copiedFrom = undefined,
+            selections = undefined,
             compareScenarios = undefined,
             output = undefined,
             executedCode = undefined,
@@ -471,6 +479,7 @@ export function useCode(): IUseCode {
                 dataPool,
                 widgets,
                 copiedFrom,
+                selections,
                 compareScenarios,
                 saveOutputDataset:
                     saveOutputDataset !== undefined

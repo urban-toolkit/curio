@@ -55,6 +55,14 @@ SCENARIOS = {
         ]),
         "a",
     ),
+    # #662: the ids a view's selection picked, saved on the node that reads them.
+    "a selection tag's ids": (
+        spec([node(
+            "a", content="return [!! selection picked !!]",
+            metadata={"selections": [{"name": "picked", "node": "chart", "column": "osm_id", "ids": [101, "w2"]}]},
+        )]),
+        "a",
+    ),
     "a pool in the middle": (
         spec([node("a"), node("pool", POOL, ""), node("b")], [edge("a", "pool"), edge("pool", "b")]),
         "b",
