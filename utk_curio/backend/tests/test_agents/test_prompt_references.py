@@ -106,8 +106,12 @@ def _shipped_templates() -> set[str]:
 
 def _injected_helpers() -> set[str]:
     """The ``curio_*`` names node code can call: the catalog helpers the sandbox
-    installs (the renamed ones only raise), plus ``curio_secret``, which both
-    execution paths inject beside them."""
+    installs (the renamed ones only raise), ``curio_secret``, which both
+    execution paths inject beside them, and the ``curio_*`` names both paths
+    seed into node code's namespace, such as the Compare Scenarios steps
+    (#662): the isolated child's template, which ``worker._worker_init``
+    mirrors."""
+    from utk_curio.sandbox.isolation.zygote import build_namespace_template
     from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
 
     namespace: dict = {}
@@ -121,7 +125,11 @@ def _injected_helpers() -> set[str]:
     for path in ("utk_curio/sandbox/app/worker.py", "utk_curio/sandbox/isolation/child.py"):
         source = (REPO_ROOT / path).read_text(encoding="utf-8")
         assert _SECRET_INJECTION_RE.search(source), f"{path} no longer injects curio_secret"
-    return names | {"curio_secret"}
+    seeded = {name for name in build_namespace_template() if name.startswith("curio_")}
+    in_process = (REPO_ROOT / "utk_curio/sandbox/app/worker.py").read_text(encoding="utf-8")
+    for name in sorted(seeded):
+        assert f"'{name}':" in in_process, f"worker._worker_init does not seed {name}, as the isolated child does"
+    return names | {"curio_secret"} | seeded
 
 
 def _ids(name: str) -> list[str]:

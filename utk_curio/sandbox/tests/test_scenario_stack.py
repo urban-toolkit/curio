@@ -147,6 +147,23 @@ class TestRefusals:
         with pytest.raises(ValueError, match=r"input 0 \(B\) carries 2 tables"):
             _stack([("s-base", "B", (_frame([1.0]), _frame([2.0])))])
 
+    def test_an_autark_nodes_layers_with_no_layer_named_are_listed(self):
+        with pytest.raises(
+            ValueError,
+            match=r"input 0 \(B\) carries 2 layers \(table_osm_buildings, table_osm_roads\)\. "
+                  r"Pick the one to compare in the node's Layer menu\.",
+        ):
+            _stack([("s-base", "B", autark_layers([5.0]))])
+
+    def test_a_layer_the_input_does_not_have_names_the_ones_it_has(self):
+        from utk_curio.sandbox.util.scenario_stack import stack_scenarios
+
+        with pytest.raises(
+            ValueError,
+            match=r"input 0 \(B\) has no layer table_osm_water\. Its layers are table_osm_buildings, table_osm_roads\.",
+        ):
+            stack_scenarios([("s-base", "B", autark_layers([5.0]))], layer="table_osm_water")
+
     def test_a_raster(self):
         class Raster:
             crs = None
@@ -205,3 +222,52 @@ class TestNodeCodeReachesIt:
         result = child.run_node(request, zygote.build_namespace_template)
         assert result["ok"], result["stderr"]
         assert result["output"]["value"] == "Baseline,Twice as tall"
+
+
+def autark_layers(sunlight):
+    """What an Autark compute step hands on: every layer of its workspace, in
+    one ``outputs`` envelope, each under its ``layerName``."""
+
+    def layer(name, rows):
+        return {
+            "dataType": "geodataframe",
+            "layerName": name,
+            "data": {
+                "type": "FeatureCollection",
+                # Autark names its workspace's coordinate system on each layer.
+                "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3395"}},
+                "features": [
+                    {"type": "Feature", "properties": properties, "geometry": {"type": "Point", "coordinates": [i, i]}}
+                    for i, properties in enumerate(rows)
+                ],
+            },
+        }
+
+    return {
+        "dataType": "outputs",
+        "data": [
+            layer("table_osm_buildings", [{"height": 12.0}]),
+            layer("table_osm_roads", [{"name": f"road {i}", "sunlight": value} for i, value in enumerate(sunlight)]),
+        ],
+    }
+
+
+class TestOneLayerOfAnAutarkNodes:
+    def test_the_named_layer_is_stacked_and_the_others_are_not(self):
+        from utk_curio.sandbox.util.scenario_stack import stack_scenarios
+
+        out = stack_scenarios(
+            [("s-base", "Baseline", autark_layers([5.0, 7.0])), ("s-tall", "Twice as tall", autark_layers([3.0, 7.0]))],
+            layer="table_osm_roads",
+        )
+        assert isinstance(out, gpd.GeoDataFrame)
+        assert out.crs.to_epsg() == 3395, "the layer's own coordinate system was lost"
+        assert out["scenario_name"].tolist() == ["Baseline", "Baseline", "Twice as tall", "Twice as tall"]
+        assert out["sunlight"].tolist() == [5.0, 7.0, 3.0, 7.0]
+        assert "height" not in out.columns
+
+    def test_a_layer_named_for_inputs_of_one_table_changes_nothing(self):
+        from utk_curio.sandbox.util.scenario_stack import stack_scenarios
+
+        out = stack_scenarios([("s-base", "B", _frame([1.0]))], layer="table_osm_roads")
+        assert out["sunlight"].tolist() == [1.0]

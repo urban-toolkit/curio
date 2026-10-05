@@ -14,7 +14,7 @@ import { toRows } from "../../utils/rowSource";
 import { codeEditRevision, subscribeToCodeEdits } from "../../utils/references/codeEdits";
 import type { ClassifiedColumn } from "../../utils/starterSpec";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
-import { compareInputs, labelWarnings } from "../../utils/compare/compareInputs";
+import { compareInputs, labelWarnings, layersToPick } from "../../utils/compare/compareInputs";
 import {
   AGGREGATE_LABELS,
   PRESET_FIELDS,
@@ -98,6 +98,37 @@ function useStackedRead(
     };
   }, [stacked]);
   return stacked ? read : null;
+}
+
+/**
+ * Each input's layer names, from its preview: several for an Autark node's
+ * workspace, one or none for a table. Null until every input has been read.
+ */
+function useInputLayers(refs: readonly (StackedRef | null)[]): (string | null)[][] | null {
+  const key = JSON.stringify(refs.map((ref) => ref?.path ?? null));
+  const [layers, setLayers] = useState<(string | null)[][] | null>(null);
+  useEffect(() => {
+    if (refs.length === 0 || refs.some((ref) => !ref)) {
+      setLayers(null);
+      return;
+    }
+    let current = true;
+    void Promise.all(
+      refs.map((ref) =>
+        readGrammarInput(ref, { label: LABEL, preview: true, bundles: true }).then(
+          (found) => found.frames.map((frame) => frame.name),
+          () => [] as (string | null)[],
+        ),
+      ),
+    ).then((found) => {
+      if (current) setLayers(found);
+    });
+    return () => {
+      current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return layers;
 }
 
 function Select<T extends string>({
@@ -204,6 +235,18 @@ export function CompareScenariosBody({
     flow.markDirty?.();
   };
   const inputRefs = inputs.map((input) => stackedRef(slots[input.slot]));
+  // An Autark node hands on every layer of its workspace: the node reads one,
+  // named in its Layer menu, which rewrites its code (its behavior does).
+  const inputLayers = useInputLayers(dashboardOn ? [] : inputRefs);
+  const layerChoices = layersToPick(inputLayers ?? []);
+  const setLayer = (next: string) => {
+    if (!node || !editable) return;
+    const updated = { ...(settings ?? {}) };
+    if (next) updated.layer = next;
+    else delete updated.layer;
+    flow.updateDataNode?.(nodeId, { ...node.data, compareScenarios: updated });
+    flow.markDirty?.();
+  };
   const choose = (patch: Partial<ChartSettings>) =>
     setChart({ preset: chart.preset, ...(chart.x ? { x: chart.x } : {}), ...(chart.y ? { y: chart.y } : {}),
       ...(chart.aggregate ? { aggregate: chart.aggregate } : {}), ...patch });
@@ -292,6 +335,21 @@ export function CompareScenariosBody({
             disabled={!editable}
             options={COMPARE_MODES.map((option) => ({ value: option, text: MODE_LABELS[option] }))}
             onChange={setMode}
+          />
+        ) : null}
+        {view === "chart" && !dashboardOn && (layerChoices.length > 0 || settings?.layer) ? (
+          <Select<string>
+            label="Layer"
+            value={settings?.layer ?? ""}
+            disabled={!editable}
+            options={[
+              { value: "", text: "Pick a layer" },
+              ...[...new Set([...(settings?.layer ? [settings.layer] : []), ...layerChoices])].map((name) => ({
+                value: name,
+                text: name,
+              })),
+            ]}
+            onChange={setLayer}
           />
         ) : null}
         {view === "chart" && mode === "chart" && read?.table && !dashboardOn ? (

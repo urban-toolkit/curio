@@ -123,7 +123,6 @@ _DIAGRAM_EXEMPT = {
     # A single autk-grammar node owns data + compute + map + plot sections; the
     # diagram draws those sections, which is the useful picture even though it
     # outnumbers the nodes.
-    "06-autark-what-if-shadow-study",
     "07-autark-gpu-shader",
     "11-autark-pbf-loading",
     "08-autark-spatial-join-regression",
@@ -163,8 +162,38 @@ def test_the_mermaid_diagram_draws_as_many_nodes_as_the_json_has(stem: str):
 # 4. Code blocks
 # ---------------------------------------------------------------------------
 
+def _references_as_json(text: str) -> str:
+    """*text* with each reference (``[!! height_factor !!]``) replaced by a name
+    made from its text: a JSON string where it stands as a value, the bare name
+    inside a string. A spec that places a widget as a value is not JSON until a
+    run resolves it, and a block quoting such a spec would otherwise be skipped
+    as not JSON; this way both parse, and two still differ when their
+    references do."""
+    out: list[str] = []
+    i = 0
+    in_string = False
+    while i < len(text):
+        match = _REFERENCE.match(text, i)
+        if match:
+            name = "__curio_ref_" + match.group(1).encode("utf-8").hex()
+            out.append(name if in_string else json.dumps(name))
+            i = match.end()
+            continue
+        ch = text[i]
+        if in_string and ch == "\\":
+            out.append(text[i:i + 2])
+            i += 2
+            continue
+        if ch == '"':
+            in_string = not in_string
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _parse_json_loose(text: str):
     """Parse a block that may be a fragment such as ``"data": [...]``."""
+    text = _references_as_json(text)
     for candidate in (text, "{" + text + "}", "{" + text.rstrip().rstrip(",") + "}"):
         try:
             return json.loads(candidate)
