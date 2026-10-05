@@ -276,8 +276,10 @@ def test_each_crop_keeps_scouts_grid(dataset_id):
     from rasterio.windows import from_bounds
 
     manifest = json.loads((REPO / "datasets" / f"{dataset_id}@1" / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["format"] == "geotiff" and manifest["publisher"] == "SCOUT", manifest
-    assert "urban-toolkit/scout" in manifest["description"]
+    # SCOUT's data is used with its authors' permission and names no license.
+    assert manifest["format"] == "geotiff" and manifest["publisher"] == "SCOUT (urban-toolkit/scout)", manifest
+    assert manifest["license"] == "", manifest["license"]
+    assert "used with the permission of SCOUT's authors" in manifest["description"]
     with rasterio.open(_data_file(dataset_id)) as crop:
         assert crop.crs.to_epsg() == 4326
         assert (crop.width, crop.height, crop.count) == (CROP_SIZE, CROP_SIZE, 1)

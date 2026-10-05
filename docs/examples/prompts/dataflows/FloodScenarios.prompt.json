@@ -194,31 +194,31 @@
     "sourceLicences": [
       {
         "datasetId": "data.scout.flood-depth-2020-2040-nbs",
-        "licence": "Research use"
+        "licence": ""
       },
       {
         "datasetId": "data.scout.flood-depth-2020-2040-no-nbs",
-        "licence": "Research use"
+        "licence": ""
       },
       {
         "datasetId": "data.scout.flood-depth-2050-2080-nbs",
-        "licence": "Research use"
+        "licence": ""
       },
       {
         "datasetId": "data.scout.flood-depth-2050-2080-no-nbs",
-        "licence": "Research use"
+        "licence": ""
       },
       {
         "datasetId": "data.scout.flood-depth-2080-2100-nbs",
-        "licence": "Research use"
+        "licence": ""
       },
       {
         "datasetId": "data.scout.flood-depth-2080-2100-no-nbs",
-        "licence": "Research use"
+        "licence": ""
       },
       {
         "datasetId": "data.scout.flood-nbs-classes",
-        "licence": "Research use"
+        "licence": ""
       }
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."

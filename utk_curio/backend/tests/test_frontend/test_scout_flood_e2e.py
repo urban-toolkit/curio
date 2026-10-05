@@ -168,7 +168,8 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     stacked = load_artifact_as_dict(artifact)
     assert stacked["dataType"] == "dataframe", stacked["dataType"]
     table = stacked["data"]
-    assert list(table) == ["scenario", "scenario_name", "median flood depth", "mean flood depth"], list(table)
+    # The stored table's columns come back by name, not in their order.
+    assert sorted(table) == ["mean flood depth", "median flood depth", "scenario", "scenario_name"], list(table)
     assert table["scenario"] == ["no-nbs", "nbs"] and table["scenario_name"] == ["No NbS", "NbS"]
     assert table["median flood depth"] == pytest.approx(MEDIANS, rel=1e-12)
     assert table["mean flood depth"] == pytest.approx(MEANS, rel=1e-12)

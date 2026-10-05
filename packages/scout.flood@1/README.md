@@ -56,7 +56,8 @@ The node reads seven Data Catalog datasets: the NbS classes
 without (`data.scout.flood-depth-2020-2040-nbs`, `data.scout.flood-depth-2020-2040-no-nbs`,
 and the same for `2050-2080` and `2080-2100`). Curio ships crops of SCOUT's
 rasters that cover longitude -90.4869 to -90.4544 and latitude 41.4377 to
-41.4702, so the corners must lie inside that area.
+41.4702, so the corners must lie inside that area. The data is SCOUT's
+(urban-toolkit/scout), used with the permission of SCOUT's authors.
 
 ## A dataflow
 

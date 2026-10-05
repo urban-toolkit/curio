@@ -3,9 +3,9 @@
   "name": "SCOUT Flood Depth 2080-2100 with NbS",
   "version": "1.0.0",
   "format": "geotiff",
-  "description": "Projected flood depth in metres for 2080 to 2100 with nature-based solutions (NbS), from SCOUT's Quad Cities flood projections. A cell with no depth holds no value. A 320 by 320 cell crop of SCOUT's 2080_2100_NbS_4326_cropped.tif on its own grid (EPSG:4326, cells of 0.000101 degrees), longitude -90.4869 to -90.4544 and latitude 41.4377 to 41.4702: the area the scout.flood package's example reads. From SCOUT, https://github.com/urban-toolkit/scout, backend/compute/quad_city_flooding_simulation/data_substitutes.",
-  "publisher": "SCOUT",
-  "license": "Research use",
+  "description": "Projected flood depth in metres for 2080 to 2100 with nature-based solutions (NbS), from SCOUT's Quad Cities flood projections. A cell with no depth holds no value. A 320 by 320 cell crop of SCOUT's 2080_2100_NbS_4326_cropped.tif on its own grid (EPSG:4326, cells of 0.000101 degrees), longitude -90.4869 to -90.4544 and latitude 41.4377 to 41.4702: the area the scout.flood package's example reads. From SCOUT, https://github.com/urban-toolkit/scout, backend/compute/quad_city_flooding_simulation/data_substitutes, used with the permission of SCOUT's authors.",
+  "publisher": "SCOUT (urban-toolkit/scout)",
+  "license": "",
   "tags": [
     "raster",
     "flood",

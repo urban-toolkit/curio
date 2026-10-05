@@ -57,6 +57,7 @@ SCOUT_FUNCTION = (
     REPO_ROOT / "utk_curio" / "backend" / "tests" / "test_packages" / "fixtures" / "scout_flood" / "flood_simulation.py"
 )
 STAMP = "2026-10-05T00:00:00Z"
+PUBLISHER = "SCOUT (urban-toolkit/scout)"
 
 #: (top, left, bottom, right) in degrees: the scout.flood template's default
 #: corners, 256 by 256 cells that hold every NbS class code.
@@ -124,7 +125,8 @@ def _describe(entry: dict, window, bounds) -> str:
         f"on its own grid (EPSG:4326, cells of 0.000101 degrees), longitude {bounds.left:.4f} to "
         f"{bounds.right:.4f} and latitude {bounds.bottom:.4f} to {bounds.top:.4f}: the area the "
         "scout.flood package's example reads. From SCOUT, https://github.com/urban-toolkit/scout, "
-        "backend/compute/quad_city_flooding_simulation/data_substitutes."
+        "backend/compute/quad_city_flooding_simulation/data_substitutes, used with the permission of "
+        "SCOUT's authors."
     )
 
 
@@ -135,8 +137,9 @@ def _write_manifest(entry: dict, root: Path, description: str) -> None:
         version="1.0.0",
         format="geotiff",
         description=description,
-        publisher="SCOUT",
-        license="Research use",
+        publisher=PUBLISHER,
+        # SCOUT's data is used with its authors' permission and names no license.
+        license="",
         tags=list(entry["tags"]),
         data_file=entry["data_file"],
         major=1,
