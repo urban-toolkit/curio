@@ -556,3 +556,60 @@ class TestTheTestRigHold:
         finally:
             jobs.set_hold(False)
         assert _get(client, token, run_id)["status"] == "succeeded"
+
+
+class TestAPackageNodesModules:
+    """#468: a run hands a node the modules its package ships beside its
+    templates, as Play does (``node_exec.resolve_package_modules``)."""
+
+    def test_the_run_sends_them_for_the_package_node_only(self, client, user_and_token, sandbox):
+        import io
+        import zipfile
+
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
+        from utk_curio.backend.app.packages.repositories.store import package_dir
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        manifest = {
+            "id": "ai.test.heights", "version": "1.0.0", "name": "Heights", "publisher": "Test",
+            "description": "Test package", "license": "MIT",
+            "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+            "permissions": [], "dependencies": {"packages": {}, "python": {}, "js": {}},
+            "createdAt": "2026-06-01T12:00:00Z",
+            "templates": [{
+                "id": "caller", "label": "Caller", "category": "computation", "engine": "python",
+                "editor": "code", "hasCode": True, "hasWidgets": False, "hasGrammar": False,
+                "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
+                "outputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
+                "source": "sources/caller.py",
+            }],
+        }
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, mode="w") as zf:
+            zf.writestr("manifest.json", json.dumps(manifest))
+            zf.writestr("sources/caller.py", "return arg\n")
+            zf.writestr("sources/building_height/convert_to_raster.py", "FACTOR = 2\n")
+        install_package_from_archive(key, buf.getvalue())
+
+        dataflow = {
+            "name": "Package modules",
+            "nodes": [_node("a"), _node("b", node_type="ai.test.heights/caller")],
+            "edges": [_edge("a", "b")],
+            "packages": ["ai.test.heights@1", "curio.builtin@1"],
+        }
+        resp = client.post("/api/projects", data=json.dumps({
+            "name": "Package modules", "spec": {"dataflow": dataflow}, "outputs": [],
+        }), headers=_auth(token))
+        assert resp.status_code == 201, resp.get_data(as_text=True)
+        project_id, revision = resp.get_json()["id"], resp.get_json()["spec_revision"]
+
+        run_id = _start(client, token, project_id, specRevision=revision).get_json()["id"]
+        _wait(run_id)
+        assert _get(client, token, run_id)["status"] == "succeeded"
+        assert "package_modules" not in sandbox.bodies["a"]
+        assert sandbox.bodies["b"]["package_modules"] == {
+            "root": str(package_dir(key, "ai.test.heights@1") / "sources"),
+            "names": ["building_height"],
+        }
