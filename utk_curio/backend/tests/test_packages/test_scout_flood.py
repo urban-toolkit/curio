@@ -1,34 +1,32 @@
-"""``scout.flood@1``: SCOUT's flood function in Curio (#662, step 18).
+"""SCOUT's flood example in Curio, made of Curio's own nodes (#662, step 18).
 
-The proof: SCOUT's own ``simulate_flood_projection`` (``fixtures/scout_flood/``,
-copied unchanged) and the package's port, run as SCOUT's flood example runs it on
-the Data Catalog's crops of SCOUT's rasters, write the same depth raster (profile,
-cells and tags) and the same median and mean, for each period and for no, some
-and all nature-based solutions (NbS). And the crops stand for SCOUT's full
-rasters: what SCOUT's function computes from the crops is what it computed from
-SCOUT's own 2592 by 2064 cell files (``PINS``, printed by
-``scripts/build_scout_flood_datasets.py --pins``), so the port on the crops gives
-SCOUT's results.
+The shipped test dataflow ``FloodScenarios.json`` does what SCOUT's
+``simulate_flood_projection`` does with no SCOUT code: three Data Loading nodes
+read the region's window of the Data Catalog's crops of SCOUT's rasters
+(``curio_load_data(..., bounds=...)``), a Raster Calculator per scenario takes
+the depth with nature-based solutions (NbS) where the class is a chosen one and
+the depth without elsewhere (``choose``), and a Raster Statistics node gives the
+median and the mean.
 
-The node: its template, with the widgets its manifest declares resolved as a run
-resolves them, reads the seven datasets by id through ``curio_data_path`` and runs
-in the sandbox with its package's modules (#719). It returns ``(depth, metrics)``,
-the two nodes the shipped example puts after it pick each part, and the depth is
-a raster the Autark node's raster path (#718) loads.
+The proof: SCOUT's own function (``fixtures/scout_flood/``, copied unchanged)
+and the dataflow's nodes, run on the crops in the sandbox, give the same cells,
+transform, median and mean, for each period and for no, some and all NbS, on
+the example region and an inner one. And the crops stand for SCOUT's rasters:
+what SCOUT's function computes from the crops is what it computed from SCOUT's
+own 2592 by 2064 cell files (``PINS``, printed by
+``scripts/build_scout_flood_datasets.py --pins``). Both regions' corners lie on
+the edges of SCOUT's cells, where SCOUT's window read takes whole cells.
 
-Package code is imported inside each test, through a run's staged copy of the
-package's modules, so a checkout without the package fails each test on its own
-and no bytecode lands in ``packages/``.
+Sandbox modules are imported inside each test, so a checkout without them
+fails each test on its own.
 """
 from __future__ import annotations
 
-import contextlib
+import ast
 import copy
 import hashlib
-import importlib
 import importlib.util
 import json
-import os
 import re
 import textwrap
 from dataclasses import dataclass
@@ -37,13 +35,14 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-PACKAGE = REPO / "packages" / "scout.flood@1"
-SOURCES = PACKAGE / "sources"
-MODULE = "scout_flood"
-NODE_TYPE = "scout.flood/flood-projection"
-PYTHON_TYPE = "curio.builtin/computation-analysis"
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "FloodScenarios.json"
 SCOUT_FUNCTION = Path(__file__).resolve().parent / "fixtures" / "scout_flood" / "flood_simulation.py"
+NODE_CODE_TS = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "raster" / "rasterNodeCode.ts"
+LOADING = "curio.builtin/data-loading"
+CALCULATOR = "curio.builtin/raster-calculator"
+STATISTICS = "curio.builtin/raster-statistics"
+PARAMETER = "curio.builtin/parameter"
+COMPARE = "curio.builtin/compare-scenarios"
 
 CLASSES = "data.scout.flood-nbs-classes"
 PERIODS = ("2020 - 2040", "2050 - 2080", "2080 - 2100")
@@ -71,8 +70,11 @@ for _period in PERIODS:
 SCOUT_GRID = (0.00010133941049058334, 0.0, -90.6879323, 0.0, -0.00010133941049058334, 41.62421049999999)
 #: Where the crops start on it, and their size.
 CROP_COLUMN, CROP_ROW, CROP_SIZE = 1984, 1520, 320
-#: The template's default corners, (top, left, bottom, right).
-EXAMPLE = (41.4669, -90.4836, 41.441, -90.4577)
+#: The dataflow's region, (top, left, bottom, right): the edges of SCOUT's
+#: columns 2016 to 2271 and rows 1552 to 1807.
+EXAMPLE = (41.4669317349186, -90.48363204845099, 41.44098884583301, -90.4576891593654)
+#: An inner region: the edges of SCOUT's columns 2061 to 2215 and rows 1599 to 1758.
+INNER = (41.46216878262555, -90.4790717749789, 41.44595447694705, -90.46336416635286)
 #: What the Autark node's raster path loads at its own size (utils/raster/rasterLoad.ts).
 AUTARK_MAX_CELLS = 2048 * 2048
 AUTARK_MAX_SIDE = 8192
@@ -99,9 +101,9 @@ CASES = {
     "example-2050-none": (EXAMPLE, "2050 - 2080", []),
     "example-2050-all": (EXAMPLE, "2050 - 2080", ALL_NBS),
     "example-2080-some": (EXAMPLE, "2080 - 2100", ["Bioswales", "Constructed wetlands"]),
-    "inner-2020-some": ((41.46213, -90.47912, 41.44587, -90.46345), "2020 - 2040", ["Retention ponds", "Permeable pavements"]),
+    "inner-2020-some": (INNER, "2020 - 2040", ["Retention ponds", "Permeable pavements"]),
 }
-_EXAMPLE_TRANSFORM = (0.00010133941049058334, 0.0, -90.4836, 0.0, -0.00010133941049058334, 41.4669)
+_EXAMPLE_TRANSFORM = (0.00010133941049058334, 0.0, -90.48363204845099, 0.0, -0.00010133941049058334, 41.4669317349186)
 PINS = {
     "example-2020-all": Pin(shape=(256, 256), median=3.7056172688802085, mean=4.743663890809282,
         cells="b6ffa6fca5f0824c76122c3127f1e98075ddc008bb51de586622c57b11b8f5e9",
@@ -118,49 +120,16 @@ PINS = {
     "example-2080-some": Pin(shape=(256, 256), median=5.801829020182292, mean=5.399905484745865,
         cells="984f29f3547ddb9652c4cadf930dddb4c264c794f6cea3dd0af6160d53c97018",
         transform=_EXAMPLE_TRANSFORM),
-    "inner-2020-some": Pin(shape=(160, 155), median=5.997294108072917, mean=6.153190826617249,
-        cells="0957596fb642f1a6881bfcf0cd55bd6640b36a3df405750ee742bc11600637db",
-        transform=(0.00010133941049058334, 0.0, -90.47912, 0.0, -0.00010133941049058334, 41.46213)),
+    "inner-2020-some": Pin(shape=(160, 155), median=6.025075276692708, mean=6.1729098187306795,
+        cells="87577a29b0ac9f642e0d208087094c909a47f69a7433e45f9fcf175001f5cfce",
+        transform=(0.00010133941049058334, 0.0, -90.4790717749789, 0.0, -0.00010133941049058334, 41.46216878262555)),
 }
-
-
-def _template() -> dict:
-    manifest = json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
-    (template,) = manifest["templates"]
-    return template
-
-
-def _source() -> str:
-    return (PACKAGE / _template()["source"]).read_text(encoding="utf-8")
 
 
 def _data_file(dataset_id: str) -> Path:
     root = REPO / "datasets" / f"{dataset_id}@1"
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     return root / manifest["dataFile"]
-
-
-def _rasters() -> dict:
-    """The port's ``rasters``, as the template builds it from the catalog."""
-    rasters = {"classes": str(_data_file(CLASSES))}
-    for period in PERIODS:
-        rasters[period] = (str(_data_file(_depth_id(period, True))), str(_data_file(_depth_id(period, False))))
-    return rasters
-
-
-@contextlib.contextmanager
-def scout_flood(tmp_path):
-    """The port's module, importable the way a run of the package's node
-    imports it: staged into a folder of the run's own."""
-    from utk_curio.sandbox.util.package_modules import importable
-    from utk_curio.sandbox.util.staging import stage_package_modules
-
-    run = tmp_path / "run"
-    run.mkdir()
-    staged = stage_package_modules({"root": str(SOURCES), "names": [MODULE]}, str(run))
-    assert staged == {"root": "package_modules", "names": [MODULE]}, staged
-    with importable(str(run / staged["root"]), staged["names"]):
-        yield importlib.import_module(f"{MODULE}.flood_simulation")
 
 
 def _scout_function():
@@ -199,13 +168,13 @@ def _scout_numbers(metrics: str) -> tuple[float, float]:
 
 
 # ---------------------------------------------------------------------------
-# The proof
+# The crops stand for SCOUT's files
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("case", sorted(CASES))
 def test_scouts_function_on_the_crops_gives_what_it_gave_on_scouts_files(tmp_path, monkeypatch, case):
-    """The crops stand for SCOUT's rasters: on them SCOUT's function writes the
-    cells, transform, median and mean it wrote from SCOUT's full files."""
+    """On the crops SCOUT's function writes the cells, transform, median and
+    mean it wrote from SCOUT's full files."""
     import numpy as np
 
     region, period, chosen = CASES[case]
@@ -214,59 +183,13 @@ def test_scouts_function_on_the_crops_gives_what_it_gave_on_scouts_files(tmp_pat
     assert cells.shape == pin.shape
     assert hashlib.sha256(cells.tobytes()).hexdigest() == pin.cells
     assert tuple(profile["transform"])[:6] == pytest.approx(pin.transform, abs=1e-12)
+    assert (float(np.nanmedian(cells)), float(np.nanmean(cells))) == (pin.median, pin.mean)
     median, mean = _scout_numbers(metrics)
     assert median == pin.median
     assert mean == pytest.approx(pin.mean, rel=1e-12)
     # Not two empty windows agreeing: the region holds depths.
     assert int(np.isfinite(cells).sum()) > 1000
 
-
-@pytest.mark.parametrize("case", sorted(CASES))
-def test_the_port_writes_what_scouts_function_writes(tmp_path, monkeypatch, case):
-    """The port, given the corners as Curio locations, returns the raster SCOUT
-    writes (the same profile, cells and tags) and SCOUT's metrics, exactly."""
-    region, period, chosen = CASES[case]
-    profile, cells, tags, metrics = run_scout(tmp_path, monkeypatch, region, period, chosen)
-    top, left, bottom, right = region
-    out = tmp_path / "out"
-    out.mkdir()
-    with scout_flood(tmp_path) as port:
-        depth, table = port.simulate_flood_projection(
-            {"lat": top, "lon": left}, {"lat": bottom, "lon": right}, lambda name: str(out / name),
-            year=period, use_NBS_classes=list(chosen), rasters=_rasters(),
-        )
-    try:
-        assert dict(depth.profile) == profile
-        assert depth.read(1).tobytes() == cells.tobytes()
-        assert depth.tags() == tags
-    finally:
-        depth.close()
-    assert table.to_csv(index=False) == metrics
-    assert (float(table["median flood depth"][0]), float(table["mean flood depth"][0])) == _scout_numbers(metrics)
-
-
-def test_scouts_lon_lat_text_gives_the_same_as_locations(tmp_path):
-    out = tmp_path / "out"
-    out.mkdir()
-    with scout_flood(tmp_path) as port:
-        top, left, bottom, right = EXAMPLE
-        by_text = port.simulate_flood_projection(
-            f"{left}, {top}", f"{right}, {bottom}", lambda name: str(out / name), rasters=_rasters(),
-        )
-        by_location = port.simulate_flood_projection(
-            {"lat": top, "lon": left}, {"lat": bottom, "lon": right}, lambda name: str(out / name), rasters=_rasters(),
-        )
-    try:
-        assert by_text[0].name == by_location[0].name
-        assert by_text[1].equals(by_location[1])
-    finally:
-        by_text[0].close()
-        by_location[0].close()
-
-
-# ---------------------------------------------------------------------------
-# The crops
-# ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("dataset_id", DATASET_IDS)
 def test_each_crop_keeps_scouts_grid(dataset_id):
@@ -280,6 +203,7 @@ def test_each_crop_keeps_scouts_grid(dataset_id):
     assert manifest["format"] == "geotiff" and manifest["publisher"] == "SCOUT (urban-toolkit/scout)", manifest
     assert manifest["license"] == "", manifest["license"]
     assert "used with the permission of SCOUT's authors" in manifest["description"]
+    assert "the area the FloodScenarios test dataflow reads" in manifest["description"]
     with rasterio.open(_data_file(dataset_id)) as crop:
         assert crop.crs.to_epsg() == 4326
         assert (crop.width, crop.height, crop.count) == (CROP_SIZE, CROP_SIZE, 1)
@@ -291,60 +215,27 @@ def test_each_crop_keeps_scouts_grid(dataset_id):
             assert crop.dtypes == ("uint8",) and crop.nodata == 0
         else:
             assert crop.dtypes == ("float64",) and crop.nodata == -1.7976931348623157e308
-        top, left, bottom, right = EXAMPLE
-        window = from_bounds(left, bottom, right, top, transform=crop.transform)
-        assert window.col_off >= 32 and window.row_off >= 32
-        assert window.col_off + window.width <= CROP_SIZE - 32
-        assert window.row_off + window.height <= CROP_SIZE - 32
+        for top, left, bottom, right in (EXAMPLE, INNER):
+            window = from_bounds(left, bottom, right, top, transform=crop.transform)
+            # On cell edges: a window of whole cells.
+            for value in (window.col_off, window.row_off, window.width, window.height):
+                assert value == pytest.approx(round(value), abs=1e-6)
+        window = from_bounds(EXAMPLE[1], EXAMPLE[2], EXAMPLE[3], EXAMPLE[0], transform=crop.transform)
+        assert round(window.col_off) == 32 and round(window.row_off) == 32
+        assert round(window.width) == round(window.height) == CROP_SIZE - 64
 
 
-def test_the_class_crop_holds_every_nbs_code(tmp_path):
-    """Each of the six choices changes something in the example's region."""
+def test_the_class_crop_holds_every_nbs_code():
+    """Each of SCOUT's NbS codes, and no other, lies in the example's region."""
     import numpy as np
     import rasterio
     from rasterio.windows import from_bounds
 
-    with scout_flood(tmp_path) as port:
-        codes = sorted(port.NBS_CLASSES)
-        assert port.NBS_NAMES == ALL_NBS
     with rasterio.open(_data_file(CLASSES)) as crop:
         top, left, bottom, right = EXAMPLE
         cells = crop.read(1, window=from_bounds(left, bottom, right, top, transform=crop.transform))
     present = {int(code) for code in np.unique(cells)}
-    assert present == {0, *codes}, present
-
-
-# ---------------------------------------------------------------------------
-# The template
-# ---------------------------------------------------------------------------
-
-def test_the_template_names_the_seven_datasets_it_reads():
-    """The node reads its rasters by literal ``curio_data_path("<id>")`` calls,
-    the only kind a run resolves, and they are the seven SCOUT crops."""
-    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
-
-    assert dataset_ids_in_code(_source()) == DATASET_IDS
-    shipped = sorted(p.name for p in (REPO / "datasets").glob("data.scout.flood-*"))
-    assert shipped == sorted(f"{dataset_id}@1" for dataset_id in DATASET_IDS)
-
-
-def test_the_template_declares_the_widgets_its_source_reads(tmp_path):
-    template = _template()
-    assert template["hasWidgets"] is True and template["inputPorts"] == []
-    widgets = {w["name"]: w for w in template["widgets"]}
-    assert [w["name"] for w in template["widgets"]] == ["topleft", "bottomright", "year", "use_NBS_classes"]
-    assert widgets["topleft"]["type"] == widgets["bottomright"]["type"] == "location"
-    top, left, bottom, right = EXAMPLE
-    assert widgets["topleft"]["default"] == {"lat": top, "lon": left}
-    assert widgets["bottomright"]["default"] == {"lat": bottom, "lon": right}
-    assert widgets["year"]["type"] == "choice" and widgets["year"]["options"]["display"] == "radio"
-    assert widgets["year"]["options"]["choices"] == list(PERIODS) and widgets["year"]["default"] == PERIODS[0]
-    assert widgets["use_NBS_classes"]["type"] == "checkbox-group"
-    assert widgets["use_NBS_classes"]["options"]["choices"] == ALL_NBS
-    assert widgets["use_NBS_classes"]["default"] == ALL_NBS
-    with scout_flood(tmp_path) as port:
-        assert list(port.PERIODS) == list(PERIODS)
-    assert re.findall(r"\[!!\s*(\w+)\s*!!\]", _source()) == ["topleft", "bottomright", "year", "use_NBS_classes"]
+    assert present == {0, *_scout_classes()}, present
 
 
 # ---------------------------------------------------------------------------
@@ -355,50 +246,133 @@ def _dataflow() -> dict:
     return json.loads(DATAFLOW.read_text(encoding="utf-8"))["dataflow"]
 
 
-def test_the_shipped_dataflow_runs_the_template_with_the_shared_period():
-    """``FloodScenarios.json`` is how its CI run reaches this package. Its two
-    Flood Projection nodes hold the template's source with one change, the
-    period read from the timeline Parameter node, and the template's widgets
-    with their NbS choice; their code resolves with nothing left over."""
-    from utk_curio.backend.app.execution.code_references import resolve_references
+def _nodes(kind: str) -> list:
+    return [n for n in _dataflow()["nodes"] if n["type"] == kind]
 
+
+def _parameters() -> dict:
+    return {n["metadata"]["widgets"][0]["name"]: n["metadata"]["widgets"][0] for n in _nodes(PARAMETER)}
+
+
+def _starter(name: str) -> str:
+    source = NODE_CODE_TS.read_text(encoding="utf-8")
+    match = re.search(rf"export const {name} = `([^`]*)`;", source)
+    assert match, f"{name} is not in {NODE_CODE_TS}"
+    return match.group(1)
+
+
+def _literal_dict(source: str, name: str) -> dict:
+    """The dict literal *source* assigns to *name*, wherever it is."""
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == name for t in node.targets):
+            return ast.literal_eval(node.value)
+    raise AssertionError(f"{name} is not assigned in the source")
+
+
+def _scout_classes() -> dict:
+    return _literal_dict(SCOUT_FUNCTION.read_text(encoding="utf-8"), "dict_use_NBS_classes")
+
+
+def _function_body(code: str) -> str:
+    """A node's code as the sandbox runs it, the body of ``userCode``, made a
+    module body for ast."""
+    return "def userCode(arg):\n" + textwrap.indent(code, "    ")
+
+
+def test_the_dataflow_is_made_of_curios_own_nodes():
+    """No package: three Parameter nodes, three Data Loading nodes, a Raster
+    Calculator and a Raster Statistics node per scenario, two Compare
+    Scenarios nodes, and the seven crops."""
     spec = _dataflow()
-    assert spec["packages"] == ["scout.flood@1"]
+    assert spec["packages"] == []
+    assert all(n["type"].startswith("curio.builtin/") for n in spec["nodes"])
     assert [ref["datasetId"] for ref in spec["datasets"]] == DATASET_IDS
+    counts = {}
+    for n in spec["nodes"]:
+        counts[n["type"]] = counts.get(n["type"], 0) + 1
+    assert counts == {PARAMETER: 3, LOADING: 3, CALCULATOR: 2, STATISTICS: 2, COMPARE: 2}
+
+
+def test_the_parameters_hold_the_period_and_the_regions_corners():
+    parameters = _parameters()
+    assert set(parameters) == {"timeline", "topleft", "bottomright"}
+    timeline = parameters["timeline"]
+    assert timeline["type"] == "choice" and timeline["options"] == {"choices": list(PERIODS), "display": "radio"}
+    assert timeline["default"] == PERIODS[0]
+    top, left, bottom, right = EXAMPLE
+    assert parameters["topleft"]["type"] == parameters["bottomright"]["type"] == "location"
+    assert parameters["topleft"]["default"] == {"lat": top, "lon": left}
+    assert parameters["bottomright"]["default"] == {"lat": bottom, "lon": right}
+
+
+def test_the_loaders_read_the_crops_by_id_with_the_regions_bounds():
+    """Each Data Loading node reads its datasets by literal id, the only kind a
+    run resolves, with the bounds the corners give."""
+    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+
+    read = sorted(tuple(dataset_ids_in_code(n["content"])) for n in _nodes(LOADING))
+    assert read == sorted([
+        (CLASSES,),
+        tuple(_depth_id(p, True) for p in PERIODS),
+        tuple(_depth_id(p, False) for p in PERIODS),
+    ])
+    for loader in _nodes(LOADING):
+        calls = re.findall(r"curio_load_data\(\"[^\"]+\", bounds=bounds\)", loader["content"])
+        assert len(calls) == len(dataset_ids_in_code(loader["content"])), loader["content"]
+
+
+def test_each_scenario_chooses_by_scouts_classes_and_takes_the_statistics():
+    """The two Raster Calculators hold one code, SCOUT's class table, and
+    differ in the solutions their widget chooses; the NbS scenario is a copy of
+    the other. Each feeds a Raster Statistics node that holds the code it starts
+    with."""
+    spec = _dataflow()
     nodes = {n["id"]: n for n in spec["nodes"]}
-    (parameter,) = [n for n in spec["nodes"] if n["type"] == "curio.builtin/parameter"]
-    (timeline,) = parameter["metadata"]["widgets"]
-    year = next(w for w in _template()["widgets"] if w["name"] == "year")
-    assert timeline["name"] == "timeline"
-    assert {k: timeline[k] for k in ("type", "default", "options")} == {k: year[k] for k in ("type", "default", "options")}
+    calculators = _nodes(CALCULATOR)
+    (code,) = {n["content"] for n in calculators}
+    assert _literal_dict(_function_body(code), "NBS_CLASSES") == _scout_classes()
+    assert "return curio_raster_calculate(\"choose\", arg, codes=codes)" in code
+    assert {n["content"] for n in _nodes(STATISTICS)} == {_starter("RASTER_STATISTICS_CODE")}
 
-    floods = [n for n in spec["nodes"] if n["type"] == NODE_TYPE]
-    assert len(floods) == 2
-    expected_code = _source().replace("[!! year !!]", "[!! @timeline !!]")
-    assert expected_code != _source()
-    chosen = {}
-    for node in floods:
-        assert node["content"] == expected_code
-        widgets = node["metadata"]["widgets"]
-        values = [w.pop("value") for w in copy.deepcopy(widgets) if w["name"] == "use_NBS_classes"]
-        assert [{k: v for k, v in w.items() if k != "value"} for w in widgets] == _template()["widgets"]
-        chosen[node["id"]] = values[0]
-        code, problems = resolve_references(node["content"], widgets, "python", shared=[timeline])
-        assert problems == [], problems
-        assert "year=\"2020 - 2040\"" in code
-
+    loaders = {}
+    for n in _nodes(LOADING):
+        if CLASSES in n["content"]:
+            loaders["classes"] = n["id"]
+        elif "-no-nbs\"" in n["content"]:
+            loaders["no-nbs"] = n["id"]
+        else:
+            loaders["nbs"] = n["id"]
     scenarios = {s["id"]: s for s in spec["scenarios"]}
     assert set(scenarios) == {"no-nbs", "nbs"}
-    by_name = {}
+    chosen = {}
     for scenario in scenarios.values():
-        (flood,) = [nodes[i] for i in scenario["nodes"] if nodes[i]["type"] == NODE_TYPE]
-        by_name[scenario["name"]] = flood
-        pickers = sorted(nodes[i]["content"].splitlines()[-1] for i in scenario["nodes"] if i != flood["id"])
-        assert pickers == ["return arg[0]", "return arg[1]"]
-    assert chosen[by_name["No NbS"]["id"]] == [] and chosen[by_name["NbS"]["id"]] == ALL_NBS
-    # The NbS scenario is a copy of the other: each node names the one it came from.
+        members = [nodes[i] for i in scenario["nodes"]]
+        assert sorted(n["type"] for n in members) == [CALCULATOR, STATISTICS]
+        (calculator,) = [n for n in members if n["type"] == CALCULATOR]
+        (statistics,) = [n for n in members if n["type"] == STATISTICS]
+        feeds = {e["targetHandle"]: e["source"] for e in spec["edges"] if e["target"] == calculator["id"]}
+        assert feeds == {"in": loaders["classes"], "in_1": loaders["nbs"], "in_2": loaders["no-nbs"]}
+        assert [e["source"] for e in spec["edges"] if e["target"] == statistics["id"]] == [calculator["id"]]
+        (widget,) = calculator["metadata"]["widgets"]
+        assert {k: widget[k] for k in ("name", "type", "default", "options")} == {
+            "name": "use_NBS_classes", "type": "checkbox-group", "default": ALL_NBS, "options": {"choices": ALL_NBS},
+        }
+        chosen[scenario["name"]] = widget["value"]
+    assert chosen == {"No NbS": [], "NbS": ALL_NBS}
     copies = {nodes[i]["metadata"]["copiedFrom"][-1] for i in scenarios["nbs"]["nodes"]}
     assert copies == set(scenarios["no-nbs"]["nodes"])
+
+
+def test_every_nodes_code_resolves_with_nothing_left_over():
+    from utk_curio.backend.app.execution.code_references import resolve_references
+
+    shared = list(_parameters().values())
+    for n in _dataflow()["nodes"]:
+        if n["type"] in (LOADING, CALCULATOR, STATISTICS):
+            code, problems = resolve_references(n["content"], n["metadata"].get("widgets") or [], "python", shared=shared)
+            assert problems == [], (n["id"], problems)
+            assert "[!!" not in code
+            compile(_function_body(code), n["id"], "exec")
 
 
 def test_the_shipped_dataflows_compare_nodes_hold_the_code_they_write():
@@ -407,8 +381,7 @@ def test_the_shipped_dataflows_compare_nodes_hold_the_code_they_write():
     one in Difference, NbS minus No NbS, and one charting the median depth."""
     spec = _dataflow()
     entries = '    ("no-nbs", "No NbS", [!! input 0 !!]),\n    ("nbs", "NbS", [!! input 1 !!]),\n])\n'
-    compares = {n["metadata"]["compareScenarios"]["mode"]: n for n in spec["nodes"]
-                if n["type"] == "curio.builtin/compare-scenarios"}
+    compares = {n["metadata"]["compareScenarios"]["mode"]: n for n in _nodes(COMPARE)}
     assert set(compares) == {"difference", "chart"}
     labels = [
         {"scenario": "no-nbs", "name": "No NbS", "color": "#e76f51"},
@@ -418,14 +391,18 @@ def test_the_shipped_dataflows_compare_nodes_hold_the_code_they_write():
         node = compares[mode]
         assert node["metadata"]["compareScenarios"]["inputs"] == labels
         assert node["content"].endswith(f"return {call}([\n{entries}"), node["content"]
-    assert compares["chart"]["metadata"]["compareScenarios"]["chart"] == {"preset": "bar", "y": "median flood depth"}
-    sources = {e["targetHandle"]: e["source"] for e in spec["edges"] if e["target"] == compares["difference"]["id"]}
+    assert compares["chart"]["metadata"]["compareScenarios"]["chart"] == {"preset": "bar", "y": "median"}
     scenario_of = {i: s["id"] for s in spec["scenarios"] for i in s["nodes"]}
-    assert {handle: scenario_of[node] for handle, node in sources.items()} == {"in": "no-nbs", "in_1": "nbs"}
+    kinds = {n["id"]: n["type"] for n in spec["nodes"]}
+    for mode, kind in (("difference", CALCULATOR), ("chart", STATISTICS)):
+        sources = {e["targetHandle"]: e["source"] for e in spec["edges"] if e["target"] == compares[mode]["id"]}
+        assert {h: (scenario_of[s], kinds[s]) for h, s in sources.items()} == {
+            "in": ("no-nbs", kind), "in_1": ("nbs", kind),
+        }
 
 
 # ---------------------------------------------------------------------------
-# The node, in the sandbox
+# The proof: the dataflow's nodes, in the sandbox, give what SCOUT's gives
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
@@ -441,142 +418,129 @@ def workspace(tmp_path, monkeypatch):
     release_connection()
 
 
-def _with_values(**values) -> list:
-    widgets = [dict(widget) for widget in _template()["widgets"]]
-    for widget in widgets:
-        if widget["name"] in values:
-            widget["value"] = values[widget["name"]]
-    return widgets
-
-
-def _execute(code, input_path, node_type, data_type, workspace, **kwargs):
+def _execute(code, file_path, node_type, data_type, workspace, **kwargs):
     from utk_curio.sandbox.app.worker import _worker_init, execute_code
 
     _worker_init()
     return execute_code(
-        textwrap.indent(code, "    "), input_path, node_type, data_type,
+        textwrap.indent(code, "    "), file_path, node_type, data_type,
         save_dataset=False, media_dir=str(workspace / "media"), **kwargs,
     )
 
 
-def run_node(workspace, *, fails=False, **values):
-    """Run the node's template, its widgets at *values*, in the sandbox, in
-    process, with the datasets its code names resolved: ``(artifact id,
-    (depth, metrics))``, or with *fails* the node's error text."""
+def run_dataflow(workspace, region=EXAMPLE, period=PERIODS[0], chosen=ALL_NBS, *, fails=False):
+    """Run the dataflow's loaders, one Raster Calculator and its Raster
+    Statistics node, as Run All runs them in the sandbox, with the Parameter
+    nodes at *region* and *period* and the calculator's widget at *chosen*:
+    ``(depth artifact id, depth, statistics)``, or with *fails* the first error."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
     from utk_curio.backend.app.execution.code_references import resolve_references
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
-    code, problems = resolve_references(_source(), _with_values(**values), "python")
-    assert problems == [], problems
-    result = _execute(
-        code, "", NODE_TYPE, "", workspace,
-        dataset_paths={i: str(_data_file(i)) for i in dataset_ids_in_code(code)},
-        package_modules={"root": str(SOURCES), "names": [MODULE]},
-    )
-    if fails:
-        assert result["stderr"], f"the node ran: {result['output']}"
-        return result["stderr"]
-    assert result["stderr"] == "", result["stderr"]
-    assert result["output"]["dataType"] == "outputs", result["output"]
-    return result["output"]["path"], load_from_duckdb(result["output"]["path"])
+    top, left, bottom, right = region
+    values = {"timeline": period, "topleft": {"lat": top, "lon": left}, "bottomright": {"lat": bottom, "lon": right}}
+    shared = []
+    for name, widget in _parameters().items():
+        shared.append({**copy.deepcopy(widget), "value": values[name]})
+
+    def run(node, file_path, data_type, widgets=()):
+        code, problems = resolve_references(node["content"], list(widgets), "python", shared=shared)
+        assert problems == [], problems
+        paths = {i: str(_data_file(i)) for i in dataset_ids_in_code(code)}
+        result = _execute(code, file_path, node["type"], data_type, workspace, dataset_paths=paths)
+        if result["stderr"]:
+            if fails:
+                return None, result["stderr"]
+            raise AssertionError(result["stderr"])
+        return result["output"], None
+
+    loaded = {}
+    for loader in _nodes(LOADING):
+        output, error = run(loader, "", "")
+        if error:
+            return error
+        assert output["dataType"] == "raster", output
+        loaded[loader["id"]] = output["path"]
+    spec = _dataflow()
+    calculator = _nodes(CALCULATOR)[0]
+    feeds = {e["targetHandle"]: e["source"] for e in spec["edges"] if e["target"] == calculator["id"]}
+    inputs = repr([loaded[feeds[handle]] for handle in ("in", "in_1", "in_2")])
+    widgets = [{**w, "value": list(chosen)} for w in calculator["metadata"]["widgets"]]
+    depth, error = run(calculator, inputs, "outputs", widgets)
+    if error:
+        return error
+    assert depth["dataType"] == "raster", depth
+    statistics, error = run(_nodes(STATISTICS)[0], depth["path"], "raster")
+    if error:
+        return error
+    assert statistics["dataType"] == "dataframe", statistics
+    return depth["path"], load_from_duckdb(depth["path"]), load_from_duckdb(statistics["path"])
 
 
-def test_the_node_returns_the_depth_and_the_metrics_scouts_function_gives(workspace, monkeypatch):
-    import rasterio
+@pytest.mark.parametrize("case", sorted(CASES))
+def test_the_dataflow_gives_what_scouts_function_gives(workspace, monkeypatch, case):
+    """The same cells, transform, median and mean, exactly, as SCOUT's function
+    on the same crops, region, period and solutions."""
+    import numpy as np
 
-    from utk_curio.sandbox.util.rasters import epsg_name
-
-    _art_id, (depth, metrics) = run_node(workspace, use_NBS_classes=[])
+    region, period, chosen = CASES[case]
+    profile, cells, _tags, _metrics = run_scout(workspace / "s", monkeypatch, region, period, chosen)
+    monkeypatch.chdir(workspace)
+    _art, depth, table = run_dataflow(workspace, region, period, chosen)
     try:
-        assert isinstance(depth, rasterio.io.DatasetReader)
-        assert epsg_name(depth.crs) == "EPSG:4326" and depth.dtypes == ("float64",)
-        assert (depth.height, depth.width) == PINS["example-2020-none"].shape
-        assert hashlib.sha256(depth.read(1).tobytes()).hexdigest() == PINS["example-2020-none"].cells
+        assert depth.dtypes == ("float64",)
+        ours = depth.read(1)
+        # Every value and every nodata cell. A nodata cell is NaN in both; SCOUT
+        # keeps the NaN bits its source file had, Curio writes one NaN.
+        assert ours.shape == cells.shape
+        assert np.array_equal(ours, cells, equal_nan=True)
+        assert np.array_equal(np.isnan(ours), np.isnan(cells))
+        assert tuple(depth.transform)[:6] == pytest.approx(tuple(profile["transform"])[:6], abs=1e-12)
+        assert depth.crs == profile["crs"]
     finally:
         depth.close()
-    assert list(metrics.columns) == ["median flood depth", "mean flood depth"]
-    assert float(metrics["median flood depth"][0]) == PINS["example-2020-none"].median
-    assert float(metrics["mean flood depth"][0]) == pytest.approx(PINS["example-2020-none"].mean, rel=1e-12)
+    assert list(table.columns) == ["mean", "median", "min", "max", "count"]
+    row = table.iloc[0]
+    assert (float(row["median"]), float(row["mean"])) == (float(np.nanmedian(cells)), float(np.nanmean(cells)))
+    assert (float(row["median"]), float(row["mean"])) == (PINS[case].median, PINS[case].mean)
+    assert int(row["count"]) == int(np.count_nonzero(~np.isnan(cells)))
 
 
-def test_the_example_picks_each_part_and_the_depth_is_a_raster_autark_loads(workspace):
-    """The two nodes after Flood Projection in each scenario of the example take
-    its depth raster and its metrics row; the depth is what #718's raster route
-    serves the Autark node, inside its caps."""
-    import rasterio
+def test_the_depth_is_a_raster_autark_loads(workspace, monkeypatch):
+    """The calculator's depth is what #718's raster route serves the Autark
+    node, inside its caps, on the region's cells: SCOUT's for the NbS scenario."""
+    import numpy as np
     from rasterio.io import MemoryFile
 
-    from utk_curio.sandbox.util.parsers import load_from_duckdb
     from utk_curio.sandbox.util.rasters import serve_raster
 
-    art_id, (depth, metrics) = run_node(workspace)
-    depth.close()
-    nodes = {n["id"]: n for n in _dataflow()["nodes"]}
-    pickers = {nodes[e["target"]]["content"].splitlines()[-1]: nodes[e["target"]]["content"]
-               for e in _dataflow()["edges"] if nodes[e["source"]]["type"] == NODE_TYPE}
-    # A circle fed by a node that returned a tuple reaches the sandbox as one
-    # stored value (backend execution/node_exec.parse_input_ref).
-    picked_depth = _execute(pickers["return arg[0]"], art_id, PYTHON_TYPE, "file", workspace)
-    picked_metrics = _execute(pickers["return arg[1]"], art_id, PYTHON_TYPE, "file", workspace)
-    assert picked_depth["stderr"] == "" and picked_metrics["stderr"] == ""
-    assert picked_depth["output"]["dataType"] == "raster", picked_depth["output"]
-    assert picked_metrics["output"]["dataType"] == "dataframe", picked_metrics["output"]
-    assert load_from_duckdb(picked_metrics["output"]["path"]).equals(metrics)
-
-    payload, meta = serve_raster(
-        picked_depth["output"]["path"], max_cells=AUTARK_MAX_CELLS, max_side=AUTARK_MAX_SIDE,
-    )
+    _profile, cells, _tags, _metrics = run_scout(workspace / "s", monkeypatch, *CASES["example-2020-all"])
+    monkeypatch.chdir(workspace)
+    art_id, depth, _table = run_dataflow(workspace)
+    try:
+        stored = depth.read(1)
+    finally:
+        depth.close()
+    payload, meta = serve_raster(art_id, max_cells=AUTARK_MAX_CELLS, max_side=AUTARK_MAX_SIDE)
     assert meta["crs"] == "EPSG:4326" and (meta["width"], meta["height"], meta["count"]) == (256, 256, 1)
     a, b, c, d, e, f = meta["transform"]
     assert b == 0 and d == 0 and a > 0 and e < 0
     assert (c, f) == pytest.approx((EXAMPLE[1], EXAMPLE[0]), abs=1e-12)
     with MemoryFile(payload) as memory, memory.open() as served:
-        stored = load_from_duckdb(picked_depth["output"]["path"])
-        try:
-            assert isinstance(stored, rasterio.io.DatasetReader)
-            assert served.read(1).tobytes() == stored.read(1).tobytes()
-            assert hashlib.sha256(served.read(1).tobytes()).hexdigest() == PINS["example-2020-all"].cells
-        finally:
-            stored.close()
-    # The node's tuple itself, part 0, is what a map wired straight to it reads.
-    _payload, straight = serve_raster(art_id, part=0, max_cells=AUTARK_MAX_CELLS, max_side=AUTARK_MAX_SIDE)
-    assert straight == meta
-
-
-def test_each_widget_reaches_the_call(workspace):
-    import numpy as np
-
-    def cells(**values):
-        _art_id, (depth, metrics) = run_node(workspace, **values)
-        try:
-            return depth.read(1), float(metrics["median flood depth"][0])
-        finally:
-            depth.close()
-
-    default, default_median = cells()
-    assert default_median == PINS["example-2020-all"].median
-    none, none_median = cells(use_NBS_classes=[])
-    assert none_median == PINS["example-2020-none"].median
-    later, later_median = cells(year="2050 - 2080")
-    assert later_median == PINS["example-2050-all"].median
-    top, left, bottom, right = CASES["inner-2020-some"][0]
-    inner, _ = cells(topleft={"lat": top, "lon": left}, bottomright={"lat": bottom, "lon": right},
-                     use_NBS_classes=CASES["inner-2020-some"][2])
-    assert inner.shape == PINS["inner-2020-some"].shape
-    assert hashlib.sha256(inner.tobytes()).hexdigest() == PINS["inner-2020-some"].cells
-    assert not np.array_equal(default, none, equal_nan=True) and not np.array_equal(default, later, equal_nan=True)
+        assert served.read(1).tobytes() == stored.tobytes()
+        assert np.array_equal(served.read(1), cells, equal_nan=True)
 
 
 @pytest.mark.parametrize(
-    "values, sentence",
+    "settings, sentence",
     [
-        ({"topleft": {"lat": 41.5, "lon": -90.4836}}, "reaches past the flood rasters, which cover longitude -90.4869"),
-        ({"topleft": {"lat": 41.441, "lon": -90.4577}, "bottomright": {"lat": 41.4669, "lon": -90.4836}},
-         "must be north and west of the bottom-right corner"),
-        ({"year": "2030"}, "There is no flood projection for '2030'"),
+        ({"region": (41.5, EXAMPLE[1], EXAMPLE[2], EXAMPLE[3])},
+         "reach past data.scout.flood-nbs-classes, which covers west -90.48687490958669"),
+        ({"region": (EXAMPLE[2], EXAMPLE[3], EXAMPLE[0], EXAMPLE[1])},
+         "are not (west, south, east, north) with west less than east and south less than north"),
+        ({"period": "2030"}, "There is no flood projection for '2030'. The periods: 2020 - 2040, 2050 - 2080, 2080 - 2100."),
     ],
 )
-def test_a_setting_the_node_cannot_use_says_why(workspace, values, sentence):
-    error = run_node(workspace, fails=True, **values)
-    assert sentence in error, error
+def test_a_setting_the_dataflow_cannot_use_says_why(workspace, settings, sentence):
+    error = run_dataflow(workspace, fails=True, **settings)
+    assert isinstance(error, str) and sentence in error, error

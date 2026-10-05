@@ -5,6 +5,6 @@ commit b98369e5, file `backend/compute/quad_city_flooding_simulation/scripts/flo
 (blob a0ec9390, the same blob as `backend/models/flooding/scripts/flood_simulation.py`, the copy
 SCOUT's example dataflows import).
 
-The `scout.flood@1` tests run it, as SCOUT's flood example calls it, on the Data Catalog's crops
-of SCOUT's rasters (`datasets/data.scout.flood-*`), and compare what it writes with what the
-package's port returns.
+`test_scout_flood.py` runs it, as SCOUT's flood example calls it, on the Data Catalog's crops of
+SCOUT's rasters (`datasets/data.scout.flood-*`), and compares what it writes with what the
+FloodScenarios test dataflow's own Curio nodes give.

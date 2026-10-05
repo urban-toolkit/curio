@@ -1,24 +1,26 @@
-"""SCOUT's flood function in two scenarios, compared on an Autark map and a chart (#662, step 18).
+"""SCOUT's flood example in two scenarios, from Curio's own nodes, compared on an Autark map and a chart (#662, step 18).
 
-The shipped test dataflow ``FloodScenarios.json``: a timeline Parameter node, and
-two scenarios, "No NbS" and "NbS" (its copy), each holding the
-``scout.flood@1`` package's Flood Projection node with its choice of
-nature-based solutions (NbS), then a node that takes its depth raster and one
-that takes its row of median and mean depth. One Compare Scenarios node, in
-Difference, maps NbS minus No NbS through the Autark node's map code (#723); the
-other charts each scenario's median flood depth (#720). Run All drives the whole
-path:
+The shipped test dataflow ``FloodScenarios.json``: Parameter nodes for the
+period and the region's corners, three Data Loading nodes reading the region's
+window of the Data Catalog's crops of SCOUT's rasters, and two scenarios, "No
+NbS" and "NbS" (its copy), each holding a Raster Calculator that chooses the
+depth by nature-based solution (NbS) class, with its choice of NbS, and a Raster
+Statistics node. One Compare Scenarios node, in Difference, maps NbS minus No
+NbS through the Autark node's map code (#723); the other charts each scenario's
+median flood depth (#720). Run All drives the whole path:
 
-1. Both Flood Projection nodes read the Data Catalog's crops of SCOUT's rasters
-   by id, for the period the Parameter node holds (2020 - 2040).
-2. The difference is a 256 by 256 cell raster in EPSG:4326 whose cells are
-   SCOUT's depths with NbS minus SCOUT's depths without, as autk-db reads both
-   (float32): 6,882 cells lower, 20 higher, 22,698 the same and 35,936 with no
-   depth on either side, the counts SCOUT's rasters give for the region.
+1. The loaders read the crops by id, for the region and the period (2020 - 2040)
+   the Parameter nodes hold, and both calculators and statistics run.
+2. The difference is a 256 by 256 cell raster in EPSG:4326, on SCOUT's cells,
+   whose cells are SCOUT's depths with NbS minus SCOUT's depths without, as
+   autk-db reads both (float32): 6,882 cells lower, 20 higher, 22,698 the same
+   and 35,936 with no depth on either side, the counts SCOUT's rasters give for
+   the region.
 3. The chart draws both scenarios in their colors from the stacked table, whose
    medians and means are SCOUT's for the region (``test_scout_flood.py``).
-4. What differs lists one lever, the Flood Projection node, and in it one
-   widget, the NbS choice; no code line differs, and nothing is warned.
+4. What differs lists one lever, the Raster Calculator, and in it one widget,
+   the NbS choice; no code line differs, the statistics are the same, and
+   nothing is warned.
 
 The two close-ups are the frames.
 
@@ -40,7 +42,6 @@ from .test_compare_difference_e2e import _assert_difference_mapped, _band
 from .test_compare_scenarios_e2e import _CHART_STATE_JS, _COLOR_PIXELS_JS, _OUTPUT_ARTIFACT_JS
 from .utils import (
     REPO_ROOT,
-    api_json,
     assert_vega_canvas_rendered,
     frame_nodes,
     load_artifact_as_dict,
@@ -59,11 +60,13 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "FloodScenarios.json"
-PACKAGE_DIR = "scout.flood@1"
-FLOOD_TYPE = "scout.flood/flood-projection"
+CALCULATOR_TYPE = "curio.builtin/raster-calculator"
+STATISTICS_TYPE = "curio.builtin/raster-statistics"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 COLORS = {"no-nbs": "#e76f51", "nbs": "#2a9d8f"}
 CELL = 0.00010133941049058334
+#: The region's north-west corner, on the edge of SCOUT's cells.
+ORIGIN = (-90.48363204845099, 41.4669317349186)
 
 #: SCOUT's median and mean flood depth for the region in 2020 - 2040, without
 #: NbS and with every NbS (``PINS`` in ``test_packages/test_scout_flood.py``).
@@ -110,7 +113,7 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
     spec = json.loads(DATAFLOW.read_text(encoding="utf-8"))
-    session = stub_login_and_enter_workflow(
+    stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
@@ -120,20 +123,18 @@ def test_two_flood_scenarios_are_mapped_and_charted(
         project_spec=spec,
     )
     require_owner_view(page)
-    store = [p.get("dirName") for p in api_json(f"{current_server}/api/packages", session["token"])["packages"]]
-    assert PACKAGE_DIR in store, (
-        f"{PACKAGE_DIR} is not in the account's store {store}: start the stack --with-examples"
-    )
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
     compares = _compare_nodes(spec)
-    floods = [node["id"] for node in spec["dataflow"]["nodes"] if node["type"] == FLOOD_TYPE]
+    steps = [(node["id"], node["type"]) for node in spec["dataflow"]["nodes"]
+             if node["type"] in (CALCULATOR_TYPE, STATISTICS_TYPE)]
+    assert len(steps) == 4, steps
 
-    # 1. Run All: both scenarios read SCOUT's crops for the shared period.
+    # 1. Run All: both scenarios read SCOUT's crops for the shared region and period.
     run_all_and_wait(page, timeout_ms=300000)
-    for flood in floods:
-        status = wait_for_node_settled(page, flood, node_type=FLOOD_TYPE, timeout_ms=120000)
-        assert status == "done", f"Flood Projection did not run: {read_node_error_text(node_locator(page, flood))}"
+    for node_id, node_type in steps:
+        status = wait_for_node_settled(page, node_id, node_type=node_type, timeout_ms=120000)
+        assert status == "done", f"{node_type} did not run: {read_node_error_text(node_locator(page, node_id))}"
     for node_id in compares.values():
         status = wait_for_node_settled(page, node_id, node_type=COMPARE_TYPE, timeout_ms=120000)
         assert status == "done", f"Compare Scenarios did not compare: {read_node_error_text(node_locator(page, node_id))}"
@@ -148,7 +149,7 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     assert envelope["dataType"] == "raster", stored.get("dataType")
     grid = envelope["data"]["grid"]
     assert (grid["crs"], grid["width"], grid["height"]) == ("EPSG:4326", 256, 256), grid
-    assert (grid["originX"], grid["originY"]) == pytest.approx((-90.4836, 41.4669), abs=1e-9), grid
+    assert (grid["originX"], grid["originY"]) == pytest.approx(ORIGIN, abs=1e-9), grid
     assert (grid["resX"], grid["resY"]) == pytest.approx((CELL, -CELL), rel=1e-9), grid
     cells = _band(envelope)
     assert len(cells) == 256 * 256
@@ -169,10 +170,11 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     assert stacked["dataType"] == "dataframe", stacked["dataType"]
     table = stacked["data"]
     # The stored table's columns come back by name, not in their order.
-    assert sorted(table) == ["mean flood depth", "median flood depth", "scenario", "scenario_name"], list(table)
+    assert sorted(table) == ["count", "max", "mean", "median", "min", "scenario", "scenario_name"], list(table)
     assert table["scenario"] == ["no-nbs", "nbs"] and table["scenario_name"] == ["No NbS", "NbS"]
-    assert table["median flood depth"] == pytest.approx(MEDIANS, rel=1e-12)
-    assert table["mean flood depth"] == pytest.approx(MEANS, rel=1e-12)
+    assert table["median"] == pytest.approx(MEDIANS, rel=1e-12)
+    assert table["mean"] == pytest.approx(MEANS, rel=1e-12)
+    assert table["count"] == [34041, 29625]
 
     # 4. What differs: the NbS choice, and nothing else.
     compare = node_locator(page, compares["chart"])
@@ -184,7 +186,8 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     assert '"Constructed wetlands"' in compare.locator('[data-compare-value="nbs"]').inner_text()
     assert compare.locator("[data-compare-code-added]").count() == 0
     assert compare.locator("[data-compare-code-removed]").count() == 0
-    assert compare.locator("[data-compare-same]").get_attribute("data-compare-same") == "2"
+    # The Raster Statistics pair is the same in both scenarios.
+    assert compare.locator("[data-compare-same]").get_attribute("data-compare-same") == "1"
     assert compare.locator("[data-compare-warning]").count() == 0
     compare.get_by_role("tab", name="Chart", exact=True).click()
 
