@@ -20,7 +20,7 @@ import {
   type ChipMark,
   type ChipSpan,
 } from "./referenceChips";
-import { effectiveValue, type WidgetDef } from "../../../utils/widgets/widgetModel";
+import { effectiveValue, type WidgetDef, type WidgetValue } from "../../../utils/widgets/widgetModel";
 import {
   findReferences,
   parseReference,
@@ -41,8 +41,14 @@ export const INPUT_REF_MIME = "application/x-curio-input";
 /** What a dragged shared tag carries: what stands inside its reference, such
  * as `@season`. */
 export const SHARED_REF_MIME = "application/x-curio-shared";
+/** What a dragged selection tag carries: what stands inside its reference,
+ * such as `selection picked`. */
+export const SELECTION_REF_MIME = "application/x-curio-selection";
 
-const REFERENCE_MIMES = [WIDGET_REF_MIME, INPUT_REF_MIME, SHARED_REF_MIME];
+const REFERENCE_MIMES = [WIDGET_REF_MIME, INPUT_REF_MIME, SHARED_REF_MIME, SELECTION_REF_MIME];
+
+/** The most ids a selection chip's hover lists. */
+const HOVER_IDS = 5;
 
 export interface LineRange {
   startLineNumber: number;
@@ -67,7 +73,7 @@ export function offsetToPosition(code: string, offset: number): { lineNumber: nu
 export interface ReferenceMark extends ChipMark {
   /** What stands inside the reference. */
   name: string;
-  kind: "widget" | "input" | "shared";
+  kind: "widget" | "input" | "shared" | "selection";
 }
 
 const toRange = (
@@ -90,6 +96,13 @@ function hoverFor(inner: string, scope: ReferenceScope, language: CodeLanguage):
   if (parsed.kind === "shared") {
     const widget = scope.shared.find((w) => w.name === parsed.name) as WidgetDef;
     return `${inner} = ${widgetLiteral(effectiveValue(widget), language)}, from its Parameter node`;
+  }
+  if (parsed.kind === "selection") {
+    const tag = (scope.selections ?? []).find((t) => t.name === parsed.name);
+    const ids = tag?.ids ?? [];
+    const shown = widgetLiteral(ids.slice(0, HOVER_IDS) as WidgetValue, language);
+    const listed = ids.length > HOVER_IDS ? `${shown.slice(0, -1)}, ...]` : shown;
+    return `${inner} = ${listed}, ${ids.length} ${tag?.column} values selected in its view`;
   }
   const input = scope.inputs.find((i) => i.slot === parsed.slot);
   const from = input?.label ? `, from ${input.label}` : "";
@@ -130,17 +143,23 @@ export function referenceMarks(code: string, scope: ReferenceScope, language: Co
       problem,
       hover: problem ?? hoverFor(ref.inner, scope, language),
       // An input or column chip is drawn like a widget's, in green; a shared
-      // one in amber.
+      // one in amber; a selection in peach.
       kindClass: kind === "widget" ? null : chipClass({ kind, problem }),
     };
   });
 }
 
+const KIND_CLASSES: Record<ReferenceMark["kind"], string> = {
+  widget: "curio-widget-ref",
+  input: "curio-input-ref",
+  shared: "curio-shared-ref",
+  selection: "curio-selection-ref",
+};
+
 /** The class that names *mark*'s kind: widget chips keep the classes #670 gave
  * them, and input chips carry theirs beside the box's (`referenceChips.ts`). */
 export function chipClass(mark: Pick<ReferenceMark, "kind" | "problem">): string {
-  const base =
-    mark.kind === "input" ? "curio-input-ref" : mark.kind === "shared" ? "curio-shared-ref" : "curio-widget-ref";
+  const base = KIND_CLASSES[mark.kind];
   return mark.problem ? `${base}-problem` : base;
 }
 

@@ -463,6 +463,36 @@ and their code follows the new name. A reference to a name no Parameter node
 has, or that two Parameter nodes have, stops the run with a message naming it.
 Pinned to the dashboard, a Parameter node shows its value.
 
+### Selection tags
+
+A selection tag gives a node's code what you selected in a view: a brush or a
+click in a Vega-Lite chart, or a pick or a brush in an Autark map or plot. The
+code gets the ids of the selected rows.
+
+1. Run the view, so its rows are known.
+2. In the node's **Widgets** tab, under **Selections**, click **Add selection**.
+   Pick the view, and the column whose values identify its rows: `osm_id` or
+   `building_id` when the rows have them, or any column whose values differ
+   from row to row. A view whose rows have no such column is refused. Give the
+   tag a name and click **Add selection tag**.
+3. Drag the tag, **selection name**, from the strip above the code into the
+   code, or click it to insert it at the cursor. In the code it is written
+   `[!! selection name !!]` and drawn as a peach chip.
+4. Select in the view and run the node.
+
+The reference becomes the list of the selected rows' ids, each once:
+
+```python
+picked = [!! selection buildings !!]
+return arg[arg["osm_id"].isin(picked)]
+```
+
+runs as `picked = [101, 104]` when two buildings are selected, and as
+`picked = []` when nothing is. The **Widgets** tab shows how many ids each tag
+holds. A new selection in the view marks the node as needing a new run, and the
+ids are saved with the dataflow. A tag holds at most 10,000 ids: a larger
+selection stops the run with a message saying so.
+
 ## Several inputs
 
 Python Computation, Data Transformation, JS Computation, Data Pool, Vega-Lite and
@@ -906,6 +936,11 @@ running anything.
   spec: the page shows what is on disk.
 - **Edit layout** (owner only) unlocks the tiles to drag by their title band and resize,
   and **Save layout** records where they sit, without touching the canvas positions.
+- **Scenarios** each get a column, framed under a header in the scenario's color. The
+  tiles they share (their fixed context, and pinned Parameter nodes outside them) come
+  first, and tiles that read their outcomes, such as a comparison, come last. Tiles
+  without a saved place are laid out this way when the page opens; while editing the
+  layout, **Arrange by scenario** puts every tile back in its column.
 - **Sharing** works like a `/dataflow/<id>` link, read-only for everyone but the owner.
   The page is served with its data inside it, so a viewer needs no account and the
   dashboard keeps working if the server is unreachable.

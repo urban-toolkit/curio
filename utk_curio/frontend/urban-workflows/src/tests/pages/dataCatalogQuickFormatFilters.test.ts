@@ -74,6 +74,7 @@ describe("quickFormatFilters", () => {
     const everyFormat: Record<DatasetFormat, number> = {
       geojson: 1, csv: 1, json: 1, parquet: 1,
       geotiff: 1, shp: 1, bundle: 1, osm: 1, gpkg: 1, gtfs: 1, collection: 1,
+      onnx: 1, netcdf: 1,
     };
     expect(quickFormatFilters(everyFormat).sort()).toEqual(
       (Object.keys(DATASET_FORMAT_LABEL) as DatasetFormat[]).sort(),

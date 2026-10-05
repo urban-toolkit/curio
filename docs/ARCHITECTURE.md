@@ -253,7 +253,10 @@ color. The boxes, frames and stand-in edges it returns are drawn by
 `components/scenarios/ScenarioLayers.tsx` beside React Flow's renderer, in its
 coordinates, not as React Flow nodes and edges. React Flow's store is what
 `reactFlow.getNodes()` returns to Run All, a save and an agent's view, so it must
-never hold a node that is not in the dataflow.
+never hold a node that is not in the dataflow. The dashboard page draws its
+scenario columns' frames and headers with the same component;
+`src/utils/scenarios/scenarioDashboard.ts` decides which column each pinned tile goes
+in, and `prepareDashboardNodes` places the columns.
 
 A node drawn hidden is never measured, so code that needs a node's size or hit-tests
 nodes leaves it out (`isDrawnHidden`): the load fit (`fitViewWithMenuOffset`) and the
@@ -467,8 +470,8 @@ interface INodeData {
   nodeType: string;
   input?: ICodeDataContent;       // reference to upstream output file
   outputCallback?: Function;      // push output to FlowProvider
-  interactionsCallback?: Function; // push user interactions upstream
-  propagationCallback?: Function;  // receive interactions from upstream
+  interactionsCallback?: Function; // report the node's selection to FlowProvider
+  propagationCallback?: Function;  // a Data Pool hands its row flags to the pools linked to it
   interactions?: IInteraction[];
   propagation?: any;
 }
@@ -684,6 +687,8 @@ When a user clicks the play button on a node, the following sequence occurs:
 ```
 
 **Backend side:** both routes only parse the request and call [`execution/node_exec.py`](../utk_curio/backend/app/execution/node_exec.py). Its `execute_python_node` and `execute_js_node` take the account and the session token as arguments, so a node runs the same way from a route or from a thread with no request: they resolve dataset paths, collections, connection keys and models, call the sandbox, auto-install the output, write the runtime journal and count the run on the monitor. The HTTP session to the sandbox is in [`execution/sandbox_client.py`](../utk_curio/backend/app/execution/sandbox_client.py): `sandbox_request` raises `SandboxTransportError` when the sandbox times out, cannot be reached or refuses the shared secret, and the routes answer it as JSON with a 504 or 502.
+
+**Package modules (#468).** For a node whose package ships Python modules in `sources/`, `node_exec.resolve_package_modules` adds `package_modules: {"root", "names"}` to the `/exec` body: the package's `sources/` folder in the account's store and its module names, the importable names there that no template names as its `source` ([`packages/domain/python_modules.py`](../utk_curio/backend/app/packages/domain/python_modules.py)). The headless runner and the ground-truth harness send the same. In both execution modes the sandbox links those modules into a folder of the run's own with `staging.stage_package_modules` (under fork isolation, the child's scratch directory), puts the folder first on `sys.path` for the run, and when the run ends removes it and every module imported from it ([`sandbox/util/package_modules.py`](../utk_curio/sandbox/util/package_modules.py)): the next run, after an update or of another package, imports its own copy. An import of a package's module is not shared with the session's later nodes. A module name that is already loaded from somewhere else fails the node with that name. The installer refuses a package that ships a module another installed package ships (`refuse_a_module_name_in_use`); two majors of one package may share names. Save into a package and the Package Builder hand the package's module names to the import scanner (`scan_imports_for_filename`), which leaves them out of the detected dependencies.
 
 **JavaScript execution detail:** `JS Computation` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed; the Node subprocess is per-request and fully isolated.
 
@@ -957,7 +962,7 @@ quoted path. See [DATA-CATALOG.md](DATA-CATALOG.md) for the authoring view.
 
 ## Interactions and Propagation
 
-Visualization nodes (`Autark`, `Vega-Lite`, `Simple View`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
+Visualization nodes (`Autark`, `Vega-Lite`, `Simple View`) report the user's selections (clicks, hovers, brushes, picks). A selection travels over interaction edges, to a Data Pool or straight to another chart, and each of them highlights the rows it picks; no node runs again for it. A node's code reads a view's selection through a selection tag (below).
 
 ### IInteraction
 
@@ -990,7 +995,16 @@ A selection is active when it picks something: a point selection with rows, or a
 
 The pool writes its `interacted` flags into a copy of its output (`utils/poolFlagCopy`), never into its input or into an output it already sent, which the charts downstream still hold. Its echo names the chart that just selected (`selectionSource`, see `utils/selectionEcho`) under every mode. An Autark node skips an echo of its own selection, so a plot keeps its brush; a Vega chart applies it, which only recolours rows. Every other chart shows the resolved rows, and an Autark plot shows them as its selection in place of its own brush.
 
-The propagation counter (`INodeData.propagation`) is incremented each time an interaction change needs to trigger a re-execution, allowing nodes to detect when they need to re-run without comparing the full interaction payload.
+A Data Pool linked to another Data Pool by an interaction edge hands it the flags of the rows its `linked` column names (`INodeData.propagation`, through `applyNewPropagation`), and flips that pool's `newPropagation`, so the other pool flags those rows too.
+
+### Selection tags
+
+A node's code reads a view's current selection as `[!! selection name !!]`: the ids of the selected rows, a list. The tag lives on the node that reads it, in `data.selections` and in the spec at `metadata.selections` (`{name, node, column, ids}`), so a run on the server and the headless runner read the ids from the saved dataflow, as the browser does.
+
+- **Rows.** A view hands over the rows it matches selections against (`utils/references/viewSelections.provideViewRows`): a Vega-Lite node the rows it draws, whose positions its point selections name; an Autark node the features of each layer it reads, whose positions its picks name. Nothing is fetched again.
+- **Ids.** `utils/references/selectionTags.selectedIds` resolves the view's latest select with `matchSelections`, as a Data Pool in its default mode does, and reads the tag's column from those rows, each value once. `_vgsid_` and row positions are never stored: a node reads its own upstream artifact, where they mean nothing. `idColumns` offers `osm_id` and `building_id`, then any column whose values are all text or numbers and all different. More than `SELECTION_ID_CAP` (10,000) ids are stored as a `count`, which fails the run with a message.
+- **Updates.** `providers/flow/useSelectionTags` records each view's latest selection. On one the user made, or cleared (`changesSelection`: a select at priority 1 that holds a selection, or that empties one the view held), it rewrites the ids of every tag on that view and marks the nodes holding them stale. A chart declaring its selects as it compiles, or reporting them empty as its signal listeners hear the first pulse, changes nothing, so a reload or a redraw keeps the saved ids. `runKeyWithShared` takes the node's tags, so the run cache keys on the ids its code names.
+- **Resolution.** The selection kind is one more kind in the reference module (`codeReferences.ts`, `execution/code_references.py`), pinned by the shared cases table. `WorkflowSpec.node_code` passes a node's tags, which `run_engine` and `runner` both call.
 
 ---
 

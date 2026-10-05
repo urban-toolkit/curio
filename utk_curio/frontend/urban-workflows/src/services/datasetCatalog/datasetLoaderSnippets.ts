@@ -106,7 +106,15 @@ const LOADED_VARIABLES: Partial<Record<DatasetFormat, string>> = {
   json: "data",
   geotiff: "src",
   bundle: "bundle",
+  onnx: "session",
+  netcdf: "ds",
 };
+
+/** Formats whose loaded value stays in the node's own code: a node's output
+ * cannot carry an onnxruntime session or an xarray Dataset, so their loader
+ * names the value and returns nothing. KEEP IN SYNC with `KEPT_IN_CODE` in the
+ * backend generator. */
+const KEPT_IN_CODE: ReadonlySet<DatasetFormat> = new Set<DatasetFormat>(["onnx", "netcdf"]);
 
 /**
  * Loader body for ``format: bundle`` datasets (multi-output / tuple node
@@ -193,7 +201,8 @@ export function osmGroupLoaderSnippet(
     imports: readsByPath ? ["import geopandas as gpd", "import pandas as pd"] : [],
     pathVariable: "layers",
     code,
-    returnVariable: "layers",
+    // NetCDF variables stay in the node's code, as a single one does.
+    returnVariable: layers.some((layer) => KEPT_IN_CODE.has(layer.format)) ? null : "layers",
   };
 }
 
@@ -222,7 +231,7 @@ function snippetForFormat(
         imports: [],
         pathVariable: null,
         code: `${variable} = curio_load_data(${quoted})`,
-        returnVariable: variable,
+        returnVariable: KEPT_IN_CODE.has(format) ? null : variable,
       };
     }
     return {
@@ -287,6 +296,24 @@ function snippetForFormat(
       pathVariable: "dataset_path",
       code: `dataset_path = ${expr}\nsrc = rasterio.open(dataset_path)`,
       returnVariable: "src",
+    };
+  }
+  if (format === "onnx") {
+    return {
+      language: "python",
+      imports: ["import onnxruntime as ort"],
+      pathVariable: "dataset_path",
+      code: `dataset_path = ${expr}\nsession = ort.InferenceSession(dataset_path, providers=["CPUExecutionProvider"])`,
+      returnVariable: null,
+    };
+  }
+  if (format === "netcdf") {
+    return {
+      language: "python",
+      imports: ["import xarray as xr"],
+      pathVariable: "dataset_path",
+      code: `dataset_path = ${expr}\nds = xr.open_dataset(dataset_path, engine="netcdf4")`,
+      returnVariable: null,
     };
   }
   if (format === "collection") {

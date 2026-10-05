@@ -1,5 +1,5 @@
 {
-  "about": "Code reference cases: widget, input and column references. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their columns when known.",
+  "about": "Code reference cases: widget, input, column, shared and selection references. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their columns when known; its selections are the node's selection tags, with the ids each holds.",
   "cases": [
     {
       "name": "a number on its own",
@@ -479,6 +479,96 @@
       "shared": [],
       "expected": "{\"a\": [!! @9lives !!]}",
       "problems": ["[!! @9lives !!] does not name a Parameter node. Parameter names are letters, digits and underscores."]
+    },
+    {
+      "name": "a selection tag's ids on their own are a list",
+      "language": "python",
+      "code": "picked = [!! selection picked !!]\nreturn arg[arg[\"osm_id\"].isin(picked)]",
+      "widgets": [],
+      "selections": [{"name": "picked", "node": "chart", "column": "osm_id", "ids": [101, 104, 12345678901]}],
+      "expected": "picked = [101, 104, 12345678901]\nreturn arg[arg[\"osm_id\"].isin(picked)]"
+    },
+    {
+      "name": "a selection's text and number ids in JavaScript",
+      "language": "javascript",
+      "code": "const ids = [!! selection roads !!];\nreturn ids.length;",
+      "widgets": [],
+      "selections": [{"name": "roads", "node": "map", "column": "way", "ids": ["w12", "w9", 1.5]}],
+      "expected": "const ids = [\"w12\", \"w9\", 1.5];\nreturn ids.length;"
+    },
+    {
+      "name": "a selection in a Vega-Lite filter and inside a title",
+      "language": "json",
+      "code": "{\"title\": \"Picked [!! selection picked !!]\", \"transform\": [{\"filter\": {\"field\": \"osm_id\", \"oneOf\": [!! selection picked !!]}}]}",
+      "widgets": [],
+      "selections": [{"name": "picked", "node": "chart", "column": "osm_id", "ids": [101, 104]}],
+      "expected": "{\"title\": \"Picked [101, 104]\", \"transform\": [{\"filter\": {\"field\": \"osm_id\", \"oneOf\": [101, 104]}}]}"
+    },
+    {
+      "name": "text ids inside a Vega-Lite title are escaped for JSON",
+      "language": "json",
+      "code": "{\"title\": \"Roads [!! selection roads !!]\"}",
+      "widgets": [],
+      "selections": [{"name": "roads", "node": "map", "column": "way", "ids": ["w12"]}],
+      "expected": "{\"title\": \"Roads [\\\"w12\\\"]\"}"
+    },
+    {
+      "name": "a selection inside a string and a comment",
+      "language": "python",
+      "code": "print('picked: [!! selection names !!]')  # [!! selection names !!]",
+      "widgets": [],
+      "selections": [{"name": "names", "node": "chart", "column": "name", "ids": ["Ann's", "Bo"]}],
+      "expected": "print('picked: [\"Ann\\'s\", \"Bo\"]')  # [\"Ann's\", \"Bo\"]"
+    },
+    {
+      "name": "nothing selected is an empty list",
+      "language": "python",
+      "code": "ids = [!! selection picked !!]",
+      "widgets": [],
+      "selections": [{"name": "picked", "node": "chart", "column": "osm_id", "ids": []}],
+      "expected": "ids = []"
+    },
+    {
+      "name": "a selection tag and a widget of the same name are two values",
+      "language": "python",
+      "code": "return [!! picked !!], [!! selection picked !!]",
+      "widgets": [{"name": "picked", "type": "number", "default": 3}],
+      "selections": [{"name": "picked", "node": "chart", "column": "osm_id", "ids": [7]}],
+      "expected": "return 3, [7]"
+    },
+    {
+      "name": "a widget named selection is a widget",
+      "language": "javascript",
+      "code": "return [!! selection !!];",
+      "widgets": [{"name": "selection", "type": "text", "default": "all"}],
+      "expected": "return \"all\";"
+    },
+    {
+      "name": "a selection tag the node does not have",
+      "language": "python",
+      "code": "x = [!! selection missing !!]",
+      "widgets": [{"name": "missing", "type": "number", "default": 1}],
+      "selections": [],
+      "expected": "x = [!! selection missing !!]",
+      "problems": ["[!! selection missing !!]: this node has no selection tag named missing. Add it in the Widgets tab."]
+    },
+    {
+      "name": "a selection reference that does not name a tag",
+      "language": "javascript",
+      "code": "const a = [!! selection 9lives !!];",
+      "widgets": [],
+      "selections": [],
+      "expected": "const a = [!! selection 9lives !!];",
+      "problems": ["[!! selection 9lives !!] does not name a selection tag. Selection tag names are letters, digits and underscores."]
+    },
+    {
+      "name": "a selection holding more ids than a tag takes",
+      "language": "json",
+      "code": "{\"oneOf\": [!! selection picked !!]}",
+      "widgets": [],
+      "selections": [{"name": "picked", "node": "chart", "column": "osm_id", "count": 25000}],
+      "expected": "{\"oneOf\": [!! selection picked !!]}",
+      "problems": ["[!! selection picked !!]: the selection holds 25000 ids, more than the 10000 a selection tag takes. Select fewer rows in its view."]
     }
   ]
 }

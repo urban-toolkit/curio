@@ -64,6 +64,14 @@
   color: var(--curio-accent-amber-fg);
 }
 
+/* A selection tag, the ids a view's selection picks: peach, like its chips. */
+.selectionTag {
+  composes: tag;
+  border-color: #f2b9a3;
+  background: var(--curio-accent-peach-bg);
+  color: #b8461d;
+}
+
 .columnTag {
   composes: tag;
   border-color: #a8d5b1;
@@ -221,6 +229,14 @@
   line-height: var(--widget-h);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A selection tag that holds no ids it can give: too many, or a deleted view. */
+.selectionProblem {
+  grid-area: control;
+  min-width: 0;
+  color: var(--curio-danger-text);
+  line-height: 1.3;
 }
 
 .control {

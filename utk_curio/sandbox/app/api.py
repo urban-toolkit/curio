@@ -14,6 +14,7 @@ import mmap
 from shapely import wkt
 
 from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code, chdir_locked
+from utk_curio.sandbox.util import package_modules as package_modules_util
 from utk_curio.sandbox.util.secrets import shape_secrets
 from utk_curio.sandbox.util.db import connection_in_use
 
@@ -682,6 +683,10 @@ def exec():
     if not isinstance(models, dict):
         models = {}
     models = {str(key): str(value) for key, value in list(models.items())[:8] if value}
+    # {"root", "names"}: the modules the node's package ships beside its
+    # templates, from the user's package store (#468). Both paths stage them
+    # into a folder of the run's own and make them importable for the run.
+    package_modules = package_modules_util.shape(request.json.get('package_modules'))
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
@@ -697,14 +702,14 @@ def exec():
             session_id=session_id, save_dataset=bool(save_dataset),
             dataset_paths=dataset_paths, user_key=user_key, config=config,
             secrets=secrets, collections=collections, media_dir=media_dir, models=models,
-            dataset_formats=dataset_formats,
+            dataset_formats=dataset_formats, package_modules=package_modules,
         )
     else:
         result = execute_code(
             code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset),
             dataset_paths=dataset_paths, secrets=secrets, collections=collections, media_dir=media_dir,
-            models=models, dataset_formats=dataset_formats,
+            models=models, dataset_formats=dataset_formats, package_modules=package_modules,
         )
 
     # A Compare Scenarios node's code hands two rasters back as a request: they

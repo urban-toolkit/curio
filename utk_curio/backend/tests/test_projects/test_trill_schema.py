@@ -353,6 +353,29 @@ REJECTED = {
     "copiedFrom as a bare id": lambda d: _node(d)["metadata"].update(copiedFrom="n0"),
     "copiedFrom empty": lambda d: _node(d)["metadata"].update(copiedFrom=[]),
     "copiedFrom holding an empty id": lambda d: _node(d)["metadata"].update(copiedFrom=[""]),
+    # #662: a selection tag names its view and id column, and holds its ids or
+    # how many there were, never both and never more ids than a tag takes.
+    "selection tag without its column": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "ids": [1]}]
+    ),
+    "selection tag holding neither ids nor a count": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "column": "osm_id"}]
+    ),
+    "selection tag holding ids and a count": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "column": "osm_id", "ids": [1], "count": 20000}]
+    ),
+    "selection tag holding more ids than a tag takes": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "column": "osm_id", "ids": list(range(10001))}]
+    ),
+    "selection tag counting fewer ids than a tag takes": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "column": "osm_id", "count": 12}]
+    ),
+    "selection tag holding an object as an id": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "column": "geometry", "ids": [{"type": "Point"}]}]
+    ),
+    "selection tag named as a reference": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "selection picked", "node": "n2", "column": "osm_id", "ids": []}]
+    ),
     # #662: a Compare Scenarios node labels each input by name and hex color.
     "compare label without a color": lambda d: _node(d)["metadata"].update(
         compareScenarios={"inputs": [{"scenario": "s1", "name": "Baseline"}]}
@@ -402,6 +425,12 @@ ACCEPTED = {
     ),
     # A copy of a copy: its lineage, oldest first (Duplicate selection, #662).
     "a copy's lineage": lambda d: _node(d)["metadata"].update(copiedFrom=["n0", "n0-copy"]),
+    # #662: selection tags holding ids, nothing, and a count over the cap.
+    "selection tags with ids, none, and a count": lambda d: _node(d)["metadata"].update(selections=[
+        {"name": "picked", "node": "n2", "column": "osm_id", "ids": [101, "w2", 1.5]},
+        {"name": "nothing_yet", "node": "n2", "column": "building_id", "ids": []},
+        {"name": "many", "node": "n2", "column": "osm_id", "count": 25000},
+    ]),
     # A Compare Scenarios node (#662): an input in no scenario has no id.
     "compare labels, one in no scenario, and a chart": lambda d: _node(d)["metadata"].update(
         compareScenarios={

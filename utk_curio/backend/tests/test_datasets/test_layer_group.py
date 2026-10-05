@@ -72,3 +72,28 @@ def test_a_discovery_download_group_says_what_its_layers_say():
     mixed = build_layer_group_item("osm.x1a2b3c4", [downloaded[0], {**downloaded[1], "discoverySource": None}])
     assert mixed["sourceLabel"] == "OSM Import"
     assert mixed["discoverySource"] is None
+
+
+def test_a_shipped_group_says_what_its_layers_say_and_keeps_its_kind():
+    """Layers that ship in the catalog every account shares, as a hub row or
+    its installed ``data.*`` copy: the group takes their source label and tags
+    and is a hub entry, but it keeps its kind's format, which is what the
+    canvas palette shows for it (``layerGroupFormat``)."""
+    shipped = [
+        {
+            **_member(layer, group_id="osm.x1a2b3c4", fmt="parquet", tags=["osm", "chicago"]),
+            "id": f"data.utk.loop-{layer}",
+            "origin": "hub",
+            "sourceLabel": "Curio",
+        }
+        for layer in ("points", "lines")
+    ]
+    installed = [{**shipped[0], "origin": "imported", "dirName": "data.utk.loop-points@1"}, shipped[1]]
+    for members in (shipped, installed):
+        group = build_layer_group_item("osm.x1a2b3c4", members)
+        assert group["format"] == "osm"
+        assert (group["sourceLabel"], group["tags"], group["origin"]) == ("Curio", ["osm", "chicago"], "hub")
+
+    # One layer of the user's own keeps the group an import.
+    own = build_layer_group_item("osm.x1a2b3c4", [shipped[0], {**shipped[1], "origin": "imported"}])
+    assert (own["sourceLabel"], own["origin"]) == ("OSM Import", "imported")

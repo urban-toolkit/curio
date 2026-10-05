@@ -46,6 +46,9 @@ const READERS: Record<DatasetFormat, string | null> = {
   // A collection's index, with a readable path for every file, which only the
   // sandbox's `curio_load_collection` can resolve.
   collection: "curio_load_collection",
+  // An onnxruntime session and an xarray Dataset (see KEPT_IN_CODE).
+  onnx: "curio_load_data",
+  netcdf: "curio_load_data",
 };
 
 /** The reader an id-less loader (a legacy literal path) spells out per format. */
@@ -58,7 +61,16 @@ const LITERAL_READERS: Partial<Record<DatasetFormat, string>> = {
   geotiff: "rasterio.open",
   bundle: "_curio_load_bundle",
   collection: "pd.read_parquet",
+  onnx: "ort.InferenceSession",
+  netcdf: "xr.open_dataset",
 };
+
+/**
+ * Formats whose loaded value stays in the node's own code. A node's output
+ * cannot carry a model session or an xarray Dataset, so their loader names the
+ * value and returns nothing; the checks below hold them to that instead.
+ */
+const KEPT_IN_CODE: DatasetFormat[] = ["onnx", "netcdf"];
 
 function snippetFor(format: DatasetFormat) {
   return getDatasetLoaderSnippet({
@@ -70,8 +82,25 @@ function snippetFor(format: DatasetFormat) {
 
 describe("snippetForFormat", () => {
   const covered = (Object.keys(READERS) as DatasetFormat[]).filter(
-    (format) => READERS[format] !== null,
+    (format) => READERS[format] !== null && !KEPT_IN_CODE.includes(format),
   );
+
+  it.each(KEPT_IN_CODE)("loads %s by dataset id into a variable and returns nothing", (format) => {
+    const snippet = snippetFor(format);
+    const variable = format === "onnx" ? "session" : "ds";
+    expect(snippet.code).toBe(`${variable} = curio_load_data("data.utk.example")`);
+    expect(snippet.returnVariable).toBeNull();
+    expect(buildDatasetLoaderCode({ id: "data.utk.example", format, path: "/tmp/example-file" } as never)).toBe(
+      `${variable} = curio_load_data("data.utk.example")`,
+    );
+  });
+
+  it.each(KEPT_IN_CODE)("reads %s from its literal path without an id, and returns nothing", (format) => {
+    const snippet = getDatasetLoaderSnippet({ format, path: "/tmp/example-file" } as never);
+    expect(snippet.code).toContain(LITERAL_READERS[format] as string);
+    expect(snippet.code).toContain('"/tmp/example-file"');
+    expect(snippet.returnVariable).toBeNull();
+  });
 
   it.each(covered)("emits a real reader for %s", (format) => {
     const snippet = snippetFor(format);
