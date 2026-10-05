@@ -13,7 +13,8 @@
  * `metadata.compareScenarios.inputs` and the code are written again together,
  * which makes the node stale; so it is when the view the node is in changes
  * (`utils/compare/compareMode`: the user's choice, else Difference for two
- * rasters or two layers), or the key Difference joins rows on. A run then
+ * rasters or two layers), the key Difference joins rows on, or the layer it
+ * reads from inputs that are an Autark node's several layers. A run then
  * compares the new inputs, in the browser or on the server, as any Python
  * node's code runs.
  */
@@ -22,7 +23,7 @@ import type { NodeBehaviorHook } from "../../registry/types";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { CompareScenariosBody } from "../../components/compare/CompareScenariosBody";
 import { compareInputs, labelsNeedWriting } from "../../utils/compare/compareInputs";
-import { compareCode, keyOfCode, modeOfCode, stackCode } from "../../utils/compare/compareCode";
+import { compareCode, keyOfCode, layerOfCode, modeOfCode, stackCode } from "../../utils/compare/compareCode";
 import { inputKinds, wantedMode } from "../../utils/compare/compareMode";
 import { normalizeCompareSettings, type CompareSettings } from "../../utils/compare/compareSettings";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
@@ -60,11 +61,12 @@ export const useCompareScenariosBehavior: NodeBehaviorHook = (data, nodeState) =
   const scenarios: Scenario[] = flow?.scenarios ?? [];
   const inputs = compareInputs(data.nodeId, nodes, edges, scenarios);
   const inputsKey = JSON.stringify(inputs.map((input) => [input.slot, input.label]));
-  // What the code is written for besides the labels: the view the node wants
-  // and the key Difference joins rows on.
+  // What the code is written for besides the labels: the view the node wants,
+  // the key Difference joins rows on, and the layer it reads from an Autark
+  // node's several.
   const wanted = normalizeCompareSettings((data as any).compareScenarios);
   const kinds = inputKinds((data as any).inputSlots, inputs.map((input) => input.slot));
-  const modeKey = JSON.stringify([wantedMode(wanted, kinds), wanted?.difference?.key ?? null]);
+  const modeKey = JSON.stringify([wantedMode(wanted, kinds), wanted?.difference?.key ?? null, wanted?.layer ?? null]);
   // Nothing is written where nobody can save it: the dashboard, a shared view.
   const writable = !flow?.dashboardOn && flow?.viewerMode !== "shared";
 
@@ -81,8 +83,9 @@ export const useCompareScenariosBehavior: NodeBehaviorHook = (data, nodeState) =
     const relabel = labelsNeedWriting(stored?.inputs, inputs, edges.length > 0);
     const switched = written !== null && written !== mode;
     const rekeyed = written === "difference" && mode === "difference" && keyOfCode(current) !== stored?.difference?.key;
-    if (!relabel && !switched && !rekeyed) return;
-    const code = compareCode(mode, inputs, stored?.difference);
+    const relayered = written !== null && layerOfCode(current) !== stored?.layer;
+    if (!relabel && !switched && !rekeyed && !relayered) return;
+    const code = compareCode(mode, inputs, stored?.difference, stored?.layer);
     const settings: CompareSettings = { ...(stored ?? {}) };
     if (inputs.length > 0) settings.inputs = inputs.map((input) => input.label);
     else delete settings.inputs;

@@ -270,6 +270,9 @@ def execute_workflow_programmatically(
 
     outputs: dict[str, dict] = {}   # node_id → {"path": artifact_id, "dataType": ...}
     expected: dict[str, dict] = {}  # node_id → eager-loaded artifact dict (see fix below)
+    # Nodes that give this runner no output: one only the browser runs (an
+    # Autark data or compute step) and every Python node below one.
+    browser_only: set[str] = set()
 
     for node in spec.topo_sorted_nodes():
         # Non-code nodes — and code nodes whose content is JavaScript
@@ -279,6 +282,17 @@ def execute_workflow_programmatically(
             propagated = propagate_node_input(spec, node.id, outputs)
             if propagated is not None:
                 outputs[node.id] = propagated
+            else:
+                browser_only.add(node.id)
+            continue
+
+        # A Python node reading such a node has no input here, so it has no
+        # ground truth either; the browser run is checked without one (#662:
+        # example 06's Compare Scenarios nodes read its Autark maps). Any other
+        # missing upstream is still the KeyError below.
+        unrun = [uid for uid in spec.upstream_nodes(node.id) if uid not in outputs]
+        if unrun and all(uid in browser_only for uid in unrun):
+            browser_only.add(node.id)
             continue
 
         # Resolve input (mirrors process_python_code in backend routes.py)
