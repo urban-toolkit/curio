@@ -10,6 +10,10 @@
  * a FeatureCollection from its geometry column, or is refused the way Vega
  * refuses a geoshape over data with no geometry.
  *
+ * A raster is a table too, under the same names, but it is not a geojson
+ * source: it is listed in `rasters` with where it is, and the node loads it
+ * (adapters/node/autkRasters).
+ *
  * No autk import here: this stays testable under jest.
  */
 import type { FeatureCollection } from "geojson";
@@ -18,7 +22,7 @@ import { requestedLayerTables } from "../adapters/node/autkDataCompile";
 import { readableBuildingProperties } from "./buildingHeight";
 import { detectCoordinateFormat } from "./geoCrs";
 import { resolveGeometryField } from "./geometryField";
-import { readGrammarInput, type GrammarFrame, type GrammarInput } from "./grammarInput";
+import { readGrammarInput, type GrammarFrame, type GrammarInput, type RasterPayload } from "./grammarInput";
 import type { NodeEmptyReason } from "./nodeEmptyState";
 import { toRows } from "./rowSource";
 
@@ -32,10 +36,18 @@ export type AutkSource = {
   layerType?: string;
 };
 
+/** A raster the input provides, by the table name the document reads it by. */
+export type AutkRasterInput = {
+  outputTableName: string;
+  payload: RasterPayload;
+};
+
 export type PreparedAutkInput = {
   /** One geojson source per table the input provides, plus `input_<k>` for an
    * input holding one named layer, when the document names it. */
   sources: AutkSource[];
+  /** The rasters the input provides, named as the geojson sources are. */
+  rasters: AutkRasterInput[];
   /** The tables the input provides, by name. */
   tables: string[];
   /** Tables the input names but cannot provide, because they cannot be drawn. */
@@ -231,7 +243,7 @@ export function tablePositions(rows: number[], order: number[] | null | undefine
 
 /** Read the Autark node's input: the fetch, done once per input object. */
 export function readAutkInput(input: any, opts: { preview?: boolean } = {}): Promise<GrammarInput> {
-  return readGrammarInput(input, { label: AUTK_INPUT_LABEL, bundles: true, preview: opts.preview });
+  return readGrammarInput(input, { label: AUTK_INPUT_LABEL, bundles: true, rasters: true, preview: opts.preview });
 }
 
 /**
@@ -247,6 +259,7 @@ export function autkSourcesFrom(
   if (read.emptyReason) {
     return {
       sources: [],
+      rasters: [],
       tables: [],
       unusable: [inputTableName(0)],
       emptyReason: read.emptyReason,
@@ -254,9 +267,10 @@ export function autkSourcesFrom(
       inputProblem: read.detail,
     };
   }
-  if (read.frames.length === 0) return { sources: [], tables: [], unusable: [] };
+  if (read.frames.length === 0) return { sources: [], rasters: [], tables: [], unusable: [] };
 
   const sources: AutkSource[] = [];
+  const rasters: AutkRasterInput[] = [];
   const unusable: string[] = [];
   const problems: string[] = [];
   let firstRefusal: { reason: NodeEmptyReason; detail: string } | null = null;
@@ -282,6 +296,10 @@ export function autkSourcesFrom(
       }
     }
     broughtBy.set(name, frame.circle);
+    if (frame.dataType === "raster") {
+      rasters.push({ outputTableName: name, payload: frame.payload });
+      continue;
+    }
     const result = featuresOf(frame, name);
     if ("reason" in result) {
       unusable.push(name);
@@ -316,20 +334,24 @@ export function autkSourcesFrom(
       const alias = inputTableName(circle);
       if (frames.length !== 1 || !frames[0].name || !refs.has(alias)) return;
       if (sources.some((s) => s.outputTableName === alias)) return;
+      if (rasters.some((r) => r.outputTableName === alias)) return;
       const own = sources.find((s) => s.outputTableName === frames[0].name);
+      const raster = rasters.find((r) => r.outputTableName === frames[0].name);
       if (own) sources.unshift({ ...own, outputTableName: alias });
+      else if (raster) rasters.unshift({ ...raster, outputTableName: alias });
       else if (unusable.includes(frames[0].name) && !unusable.includes(alias)) unusable.push(alias);
     });
   }
 
   const prepared: PreparedAutkInput = {
     sources,
-    tables: sources.map((s) => s.outputTableName),
+    rasters,
+    tables: [...sources.map((s) => s.outputTableName), ...rasters.map((r) => r.outputTableName)],
     unusable,
     rowsIn,
     ...(problems.length ? { inputProblem: problems.join(" ") } : {}),
   };
-  if (sources.length === 0 && firstRefusal) {
+  if (sources.length === 0 && rasters.length === 0 && firstRefusal) {
     prepared.emptyReason = firstRefusal.reason;
     prepared.detail = firstRefusal.detail;
   }

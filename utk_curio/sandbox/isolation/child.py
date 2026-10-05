@@ -628,6 +628,12 @@ def run_node(request, namespace_factory):
 
             argument = rebuild_input(request.get("input") or {"kind": "none"},
                                      scratch_dir)
+            # A raster an Autark node handed on arrives as a rasterio dataset,
+            # written into the scratch directory, the one place this child
+            # writes and where a raster it returns is collected from.
+            from utk_curio.sandbox.util.rasters import rasters_for_python
+
+            argument = rasters_for_python(argument, scratch_dir)
 
             # Same tripwire as the in-process path, and the same AST walk: a
             # node that never reads an input is not refused for merely

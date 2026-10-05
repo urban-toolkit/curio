@@ -34,7 +34,9 @@ CORS_HEADERS = {
     # a header missing from this list is unreadable rather than merely
     # unnoticed, and the payload would decode into an envelope with no
     # dataType. ARROW_RESPONSE_HEADERS in the sandbox route is the source of
-    # truth; a test pins that this covers it.
+    # truth; a test pins that this covers it. X-Curio-Raster is the raster
+    # route's description of the GeoTIFF it sends (RASTER_META_HEADER in
+    # sandbox/util/rasters.py), pinned the same way.
     "Access-Control-Expose-Headers": ",".join((
         "Content-Disposition",
         "X-Curio-Kind",
@@ -46,6 +48,7 @@ CORS_HEADERS = {
         "X-Curio-Total-Rows",
         "X-Curio-Encoded-Object-Columns",
         "X-Curio-Frame-Metadata",
+        "X-Curio-Raster",
     )),
     "Access-Control-Max-Age": "600",
 }

@@ -550,6 +550,70 @@ def artifact_meta():
     })
 
 
+@app.route('/raster', methods=['GET'])
+@require_sandbox_token
+@holds_duckdb
+def get_raster():
+    """A raster artifact as GeoTIFF bytes, for an Autark node to load.
+
+    ``part`` picks one raster out of a Python tuple. ``maxCells`` and
+    ``maxSide`` are what the caller can load: a larger raster is answered 413
+    with its description, and nothing is written. The description of a served
+    raster rides in the ``X-Curio-Raster`` header (see util/rasters.py).
+    """
+    import traceback as _tb
+
+    from utk_curio.sandbox.util.rasters import (
+        RASTER_META_HEADER, RasterRefused, meta_header, serve_raster,
+    )
+
+    art_id = request.args.get('fileName')
+    if not art_id:
+        abort(400, "fileName is required")
+    session_id = request.args.get('sessionId') or None
+    try:
+        part = request.args.get('part')
+        part = int(part) if part not in (None, '') else None
+        max_cells = int(request.args.get('maxCells') or 0) or None
+        max_side = int(request.args.get('maxSide') or 0) or None
+    except ValueError:
+        abort(400, "part, maxCells and maxSide are whole numbers")
+
+    launch_dir = os.environ.get('CURIO_LAUNCH_CWD')
+    try:
+        with chdir_locked(launch_dir):
+            payload, meta = serve_raster(
+                art_id, session_id=session_id, part=part,
+                max_cells=max_cells, max_side=max_side,
+            )
+    except RasterRefused as refused:
+        return jsonify({
+            'error': refused.code,
+            'message': str(refused),
+            'meta': refused.meta,
+            'fileName': art_id,
+        }), refused.status
+    except KeyError:
+        return jsonify({
+            'error': 'not-found',
+            'message': f'no raster artifact {art_id}',
+            'fileName': art_id,
+        }), 404
+    except Exception as e:
+        print(f"[sandbox /raster] failed  fileName={art_id}  session={session_id}\n"
+              f"{_tb.format_exc()}", file=sys.stderr, flush=True)
+        return jsonify({
+            'error': type(e).__name__,
+            'message': str(e),
+            'fileName': art_id,
+        }), 500
+    return Response(
+        payload,
+        mimetype='image/tiff',
+        headers={RASTER_META_HEADER: meta_header(meta)},
+    )
+
+
 @app.route('/exec', methods=['POST'])
 @require_sandbox_token
 @holds_duckdb
