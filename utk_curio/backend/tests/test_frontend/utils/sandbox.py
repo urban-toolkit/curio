@@ -295,15 +295,19 @@ def execute_workflow_programmatically(
             browser_only.add(node.id)
             continue
 
-        # Resolve input (mirrors process_python_code in backend routes.py)
+        # Resolve input as the backend does (node_exec.parse_input_ref): a fan-in
+        # is a list of refs, passed as a stringified list that worker.py eval()s
+        # back; one upstream whose node returned several values is its outputs
+        # artifact, read as a file and expanded by the worker.
+        from utk_curio.backend.app.execution.node_exec import parse_input_ref
+
         ref = resolve_node_input(spec, node.id, outputs)
-        if ref["dataType"] == "outputs":
-            # Pass as stringified list; worker.py eval()s it back
-            file_path = str(ref["path"])
-            data_type = "outputs"
+        if ref["dataType"] == "outputs" and isinstance(ref["path"], list):
+            parsed = parse_input_ref({"dataType": "outputs", "data": ref["path"]})
         else:
-            file_path = ref["path"]
-            data_type = ref["dataType"]
+            parsed = parse_input_ref({"path": ref["path"], "dataType": ref["dataType"]})
+        data_type = parsed["dataType"]
+        file_path = str(parsed["path"]) if data_type == "outputs" else parsed["path"]
 
         # Sandbox /exec expects code already indented as a function body
         resolved = spec.node_code(node, "python")
