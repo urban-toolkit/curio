@@ -289,7 +289,28 @@ describe("a run's outcome", () => {
     mockFlow = flowOf(g);
     render(<Harness data={compare.data} state={nodeState({ code: "success", content: "Saved to file: computed.p1.cmp.parquet" })} />);
     await waitFor(() => expect(mockUseVega).toHaveBeenCalled());
-    expect(mockUseVega.mock.calls.at(-1)![0].data.input).toEqual({ path: "computed.p1.cmp.parquet" });
+    expect(mockUseVega.mock.calls.at(-1)![0].data.input.path).toBe("computed.p1.cmp.parquet");
+  });
+
+  test("the chart says when its compile settled, and what stopped it", async () => {
+    const g = graph({ compareScenarios: { inputs: [BASE, TALL] } });
+    const compare = g.nodes.find((n) => n.id === COMPARE)!;
+    mockFlow = flowOf(g);
+    const restored = nodeState({ code: "success", content: "Saved to file: computed.p1.cmp.parquet" });
+    const view = render(<Harness data={compare.data} state={restored} />);
+    const chartState = () => view.container.querySelector("[data-compare-chart-state]")?.getAttribute("data-compare-chart-state");
+    await waitFor(() => expect(chartState()).toBe("drawn"));
+    // The reference the chart reads carries the type its read found.
+    expect(mockUseVega.mock.calls.at(-1)![0].data.input).toEqual({ path: "computed.p1.cmp.parquet", dataType: "dataframe" });
+    expect(view.container.querySelector("[data-compare-chart-problem]")).toBeNull();
+
+    mockCompile.mockRejectedValueOnce(new Error("undefined is not iterable"));
+    view.unmount();
+    const again = render(<Harness data={compare.data} state={restored} />);
+    await waitFor(() =>
+      expect(again.container.querySelector("[data-compare-chart-state]")?.getAttribute("data-compare-chart-state")).toBe("problem"),
+    );
+    expect(again.container.querySelector("[data-compare-chart-problem]")!.textContent).toBe("undefined is not iterable");
   });
 
   test("the file a run saved is its outcome's last such line", () => {

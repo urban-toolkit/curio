@@ -159,6 +159,34 @@ _COLOR_PIXELS_JS = """([id, colors]) => {
 }"""
 
 
+# Where the chart's compile stands: "drawing", "drawn" or "problem", once the
+# body shows *preset* (the pane and the chart render together).
+_CHART_STATE_JS = """([id, preset]) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    const pane = node && node.querySelector("[data-compare-preset]");
+    const chart = node && node.querySelector("[data-compare-chart-state]");
+    if (!pane || !chart) return null;
+    if (pane.getAttribute("data-compare-preset") !== preset) return "another preset";
+    return chart.getAttribute("data-compare-chart-state");
+}"""
+
+
+def _assert_chart_drew(page, node_id: str, preset: str) -> None:
+    """The chart of *preset* compiled with no problem, and its canvas holds both
+    scenarios' colors."""
+    deadline = time.time() + 60
+    state = None
+    while time.time() < deadline:
+        state = page.evaluate(_CHART_STATE_JS, [node_id, preset])
+        if state in ("drawn", "problem"):
+            break
+        page.wait_for_timeout(250)
+    problem = node_locator(page, node_id).locator("[data-compare-chart-problem]").all_inner_texts()
+    assert state == "drawn", f"the {preset} chart's compile ended {state!r}: {problem}"
+    assert_vega_canvas_rendered(page, node_id, timeout=30000)
+    _assert_scenario_colors_drawn(page, node_id)
+
+
 def _assert_scenario_colors_drawn(page, node_id: str) -> None:
     colors = [BASELINE["color"], TWICE["color"]]
     counts = None
@@ -211,8 +239,7 @@ def test_two_scenarios_are_stacked_charted_and_compared(
     status = wait_for_node_settled(page, COMPARE, node_type=COMPARE_TYPE, timeout_ms=120000)
     assert status == "done", f"Compare Scenarios did not stack its inputs: {read_node_error_text(compare)}"
     frame_nodes(page, [COMPARE])
-    assert_vega_canvas_rendered(page, COMPARE, timeout=60000)
-    _assert_scenario_colors_drawn(page, COMPARE)
+    _assert_chart_drew(page, COMPARE, "bar")
     artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, COMPARE)
     assert artifact, "Compare Scenarios shows no saved output"
     stacked = load_artifact_as_dict(artifact)
@@ -241,8 +268,7 @@ def test_two_scenarios_are_stacked_charted_and_compared(
     compare.get_by_role("tab", name="Chart", exact=True).click()
     frame_nodes(page, [COMPARE])
     compare.locator('select[aria-label="Chart"]').select_option("lollipop")
-    assert_vega_canvas_rendered(page, COMPARE, timeout=30000)
-    _assert_scenario_colors_drawn(page, COMPARE)
+    _assert_chart_drew(page, COMPARE, "lollipop")
     save_dataflow(page)
     project = api_json(f"{current_server}/api/projects/{project_id}", session["token"])
     saved = {n["id"]: n for n in project["spec"]["dataflow"]["nodes"]}
@@ -259,8 +285,7 @@ def test_two_scenarios_are_stacked_charted_and_compared(
     page.goto(f"{app_frontend.base_url}/dashboard/{project_id}")
     page.get_by_test_id("open-dataflow-link").wait_for(state="visible", timeout=45000)
     node_locator(page, COMPARE).wait_for(state="visible", timeout=45000)
-    assert_vega_canvas_rendered(page, COMPARE, timeout=90000)
-    _assert_scenario_colors_drawn(page, COMPARE)
+    _assert_chart_drew(page, COMPARE, "lollipop")
 
     # 7. Reopened, it reads its labels and code back and writes nothing, and the
     #    chart draws from the saved output with no run.
@@ -272,8 +297,7 @@ def test_two_scenarios_are_stacked_charted_and_compared(
     assert _wait_for_code(page, COMPARE, ENTRY_LINES) == content
     frame_nodes(page, [COMPARE])
     compare.locator('.nav-link[data-rr-ui-event-key="output"]').click()
-    assert_vega_canvas_rendered(page, COMPARE, timeout=60000)
-    _assert_scenario_colors_drawn(page, COMPARE)
+    _assert_chart_drew(page, COMPARE, "lollipop")
     assert compare.locator('select[aria-label="Chart"]').input_value() == "lollipop"
     assert compare.locator("[data-compare-warning]").count() == 0
     assert page.locator("[data-curio-save-state]").first.get_attribute("data-curio-save-state") == "saved"
@@ -286,6 +310,7 @@ def test_two_scenarios_are_stacked_charted_and_compared(
     assert warning.all_inner_texts() == [
         "Input 1 (Twice as tall) and input 0 (Baseline) read different context: only input 1 reads Roads 2050."
     ], warning.all_inner_texts()
+    _assert_chart_drew(page, COMPARE, "lollipop")
 
     save_node_closeup(
         page, "compare-scenarios", COMPARE,
