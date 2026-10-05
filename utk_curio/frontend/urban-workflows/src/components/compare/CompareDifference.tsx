@@ -50,9 +50,12 @@ function rowsOf(frame: GrammarInput["frames"][number]): any[] {
     : toRows({ data: frame.payload });
 }
 
+/** Columns Curio keeps for its own bookkeeping, as `classifyColumns` leaves them out. */
+const BOOKKEEPING = new Set(["__row_index__", "interacted"]);
+
 function namesOf(frame: GrammarInput["frames"][number], rows: any[]): string[] {
   const names = frame.schema ? Object.keys(frame.schema) : Object.keys(rows[0] ?? {});
-  return names.filter((name) => name !== frame.geometryName);
+  return names.filter((name) => name !== frame.geometryName && !BOOKKEEPING.has(name));
 }
 
 function readOf(read: GrammarInput | null, ref: Ref): DifferenceRead | null {
@@ -198,7 +201,7 @@ export function CompareDifference({
 
   const drawn = read && isDifference(read.kind, read.names) ? read : null;
   const kind = drawn?.kind ?? null;
-  const values = kind === "raster" || kind === "layer" ? differenceValues(kind, drawn!) : [];
+  const values = kind === "raster" || kind === "layer" ? differenceValues(kind, drawn!, settings?.key) : [];
   const value = resolveValue(settings?.value, values);
 
   const set = (patch: Partial<DifferenceSettings>) => {
@@ -267,8 +270,9 @@ export function CompareDifference({
       <div className={styles.mapCanvas}>{stage}</div>
       {drawn && drawn.kind !== "table" && value && !value.categorical ? (
         <p className={styles.note} data-compare-difference-note="true">
-          Dark purple is the lowest difference and yellow the highest.
-          {drawn.kind === "raster" ? " The closer a cell is to no difference, the fainter it is." : ""}
+          {drawn.kind === "raster"
+            ? "The higher a cell's difference, the darker its red, and the closer it is to no difference, the fainter it is."
+            : "Dark purple is the lowest difference and yellow the highest."}
         </p>
       ) : null}
     </div>

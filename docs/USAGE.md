@@ -620,9 +620,10 @@ The node has two tabs:
   (**Combine**: mean, sum, median, minimum, maximum, or a count of rows).
 - **Difference**, in its place in Difference, maps a raster's or a layer's
   difference, colored by a band or a number column, or by `change` (**Color by**).
-  Colors run from the lowest difference, dark purple, to the highest, yellow. On a
-  raster, the closer a cell is to no difference, the fainter it is. A table's
-  difference is shown as a table, each row in the color of its change.
+  A layer's colors run from the lowest difference, dark purple, to the highest,
+  yellow. A raster's cells are redder the higher their difference, and fainter the
+  closer they are to no difference. A table's difference is shown as a table, each
+  row in the color of its change.
 - **What differs** lists the levers that differ between the scenarios: for each, the
   widget values and the code lines that changed, read against the first scenario's.
   A node and the copies made from it with **Duplicate selection** or **Duplicate as

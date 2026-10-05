@@ -25,9 +25,14 @@ export const CHANGE_COLORS = ["#2e8540", "#c0392b", "#b7791f", "#8a8f98"];
 export const DIFFERENCE_TABLE = "input_0";
 
 /**
- * A difference, from its lowest value (dark purple) to its highest (yellow).
- * Sequential, since autk-map takes no domain that would centre a diverging
- * scheme on zero, and colors a raster with one against its own legend.
+ * A layer's difference, from its lowest value (dark purple) to its highest
+ * (yellow). Sequential, since autk-grammar takes no domain that would centre
+ * a diverging scheme on zero.
+ *
+ * A raster takes no scheme: autk-map colors a raster's cells when it loads
+ * it, in its own reds, and autk-grammar sets a layer's scheme after that, so
+ * a scheme would change the legend and not the cells. The raster's layer asks
+ * for its legend alone (`isColorMap`), which then shows the reds it is drawn in.
  */
 export const DIFFERENCE_INTERPOLATOR = "interpolateViridis";
 
@@ -35,20 +40,34 @@ export type DifferenceKind = "raster" | "layer" | "table";
 
 export type DifferenceValue = { value: string; text: string; categorical: boolean };
 
+/** The ids a difference joins rows on when the node names no key, the first both have
+ * (`STABLE_IDS` in `utk_curio/sandbox/util/scenario_difference.py`). */
+export const STABLE_IDS = ["osm_id", "building_id"] as const;
+
+/**
+ * The column a difference of layers or tables was joined on: the node's *key*,
+ * else the first stable id its columns (*names*) hold.
+ */
+export function joinKey(names: readonly string[], key?: string): string | undefined {
+  if (key && names.includes(key)) return key;
+  return STABLE_IDS.find((id) => names.includes(id));
+}
+
 /**
  * What the map can color the difference by: a raster's bands, or a layer's
- * number columns but its *key* (the ids rows were joined on, its first
- * column), and its `change`.
+ * number columns but the ids its rows were joined on (*key*), and its
+ * `change`.
  */
 export function differenceValues(
   kind: DifferenceKind,
   read: { bands?: readonly string[]; columns?: readonly ClassifiedColumn[]; names?: readonly string[] },
+  key?: string,
 ): DifferenceValue[] {
   if (kind === "raster") return (read.bands ?? []).map((band) => ({ value: band, text: band, categorical: false }));
   const names = read.names ?? [];
-  const key = names[0];
+  const joined = joinKey(names, key);
   const numbers = (read.columns ?? [])
-    .filter((column) => column.role === "quantitative" && column.name !== key)
+    .filter((column) => column.role === "quantitative" && column.name !== joined)
     .map((column) => ({ value: column.name, text: column.name, categorical: false }));
   const change = names.includes(CHANGE_FIELD)
     ? [{ value: CHANGE_FIELD, text: "change (added, removed, changed)", categorical: true }]
@@ -65,11 +84,7 @@ export function resolveValue(wanted: string | undefined, values: readonly Differ
 export function differenceMapDoc(kind: "raster" | "layer", value: DifferenceValue | undefined): Record<string, unknown> {
   if (!value) return { map: { layerRefs: [{ dataRef: DIFFERENCE_TABLE }] } };
   if (kind === "raster") {
-    return {
-      map: {
-        layerRefs: [{ dataRef: DIFFERENCE_TABLE, getFnv: value.value, colorMapInterpolator: DIFFERENCE_INTERPOLATOR }],
-      },
-    };
+    return { map: { layerRefs: [{ dataRef: DIFFERENCE_TABLE, getFnv: value.value, isColorMap: true }] } };
   }
   if (value.categorical) {
     return {
