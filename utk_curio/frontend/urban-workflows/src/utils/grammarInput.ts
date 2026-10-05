@@ -355,6 +355,9 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
       skipped.push(`${type ?? "an item"} at position ${index}`);
     }
   }
+  // A reference that names its table names the one frame it holds, whatever
+  // its type turned out to be (a raster's difference arrives undeclared).
+  if (named && frames.length === 1) frames[0] = { ...frames[0], name: named };
   // Stable, so the layers one input brought keep their order.
   frames.sort((a, b) => a.circle - b.circle || a.index - b.index);
 

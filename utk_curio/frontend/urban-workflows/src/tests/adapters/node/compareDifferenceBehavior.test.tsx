@@ -267,7 +267,9 @@ describe("its body in Difference", () => {
     expect(JSON.parse(mockApply.mock.calls.at(-1)![0]).map.layerRefs[0]).toEqual({
       dataRef: "sunlight_change", getFnv: "sunlight", getFnvType: "quantitative", colorMapInterpolator: "interpolateViridis",
     });
-    expect(mockAutk.mock.calls.at(-1)![0].input).toEqual({ path: "diff-1", layerName: "sunlight_change" });
+    expect(mockAutk.mock.calls.at(-1)![0].input).toEqual({
+      path: "diff-1", dataType: "geodataframe", layerName: "sunlight_change",
+    });
     expect(screen.getByText("Dark purple is the lowest difference and yellow the highest.")).not.toBeNull();
     fireEvent.change(screen.getByRole("combobox", { name: "Color by" }), { target: { value: "change" } });
     expect(mockUpdateDataNode).toHaveBeenCalledWith(

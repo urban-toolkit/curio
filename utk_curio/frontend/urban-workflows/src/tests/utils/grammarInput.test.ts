@@ -73,6 +73,14 @@ describe("readGrammarInput", () => {
       { ...AUTK, rasters: true },
     );
     expect(raster.frames[0]).toMatchObject({ name: "band_1_change", dataType: "raster", payload: { artifact: "grid" } });
+
+    // A reference that does not declare its type is named once it is read,
+    // as a Compare Scenarios node's raster difference arrives.
+    const envelope = { dataType: "raster", data: { type: "FeatureCollection", features: [] } };
+    mockFetchData.mockResolvedValue(envelope);
+    const undeclared = await readGrammarInput({ path: "grid", layerName: "band_1_change" }, { ...AUTK, rasters: true });
+    expect(undeclared.frames).toHaveLength(1);
+    expect(undeclared.frames[0]).toMatchObject({ name: "band_1_change", dataType: "raster", payload: { envelope } });
   });
 
   test("a geodataframe takes the Autark layer type its metadata names", async () => {
