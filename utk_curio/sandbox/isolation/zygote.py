@@ -106,6 +106,7 @@ def build_namespace_template():
 
     from utk_curio.sandbox.util.codec import detect_kind
     from utk_curio.sandbox.util.parsers import checkIOType
+    from utk_curio.sandbox.util.scenario_stack import stack_scenarios
 
     return {
         "__builtins__": __builtins__,
@@ -130,6 +131,8 @@ def build_namespace_template():
         "duckdb": duckdb,
         "detect_kind": detect_kind,
         "checkIOType": checkIOType,
+        # The Compare Scenarios node's code stacks its inputs with it (#662).
+        "curio_stack_scenarios": stack_scenarios,
         # The three store helpers the in-process path also seeds are replaced
         # by stubs. See _unavailable_under_isolation.
         "load_from_duckdb": _unavailable_under_isolation("load_from_duckdb"),

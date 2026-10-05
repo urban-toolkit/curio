@@ -267,6 +267,13 @@ export function isPassThroughNode(node: { type?: string | null; data?: any }): b
 }
 
 /**
+ * Node kinds whose tile draws the node's own output rather than what reaches
+ * it: a Compare Scenarios node (#662) charts the table its own run stacked.
+ * Mirrors `_SELF_DRAWN_KINDS` in `projects/dashboard_payload.py`.
+ */
+export const SELF_DRAWN_NODE_TYPES: ReadonlySet<string> = new Set(["curio.builtin/compare-scenarios"]);
+
+/**
  * The nodes whose outputs a dashboard needs saved.
  *
  * Walking up from each pinned tile, the first node on every path that is not a
@@ -277,14 +284,23 @@ export function isPassThroughNode(node: { type?: string | null; data?: any }): b
  * A pinned node's own output is not in the set. What a tile renders comes from
  * its input; a node that renders its own run output instead (a code node's
  * stdout pane, a Data Summary's table) has nothing a saved dataset could
- * restore, so saving it would add a dataset that nothing reads.
+ * restore, so saving it would add a dataset that nothing reads. The exception
+ * is a node whose tile draws its own output (`SELF_DRAWN_NODE_TYPES`): it is
+ * its own source, and its inputs are not walked.
  */
 export function dashboardSourceNodeIds(
   nodes: readonly { id: string; type?: string | null; data?: any }[],
   edges: readonly { source?: unknown; target?: unknown }[],
 ): Set<string> {
-  const pinned = nodes.filter((node) => node.data?.dashboardPinned).map((node) => node.id);
-  return producersFeeding(pinned, nodes, edges);
+  const pinned = nodes.filter((node) => node.data?.dashboardPinned);
+  const drawn = pinned.filter((node) => SELF_DRAWN_NODE_TYPES.has(getUnversionedFlowNodeType(node as any)));
+  const sources = producersFeeding(
+    pinned.filter((node) => !drawn.includes(node)).map((node) => node.id),
+    nodes,
+    edges,
+  );
+  drawn.forEach((node) => sources.add(node.id));
+  return sources;
 }
 
 /**

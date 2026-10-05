@@ -486,6 +486,47 @@ describe("TrillGenerator Spatial Join settings (#262)", () => {
   });
 });
 
+describe("TrillGenerator Compare Scenarios settings (#662)", () => {
+  beforeEach(() => {
+    TrillGenerator.reset();
+  });
+
+  test("persists the input labels and the chart at metadata.compareScenarios, and only when set", () => {
+    const compare = (nodeId: string, compareScenarios?: unknown) => ({
+      type: "CURIO_UNIVERSAL_NODE",
+      position: { x: 0, y: 0 },
+      data: { nodeId, nodeType: "curio.builtin/compare-scenarios@1", ...(compareScenarios ? { compareScenarios } : {}) },
+    });
+    const spec = TrillGenerator.generateTrill(
+      [
+        compare("labelled", {
+          inputs: [
+            { scenario: "s-base", name: "Baseline", color: "#2a9d8f" },
+            { name: "Loader", color: "#8a8f98" },
+          ],
+          chart: { preset: "lollipop", y: "sunlight", aggregate: "median" },
+        }),
+        compare("fresh"),
+        // Nothing well formed left: nothing written.
+        compare("junk", { inputs: [{ name: "Baseline", color: "green" }], chart: { preset: "radar" } }),
+      ],
+      [],
+      "Imported Workflow"
+    );
+
+    const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
+    expect(byId["labelled"].metadata.compareScenarios).toEqual({
+      inputs: [
+        { scenario: "s-base", name: "Baseline", color: "#2a9d8f" },
+        { name: "Loader", color: "#8a8f98" },
+      ],
+      chart: { preset: "lollipop", y: "sunlight", aggregate: "median" },
+    });
+    expect(byId["fresh"].metadata).toBeUndefined();
+    expect(byId["junk"].metadata).toBeUndefined();
+  });
+});
+
 describe("TrillGenerator Data Pool conflict modes (#581)", () => {
   beforeEach(() => {
     TrillGenerator.reset();

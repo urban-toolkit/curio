@@ -396,6 +396,7 @@ def _worker_init():
         checkIOType,
         save_dataset_parquet,
     )
+    from utk_curio.sandbox.util.scenario_stack import stack_scenarios
 
     _globals_cache = {
         '__builtins__': __builtins__,
@@ -424,6 +425,8 @@ def _worker_init():
         'detect_kind': detect_kind,
         'checkIOType': checkIOType,
         'save_dataset_parquet': save_dataset_parquet,
+        # The Compare Scenarios node's code stacks its inputs with it (#662).
+        'curio_stack_scenarios': stack_scenarios,
     }
 
 

@@ -12,6 +12,7 @@
 - [Running a dataflow](#running-a-dataflow)
 - [Widgets](#widgets)
 - [Scenarios](#scenarios)
+  - [Comparing scenarios](#comparing-scenarios)
 - [Node Catalog](#node-catalog)
 - [Vega-Lite node](#vega-lite-node)
 - [Autark node](#autark-node)
@@ -558,6 +559,52 @@ Catalog, whatever their **Save output** setting, as pinning a dashboard tile doe
 chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios,
 their colors, descriptions, collapsed state and box positions are saved with the
 dataflow. Deleting a node removes it from its scenario.
+
+### Comparing scenarios
+
+The **Compare Scenarios** node compares scenarios' outcomes on the canvas:
+
+1. Drag **Compare Scenarios** from the palette onto the canvas.
+2. Connect each scenario's outcome to one of its input circles. Each edge takes the
+   next circle, as on any node with several inputs, and each input is labelled by
+   the scenario its node belongs to.
+3. Run it. It stacks its inputs into one table, with the scenario's id in a
+   `scenario` column and its name in a `scenario_name` column on every row. That
+   table is its output: other nodes can read it, and the node can be pinned to the
+   dashboard.
+
+Its code is written for it, one line per input, reading the input through its chip
+under its scenario's id and name. It is written again when an input changes or a
+scenario is renamed or recolored, and the node then waits for a run.
+
+It stacks inputs of one kind:
+
+- tables (a DataFrame, a GeoDataFrame, a list of records, a dict of columns, or a
+  dict of values, which is one row), keeping their rows. A column one input lacks is
+  empty in its rows.
+- values (a number, a text, true or false, or a list of them), one row each under a
+  `value` column.
+
+A table beside a value, a GeoDataFrame beside a plain table, two coordinate systems,
+an input with no value, an input that holds several tables, or a raster stops the run
+with a message naming the input.
+
+The node has two tabs:
+
+- **Chart** draws the stacked table in the scenarios' colors, as **Bars**, **Grouped
+  bars**, **Lines**, **Points**, a **Pie**, **Lollipops** or a **Table**. Pick the
+  columns it reads (**X**, **Y**) and how the Y values of a group are combined
+  (**Combine**: mean, sum, median, minimum, maximum, or a count of rows).
+- **What differs** lists the levers that differ between the scenarios: for each, the
+  widget values and the code lines that changed, read against the first scenario's.
+  A node and the copies made from it with **Duplicate selection** or **Duplicate as
+  scenario** are one lever. A node with no copy in another scenario is listed as only
+  in the scenarios that have it.
+
+Above both tabs it warns when the scenarios read different fixed context, naming the
+inputs and the context only one of them reads, when an input comes from a node in no
+scenario (its rows carry that node's name, and What differs leaves it out), and when
+two inputs come from one scenario.
 
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
 fixed context, levers and outcomes and the results its project saved. Open it from

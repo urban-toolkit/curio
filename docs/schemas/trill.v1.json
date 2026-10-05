@@ -377,6 +377,37 @@
           "minItems": 1,
           "description": "Where a copy made by Duplicate selection (#662) comes from: the ids of the nodes it descends from, oldest first, ending with the node it was copied from. Two nodes are the same lever in two scenarios when their ids and these lists meet. Emitted only on a copy."
         },
+        "compareScenarios": {
+          "type": "object",
+          "description": "Settings of a Compare Scenarios node (#662). `inputs` labels each input circle, in circle order, by the scenario its node belongs to: the scenario's `scenario` id, `name` and `color`. An input whose node is in no scenario carries the node's name, a neutral color and no `scenario`. The node's code is written from these labels, and its stacked table carries them. `chart` is what its Chart tab draws from that table: the `preset`, the columns it reads as `x` and `y`, and the `aggregate` that combines the y values of a group. Emitted only when the node has inputs or a chart setting.",
+          "additionalProperties": false,
+          "properties": {
+            "inputs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["name", "color"],
+                "additionalProperties": false,
+                "properties": {
+                  "scenario": { "type": "string", "minLength": 1 },
+                  "name": { "type": "string", "minLength": 1 },
+                  "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+                }
+              }
+            },
+            "chart": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": { "type": "string", "enum": ["bar", "grouped-bar", "line", "scatter", "pie", "lollipop", "table"] },
+                "x": { "type": "string", "minLength": 1 },
+                "y": { "type": "string", "minLength": 1 },
+                "aggregate": { "type": "string", "enum": ["mean", "sum", "median", "min", "max", "count"] }
+              }
+            }
+          }
+        },
         "dataPool": {
           "type": "object",
           "description": "A Data Pool's conflict modes (#581): how the selections that reach it combine. `insideChart` resolves the selects of one chart, `betweenCharts` the latest selection of each chart linked to the pool. OVERWRITE keeps the newest, MERGE_AND the rows every active selection picked, MERGE_OR the rows any of them picked. An absent member means OVERWRITE, and only the other modes are written.",

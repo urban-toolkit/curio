@@ -90,6 +90,18 @@ ids of the nodes it descends from, oldest first, ending with the node it was
 copied from. Two nodes are the same lever in two scenarios when their ids and
 these lists meet.
 
+`metadata.compareScenarios` holds a `curio.builtin/compare-scenarios` node's
+settings, written only when it has inputs or a chart setting. `inputs` labels each
+input circle, in circle order, `{scenario?, name, color}`: the id, name and color of
+the scenario the input's node belongs to, or, for a node in no scenario, the node's
+name, a neutral color and no `scenario`. The node's `content` is written from them,
+one `(scenario, name, [!! input k !!])` entry per input handed to
+`curio_stack_scenarios`, which stacks the inputs into one table under `scenario` and
+`scenario_name`. `chart` is `{preset?, x?, y?, aggregate?}`: `preset` is one of
+`bar`, `grouped-bar`, `line`, `scatter`, `pie`, `lollipop` and `table`, `x` and `y`
+name columns of that table, and `aggregate` is one of `mean`, `sum`, `median`,
+`min`, `max` and `count`.
+
 `metadata.comments` carries the node's discussion, written only when non-empty.
 Each entry is `{id, text, author, authorName, createdAt, resolved}`. The author's
 avatar is not stored, because `profile_image` may be a full data URL; `canDelete`
