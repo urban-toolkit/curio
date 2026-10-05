@@ -15,6 +15,10 @@ import {
   setCurrentProjectPackages,
 } from "../../../registry/projectPackagesStore";
 import { EdgeType } from "../../../constants";
+import { normalizeWidgets } from "../../../utils/widgets/widgetModel";
+import { lineageFromSpec } from "../../../utils/scenarios/duplicateSelection";
+import { joinScenarios } from "../../../utils/scenarios/scenarioEdits";
+import type { Scenario } from "../../../utils/scenarios/scenarioModel";
 
 // Approximate node footprint for viewport centering — the node isn't measured
 // yet at insert time; half-extent offsets are all setCenter needs.
@@ -74,7 +78,7 @@ function appliedEdgeToCanvasEdge(edge: {
 
 export function useAgentCanvasMutations(): void {
   const { createCodeNode } = useCode();
-  const { applyNodeContent, onEdgesChange, applyReviewedRemovals } = useFlowContext();
+  const { applyNodeContent, onEdgesChange, applyReviewedRemovals, scenarios, setScenarios } = useFlowContext();
   const { reveal } = useNotebookViewContext();
   const reactFlow = useReactFlow();
   const { getNodes, setCenter, getZoom } = reactFlow;
@@ -85,6 +89,10 @@ export function useAgentCanvasMutations(): void {
   const handlerRef = useRef<(mutation: AgentCanvasMutation) => void>(() => undefined);
 
   const insertNode = (node: AgentCreatedNode) => {
+    // #662: read as a load reads them (loadTrill), so the live node holds
+    // what the spec does and the next save writes them back.
+    const widgets = normalizeWidgets(node.metadata?.widgets);
+    const copiedFrom = lineageFromSpec(node.metadata?.copiedFrom);
     createCodeNode(node.type, {
       nodeId: node.id,
       code: node.content,
@@ -94,12 +102,23 @@ export function useAgentCanvasMutations(): void {
       // values reach live data so the next save re-persists them.
       appearance: node.metadata?.appearance,
       title: node.title,
+      ...(widgets.length ? { widgets } : {}),
+      ...(copiedFrom.length ? { copiedFrom } : {}),
     });
+  };
+
+  // #662: scenarios the apply saved join the canvas's, which a save writes.
+  const joinSaved = (saved: Scenario[] | undefined) => {
+    if (saved?.length) setScenarios(joinScenarios(scenarios, saved));
   };
 
   handlerRef.current = (mutation: AgentCanvasMutation) => {
     if (mutation.kind === "node-content-applied") {
       applyNodeContent(mutation.nodeId, mutation.content);
+      return;
+    }
+    if (mutation.kind === "scenarios-created") {
+      joinSaved(mutation.scenarios);
       return;
     }
     if (mutation.kind === "edges-created") {
@@ -146,6 +165,7 @@ export function useAgentCanvasMutations(): void {
           item: appliedEdgeToCanvasEdge(edge) as never,
         })),
       );
+      joinSaved(mutation.scenarios);
       window.setTimeout(
         () => fitViewWithMenuOffset(reactFlow, { duration: 400 }),
         50,

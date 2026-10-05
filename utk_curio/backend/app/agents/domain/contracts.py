@@ -438,7 +438,9 @@ TRILL_SCHEMA = "docs/schemas/trill.v1.json"
 TRILL_PROMPT_FIELDS: dict[str, tuple[str, ...]] = {
     "dataflowBase": ("nodes", "edges", "name", "task", "scenarios"),
     "node": ("id", "type", "content", "goal", "title", "x", "y", "in", "out", "metadata"),
-    "nodeMetadata": ("keywords",),
+    # #662: a node's widgets are what an agent declares for its code to read,
+    # and a copy's lineage is how two scenarios' levers pair.
+    "nodeMetadata": ("keywords", "widgets", "copiedFrom"),
     "edge": ("id", "source", "target", "type", "sourceHandle", "targetHandle", "metadata"),
     # Where a scenario sits on the canvas and where it came from are the
     # canvas's own bookkeeping, and its description is for people.
@@ -697,6 +699,36 @@ def _input_chip(_src: _Sources, text: str) -> str:
     return reference_text(input_reference_inner(int(slot), column or None))
 
 
+def _widget_kinds(_src: _Sources) -> str:
+    """The kinds a widget can be (``WIDGET_KINDS``), as ``a, b ... or z``."""
+    from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
+
+    return _join(list(WIDGET_KINDS), "or")
+
+
+def _widget_name(name: str) -> str:
+    from utk_curio.backend.app.execution.code_references import WIDGET_NAME_RE
+
+    if not WIDGET_NAME_RE.match(name):
+        raise PromptTemplateError(f"{name!r} is not a widget name")
+    return name
+
+
+def _widget_reference(_src: _Sources, name: str) -> str:
+    """The reference code places a node's widget *name* by (``reference_text``)."""
+    from utk_curio.backend.app.execution.code_references import reference_text
+
+    return reference_text(_widget_name(name))
+
+
+def _shared_reference(_src: _Sources, name: str) -> str:
+    """The reference any node's code places the Parameter node *name* by:
+    its shared tag (``SHARED_PREFIX``)."""
+    from utk_curio.backend.app.execution.code_references import SHARED_PREFIX, reference_text
+
+    return reference_text(SHARED_PREFIX + _widget_name(name))
+
+
 def _not_code(src: _Sources) -> str:
     """The built-in templates whose nodes hold no Python or JavaScript code
     (``_control`` calls them uncontrollable or grammar), one ``- <label>`` line
@@ -883,6 +915,9 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     )},
     "inputs.handles": PromptField(_input_handles),
     "inputs.chip": PromptField(_input_chip, takes_arg=True),
+    "widgets.kinds": PromptField(_widget_kinds),
+    "widgets.reference": PromptField(_widget_reference, takes_arg=True),
+    "widgets.shared": PromptField(_shared_reference, takes_arg=True),
     "builtin.not_code": PromptField(_not_code),
     "autk.grammar": PromptField(
         lambda src: render_autk_region(src.autk, _template_label(src, AUTK_TEMPLATE))

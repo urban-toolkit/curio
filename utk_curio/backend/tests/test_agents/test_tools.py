@@ -306,6 +306,54 @@ class TestDataflowReadProjection:
         assert by_id["e2"]["kind"] == "interaction"
         assert "kind" not in by_id["e1"]  # data stays byte-absent, as in the plan
 
+    def test_scenarios_ride_the_projection_with_their_parts(self, tmp_curio):
+        """#662: each scenario with what it is made of, read by the rule the
+        canvas reads it by: its levers, its fixed context (an edge into it, or
+        a Parameter node its code names) and its outcomes. Nodes show their
+        widgets' values and a copy its lineage."""
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        spec = {"dataflow": {"nodes": [
+            {"id": "load", "type": "curio.builtin/data-loading", "content": "return 1"},
+            {"id": "a", "type": "curio.builtin/computation-analysis",
+             "content": "return arg * [!! factor !!] * [!! @season !!]",
+             "metadata": {"widgets": [{"name": "factor", "type": "number", "default": 1, "value": 2}]}},
+            {"id": "b", "type": "curio.builtin/vis-vega", "content": "{}"},
+            {"id": "p", "type": "curio.builtin/parameter",
+             "metadata": {"widgets": [{"name": "season", "type": "text", "default": "winter"}]}},
+            {"id": "a2", "type": "curio.builtin/computation-analysis", "content": "return arg",
+             "metadata": {"copiedFrom": ["a"]}},
+        ], "edges": [
+            {"id": "e1", "source": "load", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+            {"id": "e3", "source": "load", "target": "a2"},
+        ], "scenarios": [
+            {"id": "s1", "name": "Real heights", "color": "#3567c7", "description": "as mapped",
+             "nodes": ["a", "b", "ghost"], "collapsed": True, "box": {"x": 1, "y": 2}},
+        ]}}
+        projects_storage.write_spec(self.UKEY, self.PID, spec)
+        _, text = tools.execute_read_tool(
+            "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
+        )
+        payload = json.loads(text)
+        assert payload["scenarios"] == [{
+            "id": "s1", "name": "Real heights", "color": "#3567c7", "description": "as mapped",
+            "levers": ["a", "b"], "context": ["load", "p"], "outcomes": ["b"],
+        }]
+        rows = {n["id"]: n for n in payload["nodes"]}
+        assert rows["a"]["widgets"] == [{"name": "factor", "type": "number", "value": 2}]
+        assert rows["a2"]["copiedFrom"] == ["a"]
+        assert "widgets" not in rows["load"] and "copiedFrom" not in rows["a"]
+
+    def test_a_dataflow_without_scenarios_projects_as_before(self, tmp_curio):
+        self._write_big_spec(n_nodes=3, content_chars=10)
+        _, text = tools.execute_read_tool(
+            "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
+        )
+        payload = json.loads(text)
+        assert "scenarios" not in payload
+        assert all(set(n) == {"id", "type", "goal", "hasContent", "contentChars"} for n in payload["nodes"])
+
 
 class TestNodeRuntimeRead:
     """dev/67-2 — the journal's read tool: honest never-executed, traceback

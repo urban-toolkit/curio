@@ -13,6 +13,7 @@ import uuid
 
 from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import widget_grammar
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import cards as agents_cards
@@ -636,6 +637,18 @@ def _mint_node_content_write(
     )
 
 
+def _node_create_widgets(entry: dict, raw: object) -> tuple[list, list[str]]:
+    """#662: the widgets a created node declares, or why they are refused: a
+    widget is placed by a node's code or spec, so only such a node holds one."""
+    widgets, problems = widget_grammar.parse_widgets(raw, "params.widgets")
+    if problems:
+        return [], problems
+    if widgets and entry.get("contentKind") not in ("code", "grammar"):
+        return [], [f"params.widgets: a {entry.get('label') or entry.get('id')} node cannot hold widgets; "
+                    "a widget is placed in a node's code or spec"]
+    return widgets, []
+
+
 def _mint_node_create(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
@@ -689,11 +702,16 @@ def _mint_node_create(
         appearance = node_appearance.normalize_appearance(raw_appearance)
     except node_appearance.AppearanceError as exc:
         return agents_tool_rounds._refuse_params(f"params.appearance: {exc}")
+    widgets, widget_errors = _node_create_widgets(entry, params.get("widgets"))
+    if widget_errors:
+        return agents_tool_rounds._refuse_params("; ".join(widget_errors))
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         return "refused", "no saved project spec is available", None
     proposal_id = uuid.uuid4().hex
     summary = f"Create a new {entry['label']} node" + (f" · {title}" if title else "")
+    if widgets:
+        summary += " · widgets " + ", ".join(w["name"] for w in widgets)
     part = content.make_proposal_part(
         proposal_id=proposal_id,
         tool="node.create",
@@ -723,6 +741,8 @@ def _mint_node_create(
         proposal["title"] = title
     if appearance:
         proposal["appearance"] = appearance
+    if widgets:
+        proposal["widgets"] = widgets
     agents_store._store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
     loop_ctx["_note_creates"] = loop_ctx.get("_note_creates", 0) + 1  # A13 index
     return (

@@ -273,6 +273,14 @@ class TestCheck:
         rebound = "frames = arg\nfirst = [!! input 0 !!]\nreturn frames.to_crs(3395)"
         assert ic.check(rebound, self._shape())["attribute"] == "to_crs"
 
+    def test_widget_references_do_not_turn_the_gate_off(self):
+        # #662: a widget or shared tag is a value when the node runs. Left in
+        # place, the code did not parse and the gate let `arg.crs` through.
+        code = "factor = [!! factor !!]\nseason = [!! @season !!]\nreturn arg.crs"
+        assert ic.check(code, self._shape()) == {"attribute": "crs", "name": "arg", "line": 3}
+        fine = "gdf = [!! input 0 !!]\ngdf['h'] = gdf['h'] * [!! factor !!]\nreturn gdf"
+        assert ic.check(fine, self._shape()) is None
+
 
 class TestTheGateInTheLoop:
     """dev/128: the refusal happens BEFORE the sandbox, and the correction is

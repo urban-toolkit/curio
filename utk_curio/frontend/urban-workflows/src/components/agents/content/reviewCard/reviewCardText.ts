@@ -55,6 +55,8 @@ export interface PlanNodeReviewState {
     string,
     string | { proposalId: string; attachmentId?: string | null }
   >;
+  /** #662: scenario index → applied|refused, once the apply reached it. */
+  scenarioStates?: Record<string, string>;
 }
 
 /** dev/71: what a row's lifecycle state means for its action cluster. */
@@ -114,8 +116,15 @@ export function removalsTitle(nodes: number, edges: number, cascade: number): st
 }
 
 /** dev/52 (+dev/59): the plan card's effect line — dynamic and honest about
- * removals. */
+ * removals; #662: and about the scenarios it saves. */
 export function planEffectLine(part: AgentProposalPart): string | null {
+  const line = planChangeLine(part);
+  const saved = part.plan?.scenarios?.length ?? 0;
+  if (line === null || !saved) return line;
+  return `${line} It saves ${saved} scenario${saved === 1 ? "" : "s"}.`;
+}
+
+function planChangeLine(part: AgentProposalPart): string | null {
   if (part.tool !== "dataflow.plan.write" || !part.plan) return null;
   const n = part.plan.nodes.length;
   const removed = part.plan.removals?.length ?? 0;
@@ -145,7 +154,7 @@ export function planEffectLine(part: AgentProposalPart): string | null {
  * lifecycle state, whether Solve may run, and — when not — why. */
 export function planNodeRowState(
   part: AgentProposalPart,
-  node: { ref: string },
+  node: { ref: string; copyOf?: string },
   planNodeState: PlanNodeReviewState | undefined,
 ) {
   const planEdges = part.plan!.edges ?? [];
@@ -172,7 +181,45 @@ export function planNodeRowState(
   const proposalEntry = planNodeState?.nodeProposals?.[node.ref];
   const reviewHomeId =
     proposalEntry && typeof proposalEntry === "object" ? (proposalEntry.attachmentId ?? null) : null;
-  return { deps, applied, state, solvable, solveBlocker, reviewHomeId };
+  // #662: a copy names the node it copies, so that node is created first.
+  const original = node.copyOf ? part.plan!.nodes.find((n) => n.ref === node.copyOf) : undefined;
+  const createBlocker =
+    original && !(planNodeState?.appliedRefs ?? []).includes(original.ref) ? `create '${original.title}' first` : null;
+  return { deps, applied, state, solvable, solveBlocker, reviewHomeId, createBlocker };
+}
+
+/** #662: a widget as its row reads it: its name, kind and value. */
+function widgetText(widget: { name: string; type: string; default?: unknown; value?: unknown }): string {
+  const value = widget.value !== undefined ? widget.value : widget.default;
+  return `${widget.name} (${widget.type}${value !== undefined ? `, ${JSON.stringify(value)}` : ""})`;
+}
+
+/** #662: a planned node's widgets, its scenario, and the node a copy copies. */
+export function planNodeExtras(part: AgentProposalPart, node: { ref: string }): string[] {
+  const row = part.plan!.nodes.find((n) => n.ref === node.ref);
+  if (!row) return [];
+  const lines: string[] = [];
+  if (row.scenario) {
+    const original = row.copyOf ? part.plan!.nodes.find((n) => n.ref === row.copyOf) : undefined;
+    lines.push(`in ${row.scenario}` + (original ? ` · a copy of ${original.title}` : ""));
+  }
+  if (row.widgets?.length) lines.push(`widgets: ${row.widgets.map(widgetText).join(", ")}`);
+  return lines;
+}
+
+/** #662: a planned scenario's nodes, and what a duplicate copies and changes. */
+export function planScenarioLine(scenario: {
+  nodes: Array<{ label: string }>;
+  duplicateOf?: string;
+  values?: Record<string, Record<string, unknown>>;
+}): string {
+  const parts = [scenario.nodes.map((n) => n.label).join(", ")];
+  if (scenario.duplicateOf) parts.unshift(`a copy of ${scenario.duplicateOf}`);
+  const changed = Object.values(scenario.values ?? {}).flatMap((values) =>
+    Object.entries(values).map(([name, value]) => `${name} ${JSON.stringify(value)}`),
+  );
+  if (changed.length) parts.push(`sets ${changed.join(", ")}`);
+  return parts.join(" · ");
 }
 
 /** A plan edge's readiness for its row (dev/67-8): both endpoints must exist
