@@ -43,8 +43,11 @@ import {
 } from "../../utils/references/codeReferences";
 import { useInputScope } from "../../hook/useInputScope";
 import { useSharedWidgets } from "../../hook/useSharedWidgets";
+import { useSelectionViews } from "../../hook/useSelectionViews";
+import { normalizeSelections, type SelectionTag } from "../../utils/references/selectionTags";
 
 const NO_WIDGETS: WidgetDef[] = [];
+const NO_SELECTIONS: SelectionTag[] = [];
 
 type NodeEditorProps = {
     outputId?: string;
@@ -103,7 +106,7 @@ function NodeEditor({
     const [activeTab, setActiveTab] = useState<string>(
         () => resolveInitialEditorTab({ code, grammar, widgets: widgetsTab })
     );
-    const { dashboardOn, markDirty, markNodeStale } = useFlowContext();
+    const { dashboardOn, markDirty, markNodeStale, nodes: flowNodes } = useFlowContext();
 
     // #662: the node's widgets. Node data holds them (TrillGenerator saves
     // data.widgets), set directly as data.code is, so a value change does not
@@ -120,20 +123,44 @@ function NodeEditor({
         markNodeStale?.(data.nodeId);
         markDirty?.();
     };
+
+    // #662: the node's selection tags, each holding the ids a view's selection
+    // picks. Held in node data as widgets are (saved at metadata.selections);
+    // a new selection in the view replaces them from outside
+    // (providers/flow/useSelectionTags).
+    const [selections, setSelections] = useState<SelectionTag[]>(() => normalizeSelections(data.selections));
+    const dataSelections = data.selections;
+    useEffect(() => {
+        setSelections(normalizeSelections(dataSelections));
+    }, [dataSelections]);
+    const updateSelections = (next: SelectionTag[]) => {
+        data.selections = next;
+        setSelections(next);
+        markNodeStale?.(data.nodeId);
+        markDirty?.();
+    };
+    const views = useSelectionViews(data.nodeId);
+    const nodeIdsKey = (Array.isArray(flowNodes) ? flowNodes : []).map((n: any) => n.id).join("\u0000");
+    const nodeIds = useMemo(() => new Set(nodeIdsKey ? nodeIdsKey.split("\u0000") : []), [nodeIdsKey]);
     const widgetLanguage: CodeLanguage = grammar
         ? "json"
         : unversionedNodeType(nodeType) === NodeType.JS_COMPUTATION
             ? "javascript"
             : "python";
 
-    // #662: what the node's references name: its widgets, its wired inputs
-    // and the Parameter nodes' shared tags. Input, layer, column and shared
-    // tags sit above its code or spec.
+    // #662: what the node's references name: its widgets, its wired inputs,
+    // the Parameter nodes' shared tags and its selection tags. Input, layer,
+    // column, selection and shared tags sit above its code or spec.
     const { inputs, emptyInputs, loadColumns } = useInputScope(data);
     const shared = useSharedWidgets();
     const scope: ReferenceScope = useMemo(
-        () => ({ widgets: widgetsTab ? widgets : NO_WIDGETS, inputs, shared }),
-        [widgetsTab, widgets, inputs, shared],
+        () => ({
+            widgets: widgetsTab ? widgets : NO_WIDGETS,
+            inputs,
+            shared,
+            selections: widgetsTab ? selections : NO_SELECTIONS,
+        }),
+        [widgetsTab, widgets, inputs, shared, selections],
     );
     // The play callback is registered once, so a run without a Widgets tab
     // reads the scope from here.
@@ -364,6 +391,10 @@ function NodeEditor({
                                             inputs={inputs}
                                             emptyInputs={emptyInputs}
                                             shared={shared}
+                                            selections={selections}
+                                            onSelectionsChange={updateSelections}
+                                            views={views}
+                                            nodeIds={nodeIds}
                                         />
                                     </Tab.Pane>
                                 ) : null}

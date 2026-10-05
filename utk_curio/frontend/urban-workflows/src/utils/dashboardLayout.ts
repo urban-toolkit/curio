@@ -49,20 +49,74 @@ function tileHeight(node: NodeWithPosition): number {
   return node.data?.dashboardHeight ?? DASHBOARD_TILE_DEFAULT_HEIGHT;
 }
 
+/**
+ * Pinned tiles in columns, given in order: left to right from *baseX*, each
+ * column stacked top to bottom. A tile with a saved slot stays in it.
+ *
+ * Columns advance by the width of the widest tile in the column just placed,
+ * rather than by one fixed pitch. A fixed pitch narrower than a tile overlapped
+ * its neighbour, and the owner had to drag them apart before the dashboard was
+ * readable at all.
+ */
+function placeColumns(
+  unpinned: NodeWithPosition[],
+  columns: NodeWithPosition[][],
+  baseX: number,
+): NodeWithPosition[] {
+  const updatedNodes: NodeWithPosition[] = [...unpinned];
+  let cursorX = baseX;
+  for (const column of columns) {
+    let stackY = START_Y;
+    for (const node of column) {
+      // If node has a saved dashboard position, use it; otherwise auto-layout
+      if (typeof node.data?.dashboardX === "number") {
+        updatedNodes.push({ ...node, position: { x: node.data.dashboardX, y: node.data.dashboardY } });
+      } else {
+        updatedNodes.push({ ...node, position: { x: cursorX, y: stackY } });
+        stackY += tileHeight(node) + V_GAP;
+      }
+    }
+    cursorX += Math.max(...column.map(tileWidth)) + H_GAP;
+  }
+  return updatedNodes;
+}
+
+/** Ordered lists of pinned tile ids, one per column, left to right. */
+export type DashboardColumns = readonly (readonly string[])[];
+
 // Function to apply a dashboard layout to nodes based on their pinned status
-// Pinned nodes are arranged in a grid-like structure based on their distances from root nodes
+// Pinned nodes are arranged in a grid-like structure based on their distances from root nodes,
+// or in the *columns* given (the dashboard by scenario, #662).
 export function applyDashboardLayout(
   nodes: NodeWithPosition[],
   edges: readonly Edge[],
-  dashboardPins: { [key: string]: boolean }
+  dashboardPins: { [key: string]: boolean },
+  columns?: DashboardColumns | null,
 ): NodeWithPosition[] {
   // If there are no nodes or no pinned nodes, return the original nodes
   if (!nodes.length || !Object.values(dashboardPins).some(Boolean)) return nodes;
 
+  if (columns && columns.length > 0) {
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const placed = new Set<string>();
+    const groups = columns
+      .map((ids) => ids.filter((id) => {
+        if (!dashboardPins[id] || !byId.has(id) || placed.has(id)) return false;
+        placed.add(id);
+        return true;
+      }).map((id) => byId.get(id)!))
+      .filter((group) => group.length > 0);
+    // A pinned tile no column names still gets a place, in a column of its own.
+    const rest = nodes.filter((node) => dashboardPins[node.id] && !placed.has(node.id));
+    if (rest.length > 0) groups.push(rest);
+    const where = (node: NodeWithPosition) => node.data?.workflowPosition ?? node.position;
+    const baseX = Math.min(...groups.flat().map((node) => where(node).x));
+    return placeColumns(nodes.filter((node) => !dashboardPins[node.id]), groups, baseX);
+  }
+
   // The nodes are divided into pinned and unpinned categories to calc the horizontal positions
   const pinnedNodes = nodes.filter(node => dashboardPins[node.id]);
   const unpinnedNodes = nodes.filter(node => !dashboardPins[node.id]);
-  const updatedNodes: NodeWithPosition[] = [...unpinnedNodes];
 
   // If there are no pinned nodes, return the unpinned nodes
   if (pinnedNodes.length > 0) {
@@ -93,31 +147,14 @@ export function applyDashboardLayout(
       distanceGroups.get(distance)?.push(node);
     });
     const baseX = Math.min(...pinnedNodes.map(n => n.position.x));
-    // Columns advance by the width of the widest tile in the column just
-    // placed, rather than by one fixed pitch. A fixed pitch narrower than a
-    // tile overlapped its neighbour, and the owner had to drag them apart
-    // before the dashboard was readable at all.
-    let cursorX = baseX;
-    Array.from(distanceGroups.keys()).sort((a, b) => a - b).forEach(distance => {
-      const currentX = cursorX;
+    const groups = Array.from(distanceGroups.keys()).sort((a, b) => a - b).map(distance => {
       const group = distanceGroups.get(distance) ?? [];
       // Sort column by original Y for consistent ordering
-      group.sort((a, b) => (a.position?.y ?? 0) - (b.position?.y ?? 0));
-      let stackY = START_Y;
-      group.forEach((node) => {
-        // If node has a saved dashboard position, use it; otherwise auto-layout
-        if (typeof node.data?.dashboardX === "number") {
-          updatedNodes.push({ ...node, position: { x: node.data.dashboardX, y: node.data.dashboardY } });
-        } else {
-          updatedNodes.push({ ...node, position: { x: currentX, y: stackY } });
-          stackY += tileHeight(node) + V_GAP;
-        }
-      });
-      const columnWidth = Math.max(...group.map(tileWidth));
-      cursorX += columnWidth + H_GAP;
+      return group.sort((a, b) => (a.position?.y ?? 0) - (b.position?.y ?? 0));
     });
+    return placeColumns(unpinnedNodes, groups, baseX);
   }
-  return updatedNodes;
+  return unpinnedNodes;
 }
 
 
@@ -133,7 +170,8 @@ export function applyDashboardLayout(
  * writing tile positions over them.
  *
  * Pinned nodes move to their saved slot (``dashboardX``/``dashboardY``) or, when
- * they have none, to the automatic layout.
+ * they have none, to the automatic layout: in *columns* when the dataflow's
+ * scenarios give them (``scenarioDashboard``, #662), else by distance.
  *
  * Unpinned nodes stay MOUNTED and are hidden with ``display: none``
  * (``hideNode``). React Flow's own ``hidden`` unmounts the node component, which
@@ -146,6 +184,7 @@ export function prepareDashboardNodes<N extends Node, E extends Edge>(
   nodes: readonly N[],
   edges: readonly E[],
   dashboardPins: { [key: string]: boolean },
+  columns?: DashboardColumns | null,
 ): { nodes: N[]; edges: E[] } {
   const stamped = nodes.map((node) => ({
     ...node,
@@ -155,7 +194,7 @@ export function prepareDashboardNodes<N extends Node, E extends Edge>(
     },
   })) as unknown as NodeWithPosition[];
 
-  const laidOut = applyDashboardLayout(stamped, edges, dashboardPins);
+  const laidOut = applyDashboardLayout(stamped, edges, dashboardPins, columns);
 
   const dashboardNodes = laidOut.map((node) => {
     if (dashboardPins[node.id]) {
@@ -177,6 +216,26 @@ export function prepareDashboardNodes<N extends Node, E extends Edge>(
     nodes: dashboardNodes,
     edges: edges.map((edge) => ({ ...edge, hidden: true })) as E[],
   };
+}
+
+/**
+ * Where Arrange by scenario puts each pinned tile: its place in *columns*,
+ * whatever slot it was saved in or dragged to.
+ */
+export function arrangedTilePositions(
+  nodes: readonly Node[],
+  dashboardPins: { [key: string]: boolean },
+  columns: DashboardColumns,
+): Map<string, { x: number; y: number }> {
+  const unsaved = nodes.map((node) =>
+    dashboardPins[node.id]
+      ? { ...node, data: { ...node.data, dashboardX: undefined, dashboardY: undefined } }
+      : node,
+  ) as NodeWithPosition[];
+  const laidOut = applyDashboardLayout(unsaved, [], dashboardPins, columns);
+  return new Map(
+    laidOut.filter((node) => dashboardPins[node.id]).map((node) => [node.id, node.position]),
+  );
 }
 
 /**
@@ -208,6 +267,13 @@ export function isPassThroughNode(node: { type?: string | null; data?: any }): b
 }
 
 /**
+ * Node kinds whose tile draws the node's own output rather than what reaches
+ * it: a Compare Scenarios node (#662) charts the table its own run stacked.
+ * Mirrors `_SELF_DRAWN_KINDS` in `projects/dashboard_payload.py`.
+ */
+export const SELF_DRAWN_NODE_TYPES: ReadonlySet<string> = new Set(["curio.builtin/compare-scenarios"]);
+
+/**
  * The nodes whose outputs a dashboard needs saved.
  *
  * Walking up from each pinned tile, the first node on every path that is not a
@@ -218,14 +284,23 @@ export function isPassThroughNode(node: { type?: string | null; data?: any }): b
  * A pinned node's own output is not in the set. What a tile renders comes from
  * its input; a node that renders its own run output instead (a code node's
  * stdout pane, a Data Summary's table) has nothing a saved dataset could
- * restore, so saving it would add a dataset that nothing reads.
+ * restore, so saving it would add a dataset that nothing reads. The exception
+ * is a node whose tile draws its own output (`SELF_DRAWN_NODE_TYPES`): it is
+ * its own source, and its inputs are not walked.
  */
 export function dashboardSourceNodeIds(
   nodes: readonly { id: string; type?: string | null; data?: any }[],
   edges: readonly { source?: unknown; target?: unknown }[],
 ): Set<string> {
-  const pinned = nodes.filter((node) => node.data?.dashboardPinned).map((node) => node.id);
-  return producersFeeding(pinned, nodes, edges);
+  const pinned = nodes.filter((node) => node.data?.dashboardPinned);
+  const drawn = pinned.filter((node) => SELF_DRAWN_NODE_TYPES.has(getUnversionedFlowNodeType(node as any)));
+  const sources = producersFeeding(
+    pinned.filter((node) => !drawn.includes(node)).map((node) => node.id),
+    nodes,
+    edges,
+  );
+  drawn.forEach((node) => sources.add(node.id));
+  return sources;
 }
 
 /**

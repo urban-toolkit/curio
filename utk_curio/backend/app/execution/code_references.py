@@ -1,17 +1,20 @@
 """Turning a node's references into code (#662): ``[!! season !!]`` names a
 widget, ``[!! input 1 !!]`` an input (by circle, counted from 0),
 ``[!! input 1.height !!]`` a column of that input, ``[!! input 1:roads !!]``
-(or ``[!! input 1:roads.height !!]``) a layer an input carries, and
+(or ``[!! input 1:roads.height !!]``) a layer an input carries,
 ``[!! @season !!]`` a shared tag: the widget of the Parameter node named
-``season``.
+``season``, and ``[!! selection picked !!]`` one of the node's selection tags:
+the ids of the rows a view's selection picks, which the node holds at
+``metadata.selections``.
 
 The headless twin of ``src/utils/references/codeReferences.ts``, which the
 browser runs before posting a node's code. Both write the same code: one table
 of cases, ``codeReferences.cases.json`` beside the TypeScript module, is read by
 Jest and by ``tests/test_execution/test_code_references.py``.
 
-A widget or shared reference standing on its own becomes a literal of the language;
-inside a string literal it becomes the value's text, escaped for that string;
+A widget, shared or selection reference standing on its own becomes a literal
+of the language (a selection's ids are a list); inside a string literal it
+becomes the value's text, escaped for that string;
 inside a comment, the plain text. A column or layer reference is written like a
 text value: its name. In Python and JavaScript an input reference becomes
 ``arg`` when the node has one input and ``arg[i]`` when it has several, ``i``
@@ -37,6 +40,14 @@ INPUT_REFERENCE_RE = re.compile(r"^input\s+(\d+|\?)(?::([^.]+))?(?:\.(.+))?$")
 #: What a shared reference starts with. Kept in sync with ``SHARED_PREFIX`` in
 #: ``codeReferences.ts``.
 SHARED_PREFIX = "@"
+
+#: What stands inside a selection reference, ``selection picked``. Kept in sync
+#: with ``SELECTION_REFERENCE_PATTERN`` in ``codeReferences.ts``.
+SELECTION_REFERENCE_RE = re.compile(r"^selection\s+(.+)$")
+
+#: The most ids one selection tag holds. Kept in sync with ``SELECTION_ID_CAP``
+#: in ``selectionTags.ts`` and ``maxItems`` in ``docs/schemas/trill.v1.json``.
+SELECTION_ID_CAP = 10000
 
 #: What a Vega-Lite or Autark node calls its inputs. Kept in sync with
 #: ``INPUT_TABLE_PREFIX`` in ``agents/domain/contracts.py``.
@@ -131,11 +142,15 @@ def widget_literal(value, language: str) -> str:
 
 
 def parse_reference(inner: str) -> dict:
-    """``{"kind": "widget", "name"}``, ``{"kind": "shared", "name"}`` or
-    ``{"kind": "input", "slot", "layer"?, "column"?}``; ``slot`` is None for
-    ``input ?``, the input whose edge was deleted."""
+    """``{"kind": "widget", "name"}``, ``{"kind": "shared", "name"}``,
+    ``{"kind": "selection", "name"}`` or ``{"kind": "input", "slot",
+    "layer"?, "column"?}``; ``slot`` is None for ``input ?``, the input whose
+    edge was deleted."""
     m = INPUT_REFERENCE_RE.match(inner)
     if not m:
+        selection = SELECTION_REFERENCE_RE.match(inner)
+        if selection:
+            return {"kind": "selection", "name": selection.group(1)}
         if inner.startswith(SHARED_PREFIX):
             return {"kind": "shared", "name": inner[len(SHARED_PREFIX):]}
         return {"kind": "widget", "name": inner}
@@ -147,15 +162,25 @@ def parse_reference(inner: str) -> dict:
     return parsed
 
 
-def shared_names_in(code: object) -> list[str]:
-    """The names of the shared tags *code* references, each once, in order.
-    Kept in sync with ``sharedNamesIn`` in ``codeReferences.ts``."""
+def _names_of_kind_in(code: object, kind: str) -> list[str]:
     names: list[str] = []
     for ref in REFERENCE_RE.finditer(code if isinstance(code, str) else ""):
         parsed = parse_reference(ref.group(1))
-        if parsed["kind"] == "shared" and parsed["name"] not in names:
+        if parsed["kind"] == kind and parsed["name"] not in names:
             names.append(parsed["name"])
     return names
+
+
+def shared_names_in(code: object) -> list[str]:
+    """The names of the shared tags *code* references, each once, in order.
+    Kept in sync with ``sharedNamesIn`` in ``codeReferences.ts``."""
+    return _names_of_kind_in(code, "shared")
+
+
+def selection_names_in(code: object) -> list[str]:
+    """The names of the selection tags *code* references, each once, in order.
+    Kept in sync with ``selectionNamesIn`` in ``codeReferences.ts``."""
+    return _names_of_kind_in(code, "selection")
 
 
 def reference_text(inner: str) -> str:
@@ -266,12 +291,45 @@ def _write_text(text: str, context: tuple, language: str) -> str:
     return widget_literal(text, language) if context[0] == "code" else _escape_for(text, context, language)
 
 
+def _over_cap(tag: dict) -> bool:
+    ids = tag.get("ids")
+    return not isinstance(ids, list) or len(ids) > SELECTION_ID_CAP
+
+
+def _selection_size(tag: dict) -> int:
+    ids = tag.get("ids")
+    return len(ids) if isinstance(ids, list) else int(tag.get("count") or 0)
+
+
 def reference_problem(
-    reference: str, inner: str, widgets: list, inputs: list, context: tuple, language: str, shared: list = ()
+    reference: str,
+    inner: str,
+    widgets: list,
+    inputs: list,
+    context: tuple,
+    language: str,
+    shared: list = (),
+    selections: list = (),
 ) -> str | None:
-    """Why *reference* cannot be resolved against *widgets*, *inputs* and the
-    *shared* tags, standing in *context*, or None."""
+    """Why *reference* cannot be resolved against *widgets*, *inputs*, the
+    *shared* tags and the node's *selections*, standing in *context*, or None."""
     parsed = parse_reference(inner)
+    if parsed["kind"] == "selection":
+        name = parsed["name"]
+        if not WIDGET_NAME_RE.match(name):
+            return (
+                f"{reference} does not name a selection tag. "
+                "Selection tag names are letters, digits and underscores."
+            )
+        tag = next((t for t in selections if t.get("name") == name), None)
+        if tag is None:
+            return f"{reference}: this node has no selection tag named {name}. Add it in the Widgets tab."
+        if _over_cap(tag):
+            return (
+                f"{reference}: the selection holds {_selection_size(tag)} ids, more than the "
+                f"{SELECTION_ID_CAP} a selection tag takes. Select fewer rows in its view."
+            )
+        return None
     if parsed["kind"] == "shared":
         name = parsed["name"]
         if not WIDGET_NAME_RE.match(name):
@@ -522,12 +580,53 @@ def normalize_shared(raw) -> list:
     return out
 
 
+def normalize_selections(raw) -> list:
+    """The well-formed selection tags in *raw* (a spec's
+    ``metadata.selections``), one per name: ``{name, node, column, ids}``, or
+    ``count`` in place of ``ids``. Kept in sync with ``normalizeSelections`` in
+    ``selectionTags.ts``."""
+    if not isinstance(raw, list):
+        return []
+    out, seen = [], set()
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        if not isinstance(name, str) or not WIDGET_NAME_RE.match(name) or name in seen:
+            continue
+        if not isinstance(entry.get("node"), str) or not entry["node"]:
+            continue
+        if not isinstance(entry.get("column"), str) or not entry["column"]:
+            continue
+        tag = {"name": name, "node": entry["node"], "column": entry["column"]}
+        count = entry.get("count")
+        if isinstance(entry.get("ids"), list):
+            tag["ids"] = list(entry["ids"])
+        elif _finite(count) and count >= 0 and count == int(count):
+            # A whole number, as JavaScript's Number.isInteger takes it.
+            tag["count"] = int(count)
+        else:
+            continue
+        seen.add(name)
+        out.append(tag)
+    return out
+
+
 def _resolved_text(
-    inner: str, by_name: dict, inputs: list, context: tuple, language: str, shared_by_name: dict
+    inner: str,
+    by_name: dict,
+    inputs: list,
+    context: tuple,
+    language: str,
+    shared_by_name: dict,
+    selections_by_name: dict,
 ) -> str:
     parsed = parse_reference(inner)
-    if parsed["kind"] == "shared":
-        value = effective_value(shared_by_name[parsed["name"]])
+    if parsed["kind"] in ("shared", "selection"):
+        if parsed["kind"] == "shared":
+            value = effective_value(shared_by_name[parsed["name"]])
+        else:
+            value = selections_by_name[parsed["name"]]["ids"]
         if context[0] == "code":
             return widget_literal(value, language)
         return _escape_for(_text_of(value, language), context, language)
@@ -549,19 +648,26 @@ def _resolved_text(
 
 
 def resolve_references(
-    code: str, widgets: Iterable = (), language: str = "python", inputs: Iterable = (), shared: Iterable = ()
+    code: str,
+    widgets: Iterable = (),
+    language: str = "python",
+    inputs: Iterable = (),
+    shared: Iterable = (),
+    selections: Iterable = (),
 ) -> tuple[str, list]:
     """*code* with every reference replaced, and the problems found.
 
     *inputs* are the node's wired inputs, ``{"slot": <circle>, "columns"?: [...]}``
     each. *shared* are the widgets of the dataflow's Parameter nodes, one per
-    node. A reference with a problem is left as written; each problem is
+    node. *selections* are the node's selection tags (``metadata.selections``).
+    A reference with a problem is left as written; each problem is
     ``{"reference": <as written>, "message": <why>}``.
     """
     if language not in LANGUAGES:
         raise ValueError(f"unknown code language {language!r}")
     widgets = normalize_widgets(list(widgets or []))
     shared = normalize_shared(list(shared or []))
+    selections = normalize_selections(list(selections or []))
     inputs = sorted((dict(i) for i in inputs or ()), key=lambda i: i.get("slot", 0))
     refs = list(REFERENCE_RE.finditer(code))
     if not refs:
@@ -569,18 +675,23 @@ def resolve_references(
     contexts = _contexts(code, refs, language)
     by_name = {w["name"]: w for w in widgets}
     shared_by_name = {w["name"]: w for w in shared}
+    selections_by_name = {t["name"]: t for t in selections}
     problems: list = []
     out: list = []
     last = 0
     for ref, context in zip(refs, contexts):
         out.append(code[last:ref.start()])
         written = ref.group(0)
-        problem = reference_problem(written, ref.group(1), widgets, inputs, context, language, shared)
+        problem = reference_problem(
+            written, ref.group(1), widgets, inputs, context, language, shared, selections
+        )
         if problem is not None:
             problems.append({"reference": written, "message": problem})
             out.append(written)
         else:
-            out.append(_resolved_text(ref.group(1), by_name, inputs, context, language, shared_by_name))
+            out.append(_resolved_text(
+                ref.group(1), by_name, inputs, context, language, shared_by_name, selections_by_name
+            ))
         last = ref.end()
     out.append(code[last:])
     return "".join(out), problems

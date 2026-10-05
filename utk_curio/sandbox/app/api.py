@@ -14,6 +14,7 @@ import mmap
 from shapely import wkt
 
 from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code, chdir_locked
+from utk_curio.sandbox.util import package_modules as package_modules_util
 from utk_curio.sandbox.util.secrets import shape_secrets
 from utk_curio.sandbox.util.db import connection_in_use
 
@@ -549,6 +550,70 @@ def artifact_meta():
     })
 
 
+@app.route('/raster', methods=['GET'])
+@require_sandbox_token
+@holds_duckdb
+def get_raster():
+    """A raster artifact as GeoTIFF bytes, for an Autark node to load.
+
+    ``part`` picks one raster out of a Python tuple. ``maxCells`` and
+    ``maxSide`` are what the caller can load: a larger raster is answered 413
+    with its description, and nothing is written. The description of a served
+    raster rides in the ``X-Curio-Raster`` header (see util/rasters.py).
+    """
+    import traceback as _tb
+
+    from utk_curio.sandbox.util.rasters import (
+        RASTER_META_HEADER, RasterRefused, meta_header, serve_raster,
+    )
+
+    art_id = request.args.get('fileName')
+    if not art_id:
+        abort(400, "fileName is required")
+    session_id = request.args.get('sessionId') or None
+    try:
+        part = request.args.get('part')
+        part = int(part) if part not in (None, '') else None
+        max_cells = int(request.args.get('maxCells') or 0) or None
+        max_side = int(request.args.get('maxSide') or 0) or None
+    except ValueError:
+        abort(400, "part, maxCells and maxSide are whole numbers")
+
+    launch_dir = os.environ.get('CURIO_LAUNCH_CWD')
+    try:
+        with chdir_locked(launch_dir):
+            payload, meta = serve_raster(
+                art_id, session_id=session_id, part=part,
+                max_cells=max_cells, max_side=max_side,
+            )
+    except RasterRefused as refused:
+        return jsonify({
+            'error': refused.code,
+            'message': str(refused),
+            'meta': refused.meta,
+            'fileName': art_id,
+        }), refused.status
+    except KeyError:
+        return jsonify({
+            'error': 'not-found',
+            'message': f'no raster artifact {art_id}',
+            'fileName': art_id,
+        }), 404
+    except Exception as e:
+        print(f"[sandbox /raster] failed  fileName={art_id}  session={session_id}\n"
+              f"{_tb.format_exc()}", file=sys.stderr, flush=True)
+        return jsonify({
+            'error': type(e).__name__,
+            'message': str(e),
+            'fileName': art_id,
+        }), 500
+    return Response(
+        payload,
+        mimetype='image/tiff',
+        headers={RASTER_META_HEADER: meta_header(meta)},
+    )
+
+
 @app.route('/exec', methods=['POST'])
 @require_sandbox_token
 @holds_duckdb
@@ -618,6 +683,10 @@ def exec():
     if not isinstance(models, dict):
         models = {}
     models = {str(key): str(value) for key, value in list(models.items())[:8] if value}
+    # {"root", "names"}: the modules the node's package ships beside its
+    # templates, from the user's package store (#468). Both paths stage them
+    # into a folder of the run's own and make them importable for the run.
+    package_modules = package_modules_util.shape(request.json.get('package_modules'))
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
@@ -633,15 +702,23 @@ def exec():
             session_id=session_id, save_dataset=bool(save_dataset),
             dataset_paths=dataset_paths, user_key=user_key, config=config,
             secrets=secrets, collections=collections, media_dir=media_dir, models=models,
-            dataset_formats=dataset_formats,
+            dataset_formats=dataset_formats, package_modules=package_modules,
         )
     else:
         result = execute_code(
             code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset),
             dataset_paths=dataset_paths, secrets=secrets, collections=collections, media_dir=media_dir,
-            models=models, dataset_formats=dataset_formats,
+            models=models, dataset_formats=dataset_formats, package_modules=package_modules,
         )
+
+    # A Compare Scenarios node's code hands two rasters back as a request: they
+    # are subtracted here, in this process's Node, whichever path ran the code.
+    from utk_curio.sandbox.util.scenario_difference import complete_raster_difference
+
+    result = complete_raster_difference(
+        result, node_type=str(node_type), session_id=session_id, launch_dir=launch_dir,
+    )
 
     print(f"[sandbox /exec] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)
     return jsonify(result)

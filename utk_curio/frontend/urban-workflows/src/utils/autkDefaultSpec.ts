@@ -97,6 +97,8 @@ export function chooseAutkStarter(layers: StarterLayer[]): Record<string, unknow
 
 /** A frame as a drawable layer, or `null` when it has no geometry or no rows. */
 export function starterLayer(frame: GrammarFrame): StarterLayer | null {
+  // A raster has bands, not columns; no rule of the ladder is for it.
+  if (frame.dataType === "raster") return null;
   const name = autkTableName(frame);
   if (frame.dataType === "geodataframe") {
     const features: any[] = frame.payload?.features ?? [];

@@ -3,9 +3,11 @@
 ``curio_load_data("<id>")``
     A Data Catalog dataset, read the way its format is read: a table, a
     GeoDataFrame, a raster, a JSON document, the parts of a multi-output result,
-    or a collection's index.
+    a collection's index, an onnxruntime session for an ONNX model, or an
+    xarray Dataset for a NetCDF file.
 ``curio_data_path("<id>")``
-    The dataset's file, for a reader of your own (``pd.read_csv(..., sep=";")``).
+    The dataset's file, for a reader of your own (``pd.read_csv(..., sep=";")``,
+    ``netCDF4.Dataset(...)``).
 ``curio_load_collection("<id>")``
     A collection's index, one row per file with a readable ``path``.
 ``curio_load_model("<id>")``
@@ -38,6 +40,8 @@ _FORMAT_BY_SUFFIX = {
     ".zlib": "json",
     ".tif": "geotiff",
     ".tiff": "geotiff",
+    ".onnx": "onnx",
+    ".nc": "netcdf",
 }
 
 
@@ -60,16 +64,27 @@ def _read_parquet(path: str):
     except Exception:  # noqa: BLE001 - a table with no geometry column
         frame = pd.read_parquet(path)
     # Object columns (dict/list cells) are JSON-encoded on save; the columns
-    # are named in a <file>.decode.json sidecar.
+    # are named in a <file>.decode.json sidecar, beside the frame's own
+    # metadata (its name and Autark layer type), which parquet cannot hold.
     sidecar = path + ".decode.json"
     if os.path.exists(sidecar):
         with open(sidecar, encoding="utf-8") as handle:
-            encoded = json.load(handle).get("encoded_object_columns", [])
-        for column in encoded:
+            meta = json.load(handle)
+        for column in meta.get("encoded_object_columns", []):
             if column in frame.columns:
                 frame[column] = frame[column].apply(
                     lambda value: json.loads(value) if isinstance(value, str) and value else value
                 )
+        if isinstance(meta.get("frame_metadata"), dict):
+            frame.metadata = dict(meta["frame_metadata"])
+    return frame
+
+
+def _with_layer_type(frame, layer_type: str):
+    """*frame* drawn as the Autark layer *layer_type*, keeping the rest of the
+    metadata it was saved with."""
+    saved = frame.__dict__.get("metadata")
+    frame.metadata = {**(saved if isinstance(saved, dict) else {}), "layerType": layer_type}
     return frame
 
 
@@ -109,6 +124,20 @@ def _read_bundle(path: str):
     return tuple(items)
 
 
+def _read_onnx(path: str):
+    """An ONNX model as an onnxruntime session on the CPU, opened the way
+    ``curio_segment`` opens a Model Catalog model's."""
+    try:
+        import onnxruntime as ort
+    except ImportError as exc:
+        raise RuntimeError(
+            "This dataset is an ONNX model, which runs on onnxruntime, and this Curio "
+            "does not have it: install a package that brings it, such as Street Vision, "
+            "from the Node Catalog."
+        ) from exc
+    return ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+
+
 def read_dataset(path: str, fmt: str | None, *, layer_type: str | None = None):
     """The value a dataset at *path* holds, read the way *fmt* is read.
 
@@ -131,7 +160,7 @@ def read_dataset(path: str, fmt: str | None, *, layer_type: str | None = None):
     if fmt == "parquet":
         frame = _read_parquet(path)
         if layer_type:
-            frame.metadata = {"layerType": layer_type}
+            frame = _with_layer_type(frame, layer_type)
         return frame
     if fmt == "json":
         return _read_json(path)
@@ -139,6 +168,14 @@ def read_dataset(path: str, fmt: str | None, *, layer_type: str | None = None):
         import rasterio
 
         return rasterio.open(path)
+    if fmt == "onnx":
+        return _read_onnx(path)
+    if fmt == "netcdf":
+        import xarray as xr
+
+        # netCDF4 reads every NetCDF format: classic, 64-bit offset, 64-bit
+        # data and NetCDF-4.
+        return xr.open_dataset(path, engine="netcdf4")
     if fmt == "bundle":
         return _read_bundle(path)
     raise RuntimeError(

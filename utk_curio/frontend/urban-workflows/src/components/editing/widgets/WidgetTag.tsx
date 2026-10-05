@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import styles from "./WidgetTags.module.css";
-import { INPUT_REF_MIME, SHARED_REF_MIME, WIDGET_REF_MIME } from "./monacoCodeReferences";
+import { INPUT_REF_MIME, SELECTION_REF_MIME, SHARED_REF_MIME, WIDGET_REF_MIME } from "./monacoCodeReferences";
 import type { WidgetDef } from "../../../utils/widgets/widgetModel";
+import type { SelectionTag as SelectionTagDef } from "../../../utils/references/selectionTags";
 import {
   inputReferenceInner,
   referenceText,
+  selectionReferenceInner,
   sharedReferenceInner,
   type InputScope,
 } from "../../../utils/references/codeReferences";
@@ -52,6 +54,31 @@ export function SharedTag({
       text={sharedReferenceInner(name)}
       title={`The value of the Parameter node ${name}`}
       dataAttributes={{ "data-shared-tag": name }}
+      onInsert={onInsert}
+      disabled={disabled}
+    />
+  );
+}
+
+/** A selection tag (#662): the ids of the rows a view's selection picks, which
+ * the node's code names as `[!! selection name !!]`. */
+export function SelectionTag({
+  name,
+  onInsert,
+  disabled = false,
+}: {
+  name: string;
+  onInsert?: (inner: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <ReferenceTag
+      className={styles.selectionTag}
+      mime={SELECTION_REF_MIME}
+      inner={selectionReferenceInner(name)}
+      text={selectionReferenceInner(name)}
+      title="The ids of the rows selected in its view"
+      dataAttributes={{ "data-selection-tag": name }}
       onInsert={onInsert}
       disabled={disabled}
     />
@@ -273,13 +300,14 @@ function InputTags({
 
 /**
  * The tags above a code or grammar editor: the node's inputs, each opening to
- * its columns (or, with *layerChips*, its layers), then its widgets, then the
- * dataflow's shared tags. Nothing when there are none.
+ * its columns (or, with *layerChips*, its layers), then its widgets, then its
+ * selection tags, then the dataflow's shared tags. Nothing when there are none.
  */
 export function ReferenceStrip({
   widgets,
   inputs = [],
   shared = [],
+  selections = [],
   onInsert,
   onLoadColumns,
   layerChips = false,
@@ -288,13 +316,16 @@ export function ReferenceStrip({
   widgets: WidgetDef[];
   inputs?: InputScope[];
   shared?: WidgetDef[];
+  selections?: SelectionTagDef[];
   onInsert: (inner: string) => void;
   onLoadColumns?: (slot: number) => void;
   layerChips?: boolean;
   disabled?: boolean;
 }) {
   const sharedNames = uniqueSharedNames(shared);
-  if (widgets.length === 0 && inputs.length === 0 && sharedNames.length === 0) return null;
+  if (widgets.length === 0 && inputs.length === 0 && sharedNames.length === 0 && selections.length === 0) {
+    return null;
+  }
   return (
     <div className={styles.strip} aria-label="Reference tags" data-widget-strip="true">
       {inputs.length > 0 ? (
@@ -317,6 +348,14 @@ export function ReferenceStrip({
           <span className={styles.stripHint}>Widgets</span>
           {widgets.map((w) => (
             <WidgetTag key={w.name} name={w.name} onInsert={onInsert} disabled={disabled} />
+          ))}
+        </>
+      ) : null}
+      {selections.length > 0 ? (
+        <>
+          <span className={styles.stripHint} data-selection-strip="true">Selections</span>
+          {selections.map((tag) => (
+            <SelectionTag key={tag.name} name={tag.name} onInsert={onInsert} disabled={disabled} />
           ))}
         </>
       ) : null}

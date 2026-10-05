@@ -251,6 +251,8 @@ _DOWNLOAD_MIMETYPES: dict[str, str] = {
     ".tif": "image/tiff",
     ".tiff": "image/tiff",
     ".shp": "application/octet-stream",
+    ".onnx": "application/octet-stream",
+    ".nc": "application/x-netcdf",
 }
 
 

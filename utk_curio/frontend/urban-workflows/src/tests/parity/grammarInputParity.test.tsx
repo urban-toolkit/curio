@@ -102,6 +102,8 @@ const INPUT = {
     data: { zip: ["60601", "60602"], area: [polygon, polygon], centre: [point, point] },
   },
   raster: { path: "art-raster", dataType: "raster" },
+  // A type neither node reads: a code node's text.
+  text: { path: "art-text", dataType: "str" },
   // A project saved before inputs carried their type restores as a bare path.
   untyped: { path: "art-untyped" },
   bundle: {
@@ -158,9 +160,9 @@ describe("the same input, the same answer", () => {
 
   test("a type neither can read is refused before any fetch, in the same sentence", async () => {
     for (const grammar of GRAMMARS) {
-      expect(await prepare(grammar, INPUT.raster)).toEqual({
+      expect(await prepare(grammar, INPUT.text)).toEqual({
         emptyReason: "input-type-rejected",
-        detail: `raster is not a valid input type for ${LABEL[grammar]}.`,
+        detail: `str is not a valid input type for ${LABEL[grammar]}.`,
       });
     }
     expect(mockFetchData).not.toHaveBeenCalled();
@@ -170,7 +172,7 @@ describe("the same input, the same answer", () => {
     mockFetchData.mockImplementation(async () => fresh(INPUT.gdf));
     for (const grammar of GRAMMARS) expect(await prepare(grammar, INPUT.untyped)).toEqual(drawn);
 
-    mockFetchData.mockImplementation(async () => ({ dataType: "raster", data: {} }));
+    mockFetchData.mockImplementation(async () => ({ dataType: "str", data: "a note" }));
     for (const grammar of GRAMMARS) {
       expect((await prepare(grammar, INPUT.untyped)).emptyReason).toBe("input-type-rejected");
     }
@@ -192,6 +194,21 @@ describe("the same input, the same answer", () => {
       expect(await prepare("vega", INPUT.bundle)).toEqual({ emptyReason: null, detail: null });
       const vega = await prepareVegaInputs(fresh(INPUT.bundle), fresh(MAP.vega));
       expect(vega.datasets.map((d) => [d.name, d.values.length])).toEqual([["input_0", 1], ["input_1", 1]]);
+    });
+
+    test("a raster: Autark reads it as the table input_0, unfetched; Vega-Lite refuses it before any fetch", async () => {
+      expect(await prepare("vega", INPUT.raster)).toEqual({
+        emptyReason: "input-type-rejected",
+        detail: "raster is not a valid input type for the 2D Plot (Vega-Lite).",
+      });
+      const autk = await prepareAutkInput(fresh(INPUT.raster), fresh(MAP.autk));
+      expect(autk).toMatchObject({
+        sources: [],
+        rasters: [{ outputTableName: "input_0", payload: { artifact: "art-raster" } }],
+        tables: ["input_0"],
+      });
+      expect(autk.emptyReason).toBeUndefined();
+      expect(mockFetchData).not.toHaveBeenCalled();
     });
 
     test("no geometry, no drawing: a Vega-Lite bar chart draws the frame no Autark document can", async () => {
@@ -363,7 +380,7 @@ describe("both nodes, in the canvas", () => {
       connect();
       const verdicts = [];
       for (const grammar of GRAMMARS) {
-        const node = await mountNode(grammar, { code: doc(grammar), input: INPUT.raster }).mount();
+        const node = await mountNode(grammar, { code: doc(grammar), input: INPUT.text }).mount();
         await act(async () => {
           await node.behavior().applyGrammar(doc(grammar));
         });
@@ -372,7 +389,7 @@ describe("both nodes, in the canvas", () => {
       }
       expect(verdicts[0].kind).toBe("empty-render:no-input-rows");
       expect(verdicts[0].content).toBe(
-        "rendered nothing: raster is not a valid input type for <node>. "
+        "rendered nothing: str is not a valid input type for <node>. "
           + "The upstream node that feeds it is what must change; this document is not at fault.",
       );
       expect(verdicts[1].kind).toBe(verdicts[0].kind);

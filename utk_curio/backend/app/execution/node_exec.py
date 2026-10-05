@@ -115,6 +115,15 @@ def resolve_models(code: str, user) -> dict:
     return resolve_exec_models(code, user)
 
 
+def resolve_package_modules(node_type: str, user_key: str | None, dataflow_id: str | None = None) -> dict | None:
+    """The modules the node's package ships beside its templates, which the
+    sandbox makes importable for this run (#468): ``{"root", "names"}``, or
+    None for a node whose package ships none. Fail-open like dataset paths."""
+    from utk_curio.backend.app.packages.service import modules_for_node
+
+    return modules_for_node(user_key, node_type, dataflow_id)
+
+
 def resolve_secrets(code: str, user) -> dict:
     """Resolve the connection keys *code* reaches as ``curio_secret("<name>")``
     (memo dev/116) to their values: the ``dataset_paths`` twin, minus the disk.
@@ -220,6 +229,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         collections, media_dir = resolve_exec_collections(run.code, user_key, user=user)
         exec_secrets = resolve_secrets(run.code, user)
         exec_models = resolve_models(run.code, user)
+        package_modules = resolve_package_modules(run.node_type, user_key, run.dataflow_id)
         body.update({
             "dataset_paths": dataset_paths,
             "dataset_formats": dataset_formats,
@@ -231,6 +241,8 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
             **({"secrets": exec_secrets} if exec_secrets else {}),
             # Likewise only when the code runs a model.
             **({"models": exec_models} if exec_models else {}),
+            # And only when the node's package ships modules beside its templates.
+            **({"package_modules": package_modules} if package_modules else {}),
         })
     else:
         endpoint = '/execJs'

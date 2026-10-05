@@ -5,7 +5,8 @@
  */
 import { effectiveValue, nodeRunKey, normalizeWidgets, type WidgetDef } from "../widgets/widgetModel";
 import { getUnversionedFlowNodeType } from "../flowNodeCanonicalType";
-import { renameSharedReferences, sharedNamesIn } from "./codeReferences";
+import { renameSharedReferences, selectionNamesIn, sharedNamesIn } from "./codeReferences";
+import { normalizeSelections } from "./selectionTags";
 
 /** Kept in sync with `PARAMETER_TYPE` in `execution/workflow_spec.py`. */
 export const PARAMETER_NODE_TYPE = "curio.builtin/parameter";
@@ -49,15 +50,28 @@ export function nodesUsingShared<N extends FlowNodeLike>(nodes: readonly N[], na
 
 /**
  * What a run of a node depends on: `nodeRunKey` (its code and its widgets'
- * values), and the values of the shared tags its code names. Code that names
- * none keeps `nodeRunKey`'s key, so no saved result goes stale.
+ * values), the values of the shared tags its code names, and what the node's
+ * selection tags its code names hold (*selections*, the node's
+ * `data.selections`). Code that names none keeps `nodeRunKey`'s key, so no
+ * saved result goes stale; a new selection changes the key.
  */
-export function runKeyWithShared(code: string, widgets: unknown, shared: WidgetDef[]): string {
-  const key = nodeRunKey(code, widgets);
+export function runKeyWithShared(code: string, widgets: unknown, shared: WidgetDef[], selections?: unknown): string {
+  let key = nodeRunKey(code, widgets);
   const names = sharedNamesIn(code);
-  if (names.length === 0) return key;
-  const values = names.map((name) => [name, shared.filter((w) => w.name === name).map(effectiveValue)]);
-  return key + "\u0000@" + JSON.stringify(values);
+  if (names.length > 0) {
+    const values = names.map((name) => [name, shared.filter((w) => w.name === name).map(effectiveValue)]);
+    key += "\u0000@" + JSON.stringify(values);
+  }
+  const picked = selectionNamesIn(code);
+  if (picked.length > 0) {
+    const tags = normalizeSelections(selections);
+    const held = picked.map((name) => {
+      const tag = tags.find((t) => t.name === name);
+      return [name, tag ? (Array.isArray(tag.ids) ? tag.ids : { count: tag.count }) : null];
+    });
+    key += "\u0000selection" + JSON.stringify(held);
+  }
+  return key;
 }
 
 /**

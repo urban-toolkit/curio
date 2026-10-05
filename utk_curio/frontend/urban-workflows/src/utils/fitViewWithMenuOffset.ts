@@ -60,7 +60,9 @@ const DEFAULT_PADDING = 0.1;
 
 export function fitViewWithMenuOffset(
     rf: ReactFlowInstance,
-    options?: FitViewOptions,
+    /** `headroom`: room to keep in view above the nodes, in canvas units,
+     *  for what is drawn there (the dashboard's scenario headers, #662). */
+    options?: FitViewOptions & { headroom?: number },
 ): boolean {
     const requestedIds = (options?.nodes ?? [])
         .map((n: any) => n?.id)
@@ -131,7 +133,9 @@ export function fitViewWithMenuOffset(
     }
     const visibleHeight = Math.max(1, paneRect.height - occludedTop);
 
-    const bounds = getNodesBounds(targetNodes);
+    const nodeBounds = getNodesBounds(targetNodes);
+    const headroom = Math.max(0, options?.headroom ?? 0);
+    const bounds = { ...nodeBounds, y: nodeBounds.y - headroom, height: nodeBounds.height + headroom };
     const { x, y, zoom } = getViewportForBounds(
         bounds,
         visibleWidth,

@@ -41,6 +41,47 @@ class BundlePart:
     format: str
     label: str
     source_path: Path | None
+    # A frame's artifact row keeps what parquet cannot: the frame's
+    # ``metadata`` (its name and Autark layer type) and the object columns
+    # encoded for parquet (``value_json``, see ``save_to_duckdb``).
+    meta_json: str | None = None
+
+
+FRAME_KINDS = frozenset({"dataframe", "geodataframe"})
+
+
+def _frame_meta(meta_json: Any) -> tuple[dict | None, list]:
+    """``(metadata, encoded object columns)`` from a frame artifact's row."""
+    from utk_curio.sandbox.util.codec import _parse_parquet_meta
+
+    if isinstance(meta_json, (dict, list)):
+        meta_json = json.dumps(meta_json)
+    frame_metadata, encoded = _parse_parquet_meta(meta_json)
+    return (frame_metadata if isinstance(frame_metadata, dict) else None), list(encoded or [])
+
+
+def _write_frame_sidecar(data_file: Path, meta_json: Any) -> None:
+    """Write a frame part's ``.decode.json`` sidecar, the one a single saved
+    frame carries beside its file, so the part reloads with its metadata and
+    its object columns decoded."""
+    from utk_curio.sandbox.util.codec import PARQUET_DECODE_SIDECAR_SUFFIX, _serialize_parquet_meta
+
+    frame_metadata, encoded = _frame_meta(meta_json)
+    payload = _serialize_parquet_meta(frame_metadata=frame_metadata, encoded_object_columns=encoded)
+    if payload:
+        data_file.with_name(data_file.name + PARQUET_DECODE_SIDECAR_SUFFIX).write_text(payload, encoding="utf-8")
+
+
+def _layer_of(meta_json: Any) -> dict[str, str]:
+    """A frame part's layer as its bundle record names it: ``layerName`` and
+    ``layerType``, from the frame's own ``metadata``."""
+    frame_metadata, _encoded = _frame_meta(meta_json)
+    layer: dict[str, str] = {}
+    for key, field in (("name", "layerName"), ("layerType", "layerType")):
+        value = (frame_metadata or {}).get(key)
+        if isinstance(value, str) and value:
+            layer[field] = value
+    return layer
 
 
 # Sandbox artifact kinds whose ENTIRE value lives in the DuckDB row: there is no
@@ -244,14 +285,16 @@ def resolve_output_bundle_parts(parent_art_id: str) -> list[BundlePart]:
         kind = child[0] or "unknown"
         fmt = SANDBOX_DATATYPE_TO_FORMAT.get(kind, "json")
         src = _resolve_artifact_source(str(child_id), kind, child[3])
+        meta_json = child[4] if kind in FRAME_KINDS else None
         parts.append(
             BundlePart(
                 index=index,
                 artifact_id=str(child_id),
                 kind=kind,
                 format=fmt,
-                label=child_name or _part_label(index, kind),
+                label=child_name or _layer_of(meta_json).get("layerName") or _part_label(index, kind),
                 source_path=src,
+                meta_json=meta_json,
             )
         )
     return parts
@@ -314,6 +357,8 @@ def install_computed_bundle_for_node(
                 dest_file.write_bytes(zlib.decompress(part.source_path.read_bytes()))
             else:
                 shutil.copy2(part.source_path, dest_file)
+                if part.kind in FRAME_KINDS:
+                    _write_frame_sidecar(dest_file, part.meta_json)
         elif part.kind in {"int", "float", "bool", "str", "null"}:
             _serialize_scalar_part(dest_file, part.kind, part.artifact_id)
         else:
@@ -338,6 +383,7 @@ def install_computed_bundle_for_node(
             "format": part.format,
             "artifactId": part.artifact_id,
             "file": rel_file,
+            **_layer_of(part.meta_json),
         })
 
     bundle_path = dest / "data" / "bundle.json"
