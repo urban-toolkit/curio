@@ -1,0 +1,485 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Beginner"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "8f0c1e2a-5b3d-4c7e-9a61-2d4f6b8e0c13",
+        "type": "curio.builtin/parameter",
+        "x": 0,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Choose the projection period both scenarios read.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "timeline",
+              "type": "choice",
+              "label": "Projection period",
+              "default": "2020 - 2040",
+              "options": {
+                "choices": [
+                  "2020 - 2040",
+                  "2050 - 2080",
+                  "2080 - 2100"
+                ],
+                "display": "radio"
+              }
+            }
+          ],
+          "packageTemplateLabel": "Projection period"
+        }
+      },
+      {
+        "id": "c1d2e3f4-0a1b-4c2d-8e3f-4a5b6c7d8e91",
+        "type": "curio.builtin/parameter",
+        "x": 0,
+        "y": 450,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Set the region's north-west corner.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "topleft",
+              "type": "location",
+              "label": "Top-left corner",
+              "default": {
+                "lat": 41.4669317349186,
+                "lon": -90.48363204845099
+              }
+            }
+          ],
+          "packageTemplateLabel": "Top-left corner"
+        }
+      },
+      {
+        "id": "d2e3f4a5-1b2c-4d3e-9f4a-5b6c7d8e9fa2",
+        "type": "curio.builtin/parameter",
+        "x": 0,
+        "y": 900,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Set the region's south-east corner.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "bottomright",
+              "type": "location",
+              "label": "Bottom-right corner",
+              "default": {
+                "lat": 41.44098884583301,
+                "lon": -90.4576891593654
+              }
+            }
+          ],
+          "packageTemplateLabel": "Bottom-right corner"
+        }
+      },
+      {
+        "id": "e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3",
+        "type": "curio.builtin/data-loading",
+        "x": 650,
+        "y": 0,
+        "content": "# The region's window of SCOUT's nature-based solutions (NbS) class raster,\n# at its own cells: the corners are the two location Parameter nodes.\ntopleft, bottomright = [!! @topleft !!], [!! @bottomright !!]\nbounds = (topleft[\"lon\"], bottomright[\"lat\"], bottomright[\"lon\"], topleft[\"lat\"])\nsrc = curio_load_data(\"data.scout.flood-nbs-classes\", bounds=bounds)\nreturn src\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Read the region of SCOUT's nature-based solution classes.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "NbS classes"
+        }
+      },
+      {
+        "id": "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4",
+        "type": "curio.builtin/data-loading",
+        "x": 650,
+        "y": 450,
+        "content": "# The region's window of the period's flood depth with NbS, in metres:\n# the period is the timeline Parameter node.\ntopleft, bottomright = [!! @topleft !!], [!! @bottomright !!]\nbounds = (topleft[\"lon\"], bottomright[\"lat\"], bottomright[\"lon\"], topleft[\"lat\"])\ndepths = {\n    \"2020 - 2040\": lambda: curio_load_data(\"data.scout.flood-depth-2020-2040-nbs\", bounds=bounds),\n    \"2050 - 2080\": lambda: curio_load_data(\"data.scout.flood-depth-2050-2080-nbs\", bounds=bounds),\n    \"2080 - 2100\": lambda: curio_load_data(\"data.scout.flood-depth-2080-2100-nbs\", bounds=bounds),\n}\nperiod = [!! @timeline !!]\nif period not in depths:\n    raise ValueError(f\"There is no flood projection for {period!r}. The periods: {', '.join(depths)}.\")\nsrc = depths[period]()\nreturn src\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Read the region's flood depth with nature-based solutions for the period.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Depth with NbS"
+        }
+      },
+      {
+        "id": "a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5",
+        "type": "curio.builtin/data-loading",
+        "x": 650,
+        "y": 900,
+        "content": "# The region's window of the period's flood depth without NbS, in metres:\n# the period is the timeline Parameter node.\ntopleft, bottomright = [!! @topleft !!], [!! @bottomright !!]\nbounds = (topleft[\"lon\"], bottomright[\"lat\"], bottomright[\"lon\"], topleft[\"lat\"])\ndepths = {\n    \"2020 - 2040\": lambda: curio_load_data(\"data.scout.flood-depth-2020-2040-no-nbs\", bounds=bounds),\n    \"2050 - 2080\": lambda: curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=bounds),\n    \"2080 - 2100\": lambda: curio_load_data(\"data.scout.flood-depth-2080-2100-no-nbs\", bounds=bounds),\n}\nperiod = [!! @timeline !!]\nif period not in depths:\n    raise ValueError(f\"There is no flood projection for {period!r}. The periods: {', '.join(depths)}.\")\nsrc = depths[period]()\nreturn src\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Read the region's flood depth without nature-based solutions for the period.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Depth without NbS"
+        }
+      },
+      {
+        "id": "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
+        "type": "curio.builtin/raster-calculator",
+        "x": 1300,
+        "y": 0,
+        "content": "# Raster Calculator: one operation over rasters on one grid, cell by cell.\n# Input 0 is SCOUT's NbS classes, input 1 the depth with NbS and input 2 the\n# depth without: a cell takes the depth with NbS where its class is one of\n# the chosen solutions, and the depth without NbS elsewhere.\nNBS_CLASSES = {\n    21: \"Bioswales/Infiltration trenches\",\n    31: \"Permeable pavements\",\n    43: \"Retention ponds\",\n    52: \"Infiltration trench\",\n    71: \"Bioswales\",\n    81: \"Bioswales\",\n    90: \"Constructed wetlands\",\n    95: \"Constructed wetlands\",\n}\nchosen = [!! use_NBS_classes !!]\ncodes = [code for code, name in NBS_CLASSES.items() if name in chosen]\nreturn curio_raster_calculate(\"choose\", arg, codes=codes)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the flood depth with no nature-based solution in place.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "use_NBS_classes",
+              "type": "checkbox-group",
+              "label": "Nature-based solutions",
+              "default": [
+                "Bioswales/Infiltration trenches",
+                "Permeable pavements",
+                "Retention ponds",
+                "Infiltration trench",
+                "Bioswales",
+                "Constructed wetlands"
+              ],
+              "options": {
+                "choices": [
+                  "Bioswales/Infiltration trenches",
+                  "Permeable pavements",
+                  "Retention ponds",
+                  "Infiltration trench",
+                  "Bioswales",
+                  "Constructed wetlands"
+                ]
+              },
+              "value": []
+            }
+          ],
+          "packageTemplateLabel": "Flood depth"
+        }
+      },
+      {
+        "id": "5e1b7d9a-3f46-4c8a-9b2c-7d9f3e5a1b40",
+        "type": "curio.builtin/raster-statistics",
+        "x": 1950,
+        "y": 0,
+        "content": "# Raster Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# A condition keeps only some cells: where=lambda value: value < 1.08 tests\n# the raster's own values. With a mask raster on input 1, it tests the mask's\n# values instead, and mask_values=[0] keeps the cells whose mask value is 0.\nreturn curio_raster_statistics(arg)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the median and the mean flood depth.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Depth statistics"
+        }
+      },
+      {
+        "id": "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
+        "type": "curio.builtin/raster-calculator",
+        "x": 1300,
+        "y": 900,
+        "content": "# Raster Calculator: one operation over rasters on one grid, cell by cell.\n# Input 0 is SCOUT's NbS classes, input 1 the depth with NbS and input 2 the\n# depth without: a cell takes the depth with NbS where its class is one of\n# the chosen solutions, and the depth without NbS elsewhere.\nNBS_CLASSES = {\n    21: \"Bioswales/Infiltration trenches\",\n    31: \"Permeable pavements\",\n    43: \"Retention ponds\",\n    52: \"Infiltration trench\",\n    71: \"Bioswales\",\n    81: \"Bioswales\",\n    90: \"Constructed wetlands\",\n    95: \"Constructed wetlands\",\n}\nchosen = [!! use_NBS_classes !!]\ncodes = [code for code, name in NBS_CLASSES.items() if name in chosen]\nreturn curio_raster_calculate(\"choose\", arg, codes=codes)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the flood depth with every nature-based solution in place.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "use_NBS_classes",
+              "type": "checkbox-group",
+              "label": "Nature-based solutions",
+              "default": [
+                "Bioswales/Infiltration trenches",
+                "Permeable pavements",
+                "Retention ponds",
+                "Infiltration trench",
+                "Bioswales",
+                "Constructed wetlands"
+              ],
+              "options": {
+                "choices": [
+                  "Bioswales/Infiltration trenches",
+                  "Permeable pavements",
+                  "Retention ponds",
+                  "Infiltration trench",
+                  "Bioswales",
+                  "Constructed wetlands"
+                ]
+              },
+              "value": [
+                "Bioswales/Infiltration trenches",
+                "Permeable pavements",
+                "Retention ponds",
+                "Infiltration trench",
+                "Bioswales",
+                "Constructed wetlands"
+              ]
+            }
+          ],
+          "packageTemplateLabel": "Flood depth",
+          "copiedFrom": [
+            "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58"
+          ]
+        }
+      },
+      {
+        "id": "6f2c8e0b-4a57-4d9b-8c3d-9e0a4f6b2c51",
+        "type": "curio.builtin/raster-statistics",
+        "x": 1950,
+        "y": 900,
+        "content": "# Raster Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# A condition keeps only some cells: where=lambda value: value < 1.08 tests\n# the raster's own values. With a mask raster on input 1, it tests the mask's\n# values instead, and mask_values=[0] keeps the cells whose mask value is 0.\nreturn curio_raster_statistics(arg)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the median and the mean flood depth.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Depth statistics",
+          "copiedFrom": [
+            "5e1b7d9a-3f46-4c8a-9b2c-7d9f3e5a1b40"
+          ]
+        }
+      },
+      {
+        "id": "7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62",
+        "type": "curio.builtin/compare-scenarios",
+        "x": 2650,
+        "y": 0,
+        "content": "# Compare Scenarios writes this code from its inputs: input 1 minus input 0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"no-nbs\", \"No NbS\", [!! input 0 !!]),\n    (\"nbs\", \"NbS\", [!! input 1 !!]),\n])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map how much the nature-based solutions change the flood depth.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Depth change",
+          "compareScenarios": {
+            "inputs": [
+              {
+                "scenario": "no-nbs",
+                "name": "No NbS",
+                "color": "#e76f51"
+              },
+              {
+                "scenario": "nbs",
+                "name": "NbS",
+                "color": "#2a9d8f"
+              }
+            ],
+            "mode": "difference"
+          }
+        }
+      },
+      {
+        "id": "9c5f1b3e-7d80-4a2c-8f6a-2b3d7c9e5f84",
+        "type": "curio.builtin/compare-scenarios",
+        "x": 2650,
+        "y": 900,
+        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"no-nbs\", \"No NbS\", [!! input 0 !!]),\n    (\"nbs\", \"NbS\", [!! input 1 !!]),\n])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart the median flood depth of each scenario.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Median flood depth",
+          "compareScenarios": {
+            "inputs": [
+              {
+                "scenario": "no-nbs",
+                "name": "No NbS",
+                "color": "#e76f51"
+              },
+              {
+                "scenario": "nbs",
+                "name": "NbS",
+                "color": "#2a9d8f"
+              }
+            ],
+            "mode": "chart",
+            "chart": {
+              "preset": "bar",
+              "y": "median"
+            }
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3out-1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58in",
+        "source": "e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3",
+        "target": "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4out-1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58in_1",
+        "source": "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4",
+        "target": "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5out-1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58in_2",
+        "source": "a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5",
+        "target": "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3out-2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69in",
+        "source": "e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3",
+        "target": "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4out-2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69in_1",
+        "source": "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4",
+        "target": "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5out-2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69in_2",
+        "source": "a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5",
+        "target": "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58out-5e1b7d9a-3f46-4c8a-9b2c-7d9f3e5a1b40in",
+        "source": "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
+        "target": "5e1b7d9a-3f46-4c8a-9b2c-7d9f3e5a1b40",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69out-6f2c8e0b-4a57-4d9b-8c3d-9e0a4f6b2c51in",
+        "source": "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
+        "target": "6f2c8e0b-4a57-4d9b-8c3d-9e0a4f6b2c51",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58out-7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62in",
+        "source": "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
+        "target": "7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69out-7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62in_1",
+        "source": "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
+        "target": "7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-5e1b7d9a-3f46-4c8a-9b2c-7d9f3e5a1b40out-9c5f1b3e-7d80-4a2c-8f6a-2b3d7c9e5f84in",
+        "source": "5e1b7d9a-3f46-4c8a-9b2c-7d9f3e5a1b40",
+        "target": "9c5f1b3e-7d80-4a2c-8f6a-2b3d7c9e5f84",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-6f2c8e0b-4a57-4d9b-8c3d-9e0a4f6b2c51out-9c5f1b3e-7d80-4a2c-8f6a-2b3d7c9e5f84in_1",
+        "source": "6f2c8e0b-4a57-4d9b-8c3d-9e0a4f6b2c51",
+        "target": "9c5f1b3e-7d80-4a2c-8f6a-2b3d7c9e5f84",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      }
+    ],
+    "scenarios": [
+      {
+        "id": "no-nbs",
+        "name": "No NbS",
+        "color": "#e76f51",
+        "nodes": [
+          "1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58",
+          "5e1b7d9a-3f46-4c8a-9b2c-7d9f3e5a1b40"
+        ]
+      },
+      {
+        "id": "nbs",
+        "name": "NbS",
+        "color": "#2a9d8f",
+        "nodes": [
+          "2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69",
+          "6f2c8e0b-4a57-4d9b-8c3d-9e0a4f6b2c51"
+        ]
+      }
+    ],
+    "packages": [],
+    "datasets": [
+      {
+        "datasetId": "data.scout.flood-nbs-classes",
+        "dirName": "data.scout.flood-nbs-classes@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.flood-depth-2020-2040-nbs",
+        "dirName": "data.scout.flood-depth-2020-2040-nbs@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.flood-depth-2020-2040-no-nbs",
+        "dirName": "data.scout.flood-depth-2020-2040-no-nbs@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.flood-depth-2050-2080-nbs",
+        "dirName": "data.scout.flood-depth-2050-2080-nbs@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.flood-depth-2050-2080-no-nbs",
+        "dirName": "data.scout.flood-depth-2050-2080-no-nbs@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.flood-depth-2080-2100-nbs",
+        "dirName": "data.scout.flood-depth-2080-2100-nbs@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.flood-depth-2080-2100-no-nbs",
+        "dirName": "data.scout.flood-depth-2080-2100-no-nbs@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      }
+    ],
+    "name": "FloodScenarios",
+    "task": "",
+    "timestamp": 1791158400000,
+    "provenance_id": "FloodScenarios"
+  }
+}

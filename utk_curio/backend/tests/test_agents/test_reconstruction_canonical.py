@@ -361,7 +361,7 @@ class TestTheShippedCorpus:
         curated = [p for p in paths if p.parent.name == "examples"]
         legacy = [p for p in paths if p.parent.name == "dataflows"]
         assert len(curated) == 23, [p.name for p in curated]
-        assert len(legacy) == 23, [p.name for p in legacy]
+        assert len(legacy) == 24, [p.name for p in legacy]
 
     @pytest.mark.parametrize("path", example_paths(), ids=lambda p: p.stem)
     def test_every_example_canonicalizes_with_known_templates(self, path):
@@ -413,7 +413,8 @@ class TestTheShippedCorpus:
         while using only builtin templates -- a different resolution route
         from examples 10, 18, 21 and 22 and the BuildingRasters test dataflow,
         whose templates themselves live in a package (``curio.streetvision@1``,
-        ``curio.media@1`` and ``scout.raster-conversion@1``)."""
+        ``curio.media@1`` and ``scout.raster-conversion@1``). The
+        FloodScenarios test dataflow is made of built-in nodes only."""
         needs_package_templates = {}
         for path in example_paths():
             spec = json.loads(path.read_text(encoding="utf-8"))
