@@ -7,6 +7,7 @@
  */
 
 import { GrammarAdapter, registerGrammarAdapter } from '../registry/grammarAdapter';
+import { VEGA_SCHEMA_URL } from '../generated/visDefaults';
 import { prepareVegaInput } from '../utils/vegaInput';
 
 const vega = require('vega');
@@ -14,15 +15,6 @@ const lite = require('vega-lite');
 
 export const vegaLiteAdapter: GrammarAdapter = {
   grammarId: 'vega-lite',
-
-  validate(spec: unknown): boolean {
-    try {
-      const parsed = typeof spec === 'string' ? JSON.parse(spec) : spec;
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed);
-    } catch {
-      return false;
-    }
-  },
 
   async render(
     container: HTMLElement,
@@ -52,7 +44,7 @@ export const vegaLiteAdapter: GrammarAdapter = {
 
   getDefaultSpec(): unknown {
     return {
-      $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
+      $schema: VEGA_SCHEMA_URL,
       mark: 'point',
       encoding: {
         x: { field: 'x', type: 'quantitative' },

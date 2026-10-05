@@ -61,7 +61,6 @@ from .utils import (
     api_json,
     canvas_node_type,
     connect_nodes,
-    dismiss_toasts,
     drag_to_canvas,
     open_tools_palette,
     require_project_page,
@@ -78,7 +77,7 @@ if TYPE_CHECKING:
 # The CSV hub dataset, for the same reason test_canvas_authoring_e2e.py picks it:
 # its generated loader only needs pandas. Nothing here runs a node, but keeping
 # the two tests on the same dataset keeps the install path identical.
-DATASET_ID = "data.urbanlab.acs-neighborhood-profile"
+DATASET_ID = "data.utk.acs-neighborhood-profile"
 DATASET_TITLE = "ACS Neighborhood Profile"
 
 DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
@@ -88,7 +87,7 @@ CARD = 'article:not([role="status"])'
 
 LOADER_TYPE = "curio.builtin/data-loading"
 TRANSFORM_TYPE = "curio.builtin/data-transformation"
-TRANSFORM_TILE = "#step-transformation"
+TRANSFORM_TILE = "#tile-data-transformation"
 # The label the node registry gives curio.builtin/data-transformation, which is
 # what the consumer card names the node (`resolveNodeLabel` wins over the raw
 # type). Asserting the label rather than the id also proves the panel resolved
@@ -190,7 +189,6 @@ def _open_lineage_tab(page):
     scoped to one of them - an unscoped ``get_by_text`` on the Lineage tab is
     strict-mode-ambiguous.
     """
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
     page.get_by_role("button", name="Data Catalog", exact=True).click()
     drawer = _drawer(page)
 
@@ -330,13 +328,13 @@ def test_wiring_a_consumer_grows_dataset_lineage(
     expect(card.get_by_text("1↓", exact=True)).to_be_visible(timeout=10000)
 
     # Visual baseline for the panel nobody hand-checks otherwise. Compared at the
-    # suite's default tolerance (20% of pixels, 30/255 per channel); the helper
+    # suite's default tolerance (10% of pixels, 30/255 per channel); the helper
     # pins the ReactFlow viewport through JS first, which the open modal does not
-    # block, and writes the baseline on the first run if the file is absent.
-    dismiss_toasts(page)
+    # block.
     save_workflow_test_screenshot(
         page, "dataset-lineage",
         test_name="test_wiring_a_consumer_grows_dataset_lineage",
+        sweep_toasts=True,
     )
 
     _close_details_and_drawer(page)

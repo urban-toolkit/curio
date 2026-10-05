@@ -21,9 +21,12 @@ This guide is for students getting their first taste of open-source work and for
   * [TL;DR](#tldr)
   * [One-Time Setup](#one-time-setup)
   * [Backend and Sandbox Tests](#backend-and-sandbox-tests)
+  * [Agent Reconstruction Tests](#agent-reconstruction-tests)
   * [Frontend Unit Tests](#frontend-unit-tests)
   * [Frontend E2E Tests](#frontend-e2e-tests)
   * [Database Migrations](#database-migrations)
+  * [Generated Files](#generated-files)
+  * [Vendored Autark Schema](#vendored-autark-schema)
 * [Organizing Contributions](#organizing-contributions)
   * [Defining the Scope of a Pull Request](#defining-the-scope-of-a-pull-request)
   * [Pull Request Template](#pull-request-template)
@@ -58,28 +61,34 @@ The codebase follows a modular structure under the `utk_curio/` directory. This 
 ```
 curio/
 ├── utk_curio/
-│   ├── backend/                     # Manages database access and user authentication
-│   │   ├── migrations/              # Alembic migrations
-│   │   └── tests/                   # pytest files for backend (+ test_frontend/ for Playwright E2E)
-│   ├── sandbox/                     # Executes user Python code in a secure environment
-│   │   └── tests/                   # unittest files for sandbox
-│   └── frontend/                    # All frontend logic
-│       └── urban-workflows/         # Main Curio interface for dataflow editing
+│   ├── backend/                            # Manages database access and user authentication
+│   │   ├── app/agents/domain/contracts.py  # The single source of every generated contract (see Generated Files)
+│   │   ├── app/agents/schemas/             # The vendored Autark grammar schema (see Vendored Autark Schema)
+│   │   ├── app/discovery/                  # The Discovery Catalog: portal, storage, service and model sources
+│   │   ├── app/model_catalog/              # The Model Catalog: models a node runs, shipped or downloaded
+│   │   ├── migrations/                     # Alembic migrations
+│   │   └── tests/                          # pytest files for backend (+ test_frontend/ for Playwright E2E)
+│   ├── llm-prompts/                        # Built-in agent prompts; each X.md with an X.template.md beside it is generated
+│   ├── sandbox/                            # Executes user Python code in a secure environment
+│   │   └── tests/                          # unittest files for sandbox
+│   └── frontend/                           # All frontend logic
+│       └── urban-workflows/                # Main Curio interface for dataflow editing
 │           └── src/
-│               ├── components/      # React components and CSS
-│               └── tests/           # Jest unit tests
+│               ├── components/             # React components and CSS
+│               ├── generated/              # Written by scripts/generate_contracts.py; never edited by hand
+│               └── tests/                  # Jest unit tests
 │
 ├── curio.py                        # CLI entry point for running and managing all services
 ├── packages/                       # The shared node catalog: one directory per node package
 ├── datasets/                       # The shared Data Catalog: datasets published on this install
-├── datalakes/                      # The Data Lake Catalog: one manifest per data portal this install can reach
-├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py
+├── discovery/                      # The Discovery Catalog: one manifest per portal or storage source this install can reach
+├── scripts/                        # test.sh, clean.sh, new_package.py, regen_integrity.py, generate_contracts.py, sync_autk_schema.py
 ├── docs/                           # Documentation, usage guides, and examples
 │   └── examples/dataflows/         # Dataflow JSONs used by the E2E suite
 └── requirements.txt                # Curio framework dependencies (data-ops libs live in each package's manifest.dependencies.python)
 ```
 
-To build a node of your own, start with [AUTHORING-NODES.md](AUTHORING-NODES.md), a task-ordered walkthrough from a clone to a shareable package. For how packages are stored, versioned, forked, and published, see [NODE-CATALOG.md](NODE-CATALOG.md). For how datasets are published, installed, and consumed, see [DATA-CATALOG.md](DATA-CATALOG.md). For the data portals an install can download from, see [DATA-LAKE-CATALOG.md](DATA-LAKE-CATALOG.md). For how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
+To build a node of your own, start with [AUTHORING-NODES.md](AUTHORING-NODES.md), a task-ordered walkthrough from a clone to a shareable package. For how packages are stored, versioned, forked, and published, see [NODE-CATALOG.md](NODE-CATALOG.md). For how datasets are published, installed, and consumed, see [DATA-CATALOG.md](DATA-CATALOG.md). For the data portals an install can download from, see [DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md). For how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Installation Options
 
@@ -124,11 +133,20 @@ Refer to [USAGE.md](USAGE.md) for Docker instructions and frontend build steps.
 * Annotate dataflows to serve as tutorials
 * Contribute to the `examples/` directory
 
+A new dataflow in `docs/examples/` or `docs/examples/dataflows/` ships, so list it in
+[`utk_curio/llm-prompts/examples.md`](../utk_curio/llm-prompts/examples.md): under
+"Used" with one line on what it shows when agents should learn from it, or under
+"Not used" with the reason. The line leaves out the city, topic, node types and
+datasets: they are read from the file. `test_prompt_references.py` fails until the
+dataflow is listed, and checks every "Used" dataflow the way it checks the prompts.
+
 ### Documentation
 
 * Write developer setup instructions or onboarding checklists
 * Add usage diagrams, screenshots, or schema explanations
 * Contribute inline documentation and docstrings
+
+The six catalog guides (`NODE-CATALOG.md`, `DATA-CATALOG.md`, `MODEL-CATALOG.md`, `AGENT-CATALOG.md`, `DISCOVERY-CATALOG.md`, `SCENARIO-CATALOG.md`) share one outline, so a reader who knows one knows where to look in the others: **1. What is the X Catalog?** (Concept, What ships with Curio, Storage layers), **2. Surfaces and workflows** (Action matrix, Workflows), **3. Using X in a dataflow**, the catalog's own parts, then **Importing, publishing, and sharing**, **The manifest**, **Operator notes**, and **See also**. Keep them at user level: name UI labels exactly as the app shows them, and leave routes, module names, internal mechanism and design rationale to [ARCHITECTURE.md](ARCHITECTURE.md) and code comments.
 
 ### Community and Support
 
@@ -220,7 +238,7 @@ python curio.py test e2e --parallel 4
 
 See `python curio.py test --help` for all options, or read the sections below for
 more detail. The command is a front end for `./scripts/test.sh`, which CI calls
-directly and which still accepts its own flags (`--unit-only`, `--e2e-only`, ...)
+directly and which accepts its own flags (`--unit-only`, `--e2e-only`, ...)
 if you prefer to run it yourself.
 
 ### One-Time Setup
@@ -252,7 +270,7 @@ answers differently than it did yesterday. Rather than trust every author to
 remember to inject a fake, the suite makes forgetting a loud, immediate failure.
 If you hit it, the fix is almost always to inject a fake transport -- most
 network-touching code in this repo already takes one (`egress.fetch`'s
-`request_fn` and `resolver`, `RegistryFetcher`, `LakeTransport`).
+`request_fn` and `resolver`, `RegistryFetcher`, `DiscoveryTransport`).
 
 Two markers opt out, and they mean different things:
 
@@ -265,6 +283,50 @@ Writing a contract test that can fail for a reason outside our control puts a
 third party in the critical path of every PR, which is the problem the guard
 exists to solve. Skip generously; a contract test that skips has cost nothing,
 and its skip reason is printed under `pytest -v`.
+
+### Agent Reconstruction Tests
+
+Separate from the suites above, these ask whether a *model* can rebuild one of
+the shipped example dataflows from a plain-language prompt. Every example has a
+reviewed prompt fixture under `docs/examples/prompts/`; the deterministic tiers
+run offline in seconds and need no stack:
+
+```bash
+pytest utk_curio/backend/tests/test_agents/test_example_fixtures.py \
+       utk_curio/backend/tests/test_agents/test_reconstruction_canonical.py \
+       utk_curio/backend/tests/test_agents/test_reconstruction_scoring.py \
+       utk_curio/backend/tests/test_agents/test_evaluation_policy.py \
+       utk_curio/backend/tests/test_agents/test_example_reconstruction.py
+
+python -m utk_curio.tools.agent_eval list      # the fixtures and their splits
+```
+
+A fixture pins its example's digest, so editing an example fails these tests
+until someone re-reads the prompt and the expected graph and moves the pin. The
+browser tier is opt-in with the other example-dependent tests
+(`--with-examples`). A live-model evaluation needs two opt-ins, and it writes a
+report; it neither passes nor fails:
+
+```bash
+export CURIO_EVAL_LIVE=1
+python -m utk_curio.tools.agent_eval run --token "$CURIO_EVAL_TOKEN" --tier T0
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md#evaluation) for how an evaluation runs
+and what the score means.
+
+**Saving a project** goes through a guard: every write of a spec bumps a
+counter at the one chokepoint that writes it, a client sends the revision it
+last synced with as `baseRevision`, and a save whose basis is stale **and**
+which would delete a node, an edge or a node's code that exists on disk is
+refused with 409. A caller that sends no basis is not checked. If you add a path
+that writes a project spec, you get the counter for free; if you add a client
+that saves one, send the basis.
+
+```bash
+pytest utk_curio/backend/tests/test_projects/test_save_concurrency.py \
+       utk_curio/backend/tests/test_projects/test_routes.py
+```
 
 ### Frontend Unit Tests
 
@@ -347,6 +409,65 @@ FLASK_APP=server.py flask db migrate -m "Migration Name"
 # apply any pending migrations
 FLASK_APP=server.py flask db upgrade
 ```
+
+### Generated Files
+
+Some files are generated from a single source and committed: everything under
+`utk_curio/frontend/urban-workflows/src/generated/`, and every prompt in
+`utk_curio/llm-prompts/` that has a `.template.md` beside it (the shared
+preamble, most agent instructions, and `package_contract.md`), all rendered
+from `utk_curio/backend/app/agents/domain/contracts.py`. Each generated code
+file starts with a header naming its generator and source. A prompt has no
+header, because the model reads it verbatim; its hand-written text lives in
+`<name>.template.md` beside it, and the `{{...}}` markers in the template are
+the generated parts: agent names, template labels, the Trill block and other
+facts the code owns (the full list is in `contracts.PROMPT_FIELDS`). Those
+facts are read from `docs/schemas/trill.v1.json`,
+`packages/curio.builtin@1/manifest.json`, the built-in agent roster and the
+backend modules each field names, so a change to any of them needs a
+regeneration too. Do not edit an output by hand: edit the template or the
+source, then regenerate and commit both.
+
+Some frontend behaviour is defined in `contracts.py` too, because the preamble
+describes it: the Vega-Lite and Autark starter ladders, the pandas dtype each
+column role comes from, the Vega-Lite `$schema` URL, and the names, extensions
+and share behind Simple View's image columns. The frontend reads them from
+`src/generated/visDefaults.ts`. To add, remove or reorder a starter rule, edit
+its table in `contracts.py`, regenerate, and add or remove its builder in
+`vegaDefaultSpec.ts` or `autkDefaultSpec.ts`, keyed by the rule's id.
+
+```bash
+# rewrite every generated file
+python scripts/generate_contracts.py
+
+# write nothing; exit non-zero and list the stale files
+python scripts/generate_contracts.py --check
+```
+
+The backend suite runs the same check
+(`utk_curio/backend/tests/test_agents/test_generated_contracts.py`), so a stale
+or hand-edited output fails CI. See
+[ARCHITECTURE.md, Generated Contracts](ARCHITECTURE.md#generated-contracts).
+
+### Vendored Autark Schema
+
+Autark documents are validated against the JSON Schema that autk-grammar
+publishes. `utk_curio/backend/app/agents/schemas/autk-grammar.v1.json` is a
+byte-for-byte copy of the released file, and `autk-grammar.v1.source.json`
+records its version and digest. To move to a new release:
+
+```bash
+# vendor the schema from the release on npm
+python scripts/sync_autk_schema.py --version <version>
+
+# re-render the preamble and the TypeScript that read it
+python scripts/generate_contracts.py
+```
+
+`--from PATH` vendors a local build of that version instead.
+`test_autk_schema_vendored.py` checks the copy against its record in the
+backend suite, and the weekly `autk-schema` workflow runs
+`python scripts/sync_autk_schema.py --check` against npm.
 
 ## Organizing Contributions
 

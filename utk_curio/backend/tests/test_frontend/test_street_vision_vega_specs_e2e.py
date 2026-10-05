@@ -1,8 +1,7 @@
-"""Playwright E2E: the street-vision example's two Vega-Lite specs draw.
+"""Playwright E2E: the street-vision example's Vega-Lite specs draw.
 
-Example 10 cannot run end to end offline (its first two nodes need a Google
-Maps key and the HuggingFace model), so its tail was never exercised, and both
-of its Vega-Lite specs were wrong in ways no unit test could see (#276):
+Example 10's first two Vega-Lite specs were wrong in ways no unit test could
+see (#276):
 
 * the polygon map's only layer read a dataset called ``table``, which nothing
   ever fills (the node feeds its rows to the spec's root ``data``), so the layer
@@ -13,10 +12,11 @@ of its Vega-Lite specs were wrong in ways no unit test could see (#276):
   attached geometry when that name was declared, so a geoshape over it ended in
   "No geometry to draw".
 
-This runs everything after the CV nodes for real: a stand-in for the inference
-output (one tagged point inside each Chicago ZIP polygon), the real polygon
-loader, the real Spatial Join node and route, and the two specs read from the
-shipped example file, so the example's own text is what is under test.
+This runs everything after the segmentation nodes for real: a stand-in for
+their output (one tagged point inside each Chicago ZIP polygon, so every class
+shows up), the real polygon loader, the real Spatial Join node and route, and
+the three specs read from the shipped example file, so the example's own text
+is what is under test.
 
 Run::
 
@@ -48,25 +48,30 @@ if TYPE_CHECKING:
 EXAMPLE = os.path.join(REPO_ROOT, "docs", "examples", "10-street-vision-cv-analysis.json")
 MAP_NODE = "8aaff248-9894-4ca8-b9a3-3b79216ce592"
 BARS_NODE = "1aa27f1a-5ed7-4872-a413-ce6fd1eb2c6b"
+# Route 2's chart, which colours by whatever classes its model names.
+SECOND_BARS_NODE = "e5a27c3f-8d4b-4f16-a9e2-0b3c4d5e6f78"
 
 POINTS_ID = "sv-points"
 POLYGONS_ID = "sv-polygons"
 JOIN_ID = "sv-join"
 MAP_ID = "sv-map"
 BARS_ID = "sv-bars"
+SECOND_BARS_ID = "sv-second-bars"
 
-# What HF CV Inference emits, minus the pictures: a point per panorama with the
-# class it was dominated by (resultsToFeatureCollection.ts). One point inside
-# each ZIP polygon keeps every neighborhood populated, so the bar chart has a
-# row per ZIP and the map a dot in each.
+# What Image Segmentation emits, minus the pictures and the class shares: a
+# point per photo with the class it was dominated by, and the file `name` every
+# collection row carries. One point inside each ZIP polygon keeps every
+# neighborhood populated, so the bar chart has a row per ZIP and the map a dot
+# in each.
 POINTS_CODE = """import geopandas as gpd
 
-polys = gpd.read_file(curio_dataset_path("data.urbanlab.chicago-boundary"))
+polys = gpd.read_file(curio_data_path("data.utk.chicago-boundary"))
 pts = polys.representative_point()
-classes = ["road", "sidewalk", "building", "vegetation", "sky", "car"]
+classes = ["road", "sidewalk", "building", "vegetation", "sky", "terrain"]
 gdf = gpd.GeoDataFrame(
     {
         "image_id": [f"img_{i}" for i in range(len(pts))],
+        "name": [f"img_{i}.jpg" for i in range(len(pts))],
         "latitude": pts.y.round(5).tolist(),
         "longitude": pts.x.round(5).tolist(),
         "dominant_class": [classes[i % len(classes)] for i in range(len(pts))],
@@ -78,12 +83,21 @@ gdf = gpd.GeoDataFrame(
 return gdf
 """
 
-# Example 10 renames `pri_neigh` to `name`; the ZIP file calls it `zip`.
+# Example 10 renames `pri_neigh` to `neighborhood`; the ZIP file calls it `zip`.
 POLYGONS_CODE = """import geopandas as gpd
 
-gdf = gpd.read_file(curio_dataset_path("data.urbanlab.chicago-boundary"))
-return gdf.rename(columns={"zip": "name"})
+gdf = gpd.read_file(curio_data_path("data.utk.chicago-boundary"))
+return gdf.rename(columns={"zip": "neighborhood"})
 """
+
+
+def _shipped_join_metadata() -> dict:
+    with open(EXAMPLE, encoding="utf-8") as fh:
+        nodes = json.load(fh)["dataflow"]["nodes"]
+    joins = [n for n in nodes if n["type"] == "curio.builtin/spatial-join"]
+    settings = {json.dumps(n["metadata"].get("spatialJoin"), sort_keys=True) for n in joins}
+    assert len(settings) == 1, f"example 10's joins disagree on their settings: {settings}"
+    return joins[0]["metadata"]
 
 
 def _shipped_spec(node_prefix: str) -> str:
@@ -94,7 +108,8 @@ def _shipped_spec(node_prefix: str) -> str:
     return matches[0]["content"]
 
 
-def _node(node_id: str, node_type: str, x: int, y: int, content: str) -> dict:
+def _node(node_id: str, node_type: str, x: int, y: int, content: str,
+          metadata: dict | None = None) -> dict:
     return {
         "id": node_id,
         "type": node_type,
@@ -104,7 +119,7 @@ def _node(node_id: str, node_type: str, x: int, y: int, content: str) -> dict:
         "in": "DEFAULT",
         "out": "DEFAULT",
         "goal": "",
-        "metadata": {"keywords": []},
+        "metadata": metadata or {"keywords": []},
     }
 
 
@@ -128,20 +143,25 @@ def _spec() -> dict:
             "nodes": [
                 _node(POINTS_ID, "curio.builtin/data-loading", 0, 0, POINTS_CODE),
                 _node(POLYGONS_ID, "curio.builtin/data-loading", 0, 430, POLYGONS_CODE),
-                _node(JOIN_ID, "curio.builtin/spatial-join", 645, 215, ""),
+                # The join's tag column, as the example sets it.
+                _node(JOIN_ID, "curio.builtin/spatial-join", 645, 215, "",
+                      _shipped_join_metadata()),
                 _node(MAP_ID, "curio.builtin/vis-vega", 1045, 0, _shipped_spec(MAP_NODE)),
                 _node(BARS_ID, "curio.builtin/vis-vega", 1045, 430, _shipped_spec(BARS_NODE)),
+                _node(SECOND_BARS_ID, "curio.builtin/vis-vega", 1045, 860,
+                      _shipped_spec(SECOND_BARS_NODE)),
             ],
             "edges": [
                 _edge(POINTS_ID, JOIN_ID, "in_points"),
                 _edge(POLYGONS_ID, JOIN_ID, "in_polygons"),
                 _edge(JOIN_ID, MAP_ID, "in"),
                 _edge(JOIN_ID, BARS_ID, "in"),
+                _edge(JOIN_ID, SECOND_BARS_ID, "in"),
             ],
             "datasets": [
                 {
-                    "datasetId": "data.urbanlab.chicago-boundary",
-                    "dirName": "data.urbanlab.chicago-boundary@1",
+                    "datasetId": "data.utk.chicago-boundary",
+                    "dirName": "data.utk.chicago-boundary@1",
                     "origin": "imported",
                     "producerNodeId": None,
                     "consumerNodeIds": [],
@@ -202,7 +222,7 @@ def test_the_street_vision_vega_specs_draw_from_a_spatial_join(
         project_spec=_spec(),
     )
     require_owner_view(page)
-    for node_id in (POINTS_ID, POLYGONS_ID, JOIN_ID, MAP_ID, BARS_ID):
+    for node_id in (POINTS_ID, POLYGONS_ID, JOIN_ID, MAP_ID, BARS_ID, SECOND_BARS_ID):
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
 
     run_node_and_wait(page, POINTS_ID, node_type="DATA_LOADING", timeout_ms=120000)
@@ -211,11 +231,13 @@ def test_the_street_vision_vega_specs_draw_from_a_spatial_join(
     wait_for_node_done(page, JOIN_ID, node_type="SPATIAL_JOIN", timeout_ms=120000)
 
     # Every synthetic point sits inside its own ZIP polygon, so the join must
-    # tag all of them. This also proves the tag column the specs read is the
-    # one the backend writes (`joined`): the node counts tagged features by it.
+    # tag all of them. The status also names the column the tag landed in: the
+    # one the specs read, and not `name_polygon`, which is where a `name` tag
+    # goes on points that already carry a `name`.
     status = node_locator(page, JOIN_ID).locator("[data-curio-spatial-join-status]")
     status.wait_for(state="visible", timeout=30000)
     assert "Tagged 61 of 61 points" in status.inner_text(), status.inner_text()
+    assert "the points' `neighborhood` column" in status.inner_text(), status.inner_text()
 
     # The map: a geoshape layer over the joined points, coloured by the
     # per-polygon dominant class. Before the fixes it was blank three times
@@ -231,9 +253,18 @@ def test_the_street_vision_vega_specs_draw_from_a_spatial_join(
     )
 
     # The bars: images per polygon, coloured by dominant class. With the filter
-    # on `joined` dropping every row this chart is just its axes.
+    # on `neighborhood` dropping every row this chart is just its axes.
     play_node(page, BARS_ID)
     assert_vega_canvas_rendered(page, BARS_ID)
     assert _distinct_canvas_colours(page, BARS_ID) >= 6, (
-        "the bar chart drew only its axes: the rows carried no `joined` column"
+        "the bar chart drew only its axes: the rows carried no `neighborhood` column"
+    )
+
+    # Route 2's bars name no colour domain, so a model with other classes still
+    # gets one colour per class it found.
+    play_node(page, SECOND_BARS_ID)
+    assert_vega_canvas_rendered(page, SECOND_BARS_ID)
+    assert _distinct_canvas_colours(page, SECOND_BARS_ID) >= 6, (
+        "route 2's bar chart drew in too few colours: its colour field did not "
+        "resolve on the joined rows"
     )

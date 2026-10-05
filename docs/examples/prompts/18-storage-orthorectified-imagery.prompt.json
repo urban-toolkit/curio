@@ -1,0 +1,142 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "18-storage-orthorectified-imagery",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/18-storage-orthorectified-imagery.json",
+    "sha256": "082905b7635aa45995b330e5f485de8e805a977c5613f770bb0e344eb0a88720",
+    "walkthrough": "docs/examples/18-storage-orthorectified-imagery.md"
+  },
+  "prompt": "Load the Example drone orthoimagery collection from the Data Catalog: drone GeoTIFF tiles over the Chicago Loop, organized by year. Map every tile's footprint coloured by year with Vega-Lite. Then keep only the 2024 tiles, mosaic them into one raster, compute the mean of each band of that mosaic, and show the summary as a table.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.curio.storage-orthos"
+    ],
+    "packages": [
+      "curio.media@1"
+    ],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-simple",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.media/mosaic-rasters",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis1",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.curio.storage-orthos"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-simple",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T1",
+    "needs": [
+      "package-enlist:templates"
+    ],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON and its walkthrough, 2026-09-28",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.curio.storage-orthos",
+        "licence": "CC0-1.0"
+      }
+    ]
+  },
+  "notes": "A rasters collection read in place: footprints on a map, then one year mosaicked by a package node."
+}

@@ -41,6 +41,8 @@ jest.mock("reactflow", () => ({
   },
   ConnectionMode: { Loose: "loose" },
   useReactFlow: () => mockReactFlowInstance,
+  // useViewportMotionHint reads the flow's wrapper from the store.
+  useStoreApi: () => ({ getState: () => ({ domNode: null }) }),
 }));
 jest.mock("reactflow/dist/style.css", () => ({}), { virtual: true });
 jest.mock("../../components/UniversalNode", () => ({ __esModule: true, default: () => null }));
@@ -48,7 +50,6 @@ jest.mock("../../components/edges/BiDirectionalEdge", () => ({ __esModule: true,
 jest.mock("../../components/edges/UniDirectionalEdge", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/VersionBadge", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/login/Loading", () => ({ Loading: () => <div data-testid="loading" /> }));
-jest.mock("../../components/login/UserMenu", () => ({ UserMenu: () => <div data-testid="user-menu" /> }));
 jest.mock("../../components/menus/top/ShareMenu", () => ({
   __esModule: true,
   default: (props: any) => (
@@ -120,20 +121,22 @@ beforeEach(() => {
 });
 
 describe("the bar", () => {
-  test("is the dataflow bar's bar, holding only dashboard actions", async () => {
+  test("is the shared top bar, holding only dashboard actions", async () => {
     const { container } = await renderPage();
 
-    // The same stylesheet as the dataflow's bar (identity-obj-proxy maps class
-    // names to themselves), so the two look like one product.
-    const bar = container.querySelector(".menuBar");
+    // The same GlobalPageHeader as the dataflow's bar and every section page
+    // (identity-obj-proxy maps class names to themselves), so they look like
+    // one product.
+    const bar = container.querySelector("header.header[data-curio-menu-bar]");
     expect(bar).not.toBeNull();
     expect(bar!.querySelector(".logo")).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Chicago trips" })).toBeTruthy();
     expect(screen.getByTestId("user-menu")).toBeTruthy();
-    // None of the editor's menus.
-    for (const menu of ["File", "View", "Data", "Provenance", "Help"]) {
+    // None of the editor's menus, and none of its catalogs.
+    for (const menu of ["File", "View", "Data", "Provenance"]) {
       expect(screen.queryByText(new RegExp(`^${menu}`))).toBeNull();
     }
+    expect(screen.queryByRole("button", { name: /Catalog$/ })).toBeNull();
   });
 
   test("links back to the dataflow", async () => {
@@ -207,6 +210,76 @@ describe("editing the layout", () => {
     await renderPage();
 
     expect(screen.getByTestId("edit-layout-btn")).toBeTruthy();
+  });
+});
+
+describe("arranging by scenario", () => {
+  // A loader the two scenarios share, each scenario's one tile, all pinned.
+  const tile = (id: string, x: number, y: number) => ({
+    id,
+    position: { x, y },
+    data: { nodeId: id, nodeType: "curio.builtin/computation-analysis", code: "return arg", title: id },
+  });
+  const withScenarios = (over: Record<string, unknown> = {}) =>
+    flow({
+      nodes: [tile("load", 0, 0), tile("a", 600, 0), tile("b", 600, 600)],
+      edges: [
+        { id: "e1", source: "load", target: "a", sourceHandle: "out", targetHandle: "in" },
+        { id: "e2", source: "load", target: "b", sourceHandle: "out", targetHandle: "in" },
+      ],
+      dashboardPins: { load: true, a: true, b: true },
+      scenarios: [
+        { id: "base", name: "Baseline", color: "#2a9d8f", nodes: ["a"] },
+        { id: "tall", name: "Twice as tall", color: "#e86a3c", nodes: ["b"] },
+      ],
+      ...over,
+    });
+
+  test("is offered while the owner edits the layout of a dashboard with a scenario's tiles", async () => {
+    mockFlow = withScenarios({ dashboardLocked: false });
+    await renderPage();
+
+    expect(screen.getByTestId("arrange-by-scenario-btn").textContent).toBe("Arrange by scenario");
+  });
+
+  test("is not offered while the layout is locked, or without a scenario's tile", async () => {
+    mockFlow = withScenarios({ dashboardLocked: true });
+    const { unmount } = await renderPage();
+    expect(screen.queryByTestId("arrange-by-scenario-btn")).toBeNull();
+    unmount();
+
+    mockFlow = flow({ dashboardLocked: false });
+    await renderPage();
+    expect(screen.queryByTestId("save-layout-btn")).toBeTruthy();
+    expect(screen.queryByTestId("arrange-by-scenario-btn")).toBeNull();
+  });
+
+  test("moves every tile into its column and records the slots a Save layout writes", async () => {
+    mockFlow = withScenarios({ dashboardLocked: false });
+    await renderPage();
+
+    act(() => { fireEvent.click(screen.getByTestId("arrange-by-scenario-btn")); });
+
+    const moves = mockFlow.onNodesChange.mock.calls.flat(1).flat();
+    const x = Object.fromEntries(moves.map((change: any) => [change.id, change.position.x]));
+    expect(moves.every((change: any) => change.type === "position")).toBe(true);
+    expect(Object.keys(x).sort()).toEqual(["a", "b", "load"]);
+    // The shared loader first, then one column per scenario, in their order.
+    expect(x.load).toBeLessThan(x.a);
+    expect(x.a).toBeLessThan(x.b);
+
+    const slots = Object.fromEntries(
+      mockFlow.updateDataNode.mock.calls.map(([id, data]: [string, any]) => [id, data]),
+    );
+    for (const change of moves) {
+      expect([slots[change.id].dashboardX, slots[change.id].dashboardY]).toEqual([
+        change.position.x,
+        change.position.y,
+      ]);
+      // The rest of the node's data stays.
+      expect(slots[change.id].title).toBe(change.id);
+    }
+    expect(mockFlow.markDirty).toHaveBeenCalled();
   });
 });
 

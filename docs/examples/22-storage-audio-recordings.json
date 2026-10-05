@@ -1,0 +1,94 @@
+{
+  "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Sensors"], "complexity": ["Intermediate"]},
+    "name": "Storage: audio recordings",
+    "description": "Noise recordings by sensor, timed by their file names and indexed in place as one collection: spectrograms, then levels per window.",
+    "task": "Show each noise recording, cut the recordings into windows, and chart each window's level per sensor.",
+    "timestamp": 0,
+    "provenance_id": "storage-audio-recordings",
+    "packages": [
+      "curio.media@1"
+    ],
+    "datasets": [
+      {
+        "datasetId": "data.curio.storage-noise",
+        "dirName": "data.curio.storage-noise@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-09-27T00:00:00Z"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "noise-loader",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 215,
+        "content": "collection = curio_load_collection(\"data.curio.storage-noise\")\n\nreturn collection\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the recordings collection.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "noise-cards",
+        "type": "curio.builtin/vis-simple",
+        "x": 645,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show each recording's spectrogram; each plays in its card.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "noise-split",
+        "type": "curio.media/split-audio",
+        "x": 645,
+        "y": 430,
+        "content": "\"\"\"Split Audio.\n\nInput: a collection's rows, as Data Loading's `curio_load_collection(...)` returns\nthem. Every recording becomes one row per window, with the window's level and\npeak in dBFS (decibels below full scale) over all of its channels, and a\nshort WAV of the window, in the recording's channels, that Simple View can\nplay. A window row keeps the recording's fields, and its `recorded_at` moves\nforward by the window's offset. A recording is read one window at a time.\n\nSettings:\n- WINDOW_SECONDS: the length of one window.\n- MAX_WINDOWS_PER_RECORDING: windows kept from one recording at most.\n\"\"\"\n\nimport datetime\nimport math\nimport wave\n\nimport av\nimport numpy as np\nimport pandas as pd\n\nWINDOW_SECONDS = 0.1\nMAX_WINDOWS_PER_RECORDING = 2000\n\nPER_FILE = {\n    \"file_id\", \"relpath\", \"name\", \"ext\", \"kind\", \"bytes\", \"mtime\", \"duration_s\",\n    \"sample_rate\", \"channels\", \"codec\", \"path\", \"thumbnail\", \"image_url\",\n    \"audio_url\", \"probe_error\", \"geometry\",\n}\n\n\ndef dbfs(value):\n    return round(20 * math.log10(value), 2) if value > 0 else -120.0\n\n\ndef windows(path):\n    \"\"\"``(rate, start, samples)`` per window, where *samples* is one row per\n    sample and one column per channel, decoded as it is needed.\"\"\"\n    with av.open(path) as container:\n        stream = container.streams.audio[0]\n        rate = stream.codec_context.sample_rate or 16000\n        resampler = av.AudioResampler(format=\"s16\", layout=stream.codec_context.layout, rate=rate)\n        width = max(1, int(WINDOW_SECONDS * rate))\n        pending, held, start, made = [], 0, 0, 0\n\n        def decoded():\n            for frame in container.decode(stream):\n                yield from resampler.resample(frame)\n            yield from resampler.resample(None)\n\n        for out in decoded():\n            block = out.to_ndarray().reshape(-1, out.layout.nb_channels)\n            pending.append(block)\n            held += len(block)\n            while held >= width:\n                joined = np.concatenate(pending)\n                yield rate, start, joined[:width]\n                made += 1\n                if made >= MAX_WINDOWS_PER_RECORDING:\n                    return\n                rest = joined[width:]\n                pending, held, start = ([rest] if len(rest) else []), len(rest), start + width\n        if held:\n            yield rate, start, np.concatenate(pending)\n\n\nmedia = arg\nrecordings = media[media[\"kind\"] == \"audio\"]\nrows = []\nfor _, recording in recordings.iterrows():\n    if not isinstance(recording[\"path\"], str) or not recording[\"path\"]:\n        raise ValueError(\n            f\"{recording['relpath']} is not on this machine yet; cache the collection's files first\"\n        )\n    for rate, start, window in windows(recording[\"path\"]):\n        scaled = window.astype(np.float64) / 32768.0\n        t_s = round(start / rate, 3)\n        derived = curio_derived_file(\n            recording[\"dataset_id\"], recording[\"file_id\"], round(t_s * 1000), kind=\"audio\"\n        )\n        with wave.open(derived[\"path\"], \"wb\") as handle:\n            handle.setnchannels(window.shape[1])\n            handle.setsampwidth(2)\n            handle.setframerate(rate)\n            handle.writeframes(window.astype(\"<i2\").tobytes())\n        row = {k: recording[k] for k in recording.index if k not in PER_FILE}\n        started = recording.get(\"recorded_at\")\n        if isinstance(started, (pd.Timestamp, datetime.datetime)) and not pd.isna(started):\n            row[\"recorded_at\"] = started + datetime.timedelta(seconds=t_s)\n        row.update({\n            \"file_id\": derived[\"file_id\"],\n            \"kind\": \"audio\",\n            \"recording_file_id\": recording[\"file_id\"],\n            \"recording\": recording[\"name\"],\n            \"t_s\": t_s,\n            \"duration_s\": round(len(window) / rate, 3),\n            \"level_dbfs\": dbfs(float(np.sqrt(np.mean(scaled ** 2)))),\n            \"peak_dbfs\": dbfs(float(np.max(np.abs(scaled)))),\n            \"path\": derived[\"path\"],\n            \"thumbnail\": derived[\"thumbnail\"],\n            \"audio_url\": derived[\"audio_url\"],\n        })\n        rows.append(row)\n\nreturn pd.DataFrame(rows)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Cut each recording into 0.1 second windows and measure them.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "noise-levels",
+        "type": "curio.builtin/vis-vega",
+        "x": 1290,
+        "y": 430,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Each window's level, per sensor, over the recording time.\",\n  \"mark\": {\n    \"type\": \"line\",\n    \"point\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"recorded_at\",\n      \"type\": \"temporal\",\n      \"title\": \"Time\",\n      \"scale\": {\n        \"type\": \"utc\"\n      }\n    },\n    \"y\": {\n      \"field\": \"level_dbfs\",\n      \"type\": \"quantitative\",\n      \"title\": \"Level (dBFS)\"\n    },\n    \"color\": {\n      \"field\": \"sensor\",\n      \"type\": \"nominal\",\n      \"title\": \"Sensor\"\n    }\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart each window's level per sensor.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-noise-loaderout-noise-cardsin",
+        "source": "noise-loader",
+        "target": "noise-cards"
+      },
+      {
+        "id": "reactflow__edge-noise-loaderout-noise-splitin",
+        "source": "noise-loader",
+        "target": "noise-split"
+      },
+      {
+        "id": "reactflow__edge-noise-splitout-noise-levelsin",
+        "source": "noise-split",
+        "target": "noise-levels"
+      }
+    ]
+  }
+}

@@ -3,29 +3,23 @@
 Reported symptom: open Provenance, zoom in, and the edges between the version
 cards disappear while the cards themselves stay put.
 
-**This test does not currently reproduce the report.** Driven headlessly in
-Chromium, by the wheel and by the zoom control, all the way to React Flow's
-maxZoom, the edges stay present and stay painted. It is kept because it does
-guard a real way the edges CAN vanish: ``TrillProvenanceWindow``'s
+The report was a COMPOSITOR failure (#504). With this graph's viewport on its
+own GPU layer (``will-change: transform``, which ``components/MainCanvas.css``
+gave every React Flow viewport then), Chrome stopped painting the 2px edges at
+some zoom levels while the cards stayed. ``TrillProvenanceWindow.module.css``
+sets ``will-change: auto`` on this graph's viewport (pinned in
+``src/tests/styles/provenanceEdgesLayer.test.ts``), and MainCanvas.css now
+gives the hint only to a canvas the user is moving (#533).
+
+``getBoundingClientRect`` reports correct boxes whether or not the edges are
+painted, so the assertions below cannot see that failure; the screenshots this
+test saves can. The assertions guard another way the edges can vanish:
 ``ProvenanceEdge`` returns ``null`` the moment a node measurement is missing
 (``if (!src?.width || !src?.height || ...) return null``), so anything that
-disturbs node measurement silently removes every edge - and nothing else
-covered that.
+disturbs node measurement silently removes every edge.
 
-What it cannot see, and what the report may be: a COMPOSITOR failure.
-``components/MainCanvas.css`` is imported once for the whole app and styles
-``.react-flow__viewport`` unscoped, so it reaches every React Flow in the app -
-including this one, nested in a modal:
-
-    .react-flow__viewport { will-change: transform; }
-
-That promotes the viewport to its own GPU layer (the comment beside it says it
-is there for Firefox). React Flow paints all edges as a single
-``<svg class="react-flow__edges">`` inside that layer while each node is its own
-DOM subtree, so if the layer fails to rasterise it is the edges that vanish and
-the cards that remain. ``getBoundingClientRect`` still reports correct boxes in
-that case, which is exactly why the assertions below cannot detect it - and why
-headless Chromium, which rasterises differently, is the wrong place to look.
+Every count is taken inside the modal: the dataflow canvas behind it has edges
+of its own.
 
 Run::
 
@@ -33,6 +27,7 @@ Run::
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from .utils import (
@@ -43,6 +38,7 @@ from .utils import (
     stub_login_and_enter_workflow,
 )
 from .walkthroughs import load_example_spec
+from .walkthroughs.steps import PROVENANCE_EDGE_PATH, await_provenance_graph
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -51,15 +47,31 @@ if TYPE_CHECKING:
 #: harness makes, not from the spec's own shape.
 EXAMPLE = "01-vega-lite-chained-transforms.json"
 
-EDGE_PATH = ".react-flow__edges path.react-flow__edge-path"
+EDGE_PATH = PROVENANCE_EDGE_PATH
+
+#: How many times slower than the runner Chromium runs while the window opens.
+#: A wait that sleeps a fixed time passes on a fast runner and fails here; a
+#: wait for the drawn graph passes on both.
+CPU_THROTTLE = 4
+
+
+@contextmanager
+def _throttled_cpu(page, rate: int):
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("Emulation.setCPUThrottlingRate", {"rate": rate})
+    try:
+        yield
+    finally:
+        cdp.send("Emulation.setCPUThrottlingRate", {"rate": 1})
+        cdp.detach()
 
 
 def _open_provenance(page):
-    page.get_by_role("button", name="Provenance ⏷", exact=True).click(force=True)
-    page.get_by_role("button", name="Provenance", exact=True).click()
+    page.get_by_role("button", name="View menu", exact=True).click()
+    page.get_by_test_id("provenance-menu-item").click()
     dialog = page.get_by_role("dialog").filter(has_text="Provenance for")
     dialog.wait_for(state="visible", timeout=20000)
-    page.wait_for_selector(".react-flow__node", timeout=20000)
+    await_provenance_graph(page)
     return dialog
 
 
@@ -98,10 +110,10 @@ def test_provenance_edges_survive_zooming_in(
     require_owner_view(page)
     page.wait_for_selector(".react-flow__node", timeout=45000)
 
-    dialog = _open_provenance(page)
-    page.wait_for_timeout(1200)
-
-    before = _edge_geometry(page)
+    with _throttled_cpu(page, CPU_THROTTLE):
+        dialog = _open_provenance(page)
+        before = _edge_geometry(page)
+        cards = dialog.locator(".react-flow__node").count()
     if len(before) == 0:
         # Only one version means no edges at all, and the test would pass
         # vacuously at every zoom level.
@@ -110,6 +122,12 @@ def test_provenance_edges_survive_zooming_in(
             "cannot tell a zoom bug from an empty chain - the harness needs to "
             "save the dataflow more than once first"
         )
+    # Every version but the first has one parent edge, so a fully drawn graph
+    # shows one edge per card after the first. Zooming is judged against that.
+    assert len(before) == cards - 1, (
+        f"before zooming, the provenance graph shows {len(before)} edges for "
+        f"{cards} versions; a fully drawn graph has {cards - 1}"
+    )
 
     save_workflow_test_screenshot(
         page, "provenance-edges-before-zoom",

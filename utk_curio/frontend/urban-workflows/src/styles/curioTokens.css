@@ -27,6 +27,13 @@
      active section tab). Was written three ways: #2a2b30 / #2a2b31 / #2c2d32. */
   --curio-top-bar-bg-hover: #2a2b30;
   --curio-top-bar-border: rgba(255, 255, 255, 0.08);
+  /* The outline of a bordered control on the top bar: API Settings, Monitor,
+     Sign out, the drawer header's icon buttons. */
+  --curio-top-bar-control-border: #444;
+  /* The save state on the top bar. The light-page status accents are too dark
+     to read on --curio-top-bar-bg, so the bar has its own pair. */
+  --curio-top-bar-saved: #6FCF8E;
+  --curio-top-bar-unsaved: #F2B14C;
   /* Neutral chip / tile surfaces on a light page. */
   --curio-surface-muted: #ECEEF2;
   --curio-surface-alt: #F0EFEB;
@@ -184,6 +191,30 @@
   --curio-format-gpkg-bg: #F7E7DC;
   --curio-format-gpkg-on-tint: #8A4319;
 
+  /* GTFS: a transit feed's tables. A bright cerulean, clear of GeoTIFF's dark
+     teal and CSV's blue. */
+  --curio-format-gtfs-fg: #0089A8;
+  --curio-format-gtfs-bg: #DDF2F7;
+  --curio-format-gtfs-on-tint: #006A82;
+
+  /* Collection: an index of files kept where they are. A rose that no other
+     format uses, so a folder of images never reads as a table. */
+  --curio-format-collection-fg: #B83A5E;
+  --curio-format-collection-bg: #F9E1E8;
+  --curio-format-collection-on-tint: #9E2F4F;
+
+  /* ONNX: a trained model stored as its file. A bronze, the one yellow hue
+     here, clear of Parquet's light amber and GeoPackage's terracotta. */
+  --curio-format-onnx-fg: #8A6A12;
+  --curio-format-onnx-bg: #F6EFD9;
+  --curio-format-onnx-on-tint: #6B5210;
+
+  /* NetCDF: gridded variables such as weather. An indigo, deeper than CSV's
+     blue and bluer than JSON's purple. */
+  --curio-format-netcdf-fg: #34449A;
+  --curio-format-netcdf-bg: #E3E7F7;
+  --curio-format-netcdf-on-tint: #34449A;
+
   /* ── Node category palette ─────────────────────────────────────────────
      One colour per node category. Promoted from the canvas, which is where
      this colour already meant something: `nodeTypeBorderColor` in
@@ -199,7 +230,7 @@
      a `data` one.
 
      Keys match `primaryCategory()` in
-     components/packages/publishing/packageUtils.ts: data | computation | vis |
+     services/packages/packageListUtils.ts: data | computation | vis |
      package. Guarded by src/tests/styles/nodeCategoryPalette.test.ts.
      ───────────────────────────────────────────────────────────────────── */
   --curio-category-data-fg: #3498db;
@@ -244,7 +275,7 @@
      Reusing one here would recreate exactly the collision the role split was
      introduced to end.
 
-     Keys match `AgentCategory` in api/agentsApi.ts. Guarded by
+     Keys match `AgentCategory` in src/generated/agentCategories.ts. Guarded by
      src/tests/styles/agentCategoryPalette.test.ts.
      ───────────────────────────────────────────────────────────────────── */
   --curio-category-agent-data-fg: var(--curio-category-data-fg);
@@ -270,14 +301,14 @@
 
   /* ── Catalog kind palette ──────────────────────────────────────────────
      One colour per *kind* of catalog item, for the places that identify a
-     dataflow / package / dataset rather than a category or a format. Dataflows
-     have no categorization at all, so the projects list paints every card with
-     the one dataflow colour instead of a per-project accent. */
+     dataflow / package / dataset rather than a category or a format. The
+     projects list paints every card with the one dataflow colour instead of a
+     per-project accent. */
   --curio-kind-dataflow-fg: #5B6472;
   --curio-kind-dataflow-bg: #E4E7EC;
 
-  /* A data lake SOURCE (a portal), for the /catalog/lakes cards and the lake
-     kind icon. Every lake card takes this one colour rather than a per-provider
+  /* A Discovery Catalog SOURCE (a portal), for the /catalog/discovery cards and the source
+     kind icon. Every source card takes this one colour rather than a per-provider
      hue - the same choice the projects list makes for dataflows, and for a
      sharper reason: on that page every card IS a portal, so a per-provider
      colour would carry no information within the page while costing four new
@@ -289,11 +320,28 @@
      fill weight, and everything from 137 to 282 is formats and categories.
      21deg from computation purple and from shp mauve, which is tighter than
      ideal - the mitigation is that neither of those ever appears on a surface
-     with this one, and no surface asks a viewer to tell two lake colours
+     with this one, and no surface asks a viewer to tell two source colours
      apart. 6.5:1 on white, and 6.3:1 for the white strip label over the fill. */
-  --curio-kind-lake-fg: #953790;
-  --curio-kind-lake-bg: #F6DFF5;
-  --curio-kind-lake-on-tint: #742570;
+  --curio-kind-source-fg: #953790;
+  --curio-kind-source-bg: #F6DFF5;
+  --curio-kind-source-on-tint: #742570;
+
+  /* A Model Catalog MODEL, for the /catalog/models cards, the canvas drawer's
+     avatars and the model kind icon. One colour for every model, for the
+     source's reason: on that page every card IS a model, so a per-runtime hue
+     would carry no information. The runtime is a neutral badge instead.
+
+     The hue (65deg, a dark olive) sits in the widest gap left: 54deg between
+     the amber accent (39) and OSM's green (93), 26deg from the first and 28deg
+     from the second. The source note above rules out yellow-olive at fill
+     weight; that holds for a light olive, not for this one, which is dark
+     enough to read as khaki rather than yellow. Amber is the warning role and
+     never shares a surface with a model card; OSM is a dataset format and does
+     not appear on the model page. 5.5:1 on white, so the white strip label
+     holds, and 6.5:1 for the on-tint text over the tint. */
+  --curio-kind-model-fg: #676E14;
+  --curio-kind-model-bg: #EEF0D5;
+  --curio-kind-model-on-tint: #525810;
 
   /* ── Semantic roles ────────────────────────────────────────────────────
      Named for what they mean, so a role can change without dragging a category
@@ -333,6 +381,9 @@
   --curio-z-node-drawer: 10040;
   --curio-z-dataset-drawer: 10045;
   --curio-z-agent-drawer: 10048;
+  /* API Settings and Monitor on the canvas: above the catalog drawers, since a
+     catalog card can open API Settings, and below the modals. */
+  --curio-z-header-drawer: 10050;
   --curio-z-modal-backdrop: 10054;
   --curio-z-modal: 10055;
   --curio-z-dialog: 10060;

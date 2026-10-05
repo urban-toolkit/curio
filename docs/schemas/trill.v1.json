@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/trill.v1.json",
   "title": "Curio Trill Dataflow Specification (v1)",
-  "description": "Schema for a Curio dataflow document, saved on disk as '.curio/users/<userKey>/projects/<projectId>/spec.trill.json' and shipped in-repo as the examples under 'docs/examples/'. A trill document is a graph: 'dataflow.nodes' are the boxes on the canvas and 'dataflow.edges' the wires between them, plus two optional provenance sections and three backend-owned agent sections. Field names are camelCase except the historical snake_case 'provenance_id'. NODES ARE DEFINED BY PACKAGE MANIFESTS, NOT HERE: a node's 'type' is a coordinate into a manifest's 'templates[].id' (see docs/schemas/node-package.v4.json), and this schema validates only the SHAPE of that coordinate, never whether it resolves. Everything a template decides - which handle ids exist, which port types are compatible, whether the node has code at all, whether it can carry an interaction edge - lives in the manifest and depends on which packages are installed, so it is deliberately unconstrained here; 'scripts/validate_trill.py' and the cross-schema test in test_trill_schema.py cover resolution. This schema is the canonical spec for the format; the backend performs no validation of its own (projects/storage.py reads and writes it as opaque JSON), which makes this document the only written contract. Every object is intentionally open ('additionalProperties: true') because five independent writers emit overlapping but different key sets: TrillGenerator.generateTrill (the canvas), agents/services.py (agent-applied graph edits, which emit deliberately minimal nodes), datasets/application/mutations.py, useDatasetCatalogDrawer.ts, and testing/routes.py. Fields marked deprecated are still accepted on read by hook/useCode.ts but are never written by current code. NOT part of this format: 'graph_preview' (derived server-side in projects/services.py and returned only by the project-list API), the sibling 'manifest.json' written alongside the spec, agent transcripts and the usage ledger (they live under .curio/users/<userKey>/agents/), and the phantom fields 'node.output', 'node.metadata.annotations' and edge type 'Data', which appear only in the stale schema embedded in llm-prompts/default_preamble.txt and are read by nothing. User-facing overview: docs/TRILL-SPEC.md.",
-  "$comment": "Conventions follow docs/schemas/agent-package.v1.json (Draft 2020-12, raw-GitHub $id, prose descriptions, open objects) with two deliberate departures: this schema uses $defs, which the agent schema does not, because dataflowProvenance.versions recurses and several shapes are referenced twice; and it uses dependentRequired for the dashboard coordinate pairs.",
+  "description": "Schema for a Curio dataflow document, saved on disk as '.curio/users/<userKey>/projects/<projectId>/spec.trill.json' and shipped in-repo as the examples under 'docs/examples/'. A trill document is a graph: 'dataflow.nodes' are the boxes on the canvas and 'dataflow.edges' the wires between them, plus two optional provenance sections and three backend-owned agent sections. Field names are camelCase except the historical snake_case 'provenance_id'. NODES ARE DEFINED BY PACKAGE MANIFESTS, NOT HERE: a node's 'type' is a coordinate into a manifest's 'templates[].id' (see docs/schemas/node-package.v4.json), and this schema validates only the SHAPE of that coordinate, never whether it resolves. Everything a template decides - which handle ids exist, which port types are compatible, whether the node has code at all, whether it can carry an interaction edge - lives in the manifest and depends on which packages are installed, so it is deliberately unconstrained here; 'scripts/validate_trill.py' and the cross-schema test in test_trill_schema.py cover resolution. This schema is the canonical spec for the format; the backend performs no validation of its own (projects/storage.py reads and writes it as opaque JSON), which makes this document the only written contract. Every object is intentionally open ('additionalProperties: true') because five independent writers emit overlapping but different key sets: TrillGenerator.generateTrill (the canvas), agents/application/proposals/ (agent-applied graph edits, which emit deliberately minimal nodes), datasets/application/mutations.py, useDatasetCatalogDrawer.ts, and testing/routes.py. Fields marked deprecated are still accepted on read by hook/useCode.ts but are never written by current code. NOT part of this format: 'graph_preview' (derived server-side in projects/services.py and returned only by the project-list API), the sibling 'manifest.json' written alongside the spec, and agent transcripts and the usage ledger (they live under .curio/users/<userKey>/agents/). User-facing overview: docs/TRILL-SPEC.md.",
+  "$comment": "Conventions follow docs/schemas/agent-package.v1.json (Draft 2020-12, raw-GitHub $id, prose descriptions, open objects) with two deliberate departures: this schema uses $defs, which the agent schema does not, because dataflowProvenance.versions recurses and several shapes are referenced twice; and it uses dependentRequired for the dashboard coordinate pairs. This schema is also the source of the Trill block in llm-prompts/default_preamble.md: scripts/generate_contracts.py projects the fields contracts.TRILL_PROMPT_FIELDS names, so a change here reaches the prompt when the outputs are regenerated.",
   "type": "object",
   "required": ["dataflow"],
   "additionalProperties": true,
@@ -39,6 +39,48 @@
       "description": "A dataflow as captured inside dataflowProvenance.versions. Same fields as a live one and validated the same way, but only 'nodes' and 'edges' are required: a snapshot is a historical record, most on-disk ones predate the fields a live dataflow must now carry, and history cannot be retroactively completed without falsifying it. Requiring more here would make an otherwise-correct spec permanently invalid on account of its own past.",
       "required": ["nodes", "edges"]
     },
+    "categoryValues": {
+      "type": "array",
+      "description": "One hand-set category section: short labels, de-duplicated ignoring case.",
+      "maxItems": 20,
+      "items": { "type": "string", "minLength": 1, "maxLength": 40 }
+    },
+    "scenario": {
+      "type": "object",
+      "description": "One scenario (#662): a named selection of the dataflow's nodes. What enters it from outside is its fixed context, its nodes are its levers, and the outputs of its last nodes are its outcomes.",
+      "required": ["id", "name", "color", "nodes"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "Unique among the dataflow's scenarios." },
+        "name": { "type": "string", "minLength": 1, "description": "What the canvas and the Scenario Catalog call it." },
+        "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Its color on the canvas, as a CSS hex color." },
+        "description": { "type": "string", "description": "What it changes. Emitted only when non-empty." },
+        "nodes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "The ids of its nodes. Empty once its last node is deleted, until the scenario is deleted too."
+        },
+        "collapsed": { "type": "boolean", "description": "Drawn as one box on the canvas. Emitted only when set." },
+        "box": {
+          "type": "object",
+          "required": ["x", "y"],
+          "additionalProperties": false,
+          "properties": { "x": { "type": "number" }, "y": { "type": "number" } },
+          "description": "Where its collapsed box sits on the canvas."
+        },
+        "source": {
+          "type": "object",
+          "required": ["project", "scenario"],
+          "additionalProperties": false,
+          "properties": {
+            "project": { "type": "string", "minLength": 1 },
+            "scenario": { "type": "string", "minLength": 1 }
+          },
+          "description": "The project and scenario it was dragged in from, through the Scenario Catalog."
+        }
+      }
+    },
     "dataflowBase": {
       "type": "object",
       "description": "Every field a dataflow may carry, with no required list of its own. Referenced by 'dataflow' and 'snapshotDataflow', which differ only in what they require - this keeps the property definitions in one place so the two cannot drift.",
@@ -65,7 +107,7 @@
         "timestamp": {
           "type": "integer",
           "minimum": 0,
-          "description": "Save time in epoch MILLISECONDS, from Date.now(). An integer, not a string: the Draft-07 schema embedded in llm-prompts/default_preamble.txt declares this a string, and that is wrong."
+          "description": "Save time in epoch milliseconds, from Date.now(). An integer, not a string."
         },
         "provenance_id": {
           "type": "string",
@@ -74,7 +116,7 @@
         "packages": {
           "type": "array",
           "uniqueItems": true,
-          "description": "Node-package lockfile: the '<packageId>@<major>' directory names whose manifests must be installed for this dataflow's node types to resolve. BACKEND-OWNED ON UPDATE - packages/spec_packages.py:preserve_project_packages overwrites whatever the client sends with the on-disk value, so a stale tab cannot clobber an install. Sorted and de-duplicated by set_project_packages; sortedness is a writer invariant this schema cannot express. Absent or empty is recoverable: project_packages backfills it from the node types.",
+          "description": "Node-package lockfile: the '<packageId>@<major>' directory names whose manifests must be installed for this dataflow's node types to resolve. BACKEND-OWNED ON UPDATE - packages/domain/spec_packages.py:preserve_project_packages overwrites whatever the client sends with the on-disk value, so a stale tab cannot clobber an install. Sorted and de-duplicated by set_project_packages; sortedness is a writer invariant this schema cannot express. Absent or empty is recoverable: project_packages backfills it from the node types.",
           "items": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9_.-]*[a-z0-9]@(?:0|[1-9][0-9]{0,3})$",
@@ -85,6 +127,22 @@
           "type": "string",
           "description": "Longer prose description, shown on the example cards. Emitted only when non-empty, so an unset description is an absent key rather than an empty string."
         },
+        "categories": {
+          "type": "object",
+          "description": "The hand-set categories the Projects rail filters by: the user's own tags, city, topic and complexity. The rail's other sections are not stored: its source comes from the project id and its automatic tags and data types from the nodes (projects/categories.py). Always written by TrillGenerator.generateTrill; the backend drops an empty one and keeps the on-disk value when a writer omits the key.",
+          "additionalProperties": false,
+          "properties": {
+            "tags": { "$ref": "#/$defs/categoryValues" },
+            "city": { "$ref": "#/$defs/categoryValues" },
+            "topic": { "$ref": "#/$defs/categoryValues" },
+            "complexity": { "$ref": "#/$defs/categoryValues", "maxItems": 1 }
+          }
+        },
+        "scenarios": {
+          "type": "array",
+          "description": "The dataflow's scenarios (#662): named selections of its nodes, each a lever set compared against the others over the context outside it. A node belongs to at most one scenario, which the backend checks on save (projects/scenarios.py) because this schema cannot say it. A save drops member ids that are not nodes of the dataflow, so deleting a node removes it from its scenario. Written by TrillGenerator.generateTrill when the canvas saves, an empty list clearing them; the backend drops an empty list and keeps the on-disk value when a writer omits the key. Version snapshots and agent views carry it only when there are scenarios.",
+          "items": { "$ref": "#/$defs/scenario" }
+        },
         "datasets": {
           "type": "array",
           "description": "Data Catalog references this dataflow depends on. BACKEND-OWNED ON UPDATE - datasets/application/ref_ownership.py:preserve_dataset_refs unconditionally replaces a client-sent value, the only exceptions being a project with no spec or no datasets key on disk. Emitted only when non-empty.",
@@ -93,12 +151,12 @@
         "agents": {
           "type": "array",
           "uniqueItems": true,
-          "description": "Hookable-agent lockfile: the '<agentId>@<version>' directory names installed into this dataflow. BACKEND-OWNED and written only by the agent endpoints - the canvas save path never serializes it - and STRIPPED ON SHARE by agents/project_agents.py:strip_agent_state, so a shared copy of a dataflow never carries it. Note the asymmetry with 'packages': agents pin a full semantic version, packages pin a major only. project_agents.project_agents silently drops malformed entries, so the runtime is more forgiving than this pattern.",
+          "description": "Hookable-agent lockfile: the '<agentId>@<version>' directory names installed into this dataflow. BACKEND-OWNED and written only by the agent endpoints - the canvas save path never serializes it - and STRIPPED ON SHARE by agents/repositories/project_agents.py:strip_agent_state, so a shared copy of a dataflow never carries it. Note the asymmetry with 'packages': agents pin a full semantic version, packages pin a major only. project_agents.project_agents silently drops malformed entries, so the runtime is more forgiving than this pattern.",
           "items": { "$ref": "#/$defs/agentCoord" }
         },
         "agentAttachments": {
           "type": "array",
-          "description": "Live agent attachments: which installed agent is bound to which node, edge, or the canvas as a whole, and the state of its current run. BACKEND-OWNED and STRIPPED ON SHARE, exactly like 'agents'. Attachments whose target node or edge has been deleted are pruned on save by agents/attachments.py:prune_orphaned_attachments.",
+          "description": "Live agent attachments: which installed agent is bound to which node, edge, or the canvas as a whole, and the state of its current run. BACKEND-OWNED and STRIPPED ON SHARE, exactly like 'agents'. Attachments whose target node or edge has been deleted are pruned on save by agents/application/attachments.py:prune_orphaned_attachments.",
           "items": { "$ref": "#/$defs/agentAttachment" }
         },
         "agentDefaults": {
@@ -111,7 +169,7 @@
     },
     "node": {
       "type": "object",
-      "description": "One box on the canvas. Only 'id', 'type', 'x' and 'y' are required, because the agent apply path in agents/services.py writes deliberately minimal nodes - '{id, type, content, goal, x, y}' with no 'in', 'out' or 'metadata' - even though every node in every committed example carries all eight.",
+      "description": "One box on the canvas. Only 'id', 'type', 'x' and 'y' are required, because the agent apply path in agents/application/proposals/ writes deliberately minimal nodes - '{id, type, content, goal, x, y}' with no 'in', 'out' or 'metadata' - even though every node in every committed example carries all eight.",
       "required": ["id", "type", "x", "y"],
       "additionalProperties": true,
       "dependentRequired": {
@@ -209,6 +267,57 @@
         }
       }
     },
+    "widget": {
+      "type": "object",
+      "description": "One widget of a node (#662): a named value the user sets in the node's Widgets tab, and the code reads through a `[!! name !!]` reference.",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$", "description": "What the code's `[!! name !!]` references name." },
+        "type": { "type": "string", "enum": ["number", "slider", "text", "choice", "checkbox", "checkbox-group", "multi-select", "datetime", "location", "number-list", "text-list", "range", "file"] },
+        "label": { "type": "string", "description": "What the Widgets tab shows beside the control; the name when absent." },
+        "default": { "description": "The value until one is set. A checkbox group or multi-select holds a list of its choices, a datetime `YYYY-MM-DDTHH:mm:ss` local time, and a location `{\"lat\": ..., \"lon\": ...}` in WGS84." },
+        "value": { "description": "The value set in the Widgets tab. A run uses it, else `default`." },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "choices": { "type": "array", "items": { "type": "string" }, "description": "A choice, checkbox group or multi-select widget's options." },
+            "display": { "type": "string", "enum": ["dropdown", "radio"], "description": "How a choice widget is drawn; a dropdown when absent." },
+            "min": { "type": "number", "description": "A number or slider widget's smallest value. A slider needs it." },
+            "max": { "type": "number", "description": "A number or slider widget's largest value. A slider needs it." },
+            "step": { "type": "number", "exclusiveMinimum": 0, "description": "A number or slider widget's step." },
+            "units": { "type": "string", "description": "Shown after a number or slider widget's value, such as m or %." }
+          }
+        }
+      }
+    },
+    "selectionTag": {
+      "type": "object",
+      "description": "One selection tag of a node (#662): the current selection of a view (a Vega-Lite or Autark node), which the node's code reads through a `[!! selection name !!]` reference as the ids of the selected rows. It holds `ids`, or `count` in their place when the selection holds more ids than a tag takes.",
+      "required": ["name", "node", "column"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$", "description": "What the code's `[!! selection name !!]` references name." },
+        "node": { "type": "string", "minLength": 1, "description": "The id of the view whose selection the tag reads." },
+        "column": { "type": "string", "minLength": 1, "description": "The column whose values identify the selected rows, such as `osm_id` or `building_id`." },
+        "ids": {
+          "type": "array",
+          "items": { "type": ["string", "number"] },
+          "maxItems": 10000,
+          "description": "The values of `column` in the rows the view's latest selection picks, each once, in row order. A run writes them as a list."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 10001,
+          "description": "How many ids the selection held, written in place of `ids` when there are more than a tag takes. A run that reads the tag fails with a message saying so."
+        }
+      },
+      "oneOf": [
+        { "required": ["ids"], "not": { "required": ["count"] } },
+        { "required": ["count"], "not": { "required": ["ids"] } }
+      ]
+    },
     "nodeMetadata": {
       "type": "object",
       "description": "Side-channel node information that is not part of the execution payload.",
@@ -236,6 +345,118 @@
             "imageColumn": { "type": "string", "minLength": 1 }
           }
         },
+        "packageTemplateLabel": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The node's renamed header (#412). Absent means the header shows its template's label."
+        },
+        "packageTemplateConfig": {
+          "type": "object",
+          "description": "What the node settings modal saved for this node (#412): its title, description, editor mode, engine, which editor tabs it shows, and its ports. Absent until the modal saves. It does not repeat the node's code, which is 'content', and its ports carry no ids.",
+          "additionalProperties": false,
+          "properties": {
+            "label": { "type": "string" },
+            "category": {
+              "type": "string",
+              "enum": ["data", "computation", "vis_grammar", "vis_simple", "flow"]
+            },
+            "engine": { "type": "string", "enum": ["python", "javascript"] },
+            "editor": { "type": "string", "enum": ["code", "widgets", "grammar", "none"] },
+            "description": { "type": "string" },
+            "hasCode": { "type": "boolean" },
+            "hasWidgets": { "type": "boolean" },
+            "hasGrammar": { "type": "boolean" },
+            "hasProvenance": { "type": "boolean" },
+            "inputPorts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "types": { "type": "array", "items": { "type": "string" } },
+                  "cardinality": { "type": "string" }
+                }
+              }
+            },
+            "outputPorts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "types": { "type": "array", "items": { "type": "string" } },
+                  "cardinality": { "type": "string" }
+                }
+              }
+            },
+            "sourceFilename": { "type": "string" }
+          }
+        },
+        "widgets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/widget" },
+          "description": "The node's widgets (#662), declared in its Widgets tab. Its code places each one as a `[!! name !!]` reference, which a run replaces with the widget's value (`value` when set, else `default`). A `curio.builtin/parameter` node holds one widget, which any node's code places as `[!! @name !!]`. Emitted only when the node has widgets."
+        },
+        "copiedFrom": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "description": "Where a copy made by Duplicate selection (#662) comes from: the ids of the nodes it descends from, oldest first, ending with the node it was copied from. Two nodes are the same lever in two scenarios when their ids and these lists meet. Emitted only on a copy."
+        },
+        "selections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/selectionTag" },
+          "description": "The node's selection tags (#662), added in its Widgets tab. Its code places each one as a `[!! selection name !!]` reference, which a run replaces with the tag's `ids`. A new selection in the view writes new ids. Emitted only when the node has selection tags."
+        },
+        "compareScenarios": {
+          "type": "object",
+          "description": "Settings of a Compare Scenarios node (#662). `inputs` labels each input circle, in circle order, by the scenario its node belongs to: the scenario's `scenario` id, `name` and `color`. An input whose node is in no scenario carries the node's name, a neutral color and no `scenario`. The node's code is written from these labels, and its stacked table carries them. `chart` is what its Chart tab draws from that table: the `preset`, the columns it reads as `x` and `y`, and the `aggregate` that combines the y values of a group. `mode` is the view the user chose, `chart` or `difference`; without it the node shows Difference for two rasters or two layers and Chart otherwise. `difference` is what Difference joins the rows of two layers or tables on (`key`; without it `osm_id` or `building_id`) and what its map colors the difference by (`value`, a column or a band). Emitted only when the node has inputs or one of these settings.",
+          "additionalProperties": false,
+          "properties": {
+            "inputs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["name", "color"],
+                "additionalProperties": false,
+                "properties": {
+                  "scenario": { "type": "string", "minLength": 1 },
+                  "name": { "type": "string", "minLength": 1 },
+                  "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+                }
+              }
+            },
+            "chart": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": { "type": "string", "enum": ["bar", "grouped-bar", "line", "scatter", "pie", "lollipop", "table"] },
+                "x": { "type": "string", "minLength": 1 },
+                "y": { "type": "string", "minLength": 1 },
+                "aggregate": { "type": "string", "enum": ["mean", "sum", "median", "min", "max", "count"] }
+              }
+            },
+            "mode": { "type": "string", "enum": ["chart", "difference"] },
+            "difference": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "key": { "type": "string", "minLength": 1 },
+                "value": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        },
+        "dataPool": {
+          "type": "object",
+          "description": "A Data Pool's conflict modes (#581): how the selections that reach it combine. `insideChart` resolves the selects of one chart, `betweenCharts` the latest selection of each chart linked to the pool. OVERWRITE keeps the newest, MERGE_AND the rows every active selection picked, MERGE_OR the rows any of them picked. An absent member means OVERWRITE, and only the other modes are written.",
+          "additionalProperties": false,
+          "properties": {
+            "insideChart": { "type": "string", "enum": ["OVERWRITE", "MERGE_AND", "MERGE_OR"] },
+            "betweenCharts": { "type": "string", "enum": ["OVERWRITE", "MERGE_AND", "MERGE_OR"] }
+          }
+        },
         "comments": {
           "type": "array",
           "items": { "$ref": "#/$defs/comment" },
@@ -256,6 +477,19 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Ids of the Data Catalog datasets this node consumes. Plain id strings, not objects. Emitted only when non-empty."
+        },
+        "modelRefs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "name": { "type": "string" }
+            }
+          },
+          "description": "The Model Catalog model last dropped on this node, by id and name. Emitted only when set. The node runs the model its code names in `curio_load_model(...)`, and a ref counts only while the code names its id."
         },
         "datasetSource": { "$ref": "#/$defs/datasetSource" },
         "width": {
@@ -319,7 +553,7 @@
         "title": { "type": "string", "description": "Display title at the time it was applied." },
         "format": {
           "type": "string",
-          "enum": ["csv", "geojson", "json", "parquet", "geotiff", "shp", "bundle", "osm", "gpkg"],
+          "enum": ["csv", "geojson", "json", "parquet", "geotiff", "shp", "onnx", "netcdf", "bundle", "osm", "gpkg"],
           "description": "Dataset format, mirroring DatasetFormat in services/datasetCatalog/datasetCatalogTypes.ts."
         },
         "origin": { "$ref": "#/$defs/datasetOrigin" }
@@ -385,14 +619,14 @@
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique within the dataflow. Two incompatible conventions coexist - hand-authored 'edge1' and React Flow's generated 'reactflow__edge-<source>out-<target>in' - so no pattern is imposed. Historically load-bearing: before handles were persisted, the reader recovered a merge slot by looking for an 'in_N' substring here."
+          "description": "Unique within the dataflow. Two incompatible conventions coexist - hand-authored 'edge1' and React Flow's generated 'reactflow__edge-<source>out-<target>in' - so no pattern is imposed. Historically load-bearing: before handles were persisted, the reader recovered an input circle by looking for an 'in_N' substring here."
         },
         "source": { "type": "string", "description": "Id of the upstream node." },
         "target": { "type": "string", "description": "Id of the downstream node." },
         "type": {
           "type": "string",
           "enum": ["Interaction"],
-          "description": "Present only on an interaction (bidirectional) edge, along which a selection in a visualization propagates back upstream. Absence means a plain unidirectional data edge - there is no explicit 'Data' value, despite one appearing in the stale preamble schema. The in-canvas EdgeType enum (BIDIRECTIONAL_EDGE / UNIDIRECTIONAL_EDGE) is never persisted. Whether a given template may carry an interaction edge is a manifest question ('bidirectional'), not a schema one."
+          "description": "Present only on an interaction (bidirectional) edge, along which a selection in a visualization propagates back upstream. Absence means a plain unidirectional data edge - there is no explicit 'Data' value. The in-canvas EdgeType enum (BIDIRECTIONAL_EDGE / UNIDIRECTIONAL_EDGE) is never persisted. Whether a given template may carry an interaction edge is a manifest question ('bidirectional'), not a schema one."
         },
         "sourceHandle": {
           "type": "string",
@@ -400,7 +634,7 @@
         },
         "targetHandle": {
           "type": "string",
-          "description": "Explicit target handle id. The observed vocabulary is 'in', 'in/out', the merge-flow slots 'in_0' through 'in_4', and template-specific named ports such as 'in_points' and 'in_polygons'. Deliberately NOT pattern-constrained: the legal set is derived from the template's inputPorts in its package manifest, so a third-party package may name its ports anything. When absent, the reader infers a slot from an 'in_N' substring of edge.id and otherwise falls back to 'in', which cannot recover a named port."
+          "description": "Explicit target handle id. The observed vocabulary is 'in', 'in/out', the input circles 'in_1', 'in_2', ... of a node whose one input port takes several edges ('in' is its first circle, and a node's code reads circle N as [!! input N !!]), and template-specific named ports such as 'in_points' and 'in_polygons'. Deliberately NOT pattern-constrained: the legal set is derived from the template's inputPorts in its package manifest, so a third-party package may name its ports anything. When absent, the reader infers a circle from an 'in_N' suffix of edge.id and otherwise falls back to 'in', which cannot recover a named port."
         },
         "metadata": {
           "type": "object",
@@ -418,7 +652,7 @@
     },
     "agentAttachment": {
       "type": "object",
-      "description": "One agent bound to one target, plus the state of its current run. Minted in agents/attachments.py:attach; 'revision' provides optimistic concurrency.",
+      "description": "One agent bound to one target, plus the state of its current run. Minted in agents/application/attachments.py:attach; 'revision' provides optimistic concurrency.",
       "required": ["attachmentId", "coord", "target", "sessionId", "revision"],
       "additionalProperties": true,
       "properties": {
@@ -428,7 +662,7 @@
         "sessionId": { "type": "string", "description": "Id of the conversation session backing this attachment, a uuid4 hex string. The transcript itself lives outside the spec." },
         "revision": { "type": "integer", "minimum": 1, "description": "Bumped on every mutation; a client must send the revision it read or lose the write." },
         "intent": { "type": "string", "description": "The user's stated intent for this attachment. Removed from the record when cleared rather than set empty." },
-        "title": { "type": "string", "maxLength": 40, "description": "Short display title. Capped at TITLE_MAX_CHARS in agents/attachments.py, which truncates rather than rejecting on the auto-titling path." },
+        "title": { "type": "string", "maxLength": 40, "description": "Short display title. Capped at TITLE_MAX_CHARS in agents/application/attachments.py, which truncates rather than rejecting on the auto-titling path." },
         "titleEdited": { "type": "boolean", "description": "True once a human has renamed the attachment, which stops auto-titling from overwriting it. Only ever written as true." },
         "activeProposal": { "$ref": "#/$defs/agentProposal" },
         "queuedProposals": {
@@ -439,7 +673,7 @@
         "planProposal": { "$ref": "#/$defs/agentProposal" },
         "builderSession": {
           "type": "object",
-          "description": "Run state for a multi-step builder agent: which phase it is in, per-node status, and cancellation flags. Internal to agents/services.py and deliberately unconstrained - its key set changes with the agent implementation.",
+          "description": "Run state for a multi-step builder agent: which phase it is in, per-node status, and cancellation flags. Internal to agents/application/ and deliberately unconstrained - its key set changes with the agent implementation.",
           "additionalProperties": true
         }
       }
@@ -453,7 +687,7 @@
         "kind": {
           "type": "string",
           "enum": ["node", "canvas", "connection"],
-          "description": "Mirrors _TARGET_KINDS in agents/attachments.py."
+          "description": "Mirrors _TARGET_KINDS in agents/application/attachments.py."
         },
         "targetId": {
           "type": "string",
@@ -602,12 +836,12 @@
     "nodeTypeRef": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,62}(?:\\.[a-z][a-z0-9-]{0,62}){1,5}/[a-z][a-z0-9-]{0,62}(?:@(?:0|[1-9][0-9]{0,3}))?$",
-      "description": "A node template coordinate: '<packageId>/<templateId>' or '<packageId>/<templateId>@<major>', where packageId is two to six dot-separated kebab segments. THIS IS A REFERENCE INTO A PACKAGE MANIFEST, and this schema checks its shape only - whether the template actually exists depends on which packages are installed, so resolution is a job for scripts/validate_trill.py and the cross-schema test, not for validation. The unversioned form resolves at load time to the highest installed major; the versioned form pins one. Both are written: palette-dragged nodes persist the versioned form and there is no load-time normalizer, so the two coexist in real specs and any comparison against an unversioned set must normalize first (packages/spec_packages.py:unversioned_node_type). Deliberately a pattern and never an enum, because packages are user-installable - the frontend's own NodeType enum is already missing a built-in template that the examples use. Mirrors _NODE_TYPE_VERSIONED_RE and _NODE_TYPE_UNVERSIONED_RE in packages/spec_packages.py; the templateId half is the same grammar as templates[].id in docs/schemas/node-package.v4.json."
+      "description": "A node template coordinate: '<packageId>/<templateId>' or '<packageId>/<templateId>@<major>', where packageId is two to six dot-separated kebab segments. THIS IS A REFERENCE INTO A PACKAGE MANIFEST, and this schema checks its shape only - whether the template actually exists depends on which packages are installed, so resolution is a job for scripts/validate_trill.py and the cross-schema test, not for validation. The unversioned form resolves at load time to the highest installed major; the versioned form pins one. Both are written: palette-dragged nodes persist the versioned form and there is no load-time normalizer, so the two coexist in real specs and any comparison against an unversioned set must normalize first (packages/domain/spec_packages.py:unversioned_node_type). Deliberately a pattern and never an enum, because packages are user-installable - the frontend's own NodeType enum is already missing a built-in template that the examples use. Mirrors _NODE_TYPE_VERSIONED_RE and _NODE_TYPE_UNVERSIONED_RE in packages/domain/spec_packages.py; the templateId half is the same grammar as templates[].id in docs/schemas/node-package.v4.json."
     },
     "agentCoord": {
       "type": "string",
       "pattern": "^agent\\.[a-z0-9]+(?:-[a-z0-9]+)*@\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9.-]+)?$",
-      "description": "An installed agent coordinate, '<agentId>@<version>'. Mirrors AGENT_DIR_RE in agents/storage.py, which composes AGENT_ID_RE and VERSION_RE from agents/manifest.py. A FULL semantic version, unlike the major-only pin in dataflow.packages."
+      "description": "An installed agent coordinate, '<agentId>@<version>'. Mirrors AGENT_DIR_RE in agents/repositories/storage.py, which composes AGENT_ID_RE and VERSION_RE from agents/domain/manifest.py. A FULL semantic version, unlike the major-only pin in dataflow.packages."
     },
     "portType": {
       "type": "string",

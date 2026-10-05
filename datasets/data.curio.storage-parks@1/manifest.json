@@ -1,0 +1,34 @@
+{
+  "id": "data.curio.storage-parks",
+  "name": "Example parks",
+  "version": "1.0.0",
+  "format": "geojson",
+  "description": "A park outline, added from a GeoJSON file.",
+  "publisher": "Curio",
+  "license": "CC0-1.0",
+  "tags": [
+    "example",
+    "storage",
+    "geojson"
+  ],
+  "dataFile": "data/parks.geojson",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Example storage",
+  "createdAt": "2024-05-01T00:00:00Z",
+  "updatedAt": "2024-05-01T00:00:00Z",
+  "rowCount": null,
+  "featureCount": 1,
+  "schema": null,
+  "discoverySource": {
+    "sourceId": "source.curio.example-storage@1",
+    "sourceName": "Example storage",
+    "resourceId": "parks",
+    "sourcePath": "city/parks.geojson",
+    "fileCount": 1,
+    "fetchedAt": "2024-05-01T00:00:00Z",
+    "fingerprint": "9cbd066f8810f8b35aecad2f7d98abcf62198acc2c65f06c0f06bc59f724d3ae",
+    "contentSha256": "007b0894b19d84efc6ffcb801731596aaebcead4a183e04138e6b2e0c6969460"
+  }
+}

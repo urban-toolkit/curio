@@ -11,7 +11,7 @@ from typing import Any
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
-from utk_curio.backend.app.datasets.domain.catalog_item import item_from_manifest, loader_snippet
+from utk_curio.backend.app.datasets.domain.catalog_item import autark_layer_type, item_from_manifest, loader_snippet
 from utk_curio.backend.app.datasets.application.paths import PathResolver
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import (
     catalog_id_from_title,
@@ -34,6 +34,42 @@ from utk_curio.backend.app.datasets.repositories.installed import InstalledDatas
 from utk_curio.backend.app.datasets.infrastructure.storage import DATASET_ID_RE
 
 logger = logging.getLogger(__name__)
+
+
+#: What a client may say about where a file it fetched itself came from: a Discovery
+#: Catalog resource, or the link it was downloaded from.
+_CLIENT_DISCOVERY_KEYS = ("sourceId", "sourceName", "resourceId", "resourceUrl")
+
+
+def remote_provenance(raw: object, file_bytes: bytes) -> dict[str, Any] | None:
+    """The ``discoverySource`` block for a file a person downloaded themselves, or
+    None when the client stated no remote origin.
+
+    The client states where the file came from; the server records when it
+    arrived and what its bytes are, and marks it ``manual`` so it reads apart
+    from a file the Discovery Catalog fetched. A link must be http(s): it is rendered
+    as a link on the dataset's page.
+    """
+    import hashlib
+    import time
+
+    if not isinstance(raw, dict):
+        return None
+    block = {
+        key: str(raw[key]).strip()[:512]
+        for key in _CLIENT_DISCOVERY_KEYS
+        if isinstance(raw.get(key), str) and raw[key].strip()
+    }
+    if not block.get("resourceUrl", "").startswith(("https://", "http://")):
+        block.pop("resourceUrl", None)
+    if not (block.get("resourceUrl") or (block.get("sourceId") and block.get("resourceId"))):
+        return None
+    return {
+        **block,
+        "manual": True,
+        "fetchedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "contentSha256": hashlib.sha256(file_bytes).hexdigest(),
+    }
 
 
 class CatalogMutations:
@@ -66,12 +102,22 @@ class CatalogMutations:
         dataflow_id: str | None = None,
         title: str | None = None,
         source_updated_at: str | None = None,
+        discovery_source: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        """Register an uploaded file. ``discovery_source`` is where a file the person
+        downloaded themselves came from (``remote_provenance``): with it, a file
+        the account already holds, by its resource or by its bytes, is not
+        registered twice."""
         filename = secure_filename(file.filename or "")
         if not filename:
             raise DatasetCatalogError("No file selected")
         suffix = Path(filename).suffix.lower()
         file_bytes = file.read()
+        provenance = remote_provenance(discovery_source, file_bytes)
+        if provenance is not None:
+            held = self._held_remote_copy(provenance)
+            if held is not None:
+                return {**held, "alreadyPresent": True}
 
         # OSM PBF is multi-layer, so each non-empty layer (points / lines /
         # multipolygons / …) is registered as its own standalone GeoParquet
@@ -79,14 +125,16 @@ class CatalogMutations:
         # account-level catalog listing on the next reload.
         if suffix in OSM_PBF_SUFFIXES:
             return self._import_osm_pbf_layers(
-                file_bytes, filename, title=title, source_updated_at=source_updated_at
+                file_bytes, filename, title=title, source_updated_at=source_updated_at,
+                discovery_source=provenance,
             )
 
         # A GeoPackage is multi-layer for the same reason a PBF is, so it takes
         # the same route rather than becoming a stored format of its own (#268).
         if suffix in GPKG_SUFFIXES:
             return self._import_gpkg_layers(
-                file_bytes, filename, title=title, source_updated_at=source_updated_at
+                file_bytes, filename, title=title, source_updated_at=source_updated_at,
+                discovery_source=provenance,
             )
 
         if suffix not in SUPPORTED_SUFFIXES:
@@ -97,7 +145,20 @@ class CatalogMutations:
             SUPPORTED_SUFFIXES[suffix],
             title=title,
             source_updated_at=source_updated_at,
+            discovery_source=provenance,
         )
+
+    def _held_remote_copy(self, provenance: dict[str, Any]) -> dict[str, Any] | None:
+        from utk_curio.backend.app.datasets.repositories.user_store import (
+            UserDatasetRepository,
+        )
+
+        store = UserDatasetRepository(self.user)
+        if provenance.get("sourceId") and provenance.get("resourceId"):
+            held = store.find_by_discovery_resource(provenance["sourceId"], provenance["resourceId"])
+            if held is not None:
+                return held
+        return store.find_by_content(provenance["contentSha256"])
 
     def _install_imported_bytes(
         self,
@@ -110,7 +171,7 @@ class CatalogMutations:
         group_id: str | None = None,
         layer_name: str | None = None,
         source_updated_at: str | None = None,
-        lake_source: dict[str, Any] | None = None,
+        discovery_source: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Write imported bytes to the account-level user store and build the
         catalog item. Register-only: never attaches the dataset to a dataflow —
@@ -148,14 +209,95 @@ class CatalogMutations:
                 layer_name=layer_name,
                 source_updated_at=source_updated_at,
                 source_encoding=source_encoding,
-                lake_source=lake_source,
+                discovery_source=discovery_source,
             )
         except InstallerError as exc:
             raise DatasetCatalogError(str(exc)) from exc
+        return self._finish_imported(result, fmt, feature_count_override=feature_count_override)
+
+    def _install_imported_path(
+        self,
+        source_path: Path,
+        filename: str,
+        fmt: str,
+        *,
+        title: str | None = None,
+        source_updated_at: str | None = None,
+        discovery_source: dict[str, Any] | None = None,
+        description: str | None = None,
+        row_count: int | None = None,
+        feature_count: int | None = None,
+        collection: dict[str, Any] | None = None,
+        group_id: str | None = None,
+        layer_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Install a file already on disk, without reading it into memory.
+
+        The same answer as :meth:`_install_imported_bytes` for the same file:
+        text formats are stored as UTF-8 (streamed rather than decoded whole),
+        counts are filled in, and the returned item is identical. *source_path*
+        is consumed. *group_id* and *layer_name* make it one layer of a group,
+        as :meth:`_install_imported_bytes`'s do.
+        """
+        from utk_curio.backend.app.datasets.install.installer import (
+            InstallerError,
+            install_imported_path,
+        )
+        from utk_curio.backend.app.datasets.infrastructure.text_encoding import (
+            transcode_file_to_utf8,
+        )
+
+        user_key = self._paths._user_key()
+        source_path = Path(source_path)
+        source_encoding: str | None = None
+        staged = source_path
+        if fmt in TEXT_FORMATS:
+            staged = source_path.with_name(source_path.name + ".utf8")
+            try:
+                source_encoding = transcode_file_to_utf8(source_path, staged, what=filename)
+            except TextDecodeError as exc:
+                staged.unlink(missing_ok=True)
+                raise DatasetCatalogError(str(exc)) from exc
+            source_path.unlink(missing_ok=True)
+        try:
+            result = install_imported_path(
+                user_key,
+                staged,
+                filename,
+                fmt,
+                title=title,
+                group_id=group_id,
+                layer_name=layer_name,
+                source_updated_at=source_updated_at,
+                source_encoding=source_encoding,
+                discovery_source=discovery_source,
+                description=description,
+                collection=collection,
+            )
+        except InstallerError as exc:
+            raise DatasetCatalogError(str(exc)) from exc
+        finally:
+            staged.unlink(missing_ok=True)
+        return self._finish_imported(
+            result, fmt, feature_count_override=feature_count, row_count_override=row_count
+        )
+
+    def _finish_imported(
+        self,
+        result,
+        fmt: str,
+        *,
+        feature_count_override: int | None = None,
+        row_count_override: int | None = None,
+    ) -> dict[str, Any]:
+        """Counts, sidecar and catalog item for a freshly installed import."""
+        from utk_curio.backend.app.datasets.domain.manifest import load_dataset_manifest
 
         # Compute row/feature counts and patch the manifest if they were missing.
         data_path = result.dest / result.manifest.data_file
         row_count, feature_count = count_file(data_path, fmt)
+        if row_count is None and row_count_override is not None:
+            row_count = row_count_override
         # count_file doesn't parse parquet; use a caller-supplied count if given.
         if feature_count is None and feature_count_override is not None:
             feature_count = feature_count_override
@@ -170,7 +312,8 @@ class CatalogMutations:
         item["path"] = data_path.as_posix()
         # Keep loaderSnippet in sync with the resolved path.
         item["loaderSnippet"] = loader_snippet(
-            item["format"], data_path.as_posix(), dataset_id=item.get("id")
+            item["format"], data_path.as_posix(), dataset_id=item.get("id"),
+            layer_type=autark_layer_type(item),
         )
         item["sizeBytes"] = data_path.stat().st_size
         if row_count is not None:
@@ -187,6 +330,7 @@ class CatalogMutations:
         *,
         title: str | None = None,
         source_updated_at: str | None = None,
+        discovery_source: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Import an OSM PBF as one GeoParquet dataset per non-empty layer."""
         import uuid
@@ -225,6 +369,7 @@ class CatalogMutations:
                     group_id=group_id,
                     layer_name=layer.name,
                     source_updated_at=source_updated_at,
+                    discovery_source=discovery_source,
                 )
             )
 
@@ -242,6 +387,7 @@ class CatalogMutations:
         *,
         title: str | None = None,
         source_updated_at: str | None = None,
+        discovery_source: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Import a GeoPackage as one parquet dataset per layer."""
         import uuid
@@ -276,6 +422,7 @@ class CatalogMutations:
                 title=prefix,
                 feature_count_override=only.feature_count,
                 source_updated_at=source_updated_at,
+                discovery_source=discovery_source,
             )
 
         # One unique group id per *import*, never derived from content, so the
@@ -294,6 +441,7 @@ class CatalogMutations:
                     group_id=group_id,
                     layer_name=layer.name,
                     source_updated_at=source_updated_at,
+                    discovery_source=discovery_source,
                 )
             )
 
@@ -309,6 +457,12 @@ class CatalogMutations:
         self._assert_can_manage_shared_catalog("publish")
 
         item = deepcopy(self._owner.get_dataset(dataset_id, dataflow_id=dataflow_id, live_outputs=live_outputs))
+        if item.get("format") == "collection":
+            raise DatasetCatalogError(
+                "A collection cannot be published: its files are in its Discovery Catalog source, "
+                "not in the Data Catalog.",
+                400,
+            )
         for key in ("title", "description", "license", "tags"):
             if key in metadata:
                 item[key] = metadata[key]
@@ -898,7 +1052,7 @@ class CatalogMutations:
         Every project the user has counts as a user of the dataset (#176).
 
         Bindings and refs only. A node's source counts as usage everywhere else,
-        but applying a dataset writes ``curio_dataset_path("<id>")`` into that
+        but applying a dataset writes ``curio_data_path("<id>")`` into that
         source, so honouring it here meant the ordinary apply-then-uninstall
         flow never deleted anything: the folder survived, the Data Hub card
         survived, and the docstring above was simply false. The caller warns
@@ -1186,6 +1340,16 @@ class CatalogMutations:
                     )
 
                     index_repo.safe_forget(user_key, dataset_root.name)
+
+        if deleted_any:
+            # A collection's thumbnails, cached bucket files and derived
+            # frames; never the files in its source.
+            from utk_curio.backend.app.discovery.infrastructure.media_dirs import forget_media
+
+            try:
+                forget_media(user_key, dataset_id)
+            except Exception:  # noqa: BLE001 - the dataset itself is gone
+                logger.warning("Could not remove media made from %s", dataset_id, exc_info=True)
 
         if not deleted_any and not failed_dirs and not removed_from:
             raise DatasetCatalogError(

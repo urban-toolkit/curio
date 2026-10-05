@@ -24,7 +24,8 @@ export const CollaborationSidePanel: React.FC = () => {
         <div
             style={{
                 position: "absolute",
-                top: 60,
+                // Under the top bar, not 5px into it.
+                top: "var(--curio-top-bar-height)",
                 right: 0,
                 zIndex: 20,
                 display: "flex",

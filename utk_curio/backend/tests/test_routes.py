@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 from flask import current_app
 
 
@@ -71,9 +73,8 @@ def test_removed_legacy_routes_stay_removed(app):
         "/upload",
         "/datasets",
         "/api/packages/install-deps",
-        # The pre-agent LLM assistance. Its last caller was the node editor's
-        # Explanation tab, replaced by agent.node-explainer - which reads a
-        # richer nodeContext from the backend and shares the same prompt file.
+        # The pre-agent LLM assistance. The Chat agent (agent.chat-agent)
+        # explains a node, from the nodeContext it reads.
         "/llm/chat",
         "/llm/check",
         "/llm/clean",
@@ -135,7 +136,7 @@ class TestVersionPassesTheSandboxIsolationFields:
 
         import requests
 
-        from utk_curio.backend.app.api import routes
+        from utk_curio.backend.app.execution import sandbox_client
 
         class _Response:
             status_code = status
@@ -149,7 +150,7 @@ class TestVersionPassesTheSandboxIsolationFields:
                 raise boom
             return _Response()
 
-        with mock.patch.object(routes._sandbox_session, "get", _fake_get):
+        with mock.patch.object(sandbox_client._sandbox_session, "get", _fake_get):
             return app.test_client().get("/version").get_json()
 
     def test_both_fields_are_forwarded(self, app):
@@ -180,3 +181,106 @@ class TestVersionPassesTheSandboxIsolationFields:
         assert body["isolation"] == "unknown"
         assert body["isolation_active"] == "unknown"
         assert body["version"]
+
+
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+
+
+@pytest.fixture()
+def launch_at_repo(monkeypatch):
+    """Pin the launch directory: another test may have left it pointing elsewhere."""
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", _REPO_ROOT)
+    return _REPO_ROOT
+
+
+def _probe(path, payload=b"curio-private-probe"):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(payload)
+    return path
+
+
+def _served(app, url_rel):
+    resp = app.test_client().get(f"/file/{url_rel}", buffered=True)
+    return resp.status_code == 200 and b"curio-private-probe" in resp.data
+
+
+def test_file_route_never_serves_the_database(app, monkeypatch):
+    """The SQLite file holds every session and stored token.
+
+    Served from the database's own directory, so the URL has no hidden segment
+    and only the database rule can refuse it.
+    """
+    from utk_curio.backend.extensions import db
+
+    with app.app_context():
+        database = os.path.realpath(db.engine.url.database)
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", os.path.dirname(database))
+    resp = app.test_client().get(f"/file/{os.path.basename(database)}", buffered=True)
+    assert resp.status_code == 404
+
+
+def test_file_route_never_serves_hidden_paths(app, launch_at_repo):
+    probes = [
+        (".file-route-probe/secret.txt", os.path.join(launch_at_repo, ".file-route-probe", "secret.txt")),
+        ("data/.file-route-probe", os.path.join(launch_at_repo, "data", ".file-route-probe")),
+    ]
+    try:
+        for url_rel, path in probes:
+            _probe(path)
+            assert not _served(app, url_rel), url_rel
+    finally:
+        import shutil
+
+        shutil.rmtree(os.path.join(launch_at_repo, ".file-route-probe"), ignore_errors=True)
+        try:
+            os.remove(os.path.join(launch_at_repo, "data", ".file-route-probe"))
+        except FileNotFoundError:
+            pass
+
+
+def test_file_route_never_serves_curio_stores(app, monkeypatch, launch_at_repo):
+    """The instance folder, the ``.curio`` state root and the dataset hub."""
+    import shutil
+    import uuid
+
+    from utk_curio.backend.app.common.user_storage import curio_root
+    from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root
+
+    tag = uuid.uuid4().hex[:8]
+    instance = os.path.join(launch_at_repo, f"instance-probe-{tag}")
+    monkeypatch.setattr(app, "instance_path", instance)
+    state = os.path.join(launch_at_repo, f"state-probe-{tag}")
+    monkeypatch.setenv("CURIO_STATE_DIR", state)
+    hub = os.path.join(launch_at_repo, f"hub-probe-{tag}")
+    monkeypatch.setenv("CURIO_CATALOG_ROOT", hub)
+    try:
+        _probe(os.path.join(instance, "urban_workflow.db"))
+        _probe(os.path.join(str(curio_root()), "users", "1", "llm-configs.json"))
+        _probe(os.path.join(str(catalog_root()), "some.dataset@1", "data", "x.csv"))
+        assert not _served(app, f"instance-probe-{tag}/urban_workflow.db")
+        rel_state = os.path.relpath(str(curio_root()), launch_at_repo).replace(os.sep, "/")
+        assert not _served(app, f"{rel_state}/users/1/llm-configs.json")
+        assert not _served(app, f"hub-probe-{tag}/some.dataset@1/data/x.csv")
+    finally:
+        for path in (instance, state, hub):
+            shutil.rmtree(path, ignore_errors=True)
+
+
+def test_file_route_still_serves_example_extracts(app, launch_at_repo):
+    """The Autark examples read their committed PBF extracts through /file/."""
+    resp = app.test_client().get("/file/docs/examples/data/chicago_loop.osm.pbf", buffered=True)
+    assert resp.status_code == 200
+    assert len(resp.data) > 0
+
+
+def test_file_route_still_serves_vendored_duckdb_extensions(app, launch_at_repo):
+    """The browser's duckdb worker loads its extensions through /file/vendor/."""
+    import glob
+
+    found = sorted(glob.glob(os.path.join(launch_at_repo, "vendor", "duckdb-extensions", "**", "*.wasm"), recursive=True))
+    if not found:
+        pytest.skip("no vendored duckdb extension in this checkout")
+    url_rel = os.path.relpath(found[0], launch_at_repo).replace(os.sep, "/")
+    resp = app.test_client().get(f"/file/{url_rel}", buffered=True)
+    assert resp.status_code == 200

@@ -11,8 +11,10 @@
 import {
   agentCardActions,
   datasetCardActions,
-  lakeSourceCardActions,
+  discoverySourceCardActions,
+  modelCardActions,
   packageCardActions,
+  scenarioCardActions,
 } from "../../components/catalog/catalogCardActions";
 
 describe("catalog card actions", () => {
@@ -64,8 +66,8 @@ describe("catalog card actions", () => {
     ).toEqual(["view-details"]);
   });
 
-  test("a data lake source offers the browse, then its details", () => {
-    expect(lakeSourceCardActions({ browsable: true }).map((a) => a.id)).toEqual([
+  test("a Discovery Catalog source offers the browse, then its details", () => {
+    expect(discoverySourceCardActions({ browsable: true }).map((a) => a.id)).toEqual([
       "browse-datasets",
       "view-details",
     ]);
@@ -73,8 +75,50 @@ describe("catalog card actions", () => {
 
   test("a source that cannot be searched offers only its details", () => {
     // The drawer shows why in that slot, not a button, as for a current package.
-    expect(lakeSourceCardActions({ browsable: false }).map((a) => a.id)).toEqual([
+    expect(discoverySourceCardActions({ browsable: false }).map((a) => a.id)).toEqual([
       "view-details",
+    ]);
+  });
+
+  test("a link-only source offers Add by link, then its details", () => {
+    // Its page takes the link, so it has a page to open even though it has
+    // nothing to browse (#439).
+    expect(
+      discoverySourceCardActions({ browsable: false, byLink: true }).map((a) => a.id),
+    ).toEqual(["add-by-link", "view-details"]);
+  });
+
+  test("a shipped model offers only its details", () => {
+    // It has no action: it cannot be deleted and is not added to a project.
+    // Same rule as an installed, current package.
+    expect(modelCardActions({ deletable: false }).map((a) => a.id)).toEqual(["view-details"]);
+  });
+
+  test("a downloaded model offers Delete, then its details", () => {
+    expect(modelCardActions({ deletable: true }).map((a) => a.id)).toEqual([
+      "delete",
+      "view-details",
+    ]);
+  });
+
+  test("a model's Delete is the one real deletion, and is painted as one", () => {
+    // It removes the model's files from the account, unlike "Remove from all
+    // projects", which leaves the catalog copy alone.
+    const del = modelCardActions({ deletable: true }).find((a) => a.id === "delete");
+    expect(del?.destructive).toBe(true);
+    expect(modelCardActions({ deletable: false }).some((a) => a.destructive)).toBe(false);
+  });
+
+  test("a scenario offers its source project, then its details", () => {
+    // Read-only in the catalog: it changes when its project is edited, so the
+    // one action is opening that project. Nothing renames or deletes it here.
+    expect(scenarioCardActions().map((a) => a.id)).toEqual([
+      "open-source-project",
+      "view-details",
+    ]);
+    expect(scenarioCardActions().map((a) => a.label)).toEqual([
+      "Open source project",
+      "View details",
     ]);
   });
 
@@ -89,7 +133,9 @@ describe("catalog card actions", () => {
       ...agentCardActions({ imported: true }),
       ...packageCardActions({ isInstalled: false, hasUpdate: false }),
       ...packageCardActions({ isInstalled: true, hasUpdate: true }),
-      ...lakeSourceCardActions({ browsable: true }),
+      ...discoverySourceCardActions({ browsable: true }),
+      ...modelCardActions({ deletable: true }),
+      ...scenarioCardActions(),
     ];
     // Widened on purpose: the two ids are not in `CatalogCardActionId` at all,
     // which is half the guarantee - the other half is that no builder emits one.
@@ -104,7 +150,8 @@ describe("catalog card actions", () => {
       ...datasetCardActions({ inAllProjects: true }),
       ...agentCardActions({ imported: true }),
       ...packageCardActions({ isInstalled: true, hasUpdate: true }),
-      ...lakeSourceCardActions({ browsable: true }),
+      ...discoverySourceCardActions({ browsable: true }),
+      ...scenarioCardActions(),
     ];
     expect(every.every((a) => !a.destructive)).toBe(true);
   });
@@ -114,7 +161,10 @@ describe("catalog card actions", () => {
       datasetCardActions({ inAllProjects: false }),
       agentCardActions({ imported: true }),
       packageCardActions({ isInstalled: false, hasUpdate: false }),
-      lakeSourceCardActions({ browsable: true }),
+      discoverySourceCardActions({ browsable: true }),
+      modelCardActions({ deletable: true }),
+      modelCardActions({ deletable: false }),
+      scenarioCardActions(),
     ]) {
       expect(list[list.length - 1].id).toBe("view-details");
     }
@@ -126,7 +176,9 @@ describe("catalog card actions", () => {
       ...datasetCardActions({ inAllProjects: true }),
       ...agentCardActions({ imported: false }),
       ...packageCardActions({ isInstalled: true, hasUpdate: true }),
-      ...lakeSourceCardActions({ browsable: true }),
+      ...discoverySourceCardActions({ browsable: true }),
+      ...modelCardActions({ deletable: true }),
+      ...scenarioCardActions(),
     ]) {
       expect(action.label.trim()).not.toBe("");
     }

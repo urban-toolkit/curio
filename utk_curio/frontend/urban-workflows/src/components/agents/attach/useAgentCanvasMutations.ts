@@ -2,18 +2,23 @@ import { useEffect, useRef } from "react";
 import { useReactFlow } from "reactflow";
 import { useCode } from "../../../hook/useCode";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { useNotebookViewContext } from "../../../providers/flow/notebookViewContext";
 import { fitViewWithMenuOffset } from "../../../utils/fitViewWithMenuOffset";
 import {
   AgentCanvasMutation,
   AgentCreatedNode,
   subscribeAgentCanvasMutations,
-} from "../../../utils/agentCanvasEvents";
+} from "../../../services/agents";
 import { refreshPackageRegistry } from "../../../registry/packageRegistryBootstrap";
 import {
   getCurrentProjectPackages,
   setCurrentProjectPackages,
 } from "../../../registry/projectPackagesStore";
 import { EdgeType } from "../../../constants";
+import { normalizeWidgets } from "../../../utils/widgets/widgetModel";
+import { lineageFromSpec } from "../../../utils/scenarios/duplicateSelection";
+import { joinScenarios } from "../../../utils/scenarios/scenarioEdits";
+import type { Scenario } from "../../../utils/scenarios/scenarioModel";
 
 // Approximate node footprint for viewport centering — the node isn't measured
 // yet at insert time; half-extent offsets are all setCenter needs.
@@ -42,9 +47,39 @@ const CENTER_ANIMATION_MS = 400;
  * catches re-fired events before the store has synced, and the live-graph
  * check catches replays across remounts.
  */
+/** dev/112: ONE materialization of an applied spec edge for the live canvas —
+ * parity with loadTrill's `add_edge` (useCode): a Trill `Interaction` edge is
+ * bidirectional on `in/out` handles with arrows both ends; a data edge keeps
+ * the explicit handles the apply assigned (input circles, dev/67-3). Both bridge
+ * paths (bulk plan, per-edge connect) go through here. */
+function appliedEdgeToCanvasEdge(edge: {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string;
+  targetHandle?: string;
+  type?: string;
+}) {
+  const interaction = edge.type === "Interaction";
+  return {
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: interaction ? "in/out" : edge.sourceHandle ?? "out",
+    targetHandle: interaction ? "in/out" : edge.targetHandle ?? "in",
+    type: interaction ? EdgeType.BIDIRECTIONAL_EDGE : EdgeType.UNIDIRECTIONAL_EDGE,
+    markerEnd: { type: "arrow" },
+    ...(interaction ? { markerStart: { type: "arrow" } } : {}),
+    // Parity with loadTrill's add_edge (dev/58): the edge components read
+    // display flags off `data` — it must always exist.
+    data: {},
+  };
+}
+
 export function useAgentCanvasMutations(): void {
   const { createCodeNode } = useCode();
-  const { applyNodeContent, onEdgesChange, applyReviewedRemovals } = useFlowContext();
+  const { applyNodeContent, onEdgesChange, applyReviewedRemovals, scenarios, setScenarios } = useFlowContext();
+  const { reveal } = useNotebookViewContext();
   const reactFlow = useReactFlow();
   const { getNodes, setCenter, getZoom } = reactFlow;
   // Event-level idempotence: survives the store-sync lag between an insert
@@ -54,6 +89,10 @@ export function useAgentCanvasMutations(): void {
   const handlerRef = useRef<(mutation: AgentCanvasMutation) => void>(() => undefined);
 
   const insertNode = (node: AgentCreatedNode) => {
+    // #662: read as a load reads them (loadTrill), so the live node holds
+    // what the spec does and the next save writes them back.
+    const widgets = normalizeWidgets(node.metadata?.widgets);
+    const copiedFrom = lineageFromSpec(node.metadata?.copiedFrom);
     createCodeNode(node.type, {
       nodeId: node.id,
       code: node.content,
@@ -63,12 +102,23 @@ export function useAgentCanvasMutations(): void {
       // values reach live data so the next save re-persists them.
       appearance: node.metadata?.appearance,
       title: node.title,
+      ...(widgets.length ? { widgets } : {}),
+      ...(copiedFrom.length ? { copiedFrom } : {}),
     });
+  };
+
+  // #662: scenarios the apply saved join the canvas's, which a save writes.
+  const joinSaved = (saved: Scenario[] | undefined) => {
+    if (saved?.length) setScenarios(joinScenarios(scenarios, saved));
   };
 
   handlerRef.current = (mutation: AgentCanvasMutation) => {
     if (mutation.kind === "node-content-applied") {
       applyNodeContent(mutation.nodeId, mutation.content);
+      return;
+    }
+    if (mutation.kind === "scenarios-created") {
+      joinSaved(mutation.scenarios);
       return;
     }
     if (mutation.kind === "edges-created") {
@@ -80,16 +130,7 @@ export function useAgentCanvasMutations(): void {
       onEdgesChange(
         mutation.edges.map((edge) => ({
           type: "add" as const,
-          item: {
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            sourceHandle: edge.sourceHandle ?? "out",
-            targetHandle: edge.targetHandle ?? "in",
-            type: EdgeType.UNIDIRECTIONAL_EDGE,
-            markerEnd: { type: "arrow" },
-            data: {},
-          } as never,
+          item: appliedEdgeToCanvasEdge(edge) as never,
         })),
       );
       return;
@@ -119,23 +160,12 @@ export function useAgentCanvasMutations(): void {
       onEdgesChange(
         mutation.edges.map((edge) => ({
           type: "add" as const,
-          item: {
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            // dev/67-3: the apply assigns real handles (merge slots in_N) —
-            // pass them through; hardcoding "in" left merge slots unfilled
-            // until a reload healed them.
-            sourceHandle: edge.sourceHandle ?? "out",
-            targetHandle: edge.targetHandle ?? "in",
-            type: EdgeType.UNIDIRECTIONAL_EDGE,
-            markerEnd: { type: "arrow" },
-            // Parity with loadTrill's add_edge (dev/58): the edge components
-            // read display flags off `data` — it must always exist.
-            data: {},
-          } as never,
+          // dev/67-3: the apply assigns real handles (input circles in_N),
+          // passed through; dev/112: interaction edges become bidirectional.
+          item: appliedEdgeToCanvasEdge(edge) as never,
         })),
       );
+      joinSaved(mutation.scenarios);
       window.setTimeout(
         () => fitViewWithMenuOffset(reactFlow, { duration: 400 }),
         50,
@@ -160,7 +190,7 @@ export function useAgentCanvasMutations(): void {
         const fresh = mutation.nodes.filter((n) => !live.has(n.id));
         for (const node of fresh) insertNode(node);
         const first = fresh[0] ?? mutation.nodes[0];
-        if (first) {
+        if (first && !reveal([first.id])) {
           setCenter(first.x + NODE_CENTER_X, first.y + NODE_CENTER_Y, {
             zoom: getZoom(),
             duration: CENTER_ANIMATION_MS,
@@ -176,11 +206,14 @@ export function useAgentCanvasMutations(): void {
     const insert = () => {
       insertNode(node);
       // The backend placement is right of the whole graph extent — bring the
-      // node into view so "created" is visible, not off-screen (dev/51).
-      setCenter(node.x + NODE_CENTER_X, node.y + NODE_CENTER_Y, {
-        zoom: getZoom(),
-        duration: CENTER_ANIMATION_MS,
-      });
+      // node into view so "created" is visible, not off-screen (dev/51). In the
+      // notebook view that is its cell, scrolled into view.
+      if (!reveal([node.id])) {
+        setCenter(node.x + NODE_CENTER_X, node.y + NODE_CENTER_Y, {
+          zoom: getZoom(),
+          duration: CENTER_ANIMATION_MS,
+        });
+      }
     };
     if (createdPackageDir) {
       // A brand-new node type (dev/48 §3.2b): make its descriptor

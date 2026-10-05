@@ -1,5 +1,11 @@
-import { fitViewWithMenuOffset } from '../../utils/fitViewWithMenuOffset';
-import { getViewportForBounds } from 'reactflow';
+import fs from 'fs';
+import path from 'path';
+import {
+  CANVAS_TITLE_ATTR,
+  fitViewWithMenuOffset,
+  MENU_BAR_ATTR,
+} from '../../utils/fitViewWithMenuOffset';
+import { getNodesBounds, getViewportForBounds } from 'reactflow';
 
 // react-flow's geometry helpers are mocked: getNodesBounds/getViewportForBounds
 // are pure math we don't need to re-derive, only that the function routes
@@ -150,6 +156,88 @@ describe('fitViewWithMenuOffset', () => {
     expect(widthArg).toBe(1000 - 420);
   });
 
+  // #493: the menu bar is `position: fixed` over the top of the pane, so a
+  // dataflow whose height set the zoom put its top node's title bar under it.
+  const menuBar = (bottom: number) => {
+    const bar = document.createElement('div');
+    bar.setAttribute('data-curio-menu-bar', 'true');
+    document.body.appendChild(bar);
+    bar.getBoundingClientRect = () => ({ top: 0, bottom, height: bottom }) as DOMRect;
+  };
+
+  test('fits against the height below the menu bar and shifts down past it', () => {
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 1000, height: 600, left: 0, top: 0 }) as DOMRect;
+    menuBar(65);
+
+    getViewportForBoundsMock.mockReturnValueOnce({ x: 5, y: 6, zoom: 1 });
+    const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+    expect(fitViewWithMenuOffset(rf)).toBe(true);
+
+    const [, widthArg, heightArg] = getViewportForBoundsMock.mock.calls.at(-1)!;
+    expect(widthArg).toBe(1000);
+    expect(heightArg).toBe(600 - 65);
+    expect(rf.setViewport).toHaveBeenCalledWith({ x: 5, y: 6 + 65, zoom: 1 }, undefined);
+  });
+
+  test('a pane that starts below the bar is not shifted again', () => {
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 1000, height: 600, left: 0, top: 65 }) as DOMRect;
+    menuBar(65);
+
+    getViewportForBoundsMock.mockReturnValueOnce({ x: 5, y: 6, zoom: 1 });
+    const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+    expect(fitViewWithMenuOffset(rf)).toBe(true);
+
+    const [, , heightArg] = getViewportForBoundsMock.mock.calls.at(-1)!;
+    expect(heightArg).toBe(600);
+    expect(rf.setViewport).toHaveBeenCalledWith({ x: 5, y: 6, zoom: 1 }, undefined);
+  });
+
+  test('the canvas menu bar carries the attribute the fit measures', () => {
+    // The canvas wears the shared top bar, which carries the attribute; the
+    // dataflow title under it is the canvas's own.
+    const read = (rel: string) =>
+      fs.readFileSync(path.resolve(__dirname, '../../components', rel), 'utf8');
+    const upMenu = read('menus/top/UpMenu.tsx');
+    expect(upMenu).toContain('<GlobalPageHeader');
+    expect(read('layout/GlobalPageHeader.tsx')).toContain(`${MENU_BAR_ATTR}="true"`);
+    expect(upMenu).toContain(`${CANVAS_TITLE_ATTR}="true"`);
+  });
+
+  // The category chips hang under the dataflow title, below the bar; a fitted
+  // top node sat partly under them, which is #493 again one row lower.
+  test('the title and its chips push the fit below them, not just the bar', () => {
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 1000, height: 600, left: 0, top: 0 }) as DOMRect;
+    menuBar(65);
+    const title = document.createElement('div');
+    title.setAttribute(CANVAS_TITLE_ATTR, 'true');
+    title.getBoundingClientRect = () => ({ top: 80, bottom: 108 }) as DOMRect;
+    const chips = document.createElement('div');
+    chips.setAttribute('data-curio-category-chips', 'true');
+    chips.getBoundingClientRect = () => ({ top: 104, bottom: 124 }) as DOMRect;
+    title.appendChild(chips);
+    document.body.appendChild(title);
+
+    getViewportForBoundsMock.mockReturnValueOnce({ x: 5, y: 6, zoom: 1 });
+    const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+    expect(fitViewWithMenuOffset(rf)).toBe(true);
+
+    const [, , heightArg] = getViewportForBoundsMock.mock.calls.at(-1)!;
+    expect(heightArg).toBe(600 - 124);
+    expect(rf.setViewport).toHaveBeenCalledWith({ x: 5, y: 6 + 124, zoom: 1 }, undefined);
+  });
+
   test('with an open dock, fits against the VISIBLE width and shifts past the dock', () => {
     const container = document.createElement('div');
     container.className = 'react-flow';
@@ -176,5 +264,49 @@ describe('fitViewWithMenuOffset', () => {
       { x: 5 + 400, y: 6, zoom: 1 },
       undefined,
     );
+  });
+
+  // A collapsed scenario's members are drawn with display: none (#662) and
+  // React Flow never measures them: a reopened dataflow must still be framed.
+  test('a node drawn hidden is left out, so its missing size does not stall the fit', () => {
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 800, height: 600, left: 0, top: 0 }) as DOMRect;
+
+    const shown = { id: 'a', width: 120, height: 80 };
+    const hidden = { id: 'b', width: null, height: null, style: { display: 'none' } };
+    const rf = makeRf([shown, hidden as any]);
+    expect(fitViewWithMenuOffset(rf)).toBe(true);
+    expect(getNodesBounds).toHaveBeenLastCalledWith([shown]);
+  });
+
+  test('when every node is drawn hidden, the fit frames where they stand', () => {
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 800, height: 600, left: 0, top: 0 }) as DOMRect;
+
+    const rf = makeRf([{ id: 'b', width: null, height: null, style: { display: 'none' } } as any]);
+    expect(fitViewWithMenuOffset(rf)).toBe(true);
+    expect(rf.setViewport).toHaveBeenCalledTimes(1);
+  });
+
+  // The dashboard draws each scenario's header above its top tile (#662).
+  test('headroom keeps that much room in view above the nodes', () => {
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 800, height: 600, left: 0, top: 0 }) as DOMRect;
+    const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+
+    expect(fitViewWithMenuOffset(rf, { headroom: 46 })).toBe(true);
+    expect(getViewportForBoundsMock.mock.calls.at(-1)![0]).toEqual({ x: 0, y: -46, width: 100, height: 146 });
+
+    expect(fitViewWithMenuOffset(rf)).toBe(true);
+    expect(getViewportForBoundsMock.mock.calls.at(-1)![0]).toEqual({ x: 0, y: 0, width: 100, height: 100 });
   });
 });

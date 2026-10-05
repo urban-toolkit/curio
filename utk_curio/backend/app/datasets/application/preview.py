@@ -14,6 +14,9 @@ from utk_curio.backend.app.datasets.infrastructure.text_encoding import open_tex
 
 logger = logging.getLogger(__name__)
 
+#: Formats stored as the file itself that hold no table, and what each is.
+_NO_ROWS = {"onnx": "An ONNX model", "netcdf": "A NetCDF file"}
+
 
 @lru_cache(maxsize=2)
 def _load_json_cached(path_str: str, mtime_ns: int, size: int) -> Any:
@@ -89,6 +92,43 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _is_null_cell(value: Any) -> bool:
+    """A missing value in a preview row: ``None``, NaN, or an empty CSV cell."""
+    if value is None:
+        return True
+    if isinstance(value, float):
+        return math.isnan(value)
+    return isinstance(value, str) and value == ""
+
+
+def _parquet_null_counts(path: Path) -> dict[str, int] | None:
+    """Null count per top-level column, from the Parquet file's statistics.
+
+    A column is left out when any row group has no null count for it, or when
+    it is nested (its leaves count nulls, not the column's). ``None`` when the
+    metadata cannot be read.
+    """
+    try:
+        import pyarrow.parquet as pq
+
+        metadata = pq.ParquetFile(path).metadata
+    except Exception:  # noqa: BLE001
+        return None
+    counts: dict[str, int] = {}
+    unknown: set[str] = set()
+    for group_index in range(metadata.num_row_groups):
+        group = metadata.row_group(group_index)
+        for column_index in range(group.num_columns):
+            column = group.column(column_index)
+            name = column.path_in_schema
+            stats = column.statistics
+            if "." in name or stats is None or not stats.has_null_count:
+                unknown.add(name.split(".")[0])
+                continue
+            counts[name] = counts.get(name, 0) + stats.null_count
+    return {name: count for name, count in counts.items() if name not in unknown}
+
+
 class DatasetPreviewService:
     def preview(
         self,
@@ -153,7 +193,8 @@ class DatasetPreviewService:
             return self._preview_json(path, row_limit, offset, item, part_index=part_index)
         if fmt == "geojson":
             return self._preview_geojson(path, row_limit, offset, item)
-        if fmt == "parquet":
+        if fmt in ("parquet", "collection"):
+            # A collection's data file is its Parquet index.
             return self._preview_parquet(path, row_limit, offset, item)
         if fmt == "geotiff":
             return {
@@ -165,6 +206,17 @@ class DatasetPreviewService:
                 "truncated": False,
                 "unsupported": True,
                 "message": "Raster preview is not available in the catalog yet. Use the map canvas.",
+            }
+        if fmt in _NO_ROWS:
+            return {
+                "schema": item.get("schema") or {"fields": []},
+                "rows": [],
+                "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": 0,
+                "truncated": False,
+                "unsupported": True,
+                "message": f"{_NO_ROWS[fmt]} has no rows to preview. A node reads it with curio_load_data.",
             }
         return {
             "schema": {"fields": []},
@@ -188,7 +240,18 @@ class DatasetPreviewService:
             next(reader, None)
             return sum(1 for _ in reader)
 
-    def _infer_fields(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _infer_fields(
+        self,
+        rows: list[dict[str, Any]],
+        null_counts: dict[str, int] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fields of a schema-less dataset, read from a sample of its rows.
+
+        ``nullable`` is set only when it is known (#444): from the file's own
+        null counts when the format records them (``null_counts``), else
+        ``True`` when the sample holds a null. A column the sample shows no
+        gap in has no ``nullable`` key, because a sample cannot prove that.
+        """
         if not rows:
             return []
         names: list[str] = []
@@ -206,7 +269,12 @@ class DatasetPreviewService:
                 field_type = "integer"
             elif isinstance(sample, float):
                 field_type = "number"
-            fields.append({"name": name, "type": field_type, "nullable": True, "sample": sample})
+            field: dict[str, Any] = {"name": name, "type": field_type, "sample": sample}
+            if null_counts is not None and name in null_counts:
+                field["nullable"] = null_counts[name] > 0
+            elif any(_is_null_cell(row.get(name)) for row in rows):
+                field["nullable"] = True
+            fields.append(field)
         return fields
 
     def _preview_bundle(self, bundle_path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
@@ -522,7 +590,9 @@ class DatasetPreviewService:
         schema_fields = (item.get("schema") or {}).get("fields", [])
         return {
             "schema": {
-                "fields": schema_fields if schema_fields else self._infer_fields(rows),
+                "fields": schema_fields
+                if schema_fields
+                else self._infer_fields(rows, _parquet_null_counts(path)),
             },
             "rows": rows,
             "rowLimit": row_limit,

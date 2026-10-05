@@ -23,10 +23,10 @@ jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
 jest.mock("../../components/datasets/catalog/DatasetConnectionBadge", () => ({
   DatasetConnectionBadge: () => null,
 }));
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: { readDefinition: jest.fn(() => new Promise(() => {})) },
 }));
-jest.mock("../../api/packagesApi", () => ({
+jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: {
     listInstalled: jest.fn(),
     catalog: jest.fn(),
@@ -52,7 +52,7 @@ import { DatasetDetailsContext } from "../../components/datasets/catalog/dataset
 import type { DatasetCatalogItem } from "../../services/datasetCatalog";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { packagesApi } = require("../../api/packagesApi") as {
+const { packagesApi } = require("../../services/packages/packagesApi") as {
   packagesApi: { listInstalled: jest.Mock; catalog: jest.Mock };
 };
 
@@ -92,6 +92,62 @@ describe("a dataset palette row", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "View Bike Routes details" }));
     expect(openDatasetDetails).toHaveBeenCalledWith("imported.bikes", { fallbackDataset: dataset });
+  });
+
+  test("lets its id wrap after each dot and before the version (#527)", () => {
+    // One unbreakable line cut "data.projectsidewalk.chicago-labels@1" to
+    // "data.projectsidewalk.chicago-lab...", so the version never showed.
+    const dataset = {
+      id: "data.projectsidewalk.chicago-labels",
+      title: "Project Sidewalk Chicago Labels",
+      origin: "hub",
+      format: "csv",
+      dirName: "data.projectsidewalk.chicago-labels@1",
+      uri: "curio://datasets/data.projectsidewalk.chicago-labels",
+      consumerNodeIds: [],
+      updatedAt: "2026-07-14T00:00:00Z",
+      tags: [],
+      installed: true,
+    } as DatasetCatalogItem;
+    render(
+      <DatasetDetailsContext.Provider value={{ openDatasetDetails: jest.fn() }}>
+        <DatasetRow dataset={dataset} />
+      </DatasetDetailsContext.Provider>,
+    );
+    const id = screen.getByText("data.projectsidewalk.chicago-labels@1");
+    expect(id.innerHTML).toBe(
+      "data.<wbr>projectsidewalk.<wbr>chicago-labels<wbr>@1",
+    );
+    // The title is its own element, not the id's line.
+    expect(screen.getByText("Project Sidewalk Chicago Labels")).not.toBe(id);
+  });
+});
+
+describe("the dataset palette row's text (#527)", () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require("fs") as typeof import("fs");
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const path = require("path") as typeof import("path");
+  const css = fs.readFileSync(
+    path.resolve(__dirname, "../../components/menus/nodes/datasetPalette/DatasetPaletteRows.module.css"),
+    "utf8",
+  );
+  const rule = (selector: string) => {
+    const at = css.indexOf("\n" + selector + " {");
+    if (at === -1) return "";
+    const open = css.indexOf("{", at);
+    return css.slice(open + 1, css.indexOf("}", open));
+  };
+
+  test("gives the title two lines instead of one", () => {
+    const title = rule(".datasetRowTitle");
+    expect(title).toMatch(/-webkit-line-clamp:\s*2;/);
+    expect(title).not.toMatch(/white-space:\s*nowrap/);
+  });
+
+  test("lets the id wrap", () => {
+    expect(rule(".datasetRowId")).not.toMatch(/white-space:\s*nowrap/);
+    expect(rule(".datasetRowId")).toMatch(/overflow-wrap:\s*anywhere;/);
   });
 });
 

@@ -30,19 +30,33 @@ const CANVAS_DRAWERS = [
   "components/packages/publishing/NodeCatalogDrawer.tsx",
   "components/datasets/catalog/DatasetCatalogDrawer.tsx",
   "components/agents/catalog/AgentCatalogDrawer.tsx",
+  "components/models/catalog/ModelCatalogDrawer.tsx",
+  "components/scenarios/catalog/ScenarioCatalogDrawer.tsx",
+  "components/discovery/catalog/DiscoveryCatalogDrawer.tsx",
+  // API Settings and Monitor, opened from the top bar.
+  "components/layout/HeaderDrawer.tsx",
 ];
 
-/** The data/lifecycle hooks behind two of the three drawers. A confirmation
- *  that moved into a hook is just as native as one left in the component. */
+/** The data/lifecycle hooks behind the drawers. A confirmation that moved
+ *  into a hook is just as native as one left in the component; the model
+ *  drawer's delete question lives in `useModelDelete`. */
 const DRAWER_HOOKS = [
   "components/datasets/catalog/useDatasetCatalogDrawer.ts",
   "components/agents/catalog/useAgentCatalogDrawer.ts",
+  "components/models/catalog/useModelCatalogDrawer.ts",
+  "components/models/catalog/useModelDelete.ts",
+  "components/scenarios/catalog/useScenarioCatalogDrawer.ts",
 ];
 
 const PROVIDERS = [
-  "providers/NodeCatalogDrawerProvider.tsx",
+  "providers/packages/NodeCatalogDrawerProvider.tsx",
   "providers/datasetCatalog/DatasetCatalogDrawerProvider.tsx",
   "providers/AgentCatalogDrawerProvider.tsx",
+  "providers/modelCatalog/ModelCatalogDrawerProvider.tsx",
+  "providers/scenarioCatalog/ScenarioCatalogDrawerProvider.tsx",
+  "providers/discoveryCatalog/DiscoveryCatalogDrawerProvider.tsx",
+  "providers/ApiSettingsDrawerProvider.tsx",
+  "providers/MonitorDrawerProvider.tsx",
 ];
 
 describe("canvas catalog drawer parity", () => {

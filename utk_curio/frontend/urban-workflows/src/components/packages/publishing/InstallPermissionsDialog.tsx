@@ -1,5 +1,5 @@
 import React from "react";
-import type { PackagePayload, ResolveConflict } from "../../../api/packagesApi";
+import type { PackagePayload, ResolveConflict } from "../../../services/packages";
 import { describePackagePermission } from "../../../utils/packagePermissions";
 import styles from "./InstallPermissionsDialog.module.css";
 
@@ -16,6 +16,8 @@ export interface InstallPermissionsDialogProps {
    * dataflow's lockfile.
    */
   confirmLabel?: string;
+  /** The confirm button's label while the action runs. */
+  busyLabel?: string;
 }
 
 export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> = ({
@@ -25,6 +27,7 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
   onCancel,
   onConfirm,
   confirmLabel = "Add to project",
+  busyLabel = "Adding…",
 }) => {
   const hasConflicts = conflicts.length > 0;
   const pythonDeps = Object.entries(pkg.dependencies.python);
@@ -120,7 +123,7 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
             onClick={onConfirm}
             disabled={busy || hasConflicts}
           >
-            {busy ? "Adding…" : confirmLabel}
+            {busy ? busyLabel : confirmLabel}
           </button>
         </div>
       </div>

@@ -87,10 +87,12 @@ describe("node category palette", () => {
     });
   });
 
-  it("keys the catalog filter chips to the same palette", () => {
+  it("keys the Node Catalog rail's category dots to the same palette", () => {
+    // The filter chips carried these dots until the chip row was removed; the
+    // rail's category rows carry them now, beside the card strips they key.
     const css = read("pages/catalog/CatalogBrowseLayout.module.css");
     for (const key of KEYS) {
-      const rule = css.match(new RegExp("\\.chipDot_" + key + "\\s*\\{([^}]*)\\}"));
+      const rule = css.match(new RegExp("\\.categoryDot_" + key + "\\s*\\{([^}]*)\\}"));
       expect(rule).not.toBeNull();
       expect((rule as RegExpMatchArray)[1]).toContain(
         "var(--curio-category-" + key + "-fg)"
@@ -100,12 +102,29 @@ describe("node category palette", () => {
 
   it("paints the canvas node border from the palette, not from its own hexes", () => {
     const tsx = read("components/styles.tsx");
-    const map = tsx.match(/const nodeTypeBorderColor[^;]*;/s);
-    expect(map).not.toBeNull();
-    expect(map![0]).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
-    expect(map![0]).toContain("categoryFg(");
-    // The fallback border too — it was a bare #95a5a6 alongside the map.
-    expect(tsx).toContain("CATEGORY_FALLBACK_FG");
+    // The descriptor's category first, the shared type map for a node with
+    // none (#524). styles.tsx used to keep a third copy of that map.
+    expect(tsx).toContain("categoryFg(NODE_CATEGORY_KEY[");
+    expect(tsx).toContain("colorForNodeType(");
+    expect(tsx).not.toMatch(/const nodeTypeBorderColor/);
+  });
+
+  it("gives each built-in kind the category its manifest declares", () => {
+    // The map had drifted from curio.builtin@1: Data Pool painted as
+    // computation beside a DATA pill, Data Summary the other way round, and
+    // Spatial Join was missing, so it fell back to grey (#524).
+    const manifest = JSON.parse(
+      fs.readFileSync(
+        path.resolve(__dirname, "../../../../../../packages/curio.builtin@1/manifest.json"),
+        "utf8",
+      ),
+    );
+    const fromManifest: Record<string, string> = {};
+    for (const template of manifest.templates) {
+      fromManifest[`curio.builtin/${template.id}`] =
+        NODE_CATEGORY_KEY[template.category as keyof typeof NODE_CATEGORY_KEY];
+    }
+    expect(NODE_TYPE_CATEGORY).toEqual(fromManifest);
   });
 
   it("paints the projects-list thumbnail from the same map as the canvas", () => {

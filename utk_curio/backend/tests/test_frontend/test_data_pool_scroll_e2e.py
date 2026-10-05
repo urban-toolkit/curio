@@ -40,8 +40,8 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-LOADING_TILE = "#step-loading"
-POOL_TILE = "#step-pool"
+LOADING_TILE = "#tile-data-loading"
+POOL_TILE = "#tile-data-pool"
 LOADING_TYPE = "curio.builtin/data-loading"
 
 POS_UP = (150, 150)

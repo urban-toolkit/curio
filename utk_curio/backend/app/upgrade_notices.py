@@ -1,6 +1,6 @@
 """Startup warnings for settings that changed meaning between releases.
 
-Each entry here is a variable an operator plausibly still has set, whose effect
+Each entry here is a variable or folder an operator plausibly still has, whose effect
 this release removed or moved. None of them break a boot, which is the problem:
 without a warning the deployment starts cleanly and a feature quietly stops
 working, or starts costing money it did not before.
@@ -28,16 +28,15 @@ def check_upgrade_notices() -> list[str]:
     """Log a warning per stale setting. Returns the names warned about."""
     warned: list[str] = []
 
-    # The Street Vision token became an account setting with a deployment
-    # fallback under a new name. An operator upgrading with the old variable
-    # exported sees gated model downloads start failing with a 401 and nothing
-    # pointing at the rename.
-    if _warn_legacy_env(
-        "HUGGINGFACE_TOKEN",
-        "Set CURIO_DEFAULT_HUGGINGFACE_TOKEN for the deployment-wide fallback, "
-        "or let each user save their own token in AI Settings, which wins over it.",
-    ):
-        warned.append("HUGGINGFACE_TOKEN")
+    # The Street Vision token is an account setting only. An operator upgrading
+    # with either deployment-wide variable exported sees gated model downloads
+    # start failing with a 401 and nothing pointing at the change.
+    for name in ("HUGGINGFACE_TOKEN", "CURIO_DEFAULT_HUGGINGFACE_TOKEN"):
+        if _warn_legacy_env(
+            name,
+            "Each user saves their own HuggingFace token in API Settings.",
+        ):
+            warned.append(name)
 
     # The Street Vision caches moved under each user's directory, because the
     # overlay route is unauthenticated and a shared cache let anyone who could
@@ -53,6 +52,23 @@ def check_upgrade_notices() -> list[str]:
             "user. The old directory is safe to delete.",
         ):
             warned.append(name)
+
+    # The Data Lake Catalog became the Discovery Catalog. Its root setting and
+    # its folder for an operator's own sources are not read, and nothing moves
+    # them, so a source left there leaves the catalog without a word.
+    rename = "and rename lake. to source. in each source's folder name and manifest id."
+    if _warn_legacy_env("CURIO_DATALAKE_ROOT", f"Pass --discovery-root to curio.py start instead, {rename}"):
+        warned.append("CURIO_DATALAKE_ROOT")
+    from utk_curio.backend.app.common.user_storage import curio_root
+
+    try:
+        old_sources = curio_root() / "datalakes"
+        if old_sources.is_dir():
+            log.warning("%s is no longer read. Move its sources to %s, %s",
+                        old_sources, curio_root() / "discovery", rename)
+            warned.append(".curio/datalakes")
+    except OSError:  # a notice never stops a boot
+        pass
 
     # A deployment that set only a guest key used to inherit a built-in guest
     # model. Curio now ships no model name at all, so that deployment resolves

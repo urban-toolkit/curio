@@ -9,7 +9,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 import { useParams, useNavigate } from "react-router-dom";
 import { useFlowContext, IOutput } from "../providers/FlowProvider";
 import { useCode } from "../hook/useCode";
-import { useEnsureWorkflowDeps } from "../hook/useEnsureWorkflowDeps";
+import { useEnsureWorkflowDeps } from "../providers/packages/useEnsureWorkflowDeps";
 import { TrillGenerator } from "../TrillGenerator";
 import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
 import {
@@ -19,11 +19,13 @@ import {
   settleProjectLoad,
   setUnsavedDataflow,
 } from "../registry/projectPackagesStore";
-import { packagesApi } from "../api/packagesApi";
+import { packagesApi } from "../services/packages";
 import { useToastContext } from "../providers/ToastProvider";
 import { loadFailedMessage } from "../utils/dataflowImport";
+import { restoredByNode, restoredOutputs, withOutputs } from "../utils/restoredOutputs";
 
 import { SHARE_UUID_RE as UUID_RE } from "../utils/shareLinks";
+import { getEmbeddedDashboard } from "../standalone/dashboardPayload";
 
 /** How far the load has got, for a page that has to say which state it is in. */
 export type ProjectLoadState = "idle" | "loading" | "loaded" | "failed";
@@ -78,7 +80,12 @@ export const ProjectLoader: React.FC<{
     hydrateRestoredOutputs,
     loadParsedTrill,
     projectId,
+    attachLatestRun,
   } = useFlowContext();
+  // Read when the load answers, not when it started: whether this canvas runs
+  // on the server depends on the signed-in user, which can arrive in between.
+  const attachLatestRunRef = useRef(attachLatestRun);
+  attachLatestRunRef.current = attachLatestRun;
   const { loadTrill } = useCode();
   // Warn + auto-install missing Python deps. SECURITY: only called for the
   // OWNER's own project below — never for a foreign/shared spec, since the
@@ -146,23 +153,29 @@ export const ProjectLoader: React.FC<{
     // flow state as "never saved" and creating a second dataflow (#340).
     beginProjectLoad(id);
 
+    /** Apply a loaded project; returns the nodes whose saved output it restored. */
     const applyResult = (
       result: {
         spec: unknown;
         outputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
       },
       { trusted }: { trusted: boolean }
-    ) => {
+    ): Set<string> => {
       const { spec, outputs } = result;
 
       let loaded: { nodes: any[]; edges: any[] } | null = null;
+      const restoredIds = new Set<string>();
       if (spec) {
         if (!hasLoadableDataflow(spec)) {
           throw new Error(
             "Project spec is missing a valid dataflow payload. It may have been saved incorrectly."
           );
         }
-        loaded = loadTrill(spec);
+        // The outputs the manifest restored, by node: those nodes are built as
+        // having run, so a downstream play reuses them (#407).
+        const restored = restoredByNode(outputs);
+        for (const nodeId of Object.keys(restored)) restoredIds.add(nodeId);
+        loaded = loadTrill(spec, undefined, undefined, restored);
         // Auto-install missing deps only for the owner's own project — never
         // for a foreign shared spec (see ensureWorkflowDeps' SECURITY note), and
         // never for a dashboard: opening a page to look at it must not install
@@ -171,34 +184,11 @@ export const ProjectLoader: React.FC<{
       }
 
       if (outputs && outputs.length > 0) {
-        const newOutputs: IOutput[] = outputs.map((o) => ({
-          nodeId: o.node_id,
-          // Carry the TYPE, not just the name. A Vega node refuses an input
-          // whose type it cannot see ("undefined is not a valid input type"),
-          // and a bare filename has none, so a restored chart rejected its own
-          // data and rendered the empty state instead. The manifest records the
-          // type beside the filename precisely so this does not have to be
-          // guessed.
-          output: o.data_type
-            ? { path: o.filename, dataType: o.data_type }
-            : o.filename,
-        }));
-        setOutputs((prev: IOutput[]) => {
-          const existing = new Set(prev.map((p) => p.nodeId));
-          const merged = [...prev];
-          for (const o of newOutputs) {
-            if (existing.has(o.nodeId)) {
-              const idx = merged.findIndex((m) => m.nodeId === o.nodeId);
-              if (idx >= 0) merged[idx] = o;
-            } else {
-              merged.push(o);
-            }
-          }
-          return merged;
-        });
-        // Refill downstream data.input (incl. merge slots) from the restored
+        const newOutputs = restoredOutputs(outputs);
+        setOutputs((prev: IOutput[]) => withOutputs(prev, newOutputs));
+        // Refill downstream data.input (incl. input circles) from the restored
         // outputs — otherwise every reload requires rerunning each upstream
-        // node before merges/pools receive anything (dev/64).
+        // node before downstream nodes and pools receive anything (dev/64).
         //
         // Against the edges the load just built, not React Flow's store: the
         // store is written from an effect and still reports nothing at this
@@ -206,6 +196,7 @@ export const ProjectLoader: React.FC<{
         // dashboard tile draws from, and it has no Play to fall back on.
         hydrateRestoredOutputs(newOutputs, loaded?.edges);
       }
+      return restoredIds;
     };
 
     setLoadState("loading");
@@ -222,10 +213,38 @@ export const ProjectLoader: React.FC<{
       } catch {
         /* loader continues; descriptor-miss surfaces per-node, not as a hard stop */
       }
+      // A standalone dashboard was served with its spec and its rows inside it,
+      // so there is nothing to load. Taken before the request, not after a
+      // failure: the point of the page is that it never reaches the network.
+      //
+      // trusted=false, like a shared spec. A page anyone can open by link must
+      // not auto-install the dependencies its spec declares, and `presentation`
+      // already blocks that, but saying so twice costs nothing and the day this
+      // payload is served on another route it will still be foreign content.
+      const embedded = getEmbeddedDashboard();
+      if (embedded) {
+        try {
+          applyResult(
+            { spec: embedded.spec, outputs: embedded.outputRefs ?? [] },
+            { trusted: false },
+          );
+          setLoadState("loaded");
+        } catch (embeddedErr) {
+          console.error("Failed to read the embedded dashboard:", embeddedErr);
+          setLoadState("failed");
+          showToast(loadFailedMessage(embeddedErr), "error");
+        }
+        return;
+      }
+
       try {
         const result = await loadProject(id);
-        applyResult(result, { trusted: true });
+        const restored = applyResult(result, { trusted: true });
         setLoadState("loaded");
+        // The outputs its last run on the server made that the saved ones do
+        // not hold, and that run itself if it is still going. Canvas only: a
+        // dashboard draws from what was saved.
+        if (!presentation) void attachLatestRunRef.current(id, restored);
       } catch (err) {
         // 404 from the owner-scoped endpoint means either the project doesn't
         // exist or the current user isn't its owner. Try the shared (link-based)

@@ -30,17 +30,29 @@ const DRAWERS = [
 ];
 
 /**
- * Every browse drawer, including the Data Lake Catalog's.
+ * Every browse drawer, including the Discovery Catalog's.
  *
- * A lake source is deliberately absent from `DRAWERS`: it has no publish
+ * A source is deliberately absent from `DRAWERS`: it has no publish
  * concept at all. Sources are operator-authored - there is no import route,
  * because a source declares a host the server makes outbound requests to on a
  * user's behalf - so "publish this portal" is not an action that exists. The
  * assertions about layout and shared components still apply to it, which is
  * what this list is for; forcing a publish pill onto it to satisfy a loop
  * would be inventing a control to pass a test.
+ *
+ * A model is absent for the same reason: shipped models come with Curio and
+ * downloaded ones from the Discovery Catalog, and neither is published back
+ * into a shared catalog.
+ *
+ * So is a scenario: it is a selection saved inside one project, and the
+ * catalog only reads it.
  */
-const ALL_DRAWERS = [...DRAWERS, "pages/dataLakes/DataLakeCatalogBrowseDrawer.tsx"];
+const ALL_DRAWERS = [
+  ...DRAWERS,
+  "pages/discovery/DiscoveryCatalogBrowseDrawer.tsx",
+  "pages/models/ModelCatalogBrowseDrawer.tsx",
+  "pages/scenarios/ScenarioCatalogBrowseDrawer.tsx",
+];
 
 describe("catalog drawer parity", () => {
   test("every browse drawer is built from the shared drawer body", () => {
@@ -138,8 +150,9 @@ describe("catalog drawer parity", () => {
 describe("publish wording is shared across both catalogs", () => {
   test("success and failure copy follow one template", () => {
     const sources = [
-      "pages/catalog/useNodeCatalogBrowse.ts",
-      "components/packages/publishing/NodeCatalogDrawer.tsx",
+      // dev/143 F3/F4: the Node Catalog page and drawer both publish through
+      // THE catalog hook; the drawer file no longer holds any publish copy.
+      "services/packages/usePackageCatalog.ts",
       "pages/dataCatalog/DataCatalogBrowse.tsx",
       // `DatasetDetailPanel` used to be on this list. It no longer publishes:
       // it is the DETAILS view, and it carried a second, ungated publish
@@ -167,8 +180,10 @@ describe("add/remove toasts are shared across all three catalogs (#198)", () => 
   // other two adopt it verbatim rather than inventing a third phrasing.
   const SOURCES: [string, string][] = [
     ["data", "components/datasets/catalog/useDatasetCatalogDrawer.ts"],
-    ["node", "components/packages/publishing/NodeCatalogDrawer.tsx"],
-    ["agent", "components/agents/catalog/useAgentCatalogDrawer.ts"],
+    // dev/143 F4: the node drawer's actions live in THE catalog hook.
+    ["node", "services/packages/usePackageCatalog.ts"],
+    // dev/142 F3: the agent drawer's actions live in THE catalog hook.
+    ["agent", "services/agents/useAgentCatalog.ts"],
   ];
 
   test.each(SOURCES)("the %s catalog toasts both an add and a remove", (_kind, file) => {
@@ -183,10 +198,11 @@ describe("add/remove toasts are shared across all three catalogs (#198)", () => 
   // paints a successful add red. The three catalogs reach showToast by
   // different routes, so the variant is asserted where each one applies it:
   // Data and Agent behaviourally (useDatasetCatalogDrawer.import.test.ts,
-  // useAgentCatalogDrawer.test.ts), Node from source — it has no render
-  // harness, for the reasons NodeCatalogDrawerReload.test.tsx sets out.
+  // useAgentCatalogDrawer.test.ts), Node from source — the hook's own
+  // test covers the behaviour, and this read keeps the WORDING pinned
+  // (dev/143 F4: the call sites moved from the drawer into the hook).
   test("the node catalog passes the success variant at the call site", () => {
-    const src = read("components/packages/publishing/NodeCatalogDrawer.tsx");
+    const src = read("services/packages/usePackageCatalog.ts");
     // The add is one sentence and still matches the shared template exactly.
     expect(src).toMatch(
       new RegExp(`showToast\\(\\s*\`Added \\$\\{[^}]+\\} to this project\\.\`,\\s*"success"`),

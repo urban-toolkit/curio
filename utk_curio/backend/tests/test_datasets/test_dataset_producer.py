@@ -59,7 +59,7 @@ def test_dataset_producer_in_spec_none_when_not_produced_here():
     # Producing node absent from this dataflow.
     assert _dataset_producer_in_spec(spec, "computed.n1") is None
     # Non-computed dataset id is never producer-resolved.
-    assert _dataset_producer_in_spec(spec, "it.urbanlab.example") is None
+    assert _dataset_producer_in_spec(spec, "it.utk.example") is None
 
 
 def test_get_dataset_resolves_producer_from_another_dataflow(client, user_and_token):
@@ -99,7 +99,7 @@ def test_get_dataset_resolves_producer_from_another_dataflow(client, user_and_to
 def test_get_dataset_no_producer_fields_for_imported_dataset(client, user_and_token):
     """A genuinely imported (non-computed) dataset gets no producer backfill."""
     _, token = user_and_token
-    dataset_id = "it.urbanlab.example"
+    dataset_id = "it.utk.example"
     flow = _create_project(client, token, "Bound", {
         "dataflow": {
             "name": "Bound",

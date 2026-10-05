@@ -401,14 +401,14 @@ def test_package_metadata_survives_export_and_reimport(
     page.locator("#pkg-meta-permissions").fill(PERMISSIONS_INPUT)
     page.locator("#pkg-meta-readme").fill(README_TEXT)
 
-    # Baseline of the filled form, captured before the click that closes it. The
-    # subtitle carries the generated coordinate (curio.canvas.draft.<random>@1 -
-    # v0.1.0), which differs on every run; the suite's default tolerance (20% of
-    # pixels at 30/255 per channel) absorbs a one-line text change comfortably.
-    # Do not tighten it.
+    # Baseline of the filled form, captured before the click that closes it,
+    # scrolled to its end so the footer is whole: the last fill() leaves the
+    # body wherever it scrolled README into view.
+    page.get_by_role("button", name="Save changes", exact=True).scroll_into_view_if_needed()
     save_workflow_test_screenshot(
         page, SCREENSHOT_STEM,
         test_name="test_package_metadata_modal_filled",
+        sweep_toasts=True,
     )
 
     # Matched on the method alone, not on the coordinate: packagesApi runs the
@@ -494,7 +494,6 @@ def test_package_metadata_survives_export_and_reimport(
     # ------------------------------------------------------------------
     # 5. Load it back in through the Node Catalog drawer
     # ------------------------------------------------------------------
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
     page.get_by_role("button", name="Node Catalog", exact=True).click()
     page.locator(DRAWER_ROOT).wait_for(state="attached", timeout=15000)
     # Filtered by heading: the install dialog is also role="dialog" but carries
@@ -606,6 +605,7 @@ def test_package_metadata_survives_export_and_reimport(
     save_workflow_test_screenshot(
         page, SCREENSHOT_STEM,
         test_name="test_package_metadata_after_reimport",
+        sweep_toasts=True,
     )
 
     page.get_by_role("button", name="Cancel", exact=True).click()
@@ -655,9 +655,13 @@ def test_node_settings_configuration_reaches_the_saved_package(
     # visible at all - the assertions below read it back out of JSON. Worth a
     # shot of its own because the modal rendering correctly and the package
     # receiving what it rendered were, for a while, two different things.
+    # The last select_option leaves the modal scrolled to its bottom; start
+    # the view at the input ports, which carry the configuration.
+    _port_section(page, "Input ports").evaluate("el => el.scrollIntoView({block: 'start'})")
     save_workflow_test_screenshot(
         page, SCREENSHOT_STEM,
         test_name="test_node_settings_configured",
+        sweep_toasts=True,
     )
 
     dir_name = _save_as_new_package(page)

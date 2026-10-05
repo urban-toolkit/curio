@@ -7,7 +7,7 @@ import type { DatasetCatalogItem } from "./datasetCatalogTypes";
  * out, and giving it out is why the request exists: an absolute path is
  * specific to one machine, one user and one mount, so pasting it into a node
  * produces code that works until someone else opens the dataflow. The portable
- * reference is ``curio_dataset_path("<id>")`` — the sandbox resolves it to a
+ * reference is ``curio_data_path("<id>")`` — the sandbox resolves it to a
  * real location at execution time, and it is exactly what the palette's own
  * generated loaders emit.
  *
@@ -18,7 +18,7 @@ import type { DatasetCatalogItem } from "./datasetCatalogTypes";
 
 /**
  * Ids are interpolated into Python source, so only ids matching this whitelist
- * can appear inside a ``curio_dataset_path("<id>")`` call — one with a quote or
+ * can appear inside a ``curio_load_data("<id>")`` call — one with a quote or
  * a backslash would break out of the string literal. Kept in step with
  * ``SAFE_DATASET_ID_RE`` in ``datasetLoaderSnippets.ts`` and the backend's
  * ``_SAFE_DATASET_ID_RE``.
@@ -40,19 +40,22 @@ export interface DatasetReference {
  * copied always matches what the palette would have written.
  */
 export function datasetReference(
-  dataset: Pick<DatasetCatalogItem, "id" | "path" | "uri">,
+  dataset: Pick<DatasetCatalogItem, "id" | "path" | "uri"> & Partial<Pick<DatasetCatalogItem, "format">>,
 ): DatasetReference {
   const location = String(dataset.path || dataset.uri || "");
   const id = String(dataset.id ?? "");
+  // A collection is read with `curio_load_collection`, which adds a readable
+  // path for each of its files; its data file alone is only the index.
+  const call = dataset.format === "collection" ? "curio_load_collection" : "curio_load_data";
   const code = SAFE_DATASET_ID_RE.test(id)
-    ? `curio_dataset_path(${JSON.stringify(id)})`
+    ? `${call}(${JSON.stringify(id)})`
     : JSON.stringify(location);
   return { code, location };
 }
 
 /** Just the string a copy control puts on the clipboard. */
 export function datasetReferenceCode(
-  dataset: Pick<DatasetCatalogItem, "id" | "path" | "uri">,
+  dataset: Pick<DatasetCatalogItem, "id" | "path" | "uri"> & Partial<Pick<DatasetCatalogItem, "format">>,
 ): string {
   return datasetReference(dataset).code;
 }

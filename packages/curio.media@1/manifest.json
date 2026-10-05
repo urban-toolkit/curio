@@ -1,0 +1,109 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-09-27T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "av": ">=15.0",
+      "rasterio": ">=1.4"
+    }
+  },
+  "description": "Nodes for collections of images, video, audio and rasters added from the Discovery Catalog: sample a video's frames, split recordings into windows with their levels, and mosaic raster tiles into one raster. Each takes the rows Data Loading returns for a collection and returns rows or a raster the other nodes already read.",
+  "id": "curio.media",
+  "license": "MIT",
+  "name": "Media",
+  "permissions": [
+    "filesystem.read"
+  ],
+  "publisher": "Curio",
+  "readOnly": true,
+  "templates": [
+    {
+      "category": "computation",
+      "description": "Sample frames from every video in a collection, every EVERY_SECONDS seconds. Returns one row per frame with the columns of an image row (path, thumbnail, image_url, width, height), the video's fields and position, and t_s, the frame's offset.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "icon": null,
+      "iconRef": "fa-solid:film",
+      "id": "video-frames",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["DATAFRAME", "GEODATAFRAME"]
+        }
+      ],
+      "label": "Sample Video Frames",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["DATAFRAME", "GEODATAFRAME"]
+        }
+      ],
+      "source": "sources/video-frames.py"
+    },
+    {
+      "category": "computation",
+      "description": "Split every recording in a collection into windows of WINDOW_SECONDS seconds. Returns one row per window with its level and peak in dBFS, a playable clip, the recording's fields, and t_s, the window's offset.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "icon": null,
+      "iconRef": "fa-solid:wave-square",
+      "id": "split-audio",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["DATAFRAME", "GEODATAFRAME"]
+        }
+      ],
+      "label": "Split Audio",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["DATAFRAME"]
+        }
+      ],
+      "source": "sources/split-audio.py"
+    },
+    {
+      "category": "computation",
+      "description": "Combine a raster collection's tiles, or a filtered set of them, into one virtual mosaic that any RASTER node reads. The tiles must share CRS, resolution, bands and data type.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "icon": null,
+      "iconRef": "fa-solid:border-all",
+      "id": "mosaic-rasters",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["GEODATAFRAME", "DATAFRAME"]
+        }
+      ],
+      "label": "Mosaic Rasters",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["RASTER"]
+        }
+      ],
+      "source": "sources/mosaic-rasters.py"
+    }
+  ],
+  "version": "1.0.0"
+}

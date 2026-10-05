@@ -25,6 +25,7 @@ from utk_curio.sandbox.util.db import get_connection, get_read_connection, init_
 # namespace, and test_sandbox_namespace.py pins that).
 from utk_curio.sandbox.util.codec import (
     PARQUET_DECODE_SIDECAR_SUFFIX,
+    PARQUET_ROW_GROUP_ROWS,
     _decode_object_cell_from_parquet,
     _encode_object_cell_for_parquet,
     _is_missing_value,
@@ -55,75 +56,25 @@ from utk_curio.sandbox.util.codec import (
 
 #     return parsedJson
 
-# I/O Type Checking
+# I/O type checking — RETIRED (memo dev/120).
+#
+# ``checkIOType`` used to dispatch on the legacy uppercase node names
+# (DATA_LOADING / DATA_TRANSFORMATION / DATA_EXPORT) and refuse inputs and
+# outputs outside a hand-typed copy of the builtin manifest's port types. Every
+# caller has sent the namespaced id (``curio.builtin/data-loading``) since the
+# package registry landed, so the check has been a no-op on the browser path,
+# the agents' runner and the e2e runner for as long as those ids have existed.
+# A node's type contract is its template's declared ports (DEC-062/076),
+# enforced by the canvas at connect time; the validators are gone.
+#
+# The NAME stays, and stays seeded into every node namespace (owner decision
+# 2026-09-09): the #158 contract promises that every name the old star import
+# leaked keeps resolving in node code. Calling it does nothing, which is what
+# it did for every namespaced id already.
 def checkIOType(data, nodeType, input=True):
-    if input:
-        validate_input(data, nodeType)
-    else:
-        validate_output(data, nodeType)
+    """No-op kept for the #158 namespace contract — see the note above."""
+    return None
 
-
-# Input Validation
-def validate_input(data, nodeType):
-    if isinstance(data, list):
-        return
-    if nodeType == 'DATA_EXPORT':
-        check_dataframe_input(data, nodeType)
-    elif nodeType == 'DATA_TRANSFORMATION':
-        check_transformation_input(data, nodeType)
-
-# Output Validation
-def validate_output(data, nodeType):
-    if nodeType in ['DATA_LOADING', 'DATA_TRANSFORMATION']:
-        check_valid_output(data, nodeType)
-    elif nodeType == 'DATA_EXPORT':
-        if data.get('dataType') in ['', None]:
-            return
-        raise Exception(f'{nodeType} does not support output')
-
-
-# Input Type Checks
-def check_dataframe_input(data, nodeType):
-    if isinstance(data, list):
-        return
-    if data['dataType'] == 'outputs' and len(data['data']) > 5:
-        raise Exception(f'{nodeType} only supports five inputs')
-
-    valid_types = {'dataframe', 'geodataframe'}
-    if data['dataType'] == 'outputs':
-        for elem in data['data']:
-            if elem['dataType'] not in valid_types:
-                raise Exception(f'{nodeType} only supports DataFrame and GeoDataFrame as input')
-    elif data['dataType'] not in valid_types:
-        raise Exception(f'{nodeType} only supports DataFrame and GeoDataFrame as input')
-
-def check_transformation_input(data, nodeType):
-    valid_types = {'dataframe', 'geodataframe', 'raster'}
-    if data['dataType'] == 'outputs' and len(data['data']) > 2:
-        raise Exception(f'{nodeType} only supports one or two inputs')
-
-    if data['dataType'] == 'outputs':
-        for elem in data['data']:
-            if elem['dataType'] not in valid_types:
-                raise Exception(f'{nodeType} only supports DataFrame, GeoDataFrame, and Raster as input')
-    elif data['dataType'] not in valid_types:
-        raise Exception(f'{nodeType} only supports DataFrame, GeoDataFrame, and Raster as input')
-
-def check_valid_output(data, nodeType):
-    if isinstance(data, list):
-        return
-    valid_types = {'dataframe', 'geodataframe', 'raster'}
-
-    if data['dataType'] == 'outputs':
-        if len(data['data']) > 1 and nodeType != 'DATA_LOADING':
-            raise Exception(f'{nodeType} only supports one output')
-
-        for elem in data['data']:
-            if elem['dataType'] not in valid_types:
-                raise Exception(f'{nodeType} only supports DataFrame, GeoDataFrame, and Raster as output')
-
-    elif data['dataType'] not in valid_types:
-        raise Exception(f'{nodeType} only supports DataFrame, GeoDataFrame, and Raster as output')
 
 def save_memory_mapped_file(data):
     """
@@ -233,7 +184,7 @@ def parse_geodataframe(data_value):
 
 def parse_raster(data_value):
     # rasterio is optional — provided by raster-capable packages
-    # (curio.weather, ai.urbanlab.uhvi), not by curio.builtin.
+    # (curio.weather, ai.utk.uhvi), not by curio.builtin.
     import rasterio
     return rasterio.open(data_value)
 
@@ -253,7 +204,13 @@ def parseInput(parsed_json):
     elif data_type == 'geodataframe':
         return parse_geodataframe(data_value)
     elif data_type == 'raster':
-        return parse_raster(data_value)
+        # A path is a Python node's raster. Anything else is the collection an
+        # Autark node hands on, kept as its envelope: a Python node gets it as
+        # a rasterio dataset (util/rasters.rasters_for_python), a JavaScript
+        # node as the JSON it is.
+        if isinstance(data_value, str):
+            return parse_raster(data_value)
+        return parsed_json
     elif data_type == 'outputs':
         return tuple(parseInput(elem) for elem in data_value)
 
@@ -413,10 +370,13 @@ def parseOutput(output):
         # property of the frame, not of the GeoJSON, and a consumer should not
         # have to know which branch it is on to read them.
         json_output['schema'] = _frame_schema(output)
-        if hasattr(output, 'metadata') and 'name' in output.metadata:
-            parsed_geojson = json_output['data']
-            parsed_geojson['metadata'] = {'name': output.metadata['name']}
-            json_output['data'] = parsed_geojson
+        # The frame's own name and Autark layer type, as the Arrow path sends
+        # them in its X-Curio-Frame-Metadata header.
+        frame_metadata = getattr(output, 'metadata', None)
+        if isinstance(frame_metadata, dict):
+            kept = {key: frame_metadata[key] for key in ('name', 'layerType') if key in frame_metadata}
+            if kept:
+                json_output['data']['metadata'] = kept
     # A DatasetReader can only exist if user code already imported rasterio,
     # so the sys.modules guard is exact without importing the optional lib.
     elif 'rasterio' in sys.modules and isinstance(output, sys.modules['rasterio'].io.DatasetReader):
@@ -588,7 +548,8 @@ def save_to_duckdb(value, node_id=None, session_id=None):
             )
             rel_path = _stored_artifact_rel_path(art_id)
             parquet_path = _resolve_stored_artifact_path(rel_path, create_parent=True)
-            prepared.to_parquet(parquet_path)  # GeoParquet — CRS preserved automatically
+            # GeoParquet: CRS preserved automatically.
+            prepared.to_parquet(parquet_path, row_group_size=PARQUET_ROW_GROUP_ROWS)
             # parquet drops Python-side attributes like ``gdf.metadata`` (set by
             # parse_geodataframe when upstream JSON carried a metadata.name).
             # Grammar visualizers historically depended on this name, so stash it
@@ -781,8 +742,11 @@ def arrow_frame_schema(table):
     PARQUET``, which carries none, so its dtypes are derived from the Arrow
     types instead.
     """
+    # A pyarrow Schema or anything carrying one (a Table): the streamed route
+    # has only the parquet file's schema, and reads no rows to answer this.
+    schema = getattr(table, "schema", table)
     named = {}
-    raw = (table.schema.metadata or {}).get(b"pandas")
+    raw = (schema.metadata or {}).get(b"pandas")
     if raw:
         try:
             named = {
@@ -794,8 +758,8 @@ def arrow_frame_schema(table):
             named = {}
     if not named:
         named = {
-            name: _dtype_name_for(table.schema.field(name).type)
-            for name in table.schema.names
+            name: _dtype_name_for(schema.field(name).type)
+            for name in schema.names
         }
     # Whichever source it came from, every geometry column needs the same
     # correction: GeoParquet stores them as WKB, so pandas metadata calls them
@@ -805,7 +769,7 @@ def arrow_frame_schema(table):
     # All of them, not just the active one: a frame can carry a second
     # geometry column (``gdf["bbox"] = gdf.geometry.envelope``), and it is a
     # geometry in both paths.
-    for column in _geoparquet_geometry_columns(table):
+    for column in _geoparquet_geometry_columns(schema):
         if column in named:
             named[column] = "geometry"
     return named
@@ -813,7 +777,8 @@ def arrow_frame_schema(table):
 
 def _geoparquet_geometry_columns(table):
     """Every geometry column named by GeoParquet metadata, active or not."""
-    raw = (table.schema.metadata or {}).get(b"geo")
+    schema = getattr(table, "schema", table)
+    raw = (schema.metadata or {}).get(b"geo")
     if not raw:
         return ()
     try:
@@ -827,15 +792,16 @@ def _geoparquet_geometry_columns(table):
     return (primary,) if primary else ()
 
 
-def load_tabular_arrow_from_duckdb(art_id, session_id=None, *, allow_geometry=False):
-    """Load a tabular artifact as a pyarrow.Table read directly from its stored
-    parquet payload — no pandas materialization.
+def open_tabular_arrow_from_duckdb(art_id, session_id=None, *, allow_geometry=False):
+    """Open a tabular artifact's stored parquet payload, reading no rows.
 
-    Supports kind in ('dataframe', 'geodataframe'). For GeoDataFrames the
-    geometry column is binary WKB (GeoParquet's standard encoding).
+    Supports kind in ('dataframe', 'geodataframe'); for GeoDataFrames the
+    geometry column is binary WKB (GeoParquet's standard encoding). The Arrow
+    route streams from the returned file batch by batch, so a fetch holds one
+    batch at a time rather than the whole table (#408).
 
     Returns:
-        (table, kind, frame_metadata, encoded_object_columns)
+        (parquet_file, kind, frame_metadata, encoded_object_columns)
 
     Raises:
         KeyError: artifact does not exist or belongs to a different session.
@@ -863,14 +829,16 @@ def load_tabular_arrow_from_duckdb(art_id, session_id=None, *, allow_geometry=Fa
             # GeoJSON. A client that cannot decode WKB would render nothing
             # and say nothing, so it has to ask for it explicitly
             # (X-Curio-Accept-Geometry: wkb) and gets a 415 otherwise. The
-            # check is before read_table, so the refusal costs nothing.
+            # check comes before the file is opened, so the refusal costs nothing.
             raise ValueError(
                 "Arrow IPC serves geodataframe geometry as WKB; send "
                 "X-Curio-Accept-Geometry: wkb to accept it"
             )
-        table = pq.read_table(_parquet_source(v_str, blob))
+        # pre_buffer off: it reads a whole row group's column chunks ahead,
+        # which is most of what a streamed fetch would otherwise hold.
+        parquet_file = pq.ParquetFile(_parquet_source(v_str, blob), pre_buffer=False)
         frame_metadata, encoded_object_columns = _parse_parquet_meta(v_json)
-        return table, kind, frame_metadata, encoded_object_columns
+        return parquet_file, kind, frame_metadata, encoded_object_columns
     finally:
         try:
             con.close()
@@ -989,6 +957,27 @@ def load_shared_output_file(file_name):
         raise missing
 
 
+def load_artifact(art_id, session_id=None):
+    """An artifact by id: the store first, then the copy a project load hydrated.
+
+    The one rule every reader of a saved output follows, ``/get`` and node
+    inputs alike (#407, #408). The store is session-tagged, so after a reopen
+    under a new sign-in it cannot serve an output the canvas is showing as done
+    - nor when the row was pruned or the database is momentarily locked. The
+    hydrated file in the shared data directory can (see
+    :func:`load_shared_output_file`). When neither has it, the store's error is
+    the one raised: for a missing artifact that is the familiar "No artifact
+    with id", and for a locked database it keeps the real diagnostic.
+    """
+    try:
+        return load_from_duckdb(art_id, session_id=session_id)
+    except Exception as store_error:
+        try:
+            return load_shared_output_file(art_id)
+        except KeyError:
+            raise store_error
+
+
 def save_dataset_parquet(output, kind):
     """Save a DataFrame or GeoDataFrame as a named Parquet file in the shared data
     directory (top-level, not inside ``artifacts/``).
@@ -1019,7 +1008,7 @@ def save_dataset_parquet(output, kind):
             prepared, encoded_object_columns = _prepare_frame_for_parquet(
                 output, geometry_col=active_geometry_name(output)
             )
-            prepared.to_parquet(full_path)
+            prepared.to_parquet(full_path, row_group_size=PARQUET_ROW_GROUP_ROWS)
             meta_json = _serialize_parquet_meta(
                 frame_metadata=getattr(output, 'metadata', None),
                 encoded_object_columns=encoded_object_columns,

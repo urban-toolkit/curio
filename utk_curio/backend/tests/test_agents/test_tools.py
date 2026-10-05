@@ -7,9 +7,10 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import tools
-from utk_curio.backend.app.agents.manifest import ToolRequirement
-from utk_curio.backend.app.agents.tools import ToolContract
+from utk_curio.backend.app.agents.application import tools
+from utk_curio.backend.app.agents.application.turns import examples
+from utk_curio.backend.app.agents.domain.manifest import ToolRequirement
+from utk_curio.backend.app.agents.application.tools import ToolContract
 
 
 def _req(tool_id: str, required: bool = False) -> ToolRequirement:
@@ -28,8 +29,10 @@ class TestRegistry:
             "web.fetch", "web.search",
             "packages.catalog", "packages.resolve", "package.install",  # dev/84
             "package.draft.apply",  # dev/89
-            # The Data Lake Catalog: roster, live search, reviewed download.
-            "datalake.sources", "datalake.search", "datalake.acquire",
+            # The Discovery Catalog: roster, live search, reviewed download.
+            "discovery.sources", "discovery.search", "discovery.acquire",
+            "models.search",  # the Model Catalog
+            "examples.read",  # the worked examples
         }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
@@ -42,15 +45,17 @@ class TestRegistry:
         assert tools.REGISTRY["node.runtime.read"].effect == "read"
         assert tools.REGISTRY["web.fetch"].effect == "read"
         assert tools.REGISTRY["web.search"].effect == "read"
-        assert tools.REGISTRY["datalake.sources"].effect == "read"
-        assert tools.REGISTRY["datalake.search"].effect == "read"
+        assert tools.REGISTRY["discovery.sources"].effect == "read"
+        assert tools.REGISTRY["discovery.search"].effect == "read"
         # A download writes bytes into the user's store and mints a catalog
         # row, so it goes through review and never executes in the model loop.
-        assert tools.REGISTRY["datalake.acquire"].effect == "mutate"
+        assert tools.REGISTRY["discovery.acquire"].effect == "mutate"
         assert tools.REGISTRY["packages.catalog"].effect == "read"
         assert tools.REGISTRY["packages.resolve"].effect == "read"
         assert tools.REGISTRY["package.install"].effect == "mutate"
         assert tools.REGISTRY["package.draft.apply"].effect == "mutate"  # dev/89
+        assert tools.REGISTRY["models.search"].effect == "read"
+        assert tools.REGISTRY["examples.read"].effect == "read"
 
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):
@@ -253,18 +258,101 @@ class TestDataflowReadProjection:
     def test_edge_handles_survive_when_present(self, tmp_curio):
         from utk_curio.backend.app.projects import storage as projects_storage
 
+        # Two inputs on one node's circles, "in" and "in_1" (#662).
         spec = {"dataflow": {"nodes": [
             {"id": "a", "type": "t", "content": ""},
-            {"id": "m", "type": "curio.builtin/merge-flow", "content": ""},
+            {"id": "b", "type": "t", "content": ""},
+            {"id": "m", "type": "curio.builtin/computation-analysis", "content": ""},
         ], "edges": [
             {"id": "e1", "source": "a", "target": "m",
-             "sourceHandle": "out", "targetHandle": "in_0"},
+             "sourceHandle": "out", "targetHandle": "in"},
+            {"id": "e2", "source": "b", "target": "m",
+             "sourceHandle": "out", "targetHandle": "in_1"},
         ]}}
         projects_storage.write_spec(self.UKEY, self.PID, spec)
         _, text = tools.execute_read_tool(
             "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
         )
-        assert json.loads(text)["edges"][0]["targetHandle"] == "in_0"
+        handles = {e["id"]: e["targetHandle"] for e in json.loads(text)["edges"]}
+        assert handles == {"e1": "in", "e2": "in_1"}
+
+    def test_interaction_edges_are_named_as_such_data_edges_stay_bare(self, tmp_curio):
+        """dev/125 §3.6 — the read-back the instruction demands.
+
+        The builder is told to re-read the graph and confirm the topology
+        before claiming a repair. If the projection cannot say which edge is
+        the feedback link, the agent that just asked for an interaction edge
+        cannot tell whether it got one — so it re-diagnoses and loops, which is
+        the failure this whole memo exists to end. `kind` follows the plan
+        grammar's own vocabulary and its byte-absent default: present only when
+        the edge is an interaction edge.
+        """
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        spec = {"dataflow": {"nodes": [
+            {"id": "vis", "type": "curio.builtin/vis-vega", "content": ""},
+            {"id": "pool", "type": "curio.builtin/data-pool", "content": ""},
+        ], "edges": [
+            {"id": "e1", "source": "pool", "target": "vis",
+             "sourceHandle": "out", "targetHandle": "in"},
+            {"id": "e2", "source": "vis", "target": "pool", "type": "Interaction",
+             "sourceHandle": "in/out", "targetHandle": "in/out"},
+        ]}}
+        projects_storage.write_spec(self.UKEY, self.PID, spec)
+        _, text = tools.execute_read_tool(
+            "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
+        )
+        by_id = {e["id"]: e for e in json.loads(text)["edges"]}
+        assert by_id["e2"]["kind"] == "interaction"
+        assert "kind" not in by_id["e1"]  # data stays byte-absent, as in the plan
+
+    def test_scenarios_ride_the_projection_with_their_parts(self, tmp_curio):
+        """#662: each scenario with what it is made of, read by the rule the
+        canvas reads it by: its levers, its fixed context (an edge into it, or
+        a Parameter node its code names) and its outcomes. Nodes show their
+        widgets' values and a copy its lineage."""
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        spec = {"dataflow": {"nodes": [
+            {"id": "load", "type": "curio.builtin/data-loading", "content": "return 1"},
+            {"id": "a", "type": "curio.builtin/computation-analysis",
+             "content": "return arg * [!! factor !!] * [!! @season !!]",
+             "metadata": {"widgets": [{"name": "factor", "type": "number", "default": 1, "value": 2}]}},
+            {"id": "b", "type": "curio.builtin/vis-vega", "content": "{}"},
+            {"id": "p", "type": "curio.builtin/parameter",
+             "metadata": {"widgets": [{"name": "season", "type": "text", "default": "winter"}]}},
+            {"id": "a2", "type": "curio.builtin/computation-analysis", "content": "return arg",
+             "metadata": {"copiedFrom": ["a"]}},
+        ], "edges": [
+            {"id": "e1", "source": "load", "target": "a"},
+            {"id": "e2", "source": "a", "target": "b"},
+            {"id": "e3", "source": "load", "target": "a2"},
+        ], "scenarios": [
+            {"id": "s1", "name": "Real heights", "color": "#3567c7", "description": "as mapped",
+             "nodes": ["a", "b", "ghost"], "collapsed": True, "box": {"x": 1, "y": 2}},
+        ]}}
+        projects_storage.write_spec(self.UKEY, self.PID, spec)
+        _, text = tools.execute_read_tool(
+            "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
+        )
+        payload = json.loads(text)
+        assert payload["scenarios"] == [{
+            "id": "s1", "name": "Real heights", "color": "#3567c7", "description": "as mapped",
+            "levers": ["a", "b"], "context": ["load", "p"], "outcomes": ["b"],
+        }]
+        rows = {n["id"]: n for n in payload["nodes"]}
+        assert rows["a"]["widgets"] == [{"name": "factor", "type": "number", "value": 2}]
+        assert rows["a2"]["copiedFrom"] == ["a"]
+        assert "widgets" not in rows["load"] and "copiedFrom" not in rows["a"]
+
+    def test_a_dataflow_without_scenarios_projects_as_before(self, tmp_curio):
+        self._write_big_spec(n_nodes=3, content_chars=10)
+        _, text = tools.execute_read_tool(
+            "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
+        )
+        payload = json.loads(text)
+        assert "scenarios" not in payload
+        assert all(set(n) == {"id", "type", "goal", "hasContent", "contentChars"} for n in payload["nodes"])
 
 
 class TestNodeRuntimeRead:
@@ -325,12 +413,233 @@ class TestNodeRuntimeRead:
         assert status == "error" and "not attached" in text
 
 
+class TestCatalogSearchRows:
+    """dev/114 (DEC-072): installed rows carry the resolved ``path`` and the
+    domain's ONE loader recipe — the only local paths generated node content
+    may open. Rows without a resolved path carry neither."""
+
+    def _listing(self, monkeypatch, items):
+        class _Svc:
+            def __init__(self, user):
+                pass
+
+            def list_catalog(self, **kwargs):
+                return {"items": items}
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.datasets.application.catalog_service.DatasetCatalogService", _Svc
+        )
+
+    def test_path_and_loader_ride_resolved_rows_only(self, app, monkeypatch):
+        self._listing(monkeypatch, [
+            {"id": "ds-acs", "title": "Census ACS", "format": "csv", "origin": "hub",
+             "installed": True, "path": "/store/census-acs@1/acs.csv",
+             "loaderSnippet": {"code": 'dataset_path = "/store/census-acs@1/acs.csv"\ndf = pd.read_csv(dataset_path)'}},
+            {"id": "ds-hub", "title": "Hub only", "format": "csv", "origin": "hub",
+             "installed": False, "path": None},
+            {"id": "ds-geo", "title": "Tracts", "format": "geojson", "origin": "local",
+             "installed": True, "path": "/store/tracts@1/tracts.geojson"},  # no snippet → recipe
+        ])
+        with app.test_request_context():
+            rows = tools._catalog_search_rows("42", "p1", {})
+        assert rows[0]["path"] == "/store/census-acs@1/acs.csv"
+        assert "pd.read_csv(dataset_path)" in rows[0]["loader"]
+        assert "path" not in rows[1] and "loader" not in rows[1]
+        assert rows[2]["path"] == "/store/tracts@1/tracts.geojson"
+        assert 'gpd.read_file(dataset_path)' in rows[2]["loader"]
+        assert "path" in tools.REGISTRY["catalog.search"].description
+
+
+class TestModelsSearch:
+    """models.search: the Model Catalog this account can run, the shipped
+    model and its own download, each with the loader line node code copies."""
+
+    DDRNET = "model.curio.ddrnet23-slim"
+    ROW_KEYS = {"id", "name", "task", "runtime", "origin", "description", "labels", "loader"}
+
+    @pytest.fixture()
+    def catalog(self, app, user_and_token, tmp_path, monkeypatch):
+        """The repo's shipped models plus one download in the user's store."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.model_catalog.infrastructure import storage
+        from utk_curio.backend.app.model_catalog.service import ModelCatalogService
+
+        monkeypatch.setenv(storage.ENV_ROOT, str(Path(__file__).resolve().parents[4] / "models"))
+        user, _ = user_and_token
+        incoming = tmp_path / "incoming"
+        (incoming / "files").mkdir(parents=True)
+        (incoming / "files" / "m.onnx").write_bytes(b"onnx")
+        download = ModelCatalogService(user).install_downloaded(incoming, {
+            "id": "model.example.tiny", "name": "Tiny facades", "version": "1.0.0",
+            "compatibility": {"major": 1}, "license": "MIT", "runtime": "onnx",
+            "task": "semantic-segmentation", "entry": "files/m.onnx",
+            "labels": [f"class {i}" for i in range(60)],
+            "input": {"width": 64, "height": 32, "dtype": "float32", "scale": 0.00392},
+        })
+        return user, download["id"]
+
+    def _rows(self, app, user, params):
+        from flask import g
+
+        with app.test_request_context():
+            g.user = user
+            return tools._models_search_rows(params)
+
+    def test_rows_carry_both_origins_and_the_loader_line(self, app, catalog):
+        from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
+
+        user, download_id = catalog
+        by_id = {row["id"]: row for row in self._rows(app, user, {})}
+        assert {self.DDRNET, download_id} <= set(by_id)
+        for row in by_id.values():
+            assert set(row) == self.ROW_KEYS
+            assert row["loader"] == f'model = curio_load_model("{row["id"]}")'
+            # The line resolves through the runtime's own reading of node code.
+            assert model_ids_in_code(row["loader"]) == [row["id"]]
+        shipped, mine = by_id[self.DDRNET], by_id[download_id]
+        assert (shipped["origin"], shipped["runtime"], shipped["task"]) == ("shipped", "onnx", "semantic-segmentation")
+        assert "vegetation" in shipped["labels"] and len(shipped["labels"]) == 19
+        assert (mine["origin"], mine["name"]) == ("downloaded", "Tiny facades")
+        # Labels are bounded; a checkpoint may name hundreds of classes.
+        assert mine["labels"] == [f"class {i}" for i in range(tools._MODEL_LABELS_MAX)]
+
+    def test_q_filters_and_limit_bounds(self, app, catalog):
+        user, download_id = catalog
+        assert [r["id"] for r in self._rows(app, user, {"q": "  tiny  "})] == [download_id]
+        assert self._rows(app, user, {"q": "no-such-model-zzz"}) == []
+        assert len(self._rows(app, user, {"limit": 1})) == 1
+        assert len(self._rows(app, user, {"limit": "1"})) == 1
+        # A native call may carry every number as a float.
+        assert len(self._rows(app, user, {"limit": 1.0})) == 1
+        everything = self._rows(app, user, {})
+        # A limit that is not a whole number, or is out of range, never hides a row.
+        assert self._rows(app, user, {"limit": "many"}) == everything
+        assert self._rows(app, user, {"limit": 1.5}) == everything
+        assert self._rows(app, user, {"limit": 10_000}) == everything
+        assert len(self._rows(app, user, {"limit": 0})) == 1
+
+    def test_the_executor_returns_the_rows_and_needs_no_project_spec(self, app, catalog):
+        from flask import g
+
+        user, download_id = catalog
+        with app.test_request_context():
+            g.user = user
+            status, text = tools.execute_read_tool(
+                "models.search", user_key="42", project_id="no-such-project", target=None, params={"q": "tiny"},
+            )
+        assert status == "ok"
+        assert [row["id"] for row in json.loads(text)["models"]] == [download_id]
+
+    def test_the_contract_states_its_params_and_rows(self):
+        contract = tools.REGISTRY["models.search"]
+        assert contract.parameters["properties"]["q"]["type"] == "string"
+        assert contract.parameters["properties"]["limit"]["type"] == "integer"
+        assert "required" not in contract.parameters
+        for word in ("id", "name", "task", "origin", "labels", "loader", 'curio_load_model("<id>")'):
+            assert word in contract.description, word
+
+
+class TestExamplesRead:
+    """examples.read: the worked examples' list, one of them by key, and the
+    example an evaluation is scored against left out by the per-run block's rule."""
+
+    UKEY = "42"
+    PID = "p-examples"
+    NINE = "09-heterogeneous-data-linked-views"
+
+    def _read(self, params=None):
+        return tools.execute_read_tool(
+            "examples.read", user_key=self.UKEY, project_id=self.PID, target=None, params=params or {},
+        )
+
+    def _used(self) -> dict:
+        return {example.key: example for example in examples.used_examples()}
+
+    def _mark(self, fixture_id):
+        from utk_curio.backend.app.agents.evaluation import authorization
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        spec = {"dataflow": {"nodes": [], "edges": []}}
+        marker = authorization.new_marker("run-1", fixture_id)
+        projects_storage.write_spec(self.UKEY, self.PID, authorization.mark_spec(spec, marker))
+
+    def test_no_key_lists_every_used_example(self, tmp_curio):
+        # No saved spec: nothing is left out, and that is no error.
+        status, text = self._read()
+        assert status == "ok"
+        rows = json.loads(text)["examples"]
+        used = self._used()
+        assert rows and [row["key"] for row in rows] == list(used)
+        for row in rows:
+            entry = used[row["key"]].entry
+            assert row == {"key": row["key"], "title": entry.title, "line": entry.text}
+        # A "Not used" dataflow is no worked example.
+        assert "dataflows/Widget" not in used
+        assert self._read({"key": "  "}) == (status, text)
+
+    def test_a_key_returns_that_examples_line_and_trill(self, tmp_curio):
+        nine = self._used()[self.NINE]
+        status, text = self._read({"key": self.NINE})
+        assert status == "ok"
+        # The view the per-run block shows: the line, then the Trill.
+        assert text == examples.shown(nine)
+        assert text.startswith(f"{nine.entry.line}\n```json\n")
+        trill = json.loads(text.split("```json\n", 1)[1].rsplit("\n```", 1)[0])["dataflow"]
+        assert len(trill["nodes"]) == len(nine.spec["dataflow"]["nodes"])
+        assert len(trill["edges"]) == len(nine.spec["dataflow"]["edges"])
+        # Its file name names it too, as in the block's exclusion.
+        assert self._read({"key": f"{self.NINE}.json"}) == (status, text)
+        assert self._read({"key": "dataflows/Regression"})[0] == "ok"
+
+    def test_an_unknown_key_says_how_to_list_the_keys(self, tmp_curio):
+        for key in ("no-such-example", "dataflows/Widget"):
+            status, text = self._read({"key": key})
+            assert status == "error", key
+            assert repr(key) in text and "call examples.read with no key to list the keys" in text
+        status, text = self._read({"key": 9})
+        assert status == "error" and "call examples.read with no key to list the keys" in text
+
+    def test_an_evaluation_never_reads_the_example_it_is_scored_against(self, tmp_curio):
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        self._mark(self.NINE)
+        # The rule the per-run block follows: the scored example, and every
+        # example that shares a piece of its answer.
+        excluded = examples.excluded_by(projects_storage.read_spec(self.UKEY, self.PID))
+        assert self.NINE in excluded
+        status, text = self._read()
+        keys = [row["key"] for row in json.loads(text)["examples"]]
+        assert status == "ok" and self.NINE not in keys
+        assert keys == [key for key in self._used() if key not in excluded]
+        assert keys, "every example is excluded; the readable case below would be vacuous"
+        entry = self._used()[self.NINE].entry
+        for key in (self.NINE, f"{self.NINE}.json", f"docs/examples/{self.NINE}.json"):
+            status, text = self._read({"key": key})
+            assert status == "error", key
+            assert "call examples.read with no key" in text
+            # The refusal never describes the answer.
+            assert entry.title not in text and entry.text not in text
+        # Every excluded example is refused, and every other one stays readable.
+        for key in excluded - {self.NINE}:
+            assert self._read({"key": key})[0] == "error", key
+        assert self._read({"key": keys[0]})[0] == "ok"
+
+    def test_the_contract_states_its_param_and_results(self):
+        contract = tools.REGISTRY["examples.read"]
+        assert set(contract.parameters["properties"]) == {"key"}
+        assert contract.parameters["properties"]["key"]["type"] == "string"
+        assert "required" not in contract.parameters
+        for word in ("no key", "key, title and one line", "Trill", "unknown key"):
+            assert word in contract.description, word
+
+
 class TestWebTools:
     """dev/67-4 (DEC-053) — the web read tools: policy-gated, bounded,
     honest when unconfigured; no spec needed."""
 
     def _fetch(self, params, monkeypatch=None, result=None, error=None):
-        from utk_curio.backend.app.agents import egress
+        from utk_curio.backend.app.agents.infrastructure import egress
 
         if monkeypatch is not None:
             if error is not None:
@@ -344,7 +653,7 @@ class TestWebTools:
         )
 
     def test_web_fetch_returns_bounded_preview(self, monkeypatch):
-        from utk_curio.backend.app.agents.egress import EgressResult
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
 
         status, text = self._fetch(
             {"url": "https://api.example.org/x"},
@@ -359,7 +668,7 @@ class TestWebTools:
         assert payload["status"] == 200 and payload["bodyPreview"] == '{"a": 1}'
 
     def test_web_fetch_policy_refusal_is_data(self, monkeypatch):
-        from utk_curio.backend.app.agents.egress import EgressRefused
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressRefused
 
         status, text = self._fetch(
             {"url": "https://metadata.internal/x"},
@@ -371,8 +680,8 @@ class TestWebTools:
 
     def test_web_search_falls_back_to_the_default_provider(self, monkeypatch):
         """Unset is no longer unconfigured: search works out of the box."""
-        from utk_curio.backend.app.agents import egress
-        from utk_curio.backend.app.agents.egress import EgressResult
+        from utk_curio.backend.app.agents.infrastructure import egress
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
 
         monkeypatch.delenv("CURIO_SEARCH_URL", raising=False)
         seen: dict = {}
@@ -405,6 +714,8 @@ class TestWebTools:
         )
         assert status == "error"
         assert "not configured" in text and "web.fetch" in text
+        # It names the actual fault, the missing placeholder.
+        assert "CURIO_SEARCH_URL" in text and "{q}" in text
 
 
 class TestPackageTools:
@@ -422,7 +733,7 @@ class TestPackageTools:
         })
 
     def test_catalog_rows_carry_project_install_state_and_builtin_flag(self, tmp_curio):
-        self._write_spec(["curio.builtin@1", "ai.urbanlab.uhvi@1"])
+        self._write_spec(["curio.builtin@1", "ai.utk.uhvi@1"])
         status, text = tools.execute_read_tool(
             "packages.catalog", user_key=self.UKEY, project_id=self.PID,
             target=None, params={},
@@ -431,8 +742,8 @@ class TestPackageTools:
         rows = {r["dirName"]: r for r in json.loads(text)["packages"]}
         assert rows["curio.builtin@1"]["builtin"] is True
         assert rows["curio.builtin@1"]["installed"] is True  # always present
-        assert rows["ai.urbanlab.uhvi@1"]["installed"] is True  # in the lockfile
-        assert rows["ai.urbanlab.uhvi@1"]["builtin"] is False
+        assert rows["ai.utk.uhvi@1"]["installed"] is True  # in the lockfile
+        assert rows["ai.utk.uhvi@1"]["builtin"] is False
         assert rows["curio.weather@1"]["installed"] is False  # not in the lockfile
 
     def test_catalog_q_filter_bounds_the_rows(self, tmp_curio):
@@ -443,16 +754,16 @@ class TestPackageTools:
         )
         assert status == "ok"
         rows = json.loads(text)["packages"]
-        assert [r["dirName"] for r in rows] == ["ai.urbanlab.uhvi@1"]
+        assert [r["dirName"] for r in rows] == ["ai.utk.uhvi@1"]
 
     def test_resolve_reports_real_permissions_and_deps(self, tmp_curio):
         status, text = tools.execute_read_tool(
             "packages.resolve", user_key=self.UKEY, project_id=self.PID,
-            target=None, params={"dirNames": ["ai.urbanlab.uhvi@1"]},
+            target=None, params={"dirNames": ["ai.utk.uhvi@1"]},
         )
         assert status == "ok"
         report = json.loads(text)
-        pkg = next(p for p in report["packages"] if p["dirName"] == "ai.urbanlab.uhvi@1")
+        pkg = next(p for p in report["packages"] if p["dirName"] == "ai.utk.uhvi@1")
         # Grounded in the committed manifest — never invented.
         assert pkg["permissions"] == ["filesystem.read", "network.fetch"]
         assert "geopandas" in pkg["pythonDeps"]
@@ -476,8 +787,8 @@ class TestWebSearchTrustedProvider:
     web.fetch (model-supplied URLs) never passes one."""
 
     def test_search_passes_the_operator_host(self, monkeypatch):
-        from utk_curio.backend.app.agents import egress
-        from utk_curio.backend.app.agents.egress import EgressResult
+        from utk_curio.backend.app.agents.infrastructure import egress
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
 
         monkeypatch.setenv(
             "CURIO_SEARCH_URL", "http://localhost:8888/search?q={q}&format=json")
@@ -501,8 +812,8 @@ class TestWebSearchTrustedProvider:
         assert "q=weather%20in%20Paris" in seen["url"]
 
     def test_web_fetch_never_passes_a_trusted_host(self, monkeypatch):
-        from utk_curio.backend.app.agents import egress
-        from utk_curio.backend.app.agents.egress import EgressResult
+        from utk_curio.backend.app.agents.infrastructure import egress
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
 
         monkeypatch.setenv(
             "CURIO_SEARCH_URL", "http://localhost:8888/search?q={q}&format=json")
@@ -527,8 +838,8 @@ class TestDuckDuckGoShape:
     read it or an unconfigured install would search and find nothing."""
 
     def _search(self, monkeypatch, body: str):
-        from utk_curio.backend.app.agents import egress
-        from utk_curio.backend.app.agents.egress import EgressResult
+        from utk_curio.backend.app.agents.infrastructure import egress
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
 
         monkeypatch.delenv("CURIO_SEARCH_URL", raising=False)
         monkeypatch.setattr(egress, "fetch", lambda url, **kw: EgressResult(
@@ -573,8 +884,8 @@ class TestWebSearchProviderShapes:
     CURIO_SEARCH_URL template with no provider server and no new deps."""
 
     def _search(self, monkeypatch, body: str):
-        from utk_curio.backend.app.agents import egress
-        from utk_curio.backend.app.agents.egress import EgressResult
+        from utk_curio.backend.app.agents.infrastructure import egress
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
 
         monkeypatch.setenv("CURIO_SEARCH_URL", "https://api.provider.test/v1?key=K&q={q}")
         monkeypatch.setattr(egress, "fetch", lambda url, **kw: EgressResult(

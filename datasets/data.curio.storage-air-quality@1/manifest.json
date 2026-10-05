@@ -1,0 +1,33 @@
+{
+  "id": "data.curio.storage-air-quality",
+  "name": "Example air quality readings",
+  "version": "1.0.0",
+  "format": "parquet",
+  "description": "Three days of readings from three sensors, combined from one CSV file per sensor and day.",
+  "publisher": "Curio",
+  "license": "CC0-1.0",
+  "tags": [
+    "example",
+    "storage",
+    "parquet"
+  ],
+  "dataFile": "data/air-quality.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Example storage",
+  "createdAt": "2024-05-01T00:00:00Z",
+  "updatedAt": "2024-05-01T00:00:00Z",
+  "rowCount": 36,
+  "featureCount": null,
+  "schema": null,
+  "discoverySource": {
+    "sourceId": "source.curio.example-storage@1",
+    "sourceName": "Example storage",
+    "resourceId": "air-quality",
+    "fileCount": 9,
+    "fields": "sensor,day",
+    "fetchedAt": "2024-05-01T00:00:00Z",
+    "fingerprint": "0bbf73094045f591f06c776cd059123c71345502973bf1189e819873c46fee87"
+  }
+}

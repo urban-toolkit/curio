@@ -13,7 +13,10 @@ module.exports = {
   output: {
     filename: "bundle.js",
     path: path.resolve(__dirname, "dist"),
-    publicPath: process.env.PUBLIC_PATH || "/",
+    // Assets load relative to the page's <base>, which the frontend server
+    // points at the app's path (curio.py start --base-path), so one build
+    // serves any prefix.
+    publicPath: "auto",
   },
   cache: {
     type: 'filesystem',
@@ -24,7 +27,7 @@ module.exports = {
   devServer: {
     // `disableDotRule` because connect-history-api-fallback otherwise refuses to
     // rewrite any path whose last segment contains a dot, and every dataset id is
-    // dotted (data.urbanlab.acs-neighborhood-profile). Without it a hard load of
+    // dotted (data.utk.acs-neighborhood-profile). Without it a hard load of
     // /catalog/data/<id> falls through to Express and answers "Cannot GET".
     historyApiFallback: { disableDotRule: true },
     client: {
@@ -119,6 +122,13 @@ module.exports = {
         type: 'asset/resource',
       },
       {
+        // autk-db picks DuckDB's worker and wasm from a copy of
+        // import.meta.url, which webpack cannot follow; this writes the URLs
+        // out so they are emitted as assets. See webpack/autkDbDuckdbAssets.js.
+        test: /[\\/]@urban-toolkit[\\/]autk-db[\\/]dist[\\/]browser\.js$/,
+        use: [require.resolve('./webpack/autkDbDuckdbAssets.js')],
+      },
+      {
         // duckdb's worker downloads DuckDB's spatial extension from
         // extensions.duckdb.org on every fresh database. Curio ships the
         // extension, so the worker is taught to ask this instance for it
@@ -138,7 +148,8 @@ module.exports = {
     }),
     new HtmlWebpackPlugin({
       template: "./src/index.html",
-      favicon: './src/assets/favicon.ico'
+      favicon: './src/assets/favicon.ico',
+      base: "/",
     }),
     new Dotenv({
       path: ".env",

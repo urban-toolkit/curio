@@ -14,9 +14,16 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from utk_curio.backend.app.packages import pip_runner as packages_routes_pip
-from utk_curio.backend.app.packages import routes as packages_routes
-from utk_curio.backend.app.packages import services as packages_services
+from utk_curio.backend.app.packages.infrastructure import pip_runner as packages_routes_pip
+from utk_curio.backend.app.packages.application import provisioning
+from utk_curio.backend.app.packages import service as packages_services
+from utk_curio.backend.app.packages.application import (
+    provisioning,
+    prune,
+    store_install,
+    store_reads,
+    workflow_deps,
+)
 
 
 def _auth(token):
@@ -51,15 +58,20 @@ def test_check_flags_declared_package_not_in_store(client, user_and_token, tmp_c
     assert resp.get_json()["packages"] == ["curio.weather@1"]
 
 
-def test_check_defers_install_on_demand_packages(client, user_and_token, tmp_curio):
+def test_check_defers_install_on_demand_packages(client, user_and_token, tmp_curio, monkeypatch):
     """A heavy package is reported missing, but flagged not-to-be-installed.
 
     Both halves matter and they used to be in tension (#233). The canvas has to
     be able to SAY which package a node needs - saying nothing is what left
     three nodes on "Loading node…" with no explanation. But opening a dataflow
-    must not start a ~3 GB torch download on the user's behalf, so the same
+    must not start a multi-gigabyte download on the user's behalf, so the same
     response marks it deferred and the auto-installer skips it.
+
+    No shipped package is that heavy now, so one is made so here.
     """
+    from utk_curio.backend.app.packages.application import seeding
+
+    monkeypatch.setattr(seeding, "INSTALL_ON_DEMAND_PACKAGE_IDS", frozenset({"curio.streetvision"}))
     _, token = user_and_token
     resp = _check(client, token, ["curio.streetvision@1", "curio.weather@1"])
     assert resp.status_code == 200
@@ -69,6 +81,13 @@ def test_check_defers_install_on_demand_packages(client, user_and_token, tmp_cur
     assert "curio.weather@1" in body["packages"]
     # ...but only the heavy one is held back.
     assert body["deferred"] == ["curio.streetvision@1"]
+
+
+def test_street_vision_installs_with_the_dataflow_that_declares_it(client, user_and_token, tmp_curio):
+    """It needs only onnxruntime, so opening example 10 installs it."""
+    _, token = user_and_token
+    body = _check(client, token, ["curio.streetvision@1"]).get_json()
+    assert body["packages"] == ["curio.streetvision@1"] and body["deferred"] == []
 
 
 def test_check_reports_no_deferrals_for_ordinary_packages(
@@ -93,11 +112,11 @@ def test_check_omits_installed_package_with_satisfied_deps(
     """In the store + every declared dep present → not flagged."""
     _, token = user_and_token
     monkeypatch.setattr(
-        packages_routes, "list_user_packageages",
+        workflow_deps, "list_user_packages",
         lambda uk: [Path("curio.weather@1")],
     )
     monkeypatch.setattr(
-        packages_services, "_read_python_deps",
+        prune, "_read_python_deps",
         lambda uk, dn: {"flask": ""},  # flask is always present (backend runs on it)
     )
     resp = _check(client, token, ["curio.weather@1"])
@@ -111,11 +130,11 @@ def test_check_flags_installed_package_with_missing_dep(
     """In the store but a declared dep was pip-uninstalled → flagged (repair)."""
     _, token = user_and_token
     monkeypatch.setattr(
-        packages_routes, "list_user_packageages",
+        workflow_deps, "list_user_packages",
         lambda uk: [Path("curio.weather@1")],
     )
     monkeypatch.setattr(
-        packages_services, "_read_python_deps",
+        prune, "_read_python_deps",
         lambda uk, dn: {"zzz_not_a_real_package_qq": ">=1"},
     )
     resp = _check(client, token, ["curio.weather@1"])
@@ -137,11 +156,11 @@ def test_check_reports_an_installed_but_unimportable_dep_as_broken(
     """
     _, token = user_and_token
     monkeypatch.setattr(
-        packages_routes, "list_user_packageages",
+        workflow_deps, "list_user_packages",
         lambda uk: [Path("curio.weather@1")],
     )
     monkeypatch.setattr(
-        packages_services, "_read_python_deps",
+        prune, "_read_python_deps",
         lambda uk, dn: {"flask": ""},
     )
     monkeypatch.setattr(
@@ -171,11 +190,11 @@ def test_check_does_not_probe_a_dep_it_already_flagged_for_install(
     """
     _, token = user_and_token
     monkeypatch.setattr(
-        packages_routes, "list_user_packageages",
+        workflow_deps, "list_user_packages",
         lambda uk: [Path("curio.weather@1")],
     )
     monkeypatch.setattr(
-        packages_services, "_read_python_deps",
+        prune, "_read_python_deps",
         lambda uk, dn: {"zzz_not_a_real_package_qq": ">=1"},
     )
     probed: list[set] = []
@@ -201,11 +220,11 @@ def test_check_reports_nothing_broken_when_every_dep_imports(
     """The healthy case, unmocked: flask really is importable here."""
     _, token = user_and_token
     monkeypatch.setattr(
-        packages_routes, "list_user_packageages",
+        workflow_deps, "list_user_packages",
         lambda uk: [Path("curio.weather@1")],
     )
     monkeypatch.setattr(
-        packages_services, "_read_python_deps",
+        prune, "_read_python_deps",
         lambda uk, dn: {"flask": ""},
     )
     resp = _check(client, token, ["curio.weather@1"])
@@ -232,7 +251,7 @@ def test_check_rejects_malformed_body(client, user_and_token, tmp_curio):
 def test_install_installs_each_package_to_store(client, user_and_token, tmp_curio, monkeypatch):
     calls: list[str] = []
     monkeypatch.setattr(
-        packages_services, "install_to_store",
+        store_install, "install_to_store",
         lambda uk, dn: calls.append(dn) or packages_services.InstallOutcome(copied=True),
     )
     _, token = user_and_token
@@ -255,7 +274,7 @@ def test_install_reports_a_library_that_cannot_be_imported(
     two.
     """
     monkeypatch.setattr(
-        packages_services, "install_to_store",
+        store_install, "install_to_store",
         lambda uk, dn: packages_services.InstallOutcome(
             copied=True, import_errors={"rasterio": "ImportError: DLL load failed"},
         ),
@@ -274,7 +293,7 @@ def test_install_reports_no_import_errors_when_the_libraries_work(
     client, user_and_token, tmp_curio, monkeypatch,
 ):
     monkeypatch.setattr(
-        packages_services, "install_to_store",
+        store_install, "install_to_store",
         lambda uk, dn: packages_services.InstallOutcome(copied=True),
     )
     _, token = user_and_token
@@ -299,7 +318,7 @@ def test_install_rejects_invalid_dirname(client, user_and_token, tmp_curio, monk
         called = True
         return packages_services.InstallOutcome(copied=True)
 
-    monkeypatch.setattr(packages_services, "install_to_store", _fake)
+    monkeypatch.setattr(store_install, "install_to_store", _fake)
     _, token = user_and_token
     resp = _install(client, token, ["--evil", "curio.weather@1"])
     assert resp.status_code == 400
@@ -310,7 +329,7 @@ def test_install_surfaces_service_error(client, user_and_token, tmp_curio, monke
     def _fail(uk, dn):
         raise packages_services.PackageServiceError("boom", 502)
 
-    monkeypatch.setattr(packages_services, "install_to_store", _fail)
+    monkeypatch.setattr(store_install, "install_to_store", _fail)
     _, token = user_and_token
     resp = _install(client, token, ["curio.weather@1"])
     assert resp.status_code == 502
@@ -332,17 +351,17 @@ def test_install_abandons_the_partial_set_on_a_mid_loop_failure(
 
     def _second_fails(uk, dn):
         attempted.append(dn)
-        if dn == "ai.urbanlab.uhvi@1":
+        if dn == "ai.utk.uhvi@1":
             raise packages_services.PackageServiceError("no wheel", 502)
         return packages_services.InstallOutcome(copied=True)
 
-    monkeypatch.setattr(packages_services, "install_to_store", _second_fails)
+    monkeypatch.setattr(store_install, "install_to_store", _second_fails)
     _, token = user_and_token
-    resp = _install(client, token, ["curio.example-ui@1", "ai.urbanlab.uhvi@1"])
+    resp = _install(client, token, ["curio.example-ui@1", "ai.utk.uhvi@1"])
     assert resp.status_code == 502
-    assert "ai.urbanlab.uhvi@1" in resp.get_json()["error"]
+    assert "ai.utk.uhvi@1" in resp.get_json()["error"]
     # The first one really was installed, but the response says nothing about it.
-    assert attempted == ["curio.example-ui@1", "ai.urbanlab.uhvi@1"]
+    assert attempted == ["curio.example-ui@1", "ai.utk.uhvi@1"]
     assert "installedPackages" not in resp.get_json()
 
 
@@ -361,7 +380,7 @@ def test_check_is_a_pure_probe_and_installs_nothing(
     """
     installs: list[str] = []
     monkeypatch.setattr(
-        packages_services, "install_to_store",
+        store_install, "install_to_store",
         lambda uk, dn: installs.append(dn) or packages_services.InstallOutcome(copied=True),
     )
     _, token = user_and_token
@@ -446,18 +465,19 @@ def test_repairing_a_backend_package_rebuilds_its_overlay_not_the_host(
     never import from. pip exited 0, the dep read as satisfied, and the handler
     kept raising ImportError.
     """
-    from utk_curio.backend.app.packages import backend_runtime, pip_runner
-    from utk_curio.backend.app.packages import services as svc
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+    from utk_curio.backend.app.packages import service as svc
 
     manifest = SimpleNamespace(
         python_deps={"tinylib": "1.0.0"},
         backend=SimpleNamespace(handlers=[SimpleNamespace(name="h")]),
         templates=[SimpleNamespace(engine="javascript", has_code=False)],
     )
-    monkeypatch.setattr(svc, "_is_installed_in_user_store", lambda uk, dn: True)
-    monkeypatch.setattr(svc, "_read_manifest", lambda uk, dn: manifest)
+    monkeypatch.setattr(store_reads, "_is_installed_in_user_store", lambda uk, dn: True)
+    monkeypatch.setattr(store_reads, "_read_manifest", lambda uk, dn: manifest)
     monkeypatch.setattr(
-        svc, "_declared_import_failures", lambda uk, dn, m=None: {})
+        provisioning, "_declared_import_failures", lambda uk, dn, m=None: {})
 
     built: list[tuple] = []
     monkeypatch.setattr(
@@ -490,8 +510,9 @@ def test_a_working_overlay_is_not_wiped_and_rebuilt_on_every_ask(
     deletes a working overlay and re-runs pip over the network - and offline,
     where the rebuild fails, leaves the package with no overlay at all.
     """
-    from utk_curio.backend.app.packages import backend_runtime, pip_runner
-    from utk_curio.backend.app.packages import services as svc
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+    from utk_curio.backend.app.packages import service as svc
 
     overlay = tmp_path / "overlay"
     overlay.mkdir()
@@ -521,8 +542,9 @@ def test_a_healthy_overlay_is_probed_once_per_install(monkeypatch, tmp_curio, tm
     importErrors - and the overlay probe is deliberately unmemoised, so a
     working overlay paid two full subprocesses of cold imports for one install.
     """
-    from utk_curio.backend.app.packages import backend_runtime, pip_runner
-    from utk_curio.backend.app.packages import services as svc
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+    from utk_curio.backend.app.packages import service as svc
 
     overlay = tmp_path / "overlay"
     overlay.mkdir()
@@ -550,8 +572,9 @@ def test_a_healthy_overlay_is_probed_once_per_install(monkeypatch, tmp_curio, tm
 def test_a_rebuilt_overlay_reports_the_new_verdict(monkeypatch, tmp_curio, tmp_path):
     """After a rebuild the answer must come from the overlay that now exists,
     not from the one the rebuild replaced."""
-    from utk_curio.backend.app.packages import backend_runtime, pip_runner
-    from utk_curio.backend.app.packages import services as svc
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+    from utk_curio.backend.app.packages import service as svc
 
     overlay = tmp_path / "overlay"
     overlay.mkdir()
@@ -578,8 +601,9 @@ def test_a_rebuilt_overlay_reports_the_new_verdict(monkeypatch, tmp_curio, tmp_p
 
 def test_a_broken_overlay_is_still_rebuilt(monkeypatch, tmp_curio, tmp_path):
     """The other half: skipping the rebuild must not mean never repairing."""
-    from utk_curio.backend.app.packages import backend_runtime, pip_runner
-    from utk_curio.backend.app.packages import services as svc
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+    from utk_curio.backend.app.packages import service as svc
 
     overlay = tmp_path / "overlay"
     overlay.mkdir()
@@ -604,8 +628,9 @@ def test_a_broken_overlay_is_still_rebuilt(monkeypatch, tmp_curio, tmp_path):
 
 def test_an_overlay_that_was_never_built_is_built(monkeypatch, tmp_curio, tmp_path):
     """A first install has nothing to preserve."""
-    from utk_curio.backend.app.packages import backend_runtime, pip_runner
-    from utk_curio.backend.app.packages import services as svc
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+    from utk_curio.backend.app.packages import service as svc
 
     monkeypatch.setattr(
         backend_runtime, "overlay_dir_for", lambda uk, dn: tmp_path / "absent")
@@ -635,15 +660,15 @@ def test_repairing_an_installed_package_still_reports_a_broken_library(
     route answers "installed" and the user meets the failure as a node's
     ImportError.
     """
-    from utk_curio.backend.app.packages import pip_runner
-    from utk_curio.backend.app.packages import services as svc
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+    from utk_curio.backend.app.packages import service as svc
 
     manifest = SimpleNamespace(
         python_deps={"rasterio": ""}, backend=None,
         templates=[SimpleNamespace(engine="python", has_code=True)],
     )
-    monkeypatch.setattr(svc, "_is_installed_in_user_store", lambda uk, dn: True)
-    monkeypatch.setattr(svc, "_read_manifest", lambda uk, dn: manifest)
+    monkeypatch.setattr(store_reads, "_is_installed_in_user_store", lambda uk, dn: True)
+    monkeypatch.setattr(store_reads, "_read_manifest", lambda uk, dn: manifest)
     monkeypatch.setattr(
         pip_runner, "install_python_deps",
         lambda deps, on_line=None: pip_runner.InstallReport(
@@ -682,13 +707,13 @@ def test_declared_import_failures_probes_the_manifests_deps(monkeypatch):
     metadata already satisfied the requirement.
     """
     probed: list[list[str]] = []
-    import utk_curio.backend.app.packages.pip_runner as pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
     monkeypatch.setattr(
         pip_runner, "import_failures",
         lambda deps: probed.append(sorted(deps)) or {"rasterio": "ImportError: boom"},
     )
 
-    out = packages_services._declared_import_failures(
+    out = provisioning._declared_import_failures(
         "1", "curio.weather@1", _manifest({"rasterio": ">=1.3", "numpy": ""}),
     )
 
@@ -705,23 +730,23 @@ def test_declared_import_failures_is_empty_when_nothing_is_declared(monkeypatch)
         called = True
         return {}
 
-    import utk_curio.backend.app.packages.pip_runner as pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
     monkeypatch.setattr(pip_runner, "import_failures", _probe)
 
-    assert packages_services._declared_import_failures("1", "x@1", _manifest({})) == {}
+    assert provisioning._declared_import_failures("1", "x@1", _manifest({})) == {}
     assert not called
 
 
 def test_a_probe_that_raises_does_not_fail_the_install(monkeypatch):
     """The install succeeded; a broken probe must not turn that into an error."""
-    import utk_curio.backend.app.packages.pip_runner as pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     def _boom(deps):
         raise OSError("no interpreter")
 
     monkeypatch.setattr(pip_runner, "import_failures", _boom)
 
-    assert packages_services._declared_import_failures(
+    assert provisioning._declared_import_failures(
         "1", "x@1", _manifest({"rasterio": ""}),
     ) == {}
 
@@ -736,7 +761,8 @@ def test_a_backend_packages_deps_are_probed_in_the_overlay_not_the_host(
     PYTHONPATH. Asking the host would report every one of them "not installed" -
     a failure that isn't there - and would vouch for nothing that is.
     """
-    from utk_curio.backend.app.packages import backend_runtime, pip_runner
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     overlay = tmp_path / "overlay"
     overlay.mkdir()
@@ -759,7 +785,7 @@ def test_a_backend_packages_deps_are_probed_in_the_overlay_not_the_host(
         backend=SimpleNamespace(handlers=[SimpleNamespace(name="h")]),
         templates=[SimpleNamespace(engine="javascript", has_code=False)],
     )
-    out = packages_services._declared_import_failures("1", "pkg@1", manifest)
+    out = provisioning._declared_import_failures("1", "pkg@1", manifest)
 
     assert out == {"tinylib": "ImportError: boom"}
     assert seen == [(["tinylib"], str(overlay))]
@@ -776,7 +802,8 @@ def test_an_overlay_that_was_never_built_is_reported_not_passed_over(
     used to answer ``{}``, which is a clean bill of health nobody earned, on the
     one shape where the libraries are hardest to reach.
     """
-    from utk_curio.backend.app.packages import backend_runtime, pip_runner
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     monkeypatch.setattr(
         backend_runtime, "overlay_dir_for", lambda uk, dn: tmp_path / "never-built")
@@ -792,7 +819,7 @@ def test_an_overlay_that_was_never_built_is_reported_not_passed_over(
         backend=SimpleNamespace(handlers=[SimpleNamespace(name="h")]),
         templates=[SimpleNamespace(engine="javascript", has_code=False)],
     )
-    out = packages_services._declared_import_failures("1", "pkg@1", manifest)
+    out = provisioning._declared_import_failures("1", "pkg@1", manifest)
 
     # Named, with a reason that says what to do about it - and without spawning
     # a probe against a directory nothing wrote to.
@@ -807,7 +834,8 @@ def test_a_both_destination_package_is_probed_in_both_environments(
 
     Vouching for one and not the other is how a package ships half-working.
     """
-    from utk_curio.backend.app.packages import backend_runtime, pip_runner
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     overlay = tmp_path / "overlay"
     overlay.mkdir()
@@ -823,12 +851,12 @@ def test_a_both_destination_package_is_probed_in_both_environments(
         backend=SimpleNamespace(handlers=[SimpleNamespace(name="h")]),
         templates=[SimpleNamespace(engine="python", has_code=True)],
     )
-    assert packages_services._declared_import_failures("1", "pkg@1", manifest) == {
+    assert provisioning._declared_import_failures("1", "pkg@1", manifest) == {
         "a": "overlay broke", "b": "host broke",
     }
 
 
 def test_an_unreadable_manifest_reports_nothing_rather_than_guessing(monkeypatch):
     """A manifest that will not parse is a different complaint from this one."""
-    monkeypatch.setattr(packages_services, "_read_manifest", lambda uk, dn: None)
-    assert packages_services._declared_import_failures("1", "x@1") == {}
+    monkeypatch.setattr(store_reads, "_read_manifest", lambda uk, dn: None)
+    assert provisioning._declared_import_failures("1", "x@1") == {}

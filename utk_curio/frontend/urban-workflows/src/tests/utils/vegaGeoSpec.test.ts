@@ -14,10 +14,10 @@
  */
 import {
   normalizeGeoSpec,
-  resolveGeometryField,
   rewindRingsClockwise,
   specNeedsGeometry,
 } from "../../utils/vegaGeoSpec";
+import { resolveGeometryField } from "../../utils/geometryField";
 
 const CW = [[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]];
 const CCW = [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]];
@@ -201,6 +201,45 @@ describe("normalizeGeoSpec injection", () => {
     normalizeGeoSpec(spec, rows(), { geometryName: "geometry" });
 
     expect(spec.encoding.shape).toEqual({ field: "geometry", type: "geojson" });
+  });
+});
+
+describe("several inputs: each input's geometry touches only the views reading it (#662)", () => {
+  // A bar chart of the first input layered over a map of the second.
+  const layered = () => ({
+    layer: [
+      { mark: "bar", encoding: { x: { field: "zip" } } },
+      { data: { name: "input_1" }, mark: "geoshape" },
+    ],
+  });
+
+  test("a view reads the dataset it names, else its parent's, else the first input", () => {
+    const spec = {
+      data: { name: "input_1" },
+      vconcat: [{ mark: "geoshape" }, { data: { name: "input_0" }, mark: "bar" }],
+    };
+    expect(specNeedsGeometry(spec, "input_1")).toBe(true);
+    expect(specNeedsGeometry(spec, "input_0")).toBe(false);
+    expect(specNeedsGeometry(layered(), "input_0")).toBe(false);
+    expect(specNeedsGeometry(layered(), "input_1")).toBe(true);
+    // Without a dataset every view counts, as with one input.
+    expect(specNeedsGeometry(layered())).toBe(true);
+  });
+
+  test("a view bringing its own rows reads no input", () => {
+    const spec = { layer: [{ data: { url: "x.json" }, mark: "geoshape" }, { mark: "bar" }] };
+    expect(specNeedsGeometry(spec, "input_0")).toBe(false);
+  });
+
+  test("the shape encoding goes only into the views drawing that input", () => {
+    const spec: any = layered();
+    normalizeGeoSpec(spec, rows(), { geometryName: "geometry", dataset: "input_1" });
+    expect(spec.layer[1].encoding.shape).toEqual({ field: "geometry", type: "geojson" });
+    expect(spec.layer[0].encoding.shape).toBeUndefined();
+
+    const untouched: any = layered();
+    normalizeGeoSpec(untouched, rows(), { geometryName: "geometry", dataset: "input_0" });
+    expect(untouched.layer[1].encoding).toBeUndefined();
   });
 });
 

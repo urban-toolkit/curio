@@ -1,6 +1,9 @@
 /** Every canvas node maps to UniversalNode via this RF ``node.type``; real template id is ``data.nodeType``. */
 export const CURIO_UNIVERSAL_NODE_TYPE = "__curioUniversalNode" as const;
 
+/** The name of a dataflow nobody has named yet: a fresh canvas, and File > New. */
+export const DEFAULT_WORKFLOW_NAME = "DefaultDataflow";
+
 /**
  * Canonical unversioned node-type identifiers.
  *
@@ -11,7 +14,7 @@ export const CURIO_UNIVERSAL_NODE_TYPE = "__curioUniversalNode" as const;
  * but at runtime they emit canonical strings.
  *
  * IMPORTANT: every value here is UNVERSIONED. Nodes dragged from the
- * palette carry the versioned canonical id (`curio.builtin/merge-flow@1`,
+ * palette carry the versioned canonical id (`curio.builtin/data-pool@1`,
  * see `packagesClient.buildDescriptor`) and that form is what gets
  * persisted into the trill spec. There is no load-time normalizer, so any
  * comparison against these values must first strip the `@<major>` suffix
@@ -28,7 +31,6 @@ export enum NodeType {
   VIS_VEGA = "curio.builtin/vis-vega",
   VIS_SIMPLE = "curio.builtin/vis-simple",
   DATA_POOL = "curio.builtin/data-pool",
-  MERGE_FLOW = "curio.builtin/merge-flow",
   JS_COMPUTATION = "curio.builtin/js-computation",
   AUTK_GRAMMAR = "curio.builtin/autk-grammar",
 }
@@ -45,17 +47,6 @@ export enum SupportedType {
   LIST = "LIST",
   JSON = "JSON", // dictionary in python
   RASTER = "RASTER",
-}
-
-export enum WidgetType {
-  CHECKBOX = "CHECKBOX", // boolean
-  INPUT_VALUE = "INPUT_VALUE", // int, float
-  INPUT_TEXT = "INPUT_TEXT", // string
-  INPUT_LIST_VALUE = "INPUT_LIST_VALUE", // list of non-string values
-  INPUT_LIST_TEXT = "INPUT_LIST_TEXT", // list of strings
-  RANGE = "RANGE", // [number, number]
-  SELECTION = "SELECTION", // string. parameters (option1, option2)
-  FILE = "FILE", // string
 }
 
 export enum VisInteractionType {

@@ -1,6 +1,8 @@
 import os
 import re
 import json
+from dataclasses import dataclass
+
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
@@ -15,6 +17,38 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
     # compare_svg_structure,
 # )
 from .utils import (
+    INTERACTION_MIN_CHANGED_PIXELS,
+    INTERACTION_RESTORED_RATIO,
+    INTERACTION_VIEWPORT,
+    CLOSEUP_PIXEL_THRESHOLD,
+    _compare_images,
+    _wait_for_no_node_running,
+    _wait_for_reactflow_ready,
+    assert_autark_drawing_fits,
+    assert_autark_map_drawn,
+    assert_editor_panes_clear_of_markers,
+    assert_in_view,
+    at_fraction,
+    bar_boxes,
+    brush_area,
+    brush_log,
+    brush_mismatches,
+    canvas_painted_at_shown_zoom,
+    capture_node,
+    changed_pixels,
+    dismiss_toasts,
+    drawing_kept,
+    drawing_selector,
+    AUTK_PLOT_HIGHLIGHT,
+    _LIT_MARKS_JS,
+    frame_nodes,
+    keep_drawing,
+    lit_marks,
+    mark_point,
+    park_pointer,
+    save_interaction_frame,
+    save_node_closeup,
+    save_dataflow_and_settle_header,
     save_workflow_test_screenshot,
     assert_vega_canvas_rendered,
     assert_vega_node_empty_state,
@@ -25,9 +59,14 @@ from .utils import (
     node_execution_timeout_ms,
     play_node,
     read_node_error_text,
+    wait_for_node_capture,
     wait_for_node_done,
+    wait_for_node_settled,
+    wait_for_node_still,
+    wait_for_run_guard_released,
+    watch_brush,
 )
-from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES
+from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES, parse_workflow
 
 """
 This test file is to test the loading of workflow files in the frontend.
@@ -65,16 +104,17 @@ def test_load_workflow_files(workflow_files):
 # Test class
 # ---------------------------------------------------------------------------
 
-#: VIS_VEGA nodes that are *supposed* to have nothing on their canvas, keyed by
-#: workflow then node id. A ``None`` reason means the spec compiled and drew a
+#: Grammar nodes (VIS_VEGA, AUTK_GRAMMAR) that are *supposed* to have nothing
+#: on their canvas, keyed by workflow then node id. A ``None`` reason means the spec compiled and drew a
 #: real but markless chart (an empty frame, an all-null geometry column); a
 #: string means the spec could not be drawn at all and the node body is expected
 #: to say so, using that ``data-curio-node-empty`` reason.
 #:
-#: These are demonstrations, not defects: asserting marks on them would assert
-#: the opposite of what the example exists to show. Everything not listed here
-#: still has to draw.
-EXPECTED_EMPTY_VEGA = {
+#: A view that draws nothing ends in Error with an ``empty-render`` verdict, so
+#: these nodes are expected to error with that verdict, and their canvas or
+#: empty-state marker is still checked. Everything not listed here still has to
+#: draw and finish Done.
+EXPECTED_EMPTY = {
     "13-vega-lite-geometry-columns.json": {
         "5b98d1d6-9332-5fb1-a149-c8f607025a42": "geometry-unresolved",
         "1340a3df-26a8-53db-8de3-dc04db64d6fc": "geometry-ambiguous",
@@ -83,7 +123,150 @@ EXPECTED_EMPTY_VEGA = {
         "f5626141-f328-514e-be15-779e1cf43cbc": None,  # an empty frame
         "e789669d-c845-5d49-a4ec-ae2212a535ad": None,  # every geometry null
     },
+    # The same DataFrame with no geometry column, refused by both grammars.
+    "17-autark-geodataframe-maps.json": {
+        "08f7511f-03d0-5df3-b25e-1d7fbec33101": "geometry-unresolved",  # Autark
+        "dbda2a2f-5ff1-5ce4-a88b-d4599ffa254f": "geometry-unresolved",  # Vega-Lite
+    },
 }
+
+
+@dataclass(frozen=True)
+class Interaction:
+    """A gesture on one drawn node, and the node it should light up.
+
+    *gesture* is one of:
+    - ``hover``, the pointer held over a mark of a Vega chart;
+    - ``pick``, a double-click on an Autark map (a pick toggles, so a second
+      one on the same spot takes it back);
+    - ``brush``, a drag across a Vega interval selection or an Autark plot's
+      brush, from ``span[0]`` to ``span[1]`` as fractions of the area the
+      marks take.
+    The mark is the marked pixel of the source's drawing nearest *at*, given as
+    fractions of the part of that drawing in view.
+
+    *min_lit* is the share of an Autark plot's marks a brush on it has to
+    light. A brush that lights most of a plot makes its pair's after frames
+    far from the before ones, so an interaction that stops reaching fails by
+    much more than the budget.
+    """
+    slug: str
+    source: str
+    target: str
+    gesture: str
+    at: tuple = (0.5, 0.5)
+    span: tuple = ((0.25, 0.25), (0.75, 0.75))
+    min_lit: float = 0.0
+
+
+GESTURES = ("hover", "pick", "brush")
+
+VEGA_AUTARK_BARS = "node12"
+VEGA_AUTARK_MAP = "13d263ce-2e82-4e87-bc69-117b06a8a65b"
+EXAMPLE_17_BARS = "dfdcf935-96c9-5dcf-bb44-90376fbafad8"
+EXAMPLE_17_MAP = "eb39411d-d742-52c8-93aa-1424997ead25"
+EXAMPLE_09_SCATTER = "3334485c-50ad-4adf-9574-45f8a9704860"
+EXAMPLE_09_MAP = "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b"
+EXAMPLE_08_SCATTER = "niteroi-plot"
+EXAMPLE_08_MAP = "niteroi-map"
+
+#: Interactions compared before and after, keyed by workflow, in the order
+#: they run. Each frames its two nodes together, so a hover held on one still
+#: shows while the other is captured. See ``test_node_interaction``.
+INTERACTIONS = {
+    # A bar chart and an Autark map, linked through a Data Pool.
+    "Interaction_Vega_Autark.json": (
+        Interaction("bar-hover", source=VEGA_AUTARK_BARS, target=VEGA_AUTARK_MAP, gesture="hover"),
+        Interaction("map-pick", source=VEGA_AUTARK_MAP, target=VEGA_AUTARK_BARS, gesture="pick"),
+    ),
+    # The same pair joined directly, with no Data Pool between them.
+    "17-autark-geodataframe-maps.json": (
+        Interaction("bar-hover", source=EXAMPLE_17_BARS, target=EXAMPLE_17_MAP, gesture="hover"),
+        Interaction("map-pick", source=EXAMPLE_17_MAP, target=EXAMPLE_17_BARS, gesture="pick"),
+    ),
+    # A Vega-Lite interval brush on a scatter, and an Autark map, through a pool.
+    # A pick lights one point of 6,085, and most tracts' points are in the
+    # scatter's dense band, drawn under thousands of others: in a sweep of 80
+    # picks across the map, most changed fewer pixels than a gesture has to
+    # (CI run 36809892522). This one, near the map's left edge, lights a tract
+    # with gt_65 232, right of the band, where its point is alone (50 pixels).
+    # The spot moves when the map's size does: once the map kept clear of the
+    # port markers (#631), the old spot lit nothing, and a new sweep of 85
+    # picks found the same tract here (CI run 37154691120).
+    "09-heterogeneous-data-linked-views.json": (
+        Interaction("scatter-brush", source=EXAMPLE_09_SCATTER, target=EXAMPLE_09_MAP, gesture="brush"),
+        Interaction("map-pick", source=EXAMPLE_09_MAP, target=EXAMPLE_09_SCATTER, gesture="pick",
+                    at=(0.03, 0.6)),
+    ),
+    # Autark to Autark: a histogram brush and a building map, through a pool.
+    # No pick the other way: at the pair's 86% zoom a building is a few
+    # pixels, so a pick that lands changes 1 to 9 of the map's pixels, and two
+    # of six probes landed on none (CI run 36796749223).
+    "Interaction_Autark.json": (
+        Interaction("plot-brush", source="ia-plot", target="ia-map", gesture="brush"),
+    ),
+    # An Autark scatter's 2D brush and an Autark map, through a pool. The
+    # roads crowd the right of the plot (intercept 27 to 35 of 0 to 35, most
+    # of them above an angle of 0), so the brush spans that crowd across and
+    # its upper two thirds down, and has to light at least half the roads. It
+    # gets no road pick: a road is a few pixels, and the one point it lights
+    # (1 of 8524, CI run 36805909584) hides under the others.
+    "08-autark-spatial-join-regression.json": (
+        Interaction("scatter-brush", source=EXAMPLE_08_SCATTER, target=EXAMPLE_08_MAP,
+                    gesture="brush", span=((0.70, 0.02), (0.995, 0.70)), min_lit=0.5),
+    ),
+}
+
+
+def _linked(spec, a: str, b: str) -> bool:
+    """Whether an Interaction edge joins *a* and *b*, directly or through one Data Pool."""
+    def ends(edge):
+        return {edge["source"], edge["target"]}
+
+    links = [ends(e) for e in spec.edges if e.get("type") == "Interaction"]
+    if {a, b} in links:
+        return True
+    pools = {n.id for n in spec.nodes if n.type == "DATA_POOL"}
+    return any({a, pool} in links and {b, pool} in links for pool in pools)
+
+
+def test_interaction_table_matches_the_dataflows():
+    """Every INTERACTIONS step names two drawing nodes of its dataflow that an
+    Interaction edge links, and a gesture its source can take, so an edited
+    example cannot leave the table pointing at nothing."""
+    from .conftest import WORKFLOW_FILES
+    from .utils import REPO_ROOT
+
+    paths = {os.path.basename(p): os.path.join(REPO_ROOT, p) for p in WORKFLOW_FILES}
+    for workflow, steps in INTERACTIONS.items():
+        assert workflow in paths, f"{workflow} is not in conftest.WORKFLOW_FILES, so it never runs"
+        spec = parse_workflow(paths[workflow])
+        nodes = {n.id: n for n in spec.nodes}
+        for step in steps:
+            where = f"{workflow} {step.slug}"
+            assert step.gesture in GESTURES, f"{where}: unknown gesture {step.gesture!r}"
+            for node_id in (step.source, step.target):
+                assert node_id in nodes, f"{where}: no node {node_id}"
+                assert nodes[node_id].type in ("VIS_VEGA", "AUTK_GRAMMAR"), (
+                    f"{where}: {node_id} is a {nodes[node_id].type}, which draws nothing")
+            assert _linked(spec, step.source, step.target), (
+                f"{where}: no Interaction edge joins {step.source} and {step.target}")
+            source = json.loads(nodes[step.source].content or "{}")
+            selects = [p.get("select") for p in source.get("params") or []]
+            if step.gesture == "pick":
+                layers = (source.get("map") or {}).get("layerRefs") or []
+                assert any(layer.get("isPick") for layer in layers), (
+                    f"{where}: {step.source} has no isPick layer to pick")
+            elif step.gesture == "hover":
+                ons = [s.get("on") for s in selects if isinstance(s, dict)]
+                assert "pointerover" in ons, (
+                    f"{where}: {step.source} has no selection made on pointerover")
+            else:
+                intervals = [s for s in selects
+                             if s == "interval" or (isinstance(s, dict) and s.get("type") == "interval")]
+                events = (source.get("plot") or {}).get("events") or []
+                assert intervals or any(e.startswith("brush") for e in events), (
+                    f"{where}: {step.source} has no interval selection or plot brush")
 
 
 class TestWorkflowCanvas:
@@ -100,35 +283,29 @@ class TestWorkflowCanvas:
         """Return a Playwright ``Locator`` for a ReactFlow node element."""
         return self.page.locator(f'.react-flow__node[data-id="{node.id}"]')
 
-    # WebGPU (AUTK_GRAMMAR) workflows render maps/shadows on the GPU, which is
-    # non-deterministic across GPU, driver, anti-aliasing and run (the
-    # shadow-study canvas can differ ~20-25% run-to-run). They need a looser
-    # screenshot pixel-diff tolerance than the deterministic Vega/data
-    # workflows; AUTK *correctness* is independently guarded by the per-node
-    # "Done" check and ``_assert_hardware_webgpu``, so the screenshot here is
-    # only a coarse layout/regression guard.
-    _WEBGPU_SCREENSHOT_MAX_DIFF_RATIO = 0.35
-    _DEFAULT_SCREENSHOT_MAX_DIFF_RATIO = 0.20
-
     def _save_screenshot(self, request):
         """Persist canvas screenshot (see ``save_workflow_test_screenshot``)
         and dump the captured browser console/pageerror log alongside it.
 
         The browser log is the only window into autk's caught exceptions
         (autkBehaviorFactory swallows them into React state without ever
-        calling ``console.error``), so we always write it — not just on
-        failure — while we're debugging the rendering issue.
+        calling ``console.error``), so we always write it, not just on
+        failure, while we're debugging the rendering issue.
+
+        The dataflow is saved first, once no node is running, and the frame
+        waits for the header to show that save: the save icon, the automatic
+        category chips and the Data Catalog count only change when a save
+        lands (issue #584).
         """
-        is_webgpu = any(n.type in self._WEBGPU_DIAGNOSTIC_TYPES for n in self.spec.nodes)
+        _wait_for_no_node_running(self.page)
+        save_dataflow_and_settle_header(self.page)
         save_workflow_test_screenshot(
             self.page,
             self.spec.filepath,
             test_name=request.function.__name__,
-            max_diff_ratio=(
-                self._WEBGPU_SCREENSHOT_MAX_DIFF_RATIO
-                if is_webgpu
-                else self._DEFAULT_SCREENSHOT_MAX_DIFF_RATIO
-            ),
+            # Expected-empty views leave an error toast each; keep them out of
+            # the capture.
+            sweep_toasts=bool(self._expected_empty()),
         )
         log_entries = getattr(self.page, "_curio_browser_log", None) or []
         autk_errors = getattr(self.__class__, "_autk_error_texts", None) or {}
@@ -301,6 +478,25 @@ class TestWorkflowCanvas:
             f"{text or '(could not read error tab)'}"
         )
 
+    def _expected_empty(self) -> dict:
+        """This workflow's ``EXPECTED_EMPTY`` entries, keyed by node id."""
+        return EXPECTED_EMPTY.get(os.path.basename(self.spec.filepath), {})
+
+    def _drawing_autark_nodes(self) -> list[NodeSpec]:
+        """The Autark nodes whose grammar draws a map or a plot.
+
+        Read from the spec, not the page, so a node that never created its
+        canvas is still on the list.
+        """
+        drawing = []
+        for node in self.spec.nodes:
+            if node.type != "AUTK_GRAMMAR" or node.id in self._expected_empty():
+                continue
+            grammar = json.loads(node.content or "{}")
+            if "map" in grammar or "plot" in grammar:
+                drawing.append(node)
+        return drawing
+
     def _node_execution_timeout_ms(self, node: NodeSpec) -> int:
         """See ``utils.node_execution_timeout_ms``."""
         return node_execution_timeout_ms(node.type)
@@ -333,23 +529,6 @@ class TestWorkflowCanvas:
 
             # if Pool node, wait for its data table to show
             if node.type == "DATA_POOL":
-                # DATA_POOL's table lives inside the NodeEditor output tab pane.
-                # The pool auto-switches NodeEditor to that pane (NodeEditor sets
-                # activeTab="output" when contentComponent is defined), so the
-                # DataPoolContent is already mounted and active. We don't wait
-                # for the output nav-link to be "visible" — the data-pool scroll
-                # refactor (commit 76326a8) renders the tiny tab strip clipped,
-                # which Playwright reports as not visible even though the pane is
-                # shown. Best-effort dispatch a click to force the pane active
-                # (dispatch_event doesn't require visibility), then wait for the
-                # table that appears once the upstream output has propagated.
-                output_tab = node_el.locator(
-                    '.nav-link[data-rr-ui-event-key="output"]'
-                ).first
-                try:
-                    output_tab.dispatch_event("click")
-                except Exception:
-                    pass
                 data_table = node_el.locator("td.MuiTableCell-root")
                 # The pool shows data from an upstream node; for autk-grammar
                 # examples that data section parses city-scale PBFs server-side,
@@ -369,6 +548,18 @@ class TestWorkflowCanvas:
 
             play_node(self.page, node.id)
 
+            if node.id in self._expected_empty():
+                status = wait_for_node_settled(self.page, node.id, node_type=node.type)
+                detail = read_node_error_text(node_el) or ""
+                assert status == "error" and detail.startswith("rendered nothing"), (
+                    f"Node {node.id} ({node.type}): expected an empty-render "
+                    f"verdict, got {status!r}: {detail}"
+                )
+                wait_for_run_guard_released(
+                    self.page, timeout_ms=node_execution_timeout_ms("AUTK_GRAMMAR")
+                )
+                continue
+
             # Wait for success, or fail with the node's own error text. A
             # node that never settles is a hard timeout failure - there is
             # no tolerance and no retry (all data is local/deterministic).
@@ -381,6 +572,13 @@ class TestWorkflowCanvas:
                 if node.type == "AUTK_GRAMMAR":
                     self._capture_autk_error(node, node_el)
                 raise
+            # Play also re-ran this node's stale ancestors, and a node that
+            # already showed Done settles before that run reaches it. Wait for
+            # the run itself, so the next node and the checks after this loop
+            # see the chain finished.
+            wait_for_run_guard_released(
+                self.page, timeout_ms=node_execution_timeout_ms("AUTK_GRAMMAR")
+            )
 
             # verify the inline output area shows a Jupyter-style counter.
             # Grammar nodes (VIS_VEGA / AUTK_GRAMMAR) render their result via a
@@ -428,18 +626,30 @@ class TestWorkflowCanvas:
             f"document.querySelectorAll('.react-flow__node').length >= {self.spec.nodes_count}",
             timeout=15000,
         )
+        # Every box from one frame, after the view has settled. The app fits
+        # the view on a timer after a load, and boxes read one by one could
+        # straddle that fit: the first node measured under the identity
+        # transform, the next after it, which reorders nodes that are in
+        # order. Only a slower machine hit the window (ubuntu-latest did).
+        _wait_for_reactflow_ready(self.page)
+        boxes = self.page.evaluate(
+            """() => [...document.querySelectorAll('.react-flow__node')].map((el) => {
+                const r = el.getBoundingClientRect();
+                return [el.dataset.id, r.x, r.y, r.width, r.height];
+            })"""
+        )
         positions: dict[str, tuple[float, float]] = {}
 
         for node in self.spec.nodes:
-            node_el = self._node_locator(node)
-            assert node_el.count() == 1, (
+            found = [b for b in boxes if b[0] == node.id]
+            assert len(found) == 1, (
                 f"Node {node.id} ({node.type}) not found on canvas"
             )
-            bbox = node_el.bounding_box()
-            assert bbox is not None, (
+            _, x, y, width, height = found[0]
+            assert width > 0 and height > 0, (
                 f"Node {node.id} ({node.type}) has no bounding box (not visible)"
             )
-            positions[node.id] = (bbox["x"], bbox["y"])
+            positions[node.id] = (x, y)
 
         # Verify relative x-ordering: if node A.x < B.x in the spec, then
         # A should also appear to the left of (or at the same x as) B on
@@ -627,7 +837,7 @@ class TestWorkflowCanvas:
                 )
 
             else:
-                # passive nodes (MERGE_FLOW, VIS_SIMPLE, …): just verify the
+                # passive nodes (VIS_SIMPLE, COMMENTS, …): just verify the
                 # resizable container rendered
                 resizable = node_el.locator(f'[id="{node.id}resizable"]')
                 assert resizable.count() >= 1, (
@@ -648,24 +858,39 @@ class TestWorkflowCanvas:
         ``load_artifact_as_dict``; VIS_VEGA nodes are verified via SVG
         structural comparison.
         """
-        expected_map = execute_workflow_programmatically(self.spec, seed=42)
+        expected_map = execute_workflow_programmatically(
+            self.spec, seed=42, username=getattr(self, "username", None)
+        )
 
         self._execute_all_playable_nodes()
+
+        # A view below the last node that ran draws on its own once the new
+        # input reaches it: after that node reports Done and after its run
+        # released the run guard. On a loaded machine that draw outlasted the
+        # 10 s "Done" check below (workflow 09, linked views). Let the canvas go
+        # idle first, as the captures do; a node that never stops fails here,
+        # named, and any node still running is noted in the report.
+        _wait_for_no_node_running(self.page, report_as="running after the last Play")
 
         for node in self.spec.nodes:
             if not node.has_play_button:
                 continue
 
             node_el = self._node_locator(node)
-            # wait for the done span to be visible
-            done_span = node_el.locator("span").filter(
-                has_text=re.compile(r"^Done$")
-            )
-            done_span.first.wait_for(state="visible", timeout=10000)
-            assert done_span.count() >= 1, (
-                f"Node {node.id} ({node.type}) output is not 'Done' "
-                f"after full workflow execution"
-            )
+            # wait for the done span to be visible (an expected-empty view
+            # errored with its verdict, checked in _execute_all_playable_nodes)
+            if node.id not in self._expected_empty():
+                # Success from the status attribute, failing with the node's own
+                # error text; the text check below is then only a copy check.
+                wait_for_node_done(self.page, node.id, node_type=node.type)
+                done_span = node_el.locator("span").filter(
+                    has_text=re.compile(r"^Done$")
+                )
+                done_span.first.wait_for(state="visible", timeout=10000)
+                assert done_span.count() >= 1, (
+                    f"Node {node.id} ({node.type}) output is not 'Done' "
+                    f"after full workflow execution"
+                )
 
             # ---------------------------------------------------------------
             # Check output area (inline for code nodes; output tab for grammar)
@@ -803,7 +1028,7 @@ class TestWorkflowCanvas:
                     # The probe and its poll live in ``utils`` so the per-dataset
                     # suite asserts Vega rendering the same way this one does.
                     if node.type == "VIS_VEGA":
-                        expected = EXPECTED_EMPTY_VEGA.get(
+                        expected = EXPECTED_EMPTY.get(
                             os.path.basename(self.spec.filepath), {}
                         )
                         if node.id in expected:
@@ -819,6 +1044,16 @@ class TestWorkflowCanvas:
                                 )
                         else:
                             assert_vega_canvas_rendered(self.page, node.id)
+                    elif node.id in EXPECTED_EMPTY.get(os.path.basename(self.spec.filepath), {}):
+                        # An Autark map that cannot draw its input says why in
+                        # its body, as a Vega chart does.
+                        reason = EXPECTED_EMPTY[os.path.basename(self.spec.filepath)][node.id]
+                        marker = node_el.locator(f'[data-curio-node-empty="{reason}"]')
+                        marker.first.wait_for(state="attached", timeout=30000)
+                        assert (marker.first.inner_text() or "").strip(), (
+                            f"Autark node {node.id}: reported {reason!r} but "
+                            f"rendered no message for the user to read"
+                        )
 
         # ---- VIS_SIMPLE content verification -----------------------------------
         # VIS_SIMPLE has no play button so the loop above skips it.  After all
@@ -864,4 +1099,231 @@ class TestWorkflowCanvas:
                 )
             # text mode: no output tab → nothing further to assert.
 
+        # Every code and grammar node shows an editor and at least one marker.
+        assert_editor_panes_clear_of_markers(
+            self.page,
+            expect_some=any(n.category in ("code", "grammar") for n in self.spec.nodes),
+        )
         self._save_screenshot(request)
+
+        # A map or plot that drew nothing leaves a blank node, which in the
+        # full-page frame above can stay under the budget. Each one is also
+        # compared on its own, up close, after checking it fills its node.
+        for node in self._drawing_autark_nodes():
+            assert_autark_drawing_fits(self.page, node.id)
+            save_node_closeup(
+                self.page,
+                self.spec.filepath,
+                node.id,
+                test_name=f"{request.function.__name__}_closeup_{node.id}",
+                sweep_toasts=bool(self._expected_empty()),
+            )
+
+    # -- 5. Interactions ---------------------------------------------------
+
+    @pytest.mark.only_workflows(*INTERACTIONS)
+    def test_node_interaction(self, loaded_workflow, request):
+        """Each INTERACTIONS step lights up its target, and both of its nodes
+        are compared before and after it.
+
+        The frames show how a highlight looks. What the test asserts itself is
+        that there was one: the target's capture changed, it still draws into
+        the element it had (a selection highlights, it never redraws), and
+        taking the gesture back puts it back as it was.
+        """
+        self._execute_all_playable_nodes()
+        viewport = self.page.viewport_size
+        self.page.set_viewport_size(INTERACTION_VIEWPORT)
+        try:
+            # Every capture of a step, framed or in memory, with the canvas
+            # painted the same way (see canvas_painted_at_shown_zoom).
+            with canvas_painted_at_shown_zoom(self.page):
+                for step in INTERACTIONS[os.path.basename(self.spec.filepath)]:
+                    self._interact(step, request.function.__name__)
+        finally:
+            if viewport:
+                self.page.set_viewport_size(viewport)
+
+    def _assert_drawn(self, node_id: str) -> None:
+        node = next(n for n in self.spec.nodes if n.id == node_id)
+        if node.type == "VIS_VEGA":
+            assert_vega_canvas_rendered(self.page, node_id)
+        elif "map" in json.loads(node.content or "{}"):
+            assert_autark_map_drawn(self.page, node_id)
+
+    def _interact(self, step: Interaction, test_name: str) -> None:
+        page = self.page
+        where = f"{step.slug}: a {step.gesture} on {step.source}"
+
+        def frame(phase: str, role: str) -> None:
+            node_id = step.source if role == "source" else step.target
+            save_interaction_frame(
+                page,
+                self.spec.filepath,
+                node_id,
+                test_name=f"{test_name}_{step.slug}_{phase}_{node_id}",
+                interaction={
+                    "workflow": os.path.basename(self.spec.filepath),
+                    "step": step.slug, "gesture": step.gesture, "phase": phase,
+                    "role": role, "node": node_id,
+                    "source": step.source, "target": step.target,
+                },
+            )
+
+        # Before the gesture, while the pointer may still move: an error toast
+        # stays until it is closed (example 17's two refusing nodes leave one
+        # each, over the bar chart), and the frames never sweep, so that a
+        # held hover is not let go.
+        dismiss_toasts(page)
+        frame_nodes(page, [step.source, step.target])
+        _wait_for_no_node_running(page)
+        for node_id in (step.source, step.target):
+            self._assert_drawn(node_id)
+        drawing = drawing_selector(page, step.target)
+        assert drawing, f"{where}: its target {step.target} drew nothing"
+        keep_drawing(page, drawing)
+        before = wait_for_node_still(page, step.target)
+        source_before = capture_node(page, step.source)
+        frame("before", "source")
+        frame("before", "target")
+
+        source_drawing = drawing_selector(page, step.source)
+        assert source_drawing, f"{where}: {step.source} drew nothing"
+        on_vega = source_drawing.startswith("#vega")
+        if step.gesture == "brush":
+            area = brush_area(page, source_drawing)
+            assert area, f"{where}: no marks on {step.source} to brush across"
+            page.mouse.move(*at_fraction(area, step.span[0]))
+            page.mouse.down()
+            page.mouse.move(*at_fraction(area, step.span[1]), steps=8)
+            page.mouse.up()
+        else:
+            point = mark_point(page, source_drawing, step.at)
+            assert point, f"{where}: no mark near {step.at} of what {step.source} drew"
+            if step.gesture == "hover":
+                page.mouse.move(point["x"], point["y"])
+            else:
+                page.mouse.dblclick(point["x"], point["y"])
+        if step.gesture != "hover":
+            # A pick or a brush stays, so the pair can be framed again, as it was.
+            frame_nodes(page, [step.source, step.target])
+
+        after, reached = wait_for_node_capture(
+            page, step.target,
+            lambda capture: changed_pixels(before, capture) > INTERACTION_MIN_CHANGED_PIXELS,
+        )
+        # The source's own change says whether the gesture landed at all, and an
+        # Autark plot's lit marks whether the selection reached it unseen.
+        lit = None if reached else page.evaluate(
+            _LIT_MARKS_JS, {"selector": drawing, "highlight": AUTK_PLOT_HIGHLIGHT})
+        assert reached, (
+            f"{where} left {step.target} as it was "
+            f"({changed_pixels(before, after)} pixels changed; the source "
+            f"changed by {changed_pixels(source_before, capture_node(page, step.source))}"
+            + (f"; {lit['lit']} of its {lit['total']} plot marks lit" if lit and lit['total'] else "")
+            + ")"
+        )
+        wait_for_node_still(page, step.target)
+        assert drawing_kept(page, drawing), (
+            f"{where} redrew {step.target} instead of highlighting it"
+        )
+        if step.gesture == "brush" and not on_vega:
+            # The marks lit are the ones under the brush, once the selection has
+            # come back to the plot through the pool (#536).
+            wrong = brush_mismatches(page, source_drawing)
+            assert wrong is not None, f"{where} left no brush on {step.source}"
+            assert not wrong, f"{where} lit the wrong marks: " + ", ".join(
+                f"{w['label']} {'lit outside the brush' if w['lit'] else 'unlit under it'}" for w in wrong)
+        if step.min_lit:
+            counts = lit_marks(page, source_drawing, at_least=step.min_lit)
+            assert counts and counts["total"], f"{where}: {step.source} shows no plot marks"
+            assert counts["lit"] >= step.min_lit * counts["total"], (
+                f"{where} lit {counts['lit']} of {step.source}'s {counts['total']} marks, "
+                f"under the {step.min_lit:.0%} the step is meant to cover"
+            )
+        frame("after", "target")
+        frame("after", "source")
+
+        # Take it back. Vega-Lite clears a point or interval selection on a
+        # double-click anywhere in the view, its padding too; the pointer
+        # leaving the canvas, or moving over that padding, keeps it (CI run
+        # 36790868222). A pick on the same spot takes the pick back, and a
+        # click on a d3 brush's overlay, away from the brush, clears it.
+        if on_vega:
+            box = page.locator(source_drawing).first.bounding_box()
+            page.mouse.dblclick(*assert_in_view(
+                page, box["x"] + box["width"] - 2, box["y"] + 2,
+                f"taking back {where}: the corner of {step.source}'s chart"))
+        elif step.gesture == "pick":
+            page.mouse.dblclick(point["x"], point["y"])
+        else:
+            # Away from the brush: a click inside it starts a move instead.
+            area = brush_area(page, source_drawing)
+            reaches_right = max(step.span[0][0], step.span[1][0]) > 0.9
+            page.mouse.click(*at_fraction(area, (0.03 if reaches_right else 0.97, 0.5)))
+        frame_nodes(page, [step.source, step.target])
+        _, restored = wait_for_node_capture(
+            page, step.target,
+            lambda capture: _compare_images(capture, before, CLOSEUP_PIXEL_THRESHOLD).ratio
+            <= INTERACTION_RESTORED_RATIO,
+        )
+        assert restored, f"taking back {where} left {step.target} highlighted"
+
+    @pytest.mark.only_workflows("Interaction_Autark.json")
+    def test_plot_brush_started_between_bars(self, loaded_workflow):
+        """A second brush on the histogram, pressed in the gap between two bars,
+        keeps its rectangle and lights the bars under it.
+
+        The press itself covers no bar, so the plot's selection is empty for a
+        moment, and the pool clears the first brush's rows and sends that back.
+        The brush being drawn must not be taken away by it, even when the
+        pointer holds still before letting go.
+        """
+        page = self.page
+        self._execute_all_playable_nodes()
+        viewport = page.viewport_size
+        page.set_viewport_size(INTERACTION_VIEWPORT)
+        try:
+            dismiss_toasts(page)
+            frame_nodes(page, ["ia-plot", "ia-map"])
+            _wait_for_no_node_running(page)
+            plot = drawing_selector(page, "ia-plot")
+            assert plot, "ia-plot drew nothing"
+            area = brush_area(page, plot)
+            assert area, "ia-plot has no brush overlay"
+
+            # A first brush, with its rows back through the pool.
+            page.mouse.move(*at_fraction(area, (0.25, 0.5)))
+            page.mouse.down()
+            page.mouse.move(*at_fraction(area, (0.75, 0.5)), steps=8)
+            page.mouse.up()
+            assert brush_mismatches(page, plot) == [], "the first brush did not light its bars"
+
+            # A second one, pressed between the first two bars, over the next three.
+            bars = bar_boxes(page, plot)
+            assert len(bars) > 4, f"ia-plot drew {len(bars)} bars"
+            gap_x = (bars[0]["right"] + bars[1]["left"]) / 2
+            assert bars[1]["left"] - bars[0]["right"] >= 2, "no gap between the first two bars"
+            y = area["y"] + area["height"] / 2
+            end_x = (bars[3]["left"] + bars[3]["right"]) / 2
+            page.mouse.move(gap_x, y)
+            watch_brush(page, plot)
+            page.mouse.down()
+            page.mouse.move(end_x, y, steps=8)
+            page.wait_for_timeout(1500)
+            page.mouse.up()
+            wrong = brush_mismatches(page, plot)
+            log = brush_log(page)
+            down = next(e["t"] for e in log if e["what"] == "mousedown")
+            up = next(e["t"] for e in log if e["what"] == "mouseup")
+            vanished = [e["t"] - down for e in log if down < e["t"] < up and not e["shown"]]
+            assert not vanished, (
+                f"the second brush, pressed between two bars, vanished {vanished[0]} ms "
+                "into the drag, while the pointer was still drawing it")
+            assert wrong is not None, (
+                "the second brush, pressed between two bars, was gone once the pointer let go")
+            assert not wrong, "the second brush lit the wrong bars: " + ", ".join(
+                f"{w['label']} {'lit outside the brush' if w['lit'] else 'unlit under it'}" for w in wrong)
+        finally:
+            if viewport:
+                page.set_viewport_size(viewport)

@@ -24,17 +24,16 @@ from utk_curio.backend.app.projects import services, storage
 from utk_curio.backend.app.projects.repositories import list_for_user
 from utk_curio.backend.app.projects.schemas import ProjectCreate
 from utk_curio.backend.app.projects.seed import (
-    _example_files,
     _example_id,
-    _repo_root,
     example_project_ids,
     is_example_project,
     seed_example_projects,
+    shipped_dataflows,
 )
 
 
-def _example_stems() -> list[str]:
-    return [p.stem for p in _example_files(_repo_root() / "docs" / "examples")]
+def _shipped_keys() -> list[str]:
+    return [s.key for s in shipped_dataflows()]
 
 
 def _my_own_project(user):
@@ -53,7 +52,7 @@ def examples_enabled(monkeypatch):
 
 def test_deleting_a_seeded_example_is_refused(app, db, user_and_token):
     user, _ = user_and_token
-    assert seed_example_projects(user) == len(_example_stems())
+    assert seed_example_projects(user) == len(_shipped_keys())
 
     example = list_for_user(user.id)[0]
     with pytest.raises(services.ProjectError) as exc:
@@ -100,10 +99,10 @@ def test_the_example_set_is_derived_per_account(app, db, user_and_token):
     user's ordinary project could share an id with another's example.
     """
     user, _ = user_and_token
-    stems = _example_stems()
+    keys = _shipped_keys()
 
     ids = example_project_ids(user)
-    assert ids == {_example_id(stem, user) for stem in stems}
+    assert ids == {_example_id(key, user) for key in keys}
     assert all(is_example_project(user, pid) for pid in ids)
 
     # A project id that is not in the set is not protected.
@@ -117,4 +116,4 @@ def test_the_guard_does_not_need_the_examples_to_be_seeded_yet(
     user, _ = user_and_token
     # Nothing seeded in this test at all.
     assert list_for_user(user.id) == []
-    assert len(example_project_ids(user)) == len(_example_stems())
+    assert len(example_project_ids(user)) == len(_shipped_keys())

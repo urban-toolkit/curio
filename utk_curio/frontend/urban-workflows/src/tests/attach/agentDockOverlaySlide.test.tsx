@@ -51,7 +51,7 @@ jest.mock("../../providers/FlowProvider", () => ({
 }));
 
 const mockCtx = jest.fn();
-jest.mock("../../components/agents/attach/AgentAttachmentsProvider", () => ({
+jest.mock("../../providers/agents/AgentAttachmentsProvider", () => ({
   useAgentAttachmentsContext: () => mockCtx(),
 }));
 
@@ -109,6 +109,19 @@ function ctx(attachments: any[], selectedId: string | null) {
     runSimulation: jest.fn(),
     cancelSimulation: jest.fn(),
     solveAttachment: jest.fn(),
+    // The Solve lane and the Dataset Finder rows the overlay also reads: the
+    // real context always supplies them, so the double must too.
+    solveRemedies: {},
+    solveWaiting: {},
+    solveEndedBy: {},
+    solvePass: {},
+    solveWave: {},
+    solveNotices: {},
+    solveNodeActivity: {},
+    solveNode: jest.fn(),
+    cancelSolve: jest.fn(),
+    recordDatasetSelection: jest.fn(),
+    importDataset: jest.fn(),
   };
 }
 

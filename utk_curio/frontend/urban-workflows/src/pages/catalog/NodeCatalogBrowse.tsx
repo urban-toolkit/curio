@@ -3,15 +3,16 @@
  */
 import React, { useState } from "react";
 import { InstallPermissionsDialog } from "../../components/packages/publishing/InstallPermissionsDialog";
-import type { SortMode } from "../../components/packages/publishing/packageTypes";
-import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
+import { isNewerPackageVersion, type SortMode } from "../../services/packages";
 import browseStyles from "./CatalogBrowseLayout.module.css";
 import { PackageBrowseCard } from "./PackageBrowseCard";
 import { PackageBrowseDrawer } from "./PackageBrowseDrawer";
 import { useNodeCatalogBrowse } from "./useNodeCatalogBrowse";
 import { CatalogHeaderImport } from "./CatalogHeaderImport";
+import { CatalogPageHeader } from "./CatalogPageHeader";
+import { CatalogRail } from "./CatalogRail";
 import { PackageDetailModal } from "../../components/packages/publishing/PackageDetailModal";
-import type { PackagePayload } from "../../api/packagesApi";
+import type { PackagePayload } from "../../services/packages";
 import { CardContextMenu } from "../../components/catalog/CardContextMenu";
 import {
   packageCardActions,
@@ -35,6 +36,7 @@ export const NodeCatalogBrowse: React.FC = () => {
     catalogPublishAllowed,
     publishingPackageKey,
     installCandidate,
+    installMode,
     conflictReport,
     lastInstallSummary,
     dismissInstallSummary,
@@ -46,11 +48,11 @@ export const NodeCatalogBrowse: React.FC = () => {
     filtered,
     selectedPkg,
     sortedCategories,
-    quickCategories,
     allCount,
     installedCount,
     selectedHasUpdate,
     onInstall,
+    onUpdate,
     importing,
     onImportArchive,
     confirmInstall,
@@ -86,10 +88,9 @@ export const NodeCatalogBrowse: React.FC = () => {
         void onInstall(menu.pkg);
         return;
       case "update-all-projects":
-        // The catalog's row, not the installed one - installing the version
-        // already in the user's store would be a no-op update. Same fallback
-        // the drawer's button uses.
-        void onInstall(menu.catalogRow ?? menu.pkg);
+        // The catalog's row, so the review and the toast name the version the
+        // store copy is replaced with. Same fallback the drawer's button uses.
+        void onUpdate(menu.catalogRow ?? menu.pkg);
         return;
       case "view-details":
         setDetailDirName(menu.pkg.dirName);
@@ -109,124 +110,91 @@ export const NodeCatalogBrowse: React.FC = () => {
         null)
     : null;
 
+  // The counts come from the rows on screen, so a search can take the selected
+  // category's count to zero; it stays on the rail so it can be cleared.
+  const categoryRows: [string, number][] =
+    categoryFilter && !sortedCategories.some(([cat]) => cat === categoryFilter)
+      ? [...sortedCategories, [categoryFilter, 0]]
+      : sortedCategories;
+
   return (
     <div className={[browseStyles.page, drawerSlotOpen ? browseStyles.pageWithDrawer : ""].filter(Boolean).join(" ")}>
-      <aside className={browseStyles.categoryRail}>
-        <p className={browseStyles.railLabel}>By status</p>
-        <button
-          className={`${browseStyles.railButton} ${filter === "all" ? browseStyles.railButtonActive : ""}`}
-          type="button"
-          onClick={() => setFilter("all")}
-        >
-          <span>All packages</span>
-          <span className={browseStyles.railCountBadge}>{allCount}</span>
-        </button>
-        <button
-          className={`${browseStyles.railButton} ${filter === "installed" ? browseStyles.railButtonActive : ""}`}
-          type="button"
-          onClick={() => setFilter("installed")}
-        >
-          <span>In all projects</span>
-          <span className={browseStyles.railCount}>{installedCount}</span>
-        </button>
-
-        <div className={browseStyles.railDivider} />
-        <p className={browseStyles.railLabel}>By category</p>
-        <button
-          className={`${browseStyles.railButton} ${categoryFilter === "" ? browseStyles.railButtonActive : ""}`}
-          type="button"
-          onClick={() => setCategoryFilter("")}
-        >
-          <span>All categories</span>
-        </button>
-        {sortedCategories.map(([cat, count]) => (
-          <button
-            key={cat}
-            className={`${browseStyles.railButton} ${categoryFilter === cat ? browseStyles.railButtonActive : ""}`}
-            type="button"
-            onClick={() => setCategoryFilter((prev) => (prev === cat ? "" : cat))}
-          >
-            <span>{cat}</span>
-            <span className={browseStyles.railCount}>{count}</span>
-          </button>
-        ))}
-      </aside>
+      <CatalogRail
+        ariaLabel="Filter packages"
+        all={{
+          label: "All packages",
+          count: allCount,
+          active: filter === "all" && categoryFilter === "",
+          onClick: () => {
+            setFilter("all");
+            setCategoryFilter("");
+          },
+        }}
+        scope={{
+          label: "In all projects",
+          count: installedCount,
+          active: filter === "installed",
+          onClick: () => setFilter(filter === "installed" ? "all" : "installed"),
+        }}
+        sections={[
+          {
+            key: "category",
+            label: "By category",
+            entries: categoryRows.map(([cat, count]) => ({
+              value: cat,
+              label: cat,
+              count,
+              active: categoryFilter === cat,
+              onClick: () => setCategoryFilter((prev) => (prev === cat ? "" : cat)),
+              // Keyed like the card strips (`primaryCategory()`).
+              dotClassName: browseStyles[`categoryDot_${cat}`] ?? "",
+            })),
+          },
+        ]}
+      />
 
       <main className={browseStyles.browseMain}>
-        <section className={browseStyles.browseHeader}>
-          <p className={browseStyles.crumb}>Node Catalog</p>
-          <div className={browseStyles.titleRow}>
-            <CatalogKindIcon kind="package" size="md" title="Node package catalog" />
-            <h1>Node Catalog</h1>
-            <span className={browseStyles.titleCount}>{filtered.length}</span>
-          </div>
-          <p className={browseStyles.pageIntro}>
-            Node packages in the shared catalog. Adding one here adds it to{" "}
-            <strong>all your projects</strong>, present and future; add or remove it for a
-            single project from that project&apos;s Node Catalog.
-          </p>
-          <div className={browseStyles.headerTools}>
-            <input
-              className={browseStyles.hubSearch}
-              type="search"
-              placeholder="Search packages…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            {/* The drawer has had this in its footer all along; the page had no
-                import at all. Same position the Projects page uses. */}
-            <CatalogHeaderImport
-              label="Import package"
-              accept=".curio.zip,.zip,application/zip"
-              busy={importing}
-              onPick={(file) => void onImportArchive(file)}
-              title="Import a .curio.zip package archive"
-            />
-          </div>
-        </section>
-
-        <div className={browseStyles.filterBar}>
-          <button
-            className={`${browseStyles.chip} ${filter === "all" ? browseStyles.chipActive : ""}`}
-            type="button"
-            onClick={() => setFilter("all")}
-          >
-            All
-          </button>
-          <button
-            className={`${browseStyles.chip} ${filter === "installed" ? browseStyles.chipActive : ""}`}
-            type="button"
-            onClick={() => setFilter("installed")}
-          >
-            In all projects
-          </button>
-          {quickCategories.map((cat) => {
-            const dotSlug = cat.toLowerCase().replace(/[^a-z0-9-]/g, "");
-            const dotClass =
-              (browseStyles as Record<string, string>)[`chipDot_${dotSlug}`] ??
-              browseStyles.chipDotDefault;
-            return (
-              <button
-                key={cat}
-                className={`${browseStyles.chip} ${categoryFilter === cat ? browseStyles.chipActive : ""}`}
-                type="button"
-                onClick={() => setCategoryFilter((prev) => (prev === cat ? "" : cat))}
-              >
-                <span className={`${browseStyles.chipDot} ${dotClass}`} />
-                {cat}
-              </button>
-            );
-          })}
-          <span className={browseStyles.filterSpacer} />
-          <select
-            className={browseStyles.sortSelect}
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortMode)}
-          >
-            <option value="new">Sort: Newest</option>
-            <option value="name">Sort: Name</option>
-          </select>
-        </div>
+        <CatalogPageHeader
+          kind="package"
+          iconTitle="Node package catalog"
+          title="Node Catalog"
+          count={filtered.length}
+          intro={
+            <>
+              Node packages in the shared catalog. Adding one here adds it to{" "}
+              <strong>all your projects</strong>, present and future; add or remove it for a
+              single project from that project&apos;s Node Catalog.
+            </>
+          }
+          viewTools={
+            <select
+              className={browseStyles.sortSelect}
+              aria-label="Sort packages"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortMode)}
+            >
+              <option value="new">Sort: Newest</option>
+              <option value="name">Sort: Name</option>
+            </select>
+          }
+        >
+          <input
+            className={browseStyles.hubSearch}
+            type="search"
+            placeholder="Search packages…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {/* The drawer has had this in its footer all along; the page had no
+              import at all. Same position the Projects page uses. */}
+          <CatalogHeaderImport
+            label="Import package"
+            accept=".curio.zip,.zip,application/zip"
+            busy={importing}
+            onPick={(file) => void onImportArchive(file)}
+            title="Import a .curio.zip package archive"
+          />
+        </CatalogPageHeader>
 
         {lastInstallSummary ? (
           <div
@@ -293,7 +261,7 @@ export const NodeCatalogBrowse: React.FC = () => {
                 isInstalledGlobally &&
                 userStoreRow != null &&
                 catalogRow != null &&
-                catalogRow.version !== userStoreRow.version;
+                isNewerPackageVersion(catalogRow.version, userStoreRow.version);
               const isPublished = catalogPublishedDirs.has(pkg.dirName);
               const showPublish = userStoreRow != null;
               return (
@@ -338,6 +306,7 @@ export const NodeCatalogBrowse: React.FC = () => {
         publishingDir={publishingPackageKey}
         showPublish={selectedPkg != null && installedByDir.get(selectedPkg.dirName) != null}
         onInstall={(p) => void onInstall(p)}
+        onUpdate={(p) => void onUpdate(p)}
         onPublish={
           selectedPkg != null && installedByDir.get(selectedPkg.dirName) != null
             ? onPublish
@@ -383,7 +352,8 @@ export const NodeCatalogBrowse: React.FC = () => {
           busy={busy}
           onCancel={cancelInstall}
           onConfirm={() => void confirmInstall()}
-          confirmLabel="Add to all projects"
+          confirmLabel={installMode === "update" ? "Update all projects" : "Add to all projects"}
+          busyLabel={installMode === "update" ? "Updating…" : undefined}
         />
       ) : null}
     </div>

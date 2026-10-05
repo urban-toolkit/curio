@@ -2,7 +2,7 @@ import React, { Fragment, memo, useCallback, useEffect, useState, useSyncExterna
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faForwardStep, faStop } from "@fortawesome/free-solid-svg-icons";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
-import { refreshPackageRegistry } from "../../../api/packagesApi";
+import { refreshPackageRegistry } from "../../../registry/packageRegistryBootstrap";
 import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
 import { BUILTIN_PACKAGE_ID } from "../../../registry/packagesClient";
 import { NodeCategory, NodeDescriptor, NodeTemplateId } from "../../../registry/types";
@@ -17,20 +17,24 @@ import {
 } from "./toolsMenuPackagePalette";
 import { DatasetsPaletteDropdown } from "./datasetPalette";
 import { AgentsPaletteDropdown } from "./agentsPalette";
+import { ModelsPaletteDropdown } from "./modelsPalette";
 import styles from "./ToolsMenu.module.css";
+
+/** The DOM id of a built-in palette tile: `curio.builtin/data-loading@1` is `tile-data-loading`. */
+export function paletteTileId(nodeType: NodeTemplateId): string {
+    return `tile-${nodeType.replace(/^[^/]*\//, "").replace(/@\d+$/, "")}`;
+}
 
 const DraggableTool = memo(function DraggableTool({
     nodeType,
     icon,
     tooltip,
-    tutorialID,
     badge,
     tooltipPlacement = "right",
 }: {
     nodeType: NodeTemplateId;
     icon: any;
     tooltip: string;
-    tutorialID?: string;
     badge?: string;
     tooltipPlacement?: ToolsMenuTooltipSide;
 }) {
@@ -41,7 +45,7 @@ const DraggableTool = memo(function DraggableTool({
             overlay={<Tooltip>{tooltip}</Tooltip>}
         >
             <div
-                id={tutorialID}
+                id={paletteTileId(nodeType)}
                 // The tile is an icon and a drag source: nothing in it was text,
                 // so it had no accessible name at all and the hover tooltip was
                 // its only label. `title` matches how the dataset and agent drag
@@ -65,7 +69,7 @@ const DraggableTool = memo(function DraggableTool({
 });
 
 // Groups (top → bottom) for the BUILT-IN section. vis_grammar and vis_simple
-// share one block; flow nodes (e.g. Merge Flow) live in the top data block.
+// share one block; flow nodes live in the top data block.
 const PALETTE_GROUPS: NodeCategory[][] = [
     ["data", "flow"],
     ["computation"],
@@ -87,7 +91,6 @@ function renderGroup(group: NodeDescriptor[], key: string, tooltipPlacement: Too
                     nodeType={desc.id}
                     icon={desc.icon}
                     tooltip={desc.label}
-                    tutorialID={desc.tutorialId}
                     badge={desc.badge}
                     tooltipPlacement={tooltipPlacement}
                 />
@@ -124,7 +127,8 @@ const ToolsMenu = memo(function ToolsMenu() {
     const packageTypes = paletteTypes.filter((d) => !isBuiltin(d));
     const coreGroups = groupPaletteTypes(coreTypes);
     const packageGroups = groupPalettePackages(packageTypes);
-    const { playAllNodes, isRunActive, cancelRun } = useFlowContext();
+    const { playAllNodes, isRunActive: browserRunActive, serverRunActive, cancelRun } = useFlowContext();
+    const isRunActive = browserRunActive || serverRunActive;
 
     // Every catalog trigger lives in the left rail and their panels open into
     // the same strip to the right of it, so only one may be open at a time. A
@@ -132,7 +136,7 @@ const ToolsMenu = memo(function ToolsMenu() {
     // trigger takes the strip) - outside clicks and Escape deliberately leave
     // it open.
     const [activePalette, setActivePalette] = useState<
-        "datasets" | "packages" | "agents" | null
+        "datasets" | "packages" | "agents" | "models" | null
     >(null);
     const setDatasetsOpen = useCallback((value: boolean) => {
         setActivePalette((prev) => (value ? "datasets" : prev === "datasets" ? null : prev));
@@ -142,6 +146,9 @@ const ToolsMenu = memo(function ToolsMenu() {
     }, []);
     const setAgentsOpen = useCallback((value: boolean) => {
         setActivePalette((prev) => (value ? "agents" : prev === "agents" ? null : prev));
+    }, []);
+    const setModelsOpen = useCallback((value: boolean) => {
+        setActivePalette((prev) => (value ? "models" : prev === "models" ? null : prev));
     }, []);
 
     return (
@@ -163,6 +170,7 @@ const ToolsMenu = memo(function ToolsMenu() {
                 />
                 <DatasetsPaletteDropdown open={activePalette === "datasets"} setOpen={setDatasetsOpen} />
                 <AgentsPaletteDropdown open={activePalette === "agents"} setOpen={setAgentsOpen} />
+                <ModelsPaletteDropdown open={activePalette === "models"} setOpen={setModelsOpen} />
                 <div className={styles.playAllRow}>
                     {/* One button, two states: while a run is in flight it cancels
                         it. The guard used to be invisible, so the only sign a run

@@ -126,8 +126,9 @@ describe("the browse cards are informational, and the drawer acts", () => {
     // button left names the label it removed.
     expect(/>\s*Add to all projects\s*</.test(card)).toBe(false);
     expect(card).not.toContain("onInstall");
-    // It says where it is, once, in the strip - not again down in the actions.
-    expect(card).toContain("In all projects");
+    // It says where it is, once, as the card's status at the start of the
+    // actions row - not again in the strip or under another name.
+    expect(card.match(/✓ In all projects/g) ?? []).toHaveLength(1);
     expect(/>\s*In defaults\s*</.test(card)).toBe(false);
   });
 
@@ -141,11 +142,16 @@ describe("the browse cards are informational, and the drawer acts", () => {
     ["data", "pages/dataCatalog/DataCatalogBrowseCard.tsx"],
     ["node", "pages/catalog/PackageBrowseCard.tsx"],
     ["agent", "pages/agents/AgentCatalogBrowseCard.tsx"],
-    ["data lake", "pages/dataLakes/DataLakeSourceCard.tsx"],
+    ["Discovery Catalog", "pages/discovery/DiscoverySourceCard.tsx"],
+    ["model", "pages/models/ModelCatalogBrowseCard.tsx"],
+    ["scenario", "pages/scenarios/ScenarioCatalogBrowseCard.tsx"],
   ])("the %s card offers View details and a status, the same shape", (_kind, rel) => {
     const src = read(rel);
     expect(src).toContain("View details");
-    expect(src).toMatch(/stripBadgePopular/);
+    // One status slot, the shared one, and no longer in the strip: on a card a
+    // grid column wide the strip's status ran over its format or category pill.
+    expect(src).toMatch(/[sS]tyles\.cardStatus\b/);
+    expect(src).not.toContain("trailing=");
   });
 });
 
@@ -180,14 +186,14 @@ describe("the account-level agent import has one name", () => {
 
 // ── 5. The agent import picker accumulates ───────────────────────────────────
 
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: { uploadImport: jest.fn() },
 }));
 
 describe("the agent import picker can assemble a real package", () => {
   test("a second selection adds to the first instead of replacing it", async () => {
     // An agent package is `<id>@<version>/manifest.json` plus
-    // `<id>@<version>/prompts/*.txt` - two directories - and one OS file dialog
+    // `<id>@<version>/prompts/*.md` - two directories - and one OS file dialog
     // cannot span two directories. `pick` used to `setFiles(read)`, so the
     // second dialog discarded the manifest picked in the first and the flow
     // could never be completed against the documented layout.
@@ -336,8 +342,10 @@ describe("the catalog pages import, not just the drawers", () => {
 
   test.each(PAGES)("the %s page puts it in the header tools row", (_k, rel) => {
     // Beside the search box, the arrangement the Projects page already used.
+    // The tools are the children of the shared header, which lays them out at
+    // the end of the title row.
     const src = read(rel);
-    const tools = src.slice(src.indexOf("headerTools"), src.indexOf("filterBar"));
+    const tools = src.slice(src.indexOf("<CatalogPageHeader"), src.indexOf("</CatalogPageHeader>"));
     expect(tools).toContain("hubSearch");
     expect(tools).toContain("CatalogHeaderImport");
     // Search first, import second.
@@ -399,7 +407,8 @@ describe("the catalog pages import, not just the drawers", () => {
     // An agent package is a manifest plus its prompt files across two
     // directories; one file input cannot express that.
     const page = read("pages/agents/AgentCatalogBrowse.tsx");
-    const tools = page.slice(page.indexOf("headerTools"), page.indexOf("filterBar"));
+    const tools = page.slice(page.indexOf("<CatalogPageHeader"), page.indexOf("</CatalogPageHeader>"));
+    expect(tools).toContain("CatalogHeaderImport");
     expect(tools).not.toContain("accept=");
     expect(page).toContain("AgentImportModal");
   });
@@ -467,7 +476,9 @@ describe("all four catalogs have a details view, and it is the same shape", () =
     ["dataset", "components/datasets/catalog/DatasetDetailModal.tsx"],
     ["agent", "components/agents/catalog/AgentDetailModal.tsx"],
     ["package", "components/packages/publishing/PackageDetailModal.tsx"],
-    ["data lake", "pages/dataLakes/DataLakeSourceDetailModal.tsx"],
+    ["Discovery Catalog", "pages/discovery/DiscoverySourceDetailModal.tsx"],
+    ["model", "components/models/catalog/ModelDetailModal.tsx"],
+    ["scenario", "components/scenarios/catalog/ScenarioDetailModal.tsx"],
   ];
 
   test.each(MODALS)("the %s details view fills the panel, not a small box", (_k, rel) => {
@@ -498,25 +509,65 @@ describe("all four catalogs have a details view, and it is the same shape", () =
     expect(page).toContain("catalogByDir.get(detailDirName)");
   });
 
-  test("the Data Lake catalog has a details view at all", () => {
+  test("the Discovery Catalog has a details view at all", () => {
     // It was the last one with none: a source's facts lived in the drawer
     // alone, which CatalogBrowseLayout hides below 1100px. And it has its own
     // state, not the drawer's setter (#189).
-    const page = read("pages/dataLakes/DataLakeCatalogBrowse.tsx");
-    expect(page).toContain("DataLakeSourceDetailModal");
+    const page = read("pages/discovery/DiscoveryCatalogBrowse.tsx");
+    expect(page).toContain("DiscoverySourceDetailModal");
     expect(page).toContain("const [detailDir");
     expect(page).toContain("onViewDetails={() => setDetailDir(source.dirName)}");
-    expect(read("pages/dataLakes/DataLakeSourceDetailModal.tsx")).toContain("ModalShell");
+    expect(read("pages/discovery/DiscoverySourceDetailModal.tsx")).toContain("ModalShell");
   });
 
-  test("the lake drawer and its details view read the same facts", () => {
+  test("the Model Catalog has a details view of its own state", () => {
+    // Born with one, and not wired to the drawer's setter (#189): the card's
+    // View details opens the modal even on a card whose drawer is open.
+    const page = read("pages/models/ModelCatalogBrowse.tsx");
+    expect(page).toContain("ModelDetailModal");
+    expect(page).toContain("const [detailId");
+    expect(page).toContain("onViewDetails={() => setDetailId(model.id)}");
+    expect(read("components/models/catalog/ModelDetailModal.tsx")).toContain("ModalShell");
+  });
+
+  test("the model drawer and its details view read the same facts", () => {
     for (const rel of [
-      "pages/dataLakes/DataLakeCatalogBrowseDrawer.tsx",
-      "pages/dataLakes/DataLakeSourceDetailModal.tsx",
+      "pages/models/ModelCatalogBrowseDrawer.tsx",
+      "components/models/catalog/ModelDetailModal.tsx",
+    ]) {
+      expect(read(rel)).toContain("modelInfoRows(model)");
+    }
+  });
+
+  test("the Scenario Catalog has a details view of its own state", () => {
+    // Not wired to the drawer's setter (#189): the card's View details opens
+    // the modal even on a card whose drawer is open.
+    const page = read("pages/scenarios/ScenarioCatalogBrowse.tsx");
+    expect(page).toContain("ScenarioDetailModal");
+    expect(page).toContain("const [detail");
+    expect(page).toContain("onViewDetails={() => viewDetails(scenario)}");
+    expect(read("components/scenarios/catalog/ScenarioDetailModal.tsx")).toContain("ModalShell");
+  });
+
+  test("the scenario drawer and its details view read the same facts", () => {
+    for (const rel of [
+      "pages/scenarios/ScenarioCatalogBrowseDrawer.tsx",
+      "components/scenarios/catalog/ScenarioDetailModal.tsx",
+    ]) {
+      expect(read(rel)).toContain("scenarioInfoRows(scenario");
+    }
+  });
+
+  test("the source drawer and its details view read the same facts", () => {
+    for (const rel of [
+      "pages/discovery/DiscoveryCatalogBrowseDrawer.tsx",
+      "pages/discovery/DiscoverySourceDetailModal.tsx",
     ]) {
       const src = read(rel);
-      expect(src).toContain("lakeSourceInfoRows(source)");
-      expect(src).toContain("lakeSourceAccessItems(source)");
+      expect(src).toContain("discoverySourceInfoRows(source)");
+      // Both pass the hosted guest check; the modal also passes its own close,
+      // run before it asks for API Settings.
+      expect(src).toMatch(/discoverySourceAccessItems\(source, hostedGuest(, onClose)?\)/);
     }
   });
 
@@ -558,19 +609,21 @@ describe("all four catalogs have a details view, and it is the same shape", () =
     expect(read("components/agents/catalog/AgentDetailModal.tsx")).toContain(
       "curio-agent.json",
     );
-    expect(read("components/agents/catalog/buildUploadPayload.ts")).toContain(
+    expect(read("services/agents/buildUploadPayload.ts")).toContain(
       "curio-agent.json",
     );
   });
 
-  test("the download helper is a leaf, not the package API", () => {
-    // Importing it from `api/packagesApi` dragged the whole node-package
+  test("the download helper comes from the registry-free packages layer", () => {
+    // Importing it from the old `api/packagesApi` dragged the whole node-package
     // registry into any component that only wanted to save bytes to a file,
     // and killed unrelated test suites on a registry mock before their first
-    // assertion.
+    // assertion. Since dev/143 the helper lives in `services/packages`, which
+    // never imports the registry at runtime (tests/packages/servicesBarrel).
     expect(read("components/agents/catalog/AgentDetailModal.tsx")).toContain(
-      'from "../../../utils/triggerBlobDownload"',
+      'from "../../../services/packages"',
     );
+    expect(read("components/agents/catalog/AgentDetailModal.tsx")).not.toContain("api/packagesApi");
   });
 });
 
@@ -582,8 +635,12 @@ describe("the agent drawer stopped speaking about the account", () => {
     // and its row button was the only thing in the product that wrote a
     // built-in into that list - which is how "Dataflow builder" and
     // "Connection builder" came to report themselves as the user's own imports.
+    // dev/142 F3: the scope set lives in THE catalog hook; the drawer aliases it.
+    expect(read("services/agents/useAgentCatalog.ts")).toContain(
+      'export type AgentCatalogScope = "browse" | "installed";',
+    );
     const hook = read("components/agents/catalog/useAgentCatalogDrawer.ts");
-    expect(hook).toContain('export type AgentScope = "browse" | "installed";');
+    expect(hook).toContain("export type AgentScope = AgentCatalogScope;");
     // Not "never calls listImports": it does, as the no-project fallback for
     // the "In project" scope, because a dataflow has no project until its first
     // save and the scope would otherwise render empty. What must not come back
@@ -638,6 +695,8 @@ describe("every details view opens with the same header", () => {
     ["dataset", "components/datasets/catalog/DatasetDetailPanel.tsx"],
     ["agent", "components/agents/catalog/AgentDetailModal.tsx"],
     ["package", "components/packages/publishing/PackageDetailModal.tsx"],
+    ["model", "components/models/catalog/ModelDetailModal.tsx"],
+    ["scenario", "components/scenarios/catalog/ScenarioDetailModal.tsx"],
   ];
 
   test.each(VIEWS)("the %s view renders the shared header", (_k, rel) => {
@@ -704,7 +763,7 @@ describe("a dataflow with no project yet is not reported as empty", () => {
   });
 });
 
-// ── The left rail leads the same way on all three pages ─────────────────────
+// ── The left rail leads the same way on every page ──────────────────────────
 
 describe("every catalog page's rail opens with the same section", () => {
   const PAGES: [string, string][] = [
@@ -713,33 +772,56 @@ describe("every catalog page's rail opens with the same section", () => {
     ["data", "pages/dataCatalog/DataCatalogBrowse.tsx"],
   ];
 
-  test.each(PAGES)("the %s rail has a By status section", (_k, rel) => {
+  /** Every browse page, Projects, Discovery and Models included. */
+  const BROWSE_PAGES: [string, string][] = [
+    ...PAGES,
+    ["discovery", "pages/discovery/DiscoveryCatalogBrowse.tsx"],
+    ["model", "pages/models/ModelCatalogBrowse.tsx"],
+    ["scenario", "pages/scenarios/ScenarioCatalogBrowse.tsx"],
+    ["projects", "pages/projects/ProjectsList.tsx"],
+  ];
+
+  test.each(BROWSE_PAGES)("the %s page renders the shared rail, not its own", (_k, rel) => {
+    // Each page used to write its rail out by hand, and the five had drifted:
+    // reset rows on some sections and not others, a total inside "By
+    // provider", an unlabelled first group on one page only.
+    const src = read(rel);
+    expect(src).toContain("<CatalogRail");
+    expect(src).not.toContain("categoryRail");
+    expect(src).not.toContain("railDivider");
+  });
+
+  test.each(PAGES)("the %s rail offers the all-projects scope right under All", (_k, rel) => {
     // The Data rail opened straight into "By format". Its account-level scope
     // existed only as a chip down in the filter bar, so the three catalogs
-    // disagreed about where you look for the same kind of filter.
-    expect(read(rel)).toContain("By status");
+    // disagreed about where you look for the same kind of filter. The scope is
+    // the rail's `scope` row now, which CatalogRail renders second, after "All".
+    expect(read(rel)).toMatch(/scope=\{\{\s*label: "In all projects"/);
   });
 
-  test.each(PAGES)("the %s rail's status section is first", (_k, rel) => {
+  test("the rail renders All, then the scope row, then the sections", () => {
+    const src = read("pages/catalog/CatalogRail.tsx");
+    const body = src.slice(src.indexOf("export const CatalogRail"));
+    const all = body.indexOf("row={all}");
+    const scope = body.indexOf("row={scope}");
+    const sections = body.indexOf("visibleRailSections(sections)");
+    expect(all).toBeGreaterThan(-1);
+    expect(scope).toBeGreaterThan(all);
+    expect(sections).toBeGreaterThan(scope);
+  });
+
+  test.each(BROWSE_PAGES)("the %s rail has no per-section reset row", (_k, rel) => {
+    // "All <items>" at the top clears every filter, and a selected row clears
+    // itself on a second click, so a reset per section only repeated them.
     const src = read(rel);
-    const rail = src.slice(src.indexOf("categoryRail"));
-    const status = rail.indexOf("By status");
-    expect(status).toBeGreaterThan(-1);
-    // No other rail heading precedes it.
-    const firstLabel = rail.indexOf("railLabel}>");
-    expect(rail.slice(firstLabel, firstLabel + 40)).toContain("By status");
+    for (const reset of ["All formats", "All origins", "All categories"]) {
+      expect(src).not.toContain(reset);
+    }
   });
 
-  test.each(PAGES)("the %s rail offers the all-projects scope", (_k, rel) => {
-    expect(read(rel)).toContain("In all projects");
-  });
-
-  test("the data rail does not label two buttons 'All datasets'", () => {
-    // The format section's reset used that name too; it only clears the format
-    // facet, so it says so.
+  test("the data rail labels one button 'All datasets'", () => {
     const src = read("pages/dataCatalog/DataCatalogBrowse.tsx");
-    expect(src.match(/<span>All datasets<\/span>/g) ?? []).toHaveLength(1);
-    expect(src).toContain("<span>All formats</span>");
+    expect(src.match(/label: "All datasets"/g) ?? []).toHaveLength(1);
   });
 });
 
@@ -775,7 +857,7 @@ describe("a catalog's palette and its drawer describe the same dataflow", () => 
   test("the agents palette and drawer share the same no-project fallback", () => {
     for (const rel of [
       "components/menus/nodes/agentsPalette/AgentsPaletteDropdown.tsx",
-      "components/agents/catalog/useAgentCatalogDrawer.ts",
+      "services/agents/useAgentCatalog.ts", // dev/142 F3: the drawer lists through it
     ]) {
       expect(read(rel)).toContain("agentsApi.listImports()");
     }
@@ -808,9 +890,10 @@ describe("all three drawers put a count on their In project tab", () => {
   test("the agent count does not wait for its own tab to be opened", () => {
     // Counting only the VISIBLE scope would read 0 until you clicked the tab
     // the number describes.
-    expect(read("components/agents/catalog/useAgentCatalogDrawer.ts")).toContain(
-      'fetchScope("installed")',
-    );
+    // dev/142 F3: the drawer hands THE catalog hook both scopes, and that hook
+    // fetches every inactive scope once up front.
+    expect(read("components/agents/catalog/useAgentCatalogDrawer.ts")).toContain("scopes: ALL_SCOPES");
+    expect(read("services/agents/useAgentCatalog.ts")).toContain("for (const scope of scopes)");
   });
 });
 
@@ -821,6 +904,7 @@ describe("the three palettes are one design", () => {
     ["data", "components/menus/nodes/datasetPalette/DatasetsPaletteDropdown.tsx"],
     ["agent", "components/menus/nodes/agentsPalette/AgentsPaletteDropdown.tsx"],
     ["node", "components/menus/nodes/toolsMenuPackagePalette/PackagesPaletteDropdown.tsx"],
+    ["model", "components/menus/nodes/modelsPalette/ModelsPaletteDropdown.tsx"],
   ];
 
   test.each(PALETTES)("the %s palette tells you the rows are draggable", (_k, rel) => {
@@ -989,15 +1073,25 @@ describe("the palette hint is accurate per kind, not merely uniform", () => {
     for (const rel of [
       "components/menus/nodes/datasetPalette/DatasetsPaletteDropdown.tsx",
       "components/menus/nodes/toolsMenuPackagePalette/PackagesPaletteDropdown.tsx",
+      "components/menus/nodes/modelsPalette/ModelsPaletteDropdown.tsx",
     ]) {
       expect(read(rel)).not.toContain("attachesToNode");
     }
+  });
+
+  test("a model is described as going onto a node, and only there", () => {
+    // It sets the model a node's code runs; dropped on the canvas it makes
+    // nothing, so neither the agent wording nor the canvas one is true of it.
+    expect(read("components/menus/nodes/modelsPalette/ModelsPaletteDropdown.tsx")).toContain(
+      "ontoNodeOnly",
+    );
   });
 
   test("both wordings live in the one component", () => {
     const hint = read("components/menus/nodes/PaletteDragHint.tsx");
     expect(hint).toContain("onto a node or the canvas to attach it");
     expect(hint).toContain("onto the canvas to add it");
+    expect(hint).toContain("onto a node to use it");
   });
 });
 
@@ -1167,6 +1261,23 @@ describe("user-facing catalog copy uses sentences, not dashes", () => {
     "components/agents/catalog/AgentCatalogDrawer.tsx",
     "components/datasets/catalog/DatasetCatalogDrawer.tsx",
     "components/menus/nodes/PaletteDragHint.tsx",
+    "components/models/catalog/ModelCard.tsx",
+    "components/models/catalog/ModelCatalogDrawer.tsx",
+    "components/models/catalog/ModelDetailModal.tsx",
+    "components/models/catalog/useModelDelete.ts",
+    "components/menus/nodes/modelsPalette/ModelsPaletteDropdown.tsx",
+    "components/menus/nodes/modelsPalette/ModelPaletteRow.tsx",
+    "pages/models/ModelCatalogBrowse.tsx",
+    "pages/models/ModelCatalogBrowseCard.tsx",
+    "pages/models/ModelCatalogBrowseDrawer.tsx",
+    "components/scenarios/catalog/ScenarioCard.tsx",
+    "components/scenarios/catalog/ScenarioCatalogDrawer.tsx",
+    "components/scenarios/catalog/ScenarioDetailModal.tsx",
+    "components/scenarios/catalog/scenarioFacts.tsx",
+    "components/scenarios/catalog/useScenarioCatalogDrawer.ts",
+    "pages/scenarios/ScenarioCatalogBrowse.tsx",
+    "pages/scenarios/ScenarioCatalogBrowseCard.tsx",
+    "pages/scenarios/ScenarioCatalogBrowseDrawer.tsx",
   ];
 
   test.each(SURFACES)("%s has no dash inside a quoted tooltip or label", (rel) => {
@@ -1195,9 +1306,13 @@ describe("the four browse pages introduce themselves the same way", () => {
     expect(read(rel)).toContain(opening);
   });
 
-  test.each(INTROS)("the %s page uses the project vocabulary, not dataflow", (_k, rel) => {
+  test.each(INTROS)("the %s page uses the project vocabulary, not dataflow", (_k, rel, opening) => {
+    // The intro is the shared header's `intro` prop, which every page passes
+    // just before its `viewTools`. The slice must hold the intro itself, or
+    // this would pass on an empty string.
     const src = read(rel);
-    const intro = src.slice(src.indexOf("pageIntro"), src.indexOf("headerTools"));
+    const intro = src.slice(src.indexOf("intro="), src.indexOf("viewTools="));
+    expect(intro).toContain(opening);
     expect(intro).not.toMatch(/dataflow/i);
   });
 

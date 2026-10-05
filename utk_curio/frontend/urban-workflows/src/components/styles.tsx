@@ -3,6 +3,7 @@ import CSS from "csstype";
 import { Dropdown, Spinner } from "react-bootstrap";
 
 import { useFlowContext } from "../providers/FlowProvider";
+import { useNotebookViewContext } from "../providers/flow/notebookViewContext";
 import { NodeRemoveChange, useReactFlow, useStore } from "reactflow";
 
 import { CommentsList, IComment } from "./comments/CommentsList";
@@ -21,7 +22,7 @@ import {
 import { useUserContext } from "../providers/UserProvider";
 import { commentsFromMetadata, commentsToMetadata } from "../utils/nodeComments";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
-import { CATEGORY_FALLBACK_FG, categoryFg } from "../constants/nodeCategoryPalette";
+import { NODE_CATEGORY_KEY, categoryFg, colorForNodeType } from "../constants/nodeCategoryPalette";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { readCanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { ConnectionValidator } from "../ConnectionValidator";
@@ -69,28 +70,34 @@ import {
     MIN_NODE_WIDTH,
     MINIMIZED_NODE_HEIGHT,
     MINIMIZED_NODE_WIDTH,
-    NodeType,
     SupportedType,
 } from "../constants";
+import { clampNodeBox } from "../utils/nodeBoxSize";
 import { getNodeDescriptor, tryGetNodeDescriptor } from "../registry";
-import { NodeTemplateId } from "../registry/types";
+import { NodeCategory, NodeTemplateId } from "../registry/types";
 import {
     applyDatasetToNodeData,
     canApplyDatasetToNode,
     hasDatasetDrag,
     readDatasetDragPayload,
 } from "../services/datasetCatalog";
+import {
+    applyModelToNodeData,
+    canApplyModelToNode,
+    hasModelDrag,
+    readModelDragPayload,
+} from "../services/modelCatalog";
 import "./styles.css";
 import { useStarterContext } from "../providers/StarterProvider";
 import { useCode } from "../hook/useCode";
 import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
 import { SaveOutputToggle } from "./nodes/SaveOutputToggle";
-import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
+import { resolveSaveOutputDataset, showsSaveOutputToggle } from "../utils/saveOutputDataset";
 import { nodeRunStatus, nodeRunError } from "../utils/nodeRunStatus";
 import { RUN_NODE_SHORTCUT_LABEL } from "./canvasKeyBindings";
 import { hasNodeDescription } from "../utils/nodeDescription";
-import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
+import { droppedDatasetSource, isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { DatasetMetaHeader } from "./datasets/DatasetMetaHeader";
 import { useDatasetPalette } from "../providers/DatasetPaletteContext";
 
@@ -161,6 +168,11 @@ export const NodeContainer = ({
         markDirty,
         defaultSaveOutputDataset,
     } = useFlowContext();
+    // A notebook cell has a fixed size and is never minimized or resized: the
+    // size comes from the column, and the node's own size stays its canvas size.
+    // An icon-only node keeps its chip, stretched to a slim row.
+    const notebook = useNotebookViewContext();
+    const notebookCell = notebook.on && !dashboardOn && !noContent;
     const saveOutputDataset = resolveSaveOutputDataset(data, defaultSaveOutputDataset);
     // Nodes created from the dataset palette load an installed listing and can't
     // regenerate a dataset — hide the save toggle and show the dataset chip instead.
@@ -169,8 +181,13 @@ export const NodeContainer = ({
     // an OUTPUT chip linking to its palette row. Derived from the catalog (not
     // stamped) so it tracks install/uninstall. Distinct from the save-lock above —
     // producer nodes keep their save toggle.
-    const { installedComputedByProducer: producerByNode } = useDatasetPalette();
+    const { installedComputedByProducer: producerByNode, datasetsById } = useDatasetPalette();
     const producerDataset = producerByNode.get(nodeId);
+    // A node a dataset was dropped onto reads it too, so it gets a DATASET
+    // pill as well (#442), without becoming a palette node: saving stays on.
+    const consumerSource = datasetPaletteNode
+        ? (data.datasetSource ?? null)
+        : droppedDatasetSource(data, (id) => datasetsById?.get(id));
     // Whether this node is selected on the canvas — drives a more vibrant dataset
     // chip. Read reactively from the React Flow store so it updates on selection.
     const isNodeSelected = useStore((s) => !!s.nodeInternals.get(nodeId)?.selected);
@@ -219,13 +236,16 @@ export const NodeContainer = ({
     const [expectedInputType, setExpectedInputType] = useState(data.in);
     const [expectedOutputType, setExpectedOutputType] = useState(data.out);
     const [showWarnings, setShowWarnings] = useState<boolean>(false);
+    // A node with content starts at the size the mount clamp below gives it, so
+    // its first render is already its final size: the canvas measures that
+    // render for its load fit (#683). An icon-only node keeps its own footprint.
     const [currentNodeWidth, setCurrentNodeWidth] = useState<number | undefined>(
-        nodeWidth
+        () => (noContent ? nodeWidth : clampNodeBox(nodeWidth, nodeHeight).width)
     );
-    const [currentNodeHeight, setCurrentNodeHeight] = useState<
-        number | undefined
-    >(nodeHeight);
-    // Icon-only nodes (manifest `containerStyle.noContent: true` — merge-flow)
+    const [currentNodeHeight, setCurrentNodeHeight] = useState<number | undefined>(
+        () => (noContent ? nodeHeight : clampNodeBox(nodeWidth, nodeHeight).height)
+    );
+    // Icon-only nodes (manifest `containerStyle.noContent: true`)
     // start minimized: they have no body to expand and the 50×180 footprint is
     // their default render. (Spatial Join left this set in #262, when it gained
     // a body with the polygon-property control.)
@@ -233,6 +253,9 @@ export const NodeContainer = ({
     // Hover state for the minimized chip's delete control (noContent nodes have
     // no header band to put it in).
     const [chipHovered, setChipHovered] = useState(false);
+    const shownMinimized = minimized && !notebookCell;
+    const boxWidth = notebookCell ? nodeWidth : currentNodeWidth;
+    const boxHeight = notebookCell ? nodeHeight : currentNodeHeight;
 
     useEffect(() => {
         if (nodeWidth !== undefined) {
@@ -401,7 +424,9 @@ export const NodeContainer = ({
         return () => {
             resizer.removeEventListener("mousedown", initResize, false);
         };
-    }, [dashboardOn, dashboardLocked]);
+        // notebookCell: the handle unmounts in the notebook view, and the one
+        // mounted on the way back needs its listener.
+    }, [dashboardOn, dashboardLocked, notebookCell]);
 
     const deleteComment = (commentId: string) => {
         commitComments(comments.filter((comment) => comment.id !== commentId));
@@ -501,12 +526,47 @@ export const NodeContainer = ({
     const canApplyRef = useRef(false);
     canApplyRef.current = canApplyDatasetToNode(data);
 
+    // --- Model drag-and-drop, through the same capture-phase listeners ---
+    // A model goes only onto a node whose code calls `curio_load_model("...")`. Every
+    // other node still takes the drop, so it can say why nothing changed rather
+    // than letting the drop fall through to the canvas, which would make a new
+    // node that runs the model.
+    const modelDropHandlerRef = useRef<(e: DragEvent) => void>(() => {});
+    modelDropHandlerRef.current = (e: DragEvent) => {
+        if (!e.dataTransfer) return;
+        const model = readModelDragPayload(e.dataTransfer);
+        if (!model) return;
+        e.preventDefault();
+        e.stopPropagation();
+        // The editor's live text, which can be ahead of `data.code`.
+        const live = { ...data, code: code ?? data.code ?? data.defaultCode };
+        if (!canApplyModelToNode(live)) {
+            showToast("This node does not run a model", "warning");
+            return;
+        }
+        const applied = applyModelToNodeData(live, model);
+        updateDataNode(nodeId, applied);
+        updateDefaultCode(nodeId, applied.code);
+        sendCodeToWidgets?.(applied.code);
+        markDirty();
+        showToast(`Model set to ${model.name}`, "success");
+    };
+
     useEffect(() => {
         const el = resizableRef.current;
         if (!el) return;
 
         const handleDragOver = (e: DragEvent) => {
-            if (!e.dataTransfer || !hasDatasetDrag(e.dataTransfer)) return;
+            if (!e.dataTransfer) return;
+            // Accepted on every node, eligible or not: a refused dragover
+            // cancels the drop, and the drop is what explains the refusal.
+            if (hasModelDrag(e.dataTransfer)) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = "copy";
+                return;
+            }
+            if (!hasDatasetDrag(e.dataTransfer)) return;
             if (!canApplyRef.current) return;
             e.preventDefault();
             e.stopPropagation();
@@ -514,6 +574,10 @@ export const NodeContainer = ({
         };
 
         const handleDrop = (e: DragEvent) => {
+            if (e.dataTransfer && hasModelDrag(e.dataTransfer)) {
+                modelDropHandlerRef.current(e);
+                return;
+            }
             datasetDropHandlerRef.current(e);
         };
 
@@ -529,6 +593,12 @@ export const NodeContainer = ({
     // Keep React synthetic handlers as pass-throughs so the browser still
     // sees preventDefault() called (belt-and-suspenders).
     const onDatasetDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+        if (hasModelDrag(event.dataTransfer)) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.dataTransfer.dropEffect = "copy";
+            return;
+        }
         if (!hasDatasetDrag(event.dataTransfer)) return;
         if (!canApplyDatasetToNode(data)) return;
         event.preventDefault();
@@ -539,9 +609,9 @@ export const NodeContainer = ({
     const onDatasetDrop = (event: React.DragEvent<HTMLDivElement>) => {
         // Primary handling is done by the capture-phase native listener above.
         // This synthetic handler is kept only to prevent browser default actions
-        // (e.g. Monaco opening dropped file as text) for dataset drags that the
-        // native listener already handled.
-        if (!hasDatasetDrag(event.dataTransfer)) return;
+        // (e.g. Monaco opening dropped file as text) for dataset and model drags
+        // that the native listener already handled.
+        if (!hasDatasetDrag(event.dataTransfer) && !hasModelDrag(event.dataTransfer)) return;
         event.preventDefault();
         event.stopPropagation();
     };
@@ -575,7 +645,7 @@ export const NodeContainer = ({
                 has never stopped flowing; the indicator was deleted along with
                 the retired AI-mode chrome, which left the channel writing into
                 nothing and a user with no way to see a flagged node. */}
-            {!minimized && Array.isArray(data.warnings) && data.warnings.length > 0 ? (
+            {!shownMinimized && Array.isArray(data.warnings) && data.warnings.length > 0 ? (
                 <div
                     style={{
                         display: "flex",
@@ -618,7 +688,7 @@ export const NodeContainer = ({
                 </div>
             ) : null}
 
-            {(!dashboardOn || !dashboardLocked) && !noContent && <div
+            {(!dashboardOn || !dashboardLocked) && !noContent && !notebookCell && <div
                 id={nodeId + "resizer"}
                 className={"resizer nowheel nodrag"}
                 style={{
@@ -638,11 +708,15 @@ export const NodeContainer = ({
                         dashboardOn,
                         suggested: data.suggestionType != "none" && data.suggestionType != undefined,
                         acceptable: data.suggestionAcceptable,
+                        category: packageDescriptor?.category,
                     }),
                     ...styles,
-                    width: currentNodeWidth + "px",
-                    height: currentNodeHeight + "px",
-                    ...(minimized ? { display: "none" } : {}),
+                    width: boxWidth + "px",
+                    height: boxHeight + "px",
+                    // `.resizable` draws the browser's own resize grip, which
+                    // the canvas covers with its resize handle; a cell has none.
+                    ...(notebookCell ? { resize: "none" } : {}),
+                    ...(shownMinimized ? { display: "none" } : {}),
                     ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: 0.5, pointerEvents: "none"} : {}),
                     ...(data.keywordHighlighted ? {backgroundColor: "#1E1F23"} : {}),
                 }}
@@ -691,13 +765,15 @@ export const NodeContainer = ({
                         flexShrink: 0,
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                         }}>
-                        {/* Minimize toggle */}
-                        <HeaderIconButton
-                            icon={faMinus}
-                            style={{ ...headerIconStyle, flexShrink: 0, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
-                            title="Minimize"
-                            onActivate={() => setMinimized(true)}
-                        />
+                        {/* Minimize toggle (a notebook cell keeps its size) */}
+                        {!notebookCell ? (
+                            <HeaderIconButton
+                                icon={faMinus}
+                                style={{ ...headerIconStyle, flexShrink: 0, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
+                                title="Minimize"
+                                onActivate={() => setMinimized(true)}
+                            />
+                        ) : null}
 
                         {/* Node title — editable on package nodes (same visibility as PACKAGE pills) */}
                         <EditableNodeHeaderLabel
@@ -722,9 +798,9 @@ export const NodeContainer = ({
 
                         {/* Dataset linkage pills — independent of the PACKAGE pill
                             and of each other; any combination may render. */}
-                        {datasetPaletteNode && data.datasetSource ? (
+                        {consumerSource ? (
                             <DatasetMetaHeader
-                                source={data.datasetSource}
+                                source={consumerSource}
                                 variant="consumer"
                                 selected={isNodeSelected}
                                 suggestionActive={suggestionActive}
@@ -848,7 +924,7 @@ export const NodeContainer = ({
                                     )}
                                 </Col> : null
                             }
-                            {!disablePlay && !datasetPaletteNode ? (
+                            {showsSaveOutputToggle(data, !!disablePlay) ? (
                                 <Col md="auto" style={{ padding: 0, display: "flex", alignItems: "center" }}>
                                     <SaveOutputToggle
                                         variant="node"
@@ -1083,7 +1159,7 @@ export const NodeContainer = ({
                 />
             )}
 
-            {minimized ? (
+            {shownMinimized ? (
                 <div
                     onMouseEnter={() => setChipHovered(true)}
                     onMouseLeave={() => setChipHovered(false)}
@@ -1128,7 +1204,7 @@ export const NodeContainer = ({
                             ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
                         }}
                     />
-                    {/* A noContent node (merge-flow, spatial-join) is the one
+                    {/* A noContent node is the one
                         shape that never renders the header band, and it can
                         never be expanded to reach one - so without this it has
                         no on-node control at all, and the only way to remove a
@@ -1174,10 +1250,8 @@ export const NodeContainer = ({
                 </div>
             ) : null}
 
-            {/* Maximize button removed: noContent nodes (merge-flow,
-                spatial-join, …) have no body to expand to, so the previous
-                `noContent && nodeType != MERGE_FLOW` dead-code branch is
-                gone. */}
+            {/* No maximize button: noContent nodes have no body to expand
+                to. */}
 
             <NodeSaveAsModal show={saveAsOpen} nodeId={nodeId} onClose={() => setSaveAsOpen(false)} />
             <NodeTemplateConfigModal
@@ -1215,21 +1289,6 @@ const headerIconStyle: CSS.Properties = {
     flexShrink: 0,
 };
 
-// Node border colour = node category, read from the shared palette rather than
-// restated here. DataflowThumbnail used to carry a hand-kept copy of the same
-// hexes, and the Node Catalog picked a third set by hashing a directory name.
-const nodeTypeBorderColor: Record<string, string> = {
-    [NodeType.DATA_LOADING]: categoryFg("data"),
-    [NodeType.DATA_EXPORT]: categoryFg("data"),
-    [NodeType.DATA_TRANSFORMATION]: categoryFg("data"),
-    [NodeType.DATA_SUMMARY]: categoryFg("data"),
-    [NodeType.COMPUTATION_ANALYSIS]: categoryFg("computation"),
-    [NodeType.MERGE_FLOW]: categoryFg("computation"),
-    [NodeType.DATA_POOL]: categoryFg("computation"),
-    [NodeType.VIS_VEGA]: categoryFg("vis"),
-    [NodeType.VIS_SIMPLE]: categoryFg("vis"),
-};
-
 /** The node container's border and surface, resolved in one place.
  *
  * Longhands only, never the `border` shorthand. The two used to be layered: this
@@ -1242,12 +1301,23 @@ const nodeTypeBorderColor: Record<string, string> = {
  */
 export const getNodeContainerStyles = (
     nodeType: string,
-    state: { dashboardOn?: boolean; suggested?: boolean; acceptable?: boolean } = {},
+    state: {
+        dashboardOn?: boolean;
+        suggested?: boolean;
+        acceptable?: boolean;
+        /** The resolved descriptor's category, the one the title-bar pill shows. */
+        category?: NodeCategory | null;
+    } = {},
 ): CSS.Properties => {
-    // `nodeType` arrives versioned for palette-dragged nodes
-    // (`curio.builtin/merge-flow@1`) but this map is keyed by the unversioned
-    // NodeType enum, so an unnormalized lookup silently falls back to grey (#159).
-    const accent = nodeTypeBorderColor[unversionedNodeType(nodeType)] ?? CATEGORY_FALLBACK_FG;
+    // Node border colour = node category, the same one the pill in the node's
+    // own title bar shows. Keyed off the type alone, every package node was
+    // grey beside a coloured pill (#524). The type map is for a node with no
+    // resolved descriptor. `nodeType` arrives versioned for palette-dragged
+    // nodes (`curio.builtin/data-pool@1`) but the map is keyed unversioned, so
+    // an unnormalized lookup silently falls back to grey (#159).
+    const accent = state.category
+        ? categoryFg(NODE_CATEGORY_KEY[state.category] ?? "package")
+        : colorForNodeType(unversionedNodeType(nodeType));
     const base: CSS.Properties = {
         position: "relative",
         backgroundColor: "#ffffff",

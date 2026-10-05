@@ -69,7 +69,7 @@ class CatalogDataset:
 
         ``save_workflow_test_screenshot`` runs its argument through
         ``os.path.splitext``, so a raw dataset id would be truncated at its
-        last dot - collapsing the two ``data.urbanlab.*`` geojson params onto
+        last dot - collapsing the two ``data.utk.*`` geojson params onto
         one baseline file.
         """
         return "dataset-" + self.manifest.id.replace(".", "-")
@@ -185,7 +185,13 @@ _GEOJSON_VEGA_SPEC = json.dumps(
         "description": "Per-feature bounding-box width of the loaded geometry.",
         "mark": "bar",
         "encoding": {
-            "x": {"field": "feature", "type": "nominal", "axis": {"title": "Feature"}},
+            # One category per feature, so per-feature labels and ticks would
+            # draw as a solid band.
+            "x": {
+                "field": "feature",
+                "type": "nominal",
+                "axis": {"title": "Feature", "labels": False, "ticks": False},
+            },
             "y": {
                 "field": "width",
                 "type": "quantitative",
@@ -226,7 +232,7 @@ head = cols[:8]
 print("CURIO_E2E_ROWS=%d;" % len(df))
 print("CURIO_E2E_NCOLS=%d;" % len(cols))
 print("CURIO_E2E_COLS=%s;" % ",".join(head))
-# Type, not just shape: the generated loader tries gpd.read_parquet before
+# Type, not just shape: curio_load_data tries gpd.read_parquet before
 # pd.read_parquet, so this marker is what proves a GeoParquet dataset came back
 # as a GeoDataFrame rather than as a plain frame of WKB bytes. Compared by class
 # name so this snippet needs no geopandas import of its own.
@@ -379,34 +385,67 @@ def _geotiff_expectations(data_file: Path) -> dict[str, str]:
         }
 
 
+# A collection's index is the dataset; its files stay in the source that
+# indexed them. ``curio_load_collection`` adds a readable ``path`` for each row, so
+# counting the rows whose file opens proves the files were reached, not only
+# the index.
+_COLLECTION_TRANSFORM = '''import os
+
+media = arg
+print("CURIO_E2E_ROWS=%d;" % len(media))
+print("CURIO_E2E_KINDS=%s;" % ",".join(sorted(set(media["kind"]))))
+print("CURIO_E2E_READABLE=%d;" % sum(1 for p in media["path"] if p and os.path.isfile(p)))
+return media
+'''
+
+
+def _collection_expectations(data_file: Path) -> dict[str, str]:
+    """Rows and kinds off the index. Every committed collection is a folder's,
+    so every one of its files is readable where it is."""
+    import pyarrow.parquet as pq
+
+    table = pq.read_table(data_file, columns=["kind"])
+    kinds = sorted(set(table.column("kind").to_pylist()))
+    assert table.num_rows > 0, f"{data_file} indexes no files"
+    return {
+        "CURIO_E2E_ROWS": str(table.num_rows),
+        "CURIO_E2E_KINDS": ",".join(kinds),
+        "CURIO_E2E_READABLE": str(table.num_rows),
+    }
+
+
 FORMAT_PLANS: dict[str, FormatPlan] = {
     "csv": FormatPlan(
-        loader_marker="pd.read_csv",
+        loader_marker="df = curio_load_data(",
         transform_code=_CSV_TRANSFORM,
         vega_spec=None,
         expectations=_csv_expectations,
     ),
     "geojson": FormatPlan(
-        loader_marker="gpd.read_file",
+        loader_marker="gdf = curio_load_data(",
         transform_code=_GEOJSON_TRANSFORM,
         vega_spec=_GEOJSON_VEGA_SPEC,
         expectations=_geojson_expectations,
     ),
     "parquet": FormatPlan(
-        # The geo-first read, not the ``pd`` fallback: preferring
-        # ``gpd.read_parquet`` IS the contract (a geo dataset must reload as a
-        # GeoDataFrame), and asserting on the fallback line would still pass if
-        # the geo branch were deleted.
-        loader_marker="gpd.read_parquet(dataset_path)",
+        # curio_load_data reads it geo first; CURIO_E2E_GEO in the transform
+        # is what proves a geo dataset reloads as a GeoDataFrame.
+        loader_marker="df = curio_load_data(",
         transform_code=_PARQUET_TRANSFORM,
         vega_spec=_PARQUET_VEGA_SPEC,
         expectations=_parquet_expectations,
     ),
     "geotiff": FormatPlan(
-        loader_marker="rasterio.open(dataset_path)",
+        loader_marker="src = curio_load_data(",
         transform_code=_GEOTIFF_TRANSFORM,
         vega_spec=_GEOTIFF_VEGA_SPEC,
         expectations=_geotiff_expectations,
+    ),
+    "collection": FormatPlan(
+        loader_marker="collection = curio_load_collection(",
+        transform_code=_COLLECTION_TRANSFORM,
+        vega_spec=None,
+        expectations=_collection_expectations,
     ),
 }
 

@@ -20,8 +20,28 @@ jest.mock('../../../providers/ProvenanceProvider', () => ({
   }),
 }));
 
+// The edges and exec statuses a grammar node reads its input state from
+// (hook/useGrammarInputState); settable per test, reset in afterEach.
+let mockFlowEdges: any[] = [];
+let mockNodeExecStatus: Record<string, string> = {};
+const mockSignalNodeExecDone = jest.fn();
+const mockPlayNodesUpTo = jest.fn();
+let mockIsRunActive = false;
 jest.mock('../../../providers/FlowProvider', () => ({
-  useFlowContext: () => ({ workflowNameRef: { current: 'test-workflow' } }),
+  useFlowContext: () => ({
+    workflowNameRef: { current: 'test-workflow' },
+    edges: mockFlowEdges,
+    nodeExecStatus: mockNodeExecStatus,
+    signalNodeExecDone: mockSignalNodeExecDone,
+    playNodesUpTo: mockPlayNodesUpTo,
+    isRunActive: mockIsRunActive,
+  }),
+}));
+
+// jsdom has no URL.createObjectURL; the export tests only need to know it was asked.
+jest.mock('../../../services/packages/packagesBlobTransport', () => ({
+  ...jest.requireActual('../../../services/packages/packagesBlobTransport'),
+  triggerBlobDownload: jest.fn(),
 }));
 
 jest.mock('../../../providers/ToastProvider', () => ({
@@ -31,6 +51,7 @@ jest.mock('../../../providers/ToastProvider', () => ({
 jest.mock('../../../services/api', () => ({
   fetchData: jest.fn().mockResolvedValue({ data: {}, dataType: 'dataframe' }),
   fetchPreviewData: jest.fn().mockResolvedValue({ data: {}, dataType: 'dataframe' }),
+  fetchRaster: jest.fn(),
 }));
 
 jest.mock('../../../components/editing/OutputContent', () => {
@@ -38,8 +59,8 @@ jest.mock('../../../components/editing/OutputContent', () => {
   return { __esModule: true, default: () => mockReact.createElement('div', null, 'output') };
 });
 
-// `useEdges()` is settable per test so a Play-All test can wire the merge's
-// input slots. Defaults to [] for every other behavior test; reset in afterEach.
+// `useEdges()` is settable per test so a test can wire a node's input
+// circles. Defaults to [] for every other behavior test; reset in afterEach.
 let mockEdges: any[] = [];
 let mockNodes: Record<string, any> = {};
 jest.mock('reactflow', () => ({
@@ -76,33 +97,53 @@ jest.mock('@urban-toolkit/autk-grammar', () => ({ AutkGrammar: jest.fn().mockImp
 // names are the only out-of-scope refs jest.mock's hoisted factory may capture.
 const mockAutkDbLoadOsm = jest.fn().mockResolvedValue(undefined);
 // Declared with a rest parameter so the forwarding wrapper below
-// (`(...a: any[]) => mockAutkDbGetLayerTables(...a)`) can spread into it.
-const mockAutkDbGetLayerTables = jest.fn(
+// (`(...a: any[]) => mockAutkDbGetLayersMetadata(...a)`) can spread into it.
+const mockAutkDbGetLayersMetadata = jest.fn(
   (..._a: unknown[]) => [] as Array<{ name: string; type?: string }>,
 );
 const mockAutkDbSpatialQuery = jest.fn((..._a: unknown[]) => Promise.resolve(undefined));
+// Overridable per test for the same reason: dev/136 reads the feature count
+// off what the fallback loaded, so a test about a SUCCESSFUL fallback has to
+// give it something to have loaded.
+const mockAutkDbGetLayer = jest.fn(
+  (..._a: unknown[]) => Promise.resolve({ type: 'FeatureCollection', features: [] as any[] }),
+);
+// A raster on the input is loaded into the grammar's database this way.
+const mockAutkDbLoadGeoTiff = jest.fn((..._a: unknown[]) => Promise.resolve({ type: 'raster' }));
+// What it is read back as: its own extent, one feature with no geometry.
+const mockAutkDbGetRaster = jest.fn((..._a: unknown[]) => Promise.resolve({
+  type: 'FeatureCollection',
+  bbox: [-9785700, 5106000, -9781700, 5110000],
+  features: [{ type: 'Feature', geometry: null, properties: { rasterResX: 40, rasterResY: 30 } }],
+}));
 jest.mock('@urban-toolkit/autk-db', () => ({
   AutkDb: jest.fn().mockImplementation(() => ({
     init: jest.fn().mockResolvedValue(undefined),
+    loadGeoTiff: (...a: any[]) => mockAutkDbLoadGeoTiff(...a),
+    getRaster: (...a: any[]) => mockAutkDbGetRaster(...a),
     loadOsm: (...a: any[]) => mockAutkDbLoadOsm(...a),
     loadGeojson: jest.fn().mockResolvedValue(undefined),
     loadCsv: jest.fn().mockResolvedValue(undefined),
     loadJson: jest.fn().mockResolvedValue(undefined),
     spatialQuery: (...a: any[]) => mockAutkDbSpatialQuery(...a),
-    getLayerTables: (...a: any[]) => mockAutkDbGetLayerTables(...a),
-    getLayer: jest.fn().mockResolvedValue({ type: 'FeatureCollection', features: [] }),
+    getLayersMetadata: (...a: any[]) => mockAutkDbGetLayersMetadata(...a),
+    getLayer: (...a: any[]) => mockAutkDbGetLayer(...a),
   })),
   DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395',
 }), { virtual: true });
 
 import { useCodeNodeBehavior } from '../../../adapters/node/codeNodeBehavior';
 import { useDataExportBehavior } from '../../../adapters/node/dataExportBehavior';
+import { triggerBlobDownload } from '../../../services/packages/packagesBlobTransport';
 import { useVegaBehavior } from '../../../adapters/node/vegaBehavior';
 import { useSimpleVisBehavior } from '../../../adapters/node/simpleVisBehavior';
-import { useMergeFlowBehavior } from '../../../adapters/node/mergeFlowBehavior';
+import { standardInOut, withInputCircles } from '../../../adapters/node/handleHelpers';
 import { useDataPoolBehavior } from '../../../adapters/node/dataPoolBehavior';
-import { useAutkGrammarBehavior, attachMapInteractionZoomFix, requestedLayerTables, SANDBOX_BACKEND_URL_TOKEN, classifyAutkSpec, classifyAutkSpecString, describeAutkRun } from '../../../adapters/node/autkGrammarBehavior';
+import { useAutkGrammarBehavior, requestedLayerTables, SANDBOX_BACKEND_URL_TOKEN, classifyAutkSpec, classifyAutkSpecString } from '../../../adapters/node/autkGrammarBehavior';
+import { attachMapInteractionZoomFix } from '../../../adapters/node/autkMapZoom';
+import { describeAutkRun } from '../../../adapters/node/autkRunDescriptions';
 import { __resetWebGpuSupportCache } from '../../../utils/webgpuSupport';
+import { markSelectionEcho } from '../../../utils/selectionEcho';
 
 function makeMockData(overrides: Partial<NodeBehaviorData> = {}): NodeBehaviorData {
   return {
@@ -193,46 +234,52 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     afterEach(() => {
       mockEdges = [];
       mockNodes = {};
+      mockIsRunActive = false;
+      mockPlayNodesUpTo.mockClear();
+      (triggerBlobDownload as jest.Mock).mockClear();
     });
 
-    test('returns expected fields', async () => {
-      const result = await callBehavior(useDataExportBehavior);
-      assertValidBehaviorResult(result.current);
-      expect(typeof result.current.sendCodeOverride).toBe('function');
-      expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
-      expect(typeof result.current.customWidgetsCallback).toBe('function');
-      expect(result.current.contentComponent).toBeDefined();
-    });
+    const WIRED = [{ id: 'e1', source: 'upstream-1', target: 'node-1' }];
+    const UPSTREAM = {
+      'upstream-1': { id: 'upstream-1', data: { nodeType: 'curio.builtin/data-loading@1' } },
+    };
 
-    // These go through the hook rather than calling resolveExportTarget directly.
-    // The unit test for the "producing node" fallback passed against a code path
-    // no caller reached: the name was read off the export node's own
-    // datasetSource, which nothing writes, so every ordinary dataflow fell
-    // through to "data_export" (#226).
-    function exportButtonLabel(result: any): string {
-      // customWidgetsCallback mutates the element it is handed rather than
-      // returning nodes, so give it one and read the button back out.
-      const host = document.createElement('div');
-      result.current.customWidgetsCallback(host);
-      return host.querySelector('button')?.textContent ?? '';
+    // #226: the node is the Download button, nothing else.
+    function renderBody(result: any) {
+      return render(<>{result.current.contentComponent}</>);
+    }
+    function exportButton(result: any): HTMLButtonElement {
+      const { container } = renderBody(result);
+      return container.querySelector('button') as HTMLButtonElement;
     }
 
+    test('is a body with one button: no run override, no code, no widgets', async () => {
+      const result = await callBehavior(useDataExportBehavior);
+      assertValidBehaviorResult(result.current);
+      expect(result.current.contentComponent).toBeDefined();
+      // No sendCode means no play button, and a Run All releases the node
+      // without downloading (UniversalNode).
+      expect(result.current.sendCodeOverride).toBeUndefined();
+      expect(result.current.customWidgetsCallback).toBeUndefined();
+      // Nor the output panel, whose Output / Error / Warning tabs filled the
+      // node: the body is the button and one status line. OutputContent is
+      // mocked above as a div reading "output".
+      const { container } = renderBody(result);
+      expect(container.querySelectorAll('button')).toHaveLength(1);
+      expect(container.textContent).not.toContain('output');
+    });
+
     test('names the file after the node feeding it', async () => {
-      mockEdges = [{ id: 'e1', source: 'upstream-1', target: 'node-1' }];
-      mockNodes = {
-        'upstream-1': {
-          id: 'upstream-1',
-          data: { nodeType: 'curio.builtin/data-loading@1' },
-        },
-      };
+      mockEdges = WIRED;
+      mockNodes = UPSTREAM;
       const result = await callBehavior(useDataExportBehavior, {
         input: { path: 'p', dataType: 'dataframe' },
       });
-      expect(exportButtonLabel(result)).not.toContain('data_export');
+      expect(exportButton(result).textContent).not.toContain('data_export');
     });
 
     test('prefers a renamed upstream node title', async () => {
-      mockEdges = [{ id: 'e1', source: 'upstream-1', target: 'node-1' }];
+      mockEdges = WIRED;
       mockNodes = {
         'upstream-1': {
           id: 'upstream-1',
@@ -245,18 +292,123 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       const result = await callBehavior(useDataExportBehavior, {
         input: { path: 'p', dataType: 'geodataframe' },
       });
-      expect(exportButtonLabel(result)).toContain('boundaries.geojson');
+      expect(exportButton(result).textContent).toContain('boundaries.geojson');
     });
 
-    test('falls back to the default stem when nothing is upstream', async () => {
+    test('falls back to the default stem when the upstream has no name', async () => {
+      mockEdges = WIRED;
       const result = await callBehavior(useDataExportBehavior, {
         input: { path: 'p', dataType: 'dataframe' },
       });
-      expect(exportButtonLabel(result)).toContain('data_export.csv');
+      expect(exportButton(result).textContent).toContain('data_export.csv');
+    });
+
+    test('unconnected: the button is disabled and says why', async () => {
+      const result = await callBehavior(useDataExportBehavior);
+      const { container, getByText } = renderBody(result);
+      expect((container.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      expect(getByText('Connect a dataset to export it')).toBeTruthy();
+    });
+
+    // #513: it used to set a success output on mount and on every input, so
+    // the header read "Done" (and the runtime journal recorded a success)
+    // before anything had run, connected or not.
+    test.each([
+      ['unconnected', ''],
+      ['connected', { path: 'p', dataType: 'dataframe' }],
+    ])('says nothing ran until it runs (%s)', async (_label, input) => {
+      const setOutput = jest.fn();
+      await callBehavior(useDataExportBehavior, { input: input as any }, { setOutput });
+      expect(setOutput).not.toHaveBeenCalled();
+    });
+
+    test('a click downloads the input it has, without a run', async () => {
+      mockEdges = WIRED;
+      const setOutput = jest.fn();
+      const result = await callBehavior(
+        useDataExportBehavior, { input: { path: 'p', dataType: 'dataframe' } }, { setOutput },
+      );
+
+      const button = exportButton(result);
+      await act(async () => { button.click(); });
+
+      await waitFor(() => expect(triggerBlobDownload).toHaveBeenCalledTimes(1));
+      expect((triggerBlobDownload as jest.Mock).mock.calls[0][1]).toBe('data_export.csv');
+      expect(mockPlayNodesUpTo).not.toHaveBeenCalled();
+      expect(setOutput.mock.calls.map(([o]) => o.code)).toEqual(['exec', 'success']);
+      expect(setOutput).toHaveBeenLastCalledWith(
+        expect.objectContaining({ content: 'Downloaded data_export.csv' }),
+      );
+    });
+
+    test('with no input yet, a click runs the upstream nodes, then downloads once', async () => {
+      mockEdges = WIRED;
+      const nodeState = makeMockNodeState({ setOutput: jest.fn() });
+      const { result, rerender } = renderHook(
+        ({ data }) => useDataExportBehavior(data, nodeState),
+        { initialProps: { data: makeMockData({ input: '' }) } },
+      );
+
+      const { container } = render(<>{result.current.contentComponent}</>);
+      const button = container.querySelector('button') as HTMLButtonElement;
+      await act(async () => { button.click(); });
+      expect(mockPlayNodesUpTo).toHaveBeenCalledWith('node-1');
+      expect(triggerBlobDownload).not.toHaveBeenCalled();
+
+      // The run starts, the input arrives, the run ends.
+      mockIsRunActive = true;
+      await act(async () => { rerender({ data: makeMockData({ input: '' }) }); });
+      await act(async () => {
+        rerender({ data: makeMockData({ input: { path: 'p', dataType: 'dataframe' } as any }) });
+      });
+      expect(triggerBlobDownload).not.toHaveBeenCalled();
+      mockIsRunActive = false;
+      await act(async () => {
+        rerender({ data: makeMockData({ input: { path: 'p', dataType: 'dataframe' } as any }) });
+      });
+
+      await waitFor(() => expect(triggerBlobDownload).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        rerender({ data: makeMockData({ input: { path: 'p', dataType: 'dataframe' } as any }) });
+      });
+      expect(triggerBlobDownload).toHaveBeenCalledTimes(1);
+    });
+
+    test('a run that leaves no input reports that nothing could be exported', async () => {
+      mockEdges = WIRED;
+      const setOutput = jest.fn();
+      const nodeState = makeMockNodeState({ setOutput });
+      const { result, rerender } = renderHook(
+        ({ data }) => useDataExportBehavior(data, nodeState),
+        { initialProps: { data: makeMockData({ input: '' }) } },
+      );
+
+      const { container } = render(<>{result.current.contentComponent}</>);
+      const button = container.querySelector('button') as HTMLButtonElement;
+      await act(async () => { button.click(); });
+      mockIsRunActive = true;
+      await act(async () => { rerender({ data: makeMockData({ input: '' }) }); });
+      mockIsRunActive = false;
+      await act(async () => { rerender({ data: makeMockData({ input: '' }) }); });
+
+      expect(triggerBlobDownload).not.toHaveBeenCalled();
+      expect(setOutput).toHaveBeenLastCalledWith(
+        expect.objectContaining({ code: 'error', content: expect.stringContaining('produced no output') }),
+      );
     });
   });
 
   describe('useVegaBehavior', () => {
+    test('text typed into a fresh chart is not overwritten when its first input arrives', async () => {
+      const result = await callBehavior(
+        useVegaBehavior,
+        { input: { dataType: 'dataframe', data: { a: [1, 2] } } } as any,
+        { code: '{"mark": "line"}' } as any,
+      );
+      await act(async () => {});
+      expect(result.current.defaultValueOverride).toBeUndefined();
+    });
+
     test('returns applyGrammar', async () => {
       const result = await callBehavior(useVegaBehavior);
       assertValidBehaviorResult(result.current);
@@ -411,117 +563,135 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(result.current.contentComponent).toBeDefined();
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
     });
+
+    test('shows a list as its values, not the envelope around each one (#516)', async () => {
+      // JSComputation's `[1, 2, 3].map(x => x * 2)`, as the sandbox returns it.
+      const result = await callBehavior(useSimpleVisBehavior, {
+        input: {
+          dataType: 'list',
+          data: [2, 4, 6].map((n) => ({ data: n, dataType: 'int' })),
+        } as any,
+      });
+      const { container } = render(<>{result.current.contentComponent}</>);
+      const text = container.textContent ?? '';
+      expect(text).toContain('[\n  2,\n  4,\n  6\n]');
+      expect(text).not.toContain('dataType');
+    });
   });
 
-  describe('useMergeFlowBehavior', () => {
-    test('returns handlesOverride and setOutputCallbackOverride', async () => {
-      const result = await callBehavior(useMergeFlowBehavior);
-      assertValidBehaviorResult(result.current);
-      expect(Array.isArray(result.current.handlesOverride)).toBe(true);
-      // 5 input slots + 1 output handle (fully replaces adapter.handles).
-      expect(result.current.handlesOverride!.length).toBe(6);
-      expect(typeof result.current.setOutputCallbackOverride).toBe('function');
+  // A node whose one input port takes several edges grows a circle per edge
+  // (#662): UniversalNode replaces the template's `in` handle with them
+  // (`withInputCircles`), unless the behavior replaces the handles itself.
+  describe('growing nodes: input circles', () => {
+    test('growing behaviors leave handlesOverride unset, so the node draws a circle per wired input plus a free one', async () => {
+      for (const hook of [useCodeNodeBehavior, useVegaBehavior, useDataPoolBehavior]) {
+        const result = await callBehavior(hook);
+        assertValidBehaviorResult(result.current);
+        // A handlesOverride would hide the circles (UniversalNode skips them).
+        expect(result.current.handlesOverride).toBeUndefined();
+      }
+      // 4 wired circles + 1 free circle + 1 output handle.
+      const handles = withInputCircles(standardInOut(), [0, 1, 2, 3], Infinity);
+      expect(handles).toHaveLength(6);
+      // The pass-through a fan-in goes through keeps its output state locally.
+      const pool = await callBehavior(useDataPoolBehavior);
+      expect(typeof pool.current.setOutputCallbackOverride).toBe('function');
     });
 
-    test('handles override has correct ids and positions', async () => {
-      const result = await callBehavior(useMergeFlowBehavior);
-      const handles = result.current.handlesOverride!;
+    test('input circles have their ids and positions, and stop at the template maximum', async () => {
+      const handles = withInputCircles(standardInOut(), [0, 1, 2, 3], Infinity);
 
       const inputs = handles.slice(0, 5);
       inputs.forEach((h, i) => {
-        expect(h.id).toBe(`in_${i}`);
+        // Circle 0 keeps the plain `in`, so a node with one input draws as before.
+        expect(h.id).toBe(i === 0 ? 'in' : `in_${i}`);
         expect(h.type).toBe('target');
         expect(h.position).toBe('left');
+        // Spread down the left edge in circle order.
+        expect(h.style?.top).toBe(`${((i + 1) * 100) / 6}%`);
       });
 
       const output = handles[5];
       expect(output.id).toBe('out');
       expect(output.type).toBe('source');
       expect(output.position).toBe('right');
-    });
 
-    // Regression for #151: Merge Flow must not set `disablePlay`. When it did,
-    // UniversalNode's Play-All handler short-circuited (signalNodeExecDone +
-    // return) before invoking `sendCode`, so the run advanced to the downstream
-    // level before the merged output was propagated — downstream nodes then ran
-    // with stale/empty input. Routing Play All through `sendCodeOverride`
-    // (which emits synchronously, then signals done) is what fixes it.
-    test('does not disable Play and exposes sendCodeOverride for Play All', async () => {
-      const result = await callBehavior(useMergeFlowBehavior);
-      expect(result.current.disablePlay).toBeFalsy();
-      expect(typeof result.current.sendCodeOverride).toBe('function');
-    });
-
-    afterEach(() => {
-      mockEdges = [];
-    });
-
-    // The actual #151 bug was about ORDERING: Play All must propagate the merged
-    // output downstream *synchronously* (before the run advances). This drives
-    // sendCodeOverride and asserts outputCallback fires synchronously with the
-    // full merged array — so a regression where sendCodeOverride stops emitting
-    // synchronously (e.g. becomes async) is caught, not just re-adding disablePlay.
-    test('sendCodeOverride emits the merged output synchronously when all slots are ready', async () => {
-      mockEdges = [
-        { source: 'a', target: 'merge-1', targetHandle: 'in_0' },
-        { source: 'b', target: 'merge-1', targetHandle: 'in_1' },
-      ];
-      const outputCallback = jest.fn();
-      const setOutput = jest.fn();
-      const result = await callBehavior(
-        useMergeFlowBehavior,
-        { nodeId: 'merge-1', outputCallback, input: [{ id: 'a-data' }, { id: 'b-data' }] },
-        { setOutput },
-      );
-
-      // Ignore any emission from the mount effect; assert only the Play-All call.
-      outputCallback.mockClear();
-      act(() => {
-        result.current.sendCodeOverride!('print(1)');
-      });
-
-      // Propagated synchronously (we assert right after the sync act, no await)
-      // with the merged slot array — and no "inputs not ready" error.
-      expect(outputCallback).toHaveBeenCalledTimes(1);
-      expect(outputCallback).toHaveBeenCalledWith('merge-1', {
-        data: [{ id: 'a-data' }, { id: 'b-data' }],
-        dataType: 'outputs',
-      });
-      expect(setOutput).not.toHaveBeenCalled();
-    });
-
-    // The flip side: Play All must NOT emit stale/partial input when a wired slot
-    // is still empty — it surfaces an error instead of propagating downstream.
-    test('sendCodeOverride does not propagate partial input; reports inputs-not-ready', async () => {
-      mockEdges = [
-        { source: 'a', target: 'merge-2', targetHandle: 'in_0' },
-        { source: 'b', target: 'merge-2', targetHandle: 'in_1' },
-      ];
-      const outputCallback = jest.fn();
-      const setOutput = jest.fn();
-      const result = await callBehavior(
-        useMergeFlowBehavior,
-        { nodeId: 'merge-2', outputCallback, input: [{ id: 'a-data' }] }, // only 1 of 2 ready
-        { setOutput },
-      );
-
-      outputCallback.mockClear();
-      act(() => {
-        result.current.sendCodeOverride!('print(1)');
-      });
-
-      expect(outputCallback).not.toHaveBeenCalled();
-      expect(setOutput).toHaveBeenCalledTimes(1);
-      expect(setOutput.mock.calls[0][0].code).toBe('error');
+      // At a `[1,2]` template's maximum there is no free circle left to offer.
+      const full = withInputCircles(standardInOut(), [0, 1], 2);
+      expect(full.map((h) => h.id)).toEqual(['in', 'in_1', 'out']);
     });
   });
 
   describe('useDataPoolBehavior', () => {
-    test('returns contentComponent, customWidgetsCallback, overrides', async () => {
+    afterEach(() => {
+      mockEdges = [];
+    });
+
+    // Regression for #151: a pass-through node must not set `disablePlay`.
+    // When Merge Flow did, UniversalNode's Play-All handler short-circuited
+    // (signalNodeExecDone + return) before invoking `sendCode`, so the run
+    // advanced to the downstream level before the node's output was
+    // propagated, and downstream nodes ran with stale or empty input. Routing
+    // Play All through `sendCodeOverride` is what keeps the order. The Data
+    // Pool is the pass-through a fan-in goes through now.
+    test('does not disable Play and exposes sendCodeOverride for Play All', async () => {
+      const result = await callBehavior(useDataPoolBehavior);
+      expect(result.current.disablePlay).toBeFalsy();
+      expect(typeof result.current.sendCodeOverride).toBe('function');
+    });
+
+    // The actual #151 bug was about ORDERING: Play All must propagate the
+    // node's output downstream before the run advances. This drives
+    // sendCodeOverride on a pool fed through two circles and asserts
+    // outputCallback fires with both inputs, in circle order, before the
+    // returned run settles.
+    test('fed through two circles, Play All emits both inputs in circle order before its run settles', async () => {
+      mockEdges = [
+        { source: 'a', target: 'pool-1', targetHandle: 'in' },
+        { source: 'b', target: 'pool-1', targetHandle: 'in_1' },
+      ];
+      const first = { dataType: 'dataframe', data: { first: { 0: 1, 1: 2 } } };
+      const second = { dataType: 'dataframe', data: { second: { 0: 3 } } };
+      const outputCallback = jest.fn();
+      const result = await callBehavior(useDataPoolBehavior, {
+        nodeId: 'pool-1',
+        outputCallback,
+        // What the growing node reads once both circles hold a value.
+        input: { dataType: 'outputs', data: [first, second] } as any,
+      });
+      // Let the run the input started on mount finish (its result lands in the
+      // pool's own output), so the Play-All call below starts its own run
+      // instead of returning that one.
+      await waitFor(() => expect(result.current.outputOverride).toMatchObject({ code: 'success' }));
+      expect(outputCallback).toHaveBeenCalled();
+
+      outputCallback.mockClear();
+      let settled = false;
+      const settledWhenEmitted: boolean[] = [];
+      outputCallback.mockImplementation(() => settledWhenEmitted.push(settled));
+      await act(async () => {
+        await result.current.sendCodeOverride!('');
+        settled = true;
+      });
+
+      expect(outputCallback).toHaveBeenCalledTimes(1);
+      expect(settledWhenEmitted).toEqual([false]);
+      const [nodeId, emitted] = outputCallback.mock.calls[0];
+      expect(nodeId).toBe('pool-1');
+      expect(emitted.dataType).toBe('outputs');
+      expect(emitted.data).toHaveLength(2);
+      expect(emitted.data[0]).toMatchObject({ dataType: 'dataframe', data: { first: { 0: 1, 1: 2 } } });
+      expect(emitted.data[1]).toMatchObject({ dataType: 'dataframe', data: { second: { 0: 3 } } });
+      expect(result.current.outputOverride).toMatchObject({ code: 'success', content: { dataType: 'outputs' } });
+    });
+
+    test('returns contentComponent and overrides, and no widgets callback', async () => {
       const result = await callBehavior(useDataPoolBehavior);
       assertValidBehaviorResult(result.current);
       expect(result.current.contentComponent).toBeDefined();
-      expect(typeof result.current.customWidgetsCallback).toBe('function');
+      // The conflict-mode selects are part of the body (#581). The pool has no
+      // Widgets tab ("editor": "none"), so a widgets callback never ran.
+      expect(result.current.customWidgetsCallback).toBeUndefined();
       expect(typeof result.current.setOutputCallbackOverride).toBe('function');
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
       // sendCodeOverride lets Play All wait for processDataAsync to propagate
@@ -549,12 +719,12 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       Object.defineProperty(navigator, 'gpu', { configurable: true, value: undefined });
     });
 
-    test('returns applyGrammar, contentComponent, and default spec', async () => {
+    test('returns applyGrammar and contentComponent; a fresh node opens empty, like a Vega chart', async () => {
       const result = await callBehavior(useAutkGrammarBehavior);
       assertValidBehaviorResult(result.current);
       expect(typeof result.current.applyGrammar).toBe('function');
       expect(result.current.contentComponent).toBeDefined();
-      expect(typeof result.current.defaultValueOverride).toBe('string');
+      expect(result.current.defaultValueOverride).toBeUndefined();
     });
 
     test('omits defaultValueOverride when node already has code', async () => {
@@ -565,34 +735,41 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(result.current.defaultValueOverride).toBeUndefined();
     });
 
-    // dev/70 regression: the seed decision is frozen at mount. ``data.code`` is
-    // mutated by useNodeState one commit behind the editor (and the old reset
-    // chain even wrote ``undefined`` into it), so deriving the override from it
-    // per render flip-flopped ``defaultValue`` and reset the editor to the
-    // default spec while the user typed.
-    test('defaultValueOverride stays stable while data.code mutates mid-typing (dev/70)', async () => {
-      const stableData = makeMockData();
+    // dev/70 regression: ``data.code`` is mutated by useNodeState one commit
+    // behind the editor (and the old reset chain even wrote ``undefined`` into
+    // it), so an override derived from it per render flip-flopped
+    // ``defaultValue`` and reset the editor while the user typed. The starter,
+    // once offered, stays put until a document is written in from outside.
+    test('the starter stays stable while data.code mutates mid-typing (dev/70)', async () => {
+      const stableData = makeMockData({
+        input: {
+          dataType: 'geodataframe',
+          data: { type: 'FeatureCollection', features: [
+            { type: 'Feature', geometry: { type: 'Point', coordinates: [0, 0] }, properties: { pop: 1 } },
+          ] },
+        },
+      } as any);
       const stableNodeState = makeMockNodeState();
       let rendered: any;
       await act(async () => {
         rendered = renderHook(() => useAutkGrammarBehavior(stableData, stableNodeState));
       });
-
-      const seed = rendered.result.current.defaultValueOverride;
-      expect(typeof seed).toBe('string');
+      await waitFor(() => expect(rendered.result.current.defaultValueOverride).toBeDefined());
+      const starter = rendered.result.current.defaultValueOverride;
+      expect(JSON.parse(starter).map.layerRefs[0].dataRef).toBe('input_0');
 
       // Editor floats a keystroke back into the mutable node data.
       (stableData as any).code = '{"user":"typed"}';
       await act(async () => { rendered.rerender(); });
-      expect(rendered.result.current.defaultValueOverride).toBe(seed);
+      expect(rendered.result.current.defaultValueOverride).toBe(starter);
 
-      // The old reset chain cleared it again — the override must not flip back.
+      // The old reset chain cleared it again: the override must not flip.
       (stableData as any).code = undefined;
       await act(async () => { rendered.rerender(); });
-      expect(rendered.result.current.defaultValueOverride).toBe(seed);
+      expect(rendered.result.current.defaultValueOverride).toBe(starter);
 
       // An explicit external update (dataset drop / LLM apply) writes
-      // data.defaultCode via updateDefaultCode and must win over the seed.
+      // data.defaultCode via updateDefaultCode and must win over the starter.
       (stableData as any).defaultCode = '{"map":{}}';
       await act(async () => { rendered.rerender(); });
       expect(rendered.result.current.defaultValueOverride).toBeUndefined();
@@ -666,26 +843,28 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     });
 
     test('data-only node before its first run says what running it will do (#282)', async () => {
-      const result = await callBehavior(useAutkGrammarBehavior, {
-        code: JSON.stringify({
-          data: [{ type: 'geojson', geojsonObject: { type: 'FeatureCollection', features: [] }, outputTableName: 't' }],
-        }),
-      } as any);
+      const code = JSON.stringify({
+        data: [{ type: 'geojson', geojsonObject: { type: 'FeatureCollection', features: [] }, outputTableName: 't' }],
+      });
+      const result = await callBehavior(useAutkGrammarBehavior, { code } as any, { code } as any);
 
       const { container } = render(<>{result.current.contentComponent}</>);
-      const empty = container.querySelector('[data-curio-node-empty="upstream-not-run"]');
+      // It loads its own data, so it is "not run", and says what running it does.
+      const empty = container.querySelector('[data-curio-node-empty="not-run"]');
       expect(empty).not.toBeNull();
+      expect(empty!.textContent).toContain('Not run yet');
       expect(empty!.textContent).toContain('This step loads data');
       expect(container.querySelector('[data-curio-autk-summary]')).toBeNull();
     });
 
-    test('render node body is the map box, not an empty-state or summary (#282)', async () => {
+    test('render node before its first run says it has not been drawn, as a Vega chart does', async () => {
       const result = await callBehavior(useAutkGrammarBehavior, {
         code: JSON.stringify({ map: { layerRefs: [] } }),
-      } as any);
+      } as any, { code: JSON.stringify({ map: { layerRefs: [] } }) } as any);
 
       const { container } = render(<>{result.current.contentComponent}</>);
-      expect(container.querySelector('[data-curio-node-empty]')).toBeNull();
+      const empty = container.querySelector('[data-curio-node-empty="not-run"]');
+      expect(empty?.textContent).toContain('Not drawn yet');
       expect(container.querySelector('[data-curio-autk-summary]')).toBeNull();
     });
 
@@ -752,6 +931,628 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(injected.coordinateFormat).toBe('EPSG:4326');
     });
 
+    // The counts behind the empty-render verdict ride as data. Where they
+    // cannot be counted there is no verdict and no invented zero; where a node's
+    // own sources loaded nothing, the document is blamed, not the upstream.
+    describe('selections and redraws, by the rules a Vega chart follows', () => {
+      const point = (x: number) => ({ type: 'Point', coordinates: [x, x] });
+      const INPUT = {
+        dataType: 'geodataframe',
+        data: { type: 'FeatureCollection', features: [0, 1, 2].map((i) => ({ type: 'Feature', geometry: point(i), properties: { i } })) },
+      };
+      const MAP = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0' }] } });
+      const grammarMock = () => jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+
+      test('a selection across a direct interaction edge highlights the matching feature, without a redraw', async () => {
+        const highlightOnMap = jest.fn();
+        const clearHighlightOnMap = jest.fn();
+        grammarMock().AutkGrammar.mockImplementationOnce(() => ({
+          run: jest.fn().mockResolvedValue(undefined), data: {}, highlightOnMap, clearHighlightOnMap,
+        }));
+        const base = makeMockData({ outputCallback: jest.fn(), input: INPUT } as any);
+        const state = makeMockNodeState();
+        const { result, rerender } = renderHook(
+          ({ d }: { d: any }) => useAutkGrammarBehavior(d, state),
+          { initialProps: { d: base } },
+        );
+        await act(async () => { await result.current.applyGrammar!(MAP); });
+        const constructed = grammarMock().AutkGrammar.mock.calls.length;
+
+        const selection = [{ nodeId: 'bar', details: { highlight: { type: 'POINT', data: [1], priority: 1 } }, priority: 1 }];
+        await act(async () => { rerender({ d: { ...base, interactions: selection } }); });
+
+        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [1]));
+        expect(grammarMock().AutkGrammar.mock.calls.length).toBe(constructed);
+      });
+
+      test("a plot's own selection back through a pool is left alone; another chart's is applied", async () => {
+        const setPlotSelection = jest.fn();
+        const clearHighlightOnPlot = jest.fn();
+        grammarMock().AutkGrammar.mockImplementationOnce(() => ({
+          run: jest.fn().mockResolvedValue(undefined), data: {}, setPlotSelection, clearHighlightOnPlot,
+        }));
+        const PLOT = JSON.stringify({ plot: { dataRef: 'input_0', mark: 'bar', axis: ['i', '@transform'],
+          transform: { preset: 'binning-1d' }, events: ['brushX'] } });
+        const base = makeMockData({ nodeId: 'plot-1', outputCallback: jest.fn(), input: INPUT } as any);
+        const state = makeMockNodeState();
+        const { result, rerender } = renderHook(
+          ({ d }: { d: any }) => useAutkGrammarBehavior(d, state),
+          { initialProps: { d: base } },
+        );
+        await act(async () => { await result.current.applyGrammar!(PLOT); });
+        await waitFor(() => expect(clearHighlightOnPlot).toHaveBeenCalled());
+        clearHighlightOnPlot.mockClear();
+
+        const flagged = (row: number | null) => ({
+          ...INPUT,
+          data: { ...INPUT.data, features: INPUT.data.features.map((f, i) => ({
+            ...f, properties: { ...f.properties, interacted: i === row ? '1' : '0' } })) },
+        });
+        // A press between two bars: the plot's own selection is empty for a
+        // moment, and comes back through the pool with every flag off.
+        await act(async () => { rerender({ d: { ...base, input: markSelectionEcho(flagged(null), 'plot-1') } }); });
+        // Then a map's selection of row 1.
+        await act(async () => { rerender({ d: { ...base, input: markSelectionEcho(flagged(1), 'map-1') } }); });
+        await waitFor(() => expect(setPlotSelection).toHaveBeenCalledWith('input_0', [1]));
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+        expect(clearHighlightOnPlot).not.toHaveBeenCalled();
+      });
+
+      test('a run asked for while one is under way runs once more afterwards, with the latest document', async () => {
+        const base = makeMockData({ outputCallback: jest.fn(), input: INPUT } as any);
+        const result = await callBehavior(useAutkGrammarBehavior, base as any);
+        const latest = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0', opacity: 0.5 }] } });
+        const before = grammarMock().AutkGrammar.mock.results.length;
+
+        await act(async () => {
+          const first = result.current.applyGrammar!(MAP);
+          await result.current.applyGrammar!(MAP);
+          await result.current.applyGrammar!(latest);
+          await first;
+        });
+
+        const runs = grammarMock().AutkGrammar.mock.results.slice(before).map((r: any) => r.value.run.mock.calls[0]?.[0]);
+        // Two runs, one after the other: the one under way, then the latest ask.
+        expect(runs).toHaveLength(2);
+        expect(runs[1].map.layerRefs[0].opacity).toBe(0.5);
+      });
+    });
+
+    describe('what an Autark node says before it draws, as a Vega chart does', () => {
+      const MAP_ON_UPSTREAM = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0' }] } });
+      const body = async (code: string, data: any = {}) => {
+        const result = await callBehavior(useAutkGrammarBehavior, { code, ...data } as any, { code } as any);
+        const { container } = render(<>{result.current.contentComponent}</>);
+        return { result, container, reason: container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty') };
+      };
+
+      afterEach(() => {
+        mockFlowEdges = [];
+        mockNodeExecStatus = {};
+      });
+
+      test('a map on its input with nothing connected asks for a connection', async () => {
+        expect((await body(MAP_ON_UPSTREAM)).reason).toBe('disconnected');
+      });
+
+      test('connected to a node that has not run: run it', async () => {
+        mockFlowEdges = [{ source: 'py', target: 'node-1' }];
+        expect((await body(MAP_ON_UPSTREAM)).reason).toBe('upstream-not-run');
+      });
+
+      test('connected to a node that failed: says so', async () => {
+        mockFlowEdges = [{ source: 'py', target: 'node-1' }];
+        mockNodeExecStatus = { py: 'errored' };
+        expect((await body(MAP_ON_UPSTREAM)).reason).toBe('upstream-errored');
+      });
+
+      test('a compute step needs its input; a data step does not', async () => {
+        expect((await body(JSON.stringify({ compute: [{ dataRef: 'x', wglsFunction: '' }] }))).reason)
+          .toBe('disconnected');
+        const data = JSON.stringify({ data: [{ type: 'json', jsonObject: [{ a: 1 }], outputTableName: 't' }] });
+        expect((await body(data)).reason).toBe('not-run');
+      });
+
+      test('an empty editor asks for a connection first, as Vega does', async () => {
+        expect((await body('')).reason).toBe('disconnected');
+      });
+
+      test('after a run, an input it cannot draw is named in the body', async () => {
+        mockFlowEdges = [{ source: 'py', target: 'node-1' }];
+        const { result, container } = await body(MAP_ON_UPSTREAM, {
+          outputCallback: jest.fn(),
+          input: { dataType: 'dataframe', data: { pop: [1, 2] } },
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(MAP_ON_UPSTREAM);
+        });
+        const empty = container.querySelector('[data-curio-node-empty]');
+        expect(empty?.getAttribute('data-curio-node-empty')).toBe('geometry-unresolved');
+        expect(empty?.textContent).toContain('input_0 has no geometry column');
+      });
+
+      test("typing does not change the body's identity, so the editor keeps its tab", async () => {
+        const stableData = makeMockData({ code: MAP_ON_UPSTREAM } as any);
+        // The node's output is state in the app: the same object until a run.
+        const output = { code: '', content: '', outputType: '' };
+        let code = MAP_ON_UPSTREAM;
+        const { result, rerender } = renderHook(
+          () => useAutkGrammarBehavior(stableData, makeMockNodeState({ code, output } as any)),
+        );
+        const before = result.current.contentComponent;
+        code = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0', getFnv: 'v' }] } });
+        rerender();
+        expect(result.current.contentComponent).toBe(before);
+      });
+    });
+
+    describe('its input, read the way the Vega-Lite node reads its own', () => {
+      const api = () => jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+      const lastRunSpec = () => {
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const instances = AutkGrammar.mock.results.map((r: any) => r.value);
+        const run = instances[instances.length - 1]?.run as jest.Mock | undefined;
+        return run?.mock.calls[run.mock.calls.length - 1]?.[0];
+      };
+      const point = (x: number, y: number) => ({ type: 'Point', coordinates: [x, y] });
+
+      afterEach(() => {
+        api().fetchData.mockReset();
+        api().fetchData.mockResolvedValue({ data: {}, dataType: 'dataframe' });
+      });
+
+      test('a DataFrame with a geometry column reaches the map as the table input_0', async () => {
+        const result = await callBehavior(useAutkGrammarBehavior, {
+          outputCallback: jest.fn(),
+          input: { dataType: 'dataframe', data: { zone: ['n', 's'], where: [point(0, 0), point(1, 1)] } } as any,
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0' }] } }));
+        });
+        const upstream = lastRunSpec()?.data?.find((s: any) => s.outputTableName === 'input_0');
+        expect(upstream?.type).toBe('geojson');
+        expect(upstream?.geojsonObject.features.map((f: any) => f.properties.zone)).toEqual(['n', 's']);
+      });
+
+      test('input_0 is added only when the document names it', async () => {
+        const layer = (name: string) => ({
+          dataType: 'geodataframe', layerName: name,
+          data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: point(0, 0), properties: {} }] },
+        });
+        const result = await callBehavior(useAutkGrammarBehavior, {
+          outputCallback: jest.fn(),
+          input: { dataType: 'outputs', data: [layer('table_osm_roads'), layer('table_osm_water')] } as any,
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'table_osm_roads' }] } }));
+        });
+        expect(lastRunSpec()?.data.map((s: any) => s.outputTableName)).toEqual(['table_osm_roads', 'table_osm_water']);
+      });
+
+      test('a compute step reads its input once', async () => {
+        api().fetchData.mockResolvedValue({
+          dataType: 'geodataframe',
+          data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: point(0, 0), properties: {} }] },
+        });
+        const result = await callBehavior(useAutkGrammarBehavior, {
+          outputCallback: jest.fn(),
+          input: { path: 'art-in', dataType: 'geodataframe' } as any,
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ compute: [] }));
+        });
+        expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-in')).toHaveLength(1);
+      });
+
+      test('a DataFrame with no geometry column is refused with the reason, blaming the upstream', async () => {
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          {
+            outputCallback: jest.fn(),
+            input: { dataType: 'dataframe', data: { zone: ['n'], pop: [3] } } as any,
+          },
+          { setOutput },
+        );
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const constructed = AutkGrammar.mock.calls.length;
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0' }] } }));
+        });
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall![0].kind).toBe('empty-render:no-input-rows');
+        expect(errCall![0].content).toContain('input_0 has no geometry column');
+        expect(errCall![0].content).toContain('not at fault');
+        // Nothing drawable, so the grammar is never handed the document.
+        expect(AutkGrammar.mock.calls.length).toBe(constructed);
+      });
+
+      test('an input type it cannot read says so', async () => {
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), input: { path: 'art-s', dataType: 'str' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0' }] } }));
+        });
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall![0].content).toContain('str is not a valid input type for the Autark node.');
+        expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-s')).toHaveLength(0);
+      });
+
+      test('a raster is loaded into the grammar\'s own database with loadGeoTiff, at its own size, nearest, and drawn', async () => {
+        const { fetchRaster } = jest.requireMock('../../../services/api') as { fetchRaster: jest.Mock };
+        const bytes = new ArrayBuffer(16);
+        fetchRaster.mockResolvedValueOnce({
+          ok: true,
+          bytes,
+          meta: {
+            width: 40, height: 30, count: 1, crs: 'EPSG:32616', crsWkt: null,
+            transform: [30, 0, 447000, 0, -30, 4637000], nodata: -9999,
+          },
+        });
+        mockAutkDbLoadGeoTiff.mockClear();
+        // The grammar as autk-grammar builds it: its engine hands each data
+        // source to its data adapter, threading the database through.
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        let runSpec: any = null;
+        let mapLayer: any = null;
+        const resolved: any[] = [];
+        AutkGrammar.mockImplementationOnce(() => {
+          const grammar: any = { data: {} };
+          grammar.dataAdapter = { resolveSource: jest.fn(async (db: any) => db) };
+          grammar.run = jest.fn(async (spec: any) => {
+            runSpec = spec;
+            let db: any;
+            for (const source of spec.data) {
+              db = await grammar.dataAdapter.resolveSource(db, source);
+              resolved.push(db);
+            }
+            // Its map then asks the database for each layer it draws.
+            mapLayer = await db.getLayer(spec.map.layerRefs[0].dataRef);
+          });
+          return grammar;
+        });
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), input: { path: 'art-r', dataType: 'raster' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0', getFnv: 'band_1' }] } }));
+        });
+
+        expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeUndefined();
+        expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-r')).toHaveLength(0);
+        expect(fetchRaster).toHaveBeenCalledWith('art-r', expect.objectContaining({ maxCells: 2048 * 2048 }));
+        expect(runSpec.data.map((s: any) => [s.type, s.outputTableName])).toEqual([['curio-raster', 'input_0']]);
+        expect(mockAutkDbLoadGeoTiff).toHaveBeenCalledWith({
+          geotiffArrayBuffer: bytes,
+          outputTableName: 'input_0',
+          coordinateFormat: 'EPSG:32616',
+          maxRasterCells: 1200,
+          resampleMethod: 'nearest',
+        });
+        // The database the raster went into is the one the grammar's map reads,
+        // and the map gets the raster at its own extent, outlined so autk-map
+        // can place a map that starts with it.
+        expect(resolved[0]?.loadGeoTiff).toBeDefined();
+        expect(mapLayer.bbox).toEqual([-9785700, 5106000, -9781700, 5110000]);
+        expect(mapLayer.features[0].geometry).toBeNull();
+        expect(mapLayer.features[1].geometry.type).toBe('Polygon');
+        expect(setOutput.mock.calls.map((c: any[]) => c[0]?.code)).toContain('success');
+      });
+
+      test('a raster too large to load is not drawn, and the node says to crop it', async () => {
+        const { fetchRaster } = jest.requireMock('../../../services/api') as { fetchRaster: jest.Mock };
+        fetchRaster.mockResolvedValueOnce({
+          ok: false, status: 413, message: 'the raster is 6000 by 6000 cells',
+          meta: { width: 6000, height: 6000, count: 1, crs: 'EPSG:32616', transform: [1, 0, 0, 0, -1, 0] },
+        });
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const constructed = AutkGrammar.mock.calls.length;
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), input: { path: 'art-big', dataType: 'raster' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0' }] } }));
+        });
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall![0].kind).toBe('empty-render:no-input-rows');
+        expect(errCall![0].content).toContain('input_0 is 6000 by 6000 cells');
+        expect(errCall![0].content).toContain('Crop it in the node that makes it');
+        expect(AutkGrammar.mock.calls.length).toBe(constructed);
+      });
+
+      test('an empty layer from an Autark data node reaches a compute step as an empty table', async () => {
+        // The data node's artifact, as /get returns it: a list of layer
+        // records, where a layer the load found empty has no feature list.
+        api().fetchData.mockResolvedValue({
+          dataType: 'list',
+          data: [
+            { dataType: 'dict', data: { name: 'table_osm_roads', type: 'roads', geojson: {
+              type: 'FeatureCollection', features: [{ type: 'Feature', geometry: point(0, 0), properties: {} }] } } },
+            { dataType: 'dict', data: { name: 'table_osm_water', type: 'water', geojson: {
+              type: 'FeatureCollection', features: null } } },
+          ],
+        });
+        const setOutput = jest.fn();
+        const outputCallback = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback, input: { path: 'art-db', dataType: 'list' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ compute: [] }));
+        });
+        expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeUndefined();
+        // One layer left, so it is passed on as a single frame.
+        const passedOn = outputCallback.mock.calls[0]?.[1];
+        expect(passedOn).toMatchObject({ dataType: 'geodataframe', layerName: 'table_osm_roads' });
+      });
+
+      test('a compute step with nothing it can read passes nothing on', async () => {
+        const setOutput = jest.fn();
+        const outputCallback = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback, input: { dataType: 'dataframe', data: { pop: [3] } } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ compute: [] }));
+        });
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall![0].kind).toBe('empty-render:no-input-rows');
+        expect(errCall![0].content).toContain('has no geometry column');
+        expect(outputCallback).not.toHaveBeenCalled();
+      });
+
+      test('a data step does not read its input', async () => {
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } }),
+        );
+        const result = await callBehavior(useAutkGrammarBehavior, {
+          outputCallback: jest.fn(),
+          jsInterpreter: { interpretCode } as any,
+          input: { path: 'art-in', dataType: 'geodataframe' } as any,
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+                     outputTableName: 'table_osm', autoLoadLayers: { layers: ['parks'] } }],
+          }));
+        });
+        expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-in')).toHaveLength(0);
+      });
+    });
+
+    describe('empty-render counts', () => {
+      const setOutputKinds = (setOutput: jest.Mock) =>
+        setOutput.mock.calls.map((c: any[]) => c[0]?.kind).filter(Boolean);
+
+      test('the default sandbox path counts nothing, so it claims nothing', async () => {
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } }),
+        );
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+                     outputTableName: 'table_osm', autoLoadLayers: { layers: ['parks'] } }],
+          }));
+        });
+        const last = setOutput.mock.calls[setOutput.mock.calls.length - 1][0];
+        expect(last.code).toBe('success');
+        expect(last.content).toBe('Loaded 1 table: table_osm_parks');
+        expect(last.content).not.toContain('undefined');
+        expect(setOutputKinds(setOutput)).toEqual([]);
+      });
+
+      test('a data node whose own sources loaded zero rows reports empty-source', async () => {
+        // The backend is down, so the in-browser load hands back layers in hand,
+        // and the one it loaded is empty.
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: 'sandbox down', output: { path: '', dataType: 'str' } }),
+        );
+        mockAutkDbLoadOsm.mockReset();
+        mockAutkDbLoadOsm.mockResolvedValue(undefined);
+        mockAutkDbGetLayersMetadata.mockReset();
+        mockAutkDbGetLayersMetadata.mockReturnValue([{ name: 'table_osm_parks', type: 'parks' }]);
+        mockAutkDbGetLayer.mockResolvedValue({ type: 'FeatureCollection', features: [] });
+
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+                     outputTableName: 'table_osm', autoLoadLayers: { layers: ['parks'] } }],
+          }));
+        });
+
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall).toBeTruthy();
+        // Not `no-input-rows`: that would tell the harness to stop repairing a
+        // document whose own source is what came back empty.
+        expect(errCall![0].kind).toBe('empty-render:empty-source');
+        expect(errCall![0].content).toContain('table_osm_parks (0 features)');
+
+        mockAutkDbGetLayersMetadata.mockReset();
+        mockAutkDbGetLayersMetadata.mockReturnValue([]);
+      });
+
+      test('a map whose upstream delivered nothing blames the upstream, not its layerRefs', async () => {
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), input: undefined as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            map: { layerRefs: [{ dataRef: 'table_osm_roads' }] },
+          }));
+        });
+
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall).toBeTruthy();
+        // No table arrived at all, so no name could have resolved: the node
+        // that should feed this one is what must change.
+        expect(errCall![0].kind).toBe('empty-render:no-input-rows');
+        expect(errCall![0].content).not.toContain('does not produce');
+      });
+
+      test('a compute node fed an empty upstream reports no-input-rows', async () => {
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          {
+            outputCallback: jest.fn(),
+            input: { dataType: 'geodataframe', data: { type: 'FeatureCollection', features: [] } } as any,
+          },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ compute: [] }));
+        });
+
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall).toBeTruthy();
+        // Counted before the empty layer was dropped: zero rows arrived, and
+        // the compute document is not at fault for that.
+        expect(errCall![0].kind).toBe('empty-render:no-input-rows');
+        // Nor does the message go on to blame the spec for naming nothing.
+        expect(errCall![0].content).toContain('not at fault');
+        expect(errCall![0].content).not.toContain('names no');
+      });
+
+      test('a data node whose load found no tables says only that its sources were empty', async () => {
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: 'sandbox down', output: { path: '', dataType: 'str' } }),
+        );
+        mockAutkDbLoadOsm.mockReset();
+        mockAutkDbLoadOsm.mockResolvedValue(undefined);
+        mockAutkDbGetLayersMetadata.mockReset();
+        mockAutkDbGetLayersMetadata.mockReturnValue([]);
+
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+                     outputTableName: 'table_osm', autoLoadLayers: { layers: ['parks'] } }],
+          }));
+        });
+
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall).toBeTruthy();
+        expect(errCall![0].kind).toBe('empty-render:empty-source');
+        // The spec does name a table; the load just found no rows for it.
+        expect(errCall![0].content).not.toContain('names no');
+      });
+
+      test('a map that drew one layer and dropped an empty one says so', async () => {
+        const { fetchData } = require('../../../services/api');
+        const { AutkGrammar } = require('@urban-toolkit/autk-grammar');
+        let runSpec: any = null;
+        (AutkGrammar as jest.Mock).mockReset();
+        (AutkGrammar as jest.Mock).mockImplementation(() => ({
+          run: jest.fn((s: any) => { runSpec = s; return Promise.resolve(); }),
+          data: {},
+        }));
+        const point = { type: 'Feature', geometry: { type: 'Point', coordinates: [0, 0] }, properties: {} };
+        (fetchData as jest.Mock).mockResolvedValueOnce({
+          dataType: 'list',
+          data: [
+            { dataType: 'dict', data: { name: 'roads', type: 'roads', geojson: { type: 'FeatureCollection', features: [point] } } },
+            { dataType: 'dict', data: { name: 'parks', type: 'parks', geojson: { type: 'FeatureCollection', features: [] } } },
+          ],
+        });
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-mixed', dataType: 'list' } }),
+        );
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+                     outputTableName: 'table_osm', autoLoadLayers: { layers: ['roads', 'parks'] } }],
+            map: { layerRefs: [{ dataRef: 'roads' }, { dataRef: 'parks' }] },
+          }));
+        });
+
+        // Only the populated layer reached the grammar ...
+        expect(runSpec.map.layerRefs).toEqual([{ dataRef: 'roads' }]);
+        // ... and the run still succeeds, naming the layer it lost.
+        const last = setOutput.mock.calls[setOutput.mock.calls.length - 1][0];
+        expect(last.code).toBe('success');
+        expect(last.content).toContain('drew 1 of 2 layers');
+        expect(last.content).toContain('parks has no rows');
+      });
+
+      test('a map whose ref names its own EMPTY table blames the source, not the ref', async () => {
+        const { fetchData } = require('../../../services/api');
+        (fetchData as jest.Mock).mockResolvedValueOnce({
+          dataType: 'list',
+          data: [
+            { dataType: 'dict', data: { name: 'parks', type: 'parks', geojson: { type: 'FeatureCollection', features: [] } } },
+          ],
+        });
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-empty', dataType: 'list' } }),
+        );
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+                     outputTableName: 'table_osm', autoLoadLayers: { layers: ['parks'] } }],
+            map: { layerRefs: [{ dataRef: 'parks' }] },
+          }));
+        });
+
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall).toBeTruthy();
+        // The table exists with zero rows: `no-layers` would claim the
+        // document names data the dataflow does not produce.
+        expect(errCall![0].kind).toBe('empty-render:empty-source');
+      });
+    });
+
     // Regression: the flaky 06-autark-what-if-shadow-study failure. The backend
     // data load occasionally returns no artifact; the node then fell back to an
     // in-browser AutkDb load whose PBF fetch 404'd, and autk-db crashed with
@@ -769,8 +1570,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // and no tables result — loadSpecLayers must report this, not crash.
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockRejectedValue(new Error('HTTP error! Status: 404'));
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue([]);
 
       const setOutput = jest.fn();
       const result = await callBehavior(
@@ -805,16 +1606,16 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // Restore defaults so the persistent rejection can't leak to later tests.
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockResolvedValue(undefined);
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue([]);
     });
 
     // Regression for #248. autk-db's loadOsm walks autoLoadLayers.layers in
     // order and lets a per-layer failure propagate, so a throw partway leaves
-    // the earlier tables registered and the later ones absent. Both loaders used
-    // to publish whatever getLayerTables() held, so the node that actually
-    // failed went green and the breakage surfaced two nodes downstream as
-    // "Table table_osm_roads not found" from a spatialQuery.
+    // the earlier tables registered and the later ones absent. Both loaders
+    // check getLayersMetadata() against the tables the spec asks for, so the
+    // node that ran the load fails, instead of a spatialQuery two nodes
+    // downstream reporting "Table table_osm_roads not found".
     test('data-only node: a SHORT load fails the node and names the missing table (#248)', async () => {
       const interpretCode = jest.fn(
         (_unresolved, _code, _input, _inputTypes, cb) =>
@@ -825,8 +1626,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // so `roads` is the one that goes missing.
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockRejectedValue(new Error('undici assert(!this.paused)'));
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue([
         { name: 'table_osm_surface', type: 'surface' },
         { name: 'table_osm_parks', type: 'parks' },
         { name: 'table_osm_water', type: 'water' },
@@ -866,8 +1667,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
 
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockResolvedValue(undefined);
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue([]);
     });
 
     // The recovery half of #248: a short load is usually a transient in a
@@ -941,11 +1742,17 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       );
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockResolvedValue(undefined);
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue([
         { name: 'table_osm_surface', type: 'surface' },
         { name: 'table_osm_roads', type: 'roads' },
       ]);
+      // The fallback succeeded, so its layers hold features; without this the
+      // dev/136 empty-render gate reports this successful load as an error.
+      mockAutkDbGetLayer.mockResolvedValue({
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', properties: {}, geometry: null }],
+      });
 
       const setOutput = jest.fn();
       const outputCallback = jest.fn();
@@ -969,8 +1776,9 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(outputCallback.mock.calls.some((c: any[]) => Array.isArray(c[1]))).toBe(false);
       expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeFalsy();
 
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue([]);
+      mockAutkDbGetLayer.mockResolvedValue({ type: 'FeatureCollection', features: [] });
     });
 
     test('data-only node: if persisting the fallback fails too, the Data Pool still gets the wrapper inline (#248)', async () => {
@@ -980,8 +1788,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       );
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockResolvedValue(undefined);
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue([
         { name: 'table_osm_surface', type: 'surface' },
         { name: 'table_osm_roads', type: 'roads' },
       ]);
@@ -1001,15 +1809,16 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(out.dataType).toBe('outputs');
       expect(out.data.map((d: any) => d.layerName)).toEqual(['table_osm_surface', 'table_osm_roads']);
 
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue([]);
     });
 
     // The other side of the predicate: missing WITHOUT a recorded error is a
     // genuinely empty query area (autk-db creates a layer table even at zero
-    // features), so it must warn rather than fail. This is what keeps the
-    // contract check from turning sparse data into a red node.
-    test('data-only node: an empty query area with no load error does not fail (#248)', async () => {
+    // features), so the contract check must not call it a partial load. What
+    // it does report is an empty render: the sources loaded no rows, which is
+    // the document's to fix (empty-source), not a load failure.
+    test('data-only node: an empty query area is an empty source, not a partial load (#248)', async () => {
       const interpretCode = jest.fn(
         (_unresolved, _code, _input, _inputTypes, cb) =>
           cb({ stdout: [], stderr: 'sandbox down', output: { path: '', dataType: 'str' } }),
@@ -1017,8 +1826,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // Load succeeded (nothing recorded), it just found nothing.
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockResolvedValue(undefined);
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue([]);
 
       const setOutput = jest.fn();
       const result = await callBehavior(
@@ -1040,6 +1849,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
 
       const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
       expect(errCall?.[0]?.content ?? '').not.toContain('fewer table');
+      expect(errCall?.[0]?.kind).toBe('empty-render:empty-source');
     });
 
     // The case the seven-workflow e2e run turned up: the layers exist in the DB
@@ -1057,8 +1867,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // The load itself succeeded and created all four tables .
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockResolvedValue(undefined);
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue([
         { name: 'table_osm_surface', type: 'surface' },
         { name: 'table_osm_parks', type: 'parks' },
         { name: 'table_osm_water', type: 'water' },
@@ -1072,7 +1882,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         loadGeojson: jest.fn().mockResolvedValue(undefined),
         loadCsv: jest.fn().mockResolvedValue(undefined),
         loadJson: jest.fn().mockResolvedValue(undefined),
-        getLayerTables: (...a: any[]) => mockAutkDbGetLayerTables(...a),
+        getLayersMetadata: (...a: any[]) => mockAutkDbGetLayersMetadata(...a),
         getLayer: jest.fn((name: string) => (
           name === 'table_osm_parks' || name === 'table_osm_water'
             ? Promise.reject(new TypeError("Cannot read properties of null (reading 'length')"))
@@ -1108,8 +1918,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(errCall![0].content).not.toContain('table_osm_surface');
       expect(errCall![0].content).not.toContain('table_osm_roads');
 
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue([]);
     });
 
     // #319. A join rewrites a table another source created, so the missing-table
@@ -1157,11 +1967,12 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     // Run that script the way the sandbox does (an async function body), with a
     // stand-in for the autk-db module its one import names.
     function runSandboxScript(code: string, db: Record<string, any>): Promise<any> {
-      const body = code.replace(/^import \* as __autkDbMod from '@urban-toolkit\/autk-db';/, '');
-      const mod = { AutkDb: function AutkDb() { return db; }, DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395' };
+      const body = code.replace(/^import \{ AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT \} from '@urban-toolkit\/autk-db';/, '');
       // Built from source text rather than `AsyncFunction`: the test transform
       // compiles `async` arrows down, so their constructor is plain Function.
-      return new Function('__autkDbMod', `return (async () => {\n${body}\n})();`)(mod);
+      return new Function('AutkDb', 'DEFAULT_WORKSPACE_COORDINATE_FORMAT', `return (async () => {\n${body}\n})();`)(
+        function AutkDb() { return db; }, 'EPSG:3395',
+      );
     }
 
     function fakeSandboxDb(spatialQuery?: (...a: any[]) => Promise<unknown>) {
@@ -1169,7 +1980,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         init: async () => {},
         loadOsm: async () => {},
         ...(spatialQuery ? { spatialQuery } : {}),
-        getLayerTables: () => JOIN_TABLES,
+        getLayersMetadata: () => JOIN_TABLES,
         getLayer: async () => ({ type: 'FeatureCollection', features: [] }),
       };
     }
@@ -1198,8 +2009,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       );
       mockAutkDbLoadOsm.mockReset();
       mockAutkDbLoadOsm.mockResolvedValue(undefined);
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue(JOIN_TABLES);
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue(JOIN_TABLES);
       mockAutkDbSpatialQuery.mockReset();
       mockAutkDbSpatialQuery.mockRejectedValue(new Error(BINDER_ERROR));
 
@@ -1222,8 +2033,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
 
       mockAutkDbSpatialQuery.mockReset();
       mockAutkDbSpatialQuery.mockResolvedValue(undefined);
-      mockAutkDbGetLayerTables.mockReset();
-      mockAutkDbGetLayerTables.mockReturnValue([]);
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue([]);
     });
 
     // The browser must not put a host or port in a URL the SANDBOX will fetch:
@@ -1351,7 +2162,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
   // its renderer from offsetWidth (pre-scale). attachMapInteractionZoomFix
   // re-dispatches picking (double-click), wheel-zoom, and drag-pan events with
   // coordinates corrected back into unscaled CSS space so they match the cursor.
-  // See autkGrammarBehavior.attachMapInteractionZoomFix.
+  // See autkMapZoom.attachMapInteractionZoomFix.
   describe('attachMapInteractionZoomFix (map interaction under React Flow zoom)', () => {
     let dispose: (() => void) | null = null;
 

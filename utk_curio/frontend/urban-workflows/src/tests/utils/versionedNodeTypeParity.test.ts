@@ -3,8 +3,8 @@
  * `NodeType` enum, fed the VERSIONED id a palette drag actually produces.
  *
  * Both forms coexist in real canvases — a palette drag stores
- * `curio.builtin/merge-flow@1`, the Jupyter converter and legacy trills store
- * `curio.builtin/merge-flow` — and nothing normalizes them at load time. So
+ * `curio.builtin/data-pool@1`, the Jupyter converter and legacy trills store
+ * `curio.builtin/data-pool`, and nothing normalizes them at load time. So
  * every unversioned-keyed map has to be read through a normalizer, or versioned
  * nodes silently take the fallback branch.
  *
@@ -64,7 +64,6 @@ describe('colour maps resolve both id forms', () => {
   const COLOURED: NodeType[] = [
     NodeType.DATA_LOADING,
     NodeType.DATA_TRANSFORMATION,
-    NodeType.MERGE_FLOW,
     NodeType.DATA_POOL,
     NodeType.VIS_VEGA,
   ];

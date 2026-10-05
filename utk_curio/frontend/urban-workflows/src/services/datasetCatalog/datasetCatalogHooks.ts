@@ -9,6 +9,7 @@ import {
   DatasetCatalogItem,
   DatasetCatalogQuery,
   DatasetCatalogResponse,
+  DatasetDiscoverySourceInput,
 } from "./datasetCatalogTypes";
 import { resolveComputedInstallTitle } from "../../utils/palettePackageFactoryDraft";
 
@@ -26,6 +27,10 @@ const EMPTY_RESPONSE: DatasetCatalogResponse = {
       bundle: 0,
       osm: 0,
       gpkg: 0,
+      gtfs: 0,
+      collection: 0,
+      onnx: 0,
+      netcdf: 0,
     },
   },
 };
@@ -213,11 +218,11 @@ export function useDatasetCatalog(query: UseDatasetCatalogOptions = {}) {
   );
 
   const importDataset = useCallback(
-    async (file: File) => {
+    async (file: File, opts: { discoverySource?: DatasetDiscoverySourceInput } = {}) => {
       // Register-only: importing adds a standalone account-level catalog item
       // and is not attached to any dataflow, so we no longer pass dataflowId.
       // A node/dataflow link is created only on explicit install.
-      const item = await datasetCatalogApi.importDataset(file);
+      const item = await datasetCatalogApi.importDataset(file, opts);
       await reload();
       return item;
     },

@@ -1,35 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import {
-  faArrowUp,
-  faChevronLeft,
-  faChevronRight,
-  faGear,
-  faPen,
-  faRobot,
-  faTrashCan,
-  faXmark,
-} from "@fortawesome/free-solid-svg-icons";
-import type {
-  AgentAttachment,
-  AgentCardPart,
-  AgentDatasetCandidatesPart,
-  AgentDelegationPart,
-  AgentProposalPart,
-  AgentSessionTurn,
-  AgentSuggestedPromptsPart,
-} from "../../../api/agentsApi";
-import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
-import { attachmentDisplayName, TITLE_MAX_CHARS } from "./attachmentDisplayName";
-import { AgentBuilderStrip } from "./AgentBuilderStrip";
-import { AgentChatCard } from "../content/AgentChatCard";
-import { AgentDatasetCandidatesCard } from "../content/AgentDatasetCandidatesCard";
-import { AgentDelegationEntry } from "../content/AgentDelegationEntry";
-import { AgentReviewCard } from "../content/AgentReviewCard";
-import { SafeAgentContent } from "../content/SafeAgentContent";
 import { useNavigate } from "react-router-dom";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
+import {
+  attachmentDisplayName,
+  sessionTokenTotals,
+  type AgentAttachment,
+  type AgentDatasetPick,
+  type AgentDatasetSelection,
+  type AgentRemedy,
+  type AgentSessionTurn,
+  type AgentSolveWave,
+  type AgentRunStatus,
+} from "../../../services/agents";
+import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
+import { AgentBuilderStrip } from "./AgentBuilderStrip";
+import { NodeSolveRow } from "./NodeSolveRow";
 import { TranscriptJumpButton } from "./TranscriptJumpButton";
 import { useTranscriptAutoScroll } from "./useTranscriptAutoScroll";
 import { useAutoGrowTextarea } from "./useAutoGrowTextarea";
@@ -37,20 +23,19 @@ import { usePackageInstallReview } from "./usePackageInstallReview";
 // dev/84: genuine cross-feature reuse — agent package proposals apply through
 // the SAME install review the Nodes Catalog drawer uses, never a duplicate.
 import { InstallPermissionsDialog } from "../../packages/publishing/InstallPermissionsDialog";
-import ConfirmDialog from "../../ConfirmDialog";
-import { AgentRunStatusLine } from "./AgentRunStatusLine";
 import { AgentSessionTokenCounter } from "./AgentSessionTokenCounter";
-import {
-  sessionTokenTotals,
-  turnStatusDisplay,
-  type AgentRunStatus,
-  type RunStatusDisplay,
-} from "./agentRunStatus";
 import { modalStackDepth } from "../../ModalShell";
 import styles from "./AgentChatPanel.module.css";
-
-/** Heuristic: prompts longer than this get the clamp + expand toggle. */
-const INTENT_CLAMP_CHARS = 280;
+import { AgentTurn } from "./chat/AgentTurn";
+import { ChatHeader } from "./chat/ChatHeader";
+import { ClearConversationDialog } from "./chat/ClearConversationDialog";
+import { Composer } from "./chat/Composer";
+import { ConversationTitle } from "./chat/ConversationTitle";
+import { IntentMessage } from "./chat/IntentMessage";
+import { PendingReplyRow } from "./chat/PendingReplyRow";
+import { SuggestedPromptsRow } from "./chat/SuggestedPromptsRow";
+import { useConversationTitle } from "./chat/useConversationTitle";
+import { suggestedPromptsOf, targetLabelFor, targetTooltipFor, turnMetaFor } from "./chat/chatPanelDerived";
 
 /**
  * Chat panel for one attached agent, styled to the approved concept screens
@@ -135,11 +120,40 @@ export const AgentChatPanel: React.FC<{
   solveProgress?: Record<string, string>;
   /** dev/106: the live batch's per-node failure reasons (nodeId → text). */
   solveErrors?: Record<string, string>;
+  /** dev/116: the live batch's per-node remedies (a missing connection key). */
+  solveRemedies?: Record<string, import("../../../services/agents").AgentRemedy>;
+  /** dev/131: the session's live pass / waiting summary / ending. */
+  solveWaiting?: Array<{ nodeId: string; kind: string; reason?: string; attachmentId?: string | null }>;
+  solveEndedBy?: string | null;
+  solvePass?: number | null;
+  /** dev/131: resolve ONE node through its own agent, from its pill. */
+  onSolveOneNode?: (nodeId: string) => Promise<unknown>;
+  /** dev/118: the live batch's current topological wave. */
+  solveWave?: import("../../../services/agents").AgentSolveWave;
+  /** dev/118: per-node notices that are not errors (pending/skipped reasons, written-not-executed). */
+  solveNotices?: Record<string, string>;
   /** dev/63: cancel the running solve. */
   onCancelSolve?: () => Promise<void>;
+  /** dev/115 (Amendment A2): the per-node Solve — offered when this agent is
+   * attached to a node; runs the node's current code in the sandbox, fixes
+   * errors, re-runs, and lands an executed review. Omitted → no row. */
+  onSolveNode?: () => Promise<unknown>;
+  /** dev/115: the running per-node Solve's narration. */
+  solveNodeActivity?: string | null;
   /** dev/72: opens ANOTHER attachment's chat — the delegation entries' and
    * plan-row chips' icon-links route through this. Omitted → entries inert. */
   onOpenAgentChat?: (attachmentId: string) => void;
+  /** dev/126: record the confirmed dataset selection for this attachment's
+   * node (Dataset Finder on a node only). */
+  onRecordDatasetSelection?: (
+    picks: import("../../../services/agents").AgentDatasetPick[],
+  ) => Promise<import("../../../services/agents").AgentDatasetSelection>;
+  /** dev/132: the shared catalog import, for a candidate row the runtime
+   * could not fetch — resolves with the imported dataset's id. */
+  onImportDataset?: (
+    file: File,
+    discoverySource?: import("../../../services/datasetCatalog/datasetCatalogTypes").DatasetDiscoverySourceInput,
+  ) => Promise<string | null>;
   /** dev/72: live-existence check for a delegation home (stale → no link). */
   delegateExists?: (attachmentId: string) => boolean;
   onSaveIntent?: (intent: string | null) => Promise<void>;
@@ -175,10 +189,21 @@ export const AgentChatPanel: React.FC<{
   onCancelSimulate,
   simulationActivity,
   onSolve,
+  onSolveNode,
+  solveNodeActivity = null,
   solveProgress,
   solveErrors,
+  solveRemedies,
+  solveWaiting,
+  solveEndedBy,
+  solvePass,
+  onSolveOneNode,
+  solveWave,
+  solveNotices,
   onCancelSolve,
   onOpenAgentChat,
+  onRecordDatasetSelection,
+  onImportDataset,
   delegateExists,
   onSaveIntent,
   onSaveTitle,
@@ -191,22 +216,10 @@ export const AgentChatPanel: React.FC<{
   const { leave, dialog: leaveDialog } = useLeaveGuard(Boolean(projectDirty), LEAVE_DATAFLOW);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [intentExpanded, setIntentExpanded] = useState(false);
-  const [editingIntent, setEditingIntent] = useState(false);
-  const [intentDraft, setIntentDraft] = useState("");
-  const [savingIntent, setSavingIntent] = useState(false);
-  const [intentError, setIntentError] = useState<string | null>(null);
-  // Inline click-to-edit conversation title (memo dev/25): only the custom
-  // portion after "<name>: " is editable; the template-name prefix is fixed.
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState("");
-  /** Optimistic value shown between commit and the reloaded attachment. */
-  const [pendingTitle, setPendingTitle] = useState<string | null>(null);
-  const [titleError, setTitleError] = useState<string | null>(null);
-  const titleEditDone = useRef(true);
-  const wasEditingTitle = useRef(false);
-  const titleInputRef = useRef<HTMLInputElement | null>(null);
-  const titleButtonRef = useRef<HTMLButtonElement | null>(null);
+  // The app's own dialog, not the browser's (#197).
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  // Inline click-to-edit conversation title (memo dev/25).
+  const title = useConversationTitle(attachment, onSaveTitle);
   // Follow-at-bottom auto-scroll (memo dev/75): new turns and streamed chunks
   // keep the view pinned only while the user is already at the bottom;
   // scrolling up detaches follow until they return or jump to latest. Opening
@@ -232,10 +245,7 @@ export const AgentChatPanel: React.FC<{
   // Multiline composer (memo dev/77): one-row pill that grows with content up
   // to ~6 rows, then scrolls internally. Keyed on `input`, so prefills and the
   // post-send reset re-measure too.
-  const { textareaRef: composerRef } = useAutoGrowTextarea({
-    value: input,
-    maxHeightPx: 120,
-  });
+  const { textareaRef: composerRef } = useAutoGrowTextarea({ value: input, maxHeightPx: 120 });
   // dev/84: package.install proposals apply THROUGH the package install
   // review dialog — beginReview's promise spans the whole dialog round-trip,
   // so the review card's busy/error handling covers it.
@@ -246,45 +256,13 @@ export const AgentChatPanel: React.FC<{
   // attachment's proposal mirrors — it self-clears on apply/dismiss — and
   // marks only the NEWEST reply.
   const pendingReview =
-    attachment.activeProposal?.status === "pending" ||
-    attachment.planProposal?.status === "pending";
+    attachment.activeProposal?.status === "pending" || attachment.planProposal?.status === "pending";
   const runInFlight = runStatus?.phase === "running";
   const lastAgentIdx = useMemo(() => {
     for (let i = turns.length - 1; i >= 0; i--) if (turns[i].role === "agent") return i;
     return -1;
   }, [turns]);
-  /** The meta line under one agent turn: the streaming reply shows the live
-   * running indicator; finalized replies show their persisted execution
-   * record; the newest reply falls back to the live run record when an old
-   * server sent no execution fields — so a final message never renders bare. */
-  const turnMeta = (t: AgentSessionTurn, i: number): RunStatusDisplay | null => {
-    const isLast = i === turns.length - 1;
-    if (runInFlight && isLast && t.role === "agent" && !t.error && runStatus)
-      return { kind: "running", startedAt: runStatus.startedAt };
-    const derived = turnStatusDisplay(t, {
-      pendingReview: i === lastAgentIdx && pendingReview,
-    });
-    if (derived) {
-      // The just-failed reply's elapsed-at-failure lives on the run record
-      // (client error turns carry no execution).
-      if (
-        derived.kind === "error" &&
-        derived.durationMs == null &&
-        isLast &&
-        runStatus?.phase === "error"
-      )
-        return { ...derived, durationMs: runStatus.durationMs };
-      return derived;
-    }
-    if (isLast && t.role === "agent" && !t.error && runStatus?.phase === "done")
-      return {
-        kind: "done",
-        durationMs: runStatus.durationMs,
-        usage: runStatus.usage ?? null,
-        pendingReview: i === lastAgentIdx && pendingReview,
-      };
-    return null;
-  };
+  const metaCtx = { turns, runStatus, runInFlight, lastAgentIdx, pendingReview };
   // The reply being generated appears in `turns` only from its first delta;
   // until then (tool rounds, the blocking fallback) a standalone pending row
   // at the transcript tail carries the live indicator.
@@ -302,14 +280,7 @@ export const AgentChatPanel: React.FC<{
   // into another chat. Unwired (tests, previews): the local flag governs.
   const sendBusy = runStatus === undefined ? sending : runInFlight;
 
-  // SUGGESTED PROMPTS (memo dev/39, docs/08): only the newest turn's part
-  // counts — once the user replies, earlier follow-ups are stale noise.
-  const suggested = useMemo<AgentSuggestedPromptsPart | null>(() => {
-    const last = turns[turns.length - 1];
-    if (!last || last.role !== "agent" || last.error) return null;
-    const part = (last.content ?? []).find((p) => p.type === "suggestedPrompts");
-    return (part as AgentSuggestedPromptsPart | undefined) ?? null;
-  }, [turns]);
+  const suggested = useMemo(() => suggestedPromptsOf(turns), [turns]);
 
   // The primary prompt prefills the input, editable with send active — but a
   // user-typed draft always wins over any prefill.
@@ -329,17 +300,6 @@ export const AgentChatPanel: React.FC<{
 
   const tint = styles[`tint_${agentCategoryKey(attachment.category)}` as keyof typeof styles];
 
-  // "Attached to <name>", not "Attached to node 6bea6863-…". The raw id told the
-  // user nothing about which node they were talking to, and a session id in the
-  // header told them less (#228). The name is resolved by the overlay, which can
-  // see the canvas; the id stays as the element's title so support can still
-  // recover it. Falls back to the old shape when the node is gone.
-  const targetLabel =
-    attachment.target.kind === "canvas"
-      ? "canvas"
-      : targetName?.trim() ||
-        `${attachment.target.kind} ${attachment.target.targetId ?? ""}`.trim();
-
   // Escape dismisses the chat (close only — the attachment is untouched);
   // while renaming, Escape cancels the edit instead (handled on the input).
   useEffect(() => {
@@ -348,16 +308,16 @@ export const AgentChatPanel: React.FC<{
     // would restart the fallback timer against a panel nobody can see.
     if (!presented) return;
     const onKey = (e: KeyboardEvent) => {
-      // An open modal owns Escape. AI Settings and agent import are raised
+      // An open modal owns Escape. API Settings and agent import are raised
       // over this panel, and this listener is on window in the bubble phase,
       // so the modal cannot stop it firing. It has to stand down itself, or
       // dismissing the dialog closed the chat behind it as well.
       if (modalStackDepth() > 0) return;
-      if (e.key === "Escape" && !editingTitle) onClose();
+      if (e.key === "Escape" && !title.editing) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, editingTitle, presented]);
+  }, [onClose, title.editing, presented]);
 
   // The exit settles on the PANEL's own transform and nothing else. This panel
   // is full of inner transitions (bubbles, chips, the run status line), and
@@ -374,32 +334,6 @@ export const AgentChatPanel: React.FC<{
     [onExitComplete, presented],
   );
 
-  // Cycling to another agent discards any in-progress rename state.
-  useEffect(() => {
-    titleEditDone.current = true;
-    setEditingTitle(false);
-    setPendingTitle(null);
-    setTitleError(null);
-  }, [attachment.attachmentId]);
-
-  // The reloaded attachment is authoritative: once its title changes (the
-  // save round-tripped), it supersedes the optimistic value.
-  useEffect(() => {
-    setPendingTitle(null);
-  }, [attachment.title]);
-
-  // Entering edit mode focuses the input with the current value selected;
-  // leaving it hands focus back to the title control.
-  useEffect(() => {
-    if (editingTitle) {
-      titleInputRef.current?.focus();
-      titleInputRef.current?.select();
-    } else if (wasEditingTitle.current) {
-      titleButtonRef.current?.focus();
-    }
-    wasEditingTitle.current = editingTitle;
-  }, [editingTitle]);
-
   const send = async () => {
     const message = input.trim();
     if (!message || sendBusy) return;
@@ -415,69 +349,23 @@ export const AgentChatPanel: React.FC<{
     }
   };
 
-  const startIntentEdit = () => {
-    setIntentDraft(attachment.intent ?? "");
-    setIntentError(null);
-    setEditingIntent(true);
+  const displayName = attachmentDisplayName({ name: attachment.name, title: title.displayedTitle ?? null });
+  const turnActions = {
+    onComposePrompt: composePrompt,
+    onInternalLink: (to: string) => leave(() => navigate(to)),
+    onOpenAgentChat,
+    delegateExists,
+    onRecordDatasetSelection,
+    onImportDataset,
+    onApplyProposal,
+    beginPackageReview: packageReview.beginReview,
+    onDismissProposal,
+    onApplyPlanNode,
+    onSavePlanGoal,
+    onApplyPlanEdges,
+    onSolvePlanNode,
+    onRunPlanNode,
   };
-
-  const saveIntent = async () => {
-    if (!onSaveIntent || savingIntent) return;
-    setSavingIntent(true);
-    setIntentError(null);
-    try {
-      // An emptied draft clears the override → falls back to the prompt source.
-      await onSaveIntent(intentDraft.trim() ? intentDraft : null);
-      setEditingIntent(false);
-    } catch (e) {
-      setIntentError(e instanceof Error ? e.message : "Failed to save the intent");
-    } finally {
-      setSavingIntent(false);
-    }
-  };
-
-  // The app's own dialog, not the browser's (#197). This was the last
-  // `window.confirm` outside the top menu: unstyled, unthemed, and outside the
-  // modal stack the rest of the panel's dialogs live in.
-  const [confirmingClear, setConfirmingClear] = useState(false);
-
-  const clearConversation = () => {
-    if (!onClearConversation) return;
-    setConfirmingClear(true);
-  };
-
-  const displayedTitle = pendingTitle ?? attachment.title;
-
-  const startTitleEdit = () => {
-    if (!onSaveTitle) return;
-    titleEditDone.current = false;
-    setTitleDraft(displayedTitle ?? "");
-    setTitleError(null);
-    setEditingTitle(true);
-  };
-
-  // Enter and blur both commit, so a guard keeps the pair to one save; an
-  // empty or unchanged draft is a cancel (deleting a title is out of scope).
-  const finishTitleEdit = (commit: boolean) => {
-    if (titleEditDone.current) return;
-    titleEditDone.current = true;
-    setEditingTitle(false);
-    const next = titleDraft.trim();
-    if (!commit || !onSaveTitle || !next || next === (displayedTitle ?? "")) return;
-    setPendingTitle(next);
-    onSaveTitle(next).catch((e) => {
-      setPendingTitle(null);
-      setTitleError(e instanceof Error ? e.message : "Failed to rename the conversation");
-    });
-  };
-
-  const intent = attachment.intent;
-  const intentLong = (intent?.length ?? 0) > INTENT_CLAMP_CHARS;
-
-  const displayName = attachmentDisplayName({
-    name: attachment.name,
-    title: displayedTitle ?? null,
-  });
 
   return (
     <div
@@ -488,127 +376,46 @@ export const AgentChatPanel: React.FC<{
       aria-label={`Chat with ${displayName}`}
       aria-hidden={!presented}
     >
-      {/* Addressable from outside the CSS-module hash, so the #228 baseline can
-          clip to the header rather than spend its diff budget on an empty
-          transcript (agent-chat-names-its-node). */}
-      <div className={styles.header} data-curio-chat-header="true">
-        <div className={styles.headerRow}>
-          <button
-            type="button"
-            className={styles.cycleBtn}
-            aria-label="Previous agent"
-            title="Previous agent"
-            disabled={!onPrev}
-            onClick={onPrev}
-          >
-            <FontAwesomeIcon icon={faChevronLeft} />
-          </button>
-          <span className={`${styles.headerBot} ${tint}`} aria-hidden="true">
-            <FontAwesomeIcon icon={faRobot} />
-          </span>
-          {/* Click-to-rename conversation title (memo dev/25): a single click
-              (or Enter/Space when focused) swaps the custom portion for an
-              inline input; the "<name>: " prefix stays static. No edit icon —
-              the affordance is the title itself. */}
-          {editingTitle ? (
-            <span className={`${styles.title} ${styles.titleEditing}`}>
-              <span className={styles.titlePrefix}>{attachment.name}: </span>
-              <input
-                ref={titleInputRef}
-                className={styles.titleInput}
-                aria-label="Conversation title"
-                maxLength={TITLE_MAX_CHARS}
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    finishTitleEdit(true);
-                  } else if (e.key === "Escape") {
-                    e.stopPropagation();
-                    finishTitleEdit(false);
-                  }
-                }}
-                onBlur={() => finishTitleEdit(true)}
-              />
-            </span>
-          ) : onSaveTitle ? (
-            <button
-              type="button"
-              ref={titleButtonRef}
-              className={`${styles.title} ${styles.titleButton}`}
-              aria-label="Rename conversation title"
-              title="Click to rename"
-              onClick={startTitleEdit}
-            >
-              {displayName}
-            </button>
-          ) : (
-            <span className={styles.title}>{displayName}</span>
-          )}
-          <span className={styles.position}>
-            {index} / {total}
-          </span>
-          <button
-            type="button"
-            className={styles.cycleBtn}
-            aria-label="Next agent"
-            title="Next agent"
-            disabled={!onNext}
-            onClick={onNext}
-          >
-            <FontAwesomeIcon icon={faChevronRight} />
-          </button>
-          <span className={styles.headerSpacer} />
-          {onClearConversation ? (
-            <button
-              type="button"
-              className={styles.headerBtn}
-              aria-label="Clear conversation"
-              title="Clear conversation"
-              onClick={clearConversation}
-            >
-              <FontAwesomeIcon icon={faTrashCan} />
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className={styles.headerBtn}
-            aria-label="Close chat"
-            title="Close chat"
-            onClick={onClose}
-          >
-            <FontAwesomeIcon icon={faXmark} />
-          </button>
-        </div>
-        <div className={styles.headerRow}>
-          {/* The target id and session id are diagnostic, not something to read
-              while working, so they live in the tooltip rather than the header
-              (#228). */}
-          <span
-            className={styles.subtitle}
-            title={
-              attachment.target.kind === "canvas"
-                ? `session ${attachment.sessionId}`
-                : `${attachment.target.kind} ${attachment.target.targetId ?? ""} · ` +
-                  `session ${attachment.sessionId}`
-            }
-          >
-            Attached to {targetLabel}
-          </span>
-          {titleError ? <span className={styles.titleError}>{titleError}</span> : null}
-          <span className={styles.headerSpacer} />
-        </div>
-      </div>
+      <ChatHeader
+        tint={tint}
+        title={
+          <ConversationTitle agentName={attachment.name} displayName={displayName} editable={Boolean(onSaveTitle)} title={title} />
+        }
+        index={index}
+        total={total}
+        onPrev={onPrev}
+        onNext={onNext}
+        onClear={onClearConversation ? () => setConfirmingClear(true) : undefined}
+        onClose={onClose}
+        targetLabel={targetLabelFor(attachment, targetName)}
+        targetTooltip={targetTooltipFor(attachment)}
+        titleError={title.error}
+      />
 
       {/* The dev/52 builder strip: Dataflow Builder attachments only — every
           other agent's chat is pixel-identical. */}
+      {onSolveNode && attachment.target.kind === "node" ? (
+        <NodeSolveRow
+          onSolveNode={onSolveNode}
+          onOpenChat={onOpenAgentChat}
+          activity={solveNodeActivity}
+          live={attachment.liveJob?.status === "running" && attachment.liveJob.kind === "solve-node"}
+        />
+      ) : null}
       {onSolve && attachment.coord.startsWith("agent.dataflow-builder@") ? (
         <AgentBuilderStrip
           attachment={attachment}
           onSolve={onSolve}
           solveProgress={solveProgress}
           solveErrors={solveErrors}
+          solveRemedies={solveRemedies}
+          onOpenChat={onOpenAgentChat}
+          solveWaiting={solveWaiting}
+          solveEndedBy={solveEndedBy}
+          solvePass={solvePass}
+          onSolveNode={onSolveOneNode}
+          solveWave={solveWave}
+          solveNotices={solveNotices}
           onCancelSolve={onCancelSolve}
           onComposePrompt={composePrompt}
           onApplyProposal={onApplyProposal}
@@ -624,73 +431,7 @@ export const AgentChatPanel: React.FC<{
           would scroll away with the content). */}
       <div className={styles.messagesWrap}>
       <div className={styles.messages} ref={messagesRef} tabIndex={-1}>
-        {/* The initial intent reads as the conversation's first message (a
-            plain user bubble), collapsed by default, with show more/less and
-            an edit pencil. */}
-        {editingIntent ? (
-          <div className={styles.intentEditor}>
-            <textarea
-              className={styles.intentTextarea}
-              aria-label="Initial intent"
-              value={intentDraft}
-              onChange={(e) => setIntentDraft(e.target.value)}
-            />
-            <div className={styles.intentActions}>
-              <button
-                type="button"
-                className={styles.intentSave}
-                disabled={savingIntent}
-                onClick={saveIntent}
-              >
-                {savingIntent ? "Saving…" : "Save"}
-              </button>
-              <button
-                type="button"
-                className={styles.intentCancel}
-                onClick={() => setEditingIntent(false)}
-              >
-                Cancel
-              </button>
-              {intentError ? <span className={styles.intentError}>{intentError}</span> : null}
-            </div>
-          </div>
-        ) : (
-          <div className={styles.intentMsg}>
-            <div
-              className={[
-                styles.msgUser,
-                !intentExpanded && intentLong ? styles.intentClamped : "",
-                !intent ? styles.intentPlaceholder : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-            >
-              {intent ?? "No instruction prompt available for this agent."}
-            </div>
-            <div className={styles.intentControls}>
-              {intentLong ? (
-                <button
-                  type="button"
-                  className={styles.intentToggle}
-                  onClick={() => setIntentExpanded((v) => !v)}
-                >
-                  {intentExpanded ? "Show less" : "Show more"}
-                </button>
-              ) : null}
-              {onSaveIntent ? (
-                <button
-                  type="button"
-                  className={styles.intentEdit}
-                  aria-label="Edit initial intent"
-                  title="Edit initial intent"
-                  onClick={startIntentEdit}
-                >
-                  <FontAwesomeIcon icon={faPen} />
-                </button>
-              ) : null}
-            </div>
-          </div>
-        )}
+        <IntentMessage intent={attachment.intent} onSaveIntent={onSaveIntent} />
         {historyError ? (
           <div className={`${styles.systemLine} ${styles.systemError}`}>
             {historyError}
@@ -712,114 +453,7 @@ export const AgentChatPanel: React.FC<{
                 {t.text}
               </div>
             ) : (
-              <div key={i} className={styles.agentRow}>
-                <span className={`${styles.agentRowAvatar} ${tint}`} aria-hidden="true">
-                  <FontAwesomeIcon icon={faRobot} />
-                </span>
-                <div className={styles.agentCol}>
-                <div className={`${styles.msgAgent} ${t.error ? styles.msgError : ""}`}>
-                  {/* Agent rich content renders ONLY through the safe renderer
-                      (REQ-SEC-002); error markers are server-composed plain
-                      text. Cards are informational plain data (docs/08);
-                      proposals render the review card (dev/41). */}
-                  {t.error ? (
-                    t.text
-                  ) : (
-                    <SafeAgentContent
-                      text={t.text}
-                      onInternalLink={(to) => leave(() => navigate(to))}
-                    />
-                  )}
-                  {(t.content ?? [])
-                    .filter((p): p is AgentCardPart => p.type === "card")
-                    .map((card, j) => (
-                      <AgentChatCard key={j} card={card} tintClassName={tint} />
-                    ))}
-                  {(t.content ?? [])
-                    .filter(
-                      (p): p is AgentDatasetCandidatesPart =>
-                        p.type === "datasetCandidates",
-                    )
-                    .map((part, j) => (
-                      <AgentDatasetCandidatesCard
-                        key={`cand-${j}`}
-                        part={part}
-                        tintClassName={tint}
-                        onComposePrompt={composePrompt}
-                      />
-                    ))}
-                  {(t.content ?? [])
-                    .filter((p): p is AgentDelegationPart => p.type === "delegation")
-                    .map((part, j) => (
-                      <AgentDelegationEntry
-                        key={`dlg-${j}`}
-                        part={part}
-                        onOpenChat={onOpenAgentChat}
-                        delegateExists={delegateExists}
-                      />
-                    ))}
-                  {(t.content ?? [])
-                    .filter((p): p is AgentProposalPart => p.type === "proposal")
-                    .map((part, j) => (
-                      <AgentReviewCard
-                        key={part.proposalId ?? j}
-                        part={part}
-                        tintClassName={tint}
-                        onApply={
-                          part.tool === "package.install" && onApplyProposal
-                            ? (proposalId) =>
-                                packageReview.beginReview(
-                                  proposalId,
-                                  part.pins?.dirName ?? "",
-                                )
-                            : onApplyProposal
-                        }
-                        onDismiss={onDismissProposal}
-                        onApplyPlanNode={onApplyPlanNode}
-                        onSavePlanGoal={onSavePlanGoal}
-                        onApplyPlanEdges={onApplyPlanEdges}
-                        onSolvePlanNode={onSolvePlanNode}
-                        onRunPlanNode={onRunPlanNode}
-                        onOpenAgentChat={onOpenAgentChat}
-                        delegateExists={delegateExists}
-                        planNodeState={(() => {
-                          // dev/67-5/67-9: the mirror's per-node state feeds
-                          // the part whose proposal it mirrors — active OR
-                          // parked behind a content review.
-                          const mirror =
-                            attachment.activeProposal?.proposalId === part.proposalId
-                              ? attachment.activeProposal
-                              : attachment.planProposal?.proposalId === part.proposalId
-                                ? attachment.planProposal
-                                : null;
-                          return mirror
-                            ? {
-                                appliedRefs: mirror.appliedRefs ?? [],
-                                editedGoals: mirror.editedGoals ?? {},
-                                edgeStates: mirror.edgeStates ?? {},
-                                // dev/71: the lifecycle ledger for readiness.
-                                nodeStates: attachment.builderSession?.nodeStates ?? {},
-                                // dev/72: where each ref's content review lives.
-                                nodeProposals:
-                                  attachment.builderSession?.nodeProposals ?? {},
-                              }
-                            : undefined;
-                        })()}
-                      />
-                    ))}
-                </div>
-                {/* Per-reply execution status (dev/80 amendment): running
-                    while THIS reply streams, then its own duration + tokens. */}
-                {(() => {
-                  const meta = turnMeta(t, i);
-                  return meta ? (
-                    <div className={styles.turnMeta}>
-                      <AgentRunStatusLine display={meta} tintClassName={tint} />
-                    </div>
-                  ) : null;
-                })()}
-                </div>
-              </div>
+              <AgentTurn key={i} turn={t} attachment={attachment} tint={tint} meta={turnMetaFor(t, i, metaCtx)} actions={turnActions} />
             ),
           )
         )}
@@ -828,23 +462,8 @@ export const AgentChatPanel: React.FC<{
             {line}
           </div>
         ))}
-        {/* The reply hasn't streamed its first delta yet (tool rounds, the
-            blocking fallback): a standalone pending row keeps the live
-            indicator visible at the tail (dev/80 amendment). */}
         {runInFlight && !streamingTurnVisible && runStatus ? (
-          <div className={styles.agentRow}>
-            <span className={`${styles.agentRowAvatar} ${tint}`} aria-hidden="true">
-              <FontAwesomeIcon icon={faRobot} />
-            </span>
-            <div className={styles.agentCol}>
-              <div className={styles.turnMeta}>
-                <AgentRunStatusLine
-                  display={{ kind: "running", startedAt: runStatus.startedAt }}
-                  tintClassName={tint}
-                />
-              </div>
-            </div>
-          </div>
+          <PendingReplyRow tint={tint} startedAt={runStatus.startedAt} />
         ) : null}
       </div>
       <TranscriptJumpButton
@@ -865,12 +484,7 @@ export const AgentChatPanel: React.FC<{
         />
       ) : null}
       {confirmingClear ? (
-        <ConfirmDialog
-          title="Clear this conversation?"
-          body="The transcript goes; the agent stays attached to this node."
-          confirmLabel="Clear"
-          cancelLabel="Keep it"
-          destructive
+        <ClearConversationDialog
           onConfirm={() => {
             setConfirmingClear(false);
             void onClearConversation?.();
@@ -881,20 +495,7 @@ export const AgentChatPanel: React.FC<{
       </div>
 
       {suggested && suggested.alternatives.length > 0 ? (
-        <div className={styles.suggestedRow} role="group" aria-label="Suggested prompts">
-          <span className={styles.suggestedLabel}>Suggested prompts</span>
-          {suggested.alternatives.map((alt, i) => (
-            <button
-              key={i}
-              type="button"
-              className={styles.suggestedChip}
-              title={alt}
-              onClick={() => setInput(alt)}
-            >
-              {alt}
-            </button>
-          ))}
-        </div>
+        <SuggestedPromptsRow alternatives={suggested.alternatives} onPick={setInput} />
       ) : null}
 
       {/* Cumulative counter strip (memo dev/80, amended): the per-reply
@@ -909,35 +510,7 @@ export const AgentChatPanel: React.FC<{
         </div>
       ) : null}
 
-      <div className={styles.footer}>
-        {/* Enter sends; Shift+Enter falls through to the textarea's native
-            newline. An in-flight IME composition's commit-Enter never sends. */}
-        <textarea
-          ref={composerRef}
-          className={styles.input}
-          value={input}
-          rows={1}
-          aria-label="Message this agent"
-          placeholder="Message this agent…"
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              send();
-            }
-          }}
-        />
-        <button
-          type="button"
-          className={styles.send}
-          aria-label="Send"
-          title="Send"
-          disabled={sendBusy || !input.trim()}
-          onClick={send}
-        >
-          {sendBusy ? "…" : <FontAwesomeIcon icon={faArrowUp} />}
-        </button>
-      </div>
+      <Composer value={input} onChange={setInput} onSend={() => void send()} busy={sendBusy} textareaRef={composerRef} />
       {leaveDialog}
     </div>
   );

@@ -22,6 +22,11 @@
   flex-direction: column;
 }
 
+/* Wider than the default, still as tall as its content. */
+.wide {
+  width: min(640px, 90vw);
+}
+
 .large {
   width: min(720px, 50vw);
   height: min(720px, 70vh);

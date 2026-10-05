@@ -93,3 +93,29 @@ describe('TrillProvenanceWindow pan/zoom inside ModalShell (#187)', () => {
     expect(rfProps.minZoom).toBeLessThan(0.5);
   });
 });
+
+describe('TrillProvenanceWindow opens where it can be read (#507)', () => {
+  test('frames the selected version, not the whole chain', () => {
+    // Framing all twelve versions of example 01 settled near 0.16 zoom, where
+    // a card is 26x18 px and neither its thumbnail nor its time can be read.
+    TrillGenerator.latestTrill = 'v2';
+    renderWindow();
+
+    expect(rfProps.fitView).toBe(true);
+    expect(rfProps.fitViewOptions.nodes).toEqual([{ id: 'v2' }]);
+  });
+
+  test('at no more than natural size, so one card does not fill the pane', () => {
+    TrillGenerator.latestTrill = 'v2';
+    renderWindow();
+
+    expect(rfProps.fitViewOptions.maxZoom).toBe(1);
+  });
+
+  test('frames everything when no version is selected', () => {
+    TrillGenerator.latestTrill = '';
+    renderWindow();
+
+    expect(rfProps.fitViewOptions.nodes).toBeUndefined();
+  });
+});

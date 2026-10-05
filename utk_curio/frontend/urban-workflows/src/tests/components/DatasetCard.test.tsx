@@ -76,7 +76,7 @@ describe("DatasetCard delete affordance", () => {
 
   test("still hides Delete on a catalog row the user installed", () => {
     renderCard(
-      card({ origin: "imported", dirName: "data.urbanlab.demo@1" } as never),
+      card({ origin: "imported", dirName: "data.utk.demo@1" } as never),
       { isInstalled: true },
     );
     expect(deleteButton()).toBeNull();

@@ -1,7 +1,7 @@
 # Example: Coordinate systems and geometry types
 
-Whatever coordinate system your frame is in, and whatever geometry it holds, the
-same spec draws it. This example is the proof: eight frames, one `geoshape`.
+Whatever coordinate system your frame is in, the same spec draws it. This
+example is the proof: eight frames, one `geoshape`.
 
 One of four examples on drawing a `GeoDataFrame`:
 [12](12-vega-lite-geodataframe-maps.md) the basics,
@@ -36,7 +36,7 @@ anywhere without editing paths.
 
 | Dataset | Id | Format |
 |---|---|---|
-| Chicago Boundary (ZIP polygons) | `data.urbanlab.chicago-boundary` | geojson |
+| Chicago Boundary (ZIP polygons) | `data.utk.chicago-boundary` | geojson |
 
 ## Any coordinate system
 
@@ -64,12 +64,13 @@ from shapely.geometry import (
 
 gdf = arg
 square = Polygon([(-87.8, 41.9), (-87.8, 42.0), (-87.7, 42.0), (-87.7, 41.9)])
+patch = Polygon([(-87.55, 41.9), (-87.55, 42.0), (-87.45, 42.0), (-87.45, 41.9)])
 
 return gpd.GeoDataFrame(
     {"kind": ["multipolygon", "collection", "point", "with_z", "missing", "line"]},
     geometry=[
         MultiPolygon([square, Polygon([(-87.6, 41.7), (-87.6, 41.8), (-87.5, 41.8)])]),
-        GeometryCollection([square, Point(-87.65, 41.85)]),
+        GeometryCollection([patch, Point(-87.65, 41.85)]),
         Point(-87.62, 41.88),
         Point(-87.63, 41.89, 30.0),
         None,
@@ -81,13 +82,46 @@ return gpd.GeoDataFrame(
 
 One column holding a MultiPolygon, a GeometryCollection, a Point, a Point with a
 Z coordinate, a `None` and a LineString. All of them draw, and the missing one is
-skipped rather than breaking the layer.
+skipped rather than breaking the layer. A line has no area to fill, so its view
+strokes the lines in a second layer:
+
+```json
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "description": "Every geometry type in one column.",
+  "layer": [
+    {
+      "mark": "geoshape",
+      "encoding": {
+        "color": {
+          "field": "kind",
+          "type": "nominal"
+        }
+      }
+    },
+    {
+      "description": "A line has no area to fill, so it is stroked.",
+      "transform": [
+        {
+          "filter": "datum.kind == 'line'"
+        }
+      ],
+      "mark": {
+        "type": "geoshape",
+        "filled": false,
+        "strokeWidth": 2
+      },
+      "encoding": {
+        "stroke": {
+          "field": "kind",
+          "type": "nominal"
+        }
+      }
+    }
+  ]
+}
+```
 
 Derived geometry works the same way. Another view draws `gdf.envelope` as
 bounding boxes over the ZIP polygons, straight from the column, with nothing in
 the Python to prepare it.
-
-## Nothing to draw
-
-An empty frame and an all-null geometry column each render an empty chart rather
-than failing. A filter that matches no rows is a normal thing to do.

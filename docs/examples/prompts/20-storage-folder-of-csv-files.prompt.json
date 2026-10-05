@@ -1,0 +1,132 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "20-storage-folder-of-csv-files",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/20-storage-folder-of-csv-files.json",
+    "sha256": "1f5b53677dddf4e9c00f9728d0e037c6b1c789983442aeee242e9b09b66ec9cb",
+    "walkthrough": "docs/examples/20-storage-folder-of-csv-files.md"
+  },
+  "prompt": "Load the Example air quality readings table from the Data Catalog, which combines one CSV file per sensor and day, and chart PM2.5 over time for each sensor in Vega-Lite. Also load the Example air quality stations table, join it with the readings to get the mean PM2.5 of each station, and map the stations by that mean in Vega-Lite.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.curio.storage-air-quality",
+      "data.curio.storage-stations"
+    ],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader2",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "visualization2",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.curio.storage-air-quality",
+        "data.curio.storage-stations"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "validation",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON and its walkthrough, 2026-09-28",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.curio.storage-air-quality",
+        "licence": "CC0-1.0"
+      },
+      {
+        "datasetId": "data.curio.storage-stations",
+        "licence": "CC0-1.0"
+      }
+    ]
+  },
+  "notes": "A folder of CSV files combined into one table, joined to a stations table."
+}

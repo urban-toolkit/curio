@@ -24,8 +24,8 @@ import type { DatasetCatalogItem } from "../../services/datasetCatalog/datasetCa
 
 const dataset = (over: Partial<DatasetCatalogItem> = {}): DatasetCatalogItem =>
   ({
-    id: "data.urbanlab.demo",
-    dirName: "data.urbanlab.demo@1",
+    id: "data.utk.demo",
+    dirName: "data.utk.demo@1",
     title: "Demo Dataset",
     description: "",
     format: "geojson",
@@ -89,7 +89,7 @@ describe("DatasetCard - Delete gating", () => {
   });
 
   // These two now name the store folder, because that is what decides. The
-  // fixture's default is a CATALOG folder (`data.urbanlab.demo@1`), so leaving
+  // fixture's default is a CATALOG folder (`data.utk.demo@1`), so leaving
   // it implicit described a catalog dataset while claiming to describe the
   // user's own - the ambiguity the old `origin !== "hub"` guard fell into.
   it("offers Delete on the owner's computed row", () => {
@@ -208,7 +208,7 @@ describe("DatasetCard - Delete is for the user's own assets only", () => {
         origin: "imported",
         installed: true,
         producerNodeId: "n1",
-        dirName: "data.urbanlab.demo@1",
+        dirName: "data.utk.demo@1",
       }),
       onDelete: jest.fn(),
     });

@@ -60,7 +60,7 @@ class ProtocolError(ValueError):
 #   {"kind": "sequence", "container": "list"|"tuple", "items": [spec, ...]}
 #   {"kind": "mapping", "items": {"key": spec, ...}}
 #
-# 'sequence' with container 'tuple' is how an upstream merge ('outputs') and a
+# 'sequence' with container 'tuple' is how several inputs ('outputs') and a
 # stored tuple both arrive; the child rebuilds the right container so user code
 # sees exactly what the in-process path would have handed it.
 # ---------------------------------------------------------------------------
@@ -337,6 +337,12 @@ def build_exec_request(
     session_imports=None,
     limits=None,
     wall_timeout=None,
+    secrets=None,
+    collections=None,
+    media_dir=None,
+    models=None,
+    dataset_formats=None,
+    package_modules=None,
 ):
     """Assemble the request the parent hands to the zygote.
 
@@ -358,6 +364,11 @@ def build_exec_request(
     interpreter, which is what an unisolated instance and an older parent both
     mean.
 
+    ``package_modules`` is ``{"root", "names"}`` for a node whose package ships
+    modules beside its templates (#468): ``root`` is the folder they were
+    staged into, relative to ``scratch_dir``, which the child makes importable
+    for the run. None for every other node.
+
     ``wall_timeout`` is enforced by the zygote, not by the parent. The zygote is
     the child's parent process, so while it holds an unreaped child the pid
     cannot be recycled and a kill is guaranteed to hit the right process. The
@@ -373,9 +384,21 @@ def build_exec_request(
         "overlay_dir": str(overlay_dir) if overlay_dir else None,
         "input": input_spec,
         "dataset_paths": dict(dataset_paths or {}),
+        # {modelId: staged folder name}, relative to scratch_dir.
+        "models": dict(models or {}),
+        # {"root": staged folder, relative to scratch_dir, "names": [...]}.
+        "package_modules": dict(package_modules) if package_modules else None,
+        # {datasetId: {"format", "layerType"}}: how curio_load_data reads each.
+        "dataset_formats": dict(dataset_formats or {}),
+        "collections": dict(collections or {}),
+        "media_dir": str(media_dir) if media_dir else None,
         "session_imports": list(session_imports or []),
         "limits": dict(limits or {}),
         "wall_timeout": wall_timeout,
+        # dev/116: connection-key values for the code's curio_secret() calls.
+        # They cross the private parent->child pipe and nothing else; the child
+        # pops them out of the request the moment it builds the callable.
+        "secrets": dict(secrets or {}),
     }
 
 

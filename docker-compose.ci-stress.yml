@@ -41,8 +41,12 @@ services:
       # rather than quietly run every user's node code in one process, which
       # would measure a stack nobody deploys.
       - CURIO_ISOLATION=fork
-    ports:
-      - "127.0.0.1:${CURIO_PORT_2000:-2070}:2000"
+    # The job's own host ports, in place of the base file's 5002/8080, which
+    # are the production stack's on the runner.
+    ports: !override
+      - "${CURIO_E2E_BACKEND_PORT:?this job's host port for the backend}:5002"
+      - "${CURIO_E2E_FRONTEND_PORT:?this job's host port for the web app}:8080"
+      - "127.0.0.1:${CURIO_E2E_SANDBOX_PORT:-2070}:2000"
     command:
       - python
       - curio.py
@@ -55,6 +59,8 @@ services:
       - 0.0.0.0
       - --backend-port
       - "5002"
+      - --backend-url
+      - "${CURIO_E2E_BACKEND_URL:?the host address of this stack's backend}"
       - --sandbox-host
       - 0.0.0.0
       - --sandbox-port

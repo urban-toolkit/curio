@@ -24,6 +24,9 @@ jest.mock("../../components/menus/nodes/datasetPalette", () => ({
 jest.mock("../../components/menus/nodes/agentsPalette", () => ({
     AgentsPaletteDropdown: paletteStub("agents"),
 }));
+jest.mock("../../components/menus/nodes/modelsPalette", () => ({
+    ModelsPaletteDropdown: paletteStub("models"),
+}));
 jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
     PackagesPaletteDropdown: paletteStub("packages"),
     groupPalettePackages: () => [],
@@ -35,7 +38,7 @@ jest.mock("../../registry", () => ({
     subscribeToRegistry: () => () => {},
 }));
 jest.mock("../../registry/packagesClient", () => ({ BUILTIN_PACKAGE_ID: "curio.builtin" }));
-jest.mock("../../api/packagesApi", () => ({ refreshPackageRegistry: jest.fn() }));
+jest.mock("../../registry/packageRegistryBootstrap", () => ({ refreshPackageRegistry: jest.fn() }));
 
 const mockFlow = {
     playAllNodes: jest.fn(),

@@ -17,6 +17,12 @@
   gap: 8px;
   font-size: 0.85rem;
   font-weight: 600;
+}
+/* The default colour sits in :where() so it has no specificity: the chat panel's
+   category tint class on the same element wins regardless of which stylesheet the
+   bundler emits first (the dev/142 panel decomposition changed that order and the
+   review/result cards lost their tint). */
+:where(.header) {
   color: var(--curio-text-primary);
 }
 
@@ -34,6 +40,8 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--curio-text-meta);
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .preview {
@@ -321,17 +329,50 @@
   font-size: 0.8rem;
 }
 
+.planEdgeRow .apply {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .planEdgeNames {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.75rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .planEdgeRefused {
   color: var(--curio-danger-text);
   font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* #662: a scenario the plan saves, in its color, with its nodes by name. */
+.planScenarioRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.planScenarioSwatch {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: var(--scenario-color);
+}
+
+.planScenarioText {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.planScenarioName {
   font-weight: 600;
 }
 
@@ -372,4 +413,60 @@
     margin: 8px 12px 0;
     font-size: var(--curio-font-size-sm);
     color: var(--curio-text-secondary, var(--curio-text-secondary));
+}
+
+/* dev/114 (DEC-072) — the Source block: how the runtime grounded what the
+   proposed code opens or fetches. Neutral surface; the verdict chip states
+   its status in text. */
+.sourceBlock {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--curio-surface-muted);
+    border: 1px solid var(--curio-border);
+    font-size: 0.76rem;
+}
+
+.sourceTitle {
+    font-weight: 700;
+    color: var(--curio-text-primary);
+}
+
+.sourceList {
+    margin: 4px 0 0;
+    padding-left: 18px;
+    color: var(--curio-text-secondary);
+    overflow-wrap: anywhere;
+}
+
+/* dev/115 — the verification attempt trail (collapsed by default). */
+.attempts {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    font-size: 0.74rem;
+}
+
+.attemptHead {
+    font-weight: 600;
+}
+
+.attemptDetail {
+    color: var(--curio-text-secondary);
+}
+
+.attemptError summary {
+    cursor: pointer;
+    color: var(--curio-danger-text);
+    overflow-wrap: anywhere;
+}
+
+.attemptEndpoint {
+    display: block;
+    color: var(--curio-text-secondary);
+    overflow-wrap: anywhere;
+}
+
+.attemptRemedy {
+    display: inline-block;
+    margin-top: 4px;
 }

@@ -12,7 +12,20 @@ SUPPORTED_SUFFIXES = {
     ".tif": "geotiff",
     ".tiff": "geotiff",
     ".shp": "shp",
+    ".onnx": "onnx",
+    ".nc": "netcdf",
 }
+
+# The first four bytes of a TIFF, little- and big-endian, then of a BigTIFF.
+# A ``geotiff`` dataset is one of these whatever its name says.
+TIFF_SIGNATURES = (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+")
+
+# The first bytes of a NetCDF file: "CDF" and the version byte of a classic,
+# 64-bit offset or 64-bit data file, or the eight bytes every HDF5 file starts
+# with, which a NetCDF-4 file is. A ``netcdf`` dataset is one of these whatever
+# its name says. An ``onnx`` model has no such bytes; ``domain/onnx_model.py``
+# reads its protobuf fields instead.
+NETCDF_SIGNATURES = (b"CDF\x01", b"CDF\x02", b"CDF\x05", b"\x89HDF\r\n\x1a\n")
 
 # Formats whose bytes are text, and which every reader downstream therefore
 # assumes are UTF-8: the row counter, the preview, and the generated loader
@@ -32,7 +45,9 @@ OSM_PBF_SUFFIXES = (".pbf",)
 GPKG_SUFFIXES = (".gpkg",)
 
 # The per-layer datasets from one multi-layer import share a ``group_id`` with
-# one of these prefixes (e.g. ``osm.x1a2b3c4d``, ``gpkg.x9f8e7d6c``). The catalog
+# one of these prefixes (e.g. ``osm.x1a2b3c4d``, ``gpkg.x9f8e7d6c``, and
+# ``gtfs.x5e6f7a8b`` for the tables of a GTFS feed the Discovery Catalog
+# downloaded, see ``discovery/application/gtfs.py``). The catalog
 # presents the group as a single bundle-shaped entry whose id IS the group id;
 # helpers below recognize it so list/get/preview/install can expand the group
 # into its member layers.
@@ -40,11 +55,20 @@ GPKG_SUFFIXES = (".gpkg",)
 # The prefix also says which *kind* of import produced the group, which is what
 # lets the group card name itself honestly. A GeoPackage shown as an OSM PBF
 # import is a visible bug, so the kind is carried in the id rather than guessed.
+#
+# ``netcdf.`` groups NetCDF variables stored a file each, the way a WRF run
+# writes them (``RAIN.nc``, ``T2.nc``, ...). Their manifests carry the group id
+# and each variable's name as its ``layerName``, so a shipped set is grouped by
+# its manifests alone.
 OSM_GROUP_ID_PREFIX = "osm."
 GPKG_GROUP_ID_PREFIX = "gpkg."
+GTFS_GROUP_ID_PREFIX = "gtfs."
+NETCDF_GROUP_ID_PREFIX = "netcdf."
 LAYER_GROUP_ID_PREFIXES = {
     OSM_GROUP_ID_PREFIX: "osm",
     GPKG_GROUP_ID_PREFIX: "gpkg",
+    GTFS_GROUP_ID_PREFIX: "gtfs",
+    NETCDF_GROUP_ID_PREFIX: "netcdf",
 }
 
 # Canonical tab order for OSM layers in the grouped detail view. GeoPackage
@@ -53,14 +77,26 @@ LAYER_GROUP_ID_PREFIXES = {
 OSM_LAYER_ORDER = {
     "points": 0,
     "lines": 1,
+    "polylines": 1,
     "multilinestrings": 2,
     "multipolygons": 3,
+    "polygons": 3,
     "other_relations": 4,
 }
 
 
+# autk-core's ``LayerType`` values a GeoJSON source can be loaded as. A dataset
+# downloaded from the Discovery Catalog whose layer is one of these (an
+# OpenStreetMap download's ``buildings``, ``roads``, ...) loads into an Autark
+# node as that layer. KEEP IN SYNC with ``AUTARK_LAYER_TYPES`` in
+# ``frontend/urban-workflows/src/utils/autarkLayerTypes.ts``.
+AUTARK_LAYER_TYPES = frozenset({
+    "background", "surface", "parks", "water", "roads", "buildings", "points", "polygons", "polylines",
+})
+
+
 def layer_group_kind(dataset_id: object) -> str | None:
-    """``"osm"`` / ``"gpkg"`` when *dataset_id* addresses a layer group, else None."""
+    """``"osm"`` / ``"gpkg"`` / ``"gtfs"`` / ``"netcdf"`` when *dataset_id* addresses a layer group, else None."""
     if not isinstance(dataset_id, str):
         return None
     for prefix, kind in LAYER_GROUP_ID_PREFIXES.items():
@@ -118,6 +154,8 @@ FORMAT_TO_EXTENSION: dict[str, str] = {
     "parquet": ".parquet",
     "geotiff": ".tif",
     "shp": ".shp",
+    "onnx": ".onnx",
+    "netcdf": ".nc",
 }
 
 # Generic/auto-generated source labels that must never be persisted as a

@@ -6,7 +6,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 jest.mock("../../registry/packageRegistryBootstrap", () => ({
   refreshPackageRegistry: jest.fn(),
 }));
-jest.mock("../../api/packagesApi", () => ({
+jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: {
     listLibraries: jest.fn(),
     addLibrary: jest.fn(),
@@ -15,7 +15,7 @@ jest.mock("../../api/packagesApi", () => ({
 }));
 
 import LibraryManagerWindow from "../../components/menus/libraries/LibraryManagerWindow";
-import { packagesApi } from "../../api/packagesApi";
+import { packagesApi } from "../../services/packages/packagesApi";
 
 /**
  * The Installed-libraries modal had no test at all.
@@ -227,6 +227,44 @@ describe("LibraryManagerWindow - removing", () => {
     await screen.findByText("numpy");
     fireEvent.click(screen.getByTitle("Remove from your library list"));
     await waitFor(() => expect(mockRemove).toHaveBeenCalledWith("python", "numpy"));
+  });
+});
+
+/**
+ * #518: a broken library's row had two bare × buttons a few pixels apart. The
+ * red one only dismissed the status and the grey one removed the library, so
+ * the harmless one looked destructive, and every × was named "×".
+ */
+describe("LibraryManagerWindow - a broken library's controls", () => {
+  const addBroken = async () => {
+    mockAdd.mockResolvedValue({
+      standalone: { python: ["brokenlib"], js: [] },
+      installed: [],
+      skipped: ["brokenlib"],
+      importError: "ImportError: DLL load failed while importing _base",
+    });
+    open();
+    await waitFor(() => expect(mockList).toHaveBeenCalled());
+    fireEvent.change(specInput(), { target: { value: "brokenlib" } });
+    fireEvent.click(addButton());
+    await screen.findByText(/brokenlib installed, but it cannot be imported/, {}, { timeout: 3000 });
+  };
+
+  it("names Remove, apart from the dismiss", async () => {
+    await addBroken();
+    const remove = screen.getByRole("button", { name: "Remove" });
+    expect(remove).toHaveAttribute("title", "Remove from your library list");
+    fireEvent.click(remove);
+    await waitFor(() => expect(mockRemove).toHaveBeenCalledWith("python", "brokenlib"));
+  });
+
+  it("dismisses the status from one named button, not a second × in the row", async () => {
+    await addBroken();
+    expect(screen.queryAllByRole("button", { name: "×" })).toHaveLength(0);
+    const dismiss = screen.getAllByRole("button", { name: "Dismiss" });
+    expect(dismiss).toHaveLength(1);
+    fireEvent.click(dismiss[0]);
+    expect(screen.queryByText(/brokenlib installed, but it cannot be imported/)).toBeNull();
   });
 });
 

@@ -14,7 +14,10 @@ import { Position } from "reactflow";
 import { CURIO_UNIVERSAL_NODE_TYPE, NodeType, SupportedType } from "../../constants";
 import { clearPackageNodes, registerNode } from "../../registry/nodeRegistry";
 import { ContainerConfig, NodeBehaviorHook, NodeDescriptor } from "../../registry/types";
-import { resolveNodeBoxSize } from "../../utils/nodeBoxSize";
+import * as fs from "fs";
+import * as path from "path";
+
+import { clampNodeBox, resolveNodeBoxSize } from "../../utils/nodeBoxSize";
 
 const noopBehavior: NodeBehaviorHook = () => ({});
 
@@ -76,16 +79,20 @@ describe("resolveNodeBoxSize", () => {
     });
 
     test("a noContent template keeps its sub-minimum footprint", () => {
-        // merge-flow. Both resize effects in NodeContainer bail on noContent, so
-        // 50x180 is the literal rendered size -- not clamped up to 200x150, and
-        // not the 525x350 default.
-        registerNode(descriptor("curio.builtin/merge-flow@1", {
-            noContent: true,
-            nodeWidth: 50,
-            nodeHeight: 180,
-        }));
+        // A package template that declares a 50x180 icon-only chip. Both resize
+        // effects in NodeContainer bail on noContent, so 50x180 is the literal
+        // rendered size -- not clamped up to 200x150, and not the 525x350
+        // default. `source: "package"` so afterEach's clearPackageNodes drops it.
+        registerNode({
+            ...descriptor("acme.test/icon-chip@1", {
+                noContent: true,
+                nodeWidth: 50,
+                nodeHeight: 180,
+            }),
+            source: "package",
+        });
 
-        expect(resolveNodeBoxSize(node("curio.builtin/merge-flow@1"))).toEqual({
+        expect(resolveNodeBoxSize(node("acme.test/icon-chip@1"))).toEqual({
             width: 50,
             height: 180,
         });
@@ -154,5 +161,35 @@ describe("resolveNodeBoxSize", () => {
             width: 525,
             height: 350,
         });
+    });
+});
+
+describe("clampNodeBox", () => {
+    test("no size, or one under the minimum, is the default box", () => {
+        expect(clampNodeBox(undefined, undefined)).toEqual({ width: 525, height: 350 });
+        expect(clampNodeBox(120, 40)).toEqual({ width: 525, height: 350 });
+        expect(clampNodeBox(NaN, "700")).toEqual({ width: 525, height: 350 });
+    });
+
+    test("a size at or over the minimum is kept", () => {
+        expect(clampNodeBox(280, 170)).toEqual({ width: 280, height: 170 });
+        expect(clampNodeBox(900, 600)).toEqual({ width: 900, height: 600 });
+    });
+
+    // #683: NodeContainer started from the size asked for, undefined for most
+    // built-ins, and reached the default only in a mount effect. The canvas's
+    // load fit could measure that narrow first render, so the grown nodes ended
+    // past the window's edge. Its size state must start from the clamp.
+    test("NodeContainer's first render is already the clamped size", () => {
+        const source = fs.readFileSync(
+            path.resolve(__dirname, "../../components/styles.tsx"),
+            "utf8",
+        );
+        const widthAt = source.indexOf("const [currentNodeWidth, setCurrentNodeWidth]");
+        const heightAt = source.indexOf("const [currentNodeHeight, setCurrentNodeHeight]");
+        const minimizedAt = source.indexOf("const [minimized, setMinimized]");
+        expect([widthAt, heightAt, minimizedAt].every((at) => at >= 0)).toBe(true);
+        expect(source.slice(widthAt, heightAt)).toContain("clampNodeBox(nodeWidth, nodeHeight).width");
+        expect(source.slice(heightAt, minimizedAt)).toContain("clampNodeBox(nodeWidth, nodeHeight).height");
     });
 });

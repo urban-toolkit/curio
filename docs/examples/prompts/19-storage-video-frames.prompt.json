@@ -1,0 +1,102 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "19-storage-video-frames",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/19-storage-video-frames.json",
+    "sha256": "31fe95646b03da8982757151f0c1f80882fd7d07881e815ed2da668b28d16b09",
+    "walkthrough": "docs/examples/19-storage-video-frames.md"
+  },
+  "prompt": "Load the Example dashcam frames collection from the Data Catalog: frames from dashcam trips in the Chicago Loop, grouped into sequences, each frame placed by its telemetry. Show the frames in order as cards, and draw each sequence as a track on a Vega-Lite map.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.curio.storage-dashcam"
+    ],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-simple",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "visualization2",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.curio.storage-dashcam"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-simple",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON and its walkthrough, 2026-09-28",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.curio.storage-dashcam",
+        "licence": "CC0-1.0"
+      }
+    ]
+  },
+  "notes": "A frames collection: the frames in sequence order, and a track per sequence."
+}

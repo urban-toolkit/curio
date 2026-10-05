@@ -1,4 +1,4 @@
-"""Tests for :mod:`utk_curio.backend.app.packages.build_jobs` (dev/89 commit 3):
+"""Tests for :mod:`utk_curio.backend.app.packages.builder.jobs` (dev/89 commit 3):
 digest-idempotent creation, backpressure, forward-only phases, execute with
 cancellation checkpoints, sanitized events, expiry, and payload shape.
 """
@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend.app.packages import build_jobs
-from utk_curio.backend.app.packages.build_jobs import (
+from utk_curio.backend.app.packages.builder import jobs as build_jobs
+from utk_curio.backend.app.packages.builder.jobs import (
     JobError,
     JobRefused,
     advance,
@@ -21,7 +21,7 @@ from utk_curio.backend.app.packages.build_jobs import (
     list_jobs,
     sweep_expired_jobs,
 )
-from utk_curio.backend.app.packages.build_models import (
+from utk_curio.backend.app.packages.builder.models import (
     PackageBuildResult,
     parse_build_request,
 )

@@ -13,7 +13,7 @@ export type { DatasetDetailsRequest, OpenDatasetDetailsOptions } from "./dataset
 /**
  * The one place a dataset's details open from, whatever asked.
  *
- * A card, a drawer, a lake row, a palette row, a Dataset Finder row and a toast
+ * A card, a drawer, a source row, a palette row, a Dataset Finder row and a toast
  * all open the same `DatasetDetailModal`, and most of them have no natural
  * owner for it: a toast outlives the call that raised it, and a palette row is
  * one of hundreds. So the modal lives here, once per context. The app root

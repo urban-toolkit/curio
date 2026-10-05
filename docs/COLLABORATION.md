@@ -68,12 +68,13 @@ Useful environment variables:
 | File | Role |
 |------|------|
 | [providers/CollaborationProvider.tsx](../utk_curio/frontend/urban-workflows/src/providers/CollaborationProvider.tsx) | Fetches `/api/config/public`, opens one socket per project, exposes the `useCollab()` API. **No-op when disabled.** |
-| [providers/FlowProvider.tsx](../utk_curio/frontend/urban-workflows/src/providers/FlowProvider.tsx) | Calls `collabRef.current.broadcast*(...)` in node/edge mutation handlers. |
+| [providers/flow/useGraphEdits.ts](../utk_curio/frontend/urban-workflows/src/providers/flow/useGraphEdits.ts), [providers/flow/useConnect.ts](../utk_curio/frontend/urban-workflows/src/providers/flow/useConnect.ts) | Call `collabRef.current.broadcast*(...)` in node/edge mutation handlers. |
+| [providers/flow/useCollaborationSync.ts](../utk_curio/frontend/urban-workflows/src/providers/flow/useCollaborationSync.ts) | Applies peers' node and edge changes to the canvas without broadcasting them again. |
 | [components/UniversalNode.tsx](../utk_curio/frontend/urban-workflows/src/components/UniversalNode.tsx) | Lock-on-focus / unlock-on-blur, peer-lock chip, output broadcast on exec completion. |
 | [components/editing/CodeEditor.tsx](../utk_curio/frontend/urban-workflows/src/components/editing/CodeEditor.tsx) | Proposal-on-blur for Python code, banner UI, apply-on-receive. |
 | [components/editing/GrammarEditor.tsx](../utk_curio/frontend/urban-workflows/src/components/editing/GrammarEditor.tsx) | Same for grammar specs. |
 | [components/collab/CollaborationSidePanel.tsx](../utk_curio/frontend/urban-workflows/src/components/collab/CollaborationSidePanel.tsx) | Right-docked Users / Proposals / Activity panel. |
-| [components/menus/top/UpMenu.tsx](../utk_curio/frontend/urban-workflows/src/components/menus/top/UpMenu.tsx) | 👥 trigger button that toggles the side panel; only rendered when `collab.enabled`. |
+| [components/menus/top/UpMenu.tsx](../utk_curio/frontend/urban-workflows/src/components/menus/top/UpMenu.tsx) | 👥 **Collaboration** button in the top bar that toggles the side panel; only rendered when `collab.enabled`. |
 
 ## Security model
 

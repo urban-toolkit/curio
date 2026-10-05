@@ -1,15 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useEdges, useReactFlow } from 'reactflow';
+import { useFlowContext } from '../../providers/FlowProvider';
 import { NodeBehaviorHook } from '../../registry/types';
 import { fetchData } from '../../services/api';
 import { resolveNodeDisplayLabel } from '../../utils/palettePackageFactoryDraft';
-import { triggerBlobDownload } from '../../utils/triggerBlobDownload';
+import { triggerBlobDownload } from '../../services/packages';
 import {
   EXPORT_MIME,
   ExportTarget,
   resolveExportTarget,
 } from '../../utils/dataExportTarget';
-import OutputContent from '../../components/editing/OutputContent';
 
 /**
  * Turn a sandbox payload into the bytes of its file.
@@ -49,46 +49,38 @@ function serialize(result: any, format: ExportTarget['format']): string {
 }
 
 /**
- * Data Export: one button that names the file it will give you.
+ * Data Export: the node is one Download button that names the file (#226).
  *
- * It used to be an "Export format" dropdown plus a run: the user picked between
- * CSV / JSON / GeoJSON, pressed play, and got a file called ``data_export``
- * whatever the input was (#226). Both halves were avoidable. The format is
- * already determined by the payload on the wire -- offering CSV for a raster is
- * a choice that can only fail -- and the name is already known from the input,
- * so writing every export to the same stem meant three exports overwrote each
- * other in the download folder.
+ * It has no code, no widgets and no play button, and a Run All never
+ * downloads. The button downloads the input the node has. When it has none
+ * yet, the button runs the nodes upstream first, the way the play button
+ * used to, and downloads once that run is over.
  *
- * The format was also never persisted (plain ``useState``), so a chosen format
- * was silently lost on reload. That is why this needs no migration: there is no
- * saved value anywhere to carry forward.
+ * The format follows the payload on the wire and the name follows the input,
+ * so there is nothing to choose.
  */
 export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [busy, setBusy] = useState(false);
+  // Set by a click that had to run the upstream nodes first; the download
+  // fires when that run is over.
+  const [pendingDownload, setPendingDownload] = useState(false);
+  const sawRunRef = useRef(false);
+  const { playNodesUpTo, isRunActive: browserRunActive, serverRunActive } = useFlowContext();
+  const isRunActive = browserRunActive || serverRunActive;
 
   const input = data.input && typeof data.input === 'object' ? (data.input as any) : null;
-  const connected = Boolean(input?.path);
+  const hasInput = Boolean(input?.path);
 
   // The name of whatever produced the input, used when the payload carries no
   // dataset filename of its own.
-  //
-  // This used to read ``datasetSource`` off the export node's own data, which
-  // never resolved: that field is written by the dataset palette onto the node
-  // it creates, and an export node is never created that way. So the ordinary
-  // case — a compute node wired into Data Export — always fell through to the
-  // default stem and the button read "Download data_export.csv" (#226). Name the
-  // node actually feeding this one instead, which is what the button should have
-  // said all along.
   const edges = useEdges();
   const upstreamId = useMemo(
     () => edges.find((edge) => edge.target === data.nodeId)?.source ?? null,
     [edges, data.nodeId],
   );
+  const wired = upstreamId != null;
   const { getNode } = useReactFlow();
   const sourceName = useMemo(() => {
-    // A dataset dropped straight onto this node still wins, when it is there.
-    const own = (data as { datasetSource?: { title?: unknown } }).datasetSource;
-    if (typeof own?.title === 'string' && own.title.trim()) return own.title;
     if (!upstreamId) return null;
     const upstream = getNode(upstreamId);
     if (!upstream?.data) return null;
@@ -103,7 +95,7 @@ export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
       // An unresolvable node type is not worth failing a download over.
       return null;
     }
-  }, [data, upstreamId, getNode]);
+  }, [upstreamId, getNode]);
 
   const target = useMemo(
     () => resolveExportTarget(input, sourceName),
@@ -111,14 +103,19 @@ export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
   );
 
   const download = useCallback(async () => {
-    if (!connected || busy) return;
+    if (busy) return;
+    if (!hasInput) {
+      nodeState.setOutput({
+        code: 'error',
+        content: 'Could not export: the connected node produced no output.',
+      });
+      return;
+    }
     setBusy(true);
     nodeState.setOutput({ code: 'exec', content: '', outputType: target.format });
     try {
       const result: any = await fetchData(input.path);
       const contents = serialize(result, target.format);
-      // Shared helper rather than a hand-rolled anchor: it revokes the object
-      // URL, which the inline version here never did.
       triggerBlobDownload(
         new Blob([contents], { type: EXPORT_MIME[target.format] }),
         target.filename,
@@ -129,8 +126,6 @@ export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
         outputType: target.format,
       });
     } catch (err) {
-      // Reported on the node instead of only in the console, which is where a
-      // failed export used to go.
       nodeState.setOutput({
         code: 'error',
         content: `Could not export: ${(err as Error)?.message ?? 'unknown error'}`,
@@ -139,56 +134,98 @@ export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
     } finally {
       setBusy(false);
     }
-  }, [connected, busy, input, target, nodeState]);
+  }, [busy, hasInput, input, target, nodeState]);
 
-  const customWidgetsCallback = useCallback(
-    (div: HTMLElement) => {
-      div.replaceChildren();
+  const onClick = useCallback(() => {
+    if (busy || pendingDownload || !wired) return;
+    if (hasInput) {
+      void download();
+      return;
+    }
+    sawRunRef.current = false;
+    setPendingDownload(true);
+    nodeState.setOutput({ code: 'exec', content: '' });
+    playNodesUpTo(data.nodeId);
+  }, [busy, pendingDownload, wired, hasInput, download, nodeState, playNodesUpTo, data.nodeId]);
 
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'nodrag nowheel';
-      button.disabled = !connected || busy;
-      // The filename IS the format indicator: showing "boundaries.geojson"
-      // says what will arrive without a control that implies a choice.
-      button.textContent = connected ? `Download ${target.filename}` : 'Download';
-      button.title = connected
-        ? `Download this node's input as ${target.filename}`
-        : 'Connect a dataset to export it';
-      button.setAttribute('aria-label', button.textContent);
-      button.addEventListener('click', (event) => {
-        event.preventDefault();
-        void download();
-      });
-      div.appendChild(button);
-
-      if (!connected) {
-        const hint = document.createElement('span');
-        hint.textContent = 'Connect a dataset to export it';
-        hint.style.marginLeft = '8px';
-        hint.style.fontSize = '11px';
-        hint.style.opacity = '0.75';
-        div.appendChild(hint);
-      }
-    },
-    [connected, busy, target.filename, download],
-  );
-
+  // The upstream run a click started: download when it is over.
   useEffect(() => {
-    nodeState.setOutput({ code: 'success', content: '', outputType: target.format });
-  }, [data.input, target.format]);
+    if (!pendingDownload) return;
+    if (isRunActive) {
+      sawRunRef.current = true;
+      return;
+    }
+    if (!sawRunRef.current && !hasInput) return;
+    sawRunRef.current = false;
+    setPendingDownload(false);
+    void download();
+  }, [pendingDownload, isRunActive, hasInput, download]);
+
+  const waiting = busy || pendingDownload;
+  const label = hasInput ? `Download ${target.filename}` : 'Download';
+  const title = !wired
+    ? 'Connect a dataset to export it'
+    : hasInput
+      ? `Download this node's input as ${target.filename}`
+      : 'Runs the connected node, then downloads its output';
+
+  // One line under the button: what is missing, what is running, or what the
+  // last click did. No output panel, the node is only the button.
+  const output = nodeState.output;
+  const statusText = !wired
+    ? 'Connect a dataset to export it'
+    : pendingDownload
+      ? 'Running the connected node...'
+      : output?.code === 'exec'
+        ? 'Downloading...'
+        : output?.code === 'success' || output?.code === 'error'
+          ? String(output.content ?? '')
+          : '';
+  const statusIsError = wired && !pendingDownload && output?.code === 'error';
 
   const contentComponent = useMemo(
-    () => <OutputContent output={nodeState.output} />,
-    [nodeState.output],
+    () => (
+      <div
+        className="nodrag nowheel"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          height: '100%',
+          padding: '8px',
+          overflow: 'hidden',
+        }}
+      >
+        <button
+          type="button"
+          className="btn btn-outline-secondary btn-sm nodrag nowheel"
+          disabled={!wired || waiting}
+          title={title}
+          aria-label={label}
+          onClick={onClick}
+          style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        >
+          {label}
+        </button>
+        {statusText ? (
+          <span
+            role="status"
+            style={{
+              fontSize: '11px',
+              opacity: statusIsError ? 1 : 0.75,
+              color: statusIsError ? 'var(--curio-danger-text)' : undefined,
+              textAlign: 'center',
+            }}
+          >
+            {statusText}
+          </span>
+        ) : null}
+      </div>
+    ),
+    [wired, waiting, title, label, onClick, statusText, statusIsError],
   );
 
-  return {
-    // Play still works and does the same thing, so a Run All over a dataflow
-    // that ends in an export behaves as it did.
-    sendCodeOverride: download,
-    setSendCodeCallbackOverride: () => {},
-    customWidgetsCallback,
-    contentComponent,
-  };
+  return { contentComponent };
 };

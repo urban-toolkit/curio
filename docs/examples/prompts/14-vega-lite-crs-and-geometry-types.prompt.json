@@ -1,0 +1,245 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "14-vega-lite-crs-and-geometry-types",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/14-vega-lite-crs-and-geometry-types.json",
+    "sha256": "3c7569483eb2306cef7cce988a86888a719a678f3aeda5c40b9f388f06cc6736",
+    "walkthrough": "docs/examples/14-vega-lite-crs-and-geometry-types.md"
+  },
+  "prompt": "Take the Chicago ZIP boundary polygons from the Data Catalog and reproject them into several different coordinate systems, and also derive point and line geometries from them. Draw every one of those frames on a map, with the same map spec for every coordinate system, so I can confirm the coordinate system does not change what I have to write, and make sure the lines show up too.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.utk.chicago-boundary"
+    ],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform2",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform3",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform4",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform5",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform6",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform7",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization7",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform2",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform3",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform4",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform5",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform6",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform7",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "transform2",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "transform3",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "transform4",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "transform5",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "transform6",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "transform7",
+        "to": "visualization7",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.utk.chicago-boundary"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "validation",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5 from the example JSON and its walkthrough, 2026-09-24",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.utk.chicago-boundary",
+        "licence": "Open Data"
+      }
+    ]
+  },
+  "notes": "One spec over the reprojected frames; the frame of every geometry type strokes its lines in a second layer."
+}

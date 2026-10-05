@@ -1,0 +1,137 @@
+{
+  "about": "What a scenario is made of (#662): its levers, fixed context and outcomes, and the nodes whose saved outputs stand for a node's. Nodes and edges are written as a saved spec holds them. Read by src/tests/utils/scenarioParts.cases.test.ts, which hands them to the canvas as nodes, and by utk_curio/backend/tests/test_scenario_catalog/test_parts.py: the canvas and the Scenario Catalog read a scenario the same way.",
+  "cases": [
+    {
+      "name": "a branch reads a loader outside it, and its last node is the outcome",
+      "nodes": [
+        {"id": "load", "type": "curio.builtin/data-loading@1", "content": "return 1"},
+        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return arg"},
+        {"id": "b", "type": "curio.builtin/computation-analysis@1", "content": "return arg"}
+      ],
+      "edges": [
+        {"source": "load", "target": "a"},
+        {"source": "a", "target": "b"}
+      ],
+      "scenario": ["a", "b"],
+      "expected": {"levers": ["a", "b"], "context": ["load"], "outcomes": ["b"]},
+      "savedSources": {"load": ["load"], "b": ["b"]}
+    },
+    {
+      "name": "a whole-project scenario has no context",
+      "nodes": [
+        {"id": "load", "type": "curio.builtin/data-loading@1", "content": "return 1"},
+        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return arg"}
+      ],
+      "edges": [{"source": "load", "target": "a"}],
+      "scenario": ["load", "a"],
+      "expected": {"levers": ["load", "a"], "context": [], "outcomes": ["a"]},
+      "savedSources": {"a": ["a"]}
+    },
+    {
+      "name": "a lever read outside the scenario is an outcome even when a lever reads it too",
+      "nodes": [
+        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return 1"},
+        {"id": "b", "type": "curio.builtin/computation-analysis@1", "content": "return arg"},
+        {"id": "outside", "type": "curio.builtin/computation-analysis@1", "content": "return arg"}
+      ],
+      "edges": [
+        {"source": "a", "target": "b"},
+        {"source": "a", "target": "outside"}
+      ],
+      "scenario": ["a", "b"],
+      "expected": {"levers": ["a", "b"], "context": [], "outcomes": ["a", "b"]},
+      "savedSources": {"a": ["a"], "b": ["b"]}
+    },
+    {
+      "name": "a Parameter node named by a lever's shared tag is context, though no edge reaches it",
+      "nodes": [
+        {"id": "season", "type": "curio.builtin/parameter@1", "content": "", "metadata": {"widgets": [{"name": "season", "type": "text", "default": "winter"}]}},
+        {"id": "other", "type": "curio.builtin/parameter@1", "content": "", "metadata": {"widgets": [{"name": "unused", "type": "number", "default": 1}]}},
+        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return [!! @season !!]"}
+      ],
+      "edges": [],
+      "scenario": ["a"],
+      "expected": {"levers": ["a"], "context": ["season"], "outcomes": ["a"]},
+      "savedSources": {"season": [], "a": ["a"]}
+    },
+    {
+      "name": "a Parameter node inside the scenario is a lever and never an outcome",
+      "nodes": [
+        {"id": "factor", "type": "curio.builtin/parameter@1", "content": "", "metadata": {"widgets": [{"name": "factor", "type": "number", "default": 2}]}},
+        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return [!! @factor !!]"}
+      ],
+      "edges": [],
+      "scenario": ["factor", "a"],
+      "expected": {"levers": ["factor", "a"], "context": [], "outcomes": ["a"]},
+      "savedSources": {"factor": [], "a": ["a"]}
+    },
+    {
+      "name": "context is listed in dataflow order, once each",
+      "nodes": [
+        {"id": "x", "type": "curio.builtin/data-loading@1", "content": "return 1"},
+        {"id": "y", "type": "curio.builtin/data-loading@1", "content": "return 2"},
+        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return arg"},
+        {"id": "b", "type": "curio.builtin/computation-analysis@1", "content": "return arg"}
+      ],
+      "edges": [
+        {"source": "y", "target": "a", "targetHandle": "in"},
+        {"source": "x", "target": "a", "targetHandle": "in_1"},
+        {"source": "y", "target": "b"}
+      ],
+      "scenario": ["b", "a"],
+      "expected": {"levers": ["b", "a"], "context": ["x", "y"], "outcomes": ["b", "a"]},
+      "savedSources": {"x": ["x"], "y": ["y"]}
+    },
+    {
+      "name": "an interaction link between two charts is not a dataflow edge",
+      "nodes": [
+        {"id": "pool", "type": "curio.builtin/data-pool@1", "content": ""},
+        {"id": "chart", "type": "curio.builtin/vis-vega@1", "content": "{}"},
+        {"id": "other", "type": "curio.builtin/vis-vega@1", "content": "{}"}
+      ],
+      "edges": [
+        {"source": "pool", "target": "chart"},
+        {"source": "other", "target": "chart", "sourceHandle": "in/out", "targetHandle": "in/out", "type": "Interaction"}
+      ],
+      "scenario": ["chart"],
+      "expected": {"levers": ["chart"], "context": ["pool"], "outcomes": ["chart"]}
+    },
+    {
+      "name": "a chart or a Data Pool stands for the nodes feeding it",
+      "nodes": [
+        {"id": "load", "type": "curio.builtin/data-loading@1", "content": "return 1"},
+        {"id": "calc", "type": "curio.builtin/computation-analysis@1", "content": "return arg"},
+        {"id": "pool", "type": "curio.builtin/data-pool@1", "content": ""},
+        {"id": "chart", "type": "curio.builtin/vis-vega@1", "content": "{}"}
+      ],
+      "edges": [
+        {"source": "load", "target": "pool"},
+        {"source": "calc", "target": "chart"},
+        {"source": "pool", "target": "calc"}
+      ],
+      "scenario": ["calc", "chart"],
+      "expected": {"levers": ["calc", "chart"], "context": ["pool"], "outcomes": ["chart"]},
+      "savedSources": {"pool": ["load"], "chart": ["calc"]}
+    },
+    {
+      "name": "an Autark node that draws stands for its input; one that makes layers saves its own",
+      "nodes": [
+        {"id": "layers", "type": "curio.builtin/autk-grammar@1", "content": "{\"data\": [{\"name\": \"roads\"}]}"},
+        {"id": "map", "type": "curio.builtin/autk-grammar@1", "content": "{\"map\": {\"layers\": []}}"}
+      ],
+      "edges": [{"source": "layers", "target": "map"}],
+      "scenario": ["layers", "map"],
+      "expected": {"levers": ["layers", "map"], "context": [], "outcomes": ["map"]},
+      "savedSources": {"layers": ["layers"], "map": ["layers"]}
+    },
+    {
+      "name": "a member that is not a node is left out",
+      "nodes": [
+        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return 1"}
+      ],
+      "edges": [],
+      "scenario": ["gone", "a"],
+      "expected": {"levers": ["a"], "context": [], "outcomes": ["a"]}
+    }
+  ]
+}

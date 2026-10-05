@@ -18,6 +18,8 @@ from utk_curio.backend.app.datasets.domain.manifest import (
     write_manifest,
 )
 from utk_curio.backend.app.common.safe_paths import PathTraversalError, validate_component
+from utk_curio.backend.app.datasets.domain.constants import NETCDF_SIGNATURES, TIFF_SIGNATURES
+from utk_curio.backend.app.datasets.domain.onnx_model import is_onnx_model
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import title_from_filename
 from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root, dataset_dir
 
@@ -434,7 +436,7 @@ def install_imported_file(
     layer_name: str | None = None,
     source_updated_at: str | None = None,
     source_encoding: str | None = None,
-    lake_source: dict | None = None,
+    discovery_source: dict | None = None,
 ) -> InstallResult:
     """Save an uploaded file into the user's dataset store with a generated manifest.
 
@@ -445,6 +447,112 @@ def install_imported_file(
     OSM PBF); ``source_updated_at`` records the original file's last-modified
     date, distinct from the record's ``created_at`` / ``updated_at``.
     """
+    return _install_imported(
+        user_key,
+        lambda data_path: data_path.write_bytes(file_bytes),
+        safe_filename,
+        fmt,
+        title=title,
+        group_id=group_id,
+        layer_name=layer_name,
+        source_updated_at=source_updated_at,
+        source_encoding=source_encoding,
+        discovery_source=discovery_source,
+    )
+
+
+def install_imported_path(
+    user_key: str,
+    source_path: Path,
+    safe_filename: str,
+    fmt: str,
+    *,
+    title: str | None = None,
+    group_id: str | None = None,
+    layer_name: str | None = None,
+    source_updated_at: str | None = None,
+    source_encoding: str | None = None,
+    discovery_source: dict | None = None,
+    description: str | None = None,
+    collection: dict | None = None,
+) -> InstallResult:
+    """Move a file already on disk into a fresh dataset folder.
+
+    The path-taking sibling of :func:`install_imported_file`: the bytes are
+    never read into memory, so a large file costs a rename rather than its own
+    size in RAM. *source_path* is consumed. It is moved with ``os.replace``
+    when it sits on the same filesystem as the store, which every staging
+    directory under ``.curio/users/<key>/`` does, and copied then removed
+    otherwise.
+    """
+    source_path = Path(source_path)
+    if not source_path.is_file():
+        raise InstallerError(f"nothing to install at {source_path}")
+
+    def _place(data_path: Path) -> None:
+        try:
+            os.replace(source_path, data_path)
+        except OSError:
+            shutil.copyfile(source_path, data_path)
+            source_path.unlink(missing_ok=True)
+
+    return _install_imported(
+        user_key,
+        _place,
+        safe_filename,
+        fmt,
+        title=title,
+        group_id=group_id,
+        layer_name=layer_name,
+        source_updated_at=source_updated_at,
+        source_encoding=source_encoding,
+        discovery_source=discovery_source,
+        description=description,
+        collection=collection,
+    )
+
+
+def _check_content(data_path: Path, fmt: str, safe_filename: str) -> None:
+    """Refuse an import whose bytes are not the format it is stored as.
+
+    An upload's format comes from its name, and a download's from its URL and
+    headers, so a ``geotiff`` is checked for a TIFF's first bytes and a
+    ``netcdf`` for a NetCDF file's. The loader opens a GeoTIFF with rasterio,
+    which reads whatever format the bytes are. An ``onnx`` model has no such
+    bytes, so its protobuf fields are read instead (``domain/onnx_model.py``).
+    """
+    if fmt not in ("geotiff", "netcdf", "onnx"):
+        return
+    with open(data_path, "rb") as fh:
+        if fmt == "geotiff":
+            matches = fh.read(4) in TIFF_SIGNATURES
+            what = "a TIFF file, so it cannot be imported as a GeoTIFF"
+        elif fmt == "netcdf":
+            matches = fh.read(8).startswith(NETCDF_SIGNATURES)
+            what = "a NetCDF file, so it cannot be imported as NetCDF"
+        else:
+            matches = is_onnx_model(fh, data_path.stat().st_size)
+            what = "an ONNX model, so it cannot be imported as ONNX"
+    if not matches:
+        raise InstallerError(f"{safe_filename} is not {what}.")
+
+
+def _install_imported(
+    user_key: str,
+    place_data,
+    safe_filename: str,
+    fmt: str,
+    *,
+    title: str | None = None,
+    group_id: str | None = None,
+    layer_name: str | None = None,
+    source_updated_at: str | None = None,
+    source_encoding: str | None = None,
+    discovery_source: dict | None = None,
+    description: str | None = None,
+    collection: dict | None = None,
+) -> InstallResult:
+    """Mint ``imported.x<uuid>@1``, let *place_data* put the file, write the manifest."""
     # A per-import unique token — never the file content — guarantees each import
     # is a distinct dataset. The dir-name regex requires each dot-segment to
     # start with [a-z]; the 'x' prefix keeps the (hex) uuid segment letter-first.
@@ -454,15 +562,19 @@ def install_imported_file(
 
     dest = dataset_dir(user_key, dir_name)
 
-    dest.mkdir(parents=True, exist_ok=True)
-    (dest / "data").mkdir(exist_ok=True)
-
-    # Validate at the write boundary even though the sole caller pre-sanitizes
+    # Validate at the write boundary even though every caller pre-sanitizes
     # (secure_filename) — keep the "validate at every write boundary" invariant.
     safe_filename = _validate_store_filename(safe_filename)
-    # Write the data file.
+
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "data").mkdir(exist_ok=True)
     data_path = dest / "data" / safe_filename
-    data_path.write_bytes(file_bytes)
+    try:
+        place_data(data_path)
+        _check_content(data_path, fmt, safe_filename)
+    except Exception:
+        shutil.rmtree(dest, ignore_errors=True)
+        raise
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     display_title = title or title_from_filename(safe_filename)
@@ -471,7 +583,7 @@ def install_imported_file(
         name=display_title,
         version="1.0.0",
         format=fmt,
-        description=f"{fmt.upper()} dataset imported by the user.",
+        description=description or f"{fmt.upper()} dataset imported by the user.",
         publisher="User",
         license="",
         tags=[fmt, "imported"],
@@ -487,7 +599,8 @@ def install_imported_file(
         group_id=group_id,
         layer_name=layer_name,
         source_encoding=source_encoding,
-        lake_source=lake_source,
+        discovery_source=discovery_source,
+        collection=collection,
     )
     write_manifest(manifest_obj, dest)
 
@@ -499,5 +612,3 @@ def install_imported_file(
 
     # A fresh unique dir is always created — never a reuse of a prior import.
     return _index(user_key, InstallResult(manifest=manifest, dest=dest, replaced=False))
-
-

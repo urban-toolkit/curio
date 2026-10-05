@@ -108,6 +108,19 @@ describe('the Vega output mount', () => {
     expect(el.style.height).toBe('100%');
   });
 
+  test('is not inset, since the node body keeps its pane clear of the port markers (#522, #668)', () => {
+    // An inset here would come on top of the body's own. No padding either:
+    // vega sizes a "container" chart from the mount's clientWidth, which
+    // counts padding, so the chart would overflow by exactly that much.
+    // nodeEditorPanesInBody.test.tsx checks the pane stays in the body.
+    render(<NodeEditor {...baseProps} />);
+    const el = mountDiv();
+    expect(el.style.marginLeft).toBe('');
+    expect(el.style.marginRight).toBe('');
+    expect(el.style.paddingLeft).toBe('');
+    expect(el.style.paddingRight).toBe('');
+  });
+
   test('the pane around it stays clamped, so the node box cannot spill', () => {
     // The Tab.Pane wrapping the mount must remain overflow:hidden — it is what
     // keeps a tall chart inside the node instead of painting over the canvas.

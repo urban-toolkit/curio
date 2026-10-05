@@ -167,11 +167,11 @@ def resolve_mode(requested=None, *, hosted=False, caps=None):
     # the WRONG default, because child.confine had never executed anywhere.
     # That is no longer true: docker-compose.ci-isolated.yml and
     # docker-compose.ci-exec-user.yml boot the fork path on every CI run, the
-    # workflow asserts the mode /version reports, and test-gpu-exec-user runs a
+    # workflow asserts the mode /version reports, and test-exec-user runs a
     # real workload through it with an unprivileged execution account.
     #
     # So the decision moved up rather than changing here. The launcher defaults
-    # --deploy to FORK when the host can deliver it (utk_curio/main.py), which
+    # --deploy to FORK when the host can deliver it (utk_curio/cli/environment.py), which
     # is the "isolate wherever it is possible" behaviour, scoped to the
     # instances that have more than one user to separate. AUTO stays OFF so
     # that a local launch, and anything that never went through the launcher,

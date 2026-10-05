@@ -13,8 +13,11 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import testing_provider
-from utk_curio.backend.app.agents.providers import ProviderConfig, run_chat_completion
+from utk_curio.backend.app.agents.infrastructure import testing_provider
+from utk_curio.backend.app.agents.infrastructure.providers import (
+    ProviderConfig,
+    run_chat_completion,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -71,6 +74,43 @@ class TestQueue:
         assert "curio.v1" not in testing_provider.FALLBACK_REPLY
 
 
+def _delegated(intent: str, siblings: str = "") -> list:
+    """A delegated request as the runtime sends it: a header, then JSON."""
+    body = json.dumps({"intent": intent, "planSiblings": siblings})
+    return [{"role": "user", "content": f"[delegated task from agent.x@1 - capability c]\n{body}"}]
+
+
+class TestRoutingByIntent:
+    def test_a_delegated_call_gets_the_reply_its_intent_names(self):
+        """Solve asks per node in wave order, interleaved with other delegations,
+        so only the call's own intent can say which node it is asking about."""
+        testing_provider.route_by_intent({"load_labels": "LOAD", "plot_counts": "PLOT"})
+        assert testing_provider.run_scripted_completion(_delegated("write plot_counts")) == "PLOT"
+        assert testing_provider.run_scripted_completion(_delegated("write load_labels")) == "LOAD"
+
+    def test_only_the_intent_is_matched_not_the_siblings(self):
+        testing_provider.route_by_intent({"load_labels": "LOAD"})
+        testing_provider.push_reply("queued")
+        messages = _delegated("write the chart", siblings="load_labels feeds this node")
+        assert testing_provider.run_scripted_completion(messages) == "queued"
+
+    def test_the_longest_key_wins(self):
+        testing_provider.route_by_intent({"load": "SHORT", "load_labels": "LONG"})
+        assert testing_provider.run_scripted_completion(_delegated("write load_labels")) == "LONG"
+
+    def test_an_unrouted_call_still_pops_the_queue(self):
+        testing_provider.route_by_intent({"load_labels": "LOAD"})
+        testing_provider.push_replies("plan")
+        assert testing_provider.run_scripted_completion([{"role": "user", "content": "build it"}]) == "plan"
+        assert testing_provider.pending() == 0
+
+    def test_reset_drops_the_routes(self):
+        testing_provider.route_by_intent({"load_labels": "LOAD"})
+        testing_provider.reset()
+        reply = testing_provider.run_scripted_completion(_delegated("write load_labels"))
+        assert reply == testing_provider.FALLBACK_REPLY
+
+
 class TestUsageAccounting:
     def test_default_counts_are_reported(self):
         usage: dict = {}
@@ -125,7 +165,7 @@ class TestDispatch:
         assert usage == {"inputTokens": 12, "outputTokens": 34}
 
     def test_streaming_yields_the_same_reply(self):
-        from utk_curio.backend.app.agents.providers import stream_chat_completion
+        from utk_curio.backend.app.agents.infrastructure.providers import stream_chat_completion
 
         testing_provider.push_reply("streamed")
         chunks = list(stream_chat_completion(_config(), [{"role": "user", "content": "hi"}]))
@@ -235,8 +275,76 @@ class TestCapture:
         assert testing_provider.last_messages()[0]["content"] == "preamble here"
 
     def test_streaming_captures_too(self):
-        from utk_curio.backend.app.agents.providers import stream_chat_completion
+        from utk_curio.backend.app.agents.infrastructure.providers import stream_chat_completion
 
         testing_provider.push_reply("streamed")
         list(stream_chat_completion(_config(), [{"role": "user", "content": "streamy"}]))
         assert testing_provider.last_messages()[0]["content"] == "streamy"
+
+
+class TestNativeCalls:
+    """A scripted reply may call tools natively, as a model offered tools does."""
+
+    TOOLS = [{"name": "node__read", "description": "", "parameters": {}}]
+
+    def test_an_entry_makes_its_calls_under_their_native_names(self):
+        from utk_curio.backend.app.agents.infrastructure.providers import ToolCall
+
+        testing_provider.push_reply({"text": "Reading.", "toolCalls": [
+            {"name": "node.read", "arguments": {"nodeId": "n1"}, "id": "c1"},
+            {"name": "node__read"},
+        ]})
+        turn = testing_provider.run_scripted_turn([], tools=self.TOOLS)
+        assert turn.text == "Reading."
+        first, second = turn.tool_calls
+        assert first == ToolCall("c1", "node__read", {"nodeId": "n1"})
+        assert (second.name, second.arguments) == ("node__read", {})
+        assert second.id and second.id != first.id
+
+    def test_a_call_needs_a_call_that_offered_tools(self):
+        testing_provider.push_replies(
+            {"toolCalls": [{"name": "node.read"}]}, {"toolCalls": [{"name": "node.read"}]},
+        )
+        with pytest.raises(ValueError, match="offered no tool"):
+            testing_provider.run_scripted_turn([])
+        with pytest.raises(ValueError, match="last round"):
+            testing_provider.run_scripted_turn([], tools=self.TOOLS, tool_choice="none")
+
+    def test_an_error_entry_fails_the_call_uncharged(self):
+        testing_provider.push_reply({"error": "no tools here", "status": 400})
+        sink: dict = {}
+        with pytest.raises(testing_provider.ScriptedEndpointError) as raised:
+            testing_provider.run_scripted_turn([], usage_out=sink, tools=self.TOOLS)
+        assert raised.value.status_code == 400 and sink == {}
+
+    def test_what_each_call_offered_is_recorded(self):
+        testing_provider.run_scripted_turn([], tools=self.TOOLS)
+        testing_provider.run_scripted_turn([])
+        assert testing_provider.offered() == [
+            {"tools": ["node__read"], "toolChoice": "auto", "replySchema": None},
+            {"tools": [], "toolChoice": None, "replySchema": None},
+        ]
+        testing_provider.reset()
+        assert testing_provider.offered() == []
+
+    def test_the_stream_yields_the_text_then_the_calls(self):
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            ToolCall,
+            stream_chat_turn,
+        )
+
+        testing_provider.push_reply({"toolCalls": [{"name": "node.read", "id": "c1"}]})
+        events = list(stream_chat_turn(_config(), [], tools=self.TOOLS))
+        assert events == [ToolCall("c1", "node__read", {})]
+        testing_provider.push_reply("plain")
+        assert list(stream_chat_turn(_config(), [])) == ["plain"]
+
+    def test_an_endpoint_error_on_a_call_offering_tools_is_a_refusal_of_them(self):
+        from utk_curio.backend.app.agents.infrastructure.providers import (
+            NativeToolsRefused,
+            run_chat_turn,
+        )
+
+        testing_provider.push_reply({"error": "no tools here", "status": 422})
+        with pytest.raises(NativeToolsRefused):
+            run_chat_turn(_config(), [], tools=self.TOOLS)

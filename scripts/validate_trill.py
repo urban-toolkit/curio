@@ -14,13 +14,6 @@ projects: ``.curio/`` is gitignored, so those 18-odd files exist only on your
 machine. This script is the half that reaches them, which is what makes "all
 dataflow jsons are checked against the schema" true rather than aspirational.
 
-Expect your ``.curio`` projects to report failures. They are a genuinely looser
-dialect — saved before the schema existed, often missing ``provenance_id`` or
-``timestamp``, and mixing versioned (``curio.builtin/vis-vega@1``) with
-unversioned node types. That report is the point: it is the migration triage
-``docs/NODE-CATALOG.md`` asks for when it says legacy projects need a one-time
-JSON rewrite. A non-zero exit from ``--all`` is information, not a broken build.
-
 What this does NOT check is whether a node's ``type`` resolves to a template
 that actually exists. Nodes are defined by package manifests, so resolution
 depends on which packages are installed; the schema validates only the shape of
@@ -52,9 +45,8 @@ if str(REPO_ROOT) not in sys.path:
 
 from jsonschema import Draft202012Validator  # noqa: E402
 
-from utk_curio.backend.app.packages.spec_packages import (  # noqa: E402
-    unversioned_node_type,
-)
+from utk_curio.backend.app.packages.service import unversioned_node_type
+from utk_curio.backend.app.projects.scenarios import scenario_problems
 
 SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "trill.v1.json"
 DEFAULT_MAX_ERRORS = 5
@@ -68,8 +60,8 @@ def _load_schema() -> Draft202012Validator:
 def _template_index() -> dict[str, dict]:
     """Map ``<packageId>/<templateId>`` to its template, from ``packages/``.
 
-    The in-repo catalog, not a user store: that is what makes a bundled but
-    not-auto-installed package such as ``curio.streetvision`` resolvable.
+    The in-repo catalog, not a user store: that is what makes a bundled
+    package resolvable before any user store holds it.
     """
     index: dict[str, dict] = {}
     for manifest_path in sorted((REPO_ROOT / "packages").glob("*/manifest.json")):
@@ -210,7 +202,7 @@ def _validate_one(
     # `packages: []` while its nodes referenced `curio.streetvision/*`, and
     # because those types are UNVERSIONED the backend's backfill could only
     # resolve them through packages that were ALREADY installed - which
-    # streetvision, by design, never is. So three nodes sat on "Loading node…"
+    # streetvision, by design, then never was. So three nodes sat on "Loading node…"
     # forever and every edge touching them vanished (#233).
     #
     # Not behind `--resolve`: that flag exists because resolution needs the
@@ -239,6 +231,10 @@ def _validate_one(
         f"references"
         for pkg in undeclared
     ]
+
+    # What the schema cannot say about scenarios: a node in at most one, and
+    # every member a node of this dataflow.
+    problems += [f"dataflow.scenarios: {p}" for p in scenario_problems(doc)]
 
     if not problems:
         if not quiet:
@@ -345,13 +341,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(f"\n{checked - failed}/{checked} file(s) validated against {_rel(SCHEMA_PATH)}")
         if failed:
-            # Loud enough to notice, calm enough not to read as a build break:
-            # .curio projects predate the schema and are expected to differ.
-            print(
-                f"{failed} file(s) did not validate. For projects under .curio/ this is "
-                f"migration triage rather than a regression — see docs/TRILL-SPEC.md.",
-                file=sys.stderr,
-            )
+            print(f"{failed} file(s) did not validate.", file=sys.stderr)
     elif checked == 0:
         return 2
     return status

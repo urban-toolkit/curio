@@ -21,7 +21,7 @@ describe("isShareLinkPath", () => {
   test.each([
     [`/dataflow/${UUID}`, "a dataflow link"],
     [`/dashboard/${UUID}`, "a dashboard link"],
-    [`/curio/dashboard/${UUID}`, "a link under a PUBLIC_PATH prefix"],
+    [`/curio/dashboard/${UUID}`, "a link under a base path"],
     [`/dataflow/${UUID.toUpperCase()}`, "uppercase hex"],
     [`/dashboard/${UUID}/`, "a trailing slash"],
     [`/dashboard/${UUID}?from=email`, "a query string"],

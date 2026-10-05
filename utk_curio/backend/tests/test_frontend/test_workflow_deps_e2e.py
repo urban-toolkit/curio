@@ -21,8 +21,8 @@ test asserts.
 
 ``curio.example-ui@1`` is the declared package because it has zero python deps,
 so no pip runs. Never point this at ``curio.weather@1``,
-``ai.urbanlab.uhvi@1`` or ``curio.streetvision@1``: those pull
-rasterio/geopandas/torch through a synchronous 30-minute-capped pip call, and the
+``ai.utk.uhvi@1`` or ``curio.streetvision@1``: those pull
+rasterio/geopandas/onnxruntime through a synchronous 30-minute-capped pip call, and the
 resulting user-store copy makes every later ``curio start`` re-resolve them.
 
 Run::
@@ -214,6 +214,7 @@ def test_importing_a_dataflow_installs_its_declared_packages(
     save_workflow_test_screenshot(
         page, "workflow-deps-import",
         test_name="test_importing_a_dataflow_installs_its_declared_packages",
+        sweep_toasts=True,
     )
 
     # The point of installing: the package's nodes become usable. The palette

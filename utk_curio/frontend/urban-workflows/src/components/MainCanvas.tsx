@@ -3,6 +3,7 @@ import React, { useMemo, useState, useEffect, useRef, useCallback } from "react"
 import ReactFlow, {
     Background,
     BackgroundVariant,
+    Connection,
     ConnectionMode,
     Controls,
     Edge,
@@ -10,13 +11,22 @@ import ReactFlow, {
     FitViewOptions,
     NodeChange,
     useReactFlow,
+    useStore,
+    useStoreApi,
 } from "reactflow";
-import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
+import {
+    CANVAS_TITLE_ATTR,
+    fitViewWithMenuOffset,
+    paletteRailRight,
+    topOverlayBottom,
+} from "../utils/fitViewWithMenuOffset";
 import { computeTranslateExtent } from "../utils/canvasExtent";
+import { notebookFlowProps } from "../utils/notebookLayout";
+import { usePosition } from "../hook/usePosition";
 
 import { useFlowContext } from "../providers/FlowProvider";
 import { useCollab } from "../providers/CollaborationProvider";
-import { usePackagePalette } from "../providers/PackagePaletteContext";
+import { usePackagePalette } from "../providers/packages/PackagePaletteContext";
 import { useToastContext } from "../providers/ToastProvider";
 import {
     useDatasetDetails,
@@ -27,6 +37,7 @@ import { NodeType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
 import { DEFAULT_DELETE_KEY_CODES } from "./canvasKeyBindings";
 import { useRunSelectedNodeShortcut } from "../hook/useRunSelectedNodeShortcut";
+import { useViewportMotionHint } from "../hook/useViewportMotionHint";
 import UniversalNode from "./UniversalNode";
 import BiDirectionalEdge from "./edges/BiDirectionalEdge";
 import { useCode } from "../hook/useCode";
@@ -47,12 +58,44 @@ import {
     hasDatasetDrag,
     readDatasetDragPayload,
 } from "../services/datasetCatalog";
-import { agentsApi } from "../api/agentsApi";
-import { readAgentDragCoord, notifyAgentDockRefresh, resolveAgentDropTarget, hasAgentDrag, type AgentDropTarget } from "../utils/agentCatalogEvents";
+import {
+    hasModelDrag,
+    modelNodeForCanvas,
+    readModelDragPayload,
+    type ModelDropTemplate,
+} from "../services/modelCatalog";
+import { endScenarioDrag, hasScenarioDrag, readScenarioDragPayload } from "../services/scenarioCatalog/scenarioDrag";
+import { useScenarioDrop } from "./scenarios/useScenarioDrop";
+import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
+import { useStarterContext } from "../providers/StarterProvider";
+import { getAllNodeTypes, getPaletteNodeTypes } from "../registry/nodeRegistry";
+import type { NodeDescriptor } from "../registry/types";
+import {
+  agentsApi,
+  readAgentDragCoord,
+  notifyAgentDockRefresh,
+  resolveAgentDropTarget,
+  hasAgentDrag,
+  type AgentDropTarget,
+} from "../services/agents";
 import { clearAgentDropHover, setAgentDropHoverEdgeId } from "../utils/agentDropHover";
 import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
-import { AgentAttachmentsProvider } from "./agents/attach/AgentAttachmentsProvider";
+import { AgentAttachmentsProvider } from "../providers/agents";
+import { isDrawnHidden } from "../utils/hiddenNodes";
+import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
+import { BOX_WIDTH, boxLayout } from "./scenarios/ScenarioLayers";
+import { CanvasScenarioLayers } from "./scenarios/CanvasScenarioLayers";
+import { ScenariosPanel } from "./scenarios/ScenariosPanel";
+import { ScenarioUiContext, type ScenarioUi } from "./scenarios/scenarioUi";
+
+const FILL_STYLE: React.CSSProperties = { width: "100%", height: "100%" };
+const NOTEBOOK_SCROLLER_STYLE: React.CSSProperties = {
+    width: "100%",
+    height: "100%",
+    overflowX: "hidden",
+    overflowY: "auto",
+};
 
 export function MainCanvas() {
     const { showToast } = useToastContext();
@@ -71,7 +114,34 @@ export function MainCanvas() {
         onNodesDelete,
         markDirty,
         saveCurrentProject,
+        notebookOn,
+        notebookContentHeight,
+        setNotebookPane,
+        registerNotebookScroller,
+        revealNodes,
+        scenarios,
     } = useFlowContext();
+
+    // The Scenarios panel, and the scenario it highlights (#662). Never saved.
+    const [scenarioPanelOpen, setScenarioPanelOpen] = useState(false);
+    const [highlightedScenario, setHighlightedScenario] = useState<string | null>(null);
+    const scenarioUi = useMemo<ScenarioUi>(() => ({
+        panelOpen: scenarioPanelOpen,
+        setPanelOpen: setScenarioPanelOpen,
+        highlighted: highlightedScenario,
+        setHighlighted: setHighlightedScenario,
+    }), [scenarioPanelOpen, highlightedScenario]);
+
+    // What React Flow draws: the flow's own nodes and edges, with collapsed
+    // scenarios hidden and their members marked, plus the boxes, frames and
+    // stand-in edges the scenario layers draw beside it. The flow's state
+    // itself never holds any of it (#662). The notebook view shows every node
+    // as a cell: a hidden member would leave an empty slot, and the boxes and
+    // frames are placed by canvas positions the cells do not have.
+    const scenarioView = useMemo(
+        () => scenarioCanvasView(nodes, edges, notebookOn ? [] : scenarios ?? [], { fixedFor: highlightedScenario }),
+        [nodes, edges, scenarios, highlightedScenario, notebookOn],
+    );
 
     // How far the viewport may pan, tracking the nodes rather than a fixed box
     // (#234). Two memos on purpose: React Flow re-applies `translateExtent`
@@ -79,11 +149,21 @@ export function MainCanvas() {
     // array every render would call `d3Zoom.translateExtent()` on every frame
     // of a drag. `computeTranslateExtent` rounds to a coarse grid, and keying
     // the tuple on those four numbers keeps the identity stable until a node
-    // actually crosses a boundary.
+    // actually crosses a boundary. A collapsed scenario's box counts as a node.
     const [extentMinX, extentMinY, extentMaxX, extentMaxY] = useMemo(() => {
-        const [[minX, minY], [maxX, maxY]] = computeTranslateExtent(nodes);
+        const boxes = scenarioView.boxes.map((box) => ({
+            id: box.scenario.id,
+            position: { x: box.x, y: box.y },
+            positionAbsolute: { x: box.x, y: box.y },
+            width: BOX_WIDTH,
+            height: boxLayout(box).height,
+            data: {},
+        }));
+        const [[minX, minY], [maxX, maxY]] = computeTranslateExtent(
+            boxes.length > 0 ? [...nodes, ...boxes] : nodes,
+        );
         return [minX, minY, maxX, maxY];
-    }, [nodes]);
+    }, [nodes, scenarioView.boxes]);
     const translateExtent = useMemo(
         () =>
             [
@@ -150,6 +230,79 @@ export function MainCanvas() {
 
     const reactFlow = useReactFlow();
     const {getZoom, getViewport, setViewport, setCenter, screenToFlowPosition, fitView} = useReactFlow();
+    const viewportMotionHint = useViewportMotionHint();
+
+    // The notebook view holds React Flow on its own pane: zoom 1, no gestures,
+    // and a translate extent equal to the pane, so the page scrolls instead.
+    // Memoized on the pane's size, as `translateExtent` is above, because
+    // React Flow re-applies the extent whenever its identity changes.
+    const flowWidth = useStore((s) => s.width);
+    const flowHeight = useStore((s) => s.height);
+    const notebookProps = useMemo(
+        () => (notebookOn ? notebookFlowProps(flowWidth, flowHeight) : null),
+        [notebookOn, flowWidth, flowHeight],
+    );
+    // In the notebook view the page scrolls and React Flow's own view stays at
+    // the origin. The settings above stop gestures but not a call that sets
+    // the view (a load's fit, a framing helper), so a view that moves is put
+    // back. React Flow 11 lands `setViewport` a frame or two later, through a
+    // d3 transition, so the check runs on every change of the view. It also
+    // runs again when `setViewport` changes, which it does once React Flow's
+    // zoom is ready: before that, it does nothing.
+    const flowStore = useStoreApi();
+    useEffect(() => {
+        if (!notebookOn) return;
+        const hold = ([x, y, zoom]: readonly number[]) => {
+            if (x !== 0 || y !== 0 || zoom !== 1) setViewport({ x: 0, y: 0, zoom: 1 });
+        };
+        hold(flowStore.getState().transform);
+        return flowStore.subscribe((state, prev) => {
+            if (state.transform !== prev.transform) hold(state.transform);
+        });
+    }, [notebookOn, flowStore, setViewport]);
+
+    // The element the notebook scrolls in. Its size and the overlays fixed over
+    // it (top bar, title chips, palette rail) decide where the column goes.
+    const scrollerRef = useRef<HTMLDivElement | null>(null);
+    useEffect(() => {
+        const scroller = scrollerRef.current;
+        if (!scroller) return;
+        registerNotebookScroller(scroller);
+        const measure = () => {
+            const rect = scroller.getBoundingClientRect();
+            const top = topOverlayBottom();
+            const rail = paletteRailRight();
+            setNotebookPane({
+                width: scroller.clientWidth,
+                top: top === null ? 0 : Math.max(0, top - rect.top),
+                left: rail === null ? 0 : Math.max(0, rail - rect.left),
+            });
+        };
+        measure();
+        const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+        observer?.observe(scroller);
+        const title = document.querySelector(`[${CANVAS_TITLE_ATTR}]`);
+        if (title) observer?.observe(title);
+        window.addEventListener("resize", measure);
+        return () => {
+            observer?.disconnect();
+            window.removeEventListener("resize", measure);
+            registerNotebookScroller(null);
+        };
+    }, [loading, registerNotebookScroller, setNotebookPane]);
+
+    // Where a dropped node goes. On the canvas, under the pointer. In the
+    // notebook view the pointer is on a page, not on the canvas, so the node
+    // takes the next free canvas spot and its cell is scrolled into view.
+    const { getPosition } = usePosition();
+    const dropPosition = useCallback(
+        (event: React.DragEvent) =>
+            notebookOn ? getPosition() : screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+        [notebookOn, getPosition, screenToFlowPosition],
+    );
+    const revealCreated = useCallback((node: { id: string } | undefined | void) => {
+        if (node && node.id) revealNodes([node.id]);
+    }, [revealNodes]);
 
     // Test hook: expose the ReactFlow instance and a menu-aware fitView so
     // Playwright can force the same shifted viewport the in-app loader uses
@@ -182,9 +335,6 @@ export function MainCanvas() {
     // socket to the owner, who persists. Without this gate, peers see the
     // canvas as read-only and the lock/proposal flow does nothing.
     const isSharedView = viewerMode === "shared" && !collab.enabled;
-
-    // Refs used inside callbacks so the callbacks don't need to list them as deps
-    const selectedEdgeIdRef = useRef<string>("");
 
     const [isComponentsSelected, setIsComponentsSelected] = useState<boolean>(false);
 
@@ -226,12 +376,15 @@ export function MainCanvas() {
 
     const handleDragOver = useCallback((event: React.DragEvent) => {
         event.preventDefault();
-        // Dataset AND agent drags use effectAllowed="copy"; a "move" dropEffect is
-        // an incompatible pair, so the browser cancels the drop (handleDrop never
-        // fires and the agent silently fails to attach). Node-creation drags keep
-        // "move".
+        // Dataset, model, scenario AND agent drags use effectAllowed="copy"; a
+        // "move" dropEffect is an incompatible pair, so the browser cancels the
+        // drop (handleDrop never fires and the agent silently fails to attach).
+        // Node-creation drags keep "move".
         const wantsCopy =
-            hasDatasetDrag(event.dataTransfer) || hasAgentDrag(event.dataTransfer);
+            hasDatasetDrag(event.dataTransfer) ||
+            hasModelDrag(event.dataTransfer) ||
+            hasScenarioDrag(event.dataTransfer) ||
+            hasAgentDrag(event.dataTransfer);
         event.dataTransfer.dropEffect = wantsCopy ? "copy" : "move";
 
         // Tell the edges which connection would receive this drop (#296). Only
@@ -245,7 +398,8 @@ export function MainCanvas() {
         if (last && last.x === event.clientX && last.y === event.clientY) return;
         lastDragPointRef.current = { x: event.clientX, y: event.clientY };
         const target = resolveAgentDropTarget({
-            nodes: reactFlow.getNodes(),
+            // A collapsed scenario's members keep their old size while hidden.
+            nodes: reactFlow.getNodes().filter((n) => !isDrawnHidden(n)),
             flowPoint: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
             clientX: event.clientX,
             clientY: event.clientY,
@@ -287,8 +441,8 @@ export function MainCanvas() {
         event.stopPropagation();
         const dataset = readDatasetDragPayload(event.dataTransfer);
         if (dataset) {
-            const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-            createCodeNode(NodeType.DATA_LOADING, buildDatasetLoaderNodeOptions(dataset, position));
+            const position = dropPosition(event);
+            revealCreated(createCodeNode(NodeType.DATA_LOADING, buildDatasetLoaderNodeOptions(dataset, position)));
             showToast(
                 `Created a Data Loading node for ${dataset.title}.`,
                 "success",
@@ -296,11 +450,67 @@ export function MainCanvas() {
             );
             markDirty();
         }
-    }, [screenToFlowPosition, createCodeNode, markDirty, showToast, openDatasetDetails]);
+    }, [dropPosition, revealCreated, createCodeNode, markDirty, showToast, openDatasetDetails]);
+
+    // A model dropped on the empty canvas becomes a node that runs it, as a
+    // dataset becomes a Data Loading node. A drop on a node never gets here:
+    // the node's own listener takes it (styles.tsx).
+    const { getStarters } = useStarterContext();
+    const handleModelCanvasDrop = useCallback((event: React.DragEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const model = readModelDragPayload(event.dataTransfer);
+        if (!model) return;
+        const templates = (descriptors: NodeDescriptor[]): ModelDropTemplate[] =>
+            descriptors.map((d) => ({
+                nodeType: String(d.id),
+                label: d.label,
+                code: packageStarterCode(d, getStarters),
+                packageName: d.package?.name,
+            }));
+        const node = modelNodeForCanvas(templates(getPaletteNodeTypes()), model);
+        if (!node) {
+            const elsewhere = modelNodeForCanvas(templates(getAllNodeTypes()), model);
+            showToast(
+                elsewhere?.packageName
+                    ? `${model.name} needs a node that runs models: add ${elsewhere.packageName} to this project from the Node Catalog.`
+                    : "No installed node runs a model.",
+                "warning",
+            );
+            return;
+        }
+        const position = dropPosition(event);
+        revealCreated(createCodeNode(node.nodeType, { position, code: node.code, modelRefs: node.modelRefs }));
+        const article = /^[aeiou]/i.test(node.label) ? "an" : "a";
+        showToast(`Created ${article} ${node.label} node for ${model.name}.`, "success");
+        markDirty();
+    }, [getStarters, dropPosition, revealCreated, createCodeNode, markDirty, showToast]);
+
+    // A scenario from the Scenario Catalog arrives as a copy: its box where it
+    // was dropped, its context as fixed data (useScenarioDrop).
+    const dropScenario = useScenarioDrop();
+    const handleScenarioCanvasDrop = useCallback((event: React.DragEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const scenario = readScenarioDragPayload(event.dataTransfer);
+        endScenarioDrag();
+        if (!scenario) return;
+        void dropScenario(scenario, dropPosition(event)).then((ids) => {
+            if (ids.length > 0) revealNodes(ids);
+        });
+    }, [dropScenario, dropPosition, revealNodes]);
 
     const handleDrop = useCallback((event: React.DragEvent) => {
         if (hasDatasetDrag(event.dataTransfer)) {
             handleCanvasDrop(event);
+            return;
+        }
+        if (hasModelDrag(event.dataTransfer)) {
+            handleModelCanvasDrop(event);
+            return;
+        }
+        if (hasScenarioDrag(event.dataTransfer)) {
+            handleScenarioCanvasDrop(event);
             return;
         }
         const agentCoord = readAgentDragCoord(event.dataTransfer);
@@ -314,7 +524,7 @@ export function MainCanvas() {
             // drag-over highlight, so what lights up under the pointer and what
             // actually receives the drop cannot disagree (#296).
             const target: AgentDropTarget = resolveAgentDropTarget({
-                nodes: reactFlow.getNodes(),
+                nodes: reactFlow.getNodes().filter((n) => !isDrawnHidden(n)),
                 flowPoint: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
                 clientX: event.clientX,
                 clientY: event.clientY,
@@ -346,39 +556,19 @@ export function MainCanvas() {
         event.preventDefault();
         const type = event.dataTransfer.getData("application/reactflow") as NodeType;
         if (!type) return;
-        const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-        createCodeNode(type, { position });
+        const position = dropPosition(event);
+        revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, createCodeNode, markDirty, handleCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
 
+    // The Delete key reaches these through React Flow, which sends the
+    // selected edges plus every edge attached to a deleted node first, then
+    // the nodes (#155). Both are applied as sent.
     const handleNodesChange = useCallback((changes: NodeChange[]) => {
-        const allowedChanges: NodeChange[] = [];
-        const currentEdges = reactFlow.getEdges();
         let dirty = false;
 
         for (const change of changes) {
-            let allowed = true;
-
-            if (change.type === "remove") {
-                // Removing a wired node is refused on purpose. Say how much is
-                // in the way: the old copy told the user to "remove the edges"
-                // without saying how many there were or which, so on a busy
-                // canvas it read as the key simply not working.
-                const attached = currentEdges.filter(
-                    (edge) => edge.source === change.id || edge.target === change.id,
-                );
-                if (attached.length > 0) {
-                    const count = attached.length;
-                    showToast(
-                        `This node still has ${count} connection${count === 1 ? "" : "s"}. ` +
-                        `Select ${count === 1 ? "it" : "them"} and press Delete or Backspace, ` +
-                        "then remove the node.",
-                        "warning"
-                    );
-                    allowed = false;
-                }
-                if (allowed) dirty = true;
-            }
+            if (change.type === "remove") dirty = true;
 
             if (
                 change.type === "position" &&
@@ -391,50 +581,28 @@ export function MainCanvas() {
                     patch: { position: change.position },
                 });
             }
-
-            if (allowed) allowedChanges.push(change);
         }
 
         if (dirty) markDirty();
-        onNodesDelete(allowedChanges);
-        return onNodesChange(allowedChanges);
-    }, [reactFlow, showToast, onNodesDelete, onNodesChange, markDirty]);
+        onNodesDelete(changes);
+        return onNodesChange(changes);
+    }, [onNodesDelete, onNodesChange, markDirty]);
+
+    // A connection can move its target further down the notebook's column; the
+    // view follows it there rather than leaving the cell to vanish off screen.
+    const handleConnect = useCallback((connection: Connection) => {
+        onConnect(connection);
+        if (connection.target) revealNodes([connection.target], { ifMoved: true });
+    }, [onConnect, revealNodes]);
 
     const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
-        let selected = "";
-        const allowedChanges: EdgeChange[] = [];
-        const prevSelectedId = selectedEdgeIdRef.current;
-
-        for (const change of changes) {
-            if (change.type === "select" && change.selected === true) {
-                selectedEdgeIdRef.current = change.id;
-                selected = change.id;
-            } else if (change.type === "select") {
-                selectedEdgeIdRef.current = "";
-            }
-        }
-
-        let dirty = false;
-        for (const change of changes) {
-            if (
-                change.type === "remove" &&
-                (selected === change.id || prevSelectedId === change.id)
-            ) {
-                allowedChanges.push(change);
-                dirty = true;
-            } else if (change.type !== "remove") {
-                allowedChanges.push(change);
-            }
-        }
-
-        if (dirty) markDirty();
-        return onEdgesChange(allowedChanges);
+        if (changes.some((change) => change.type === "remove")) markDirty();
+        return onEdgesChange(changes);
     }, [onEdgesChange, markDirty]);
 
     const handleEdgesDelete = useCallback((edges: Edge[]) => {
-        const allowedEdges = edges.filter(edge => selectedEdgeIdRef.current === edge.id);
-        if (allowedEdges.length > 0) markDirty();
-        return onEdgesDelete(allowedEdges);
+        if (edges.length > 0) markDirty();
+        return onEdgesDelete(edges);
     }, [onEdgesDelete, markDirty]);
 
     const handleSelectionChange = useCallback((selection: { nodes: any[]; edges: any[] }) => {
@@ -502,7 +670,7 @@ export function MainCanvas() {
 
     return (
         <AgentAttachmentsProvider enabled={!isSharedView}>
-        <>
+        <ScenarioUiContext.Provider value={scenarioUi}>
         {!loading ? <div
             style={{ width: "100vw", height: "100vh", backgroundColor: "#f0f0f0" }}
             // onWheelCapture={handleWheel}
@@ -519,6 +687,7 @@ export function MainCanvas() {
             <ToolsMenu />
             <UpMenu />
             <CollaborationSidePanel />
+            {!isSharedView ? <ScenariosPanel /> : null}
             <div
                 className="curio-canvas-drop-target"
                 style={{ width: "100%", height: "100%" }}
@@ -526,22 +695,41 @@ export function MainCanvas() {
                 onDragLeave={!isSharedView ? handleDragLeave : undefined}
                 onDrop={!isSharedView ? handleDrop : undefined}
             >
+            {/* Present in both views so switching never remounts React Flow:
+                on the canvas both fill the window and change nothing; in the
+                notebook view the outer one scrolls and the inner one is as
+                tall as the column. React Flow always fills its parent (its own
+                100% size wins over a `style` passed to it), so the height goes
+                on the parent. */}
+            <div
+                ref={scrollerRef}
+                className="curio-flow-scroller"
+                data-curio-notebook={notebookOn ? "true" : undefined}
+                style={notebookOn ? NOTEBOOK_SCROLLER_STYLE : FILL_STYLE}
+            >
+            <div
+                className="curio-flow-sizer"
+                style={notebookOn ? { width: "100%", height: notebookContentHeight, minHeight: "100%" } : FILL_STYLE}
+            >
             <ReactFlow
-                nodes={nodes}
-                edges={edges}
+                nodes={scenarioView.nodes}
+                edges={scenarioView.edges}
                 onNodesChange={handleNodesChange}
                 onEdgesChange={handleEdgesChange}
                 onEdgesDelete={handleEdgesDelete}
                 selectionKeyCode={"Shift"}
                 panActivationKeyCode={null}
                 onSelectionChange={handleSelectionChange}
-                onConnect={!isSharedView ? onConnect : undefined}
+                onConnect={!isSharedView ? handleConnect : undefined}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 isValidConnection={isValidConnection}
                 connectionMode={ConnectionMode.Loose}
                 minZoom={0.05}
                 translateExtent={translateExtent}
+                onMoveStart={viewportMotionHint.onMoveStart}
+                onMove={viewportMotionHint.onMove}
+                onMoveEnd={viewportMotionHint.onMoveEnd}
                 nodesDraggable={!isSharedView}
                 elementsSelectable={true}
                 nodesConnectable={!isSharedView}
@@ -550,16 +738,24 @@ export function MainCanvas() {
                 // Delete got no response (#153). useKeyPress bails on isInputDOMNode,
                 // so neither key can fire while the caret is in Monaco or an input.
                 deleteKeyCode={isSharedView ? null : DEFAULT_DELETE_KEY_CODES}
+                {...(notebookProps ?? {})}
+                // The version badge owns the bottom-right corner, and the
+                // attribution drawn there sat under it (#509). The other three
+                // canvases already hide it.
+                proOptions={{ hideAttribution: true }}
             >
-                <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />
-                <Controls />
+                {!notebookOn && <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />}
+                {!notebookOn && <Controls />}
+                {!notebookOn && <CanvasScenarioLayers view={scenarioView} editable={!isSharedView} />}
             </ReactFlow>
+            </div>
+            </div>
             {!isSharedView ? <AgentDockOverlay /> : null}
             </div>
 
         </div> : loadingAnimation() }
         <VersionBadge />
-        </>
+        </ScenarioUiContext.Provider>
         </AgentAttachmentsProvider>
     );
 }

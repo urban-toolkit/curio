@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import ModalShell from "../../ModalShell";
-import { packagesApi, refreshPackageRegistry } from "../../../api/packagesApi";
-import type { PackageMetadataUpdate, PackagePayload } from "../../../api/packagesApi";
+import { refreshPackageRegistry } from "../../../registry/packageRegistryBootstrap";
+import { packagesApi } from "../../../services/packages";
+import type { PackageMetadataUpdate, PackagePayload } from "../../../services/packages";
 import { useToastContext } from "../../../providers/ToastProvider";
 import styles from "./PackageMetadataModal.module.css";
 

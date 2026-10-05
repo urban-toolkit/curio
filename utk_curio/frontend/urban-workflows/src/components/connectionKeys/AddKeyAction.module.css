@@ -1,0 +1,20 @@
+/* dev/116 — the remedy action a failed data-loading node offers. */
+.button {
+    font-size: 0.76rem;
+    font-weight: 600;
+    border-radius: 8px;
+    padding: 4px 12px;
+    cursor: pointer;
+    border: 1px solid var(--curio-border-strong);
+    background: var(--curio-card-bg);
+    color: var(--curio-text-primary);
+}
+
+.button:hover {
+    border-color: var(--curio-text-secondary);
+}
+
+.note {
+    font-size: 0.74rem;
+    color: var(--curio-text-secondary);
+}

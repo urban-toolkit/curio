@@ -1,6 +1,19 @@
 export type DatasetOrigin = "source_node" | "computed" | "imported" | "hub";
 
-export type DatasetFormat = "csv" | "geojson" | "json" | "parquet" | "geotiff" | "shp" | "bundle" | "osm" | "gpkg";
+export type DatasetFormat =
+  | "csv"
+  | "geojson"
+  | "json"
+  | "parquet"
+  | "geotiff"
+  | "shp"
+  | "bundle"
+  | "osm"
+  | "gpkg"
+  | "gtfs"
+  | "collection"
+  | "onnx"
+  | "netcdf";
 
 export type DatasetSortMode = "recent" | "name";
 
@@ -23,6 +36,8 @@ export const IMPORTABLE_DATASET_EXTENSIONS = [
   ".tif",
   ".tiff",
   ".shp",
+  ".onnx",
+  ".nc",
   ".pbf",
   ".osm.pbf",
   ".gpkg",
@@ -33,12 +48,18 @@ export const DATASET_IMPORT_ACCEPT = IMPORTABLE_DATASET_EXTENSIONS.join(",");
 
 /** Prefixes of a synthetic layer-group id (mirrors the backend). The group is a
  * bundle-shaped catalog entry whose id addresses all its member layers. Two
- * importers make them: OSM PBF extracts and GeoPackages. */
+ * importers make them, OSM PBF extracts and GeoPackages, and the Discovery
+ * Catalog does for an OpenStreetMap download and a GTFS feed. NetCDF variables
+ * stored a file each form one from their manifests. */
 export const OSM_GROUP_ID_PREFIX = "osm.";
 export const GPKG_GROUP_ID_PREFIX = "gpkg.";
+export const GTFS_GROUP_ID_PREFIX = "gtfs.";
+export const NETCDF_GROUP_ID_PREFIX = "netcdf.";
 export const LAYER_GROUP_ID_PREFIXES = [
   OSM_GROUP_ID_PREFIX,
   GPKG_GROUP_ID_PREFIX,
+  GTFS_GROUP_ID_PREFIX,
+  NETCDF_GROUP_ID_PREFIX,
 ] as const;
 
 /** True when an id addresses a synthetic multi-layer group. */
@@ -47,6 +68,17 @@ export function isLayerGroupId(id: string | null | undefined): boolean {
     typeof id === "string" &&
     LAYER_GROUP_ID_PREFIXES.some((prefix) => id.startsWith(prefix))
   );
+}
+
+/** Which importer made a layer group, read from its id: ``"gpkg"`` for a
+ * GeoPackage, ``"gtfs"`` for a GTFS feed, ``"netcdf"`` for NetCDF variables,
+ * else ``"osm"``. Also the group's format and its ``curio://`` scheme. Mirrors
+ * the backend ``layer_group_kind`` and its ``osm`` fallback. */
+export function layerGroupKind(groupId: string): "osm" | "gpkg" | "gtfs" | "netcdf" {
+  if (groupId.startsWith(GPKG_GROUP_ID_PREFIX)) return "gpkg";
+  if (groupId.startsWith(GTFS_GROUP_ID_PREFIX)) return "gtfs";
+  if (groupId.startsWith(NETCDF_GROUP_ID_PREFIX)) return "netcdf";
+  return "osm";
 }
 
 /**
@@ -102,7 +134,7 @@ export interface DatasetDataflowUsageRef {
   /** Consumer nodes within this dataflow (downstream of the dataset). */
   nodes?: Array<{ nodeId: string; nodeType?: string | null }>;
   /** True when this dataflow uses the dataset ONLY through a node's source
-   *  (a literal `curio_dataset_path("<id>")`), with no ref or binding.
+   *  (a literal `curio_data_path("<id>")`), with no ref or binding.
    *
    *  The backend's destructive gate ignores these, so they do not keep an
    *  uploaded file alive on uninstall - but the code stays behind and will
@@ -130,28 +162,105 @@ export interface DatasetLoaderSnippet {
   language: "python";
   imports: string[];
   code: string;
-  pathVariable: string;
+  /** Null when the code names no path, as a collection's `curio_load_collection` call does. */
+  pathVariable: string | null;
   /** Variable name that should be returned from a standalone Data Loading node (e.g. "df"). */
   returnVariable?: string | null;
 }
 
 /**
- * Where a dataset downloaded from the Data Lake Catalog came from.
+ * Where a dataset downloaded from the Discovery Catalog came from.
  *
- * Mirrors the `lakeSource` block on the dataset manifest. Null for every
+ * Mirrors the `discoverySource` block on the dataset manifest. Null for every
  * dataset that did not come from a portal, which is most of them. Such a
  * dataset's `origin` is still `"imported"` - this block is what distinguishes
  * it, rather than a fifth origin value.
  */
-export interface DatasetLakeSource {
-  lakeId: string;
-  lakeName: string;
-  resourceId: string;
-  resourceUrl: string;
+export interface DatasetDiscoverySource {
+  /** The Discovery Catalog source and resource, absent for a file downloaded by hand
+   * from a link no source covers. */
+  sourceId?: string;
+  sourceName?: string;
+  resourceId?: string;
+  /** A portal resource's page, or the link a file was downloaded by hand
+   *  from. Absent for a storage source's, which is a folder or a bucket
+   *  rather than a page. */
+  resourceUrl?: string;
   finalUrl?: string;
   fetchedAt?: string;
   contentSha256?: string;
+  /** Storage sources: the one file added, or how many were combined. */
+  sourcePath?: string;
+  fileCount?: number;
+  /** The path fields that became columns, comma-separated. */
+  fields?: string;
+  /** Added from part of a storage row, picked by field value or by file. */
+  narrowed?: boolean;
+  /** Storage sources: what the files were when they were added. */
+  fingerprint?: string;
+  /** The person downloaded the file and imported it; Curio did not fetch it. */
+  manual?: boolean;
+  /** The answers the download was narrowed by, such as an area, by id. */
+  parameters?: Record<string, unknown>;
+  parametersHash?: string;
 }
+
+/** A collection's kind. Mirrors the Discovery Catalog's collection `RESOURCE_KINDS`. */
+export type DatasetCollectionKind = "rasters" | "frames" | "images" | "videos" | "media" | "audio";
+
+/**
+ * The `collection` block of a `collection` dataset: which source and
+ * resource its files belong to, and what they are. Mirrors
+ * `index_collection.collection_block` in the backend.
+ */
+export interface DatasetCollection {
+  kind: DatasetCollectionKind;
+  sourceId: string;
+  sourceName: string;
+  provider: string;
+  resourceId: string;
+  resource: string;
+  /** The resource's name in its manifest. */
+  resourceName?: string;
+  path: string;
+  fields: string[];
+  /** The values each path field took, or its range when it took many. */
+  fieldValues?: DatasetCollectionField[];
+  /** Files per kind: `image`, `video`, `frame`, `audio` or `raster`. */
+  counts: Record<string, number>;
+  fileCount: number;
+  totalBytes: number;
+  hasGps: boolean;
+  probeErrors: number;
+  indexedAt: string;
+  fingerprint: string;
+  split?: Record<string, string>;
+  narrowedBy?: Record<string, string[] | { min: string; max: string }>;
+  chosenFiles?: number;
+  fps?: number;
+  sequences?: number;
+  totalSeconds?: number;
+  /** The rasters' own CRS, as EPSG codes or names. */
+  crs?: string[];
+  /** West, south, east and north of every footprint or position, in EPSG:4326. */
+  bounds?: [number, number, number, number];
+}
+
+/** One path field of a collection and what it covers. */
+export interface DatasetCollectionField {
+  name: string;
+  type: string;
+  distinct: number;
+  values?: string[];
+  min?: string;
+  max?: string;
+}
+
+/** Where a file the person downloaded themselves came from, as the import states it. */
+export type DatasetDiscoverySourceInput = Pick<
+  DatasetDiscoverySource,
+  "sourceId" | "sourceName" | "resourceId" | "resourceUrl"
+>;
 
 export interface DatasetCatalogItem {
   id: string;
@@ -165,7 +274,7 @@ export interface DatasetCatalogItem {
   format: DatasetFormat;
   uri: string;
   path?: string | null;
-  /** Folder name in the dataset store (e.g. ``data.urbanlab.chicago-boundary@1``). Present for catalog (hub) datasets. */
+  /** Folder name in the dataset store (e.g. ``data.utk.chicago-boundary@1``). Present for catalog (hub) datasets. */
   dirName?: string | null;
   sizeBytes?: number | null;
   rowCount?: number | null;
@@ -223,7 +332,9 @@ export interface DatasetCatalogItem {
   tags: string[];
   schema?: DatasetSchema | null;
   loaderSnippet?: DatasetLoaderSnippet | null;
-  lakeSource?: DatasetLakeSource | null;
+  discoverySource?: DatasetDiscoverySource | null;
+  /** Present on `collection` datasets only. */
+  collection?: DatasetCollection | null;
   installed?: boolean;
   /** In the user's account-level "all projects" list. Independent of
    *  `installed`, which is one dataflow's spec refs. */
@@ -237,7 +348,7 @@ export interface DatasetCatalogItem {
    * files; N for an OSM PBF, which registers one dataset per layer (this item is
    * the first — the rest appear via the catalog listing on refresh). */
   importedDatasetCount?: number;
-  /** On a synthetic OSM group entry (``format: "osm"``, id = group id): the
+  /** On a synthetic layer group entry (id = group id, see `isLayerGroupId`): the
    * real per-layer dataset ids, so the client installs/uninstalls each member. */
   groupLayerIds?: string[];
 }
@@ -567,7 +678,7 @@ export function isDatasetInstalledFromCatalog(dataset: DatasetCatalogItem): bool
  *
  * Told apart by the store folder, the same signal the backend's uninstall uses
  * (``_remove_orphaned_imported_store_dir`` keys on ``imported.``): catalog
- * datasets land under their publisher's id (``data.urbanlab.…@1``), uploads
+ * datasets land under their publisher's id (``data.utk.…@1``), uploads
  * under ``imported.…`` and node outputs under ``computed.…``. ``origin`` cannot
  * answer this - installing a catalog dataset flips it from ``hub`` to
  * ``imported``, so an installed catalog row and an upload look identical there.
@@ -636,4 +747,18 @@ export const DATASET_FORMAT_LABEL: Record<DatasetFormat, string> = {
   bundle: "Bundle",
   osm: "OSM PBF",
   gpkg: "GeoPackage",
+  gtfs: "GTFS",
+  collection: "Collection",
+  onnx: "ONNX",
+  netcdf: "NetCDF",
+};
+
+/** Mirrors `KIND_LABEL` in the Discovery Catalog's `application/scan.py`. */
+export const DATASET_COLLECTION_KIND_LABEL: Record<DatasetCollectionKind, string> = {
+  rasters: "Rasters",
+  frames: "Frames",
+  images: "Images",
+  videos: "Videos",
+  media: "Photos and videos",
+  audio: "Audio",
 };

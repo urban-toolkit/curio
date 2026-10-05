@@ -3,9 +3,41 @@ import Nav from 'react-bootstrap/Nav';
 import { TabularPreviewTable } from '../../../components/tables/TabularPreviewTable';
 import { fetchPreviewData } from '../../../services/api';
 import { sandboxArtifactId } from '../../../utils/flowOutputRef';
-import { rowsFromParseOutput } from '../../../utils/tabularPreview';
+import { previewTotalRows, rowsFromParseOutput } from '../../../utils/tabularPreview';
 import { NodeEmptyState } from '../../../components/nodes/NodeEmptyState';
 import { isTabularPayload, resolveNodeEmptyReason } from '../../../utils/nodeEmptyState';
+import { ResolutionType } from '../../../constants';
+
+const MODE_LABELS: Record<ResolutionType, string> = {
+  [ResolutionType.OVERWRITE]: 'Overwrite',
+  [ResolutionType.MERGE_AND]: 'Merge (AND)',
+  [ResolutionType.MERGE_OR]: 'Merge (OR)',
+};
+
+/** One conflict mode: a label and a select over every ResolutionType. */
+function ModeSelect({ label, value, onChange, testId }: {
+  label: string;
+  value: string;
+  onChange?: (value: string) => void;
+  testId: string;
+}) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 4, margin: 0, whiteSpace: 'nowrap' }}>
+      <span>{label}</span>
+      <select
+        aria-label={label}
+        data-testid={testId}
+        value={value}
+        onChange={(event) => onChange?.(event.target.value)}
+        style={{ padding: '1px 4px', fontSize: 12 }}
+      >
+        {Object.values(ResolutionType).map((mode) => (
+          <option key={mode} value={mode}>{MODE_LABELS[mode]}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 interface DataPoolContentProps {
   activeTab: string;
@@ -30,6 +62,12 @@ interface DataPoolContentProps {
    * as "no known failure" rather than blaming an upstream node at random.
    */
   upstreamErrored?: boolean;
+  /** How the selects of one chart combine (a ResolutionType). */
+  insideChartMode?: string;
+  /** How the latest selections of the linked charts combine (a ResolutionType). */
+  betweenChartsMode?: string;
+  onInsideChartModeChange?: (mode: string) => void;
+  onBetweenChartsModeChange?: (mode: string) => void;
 }
 
 const ContentComponent = ({
@@ -40,6 +78,8 @@ const ContentComponent = ({
   data: any;
 }) => {
   const [previewTable, setPreviewTable] = useState<any[]>([]);
+  // The server previews the first 100 rows and says how many there are.
+  const [previewTotal, setPreviewTotal] = useState<number | undefined>(undefined);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [usePreview, setUsePreview] = useState(false);
 
@@ -71,6 +111,7 @@ const ContentComponent = ({
               if (cancelled) return;
 
               setPreviewTable(nextPreviewTable);
+              setPreviewTotal(previewTotalRows(previewData));
               // Keep the already-rendered output table when preview returns
               // no rows or resolves after the input has moved on.
               setUsePreview(nextPreviewTable.length > 0);
@@ -92,8 +133,11 @@ const ContentComponent = ({
       };
   }, [data.input]);
 
-  // Use preview data if available, otherwise fall back to outputTable
-  const displayTable = usePreview && previewTable.length > 0 ? previewTable : outputTable;
+  // Use preview data if available, otherwise fall back to outputTable. Either
+  // way the table shows at most 100 rows and says how many there are.
+  const showingPreview = usePreview && previewTable.length > 0;
+  const displayTable = showingPreview ? previewTable : outputTable;
+  const displayTotal = showingPreview ? previewTotal : outputTable?.length;
 
   return (
       <div
@@ -106,6 +150,7 @@ const ContentComponent = ({
       >
           <TabularPreviewTable
               rows={displayTable}
+              totalRows={displayTotal}
               rowKeyPrefix={data.nodeId}
               loading={isLoadingPreview}
               excludeColumns={[]}
@@ -114,7 +159,11 @@ const ContentComponent = ({
   );
 };
 
-export default function DataPoolContent({ activeTab, onSelectTab, tabData, tableData, data = { nodeId: '', input: '' }, connected = false, upstreamErrored = false }: DataPoolContentProps) {
+export default function DataPoolContent({
+  activeTab, onSelectTab, tabData, tableData, data = { nodeId: '', input: '' }, connected = false, upstreamErrored = false,
+  insideChartMode = ResolutionType.OVERWRITE, betweenChartsMode = ResolutionType.OVERWRITE,
+  onInsideChartModeChange, onBetweenChartsModeChange,
+}: DataPoolContentProps) {
   const wrappers: any[] = (() => {
     if (!data.input || typeof data.input !== "object") return [];
     if (data.input.dataType === "outputs" && Array.isArray(data.input.data)) return data.input.data;
@@ -149,6 +198,26 @@ export default function DataPoolContent({ activeTab, onSelectTab, tabData, table
     // button and NodeEditor's bottom tab nav (both occupy ~25px below NodeEditor's
     // outer div via marginTop:-25px / overflow:visible).
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, minWidth: 0, paddingBottom: 25 }}>
+      {/* How the selections that reach the pool combine (#581). nodrag/nopan
+          so React Flow leaves the selects to the pointer. */}
+      <div
+        className="nodrag nopan nowheel"
+        data-testid="data-pool-modes"
+        style={{ flexShrink: 0, display: 'flex', flexWrap: 'wrap', columnGap: 12, rowGap: 4, marginBottom: 6, fontSize: 12 }}
+      >
+        <ModeSelect
+          label="Conflict inside visualization"
+          value={insideChartMode}
+          onChange={onInsideChartModeChange}
+          testId="data-pool-mode-inside"
+        />
+        <ModeSelect
+          label="Conflict between visualizations"
+          value={betweenChartsMode}
+          onChange={onBetweenChartsModeChange}
+          testId="data-pool-mode-between"
+        />
+      </div>
       <Nav
         variant="tabs"
         activeKey={activeTab}
@@ -156,8 +225,10 @@ export default function DataPoolContent({ activeTab, onSelectTab, tabData, table
         className="mb-3 nowheel"
         // nowrap + overflowX keeps the strip one row tall regardless of table
         // count, so adding tables never steals height from the table below.
+        // overflowY hidden: a tab's -1px bottom margin would otherwise make
+        // the strip scroll vertically by one pixel, with a scrollbar.
         // `nowheel` stops React Flow swallowing the scroll (#156).
-        style={{ flexShrink: 0, flexWrap: 'nowrap', overflowX: 'auto' }}
+        style={{ flexShrink: 0, flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden' }}
         data-testid="data-pool-tabs"
       >
         {hasData ? (
@@ -195,7 +266,7 @@ export default function DataPoolContent({ activeTab, onSelectTab, tabData, table
                 // used to state - that a zero-row dataframe still yields a tab
                 // and so never reaches here - is not true: processDataAsync
                 // filters dataframe/geodataframe layers with no rows out before
-                // tabData is set (added for autk-db 2.1.2 empty layers). So a
+                // tabData is set (autk-db cannot load an empty layer). So a
                 // node that ran and returned an empty table landed here and was
                 // told "This input is not tabular data", which is wrong and
                 // unactionable. The declared dataType still knows better.

@@ -1,5 +1,5 @@
 # Compose override for the exec-user CI job
-# (.github/workflows/docker-compose.yml, job `test-gpu-exec-user`).
+# (.github/workflows/docker-compose.yml, job `test-exec-user`).
 #
 # This is the ONLY job that boots the configuration the deploy actually ships:
 # isolation plus the curio-exec account with auth on, the same shape
@@ -15,7 +15,7 @@
 # 1. An execution user, and therefore NO host-side e2e. Setting one makes the sandbox
 #    chmod ./instance and ./.curio/data to 0700/0600 root-owned at boot. The
 #    e2e harness computes its ground truth by executing every code node IN THE
-#    HOST TEST PROCESS (test_frontend/utils.py::execute_workflow_programmatically)
+#    HOST TEST PROCESS (test_frontend/utils/sandbox.py::execute_workflow_programmatically)
 #    and writing the artifacts into .curio/data as the runner user, so it dies
 #    with EACCES before a browser is ever driven. The two are mutually
 #    exclusive. This job therefore drops the workflow comparison entirely and
@@ -47,6 +47,10 @@ services:
     # provoke process exhaustion and this host also runs the live stacks.
     # RLIMIT_NPROC bounds each child, but the sandbox parent is root here.
     pids_limit: 4096
+    # A deployment's .env where a deployment keeps it, planted by the job's
+    # seed step, so the boundary suite can show a node cannot read it.
+    volumes:
+      - ./ci-planted.env:/app/.env
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
       # What this whole job exists to exercise. --deploy makes the instance
@@ -56,11 +60,15 @@ services:
       # so a runner that cannot confine fails the job rather than running
       # in-process and asserting a boundary that is not there.
       - CURIO_ISOLATION=fork
-    ports:
+    # The job's own host ports, in place of the base file's 5002/8080, which
+    # are the production stack's on the runner.
+    ports: !override
+      - "${CURIO_E2E_BACKEND_PORT:?this job's host port for the backend}:5002"
+      - "${CURIO_E2E_FRONTEND_PORT:?this job's host port for the web app}:8080"
       # The sandbox, published to the runner's loopback only (never 0.0.0.0).
       # The boundary assertions are host-side pytest calling /exec directly,
       # which is the same reason docker-compose.ci.yml publishes it.
-      - "127.0.0.1:${CURIO_PORT_2000:-2040}:2000"
+      - "127.0.0.1:${CURIO_E2E_SANDBOX_PORT:-2040}:2000"
     command:
       - python
       - curio.py
@@ -72,6 +80,8 @@ services:
       - 0.0.0.0
       - --backend-port
       - "5002"
+      - --backend-url
+      - "${CURIO_E2E_BACKEND_URL:?the host address of this stack's backend}"
       # Published above, so unlike the deploy overlay the sandbox has to listen
       # on more than loopback-inside-the-container.
       - --sandbox-host

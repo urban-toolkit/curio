@@ -624,41 +624,29 @@ DRAWER_DATA = '[data-curio-dataset-catalog-drawer="true"]'
 DRAWER_NODES = '[data-curio-node-catalog-drawer="true"]'
 DRAWER_AGENTS = '[data-curio-agent-catalog-drawer="true"]'
 
-#: Built-in palette tiles carry an ``id`` only when their manifest declares a
-#: ``tutorialId`` (ToolsMenu.DraggableTool sets ``id={tutorialID}``), which four
-#: of the twelve do not. The rest are addressed by their position in the
-#: built-in stack, which follows PALETTE_GROUPS ([data, flow], [computation],
-#: [vis_grammar, vis_simple]) with each group in manifest paletteOrder.
-BUILTIN_TILES: tuple[tuple[str, str | None], ...] = (
-    ("data-loading", "step-loading"),
-    ("data-export", None),
-    ("data-transformation", "step-transformation"),
-    ("spatial-join", None),
-    ("merge-flow", "step-merge"),
-    ("data-pool", "step-pool"),
-    ("computation-analysis", "step-analysis"),
-    ("data-summary", None),
-    ("js-computation", None),
-    ("autk-grammar", "step-utk"),
-    ("vis-vega", "step-vega"),
-    ("vis-simple", "step-image"),
+#: The eleven built-in templates in rail order: PALETTE_GROUPS ([data, flow],
+#: [computation], [vis_grammar, vis_simple]) with each group in manifest
+#: paletteOrder. ToolsMenu gives each tile the id ``tile-<template>``.
+BUILTIN_TILES: tuple[str, ...] = (
+    "data-loading",
+    "data-export",
+    "data-transformation",
+    "spatial-join",
+    "data-pool",
+    "computation-analysis",
+    "data-summary",
+    "js-computation",
+    "autk-grammar",
+    "vis-vega",
+    "vis-simple",
 )
-
-_TILE_INDEX = {name: i for i, (name, _) in enumerate(BUILTIN_TILES)}
-_TILE_ANCHOR = dict(BUILTIN_TILES)
 
 
 def builtin_tile(page, template_id: str):
     """A locator for one built-in palette tile, by manifest template id."""
-    anchor = _TILE_ANCHOR.get(template_id)
-    if anchor:
-        return page.locator(f"#{anchor}")
-    index = _TILE_INDEX.get(template_id)
-    if index is None:
+    if template_id not in BUILTIN_TILES:
         raise KeyError(f"unknown built-in template {template_id!r}")
-    # The built-in stack is the first child of #tools-menu; the three catalog
-    # palettes and the run-all row follow it and also contain draggables.
-    return page.locator("#tools-menu > div").first.locator("[draggable]").nth(index)
+    return page.locator(f"#tile-{template_id}")
 
 
 def package_row(page, template_id: str):
@@ -701,7 +689,7 @@ def reset_zoom(page) -> None:
 
 def menu(page, label: str):
     """Top-bar dropdown trigger (``File``, ``View``, ``Data``, ...)."""
-    return page.get_by_role("button", name=f"{label} ⏷", exact=True)
+    return page.get_by_role("button", name=f"{label} menu", exact=True)
 
 
 def load_example(run: "StressRun", path: str, *, expected_nodes: int,
@@ -863,11 +851,15 @@ def center_on(page, node_id: str, *, zoom: float = 0.9) -> None:
     page.wait_for_timeout(800)
 
 
+#: API Settings inputs, by the id their label points at. The configuration
+#: fields are the "Add configuration" editor's, the only editor open while a
+#: new configuration is typed in.
 AI_FIELDS = {
-    "Base URL": "#ai-settings-base-url",
-    "API Key": "#ai-settings-api-key",
-    "Model": "#ai-settings-model",
-    "HuggingFace token": "#ai-settings-hf-token",
+    "Label": "#llm-config-new-label",
+    "Base URL": "#llm-config-new-base-url",
+    "API Key": "#llm-config-new-api-key",
+    "Model": "#llm-config-new-model",
+    "HuggingFace token": "#api-settings-key-huggingface-token",
 }
 
 
@@ -878,14 +870,9 @@ def ai_field(page, label: str):
 def wait_for_drawer_presented(page, selector: str, *, timeout: float = 25000) -> None:
     """Wait until a catalog drawer has actually slid into frame.
 
-    Neither obvious gate works for all three. ``to_be_visible()`` is not one:
-    the drawers sit off-screen behind ``transform: translate3d(100%, 0, 0)``,
-    which keeps a full bounding box. ``aria-hidden="false"`` is the presented
-    signal for the Data and Agent drawers, but the Node Catalog drawer never
-    sets the attribute at all (it toggles a CSS class only), so gating on it
-    there waits forever.
-
-    Measuring where the panel *is* works for all three and cannot drift.
+    ``to_be_visible()`` is not a gate: the drawers sit off-screen behind
+    ``transform: translate3d(100%, 0, 0)``, which keeps a full bounding box.
+    Measuring where the panel *is* works for all three.
     """
     page.wait_for_function(
         """(selector) => {
@@ -923,14 +910,13 @@ def drawer_presentation_signals(page, selector: str) -> dict:
 
 
 def open_agent_drawer(run: "StressRun"):
-    """Data > Agent Catalog, returning the drawer dialog.
+    """The top bar's Agent Catalog button, returning the drawer dialog.
 
-    ``exact=True`` on the menu row is load-bearing: the left rail's palette
+    ``exact=True`` on the bar's button is load-bearing: the left rail's palette
     trigger is also named "Agent Catalog", so a substring match is ambiguous and
     Playwright's strict mode fails the step.
     """
     page, tour = run.page, run.tour
-    tour.click(menu(page, "Data"), force=True)
     tour.click(page.get_by_role("button", name="Agent Catalog", exact=True))
     root = page.locator(DRAWER_AGENTS)
     root.wait_for(state="attached", timeout=15000)
@@ -943,9 +929,8 @@ def open_agent_drawer(run: "StressRun"):
 
 
 def open_node_drawer(run: "StressRun"):
-    """Data > Node Catalog, returning the drawer dialog."""
+    """The top bar's Node Catalog button, returning the drawer dialog."""
     page, tour = run.page, run.tour
-    tour.click(menu(page, "Data"), force=True)
     tour.click(page.get_by_role("button", name="Node Catalog", exact=True))
     root = page.locator(DRAWER_NODES)
     root.wait_for(state="attached", timeout=15000)
@@ -956,9 +941,8 @@ def open_node_drawer(run: "StressRun"):
 
 
 def open_data_drawer(run: "StressRun"):
-    """Data > Data Catalog, returning the drawer dialog."""
+    """The top bar's Data Catalog button, returning the drawer dialog."""
     page, tour = run.page, run.tour
-    tour.click(menu(page, "Data"), force=True)
     tour.click(page.get_by_role("button", name="Data Catalog", exact=True))
     root = page.locator(DRAWER_DATA)
     root.wait_for(state="attached", timeout=15000)

@@ -392,20 +392,20 @@ def test_client_save_cannot_clobber_the_project_lockfile(app, db, user_and_token
     """The reported bug: the Package Builder's promotion wrote the lockfile,
     then a canvas save from a tab whose mirror still said ``[]`` overwrote it.
     Datasets and agents already survived a client save; packages now do too."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages.application import project_packages as packages_services
 
     user, _ = user_and_token
     ukey = services._user_dir_key(user)
     detail = services.save_project(
         user, ProjectCreate(name="Clobber", spec={"dataflow": {"nodes": [], "edges": [], "packages": []}}),
     )
-    packages_services.install_to_project(ukey, detail.id, "ai.urbanlab.uhvi@1")
-    assert storage.read_spec(ukey, detail.id)["dataflow"]["packages"] == ["ai.urbanlab.uhvi@1"]
+    packages_services.install_to_project(ukey, detail.id, "ai.utk.uhvi@1")
+    assert storage.read_spec(ukey, detail.id)["dataflow"]["packages"] == ["ai.utk.uhvi@1"]
 
     stale = {"dataflow": {"nodes": [], "edges": [], "packages": []}}
     services.update_project(user, detail.id, ProjectUpdate(spec=stale, outputs=[]))
 
-    assert storage.read_spec(ukey, detail.id)["dataflow"]["packages"] == ["ai.urbanlab.uhvi@1"]
+    assert storage.read_spec(ukey, detail.id)["dataflow"]["packages"] == ["ai.utk.uhvi@1"]
 
 
 def test_client_save_cannot_add_to_the_project_lockfile(app, db, user_and_token, tmp_curio):
@@ -434,22 +434,22 @@ def test_load_serves_the_effective_lockfile_not_the_raw_list(app, db, user_and_t
     list it loads. A clobbered ``[]`` with a package node on the canvas must
     load as the backfilled list the backend itself acts on — otherwise the
     palette shows 0 and the node paints "Loading node…" forever."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages.application import project_packages as packages_services
 
     user, _ = user_and_token
     ukey = services._user_dir_key(user)
     detail = services.save_project(
         user, ProjectCreate(name="Heal", spec={"dataflow": {"nodes": [], "edges": [], "packages": []}}),
     )
-    packages_services.install_to_project(ukey, detail.id, "ai.urbanlab.uhvi@1")
+    packages_services.install_to_project(ukey, detail.id, "ai.utk.uhvi@1")
     spec = storage.read_spec(ukey, detail.id)
-    spec["dataflow"]["nodes"] = [{"id": "n1", "type": "ai.urbanlab.uhvi/uhvi-load@1"}]
+    spec["dataflow"]["nodes"] = [{"id": "n1", "type": "ai.utk.uhvi/uhvi-load@1"}]
     spec["dataflow"]["packages"] = []
     storage.write_spec(ukey, detail.id, spec)
 
     loaded = services.load_project(user, detail.id)
-    assert loaded["spec"]["dataflow"]["packages"] == ["ai.urbanlab.uhvi@1"]
-    assert loaded["project"].spec["dataflow"]["packages"] == ["ai.urbanlab.uhvi@1"]
+    assert loaded["spec"]["dataflow"]["packages"] == ["ai.utk.uhvi@1"]
+    assert loaded["project"].spec["dataflow"]["packages"] == ["ai.utk.uhvi@1"]
     # On disk it is still ``[]`` until the next save writes it down (commit 1).
     assert storage.read_spec(ukey, detail.id)["dataflow"]["packages"] == []
 

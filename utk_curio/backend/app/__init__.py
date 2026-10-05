@@ -34,17 +34,21 @@ CORS_HEADERS = {
     # a header missing from this list is unreadable rather than merely
     # unnoticed, and the payload would decode into an envelope with no
     # dataType. ARROW_RESPONSE_HEADERS in the sandbox route is the source of
-    # truth; a test pins that this covers it.
+    # truth; a test pins that this covers it. X-Curio-Raster is the raster
+    # route's description of the GeoTIFF it sends (RASTER_META_HEADER in
+    # sandbox/util/rasters.py), pinned the same way.
     "Access-Control-Expose-Headers": ",".join((
         "Content-Disposition",
         "X-Curio-Kind",
         "X-Curio-Filename",
+        "X-Curio-Rows",
         "X-Curio-Schema",
         "X-Curio-Preview",
         "X-Curio-Preview-Rows",
         "X-Curio-Total-Rows",
         "X-Curio-Encoded-Object-Columns",
         "X-Curio-Frame-Metadata",
+        "X-Curio-Raster",
     )),
     "Access-Control-Max-Age": "600",
 }
@@ -84,29 +88,50 @@ def create_app(config_class=config_class):
     app.register_blueprint(auth_bp)
     app.register_blueprint(config_bp)
 
+    from utk_curio.backend.app.users.connection_keys_routes import connection_keys_bp
+    app.register_blueprint(connection_keys_bp)
+
     from utk_curio.backend.app.projects.routes import projects_bp
     app.register_blueprint(projects_bp)
+
+    # The run tables, and the cascade that deletes a project's runs with it.
+    from utk_curio.backend.app.runs import models as _run_models  # noqa: F401
+    from utk_curio.backend.app.runs.routes import runs_bp
+    app.register_blueprint(runs_bp)
 
     from utk_curio.backend.app.notebooks import notebooks_bp
     app.register_blueprint(notebooks_bp)
 
-    from utk_curio.backend.app.packages import packages_bp, seed_dev_packageages
+    from utk_curio.backend.app.packages import (
+        packages_bp,
+        seed_dev_packages,
+    )
     app.register_blueprint(packages_bp)
 
     from utk_curio.backend.app.datasets import datasets_bp
     app.register_blueprint(datasets_bp)
 
-    from utk_curio.backend.app.datalakes import datalakes_bp
-    app.register_blueprint(datalakes_bp)
+    from utk_curio.backend.app.discovery import discovery_bp, media_bp
+    app.register_blueprint(discovery_bp)
+    app.register_blueprint(media_bp)
 
-    from utk_curio.backend.app.agents.routes import agents_bp
+    from utk_curio.backend.app.model_catalog import models_bp
+    app.register_blueprint(models_bp)
+
+    from utk_curio.backend.app.scenario_catalog import scenarios_bp
+    app.register_blueprint(scenarios_bp)
+    try:
+        from utk_curio.backend.app.discovery.infrastructure.storage import audit_folder_roots
+
+        audit_folder_roots()
+    except Exception:  # noqa: BLE001 - an audit must never stop a boot
+        pass
+
+    from utk_curio.backend.app.agents.routes.common import agents_bp
     app.register_blueprint(agents_bp)
 
     from utk_curio.backend.app.monitor.routes import monitor_bp
     app.register_blueprint(monitor_bp)
-
-    from utk_curio.backend.app.streetvision import bp as streetvision_bp
-    app.register_blueprint(streetvision_bp, url_prefix="/api/streetvision")
 
     # Non-prod DB stub endpoints for Playwright E2E tests.
     # Lets Playwright seed users / projects directly without the signup form.
@@ -116,7 +141,7 @@ def create_app(config_class=config_class):
         # Copy fixture node packages into the guest user's package store on first
         # startup. See utk_curio/backend/app/packages/seed.py for the policy.
         try:
-            seeded = seed_dev_packageages(user_key="guest")
+            seeded = seed_dev_packages(user_key="guest")
             if seeded:
                 app.logger.info("Seeded dev node packages: %s", ", ".join(seeded))
         except Exception:  # noqa: BLE001 — never block startup on seeding
@@ -185,6 +210,15 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.projects.tasks import start_cleanup_scheduler
     start_cleanup_scheduler(app)
+
+    # A run an earlier backend process left going was cut off when it stopped.
+    with app.app_context():
+        try:
+            from utk_curio.backend.app.runs.service import interrupt_runs_of_other_processes
+
+            interrupt_runs_of_other_processes()
+        except Exception:  # noqa: BLE001 - before the migration that makes the tables
+            db.session.rollback()
 
     # Real-time collaboration: opt-in via ENABLE_COLLAB. The collaboration
     # package and flask-socketio are imported only inside this branch so the

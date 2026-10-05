@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import {
+  DATASET_COLLECTION_KIND_LABEL,
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
   datasetCatalogApi,
@@ -7,9 +8,15 @@ import {
   datasetProvenanceLabel,
   isDatasetInstalledFromCatalog,
   isDatasetPublishedToCatalog,
+  isLayerGroupId,
   notifyDatasetCatalogRefresh,
 } from "../../../services/datasetCatalog";
 import { DatasetDataflowUsageSection, useDatasetDataflowUsage } from "./DatasetDataflowUsage";
+import {
+  CollectionInfoSection,
+  CollectionStrip,
+  useCollectionStatus,
+} from "./DatasetCollectionPanel";
 import { DetailLink } from "./DetailLink";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
@@ -253,6 +260,33 @@ const LineageMainSection: React.FC<{
   );
 };
 
+
+/** A parameter's id as a label: "area" is "Area", "maxImages" is "Max images". */
+export function parameterLabel(id: string): string {
+  const words = id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** What a download was narrowed by, as text: a place or a box, dates, values. */
+export function parameterText(value: unknown): string {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const v = value as Record<string, unknown>;
+    if (Array.isArray(v.box)) {
+      const box = (v.box as number[]).map((n) => n.toFixed(4)).join(", ");
+      return v.label ? `${String(v.label)} (${box})` : box;
+    }
+    if (v.names && typeof v.names === "object") {
+      const names = v.names as { geocodeArea?: string; areas?: string[] };
+      return `${(names.areas ?? []).join(", ")} in ${names.geocodeArea ?? ""}`;
+    }
+    if ("start" in v || "end" in v) return `${String(v.start ?? "")} to ${String(v.end ?? "")}`.trim();
+    return JSON.stringify(v);
+  }
+  if (Array.isArray(value)) return value.map(String).join(", ");
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value);
+}
+
 export interface DatasetDetailPanelProps {
   dataset: DatasetCatalogItem | null;
   loading?: boolean;
@@ -311,6 +345,9 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     () => (dataset ? datasetReference(dataset) : null),
     [dataset],
   );
+  const collection = useCollectionStatus(
+    dataset?.format === "collection" ? dataset.id : undefined,
+  );
 
   const columnsLabel =
     fields.length > 0
@@ -343,9 +380,19 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     : lineage;
   const { consumingNodes } = effectiveLineage.downstream;
   const published = isDatasetPublishedToCatalog(dataset);
-  // Bundles are multi-part and have no single serialized file to export.
-  // Neither a multi-part bundle nor an OSM group is a single exportable file.
-  const canExport = dataset.format !== "bundle" && dataset.format !== "osm";
+  // Neither a multi-part bundle, a layer group (whatever format it shows) nor a
+  // collection (an index of files kept where they are) is a single exportable file.
+  const canExport =
+    dataset.format !== "bundle" &&
+    dataset.format !== "osm" &&
+    dataset.format !== "collection" &&
+    !isLayerGroupId(dataset.id);
+  const discovered = dataset.discoverySource;
+  // A storage source's resource is a folder or a bucket, not a portal page.
+  // Which words describe where the bytes came from: a file the person
+  // downloaded by hand, then a storage source's files, then a portal download.
+  const manual = Boolean(discovered?.manual);
+  const fromStorage = Boolean(discovered && !manual && (discovered.fingerprint || discovered.fileCount != null));
   const activeDataset = dataset;
 
   const handleExport = async () => {
@@ -405,7 +452,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               title={
                 canExport
                   ? undefined
-                  : "Multi-part (bundle) datasets cannot be exported as a single file."
+                  : "This dataset has no single file to export."
               }
             >
               {exporting ? "Exporting…" : "Export"}
@@ -421,6 +468,11 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             <span className={formatClass(dataset.format, styles)}>
               {DATASET_FORMAT_LABEL[dataset.format]}
             </span>
+            {dataset.collection ? (
+              <span className={styles.installedBadge}>
+                {DATASET_COLLECTION_KIND_LABEL[dataset.collection.kind] ?? dataset.collection.kind}
+              </span>
+            ) : null}
             {countLabel ? <span>{countLabel}</span> : null}
             {fields.length > 0 ? (
               <>
@@ -472,6 +524,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             />
           ) : (
             <div className={styles.previewSection}>
+              {dataset.collection ? <CollectionStrip status={collection.status} /> : null}
               <div className={styles.previewSubtab}>
                 <span className={styles.previewSubtabActive}>Table Preview</span>
               </div>
@@ -533,43 +586,75 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             </dl>
           </div>
 
-          {dataset.lakeSource ? (
+          {dataset.collection ? (
+            <CollectionInfoSection
+              dataset={dataset}
+              status={collection.status}
+              error={collection.error}
+              job={collection.job}
+              onCacheFiles={collection.cacheFiles}
+              onFollowLink={onFollowLink}
+            />
+          ) : discovered ? (
             // Where the bytes came from. Without it a downloaded dataset is
             // indistinguishable from a hand-uploaded one, and the question it
             // answers - "which portal is this, and can I go back to it?" - has
-            // no other home on this page.
+            // no other home on this page. A collection says it in its own
+            // section, above.
             <div className={styles.infoSection}>
-              <p className={styles.infoSectionLabel}>Downloaded from</p>
+              <p className={styles.infoSectionLabel}>
+                {manual ? "Downloaded by hand from" : fromStorage ? "Added from" : "Downloaded from"}
+              </p>
               <dl className={styles.infoRows}>
-                <div>
-                  <dt>Portal</dt>
-                  <dd>
-                    <DetailLink
-                      to={`/catalog/lakes/${encodeURIComponent(dataset.lakeSource.lakeId)}`}
-                      onFollow={onFollowLink}
-                    >
-                      {dataset.lakeSource.lakeName}
-                    </DetailLink>
-                  </dd>
-                </div>
-                <div>
-                  <dt>Resource</dt>
-                  <dd>
-                    <a
-                      href={dataset.lakeSource.resourceUrl}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                    >
-                      {dataset.lakeSource.resourceId} ↗
-                    </a>
-                  </dd>
-                </div>
-                {dataset.lakeSource.fetchedAt ? (
+                {discovered.sourceId ? (
                   <div>
-                    <dt>Downloaded</dt>
-                    <dd title={absoluteDate(dataset.lakeSource.fetchedAt)}>
-                      {relativeTime(dataset.lakeSource.fetchedAt)}
+                    <dt>{fromStorage ? "Source" : "Portal"}</dt>
+                    <dd>
+                      <DetailLink
+                        to={`/catalog/discovery/${encodeURIComponent(discovered.sourceId)}`}
+                        onFollow={onFollowLink}
+                      >
+                        {discovered.sourceName || discovered.sourceId}
+                      </DetailLink>
                     </dd>
+                  </div>
+                ) : null}
+                {discovered.resourceUrl ? (
+                  <div>
+                    <dt>{discovered.resourceId ? "Resource" : "Link"}</dt>
+                    <dd>
+                      <a href={discovered.resourceUrl} target="_blank" rel="noreferrer noopener">
+                        {discovered.resourceId || discovered.resourceUrl} ↗
+                      </a>
+                    </dd>
+                  </div>
+                ) : discovered.resourceId ? (
+                  <div>
+                    <dt>Resource</dt>
+                    <dd>{discovered.resourceId}</dd>
+                  </div>
+                ) : null}
+                {discovered.fileCount != null && discovered.fileCount > 1 ? (
+                  <div>
+                    <dt>Combined from</dt>
+                    <dd>{discovered.fileCount.toLocaleString()} files</dd>
+                  </div>
+                ) : discovered.sourcePath ? (
+                  <div>
+                    <dt>File</dt>
+                    <dd>{discovered.sourcePath}</dd>
+                  </div>
+                ) : null}
+                {Object.entries(discovered.parameters ?? {}).map(([id, value]) => (
+                  <div key={id}>
+                    <dt>{parameterLabel(id)}</dt>
+                    <dd>{parameterText(value)}</dd>
+                  </div>
+                ))}
+                {discovered.fetchedAt ? (
+                  <div>
+                    <dt>{manual ? "Imported" : fromStorage ? "Added" : "Downloaded"}</dt>
+                    <dd title={absoluteDate(discovered.fetchedAt)}>{relativeTime(discovered.fetchedAt)}</dd>
                   </div>
                 ) : null}
               </dl>

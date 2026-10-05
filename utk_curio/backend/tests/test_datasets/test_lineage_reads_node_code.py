@@ -8,7 +8,7 @@ producer id decode - and never the node's ``content``.
 
 That is where a dataset reference actually lives most of the time. Curio's own
 shipped examples are the proof: their loaders reference datasets *only* through
-``curio_dataset_path("...")`` inside ``content``, with ``metadata:
+``curio_data_path("...")`` inside ``content``, with ``metadata:
 {"keywords": []}`` and no ``datasetRefs`` at all. Drag a dataset onto the canvas
 and the binding exists; write or edit the loader by hand, or open a saved
 example, and only the code does.
@@ -44,7 +44,7 @@ def _usage(client, token, dataset_id):
     return resp.get_json()["dataflows"]
 
 
-DATASET = "data.urbanlab.chicago-boundary"
+DATASET = "data.utk.chicago-boundary"
 
 
 def _loader(code: str) -> dict:
@@ -62,7 +62,7 @@ class TestADatasetReferencedOnlyInCode:
                 "name": "Hand-written loader",
                 "nodes": [_loader(
                     "import geopandas as gpd\n"
-                    f'dataset_path = curio_dataset_path("{DATASET}")\n'
+                    f'dataset_path = curio_data_path("{DATASET}")\n'
                     "gdf = gpd.read_file(dataset_path)\n"
                 )],
                 "edges": [],
@@ -78,7 +78,7 @@ class TestADatasetReferencedOnlyInCode:
             "dataflow": {
                 "name": "Loader and consumer",
                 "nodes": [
-                    _loader(f'dataset_path = curio_dataset_path("{DATASET}")\n'),
+                    _loader(f'dataset_path = curio_data_path("{DATASET}")\n'),
                     {"id": "plot", "type": "VIS_VEGA", "x": 200, "y": 0},
                 ],
                 "edges": [{"source": "loader", "target": "plot"}],
@@ -96,7 +96,7 @@ class TestADatasetReferencedOnlyInCode:
         _create_project(client, token, "Single quoted", {
             "dataflow": {
                 "name": "Single quoted",
-                "nodes": [_loader(f"p = curio_dataset_path('{DATASET}')\n")],
+                "nodes": [_loader(f"p = curio_data_path('{DATASET}')\n")],
                 "edges": [],
                 "datasets": [],
             }
@@ -110,7 +110,7 @@ class TestItDoesNotInventUsage:
         _create_project(client, token, "Other dataset", {
             "dataflow": {
                 "name": "Other dataset",
-                "nodes": [_loader('p = curio_dataset_path("data.other.thing")\n')],
+                "nodes": [_loader('p = curio_data_path("data.other.thing")\n')],
                 "edges": [],
                 "datasets": [],
             }
@@ -123,7 +123,7 @@ class TestItDoesNotInventUsage:
         _create_project(client, token, "Broken quoting", {
             "dataflow": {
                 "name": "Broken quoting",
-                "nodes": [_loader(f"p = curio_dataset_path(\"{DATASET}')\n")],
+                "nodes": [_loader(f"p = curio_data_path(\"{DATASET}')\n")],
                 "edges": [],
                 "datasets": [],
             }
@@ -139,7 +139,7 @@ class TestItDoesNotInventUsage:
         )
 
         assert dataset_ids_in_code(
-            'p = curio_dataset_path("../../etc/passwd")'
+            'p = curio_data_path("../../etc/passwd")'
         ) == []
 
 

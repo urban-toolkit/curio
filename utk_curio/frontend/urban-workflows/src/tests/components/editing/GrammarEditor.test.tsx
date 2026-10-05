@@ -10,6 +10,7 @@ jest.mock("@monaco-editor/react", () => {
     // React.useRef<any>() a "type arguments on an untyped call" error.
     const React: typeof import("react") = require("react");
     const editors: any[] = [];
+    const setDiagnosticsOptions = jest.fn();
     function makeEditor(initial: string) {
         let value = initial;
         let position = { lineNumber: 1, column: 1 };
@@ -46,12 +47,17 @@ jest.mock("@monaco-editor/react", () => {
         ref.current.props = props;
         React.useEffect(() => {
             props.onMount?.(ref.current, {
-                languages: { json: { jsonDefaults: { setDiagnosticsOptions: () => {} } } },
+                languages: { json: { jsonDefaults: { setDiagnosticsOptions } } },
             });
         }, []);
         return React.createElement("div", { "data-testid": "mock-monaco" });
     };
-    return { __esModule: true, default: MockEditor, __editors: editors };
+    return {
+        __esModule: true,
+        default: MockEditor,
+        __editors: editors,
+        __setDiagnosticsOptions: setDiagnosticsOptions,
+    };
 });
 
 // The editor reads playNodesUpTo for the Ctrl/Cmd+Enter binding (#223), and
@@ -78,7 +84,7 @@ jest.mock("../../../providers/CollaborationProvider", () => ({
 
 import GrammarEditor from "../../../components/editing/GrammarEditor";
 
-const { __editors } = jest.requireMock("@monaco-editor/react");
+const { __editors, __setDiagnosticsOptions } = jest.requireMock("@monaco-editor/react");
 const lastEditor = () => __editors[__editors.length - 1];
 
 const DEFAULT_SPEC = '{\n  "map": { "layerRefs": [] }\n}';
@@ -103,6 +109,20 @@ function renderGrammarEditor(defaultValue: string | undefined, floatCode = jest.
             view.rerender(<GrammarEditor {...props(dv)} />),
     };
 }
+
+describe("GrammarEditor JSON diagnostics (#494)", () => {
+    test("checks JSON syntax but does not warn about the $schema it never fetches", () => {
+        __setDiagnosticsOptions.mockClear();
+        renderGrammarEditor(DEFAULT_SPEC);
+        expect(__setDiagnosticsOptions).toHaveBeenCalledWith(
+            expect.objectContaining({
+                validate: true,
+                enableSchemaRequest: false,
+                schemaRequest: "ignore",
+            }),
+        );
+    });
+});
 
 describe("GrammarEditor content sync (dev/70)", () => {
     beforeEach(() => { __editors.length = 0; });

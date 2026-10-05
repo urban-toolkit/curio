@@ -40,6 +40,10 @@ jest.mock("../../components/menus/nodes/agentsPalette", () => ({
     AgentsPaletteDropdown: paletteStub("agents"),
 }));
 
+jest.mock("../../components/menus/nodes/modelsPalette", () => ({
+    ModelsPaletteDropdown: paletteStub("models"),
+}));
+
 jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
     PackagesPaletteDropdown: paletteStub("packages"),
     groupPalettePackages: () => [],
@@ -55,7 +59,7 @@ jest.mock("../../registry", () => ({
 // which ship ESM that jest's transform does not handle. ToolsMenu only needs the
 // one constant.
 jest.mock("../../registry/packagesClient", () => ({ BUILTIN_PACKAGE_ID: "curio.builtin" }));
-jest.mock("../../api/packagesApi", () => ({ refreshPackageRegistry: jest.fn() }));
+jest.mock("../../registry/packageRegistryBootstrap", () => ({ refreshPackageRegistry: jest.fn() }));
 jest.mock("../../providers/FlowProvider", () => ({
     useFlowContext: () => ({ playAllNodes: jest.fn() }),
 }));
@@ -68,6 +72,7 @@ import ToolsMenu from "../../components/menus/nodes/ToolsMenu";
 const datasetsPanel = () => screen.queryByTestId("datasets-panel");
 const packagesPanel = () => screen.queryByTestId("packages-panel");
 const agentsPanel = () => screen.queryByTestId("agents-panel");
+const modelsPanel = () => screen.queryByTestId("models-panel");
 
 describe("ToolsMenu palette coordination", () => {
     test("every palette starts closed", () => {
@@ -75,6 +80,7 @@ describe("ToolsMenu palette coordination", () => {
         expect(datasetsPanel()).toBeNull();
         expect(packagesPanel()).toBeNull();
         expect(agentsPanel()).toBeNull();
+        expect(modelsPanel()).toBeNull();
     });
 
     test("a trigger opens its own palette", () => {
@@ -122,6 +128,31 @@ describe("ToolsMenu palette coordination", () => {
         expect(agentsPanel()).toBeNull();
         expect(datasetsPanel()).toBeNull();
         expect(packagesPanel()).toBeNull();
+    });
+
+    test("the fourth palette shares the same strip too", () => {
+        // Models joined after agents, under the same invariant: one
+        // `activePalette` slot, so two panels can never overlap in the strip.
+        render(<ToolsMenu />);
+        fireEvent.click(screen.getByText("toggle models"));
+        expect(modelsPanel()).not.toBeNull();
+        expect(agentsPanel()).toBeNull();
+        expect(datasetsPanel()).toBeNull();
+        expect(packagesPanel()).toBeNull();
+
+        fireEvent.click(screen.getByText("toggle datasets"));
+        expect(datasetsPanel()).not.toBeNull();
+        expect(modelsPanel()).toBeNull();
+
+        fireEvent.click(screen.getByText("toggle models"));
+        expect(modelsPanel()).not.toBeNull();
+        expect(datasetsPanel()).toBeNull();
+
+        // Closing another palette leaves it open; its own trigger closes it.
+        fireEvent.click(screen.getByText("force-close agents"));
+        expect(modelsPanel()).not.toBeNull();
+        fireEvent.click(screen.getByText("toggle models"));
+        expect(modelsPanel()).toBeNull();
     });
 
     test("clicking a trigger again closes its own palette", () => {

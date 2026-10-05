@@ -1,0 +1,313 @@
+"""The shape of ``arg`` for one node — stated, and enforced before the sandbox.
+
+Memo dev/128, from the owner's sentence: *"The merge node always outputs a list
+called `arg`, where each item in this list corresponds to the linked nodes in
+the order of their connections to the input handles of the merge node. Your
+attempts always used `arg` alone; when I changed it to `arg[0]`, it worked
+correctly."*
+
+The runtime knows this per node. ``runner.run_through_node`` decides it in one
+place: a node with ONE input gets that upstream's value (through a node with
+no code of its own, a pool or a passive view, which passes it straight
+through), and a node with several input circles gets them as a list tagged
+``dataType: "outputs"``; ``workflow_spec.upstream_nodes`` orders those sources
+by circle, ``in``, ``in_1``, … So the shape of ``arg`` is a fact available
+before a line is generated, and this module is the ONE place that reads it.
+Code reads each input through its chip, ``[!! input k !!]``, which the run
+turns into ``arg`` or ``arg[k]``.
+
+Two halves, both deterministic:
+
+- ``arg_shape``: ``list`` (with its slots, in circle order), ``single`` or
+  ``none``. A node with ONE connected input is ``single``, because that is
+  what the runner does.
+- ``check`` — with a list-shaped ``arg``, an attribute access on it (``arg.crs``,
+  or ``gdf = arg`` followed by ``gdf.to_crs(...)``, the owner's exact code) is
+  provably wrong: a list has no such attribute. Refused BEFORE the sandbox
+  runs, in the ``DEC-072`` pattern, and the refusal is the next round's error.
+  The code is judged as it runs, with its input chips resolved.
+
+Legitimate uses of a list are never refused: ``arg[0]``, ``arg[0].crs``,
+iteration, ``len(arg)``, ``pd.concat(arg)``, returning it.
+"""
+
+from __future__ import annotations
+
+import ast
+import logging
+
+log = logging.getLogger(__name__)
+
+KIND_LIST = "list"
+KIND_SINGLE = "single"
+KIND_NONE = "none"
+
+#: How far to look through nodes that hold no code of their own.
+_WALK_MAX_DEPTH = 4
+#: Slots described in a refusal / an input.
+MAX_SLOTS = 8
+#: Bounds for the text that rides a prompt.
+_GOAL_CHARS = 120
+_COLUMNS_PER_SLOT = 12
+
+
+def _graph(spec: dict | None):
+    from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
+    try:
+        return parse_workflow_dict(spec or {})
+    except Exception:
+        return None
+
+
+def arg_shape(spec: dict | None, node_id: str) -> dict:
+    """What ``arg`` will be for *node_id*, read the way the runner reads it.
+
+    ``{"kind": "list", "length": N, "circles": [...], "slots": [{argIndex,
+    circle, chip, upstreamNodeId, goal, upstreamNodeType}], "via": "<node id>"}``,
+    ``{"kind": "single", upstreamNodeId, goal, upstreamNodeType}`` or
+    ``{"kind": "none"}``. ``argIndex`` is the position in ``arg``; ``circle``
+    is the circle the edge feeds, which is what a chip names, so a node wired
+    on ``in`` and ``in_3`` reads its second input as ``[!! input 3 !!]``.
+    """
+    graph = _graph(spec)
+    if graph is None:
+        return {"kind": KIND_NONE}
+    nodes = {n.id: n for n in graph.nodes}
+    # The parsed NodeSpec carries type and category, not the node's goal — the
+    # human label lives in the raw spec, which is where the slot table reads it.
+    goals = {
+        n.get("id"): str(n.get("goal") or "")[:_GOAL_CHARS]
+        for n in ((spec or {}).get("dataflow") or {}).get("nodes") or []
+        if isinstance(n, dict)
+    }
+
+    def _describe(nid: str, arg_index: int | None = None) -> dict:
+        node = nodes.get(nid)
+        row = {
+            # dev/128: NOT "nodeId"/"nodeType" — the child's own inputs already
+            # carry both keys for the node being generated, and one key with two
+            # meanings misleads a reader (model or test) about whose it is.
+            "upstreamNodeId": nid,
+            "goal": goals.get(nid, ""),
+            "upstreamNodeType": str(getattr(node, "raw_type", "") or "") if node else "",
+        }
+        if arg_index is not None:
+            row["argIndex"] = arg_index
+        return row
+
+    try:
+        own_circles = graph.input_slots(node_id)
+    except Exception:
+        own_circles = []
+    # The chip the node's code reads its one input by, when it has one.
+    own_chip = _chip(own_circles[0] if own_circles else 0)
+
+    def _resolve(target: str, depth: int) -> dict:
+        try:
+            ups = graph.upstream_nodes(target)
+        except Exception:
+            return {"kind": KIND_NONE}
+        if not ups:
+            return {"kind": KIND_NONE}
+        if len(ups) > 1:
+            # Several input circles: the runner hands them over as a list. On
+            # the node itself each is read by its circle's chip; through a
+            # pass-through the node has one input, the list, read by index.
+            direct = target == node_id
+            circles = graph.input_slots(target) if direct else own_circles
+            slots = []
+            for i, upstream in enumerate(ups[:MAX_SLOTS]):
+                row = _describe(upstream, i)
+                if direct:
+                    row["circle"] = circles[i]
+                    row["chip"] = _chip(circles[i])
+                else:
+                    row["chip"] = f"{own_chip}[{i}]"
+                slots.append(row)
+            return {
+                "kind": KIND_LIST,
+                "length": len(ups),
+                "circles": circles,
+                "via": target,
+                "slots": slots,
+            }
+        upstream = ups[0]
+        node = nodes.get(upstream)
+        if node is not None and getattr(node, "category", "code") != "code" and depth < _WALK_MAX_DEPTH:
+            # A pass-through: what IT receives is what this node receives.
+            return _resolve(upstream, depth + 1)
+        return {"kind": KIND_SINGLE, **_describe(upstream), "chip": own_chip}
+
+    return _resolve(node_id, 0)
+
+
+def with_schemas(shape: dict, rows: list | None) -> dict:
+    """Enrich a shape's slots with the column summaries dev/127 already
+    fetched (matched by ``nodeId``) — data, never invention: a slot whose
+    upstream has not run keeps its goal and type alone."""
+    if not isinstance(shape, dict) or not rows:
+        return shape
+    by_node = {
+        str(r.get("nodeId")): r.get("schema")
+        for r in rows
+        if isinstance(r, dict) and r.get("schema")
+    }  # dev/127's rows are keyed by nodeId; the slots name it upstreamNodeId
+    if not by_node:
+        return shape
+    if shape.get("kind") == KIND_LIST:
+        slots = []
+        for slot in shape.get("slots") or []:
+            schema = by_node.get(str(slot.get("upstreamNodeId")))
+            slots.append({**slot, "schema": _trim_schema(schema)} if schema else slot)
+        return {**shape, "slots": slots}
+    if shape.get("kind") == KIND_SINGLE:
+        schema = by_node.get(str(shape.get("upstreamNodeId")))
+        return {**shape, "schema": _trim_schema(schema)} if schema else shape
+    return shape
+
+
+def _trim_schema(schema: object) -> object:
+    """A slot carries the columns and the shape, not the sample rows: the
+    sample already rides ``upstreamOutputs`` and one copy is enough."""
+    if not isinstance(schema, dict):
+        return schema
+    trimmed = {k: v for k, v in schema.items() if k != "sampleRows"}
+    columns = trimmed.get("columns")
+    if isinstance(columns, list) and len(columns) > _COLUMNS_PER_SLOT:
+        trimmed["columns"] = columns[:_COLUMNS_PER_SLOT]
+        trimmed["columnsElided"] = len(columns) - _COLUMNS_PER_SLOT
+    return trimmed
+
+
+def describe(shape: dict | None) -> str:
+    """One line for a prompt, a card or a log."""
+    if not isinstance(shape, dict):
+        return ""
+    if shape.get("kind") == KIND_LIST:
+        parts = []
+        for slot in shape.get("slots") or []:
+            label = slot.get("goal") or slot.get("upstreamNodeId") or "?"
+            schema = slot.get("schema") if isinstance(slot.get("schema"), dict) else None
+            columns = (
+                ", ".join(str(c.get("name")) for c in (schema.get("columns") or [])[:6])
+                if schema else ""
+            )
+            parts.append(
+                f"{_slot_chip(slot)} = {label}" + (f" ({columns})" if columns else "")
+            )
+        return f"arg is a list of {shape.get('length')} inputs: " + "; ".join(parts)
+    if shape.get("kind") == KIND_SINGLE:
+        label = shape.get("goal") or shape.get("upstreamNodeId") or "the upstream node"
+        return f"{shape.get('chip') or _chip(0)} (arg) IS the value {label} returned"
+    return "this node has no input"
+
+
+def _slot_chip(slot: dict) -> str:
+    """The chip a slot of a list-shaped ``arg`` is read by."""
+    return slot.get("chip") or _chip(slot.get("argIndex"))
+
+
+def _chip(position) -> str:
+    """The chip code reads input *position* by."""
+    from utk_curio.backend.app.execution.code_references import (
+        input_reference_inner,
+        reference_text,
+    )
+
+    return reference_text(input_reference_inner(position if isinstance(position, int) else None))
+
+
+# ── the check ────────────────────────────────────────────────────────────────
+
+
+def _names_bound_to_arg(tree: ast.AST) -> set[str]:
+    """Names assigned DIRECTLY from ``arg`` — ``gdf = arg`` (the owner's code).
+
+    A name bound to ``arg[0]`` is not one of these: it holds a slot, which is
+    the correct form.
+    """
+    bound: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if isinstance(node.value, ast.Name) and node.value.id == "arg":
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    bound.add(target.id)
+        elif isinstance(node.value, ast.Name) and node.value.id in bound:
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    bound.add(target.id)
+    return bound
+
+
+def check(code: object, shape: dict | None) -> dict | None:
+    """The ONE rule: with a list-shaped ``arg``, an attribute access on it is
+    wrong. Returns ``{"attribute", "name", "line"}`` or None.
+
+    Only ``kind: list`` is judged, on the code as it runs: its input chips
+    become ``arg[k]``. A syntax error is not this gate's business (the
+    sandbox reports it), and a candidate that never mentions ``arg`` cannot
+    violate a contract about it.
+    """
+    if not isinstance(shape, dict) or shape.get("kind") != KIND_LIST:
+        return None
+    if not isinstance(code, str):
+        return None
+    from utk_curio.backend.app.execution.code_references import REFERENCE_RE, resolve_references
+
+    circles = shape.get("circles") or range(int(shape.get("length") or 0))
+    inputs = [{"slot": circle} for circle in circles]
+    code, _ = resolve_references(code, (), "python", inputs)
+    # #662: what is left is a widget or a shared tag, a value when the node
+    # runs; standing in as one, it keeps the code parseable for this gate.
+    code = REFERENCE_RE.sub("None", code)
+    if "arg" not in code:
+        return None
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return None
+    bound = _names_bound_to_arg(tree) | {"arg"}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute):
+            continue
+        value = node.value
+        # `arg[0].crs` is an attribute of a SUBSCRIPT — correct, never refused.
+        if isinstance(value, ast.Name) and value.id in bound:
+            return {
+                "attribute": node.attr,
+                "name": value.id,
+                "line": getattr(node, "lineno", 0),
+            }
+    return None
+
+
+def refusal_text(shape: dict, violation: dict) -> str:
+    """What the model is told, and what a human reads in the trail."""
+    name = violation.get("name") or "arg"
+    attribute = violation.get("attribute") or "?"
+    line = violation.get("line") or 0
+    used = f"{name}.{attribute}" + (f" (line {line})" if line else "")
+    slots = []
+    for slot in (shape.get("slots") or [])[:MAX_SLOTS]:
+        label = slot.get("goal") or slot.get("upstreamNodeId") or "?"
+        schema = slot.get("schema") if isinstance(slot.get("schema"), dict) else None
+        detail = ""
+        if schema:
+            columns = ", ".join(
+                str(c.get("name")) for c in (schema.get("columns") or [])[:8]
+            )
+            kind = schema.get("kind") or ""
+            detail = f" — {kind}" + (f": {columns}" if columns else "")
+        slots.append(f"{_slot_chip(slot)} = {label}{detail}")
+    body = "; ".join(slots)
+    chips = [_slot_chip(slot) for slot in (shape.get("slots") or [])[:2]] or [_chip(0), _chip(1)]
+    return (
+        f"input contract refused: this node has {shape.get('length')} inputs, so "
+        "`arg` is a LIST of them in circle order: " + body + ". "
+        f"Your code used `{used}`: a list has no attribute {attribute!r}. "
+        f"Read the input you need through its chip ({', '.join(chips)}, ...): "
+        "`arg` alone is the list itself."
+    )

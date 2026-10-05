@@ -1,7 +1,11 @@
 """memo dev/98 — the reference preview runner (REAL Playwright/Chromium; the
 A9 real-toolchain rule). Environment-guarded with an honest skip reason: the
 runner is an operator tool, and machines without playwright/chromium skip
-these instead of faking a browser."""
+these instead of faking a browser.
+
+CI's ``preview-runner`` job runs them on Linux with
+``CURIO_REQUIRE_PREVIEW_RUNNER=1``, where a missing browser, React build or
+esbuild fails the test instead of skipping it."""
 
 from __future__ import annotations
 
@@ -9,31 +13,44 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.packages.build_models import parse_build_request
-from utk_curio.backend.app.packages.build_preview import run_preview, runner_from_env
-from utk_curio.backend.app.packages.build_workspace import (
-    WorkerLimits,
+from utk_curio.backend.app.packages.builder import preview as builder_preview
+from utk_curio.backend.app.packages.builder.models import parse_build_request
+from utk_curio.backend.app.packages.builder.preview import (
+    run_preview,
+    runner_from_env,
+)
+from utk_curio.backend.app.packages.infrastructure.workspace import (
     create_workspace,
     destroy_workspace,
 )
 from utk_curio.tools import install_preview_runner as installer
 
-#: Chromium startup dominates; generous wall, honest CPU.
-PREVIEW_LIMITS = WorkerLimits(wall_time_seconds=90.0, cpu_seconds=60)
+#: The preview worker's own bounds. Chromium startup dominates; generous wall,
+#: honest CPU.
+PREVIEW_LIMITS = replace(builder_preview.PREVIEW_LIMITS, wall_time_seconds=90.0, cpu_seconds=60)
+
+
+def _missing(reason: str) -> None:
+    """Skip for want of a tool, or fail where the run says the tools are there."""
+    if os.environ.get("CURIO_REQUIRE_PREVIEW_RUNNER") == "1":
+        pytest.fail(f"CURIO_REQUIRE_PREVIEW_RUNNER=1, but {reason}")
+    pytest.skip(reason)
 
 
 def _require_browser() -> None:
-    pytest.importorskip(
-        "playwright.sync_api",
-        reason="reference-runner E2E needs the playwright package")
+    try:
+        import playwright.sync_api  # noqa: F401
+    except ImportError:
+        _missing("reference-runner E2E needs the playwright package")
     try:
         installer._browsers_path()
     except SystemExit as exc:
-        pytest.skip(f"reference-runner E2E skipped: {exc}")
+        _missing(f"reference-runner E2E skipped: {exc}")
 
 
 @pytest.fixture()
@@ -104,12 +121,24 @@ class TestSkipGuard:
     def test_an_empty_browser_cache_skips_instead_of_erroring(
             self, tmp_path, monkeypatch):
         pytest.importorskip("playwright.sync_api")
+        monkeypatch.delenv("CURIO_REQUIRE_PREVIEW_RUNNER", raising=False)
         monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "empty"))
         # Skipped derives from BaseException, so pytest.raises(Exception)
         # would NOT catch this; pytest.skip.Exception is the public handle.
         with pytest.raises(pytest.skip.Exception) as exc:
             _require_browser()
         # The skip has to carry the remedy, not just the fact.
+        assert "playwright install chromium" in str(exc.value)
+
+    def test_a_run_that_requires_the_runner_fails_instead_of_skipping(
+            self, tmp_path, monkeypatch):
+        """CI's preview-runner job: a browser that is not there fails the
+        test, so the job cannot go green on skips."""
+        pytest.importorskip("playwright.sync_api")
+        monkeypatch.setenv("CURIO_REQUIRE_PREVIEW_RUNNER", "1")
+        monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "empty"))
+        with pytest.raises(pytest.fail.Exception) as exc:
+            _require_browser()
         assert "playwright install chromium" in str(exc.value)
 
     def test_the_refusal_stays_a_systemexit_subclass(self):
@@ -226,9 +255,7 @@ class TestSchemaAgreementWithTheFake:
         _ = monkeypatch
         workspace = create_workspace("ref-schema-test")
         try:
-            from utk_curio.backend.app.packages.build_preview import (
-                build_preview_document,
-            )
+            from utk_curio.backend.app.packages.builder.preview import build_preview_document
 
             request = _preview_request()
             preview_dir = workspace.work_dir / "preview"
@@ -243,7 +270,7 @@ class TestSchemaAgreementWithTheFake:
             }], "report": "preview/report.json"}
             (preview_dir / "plan.json").write_text(json.dumps(plan),
                                                    encoding="utf-8")
-            from utk_curio.backend.app.packages.build_workspace import run_worker
+            from utk_curio.backend.app.packages.infrastructure.workspace import run_worker
 
             worker = run_worker(
                 workspace,
@@ -263,7 +290,10 @@ class TestSchemaAgreementWithTheFake:
             destroy_workspace(workspace)
 
 
-_REAL_ESBUILD = Path("/opt/anaconda3/envs/curio-feat/bin/esbuild")
+#: The deployment's pinned esbuild when one is set (CI's preview-runner job
+#: sets it), else the one a developer machine keeps in its conda env.
+_REAL_ESBUILD = Path(os.environ.get("CURIO_BUILD_ESBUILD")
+                     or "/opt/anaconda3/envs/curio-feat/bin/esbuild")
 
 
 class TestFullPipelineWithRealPreview:
@@ -275,7 +305,7 @@ class TestFullPipelineWithRealPreview:
     def _require_toolchain(self, monkeypatch):
         _require_browser()
         if not _REAL_ESBUILD.is_file():
-            pytest.skip("real esbuild not installed — full-stack preview skipped")
+            _missing("real esbuild not installed: full-stack preview skipped")
         monkeypatch.setenv("CURIO_BUILD_ESBUILD", str(_REAL_ESBUILD))
 
     def _behavior_request(self, source: str):
@@ -311,9 +341,9 @@ class TestFullPipelineWithRealPreview:
 
     def test_draft_builds_compiles_and_previews_ok(self, wrapper, monkeypatch,
                                                    tmp_curio):
-        from utk_curio.backend.app.packages import build_jobs
-        from utk_curio.backend.app.packages.build_compiler import toolchain_from_env
-        from utk_curio.backend.app.packages.build_pipeline import run_build
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
+        from utk_curio.backend.app.packages.builder.compiler import toolchain_from_env
+        from utk_curio.backend.app.packages.builder.pipeline import run_build
 
         self._require_toolchain(monkeypatch)
         monkeypatch.setenv("CURIO_BUILD_PREVIEW_RUNNER", str(wrapper))
@@ -336,9 +366,9 @@ class TestFullPipelineWithRealPreview:
 
     def test_wrong_behavior_key_fails_the_build_at_preview(
             self, wrapper, monkeypatch, tmp_curio):
-        from utk_curio.backend.app.packages import build_jobs
-        from utk_curio.backend.app.packages.build_compiler import toolchain_from_env
-        from utk_curio.backend.app.packages.build_pipeline import run_build
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
+        from utk_curio.backend.app.packages.builder.compiler import toolchain_from_env
+        from utk_curio.backend.app.packages.builder.pipeline import run_build
 
         self._require_toolchain(monkeypatch)
         monkeypatch.setenv("CURIO_BUILD_PREVIEW_RUNNER", str(wrapper))

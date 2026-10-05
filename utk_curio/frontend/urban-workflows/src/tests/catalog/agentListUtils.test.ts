@@ -1,18 +1,18 @@
-import type { AgentCard } from "../../api/agentsApi";
 import {
   installLabel,
   installTitle,
   matchesAgentSearch,
   missingRequiredAgents,
   sortAgentCards,
-} from "../../components/agents/catalog/agentListUtils";
+  type AgentCard,
+} from "../../services/agents";
 
 function card(over: Partial<AgentCard> = {}): AgentCard {
   return {
-    id: "agent.node-explainer",
+    id: "agent.my-explainer",
     version: "1.0.0",
-    dirName: "agent.node-explainer@1.0.0",
-    name: "Node Explainer",
+    dirName: "agent.my-explainer@1.0.0",
+    name: "My Explainer",
     category: "node",
     purpose: "explains what a node / flow does",
     capabilities: ["node.explain"],
@@ -36,7 +36,7 @@ describe("matchesAgentSearch", () => {
 
   it("matches each promised field, case-insensitively", () => {
     expect(matchesAgentSearch(card(), "EXPLAINER")).toBe(true); // name
-    expect(matchesAgentSearch(card(), "agent.node-")).toBe(true); // id
+    expect(matchesAgentSearch(card(), "agent.my-")).toBe(true); // id
     expect(matchesAgentSearch(card(), "flow does")).toBe(true); // purpose
     expect(matchesAgentSearch(card({ category: "evaluate" }), "Evaluate")).toBe(true); // category
     expect(matchesAgentSearch(card(), "node.explain")).toBe(true); // capability

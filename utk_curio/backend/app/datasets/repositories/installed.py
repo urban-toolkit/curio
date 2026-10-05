@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from utk_curio.backend.app.datasets.domain.catalog_item import (
+    autark_layer_type,
     base_item,
     item_from_manifest,
     loader_snippet,
@@ -88,7 +89,8 @@ class InstalledDatasetRepository:
                     item["path"] = data_path.as_posix()
                     # Keep loaderSnippet in sync with the resolved path.
                     item["loaderSnippet"] = loader_snippet(
-                        item["format"], data_path.as_posix(), dataset_id=item.get("id")
+                        item["format"], data_path.as_posix(), dataset_id=item.get("id"),
+                        layer_type=autark_layer_type(item),
                     )
                     item["sizeBytes"] = data_path.stat().st_size
                     item["installed"] = True

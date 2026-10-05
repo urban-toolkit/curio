@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
     LibraryManagerWindow,
     TrillProvenanceWindow,
@@ -8,40 +8,39 @@ import {
     useNodeActionsContext,
 } from "../../../providers/FlowProvider";
 import { useCode } from "../../../hook/useCode";
-import { useEnsureWorkflowDeps } from "../../../hook/useEnsureWorkflowDeps";
+import { useEnsureWorkflowDeps } from "../../../providers/packages/useEnsureWorkflowDeps";
 import { useCollab } from "../../../providers/CollaborationProvider";
 import { TrillGenerator } from "../../../TrillGenerator";
 import { trillToNotebook, serializeNotebook } from "../../../NotebookConvertor";
 import styles from "./UpMenu.module.css";
+import headerStyles from "../../layout/GlobalPageHeader.module.css";
 import clsx from "clsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
+    faCircleCheck,
+    faClockRotateLeft,
+    faClone,
+    faCodeBranch,
     faCubes,
-    faDatabase,
+    faListUl,
+    faObjectGroup,
+    faFileArrowDown,
     faFileImport,
     faFileExport,
     faFolderOpen,
     faFloppyDisk,
     faPlus,
-    faRobot,
     faUsers,
     faUpRightAndDownLeftFromCenter,
     faDownLeftAndUpRightToCenter,
-    faSitemap,
-    faCircleQuestion,
-    faStore,
 } from "@fortawesome/free-solid-svg-icons";
-import logo from "assets/curio-2.png";
-import { UserMenu } from "components/login/UserMenu";
-import introJs from "intro.js";
-import "intro.js/introjs.css";
+import { GlobalPageHeader } from "../../layout/GlobalPageHeader";
+import { HeaderMenu, HeaderMenuDivider, HeaderMenuItem } from "./HeaderMenu";
+import { CatalogButtons } from "./CatalogButtons";
+import { CanvasViewSwitch } from "./CanvasViewSwitch";
 import { useNavigate, useParams } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
-import { useNodeCatalogDrawer } from "../../../providers/NodeCatalogDrawerProvider";
-import { useAgentCatalogDrawerControls } from "../../../providers/AgentCatalogDrawerProvider";
-import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
-import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
 import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
 import {
     looksLikeJsonFile,
@@ -52,17 +51,19 @@ import {
 } from "../../../utils/dataflowImport";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import ShareMenu from "./ShareMenu";
+import DataflowCategoryInput from "../../projects/DataflowCategoryInput";
+import { projectsApi, type ProjectSummary } from "../../../api/projectsApi";
 import { SHARE_UUID_RE } from "../../../utils/shareLinks";
+import { useScenarioActions } from "../../scenarios/useScenarioActions";
+import { useScenarioUi } from "../../scenarios/scenarioUi";
 
 export default function UpMenu() {
     const [isEditing, setIsEditing] = useState(false);
     const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
-    const [tutorialOpen, setTutorialOpen] = useState(false);
     const [librariesOpen, setLibrariesOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
 
-    const menuBarRef = useRef<HTMLDivElement>(null);
     const loadTrillInputRef = useRef<HTMLInputElement>(null);
     const navigate = useNavigate();
     const { skipProjectPage } = useUserContext();
@@ -75,6 +76,10 @@ export default function UpMenu() {
         cleanCanvas,
         markDirty,
         renameDataflow,
+        workflowCategories,
+        serverCategories,
+        scenarios,
+        updateDataflowCategories,
         saveCurrentProject,
         saveAsNewProject,
         discardProject,
@@ -82,6 +87,8 @@ export default function UpMenu() {
         packages,
         nodes,
         edges,
+        canvasView,
+        setCanvasView,
     } = useFlowContext();
 
     /** Run *action* now, or ask first when there is unsaved work to lose.
@@ -112,12 +119,37 @@ export default function UpMenu() {
     const { id: routeId } = useParams<{ id?: string }>();
     const shareId = projectId ?? (routeId && SHARE_UUID_RE.test(routeId) ? routeId : null);
     const ensureWorkflowDeps = useEnsureWorkflowDeps();
-    const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
-    const { openAgentCatalogDrawer } = useAgentCatalogDrawerControls();
-    const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
 
     const toggleMenu = (menu: string) => {
         setActiveMenu((prev) => (prev === menu ? null : menu));
+    };
+
+    // Each menu closes itself on an outside click or Escape. A click on
+    // another menu's trigger is outside this one, so close only if this is
+    // still the open menu, or it would shut the one just opened.
+    const closeMenu = useCallback((menu: string) => {
+        setActiveMenu((prev) => (prev === menu ? null : prev));
+    }, []);
+    const closeFile = useCallback(() => closeMenu("file"), [closeMenu]);
+    const closeView = useCallback(() => closeMenu("view"), [closeMenu]);
+    const closeShare = useCallback(() => closeMenu("share"), [closeMenu]);
+
+    // #662: named selections of the dataflow, compared in the canvas.
+    const scenarioActions = useScenarioActions();
+    const scenarioUi = useScenarioUi();
+    const scenarioItem = (action: () => void) => () => {
+        setActiveMenu(null);
+        action();
+    };
+
+    // The account's other dataflows, for the category suggestions. Fetched the
+    // first time "+ Category" opens, not on every canvas load.
+    const [categorySuggestions, setCategorySuggestions] = useState<ProjectSummary[]>([]);
+    const suggestionsRequested = useRef(false);
+    const loadCategorySuggestions = () => {
+        if (suggestionsRequested.current) return;
+        suggestionsRequested.current = true;
+        projectsApi.list().then(setCategorySuggestions).catch(() => {});
     };
 
     const closeTrillProvenanceModal = () => {
@@ -155,11 +187,6 @@ export default function UpMenu() {
         if (e.key === "Enter") {
             commitName();
         }
-    };
-
-    const openTutorial = () => {
-        setTutorialOpen(true);
-        setActiveMenu(null);
     };
 
     const toggleExpand = () => {
@@ -229,6 +256,11 @@ export default function UpMenu() {
             workflowNameRef.current,
             "",
             getCurrentProjectPackagesList(),
+            undefined,
+            undefined,
+            workflowCategories,
+            // A downloaded file carries scenarios only when there are some.
+            scenarios && scenarios.length > 0 ? scenarios : undefined,
         );
         const content = JSON.stringify(trillSpec, null, 2);
         const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
@@ -329,92 +361,6 @@ export default function UpMenu() {
         setTimeout(() => loadTrillInputRef.current?.click(), 0);
     };
 
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (
-                menuBarRef.current &&
-                !menuBarRef.current.contains(event.target as Node)
-            ) {
-                setActiveMenu(null);
-            }
-        };
-
-        if (activeMenu) {
-            document.addEventListener("click", handleClickOutside);
-        } else {
-            document.removeEventListener("click", handleClickOutside);
-        }
-
-        return () => {
-            document.removeEventListener("click", handleClickOutside);
-        };
-    }, [activeMenu]);
-
-    useEffect(() => {
-        if (!tutorialOpen) return;
-
-        const intro = introJs();
-        intro.setOptions({
-            steps: [
-                {
-                    intro: "Welcome to Curio, a framework for urban analytics. Let's take a quick tour to help you get started.",
-                },
-                {
-                    // #240: this step used to promise a file picker the node
-                    // has never shipped. The uploader it described was
-                    // commented out of WidgetsEditor and has now been deleted,
-                    // so the copy names the two routes that do exist, and the
-                    // Data Catalog step below follows immediately because it is
-                    // the answer to the question this one raises.
-                    element: "#step-loading",
-                    intro: "This is a Data Loading Node. Write Python here to build a small dataset inline, or to read one already available to your dataflow. The node holds code, not a file picker: to bring a file in, use the Data Catalog (next step), or add a file widget to the code with the marker [!! path$FILE !!].",
-                },
-                {
-                    // The tour never mentioned the Data Catalog, which is how a
-                    // file actually gets into a dataflow.
-                    intro: "Files live in the Data Catalog, not inside a node. Open Data → Data Catalog, import a CSV or GeoJSON, then drag the dataset onto the canvas: Curio creates a Data Loading Node already wired to it.",
-                },
-                {
-                    element: "#step-analysis",
-                    intro: "This is a Python Computation Node. Use it to perform calculations and operations on your dataset, preparing it for visualization.",
-                },
-                {
-                    element: "#step-transformation",
-                    intro: "The Data Transformation Node allows you to filter, segment, or restructure your data.",
-                },
-                {
-                    element: "#step-pool",
-                    intro: "This is a Data Pool Node. It enables you to display your processed data in a structured grid format for easy review.",
-                },
-                {
-                    element: "#step-utk",
-                    intro: "This is an Autark Node. Write a declarative UrbanSpec to load data (OSM, CSV, GeoJSON), run GPU compute, and render maps or plots - all in the browser.",
-                },
-                {
-                    element: "#step-vega",
-                    intro: "This is a Vega-Lite Node. Use it to visualize data in 2D formats (bar charts, scatter plots, and line graphs) using a JSON specification.",
-                },
-                {
-                    element: "#step-image",
-                    intro: "This is a Simple View Node. It displays a table for DataFrames, an image grid for image DataFrames, or passes through other values.",
-                },
-                {
-                    element: "#step-merge",
-                    intro: "This is a Merge Flow Node. It allows you to combine multiple data streams into a single dataset. Red handles indicate a missing connection, while green handles show that a connection has been established. Note: each handle can only connect to one edge.",
-                },
-                {
-                    intro: "That's it! Drag and drop nodes into your workspace and begin exploring your data with Curio.",
-                },
-            ],
-            showStepNumbers: false,
-            showProgress: false,
-            exitOnOverlayClick: false,
-            tooltipClass: "custom-intro-tooltip",
-        });
-        intro.start();
-        setTutorialOpen(false);
-    }, [tutorialOpen]);
-
     return (
         <>
             <input
@@ -427,209 +373,148 @@ export default function UpMenu() {
                     (e.target as HTMLInputElement).value = "";
                 }}
             />
-            <div
-                className={clsx(styles.menuBar, "nowheel", "nodrag")}
-                ref={menuBarRef}
+            {/* The same bar as every other page, with the dataflow's own
+                controls in its slot. */}
+            <GlobalPageHeader
+                className={clsx(styles.canvasHeader, "nowheel", "nodrag")}
+                onLeave={(go) =>
+                    leaveWithGuard("Leaving this dataflow discards the changes you have not saved.", go)
+                }
             >
-                <img
-                    className={styles.logo}
-                    src={logo}
-                    alt="Curio logo"
-                    onClick={() => {
-                        leaveWithGuard(
-                            "Leaving this dataflow discards the changes you have not saved.",
-                            () => navigate("/projects"),
-                        );
-                    }}
-                />
-
-                {/* File */}
-                <div className={styles.dropdownWrapper}>
-                    <button
-                        className={styles.button}
-                        data-testid="file-menu-btn"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            toggleMenu("file");
+                <HeaderMenu
+                    label="File"
+                    testId="file-menu-btn"
+                    open={activeMenu === "file"}
+                    onToggle={() => toggleMenu("file")}
+                    onClose={closeFile}
+                >
+                    <HeaderMenuItem icon={faPlus} onClick={handleNewWorkflow}>
+                        New dataflow
+                    </HeaderMenuItem>
+                    <HeaderMenuItem icon={faFileImport} onClick={loadTrillFile}>
+                        Load dataflow
+                    </HeaderMenuItem>
+                    <HeaderMenuDivider />
+                    {!skipProjectPage && !isSharedView && (
+                        <HeaderMenuItem icon={faFloppyDisk} onClick={handleSave} disabled={saving}>
+                            {saving ? "Saving..." : "Save dataflow"}
+                        </HeaderMenuItem>
+                    )}
+                    {isSharedView && (
+                        <HeaderMenuItem icon={faFloppyDisk} onClick={handleSaveCopy} disabled={saving}>
+                            {saving ? "Saving..." : "Save dataflow"}
+                        </HeaderMenuItem>
+                    )}
+                    <HeaderMenuItem icon={faFileArrowDown} onClick={handleSaveAs}>
+                        Save dataflow as
+                    </HeaderMenuItem>
+                    <HeaderMenuItem icon={faFileExport} onClick={exportAsJupyterNotebook}>
+                        Export as notebook
+                    </HeaderMenuItem>
+                    {!isSharedView && (
+                        <HeaderMenuItem
+                            icon={faCodeBranch}
+                            onClick={scenarioItem(scenarioActions.saveDataflowAsScenario)}
+                        >
+                            Save dataflow as scenario
+                        </HeaderMenuItem>
+                    )}
+                    <HeaderMenuDivider />
+                    {/* The Python environment the nodes run in. Not a
+                        catalog, so not among the catalog buttons. */}
+                    <HeaderMenuItem
+                        icon={faCubes}
+                        onClick={() => {
+                            setLibrariesOpen(true);
+                            setActiveMenu(null);
                         }}
                     >
-                        File ⏷
-                    </button>
-                    {activeMenu === "file" && (
-                        <div className={styles.dropDownMenu} onClick={(e) => e.stopPropagation()}>
-                            <div className={styles.dropDownRow} onClick={handleNewWorkflow}>
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faPlus} />
-                                <button className={styles.noStyleButton}>New dataflow</button>
-                            </div>
-                            <div className={styles.dropDownRow} onClick={loadTrillFile}>
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faFileImport} />
-                                <button className={styles.noStyleButton}>Load dataflow</button>
-                            </div>
-                            {!skipProjectPage && !isSharedView && (
-                                <div className={styles.dropDownRow} onClick={handleSave}>
-                                    <FontAwesomeIcon className={styles.dropDownIcon} icon={faFloppyDisk} />
-                                    <button className={styles.noStyleButton} disabled={saving}>
-                                        {saving ? "Saving..." : "Save dataflow"}
-                                    </button>
-                                </div>
-                            )}
-                            {isSharedView && (
-                                <div className={styles.dropDownRow} onClick={handleSaveCopy}>
-                                    <FontAwesomeIcon className={styles.dropDownIcon} icon={faFloppyDisk} />
-                                    <button className={styles.noStyleButton} disabled={saving}>
-                                        {saving ? "Saving..." : "Save dataflow"}
-                                    </button>
-                                </div>
-                            )}
-                            <div className={styles.dropDownRow} onClick={handleSaveAs}>
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faFloppyDisk} />
-                                <button className={styles.noStyleButton}>Save dataflow as</button>
-                            </div>
-                            <div className={styles.dropDownRow} onClick={exportAsJupyterNotebook}>
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faFileExport} />
-                                <button className={styles.noStyleButton}>Export as notebook</button>
-                            </div>
-                            {!skipProjectPage && (
-                                <>
-                                    <div className={styles.dropDownDivider} />
-                                    <div
-                                        className={styles.dropDownRow}
-                                        onClick={() => {
-                                            leaveWithGuard(
-                                                "Leaving this dataflow discards the changes you have not saved.",
-                                                () => {
-                                                    navigate("/projects");
-                                                    setActiveMenu(null);
-                                                },
-                                            );
-                                        }}
-                                    >
-                                        <FontAwesomeIcon className={styles.dropDownIcon} icon={faFolderOpen} />
-                                        <button className={styles.noStyleButton}>Go to projects</button>
-                                    </div>
-                                </>
-                            )}
-                        </div>
+                        Installed libraries
+                    </HeaderMenuItem>
+                    {!skipProjectPage && (
+                        <>
+                            <HeaderMenuDivider />
+                            <HeaderMenuItem
+                                icon={faFolderOpen}
+                                onClick={() => {
+                                    leaveWithGuard(
+                                        "Leaving this dataflow discards the changes you have not saved.",
+                                        () => {
+                                            navigate("/projects");
+                                            setActiveMenu(null);
+                                        },
+                                    );
+                                }}
+                            >
+                                Go to projects
+                            </HeaderMenuItem>
+                        </>
                     )}
-                </div>
+                </HeaderMenu>
 
-                {/* View */}
-                <div className={styles.dropdownWrapper}>
-                    <button className={styles.button} onClick={() => toggleMenu("view")}>
-                        View ⏷
-                    </button>
-                    {activeMenu === "view" && (
-                        <div className={styles.dropDownMenu}>
-                            <div className={styles.dropDownRow} onClick={toggleExpand}>
-                                <FontAwesomeIcon
-                                    className={styles.dropDownIcon}
-                                    icon={
-                                        expandStatus === "expanded"
-                                            ? faDownLeftAndUpRightToCenter
-                                            : faUpRightAndDownLeftFromCenter
-                                    }
-                                />
-                                <button className={styles.noStyleButton}>
-                                    {expandStatus === "expanded" ? "Minimize Nodes" : "Expand Nodes"}
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Data */}
-                <div className={styles.dropdownWrapper}>
-                    <button className={styles.button} onClick={() => toggleMenu("data")}>
-                        Data ⏷
-                    </button>
-                    {activeMenu === "data" && (
-                        <div className={styles.dropDownMenu}>
-                            <div
-                                className={styles.dropDownRow}
-                                onClick={() => {
-                                    openNodeCatalogDrawer();
-                                    setActiveMenu(null);
-                                }}
-                            >
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faStore} />
-                                <button className={styles.noStyleButton}>Node Catalog</button>
-                            </div>
-                            <div
-                                className={styles.dropDownRow}
-                                onClick={() => {
-                                    openAgentCatalogDrawer();
-                                    setActiveMenu(null);
-                                }}
-                            >
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faRobot} />
-                                <button className={styles.noStyleButton}>Agent Catalog</button>
-                            </div>
-                            <div
-                                className={styles.dropDownRow}
-                                onMouseEnter={() => {
-                                    if (projectId) {
-                                        prefetchDatasetCatalog({
-                                            dataflowId: projectId,
-                                            includeHub: true,
-                                            sort: "recent",
-                                        });
-                                    }
-                                }}
-                                onClick={() => {
-                                    openDatasetCatalogDrawer();
-                                    setActiveMenu(null);
-                                }}
-                            >
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faDatabase} />
-                                <button className={styles.noStyleButton}>Data Catalog</button>
-                            </div>
-                            <div
-                                className={styles.dropDownRow}
-                                onClick={() => {
-                                    setLibrariesOpen(true);
-                                    setActiveMenu(null);
-                                }}
-                            >
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faCubes} />
-                                <button className={styles.noStyleButton}>Installed libraries</button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Provenance */}
-                <div className={styles.dropdownWrapper}>
-                    <button
-                        className={styles.button}
-                        onClick={() => toggleMenu("provenance")}
+                <HeaderMenu
+                    label="View"
+                    open={activeMenu === "view"}
+                    onToggle={() => toggleMenu("view")}
+                    onClose={closeView}
+                >
+                    {/* A notebook cell keeps its size, so nothing to minimize there. */}
+                    <HeaderMenuItem
+                        icon={
+                            expandStatus === "expanded"
+                                ? faDownLeftAndUpRightToCenter
+                                : faUpRightAndDownLeftFromCenter
+                        }
+                        onClick={toggleExpand}
+                        disabled={canvasView === "notebook"}
                     >
-                        Provenance ⏷
-                    </button>
-                    {activeMenu === "provenance" && (
-                        <div className={styles.dropDownMenu}>
-                            <div className={styles.dropDownRow} onClick={openTrillProvenanceModal}>
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faSitemap} />
-                                <button className={styles.noStyleButton}>Provenance</button>
-                            </div>
-                        </div>
+                        {expandStatus === "expanded" ? "Minimize Nodes" : "Expand Nodes"}
+                    </HeaderMenuItem>
+                    {/* The dataflow's versions. Here rather than a button on
+                        the bar, which had no room left for the Scenario
+                        Catalog beside it. Reading, so for a shared viewer too. */}
+                    <HeaderMenuItem
+                        icon={faClockRotateLeft}
+                        onClick={openTrillProvenanceModal}
+                        testId="provenance-menu-item"
+                    >
+                        Provenance
+                    </HeaderMenuItem>
+                    {/* Scenarios (#662): save a selection as one, duplicate it
+                        as another, and the panel that lists them. Here rather
+                        than a menu of their own: the bar has no room for one
+                        beside every catalog's label. An edit, so not for a
+                        shared viewer. */}
+                    {!isSharedView && (
+                        <>
+                            <HeaderMenuDivider />
+                            <HeaderMenuItem
+                                icon={faObjectGroup}
+                                onClick={scenarioItem(scenarioActions.saveSelectionAsScenario)}
+                            >
+                                Save selection as scenario
+                            </HeaderMenuItem>
+                            <HeaderMenuItem
+                                icon={faClone}
+                                onClick={scenarioItem(() => scenarioActions.duplicate(false))}
+                            >
+                                Duplicate selection
+                            </HeaderMenuItem>
+                            <HeaderMenuItem
+                                icon={faCodeBranch}
+                                onClick={scenarioItem(() => scenarioActions.duplicate(true))}
+                            >
+                                Duplicate as scenario
+                            </HeaderMenuItem>
+                            <HeaderMenuItem
+                                icon={faListUl}
+                                onClick={scenarioItem(() => scenarioUi.setPanelOpen(!scenarioUi.panelOpen))}
+                            >
+                                {scenarioUi.panelOpen ? "Hide scenarios" : "Show scenarios"}
+                            </HeaderMenuItem>
+                        </>
                     )}
-                </div>
-
-                {/* Help */}
-                <div className={styles.dropdownWrapper}>
-                    <button className={styles.button} onClick={() => toggleMenu("help")}>
-                        Help ⏷
-                    </button>
-                    {activeMenu === "help" && (
-                        <div className={styles.dropDownMenu}>
-                            <div className={styles.dropDownRow} onClick={openTutorial}>
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faCircleQuestion} />
-                                <button className={styles.noStyleButton}>Tutorial</button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
+                </HeaderMenu>
 
                 {/* Share: the dataflow's dashboard, and a link to either. Shown
                     to a shared viewer too - passing a link on is not an edit. */}
@@ -638,7 +523,7 @@ export default function UpMenu() {
                     includeOpenDashboard
                     open={activeMenu === "share"}
                     onToggle={() => toggleMenu("share")}
-                    onClose={() => setActiveMenu(null)}
+                    onClose={closeShare}
                     projectDirty={projectDirty}
                 />
 
@@ -648,7 +533,10 @@ export default function UpMenu() {
                     closed. */}
                 {collab.enabled && (
                     <button
-                        className={clsx(styles.button, collab.panelOpen && styles.aiIconActive)}
+                        type="button"
+                        className={clsx(headerStyles.barButton, collab.panelOpen && headerStyles.barButtonActive)}
+                        aria-label="Collaboration"
+                        aria-pressed={collab.panelOpen}
                         onClick={() => collab.setPanelOpen(!collab.panelOpen)}
                         title={
                             collab.connected
@@ -658,15 +546,7 @@ export default function UpMenu() {
                     >
                         <FontAwesomeIcon icon={faUsers} />
                         {collab.users.length > 1 && (
-                            <span
-                                style={{
-                                    marginLeft: 4,
-                                    fontSize: 10,
-                                    fontWeight: 700,
-                                }}
-                            >
-                                {collab.users.length}
-                            </span>
+                            <span className={styles.peerCount}>{collab.users.length}</span>
                         )}
                     </button>
                 )}
@@ -677,14 +557,15 @@ export default function UpMenu() {
                     dataflow was dirty or had been saved at least once, which
                     meant a brand-new dataflow showed nothing at all - the one
                     moment the state is most worth stating, because nothing is
-                    on disk yet. A never-saved dataflow reads as unsaved
-                    (orange), the same as a dirty one; green means, and only
-                    means, "what you see is on disk".
-                    Hidden for a shared viewer, who has nothing to save. */}
+                    on disk yet. A never-saved dataflow reads as unsaved, the
+                    same as a dirty one; "Saved" means, and only means, "what
+                    you see is on disk". The word says it as well as the
+                    colour, so the state does not rest on telling two hues
+                    apart. Hidden for a shared viewer, who has nothing to save. */}
                 {!isSharedView && (
                     <button
-                        className={clsx(styles.button, styles.saveStatus)}
-                        style={{ cursor: saving ? "default" : "pointer" }}
+                        type="button"
+                        className={clsx(headerStyles.barButton, styles.saveStatus)}
                         disabled={saving}
                         onClick={handleSave}
                         title={
@@ -700,7 +581,7 @@ export default function UpMenu() {
                         }
                     >
                         <FontAwesomeIcon
-                            icon={faFloppyDisk}
+                            icon={saving || projectDirty || !projectSavedAt ? faFloppyDisk : faCircleCheck}
                             className={clsx(
                                 saving || projectDirty || !projectSavedAt
                                     ? styles.unsavedIcon
@@ -708,14 +589,31 @@ export default function UpMenu() {
                                 saving && styles.savingPulse,
                             )}
                         />
+                        <span>
+                            {saving ? "Saving..." : projectDirty || !projectSavedAt ? "Unsaved" : "Saved"}
+                        </span>
                     </button>
                 )}
 
-                <UserMenu />
-            </div>
+                <span className={headerStyles.divider} aria-hidden="true" />
+                <CatalogButtons projectId={projectId} crowded={collab.enabled} />
+
+                {/* The canvas, or the same nodes as a column of notebook cells.
+                    Last in the slot and pushed to its end, so it sits beside
+                    Monitor; still in the slot, so it shares its room. */}
+                <CanvasViewSwitch
+                    className={styles.viewSwitch}
+                    value={canvasView}
+                    onChange={(view) => {
+                        setActiveMenu(null);
+                        setCanvasView(view);
+                    }}
+                    crowded={collab.enabled}
+                />
+            </GlobalPageHeader>
 
             {/* Editable Workflow Name */}
-            <div className={styles.workflowNameContainer}>
+            <div className={styles.workflowNameContainer} data-curio-canvas-title="true">
                 {isEditing && !isSharedView ? (
                     <input
                         type="text"
@@ -734,28 +632,24 @@ export default function UpMenu() {
                         {workflowName}
                     </h1>
                 )}
+                {/* The dataflow's categories. The automatic ones come from the
+                    last load or save; the hand-set ones save with the dataflow. */}
+                <DataflowCategoryInput
+                    className={styles.workflowCategories}
+                    categories={serverCategories ?? {}}
+                    hand={workflowCategories ?? {}}
+                    onChange={isSharedView ? undefined : updateDataflowCategories}
+                    suggestionItems={categorySuggestions}
+                    onOpenAdd={loadCategorySuggestions}
+                    maxVisible={6}
+                />
             </div>
 
+            {/* "Save dataflow as" is not named here: it downloads a file, which
+                does not make the dataflow yours. */}
             {isSharedView && (
-                <div
-                    style={{
-                        position: "absolute",
-                        top: 60,
-                        left: "50%",
-                        transform: "translateX(-50%)",
-                        background: "#FFF4D6",
-                        color: "#7A5A00",
-                        border: "1px solid #E6CD7A",
-                        borderRadius: 6,
-                        padding: "6px 14px",
-                        fontSize: 12,
-                        fontWeight: 500,
-                        zIndex: 1000,
-                        boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-                    }}
-                    data-testid="shared-view-banner"
-                >
-                    Viewing a shared dataflow (read-only). Use File → Save dataflow or File → Save dataflow as to make it yours.
+                <div className={styles.sharedBanner} data-testid="shared-view-banner">
+                    Viewing a shared dataflow (read-only). Use File → Save dataflow to keep a copy in your projects.
                 </div>
             )}
 

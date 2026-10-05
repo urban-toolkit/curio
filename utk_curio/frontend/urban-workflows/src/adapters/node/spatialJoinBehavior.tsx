@@ -19,13 +19,12 @@ import { backendUrl } from '../../utils/backendUrl';
  * `properties.name`, with the manifest telling the user to rename their field
  * upstream with a Data Transformation node - a workaround presented as the
  * design, while the backend had accepted `name_property` all along. The node
- * now has a small body with the one control: which polygon column carries
- * the tag, persisted at `metadata.spatialJoin.nameProperty` so it survives a
- * save. The backend also says when no polygon carries the chosen column,
- * instead of silently tagging everything `polygon_<i>`.
+ * now has a small body with the one control: a list of the polygons' columns
+ * to pick the tag from, persisted at `metadata.spatialJoin.nameProperty` so it
+ * survives a save. The backend also says when no polygon carries the chosen
+ * column, instead of silently tagging everything `polygon_<i>`.
  *
- * Mirrors Merge Flow's `dynamicHandles` + `setOutputCallbackOverride`
- * pattern so each handle's value lands in its own slot, then POSTs both
+ * Each input lands in its own slot, by its geometry, and the node POSTs both
  * to the `/spatial_join` backend endpoint when both arrive.
  */
 
@@ -71,9 +70,13 @@ async function resolveInput(value: any): Promise<any> {
   return unwrap(value);
 }
 
-/** Distinct property names across the first *limit* polygon features, for the datalist. */
-export function polygonPropertyNames(fc: any, limit = 20): string[] {
-  const features = Array.isArray(fc?.features) ? fc.features.slice(0, limit) : [];
+/**
+ * Distinct property names across every polygon feature, for the column list.
+ * All of them, not a sample: the list is the only way to pick a column, so one
+ * that only later features carry would be out of reach.
+ */
+export function polygonPropertyNames(fc: any): string[] {
+  const features = Array.isArray(fc?.features) ? fc.features : [];
   const names = new Set<string>();
   for (const f of features) {
     const props = f?.properties;
@@ -120,7 +123,7 @@ export function resolveOutputMode(data: any): SpatialJoinOutput {
 export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [slots, setSlots] = useState<[any | undefined, any | undefined]>([undefined, undefined]);
   const edges = useEdges();
-  const { updateDataNode } = useFlowContext();
+  const { updateDataNode, dashboardOn } = useFlowContext();
   const { showToast } = useToastContext();
 
   const nameProperty = resolveNameProperty(data);
@@ -128,13 +131,9 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
   // What the last join reported: how many points found a polygon, and the
   // backend's warnings (e.g. no polygon carries the chosen property).
   const [lastResult, setLastResult] = useState<{ tagged: number; total: number; column: string; output: SpatialJoinOutput; warnings: string[] } | null>(null);
-  // Draft of the property box; committed on blur / Enter.
-  const [draft, setDraft] = useState<string>(nameProperty);
-  useEffect(() => { setDraft(nameProperty); }, [nameProperty]);
 
   const commitNameProperty = useCallback((value: string) => {
     const next = value.trim() || DEFAULT_NAME_PROPERTY;
-    setDraft(next);
     if (next === nameProperty) return;
     // Persisted on the node so TrillGenerator writes it (metadata.spatialJoin).
     updateDataNode(data.nodeId, { ...data, spatialJoin: { ...(data as any).spatialJoin, nameProperty: next } });
@@ -169,60 +168,52 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
   // SAME slot may overwrite an older one; unmount is the only thing that stops
   // a result from landing.
   const aliveRef = useRef(true);
-  useEffect(() => () => { aliveRef.current = false; }, []);
   const resolveSeqRef = useRef(0);
   const appliedSeqRef = useRef<[number, number]>([0, 0]);
-  const placeResolved = useCallback((v: any, seq: number) => {
-    if (!aliveRef.current) return;
-    const kind = classifyFC(v);
-    const idx: 0 | 1 | null = kind === 'points' ? 0 : kind === 'polygons' ? 1 : null;
-    if (idx === null || seq < appliedSeqRef.current[idx]) return;
-    appliedSeqRef.current[idx] = seq;
-    setSlots(prev => {
-      const next: [any | undefined, any | undefined] = [prev[0], prev[1]];
-      next[idx] = v;
-      return next;
-    });
+
+  // What a Run All waits on, as it waits for a Data Pool's fetch: the inputs
+  // still being fetched, the join they start, and the join's last outcome.
+  // Without them the run counted the join as done the moment it asked, moved
+  // on to the charts, and they compiled before the join had answered: "0 rows
+  // arrived", over a chart that drew a moment later (#151).
+  const slotsRef = useRef<[any | undefined, any | undefined]>([undefined, undefined]);
+  const pendingInputsRef = useRef<Set<Promise<unknown>>>(new Set());
+  const inflightRef = useRef<Promise<void> | null>(null);
+  const outcomeRef = useRef<{ code: 'success' | 'error'; content: string } | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
+  // Read by the join when it starts; `data` changes identity on every node
+  // update, including our own updateDataNode.
+  const latestRef = useRef({ data, nameProperty, outputMode, dashboardOn, showToast });
+  latestRef.current = { data, nameProperty, outputMode, dashboardOn, showToast };
+  useEffect(() => () => {
+    aliveRef.current = false;
+    controllerRef.current?.abort();
   }, []);
 
-  useEffect(() => {
-    if (data.input === undefined || data.input === '' || data.input === null) return;
-    const seq = ++resolveSeqRef.current;
-    const onError = (e: any) => {
-      if (aliveRef.current) nodeState.setOutput({ code: 'error', content: e?.message || String(e) });
-    };
-    if (Array.isArray(data.input)) {
-      Promise.all(data.input.slice(0, 2).map(resolveInput))
-        .then(values => { values.forEach(v => placeResolved(v, seq)); })
-        .catch(onError);
-    } else {
-      resolveInput(data.input).then(v => placeResolved(v, seq)).catch(onError);
-    }
-    // nodeState is stable for the node's lifetime; only a new input re-resolves.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.input, placeResolved]);
-
-  // Slot-indexed override (Merge-Flow pattern) — the framework calls this
-  // with (value, slotIdx) when each handle's upstream output arrives.
-  const setOutputCallbackOverride = useCallback((val: any, idx = 0) => {
-    setSlots(prev => {
-      const next: [any | undefined, any | undefined] = [prev[0], prev[1]];
-      if (idx === 0 || idx === 1) next[idx] = val;
-      return next;
-    });
-  }, []);
-
-  // Fire the join whenever both slots are populated.
-  useEffect(() => {
-    const rawPoints = unwrap(slots[0]);
-    const rawPolygons = unwrap(slots[1]);
+  // Post the join for the slots as they are now, if both are filled. Started
+  // the moment the second one lands, not on the next render, so a Run All that
+  // asks right after sees it running.
+  const startJoin = useCallback(() => {
+    const rawPoints = unwrap(slotsRef.current[0]);
+    const rawPolygons = unwrap(slotsRef.current[1]);
     if (!rawPoints || !rawPolygons) return;
+    const { data: node, nameProperty: property, outputMode: mode, dashboardOn: onDashboard, showToast: toast } = latestRef.current;
+    // Never from a dashboard. Restoring a saved dataflow fills both slots with
+    // no user action, so this would post a join to the server because somebody
+    // opened a page to look at it: a computation nobody asked for, on a page
+    // that is supposed to need no server at all, and one that throws for a
+    // visitor holding a link. A dashboard shows what was saved or it shows the
+    // node's empty state; it never computes.
+    if (onDashboard) return;
+    controllerRef.current?.abort();
     const controller = new AbortController();
+    controllerRef.current = controller;
+    outcomeRef.current = null;
     setLastResult(null);
-    fetch(API_BASE, {
+    const settled: Promise<void> = fetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ points: rawPoints, polygons: rawPolygons, name_property: nameProperty, output: outputMode }),
+      body: JSON.stringify({ points: rawPoints, polygons: rawPolygons, name_property: property, output: mode }),
       signal: controller.signal,
     })
       .then(async r => {
@@ -233,39 +224,124 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
         return r.json();
       })
       .then(fc => {
+        if (!aliveRef.current) return;
         const features: any[] = Array.isArray(fc?.features) ? fc.features : [];
         // The backend names the tag column after the polygon column, or
         // `<column>_polygon` when the points already had one; it says which.
-        const column: string = typeof fc?.metadata?.tag_column === 'string' ? fc.metadata.tag_column : nameProperty;
+        const column: string = typeof fc?.metadata?.tag_column === 'string' ? fc.metadata.tag_column : property;
         const output: SpatialJoinOutput = fc?.metadata?.output === 'polygons' ? 'polygons' : 'points';
         const tagged = output === 'polygons'
           ? features.filter(f => (f?.properties?.point_count ?? 0) > 0).length
           : features.filter(f => f?.properties?.[column] != null).length;
         const warnings: string[] = Array.isArray(fc?.metadata?.warnings) ? fc.metadata.warnings : [];
         setLastResult({ tagged, total: features.length, column, output, warnings });
-        data.outputCallback(data.nodeId, { data: fc, dataType: 'geodataframe' });
+        // Downstream first, then the outcome: the outcome is what tells a run
+        // this node is done, and the nodes it feeds must have the rows by then.
+        node.outputCallback(node.nodeId, { data: fc, dataType: 'geodataframe' });
         // A warning is still a completed join - downstream gets data - but the
         // node says so where the user is looking, and once as a toast.
-        nodeState.setOutput({ code: 'success', content: warnings.join('\n') });
-        for (const w of warnings) showToast(w, 'warning');
+        outcomeRef.current = { code: 'success', content: warnings.join('\n') };
+        nodeState.setOutput({ ...outcomeRef.current });
+        for (const w of warnings) toast(w, 'warning');
       })
       .catch(e => {
-        if (e.name === 'AbortError') return;
-        nodeState.setOutput({ code: 'error', content: e.message || String(e) });
+        if (e.name === 'AbortError' || !aliveRef.current) return;
+        outcomeRef.current = { code: 'error', content: e.message || String(e) };
+        nodeState.setOutput({ ...outcomeRef.current });
+      })
+      .finally(() => {
+        if (inflightRef.current === settled) inflightRef.current = null;
       });
-    return () => controller.abort();
-    // `data` is deliberately not a dep: it changes identity on every node
-    // update (including our own updateDataNode), which would re-fire the join
-    // with the same inputs. The property is a dep in its own right.
+    inflightRef.current = settled;
+    // nodeState is stable for the node's lifetime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slots, nameProperty, outputMode]);
+  }, []);
 
-  const polygonProps = useMemo(() => polygonPropertyNames(unwrap(slots[1])), [slots]);
-  const datalistId = `spatial-join-props-${data.nodeId}`;
+  const setSlot = useCallback((idx: 0 | 1, value: any) => {
+    const next: [any | undefined, any | undefined] = [slotsRef.current[0], slotsRef.current[1]];
+    next[idx] = value;
+    slotsRef.current = next;
+    setSlots(next);
+    startJoin();
+  }, [startJoin]);
+
+  const placeResolved = useCallback((v: any, seq: number) => {
+    if (!aliveRef.current) return;
+    const kind = classifyFC(v);
+    const idx: 0 | 1 | null = kind === 'points' ? 0 : kind === 'polygons' ? 1 : null;
+    if (idx === null || seq < appliedSeqRef.current[idx]) return;
+    appliedSeqRef.current[idx] = seq;
+    setSlot(idx, v);
+  }, [setSlot]);
+
+  useEffect(() => {
+    if (data.input === undefined || data.input === '' || data.input === null) return;
+    const seq = ++resolveSeqRef.current;
+    const onError = (e: any) => {
+      if (!aliveRef.current) return;
+      outcomeRef.current = { code: 'error', content: e?.message || String(e) };
+      nodeState.setOutput({ ...outcomeRef.current });
+    };
+    const resolving: Promise<unknown> = (Array.isArray(data.input)
+      ? Promise.all(data.input.slice(0, 2).map(resolveInput)).then(values => { values.forEach(v => placeResolved(v, seq)); })
+      : resolveInput(data.input).then(v => placeResolved(v, seq))
+    )
+      .catch(onError)
+      .finally(() => { pendingInputsRef.current.delete(resolving); });
+    pendingInputsRef.current.add(resolving);
+    // nodeState is stable for the node's lifetime; only a new input re-resolves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.input, placeResolved]);
+
+  // No `setOutputCallbackOverride`. Both inputs arrive through `data.input`,
+  // above; UniversalNode calls that override with the node's OWN status (the
+  // "exec" a run marks it with, the reason a run skipped it). As a slot setter
+  // it put `{ code: "exec" }` in the points slot the moment a run asked, and
+  // the join posted that as its points: "Tagged 0 of 0 points", and every
+  // chart it fed got 0 rows.
+
+  // A changed setting joins the same inputs again.
+  useEffect(() => {
+    startJoin();
+  }, [nameProperty, outputMode, dashboardOn, startJoin]);
+
+  // What a Run All calls, as it calls the Data Pool's: the run counts this node
+  // done when its outcome lands, which for a join still running is when the
+  // join answers (UniversalNode signals on the outcome).
+  const sendCodeOverride = useCallback(async () => {
+    // Inputs still being fetched start the join when they land.
+    while (pendingInputsRef.current.size > 0) {
+      await Promise.allSettled(Array.from(pendingInputsRef.current));
+    }
+    if (inflightRef.current) {
+      await inflightRef.current;
+      return;
+    }
+    // Nothing running: the join already answered for these inputs, or it has
+    // nothing to join. Say so again: the run listens only from when it asked.
+    if (outcomeRef.current) {
+      nodeState.setOutput({ ...outcomeRef.current });
+      return;
+    }
+    const missing = [!slotsRef.current[0] && 'points', !slotsRef.current[1] && 'polygons'].filter(Boolean);
+    nodeState.setOutput({
+      code: 'error',
+      content: missing.length
+        ? `The Spatial Join has no ${missing.join(' or ')} to join: connect ${missing.length > 1 ? 'them' : 'it'} and run the nodes feeding it.`
+        : 'The Spatial Join could not run here.',
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const polygonColumns = useMemo(() => polygonPropertyNames(unwrap(slots[1])), [slots]);
+  // The chosen column stays in the list when the polygons lack it or have not
+  // arrived yet: a select whose value is none of its options shows the first
+  // one while the node joins on another.
+  const columnMissing = !polygonColumns.includes(nameProperty);
 
   const contentComponent = React.useMemo<React.ReactNode>(() => {
-    const blue = <><HandleSwatch color={POINTS_HANDLE_COLOR} />blue handle</>;
-    const green = <><HandleSwatch color={POLYGONS_HANDLE_COLOR} />green handle</>;
+    const blue = <><HandleSwatch color={POINTS_HANDLE_COLOR} />blue circle</>;
+    const green = <><HandleSwatch color={POLYGONS_HANDLE_COLOR} />green circle</>;
     const status: React.ReactNode = lastResult
       ? lastResult.output === 'polygons'
         ? `${lastResult.tagged} of ${lastResult.total} polygons received points; each polygon now carries point_count.`
@@ -284,27 +360,30 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
         style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px', fontSize: 12, lineHeight: 1.4 }}
       >
         <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <span>Tag each point with this polygon column</span>
-          <input
-            type="text"
-            list={datalistId}
-            value={draft}
-            placeholder={DEFAULT_NAME_PROPERTY}
-            aria-label="Tag each point with this polygon column"
-            onChange={e => setDraft(e.target.value)}
-            onBlur={e => commitNameProperty(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') { e.preventDefault(); commitNameProperty((e.target as HTMLInputElement).value); }
-            }}
-            style={{ padding: '3px 6px', fontSize: 12 }}
-          />
-          <datalist id={datalistId}>
-            {polygonProps.map(p => <option key={p} value={p} />)}
-          </datalist>
-          <span style={{ opacity: 0.7, fontSize: 11 }}>
-            <code>{DEFAULT_NAME_PROPERTY}</code> by default; the polygons' columns are
-            suggested once they arrive.
+          {/* Each word wears its circle, whatever the status line says. */}
+          <span data-curio-spatial-join-column-label="true">
+            Tag each <HandleSwatch color={POINTS_HANDLE_COLOR} />point with this{' '}
+            <HandleSwatch color={POLYGONS_HANDLE_COLOR} />polygon column
           </span>
+          <select
+            value={nameProperty}
+            disabled={polygonColumns.length === 0}
+            aria-label="Tag each point with this polygon column"
+            onChange={e => commitNameProperty(e.target.value)}
+            style={{ padding: '3px 6px', fontSize: 12 }}
+          >
+            {columnMissing && (
+              <option value={nameProperty}>
+                {polygonColumns.length > 0 ? `${nameProperty} (not in the polygons)` : nameProperty}
+              </option>
+            )}
+            {polygonColumns.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          {polygonColumns.length === 0 && (
+            <span style={{ opacity: 0.7, fontSize: 11 }}>
+              The polygons' columns are listed once they arrive.
+            </span>
+          )}
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           <span>Output</span>
@@ -341,16 +420,14 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
         ))}
       </div>
     );
-  }, [draft, datalistId, polygonProps, lastResult, nameProperty, outputMode, slots, commitNameProperty, commitOutputMode]);
+  }, [polygonColumns, columnMissing, lastResult, nameProperty, outputMode, slots, commitNameProperty, commitOutputMode]);
 
   // Two distinct input handles on the left edge: points (top), polygons (bottom).
   // Plus the single output handle on the right. We use `handlesOverride`
   // (not `dynamicHandles`) so the default `standardInOut()` "in" handle from
   // packagesClient is fully replaced — otherwise it leaks through at top:50%
-  // as an unwanted gray circle.
-  //
-  // Input-handle indices here match the slot index the framework passes back
-  // to `setOutputCallbackOverride`.
+  // as an unwanted gray circle. Which slot an input fills is decided by its
+  // geometry (classifyFC), not by the handle it came in on.
   const handlesOverride: HandleDef[] = [
     {
       id: 'in_points',
@@ -361,7 +438,7 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
         boxSizing: 'border-box',
         backgroundColor: pointsConnected ? POINTS_HANDLE_COLOR : '#ffffff',
         // The ring wears the colour before anything is wired, so the text that
-        // says "the blue handle" points at something visibly blue; it fills in
+        // says "the blue circle" points at something visibly blue; it fills in
         // once an edge arrives.
         border: `2px solid ${POINTS_HANDLE_COLOR}`,
         zIndex: 10, pointerEvents: 'auto',
@@ -386,5 +463,5 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
     },
   ];
 
-  return { handlesOverride, setOutputCallbackOverride, contentComponent };
+  return { handlesOverride, sendCodeOverride, contentComponent };
 };

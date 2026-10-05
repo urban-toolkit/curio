@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import { PackageSearchRow } from "../../components/packages/publishing/PackageSearchRow";
 import { InstallPermissionsDialog } from "../../components/packages/publishing/InstallPermissionsDialog";
-import type { PackagePayload } from "../../api/packagesApi";
+import type { PackagePayload } from "../../services/packages";
 
 /**
  * Pins the catalog's per-surface copy and the props that vary it.

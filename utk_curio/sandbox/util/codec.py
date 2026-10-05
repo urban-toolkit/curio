@@ -257,6 +257,15 @@ def _object_column_needs_json_encoding(series):
         "decimal",
     }
 
+#: Rows per parquet row group in every artifact the sandbox writes (#408).
+#:
+#: The Arrow route streams an artifact batch by batch, in batches of this same
+#: size, and what one fetch holds depends on both numbers. Measured on a
+#: 200k-polygon artifact, a fetch peaks at 17 MB of Arrow memory this way
+#: against 88 MB with the defaults (the whole frame as one row group, which is
+#: ``to_parquet``'s choice below a million rows, read in 64k-row batches).
+PARQUET_ROW_GROUP_ROWS = 16_384
+
 #: The most one COPY of one frame may reserve, in MB (#334).
 #:
 #: DuckDB's defaults assume it owns the machine: ``threads`` follows the host's
@@ -289,7 +298,7 @@ _WRITER_BUDGET_DIVISOR = 2
 
 #: Below this DuckDB has no workable arena, so a budget that would derive less
 #: gets this instead. The operator-facing guard is the floor on
-#: ``--exec-memory-mb`` in ``main.py``; this one only catches a raw
+#: ``--exec-memory-mb`` in ``cli/environment.py``; this one only catches a raw
 #: ``CURIO_EXEC_MEMORY_MB`` set past it.
 _WRITER_MEMORY_FLOOR_MB = 32
 
@@ -319,7 +328,10 @@ def _write_dataframe_parquet(frame, parquet_path):
     try:
         writer.register("curio_frame", frame)
         escaped_path = str(parquet_path).replace("'", "''")
-        writer.execute(f"COPY curio_frame TO '{escaped_path}' (FORMAT PARQUET)")
+        writer.execute(
+            f"COPY curio_frame TO '{escaped_path}' "
+            f"(FORMAT PARQUET, ROW_GROUP_SIZE {PARQUET_ROW_GROUP_ROWS})"
+        )
     finally:
         try:
             writer.unregister("curio_frame")

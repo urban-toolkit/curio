@@ -1,4 +1,4 @@
-"""Tests for :mod:`utk_curio.backend.app.packages.build_pipeline` (dev/89 commit 7):
+"""Tests for :mod:`utk_curio.backend.app.packages.builder.pipeline` (dev/89 commit 7):
 phase composition over commits 2–6, failure provenance, digest idempotency,
 extend-mode preservation, and stale-base fast failure.
 
@@ -15,13 +15,14 @@ import pytest
 
 from .conftest import write_fake_tool
 
-from utk_curio.backend.app.packages import build_jobs, build_staging
-from utk_curio.backend.app.packages.build_compiler import toolchain_from_env
-from utk_curio.backend.app.packages.build_deps import DependencyPolicy
-from utk_curio.backend.app.packages.build_extension import installed_package_digest
-from utk_curio.backend.app.packages.build_models import parse_build_request
-from utk_curio.backend.app.packages.build_pipeline import run_build
-from utk_curio.backend.app.packages.build_preview import runner_from_env
+from utk_curio.backend.app.packages.builder import jobs as build_jobs
+from utk_curio.backend.app.packages.repositories import staging as build_staging
+from utk_curio.backend.app.packages.builder.compiler import toolchain_from_env
+from utk_curio.backend.app.packages.builder.deps import DependencyPolicy
+from utk_curio.backend.app.packages.builder.extension import installed_package_digest
+from utk_curio.backend.app.packages.builder.models import parse_build_request
+from utk_curio.backend.app.packages.builder.pipeline import run_build
+from utk_curio.backend.app.packages.builder.preview import runner_from_env
 from utk_curio.backend.tests.test_packages.test_build_compiler import _FAKE_ESBUILD
 from utk_curio.backend.tests.test_packages.test_build_deps import FakeFetcher
 from utk_curio.backend.tests.test_packages.test_build_preview import _FAKE_RUNNER
@@ -170,16 +171,21 @@ class TestFailureProvenance:
         assert any("preview failed" in w for w in job.result.warnings)
 
 
-class TestExtendPipeline:
-    def _base(self, install_packageage, manifest_dict):
-        manifest = _manifest(manifest_dict, [_plain_kind()])
-        install_packageage("guest", manifest=manifest,
-                           sources={"demo-kind": {"Default.py": "def run():\n    return {}\n"}})
-        return manifest
+def _kind_manifest_for_extend(install_package, manifest_dict):
+    """Install the plain base package an extend draft builds on; returns its manifest."""
+    manifest = _manifest(manifest_dict, [_plain_kind()])
+    install_package("guest", manifest=manifest,
+                       sources={"demo-kind": {"Default.py": "def run():\n    return {}\n"}})
+    return manifest
 
-    def test_extend_preserves_base_files(self, tmp_curio, install_packageage,
+
+class TestExtendPipeline:
+    def _base(self, install_package, manifest_dict):
+        return _kind_manifest_for_extend(install_package, manifest_dict)
+
+    def test_extend_preserves_base_files(self, tmp_curio, install_package,
                                          manifest_dict):
-        base_manifest = self._base(install_packageage, manifest_dict)
+        base_manifest = self._base(install_package, manifest_dict)
         base_digest = installed_package_digest("guest", "ai.test.demo@1")
         draft = dict(base_manifest, version="1.1.0",
                      templates=list(base_manifest["templates"]) + [dict(_plain_kind("extra-kind"))])
@@ -199,8 +205,8 @@ class TestExtendPipeline:
         assert job.result.diff["files"]["preserved"] == ["starters/demo-kind/Default.py"]
 
     def test_stale_base_fails_before_expensive_work(self, tmp_curio,
-                                                    install_packageage, manifest_dict):
-        base_manifest = self._base(install_packageage, manifest_dict)
+                                                    install_package, manifest_dict):
+        base_manifest = self._base(install_package, manifest_dict)
         draft = dict(base_manifest, version="1.1.0")
         request = parse_build_request({
             "mode": "extend", "target": "ai.test.demo@1",

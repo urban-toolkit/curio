@@ -25,7 +25,7 @@ import sys
 
 import pytest
 
-from utk_curio.backend.app.packages import pip_runner
+from utk_curio.backend.app.packages.infrastructure import bounded_exec, pip_runner
 
 
 class _Result:
@@ -98,8 +98,11 @@ class TestTheBuildDropsPrivileges:
 
         pip_runner.install_python_deps_to_target({"humanize": ""}, str(tmp_path))
 
-        _cmd, kwargs = runs[0]
-        assert kwargs.get("preexec_fn") is not None
+        cmd, kwargs = runs[0]
+        # Dropped after exec, not in a preexec_fn (see bounded_exec).
+        assert "preexec_fn" not in kwargs
+        assert bounded_exec.bounds_of(cmd)["drop"] == [4242, 4242]
+        assert bounded_exec.command_of(cmd)[1:3] == ["-m", "pip"]
 
     def test_a_local_run_drops_nothing(self, runs, tmp_path, monkeypatch):
         # No execution user is the local case. There is no lesser account to
@@ -109,6 +112,8 @@ class TestTheBuildDropsPrivileges:
 
         pip_runner.install_python_deps_to_target({"humanize": ""}, str(tmp_path))
 
-        _cmd, kwargs = runs[0]
-        preexec = kwargs.get("preexec_fn")
-        assert preexec is None or pip_runner._drops_privileges(preexec) is False
+        cmd, kwargs = runs[0]
+        assert "preexec_fn" not in kwargs
+        bounds = bounded_exec.bounds_of(cmd)
+        assert bounds is not None and "drop" not in bounds
+        assert bounds["rlimits"], "the limits still apply to a local run"

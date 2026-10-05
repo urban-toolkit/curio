@@ -1,13 +1,13 @@
 """Who may trigger a pip run, on which instances (#332, #309).
 
-``/api/packages/libraries`` has been gated since #309: the shared guest is every
-anonymous visitor at once, so on an instance with accounts it never installs.
-Eight other routes reach the same pip chokepoint carrying only ``@require_auth``:
-package upload, catalog install, factory install, workflow-deps install, the
-per-project and defaults installs, and the agent proposal-apply path. Each of
-them could put a library into the interpreter that runs everybody's node code.
+The shared guest is every anonymous visitor at once, so on an instance with
+accounts it never installs: not a library through ``/api/packages/libraries``,
+and not a package through any route that puts one into the store (package
+upload, catalog install, factory install, workflow-deps install, the
+per-project and defaults installs, and the agent proposal-apply path). A
+package in the guest's store is in every visitor's palette and dataflows.
 
-The rule this pins has three parts, and the FIRST one is the one a naive
+The rule this pins has two parts, and the FIRST one is the one a naive
 "refuse when installs are not scoped" rule gets wrong:
 
 1. **A local run always may.** Without ``--deploy`` there is no auth, the single
@@ -17,18 +17,13 @@ The rule this pins has three parts, and the FIRST one is the one a naive
    the everyday path and must keep working.
 2. **A hosted guest may not.** Every anonymous visitor is the same account, so
    one visitor's install changes what every other visitor's nodes import.
-3. **Nobody may on a hosted instance that cannot scope installs.** This is the
-   half #309 was left open for: under ``--deploy`` on a host that cannot isolate
-   (non-root Linux, macOS, Windows, which boot with a warning rather than a
-   refusal), a *signed-in* user's install still lands in the one shared
-   interpreter.
 """
 from __future__ import annotations
 
 import pytest
 
 from utk_curio.backend import config
-from utk_curio.backend.app.packages import backend_runtime
+from utk_curio.backend.app.packages.infrastructure import backend_runtime
 from utk_curio.backend.app.users.capabilities import package_install_refusal
 
 
@@ -57,8 +52,8 @@ def shared_guest_token(db):
 @pytest.fixture
 def pip_calls(monkeypatch):
     """Every pip run the routes ask for. Empty means the gate fired first."""
-    from utk_curio.backend.app.packages import pip_runner
-    from utk_curio.backend.app.packages.pip_runner import InstallReport
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+    from utk_curio.backend.app.packages.infrastructure.pip_runner import InstallReport
 
     calls: list = []
     monkeypatch.setattr(
@@ -96,7 +91,7 @@ def unscoped(monkeypatch):
 
     Reachable only by a test rig now: ``--deploy`` on a host that cannot
     isolate refuses to start unless ``CURIO_TESTING`` is set
-    (``main.py::_refuse_unisolated_deploy``). Kept as a posture here because
+    (``cli/environment.py::_refuse_unisolated_deploy``). Kept as a posture here because
     the rules below must still hold on the rigs that do run it.
     """
     monkeypatch.setattr(backend_runtime, "per_user_node_envs", lambda: False)
@@ -189,6 +184,163 @@ class TestTheRoutesEnforceIt:
             headers=_auth(shared_guest_token),
         )
         assert resp.status_code == 200, resp.get_data(as_text=True)
+
+
+UHVI_DIR = "ai.utk.uhvi@1"  # declares geopandas, numpy and rasterio, and is not pre-seeded
+
+
+def _guest_store_has(dir_name: str) -> bool:
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+
+    return package_dir("guest", dir_name).exists()
+
+
+def _guest_draft() -> dict:
+    return {
+        "manifest": {
+            "id": "ai.test.guestdraft",
+            "version": "1.0.0",
+            "name": "Guest draft",
+            "publisher": "Tests",
+            "description": "Saved by a hosted guest",
+            "license": "MIT",
+            "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+            "permissions": [],
+            "dependencies": {"packages": {}, "python": {}, "js": {}},
+            "templates": [{
+                "id": "demo", "label": "Demo", "category": "computation",
+                "engine": "python", "editor": "code", "hasCode": True,
+                "hasWidgets": False, "hasGrammar": False, "inputPorts": [],
+                "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+                "source": "sources/demo.py",
+            }],
+        },
+        "sources": {"demo": {"filename": "demo.py", "code": "import numpy\nreturn arg\n"}},
+    }
+
+
+@pytest.fixture
+def guest_project(client, shared_guest_token, auth_on):
+    resp = client.post(
+        "/api/projects",
+        json={"name": "guest-proj",
+              "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
+              "outputs": []},
+        headers=_auth(shared_guest_token),
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    return resp.get_json()["id"]
+
+
+class TestAHostedGuestInstallLeavesNothingBehind:
+    """#451: every route that puts a package into the store refuses a hosted
+    guest before a file lands, not after.
+
+    The shared guest is one account for every anonymous visitor, so a package
+    left in its store reaches every other visitor's palette and dataflows, and
+    its libraries are one ``/workflow-deps/check`` away from a pip run. A 403
+    that arrives after the copy refuses nothing.
+    """
+
+    def _refused(self, resp, pip_calls):
+        assert resp.status_code == 403, resp.get_data(as_text=True)
+        assert "guest" in resp.get_json()["error"].lower()
+        assert pip_calls == []
+
+    def test_add_to_project(
+        self, client, shared_guest_token, auth_on, scoped, pip_calls, guest_project,
+    ):
+        resp = client.post(
+            f"/api/packages/projects/{guest_project}/install",
+            json={"dirName": UHVI_DIR}, headers=_auth(shared_guest_token),
+        )
+        self._refused(resp, pip_calls)
+        assert not _guest_store_has(UHVI_DIR)
+        lock = client.get(
+            f"/api/packages/projects/{guest_project}", headers=_auth(shared_guest_token),
+        ).get_json()["packages"]
+        assert UHVI_DIR not in lock
+
+    def test_add_to_all_projects(
+        self, client, shared_guest_token, auth_on, scoped, pip_calls, guest_project,
+    ):
+        resp = client.post(
+            "/api/packages/defaults",
+            json={"dirName": UHVI_DIR}, headers=_auth(shared_guest_token),
+        )
+        self._refused(resp, pip_calls)
+        assert not _guest_store_has(UHVI_DIR)
+        defaults = client.get(
+            "/api/packages/defaults", headers=_auth(shared_guest_token),
+        ).get_json()["packages"]
+        assert UHVI_DIR not in defaults
+
+    def test_install_from_catalog(
+        self, client, shared_guest_token, auth_on, scoped, pip_calls,
+    ):
+        resp = client.post(
+            "/api/packages/catalog/install",
+            json={"dirName": UHVI_DIR}, headers=_auth(shared_guest_token),
+        )
+        self._refused(resp, pip_calls)
+        assert not _guest_store_has(UHVI_DIR)
+
+    def test_upload(self, client, shared_guest_token, auth_on, scoped, pip_calls):
+        import io
+
+        from utk_curio.backend.app.packages.builder.factory import build_package_archive
+
+        archive = build_package_archive(_guest_draft()).archive
+        resp = client.post(
+            "/api/packages/upload",
+            data={"file": (io.BytesIO(archive), "guest.curio.zip")},
+            headers={"Authorization": f"Bearer {shared_guest_token}"},
+            content_type="multipart/form-data",
+        )
+        self._refused(resp, pip_calls)
+        assert not _guest_store_has("ai.test.guestdraft@1")
+
+    def test_save_as_package(self, client, shared_guest_token, auth_on, scoped, pip_calls):
+        resp = client.post(
+            "/api/packages/factory/install",
+            json=_guest_draft(), headers=_auth(shared_guest_token),
+        )
+        self._refused(resp, pip_calls)
+        assert not _guest_store_has("ai.test.guestdraft@1")
+
+    def test_a_signed_in_user_still_adds_to_project_and_all_projects(
+        self, client, db, auth_on, scoped, pip_calls,
+    ):
+        # The control: the gate refuses the guest, not the routes.
+        _make_user(db, "frank", "frank-token")
+        project = client.post(
+            "/api/projects",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
+                  "outputs": []},
+            headers=_auth("frank-token"),
+        ).get_json()["id"]
+        resp = client.post(
+            f"/api/packages/projects/{project}/install",
+            json={"dirName": UHVI_DIR}, headers=_auth("frank-token"),
+        )
+        assert resp.status_code == 201, resp.get_data(as_text=True)
+        resp = client.post(
+            "/api/packages/defaults",
+            json={"dirName": UHVI_DIR}, headers=_auth("frank-token"),
+        )
+        assert resp.status_code == 201, resp.get_data(as_text=True)
+
+    def test_a_guest_may_still_add_a_package_it_already_has(
+        self, client, shared_guest_token, auth_on, scoped, pip_calls, guest_project,
+    ):
+        # Nothing is installed, so nothing is refused: the seeded built-in
+        # is already in the guest's store.
+        resp = client.post(
+            f"/api/packages/projects/{guest_project}/install",
+            json={"dirName": "curio.builtin@1"}, headers=_auth(shared_guest_token),
+        )
+        assert resp.status_code == 201, resp.get_data(as_text=True)
+        assert pip_calls == []
 
 
 class TestTheUIIsToldWhy:

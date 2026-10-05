@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCircleInfo, faDownload, faPenToSquare } from "@fortawesome/free-solid-svg-icons";
-import { packagesApi, type PackagePayload } from "../../../../api/packagesApi";
+import { packagesApi, type PackagePayload } from "../../../../services/packages";
 import { PackageDetailModal } from "../../../packages/publishing/PackageDetailModal";
 import { useToastContext } from "../../../../providers/ToastProvider";
 import { CatalogPublishPill } from "../../../packages/CatalogPublishPill";

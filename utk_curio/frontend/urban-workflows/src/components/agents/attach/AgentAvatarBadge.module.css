@@ -7,6 +7,7 @@
 }
 
 .avatar {
+  position: relative; /* dev/115: anchors the running dot */
   width: 32px;
   height: 32px;
   display: flex;
@@ -95,6 +96,28 @@
 .badge:hover .tooltip,
 .badge:focus-within .tooltip {
   opacity: 1;
+}
+
+/* dev/115 — background job running: a pulsing dot on the chip's corner. */
+.runningDot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--curio-role-running-fg);
+  box-shadow: 0 0 0 2px var(--curio-card-bg);
+  animation: agentRunningPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes agentRunningPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runningDot { animation: none; }
 }
 
 /* Category tints (icon color; the chip stays white). */

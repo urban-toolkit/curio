@@ -7,7 +7,7 @@ directories.
 
 Deliberately *not* ``save_workflow_test_screenshot``: that helper's job is
 baseline diffing against committed PNGs under
-``docs/examples/dataflows/expected_outputs/`` with a 20 % tolerance. Here we want
+``docs/examples/dataflows/expected_outputs/`` with a 10 % tolerance. Here we want
 raw captures with no baseline and no pass/fail, so a review is a review rather
 than a threshold.
 
@@ -292,16 +292,13 @@ def test_gallery_canvas_and_drawers(gallery, owner, app_frontend, current_server
         ("Agent Catalog", "drawer-agent-catalog"),
     ):
         try:
-            # Fresh load per drawer. Driving both from one page left the Data
-            # menu in whichever state the previous iteration toggled it into, so
-            # the second entry was never shown and the click sat out its full
-            # timeout on an invisible element.
+            # Fresh load per drawer, so each starts from a canvas with no
+            # drawer open over the top bar's catalog buttons.
             page.goto(app_frontend.base_url + "/dataflow/" + project_id)
             page.wait_for_url("**/dataflow/" + project_id, timeout=20000)
             page.locator(".react-flow__node").first.wait_for(
                 state="visible", timeout=30000
             )
-            page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
             page.get_by_role("button", name=menu_entry, exact=True).click(timeout=15000)
             drawer = page.get_by_role("dialog").filter(
                 has=page.get_by_role("heading", name=menu_entry, exact=True)
@@ -356,21 +353,21 @@ def test_gallery_modals(gallery, owner, app_frontend, page):
     except (PlaywrightTimeoutError, AssertionError) as exc:
         gallery.miss("modal-dataset-detail", str(exc))
 
-    # AI Settings, which now carries the agent spend limits on its second tab.
-    # Captured from the projects page because that is where its header button
-    # lives; the canvas reaches the same modal through the drawer's cog.
+    # API Settings, reached from the projects page's top bar: its two tabs. The
+    # canvas opens the same panel in a drawer.
     try:
         page.goto(app_frontend.base_url + "/projects")
         expect(page.get_by_role("heading", name="Projects", level=1)).to_be_visible(
             timeout=20000
         )
-        page.get_by_role("button", name="AI Settings", exact=True).click(timeout=15000)
+        page.get_by_role("link", name="API Settings", exact=True).click(timeout=15000)
         expect(
-            page.get_by_role("heading", name="AI Settings", level=2)
+            page.get_by_role("heading", name="API Settings", level=1)
         ).to_be_visible(timeout=15000)
-        # One panel, no tabs: AI Settings sets the provider and nothing else.
-        # It briefly carried an "Agent limits" tab, captured here as a second
-        # surface, until the run and spend caps came out.
-        gallery.shot("modal-ai-settings")
+        expect(page.get_by_role("button", name="Add configuration")).to_be_visible(timeout=15000)
+        gallery.shot("page-api-settings-keys")
+        page.get_by_role("tab", name="Agent configuration", exact=True).click()
+        expect(page.get_by_test_id("agent-config-tab")).to_be_visible(timeout=15000)
+        gallery.shot("page-api-settings-agents")
     except (PlaywrightTimeoutError, AssertionError) as exc:
-        gallery.miss("modal-ai-settings", str(exc))
+        gallery.miss("page-api-settings", str(exc))

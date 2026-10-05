@@ -65,6 +65,77 @@ function group(): DatasetPaletteGroup {
 describe("DatasetGroupRow", () => {
   beforeEach(() => focusLinkedNodesMock.mockClear());
 
+  test("a GeoPackage import says GeoPackage, not OSM PBF (#440)", async () => {
+    const gpkg: DatasetPaletteGroup = {
+      ...group(),
+      groupId: "gpkg.x1",
+      title: "parcels",
+      members: group().members.map((m) => ({ ...m, groupId: "gpkg.x1" })),
+    };
+    const { container } = render(<DatasetGroupRow group={gpkg} />);
+    expect(screen.getByText("GeoPackage")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Expand parcels: GeoPackage import with 3 layers" }),
+    ).toBeInTheDocument();
+    await userEvent.hover(screen.getByText("parcels"));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("parcels · GeoPackage · 3 layers");
+    expect(container.textContent).not.toContain("OSM PBF");
+    expect(container.querySelector(".chip_osm")).toBeNull();
+  });
+
+  test("a Discovery download says its layers' format, not OSM PBF (#586)", async () => {
+    // Layers an OpenStreetMap download landed: GeoJSON, each carrying where it
+    // came from. Each layer's own row says GeoJSON; so does their group.
+    const discoverySource = { sourceId: "source.openstreetmap.autark@1", sourceName: "OpenStreetMap" };
+    const downloaded: DatasetPaletteGroup = {
+      ...group(),
+      groupId: "osm.x2",
+      title: "Points of interest, Loop",
+      members: group().members.map((m) => ({
+        ...m,
+        format: "geojson",
+        tags: ["geojson", "imported"],
+        groupId: "osm.x2",
+        discoverySource,
+      })) as DatasetCatalogItem[],
+    };
+    const { container } = render(<DatasetGroupRow group={downloaded} />);
+    expect(screen.getByText("GeoJSON")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Expand Points of interest, Loop: GeoJSON import with 3 layers" }),
+    ).toBeInTheDocument();
+    await userEvent.hover(screen.getByText("Points of interest, Loop"));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Points of interest, Loop · GeoJSON · 3 layers");
+    expect(container.textContent).not.toContain("OSM PBF");
+    expect(container.querySelector(".chip_osm")).toBeNull();
+  });
+
+  test("a GTFS feed says GTFS, though every layer was downloaded (#608)", async () => {
+    // The tables of one GTFS feed: Parquet, each carrying where it came from,
+    // under a gtfs. group id. Each layer's own row says Parquet; the group is
+    // the feed.
+    const discoverySource = { sourceId: "source.curio.direct-url@1", sourceName: "Direct URL" };
+    const feed: DatasetPaletteGroup = {
+      ...group(),
+      groupId: "gtfs.x3",
+      title: "google_transit",
+      members: group().members.map((m) => ({
+        ...m,
+        groupId: "gtfs.x3",
+        discoverySource,
+      })) as DatasetCatalogItem[],
+    };
+    const { container } = render(<DatasetGroupRow group={feed} />);
+    expect(screen.getByText("GTFS")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Expand google_transit: GTFS import with 3 layers" }),
+    ).toBeInTheDocument();
+    await userEvent.hover(screen.getByText("google_transit"));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("google_transit · GTFS · 3 layers");
+    expect(container.textContent).not.toContain("OSM PBF");
+    expect(container.querySelector(".chip_gtfs")).not.toBeNull();
+  });
+
   test("collapsed by default: shows the OSM PBF parent, hides members", () => {
     render(<DatasetGroupRow group={group()} />);
     expect(screen.getByText("chicago_loop")).toBeInTheDocument();

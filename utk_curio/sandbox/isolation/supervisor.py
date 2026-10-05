@@ -1,8 +1,8 @@
 """Parent side of isolated execution: stage, dispatch, time out, persist.
 
 The dispatch half needs Linux (AF_UNIX, killpg). It is exercised by
-``sandbox/tests/test_isolation_linux.py``, which runs in the ``test-gpu`` CI
-job and nowhere else.
+``sandbox/tests/test_isolation_linux.py``, which runs in the ``unit`` CI job
+(its sandbox half) and nowhere else.
 
 This module keeps every privilege the child must not have. It owns the DuckDB
 connection, resolves artifacts under session scoping, and decides what a
@@ -84,6 +84,17 @@ MIN_EXEC_MEMORY_MB = 64
 # Wall-clock allowance. Separate from cpu_seconds because a node that blocks on
 # I/O burns no CPU and would otherwise hang until the backend's own deadline.
 DEFAULT_WALL_TIMEOUT_SECONDS = 300
+
+def usable_cpus():
+    """How many CPUs this process may run on: its affinity mask, else the
+    host's count."""
+    affinity = getattr(os, "sched_getaffinity", None)
+    if affinity is not None:
+        try:
+            return max(1, len(affinity(0)))
+        except OSError:
+            pass
+    return os.cpu_count() or 1
 
 # How long past the child's own deadline the parent waits before deciding
 # the zygote itself has stopped responding. Only a liveness backstop: the
@@ -378,9 +389,9 @@ def describe_child_death(exit_code, signal_number, timed_out, *, wall_timeout,
         )
     if reason == "cpu":
         return (
-            f"This node exceeded its CPU allowance of {limits.get('cpu_seconds')}s. "
-            "Note this counts CPU time, not wall-clock, so a busy loop hits it "
-            "quickly. Raise --exec-timeout if the work is genuinely this heavy."
+            f"This node used up its CPU allowance of {limits.get('cpu_seconds')}s "
+            "of CPU time, which counts the time of all its threads. Raise "
+            "--exec-timeout if the work is genuinely this heavy."
         )
     if reason == "signal":
         return f"This node was killed by signal {signal_number}."

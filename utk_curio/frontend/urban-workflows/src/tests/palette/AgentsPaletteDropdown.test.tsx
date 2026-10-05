@@ -12,16 +12,12 @@ jest.mock("../../providers/AgentCatalogDrawerProvider", () => ({
     isAgentCatalogDrawerOpen: false,
   }),
 }));
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: { listProjectAgents: jest.fn() },
 }));
 
-import { agentsApi } from "../../api/agentsApi";
+import { agentsApi, AGENT_CATALOG_REFRESH_EVENT, AGENT_DRAG_MIME } from "../../services/agents";
 import { AgentsPaletteDropdown } from "../../components/menus/nodes/agentsPalette/AgentsPaletteDropdown";
-import {
-  AGENT_CATALOG_REFRESH_EVENT,
-  AGENT_DRAG_MIME,
-} from "../../utils/agentCatalogEvents";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
 
@@ -57,7 +53,7 @@ function ControlledAgentsPalette() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  api.listProjectAgents.mockResolvedValue({ agents: [card("agent.node-explainer")] });
+  api.listProjectAgents.mockResolvedValue({ agents: [card("agent.my-explainer")] });
 });
 
 describe("AgentsPaletteDropdown", () => {
@@ -65,9 +61,9 @@ describe("AgentsPaletteDropdown", () => {
     render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalledWith("p1"));
     fireEvent.click(screen.getByRole("button", { name: /Agent Catalog/i }));
-    expect(await screen.findByText("node-explainer")).toBeInTheDocument();
+    expect(await screen.findByText("my-explainer")).toBeInTheDocument();
     // Row shows the install coordinate (major only) and a compatible-target pill.
-    expect(screen.getByText("agent.node-explainer@1")).toBeInTheDocument();
+    expect(screen.getByText("agent.my-explainer@1")).toBeInTheDocument();
     expect(screen.getByText("Node")).toBeInTheDocument();
   });
 
@@ -83,7 +79,7 @@ describe("AgentsPaletteDropdown", () => {
     render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: /Agent Catalog/i }));
-    fireEvent.click(await screen.findByText("node-explainer"));
+    fireEvent.click(await screen.findByText("my-explainer"));
     expect(mockOpenDrawer).toHaveBeenCalled();
   });
 
@@ -103,13 +99,13 @@ describe("AgentsPaletteDropdown", () => {
     render(<ControlledAgentsPalette />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: /Agent Catalog/i }));
-    await screen.findByText("node-explainer");
+    await screen.findByText("my-explainer");
     const dragHandle = screen.getByTitle(/Drag onto a node or the canvas to attach/i);
     const setData = jest.fn();
     fireEvent.dragStart(dragHandle, {
       dataTransfer: { setData, effectAllowed: "" },
     });
-    expect(setData).toHaveBeenCalledWith(AGENT_DRAG_MIME, "agent.node-explainer@1.0.0");
+    expect(setData).toHaveBeenCalledWith(AGENT_DRAG_MIME, "agent.my-explainer@1.0.0");
   });
 
   // The palette dock is pointer-events: none; the root re-enables events via a

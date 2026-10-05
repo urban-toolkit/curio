@@ -11,7 +11,7 @@ import {
   CatalogPublishPill,
   shouldShowPublishPill,
 } from "../../components/packages/CatalogPublishPill";
-import type { AgentCard } from "../../api/agentsApi";
+import type { AgentCard } from "../../services/agents";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 
 export interface AgentCatalogBrowseDrawerProps {

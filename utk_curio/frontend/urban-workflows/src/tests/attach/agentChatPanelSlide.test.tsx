@@ -16,7 +16,7 @@ import styles from "../../components/agents/attach/AgentChatPanel.module.css";
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({ projectId: "p1", workflowNameRef: { current: "wf" } }),
 }));
-jest.mock("../../api/packagesApi", () => ({ packagesApi: {} }));
+jest.mock("../../services/packages/packagesApi", () => ({ packagesApi: {} }));
 
 import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
 

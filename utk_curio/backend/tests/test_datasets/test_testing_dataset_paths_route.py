@@ -41,7 +41,7 @@ def _post(client, body):
 def _loader_code(*dataset_ids: str) -> str:
     """Node code shaped like the generated loaders the examples actually use."""
     return "\n".join(
-        f'path_{i} = curio_dataset_path("{dataset_id}")'
+        f'path_{i} = curio_data_path("{dataset_id}")'
         for i, dataset_id in enumerate(dataset_ids)
     )
 
@@ -82,6 +82,34 @@ class TestResolvesTheCommittedCatalog:
         assert resolved.is_absolute()
         assert resolved.is_file()
 
+    def test_a_collection_resolves_to_its_files_too(self, client):
+        """The harness also sends what ``curio_load_collection`` needs: where the
+        collection's files are, and where a node writes what it derives."""
+        code = 'media = curio_load_collection("data.curio.storage-orthos")'
+        body = _post(client, {"code": code}).get_json()
+        assert set(body["paths"]) == {"data.curio.storage-orthos"}
+        entry = body["collections"]["data.curio.storage-orthos"]
+        assert entry["kind"] == "rasters"
+        assert (Path(entry["root"]) / "orthos" / "2024" / "tile_0001.tif").is_file()
+        assert body["mediaDir"]
+
+    def test_without_sign_in_it_resolves_as_the_guest_the_browser_runs_as(
+        self, client, user_and_token, monkeypatch
+    ):
+        """A stack with ``CURIO_NO_AUTH`` runs every node as the shared guest,
+        so the files a node derives land in the guest's folder; the harness's
+        run has to write them there too, or the two outputs name different
+        paths."""
+        from utk_curio.backend import config
+
+        user, _token = user_and_token
+        code = 'media = curio_load_collection("data.curio.storage-orthos")'
+        signed_in = _post(client, {"code": code, "username": user.username}).get_json()["mediaDir"]
+        guest = _post(client, {"code": code}).get_json()["mediaDir"]
+        assert signed_in != guest
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+        assert _post(client, {"code": code, "username": user.username}).get_json()["mediaDir"] == guest
+
     def test_code_without_a_call_costs_nothing(self, client):
         resp = _post(client, {"code": "return 1 + 1"})
         assert resp.status_code == 200
@@ -101,7 +129,7 @@ class TestResolvesTheCommittedCatalog:
         assert set(resp.get_json()["paths"]) == {dataset.dataset_id}
 
     def test_an_id_carrying_its_major_does_not_resolve(self, client):
-        """``curio_dataset_path`` takes the bare id; ``<id>@1`` is a miss.
+        """``curio_data_path`` takes the bare id; ``<id>@1`` is a miss.
 
         Same distinction ``test_example_dataset_palette`` pins for the service.
         Asserted here too because the harness's own error message tells authors
@@ -112,6 +140,23 @@ class TestResolvesTheCommittedCatalog:
             client, {"code": _loader_code(dataset.manifest.dir_name)}
         ).get_json()["paths"]
         assert paths == {}
+
+
+class TestResolvesModels:
+    def test_a_shipped_model_resolves_as_execution_resolves_it(self, client):
+        """Example 10's nodes call ``curio_load_model``: without the folder the
+        harness's ``/exec`` ran them with no model, and the node failed."""
+        from utk_curio.backend.app.execution.node_exec import resolve_models
+
+        code = 'model = curio_load_model("model.curio.ddrnet23-slim")'
+        models = _post(client, {"code": code}).get_json()["models"]
+        assert set(models) == {"model.curio.ddrnet23-slim"}
+        assert (Path(models["model.curio.ddrnet23-slim"]) / "manifest.json").is_file()
+        with client.application.test_request_context():
+            assert models == resolve_models(code, None)
+
+    def test_code_naming_no_model_resolves_none(self, client):
+        assert _post(client, {"code": _loader_code()}).get_json()["models"] == {}
 
 
 class TestTheRouteIsGatedLikeItsSiblings:

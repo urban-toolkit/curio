@@ -33,20 +33,20 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.packages import seed_state
-from utk_curio.backend.app.packages.installer import (
-    install_packageage_from_directory,
-    uninstall_packageage,
+from utk_curio.backend.app.packages.repositories import seed_state
+from utk_curio.backend.app.packages.application.store_install import (
+    install_package_from_directory,
+    uninstall_package,
 )
-from utk_curio.backend.app.packages.seed import seed_dev_packageages
-from utk_curio.backend.app.packages.storage import user_packageages_dir
+from utk_curio.backend.app.packages.application.seeding import seed_dev_packages
+from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
 
 REAL_CATALOG = Path(__file__).resolve().parents[4] / "packages"
 
 
 def _installed_names(user_key: str = "guest") -> list[str]:
-    base = user_packageages_dir(user_key)
+    base = user_packages_dir(user_key)
     if not base.is_dir():
         return []
     return sorted(p.name for p in base.iterdir() if p.is_dir() and "@" in p.name)
@@ -76,11 +76,11 @@ def real_fixtures_root() -> Path:
 # ---------------------------------------------------------------------------
 
 def test_seeds_only_builtin_on_first_run(tmp_curio, real_fixtures_root):
-    seeded = seed_dev_packageages(user_key="guest")
+    seeded = seed_dev_packages(user_key="guest")
     assert seeded, "expected the built-in package to seed"
     installed = _installed_names()
     assert any(name.startswith("curio.builtin@") for name in installed)
-    assert "ai.urbanlab.uhvi@1" not in installed, (
+    assert "ai.utk.uhvi@1" not in installed, (
         "third-party catalog packages must not auto-install"
     )
 
@@ -88,17 +88,17 @@ def test_seeds_only_builtin_on_first_run(tmp_curio, real_fixtures_root):
 def test_seed_after_uninstall_of_third_party_remains_no_op(tmp_curio, real_fixtures_root):
     """A third-party package that the user never installed (no auto-seed)
     must continue not to install on subsequent boots."""
-    seed_dev_packageages(user_key="guest")
-    assert "ai.urbanlab.uhvi@1" not in _installed_names()
+    seed_dev_packages(user_key="guest")
+    assert "ai.utk.uhvi@1" not in _installed_names()
     # Second seed: still not installed.
-    second = seed_dev_packageages(user_key="guest")
-    assert "ai.urbanlab.uhvi@1" not in second
-    assert "ai.urbanlab.uhvi@1" not in _installed_names()
+    second = seed_dev_packages(user_key="guest")
+    assert "ai.utk.uhvi@1" not in second
+    assert "ai.utk.uhvi@1" not in _installed_names()
 
     # Now uninstall and confirm the tombstone is sticky across restarts.
-    uninstall_packageage("guest", "ai.urbanlab.uhvi@1")
-    seed_dev_packageages(user_key="guest")
-    assert "ai.urbanlab.uhvi@1" not in _installed_names()
+    uninstall_package("guest", "ai.utk.uhvi@1")
+    seed_dev_packages(user_key="guest")
+    assert "ai.utk.uhvi@1" not in _installed_names()
 
 
 def test_uninstall_without_prior_state_is_still_sticky(tmp_curio, real_fixtures_root):
@@ -107,20 +107,20 @@ def test_uninstall_without_prior_state_is_still_sticky(tmp_curio, real_fixtures_
     (so the seeder never had a chance to adopt the copy). The
     tombstone's fixture_mtime is ``None`` but the seeder still respects
     the uninstall — the user's intent wins over silent re-seeding."""
-    src = real_fixtures_root / "ai.urbanlab.uhvi@1"
-    dest = user_packageages_dir("guest") / src.name
+    src = real_fixtures_root / "ai.utk.uhvi@1"
+    dest = user_packages_dir("guest") / src.name
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dest)
 
-    uninstall_packageage("guest", "ai.urbanlab.uhvi@1")
-    rec = _state()["ai.urbanlab.uhvi@1"]
+    uninstall_package("guest", "ai.utk.uhvi@1")
+    rec = _state()["ai.utk.uhvi@1"]
     assert rec.get("uninstalledAt") is not None
     assert "fixtureMtime" not in rec, (
         "no prior seeded record means we cannot anchor the tombstone"
     )
 
-    seed_dev_packageages(user_key="guest")
-    assert "ai.urbanlab.uhvi@1" not in _installed_names()
+    seed_dev_packages(user_key="guest")
+    assert "ai.utk.uhvi@1" not in _installed_names()
 
 
 # ---------------------------------------------------------------------------
@@ -128,8 +128,8 @@ def test_uninstall_without_prior_state_is_still_sticky(tmp_curio, real_fixtures_
 # ---------------------------------------------------------------------------
 
 def test_corrupt_state_file_does_not_block_startup(tmp_curio, real_fixtures_root):
-    seed_dev_packageages(user_key="guest")
-    state_path = user_packageages_dir("guest") / seed_state.STATE_FILENAME
+    seed_dev_packages(user_key="guest")
+    state_path = user_packages_dir("guest") / seed_state.STATE_FILENAME
     state_path.write_text("{not valid json", encoding="utf-8")
 
     # ``load`` swallows the parse error and returns an empty dict so a
@@ -137,17 +137,17 @@ def test_corrupt_state_file_does_not_block_startup(tmp_curio, real_fixtures_root
     assert seed_state.load("guest") == {}
     # The seeder runs cleanly against a corrupt state file — the
     # important property is that startup does not raise.
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
 
     # Forcing a re-seed (uninstall + CURIO_RESEED_PACKAGES) restores a
     # well-formed marker on disk, proving the corrupt file is recoverable
     # without manual intervention.
-    uninstall_packageage("guest", "ai.urbanlab.uhvi@1")
-    from utk_curio.backend.app.packages import seed as packages_seed
+    uninstall_package("guest", "ai.utk.uhvi@1")
+    from utk_curio.backend.app.packages.application import seeding as packages_seed
     original = packages_seed.CURIO_RESEED_PACKAGES
     packages_seed.CURIO_RESEED_PACKAGES = True
     try:
-        seed_dev_packageages(user_key="guest")
+        seed_dev_packages(user_key="guest")
     finally:
         packages_seed.CURIO_RESEED_PACKAGES = original
     assert json.loads(state_path.read_text(encoding="utf-8"))["version"] == 1
@@ -161,7 +161,7 @@ def test_corrupt_state_file_does_not_block_startup(tmp_curio, real_fixtures_root
 
 @pytest.fixture()
 def seed_examples_flag():
-    from utk_curio.backend.app.packages import seed as packages_seed
+    from utk_curio.backend.app.packages.application import seeding as packages_seed
     original = packages_seed.CURIO_SEED_EXAMPLES
     packages_seed.CURIO_SEED_EXAMPLES = True
     yield
@@ -172,14 +172,14 @@ def test_example_dep_package_ids_derived_from_lockfiles():
     """The example-dep package set is derived from the bundled examples'
     ``dataflow.packages`` lockfiles — example 09 declares curio.weather, so
     curio.weather is provisioned."""
-    from utk_curio.backend.app.packages.seed import example_dep_package_ids
+    from utk_curio.backend.app.packages.application.seeding import example_dep_package_ids
 
     ids = example_dep_package_ids()
     assert "curio.weather" in ids
     assert "curio.builtin" not in ids  # always-installed, never an example dep
 
 
-def test_install_on_demand_packages_are_excluded_even_when_declared():
+def test_install_on_demand_packages_are_excluded_even_when_declared(monkeypatch):
     """A heavy package stays out of the boot install *explicitly*.
 
     It used to stay out by accident: nothing pip-installed curio.streetvision
@@ -189,17 +189,15 @@ def test_install_on_demand_packages_are_excluded_even_when_declared():
     unversioned, the backend's backfill had no way to name the package the
     dataflow needed, so its nodes rendered "Loading node…" forever.
 
-    Example 10 now declares it, and the exclusion is stated here instead. This
-    asserts the declaration exists AND that it still does not reach the
-    launcher's pip walk - the whole point of separating the two.
+    Example 10 declares it. Street Vision needs only onnxruntime now, so it is
+    no longer on the install-on-demand list and the boot install brings it.
+    The exclusion itself is still asserted, with a heavy package put on the
+    list for the test.
     """
     import json
     from pathlib import Path
 
-    from utk_curio.backend.app.packages.seed import (
-        INSTALL_ON_DEMAND_PACKAGE_IDS,
-        example_dep_package_ids,
-    )
+    from utk_curio.backend.app.packages.application import seeding
 
     repo_root = Path(__file__).resolve().parents[4]
     example = repo_root / "docs" / "examples" / "10-street-vision-cv-analysis.json"
@@ -209,29 +207,35 @@ def test_install_on_demand_packages_are_excluded_even_when_declared():
         "resolve them (#233)"
     )
 
-    assert "curio.streetvision" in INSTALL_ON_DEMAND_PACKAGE_IDS
-    assert "curio.streetvision" not in example_dep_package_ids(), (
-        "declaring a heavy package must not put it in the boot install - that "
-        "is a ~3 GB torch download on every --with-examples start"
+    streetvision = json.loads(
+        (repo_root / "packages" / "curio.streetvision@1" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert set(streetvision["dependencies"]["python"]) == {"onnxruntime"}
+    assert "curio.streetvision" not in seeding.INSTALL_ON_DEMAND_PACKAGE_IDS
+    assert "curio.streetvision" in seeding.example_dep_package_ids()
+
+    monkeypatch.setattr(seeding, "INSTALL_ON_DEMAND_PACKAGE_IDS", frozenset({"curio.streetvision"}))
+    assert "curio.streetvision" not in seeding.example_dep_package_ids(), (
+        "a package on the install-on-demand list must not reach the boot install"
     )
 
 
 def test_examples_flag_seeds_weather(tmp_curio, real_fixtures_root, seed_examples_flag):
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
     installed = _installed_names()
     assert "curio.weather@1" in installed
     assert any(name.startswith("curio.builtin@") for name in installed)
     # Still an allowlist, not a full-catalog walk.
-    assert "ai.urbanlab.uhvi@1" not in installed
+    assert "ai.utk.uhvi@1" not in installed
 
 
 def test_no_examples_flag_keeps_weather_out(tmp_curio, real_fixtures_root):
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
     assert "curio.weather@1" not in _installed_names()
 
 
 def _builtin_dir(user_key: str = "guest") -> Path:
-    base = user_packageages_dir(user_key)
+    base = user_packages_dir(user_key)
     matches = [p for p in base.iterdir() if p.name.startswith("curio.builtin@")]
     assert len(matches) == 1, f"expected exactly one built-in copy, got {matches}"
     return matches[0]
@@ -240,9 +244,9 @@ def _builtin_dir(user_key: str = "guest") -> Path:
 def _template_count(user_key: str = "guest") -> int:
     """Templates the backend would actually offer — the value that silently
     went to zero while the store was truncated."""
-    from utk_curio.backend.app.packages.manifest import load_packageage_manifest
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
-    return len(load_packageage_manifest(_builtin_dir(user_key)).templates)
+    return len(load_package_manifest(_builtin_dir(user_key)).templates)
 
 
 # ---------------------------------------------------------------------------
@@ -255,10 +259,10 @@ def test_healthy_builtin_is_not_recopied(tmp_curio, real_fixtures_root, monkeypa
     every call — ``rmtree`` + ``copytree`` into the live directory — which is
     both pointless work on four request paths and the window that corrupted
     the store."""
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
     assert _template_count() > 0
 
-    from utk_curio.backend.app.packages import seed as packages_seed
+    from utk_curio.backend.app.packages.application import seeding as packages_seed
 
     def _fail(*args, **kwargs):
         raise AssertionError("a healthy store must not be re-copied")
@@ -266,7 +270,7 @@ def test_healthy_builtin_is_not_recopied(tmp_curio, real_fixtures_root, monkeypa
     monkeypatch.setattr(packages_seed.shutil, "copytree", _fail)
     monkeypatch.setattr(packages_seed.shutil, "rmtree", _fail)
 
-    assert seed_dev_packageages(user_key="guest") == []
+    assert seed_dev_packages(user_key="guest") == []
 
 
 def test_truncated_builtin_self_heals(tmp_curio, real_fixtures_root):
@@ -274,7 +278,7 @@ def test_truncated_builtin_self_heals(tmp_curio, real_fixtures_root):
     only ``integrity.json``, its manifest gone, so ``available_templates``
     silently offered nothing. The next pass must restore it with no manual
     filesystem surgery."""
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
     expected = _template_count()
 
     builtin = _builtin_dir()
@@ -284,7 +288,7 @@ def test_truncated_builtin_self_heals(tmp_curio, real_fixtures_root):
             stray.unlink()
     assert [p.name for p in builtin.iterdir()] == ["integrity.json"]
 
-    assert builtin.name in seed_dev_packageages(user_key="guest")
+    assert builtin.name in seed_dev_packages(user_key="guest")
     assert (builtin / "manifest.json").is_file()
     assert _template_count() == expected
 
@@ -295,13 +299,13 @@ def test_builtin_missing_a_file_integrity_names_self_heals(
     """A subtler truncation: the manifest still loads, but a file
     ``integrity.json`` names is gone. Health is defined by the manifest AND
     the integrity listing, so this is repaired too."""
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
     builtin = _builtin_dir()
     listed = json.loads((builtin / "integrity.json").read_text(encoding="utf-8"))
     victim = next(name for name in listed["sha256"] if name != "manifest.json")
     (builtin / victim).unlink()
 
-    assert builtin.name in seed_dev_packageages(user_key="guest")
+    assert builtin.name in seed_dev_packages(user_key="guest")
     assert (builtin / victim).is_file()
 
 
@@ -311,16 +315,16 @@ def test_builtin_without_integrity_file_is_left_alone(
     """A package that ships no ``integrity.json`` must not be judged
     unhealthy — treating a missing listing as corruption would re-seed on
     every request, reinstating the very behaviour this change removes."""
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
     (_builtin_dir() / "integrity.json").unlink()
 
-    from utk_curio.backend.app.packages import seed as packages_seed
+    from utk_curio.backend.app.packages.application import seeding as packages_seed
 
     def _fail(*args, **kwargs):
         raise AssertionError("a loadable package must not be re-copied")
 
     monkeypatch.setattr(packages_seed.shutil, "copytree", _fail)
-    assert seed_dev_packageages(user_key="guest") == []
+    assert seed_dev_packages(user_key="guest") == []
 
 
 def test_builtin_reseeds_when_missing_despite_tombstone(
@@ -329,23 +333,23 @@ def test_builtin_reseeds_when_missing_despite_tombstone(
     """Users cannot opt out of the default node kinds: a stray built-in
     tombstone (only reachable from an older build — ``uninstall`` refuses the
     built-in) must not leave a canvas with no node types."""
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
     builtin_name = _builtin_dir().name
-    shutil.rmtree(user_packageages_dir("guest") / builtin_name)
+    shutil.rmtree(user_packages_dir("guest") / builtin_name)
     seed_state.mark_uninstalled("guest", builtin_name)
 
-    assert builtin_name in seed_dev_packageages(user_key="guest")
+    assert builtin_name in seed_dev_packages(user_key="guest")
     assert _template_count() > 0
 
 
 def test_failed_swap_keeps_the_previous_tree(tmp_curio, real_fixtures_root, monkeypatch):
     """A refresh that dies mid-swap must not become a deletion. The old tree
     is moved aside, so if the move-into-place fails it goes back."""
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
     builtin = _builtin_dir()
     expected = _template_count()
 
-    from utk_curio.backend.app.packages import seed as packages_seed
+    from utk_curio.backend.app.packages.application import seeding as packages_seed
 
     real_replace = packages_seed.os.replace
     calls = {"n": 0}
@@ -358,7 +362,7 @@ def test_failed_swap_keeps_the_previous_tree(tmp_curio, real_fixtures_root, monk
 
     monkeypatch.setattr(packages_seed.os, "replace", _replace)
     monkeypatch.setattr(packages_seed, "CURIO_RESEED_PACKAGES", True)
-    assert seed_dev_packageages(user_key="guest") == []
+    assert seed_dev_packages(user_key="guest") == []
 
     monkeypatch.undo()
     assert builtin.is_dir()
@@ -368,16 +372,16 @@ def test_failed_swap_keeps_the_previous_tree(tmp_curio, real_fixtures_root, monk
 def test_seed_staging_leftovers_are_swept(tmp_curio, real_fixtures_root):
     """A staging tree from a killed swap is cleaned up by the next pass, and
     never mistaken for a package."""
-    from utk_curio.backend.app.packages.seed import _SEED_STAGING_PREFIX
-    from utk_curio.backend.app.packages.storage import list_user_packageages
+    from utk_curio.backend.app.packages.application.seeding import _SEED_STAGING_PREFIX
+    from utk_curio.backend.app.packages.repositories.store import list_user_packages
 
-    seed_dev_packageages(user_key="guest")
-    orphan = user_packageages_dir("guest") / f"{_SEED_STAGING_PREFIX}dead"
+    seed_dev_packages(user_key="guest")
+    orphan = user_packages_dir("guest") / f"{_SEED_STAGING_PREFIX}dead"
     orphan.mkdir()
     (orphan / "half-copied.json").write_text("{}", encoding="utf-8")
 
-    assert orphan not in list_user_packageages("guest")
-    seed_dev_packageages(user_key="guest")
+    assert orphan not in list_user_packages("guest")
+    seed_dev_packages(user_key="guest")
     assert not orphan.exists()
 
 
@@ -389,9 +393,9 @@ def _read_builtin_templates(user_key: str = "guest") -> int | None:
     one. Anything else that goes wrong is raised: a package that is *present
     but unreadable* is the corruption this change exists to prevent.
     """
-    from utk_curio.backend.app.packages.manifest import load_packageage_manifest
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
-    base = user_packageages_dir(user_key)
+    base = user_packages_dir(user_key)
     matches = [p for p in base.iterdir() if p.name.startswith("curio.builtin@")]
     if not matches:
         return None
@@ -401,7 +405,7 @@ def _read_builtin_templates(user_key: str = "guest") -> int | None:
     except FileNotFoundError:
         return None
     try:
-        return len(load_packageage_manifest(package).templates)
+        return len(load_package_manifest(package).templates)
     except Exception:
         # Identity, not mere existence: by the time we look again a later
         # swap may have put a *different* tree at the same path, which would
@@ -438,9 +442,9 @@ def test_concurrent_passes_never_expose_a_broken_store(
     machinery runs under genuine contention instead of short-circuiting on
     the healthy-store check.
     """
-    from utk_curio.backend.app.packages import seed as packages_seed
+    from utk_curio.backend.app.packages.application import seeding as packages_seed
 
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
     expected = _template_count()
     assert expected > 0
     monkeypatch.setattr(packages_seed, "CURIO_RESEED_PACKAGES", True)
@@ -452,7 +456,7 @@ def test_concurrent_passes_never_expose_a_broken_store(
     def seeder():
         try:
             for _ in range(4):
-                seed_dev_packageages(user_key="guest")
+                seed_dev_packages(user_key="guest")
         except Exception as exc:  # noqa: BLE001 — recorded, not raised, in a thread
             failures.append(f"seeder raised {exc!r}")
         finally:
@@ -487,21 +491,21 @@ def test_concurrent_passes_never_expose_a_broken_store(
 def test_weather_uninstall_is_sticky_under_examples_flag(
     tmp_curio, real_fixtures_root, seed_examples_flag
 ):
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
     assert "curio.weather@1" in _installed_names()
 
-    uninstall_packageage("guest", "curio.weather@1")
-    seed_dev_packageages(user_key="guest")
+    uninstall_package("guest", "curio.weather@1")
+    seed_dev_packages(user_key="guest")
     assert "curio.weather@1" not in _installed_names(), (
         "an explicit uninstall must not be resurrected by example seeding"
     )
 
     # CURIO_RESEED_PACKAGES=1 stays the documented escape hatch.
-    from utk_curio.backend.app.packages import seed as packages_seed
+    from utk_curio.backend.app.packages.application import seeding as packages_seed
     original = packages_seed.CURIO_RESEED_PACKAGES
     packages_seed.CURIO_RESEED_PACKAGES = True
     try:
-        seed_dev_packageages(user_key="guest")
+        seed_dev_packages(user_key="guest")
     finally:
         packages_seed.CURIO_RESEED_PACKAGES = original
     assert "curio.weather@1" in _installed_names()
@@ -515,7 +519,8 @@ def test_weather_uninstall_is_sticky_under_examples_flag(
 def _production_template_ids(user_key: str) -> set[str]:
     """Read through a real production path — the same call an agent's roster,
     plan mint and node.create all sit on."""
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages.application import store_reads
+    from utk_curio.backend.app.packages import service as packages_services
 
     return {
         t["id"] for t in packages_services.available_templates(user_key, "no-such-project")
@@ -523,33 +528,34 @@ def _production_template_ids(user_key: str) -> set[str]:
 
 
 def _lockfile_dirs(user_key: str) -> set[str]:
-    from utk_curio.backend.app.packages.resolver import lockfile_for_user
+    from utk_curio.backend.app.packages.application.resolution import lockfile_for_user
 
     return {e["dirName"] for e in lockfile_for_user(user_key)["installedPackages"]}
 
 
 def _starter_ids(user_key: str) -> set[str]:
-    from utk_curio.backend.app.packages.starters import generate_packageage_starters
+    from utk_curio.backend.app.packages.application.starters import generate_package_starters
 
     # The builtin ships no ``source`` files, so the roster is legitimately
     # empty; the count sentinel keeps the probe non-empty — the load-bearing
     # assertion for this reader is that it BLOCKS during the window.
-    return {f"starters:{len(generate_packageage_starters(user_key))}"}
+    return {f"starters:{len(generate_package_starters(user_key))}"}
 
 
 def _library_sources(user_key: str) -> set[str]:
-    from utk_curio.backend.app.packages.libraries import package_derived
+    from utk_curio.backend.app.packages.application.libraries import package_derived
 
     # The builtin declares no libraries; enumeration is still the snapshot.
-    from utk_curio.backend.app.packages.build_deps import installed_manifests
+    from utk_curio.backend.app.packages.builder.deps import installed_manifests
 
     return set(installed_manifests(user_key)) | {e.source for e in package_derived(user_key)}
 
 
 def _installed_majors(user_key: str) -> dict:
-    from utk_curio.backend.app.packages import services as packages_services
+    from utk_curio.backend.app.packages.application import store_reads
+    from utk_curio.backend.app.packages import service as packages_services
 
-    return packages_services._installed_majors_by_pkg(user_key)
+    return store_reads._installed_majors_by_pkg(user_key)
 
 
 _PRODUCTION_READERS = {
@@ -575,10 +581,10 @@ def test_reader_waits_out_the_swap_window_instead_of_seeing_nothing(
     false "not an available template for this project" refusal. Now it blocks
     on the seeder's lock and returns a complete snapshot.
     """
-    from utk_curio.backend.app.packages import seed as packages_seed
+    from utk_curio.backend.app.packages.application import seeding as packages_seed
 
     read = _PRODUCTION_READERS[reader_name]
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
     expected = read("guest")
     assert expected, "fixture should give the reader something to see"
 
@@ -600,12 +606,12 @@ def test_reader_waits_out_the_swap_window_instead_of_seeing_nothing(
     monkeypatch.setattr(packages_seed.os, "replace", _parking_replace)
     monkeypatch.setattr(packages_seed, "CURIO_RESEED_PACKAGES", True)
 
-    seeder = threading.Thread(target=seed_dev_packageages, kwargs={"user_key": "guest"})
+    seeder = threading.Thread(target=seed_dev_packages, kwargs={"user_key": "guest"})
     seeder.start()
     assert moved_aside.wait(timeout=10), "seeder never reached the swap window"
 
     # The package really is absent on disk right now — this is the window.
-    assert not (user_packageages_dir("guest") / builtin_name).exists()
+    assert not (user_packages_dir("guest") / builtin_name).exists()
 
     result: dict = {}
     reader = threading.Thread(target=lambda: result.update(ids=read("guest")))
@@ -623,7 +629,7 @@ def test_reader_waits_out_the_swap_window_instead_of_seeing_nothing(
 
 
 def _builtin_dir_name() -> str:
-    base = user_packageages_dir("guest")
+    base = user_packages_dir("guest")
     return next(p.name for p in base.iterdir() if p.name.startswith("curio.builtin@"))
 
 
@@ -635,9 +641,9 @@ def test_production_readers_never_see_an_absent_package_under_stress(
     absent reads, not merely zero broken ones. The dev/93 test deliberately
     tolerated absence because nothing shared the lock; that tolerance is what
     this change removes."""
-    from utk_curio.backend.app.packages import seed as packages_seed
+    from utk_curio.backend.app.packages.application import seeding as packages_seed
 
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
     expected = _production_template_ids("guest")
     monkeypatch.setattr(packages_seed, "CURIO_RESEED_PACKAGES", True)
 
@@ -648,7 +654,7 @@ def test_production_readers_never_see_an_absent_package_under_stress(
     def seeder():
         try:
             for _ in range(4):
-                seed_dev_packageages(user_key="guest")
+                seed_dev_packages(user_key="guest")
         except Exception as exc:  # noqa: BLE001 — recorded, not raised, in a thread
             failures.append(f"seeder raised {exc!r}")
         finally:
@@ -686,7 +692,7 @@ def test_fixture_catalog_reads_happen_before_the_lock_is_taken(
     this lock, so they must not be inside it. Asserted by recording whether the
     per-user thread lock is held when each catalog read runs."""
     from utk_curio.backend.app.common import file_locks
-    from utk_curio.backend.app.packages import seed as packages_seed
+    from utk_curio.backend.app.packages.application import seeding as packages_seed
 
     thread_lock = file_locks.keyed_thread_lock("package-seed", "guest")
     held_during: dict[str, bool] = {}
@@ -708,7 +714,7 @@ def test_fixture_catalog_reads_happen_before_the_lock_is_taken(
     )
     monkeypatch.setattr(packages_seed, "CURIO_SEED_EXAMPLES", True)
 
-    assert seed_dev_packageages(user_key="guest"), "the pass should seed something"
+    assert seed_dev_packages(user_key="guest"), "the pass should seed something"
     assert set(held_during) == {"_max_mtime", "_latest_builtin_dir", "example_dep_package_ids"}
     assert not any(held_during.values()), (
         f"catalog reads ran INSIDE the seed lock: "
@@ -717,51 +723,309 @@ def test_fixture_catalog_reads_happen_before_the_lock_is_taken(
 
 
 # ---------------------------------------------------------------------------
-# An upgrade reaches a package the user already installed (#194).
+# An upgrade reaches a package the user already installed (#194), and never
+# replaces a change the user made to it (#564).
 #
 # A fix can ship inside a package at an unchanged version — the catalog under
 # <repo_root>/packages moves, the coordinate does not. Installing is copy-once,
-# so before this the user kept whatever they first copied, indefinitely. These
-# two tests pin the rule and its limit: a stale copy refreshes, a copy the user
-# deliberately removed does not come back.
+# so before #194 the user kept whatever they first copied, indefinitely. The
+# refresh cannot tell that apart from the user changing their copy, because
+# both make the two differ, so the seed-state record says where the copy came
+# from. These tests pin the rule and its limits: a copy nobody changed
+# refreshes, a copy the user changed is kept, a copy with no origin on record
+# refreshes only when it is provably an earlier catalog copy, and a copy the
+# user removed does not come back.
 # ---------------------------------------------------------------------------
 
+PROBE_DIR = "ai.utk.uhvi@1"
+
+
 def _probe_file(user_key: str, dir_name: str, rel: str = "manifest.json") -> Path:
-    return user_packageages_dir(user_key) / dir_name / rel
+    return user_packages_dir(user_key) / dir_name / rel
+
+
+def _store_digest(user_key: str, dir_name: str) -> str:
+    raw = json.loads(_probe_file(user_key, dir_name, "integrity.json").read_text(encoding="utf-8"))
+    return seed_state.copy_digest(raw["sha256"])
+
+
+def _diverge_store_copy(probe: Path) -> None:
+    """Change the store copy and leave it internally consistent.
+
+    An older copy's files and its own ``integrity.json`` agree with each other,
+    they are simply an older pair than the catalog's. Editing the file alone
+    would leave the store's map still quoting the original hash: a damaged
+    copy, not an out-of-date one, and the refresh is right to decline that.
+    Getting this wrong made an earlier version of these tests pass for the
+    wrong reason.
+    """
+    from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
+
+    probe.write_bytes(probe.read_bytes() + b"\n")
+    refresh_package_integrity(probe.parent)
+
+
+@pytest.fixture()
+def movable_catalog(tmp_path, monkeypatch, real_fixtures_root) -> Path:
+    """The probe package in a catalog this test may change, the way a release does."""
+    from utk_curio.backend.app.packages.repositories import catalog_dir
+
+    root = tmp_path / "catalog"
+    shutil.copytree(real_fixtures_root / PROBE_DIR, root / PROBE_DIR)
+    monkeypatch.setattr(catalog_dir, "catalog_root", lambda: root)
+    return root
+
+
+def _ship_an_upgrade(catalog_root: Path) -> bytes:
+    """The catalog's manifest changes at an unchanged version, and the release
+    refreshes its committed integrity map with it. Answers the new bytes."""
+    from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
+
+    manifest = catalog_root / PROBE_DIR / "manifest.json"
+    manifest.write_bytes(manifest.read_bytes() + b"\n")
+    refresh_package_integrity(manifest.parent)
+    return manifest.read_bytes()
 
 
 def test_a_stale_installed_package_is_refreshed_from_the_catalog(
-    tmp_curio, real_fixtures_root,
+    tmp_curio, movable_catalog,
 ):
-    """The #194 delivery bug, at the unit layer."""
-    dir_name = "ai.urbanlab.uhvi@1"
-    install_packageage_from_directory("guest", real_fixtures_root / dir_name)
-    assert dir_name in _installed_names()
+    """The #194 delivery bug, at the unit layer: the catalog moves, and the
+    copy nobody changed follows it."""
+    install_package_from_directory("guest", movable_catalog / PROBE_DIR)
+    probe = _probe_file("guest", PROBE_DIR)
+    assert probe.read_bytes() == (movable_catalog / PROBE_DIR / "manifest.json").read_bytes(), (
+        "install did not copy faithfully"
+    )
 
-    probe = _probe_file("guest", dir_name)
-    catalog_bytes = (real_fixtures_root / dir_name / "manifest.json").read_bytes()
-    assert probe.read_bytes() == catalog_bytes, "install did not copy faithfully"
+    upgraded = _ship_an_upgrade(movable_catalog)
+    assert probe.read_bytes() != upgraded
 
-    # Diverge the store copy the way an UPGRADE diverges it, which means leaving
-    # it internally consistent: an older copy's files and its own
-    # ``integrity.json`` agree with each other, they are simply an older pair
-    # than the catalog's. Editing the file alone would leave the store's map
-    # still quoting the original hash — a damaged copy, not an out-of-date one,
-    # and the refresh is right to decline that. Getting this wrong made an
-    # earlier version of this test pass for the wrong reason.
-    from utk_curio.backend.app.packages.installer import refresh_packageage_integrity
+    seed_dev_packages(user_key="guest")
 
-    probe.write_bytes(catalog_bytes + b"\n")
-    refresh_packageage_integrity(probe.parent)
-    seed_state.clear("guest", dir_name)
-    assert probe.read_bytes() != catalog_bytes
-
-    seed_dev_packageages(user_key="guest")
-
-    assert probe.read_bytes() == catalog_bytes, (
+    assert probe.read_bytes() == upgraded, (
         "a stale installed package was not refreshed, so a fix shipped inside "
         "a package at an unchanged version never reaches an existing install"
     )
+    assert _state()[PROBE_DIR]["catalogCopy"] == _store_digest("guest", PROBE_DIR)
+
+
+_LEGACY_RECORDS = pytest.mark.parametrize(
+    "legacy_record", [None, {"seededAt": 1.0, "fixtureMtime": 1.0}],
+    ids=["no-record", "old-seeder-record"],
+)
+
+
+def _catalog_once_shipped(monkeypatch, dir_name: str, digest: str) -> None:
+    """Make *digest* one the catalog shipped for *dir_name* in an earlier release."""
+    known = {**seed_state.legacy_catalog_digests(), dir_name: frozenset({digest})}
+    monkeypatch.setattr(seed_state, "legacy_catalog_digests", lambda: known)
+
+
+@_LEGACY_RECORDS
+def test_an_untouched_copy_from_before_the_record_is_refreshed_once_then_recorded(
+    tmp_curio, movable_catalog, monkeypatch, legacy_record,
+):
+    """#194 for a copy with no origin on record: it is byte for byte an earlier
+    release's catalog copy, so an upgrade reaches it. The pass that refreshes
+    it records it, so later passes follow the ordinary catalog track."""
+    install_package_from_directory("guest", movable_catalog / PROBE_DIR)
+    _catalog_once_shipped(monkeypatch, PROBE_DIR, _store_digest("guest", PROBE_DIR))
+    seed_state.put("guest", PROBE_DIR, legacy_record)
+
+    upgraded = _ship_an_upgrade(movable_catalog)
+    seed_dev_packages(user_key="guest")
+
+    assert _probe_file("guest", PROBE_DIR).read_bytes() == upgraded
+    assert _state()[PROBE_DIR]["catalogCopy"] == _store_digest("guest", PROBE_DIR)
+
+
+@_LEGACY_RECORDS
+def test_a_changed_copy_with_no_origin_on_record_is_kept_as_the_users(
+    tmp_curio, movable_catalog, legacy_record,
+):
+    """The audit's P1: a copy with no origin on record that differs from the
+    catalog and is not a catalog copy may be the user's work. A record from
+    before #564 looks like this, and so does one that was lost: a corrupt or
+    missing state file, or a record write that failed. It is kept, recorded as
+    the user's, and still kept after the catalog moves."""
+    install_package_from_directory("guest", movable_catalog / PROBE_DIR)
+    probe = _probe_file("guest", PROBE_DIR)
+    _diverge_store_copy(probe)
+    changed = probe.read_bytes()
+    seed_state.put("guest", PROBE_DIR, legacy_record)
+
+    seed_dev_packages(user_key="guest")
+
+    assert probe.read_bytes() == changed, "the catalog's copy replaced a copy that may be the user's"
+    rec = _state()[PROBE_DIR]
+    assert rec.get("installedAt") is not None and "catalogCopy" not in rec
+
+    _ship_an_upgrade(movable_catalog)
+    seed_dev_packages(user_key="guest")
+
+    assert probe.read_bytes() == changed
+
+
+@_LEGACY_RECORDS
+def test_a_copy_from_before_the_record_edited_in_place_is_kept(
+    tmp_curio, movable_catalog, monkeypatch, legacy_record,
+):
+    """A metadata edit before #564 rewrote ``manifest.json`` and left
+    ``integrity.json`` alone, so the copy's map is still a catalog map. Its
+    files no longer match that map, and that is what shows the edit."""
+    install_package_from_directory("guest", movable_catalog / PROBE_DIR)
+    _catalog_once_shipped(monkeypatch, PROBE_DIR, _store_digest("guest", PROBE_DIR))
+    probe = _probe_file("guest", PROBE_DIR)
+    edited = json.loads(probe.read_text(encoding="utf-8"))
+    edited["description"] = "My own notes"
+    probe.write_text(json.dumps(edited, indent=2), encoding="utf-8")
+    seed_state.put("guest", PROBE_DIR, legacy_record)
+
+    _ship_an_upgrade(movable_catalog)
+    seed_dev_packages(user_key="guest")
+
+    assert json.loads(probe.read_text(encoding="utf-8"))["description"] == "My own notes"
+
+
+def test_the_shipped_catalog_digest_history_is_well_formed():
+    """The frozen history the rule above reads. Not tied to the current
+    catalog: a copy whose digest postdates the file is kept, which is safe."""
+    import re
+
+    history = seed_state.legacy_catalog_digests()
+    for dir_name in (
+        "ai.utk.uhvi@1", "curio.example-ui@1", "curio.media@1",
+        "curio.streetvision@1", "curio.weather@1",
+    ):
+        assert history.get(dir_name), f"no catalog digests for {dir_name}"
+        assert all(re.fullmatch(r"[0-9a-f]{64}", d) for d in history[dir_name])
+
+
+@pytest.mark.parametrize("writer", ["install", "uninstall", "metadata-edit"])
+def test_store_writers_wait_for_the_store_lock(tmp_curio, real_fixtures_root, writer):
+    """Installs, uninstalls and metadata edits change the store under the lock
+    the seeder swaps under (memo dev/99). Without it, a seeding pass could
+    decide to refresh a copy and then swap the catalog's over a change that
+    landed in between, and a reader could see the package missing."""
+    from utk_curio.backend.app.packages.application.metadata import patch_package_metadata
+    from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
+
+    if writer != "install":
+        install_package_from_directory("guest", real_fixtures_root / PROBE_DIR)
+    run = {
+        "install": lambda: install_package_from_directory("guest", real_fixtures_root / PROBE_DIR),
+        "uninstall": lambda: uninstall_package("guest", PROBE_DIR),
+        "metadata-edit": lambda: patch_package_metadata("guest", PROBE_DIR, {"description": "mine"}),
+    }[writer]
+    done = threading.Event()
+    errors: list[BaseException] = []
+
+    def _snapshot() -> list[tuple[str, int, int]]:
+        base = user_packages_dir("guest")
+        return sorted(
+            (str(p.relative_to(base)), p.stat().st_mtime_ns, p.stat().st_size)
+            for p in base.rglob("*") if p.is_file() and p.name != ".seed.lock"
+        )
+
+    def _write():
+        try:
+            run()
+        except BaseException as exc:  # noqa: BLE001 - reported below
+            errors.append(exc)
+        finally:
+            done.set()
+
+    with package_seed_lock("guest"):
+        before = _snapshot()
+        worker = threading.Thread(target=_write)
+        worker.start()
+        finished_early = done.wait(2.0)
+        during = _snapshot()
+    worker.join(60)
+
+    assert not errors, errors
+    assert not finished_early, f"the {writer} finished while the store lock was held"
+    assert during == before, f"the {writer} changed the store while the lock was held"
+    assert done.is_set()
+
+
+def test_a_copy_from_before_the_record_that_matches_the_catalog_is_adopted(
+    tmp_curio, real_fixtures_root,
+):
+    """Identical to the catalog, so it is the catalog's copy: recorded as one in
+    place, and from then on a catalog change reaches it."""
+    install_package_from_directory("guest", real_fixtures_root / PROBE_DIR)
+    seed_state.clear("guest", PROBE_DIR)
+
+    seeded = seed_dev_packages(user_key="guest")
+
+    assert PROBE_DIR not in seeded, "adoption re-copied the package"
+    assert _state()[PROBE_DIR]["catalogCopy"] == _store_digest("guest", PROBE_DIR)
+
+
+def test_a_copy_the_user_replaced_is_kept_when_the_catalog_moves(
+    tmp_curio, movable_catalog, tmp_path,
+):
+    """An upload, a factory install or a promotion over a catalog copy writes
+    the user's own content, and the next catalog change must not undo it."""
+    from utk_curio.backend.app.packages.application.store_install import (
+        install_package_from_archive,
+    )
+    from utk_curio.backend.app.packages.repositories.archive import zip_package_tree
+
+    install_package_from_directory("guest", movable_catalog / PROBE_DIR)
+    mine = tmp_path / "mine" / PROBE_DIR
+    shutil.copytree(movable_catalog / PROBE_DIR, mine)
+    (mine / "README.md").write_text("my own notes\n", encoding="utf-8")
+    install_package_from_archive("guest", zip_package_tree(mine), replace=True)
+
+    _ship_an_upgrade(movable_catalog)
+    seed_dev_packages(user_key="guest")
+
+    readme = _probe_file("guest", PROBE_DIR, "README.md")
+    assert readme.is_file() and readme.read_text(encoding="utf-8") == "my own notes\n", (
+        "the catalog's copy replaced the user's"
+    )
+
+
+def test_a_catalog_copy_changed_in_place_is_kept_when_the_catalog_moves(
+    tmp_curio, movable_catalog,
+):
+    """Whatever changed it, a catalog copy whose map no longer has the recorded
+    digest is not the catalog's any more."""
+    install_package_from_directory("guest", movable_catalog / PROBE_DIR)
+    probe = _probe_file("guest", PROBE_DIR)
+    _diverge_store_copy(probe)
+    changed = probe.read_bytes()
+
+    _ship_an_upgrade(movable_catalog)
+    seed_dev_packages(user_key="guest")
+
+    assert probe.read_bytes() == changed
+
+
+def test_a_failed_dependency_install_leaves_no_record_behind(
+    tmp_curio, real_fixtures_root, monkeypatch,
+):
+    """The rollback deletes the copy, so it deletes the record that describes it."""
+    from utk_curio.backend.app.packages.application import provisioning
+    from utk_curio.backend.app.packages.application.store_install import (
+        _ensure_user_store_install,
+    )
+    from utk_curio.backend.app.packages.domain.errors import PackageServiceError
+    from utk_curio.backend.app.packages.infrastructure.pip_runner import PipInstallError
+
+    def _fail(*_a, **_kw):
+        raise PipInstallError("ERROR: No matching distribution found")
+
+    monkeypatch.setattr(provisioning, "provision_python_deps", _fail)
+
+    with pytest.raises(PackageServiceError):
+        _ensure_user_store_install("guest", PROBE_DIR)
+
+    assert PROBE_DIR not in _installed_names()
+    assert PROBE_DIR not in _state()
 
 
 def test_an_uninstalled_package_is_not_resurrected_by_the_refresh(
@@ -774,12 +1038,12 @@ def test_an_uninstalled_package_is_not_resurrected_by_the_refresh(
     because the obvious implementation (widen the seed plan to the whole
     catalog) would resurrect it.
     """
-    dir_name = "ai.urbanlab.uhvi@1"
-    install_packageage_from_directory("guest", real_fixtures_root / dir_name)
-    uninstall_packageage("guest", dir_name)
+    dir_name = "ai.utk.uhvi@1"
+    install_package_from_directory("guest", real_fixtures_root / dir_name)
+    uninstall_package("guest", dir_name)
     assert dir_name not in _installed_names()
 
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
 
     assert dir_name not in _installed_names(), (
         "the refresh brought back a package the user uninstalled"

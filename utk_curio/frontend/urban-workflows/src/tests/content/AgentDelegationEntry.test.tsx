@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 import { AgentDelegationEntry } from "../../components/agents/content/AgentDelegationEntry";
-import type { AgentDelegationPart } from "../../api/agentsApi";
+import type { AgentDelegationPart } from "../../services/agents";
 
 const part = (overrides: Partial<AgentDelegationPart> = {}): AgentDelegationPart => ({
   type: "delegation",
@@ -51,3 +51,16 @@ describe("AgentDelegationEntry (memo dev/72)", () => {
     expect(screen.getByText("research.verify")).toBeInTheDocument();
   });
 });
+
+describe("AgentDelegationEntry: what the delegate ran on", () => {
+  it("shows the delegate's configuration and model, which may not be the parent's", () => {
+    render(<AgentDelegationEntry part={part({ model: "llama3", llmLabel: "Local" })} />);
+    expect(screen.getByText("Local (llama3)")).toBeInTheDocument();
+  });
+
+  it("shows nothing extra when the entry names no model", () => {
+    const { container } = render(<AgentDelegationEntry part={part()} />);
+    expect(container.textContent).not.toContain("(");
+  });
+});
+

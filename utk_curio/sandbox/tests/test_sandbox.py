@@ -16,7 +16,8 @@ _SKIP_NO_NODE = unittest.skipIf(
 )
 
 # Repo root holds the node_modules the sandbox's `node` subprocess resolves
-# @urban-toolkit/autk-db from (installed by _ensure_root_node_modules in main.py).
+# @urban-toolkit/autk-db from (installed by _ensure_root_node_modules in
+# utk_curio/cli/dependencies.py).
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 _AUTK_DB_AVAILABLE = os.path.isdir(
     os.path.join(_REPO_ROOT, 'node_modules', '@urban-toolkit', 'autk-db')
@@ -32,8 +33,7 @@ _SKIP_NO_AUTK_DB = unittest.skipUnless(
 # suite covers the host-side decision, but only running it in the real Node
 # subprocess proves the GENERATED code parses and behaves there.
 _CONTRACT_CHECK_JS = (
-    "import * as __autkDbMod from '@urban-toolkit/autk-db';\n"
-    "const AutkDb = __autkDbMod.AutkDb || __autkDbMod.AutkSpatialDb;\n"
+    "import {{ AutkDb }} from '@urban-toolkit/autk-db';\n"
     "const __sources = [{{ type: 'geojson', geojsonObject: {{ type: 'FeatureCollection', "
     "features: [{{ type: 'Feature', geometry: {{ type: 'Point', coordinates: [-87.63, 41.88] }}, "
     "properties: {{ name: 'a' }} }}] }}, outputTableName: 'probe_pts' }}];\n"
@@ -44,8 +44,8 @@ _CONTRACT_CHECK_JS = (
     "for (const source of __sources) {{ const {{ type, ...rest }} = source; "
     "if (type === 'geojson') await db.loadGeojson(rest); }}\n"
     "let __tables = [];\n"
-    "try {{ __tables = db.getLayerTables ? db.getLayerTables() : []; }}\n"
-    "catch (e) {{ __loadErrors.push('getLayerTables: ' + ((e && e.message) || String(e))); }}\n"
+    "try {{ __tables = db.getLayersMetadata(); }}\n"
+    "catch (e) {{ __loadErrors.push('getLayersMetadata: ' + ((e && e.message) || String(e))); }}\n"
     "const __have = new Set(__tables.map((t) => t.name));\n"
     "const __missing = __expectedTables.filter((n) => !__have.has(n));\n"
     "if (__missing.length > 0) {{\n"
@@ -177,14 +177,8 @@ class TestSandbox(unittest.TestCase):
         _worker_init()
 
         code = (
-            "import * as __autkDbMod from '@urban-toolkit/autk-db';\n"
-            # Mirror compileDataSpecToAutkDbJs: the v2.0 frontend build exports
-            # AutkDb, but the older root-level install the sandbox resolves
-            # exports AutkSpatialDb. Accept either so the snippet matches the
-            # real emit and doesn't throw "AutkDb is not a constructor".
-            "const AutkDb = __autkDbMod.AutkDb || __autkDbMod.AutkSpatialDb;\n"
-            "if (typeof AutkDb !== 'function') throw new Error("
-            "'@urban-toolkit/autk-db: neither AutkDb nor AutkSpatialDb is exported');\n"
+            # Mirrors compileDataSpecToAutkDbJs's import.
+            "import { AutkDb } from '@urban-toolkit/autk-db';\n"
             "const __sources = [{ type: 'geojson', geojsonObject: { type: 'FeatureCollection', "
             "features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [-87.63, 41.88] }, "
             "properties: { name: 'a' } }] }, outputTableName: 'probe_pts' }];\n"
@@ -193,7 +187,7 @@ class TestSandbox(unittest.TestCase):
             "for (const source of __sources) { const { type, ...rest } = source; "
             "if (type === 'geojson') await db.loadGeojson(rest); }\n"
             "const out = [];\n"
-            "for (const t of (db.getLayerTables ? db.getLayerTables() : [])) { "
+            "for (const t of db.getLayersMetadata()) { "
             "const geojson = await db.getLayer(t.name); "
             "out.push({ name: t.name, type: t.type ?? 'polygons', geojson }); }\n"
             "return out;"
@@ -284,12 +278,13 @@ class TestSandbox(unittest.TestCase):
 
         This is #248: autk-db's loadOsm walks autoLoadLayers.layers in order and
         lets a per-layer failure propagate, so a throw partway leaves the earlier
-        tables registered and the later ones absent. The emit used to publish
-        whatever getLayerTables() held, so the node that failed reported "Done"
-        and a consumer two hops downstream died on "Table table_osm_roads not
-        found". Failing here is also what makes the loss reachable by
-        runDataInBackend's retry: `success: false` returns an empty output.path,
-        the one shape that retry has always keyed on.
+        tables registered and the later ones absent. The emit checks
+        getLayersMetadata() against the tables the spec asks for, so the node
+        that ran the load fails, instead of a consumer two hops downstream
+        dying on "Table table_osm_roads not found". Failing here is also what
+        makes the loss reachable by runDataInBackend's retry: `success: false`
+        returns an empty output.path, the one shape that retry has always keyed
+        on.
         """
         from utk_curio.sandbox.app.worker import execute_js_code, _worker_init
         _worker_init()
@@ -342,12 +337,12 @@ class TestProjDataDir(unittest.TestCase):
 
     #: The Milan census polygons, now a Data Catalog dataset rather than a loose
     #: file under docs/examples/data. Addressed by path, not by
-    #: ``curio_dataset_path``, because these tests call ``execute_code``
+    #: ``curio_data_path``, because these tests call ``execute_code``
     #: directly and so never get the backend's resolved ``dataset_paths``.
     _CENSUS_GJ = os.path.join(
         _REPO_ROOT,
         "datasets",
-        "data.urbanlab.milan-census-gt65@1",
+        "data.utk.milan-census-gt65@1",
         "data",
         "milan-census-gt65.geojson",
     )

@@ -82,12 +82,17 @@ import CatalogMasterPage from "./pages/catalog/CatalogMasterPage";
 import NodeCatalogBrowse from "./pages/catalog/NodeCatalogBrowse";
 import DataCatalogBrowse from "./pages/dataCatalog/DataCatalogBrowse";
 import AgentCatalogBrowse from "./pages/agents/AgentCatalogBrowse";
-import DataLakeCatalogBrowse from "./pages/dataLakes/DataLakeCatalogBrowse";
-import DataLakeSourceDetail from "./pages/dataLakes/DataLakeSourceDetail";
+import DiscoveryCatalogBrowse from "./pages/discovery/DiscoveryCatalogBrowse";
+import DiscoverySourceDetail from "./pages/discovery/DiscoverySourceDetail";
+import ModelCatalogBrowse from "./pages/models/ModelCatalogBrowse";
+import ScenarioCatalogBrowse from "./pages/scenarios/ScenarioCatalogBrowse";
 import { DataflowProviders } from "./components/DataflowProviders";
 import DashboardPage from "./pages/dashboard/DashboardPage";
 import { SHARE_UUID_RE } from "./utils/shareLinks";
+import { basePath } from "./utils/basePath";
+import { backendUrl } from "./utils/backendUrl";
 import MonitorPage from "./pages/monitor/MonitorPage";
+import SettingsPage from "./pages/settings/SettingsPage";
 import { installClientErrorReporter } from "./utils/clientErrorReporter";
 
 const MainCanvasRoute: React.FC = () => (
@@ -137,7 +142,7 @@ const ProjectsRoute: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <BrowserRouter basename={(process.env.PUBLIC_PATH || "/").replace(/\/$/, "") || undefined}>
+    <BrowserRouter basename={basePath() || undefined}>
       <BackendHealthBanner>
         <ToastProvider>
             <ReactFlowProvider>
@@ -191,16 +196,35 @@ const App: React.FC = () => {
                           dataset's details over the Data Catalog. */}
                       <Route path="data/:datasetId?" element={<DataCatalogBrowse />} />
                       <Route path="agents" element={<AgentCatalogBrowse />} />
-                      <Route path="lakes" element={<DataLakeCatalogBrowse />} />
+                      <Route path="discovery" element={<DiscoveryCatalogBrowse />} />
                       <Route
-                        path="lakes/:sourceDir"
-                        element={<DataLakeSourceDetail />}
+                        path="discovery/:sourceDir"
+                        element={<DiscoverySourceDetail />}
+                      />
+                      {/* One page for both, as for datasets: a model's link
+                          opens that model's details over the Model Catalog. */}
+                      <Route path="models/:modelId?" element={<ModelCatalogBrowse />} />
+                      {/* A scenario's id is unique in its project only, so
+                          its link names both; it opens that scenario's
+                          details over the Scenario Catalog. */}
+                      <Route
+                        path="scenarios/:projectId?/:scenarioId?"
+                        element={<ScenarioCatalogBrowse />}
                       />
                     </Route>
                     {/* Deliberately outside RequireAuth: the monitor is
                         public, so whoever is hitting a problem can read it and
                         share it without an account. */}
                     <Route path="/monitor" element={<MonitorPage />} />
+                    {/* API Settings: /settings/keys and /settings/agents. */}
+                    <Route
+                      path="/settings/:tab?"
+                      element={
+                        <RequireAuth>
+                          <SettingsPage />
+                        </RequireAuth>
+                      }
+                    />
                     <Route
                       path="/workflow/:id?"
                       element={<LegacyWorkflowRedirect />}
@@ -245,6 +269,10 @@ listenForPeerDatasetCatalogRefresh();
 // Installed before the first render so a crash during mount is reported too.
 // The reporter caps itself and never throws; see clientErrorReporter.ts.
 installClientErrorReporter();
+
+// DuckDB's worker starts from a blob and cannot see this page; autk-db hands
+// it this absolute address (webpack/autkDbDuckdbAssets.js).
+(globalThis as any).__curioBackendUrl = new URL(backendUrl() || "/", window.location.href).href;
 
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 

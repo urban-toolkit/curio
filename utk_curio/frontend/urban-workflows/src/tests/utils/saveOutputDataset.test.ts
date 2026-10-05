@@ -134,6 +134,30 @@ describe('isNonProducingNodeType', () => {
   });
 });
 
+describe('showsSaveOutputToggle (#445)', () => {
+  const { showsSaveOutputToggle } = require('../../utils/saveOutputDataset');
+
+  test('a Vega-Lite or Simple View node has no toggle, versioned or not', () => {
+    expect(showsSaveOutputToggle({ nodeType: 'curio.builtin/vis-vega@1' }, false)).toBe(false);
+    expect(showsSaveOutputToggle({ nodeType: 'curio.builtin/vis-vega' }, false)).toBe(false);
+    expect(showsSaveOutputToggle({ nodeType: 'curio.builtin/vis-simple@1' }, false)).toBe(false);
+  });
+
+  test('a node that computes a dataset keeps its toggle', () => {
+    expect(showsSaveOutputToggle({ nodeType: 'curio.builtin/computation-analysis@1' }, false)).toBe(true);
+    expect(showsSaveOutputToggle({ nodeType: 'curio.builtin/data-pool@1' }, false)).toBe(true);
+  });
+
+  test('a dataset-palette node and a node without play have none', () => {
+    const paletteNode = {
+      nodeType: 'curio.builtin/data-loading@1',
+      datasetSource: { datasetId: 'd1' },
+    };
+    expect(showsSaveOutputToggle(paletteNode, false)).toBe(false);
+    expect(showsSaveOutputToggle({ nodeType: 'curio.builtin/computation-analysis@1' }, true)).toBe(false);
+  });
+});
+
 describe("DATA_POOL is a save-trigger extra, not a shared sink", () => {
   // FlowProvider.scheduleInstallSync skips `isNonProducingNodeType(t) ||
   // t === DATA_POOL`. The second clause is only load-bearing while DATA_POOL

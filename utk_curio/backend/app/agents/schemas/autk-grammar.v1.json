@@ -1,0 +1,2084 @@
+{
+  "$id": "https://autarkjs.org/schema/autk-grammar/v1.json",
+  "$ref": "#/definitions/UrbanSpec",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "AggregateFunction": {
+      "description": "How joined rows are combined per feature.",
+      "enum": [
+        "sum",
+        "avg",
+        "count",
+        "min",
+        "max",
+        "weighted",
+        "collect"
+      ],
+      "type": "string"
+    },
+    "BBox": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        },
+        {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 6,
+          "minItems": 6,
+          "type": "array"
+        }
+      ],
+      "description": "Bounding box https://tools.ietf.org/html/rfc7946#section-5"
+    },
+    "BarPlotSpec": {
+      "description": "A bar chart. A transform, when given, must be `binning-1d`.",
+      "properties": {
+        "axis": {
+          "description": "Columns to plot, in axis order. At least one is required.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "color": {
+          "type": "string"
+        },
+        "dataRef": {
+          "description": "Name of the table to plot.",
+          "type": "string"
+        },
+        "events": {
+          "description": "Interactions the plot emits.",
+          "items": {
+            "$ref": "#/definitions/PlotEvent"
+          },
+          "type": "array"
+        },
+        "height": {
+          "type": "number"
+        },
+        "mapRef": {
+          "description": "Layer id of a map this plot links its selection to.",
+          "type": "string"
+        },
+        "margins": {
+          "properties": {
+            "bottom": {
+              "type": "number"
+            },
+            "left": {
+              "type": "number"
+            },
+            "right": {
+              "type": "number"
+            },
+            "top": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ],
+          "type": "object"
+        },
+        "mark": {
+          "const": "bar",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "transform": {
+          "$ref": "#/definitions/PlotTransformSpec%3C%22binning-1d%22%3E"
+        },
+        "width": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "axis",
+        "dataRef",
+        "mark"
+      ],
+      "type": "object"
+    },
+    "BoundingBox": {
+      "properties": {
+        "maxLat": {
+          "type": "number"
+        },
+        "maxLon": {
+          "type": "number"
+        },
+        "minLat": {
+          "type": "number"
+        },
+        "minLon": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "minLon",
+        "minLat",
+        "maxLon",
+        "maxLat"
+      ],
+      "type": "object"
+    },
+    "ColorMapInterpolator": {
+      "description": "Color scheme for a colored map layer: `scheme*` names are categorical, `interpolate*` names are sequential or diverging.",
+      "enum": [
+        "schemeAccent",
+        "schemeDark2",
+        "schemeCategory10",
+        "schemeObservable10",
+        "schemePaired",
+        "schemePastel1",
+        "schemePastel2",
+        "schemeSet1",
+        "schemeSet2",
+        "schemeSet3",
+        "schemeTableau10",
+        "interpolateReds",
+        "interpolateBlues",
+        "interpolateGreens",
+        "interpolateGreys",
+        "interpolateOranges",
+        "interpolatePurples",
+        "interpolateTurbo",
+        "interpolateViridis",
+        "interpolateInferno",
+        "interpolateMagma",
+        "interpolatePlasma",
+        "interpolateCividis",
+        "interpolateWarm",
+        "interpolateCool",
+        "interpolateCubehelixDefault",
+        "interpolateBuGn",
+        "interpolateBuPu",
+        "interpolateGnBu",
+        "interpolateOrRd",
+        "interpolatePuBuGn",
+        "interpolatePuBu",
+        "interpolatePuRd",
+        "interpolateRdPu",
+        "interpolateYlGnBu",
+        "interpolateYlGn",
+        "interpolateYlOrBr",
+        "interpolateYlOrRd",
+        "interpolateBrBG",
+        "interpolatePRGn",
+        "interpolatePiYG",
+        "interpolatePuOr",
+        "interpolateRdBu",
+        "interpolateRdGy",
+        "interpolateRdYlBu",
+        "interpolateRdYlGn",
+        "interpolateSpectral"
+      ],
+      "type": "string"
+    },
+    "ComputeSpec": {
+      "anyOf": [
+        {
+          "properties": {
+            "attributeArrays": {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            "attributeMatrices": {
+              "additionalProperties": {
+                "properties": {
+                  "cols": {
+                    "type": "number"
+                  },
+                  "rows": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "const": "auto",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "rows",
+                  "cols"
+                ],
+                "type": "object"
+              },
+              "type": "object"
+            },
+            "attributes": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Maps WGSL variable names to feature property paths.",
+              "type": "object"
+            },
+            "dataRef": {
+              "description": "Name of the table the shader runs over, one invocation per feature.",
+              "type": "string"
+            },
+            "outputColumnName": {
+              "description": "Column written when the shader returns one value.",
+              "type": "string"
+            },
+            "outputColumns": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "uniformArrays": {
+              "additionalProperties": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            "uniformMatrices": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "cols": {
+                        "type": "number"
+                      },
+                      "data": {
+                        "items": {
+                          "items": {
+                            "type": "number"
+                          },
+                          "type": "array"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "data",
+                      "cols"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "$ref": "#/definitions/FromFeatureDirective"
+                  }
+                ]
+              },
+              "description": "Matrix constants shared by every invocation, written inline or read from a feature.",
+              "type": "object"
+            },
+            "uniforms": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "$ref": "#/definitions/FromFeatureDirective"
+                  }
+                ]
+              },
+              "description": "Scalar constants shared by every invocation, written inline or read from a feature.",
+              "type": "object"
+            },
+            "wglsFunction": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ],
+              "description": "WGSL body of the compute function. An array is joined with newlines, which keeps long shaders readable in JSON."
+            }
+          },
+          "required": [
+            "attributes",
+            "dataRef",
+            "outputColumnName",
+            "wglsFunction"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "attributeArrays": {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            "attributeMatrices": {
+              "additionalProperties": {
+                "properties": {
+                  "cols": {
+                    "type": "number"
+                  },
+                  "rows": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "const": "auto",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "rows",
+                  "cols"
+                ],
+                "type": "object"
+              },
+              "type": "object"
+            },
+            "attributes": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Maps WGSL variable names to feature property paths.",
+              "type": "object"
+            },
+            "dataRef": {
+              "description": "Name of the table the shader runs over, one invocation per feature.",
+              "type": "string"
+            },
+            "outputColumnName": {
+              "type": "string"
+            },
+            "outputColumns": {
+              "description": "Columns written when the shader returns several values, in order.",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "uniformArrays": {
+              "additionalProperties": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            "uniformMatrices": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "cols": {
+                        "type": "number"
+                      },
+                      "data": {
+                        "items": {
+                          "items": {
+                            "type": "number"
+                          },
+                          "type": "array"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "data",
+                      "cols"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "$ref": "#/definitions/FromFeatureDirective"
+                  }
+                ]
+              },
+              "description": "Matrix constants shared by every invocation, written inline or read from a feature.",
+              "type": "object"
+            },
+            "uniforms": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "$ref": "#/definitions/FromFeatureDirective"
+                  }
+                ]
+              },
+              "description": "Scalar constants shared by every invocation, written inline or read from a feature.",
+              "type": "object"
+            },
+            "wglsFunction": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ],
+              "description": "WGSL body of the compute function. An array is joined with newlines, which keeps long shaders readable in JSON."
+            }
+          },
+          "required": [
+            "attributes",
+            "dataRef",
+            "outputColumns",
+            "wglsFunction"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "A GPU compute pass over a table. Results are written to `feature.properties.compute.<column>`. It needs `outputColumnName` for a single result or `outputColumns` for several."
+    },
+    "CsvDataSourceSpec": {
+      "description": "Loads a CSV table from exactly one of `csvFileUrl` or `csvObject`.",
+      "else": {
+        "required": [
+          "csvObject"
+        ]
+      },
+      "if": {
+        "required": [
+          "csvFileUrl"
+        ]
+      },
+      "properties": {
+        "csvFileUrl": {
+          "type": "string"
+        },
+        "csvObject": {
+          "description": "Rows as arrays; the first row holds the column names.",
+          "items": {
+            "items": {},
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "delimiter": {
+          "type": "string"
+        },
+        "geometryColumns": {
+          "$ref": "#/definitions/GeometryColumns"
+        },
+        "outputTableName": {
+          "description": "Name of the table this source creates. Later sources, compute passes, maps and plots refer to it by this name.",
+          "type": "string"
+        },
+        "type": {
+          "const": "csv",
+          "type": "string"
+        }
+      },
+      "required": [
+        "outputTableName",
+        "type"
+      ],
+      "then": {
+        "not": {
+          "required": [
+            "csvObject"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "CustomDataSourceSpec": {
+      "description": "Loads a GeoJSON FeatureCollection from `geojsonFileUrl` or `geojsonObject`. When both are given, the Autark adapter reads the URL.",
+      "if": {
+        "not": {
+          "required": [
+            "geojsonFileUrl"
+          ]
+        }
+      },
+      "properties": {
+        "boundingBox": {
+          "$ref": "#/definitions/BoundingBox"
+        },
+        "coordinateFormat": {
+          "description": "Source coordinate reference system of the input data, expressed as an EPSG string (e.g. `'EPSG:4326'`, `'EPSG:3395'`).\n\nDefaults to `'EPSG:4326'` (WGS84) when omitted, which is the correct value for standards-compliant GeoJSON. Only set this when the source data deviates from RFC 7946.",
+          "type": "string"
+        },
+        "geojsonFileUrl": {
+          "type": "string"
+        },
+        "geojsonObject": {
+          "$ref": "#/definitions/InlineFeatureCollection",
+          "description": "GeoJSON FeatureCollection to load directly.\n\nPer RFC 7946, GeoJSON coordinates MUST be in WGS84 (EPSG:4326) longitude/latitude. This is the default assumption when `coordinateFormat` is omitted.\n\nIf your FeatureCollection is in a different CRS (e.g. a projected system such as EPSG:3395), you MUST set `coordinateFormat` explicitly to match the actual CRS of the input data. Omitting `coordinateFormat` when the data is not in EPSG:4326 will cause the spatial transform to produce invalid geometry."
+        },
+        "outputTableName": {
+          "description": "Name of the table this source creates. Later sources, compute passes, maps and plots refer to it by this name.",
+          "type": "string"
+        },
+        "type": {
+          "const": "geojson",
+          "type": "string"
+        }
+      },
+      "required": [
+        "outputTableName",
+        "type"
+      ],
+      "then": {
+        "required": [
+          "geojsonObject"
+        ]
+      },
+      "type": "object"
+    },
+    "DataSourceSpec": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "osm",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/OsmDataSourceSpec"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "csv",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/CsvDataSourceSpec"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "json",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/JsonDataSourceSpec"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "geojson",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/CustomDataSourceSpec"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "heatmap",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/HeatmapSourceSpec"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "join",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/JoinSourceSpec"
+          }
+        }
+      ],
+      "description": "One entry of `data`. The `type` field selects which fields apply.",
+      "properties": {
+        "type": {
+          "enum": [
+            "osm",
+            "csv",
+            "json",
+            "geojson",
+            "heatmap",
+            "join"
+          ]
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "FromFeatureDirective": {
+      "description": "Reads a uniform's value from a feature of a loaded table instead of writing it inline.",
+      "properties": {
+        "cols": {
+          "description": "Matrix column count, for entries in `uniformMatrices`.",
+          "type": "number"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "items": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            }
+          ],
+          "description": "Value used when `path` does not resolve. Without it the entry is dropped."
+        },
+        "fromFeature": {
+          "properties": {
+            "index": {
+              "description": "Feature index to read. Defaults to 0.",
+              "type": "number"
+            },
+            "iterate": {
+              "description": "Iterate over every feature of `layer`. `all` runs the shader once per feature and sums the outputs. `batched` packs every feature's value into a uniform array named after this entry (matrix entries become each feature's bounding box as four corners), adds a `num_features` uniform, and runs the shader once.",
+              "enum": [
+                "all",
+                "batched"
+              ],
+              "type": "string"
+            },
+            "layer": {
+              "description": "Table to read from.",
+              "type": "string"
+            },
+            "path": {
+              "description": "Dot path from the feature root, for example `properties.height` or `geometry.coordinates.0`.",
+              "type": "string"
+            },
+            "required": {
+              "description": "With `iterate: 'batched'`, drop features whose `path` does not resolve to a finite value.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "layer",
+            "path"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "fromFeature"
+      ],
+      "type": "object"
+    },
+    "GeoJsonProperties": {
+      "anyOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "Geometry": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Point"
+        },
+        {
+          "$ref": "#/definitions/MultiPoint"
+        },
+        {
+          "$ref": "#/definitions/LineString"
+        },
+        {
+          "$ref": "#/definitions/MultiLineString"
+        },
+        {
+          "$ref": "#/definitions/Polygon"
+        },
+        {
+          "$ref": "#/definitions/MultiPolygon"
+        },
+        {
+          "$ref": "#/definitions/GeometryCollection"
+        }
+      ],
+      "description": "Geometry object. https://tools.ietf.org/html/rfc7946#section-3"
+    },
+    "GeometryCollection": {
+      "description": "Geometry Collection https://tools.ietf.org/html/rfc7946#section-3.1.8",
+      "properties": {
+        "bbox": {
+          "$ref": "#/definitions/BBox",
+          "description": "Bounding box of the coordinate range of the object's Geometries, Features, or Feature Collections. The value of the bbox member is an array of length 2*n where n is the number of dimensions represented in the contained geometries, with all axes of the most southwesterly point followed by all axes of the more northeasterly point. The axes order of a bbox follows the axes order of geometries. https://tools.ietf.org/html/rfc7946#section-5"
+        },
+        "geometries": {
+          "items": {
+            "$ref": "#/definitions/Geometry"
+          },
+          "type": "array"
+        },
+        "type": {
+          "const": "GeometryCollection",
+          "description": "Specifies the type of GeoJSON object.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "geometries",
+        "type"
+      ],
+      "type": "object"
+    },
+    "GeometryColumns": {
+      "anyOf": [
+        {
+          "const": true,
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/definitions/LatLongGeometryColumns"
+        },
+        {
+          "$ref": "#/definitions/WktGeometryColumns"
+        }
+      ],
+      "description": "How rows become features: `true` reads the `Latitude` and `Longitude` columns, or name the columns."
+    },
+    "HeatmapSourceSpec": {
+      "description": "Aggregates a table onto a regular grid, producing a raster heatmap table.",
+      "properties": {
+        "grid": {
+          "description": "Grid resolution.",
+          "properties": {
+            "columns": {
+              "type": "number"
+            },
+            "rows": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "rows",
+            "columns"
+          ],
+          "type": "object"
+        },
+        "groupBy": {
+          "items": {
+            "properties": {
+              "aggregateFn": {
+                "$ref": "#/definitions/AggregateFunction"
+              },
+              "column": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "column"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "near": {
+          "description": "Radius around each grid cell, in workspace units, within which rows are aggregated.",
+          "properties": {
+            "distance": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "distance"
+          ],
+          "type": "object"
+        },
+        "outputTableName": {
+          "description": "Name of the table this source creates. Later sources, compute passes, maps and plots refer to it by this name.",
+          "type": "string"
+        },
+        "tableJoinName": {
+          "description": "Table whose rows are aggregated onto the grid.",
+          "type": "string"
+        },
+        "type": {
+          "const": "heatmap",
+          "type": "string"
+        }
+      },
+      "required": [
+        "grid",
+        "near",
+        "outputTableName",
+        "tableJoinName",
+        "type"
+      ],
+      "type": "object"
+    },
+    "HeatmatrixPlotSpec": {
+      "description": "A heat matrix over a `binning-2d` transform, which it requires.",
+      "properties": {
+        "axis": {
+          "description": "Columns to plot, in axis order. At least one is required.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "color": {
+          "type": "string"
+        },
+        "dataRef": {
+          "description": "Name of the table to plot.",
+          "type": "string"
+        },
+        "events": {
+          "description": "Interactions the plot emits.",
+          "items": {
+            "$ref": "#/definitions/PlotEvent"
+          },
+          "type": "array"
+        },
+        "height": {
+          "type": "number"
+        },
+        "mapRef": {
+          "description": "Layer id of a map this plot links its selection to.",
+          "type": "string"
+        },
+        "margins": {
+          "properties": {
+            "bottom": {
+              "type": "number"
+            },
+            "left": {
+              "type": "number"
+            },
+            "right": {
+              "type": "number"
+            },
+            "top": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ],
+          "type": "object"
+        },
+        "mark": {
+          "const": "heatmatrix",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "transform": {
+          "$ref": "#/definitions/PlotTransformSpec%3C%22binning-2d%22%3E"
+        },
+        "width": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "axis",
+        "dataRef",
+        "mark",
+        "transform"
+      ],
+      "type": "object"
+    },
+    "InlineFeature": {
+      "description": "A GeoJSON feature as the loader accepts it: `geometry` may be null and `properties` may be omitted.",
+      "properties": {
+        "bbox": {
+          "$ref": "#/definitions/BBox"
+        },
+        "geometry": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Geometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": [
+            "string",
+            "number"
+          ]
+        },
+        "properties": {
+          "$ref": "#/definitions/GeoJsonProperties"
+        },
+        "type": {
+          "const": "Feature",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "geometry"
+      ],
+      "type": "object"
+    },
+    "InlineFeatureCollection": {
+      "description": "A GeoJSON FeatureCollection with at least one feature.",
+      "properties": {
+        "bbox": {
+          "$ref": "#/definitions/BBox"
+        },
+        "features": {
+          "items": {
+            "$ref": "#/definitions/InlineFeature"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "type": {
+          "const": "FeatureCollection",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "features"
+      ],
+      "type": "object"
+    },
+    "JoinSourceSpec": {
+      "description": "Spatially joins one table onto another. The result replaces the root table.",
+      "properties": {
+        "groupBy": {
+          "description": "Aggregate the joined rows per root feature.",
+          "items": {
+            "properties": {
+              "aggregateFn": {
+                "$ref": "#/definitions/AggregateFunction"
+              },
+              "column": {
+                "type": "string"
+              },
+              "normalize": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "column"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "near": {
+          "description": "Join rows within `distance` (in workspace units) instead of by containment.",
+          "properties": {
+            "distance": {
+              "type": "number"
+            },
+            "useCentroid": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "distance"
+          ],
+          "type": "object"
+        },
+        "tableJoinName": {
+          "description": "Table whose rows are joined onto the root table.",
+          "type": "string"
+        },
+        "tableRootName": {
+          "description": "Table that receives the joined columns.",
+          "type": "string"
+        },
+        "type": {
+          "const": "join",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "tableRootName",
+        "tableJoinName"
+      ],
+      "type": "object"
+    },
+    "JsonDataSourceSpec": {
+      "description": "Loads a JSON table from exactly one of `jsonFileUrl` or `jsonObject`.",
+      "else": {
+        "required": [
+          "jsonObject"
+        ]
+      },
+      "if": {
+        "required": [
+          "jsonFileUrl"
+        ]
+      },
+      "properties": {
+        "geometryColumns": {
+          "$ref": "#/definitions/GeometryColumns"
+        },
+        "jsonFileUrl": {
+          "type": "string"
+        },
+        "jsonObject": {
+          "items": {},
+          "type": "array"
+        },
+        "outputTableName": {
+          "description": "Name of the table this source creates. Later sources, compute passes, maps and plots refer to it by this name.",
+          "type": "string"
+        },
+        "type": {
+          "const": "json",
+          "type": "string"
+        }
+      },
+      "required": [
+        "outputTableName",
+        "type"
+      ],
+      "then": {
+        "not": {
+          "required": [
+            "jsonObject"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "LatLongGeometryColumns": {
+      "description": "Point geometry from two columns holding latitude and longitude.",
+      "properties": {
+        "coordinateFormat": {
+          "description": "CRS of the coordinates, as an EPSG string. Defaults to `'EPSG:4326'`.",
+          "type": "string"
+        },
+        "latColumnName": {
+          "type": "string"
+        },
+        "longColumnName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "latColumnName",
+        "longColumnName"
+      ],
+      "type": "object"
+    },
+    "LayerType": {
+      "description": "OSM layer a data source can split out, or a generic geometry layer.",
+      "enum": [
+        "surface",
+        "water",
+        "parks",
+        "roads",
+        "buildings",
+        "points",
+        "polygons",
+        "polylines",
+        "raster"
+      ],
+      "type": "string"
+    },
+    "LinePlotSpec": {
+      "description": "A line chart over a `reduce-series` or `binning-events` transform, which it requires.",
+      "properties": {
+        "axis": {
+          "description": "Columns to plot, in axis order. At least one is required.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "color": {
+          "type": "string"
+        },
+        "dataRef": {
+          "description": "Name of the table to plot.",
+          "type": "string"
+        },
+        "events": {
+          "description": "Interactions the plot emits.",
+          "items": {
+            "$ref": "#/definitions/PlotEvent"
+          },
+          "type": "array"
+        },
+        "height": {
+          "type": "number"
+        },
+        "mapRef": {
+          "description": "Layer id of a map this plot links its selection to.",
+          "type": "string"
+        },
+        "margins": {
+          "properties": {
+            "bottom": {
+              "type": "number"
+            },
+            "left": {
+              "type": "number"
+            },
+            "right": {
+              "type": "number"
+            },
+            "top": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ],
+          "type": "object"
+        },
+        "mark": {
+          "enum": [
+            "line",
+            "linechart"
+          ],
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "transform": {
+          "$ref": "#/definitions/PlotTransformSpec%3C(%22reduce-series%22%7C%22binning-events%22)%3E"
+        },
+        "width": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "axis",
+        "dataRef",
+        "mark",
+        "transform"
+      ],
+      "type": "object"
+    },
+    "LineString": {
+      "description": "LineString geometry object. https://tools.ietf.org/html/rfc7946#section-3.1.4",
+      "properties": {
+        "bbox": {
+          "$ref": "#/definitions/BBox",
+          "description": "Bounding box of the coordinate range of the object's Geometries, Features, or Feature Collections. The value of the bbox member is an array of length 2*n where n is the number of dimensions represented in the contained geometries, with all axes of the most southwesterly point followed by all axes of the more northeasterly point. The axes order of a bbox follows the axes order of geometries. https://tools.ietf.org/html/rfc7946#section-5"
+        },
+        "coordinates": {
+          "items": {
+            "$ref": "#/definitions/Position"
+          },
+          "type": "array"
+        },
+        "type": {
+          "const": "LineString",
+          "description": "Specifies the type of GeoJSON object.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "coordinates",
+        "type"
+      ],
+      "type": "object"
+    },
+    "MapLayerSpec": {
+      "description": "One layer drawn by a map.",
+      "properties": {
+        "catchAllCategory": {
+          "type": "string"
+        },
+        "colorMapDomain": {
+          "description": "Allowed category values; anything else is drawn as the catch-all category. Only used when `getFnvType` is `categorical`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "colorMapInterpolator": {
+          "$ref": "#/definitions/ColorMapInterpolator",
+          "description": "Color scheme used when `isColorMap` is set."
+        },
+        "colorMapLabels": {
+          "description": "Legend labels. Read by the deck.gl adapter; the Autark adapter ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "dataRef": {
+          "description": "Name of the table to draw, as produced by a data source or a compute pass.",
+          "type": "string"
+        },
+        "defaultFnv": {
+          "description": "Value used for features where `getFnv` resolves to nothing. Read by the deck.gl adapter; the Autark adapter ignores it.",
+          "type": [
+            "string",
+            "number"
+          ]
+        },
+        "getFnv": {
+          "description": "Dot path to the thematic value, relative to `feature.properties` (for example `tags.highway` or `compute.result`).",
+          "type": "string"
+        },
+        "getFnvType": {
+          "description": "`categorical` reads the value as a string for discrete palettes; `quantitative` reads it as a number for continuous scales. Read by the deck.gl adapter; the Autark adapter ignores it.",
+          "enum": [
+            "categorical",
+            "quantitative"
+          ],
+          "type": "string"
+        },
+        "isColorMap": {
+          "description": "Color the layer by the value read with `getFnv`.",
+          "type": "boolean"
+        },
+        "isPick": {
+          "description": "Allow picking features on this layer.",
+          "type": "boolean"
+        },
+        "isSkip": {
+          "description": "Load the layer without drawing it.",
+          "type": "boolean"
+        },
+        "normalization": {
+          "description": "How values are rescaled before coloring.",
+          "properties": {
+            "lowerPercentile": {
+              "type": "number"
+            },
+            "mode": {
+              "$ref": "#/definitions/NormalizationMode"
+            },
+            "upperPercentile": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        },
+        "opacity": {
+          "description": "Layer opacity, from 0 to 1.",
+          "type": "number"
+        },
+        "pickedComps": {
+          "description": "Feature ids drawn as picked. Read by the deck.gl adapter; the Autark adapter ignores it.",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "dataRef"
+      ],
+      "type": "object"
+    },
+    "MapSpec": {
+      "description": "A map view.",
+      "properties": {
+        "layerRefs": {
+          "description": "Layers to draw, bottom first. Each names a table with `dataRef`.",
+          "items": {
+            "$ref": "#/definitions/MapLayerSpec"
+          },
+          "type": "array"
+        },
+        "style": {
+          "description": "Map style.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "layerRefs"
+      ],
+      "type": "object"
+    },
+    "MultiLineString": {
+      "description": "MultiLineString geometry object. https://tools.ietf.org/html/rfc7946#section-3.1.5",
+      "properties": {
+        "bbox": {
+          "$ref": "#/definitions/BBox",
+          "description": "Bounding box of the coordinate range of the object's Geometries, Features, or Feature Collections. The value of the bbox member is an array of length 2*n where n is the number of dimensions represented in the contained geometries, with all axes of the most southwesterly point followed by all axes of the more northeasterly point. The axes order of a bbox follows the axes order of geometries. https://tools.ietf.org/html/rfc7946#section-5"
+        },
+        "coordinates": {
+          "items": {
+            "items": {
+              "$ref": "#/definitions/Position"
+            },
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "type": {
+          "const": "MultiLineString",
+          "description": "Specifies the type of GeoJSON object.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "coordinates",
+        "type"
+      ],
+      "type": "object"
+    },
+    "MultiPoint": {
+      "description": "MultiPoint geometry object.  https://tools.ietf.org/html/rfc7946#section-3.1.3",
+      "properties": {
+        "bbox": {
+          "$ref": "#/definitions/BBox",
+          "description": "Bounding box of the coordinate range of the object's Geometries, Features, or Feature Collections. The value of the bbox member is an array of length 2*n where n is the number of dimensions represented in the contained geometries, with all axes of the most southwesterly point followed by all axes of the more northeasterly point. The axes order of a bbox follows the axes order of geometries. https://tools.ietf.org/html/rfc7946#section-5"
+        },
+        "coordinates": {
+          "items": {
+            "$ref": "#/definitions/Position"
+          },
+          "type": "array"
+        },
+        "type": {
+          "const": "MultiPoint",
+          "description": "Specifies the type of GeoJSON object.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "coordinates",
+        "type"
+      ],
+      "type": "object"
+    },
+    "MultiPolygon": {
+      "description": "MultiPolygon geometry object. https://tools.ietf.org/html/rfc7946#section-3.1.7",
+      "properties": {
+        "bbox": {
+          "$ref": "#/definitions/BBox",
+          "description": "Bounding box of the coordinate range of the object's Geometries, Features, or Feature Collections. The value of the bbox member is an array of length 2*n where n is the number of dimensions represented in the contained geometries, with all axes of the most southwesterly point followed by all axes of the more northeasterly point. The axes order of a bbox follows the axes order of geometries. https://tools.ietf.org/html/rfc7946#section-5"
+        },
+        "coordinates": {
+          "items": {
+            "items": {
+              "items": {
+                "$ref": "#/definitions/Position"
+              },
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "type": {
+          "const": "MultiPolygon",
+          "description": "Specifies the type of GeoJSON object.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "coordinates",
+        "type"
+      ],
+      "type": "object"
+    },
+    "NormalizationMode": {
+      "description": "How values are rescaled before coloring.",
+      "enum": [
+        "minMax",
+        "percentile"
+      ],
+      "type": "string"
+    },
+    "OsmDataSourceSpec": {
+      "description": "Loads OpenStreetMap data for a named area, from Overpass or from a PBF extract.",
+      "properties": {
+        "autoLoadLayers": {
+          "description": "Split the raw OSM table into one table per layer, named `<outputTableName>_<layer>`.",
+          "properties": {
+            "dropOsmTable": {
+              "description": "Currently ignored by both adapters.",
+              "type": "boolean"
+            },
+            "layers": {
+              "items": {
+                "$ref": "#/definitions/LayerType"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "layers"
+          ],
+          "type": "object"
+        },
+        "outputTableName": {
+          "description": "Name of the table this source creates. Later sources, compute passes, maps and plots refer to it by this name.",
+          "type": "string"
+        },
+        "pbfFileUrl": {
+          "description": "URL of a local or remote `.osm.pbf` extract to read instead of querying Overpass.",
+          "type": "string"
+        },
+        "queryArea": {
+          "description": "Area to load: the named sub-areas inside a geocoded region.",
+          "properties": {
+            "areas": {
+              "description": "Sub-areas inside the region, for example neighborhood names.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "geocodeArea": {
+              "description": "Region to geocode, for example a city name.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "geocodeArea",
+            "areas"
+          ],
+          "type": "object"
+        },
+        "type": {
+          "const": "osm",
+          "type": "string"
+        }
+      },
+      "required": [
+        "outputTableName",
+        "queryArea",
+        "type"
+      ],
+      "type": "object"
+    },
+    "ParallelCoordinatesPlotSpec": {
+      "description": "Parallel coordinates over the plotted columns.",
+      "properties": {
+        "axis": {
+          "description": "Columns to plot, in axis order. At least one is required.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "color": {
+          "type": "string"
+        },
+        "dataRef": {
+          "description": "Name of the table to plot.",
+          "type": "string"
+        },
+        "events": {
+          "description": "Interactions the plot emits.",
+          "items": {
+            "$ref": "#/definitions/PlotEvent"
+          },
+          "type": "array"
+        },
+        "height": {
+          "type": "number"
+        },
+        "mapRef": {
+          "description": "Layer id of a map this plot links its selection to.",
+          "type": "string"
+        },
+        "margins": {
+          "properties": {
+            "bottom": {
+              "type": "number"
+            },
+            "left": {
+              "type": "number"
+            },
+            "right": {
+              "type": "number"
+            },
+            "top": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ],
+          "type": "object"
+        },
+        "mark": {
+          "const": "parallel-coordinates",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "transform": {
+          "$ref": "#/definitions/PlotTransformSpec"
+        },
+        "width": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "axis",
+        "dataRef",
+        "mark"
+      ],
+      "type": "object"
+    },
+    "PlotEvent": {
+      "description": "Interaction a plot emits.",
+      "enum": [
+        "click",
+        "brush",
+        "brushY",
+        "brushX"
+      ],
+      "type": "string"
+    },
+    "PlotSpec": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mark": {
+                "const": "scatter",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/ScatterPlotSpec"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mark": {
+                "const": "bar",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/BarPlotSpec"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mark": {
+                "enum": [
+                  "line",
+                  "linechart"
+                ],
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/LinePlotSpec"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mark": {
+                "const": "parallel-coordinates",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/ParallelCoordinatesPlotSpec"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mark": {
+                "const": "table",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/TablePlotSpec"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mark": {
+                "const": "heatmatrix",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/HeatmatrixPlotSpec"
+          }
+        }
+      ],
+      "description": "A plot view. The `mark` field selects which transforms apply.",
+      "properties": {
+        "mark": {
+          "enum": [
+            "scatter",
+            "bar",
+            "line",
+            "linechart",
+            "parallel-coordinates",
+            "table",
+            "heatmatrix"
+          ]
+        }
+      },
+      "required": [
+        "mark"
+      ],
+      "type": "object"
+    },
+    "PlotTransformPreset": {
+      "description": "Transform presets a plot accepts.",
+      "enum": [
+        "binning-1d",
+        "binning-2d",
+        "binning-events",
+        "reduce-series",
+        "sort"
+      ],
+      "type": "string"
+    },
+    "PlotTransformSpec": {
+      "description": "Reshapes the table before plotting.",
+      "properties": {
+        "options": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "preset": {
+          "$ref": "#/definitions/PlotTransformPreset"
+        }
+      },
+      "required": [
+        "preset"
+      ],
+      "type": "object"
+    },
+    "PlotTransformSpec<\"binning-1d\">": {
+      "description": "Reshapes the table before plotting.",
+      "properties": {
+        "options": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "preset": {
+          "const": "binning-1d",
+          "type": "string"
+        }
+      },
+      "required": [
+        "preset"
+      ],
+      "type": "object"
+    },
+    "PlotTransformSpec<\"binning-2d\">": {
+      "description": "Reshapes the table before plotting.",
+      "properties": {
+        "options": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "preset": {
+          "const": "binning-2d",
+          "type": "string"
+        }
+      },
+      "required": [
+        "preset"
+      ],
+      "type": "object"
+    },
+    "PlotTransformSpec<\"sort\">": {
+      "description": "Reshapes the table before plotting.",
+      "properties": {
+        "options": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "preset": {
+          "const": "sort",
+          "type": "string"
+        }
+      },
+      "required": [
+        "preset"
+      ],
+      "type": "object"
+    },
+    "PlotTransformSpec<(\"reduce-series\"|\"binning-events\")>": {
+      "description": "Reshapes the table before plotting.",
+      "properties": {
+        "options": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "preset": {
+          "enum": [
+            "reduce-series",
+            "binning-events"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "preset"
+      ],
+      "type": "object"
+    },
+    "Point": {
+      "description": "Point geometry object. https://tools.ietf.org/html/rfc7946#section-3.1.2",
+      "properties": {
+        "bbox": {
+          "$ref": "#/definitions/BBox",
+          "description": "Bounding box of the coordinate range of the object's Geometries, Features, or Feature Collections. The value of the bbox member is an array of length 2*n where n is the number of dimensions represented in the contained geometries, with all axes of the most southwesterly point followed by all axes of the more northeasterly point. The axes order of a bbox follows the axes order of geometries. https://tools.ietf.org/html/rfc7946#section-5"
+        },
+        "coordinates": {
+          "$ref": "#/definitions/Position"
+        },
+        "type": {
+          "const": "Point",
+          "description": "Specifies the type of GeoJSON object.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "coordinates",
+        "type"
+      ],
+      "type": "object"
+    },
+    "Polygon": {
+      "description": "Polygon geometry object. https://tools.ietf.org/html/rfc7946#section-3.1.6",
+      "properties": {
+        "bbox": {
+          "$ref": "#/definitions/BBox",
+          "description": "Bounding box of the coordinate range of the object's Geometries, Features, or Feature Collections. The value of the bbox member is an array of length 2*n where n is the number of dimensions represented in the contained geometries, with all axes of the most southwesterly point followed by all axes of the more northeasterly point. The axes order of a bbox follows the axes order of geometries. https://tools.ietf.org/html/rfc7946#section-5"
+        },
+        "coordinates": {
+          "items": {
+            "items": {
+              "$ref": "#/definitions/Position"
+            },
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "type": {
+          "const": "Polygon",
+          "description": "Specifies the type of GeoJSON object.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "coordinates",
+        "type"
+      ],
+      "type": "object"
+    },
+    "Position": {
+      "description": "A Position is an array of coordinates. https://tools.ietf.org/html/rfc7946#section-3.1.1 Array should contain between two and three elements. The previous GeoJSON specification allowed more elements (e.g., which could be used to represent M values), but the current specification only allows X, Y, and (optionally) Z to be defined.\n\nNote: the type will not be narrowed down to `[number, number] | [number, number, number]` due to marginal benefits and the large impact of breaking change.\n\nSee previous discussions on the type narrowing:\n-  {@link  https://github.com/DefinitelyTyped/DefinitelyTyped/pull/21590 Nov 2017 } \n-  {@link  https://github.com/DefinitelyTyped/DefinitelyTyped/discussions/67773 Dec 2023 } \n-  {@link  https://github.com/DefinitelyTyped/DefinitelyTyped/discussions/71441 Dec 2024 } \n\nOne can use a  {@link  https://www.typescriptlang.org/docs/handbook/2/narrowing.html#using-type-predicates user-defined type guard that returns a type predicate }  to determine if a position is a 2D or 3D position.",
+      "items": {
+        "type": "number"
+      },
+      "type": "array"
+    },
+    "ScatterPlotSpec": {
+      "description": "A scatterplot of two or more columns.",
+      "properties": {
+        "axis": {
+          "description": "Columns to plot, in axis order. At least two are required.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2,
+          "type": "array"
+        },
+        "color": {
+          "type": "string"
+        },
+        "dataRef": {
+          "description": "Name of the table to plot.",
+          "type": "string"
+        },
+        "events": {
+          "description": "Interactions the plot emits.",
+          "items": {
+            "$ref": "#/definitions/PlotEvent"
+          },
+          "type": "array"
+        },
+        "height": {
+          "type": "number"
+        },
+        "mapRef": {
+          "description": "Layer id of a map this plot links its selection to.",
+          "type": "string"
+        },
+        "margins": {
+          "properties": {
+            "bottom": {
+              "type": "number"
+            },
+            "left": {
+              "type": "number"
+            },
+            "right": {
+              "type": "number"
+            },
+            "top": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ],
+          "type": "object"
+        },
+        "mark": {
+          "const": "scatter",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "transform": {
+          "$ref": "#/definitions/PlotTransformSpec"
+        },
+        "width": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "axis",
+        "dataRef",
+        "mark"
+      ],
+      "type": "object"
+    },
+    "TablePlotSpec": {
+      "description": "A table. A transform, when given, must be `sort`.",
+      "properties": {
+        "axis": {
+          "description": "Columns to plot, in axis order. At least one is required.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "color": {
+          "type": "string"
+        },
+        "dataRef": {
+          "description": "Name of the table to plot.",
+          "type": "string"
+        },
+        "events": {
+          "description": "Interactions the plot emits.",
+          "items": {
+            "$ref": "#/definitions/PlotEvent"
+          },
+          "type": "array"
+        },
+        "height": {
+          "type": "number"
+        },
+        "mapRef": {
+          "description": "Layer id of a map this plot links its selection to.",
+          "type": "string"
+        },
+        "margins": {
+          "properties": {
+            "bottom": {
+              "type": "number"
+            },
+            "left": {
+              "type": "number"
+            },
+            "right": {
+              "type": "number"
+            },
+            "top": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ],
+          "type": "object"
+        },
+        "mark": {
+          "const": "table",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "transform": {
+          "$ref": "#/definitions/PlotTransformSpec%3C%22sort%22%3E"
+        },
+        "width": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "axis",
+        "dataRef",
+        "mark"
+      ],
+      "type": "object"
+    },
+    "UrbanSpec": {
+      "description": "An Autark grammar specification. It names at least one of `data`, `compute`, `map` or `plot`.",
+      "properties": {
+        "$schema": {
+          "description": "URL of the JSON Schema this specification follows.",
+          "type": "string"
+        },
+        "compute": {
+          "description": "Compute passes, run in order after the data is loaded.",
+          "items": {
+            "$ref": "#/definitions/ComputeSpec"
+          },
+          "type": "array"
+        },
+        "data": {
+          "description": "Tables to load, in order.",
+          "items": {
+            "$ref": "#/definitions/DataSourceSpec"
+          },
+          "type": "array"
+        },
+        "map": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/definitions/MapSpec"
+              },
+              "type": "array"
+            },
+            {
+              "$ref": "#/definitions/MapSpec"
+            }
+          ],
+          "description": "One map, or several."
+        },
+        "plot": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/definitions/PlotSpec"
+              },
+              "type": "array"
+            },
+            {
+              "$ref": "#/definitions/PlotSpec"
+            }
+          ],
+          "description": "One plot, or several."
+        }
+      },
+      "type": "object"
+    },
+    "WktGeometryColumns": {
+      "description": "Geometry from one column holding WKT text such as `POLYGON((...))`. Read by the Autark adapter only.",
+      "properties": {
+        "coordinateFormat": {
+          "description": "CRS of the geometry, as an EPSG string. Defaults to `'EPSG:4326'`.",
+          "type": "string"
+        },
+        "wktColumnName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "wktColumnName"
+      ],
+      "type": "object"
+    }
+  }
+}

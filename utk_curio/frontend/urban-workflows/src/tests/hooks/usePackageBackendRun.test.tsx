@@ -7,11 +7,11 @@
 import React from "react";
 import { render } from "@testing-library/react";
 
-jest.mock("../../api/packageBackendApi", () => ({
+jest.mock("../../services/packages/packageBackendApi", () => ({
     invokePackageBackend: jest.fn(),
 }));
 
-import { invokePackageBackend } from "../../api/packageBackendApi";
+import { invokePackageBackend } from "../../services/packages/packageBackendApi";
 import { registerNode, clearPackageNodes } from "../../registry/nodeRegistry";
 import { usePackageBackendRun, PackageBackendRun } from "../../hook/usePackageBackendRun";
 import type { NodeDescriptor } from "../../registry/types";

@@ -23,7 +23,7 @@ import React from "react";
 import { render, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
-import { usePackageArchiveImport } from "../../components/packages/publishing/usePackageArchiveImport";
+import { usePackageArchiveImport } from "../../providers/packages/usePackageArchiveImport";
 
 const SRC = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
@@ -31,11 +31,13 @@ const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 const mockUploadArchive = jest.fn();
 const mockInstallToProject = jest.fn();
 
-jest.mock("../../api/packagesApi", () => ({
+jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: {
     uploadArchive: (...args: unknown[]) => mockUploadArchive(...args),
     installToProject: (...args: unknown[]) => mockInstallToProject(...args),
   },
+}));
+jest.mock("../../registry/packageRegistryBootstrap", () => ({
   refreshPackageRegistry: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -129,12 +131,12 @@ describe("the drawer hands over the id it saved", () => {
     expect(src).not.toContain("await importArchive(file)");
   });
 
-  test("that id is the one ensureSavedProjectId returned", () => {
+  test("that id is the one ensureProjectId returned", () => {
     // Re-reading the ref here instead would work today and rot the moment the
     // save stops writing it; the returned value is the save's own answer.
     const src = read(DRAWER);
     expect(src).toMatch(
-      /const intoProjectId = await ensureSavedProjectId\([\s\S]{0,120}?\);/,
+      /const intoProjectId = await ensureProjectId\([\s\S]{0,120}?\);/,
     );
   });
 });
@@ -154,7 +156,7 @@ describe("neither silent path stays silent", () => {
     // the import had worked.
     const src = read("components/packages/publishing/NodeCatalogDrawer.tsx");
     const handler = src.slice(src.indexOf("const onPickArchive"));
-    const body = handler.slice(0, handler.indexOf("[ensureSavedProjectId"));
+    const body = handler.slice(0, handler.indexOf("[ensureProjectId"));
     expect(body).toMatch(/catch\s*\([\s\S]{0,40}?\)\s*{[\s\S]{0,1200}?reportActionError/);
   });
 
@@ -163,7 +165,7 @@ describe("neither silent path stays silent", () => {
     // the drawer had its error chrome, which is the quiet way this regresses.
     const src = read("components/packages/publishing/NodeCatalogDrawer.tsx");
     expect(src).toMatch(
-      /\[ensureSavedProjectId,\s*importArchive,\s*reportActionError\]/,
+      /\[ensureProjectId,\s*importArchive,\s*reportActionError\]/,
     );
   });
 

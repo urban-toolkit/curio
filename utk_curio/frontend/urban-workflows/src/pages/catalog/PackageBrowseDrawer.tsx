@@ -1,5 +1,5 @@
 import React from "react";
-import { PackagePayload } from "../../api/packagesApi";
+import { PackagePayload, primaryCategory } from "../../services/packages";
 import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import {
   catalogIsFresh,
@@ -15,8 +15,8 @@ import {
   CatalogPublishPill,
   shouldShowPublishPill,
 } from "../../components/packages/CatalogPublishPill";
-import { primaryCategory } from "../../components/packages/publishing/packageUtils";
 import browseStyles from "./CatalogBrowseLayout.module.css";
+import { countLabel } from "../../utils/countLabel";
 
 /** Cap the "Nodes in pack" list; the remainder collapses into a "…and N more" row. */
 const TEMPLATE_PREVIEW_LIMIT = 12;
@@ -32,6 +32,8 @@ export interface PackageBrowseDrawerProps {
   publishingDir?: string | null;
   showPublish: boolean;
   onInstall: (pkg: PackagePayload) => void;
+  /** Update all projects: replace the store copy with the catalog row it is handed. */
+  onUpdate: (pkg: PackagePayload) => void;
   onViewDetails?: (pkg: PackagePayload) => void;
   onPublish?: (dirName: string) => void;
   onUnpublish?: (dirName: string) => void;
@@ -64,6 +66,7 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
   isPublished,
   publishingDir,
   onInstall,
+  onUpdate,
   onViewDetails,
   onPublish,
   onUnpublish,
@@ -105,7 +108,7 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
         </>
       }
       subtitle={`${pkg.publisher || pkg.packageId} · v${pkg.version}`}
-      metaLeft={`${pkg.templates.length} nodes · ${pkg.packageId}`}
+      metaLeft={`${countLabel(pkg.templates.length, "node")} · ${pkg.packageId}`}
       metaRight={catalogRelativeTime(pkg.createdAtMs)}
       fresh={catalogIsFresh(pkg.createdAtMs)}
       description={pkg.description}
@@ -138,7 +141,7 @@ const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
             type="button"
             className={browseStyles.addToPaletteBtn}
             disabled={busy}
-            onClick={() => onInstall(catalogRow ?? pkg)}
+            onClick={() => onUpdate(catalogRow ?? pkg)}
           >
             Update all projects
           </button>

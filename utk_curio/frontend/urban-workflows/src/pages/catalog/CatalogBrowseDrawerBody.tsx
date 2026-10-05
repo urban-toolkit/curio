@@ -106,55 +106,60 @@ export const CatalogBrowseDrawerBody: React.FC<CatalogBrowseDrawerBodyProps> = (
         </button>
       </div>
 
-      {hero}
+      {/* Only this part scrolls. When the whole drawer was the scroller, the
+          header scrolled away and the actions ended below the fold whenever
+          the content was taller than the drawer (#526). */}
+      <div className={styles.drawerBody} data-curio-drawer-body="true">
+        {hero}
 
-      <div className={styles.drawerDatasetName}>
-        <h2>{title}</h2>
-        <div className={styles.drawerBadgesRow}>{badges}</div>
-      </div>
-
-      <div className={styles.drawerPublisher}>
-        <span className={styles.drawerPublisherText}>{subtitle}</span>
-      </div>
-
-      <div className={styles.drawerMeta}>
-        <span>{metaLeft}</span>
-        <span className={styles.drawerMetaRight}>
-          <span className={`${styles.liveDot} ${fresh ? styles.liveDotGreen : styles.liveDotGray}`} />
-          <span>{metaRight}</span>
-        </span>
-      </div>
-
-      {description ? (
-        <div className={styles.drawerSection}>
-          <p className={styles.drawerDescription}>{description}</p>
+        <div className={styles.drawerDatasetName}>
+          <h2>{title}</h2>
+          <div className={styles.drawerBadgesRow}>{badges}</div>
         </div>
-      ) : null}
 
-      {rows.length > 0 ? (
-        <CatalogDrawerSection label={infoLabel}>
-          {rows.map((row) => (
-            <div className={styles.infoRow} key={row.label}>
-              <span className={styles.infoRowLabel}>{row.label}</span>
-              <span className={styles.infoRowValue}>{row.value}</span>
-            </div>
-          ))}
-        </CatalogDrawerSection>
-      ) : null}
+        <div className={styles.drawerPublisher}>
+          <span className={styles.drawerPublisherText}>{subtitle}</span>
+        </div>
 
-      {tags && tags.length > 0 ? (
-        <CatalogDrawerSection label="Tags">
-          <div className={styles.drawerTagsRow}>
-            {tags.map((tag) => (
-              <span key={tag} className={styles.drawerTag}>
-                {tag}
-              </span>
-            ))}
+        <div className={styles.drawerMeta}>
+          <span>{metaLeft}</span>
+          <span className={styles.drawerMetaRight}>
+            <span className={`${styles.liveDot} ${fresh ? styles.liveDotGreen : styles.liveDotGray}`} />
+            <span>{metaRight}</span>
+          </span>
+        </div>
+
+        {description ? (
+          <div className={styles.drawerSection}>
+            <p className={styles.drawerDescription}>{description}</p>
           </div>
-        </CatalogDrawerSection>
-      ) : null}
+        ) : null}
 
-      {sections}
+        {rows.length > 0 ? (
+          <CatalogDrawerSection label={infoLabel}>
+            {rows.map((row) => (
+              <div className={styles.infoRow} key={row.label}>
+                <span className={styles.infoRowLabel}>{row.label}</span>
+                <span className={styles.infoRowValue}>{row.value}</span>
+              </div>
+            ))}
+          </CatalogDrawerSection>
+        ) : null}
+
+        {tags && tags.length > 0 ? (
+          <CatalogDrawerSection label="Tags">
+            <div className={styles.drawerTagsRow}>
+              {tags.map((tag) => (
+                <span key={tag} className={styles.drawerTag}>
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </CatalogDrawerSection>
+        ) : null}
+
+        {sections}
+      </div>
 
       {/* The subject of the `agent-catalog-action-labels-fit` baseline
           (#333): whether "Remove from all projects" fits on one line. The

@@ -5,7 +5,7 @@
  * expected to pick a preset from the Templates dropdown before running.
  *
  * Package nodes optionally ship a `source` field in the manifest. Reference package:
- * ``<repo_root>/packages/ai.urbanlab.uhvi@1/manifest.json``.
+ * ``<repo_root>/packages/ai.utk.uhvi@1/manifest.json``.
  *
  * Semantic — "inject once, at instantiation only":
  *
@@ -34,9 +34,9 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { useStarterContext } from '../../providers/StarterProvider';
+import { useStarterContext, type Starter } from '../../providers/StarterProvider';
 import { tryGetNodeDescriptor } from '../../registry/nodeRegistry';
-import type { NodeBehaviorHook } from '../../registry/types';
+import type { NodeBehaviorHook, NodeDescriptor } from '../../registry/types';
 
 function sourceDisplayName(sourcePath: string | undefined): string | undefined {
   if (!sourcePath) return undefined;
@@ -46,6 +46,22 @@ function sourceDisplayName(sourcePath: string | undefined): string | undefined {
   // backend walker in `utk_curio/backend/app/packages/templates.py`).
   const stem = basename.replace(/\.[^.]+$/u, '');
   return stem.replace(/_/g, ' ');
+}
+
+/**
+ * The code a freshly dropped node of *descriptor* opens with: its manifest's
+ * `source` starter, from the starters feed. `undefined` for a template without
+ * one, and until the feed has it.
+ */
+export function packageStarterCode(
+  descriptor: NodeDescriptor | undefined,
+  getStarters: (type: string, custom: boolean) => Starter[],
+): string | undefined {
+  if (!descriptor || descriptor.source !== 'package') return undefined;
+  const wantedName = sourceDisplayName(descriptor.package?.source);
+  if (!wantedName) return undefined;
+  const hit = getStarters(descriptor.id, false).find((t) => t.name === wantedName);
+  return hit?.code || undefined;
 }
 
 export const usePackageNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
@@ -91,6 +107,12 @@ export const usePackageNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
     const hit = templates.find((t) => t.name === wantedName);
     if (hit?.code) {
       hasInjectedRef.current = true;
+      // #662: the starter's [!! name !!] references need the widgets the
+      // template declares. Seeded beside the code, once, like the code.
+      const node = data as { widgets?: unknown };
+      if (node.widgets === undefined && descriptor.widgets && descriptor.widgets.length > 0) {
+        node.widgets = descriptor.widgets.map((w) => ({ ...w }));
+      }
       setOverride(hit.code);
     }
     // else: templates not loaded yet — wait for the next effect run.
@@ -115,7 +137,7 @@ export const usePackageNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
  * package-shipped key, …). Resolving `"code"` yields the built-in no-op
  * `useCodeNodeBehavior`, which knows nothing about package starters — so
  * every package template declaring `behavior: "code"` alongside a `source`
- * (curio.weather, ai.urbanlab.uhvi, and everything the node factory
+ * (curio.weather, ai.utk.uhvi, and everything the node factory
  * scaffolds) used to open with an empty editor.
  *
  * The composed hook runs both: *inner* owns the whole behavior surface, and

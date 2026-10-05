@@ -8,15 +8,16 @@
  * The fixture is a hand-written subset of `packages/curio.builtin@1/manifest.json`
  * — small enough to read in one screen, large enough to exercise:
  *   - bidirectional handles (vis-vega)
- *   - container overrides (merge-flow)
+ *   - container overrides (data-pool: the fixture gives it a 50x180 icon-only
+ *     container, since no shipped template declares one)
  *   - editor === 'none' → adapter.editor must be null
- *   - 'N' icon for [1,n] cardinality (data-loading output)
+ *   - 'N' icon for [1,n] cardinality (data-loading output, data-pool input)
  *   - badge passthrough (vega), behavior/icon registry lookups
  */
 
 import {
   faChartLine,
-  faCodeMerge,
+  faServer,
   faUpload,
 } from '@fortawesome/free-solid-svg-icons';
 
@@ -26,7 +27,7 @@ import {
 jest.mock('vega', () => ({}), { virtual: true });
 jest.mock('vega-lite', () => ({}), { virtual: true });
 
-import '../../registry/builtinBehaviors'; // side-effect: registers the 11 built-in behaviors
+import '../../registry/builtinBehaviors'; // side-effect: registers the built-in behaviors
 import '../../registry/iconRegistry'; // side-effect: registers FA icons used by the fixture
 import { registerPackageTemplates } from '../../registry/packagesClient';
 import { clearPackageNodes } from '../../registry/nodeRegistry';
@@ -65,7 +66,6 @@ const FIXTURE_PACK = {
       bidirectional: false,
       containerStyle: null,
       hasProvenance: null,
-      tutorialId: 'step-loading',
     },
     {
       id: 'curio.builtin/vis-vega@1',
@@ -90,32 +90,30 @@ const FIXTURE_PACK = {
       bidirectional: true,
       containerStyle: null,
       hasProvenance: true,
-      tutorialId: null,
     },
     {
-      id: 'curio.builtin/merge-flow@1',
-      templateId: 'merge-flow',
-      label: 'Merge Flow',
-      category: 'flow',
+      id: 'curio.builtin/data-pool@1',
+      templateId: 'data-pool',
+      label: 'Data Pool',
+      category: 'data',
       engine: 'python' as const,
       description: '',
       icon: null,
-      iconRef: 'fa-solid:code-merge',
-      behavior: 'merge-flow',
-      paletteOrder: 9,
+      iconRef: 'fa-solid:server',
+      behavior: 'data-pool',
+      paletteOrder: 13,
       editor: 'none' as const,
       hasCode: false,
       hasWidgets: false,
       hasGrammar: false,
       grammarId: null,
       badge: null,
-      inputPorts: [{ types: ['DATAFRAME'], cardinality: '[1,n]' }],
-      outputPorts: [{ types: ['DATAFRAME'], cardinality: '1' }],
+      inputPorts: [{ types: ['DATAFRAME', 'GEODATAFRAME'], cardinality: '[1,n]' }],
+      outputPorts: [{ types: ['DATAFRAME', 'GEODATAFRAME'], cardinality: '1' }],
       source: null,
-      bidirectional: false,
+      bidirectional: true,
       containerStyle: { nodeWidth: 50, nodeHeight: 180, noContent: true },
       hasProvenance: null,
-      tutorialId: 'step-merge',
     },
   ],
 };
@@ -130,7 +128,6 @@ describe('registerPackageTemplates → NodeDescriptor', () => {
     expect(dl.badge).toBeUndefined();
     expect(dl.adapter.outputIconType).toBe('N');
     expect(dl.adapter.editor).not.toBeNull();
-    expect(dl.tutorialId).toBe('step-loading');
   });
 
   test('vis-vega: bidirectional handle, badge="VEGA", grammarId="vega-lite", hasProvenance=true', () => {
@@ -144,14 +141,42 @@ describe('registerPackageTemplates → NodeDescriptor', () => {
     expect(vega.adapter.handles).toHaveLength(3);
   });
 
-  test('merge-flow: editor=null (none), 50x180 container, custom icon', () => {
-    const [, , merge] = registerPackageTemplates([FIXTURE_PACK]);
-    expect(merge.id).toBe('curio.builtin/merge-flow@1');
-    expect(merge.icon).toBe(faCodeMerge);
-    expect(merge.adapter.editor).toBeNull();
-    expect(merge.adapter.container.nodeWidth).toBe(50);
-    expect(merge.adapter.container.nodeHeight).toBe(180);
-    expect(merge.adapter.container.noContent).toBe(true);
+  test('data-pool: editor=null (none), 50x180 container, custom icon, N input', () => {
+    const [, , pool] = registerPackageTemplates([FIXTURE_PACK]);
+    expect(pool.id).toBe('curio.builtin/data-pool@1');
+    expect(pool.icon).toBe(faServer);
+    expect(pool.adapter.editor).toBeNull();
+    expect(pool.adapter.container.nodeWidth).toBe(50);
+    expect(pool.adapter.container.nodeHeight).toBe(180);
+    expect(pool.adapter.container.noContent).toBe(true);
+    // Its one input port takes several edges, so it grows a circle per edge.
+    expect(pool.adapter.inputIconType).toBe('N');
+  });
+});
+
+describe('a template with no port (#662, the Parameter node)', () => {
+  beforeEach(() => clearPackageNodes());
+
+  test('has no handle, so no edge reaches it or leaves it', () => {
+    const parameter = {
+      ...FIXTURE_PACK.templates[0],
+      id: 'curio.builtin/parameter@1',
+      templateId: 'parameter',
+      label: 'Parameter',
+      category: 'flow',
+      iconRef: 'fa-solid:sliders',
+      behavior: 'parameter',
+      paletteOrder: 12,
+      editor: 'none' as const,
+      hasCode: false,
+      inputPorts: [],
+      outputPorts: [],
+    };
+    const [descriptor] = registerPackageTemplates([{ ...FIXTURE_PACK, templates: [parameter] }]);
+    expect(descriptor.adapter.handles).toEqual([]);
+    expect(descriptor.adapter.inputIconType).toBeUndefined();
+    expect(descriptor.adapter.outputIconType).toBeUndefined();
+    expect(descriptor.adapter.editor).toBeNull();
   });
 });
 

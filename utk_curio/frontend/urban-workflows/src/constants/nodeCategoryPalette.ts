@@ -55,20 +55,23 @@ export const CATEGORY_FALLBACK_FG = categoryFg("package");
 /**
  * Canonical unversioned node types per colour bucket.
  *
- * The canvas keys its border off the node *type* rather than off a category
- * field, because a flow node carries no descriptor at paint time. Keeping the
- * type lists here means the canvas and the projects-list thumbnail read one
- * source instead of two copies that have to be kept in step by hand.
+ * The projects-list thumbnail paints from a saved preview, which carries only
+ * node types, and the canvas falls back here for a node with no resolved
+ * descriptor. The values are the categories `curio.builtin@1`'s manifest gives
+ * each kind, through NODE_CATEGORY_KEY, so the thumbnail, the canvas border
+ * and the title-bar pill agree; nodeCategoryPalette.test.ts checks the two.
  */
 export const NODE_TYPE_CATEGORY: Record<string, NodeCategoryKey> = {
   "curio.builtin/data-loading": "data",
   "curio.builtin/data-export": "data",
   "curio.builtin/data-transformation": "data",
-  "curio.builtin/data-summary": "data",
+  "curio.builtin/data-pool": "data",
+  "curio.builtin/spatial-join": "data",
   "curio.builtin/computation-analysis": "computation",
-  "curio.builtin/merge-flow": "computation",
-  "curio.builtin/data-pool": "computation",
+  "curio.builtin/data-summary": "computation",
   "curio.builtin/js-computation": "computation",
+  "curio.builtin/parameter": "package",
+  "curio.builtin/compare-scenarios": "vis",
   "curio.builtin/vis-vega": "vis",
   "curio.builtin/vis-simple": "vis",
   "curio.builtin/autk-grammar": "vis",

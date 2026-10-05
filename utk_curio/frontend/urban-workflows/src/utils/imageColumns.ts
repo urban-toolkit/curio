@@ -12,7 +12,8 @@
  * The rule, in order:
  *
  *   1. If any RECOGNIZED_COLUMNS name is present and holds image-like values,
- *      those are the image columns and nothing else is considered.
+ *      those are the image columns and nothing else is considered. A
+ *      `thumbnail` column stands in for `image_url` when both are present.
  *   2. Otherwise sniff every column's values.
  *
  * Bare base64 is only honoured in step 1. A column of long hex ids passes any
@@ -22,28 +23,32 @@
  * while step 1 does not - Street View's `image_url` is a query-string API call
  * with no extension, and it reaches us under a recognized name.
  *
+ * The recognized names, the extensions and the threshold are generated from
+ * the backend's `contracts.py` into `src/generated/visDefaults.ts`, which is
+ * also what the agents' shared preamble states.
+ *
  * Pure and React-free so it can be tested directly.
  */
+
+import {
+  IMAGE_COLUMNS,
+  IMAGE_EXTENSIONS,
+  IMAGE_MATCH_THRESHOLD,
+} from '../generated/visDefaults';
 
 export type FrameRow = Record<string, unknown>;
 
 /** Names checked first, in this order. */
-export const RECOGNIZED_COLUMNS: readonly string[] = [
-  'image_content',
-  'image_url',
-  'image',
-  'thumbnail',
-  'overlay_url',
-];
+export const RECOGNIZED_COLUMNS: readonly string[] = IMAGE_COLUMNS;
 
 /** Fraction of a column's non-null cells that must look like images. */
-const MATCH_THRESHOLD = 0.6;
+const MATCH_THRESHOLD = IMAGE_MATCH_THRESHOLD;
 
 /** Long enough that ordinary words and short ids cannot qualify. */
 const MIN_BASE64_LENGTH = 64;
 
 const BASE64_RE = /^[A-Za-z0-9+/\s]+={0,2}$/;
-const IMAGE_EXTENSION_RE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)(\?|#|$)/i;
+const IMAGE_EXTENSION_RE = new RegExp(`\\.(${IMAGE_EXTENSIONS.join('|')})(\\?|#|$)`, 'i');
 
 /**
  * How a single cell can become an `<img>` source.
@@ -150,6 +155,12 @@ export function resolveImageColumns(rows: readonly FrameRow[]): string[] {
       columns.includes(name) &&
       columnHoldsImages(rows, name, { allowBase64: true, requireExtension: false }),
   );
+  // A `thumbnail` is the small view of the row's `image_url`, as a
+  // collection's rows carry both: drawing the two would show every file twice
+  // and fetch each one at full size.
+  if (recognized.includes('thumbnail')) {
+    return recognized.filter((name) => name !== 'image_url');
+  }
   if (recognized.length > 0) return recognized;
 
   return columns.filter((name) =>

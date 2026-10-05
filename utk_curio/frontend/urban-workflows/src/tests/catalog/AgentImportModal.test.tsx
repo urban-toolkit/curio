@@ -1,13 +1,12 @@
 import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: { uploadImport: jest.fn() },
 }));
 
-import { agentsApi } from "../../api/agentsApi";
+import { agentsApi, buildUploadPayload } from "../../services/agents";
 import { AgentImportModal } from "../../components/agents/catalog/AgentImportModal";
-import { buildUploadPayload } from "../../components/agents/catalog/buildUploadPayload";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
 
@@ -23,7 +22,19 @@ describe("buildUploadPayload", () => {
     expect(out.prompts).toEqual({ "prompts/instruction.txt": "do the thing" });
   });
 
-  it("requires exactly one manifest and only .txt prompts", () => {
+  it("takes .md prompts, the form built-in definitions export", () => {
+    const out = buildUploadPayload([
+      { name: "manifest.json", text: JSON.stringify(MANIFEST) },
+      { name: "instruction.md", text: "do the thing" },
+      { name: "notes.txt", text: "and this" },
+    ]);
+    expect(out.prompts).toEqual({
+      "prompts/instruction.md": "do the thing",
+      "prompts/notes.txt": "and this",
+    });
+  });
+
+  it("requires exactly one manifest and only .md or .txt prompts", () => {
     expect(() => buildUploadPayload([{ name: "instruction.txt", text: "x" }])).toThrow(
       /exactly one manifest/i,
     );

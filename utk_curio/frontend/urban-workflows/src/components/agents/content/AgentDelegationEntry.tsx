@@ -1,7 +1,7 @@
 import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
-import type { AgentDelegationPart } from "../../../api/agentsApi";
+import type { AgentDelegationPart } from "../../../services/agents";
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import styles from "./AgentDelegationEntry.module.css";
 
@@ -54,6 +54,11 @@ export const AgentDelegationEntry: React.FC<{
       <div className={styles.head}>
         <span className={styles.title}>{part.capability}</span>
         <span className={styles.name}>{part.name}</span>
+        {part.model ? (
+          <span className={styles.model}>
+            {part.llmLabel ? `${part.llmLabel} (${part.model})` : part.model}
+          </span>
+        ) : null}
         <span className={`${styles.status} ${failed ? styles.statusFailed : styles.statusOk}`}>
           {failed ? "failed" : "ok"}
         </span>

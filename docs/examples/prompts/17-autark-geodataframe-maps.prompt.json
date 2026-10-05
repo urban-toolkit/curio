@@ -1,0 +1,259 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "17-autark-geodataframe-maps",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/17-autark-geodataframe-maps.json",
+    "sha256": "4bbda1b9ae1896c1ebb3f3435a79109ebf993cc6a963b1a7bd8109c700e63dd9",
+    "walkthrough": "docs/examples/17-autark-geodataframe-maps.md"
+  },
+  "prompt": "Load the Chicago ZIP boundary polygons from the Data Catalog, keep the downtown ZIPs (the Loop and its neighbours), and add each ZIP's area in square kilometres, measured in a projected coordinate system. Draw the frame as an Autark map coloured by area, and next to it the same map in Vega-Lite. Then show the same pair of maps three more times: once from a plain DataFrame that still holds the geometry column, once from a DataFrame with the geometry dropped (both views should say there is nothing to draw), and once from the frame reprojected to Illinois East. Also make a second layer with a point at the centre of each ZIP and draw the polygons and the points together on one Autark map. Finally add a bar chart of area by ZIP, linked to the first Autark map so that hovering a bar highlights its ZIP.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.utk.chicago-boundary"
+    ],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform2",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform3",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform4",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization7",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization8",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization9",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization10",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform2",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform3",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "transform4",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "transform2",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "transform2",
+        "to": "visualization8",
+        "kind": "data"
+      },
+      {
+        "from": "transform3",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "transform3",
+        "to": "visualization9",
+        "kind": "data"
+      },
+      {
+        "from": "transform4",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "transform4",
+        "to": "visualization10",
+        "kind": "data"
+      },
+      {
+        "from": "visualization7",
+        "to": "visualization1",
+        "kind": "interaction"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.utk.chicago-boundary"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T3",
+    "needs": [
+      "gpu"
+    ],
+    "skip": [
+      {
+        "when": "gpu",
+        "reason": "The Autark maps need hardware WebGPU; the plan and apply half of this fixture still runs offline.",
+        "scope": "execution"
+      }
+    ]
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "validation",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON and its walkthrough, 2026-09-26",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.utk.chicago-boundary",
+        "licence": "Open Data"
+      }
+    ]
+  },
+  "notes": "The Autark node beside the Vega-Lite node on the same inputs, including the refusal of a frame with no geometry."
+}

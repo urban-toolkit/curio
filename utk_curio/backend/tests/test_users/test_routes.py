@@ -85,8 +85,7 @@ class TestHuggingFaceToken:
     accepting a licence, so one shared deployment token could not represent
     what each user is entitled to download. It used to be read from a bare
     ``HUGGINGFACE_TOKEN`` env var and was invisible to the people it applied
-    to; it is now edited in AI Settings, with
-    ``curio.py start --huggingface-token`` supplying the fallback.
+    to; it is now edited in API Settings, and nothing else supplies one.
     """
 
     def _patch(self, client, token, body):
@@ -119,12 +118,33 @@ class TestHuggingFaceToken:
         r = self._patch(client, token, {"huggingface_token": ""})
         assert r.get_json()["has_huggingface_token"] is False
 
+    def test_a_hosted_guest_is_refused_out_loud(self, client):
+        guest = _post(client, "/api/auth/signin/guest").get_json()["token"]
+        r = self._patch(client, guest, {"huggingface_token": "hf_secret"})
+        assert r.status_code == 403
+        assert "HuggingFace token" in r.get_json()["error"]
+        assert _get(client, "/api/auth/me", token=guest).get_json()[
+            "has_huggingface_token"
+        ] is False
+
+    def test_the_local_guest_saves_its_own(self, client, monkeypatch):
+        # Without --deploy the shared guest is the one local user, so API
+        # Settings is where it sets the token.
+        from utk_curio.backend import config
+
+        monkeypatch.setattr(routes, "CURIO_NO_AUTH", True)
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+        guest = _post(client, "/api/auth/signin/auto-guest").get_json()["token"]
+        r = self._patch(client, guest, {"huggingface_token": "hf_secret"})
+        assert r.status_code == 200
+        assert r.get_json()["has_huggingface_token"] is True
+
     def test_omitting_it_leaves_it_alone(self, client):
-        # AI Settings sends the field only when the user typed something, so a
-        # save that changes the model must not wipe a stored token.
+        # API Settings sends the field only when the user typed something, so a
+        # save that changes another field must not wipe a stored token.
         token = _signup(client).get_json()["token"]
         self._patch(client, token, {"huggingface_token": "hf_secret"})
-        r = self._patch(client, token, {"llm_model": "some-model"})
+        r = self._patch(client, token, {"name": "Renamed"})
         assert r.get_json()["has_huggingface_token"] is True
 
 

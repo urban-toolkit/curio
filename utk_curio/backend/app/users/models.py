@@ -15,21 +15,23 @@ class User(db.Model):
     provider = db.Column(db.String(50), nullable=True)
     provider_uid = db.Column(db.String(200), nullable=True)
     is_guest = db.Column(db.Boolean, default=False, nullable=False)
-    llm_api_type = db.Column(db.String(50), nullable=True)
-    llm_base_url = db.Column(db.String(500), nullable=True)
-    llm_api_key = db.Column(db.String(255), nullable=True)
-    llm_model = db.Column(db.String(100), nullable=True)
+    # The account's LLM configurations live in an owner-only file beside its
+    # other per-user stores (agents/llm_configs.py), not on this row.
     # Gated-model access on HuggingFace is a per-person entitlement (you
     # accept a model's licence with your own account), so this is an
     # account setting rather than one shared deployment secret.
     huggingface_token = db.Column(db.String(255), nullable=True)
-    # A Socrata app token, for the Data Lake Catalog. Optional - the portals
+    # A Socrata app token, for the Discovery Catalog. Optional - the portals
     # answer without one - but it is issued to a person and raises that
     # person's rate limit, so one shared deployment token would mean everyone
     # on an install spending the same allowance and being throttled together.
-    # The slot registry in datalakes/infrastructure/credentials.py maps a
+    # The slot registry in discovery/infrastructure/credentials.py maps a
     # manifest's auth.secretId onto this column.
     socrata_app_token = db.Column(db.String(255), nullable=True)
+    # Two street-level imagery keys for the Discovery Catalog, each billed or
+    # rate-limited per person, so neither has a deployment-wide fallback.
+    google_maps_api_key = db.Column(db.String(255), nullable=True)
+    mapillary_access_token = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
         db.DateTime,

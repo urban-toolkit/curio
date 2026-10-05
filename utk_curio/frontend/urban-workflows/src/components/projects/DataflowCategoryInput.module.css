@@ -1,0 +1,149 @@
+/* A dataflow's categories as chips. The chip itself matches the catalog
+   cards' `.tag` (CatalogBrowseLayout.module.css) so a category reads the same
+   on a card, in the drawer and under the canvas title. */
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--curio-font-family);
+}
+
+.chip {
+  height: 20px;
+  border-radius: 10px;
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-secondary);
+  padding: 0 8px;
+  font-size: var(--curio-font-size-xs);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* Read off the nodes, so they are not removable: filled, no border. The
+   dataflow grey reads as a chip on the canvas and on a white dialog alike. */
+.chipAuto {
+  background: var(--curio-kind-dataflow-bg);
+}
+
+/* Set by hand: outlined, with a remove button. */
+.chipHand {
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border-strong);
+}
+
+.remove {
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  color: var(--curio-text-muted);
+  font-size: var(--curio-font-size-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.remove:hover {
+  color: var(--curio-text-primary);
+}
+
+.more,
+.add {
+  height: 20px;
+  border-radius: 10px;
+  border: 1px dashed var(--curio-border-strong);
+  background: none;
+  color: var(--curio-text-secondary);
+  padding: 0 8px;
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.more {
+  border-style: solid;
+}
+
+.more:hover,
+.add:hover {
+  color: var(--curio-text-primary);
+  border-color: var(--curio-text-secondary);
+}
+
+.addWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.form {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  background: var(--curio-card-bg);
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-lg);
+  box-shadow: var(--curio-shadow-modal);
+  white-space: nowrap;
+}
+
+/* The dialog's form: always open, in the flow under the chips. */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.formInline {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.select,
+.input {
+  height: 28px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-sm);
+  font-family: inherit;
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-primary);
+  background: var(--curio-card-bg);
+}
+
+.select {
+  padding: 0 4px;
+}
+
+.input {
+  width: 180px;
+  padding: 0 8px;
+}
+
+.confirm {
+  height: 28px;
+  border: none;
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: var(--curio-font-size-sm);
+  cursor: pointer;
+}
+
+.confirm:hover {
+  background: var(--curio-top-bar-bg-hover);
+}
+
+.confirm:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

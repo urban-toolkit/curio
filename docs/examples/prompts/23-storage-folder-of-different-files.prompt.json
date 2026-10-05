@@ -1,0 +1,120 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "23-storage-folder-of-different-files",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/23-storage-folder-of-different-files.json",
+    "sha256": "4e445d3938e7ba5f3755c0454948739b35528168664ad34707049d1484124d08",
+    "walkthrough": "docs/examples/23-storage-folder-of-different-files.md"
+  },
+  "prompt": "Load two datasets from the Data Catalog: Example roads, a shapefile, and Example parks, a GeoJSON file. Combine them into one GeoDataFrame and draw the parks and the roads together on one Vega-Lite map.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.curio.storage-parks",
+      "data.curio.storage-roads"
+    ],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "analysis1",
+        "kind": "data",
+        "slot": 1
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.curio.storage-parks",
+        "data.curio.storage-roads"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON and its walkthrough, 2026-09-28",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.curio.storage-parks",
+        "licence": "CC0-1.0"
+      },
+      {
+        "datasetId": "data.curio.storage-roads",
+        "licence": "CC0-1.0"
+      }
+    ]
+  },
+  "notes": "A folder of different files, each its own dataset, stacked on one map."
+}

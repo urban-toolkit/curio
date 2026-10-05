@@ -7,6 +7,8 @@
 
 import { loadInstalledPackages } from './packagesClient';
 import { getToken } from '../utils/authApi';
+import { isStandaloneDashboard } from '../standalone/dashboardPayload';
+import { registryLoadSettled, registryLoadStarted } from './registryReadiness';
 
 function notifyTemplatesAfterPackageRefresh(): void {
   const w = window as unknown as { curio?: { fetchStarters?: () => void | Promise<void> } };
@@ -14,39 +16,6 @@ function notifyTemplatesAfterPackageRefresh(): void {
   if (typeof fn === 'function') {
     void Promise.resolve(fn()).catch(() => {});
   }
-}
-
-/**
- * Whether the registry has finished at least one real load and none is in
- * flight.
- *
- * A node whose type has no descriptor has two very different explanations:
- * the registry has not caught up yet, or nothing installed provides that type.
- * They were indistinguishable, so both rendered "Loading node…" and the second
- * one rendered it forever - which is all the streetvision example ever showed
- * (#233). This is the signal that separates them.
- *
- * "At least one real load" matters: ``refreshPackageRegistry`` returns early
- * with no session, and a canvas that concluded "not installed" from an absent
- * token would accuse every node on the board.
- */
-let completedRealLoad = false;
-let inFlight = 0;
-const readyListeners = new Set<() => void>();
-
-function emitReadyChange(): void {
-  readyListeners.forEach((listener) => listener());
-}
-
-export function isRegistryReady(): boolean {
-  return completedRealLoad && inFlight === 0;
-}
-
-export function subscribeToRegistryReady(listener: () => void): () => void {
-  readyListeners.add(listener);
-  return () => {
-    readyListeners.delete(listener);
-  };
 }
 
 /**
@@ -66,19 +35,17 @@ export function refreshPackageRegistry(): Promise<void> {
   // sign-up page, the first screen a new user sees. Callers that matter run
   // after sign-in anyway: ``UserProvider.applyUser`` refreshes as soon as a
   // user resolves, and ``ToolsMenu`` refreshes again when ``user.id`` appears.
-  if (!getToken()) return Promise.resolve();
-  inFlight += 1;
-  emitReadyChange();
+  //
+  // A standalone dashboard is the exception: it has no session and never will,
+  // but it was served with the descriptors inside it, so there IS a real load
+  // to do. Returning early here would leave the registry never ready
+  // (`registryReadiness`), and `UnresolvedNode` would show "Loading node..." on
+  // every tile forever rather than render the page the viewer was sent.
+  if (!getToken() && !isStandaloneDashboard()) return Promise.resolve();
+  registryLoadStarted();
   return loadInstalledPackages()
     .then(() => {
       notifyTemplatesAfterPackageRefresh();
     })
-    .finally(() => {
-      inFlight -= 1;
-      // A load that FAILED still counts as settled: `loadInstalledPackages`
-      // swallows its own errors and returns [], so waiting for a success that
-      // will never come is how the placeholder became permanent.
-      completedRealLoad = true;
-      emitReadyChange();
-    });
+    .finally(registryLoadSettled);
 }

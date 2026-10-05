@@ -11,6 +11,15 @@
  *
  * `loadTrill` in `hook/useCode.ts` is the matching reader.
  */
+import type { HandCategories } from "./utils/dataflowCategories";
+import { canvasPositionOf } from "./utils/canvasPosition";
+import { canvasTemplateConfigToSpec } from "./utils/canvasTemplateConfigSpec";
+import { dataPoolToSpec } from "./utils/dataPoolSpec";
+import { normalizeWidgets } from "./utils/widgets/widgetModel";
+import { normalizeSelections } from "./utils/references/selectionTags";
+import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
+import { normalizeCompareSettings } from "./utils/compare/compareSettings";
+
 export class TrillGenerator {
 
     static provenanceJSON: any = {
@@ -23,10 +32,15 @@ export class TrillGenerator {
 
     static list_of_trills: any = {}; // [workflowName_timestamp] -> trill_spec
 
+    /** #662: the canvas's scenarios, so a version snapshot carries them. The
+     * flow's `setScenarios` keeps this current; `reset` clears it. */
+    static scenarios: Scenario[] = [];
+
     static reset() {
         this.provenanceJSON = { id: "", nodes: [], edges: [] };
         this.latestTrill = "";
         this.list_of_trills = {};
+        this.scenarios = [];
     }
 
     static _extractGraphPreview(trill: any): { nodes: any[]; edges: any[] } {
@@ -92,7 +106,11 @@ export class TrillGenerator {
 
         console.log("adding new provenance version for Trill");
 
-        let new_trill = this.generateTrill(nodes, edges, name, task);
+        // A snapshot carries the scenarios only when there are some.
+        let new_trill = this.generateTrill(
+            nodes, edges, name, task, undefined, undefined, undefined, undefined,
+            this.scenarios.length > 0 ? this.scenarios : undefined,
+        );
         
         console.log("new_trill", new_trill);
 
@@ -158,7 +176,17 @@ export class TrillGenerator {
         TrillGenerator.list_of_trills = data.versions || {};
     }
 
-    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = [], description: string = "", datasets: any[] = []){
+    /**
+     * *categories* are the hand-set ones (`dataflow.categories`). Pass them from
+     * a save, where the canvas's value is the truth and `{}` clears them; leave
+     * them out anywhere else, and the key is not written, so the server keeps
+     * what is on disk.
+     *
+     * *scenarios* (`dataflow.scenarios`, #662) follow the same rule: a save
+     * passes the canvas's list and `[]` clears them. Their members are kept
+     * only when they are among *nodes*.
+     */
+    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = [], description: string = "", datasets: any[] = [], categories?: HandCategories, scenarios?: Scenario[]){
 
         let trill: any = {
             dataflow: {
@@ -174,6 +202,9 @@ export class TrillGenerator {
         if (description) {
             trill.dataflow.description = description;
         }
+        if (categories) {
+            trill.dataflow.categories = categories;
+        }
 
         const datasetRefs = new Map<string, any>();
         for (const dataset of datasets || []) {
@@ -188,8 +219,8 @@ export class TrillGenerator {
             // Persist dispatcher id (`data.nodeType`); RF `type` stays a sentinel for all UniversalNode-backed templates.
             trill_node.type = node.data?.nodeType ?? node.type;
 
-            // Use workflow position so saving in dashboard mode doesn't corrupt the layout
-            const workflowPos = node.data.workflowPosition ?? node.position;
+            // The canvas spot, so a save from the dashboard or the notebook view doesn't corrupt the layout
+            const workflowPos = canvasPositionOf(node);
             trill_node.x = workflowPos.x;
             trill_node.y = workflowPos.y;
 
@@ -249,6 +280,15 @@ export class TrillGenerator {
                 trill_node.metadata.datasetSource = node.data.datasetSource;
             }
 
+            // The model a Model Catalog drop set, beside datasetRefs, so the
+            // saved dataflow says which model a node runs.
+            if(Array.isArray(node.data.modelRefs) && node.data.modelRefs.length > 0){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.modelRefs = node.data.modelRefs;
+            }
+
             // dev/89: per-node appearance persists at the canonical
             // metadata.appearance shape — without this, a recolored post-it
             // would lose its color on the next canvas save.
@@ -292,6 +332,80 @@ export class TrillGenerator {
                     trill_node.metadata = {};
 
                 trill_node.metadata.simpleVis = { imageColumn: node.data.simpleVis.imageColumn };
+            }
+
+            // #412: a renamed node header (the header's rename and the config
+            // modal both write data.packageTemplateLabel) persists at
+            // metadata.packageTemplateLabel.
+            if(typeof node.data.packageTemplateLabel === "string" && node.data.packageTemplateLabel.trim()){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.packageTemplateLabel = node.data.packageTemplateLabel.trim();
+            }
+
+            // #412: the rest of what the node settings modal saved
+            // (data.packageTemplateConfig) persists at
+            // metadata.packageTemplateConfig, without the code copy and the
+            // port row ids (utils/canvasTemplateConfigSpec).
+            const packageTemplateConfig = canvasTemplateConfigToSpec(node.data.packageTemplateConfig);
+            if(packageTemplateConfig != undefined){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.packageTemplateConfig = packageTemplateConfig;
+            }
+
+            // #581: a Data Pool's conflict modes (data.dataPool) persist at
+            // metadata.dataPool, only those that are not Overwrite, so an
+            // untouched pool serializes as it did before (utils/dataPoolSpec).
+            const dataPool = dataPoolToSpec(node.data.dataPool);
+            if(dataPool != undefined){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.dataPool = dataPool;
+            }
+
+            // #662: the node's widgets and their values persist at
+            // metadata.widgets, only when it has any, so a node without
+            // widgets serializes as it did before.
+            const widgets = normalizeWidgets(node.data.widgets);
+            if(widgets.length > 0){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.widgets = widgets;
+            }
+
+            // #662: a copy made by Duplicate selection names the nodes it
+            // descends from at metadata.copiedFrom, only when it is one.
+            if(Array.isArray(node.data.copiedFrom) && node.data.copiedFrom.length > 0){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.copiedFrom = [...node.data.copiedFrom];
+            }
+
+            // #662: the node's selection tags and the ids each holds persist
+            // at metadata.selections, only when it has any, so every run reads
+            // the selection the canvas showed.
+            const selections = normalizeSelections(node.data.selections);
+            if(selections.length > 0){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.selections = selections;
+            }
+
+            // #662: a Compare Scenarios node's input labels and chart persist
+            // at metadata.compareScenarios, only when it has either.
+            const compareScenarios = normalizeCompareSettings(node.data.compareScenarios);
+            if(compareScenarios != undefined){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.compareScenarios = compareScenarios;
             }
 
             if(typeof node.data.title === "string" && node.data.title)
@@ -339,6 +453,13 @@ export class TrillGenerator {
             }
 
             trill.dataflow.edges.push(trill_edge);
+        }
+
+        if (scenarios) {
+            trill.dataflow.scenarios = normalizeScenarios(
+                scenarios,
+                trill.dataflow.nodes.map((n: any) => n.id),
+            );
         }
 
         return trill

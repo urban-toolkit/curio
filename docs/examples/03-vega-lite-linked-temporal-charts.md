@@ -14,8 +14,7 @@ flowchart LR
 ## Data
 
 This example reads its inputs from the [Data Catalog](../DATA-CATALOG.md). Each loader node
-addresses a dataset by id via `curio_dataset_path("<id>")` rather than by a repo-relative path,
-so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
+addresses a dataset by id via `curio_data_path("<id>")`, so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
 
 | Dataset | Id | Format | Size |
 |---|---|---|---|
@@ -32,7 +31,7 @@ Read the table from the catalog. Three trims at the source matter for runtime: `
 ```python
 import pandas as pd
 
-dataset_path = curio_dataset_path("data.cityofchicago.speed-camera-violations")
+dataset_path = curio_data_path("data.cityofchicago.speed-camera-violations")
 df = pd.read_parquet(
     dataset_path,
     columns=['CAMERA ID', 'VIOLATION DATE', 'VIOLATIONS', 'LATITUDE', 'LONGITUDE'],
@@ -88,7 +87,7 @@ The first view stacks violations by camera within each year so individual offend
   "config": {"bar": {"continuousBandSize": 18}},
   "mark": {"type": "bar"},
   "encoding": {
-    "x": {"field": "Year", "type": "quantitative", "title": "Year"},
+    "x": {"field": "Year", "type": "quantitative", "title": "Year", "axis": {"format": "d"}},
     "y": {
       "aggregate": "sum",
       "field": "total_violations",
@@ -117,12 +116,11 @@ The second view sums across the same five cameras to show the year-over-year tre
     {
       "aggregate": [{"op": "sum", "field": "total_violations", "as": "total"}],
       "groupby": ["Year"]
-    },
-    {"sort": {"field": "Year"}}
+    }
   ],
   "mark": {"type": "line", "point": true},
   "encoding": {
-    "x": {"field": "Year", "type": "quantitative", "title": "Year"},
+    "x": {"field": "Year", "type": "quantitative", "title": "Year", "axis": {"format": "d"}},
     "y": {"field": "total", "type": "quantitative", "title": "Total Violations"}
   }
 }

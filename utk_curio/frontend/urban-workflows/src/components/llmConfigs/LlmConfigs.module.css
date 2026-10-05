@@ -1,0 +1,237 @@
+/* API Settings: LLM configurations and their editor. The field, button and
+   footer vocabulary is ../modal-content.module.css. */
+
+.section {
+  margin: 0 0 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--curio-border);
+}
+
+.heading {
+  margin: 0 0 6px;
+  font-size: var(--curio-font-size-lg);
+  font-weight: 600;
+  color: var(--curio-text-primary);
+}
+
+.intro,
+.note {
+  margin: 0 0 10px;
+  color: var(--curio-text-secondary);
+  font-size: var(--curio-font-size-sm);
+  line-height: 1.5;
+}
+
+.shared {
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-page-bg);
+  color: var(--curio-text-secondary);
+  font-size: var(--curio-font-size-sm);
+}
+
+.active {
+  margin: 0 0 10px;
+  color: var(--curio-text-primary);
+  font-size: var(--curio-font-size-sm);
+}
+
+.skeleton,
+.empty {
+  margin: 6px 0 10px;
+  color: var(--curio-text-muted);
+  font-size: var(--curio-font-size-sm);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--curio-font-size-sm);
+  margin-bottom: 8px;
+}
+
+.table caption {
+  text-align: left;
+  color: var(--curio-text-muted);
+  font-size: var(--curio-font-size-sm);
+  padding-bottom: 4px;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--curio-border);
+}
+
+.table th {
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+}
+
+.name {
+  font-weight: 600;
+  color: var(--curio-text-primary);
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+}
+
+.host {
+  display: block;
+  color: var(--curio-text-muted);
+}
+
+/* The buttons wrap onto another line, each keeping its label whole. A nowrap
+   cell held "Edit Duplicate Remove" on one line, so the table was about
+   451 px wide in a 409 px body and the modal scrolled sideways (#510). */
+.actions > .actionBtn {
+  white-space: nowrap;
+}
+
+.actionBtn,
+.quietBtn {
+  padding: 0;
+  margin-right: 10px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-secondary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.actionBtn:hover:not(:disabled),
+.quietBtn:hover:not(:disabled) {
+  color: var(--curio-text-primary);
+}
+
+.actionBtn:disabled,
+.quietBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.quietBtn {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  white-space: normal;
+}
+
+.editor {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+}
+
+.editorTitle {
+  margin: 0 0 10px;
+  font-size: var(--curio-font-size-md);
+  font-weight: 600;
+}
+
+.optional {
+  font-weight: 400;
+  text-transform: none;
+  color: var(--curio-text-muted);
+  letter-spacing: 0;
+}
+
+/* Provider picker: a segmented row of choices, not a form field. */
+.modeTabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.modeTab {
+  padding: 6px 14px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-secondary);
+  font: inherit;
+  font-size: var(--curio-font-size-md);
+  cursor: pointer;
+}
+
+.modeTab:hover:not(.modeTabActive) {
+  background: var(--curio-page-bg);
+}
+
+.modeTabActive {
+  border-color: var(--curio-top-bar-bg);
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  font-weight: 600;
+}
+
+.keyLink {
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-role-published-fg);
+  text-decoration: none;
+  margin-top: 2px;
+}
+
+.modelFetchRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.fetchModelsBtn {
+  background: none;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-sm);
+  padding: 3px 10px;
+  color: var(--curio-text-secondary);
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  cursor: pointer;
+}
+
+.fetchModelsBtn:hover:not(:disabled) {
+  color: var(--curio-text-primary);
+  border-color: var(--curio-text-secondary);
+}
+
+.fetchModelsBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 8px;
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-secondary);
+}
+
+/* The Agent models row a card asked API Settings to open on. */
+.focusedRow td {
+  background: var(--curio-page-bg);
+}

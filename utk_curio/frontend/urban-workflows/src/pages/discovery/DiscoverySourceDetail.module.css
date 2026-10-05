@@ -1,0 +1,87 @@
+/*
+ * The source's identity block inside the shared detail header.
+ *
+ * Only what the header does not already own: the header supplies the title,
+ * subtitle, actions and all of the surrounding geometry.
+ */
+.identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 10px;
+  min-width: 0;
+}
+
+.blurb {
+  margin: 0;
+  max-width: 720px;
+  font-size: var(--curio-font-size-md);
+  color: var(--curio-text-secondary);
+  line-height: 1.5;
+}
+
+.identityText {
+  min-width: 0;
+}
+
+.homepage {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-secondary);
+}
+
+.count {
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-meta);
+}
+
+/* A storage source's Rescan: light with a border, a secondary action beside
+   the search box. */
+.rescan {
+  height: 30px;
+  margin-left: 10px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: var(--curio-font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rescan:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* Below a portal's rows: asks it for its next page. */
+.moreRow {
+  display: flex;
+  justify-content: center;
+  padding: 12px 16px;
+}
+
+.moreRow .rescan {
+  margin-left: 0;
+}
+
+/* For the manifest's author: what the source holds that no resource names. */
+.unmatched {
+  margin: 0;
+  padding: 8px 16px;
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-meta);
+}
+
+/* The result list: rows on a card surface, bounded so the page scrolls its
+   results rather than the whole document. */
+.results {
+  background: var(--curio-card-bg);
+  border-top: 1px solid var(--curio-border);
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}

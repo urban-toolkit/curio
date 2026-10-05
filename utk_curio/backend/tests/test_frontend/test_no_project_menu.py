@@ -39,6 +39,7 @@ _VISIBLE_ENTRIES = (
     "Load dataflow",
     "Save dataflow as",
     "Export as notebook",
+    "Installed libraries",
 )
 
 
@@ -48,7 +49,7 @@ def _enter_dataflow(app_frontend: "FrontendPage", page) -> None:
     In ``--no-project`` mode the SPA auto-guest-signs in and routes ``/`` to
     ``/dataflow`` (see ``index.tsx``). We dismiss the ``#plug-loader`` splash
     so the File button is clickable, mirroring ``upload_workflow`` in
-    ``utils.py``.
+    ``utils/upload.py``.
     """
     page.goto(f"{app_frontend.base_url}/")
     page.wait_for_url("**/dataflow**", timeout=60000)

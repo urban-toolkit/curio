@@ -1,7 +1,7 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import { Link } from "react-router-dom";
-import { agentLinkAppPath, sanitizeAgentUrl } from "./sanitizeAgentContent";
+import { agentLinkAppPath, sanitizeAgentUrl } from "../../../services/agents";
 import { AgentCodeBlock } from "./AgentCodeBlock";
 
 /**

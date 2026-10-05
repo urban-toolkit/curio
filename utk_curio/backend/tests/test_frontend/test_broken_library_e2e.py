@@ -154,9 +154,9 @@ def _sideload(current_server: str, token: str) -> dict:
     import json
     import urllib.request
 
-    from utk_curio.backend.app.packages.factory import build_packageage_archive
+    from utk_curio.backend.app.packages.builder.factory import build_package_archive
 
-    archive = build_packageage_archive(_fixture_draft()).archive
+    archive = build_package_archive(_fixture_draft()).archive
     boundary = "----curioE2EBrokenLibrary"
     crlf = "\r\n"
     head = (
@@ -215,7 +215,7 @@ def _enter_canvas(page, app_frontend, current_server, *, username, name,
 
 
 def _open_libraries_dialog(page):
-    page.get_by_role("button", name=re.compile(r"^Data")).click(force=True)
+    page.get_by_role("button", name="File menu", exact=True).click(force=True)
     page.get_by_role("button", name="Installed libraries", exact=True).click()
     dialog = page.get_by_role("dialog").filter(
         has=page.get_by_role("heading", name="Installed libraries", exact=True)
@@ -238,7 +238,6 @@ def _add_library(page, dialog, spec: str):
 
 
 def _open_node_catalog(page):
-    page.get_by_role("button", name=re.compile(r"^Data")).click(force=True)
     page.get_by_role("button", name="Node Catalog", exact=True).click()
     drawer = page.get_by_role("dialog").filter(
         has=page.get_by_role("heading", name="Node Catalog", exact=True)
@@ -283,19 +282,13 @@ def test_the_libraries_dialog_names_the_library_and_the_reason(
     expect(dialog.get_by_text("✓ Already installed")).to_have_count(0)
     expect(dialog.get_by_text("✓ Installed")).to_have_count(0)
 
-    # The repo default budget rather than a tight one, because the machine that
-    # records this baseline is not the machine that polices it: e2e runs
-    # host-side on the Linux runner (CURIO_E2E_HOST), whose font metrics wrap
-    # the intro copy a line earlier, overflow the library table and add a
-    # horizontal scrollbar - 10% of a crop that is almost entirely text, with
-    # nothing behaving differently. What the dialog SAYS is asserted above, in
-    # the DOM; this capture is here for the layout around it.
+    # What the dialog SAYS is asserted above, in the DOM; this capture is here
+    # for the layout around it.
     save_workflow_test_screenshot(
         page, "broken-library",
         test_name="test_the_libraries_dialog_names_the_library_and_the_reason",
         fit_reactflow=False,
         clip_selector='[role="dialog"]',
-        max_diff_ratio=0.20,
     )
 
 
@@ -492,10 +485,10 @@ def test_sideloading_an_archive_reports_its_broken_library(
     early for a package already in the store. So a sideloaded package's
     libraries were nobody's job, and the archive reported a clean 201.
     """
-    from utk_curio.backend.app.packages.factory import build_packageage_archive
+    from utk_curio.backend.app.packages.builder.factory import build_package_archive
 
     archive = tmp_path / "broken.curio.zip"
-    archive.write_bytes(build_packageage_archive(_fixture_draft()).archive)
+    archive.write_bytes(build_package_archive(_fixture_draft()).archive)
 
     session = _enter_canvas(
         page, app_frontend, current_server,
@@ -589,10 +582,10 @@ def _sideload_through_the_drawer(page, archive_path):
 
 
 def _write_archive(tmp_path, draft) -> "object":
-    from utk_curio.backend.app.packages.factory import build_packageage_archive
+    from utk_curio.backend.app.packages.builder.factory import build_package_archive
 
     archive = tmp_path / "fixture.curio.zip"
-    archive.write_bytes(build_packageage_archive(draft).archive)
+    archive.write_bytes(build_package_archive(draft).archive)
     return archive
 
 

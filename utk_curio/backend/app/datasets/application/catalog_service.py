@@ -72,8 +72,16 @@ class DatasetCatalogService:
     def download_target(self, *args: Any, **kwargs: Any) -> Any:
         return self._listing.download_target(*args, **kwargs)
 
+    def extent(self, *args: Any, **kwargs: Any) -> Any:
+        return self._listing.extent(*args, **kwargs)
+
     def dataset_usage(self, *args: Any, **kwargs: Any) -> Any:
         return self._listing.dataset_usage(*args, **kwargs)
+
+    def list_dataflow_outputs(self, dataflow_id: str) -> list[dict[str, Any]]:
+        """The outputs *dataflow_id* saved to this account's store, matched by
+        the ``computed.<dataflowId>.`` prefix."""
+        return self.user_store.list_dataflow_computed_items(dataflow_id)
 
     # ── Write-side (delegates to CatalogMutations) ─────────────────────────
     def import_dataset(self, *args: Any, **kwargs: Any) -> Any:

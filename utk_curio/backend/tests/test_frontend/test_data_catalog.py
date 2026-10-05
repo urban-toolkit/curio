@@ -27,6 +27,7 @@ Run::
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -34,6 +35,7 @@ import re
 from playwright.sync_api import expect
 
 from .utils import (
+    REPO_ROOT,
     accept_confirm_dialog,
     api_json,
     open_tools_palette,
@@ -47,7 +49,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-DATASET_ID = "data.urbanlab.chicago-community-areas"
+DATASET_ID = "data.utk.chicago-community-areas"
 DATASET_TITLE = "Chicago Community Areas"
 OTHER_HUB_TITLES = ("Chicago Boundary", "ACS Neighborhood Profile")
 
@@ -57,11 +59,25 @@ SEARCH_PLACEHOLDER = "Search datasets, publishers, tags…"
 # title as the real card, so every card locator has to exclude it.
 CARD = 'article:not([role="status"])'
 
-#: The formats the Data Catalog's rail offers, in its own order. Mirrors
-#: ``FORMAT_FILTERS`` in pages/dataCatalog/dataCatalogBrowseConstants.ts - the chip row
-#: is derived from these, so the expected chip set is derivable from the facet
+def _rail_formats() -> tuple[str, ...]:
+    """``FORMAT_FILTERS`` from pages/dataCatalog/dataCatalogBrowseConstants.ts.
+
+    Read from the source rather than copied: a hand copy here had already
+    fallen three formats behind it.
+    """
+    source = (
+        Path(REPO_ROOT) / "utk_curio" / "frontend" / "urban-workflows" / "src"
+        / "pages" / "dataCatalog" / "dataCatalogBrowseConstants.ts"
+    ).read_text(encoding="utf-8")
+    body = re.search(r"export const FORMAT_FILTERS[^=]*=\s*\[(.*?)\];", source, re.S)
+    assert body, "FORMAT_FILTERS not found in dataCatalogBrowseConstants.ts"
+    return tuple(re.findall(r'"([a-z]+)"', body.group(1)))
+
+
+#: The formats the Data Catalog's rail can offer, in its own order. The rows it
+#: shows are the populated ones, so the expected set is derivable from the facet
 #: counts alone (#232).
-RAIL_FORMATS = ("geojson", "csv", "json", "parquet", "geotiff", "shp")
+RAIL_FORMATS = _rail_formats()
 
 
 def _one_node_spec() -> dict:
@@ -114,7 +130,6 @@ def _enter_dataflow(page, app_frontend, current_server, *, username, project):
 
 
 def _open_drawer_from_menu(page):
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
     page.get_by_role("button", name="Data Catalog", exact=True).click()
     return _drawer(page)
 
@@ -164,7 +179,7 @@ def test_drawer_lists_hub_datasets(
 
     # Visual baseline of the hub listing. Card text includes a relative
     # timestamp, which drifts slowly against a fixed manifest date; the suite's
-    # default tolerance (20% of pixels, 30/255 per channel) absorbs that.
+    # default tolerance (10% of pixels, 30/255 per channel) absorbs that.
     save_workflow_test_screenshot(
         page, "data-catalog-drawer", test_name="test_drawer_lists_hub_datasets",
     )
@@ -457,16 +472,21 @@ beta,2
 def test_quick_filters_cover_every_populated_format(
     app_frontend: "FrontendPage", current_server: str, page
 ):
-    """#232: the /catalog/data quick-filter chips were a hardcoded three.
+    """#232: the /catalog/data format filters disagreed with the facet counts.
 
-    The page renders format filters twice - a sidebar rail derived from the live
+    The page rendered format filters twice - a sidebar rail derived from the live
     ``facets.format`` counts, and a chip row above the cards that was a literal
     ``["geojson", "csv", "json"]``. So the chips advertised JSON with zero
     datasets while hiding Parquet and GeoTIFF, both of which the rail beside them
     was counting off the shipped ``datasets/`` folder.
 
-    Chips are located by accessible NAME, never by index: the set is derived from
-    the catalog now, so a positional locator would silently follow the data.
+    The chip row is gone; the rail's format rows are the one filter surface
+    left, and they follow the same rule: exactly the formats that hold
+    datasets, in the rail's order.
+
+    Rows are located by their ``data-curio-rail-*`` attributes, never by index:
+    the set is derived from the catalog, so a positional locator would silently
+    follow the data.
     """
     require_project_page()
     require_user_auth()
@@ -484,40 +504,44 @@ def test_quick_filters_cover_every_populated_format(
     page.wait_for_selector(".react-flow__node", timeout=90000)
 
     page.goto(f"{app_frontend.base_url}/catalog/data")
-    # `networkidle`, not `domcontentloaded`: the page renders its rail and chips
-    # from the catalog listing, so the markup this test reads does not exist
-    # until that request has come back. On a loaded machine the difference is
-    # the whole test.
+    # `networkidle`, not `domcontentloaded`: the page renders its rail from the
+    # catalog listing, so the markup this test reads does not exist until that
+    # request has come back. On a loaded machine the difference is the whole
+    # test.
     page.wait_for_load_state("networkidle")
     expect(
         page.get_by_role("heading", name="Data Catalog", exact=True)
     ).to_be_visible(timeout=30000)
 
-    # Located by data attribute, not by class: CSS Modules hashes every class
-    # name, so a `[class*=...]` selector matches nothing in a real build - a trap
-    # this suite has been caught by before (see test_tools_rail_fits.py).
-    bar = page.locator('[data-curio-catalog-filter-bar="true"]')
-    expect(bar).to_be_visible(timeout=20000)
-    chip = lambda fmt: bar.locator(f'[data-curio-format-chip="{fmt}"]')
+    # Located by role and data attribute, not by class: CSS Modules hashes
+    # every class name, so a `[class*=...]` selector matches nothing in a real
+    # build - a trap this suite has been caught by before (see
+    # test_tools_rail_fits.py).
+    rail = page.get_by_role("complementary", name="Filter datasets")
+    expect(rail).to_be_visible(timeout=20000)
+    row = lambda fmt: rail.locator(
+        f'[data-curio-rail-section="format"][data-curio-rail-value="{fmt}"]'
+    )
+    offered_rows = lambda: rail.locator('[data-curio-rail-section="format"]').evaluate_all(
+        "els => els.map(e => e.getAttribute('data-curio-rail-value'))"
+    )
 
-    # Gate on a derived chip, not a timeout: the row renders off the facets, so
-    # it is empty until the first listing lands.
-    expect(chip("geojson")).to_have_count(1, timeout=20000)
+    # Gate on a derived row, not a timeout: the rows render off the facets, so
+    # there are none until the first listing lands.
+    expect(row("geojson")).to_have_count(1, timeout=20000)
 
-    # The contract, not the fixture: the chip row must be exactly the rail
-    # formats that hold datasets. An earlier version of this test hardcoded
-    # "JSON must be absent", which is only true of a pristine catalog - in a
-    # full-suite run another test had published a JSON dataset to the shared
-    # hub, so JSON legitimately had a chip and the assertion failed on correct
-    # behaviour. Reading the same facet counts the page reads keeps it honest
-    # whatever else the suite has left lying around.
+    # The contract, not the fixture: the rows must be exactly the rail formats
+    # that hold datasets. An earlier version of this test hardcoded "JSON must
+    # be absent", which is only true of a pristine catalog - in a full-suite run
+    # another test had published a JSON dataset to the shared hub, so JSON
+    # legitimately had a row and the assertion failed on correct behaviour.
+    # Reading the same facet counts the page reads keeps it honest whatever else
+    # the suite has left lying around.
     facets = api_json(f"{current_server}/api/datasets/catalog", token)["facets"]["format"]
     expected = [f for f in RAIL_FORMATS if facets.get(f, 0) > 0]
-    offered = bar.locator("[data-curio-format-chip]").evaluate_all(
-        "els => els.map(e => e.getAttribute('data-curio-format-chip'))"
-    )
+    offered = offered_rows()
     assert offered == expected, (
-        f"chips {offered} do not match the populated formats {expected} "
+        f"rail rows {offered} do not match the populated formats {expected} "
         f"(facet counts: {facets})"
     )
 
@@ -528,30 +552,29 @@ def test_quick_filters_cover_every_populated_format(
         assert facets.get(populated, 0) > 0, (
             f"{populated} has no datasets, so this test cannot prove #232"
         )
-        expect(chip(populated)).to_have_count(1)
+        expect(row(populated)).to_have_count(1)
 
     # Every dot must actually be painted. A format-keyed class with no CSS rule
-    # resolves to "" and renders an invisible 8px dot - jest cannot catch that at
+    # resolves to "" and renders an invisible dot - jest cannot catch that at
     # all, because CSS modules are mapped to identity-obj-proxy there.
     for populated in offered:
-        colour = chip(populated).locator("[data-curio-format-chip-dot]").evaluate(
+        colour = row(populated).locator("[data-curio-rail-dot]").evaluate(
             "el => getComputedStyle(el).backgroundColor"
         )
         assert colour not in ("rgba(0, 0, 0, 0)", "transparent"), (
-            f"the {populated} chip's dot is transparent ({colour!r}) - its "
-            f".chipDot_* rule is missing"
+            f"the {populated} row's dot is transparent ({colour!r}) - its "
+            f".dot_* rule is missing"
         )
 
-    # Selecting a format must not collapse the row. The facets are computed
+    # Selecting a format must not collapse the rows. The facets are computed
     # BEFORE the format filter is applied (listing.py), and this is what pins
     # that ordering: move the facet call below the filter and this fails.
-    chip("parquet").click()
+    row("parquet").click()
+    expect(row("parquet")).to_have_attribute("aria-pressed", "true", timeout=10000)
     # If any of these disappears, the facets are being computed AFTER the format
-    # filter instead of before it, and the chip row has become self-erasing.
+    # filter instead of before it, and the rail has become self-erasing.
     page.wait_for_timeout(1000)
-    after = bar.locator("[data-curio-format-chip]").evaluate_all(
-        "els => els.map(e => e.getAttribute('data-curio-format-chip'))"
-    )
+    after = offered_rows()
     assert after == offered, (
-        f"selecting Parquet changed the chip row from {offered} to {after}"
+        f"selecting Parquet changed the rail's format rows from {offered} to {after}"
     )

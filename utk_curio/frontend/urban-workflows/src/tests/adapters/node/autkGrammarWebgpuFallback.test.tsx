@@ -16,15 +16,17 @@ import React from 'react';
 import { render, act, waitFor, fireEvent } from '@testing-library/react';
 
 const mockShowToast = jest.fn();
+// The node reads its input edge from the flow context (hook/useGrammarInputState);
+// the real provider would load the whole node registry, vega included.
+jest.mock('../../../providers/FlowProvider', () => ({
+  useFlowContext: () => ({ edges: [], nodeExecStatus: {} }),
+}));
 jest.mock('../../../providers/ToastProvider', () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
 jest.mock('../../../services/api', () => ({ fetchData: jest.fn() }));
 jest.mock('../../../JavaScriptInterpreter', () => ({
   JavaScriptInterpreter: class { },
-}));
-jest.mock('../../../adapters/autkGrammarAdapter', () => ({
-  autkGrammarAdapter: { getDefaultSpec: () => '{"map":{}}' },
 }));
 
 const mockGrammarRun = jest.fn().mockResolvedValue(undefined);
@@ -54,7 +56,7 @@ import {
 
 const MAP_SPEC = JSON.stringify({ map: { layerRefs: [] } });
 const COMPUTE_SPEC = JSON.stringify({
-  compute: [{ dataRef: 'upstream', wglsFunction: 'fn main() {}' }],
+  compute: [{ dataRef: 'input_0', wglsFunction: 'fn main() {}' }],
 });
 
 interface Harness {

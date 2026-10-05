@@ -1,18 +1,11 @@
 import { NodeType } from "./constants";
 import { NodeTemplateId } from "./registry/types";
-import { formatDate, mapTypes } from "./utils/formatters";
+import { recordExecProvenance } from "./utils/executionResult";
 import { getToken } from "./utils/authApi";
-// import { pythonCode } from "./pythonWrapper";
 import { backendUrl } from "./utils/backendUrl";
+import { executionInputRef } from "./utils/flowOutputRef";
 
 export class PythonInterpreter {
-    // protected _pythonWrapperCode: string[];
-
-    constructor() {
-        // parse and store the python wrapper code
-        // this._pythonWrapperCode = pythonCode.split("\n");
-    }
-
     public interpretCode(
         unresolvedUserCode: string,
         userCode: string,
@@ -42,13 +35,13 @@ export class PythonInterpreter {
             unifiedLines += "    " + line + "\n";
         }
 
-        let startTime = formatDate(new Date());
+        const startedAt = new Date();
 
         console.log("unifiedLines", unifiedLines);
 
         // Diagnostic: surface what the frontend is actually sending as the
         // node's input. Useful when chasing "arg is None" bugs in package /
-        // merge-flow scenarios — the most common cause is `data.input`
+        // several-input scenarios: the most common cause is `data.input`
         // never being updated by `applyNewOutput` before Run fires.
         // Strip large blobs so the console stays readable.
         try {
@@ -73,7 +66,7 @@ export class PythonInterpreter {
             method: "POST",
             body: JSON.stringify({
                 code: unifiedLines,
-                input: input, // new
+                input: executionInputRef(input), // new
                 inputTypes: inputTypes, // new
                 nodeType: nodeType, // new
                 nodeId: nodeId,
@@ -112,52 +105,15 @@ export class PythonInterpreter {
             })
             .then((json) => {
                 clearTimeout(timeoutId);
-                let endTime = formatDate(new Date());
-
-                let typesInput: string[] = [];
-                // console.log("------------ inputTypes", json.inputTypes)
-                // console.log("------------", json)
-                if (input != "") typesInput = json.input.dataType;//getType([input]);
-
-                let typesOuput: string[] = [];
-
-                if (json.output != "") {
-                    if (json.stderr != "") {
-                        typesOuput = ["error"];
-                    } else {
-                        typesOuput = json.output.dataType;// getType([json.output]);
-                    }
-                }
-
-                nodeExecProv(
-                    startTime,
-                    endTime,
-                    workflow_name,
-                    nodeType + "-" + nodeId,
-                    mapTypes(typesInput),
-                    mapTypes(typesOuput),
-                    unresolvedUserCode
-                );
-
-                // fetch(backendUrl()+"/nodeExecProv", {
-                //     method: "POST",
-                //     body: JSON.stringify({
-                //         data: {
-                //             activityexec_start_time: startTime,
-                //             activityexec_end_time: endTime,
-                //             workflow_name,
-                //             activity_name: nodeType+"_"+nodeId,
-                //             types_input: mapTypes(typesInput),
-                //             types_output: mapTypes(typesOuput),
-                //             activity_source_code: userCode
-                //         }
-                //     }),
-                //     headers: {
-                //         "Content-type": "application/json; charset=UTF-8",
-                //     }
-                // }).then((value: any) => {
-                //     updateBoxGraph(workflow_name, nodeType+"_"+nodeId);
-                // })
+                recordExecProvenance(nodeExecProv, {
+                    startedAt,
+                    finishedAt: new Date(),
+                    workflowName: workflow_name,
+                    nodeId,
+                    input,
+                    reply: json,
+                    code: unresolvedUserCode,
+                });
 
                 callback(json);
             })

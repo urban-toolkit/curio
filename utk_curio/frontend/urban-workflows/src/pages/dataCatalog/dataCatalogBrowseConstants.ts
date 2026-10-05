@@ -4,7 +4,7 @@ import type { DatasetFormat, DatasetOrigin } from "../../services/datasetCatalog
 export const ORIGIN_FILTERS: DatasetOrigin[] = ["computed", "imported"];
 
 /**
- * Every ``DatasetFormat``, in the order the rail and the chip row show them.
+ * Every ``DatasetFormat``, in the order the rail shows them.
  *
  * It used to list six of the eight (#348). ``bundle`` (a computed multi-output
  * node's result) and ``osm`` (a synthetic OSM PBF layer group) were left out
@@ -26,31 +26,30 @@ export const FORMAT_FILTERS: DatasetFormat[] = [
   "bundle",
   "osm",
   "gpkg",
+  "gtfs",
+  "collection",
+  "onnx",
+  "netcdf",
 ];
 
 /**
- * Quick-filter chips above the dataset cards: the rail's format rows that
- * actually hold datasets, in the rail's own order.
+ * The rail's format rows: the formats that actually hold datasets, in the
+ * rail's own order.
  *
- * Was a hardcoded ``["geojson", "csv", "json"]`` (#232). That list advertised
- * JSON with zero datasets while hiding the Parquet and GeoTIFF rows the rail
- * immediately to its left was busy counting - two filter surfaces on one page,
- * disagreeing about what you could filter by. Deriving both from the same
- * ``facets.format`` is what keeps them in step, and means a format added to
- * ``FORMAT_FILTERS`` reaches both at once.
+ * Until the chip row above the cards was removed, it showed these too. It was a
+ * hardcoded ``["geojson", "csv", "json"]`` (#232), which advertised JSON with
+ * zero datasets while hiding the Parquet and GeoTIFF rows the rail beside it was
+ * busy counting. Deriving the rows from ``facets.format`` means a format added
+ * to ``FORMAT_FILTERS`` reaches the rail as soon as it holds a dataset.
  *
  * Canonical order rather than count-descending: the facets recompute on every
- * search keystroke, so ranking by count would reshuffle the chips under the
- * user's cursor and break the visual correspondence with the rail rows beside
- * them.
+ * search keystroke, so ranking by count would reshuffle the rows under the
+ * user's cursor.
  *
  * ``active`` is kept even at zero. The facets narrow with the search box
  * (``listing.py`` computes them after ``q`` and before the format filter), so a
  * search excluding every dataset of the selected format would otherwise make the
- * very chip you are filtering by vanish.
- *
- * No numeric cap: the domain is closed at these formats and ``.filterBar``
- * wraps, so the row cannot overflow.
+ * very row you are filtering by vanish.
  */
 export function quickFormatFilters(
   counts: Partial<Record<DatasetFormat, number>>,

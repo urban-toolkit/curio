@@ -15,7 +15,7 @@
     "id": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9_.-]*[a-z0-9]$",
-      "description": "Reverse-domain package id, e.g. 'ai.urbanlab.uhvi' or 'curio.builtin'."
+      "description": "Reverse-domain package id, e.g. 'ai.utk.uhvi' or 'curio.builtin'."
     },
     "version": {
       "type": "string",
@@ -169,6 +169,31 @@
       },
       "additionalProperties": false
     },
+    "widget": {
+      "type": "object",
+      "description": "One widget of a node (#662), in the shape of a dataflow node's metadata.widgets entries (docs/schemas/trill.v1.json).",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
+        "type": { "type": "string", "enum": ["number", "slider", "text", "choice", "checkbox", "checkbox-group", "multi-select", "datetime", "location", "number-list", "text-list", "range", "file"] },
+        "label": { "type": "string" },
+        "default": {},
+        "value": {},
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "choices": { "type": "array", "items": { "type": "string" } },
+            "display": { "type": "string", "enum": ["dropdown", "radio"] },
+            "min": { "type": "number" },
+            "max": { "type": "number" },
+            "step": { "type": "number", "exclusiveMinimum": 0 },
+            "units": { "type": "string" }
+          }
+        }
+      }
+    },
     "template": {
       "type": "object",
       "required": ["id", "label", "category", "engine", "editor", "inputPorts", "outputPorts"],
@@ -191,7 +216,7 @@
         },
         "behavior": {
           "type": "string",
-          "description": "Key into the frontend behaviorRegistry (e.g. 'code', 'vega', 'merge-flow'). See packages/curio.builtin@1/manifest.json for the canonical set."
+          "description": "Key into the frontend behaviorRegistry (e.g. 'code', 'vega', 'data-pool'). See packages/curio.builtin@1/manifest.json for the canonical set."
         },
         "iconRef": {
           "type": "string",
@@ -231,7 +256,7 @@
         },
         "containerStyle": {
           "type": "object",
-          "description": "Overrides for the canvas node container's static layout. Most kinds use defaults; the merge-flow kind uses this to render as a narrow vertical rail.",
+          "description": "Overrides for the canvas node container's static layout. Most kinds use defaults; a kind with noContent renders as a chip of exactly this size, such as a narrow vertical rail.",
           "properties": {
             "nodeWidth": { "type": "integer", "minimum": 1 },
             "nodeHeight": { "type": "integer", "minimum": 1 },
@@ -244,14 +269,15 @@
           "type": "boolean",
           "description": "Whether the node exposes a provenance tab in its editor. Defaults to true; set to false to suppress (e.g. on display-only kinds)."
         },
-        "tutorialId": {
-          "type": "string",
-          "description": "Anchor id this kind exposes to the in-app tutorial system (`step-loading`, `step-vega`, ...)."
-        },
         "backendHandler": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]{0,63}$",
           "description": "Name of a declared backend handler this template's Run invokes through the package backend sandbox (memo dev/91). Must appear in the package's backend.handlers."
+        },
+        "widgets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/widget" },
+          "description": "The widgets a freshly dropped node of this template starts with (#662). The template's source places each one as a `[!! name !!]` reference."
         }
       },
       "additionalProperties": true

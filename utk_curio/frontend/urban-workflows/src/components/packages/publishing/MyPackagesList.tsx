@@ -5,13 +5,10 @@ import {
   faDownload,
   faTrashCan,
 } from "@fortawesome/free-solid-svg-icons";
-import { PackagePayload } from "../../../api/packagesApi";
-import {
-  formatForkOfSubtitle,
-  partitionInstalledPackagesForCatalogList,
-} from "../../../utils/forkPackageLineage";
+import { PackagePayload, formatForkOfSubtitle, partitionInstalledPackagesForCatalogList } from "../../../services/packages";
 import { CatalogPublishPill } from "../CatalogPublishPill";
 import styles from "./MyPackagesList.module.css";
+import { countLabel } from "../../../utils/countLabel";
 
 export interface MyPackagesListProps {
   installed: PackagePayload[];
@@ -178,7 +175,7 @@ function InstalledPackageRow({
         <span className={styles.installedName}>{pkg.name}</span>
         <span className={styles.installedMeta}>
           v{pkg.version}
-          {hasUpdate ? " · update available" : ` · ${pkg.templates.length} nodes`}
+          {hasUpdate ? " · update available" : ` · ${countLabel(pkg.templates.length, "node")}`}
         </span>
         {pkg.lineage ? (
           <span className={styles.installedForkOf} title={formatForkOfSubtitle(pkg.lineage).title}>
@@ -249,7 +246,7 @@ export const MyPackagesList: React.FC<MyPackagesListProps> = ({
           const headerPack = row.rootPack;
           const headerName = headerPack?.name ?? row.rootKey;
           const headerMeta = headerPack
-            ? `v${headerPack.version} · ${headerPack.templates.length} nodes`
+            ? `v${headerPack.version} · ${countLabel(headerPack.templates.length, "node")}`
             : `${row.members.length} fork${row.members.length === 1 ? "" : "s"}`;
 
           // NOTE: this key must be `pkg` — `PackageRowActions` destructures

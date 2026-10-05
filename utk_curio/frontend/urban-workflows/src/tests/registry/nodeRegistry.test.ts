@@ -56,11 +56,11 @@ describe('nodeRegistry', () => {
     });
 
     test('registers and retrieves a descriptor by canonical package id', () => {
-      const canonical = 'ai.urbanlab.uhvi/uhvi-load@1';
+      const canonical = 'ai.utk.uhvi/uhvi-load@1';
       const desc = makeDescriptor({
         id: canonical,
         source: 'package',
-        package: { packageId: 'ai.urbanlab.uhvi', major: 1, version: '1.0.0' },
+        package: { packageId: 'ai.utk.uhvi', major: 1, version: '1.0.0' },
         label: 'UHVI Loader',
       });
       registerNode(desc);
@@ -68,7 +68,7 @@ describe('nodeRegistry', () => {
       const result = getNodeDescriptor(canonical);
       expect(result).toBe(desc);
       expect(result.source).toBe('package');
-      expect(result.package?.packageId).toBe('ai.urbanlab.uhvi');
+      expect(result.package?.packageId).toBe('ai.utk.uhvi');
     });
 
     test('silently overwrites same-version re-registration (refresh-loop case)', () => {

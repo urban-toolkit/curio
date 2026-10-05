@@ -7,7 +7,8 @@ export function formatBytes(value?: number | null): string | null {
   if (value == null) return null;
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 export function relativeTime(iso?: string | null): string {

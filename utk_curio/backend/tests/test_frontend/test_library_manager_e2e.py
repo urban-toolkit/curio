@@ -61,7 +61,7 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 LIB = "titlecase"
-ANALYSIS_TILE = "#step-analysis"
+ANALYSIS_TILE = "#tile-computation-analysis"
 ANALYSIS_TYPE = "curio.builtin/computation-analysis"
 
 SPEC_PLACEHOLDER = "e.g. numpy or scikit-learn==1.4.0"
@@ -122,7 +122,7 @@ def library_teardown(current_server):
 
 
 def _open_library_modal(page):
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
+    page.get_by_role("button", name="File menu", exact=True).click(force=True)
     page.get_by_role("button", name="Installed libraries", exact=True).click()
     expect(page.get_by_role("heading", name="Installed libraries")).to_be_visible(
         timeout=10000
@@ -223,10 +223,8 @@ def test_install_library_from_ui_then_use_it(
     # assertions above cover what each node computed; this covers what the
     # canvas *looks* like - most usefully that the edge is actually drawn, which
     # a store-level edge assertion cannot see. Compared at the suite's default
-    # tolerance (20% of pixels, 30/255 per channel), which is what absorbs the
-    # per-run "Saved to file: <timestamp>_<hash>" text in each output box.
-    # The helper fitViews first, so baseline and comparison share one viewport,
-    # and it writes the baseline on the first run if the file is absent.
+    # tolerance (10% of pixels, 30/255 per channel). The helper fitViews first,
+    # so baseline and comparison share one viewport.
     save_workflow_test_screenshot(
         page, "library-manager", test_name="test_install_library_from_ui_then_use_it",
     )

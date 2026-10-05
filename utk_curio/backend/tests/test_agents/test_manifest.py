@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents.manifest import (
+from utk_curio.backend.app.agents.domain.manifest import (
     AgentManifestError,
     load_agent_manifest,
     parse_agent_manifest,
@@ -19,11 +19,11 @@ from utk_curio.backend.app.agents.manifest import (
 
 
 def _valid_manifest() -> dict:
-    """A minimal-but-complete valid agent manifest (Node Explainer shape)."""
+    """A minimal-but-complete valid agent manifest: a user's explainer agent."""
     return {
         "$schema": "../../docs/schemas/agent-package.v1.json",
-        "id": "agent.node-explainer",
-        "name": "Node Explainer",
+        "id": "agent.my-explainer",
+        "name": "My Explainer",
         "category": "node",
         "version": "1.0.0",
         "purpose": "Explain what a node or its output does.",
@@ -34,7 +34,7 @@ def _valid_manifest() -> dict:
         ],
         "delegatesTo": ["agent.node-builder"],
         "prompts": {
-            "system": {"path": "prompts/default_preamble.txt", "sha256": "abc", "variables": []},
+            "system": {"path": "prompts/default_preamble.md", "sha256": "abc", "variables": []},
             "instruction": {
                 "path": "prompts/single_box_explanation.txt",
                 "sha256": "def",
@@ -55,12 +55,12 @@ def _valid_manifest() -> dict:
 class TestValidManifest:
     def test_parses_core_fields(self):
         m = parse_agent_manifest(_valid_manifest())
-        assert m.agent_id == "agent.node-explainer"
+        assert m.agent_id == "agent.my-explainer"
         assert m.version == "1.0.0"
         assert m.category == "node"
         assert m.capability_ids == ["node.explain", "node.output.interpret"]
         assert m.delegates_to == ["agent.node-builder"]
-        assert m.dir_name == "agent.node-explainer@1.0.0"
+        assert m.dir_name == "agent.my-explainer@1.0.0"
 
     def test_parses_prompts_targets_runtime(self):
         m = parse_agent_manifest(_valid_manifest())
@@ -95,9 +95,16 @@ class TestValidManifest:
 
 
 class TestAgentId:
+    def test_a_manifest_without_a_name_is_refused(self):
+        # #482: agent-package.v1.json requires "name"; the parser used the id.
+        raw = _valid_manifest()
+        del raw["name"]
+        with pytest.raises(AgentManifestError, match="name"):
+            parse_agent_manifest(raw)
+
     def test_missing_agent_prefix_rejected(self):
         raw = _valid_manifest()
-        raw["id"] = "curio.node-explainer"
+        raw["id"] = "curio.my-explainer"
         with pytest.raises(AgentManifestError, match="must begin with 'agent.'"):
             parse_agent_manifest(raw)
 
@@ -109,7 +116,7 @@ class TestAgentId:
 
     def test_delegates_to_self_rejected(self):
         raw = _valid_manifest()
-        raw["delegatesTo"] = ["agent.node-explainer"]
+        raw["delegatesTo"] = ["agent.my-explainer"]
         with pytest.raises(AgentManifestError, match="must not reference the agent itself"):
             parse_agent_manifest(raw)
 
@@ -141,7 +148,7 @@ class TestRequiresAgents:
 
     def test_self_rejected(self):
         raw = _valid_manifest()
-        raw["requiresAgents"] = ["agent.node-explainer"]
+        raw["requiresAgents"] = ["agent.my-explainer"]
         with pytest.raises(AgentManifestError, match="must not reference the agent itself"):
             parse_agent_manifest(raw)
 
@@ -175,6 +182,7 @@ class TestCapabilityIdRules:
             "node_explain_prompt",       # underscore + prompt token
             "prompts/single_box.txt",    # path separator + .txt
             "single_box_explanation.txt",  # prompt filename
+            "node.md",                   # .md, a prompt file extension
             "explain",                   # single segment (no namespace)
             "Node.Explain",              # uppercase
             "node..explain",             # empty segment
@@ -281,7 +289,8 @@ class TestToolRequirements:
         ]
 
     def test_tool_id_must_match_the_capability_grammar(self):
-        for bad in ("Search", "catalog", "catalog/search", "catalog_search", "fetch_prompt.txt"):
+        for bad in ("Search", "catalog", "catalog/search", "catalog_search", "fetch_prompt.txt",
+                    "fetch.md"):
             raw = _valid_manifest()
             raw["tools"] = [{"id": bad}]
             with pytest.raises(AgentManifestError, match="tools"):
@@ -302,28 +311,98 @@ class TestToolRequirements:
 
 class TestLoadFromDisk:
     def test_loads_valid_dir(self, tmp_path):
-        d = tmp_path / "agent.node-explainer@1.0.0"
+        d = tmp_path / "agent.my-explainer@1.0.0"
         d.mkdir()
         (d / "manifest.json").write_text(json.dumps(_valid_manifest()), encoding="utf-8")
         m = load_agent_manifest(d)
-        assert m.agent_id == "agent.node-explainer"
+        assert m.agent_id == "agent.my-explainer"
 
     def test_dir_name_mismatch_rejected(self, tmp_path):
-        d = tmp_path / "agent.node-explainer@2.0.0"
+        d = tmp_path / "agent.my-explainer@2.0.0"
         d.mkdir()
         (d / "manifest.json").write_text(json.dumps(_valid_manifest()), encoding="utf-8")
         with pytest.raises(AgentManifestError, match="does not match"):
             load_agent_manifest(d)
 
     def test_missing_manifest_rejected(self, tmp_path):
-        d = tmp_path / "agent.node-explainer@1.0.0"
+        d = tmp_path / "agent.my-explainer@1.0.0"
         d.mkdir()
         with pytest.raises(AgentManifestError, match="missing manifest.json"):
             load_agent_manifest(d)
 
     def test_invalid_json_rejected(self, tmp_path):
-        d = tmp_path / "agent.node-explainer@1.0.0"
+        d = tmp_path / "agent.my-explainer@1.0.0"
         d.mkdir()
         (d / "manifest.json").write_text("{not json", encoding="utf-8")
         with pytest.raises(AgentManifestError, match="invalid JSON"):
             load_agent_manifest(d)
+
+
+class TestModesAndScopedDelegates:
+    def _with_mode(self) -> dict:
+        raw = _valid_manifest()
+        raw["prompts"]["node.output.interpret"] = {"path": "prompts/interpret.txt", "variables": []}
+        raw["capabilities"][1] = {
+            "id": "node.output.interpret", "contractVersion": "1",
+            "instruction": "node.output.interpret", "reads": ["nodeContext"],
+            "requiredConfig": ["keywordTypes"],
+        }
+        return raw
+
+    def test_a_capability_can_be_a_mode(self):
+        m = parse_agent_manifest(self._with_mode())
+        mode = m.capability("node.output.interpret")
+        assert mode.instruction == "node.output.interpret"
+        assert mode.reads == ("nodeContext",)
+        assert m.capability("node.explain").instruction is None
+        assert m.capability("node.nope") is None
+
+    def test_a_mode_must_name_a_declared_prompt(self):
+        raw = self._with_mode()
+        del raw["prompts"]["node.output.interpret"]
+        with pytest.raises(AgentManifestError, match="names no prompts entry"):
+            parse_agent_manifest(raw)
+
+    def test_config_keys_are_every_runs_and_the_capabilitys(self):
+        raw = self._with_mode()
+        raw["inputs"]["requiredConfig"] = ["units"]
+        m = parse_agent_manifest(raw)
+        assert m.config_keys() == ("units",)
+        assert m.config_keys("node.explain") == ("units",)
+        assert m.config_keys("node.output.interpret") == ("units", "keywordTypes")
+
+    def test_a_scoped_entry_delegates_only_its_capabilities(self):
+        raw = _valid_manifest()
+        raw["delegatesTo"] = [
+            "agent.node-builder",
+            {"id": "agent.dataflow-planner", "capabilities": ["workflow.keyword.bind"]},
+        ]
+        m = parse_agent_manifest(raw)
+        assert m.delegates_to == ["agent.node-builder", "agent.dataflow-planner"]
+        assert m.delegates("agent.dataflow-planner", "workflow.keyword.bind")
+        assert not m.delegates("agent.dataflow-planner", "workflow.plan.create")
+        # A plain entry delegates everything; an unlisted agent nothing.
+        assert m.delegates("agent.node-builder", "node.build")
+        assert not m.delegates("agent.researcher", "research.notes.compose")
+
+    @pytest.mark.parametrize("entry", [
+        {"id": "agent.dataflow-planner"},
+        {"id": "agent.dataflow-planner", "capabilities": []},
+        {"id": "agent.dataflow-planner", "capabilities": ["not a capability"]},
+        {"capabilities": ["workflow.keyword.bind"]},
+    ])
+    def test_a_malformed_scoped_entry_is_refused(self, entry):
+        raw = _valid_manifest()
+        raw["delegatesTo"] = [entry]
+        with pytest.raises(AgentManifestError):
+            parse_agent_manifest(raw)
+
+    def test_an_agent_is_named_once(self):
+        # Two entries could scope it two ways.
+        raw = _valid_manifest()
+        raw["delegatesTo"] = [
+            "agent.node-builder",
+            {"id": "agent.node-builder", "capabilities": ["node.build"]},
+        ]
+        with pytest.raises(AgentManifestError, match="duplicate"):
+            parse_agent_manifest(raw)

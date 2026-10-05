@@ -138,7 +138,32 @@ describe("applyReviewedRemovals (dev/62 — reviewed plan removals bypass the ma
     ]);
   });
 
-  it("the manual guard is byte-identical: applyRemoveChanges still refuses connected nodes", () => {
+});
+
+describe("applyRemoveChanges (#155 - the node header's Delete node button)", () => {
+  it("removes a wired node with its edges, and warns about nothing", () => {
+    const deps = makeDeps();
+    const { result } = renderHook(() => useWorkflowOperations(deps));
+
+    act(() => {
+      result.current.applyRemoveChanges([{ id: "cleaner", type: "remove" }]);
+    });
+
+    expect(mockShowToast).not.toHaveBeenCalled();
+    // Both of its edges leave through the same bookkeeping as a deleted edge
+    // (collab, provenance, the survivor's input reset), before the node does.
+    expect(deps.onEdgesDelete).toHaveBeenCalledWith(LIVE_EDGES);
+    const edgeFilter = deps.setEdges.mock.calls[0][0];
+    expect(edgeFilter(LIVE_EDGES)).toEqual([]);
+    expect(deps.onEdgesDelete.mock.invocationCallOrder[0]).toBeLessThan(
+      deps.onNodesChange.mock.invocationCallOrder[0],
+    );
+    const changes = [{ id: "cleaner", type: "remove" }];
+    expect(deps.onNodesDelete).toHaveBeenCalledWith(changes);
+    expect(deps.onNodesChange).toHaveBeenCalledWith(changes);
+  });
+
+  it("leaves edges that do not touch the removed node", () => {
     const deps = makeDeps();
     const { result } = renderHook(() => useWorkflowOperations(deps));
 
@@ -146,10 +171,23 @@ describe("applyReviewedRemovals (dev/62 — reviewed plan removals bypass the ma
       result.current.applyRemoveChanges([{ id: "old-loader", type: "remove" }]);
     });
 
-    expect(mockShowToast).toHaveBeenCalledWith(
-      "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing Delete or Backspace.",
-      "warning",
-    );
-    expect(deps.onNodesChange).toHaveBeenCalledWith([]);
+    expect(deps.onEdgesDelete).toHaveBeenCalledWith([LIVE_EDGES[0]]);
+    const edgeFilter = deps.setEdges.mock.calls[0][0];
+    expect(edgeFilter(LIVE_EDGES)).toEqual([LIVE_EDGES[1]]);
+    expect(deps.onNodesChange).toHaveBeenCalledWith([{ id: "old-loader", type: "remove" }]);
+  });
+
+  it("removes an unwired node without touching any edge", () => {
+    mockGetEdges.mockReturnValue([]);
+    const deps = makeDeps();
+    const { result } = renderHook(() => useWorkflowOperations(deps));
+
+    act(() => {
+      result.current.applyRemoveChanges([{ id: "survivor", type: "remove" }]);
+    });
+
+    expect(deps.onEdgesDelete).not.toHaveBeenCalled();
+    expect(deps.setEdges).not.toHaveBeenCalled();
+    expect(deps.onNodesChange).toHaveBeenCalledWith([{ id: "survivor", type: "remove" }]);
   });
 });

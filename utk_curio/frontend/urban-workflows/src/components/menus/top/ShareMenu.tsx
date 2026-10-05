@@ -6,7 +6,8 @@ import { faLink, faTableColumns } from "@fortawesome/free-solid-svg-icons";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { copyText } from "../../../utils/clipboard";
 import { absoluteUrl, dashboardPath, dataflowPath } from "../../../utils/shareLinks";
-import styles from "./UpMenu.module.css";
+import menuStyles from "../darkMenu.module.css";
+import { HeaderMenu, HeaderMenuItem } from "./HeaderMenu";
 
 export const SAVE_FIRST_MESSAGE = "Save the dataflow first to share it.";
 export const STALE_DASHBOARD_MESSAGE =
@@ -64,57 +65,46 @@ export function ShareMenu({
   };
 
   return (
-    <div className={styles.dropdownWrapper}>
-      <button className={styles.button} onClick={onToggle} data-testid="share-menu-btn">
-        Share ⏷
-      </button>
-      {open && (
-        <div className={styles.dropDownMenu} onClick={(e) => e.stopPropagation()}>
-          {includeOpenDashboard && (
-            <div className={styles.dropDownRow}>
-              <FontAwesomeIcon className={styles.dropDownIcon} icon={faTableColumns} />
-              {/* A real anchor, not a navigate: the dashboard opens in its own
-                  tab so the dataflow the user is editing stays where it is, and
-                  a user-initiated link is never caught by a popup blocker. */}
-              <a
-                className={styles.noStyleButton}
-                href={id ? dashboardUrl : undefined}
-                target={id ? "_blank" : undefined}
-                rel="noopener noreferrer"
-                data-testid="open-dashboard-link"
-                onClick={(event) => {
-                  onClose();
-                  if (!id) {
-                    event.preventDefault();
-                    showToast(SAVE_FIRST_MESSAGE, "info");
-                    return;
-                  }
-                  // Pins and tile geometry live in the spec, so an unsaved edit
-                  // is not in the page about to open.
-                  if (projectDirty) showToast(STALE_DASHBOARD_MESSAGE, "info");
-                }}
-              >
-                Open dashboard
-              </a>
-            </div>
-          )}
-          <div
-            className={styles.dropDownRow}
-            onClick={() => void copy(dashboardUrl, "dashboard link", "Dashboard link copied.")}
-          >
-            <FontAwesomeIcon className={styles.dropDownIcon} icon={faLink} />
-            <button className={styles.noStyleButton}>Copy dashboard link</button>
-          </div>
-          <div
-            className={styles.dropDownRow}
-            onClick={() => void copy(dataflowUrl, "dataflow link", "Dataflow link copied.")}
-          >
-            <FontAwesomeIcon className={styles.dropDownIcon} icon={faLink} />
-            <button className={styles.noStyleButton}>Copy dataflow link</button>
-          </div>
-        </div>
+    <HeaderMenu label="Share" open={open} onToggle={onToggle} onClose={onClose} testId="share-menu-btn">
+      {includeOpenDashboard && (
+        // A real anchor, not a navigate: the dashboard opens in its own tab so
+        // the dataflow the user is editing stays where it is, and a
+        // user-initiated link is never caught by a popup blocker.
+        <a
+          className={menuStyles.item}
+          href={id ? dashboardUrl : undefined}
+          target={id ? "_blank" : undefined}
+          rel="noopener noreferrer"
+          data-testid="open-dashboard-link"
+          onClick={(event) => {
+            onClose();
+            if (!id) {
+              event.preventDefault();
+              showToast(SAVE_FIRST_MESSAGE, "info");
+              return;
+            }
+            // Pins and tile geometry live in the spec, so an unsaved edit is
+            // not in the page about to open.
+            if (projectDirty) showToast(STALE_DASHBOARD_MESSAGE, "info");
+          }}
+        >
+          <FontAwesomeIcon className={menuStyles.itemIcon} icon={faTableColumns} />
+          <span>Open dashboard</span>
+        </a>
       )}
-    </div>
+      <HeaderMenuItem
+        icon={faLink}
+        onClick={() => void copy(dashboardUrl, "dashboard link", "Dashboard link copied.")}
+      >
+        Copy dashboard link
+      </HeaderMenuItem>
+      <HeaderMenuItem
+        icon={faLink}
+        onClick={() => void copy(dataflowUrl, "dataflow link", "Dataflow link copied.")}
+      >
+        Copy dataflow link
+      </HeaderMenuItem>
+    </HeaderMenu>
   );
 }
 

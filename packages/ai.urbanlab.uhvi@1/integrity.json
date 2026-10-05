@@ -1,9 +1,0 @@
-{
-  "sha256": {
-    "README.md": "378fb156ca5052b16de5a6ccc89c96dc7375e59f14dce2f110e08d1104a9329d",
-    "manifest.json": "91b94e57d3f1e868d1b70dfc48c156b5f6cb2f4f33538673768019e774288eaa",
-    "sources/uhvi-load.py": "45d052e421a2a5452dfce2e0b79bb0cb6c11650a0df56bdf74a28d937a1a1117",
-    "sources/uhvi-zonal.py": "4e294fa3b85a582b07bbb59d3720adfed1f06a192947cd34b0e72ab37b535973",
-    "sources/uhvi-zones.py": "81130d05e6bc2206e1cbe80ee6332a97e475769d9541689a93335f14ae2a092c"
-  }
-}

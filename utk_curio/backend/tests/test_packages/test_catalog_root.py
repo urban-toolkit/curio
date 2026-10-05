@@ -21,10 +21,10 @@ import json
 import zipfile
 from pathlib import Path
 
-from utk_curio.backend.app.packages import seed as packages_seed
-from utk_curio.backend.app.packages import services as packages_services
-from utk_curio.backend.app.packages import routes as packages_routes
-from utk_curio.backend.app.packages.storage import catalog_root
+from utk_curio.backend.app.packages import service as packages_service
+from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root
+
+PACKAGES_APP = Path(__file__).resolve().parents[2] / "app" / "packages"
 
 REPO_CATALOG = Path(__file__).resolve().parents[4] / "packages"
 
@@ -60,6 +60,17 @@ def _draft():
     }
 
 
+def _install_and_publish(client, token) -> int:
+    """Save the draft into the caller's store, then publish that copy."""
+    installed = client.post("/api/packages/factory/install", json=_draft(), headers=_auth(token))
+    assert installed.status_code == 201, installed.get_data(as_text=True)
+    return client.post(
+        "/api/packages/factory/publish-catalog",
+        json={"dirName": "ai.test.relocatable@1"},
+        headers=_auth(token),
+    ).status_code
+
+
 def test_the_default_is_the_committed_catalog(monkeypatch):
     """Unset means the repo, so a developer's publish still lands there."""
     monkeypatch.delenv("CURIO_PACKAGES_ROOT", raising=False)
@@ -67,14 +78,21 @@ def test_the_default_is_the_committed_catalog(monkeypatch):
 
 
 def test_every_module_resolves_the_same_root(monkeypatch, tmp_path):
-    """Three modules used to carry three copies of the same path expression."""
+    """Three modules used to carry three copies of the same path expression.
+
+    Since memo dev/143 there is ONE, in ``repositories.catalog_dir``: the
+    routes, the seeder and the facade read it rather than carrying a copy, so
+    the override has exactly one place to be honoured.
+    """
     monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(tmp_path / "catalog"))
-    resolved = {
-        packages_routes._catalog_root(),
-        packages_seed._catalog_root(),
-        packages_services.catalog_root(),
-    }
-    assert resolved == {(tmp_path / "catalog").resolve()}
+    assert catalog_root() == (tmp_path / "catalog").resolve()
+    assert packages_service.catalog_root is catalog_root
+    definitions = [
+        f.relative_to(PACKAGES_APP).as_posix()
+        for f in PACKAGES_APP.rglob("*.py")
+        if "def catalog_root(" in f.read_text() or "def _catalog_root(" in f.read_text()
+    ]
+    assert definitions == ["repositories/catalog_dir.py"], definitions
 
 
 def test_a_publish_goes_where_the_override_points(
@@ -86,12 +104,7 @@ def test_a_publish_goes_where_the_override_points(
     catalog.mkdir()
     monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(catalog))
 
-    resp = client.post(
-        "/api/packages/factory/publish-catalog",
-        json=_draft(),
-        headers=_auth(token),
-    )
-    assert resp.status_code == 201, resp.get_data(as_text=True)
+    assert _install_and_publish(client, token) == 201
 
     published = catalog / "ai.test.relocatable@1"
     assert published.is_dir(), f"published nothing into {catalog}"
@@ -111,10 +124,7 @@ def test_a_publish_is_invisible_to_a_differently_rooted_catalog(
     _, token = user_and_token
 
     monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(mine))
-    assert client.post(
-        "/api/packages/factory/publish-catalog",
-        json=_draft(), headers=_auth(token),
-    ).status_code == 201
+    assert _install_and_publish(client, token) == 201
 
     monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(theirs))
     listed = client.get("/api/packages/catalog", headers=_auth(token)).get_json()

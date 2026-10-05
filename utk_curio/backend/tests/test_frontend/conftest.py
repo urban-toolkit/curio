@@ -4,7 +4,7 @@ import os
 import pytest
 from playwright.sync_api import Browser, BrowserType
 
-from . import diagnostics
+from . import comparisons, diagnostics, runner_split
 from .utils import REPO_ROOT
 from .fixtures import _clean_db
 
@@ -81,8 +81,8 @@ WORKFLOW_FILES = [
 
     "docs/examples/dataflows/Image.json",
     "docs/examples/dataflows/SimpleView.json",
-    "docs/examples/dataflows/Merge.json",
-    "docs/examples/dataflows/MergeFlowDataPool.json",
+    "docs/examples/dataflows/MultiInput.json",
+    "docs/examples/dataflows/MultiInputDataPool.json",
 
     "docs/examples/dataflows/JSComputation.json",
 
@@ -113,12 +113,6 @@ WORKFLOW_FILES = [
     "docs/examples/07-autark-gpu-shader.json",
     "docs/examples/08-autark-spatial-join-regression.json",
     "docs/examples/09-heterogeneous-data-linked-views.json",
-    # Example 10 depends on external services (HuggingFace CV inference +
-    # street-view APIs) and the non-builtin curio.streetvision package, so it
-    # can't run offline/deterministically. It is listed here (so it stays
-    # selectable via CURIO_E2E_WORKFLOWS) but the ``loaded_workflow`` fixture
-    # skips it with a reason unless CURIO_E2E_EXTERNAL=1 — a visible, reasoned
-    # skip rather than a silent omission.
     "docs/examples/10-street-vision-cv-analysis.json",
     "docs/examples/11-autark-pbf-loading.json",
     "docs/examples/12-vega-lite-geodataframe-maps.json",
@@ -126,6 +120,15 @@ WORKFLOW_FILES = [
     "docs/examples/14-vega-lite-crs-and-geometry-types.json",
     "docs/examples/15-vega-lite-spec-forms-and-catalogs.json",
     "docs/examples/16-simple-view-tables-and-images.json",
+    "docs/examples/17-autark-geodataframe-maps.json",
+    # The storage examples read collections and tables added from the example
+    # storage source, committed to datasets/ and resolved like any other.
+    "docs/examples/18-storage-orthorectified-imagery.json",
+    "docs/examples/19-storage-video-frames.json",
+    "docs/examples/20-storage-folder-of-csv-files.json",
+    "docs/examples/21-storage-photos-and-videos.json",
+    "docs/examples/22-storage-audio-recordings.json",
+    "docs/examples/23-storage-folder-of-different-files.json",
 ]
 
 
@@ -190,13 +193,6 @@ def pytest_generate_tests(metafunc):
     """
     if "loaded_workflow" in metafunc.fixturenames:
         files = load_workflow_files_from_folder()
-        # Example 10 (street-vision) drives external services — HuggingFace CV
-        # inference + street-view APIs via the non-builtin curio.streetvision
-        # package — so it can't run offline/deterministically. Skip it at
-        # collection time (before any browser/server fixture setup) with a
-        # visible reason unless CURIO_E2E_EXTERNAL=1, rather than silently
-        # dropping it from the matrix.
-        external = os.environ.get("CURIO_E2E_EXTERNAL") == "1"
         params = []
         for f in files:
             basename = os.path.basename(f)
@@ -206,12 +202,6 @@ def pytest_generate_tests(metafunc):
             # independent, so ``--dist loadgroup`` can spread the ~30 groups
             # across workers instead of pinning the whole file to one.
             marks = [pytest.mark.xdist_group(f"wf-{basename}")]
-            if basename.startswith("10-") and not external:
-                marks.append(pytest.mark.skip(reason=(
-                    "example 10 (street-vision) needs external HuggingFace "
-                    "inference + street-view APIs and the curio.streetvision "
-                    "package; set CURIO_E2E_EXTERNAL=1 to run it"
-                )))
             params.append(pytest.param(f, marks=marks, id=basename))
         metafunc.parametrize("loaded_workflow", params, indirect=True)
 
@@ -230,8 +220,80 @@ def pytest_itemcollected(item):
     """
     if item.get_closest_marker("xdist_group") is None:
         module = getattr(item, "module", None)
-        if module is not None:
+        walk = getattr(getattr(item, "callspec", None), "params", {}).get("walk")
+        if walk is not None:
+            # One group per walkthrough scene. Each opens its own page and
+            # user, so they are independent, and as one module group they were
+            # the floor of the whole parallel run: 31 scenes, 8.8 minutes, on
+            # one worker.
+            item.add_marker(pytest.mark.xdist_group(f"walk-{walk.slug}"))
+        elif module is not None:
             item.add_marker(pytest.mark.xdist_group(module.__name__.rsplit(".", 1)[-1]))
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "webgpu: the browser runs WebGPU, so CI runs it on the utk GPU runner "
+        "(set automatically, see runner_split.py)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "needs_parallel: needs the sibling backends of --parallel, which only "
+        "the utk job runs (runner_split.py)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "only_workflows(*basenames): a test_workflows test deselected for every "
+        "other workflow",
+    )
+    config.pluginmanager.register(_OnlyWorkflows(), "curio-only-workflows")
+
+
+class _OnlyWorkflows:
+    """Deselects an ``only_workflows`` test for every workflow it does not name.
+
+    After pytest has put the items in order, never by parametrizing the test
+    over fewer workflows: pytest orders a test with fewer parameters than its
+    class's others ahead of them, so test_node_interaction ran its gestures
+    before test_node_type_and_content looked at the nodes unrun (CI run
+    36794470794). Selecting the test alone still loads only those workflows.
+    """
+
+    @pytest.hookimpl(trylast=True)
+    def pytest_collection_modifyitems(self, config, items):
+        kept, dropped = [], []
+        for item in items:
+            only = item.get_closest_marker("only_workflows")
+            params = getattr(getattr(item, "callspec", None), "params", {}) or {}
+            workflow = params.get("loaded_workflow")
+            if only is not None and workflow is not None and os.path.basename(str(workflow)) not in only.args:
+                dropped.append(item)
+            else:
+                kept.append(item)
+        if dropped:
+            config.hook.pytest_deselected(items=dropped)
+            items[:] = kept
+
+
+def pytest_collection_modifyitems(config, items):
+    """Mark the WebGPU tests, and keep only this runner's share of the suite.
+
+    Marking always happens, so ``-m webgpu`` / ``-m "not webgpu"`` work in any
+    run. Deselection only happens when CI asks for it through
+    ``CURIO_E2E_RUNNER`` / ``CURIO_E2E_PART`` (runner_split.py); a local run
+    with neither set runs everything, as before.
+    """
+    for item in items:
+        if runner_split.item_needs_webgpu(item):
+            item.add_marker(pytest.mark.webgpu)
+    runner, shard = runner_split.from_environment()
+    if not runner and not shard:
+        return
+    kept, dropped = runner_split.select(items, runner, shard)
+    if dropped:
+        config.hook.pytest_deselected(items=dropped)
+        items[:] = kept
 
 
 # ------------------------------------------------------------------ #
@@ -240,9 +302,15 @@ def pytest_itemcollected(item):
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_call(item):
-    """Start the test's trace chunk, once its page exists (see diagnostics.py)."""
+    """Start the test's trace chunk, once its page exists (see diagnostics.py).
+
+    Also names the test its screenshot comparisons are recorded under
+    (comparisons.py), since the capture helper is not handed its item.
+    """
     diagnostics.start_trace_chunk(item)
+    comparisons.current_nodeid = item.nodeid
     yield
+    comparisons.current_nodeid = None
 
 
 @pytest.hookimpl(hookwrapper=True)

@@ -31,12 +31,13 @@ jest.mock("../../providers/FlowProvider", () => ({
     setOutputs: jest.fn(),
     loadParsedTrill: jest.fn(),
     projectId: null,
+    attachLatestRun: jest.fn(),
   }),
 }));
 jest.mock("../../hook/useCode", () => ({
   useCode: () => ({ loadTrill: mockLoadTrill }),
 }));
-jest.mock("../../hook/useEnsureWorkflowDeps", () => ({
+jest.mock("../../providers/packages/useEnsureWorkflowDeps", () => ({
   useEnsureWorkflowDeps: () => mockEnsureWorkflowDeps,
 }));
 jest.mock("../../TrillGenerator", () => ({
@@ -64,7 +65,7 @@ jest.mock("../../registry/projectPackagesStore", () => ({
 import { ProjectLoader } from "../../components/ProjectLoader";
 
 const SPEC_WITH_DEPS = {
-  dataflow: { nodes: [], edges: [], packages: ["ai.urbanlab.uhvi@1"] },
+  dataflow: { nodes: [], edges: [], packages: ["ai.utk.uhvi@1"] },
 };
 
 const notFound = () => Object.assign(new Error("not found"), { status: 404 });
@@ -95,7 +96,8 @@ it("renders a shared project but never installs its declared deps", async () => 
   mockLoadSharedProject.mockResolvedValue({ spec: SPEC_WITH_DEPS, outputs: [] });
   renderLoader();
   // The spec IS applied - a visitor still sees the dataflow…
-  await waitFor(() => expect(mockLoadTrill).toHaveBeenCalledWith(SPEC_WITH_DEPS));
+  await waitFor(() => expect(mockLoadTrill).toHaveBeenCalled());
+  expect(mockLoadTrill.mock.calls[0][0]).toBe(SPEC_WITH_DEPS);
   // …but nothing is installed on their behalf.
   expect(mockEnsureWorkflowDeps).not.toHaveBeenCalled();
 });

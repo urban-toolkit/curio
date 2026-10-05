@@ -1,12 +1,13 @@
 {
   "dataflow": {
+    "categories": {"city": ["Niterói"], "topic": ["Heat and climate"], "complexity": ["Advanced"]},
     "nodes": [
       {
         "id": "niteroi-osm",
         "type": "curio.builtin/autk-grammar",
         "x": 0,
         "y": 243,
-        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/niteroi.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Rio de Janeiro\",\n        \"areas\": [\n          \"Niterói\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"coordinateFormat\": \"EPSG:4326\",\n        \"dropOsmTable\": true,\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"water\",\n          \"roads\"\n        ]\n      }\n    }\n  ]\n}",
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/niteroi.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Rio de Janeiro\",\n        \"areas\": [\n          \"Niterói\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"water\",\n          \"roads\"\n        ]\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Load Niterói OSM surface, parks, water, and roads from the local PBF in EPSG:4326 and emit the layer array downstream.",
@@ -28,24 +29,11 @@
         }
       },
       {
-        "id": "niteroi-merge",
-        "type": "curio.builtin/merge-flow",
-        "x": 645,
-        "y": 543,
-        "content": "",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "Bundle the OSM layers and the raster bytes row into a single 2-element input for the spatial join.",
-        "metadata": {
-          "keywords": []
-        }
-      },
-      {
         "id": "niteroi-join",
         "type": "curio.builtin/js-computation",
-        "x": 815,
+        "x": 645,
         "y": 458,
-        "content": "import * as __autkDbMod from '@urban-toolkit/autk-db';\nconst AutkSpatialDb = __autkDbMod.AutkDb || __autkDbMod.AutkSpatialDb;\n\n// The merge delivers [osmLayers, rasterFc]:\n//   arg[0] = OSM layer array (EPSG:4326) from niteroi-osm\n//   arg[1] = single-row FeatureCollection carrying the GeoTIFF bytes (base64)\n// Depending on how the merge output was resolved it can also arrive as a\n// { data: [...] } 'outputs' wrapper. Accept either, and if it is neither,\n// throw an error that reports the ACTUAL shape so the pipeline is debuggable.\nconst __shape = (v) => v == null ? ('' + v)\n  : Array.isArray(v) ? ('array[' + v.length + ']')\n  : (typeof v === 'object') ? ('object{' + Object.keys(v).slice(0, 8).join(',') + '}')\n  : typeof v;\nlet __parts = (arg && !Array.isArray(arg) && Array.isArray(arg.data)) ? arg.data : arg;\nif (!Array.isArray(__parts)) {\n    throw new Error('[join] expected a 2-element merge array, got arg=' + __shape(arg)\n        + (arg && typeof arg === 'object' && 'dataType' in arg ? ' dataType=' + arg.dataType : ''));\n}\nconst [osmLayers, rasterFc] = __parts;\nif (!Array.isArray(osmLayers)) {\n    throw new Error('[join] osmLayers is not an array: arg=' + __shape(arg)\n        + ' parts[0]=' + __shape(__parts[0])\n        + (__parts[0] && typeof __parts[0] === 'object' && 'dataType' in __parts[0]\n            ? ' (a ref: dataType=' + __parts[0].dataType + '). The sandbox did not resolve the merge refs; restart the sandbox so the worker.py fix is live'\n            : ''));\n}\nconst geotiffB64 = rasterFc?.features?.[0]?.properties?.geotiff_b64;\nif (!geotiffB64) throw new Error('geotiff_b64 missing from upstream raster row');\n\n// Decode the base64-embedded raster bytes back into a clean ArrayBuffer\n// (slicing off any Buffer prefix so loadGeoTiff sees just the raster).\nconst nodeBuf = Buffer.from(geotiffB64, 'base64');\nconst geotiffArrayBuffer = nodeBuf.buffer.slice(\n    nodeBuf.byteOffset,\n    nodeBuf.byteOffset + nodeBuf.byteLength,\n);\n\nconst BAND_COUNT = 24;\n\nconst db = new AutkSpatialDb();\nawait db.init();\n\n// Re-ingest each OSM layer (already in EPSG:4326) as a custom table and\n// project to EPSG:3395 so the metric NEAR distance works.\nfor (const layer of osmLayers) {\n    await (db.loadGeojson ?? db.loadCustomLayer).call(db, {\n        geojsonObject: layer.geojson,\n        outputTableName: layer.name,\n        coordinateFormat: 'EPSG:3395',\n        layerType: layer.type,\n    });\n}\n\n// Reuse the bytes the Python DataLoading node already fetched — no second\n// HTTP request, no URL needed here.\nawait db.loadGeoTiff({\n    geotiffArrayBuffer,\n    outputTableName: 'lst',\n    // 2.0.1 read sourceCrs (source) + coordinateFormat (target). 2.1.2\n    // flipped it: coordinateFormat is the SOURCE CRS, the target is the\n    // workspace default (EPSG:3395), and it transforms only when they\n    // differ. Pass the truthful source so 2.1.2 projects the raster into\n    // the same meters the loadOsm-produced roads are in.\n    sourceCrs: 'EPSG:4326',\n    coordinateFormat: 'EPSG:4326',\n});\n\n// Spatial join: average each LST band within 1 km of every road segment.\nawait db.spatialQuery({\n    tableRootName: 'table_osm_roads',\n    tableJoinName: 'lst',\n    // 2.0.1 reads spatialPredicate/nearDistance; 2.1.2 reads near.distance\n    // and silently degrades to an ST_Intersects join without it (which never\n    // matches lines against raster cells). Both tables are in workspace\n    // meters (EPSG:3395) here — roads via loadOsm's projection, the raster\n    // via the loadGeoTiff source-CRS transform above — so the radius is 1 km.\n    spatialPredicate: 'NEAR',\n    nearDistance: 1000,\n    near: { distance: 1000 },\n    output: { type: 'MODIFY_ROOT' },\n    joinType: 'LEFT',\n    // autk-db 2.1.2: groupBy is an array of column specs\n    // (2.0.1 wrapped it as { selectColumns: [...] }).\n    groupBy: Array.from({ length: BAND_COUNT }, (_, i) => ({\n        tableName: 'lst',\n        column: `band_${i + 1}`,\n        aggregateFn: 'avg',\n        aggregateFnResultColumnName: `band_${i + 1}`,\n    })),\n});\n\n// Reshape per-band averages into a single lst_timeseries array per road.\nconst bandSelects = Array.from({ length: BAND_COUNT }, (_, i) =>\n    // autk-db 2.1.2 keys sjoin aggregates as \"<joinTable>.<column>\" (and ignores\n    // aggregateFnResultColumnName); 2.0.1 used the bare column name. Read both.\n    `COALESCE(json_extract(properties, '$.sjoin.avg.\"lst.band_${i + 1}\"')::DOUBLE, json_extract(properties, '$.sjoin.avg.band_${i + 1}')::DOUBLE, 0)`\n).join(', ');\n\nawait db.rawQuery({\n    query: `\n        SELECT\n            geometry,\n            json_merge_patch(\n                COALESCE(CAST(properties AS JSON), '{}'::JSON),\n                json_object('lst_timeseries', [${bandSelects}])\n            ) AS properties\n        FROM table_osm_roads\n    `,\n    output: { type: 'CREATE_TABLE', tableName: 'table_osm_roads', source: 'osm', tableType: 'roads' },\n});\n\n// Rebuild the layer array uniformly from the local db (all in EPSG:3395)\n// so the downstream map gets a consistent CRS across surface/parks/water/roads.\n// The LST raster is intentionally not re-emitted: it is only needed for the\n// join above, the map skips it, and its non-FeatureCollection shape would be\n// dropped by the grammar resolver anyway.\nconst layers = [];\nfor (const layer of osmLayers) {\n    layers.push({\n        name: layer.name,\n        type: layer.type,\n        geojson: await db.getLayer(layer.name),\n    });\n}\n\nreturn layers;",
+        "content": "import { AutkDb } from '@urban-toolkit/autk-db';\n\n// Input 0 is the OSM layer array (EPSG:3395 meters) from niteroi-osm, and\n// input 1 the single-row FeatureCollection carrying the GeoTIFF bytes (base64).\nconst osmLayers = [!! input 0 !!];\nconst rasterFc = [!! input 1 !!];\nif (!Array.isArray(osmLayers)) {\n    throw new Error('[join] input 0 is not a layer array');\n}\nconst geotiffB64 = rasterFc?.features?.[0]?.properties?.geotiff_b64;\nif (!geotiffB64) throw new Error('geotiff_b64 missing from upstream raster row');\n\n// Decode the base64-embedded raster bytes back into a clean ArrayBuffer\n// (slicing off any Buffer prefix so loadGeoTiff sees just the raster).\nconst nodeBuf = Buffer.from(geotiffB64, 'base64');\nconst geotiffArrayBuffer = nodeBuf.buffer.slice(\n    nodeBuf.byteOffset,\n    nodeBuf.byteOffset + nodeBuf.byteLength,\n);\n\nconst BAND_COUNT = 24;\n\nconst db = new AutkDb();\nawait db.init();\n\n// autk-db clips every layer it loads to the first polygon layer, the surface.\n// These layers were clipped to it once already, upstream, so on a 1 cm grid:\n// otherwise GEOS can refuse the second intersection along a shared edge.\nconst snap = (c) => (Array.isArray(c) ? c.map(snap) : Math.round(c * 100) / 100);\nconst snapGeometry = (g) => (!g ? g : g.type === 'GeometryCollection'\n    ? { ...g, geometries: g.geometries.map(snapGeometry) }\n    : { ...g, coordinates: snap(g.coordinates) });\nconst snapLayer = (fc) => ({ ...fc, features: fc.features.map((f) => ({ ...f, geometry: snapGeometry(f.geometry) })) });\n\n// Re-ingest each OSM layer. They arrive in the workspace CRS (EPSG:3395\n// meters), and coordinateFormat names the source CRS, so nothing is\n// reprojected and the metric NEAR distance works.\nfor (const layer of osmLayers) {\n    await db.loadGeojson({\n        geojsonObject: snapLayer(layer.geojson),\n        outputTableName: layer.name,\n        coordinateFormat: 'EPSG:3395',\n        layerType: layer.type,\n    });\n}\n\n// Reuse the bytes the Python DataLoading node already fetched — no second\n// HTTP request, no URL needed here.\nawait db.loadGeoTiff({\n    geotiffArrayBuffer,\n    outputTableName: 'lst',\n    // The raster's source CRS: autk-db projects it into the workspace CRS\n    // (EPSG:3395), the same meters the roads are in.\n    coordinateFormat: 'EPSG:4326',\n});\n\n// autk-db keeps the raster compact: its extent, in workspace meters, and one\n// array per band with row 0 at the south edge. Its NEAR join needs geometry,\n// so each cell becomes a point at its center, carrying the cell's 24 values.\nconst raster = await db.getRaster('lst');\nconst [minX, minY, maxX, maxY] = raster.bbox;\nconst { rasterResX: width, rasterResY: height, ...values } = raster.features[0].properties;\nconst cellWidth = (maxX - minX) / width;\nconst cellHeight = (maxY - minY) / height;\nconst cells = [];\nfor (let row = 0; row < height; row++) {\n    for (let col = 0; col < width; col++) {\n        const properties = {};\n        for (let b = 1; b <= BAND_COUNT; b++) {\n            const value = values[`band_${b}`][row * width + col];\n            if (Number.isFinite(value)) properties[`band_${b}`] = value;\n        }\n        if (Object.keys(properties).length === 0) continue;\n        cells.push({\n            type: 'Feature',\n            properties,\n            geometry: { type: 'Point', coordinates: [minX + (col + 0.5) * cellWidth, minY + (row + 0.5) * cellHeight] },\n        });\n    }\n}\nawait db.loadGeojson({\n    geojsonObject: { type: 'FeatureCollection', features: cells },\n    outputTableName: 'lst_cells',\n    coordinateFormat: 'EPSG:3395',\n    layerType: 'points',\n});\n\n// Spatial join: average each LST band within 1 km of every road segment.\nawait db.spatialQuery({\n    tableRootName: 'table_osm_roads',\n    tableJoinName: 'lst_cells',\n    // Both tables are in workspace meters (EPSG:3395), so the radius is 1 km.\n    near: { distance: 1000 },\n    groupBy: Array.from({ length: BAND_COUNT }, (_, i) => ({\n        column: `band_${i + 1}`,\n        aggregateFn: 'avg',\n    })),\n});\n\n// Reshape per-band averages into a single lst_timeseries array per road.\n// autk-db keys each join aggregate as \"<joinTable>.<column>\".\nconst bandSelects = Array.from({ length: BAND_COUNT }, (_, i) =>\n    `COALESCE(json_extract(properties, '$.sjoin.avg.\"lst_cells.band_${i + 1}\"')::DOUBLE, 0)`\n).join(', ');\n\nawait db.rawQuery({\n    query: `\n        SELECT\n            geometry,\n            json_merge_patch(\n                COALESCE(CAST(properties AS JSON), '{}'::JSON),\n                json_object('lst_timeseries', [${bandSelects}])\n            ) AS properties\n        FROM table_osm_roads\n    `,\n    output: { type: 'CREATE_TABLE', tableName: 'table_osm_roads', source: 'osm', tableType: 'roads' },\n});\n\n// Rebuild the layer array uniformly from the local db (all in EPSG:3395)\n// so the downstream map gets a consistent CRS across surface/parks/water/roads.\n// The LST raster is intentionally not re-emitted: it is only needed for the\n// join above, the map skips it, and its non-FeatureCollection shape would be\n// dropped by the grammar resolver anyway.\nconst layers = [];\nfor (const layer of osmLayers) {\n    layers.push({\n        name: layer.name,\n        type: layer.type,\n        geojson: await db.getLayer(layer.name),\n    });\n}\n\nreturn layers;",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Re-ingest the OSM layers, load the LST raster, then spatially join LST band averages to roads within 1 km.",
@@ -56,7 +44,7 @@
       {
         "id": "niteroi-compute",
         "type": "curio.builtin/autk-grammar",
-        "x": 1460,
+        "x": 1290,
         "y": 458,
         "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"table_osm_roads\",\n      \"attributes\": {\n        \"bands\": \"lst_timeseries\"\n      },\n      \"attributeArrays\": {\n        \"bands\": 24\n      },\n      \"outputColumns\": [\n        \"angle\",\n        \"intercept\"\n      ],\n      \"wglsFunction\": \"\\n  var n = f32(bands_length);\\n  var sum_x  = 0.0;\\n  var sum_y  = 0.0;\\n  var sum_xy = 0.0;\\n  var sum_x2 = 0.0;\\n\\n  for (var i = 0u; i < bands_length; i++) {\\n    let x   = f32(i);\\n    let y   = bands[i];\\n    sum_x  += x;\\n    sum_y  += y;\\n    sum_xy += x * y;\\n    sum_x2 += x * x;\\n  }\\n\\n  let denom = n * sum_x2 - sum_x * sum_x;\\n  var slope     = 0.0;\\n  var intercept = 0.0;\\n  if (denom != 0.0) {\\n    slope     = (n * sum_xy - sum_x * sum_y) / denom;\\n    intercept = (sum_y - slope * sum_x) / n;\\n  }\\n\\n  var out: OutputArray;\\n  out[0] = atan(slope) * (180.0 / 3.14159265358979);\\n  out[1] = intercept;\\n  return out;\\n\"\n    }\n  ]\n}",
         "out": "DEFAULT",
@@ -69,7 +57,7 @@
       {
         "id": "niteroi-pool",
         "type": "curio.builtin/data-pool",
-        "x": 2105,
+        "x": 1935,
         "y": 458,
         "content": "",
         "out": "DEFAULT",
@@ -82,7 +70,7 @@
       {
         "id": "niteroi-map",
         "type": "curio.builtin/autk-grammar",
-        "x": 2756,
+        "x": 2586,
         "y": 657,
         "width": 759,
         "height": 640,
@@ -97,7 +85,7 @@
       {
         "id": "niteroi-plot",
         "type": "curio.builtin/autk-grammar",
-        "x": 2750,
+        "x": 2580,
         "y": 0,
         "width": 770,
         "height": 577,
@@ -112,19 +100,16 @@
     ],
     "edges": [
       {
-        "id": "reactflow__edge-niteroi-osmout-niteroi-mergein_0",
+        "id": "reactflow__edge-niteroi-osmout-niteroi-joinin",
         "source": "niteroi-osm",
-        "target": "niteroi-merge"
+        "target": "niteroi-join",
+        "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-niteroi-rasterout-niteroi-mergein_1",
+        "id": "reactflow__edge-niteroi-rasterout-niteroi-joinin_1",
         "source": "niteroi-raster",
-        "target": "niteroi-merge"
-      },
-      {
-        "id": "reactflow__edge-niteroi-mergeout-niteroi-joinin",
-        "source": "niteroi-merge",
-        "target": "niteroi-join"
+        "target": "niteroi-join",
+        "targetHandle": "in_1"
       },
       {
         "id": "reactflow__edge-niteroi-joinout-niteroi-computein",

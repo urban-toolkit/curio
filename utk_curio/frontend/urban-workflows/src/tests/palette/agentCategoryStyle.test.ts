@@ -9,6 +9,7 @@ import {
   agentCategoryIcon,
   agentCategoryKey,
 } from "../../components/menus/nodes/agentsPalette/agentCategoryStyle";
+import { AGENT_CATEGORIES } from "../../generated/agentCategories";
 
 /**
  * How an agent is drawn by category: one colour and one glyph each.
@@ -51,7 +52,7 @@ const AGENT_CATEGORY_SURFACES = [
 ];
 
 /** The manifest's category vocabulary, which is now also the palette's. */
-const MANIFEST_CATEGORIES = ["data", "node", "canvas", "package", "evaluate"];
+const MANIFEST_CATEGORIES: readonly string[] = AGENT_CATEGORIES;
 
 describe("agentCategoryKey", () => {
   it("keeps every manifest category distinct", () => {
@@ -189,6 +190,17 @@ describe("agent category stylesheets", () => {
         .filter((l) => /^\s*--curio-[\w-]+\s*:/.test(l))
         .filter((l) => !l.includes("--curio-drawer-z"));
       expect(defines).toEqual([]);
+    }
+  });
+
+  it("the Agent Catalog rail keys its category dots to the same family", () => {
+    // The rail's category rows carry a dot beside the card strips it keys, so
+    // each must be the strip's colour: the agent family, not the node one.
+    const css = read("pages/catalog/CatalogBrowseLayout.module.css");
+    for (const key of MANIFEST_CATEGORIES) {
+      const rule = css.match(new RegExp("\\.agentDot_" + key + "\\s*\\{([^}]*)\\}"));
+      expect(rule).not.toBeNull();
+      expect((rule as RegExpMatchArray)[1]).toContain(`var(--curio-category-agent-${key}-fg)`);
     }
   });
 

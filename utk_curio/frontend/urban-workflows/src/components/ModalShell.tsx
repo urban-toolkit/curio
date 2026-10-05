@@ -8,7 +8,7 @@ import styles from "./ModalShell.module.css";
  *
  * Escape must reach exactly one overlay, and two things make that awkward. The
  * catalog drawers listen on `window` too, and a drawer that renders a modal
- * inside itself (the Agent Catalog holds AI Settings and agent import) mounted
+ * inside itself (the Agent Catalog holds API Settings and agent import) mounted
  * first — so its listener runs first and `stopPropagation` from the modal cannot
  * help. `modalStackDepth` lets those drawers stand down instead.
  *
@@ -18,15 +18,26 @@ import styles from "./ModalShell.module.css";
  */
 const modalStack = new Set<symbol>();
 
-/** How many ModalShell dialogs are currently open. */
+/** How many ModalShell dialogs, and drawers holding the stack, are open. */
 export function modalStackDepth(): number {
   return modalStack.size;
+}
+
+/** Count a drawer that opens over the catalog drawers (API Settings, Monitor)
+ *  as one more layer, so every Escape listener below it stands down. Returns
+ *  the release, for an effect's cleanup. */
+export function holdModalStack(): () => void {
+  const token = Symbol("curio-header-drawer");
+  modalStack.add(token);
+  return () => {
+    modalStack.delete(token);
+  };
 }
 
 interface ModalShellProps {
   onClose: () => void;
   children: React.ReactNode;
-  size?: "default" | "large" | "xlarge";
+  size?: "default" | "wide" | "large" | "xlarge";
   /** Stack above canvas dock / catalog overlays (--curio-z-modal). */
   layer?: "default" | "overlay";
   /** Keep the packages palette dock open while this modal is interacted with. */
@@ -109,7 +120,8 @@ export default function ModalShell({
         aria-labelledby={titleId}
         aria-label={titleId ? undefined : label}
         className={`${styles.modal} nowheel nodrag nopan${
-          size === "large" ? ` ${styles.large}` : ""
+          size === "wide" ? ` ${styles.wide}` : ""
+        }${size === "large" ? ` ${styles.large}` : ""
         }${size === "xlarge" ? ` ${styles.xlarge}` : ""}${
           layer === "overlay" ? ` ${styles.modalOverlay}` : ""
         }${size === "xlarge" && layer === "overlay" ? ` ${styles.xlargeOverlay}` : ""}`}

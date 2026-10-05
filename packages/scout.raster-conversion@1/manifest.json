@@ -1,0 +1,76 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-10-05T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "dask": ">=2026.8.0",
+      "datashader": ">=0.19.1",
+      "rasterio": ">=1.4",
+      "spatialpandas": ">=0.5.0"
+    }
+  },
+  "description": "SCOUT's building rasterizer, ported from SCOUT (urban-toolkit/scout): the Rasterize Buildings node turns a buildings layer into the zoom-16 height tiles SCOUT's Deep Umbra shadow model reads, and a mosaic of them in metres that an Autark map draws.",
+  "id": "scout.raster-conversion",
+  "license": "MIT",
+  "name": "SCOUT Raster Conversion",
+  "permissions": [],
+  "publisher": "Curio",
+  "readOnly": true,
+  "templates": [
+    {
+      "category": "computation",
+      "description": "SCOUT's OSM vector to raster: draws each building's height into 256 by 256 map tiles at a zoom level, 8-bit gray where 255 is the maximum height, in EPSG:3395. Input: a buildings GeoDataFrame with a column of heights in metres. Output: (mosaic, tiles): one RASTER of the tiles side by side, heights in metres, for an Autark map; and a table with one row per tile (zoom, x, y and its PNG in base64), the tiles SCOUT's Deep Umbra shadow model reads.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": true,
+      "iconRef": "fa-solid:city",
+      "id": "rasterize-buildings",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["GEODATAFRAME"]
+        }
+      ],
+      "label": "Rasterize Buildings",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": ["RASTER", "DATAFRAME"]
+        }
+      ],
+      "source": "sources/rasterize-buildings.py",
+      "widgets": [
+        {
+          "name": "attribute",
+          "type": "text",
+          "label": "Height column",
+          "default": "height"
+        },
+        {
+          "name": "zoom",
+          "type": "number",
+          "label": "Zoom level",
+          "default": 16,
+          "options": {"min": 1, "max": 20, "step": 1}
+        },
+        {
+          "name": "max_height",
+          "type": "number",
+          "label": "Maximum height",
+          "default": 550,
+          "options": {"min": 1, "step": 1, "units": "m"}
+        }
+      ]
+    }
+  ],
+  "version": "1.0.0"
+}

@@ -14,6 +14,8 @@ import mmap
 from shapely import wkt
 
 from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code, chdir_locked
+from utk_curio.sandbox.util import package_modules as package_modules_util
+from utk_curio.sandbox.util.secrets import shape_secrets
 from utk_curio.sandbox.util.db import connection_in_use
 
 
@@ -38,12 +40,12 @@ def holds_duckdb(view):
             return view(*args, **kwargs)
 
     return wrapper
+from utk_curio.sandbox.util.codec import PARQUET_ROW_GROUP_ROWS
 from utk_curio.sandbox.util.parsers import (
     arrow_frame_schema,
-    load_from_duckdb,
-    load_shared_output_file,
-    load_tabular_arrow_from_duckdb,
+    load_artifact,
     load_tabular_preview_from_duckdb,
+    open_tabular_arrow_from_duckdb,
     parseOutput,
 )
 
@@ -59,6 +61,7 @@ ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
 ARROW_RESPONSE_HEADERS = (
     "X-Curio-Kind",
     "X-Curio-Filename",
+    "X-Curio-Rows",
     "X-Curio-Schema",
     "X-Curio-Preview",
     "X-Curio-Preview-Rows",
@@ -259,42 +262,29 @@ def get_artifact():
         with chdir_locked(launch_dir):
             total_rows = None
             raw = None
-            try:
-                if max_rows is not None:
+            if max_rows is not None:
+                try:
                     preview = load_tabular_preview_from_duckdb(
                         art_id,
                         max_rows,
                         session_id=session_id,
                     )
-                    if preview is not None:
-                        raw, total_rows = preview
-                if raw is None:
-                    raw = load_from_duckdb(art_id, session_id=session_id)
-                    if max_rows is not None and isinstance(raw, _pd.DataFrame):
-                        total_rows = len(raw)
-                        raw = raw.head(max_rows)
-            except Exception as store_error:
-                # The store could not serve it. Three ways that happens and all
-                # three mean the same thing to a caller holding a project's
-                # saved output: no such row, a row this session may not read
-                # (rows are session-tagged), or no readable database at all -
+                except Exception:
+                    # The full load below reports why, and knows where else
+                    # to look: a project's saved outputs are hydrated into the
+                    # shared data directory, which the store cannot see.
+                    preview = None
+                if preview is not None:
+                    raw, total_rows = preview
+            if raw is None:
+                # The store, or a project output hydrated into the shared
+                # data directory: a row this session may not read (rows are
+                # session-tagged), no row at all, or no readable database -
                 # the file is created on first write and can be locked by a
-                # concurrent /exec. So try the shared data directory, where a
-                # project load hydrates every output the manifest records. That
-                # file carries no session tag, which is what lets a dashboard -
-                # or any second viewer - read an output the producing session no
-                # longer owns.
-                try:
-                    raw = load_shared_output_file(art_id)
-                except KeyError:
-                    # Nothing hydrated under that name either. Report what the
-                    # STORE said rather than what the fallback said: for a
-                    # genuinely missing artifact that is the same KeyError this
-                    # route has always returned, and for a locked or missing
-                    # database it keeps the diagnostic instead of replacing it
-                    # with a misleading "no artifact with id".
-                    raise store_error
-                total_rows = None
+                # concurrent /exec. That file carries no session tag, which is
+                # what lets a dashboard - or any second viewer - read an
+                # output the producing session no longer owns.
+                raw = load_artifact(art_id, session_id=session_id)
                 if max_rows is not None and isinstance(raw, _pd.DataFrame):
                     total_rows = len(raw)
                     raw = raw.head(max_rows)
@@ -324,18 +314,57 @@ def get_artifact():
     return jsonify(data)
 
 
+#: Rows per record batch on the Arrow route: what one fetch holds at a time.
+#:
+#: The route used to read the whole table, write the whole IPC stream, and copy
+#: that into ``bytes``: three copies of the artifact per fetch, and the canvas
+#: fetches every output of a run at once. On a four-loader dataflow at 800k
+#: polygons each, serving the outputs added 3.7 GB to the sandbox against 1.8 GB
+#: for computing them (#408). Streamed, a fetch holds about one batch; the
+#: artifacts are written in row groups of the same size (see codec).
+ARROW_STREAM_BATCH_ROWS = PARQUET_ROW_GROUP_ROWS
+
+
+def _arrow_ipc_stream(parquet_file, schema, rows):
+    """Yield an Arrow IPC stream of the first ``rows`` rows, a batch at a time."""
+    import io
+
+    import pyarrow as pa
+
+    sink = io.BytesIO()
+
+    def drain():
+        chunk = sink.getvalue()
+        sink.seek(0)
+        sink.truncate(0)
+        return chunk
+
+    with pa.ipc.new_stream(sink, schema) as writer:
+        yield drain()
+        remaining = rows
+        for batch in parquet_file.iter_batches(batch_size=ARROW_STREAM_BATCH_ROWS):
+            if remaining <= 0:
+                break
+            if batch.num_rows > remaining:
+                batch = batch.slice(0, remaining)
+            writer.write_batch(batch)
+            remaining -= batch.num_rows
+            yield drain()
+    # Closing the writer wrote the end-of-stream marker.
+    yield drain()
+
+
 def _get_artifact_arrow(art_id, session_id, max_rows_param, *, allow_geometry=False):
     """Serve a tabular artifact as an Arrow IPC stream.
 
-    parquet blob -> pyarrow.Table via pyarrow.parquet.read_table (no pandas).
-    Non-tabular kinds -> 415 so clients can fall back to the JSON path.
+    Streamed from the stored parquet a batch at a time (no pandas, and never
+    the whole table in memory). Non-tabular kinds -> 415 so clients can fall
+    back to the JSON path.
     """
     import traceback as _tb
-    import pyarrow as pa
-    import pyarrow.ipc as ipc
     try:
-        table, kind, frame_metadata, encoded_object_columns = (
-            load_tabular_arrow_from_duckdb(
+        parquet_file, kind, frame_metadata, encoded_object_columns = (
+            open_tabular_arrow_from_duckdb(
                 art_id, session_id=session_id, allow_geometry=allow_geometry
             )
         )
@@ -362,37 +391,40 @@ def _get_artifact_arrow(art_id, session_id, max_rows_param, *, allow_geometry=Fa
             'traceback': _tb.format_exc(),
         }), 500
 
+    table_schema = parquet_file.schema_arrow
+    rows = parquet_file.metadata.num_rows
     total_rows = None
     if max_rows_param is not None:
         max_rows = int(max_rows_param)
-        if table.num_rows > max_rows:
-            total_rows = table.num_rows
-            table = table.slice(0, max_rows)
-
-    sink = pa.BufferOutputStream()
-    with ipc.new_stream(sink, table.schema) as writer:
-        writer.write_table(table)
-    body = sink.getvalue().to_pybytes()
+        if rows > max_rows:
+            total_rows = rows
+            rows = max_rows
 
     headers = {
         'X-Curio-Kind': kind,
         'X-Curio-Filename': art_id,
+        # How many rows the stream carries. A stream cut short still decodes
+        # (to fewer rows, and no error), so the client checks it against this.
+        'X-Curio-Rows': str(rows),
     }
     # The dtypes the JSON envelope carries as `schema`. Read from the parquet
     # file's own pandas metadata, so this route still materialises nothing.
-    schema = arrow_frame_schema(table)
+    schema = arrow_frame_schema(table_schema)
     if schema:
         headers['X-Curio-Schema'] = json.dumps(schema)
     if total_rows is not None:
         headers['X-Curio-Preview'] = 'true'
-        headers['X-Curio-Preview-Rows'] = str(min(int(max_rows_param), total_rows))
+        headers['X-Curio-Preview-Rows'] = str(rows)
         headers['X-Curio-Total-Rows'] = str(total_rows)
     if encoded_object_columns:
         headers['X-Curio-Encoded-Object-Columns'] = ','.join(encoded_object_columns)
     if kind == 'geodataframe' and frame_metadata:
         headers['X-Curio-Frame-Metadata'] = json.dumps(frame_metadata)
 
-    return Response(body, mimetype=ARROW_IPC_MIME, headers=headers)
+    return Response(
+        _arrow_ipc_stream(parquet_file, table_schema, rows),
+        mimetype=ARROW_IPC_MIME, headers=headers,
+    )
 
 # Isolation is resolved once, on the first /exec, and cached. Resolving per
 # request would repeat the capability probe and the warning on every node.
@@ -518,6 +550,70 @@ def artifact_meta():
     })
 
 
+@app.route('/raster', methods=['GET'])
+@require_sandbox_token
+@holds_duckdb
+def get_raster():
+    """A raster artifact as GeoTIFF bytes, for an Autark node to load.
+
+    ``part`` picks one raster out of a Python tuple. ``maxCells`` and
+    ``maxSide`` are what the caller can load: a larger raster is answered 413
+    with its description, and nothing is written. The description of a served
+    raster rides in the ``X-Curio-Raster`` header (see util/rasters.py).
+    """
+    import traceback as _tb
+
+    from utk_curio.sandbox.util.rasters import (
+        RASTER_META_HEADER, RasterRefused, meta_header, serve_raster,
+    )
+
+    art_id = request.args.get('fileName')
+    if not art_id:
+        abort(400, "fileName is required")
+    session_id = request.args.get('sessionId') or None
+    try:
+        part = request.args.get('part')
+        part = int(part) if part not in (None, '') else None
+        max_cells = int(request.args.get('maxCells') or 0) or None
+        max_side = int(request.args.get('maxSide') or 0) or None
+    except ValueError:
+        abort(400, "part, maxCells and maxSide are whole numbers")
+
+    launch_dir = os.environ.get('CURIO_LAUNCH_CWD')
+    try:
+        with chdir_locked(launch_dir):
+            payload, meta = serve_raster(
+                art_id, session_id=session_id, part=part,
+                max_cells=max_cells, max_side=max_side,
+            )
+    except RasterRefused as refused:
+        return jsonify({
+            'error': refused.code,
+            'message': str(refused),
+            'meta': refused.meta,
+            'fileName': art_id,
+        }), refused.status
+    except KeyError:
+        return jsonify({
+            'error': 'not-found',
+            'message': f'no raster artifact {art_id}',
+            'fileName': art_id,
+        }), 404
+    except Exception as e:
+        print(f"[sandbox /raster] failed  fileName={art_id}  session={session_id}\n"
+              f"{_tb.format_exc()}", file=sys.stderr, flush=True)
+        return jsonify({
+            'error': type(e).__name__,
+            'message': str(e),
+            'fileName': art_id,
+        }), 500
+    return Response(
+        payload,
+        mimetype='image/tiff',
+        headers={RASTER_META_HEADER: meta_header(meta)},
+    )
+
+
 @app.route('/exec', methods=['POST'])
 @require_sandbox_token
 @holds_duckdb
@@ -539,7 +635,7 @@ def exec():
     if isinstance(save_dataset, str):
         save_dataset = save_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
     # {datasetId: absolutePath} resolved by the backend for the code's
-    # curio_dataset_path("<id>") calls. Defensive re-shaping mirrors the
+    # curio_load_data / curio_data_path calls. Defensive re-shaping mirrors the
     # backend's MAX_EXEC_DATASET_IDS cap.
     dataset_paths = request.json.get('dataset_paths') or {}
     # Isolated mode gives each user their own work directory, so a node's
@@ -554,6 +650,43 @@ def exec():
         for key, value in list(dataset_paths.items())[:32]
         if value
     }
+    # {datasetId: {"format", "layerType"}}: how curio_load_data reads each of
+    # those datasets, from the backend's catalog.
+    dataset_formats = request.json.get('dataset_formats') or {}
+    if not isinstance(dataset_formats, dict):
+        dataset_formats = {}
+    dataset_formats = {
+        str(key): {k: str(v) for k, v in value.items() if k in ('format', 'layerType') and v}
+        for key, value in list(dataset_formats.items())[:32]
+        if isinstance(value, dict) and str(key) in dataset_paths
+    }
+    # dev/116: {name: value} for the code's curio_secret("<name>") calls,
+    # resolved by the backend from the user's connection keys. Injected as a
+    # callable in both execution modes; never an env var, never staged, never
+    # logged.
+    secrets = shape_secrets(request.json.get('secrets'))
+    # {datasetId: {root|objects, kind}} for the code's curio_load_collection("<id>")
+    # calls, and the user's media directory for the files a node derives.
+    # Resolved and containment-checked by the backend, like dataset_paths.
+    collections = request.json.get('collections') or {}
+    if not isinstance(collections, dict):
+        collections = {}
+    collections = {
+        str(key): {k: str(v) for k, v in value.items() if k in ('root', 'objects', 'kind') and v}
+        for key, value in list(collections.items())[:32]
+        if isinstance(value, dict)
+    }
+    media_dir = request.json.get('media_dir') or None
+    # {modelId: folder} for the code's curio_load_model("<id>") calls, resolved by
+    # the backend from the account's Model Catalog, like dataset_paths.
+    models = request.json.get('models') or {}
+    if not isinstance(models, dict):
+        models = {}
+    models = {str(key): str(value) for key, value in list(models.items())[:8] if value}
+    # {"root", "names"}: the modules the node's package ships beside its
+    # templates, from the user's package store (#468). Both paths stage them
+    # into a folder of the run's own and make them importable for the run.
+    package_modules = package_modules_util.shape(request.json.get('package_modules'))
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
@@ -568,13 +701,24 @@ def exec():
             code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset),
             dataset_paths=dataset_paths, user_key=user_key, config=config,
+            secrets=secrets, collections=collections, media_dir=media_dir, models=models,
+            dataset_formats=dataset_formats, package_modules=package_modules,
         )
     else:
         result = execute_code(
             code, str(file_path), str(node_type), str(data_type), launch_dir,
             session_id=session_id, save_dataset=bool(save_dataset),
-            dataset_paths=dataset_paths,
+            dataset_paths=dataset_paths, secrets=secrets, collections=collections, media_dir=media_dir,
+            models=models, dataset_formats=dataset_formats, package_modules=package_modules,
         )
+
+    # A Compare Scenarios node's code hands two rasters back as a request: they
+    # are subtracted here, in this process's Node, whichever path ran the code.
+    from utk_curio.sandbox.util.scenario_difference import complete_raster_difference
+
+    result = complete_raster_difference(
+        result, node_type=str(node_type), session_id=session_id, launch_dir=launch_dir,
+    )
 
     print(f"[sandbox /exec] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)
     return jsonify(result)

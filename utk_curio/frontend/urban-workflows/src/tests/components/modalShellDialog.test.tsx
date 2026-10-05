@@ -171,7 +171,7 @@ describe("ModalShell responds to Escape", () => {
   });
 
   it("reports its depth so the catalog drawers can stand down", () => {
-    // The Agent Catalog drawer renders AI Settings and agent import inside
+    // The Agent Catalog drawer renders API Settings and agent import inside
     // itself and listens for Escape on window. It mounted first, so the modal
     // cannot stop its handler — the drawer checks this instead.
     expect(modalStackDepth()).toBe(0);

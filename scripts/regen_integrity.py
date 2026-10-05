@@ -12,7 +12,7 @@ package root*, so ``sources/my-node.py`` and ``scripts/behaviors.js`` must be
 included, not just the files sitting at the top level.
 
 This script is the supported way to do it. It calls the same
-``refresh_packageage_integrity`` the installer uses, so the output is identical
+``refresh_package_integrity`` the installer uses, so the output is identical
 to what a fresh install would produce.
 
 Note: nothing in Curio currently *verifies* these hashes at load time — a stale
@@ -47,14 +47,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from utk_curio.backend.app.packages.installer import (  # noqa: E402
-    refresh_packageage_integrity,
-)
-from utk_curio.backend.app.packages.manifest import (  # noqa: E402
-    ManifestError,
-    load_packageage_manifest,
-)
-from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE  # noqa: E402
+from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
+from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+from utk_curio.backend.app.packages.service import ManifestError
+from utk_curio.backend.app.packages.service import PACKAGE_DIR_RE
 
 
 def _catalog_root() -> Path:
@@ -95,7 +91,7 @@ def _regen_one(package_root: Path) -> int:
         except (OSError, ValueError):
             before = {}
 
-    after = refresh_packageage_integrity(package_root)
+    after = refresh_package_integrity(package_root)
 
     added = sorted(set(after) - set(before))
     removed = sorted(set(before) - set(after))
@@ -117,7 +113,7 @@ def _regen_one(package_root: Path) -> int:
     # Validate after writing: a broken manifest is worth reporting, but it
     # should not stop the hashes from being refreshed.
     try:
-        load_packageage_manifest(package_root)
+        load_package_manifest(package_root)
     except ManifestError as exc:
         print(f"  {label}: manifest is INVALID — {exc}", file=sys.stderr)
         return 1

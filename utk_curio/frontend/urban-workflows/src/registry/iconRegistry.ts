@@ -9,23 +9,28 @@
  */
 
 import {
+  faBorderAll,
   faCity,
   faCube,
   faChartColumn,
   faChartLine,
+  faCodeCompare,
   faCodeMerge,
   faCubes,
   faDatabase,
   faDownload,
+  faFilm,
   faMap,
   faMapLocationDot,
   faObjectGroup,
   faRectangleList,
   faServer,
+  faSliders,
   faStreetView,
   faTable,
   faUpload,
   faWandMagicSparkles,
+  faWaveSquare,
 } from '@fortawesome/free-solid-svg-icons';
 import { faJs, faPython } from '@fortawesome/free-brands-svg-icons';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
@@ -69,7 +74,13 @@ registerIcon('fa-solid:map-location-dot', faMapLocationDot);
 registerIcon('fa-solid:code-merge', faCodeMerge);
 // curio.builtin@1 + curio.streetvision@1 additions.
 registerIcon('fa-solid:object-group', faObjectGroup);
+registerIcon('fa-solid:sliders', faSliders);
+registerIcon('fa-solid:code-compare', faCodeCompare);
 registerIcon('fa-solid:street-view', faStreetView);
 registerIcon('fa-solid:wand-magic-sparkles', faWandMagicSparkles);
+// curio.media@1.
+registerIcon('fa-solid:film', faFilm);
+registerIcon('fa-solid:wave-square', faWaveSquare);
+registerIcon('fa-solid:border-all', faBorderAll);
 registerIcon('fa-brands:js', faJs);
 registerIcon('fa-brands:python', faPython);

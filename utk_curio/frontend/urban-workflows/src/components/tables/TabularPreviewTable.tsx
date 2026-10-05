@@ -7,12 +7,18 @@ import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import { shortenString } from "../../utils/parsing";
+import { cellText } from "../../utils/cellText";
 import { visiblePreviewColumns } from "../../utils/tabularPreview";
 
 export interface TabularPreviewTableProps {
   rows: Record<string, unknown>[];
   rowKeyPrefix?: string;
   maxRows?: number;
+  /**
+   * How many rows the whole table has, when *rows* is a preview cut from it.
+   * Whenever fewer rows are shown than exist, the table says so.
+   */
+  totalRows?: number;
   excludeColumns?: string[];
   loading?: boolean;
   loadingMessage?: string;
@@ -24,13 +30,14 @@ function formatCell(value: unknown): string {
   if (value === undefined || value === null) {
     return "null";
   }
-  return shortenString(String(value));
+  return shortenString(cellText(value));
 }
 
 export const TabularPreviewTable: React.FC<TabularPreviewTableProps> = ({
   rows,
   rowKeyPrefix = "preview",
   maxRows = 100,
+  totalRows,
   excludeColumns = [],
   loading = false,
   loadingMessage = "Loading preview...",
@@ -39,6 +46,8 @@ export const TabularPreviewTable: React.FC<TabularPreviewTableProps> = ({
 }) => {
   const displayRows = rows.slice(0, maxRows);
   const columns = visiblePreviewColumns(displayRows, excludeColumns);
+  const allRows = Math.max(totalRows ?? 0, rows.length);
+  const cut = displayRows.length > 0 && allRows > displayRows.length;
 
   return (
     <div
@@ -107,6 +116,25 @@ export const TabularPreviewTable: React.FC<TabularPreviewTableProps> = ({
           </TableBody>
         </Table>
       </TableContainer>
+      {cut ? (
+        // Pinned to the bottom-left of whatever scrolls this table, so it is in
+        // view without scrolling to the last row.
+        <div
+          data-testid="tabular-preview-row-notice"
+          style={{
+            position: "sticky",
+            bottom: 0,
+            left: 0,
+            alignSelf: "flex-start",
+            padding: "4px 10px",
+            fontSize: 12,
+            color: "#555",
+            background: "#fff",
+          }}
+        >
+          {`Showing first ${displayRows.length.toLocaleString()} of ${allRows.toLocaleString()} rows`}
+        </div>
+      ) : null}
     </div>
   );
 };

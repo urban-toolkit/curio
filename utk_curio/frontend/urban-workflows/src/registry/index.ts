@@ -1,6 +1,7 @@
 import './builtinBehaviors';
 import './iconRegistry';
 import '../adapters/vegaLiteAdapter';
+import '../adapters/autkGrammarAdapter';
 
 // ── Dynamic-package globals ────────────────────────────────────────────
 //

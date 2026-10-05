@@ -53,6 +53,7 @@ from .utils import (
     activate_header_icon,
     api_json,
     click_package_summary_action,
+    close_tools_palette,
     connect_nodes,
     drag_to_canvas,
     open_tools_palette,
@@ -60,6 +61,7 @@ from .utils import (
     require_user_auth,
     run_node_and_wait,
     save_workflow_test_screenshot,
+    set_canvas_zoom,
     set_node_code,
     require_owner_view,
     stub_login_and_enter_workflow,
@@ -68,7 +70,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-DATASET_ID = "data.urbanlab.acs-neighborhood-profile"
+DATASET_ID = "data.utk.acs-neighborhood-profile"
 DATASET_ROWS = 3  # rows in the committed CSV fixture
 
 PACKAGE_NAME = "E2E Roundtrip"
@@ -77,7 +79,7 @@ PACKAGE_NAME = "E2E Roundtrip"
 # kind" by matching the node's label against the target package's kinds.
 HEAD_LABEL = "E2E Head"
 
-TRANSFORM_TILE = "#step-transformation"
+TRANSFORM_TILE = "#tile-data-transformation"
 TRANSFORM_TYPE = "curio.builtin/data-transformation"
 LOADER_TYPE = "curio.builtin/data-loading"
 
@@ -101,6 +103,12 @@ POS_LOADER = (40, 30)
 POS_FIRST = (660, 30)
 POS_SECOND = (40, 390)
 
+# The consumer's chain is three nodes in a row, so both edges run forward and
+# are drawn in full. Three nodes fit side by side at this zoom (the layout of
+# test_dataset_catalog_datasets_e2e.py).
+THREE_NODE_ZOOM = 0.55
+POS_TRIPLE = ((190, 140), (550, 140), (910, 140))
+
 
 # ---------------------------------------------------------------------------
 # Drawer / palette helpers
@@ -120,7 +128,7 @@ def _dataset_drawer(page):
 
 
 def _open_package_drawer(page, project_id: str):
-    """Data menu -> Node Catalog, not returning until the drawer has a project.
+    """The bar's Node Catalog button, not returning until the drawer has a project.
 
     ``projectId`` reaches the drawer through FlowContext only once
     ``loadProject`` resolves, and ``onPickArchive`` skips the lockfile write
@@ -130,7 +138,6 @@ def _open_package_drawer(page, project_id: str):
     ``GET /api/packages/projects/<id>`` fires exactly when it learns the project,
     which makes that response the precondition to wait for.
     """
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
     with page.expect_response(
         lambda r: f"/api/packages/projects/{project_id}" in r.url
         and r.request.method == "GET",
@@ -474,7 +481,8 @@ def test_save_export_import_and_run_package_nodes(
     # code it was saved with. Dragged twice and chained, so the assertion covers
     # both "a package node runs" and "one feeds another".
     consumer_row = _add_dataset_and_get_palette_row(page)
-    new_loader = drag_to_canvas(page, consumer_row, at=POS_LOADER)
+    set_canvas_zoom(page, THREE_NODE_ZOOM)
+    new_loader = drag_to_canvas(page, consumer_row, at=POS_TRIPLE[0])
 
     open_tools_palette(page, "packages")
     anchor = _package_anchor(page, dir_name)
@@ -482,8 +490,11 @@ def test_save_export_import_and_run_package_nodes(
     _expand_package(anchor)
     head_row = _template_row(anchor, HEAD_LABEL)
     expect(head_row).to_have_count(1, timeout=20000)
-    first_id = drag_to_canvas(page, head_row, at=POS_FIRST)
-    second_id = drag_to_canvas(page, head_row, at=POS_SECOND)
+    set_canvas_zoom(page, THREE_NODE_ZOOM)
+    first_id = drag_to_canvas(page, head_row, at=POS_TRIPLE[1])
+    set_canvas_zoom(page, THREE_NODE_ZOOM)
+    second_id = drag_to_canvas(page, head_row, at=POS_TRIPLE[2])
+    close_tools_palette(page, "packages")
 
     connect_nodes(page, new_loader, first_id)
     connect_nodes(page, first_id, second_id)
@@ -528,12 +539,11 @@ def test_save_export_import_and_run_package_nodes(
     # assertions above cover what each node computed; this covers what the
     # canvas *looks* like - most usefully that the edge is actually drawn, which
     # a store-level edge assertion cannot see. Compared at the suite's default
-    # tolerance (20% of pixels, 30/255 per channel), which is what absorbs the
-    # per-run "Saved to file: <timestamp>_<hash>" text in each output box.
-    # The helper fitViews first, so baseline and comparison share one viewport,
-    # and it writes the baseline on the first run if the file is absent.
+    # tolerance (10% of pixels, 30/255 per channel). The helper fitViews first,
+    # so baseline and comparison share one viewport.
     save_workflow_test_screenshot(
         page, "package-roundtrip", test_name="test_save_export_import_and_run_package_nodes",
+        sweep_toasts=True,
     )
 
 

@@ -16,7 +16,7 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents.model_catalog import (
+from utk_curio.backend.app.agents.repositories.model_catalog import (
     provider_key,
     remember_models,
     remembered_models,
@@ -31,7 +31,7 @@ OTHER = "2"
 @pytest.fixture(autouse=True)
 def _store(tmp_path, monkeypatch):
     """Point the per-user store at a temp dir for every case."""
-    from utk_curio.backend.app.agents import model_catalog
+    from utk_curio.backend.app.agents.repositories import model_catalog
 
     monkeypatch.setattr(model_catalog, "_users_base", lambda: tmp_path)
     return tmp_path
@@ -109,7 +109,7 @@ class TestRemembering:
         assert remembered_models(USER, "anthropic")[0] == ["ok"]
 
     def test_a_pathological_endpoint_cannot_grow_the_store_without_bound(self):
-        from utk_curio.backend.app.agents.model_catalog import _MAX_REMEMBERED
+        from utk_curio.backend.app.agents.repositories.model_catalog import _MAX_REMEMBERED
 
         remember_models(USER, "anthropic", "", [f"m{i}" for i in range(_MAX_REMEMBERED + 50)])
         assert len(remembered_models(USER, "anthropic")[0]) == _MAX_REMEMBERED
@@ -117,7 +117,7 @@ class TestRemembering:
 
 class TestDegradingQuietly:
     def test_a_corrupt_store_reads_as_empty(self, _store):
-        from utk_curio.backend.app.agents.model_catalog import _path
+        from utk_curio.backend.app.agents.repositories.model_catalog import _path
 
         p = _path(USER)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -127,7 +127,7 @@ class TestDegradingQuietly:
         assert remembered_models(USER, "anthropic") == ([], None)
 
     def test_a_corrupt_store_is_replaced_by_the_next_success(self, _store):
-        from utk_curio.backend.app.agents.model_catalog import _path
+        from utk_curio.backend.app.agents.repositories.model_catalog import _path
 
         p = _path(USER)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -136,7 +136,7 @@ class TestDegradingQuietly:
         assert remembered_models(USER, "anthropic")[0] == ["recovered"]
 
     def test_a_store_shaped_wrongly_reads_as_empty(self, _store):
-        from utk_curio.backend.app.agents.model_catalog import _path
+        from utk_curio.backend.app.agents.repositories.model_catalog import _path
 
         p = _path(USER)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -144,7 +144,10 @@ class TestDegradingQuietly:
         assert remembered_models(USER, "anthropic") == ([], None)
 
     def test_an_entry_with_no_timestamp_still_yields_its_models(self, _store):
-        from utk_curio.backend.app.agents.model_catalog import _path, provider_key
+        from utk_curio.backend.app.agents.repositories.model_catalog import (
+            _path,
+            provider_key,
+        )
 
         p = _path(USER)
         p.parent.mkdir(parents=True, exist_ok=True)

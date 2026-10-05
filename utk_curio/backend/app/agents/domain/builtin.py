@@ -1,0 +1,621 @@
+"""Built-in agent definitions: the thirteen agents Curio ships with, ten of them catalog cards.
+
+Data-driven roster generated from the canonical prompt→agent map (plan memo
+``dev/06``) over the existing prompt files in ``utk_curio/llm-prompts/*.md``,
+plus the P5 composites (memo ``dev/48``: ``agent.node-builder``), whose
+instruction assets are net-new but live in the same directory so resolution
+and materialization work unchanged.
+Each roster entry is turned into a manifest dict and validated through
+``parse_agent_manifest``, so the built-ins can never drift from the manifest
+contract. This roster is what the catalog browses and the resolution source for
+importing or installing a built-in.
+
+``agent.generated-content-evaluator`` shipped as a net-new AUTHORED built-in
+under ``DEC-055`` (memo dev/85 resolved ``OQ-007``: authored, not migrated —
+the advisory semantic-validation layer; report-only, never feeds the DEC-054
+empirical auto-approve).
+
+Prompt-byte materialization (copying ``llm-prompts/`` into a user store on
+install) is a later step; the manifest ``prompts.instruction.path`` here is the
+package-relative name the asset takes once materialized.
+
+User-facing overview: ``docs/AGENT-CATALOG.md``.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from utk_curio.backend.app.agents.domain.manifest import (
+    AgentManifest,
+    parse_agent_manifest,
+)
+from utk_curio.backend.app.agents.domain.contracts import AUTK_PROMPT_KEY, PACKAGE_CONTRACT
+
+log = logging.getLogger(__name__)
+
+BUILTIN_VERSION = "1.0.0"
+
+# Where the legacy prompt files currently live. This module is
+# utk_curio/backend/app/agents/builtin.py, so parents[3] is utk_curio/.
+# domain/builtin.py -> domain -> agents -> app -> backend -> utk_curio/llm-prompts (one deeper since B1)
+PROMPT_SOURCE_DIR = (Path(__file__).resolve().parents[4] / "llm-prompts")
+# The one preamble every built-in composes before its instruction. It is
+# generated, as are the instructions with a ``.template.md`` beside them
+# (``contracts.render_prompt``).
+PREAMBLE_FILE = "default_preamble.md"
+# The Package Builder's backend contract: its instruction includes the text,
+# and a delegated Package Builder receives this file as an input.
+PACKAGE_CONTRACT_FILE = f"{PACKAGE_CONTRACT}.md"
+
+# category -> the single compatible attachment target kind.
+_TARGET_BY_CATEGORY = {
+    "data": "node",
+    "node": "node",
+    "canvas": "canvas",
+    "package": "node",
+    "evaluate": "node",
+}
+
+
+@dataclass(frozen=True)
+class BuiltinMode:
+    """One capability of a merged agent: its own instruction file, the context
+    it reads, and the catalog settings it needs. A delegated run of that
+    capability runs this mode."""
+
+    capability: str
+    prompt_file: str
+    reads: tuple[str, ...]
+    required_config: tuple[str, ...] = ()
+    # Whether a run of this mode gets worked examples, the shipped dataflows
+    # closest to its task, in its runtime slot (``turns/examples``).
+    worked_examples: bool = False
+
+
+#: A ``delegates_to`` entry: an agent id, or ``(agent id, capabilities)`` to
+#: delegate only those capabilities of it.
+Delegate = "str | tuple[str, tuple[str, ...]]"
+
+
+@dataclass(frozen=True)
+class BuiltinAgentSpec:
+    agent_id: str
+    name: str
+    category: str
+    purpose: str
+    prompt_file: str  # instruction filename in llm-prompts/
+    capabilities: tuple[str, ...]
+    roles: tuple[str, ...] = field(default_factory=tuple)
+    # inputs.reads — the context the agent consumes, grounded in what each
+    # legacy call site actually passed (dev/06 migration map).
+    reads: tuple[str, ...] = field(default_factory=tuple)
+    # Compatible attachment target kinds. Empty → derive the single kind from
+    # the category (_TARGET_BY_CATEGORY). Set explicitly for dual-compatible
+    # agents (e.g. Chat attaches to a node OR the canvas).
+    targets: tuple[str, ...] = field(default_factory=tuple)
+    # Typed tool requirements (memo dev/41) — declarations, never grants
+    # (DEC-017); grounded in the agent's declared reads / legacy behavior.
+    # All optional: a missing grant degrades to the pre-tool blind behavior.
+    tools: tuple[str, ...] = field(default_factory=tuple)
+    # compatibleTargets[].requires for the "node" kind (memo dev/50): template
+    # id suffixes the target node's canonical type must match (e.g.
+    # "data-loading"). Empty = any node — every prior agent byte-identical.
+    node_requires: tuple[str, ...] = field(default_factory=tuple)
+    # Preferred delegate agents, in preference order (memo dev/48 / dev/15
+    # §3.2). Expresses composition only — grants nothing; resolution is
+    # current-project-only at run time. An entry may name the capabilities it
+    # delegates, so a merged agent is not offered whole to every parent.
+    delegates_to: tuple = field(default_factory=tuple)
+    # Hard dependencies (memo dev/106): the subset of delegates_to a SERVER
+    # code path of this agent invokes without model choice. Installing the
+    # agent installs the closure at the user's explicit click; uninstalling a
+    # required one while a dependent is installed is refused.
+    requires_agents: tuple[str, ...] = field(default_factory=tuple)
+    # runtime.reviewPolicy. The default keeps the thirteen migrated manifests
+    # byte-identical; composites that mint mutation proposals declare
+    # "review-before-apply".
+    review_policy: str = "report-only"
+    # runtime.execution (dev/115, DEC-073): "background" declares that a SERVER
+    # path of this agent outlives the HTTP request — the Dataflow Builder's
+    # Solve runs as a detached, re-attachable job. The dock projects a running
+    # indicator from the live job (docs/11:178). Every other built-in stays
+    # "foreground" byte-identically.
+    execution: str = "foreground"
+    # Whether the agent is a catalog card. A card can change the user's
+    # project, is one whose input or output the runtime treats as structure,
+    # or is the only agent for a canvas target; the chat agent is the one
+    # conversational surface. Every other built-in is internal: it runs only
+    # as a delegate, resolves from this roster without being installed, and
+    # is never listed, installed or attached.
+    in_catalog: bool = True
+    # A merged agent's modes, one per capability. Empty for an agent with one
+    # instruction for everything it does.
+    modes: tuple[BuiltinMode, ...] = field(default_factory=tuple)
+    # Instructions a run selects in place of the agent's own in one situation,
+    # as (prompts key, file): the Autark document under its reply schema
+    # (``reply_schemas.AUTK_PROMPT_KEY``).
+    variant_prompts: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    # Whether a run of this agent, under its instruction or a variant, gets
+    # worked examples (``turns/examples``). A mode decides for itself.
+    worked_examples: bool = False
+
+    def target_kinds(self) -> tuple[str, ...]:
+        return self.targets or (_TARGET_BY_CATEGORY[self.category],)
+
+    def delegate_ids(self) -> tuple[str, ...]:
+        return tuple(d if isinstance(d, str) else d[0] for d in self.delegates_to)
+
+    def prompt_files(self) -> dict[str, str]:
+        """Every prompt key this agent declares and the file behind it."""
+        files = {"system": PREAMBLE_FILE, "instruction": self.prompt_file}
+        files.update({mode.capability: mode.prompt_file for mode in self.modes})
+        files.update(dict(self.variant_prompts))
+        return files
+
+
+def _merged(agent_id: str, name: str, category: str, purpose: str,
+            modes: tuple[BuiltinMode, ...], **kwargs) -> BuiltinAgentSpec:
+    """An internal agent made of *modes*: its capabilities are the modes',
+    its default instruction the first mode's, and its reads their union."""
+    reads = tuple(dict.fromkeys(r for mode in modes for r in mode.reads))
+    return BuiltinAgentSpec(
+        agent_id, name, category, purpose, modes[0].prompt_file,
+        tuple(mode.capability for mode in modes), reads=reads, modes=modes,
+        in_catalog=False, **kwargs,
+    )
+
+
+# The prompt-agent migrations (dev/06 canonical map) plus the P5 composites
+# (dev/48) and the package-authoring agents: thirteen in all, ten of them
+# catalog cards (``in_catalog``), which is what docs/AGENT-CATALOG.md quotes
+# and test_prompt_assets parametrizes over.
+BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
+    # The one conversational surface. It explains and debugs as well as
+    # chatting, so it reads the node and the dataflow as they are on screen,
+    # unsaved edits included, and holds the read tools to look further.
+    BuiltinAgentSpec("agent.chat-agent", "Chat", "node",
+                     "Talk with an assistant about a node or the whole dataflow: it "
+                     "explains what they do, diagnoses errors, and helps you define "
+                     "what to build.",
+                     "chat_prompt.md",
+                     ("conversation.respond", "attachment.refine", "node.explain",
+                      "code.debug.diagnose"), ("chat",),
+                     targets=("node", "canvas"),
+                     reads=("userMessage", "nodeContext", "dataflowContext"),
+                     tools=("dataflow.read", "node.read", "node.runtime.read")),
+    BuiltinAgentSpec("agent.node-content-builder", "Node Content Builder", "node",
+                     "Generate node content for a target.",
+                     "new_content_prompt.md", ("node.content.generate",), ("authoring",),
+                     reads=("dataflowContext", "nodeId", "subtask", "workflowGoal"),
+                     # models.search: a node that runs a model loads one
+                     # this account has, by the catalog's own loader line.
+                     tools=("dataflow.read", "node.read", "node.content.write",
+                            "node.runtime.read", "models.search"),
+                     variant_prompts=((AUTK_PROMPT_KEY, "new_content_autk_prompt.md"),),
+                     worked_examples=True),
+    BuiltinAgentSpec("agent.connection-builder", "Connection Builder", "node",
+                     "Suggest and create valid node connections.",
+                     "new_connection_prompt.md", ("connection.propose",), ("authoring",),
+                     # Attaches to a node or to a connection. The connection
+                     # target is why this agent declares ``connectionSide``:
+                     # bound to one edge it knows which end it is reasoning
+                     # from. The kind was always accepted by the backend and
+                     # advertised in the palette; only the drop gesture that
+                     # produces one was missing.
+                     targets=("node", "connection"),
+                     reads=("workflowGoal", "nodeId", "subtask", "connectionSide", "dataflowContext"),
+                     # dev/16 §3.3 addendum via dev/84 (deviation D4): the one
+                     # migrated manifest that gains delegatesTo — a proposed
+                     # connection's required packages surface as reviewed
+                     # proposals. Its connection.propose capability is unchanged.
+                     delegates_to=("agent.package-recommendation",),
+                     worked_examples=True),
+    # The planning and keyword agents, merged: six capabilities that shared
+    # their tools (none), delegates (none), review and execution, each still
+    # running its own instruction as a mode. Internal: a delegate only.
+    _merged("agent.dataflow-planner", "Dataflow Planner", "canvas",
+            "Plan, refresh and check a dataflow's tasks, and extract and bind "
+            "the keywords that describe it.",
+            (BuiltinMode("workflow.plan.create", "new_subtasks_prompt.md",
+                         ("currentTask", "dataflowContext")),
+             BuiltinMode("execution.followup.plan", "new_subtask_from_exec_prompt.md",
+                         ("nodeContent", "nodeType", "currentTask")),
+             BuiltinMode("workflow.plan.refresh", "task_refresh_prompt.md",
+                         ("currentTask", "keywords", "dataflowContext"), ("keywordTypes",)),
+             BuiltinMode("workflow.coherence.validate", "evaluate_coherence_subtasks_prompt.md",
+                         ("workflowGoal", "dataflowContext")),
+             BuiltinMode("workflow.keyword.bind", "keywords_binding_prompt.md",
+                         ("keywords", "dataflowContext"), ("keywordTypes",)),
+             BuiltinMode("workflow.keywords.extract", "syntax_analysis_prompt.md",
+                         ("workflowGoal",), ("keywordTypes",))),
+            roles=("planning", "validation"), targets=("canvas",)),
+    # The two dataflow readers, merged the same way.
+    _merged("agent.dataflow-reader", "Dataflow Reader", "canvas",
+            "Explain what the whole dataflow does, and suggest its next steps.",
+            (BuiltinMode("dataflow.explain", "explanation_prompt.md", ("dataflowContext",)),
+             BuiltinMode("workflow.suggest", "workflow_suggestions_prompt.md",
+                         ("dataflowContext", "workflowGoal"), worked_examples=True)),
+            roles=("explanation", "planning"), targets=("canvas",), tools=("dataflow.read",)),
+    # dev/67-4 (DEC-053): the research agent — concise factual verification
+    # of external sources (dataset ids, endpoints, schemas) other agents
+    # chain to via research.verify; policy-gated web tools; never mutates.
+    BuiltinAgentSpec("agent.node-researcher", "Node Researcher", "evaluate",
+                     "Verify external facts — dataset ids, API endpoints, schemas, "
+                     "parameter names — with policy-gated web access; reusable and "
+                     "chainable; reports failure to verify as a finding.",
+                     "research_instruction.md",
+                     ("research.verify", "research.summarize"), ("validation",),
+                     targets=("node", "canvas"),
+                     reads=("mission", "nodeContext"),
+                     tools=("web.search", "web.fetch", "node.read")),
+    # The first P5 composite (memo dev/48; spec dev/15 §3.4). Net-new
+    # instruction — no migrated prompt source. dev/15 deviations recorded in
+    # the memo: "connection" target and agent.package-recommendation deferred.
+    BuiltinAgentSpec("agent.node-builder", "Node Builder", "node",
+                     "Create computation, transform, visualization, or data-fetch nodes as "
+                     "reviewable proposals — or modify an existing node through a reviewed "
+                     "content replacement; delegates content generation to Node Content Builder.",
+                     "node_build_instruction.md",
+                     ("node.build", "dataset.fetch.author"), ("authoring",),
+                     # dev/67-6: node targets lift the dev/48 canvas-only
+                     # limitation — the modify-existing posture attaches to
+                     # the node it modifies.
+                     targets=("canvas", "node"),
+                     reads=("nodeIntent", "targetContext", "externalSelection"),
+                     # dev/114 (DEC-072): catalog.search — the ONLY way a
+                     # data-loading node learns a real local path (rows carry
+                     # the resolved path); the grounding gate refuses any
+                     # other file the code opens. models.search does the same
+                     # for a node that runs a model.
+                     tools=("dataflow.read", "node.create", "node.template.create",
+                            "node.runtime.read", "node.content.write", "catalog.search",
+                            "models.search"),
+                     delegates_to=("agent.node-content-builder",
+                                   ("agent.dataflow-planner", ("execution.followup.plan",)),
+                                   "agent.node-researcher",
+                                   # dev/84: a built node's required packages.
+                                   "agent.package-recommendation",
+                                   # dev/89: no suitable template anywhere →
+                                   # the package.create-or-extend intent goes
+                                   # to the authoring specialist (reuse/catalog
+                                   # discovery stays ahead in preference order).
+                                   "agent.package-builder",
+                                   # dev/86 (DEC-055): optional post-generation
+                                   # semantic check — advisory, never approval.
+                                   "agent.generated-content-evaluator",
+                                   # dev/114 (DEC-072): source resolution for a
+                                   # data-loading node — the tool-less child gets
+                                   # the catalog as INPUT and its candidates are
+                                   # runtime-minted onto the two-lane card.
+                                   "agent.dataset-finder"),
+                     # dev/126: a data-loading node's source resolution
+                     # delegates dataset.discover from a SERVER path, with no
+                     # model choice — the Dataset Finder is a hard dependency,
+                     # not a preference.
+                     requires_agents=("agent.dataset-finder",),
+                     review_policy="review-before-apply",
+                     worked_examples=True),
+    # The second P5 composite (memo dev/50; spec dev/15 §3.4 + docs/06). Two-
+    # lane discovery: catalog picks → reviewed dataset.install; external picks
+    # → the DEC-047 user-mediated Node Builder handoff. Never authors fetch
+    # code. Deviations recorded in the memo (canvas target added for mission-
+    # first discovery; foreground-only; no auto-install).
+    BuiltinAgentSpec("agent.dataset-finder", "Dataset Finder", "data",
+                     "Discover and select datasets across connected data portals and the "
+                     "Data Catalog; download portal picks into the Data Catalog as a "
+                     "reviewed proposal. Never authors fetch code.",
+                     "discovery_instruction.md",
+                     ("dataset.discover", "dataset.select"), ("discovery", "selection"),
+                     targets=("node", "canvas"),
+                     reads=("mission", "nodeContext", "catalog"),
+                     # The external lane used to dead-end: it could NAME a
+                     # portal dataset and nothing could act on it, so the only
+                     # move was the Node Builder handoff. The three discovery
+                     # contracts make it actionable - roster, live search, and
+                     # a reviewed download. node-builder stays in delegates_to
+                     # because a source no provider covers is still real; it
+                     # just stops being the only answer.
+                     tools=("catalog.search", "discovery.sources", "discovery.search",
+                            "discovery.acquire", "dataset.install", "dataflow.read"),
+                     delegates_to=("agent.node-builder",
+                                   ("agent.dataflow-reader", ("workflow.suggest",)),
+                                   ("agent.dataflow-planner", ("workflow.keyword.bind",)),
+                                   "agent.node-researcher"),
+                     review_policy="review-before-apply",
+                     node_requires=("data-loading",)),
+    # The third P5 composite (memo dev/52; spec dev/15 §3.4 + dev/49 DR-1…5).
+    # Plan → Revise → Solve → Run: additive graph-level plan proposals, the
+    # persisted builder session, and the authenticated Solve batch (DEC-048).
+    # Deviation recorded: agent.package-recommendation deferred (dev/16).
+    BuiltinAgentSpec("agent.dataflow-builder", "Dataflow Builder", "canvas",
+                     "Plan a connected dataflow from a goal as one reviewable proposal; "
+                     "solve unresolved nodes through delegated specialists. Never mutates "
+                     "without review.",
+                     "orchestration_instruction.md",
+                     ("dataflow.orchestrate",), ("orchestration",),
+                     reads=("mission", "graphContext", "installedTemplates"),
+                     # dev/95: node.create is the reviewed lane the delegated
+                     # Researcher's note proposals mint on (grant-gated —
+                     # nothing lands without the user's Apply). examples.read:
+                     # any worked example, beside the ones a run is given.
+                     tools=("dataflow.read", "dataflow.plan.write",
+                            "node.runtime.read", "node.create", "examples.read"),
+                     # dev/73: node-content-builder listed so node.content.generate
+                     # is OFFERED in the delegation paragraph — the chat path for
+                     # "change this node's content" (the runtime mints the review
+                     # at that node's own agent; plans stay content-free).
+                     delegates_to=("agent.dataset-finder", "agent.node-builder",
+                                   "agent.node-content-builder",
+                                   "agent.connection-builder",
+                                   ("agent.dataflow-planner", (
+                                       "workflow.plan.create", "execution.followup.plan",
+                                       "workflow.plan.refresh", "workflow.coherence.validate")),
+                                   ("agent.dataflow-reader", ("workflow.suggest", "dataflow.explain")),
+                                   "agent.node-researcher",
+                                   # dev/84: the "Recommend packages" plan step.
+                                   "agent.package-recommendation",
+                                   # dev/89: package-scale plan steps — one
+                                   # coherent new or extended multi-template
+                                   # package, instead of repeated single-
+                                   # template rewrites.
+                                   "agent.package-builder",
+                                   # dev/86 (DEC-055): optional post-generation
+                                   # semantic check — advisory, never approval.
+                                   "agent.generated-content-evaluator",
+                                   # dev/95 (Follow-up D): research questions in
+                                   # the DFB chat delegate research.notes.compose
+                                   # — runtime-gathered search inputs, schema
+                                   # reply, reviewed note sequence.
+                                   "agent.researcher"),
+                     # dev/106: Solve/Validate hard-invoke node.content.generate.
+                     # dev/126: and resolution hard-invokes dataset.discover for
+                     # a data-loading node, while every plan-created node is
+                     # given a Node Builder at the user's Apply — both server
+                     # paths, neither a model choice, so both are required
+                     # (DEC-068's own criterion) instead of merely preferred.
+                     # The install proposal for a required agent that the owner
+                     # hit mid-conversation (memo dev/126 §0) cannot recur.
+                     requires_agents=("agent.node-content-builder",
+                                      "agent.dataset-finder", "agent.node-builder"),
+                     review_policy="review-before-apply",
+                     # dev/115 (DEC-073): Solve is a detached background job.
+                     execution="background",
+                     worked_examples=True),
+    # The fourteenth releasable built-in (memo dev/84; spec dev/16 / DEC-035).
+    # Net-new instruction. Deviations recorded in the memo: roster-generated
+    # manifest (foreground, no settingsDefaults); the dev/16 installedPackages
+    # read is served by packages.catalog's installed flags, not a new fragment.
+    # Identify/suggest/reviewed-install only — never installs, never authors.
+    BuiltinAgentSpec("agent.package-recommendation", "Package Recommendation", "package",
+                     "Identify and recommend the node packages a task, node, or dataflow "
+                     "needs; surface each required-but-uninstalled package as a reviewed "
+                     "install proposal against the existing Nodes Catalog. Never installs "
+                     "anything itself and never authors a package.",
+                     "package_recommendation_instruction.md",
+                     ("package.recommend", "package.identify"), ("recommendation",),
+                     targets=("node", "canvas"),
+                     reads=("mission", "targetContext", "installedTemplates"),
+                     tools=("packages.catalog", "packages.resolve", "package.install",
+                            "dataflow.read"),
+                     review_policy="review-before-apply"),
+    # The DEC-055 authored built-in (memo dev/85 resolved OQ-007; impl dev/86).
+    # The advisory semantic-validation layer over the empirical stack: judges
+    # generated content against its goal/assumptions/journal evidence and
+    # reports findings + a derived verdict. Report-only, delegates-free —
+    # it can never approve, propose, or mutate; DEC-054's simulation
+    # auto-approve stays exclusively empirical.
+    BuiltinAgentSpec("agent.generated-content-evaluator", "Generated Content Evaluator",
+                     "evaluate",
+                     "Judge whether generated node content does what its goal and "
+                     "assumptions say — findings with quoted evidence and an advisory "
+                     "verdict. Never approves, never mutates, never replaces "
+                     "execution-based validation.",
+                     "evaluate_generated_content_prompt.md",
+                     ("content.quality.evaluate",), ("validation",),
+                     targets=("node", "canvas"),
+                     reads=("nodeContext", "targetContext"),
+                     tools=("node.read", "node.runtime.read", "dataflow.read"),
+                     in_catalog=False),
+    # The twentieth built-in (memo dev/89). Net-new instruction. The package
+    # AUTHORING specialist, deliberately separate from Package Recommendation
+    # (dev/89 §3): recommendation stays catalog-grounded discovery + reviewed
+    # install; authoring owns the package artifact — new or extended packages,
+    # template definitions, behavior source, dependencies, assets, integrity —
+    # always as a reviewed draft. Node Builder's template fallback and Dataflow
+    # Builder's package-scale plan steps delegate the package.create-or-extend
+    # intent here, which resolves to these capabilities. package.draft.apply
+    # is the ONE authoring mutate contract (dev/89 commit 8): requesting it
+    # runs the isolated build service and mints the reviewed draft proposal;
+    # Apply promotes the exact reviewed artifact digest.
+    BuiltinAgentSpec("agent.package-builder", "Package Builder", "package",
+                     "Author a new node package or extend an installed editable one — "
+                     "templates, custom JS behavior, dependencies, assets, integrity — "
+                     "as one reviewed, installable draft. Never installs, never "
+                     "publishes, never touches read-only packages.",
+                     "package_build_instruction.md",
+                     ("package.build", "package.extend", "node.kind.author"),
+                     ("authoring",),
+                     targets=("node", "canvas"),
+                     reads=("packageIntent", "targetContext", "installedTemplates"),
+                     tools=("packages.catalog", "packages.resolve", "dataflow.read",
+                            "package.draft.apply"),
+                     review_policy="review-before-apply"),
+    # The twenty-first built-in (memo dev/90). Net-new instruction. The NOTES
+    # scenario owner: turns findings into post-it style note nodes. Distinct
+    # from agent.node-researcher (dev/67-4 web VERIFICATION) — the two
+    # cooperate: Researcher may chain research.verify before composing.
+    # Reuse-first (node.create on an installed notes template, per-note
+    # appearance color); when no template fits it delegates the
+    # package.create-or-extend intent to the Package Builder with the
+    # post-it recipe's REQUIREMENTS as inputs — it never composes manifests
+    # or behavior source itself. package.draft.apply is declared for the
+    # dev/90 delegate-draft mint authorization only (DEC-017: proposal
+    # purposes; the draft content always comes from the delegate).
+    # Dataflow Builder wiring is deliberately deferred (dev/90 Follow-up D).
+    BuiltinAgentSpec("agent.researcher", "Researcher", "node",
+                     "Answer questions by searching the web and compose the "
+                     "findings into post-it style note nodes — reuse an "
+                     "installed notes template, or delegate package authoring to "
+                     "the Package Builder with the post-it look requirements. "
+                     "Never authors packages itself; distinct from Node "
+                     "Researcher (verification).",
+                     "researcher_notes_instruction.md",
+                     ("research.notes.compose",), ("authoring",),
+                     targets=("node", "canvas"),
+                     reads=("mission", "targetContext", "installedTemplates"),
+                     # dev/90 A1: the reference recording's loop — question →
+                     # web search → post-it reply. The dev/67-4 web contracts
+                     # ride as-is (egress policy, ≤4 calls/run, honest
+                     # not-configured error).
+                     # dev/93 D4: package.install is the MIDDLE rung of the
+                     # reuse ladder. Without it the Researcher could only
+                     # reuse a template this project already enlisted or
+                     # author a brand-new package — so a notes package the
+                     # user already owned was unreachable, and one weather
+                     # question produced two near-duplicate packages. The
+                     # reviewed install lane (dev/84) keeps the user in
+                     # control; nothing installs without their approval.
+                     tools=("dataflow.read", "web.search", "web.fetch",
+                            "node.create", "package.install",
+                            "package.draft.apply"),
+                     delegates_to=("agent.package-builder", "agent.node-researcher"),
+                     review_policy="review-before-apply"),
+)
+
+
+def build_builtin_manifest(spec: BuiltinAgentSpec) -> dict:
+    """Turn a roster entry into a manifest dict (camelCase)."""
+    manifest = {
+        "id": spec.agent_id,
+        "name": spec.name,
+        "category": spec.category,
+        "version": BUILTIN_VERSION,
+        "purpose": spec.purpose,
+        "roles": list(spec.roles),
+        "capabilities": [_capability_entry(spec, c) for c in spec.capabilities],
+        "prompts": {
+            key: {"path": f"prompts/{filename}", "variables": []}
+            for key, filename in spec.prompt_files().items()
+        },
+        "compatibleTargets": [
+            {
+                "kind": k,
+                "requires": list(spec.node_requires) if k == "node" else [],
+            }
+            for k in spec.target_kinds()
+        ],
+        "inputs": {"reads": list(spec.reads), "requiredConfig": []},
+        # Typed tool requirements (dev/41) — all optional declarations.
+        "tools": [{"id": t} for t in spec.tools],
+        "runtime": {"execution": spec.execution, "reviewPolicy": spec.review_policy},
+        "providerRequirements": {"capabilities": ["structured-output"]},
+        "provenance": {"publisher": "curio", "license": "MIT", "trust": "built-in"},
+    }
+    # Only composites carry the key — the thirteen migrated manifests stay
+    # byte-identical (memo dev/48 regression requirement).
+    if spec.delegates_to:
+        manifest["delegatesTo"] = [
+            d if isinstance(d, str) else {"id": d[0], "capabilities": list(d[1])}
+            for d in spec.delegates_to
+        ]
+    if spec.requires_agents:
+        manifest["requiresAgents"] = list(spec.requires_agents)
+    return manifest
+
+
+def _capability_entry(spec: BuiltinAgentSpec, capability: str) -> dict:
+    """A capability, with its mode's instruction, reads and settings when it has one."""
+    entry: dict = {"id": capability, "contractVersion": "1"}
+    mode = next((m for m in spec.modes if m.capability == capability), None)
+    if mode is not None:
+        entry["instruction"] = mode.capability
+        entry["reads"] = list(mode.reads)
+        entry["requiredConfig"] = list(mode.required_config)
+    return entry
+
+
+def list_builtin_manifests() -> list[AgentManifest]:
+    """Validated manifests for every built-in, in roster order."""
+    return [parse_agent_manifest(build_builtin_manifest(s), where=s.agent_id) for s in BUILTIN_AGENTS]
+
+
+def _by_coord() -> dict[str, BuiltinAgentSpec]:
+    return {f"{s.agent_id}@{BUILTIN_VERSION}": s for s in BUILTIN_AGENTS}
+
+
+def get_builtin_spec(coord: str) -> BuiltinAgentSpec | None:
+    """Resolve a ``<agentId>@<version>`` coordinate to its roster spec, or None."""
+    return _by_coord().get(coord)
+
+
+def gets_worked_examples(coord: str, capability: str | None = None) -> bool:
+    """Whether a run of the built-in *coord* gets worked examples: in the mode
+    of *capability* when it has one, else as the agent says. Any other
+    definition gets none."""
+    spec = _by_coord().get(coord)
+    if spec is None:
+        return False
+    mode = next((m for m in spec.modes if m.capability == capability), None)
+    return mode.worked_examples if mode is not None else spec.worked_examples
+
+
+def internal_agent_ids() -> frozenset[str]:
+    """The built-ins that run only as delegates (``in_catalog`` false)."""
+    return frozenset(spec.agent_id for spec in BUILTIN_AGENTS if not spec.in_catalog)
+
+
+def is_internal(coord: object) -> bool:
+    """Whether *coord* (or a bare agent id) is an internal built-in. A
+    definition of the same id at another version is the owner's own, and is not."""
+    agent_id, _, version = str(coord or "").partition("@")
+    return agent_id in internal_agent_ids() and version in ("", BUILTIN_VERSION)
+
+
+def get_builtin_manifest(coord: str) -> AgentManifest | None:
+    """Resolve a ``<agentId>@<version>`` coordinate to a built-in manifest, or None."""
+    spec = _by_coord().get(coord)
+    if spec is None:
+        return None
+    return parse_agent_manifest(build_builtin_manifest(spec), where=spec.agent_id)
+
+
+def read_prompt_text(coord: str, name: str) -> str | None:
+    """Read a built-in's prompt asset text from ``llm-prompts/``, or None.
+
+    ``name`` is the manifest prompt key: ``"instruction"`` (the agent's task
+    prompt), ``"system"`` (its preamble), or a mode's capability id.
+    """
+    spec = _by_coord().get(coord)
+    if spec is None:
+        return None
+    filename = spec.prompt_files().get(name)
+    if filename is None:
+        return None
+    return read_prompt_file(filename, wanted_by=f"built-in agent {coord}, prompt {name!r},")
+
+
+def read_prompt_file(filename: str, *, wanted_by: str) -> str | None:
+    """Read one file from ``llm-prompts/``, or None when it is missing.
+
+    A missing file is logged: returning None silently would ship an agent
+    with no system or task prompt and no symptom beyond worse answers, which
+    is precisely what an sdist without ``utk_curio/llm-prompts/`` used to do.
+    """
+    path = PROMPT_SOURCE_DIR / filename
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+    log.error(
+        "%s reads %s but %s is missing, so it runs without it. If this is an "
+        "installed Curio, the package is missing utk_curio/llm-prompts/ (see "
+        "MANIFEST.in).",
+        wanted_by, filename, path,
+    )
+    return None
+
+
+def read_instruction_text(coord: str) -> str | None:
+    """Read a built-in's instruction prompt text from ``llm-prompts/``, or None."""
+    return read_prompt_text(coord, "instruction")

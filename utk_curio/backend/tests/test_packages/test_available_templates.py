@@ -11,8 +11,13 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.packages import services as packages_services
-from utk_curio.backend.app.packages.storage import user_packageages_dir
+from utk_curio.backend.app.packages.application import store_reads
+from utk_curio.backend.app.packages import service as packages_services
+from utk_curio.backend.app.packages.application import (
+    store_reads,
+    templates,
+)
+from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 from utk_curio.backend.app.projects import services as projects_services
 
 
@@ -33,12 +38,13 @@ def alice_project(client, user_and_token):
     return resp.get_json()["id"]
 
 
-def _template(template_id, label, *, editor="code", has_code=None, has_grammar=None, description="", input_ports=None):
+def _template(template_id, label, *, editor="code", has_code=None, has_grammar=None, description="", input_ports=None,
+              engine="python"):
     t = {
         "id": template_id,
         "label": label,
         "category": "computation",
-        "engine": "python",
+        "engine": engine,
         "editor": editor,
         "description": description,
         "inputPorts": input_ports if input_ports is not None else [],
@@ -52,7 +58,7 @@ def _template(template_id, label, *, editor="code", has_code=None, has_grammar=N
 
 
 def _write_package(user_key, package_id, major, templates, *, broken=False):
-    d = user_packageages_dir(user_key) / f"{package_id}@{major}"
+    d = user_packages_dir(user_key) / f"{package_id}@{major}"
     d.mkdir(parents=True, exist_ok=True)
     if broken:
         (d / "manifest.json").write_text("{not json", encoding="utf-8")
@@ -74,7 +80,7 @@ def _write_package(user_key, package_id, major, templates, *, broken=False):
 
 
 def _lockfile_add(user_key, project_id, dir_name):
-    from utk_curio.backend.app.packages.spec_packages import set_project_packages
+    from utk_curio.backend.app.packages.domain.spec_packages import set_project_packages
     from utk_curio.backend.app.projects import storage as projects_storage
 
     spec = projects_storage.read_spec(user_key, project_id)
@@ -143,7 +149,7 @@ class TestParseCardinality:
     """dev/67-3 (DEC-051) — one parser for the schema's cardinality grammar."""
 
     def test_all_schema_forms(self):
-        from utk_curio.backend.app.packages.manifest import parse_cardinality
+        from utk_curio.backend.app.packages.domain.manifest import parse_cardinality
 
         assert parse_cardinality("1") == (1, 1)
         assert parse_cardinality("2") == (2, 2)
@@ -157,9 +163,10 @@ class TestParseCardinality:
 
 
 class TestInputArity:
-    """dev/67-3 (DEC-051) — maxIncomingEdges is the RENDERED truth: one edge
-    per rendered handle (handles = ports); merge-flow's slots are the sole
-    multi-edge surface."""
+    """dev/67-3 (DEC-051) — maxIncomingEdges is the RENDERED truth: a single
+    input port takes its declared maximum (the canvas grows a circle per edge,
+    and None is any number), and named ports take one edge each. No template
+    id is special: since #662 the declared maximum is the only cap."""
 
     def _templates(self, user_and_token, alice_project, tmp_curio):
         from utk_curio.backend.app.projects import services as projects_services
@@ -170,10 +177,18 @@ class TestInputArity:
             _template("data-loading", "Load", input_ports=[]),
             _template("computation-analysis", "Compute",
                       input_ports=[{"types": ["DATAFRAME"], "cardinality": "[1,n]"}]),
+            _template("data-transformation", "Transform",
+                      input_ports=[{"types": ["DATAFRAME"], "cardinality": "[1,2]"}]),
+            _template("vis-vega", "Vega",
+                      input_ports=[{"types": ["DATAFRAME"], "cardinality": "1"}]),
             _template("spatial-join", "Spatial Join",
                       input_ports=[{"types": ["GEODATAFRAME"], "cardinality": "1"},
                                    {"types": ["GEODATAFRAME"], "cardinality": "1"}]),
-            _template("merge-flow", "Merge",
+            _template("fan-in", "Fan In",
+                      input_ports=[{"types": ["DATAFRAME"], "cardinality": "[1,5]"}]),
+            # The id that once rendered five fixed slots (DEC-051), declared here
+            # by a package that still ships it.
+            _template("merge-flow", "Old Merge",
                       input_ports=[{"types": ["DATAFRAME"], "cardinality": "[1,n]"}]),
         ])
         return {
@@ -184,12 +199,28 @@ class TestInputArity:
     def test_rendered_capacity_rules(self, user_and_token, alice_project, tmp_curio):
         by_id = self._templates(user_and_token, alice_project, tmp_curio)
         assert by_id["curio.builtin/data-loading"]["maxIncomingEdges"] == 0
-        # Declared [1,n] is NOT enforceable capacity — the input plumbing is
-        # scalar per handle (a second edge silently overwrites data.input).
-        assert by_id["curio.builtin/computation-analysis"]["maxIncomingEdges"] == 1
+        # A single port takes its declared maximum: each edge gets a circle.
+        assert by_id["curio.builtin/computation-analysis"]["maxIncomingEdges"] is None
+        assert by_id["curio.builtin/data-transformation"]["maxIncomingEdges"] == 2
+        assert by_id["curio.builtin/vis-vega"]["maxIncomingEdges"] == 1
         assert by_id["curio.builtin/spatial-join"]["maxIncomingEdges"] == 2
-        # Merge's rendered slot machinery wins over its declared [1,n].
-        assert by_id["curio.builtin/merge-flow"]["maxIncomingEdges"] == 5
+        # A growing port with a finite bound stops at it: five circles, no sixth.
+        assert by_id["curio.builtin/fan-in"]["maxIncomingEdges"] == 5
+        # No id overrides what its port declares: [1,n] is any number.
+        assert by_id["curio.builtin/merge-flow"]["maxIncomingEdges"] is None
+
+    def test_input_capacity_is_the_declared_bound_alone(self):
+        """The one rule behind ``maxIncomingEdges`` takes the port count and the
+        single port's cardinality, and nothing that names a template."""
+        from utk_curio.backend.app.packages.application.templates import input_capacity
+
+        assert input_capacity(0) == 0
+        assert input_capacity(1, "1") == 1
+        assert input_capacity(1, "[1,5]") == 5
+        assert input_capacity(1, "[1,n]") is None
+        assert input_capacity(2) == 2
+        # Several ports are named circles, one edge each, whatever one declares.
+        assert input_capacity(2, "[1,n]") == 2
 
     def test_declared_cardinality_survives_as_metadata(self, user_and_token, alice_project, tmp_curio):
         by_id = self._templates(user_and_token, alice_project, tmp_curio)
@@ -265,6 +296,9 @@ class TestInstalledTemplatesNotInProject:
         assert set(row) == {
             "id", "label", "description", "authorable", "presentation", "inputs",
             "maxIncomingEdges", "dirName",
+            "engine", "editor", "hasCode", "backendHandler", "executable",  # dev/119
+            "contentKind", "hasGrammar",  # dev/134
+            "category", "bidirectional",  # the interaction rule reads these
         }
 
 
@@ -384,7 +418,20 @@ class TestCanonicalTemplateId:
         text = constants.read_text(encoding="utf-8")
         block = text.split("export enum NodeType {", 1)[1].split("}", 1)[0]
         members = re.findall(r'^\s*([A-Z0-9_]+)\s*=\s*"([^"]+)"', block, re.M)
-        assert len(members) >= 11, f"expected the NodeType roster, parsed {members}"
+        # Ten since Merge Flow left (#662); every member names a template the
+        # built-in package ships, so a stale member fails here too.
+        assert len(members) >= 10, f"expected the NodeType roster, parsed {members}"
+        import json
+
+        manifest = json.loads(
+            (Path(__file__).resolve().parents[4] / "packages" / "curio.builtin@1" / "manifest.json")
+            .read_text(encoding="utf-8")
+        )
+        shipped = {f"curio.builtin/{t['id']}" for t in manifest["templates"]}
+        assert {value for _, value in members} <= shipped, (
+            f"NodeType names templates the built-in package does not ship: "
+            f"{sorted({value for _, value in members} - shipped)}"
+        )
         for key, value in members:
             assert packages_services.canonical_template_id(key) == value, (
                 f"NodeType.{key} = {value!r} does not follow the upper-snake rule "
@@ -487,7 +534,7 @@ class TestResolveTemplate:
     ):
         key, pid = self._project(user_and_token, alice_project)
         monkeypatch.setattr(
-            packages_services, "available_templates_report",
+            templates, "available_templates_report",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk on fire")),
         )
         entry, err = packages_services.resolve_template(key, pid, "curio.builtin/data-loading")
@@ -538,13 +585,13 @@ class TestTemplateLandscape:
         key, pid = self._fixture(user_and_token, alice_project)
 
         walks = {"n": 0}
-        real = packages_services._store_index
+        real = store_reads._store_index
 
         def counting(user_key):
             walks["n"] += 1
             return real(user_key)
 
-        monkeypatch.setattr(packages_services, "_store_index", counting)
+        monkeypatch.setattr(store_reads, "_store_index", counting)
 
         packages_services.template_landscape(key, pid)
         assert walks["n"] == 1
@@ -602,9 +649,9 @@ class TestBatchResolution:
     ):
         key, pid = self._project(user_and_token, alice_project)
         walks = {"n": 0}
-        real = packages_services._store_index
+        real = store_reads._store_index
         monkeypatch.setattr(
-            packages_services, "_store_index",
+            store_reads, "_store_index",
             lambda uk: (walks.__setitem__("n", walks["n"] + 1), real(uk))[1],
         )
 
@@ -654,9 +701,75 @@ class TestBatchResolution:
     ):
         key, pid = self._project(user_and_token, alice_project)
         monkeypatch.setattr(
-            packages_services, "available_templates_report",
+            templates, "available_templates_report",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk on fire")),
         )
         outcomes = packages_services.resolve_templates(key, pid, ["a", "b", "c"])
         assert len(outcomes) == 3
         assert all(e is None and "registry is unavailable" in msg for e, msg in outcomes)
+
+
+class TestDev119ExecutableFlag:
+    """dev/119 (DEC-076): the roster carries the schema facts the runner's
+    executability is derived from — ``executable`` is THE derivation (code
+    surface + a sandbox engine + no package backend handler), so no caller
+    keeps a hand-written list of executable kinds."""
+
+    def _rows(self, user_key, project_id, templates):
+        _write_package(user_key, "ai.test.exec", 1, templates)
+        _lockfile_add(user_key, project_id, "ai.test.exec@1")
+        return {row["id"].split("/", 1)[1]: row
+                for row in packages_services.available_templates(user_key, project_id)
+                if row["id"].startswith("ai.test.exec/")}
+
+    def test_flags_follow_the_manifest_not_the_name(self, client, user_and_token, alice_project):
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        rows = self._rows(key, alice_project, [
+            _template("spatial-join", "Spatial Join", editor="none", has_code=False),
+            _template("python-thing", "Python", editor="code"),
+            _template("js-thing", "JS", editor="code", engine="javascript"),
+            _template("look", "Look", editor="grammar", has_code=False, has_grammar=True),
+            _template("data-loading", "Impostor", editor="none", has_code=False),
+        ])
+        assert rows["python-thing"]["executable"] is True
+        assert rows["python-thing"]["engine"] == "python" and rows["python-thing"]["hasCode"] is True
+        assert rows["js-thing"]["executable"] is True and rows["js-thing"]["engine"] == "javascript"
+        assert rows["spatial-join"]["executable"] is False and rows["spatial-join"]["editor"] == "none"
+        assert rows["look"]["executable"] is False and rows["look"]["hasCode"] is False
+        # A code-kind NAME on a template without code is not executable: the
+        # manifest decides, never the name.
+        assert rows["data-loading"]["executable"] is False
+        assert all(row["backendHandler"] is False for row in rows.values())
+
+    def test_a_backend_handler_template_is_not_sandbox_executable(self):
+        from types import SimpleNamespace
+
+        ns = lambda **kw: SimpleNamespace(**{"has_code": True, "engine": "python", "backend_handler": None, **kw})
+        assert packages_services.template_is_executable(ns()) is True
+        assert packages_services.template_is_executable(ns(backend_handler="word-count")) is False
+        assert packages_services.template_is_executable(ns(engine="wasm")) is False
+        assert packages_services.template_is_executable(ns(has_code=False)) is False
+
+    def test_roster_templates_is_the_snapshot_the_runner_classifies_against(self, client, user_and_token, alice_project, monkeypatch):
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        _write_package(key, "ai.test.exec", 1, [
+            _template("js-thing", "JS", editor="code", engine="javascript"),
+            _template("spatial-join", "Spatial Join", editor="none", has_code=False),
+        ])
+        _lockfile_add(key, alice_project, "ai.test.exec@1")
+        snap = packages_services.roster_templates(key, alice_project)
+        assert snap["ai.test.exec/js-thing"] == {
+            "executable": True, "engine": "javascript", "contentKind": "code",
+        }
+        assert snap["ai.test.exec/spatial-join"] == {
+            "executable": False, "engine": "python", "contentKind": "note",
+        }
+        # The runner's contract, nothing more. `contentKind` joined it in
+        # dev/134: the write gate routes on the same snapshot, so a template
+        # whose content is a document is told apart from one that holds code.
+        assert set(snap["ai.test.exec/js-thing"]) == {"executable", "engine", "contentKind"}
+        monkeypatch.setattr(templates, "available_templates",
+                            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("store down")))
+        assert packages_services.roster_templates(key, alice_project) is None  # callers fall back to legacy

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import json
 
 from flask import Blueprint, g, jsonify, request, send_file
 
@@ -11,6 +12,8 @@ from utk_curio.backend.app.datasets.schemas.requests import (
     parse_live_outputs,
 )
 from utk_curio.backend.app.datasets.service import DatasetCatalogError, DatasetCatalogService
+# The operator's publish switch, read where every catalog gate reads it.
+from utk_curio.backend.app.packages.routes import common as packages_routes_common
 from utk_curio.backend.app.projects.repositories import NotFoundError
 from utk_curio.backend.app.projects.services import ProjectError
 from utk_curio.backend.app.users.dependencies import require_auth
@@ -116,6 +119,15 @@ def preview_dataset(dataset_id: str):
     return jsonify(payload), 200
 
 
+@datasets_bp.route("/datasets/<dataset_id>/extent", methods=["GET"])
+@require_auth
+@_map_catalog_errors
+def dataset_extent(dataset_id: str):
+    """``{datasetId, title, box}``: the WGS84 box the dataset covers, or a null
+    box when it has no geometry."""
+    return jsonify(_service().extent(dataset_id)), 200
+
+
 @datasets_bp.route("/datasets/<dataset_id>/usage", methods=["GET"])
 @require_auth
 @_map_catalog_errors
@@ -165,8 +177,21 @@ def import_dataset():
         dataflow_id=request.form.get("dataflowId") or request.form.get("projectId"),
         title=request.form.get("title") or None,
         source_updated_at=_parse_source_updated_at(request.form.get("sourceUpdatedAt")),
+        discovery_source=_parse_discovery_source(request.form.get("discoverySource")),
     )
-    return jsonify(payload), 201
+    return jsonify(payload), 200 if payload.get("alreadyPresent") else 201
+
+
+def _parse_discovery_source(raw: str | None) -> dict | None:
+    """Where a file the person downloaded themselves came from, as JSON. An
+    unreadable value is no provenance, never a failed import."""
+    if not raw or not raw.strip():
+        return None
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
 
 
 def _parse_source_updated_at(raw: str | None) -> str | None:
@@ -195,6 +220,8 @@ def _parse_source_updated_at(raw: str | None) -> str | None:
 @require_auth
 @_map_catalog_errors
 def publish_dataset():
+    if not packages_routes_common.CURIO_ALLOW_FACTORY_CATALOG_PUBLISH:
+        return packages_routes_common.catalog_publish_disabled()
     body = request.get_json(silent=True) or {}
     dataset_id = body.get("datasetId")
     if not dataset_id:
@@ -212,6 +239,10 @@ def publish_dataset():
 @require_auth
 @_map_catalog_errors
 def unpublish_dataset(dataset_id: str):
+    # The route, not the service: deleting a dataset unpublishes it through
+    # the service, and the switch must not strand a user's own dataset.
+    if not packages_routes_common.CURIO_ALLOW_FACTORY_CATALOG_PUBLISH:
+        return packages_routes_common.catalog_publish_disabled()
     payload = _service().unpublish_dataset(
         dataset_id,
         dataflow_id=_dataflow_id_from_request(),

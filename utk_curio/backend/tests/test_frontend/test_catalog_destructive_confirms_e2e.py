@@ -54,7 +54,7 @@ NODE_DRAWER = '[data-curio-node-catalog-drawer="true"]'
 #: The catalog PAGES' detail drawer. Publishing lives here and nowhere else.
 BROWSE_DRAWER = '[data-curio-browse-drawer="true"]'
 
-LOADING_TILE = "#step-loading"
+LOADING_TILE = "#tile-data-loading"
 LOADING_TYPE = "curio.builtin/data-loading"
 
 #: A node body that outputs a frame, so running it with save-output on leaves a
@@ -66,6 +66,16 @@ OWN_DATASET_CODE = (
     "df = pd.DataFrame({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})\n"
     "return df\n"
 )
+
+
+def _expect_actions_in_view(drawer) -> None:
+    """The drawer's actions are on screen without scrolling anything (#526).
+
+    They used to sit at the end of the drawer's one scroll box, about 220 px
+    below the fold for a dataset, so the capture had to scroll the drawer to
+    show them. Only the body between the header and the actions scrolls now.
+    """
+    expect(drawer.locator('[data-curio-drawer-ctas="true"]')).to_be_in_viewport(ratio=1)
 
 
 def _modal(page, name):
@@ -80,7 +90,6 @@ def _modal(page, name):
 
 
 def _open_data_drawer(page):
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
     page.get_by_role("button", name="Data Catalog", exact=True).click()
     root = page.locator(DATA_DRAWER)
     root.wait_for(state="attached", timeout=15000)
@@ -91,7 +100,6 @@ def _open_data_drawer(page):
 
 
 def _open_node_drawer(page):
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
     page.get_by_role("button", name="Node Catalog", exact=True).click()
     root = page.locator(NODE_DRAWER)
     root.wait_for(state="attached", timeout=15000)
@@ -153,6 +161,7 @@ def test_removing_a_dataset_from_the_dataflow_asks_first(
         page, "data-remove-confirm",
         test_name="test_removing_a_dataset_from_the_dataflow_asks_first",
         fit_reactflow=False,
+        sweep_toasts=True,
     )
 
     # Cancel really cancels: still in the dataflow afterwards.
@@ -330,11 +339,13 @@ def test_publish_is_offered_only_for_the_users_own_data_and_asks_first(
     own_card.click()
     publish = drawer.get_by_role("button", name=re.compile(r"^Publish"))
     expect(publish).to_have_count(1, timeout=30000)
+    _expect_actions_in_view(drawer)
 
     save_workflow_test_screenshot(
         page, "publish-offered-for-own-dataset",
         test_name="test_publish_is_offered_only_for_the_users_own_data_and_asks_first",
         fit_reactflow=False,
+        sweep_toasts=True,
     )
 
     # 3. And publishing asks first - it is the only deployment-wide write.
@@ -410,6 +421,7 @@ def test_uploading_a_file_then_deleting_it_warns_about_every_dataflow(
         page, "upload-delete-confirm",
         test_name="test_uploading_a_file_then_deleting_it_warns_about_every_dataflow",
         fit_reactflow=False,
+        sweep_toasts=True,
     )
 
     # Cancelling leaves it alone.
@@ -489,9 +501,11 @@ def test_the_catalog_pages_use_one_button_vocabulary(
         f"Publish is not the dark action fill: {fill}. Black is an action, "
         f"white with a border is destructive, and Publish is an action."
     )
+    _expect_actions_in_view(drawer)
 
     save_workflow_test_screenshot(
         page, "catalog-page-button-vocabulary",
         test_name="test_the_catalog_pages_use_one_button_vocabulary",
         fit_reactflow=False,
+        sweep_toasts=True,
     )

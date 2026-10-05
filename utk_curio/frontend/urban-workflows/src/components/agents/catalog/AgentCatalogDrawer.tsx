@@ -1,22 +1,22 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFileImport, faGear, faRobot, faThumbtack } from "@fortawesome/free-solid-svg-icons";
-import type { AgentCard } from "../../../api/agentsApi";
+import {
+  matchesAgentSearch,
+  sortAgentCards,
+  installLabel,
+  installTitle,
+  type AgentCard,
+} from "../../../services/agents";
 
-/**
- * Loaded on demand. A static import would pull AI Settings' whole module
- * graph - it reads UserProvider, which reaches the package registry and
- * through it vega - into every canvas that mounts this drawer, to render a
- * modal that is usually closed.
- */
-const AiSettingsModal = React.lazy(() => import("../../AiSettingsModal"));
+import { requestAgentModel } from "../../apiSettings/apiSettingsRequest";
 import { AgentImportModal } from "./AgentImportModal";
 import { AgentDetailModal } from "./AgentDetailModal";
 import { PackageSearchRow } from "../../packages/publishing/PackageSearchRow";
 import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import footerStyles from "../../packages/publishing/DrawerFooter.module.css";
 import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
-import { SortMode } from "../../packages/publishing/packageTypes";
+import { SortMode } from "../../../services/packages";
 import {
   agentCategoryIcon,
   agentCategoryKey,
@@ -24,7 +24,6 @@ import {
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
 import cardStyles from "../../packages/publishing/PackageCard.module.css";
 import styles from "./AgentCatalogDrawer.module.css";
-import { matchesAgentSearch, sortAgentCards, installLabel, installTitle } from "./agentListUtils";
 import { AgentScope, useAgentCatalogDrawer } from "./useAgentCatalogDrawer";
 import ConfirmDialog from "../../ConfirmDialog";
 
@@ -90,8 +89,6 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
 }) => {
   const c = useAgentCatalogDrawer(presented, projectId, onEnsureProject);
   const panelRef = useRef<HTMLElement>(null);
-  // The header cog opens AI Settings, which owns the account scope.
-  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   // Upload-import (dev/36), opened from the footer's Import package button.
   const [importOpen, setImportOpen] = useState(false);
   const [detailCard, setDetailCard] = useState<AgentCard | null>(null);
@@ -225,13 +222,15 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
         onPinToggle={onPinToggle}
         onClose={() => onRequestClose?.()}
         actions={
+          // The model each agent runs on lives in API Settings' Agent
+          // configuration tab, which opens over this drawer.
           <button
             type="button"
             className={styles.headerSettingsBtn}
             aria-haspopup="dialog"
-            onClick={() => setAccountSettingsOpen(true)}
+            onClick={() => requestAgentModel()}
           >
-            <FontAwesomeIcon icon={faGear} aria-hidden /> AI Settings
+            <FontAwesomeIcon icon={faGear} aria-hidden /> API Settings
           </button>
         }
       />
@@ -342,15 +341,6 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
             void c.reload();
           }}
         />
-      ) : null}
-      {accountSettingsOpen ? (
-        /* The account scope lives in AI Settings now, beside the provider it
-           applies to. This drawer opens that one surface rather than a second
-           modal for half the answer. On the canvas it is the ONLY way there:
-           GlobalPageHeader renders only on /projects and /catalog/*. */
-        <React.Suspense fallback={null}>
-          <AiSettingsModal isOpen onClose={() => setAccountSettingsOpen(false)} />
-        </React.Suspense>
       ) : null}
       {confirmAction ? (
         <ConfirmDialog

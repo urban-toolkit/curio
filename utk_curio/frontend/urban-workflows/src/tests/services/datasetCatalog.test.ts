@@ -19,6 +19,7 @@ import {
   nodeLinkedDatasetIds,
   isNodeLinkedToAnyDataset,
   DATASET_DRAG_MIME,
+  DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
   type DatasetPaletteGroup,
 } from "../../services/datasetCatalog";
@@ -153,7 +154,7 @@ describe("datasetDisplayTitle (clean, user-facing dataset name)", () => {
 
   test("imported / hub / source datasets show their real title", () => {
     expect(
-      datasetDisplayTitle(makeDataset({ origin: "imported", title: "Chicago Boundary", dirName: "data.urbanlab.chicago-boundary@1" })),
+      datasetDisplayTitle(makeDataset({ origin: "imported", title: "Chicago Boundary", dirName: "data.utk.chicago-boundary@1" })),
     ).toBe("Chicago Boundary");
     expect(
       datasetDisplayTitle(makeDataset({ origin: "hub", title: "Census Blocks" })),
@@ -177,8 +178,8 @@ describe("datasetSubtitle (secondary line under the title)", () => {
 
   test("imported / hub datasets show the store folder", () => {
     expect(
-      datasetSubtitle(makeDataset({ origin: "imported", dirName: "data.urbanlab.chicago-boundary@1" })),
-    ).toBe("data.urbanlab.chicago-boundary@1");
+      datasetSubtitle(makeDataset({ origin: "imported", dirName: "data.utk.chicago-boundary@1" })),
+    ).toBe("data.utk.chicago-boundary@1");
   });
 
   test("falls back to the filename (no extension) when dirName would duplicate the title", () => {
@@ -298,12 +299,12 @@ const bundleDataset: DatasetCatalogItem = {
   tags: ["bundle", "computed"],
 };
 
-test("buildDatasetLoaderCode creates CSV imports and loader", () => {
-  expect(buildDatasetLoaderCode(dataset)).toContain("import pandas as pd");
-  // Portable form: the id call resolves to a real path at execution time, so
-  // generated code carries no machine-specific absolute path.
-  expect(buildDatasetLoaderCode(dataset)).toContain('dataset_path = curio_dataset_path("file-123")');
-  expect(buildDatasetLoaderCode(dataset)).toContain("pd.read_csv(dataset_path)");
+test("buildDatasetLoaderCode loads a CSV with one portable call", () => {
+  // Portable form: the sandbox resolves the id and reads the CSV at execution
+  // time, so generated code carries no machine-specific absolute path.
+  const code = buildDatasetLoaderCode(dataset);
+  expect(code).toContain('df = curio_load_data("file-123")');
+  expect(code).not.toContain(String(dataset.path));
 });
 
 test("buildDatasetLoaderCode includes return statement for CSV", () => {
@@ -311,13 +312,11 @@ test("buildDatasetLoaderCode includes return statement for CSV", () => {
   expect(code).toContain("return df");
 });
 
-test("buildDatasetLoaderCode reads parquet as a GeoDataFrame first, then falls back", () => {
+test("buildDatasetLoaderCode loads parquet with one portable call", () => {
+  // The sandbox reads it as a GeoDataFrame when it has geometry, so a computed
+  // geo dataset reloads with the type the producing node emitted.
   const code = buildDatasetLoaderCode(parquetDataset);
-  // GeoParquet-aware read so a computed geo dataset reloads with the same
-  // (geo)dataframe type/schema the producing node emitted.
-  expect(code).toContain("import geopandas as gpd");
-  expect(code).toContain("gpd.read_parquet(dataset_path)");
-  expect(code).toContain("pd.read_parquet(dataset_path)");
+  expect(code).toContain('df = curio_load_data("parquet-456")');
   expect(code).toContain("return df");
 });
 
@@ -333,37 +332,28 @@ const jsonDataset: DatasetCatalogItem = {
   tags: ["json", "computed"],
 };
 
-test("buildDatasetLoaderCode reads json binary and tolerates zlib compression", () => {
+test("buildDatasetLoaderCode loads json with one portable call", () => {
   // Computed dict/list outputs (autk-grammar pool wrappers) are stored as
-  // `.json.zlib` with `format: json`; the loader must decompress them while
-  // still reading plain user-imported .json files.
+  // `.json.zlib` with `format: json`; the sandbox decompresses them and still
+  // reads plain user-imported .json files.
   const code = buildDatasetLoaderCode(jsonDataset);
-  expect(code).toContain("import json");
-  expect(code).toContain("import zlib");
-  expect(code).toContain('with open(dataset_path, "rb") as f:');
-  expect(code).toContain("zlib.decompress(_raw)");
-  expect(code).toContain("except zlib.error:");
-  expect(code).toContain('data = json.loads(_raw.decode("utf-8"))');
+  expect(code).toContain('data = curio_load_data("computed.dataflow-1.node-a")');
   expect(code).toContain("return data");
-  expect(code).not.toContain("json.load(f)");
 });
 
-test("mergeDatasetLoaderCode adds the zlib import once and is stable on re-apply", () => {
+test("mergeDatasetLoaderCode is stable on re-apply", () => {
   const first = mergeDatasetLoaderCode("", jsonDataset);
-  expect(first.match(/^import zlib$/gm)).toHaveLength(1);
-  // Re-applying the same dataset must not duplicate the loader block or imports.
+  expect(first.split('curio_load_data("computed.dataflow-1.node-a")')).toHaveLength(2);
+  // Re-applying the same dataset must not duplicate the loader block.
   const again = mergeDatasetLoaderCode(first, jsonDataset);
   expect(again).toBe(first);
 });
 
-test("buildDatasetLoaderCode rebuilds a bundle into a tuple of parts", () => {
+test("buildDatasetLoaderCode loads a bundle with one portable call", () => {
+  // The sandbox reads the bundle manifest and returns the parts as a tuple, so
+  // it re-detects the same `outputs` envelope the producing node emitted.
   const code = buildDatasetLoaderCode(bundleDataset);
-  // Reads the bundle manifest and returns the parts as a tuple so the sandbox
-  // re-detects the same `outputs` envelope the producing node emitted.
-  expect(code).toContain('bundle_path = curio_dataset_path("computed.node_x")');
-  expect(code).toContain("spec.get(\"parts\", [])");
-  expect(code).toContain("gpd.read_parquet(file_path)");
-  expect(code).toContain("return tuple(items)");
+  expect(code).toContain('bundle = curio_load_data("computed.node_x")');
   expect(code).toContain("return bundle");
 });
 
@@ -372,7 +362,7 @@ test("buildDatasetLoaderNodeOptions builds a new Data Loading node payload", () 
   const options = buildDatasetLoaderNodeOptions(payload, { x: 100, y: 200 });
   expect(options.position).toEqual({ x: 100, y: 200 });
   expect(options.datasetRefs).toEqual(["file-123"]);
-  expect(options.code).toContain("pd.read_csv(dataset_path)");
+  expect(options.code).toContain('df = curio_load_data("file-123")');
   expect(options.appliedDatasets["file-123"]).toMatchObject({
     id: "file-123",
     title: "Blocks",
@@ -432,11 +422,138 @@ test("dragging an OSM group builds a node that loads all layers via real member 
   expect(Object.keys(options.appliedDatasets)).toEqual(["loop.points", "loop.lines"]);
   expect(options.appliedDatasets["osm.x1"]).toBeUndefined();
   // The loader reads every layer into one `layers` dict (the full import).
-  expect(options.code).toContain('layers["points"] = _curio_read_layer(curio_dataset_path("loop.points"))');
-  expect(options.code).toContain('layers["lines"] = _curio_read_layer(curio_dataset_path("loop.lines"))');
+  expect(options.code).toContain('layers["points"] = curio_load_data("loop.points")');
+  expect(options.code).toContain('layers["lines"] = curio_load_data("loop.lines")');
   expect(options.code).toContain("return layers");
   // The linkage marker still points at the group for palette↔canvas focus.
   expect(options.datasetSource.datasetId).toBe("osm.x1");
+});
+
+test("dragging a Discovery OpenStreetMap group reads its GeoJSON layers as GeoJSON", () => {
+  // A Discovery download lands each Autark layer as a GeoJSON file in one osm.x group.
+  const members = [
+    makeDataset({ id: "golf.buildings", title: "OpenStreetMap, Golf (buildings)", origin: "imported", format: "geojson", path: "/store/golf.buildings@1/data/osm_buildings.geojson", layerName: "buildings", groupId: "osm.x2" }),
+    makeDataset({ id: "golf.roads", title: "OpenStreetMap, Golf (roads)", origin: "imported", format: "geojson", path: "/store/golf.roads@1/data/osm_roads.geojson", layerName: "roads", groupId: "osm.x2" }),
+  ];
+  const [group] = groupDatasetsForPalette(members) as [DatasetPaletteGroup];
+  const options = buildDatasetLoaderNodeOptions(createOsmGroupDragPayload(group), { x: 0, y: 0 });
+
+  expect(options.code).toContain('layers["buildings"] = curio_load_data("golf.buildings")');
+  expect(options.code).toContain('layers["roads"] = curio_load_data("golf.roads")');
+  expect(options.code).not.toContain("read_parquet");
+  expect(options.code).toContain("return layers");
+});
+
+describe("a layer group's drag payload takes its kind from the group id (#440)", () => {
+  function groupOf(groupId: string): DatasetPaletteGroup {
+    const members = [
+      makeDataset({ id: "imported.parks_parks", title: "parks (parks)", origin: "imported", format: "parquet", path: "/store/imported.parks_parks@1/data/parks.parquet", layerName: "parks", groupId }),
+      makeDataset({ id: "imported.parks_trails", title: "parks (trails)", origin: "imported", format: "parquet", path: "/store/imported.parks_trails@1/data/trails.parquet", layerName: "trails", groupId }),
+    ];
+    const [group] = groupDatasetsForPalette(members) as [DatasetPaletteGroup];
+    return group;
+  }
+
+  test("a GeoPackage group drops as a GeoPackage dataset, not an OSM PBF", () => {
+    const payload = createOsmGroupDragPayload(groupOf("gpkg.x1"));
+    expect(payload.format).toBe("gpkg");
+    expect(payload.uri).toBe("curio://gpkg/gpkg.x1");
+
+    // The DATASET pill's tooltip reads the format from the node's datasetSource.
+    const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
+    expect(options.datasetSource.format).toBe("gpkg");
+    expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("GeoPackage");
+    // The layers still load through their own ids.
+    expect(options.datasetRefs).toEqual(["imported.parks_parks", "imported.parks_trails"]);
+    expect(options.code).toContain('layers["parks"] = curio_load_data("imported.parks_parks")');
+    expect(options.code).toContain('layers["trails"] = curio_load_data("imported.parks_trails")');
+  });
+
+  test("a GTFS feed drops as GTFS, though its tables were downloaded (#608)", () => {
+    // A GTFS feed is always a Discovery download; it still says what it is
+    // rather than its tables' Parquet, unlike #586's layer groups.
+    const discoverySource = { sourceId: "source.curio.direct-url@1", sourceName: "Direct URL" };
+    const feed = groupOf("gtfs.x1");
+    const downloaded: DatasetPaletteGroup = {
+      ...feed,
+      members: feed.members.map((m) => ({ ...m, discoverySource })),
+    };
+    const payload = createOsmGroupDragPayload(downloaded);
+    expect(payload.format).toBe("gtfs");
+    expect(payload.uri).toBe("curio://gtfs/gtfs.x1");
+    const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
+    expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("GTFS");
+    // Each table loads through its own id.
+    expect(options.datasetRefs).toEqual(["imported.parks_parks", "imported.parks_trails"]);
+  });
+
+  test("an OSM group still drops as an OSM PBF dataset", () => {
+    const payload = createOsmGroupDragPayload(groupOf("osm.x1"));
+    expect(payload.format).toBe("osm");
+    expect(payload.uri).toBe("curio://osm/osm.x1");
+    const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
+    expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("OSM PBF");
+  });
+
+  test("a group of NetCDF variables drops as NetCDF and loads each variable without returning it", () => {
+    // One file per variable, as WRF writes them, under one netcdf. group id.
+    const members = ["RAIN", "T2"].map((variable) =>
+      makeDataset({
+        id: `data.test.wrf-${variable.toLowerCase()}`,
+        title: `WRF sample (${variable})`,
+        origin: "hub",
+        format: "netcdf",
+        path: `/catalog/data.test.wrf-${variable.toLowerCase()}@1/data/${variable}.nc`,
+        layerName: variable,
+        groupId: "netcdf.wrf-sample",
+      }),
+    );
+    const [group] = groupDatasetsForPalette(members) as [DatasetPaletteGroup];
+    const payload = createOsmGroupDragPayload(group);
+    expect(payload.format).toBe("netcdf");
+    expect(payload.uri).toBe("curio://netcdf/netcdf.wrf-sample");
+
+    const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
+    expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("NetCDF");
+    expect(options.datasetRefs).toEqual(["data.test.wrf-rain", "data.test.wrf-t2"]);
+    expect(options.code).toContain('layers["RAIN"] = curio_load_data("data.test.wrf-rain")');
+    expect(options.code).toContain('layers["T2"] = curio_load_data("data.test.wrf-t2")');
+    // A node's output cannot carry an xarray Dataset, so the node returns nothing.
+    expect(options.code).not.toContain("return");
+  });
+});
+
+describe("a Discovery download's group drops as its layers' format (#586)", () => {
+  // The layers of one OpenStreetMap download: GeoJSON, each carrying where it
+  // came from, under an osm. group id as a .pbf import's are.
+  const discoverySource = { sourceId: "source.openstreetmap.autark@1", sourceName: "OpenStreetMap" };
+  const downloaded = (): DatasetPaletteGroup => {
+    const members = [
+      makeDataset({ id: "imported.xpoints", title: "Points of interest, Loop (points)", origin: "imported", format: "geojson", path: "/store/imported.xpoints@1/data/osm_points.geojson", layerName: "points", groupId: "osm.x1", discoverySource }),
+      makeDataset({ id: "imported.xpolygons", title: "Points of interest, Loop (polygons)", origin: "imported", format: "geojson", path: "/store/imported.xpolygons@1/data/osm_polygons.geojson", layerName: "polygons", groupId: "osm.x1", discoverySource }),
+    ];
+    const [group] = groupDatasetsForPalette(members) as [DatasetPaletteGroup];
+    return group;
+  };
+
+  test("its payload says GeoJSON and keeps the group's id and uri", () => {
+    const payload = createOsmGroupDragPayload(downloaded());
+    expect(payload.format).toBe("geojson");
+    expect(payload.datasetId).toBe("osm.x1");
+    expect(payload.uri).toBe("curio://osm/osm.x1");
+
+    // The DATASET pill reads the format from the node's datasetSource.
+    const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
+    expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("GeoJSON");
+    // The layers still load through their own ids, read as the GeoJSON they are (#579).
+    expect(options.datasetRefs).toEqual(["imported.xpoints", "imported.xpolygons"]);
+    expect(options.code).toContain('layers["points"] = curio_load_data("imported.xpoints")');
+
+    // Only when every layer was downloaded: otherwise it is an OSM PBF import.
+    const mixed = downloaded();
+    mixed.members[1] = { ...mixed.members[1], discoverySource: null };
+    expect(createOsmGroupDragPayload(mixed).format).toBe("osm");
+  });
 });
 
 test("dropping an OSM group onto a node applies all layer refs, not the group id", () => {
@@ -509,14 +626,14 @@ test("applyDatasetToNodeData records refs and merges loader code", () => {
 
   expect(result.data.datasetRefs).toEqual(["file-123"]);
   expect(result.code).toContain("print('hello')");
-  expect(result.code).toContain("pd.read_csv(dataset_path)");
+  expect(result.code).toContain('df = curio_load_data("file-123")');
 });
 
 test("mergeDatasetLoaderCode inserts loader before return in existing code", () => {
   const existingCode = "import pandas as pd\n\ndf = old_data\nreturn df";
   const merged = mergeDatasetLoaderCode(existingCode, dataset);
   // loader code should appear before the return
-  const loaderPos = merged.indexOf("pd.read_csv");
+  const loaderPos = merged.indexOf('curio_load_data("file-123")');
   const returnPos = merged.indexOf("return df");
   expect(loaderPos).toBeGreaterThan(-1);
   expect(returnPos).toBeGreaterThan(loaderPos);
@@ -524,16 +641,16 @@ test("mergeDatasetLoaderCode inserts loader before return in existing code", () 
 
 test("mergeDatasetLoaderCode is a no-op when the id-form loader is already there", () => {
   // Dropping the same dataset onto a node twice must not stack a second loader
-  // block. The check matches the emitted curio_dataset_path("<id>") call, so it
+  // block. The check matches the emitted curio_load_data("<id>") call, so it
   // keeps working now that snippets no longer embed a literal path.
   const once = mergeDatasetLoaderCode("", dataset);
-  expect(once).toContain('curio_dataset_path("file-123")');
+  expect(once).toContain('curio_load_data("file-123")');
 
   const twice = mergeDatasetLoaderCode(once, dataset);
   expect(twice).toBe(once.trim());
 
-  const calls = once.split('curio_dataset_path("file-123")').length - 1;
-  expect(twice.split('curio_dataset_path("file-123")').length - 1).toBe(calls);
+  const calls = once.split('curio_load_data("file-123")').length - 1;
+  expect(twice.split('curio_load_data("file-123")').length - 1).toBe(calls);
 });
 
 test("mergeDatasetLoaderCode still recognises a legacy literal-path loader", () => {
@@ -552,7 +669,7 @@ test("mergeDatasetLoaderCode still recognises a legacy literal-path loader", () 
 
 test("mergeDatasetLoaderCode on empty code includes return", () => {
   const merged = mergeDatasetLoaderCode("", dataset);
-  expect(merged).toContain("pd.read_csv(dataset_path)");
+  expect(merged).toContain('df = curio_load_data("file-123")');
   expect(merged).toContain("return df");
 });
 
@@ -562,14 +679,14 @@ test("mergeDatasetLoaderCode indents the loader block to match an indented retur
   const merged = mergeDatasetLoaderCode(existing, dataset);
   // No line of the inserted loader may sit at column 0 between the indented
   // code and the indented return — that would be a Python IndentationError.
-  expect(merged).toContain("    df = pd.read_csv(dataset_path)");
+  expect(merged).toContain('    df = curio_load_data("file-123")');
   expect(merged).toContain("    return df");
-  expect(merged).not.toMatch(/\ndf = pd\.read_csv/);
+  expect(merged).not.toMatch(/\ndf = curio_load_data/);
 });
 
 test("mergeDatasetLoaderCode/buildDatasetLoaderCode escape backslashes and quotes in the path (B11)", () => {
   // An UNSAFE id (quote inside) must never reach the generated source as a
-  // curio_dataset_path call — the snippet falls back to the literal path,
+  // curio_data_path call — the snippet falls back to the literal path,
   // which must stay a valid Python string literal: backslashes escaped, so no
   // raw `\U`/`\b` escape and the literal isn't terminated early.
   const winDataset = makeDataset({
@@ -579,7 +696,7 @@ test("mergeDatasetLoaderCode/buildDatasetLoaderCode escape backslashes and quote
     uri: "file:///c/blocks.csv",
   });
   const code = buildDatasetLoaderCode(winDataset);
-  expect(code).not.toContain("curio_dataset_path");
+  expect(code).not.toContain("curio_");
   expect(code).toContain('dataset_path = "C:\\\\Users\\\\me\\\\data\\\\blocks.csv"');
 });
 

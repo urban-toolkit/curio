@@ -68,6 +68,34 @@ describe("getNodeContainerStyles", () => {
     expect(loader.boxShadow).toBe("var(--curio-shadow-browse-card)");
   });
 
+  // #524: the border keyed off the type alone, so every package node was grey
+  // beside a coloured category pill, and built-ins whose map entry disagreed
+  // with their manifest showed one colour in the pill and another in the stripe.
+  test("paints a package node in the category its pill shows", () => {
+    const style = getNodeContainerStyles("acme.tools/e2e-head@1", { category: "data" });
+    expect(style.borderLeftColor).toBe("var(--curio-category-data-fg)");
+  });
+
+  test("follows the descriptor over the type map for a built-in", () => {
+    const pool = getNodeContainerStyles("curio.builtin/data-pool@1", { category: "data" });
+    expect(pool.borderLeftColor).toBe("var(--curio-category-data-fg)");
+    const chart = getNodeContainerStyles("curio.builtin/vis-vega@1", { category: "vis_grammar" });
+    expect(chart.borderLeftColor).toBe("var(--curio-category-vis-fg)");
+  });
+
+  test("keeps a flow node neutral, as its pill is", () => {
+    // No built-in template is in the flow category any more; a package one can be.
+    const flow = getNodeContainerStyles("acme.tools/route-flow@1", { category: "flow" });
+    expect(flow.borderLeftColor).toBe("var(--curio-category-package-fg)");
+  });
+
+  test("falls back to the type map, then grey, with no resolved descriptor", () => {
+    expect(getNodeContainerStyles("curio.builtin/data-loading", {}).borderLeftColor)
+      .toBe("var(--curio-category-data-fg)");
+    expect(getNodeContainerStyles("acme.tools/e2e-head@1", {}).borderLeftColor)
+      .toBe("var(--curio-category-package-fg)");
+  });
+
   test("resolves a versioned node type to the same accent as an unversioned one", () => {
     // Palette-dragged nodes persist `...@1`; an unnormalised lookup used to fall
     // back to grey (#159).

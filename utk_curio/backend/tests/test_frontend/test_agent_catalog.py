@@ -12,8 +12,9 @@ disclosure the drawer shows before the click has to match what the server
 actually does on it, and that agreement lives across the wire.
 
 Covered more cheaply elsewhere, and deliberately not re-asserted here:
-``test_agents/test_routes.py`` owns the route contract and the closure's
-server-side refusal, ``test_agents/test_delegation.py`` owns the closure
+``test_agents/test_routes_catalog.py`` and ``test_agents/test_routes_lifecycle.py``
+own the route contract and the closure's server-side refusal,
+``test_agents/test_delegation.py`` owns the closure
 computation, and ``src/tests/catalog/AgentCatalogDrawer.test.tsx`` owns which
 button a card shows for a given prop set.
 
@@ -49,9 +50,9 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 # A built-in with no requiresAgents: the plain install path.
-AGENT_COORD = "agent.node-explainer@1.0.0"
-AGENT_ID = "agent.node-explainer"
-AGENT_NAME = "Node Explainer"
+AGENT_COORD = "agent.chat-agent@1.0.0"
+AGENT_ID = "agent.chat-agent"
+AGENT_NAME = "Chat"
 
 # The one built-in that declares a hard dependency (on agent.node-content-builder),
 # which is what makes the closure assertable end to end.
@@ -115,10 +116,9 @@ def _enter_dataflow(page, app_frontend, current_server, *, username, project):
 
 
 def _open_drawer_from_menu(page):
-    """Data menu -> Agent Catalog."""
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
+    """The top bar's Agent Catalog button."""
     # "Agent Catalog" also labels the palette trigger, whose accessible name
-    # includes a count span - exact=True picks out the menu row's own button.
+    # includes a count span - exact=True picks out the bar's own button.
     page.get_by_role("button", name="Agent Catalog", exact=True).click()
     return _drawer(page)
 
@@ -238,12 +238,12 @@ def test_add_agent_propagates_to_palette(
     lock_before = _installed_coords(current_server, token, project_id)
 
     # 2. Open the palette FIRST and leave it mounted, then reach the drawer
-    #    from the Data menu. Opening the drawer does not change ToolsMenu's
+    #    from the top bar. Opening the drawer does not change ToolsMenu's
     #    `activePalette`, so the palette survives underneath - which is what
     #    makes the post-condition below a claim about a live repaint rather
     #    than about a fresh fetch on mount.
     #
-    #    Entering from the menu rather than the palette's own "Browse Agent
+    #    Entering from the top bar rather than the palette's own "Browse Agent
     #    Catalog +" footer is what keeps the palette mounted underneath, which
     #    is the whole point here. (The footer is reachable now that the panel is
     #    positioned against the dock like its two peers; it was below the fold
@@ -381,3 +381,52 @@ def test_requires_agents_closure_is_disclosed_and_installed(
     assert any(coord.startswith(REQUIRED_ID) for coord in installed), (
         f"the required {REQUIRED_ID} was not installed alongside it: {sorted(installed)}"
     )
+
+
+def test_catalog_settings_round_trip(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """Settings on the account catalog edits a value the server stores, a
+    reload shows it, and Restore default returns the shipped one.
+
+    The editor's rows and the server's validation are covered by
+    ``AgentCatalogSettingsModal.test.tsx`` and ``test_catalog_settings.py``;
+    the wire between the page and the per-account file is what needs a browser.
+    """
+    require_project_page()
+    require_user_auth()
+    result = _enter_dataflow(
+        page, app_frontend, current_server,
+        username="agentcat_settings", project="Agent Catalog Settings",
+    )
+    token = result["token"]
+
+    def open_settings():
+        page.get_by_role("button", name="Settings", exact=True).click()
+        return page.get_by_role("dialog", name="Catalog settings")
+
+    page.goto(f"{app_frontend.base_url}/catalog/agents")
+    dialog = open_settings()
+    # Exact: "Name 1" is also a prefix of "Name 10" and "Name 11".
+    first = dialog.get_by_label("Name 1", exact=True)
+    expect(first).to_have_value("Action", timeout=15000)
+    first.fill("Hazard")
+    dialog.get_by_role("button", name="Save", exact=True).click()
+    expect(dialog.get_by_text("Saved", exact=True)).to_be_visible(timeout=10000)
+
+    stored = api_json(f"{current_server}/api/agents/settings", token)
+    keyword_types = next(s for s in stored["settings"] if s["key"] == "keywordTypes")
+    assert keyword_types["value"][0]["name"] == "Hazard"
+    assert keyword_types["isDefault"] is False
+
+    # One navigation only: a second one while the reloaded page is still
+    # booting aborts its session check, and UserProvider signs out on any
+    # failed check.
+    page.reload()
+    page.wait_for_load_state("domcontentloaded")
+    dialog = open_settings()
+    expect(dialog.get_by_label("Name 1", exact=True)).to_have_value("Hazard", timeout=15000)
+    dialog.get_by_role("button", name="Restore default", exact=True).click()
+    expect(dialog.get_by_label("Name 1", exact=True)).to_have_value("Action", timeout=10000)
+    restored = api_json(f"{current_server}/api/agents/settings", token)
+    assert next(s for s in restored["settings"] if s["key"] == "keywordTypes")["isDefault"] is True

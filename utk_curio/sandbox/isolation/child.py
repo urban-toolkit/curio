@@ -44,7 +44,16 @@ import json
 import os
 import sys
 
+from utk_curio.common.redaction import redact
+from utk_curio.sandbox.util.secrets import make_curio_secret, shape_secrets
+
 RESULT_FILENAME = "result.json"
+
+# How far RLIMIT_CPU's hard limit sits above its soft one, in CPU-seconds. The
+# kernel sends SIGXCPU at the soft limit and SIGKILL at the hard one, checking
+# the hard one first: with the two equal, a node that ran out of CPU time was
+# SIGKILLed and reported as the memory limit.
+CPU_HARD_LIMIT_GRACE_SECONDS = 60
 
 # Kept in step with protocol.MAX_* so a child never writes a manifest the
 # parent will reject wholesale for being oversized.
@@ -186,11 +195,11 @@ def _apply_rlimits(limits):
     """
     import resource
 
-    def _set(what, value, name):
+    def _set(what, value, name, hard=None):
         if value is None:
             return
         try:
-            resource.setrlimit(what, (value, value))
+            resource.setrlimit(what, (value, value if hard is None else hard))
         except (ValueError, OSError) as exc:
             raise ChildSetupError(f"could not set {name}: {exc}") from exc
 
@@ -205,9 +214,14 @@ def _apply_rlimits(limits):
         _set(resource.RLIMIT_AS,
              baseline + budget if baseline is not None else None,
              "RLIMIT_AS")
+        # The malloc arenas this budget allows are capped in the zygote's
+        # environment, which every child inherits: lifecycle.zygote_environment.
 
+    # The hard limit above the soft one, so the kernel's first signal is
+    # SIGXCPU, which the node reports as its CPU allowance, and not SIGKILL.
     cpu_seconds = limits.get("cpu_seconds")
-    _set(resource.RLIMIT_CPU, cpu_seconds, "RLIMIT_CPU")
+    _set(resource.RLIMIT_CPU, cpu_seconds, "RLIMIT_CPU",
+         hard=cpu_seconds + CPU_HARD_LIMIT_GRACE_SECONDS if cpu_seconds else None)
 
     _set(resource.RLIMIT_NPROC, limits.get("nproc"), "RLIMIT_NPROC")
 
@@ -407,7 +421,8 @@ def serialize_output(value, scratch_dir, *, slot="out"):
         prepared, encoded = codec._prepare_frame_for_parquet(
             value, geometry_col=codec.active_geometry_name(value)
         )
-        prepared.to_parquet(os.path.join(scratch_dir, name))
+        prepared.to_parquet(os.path.join(scratch_dir, name),
+                            row_group_size=codec.PARQUET_ROW_GROUP_ROWS)
         meta = {"encoded_object_columns": encoded}
         frame_metadata = getattr(value, "metadata", None)
         if isinstance(frame_metadata, dict) and frame_metadata:
@@ -438,6 +453,18 @@ def serialize_output(value, scratch_dir, *, slot="out"):
 # ---------------------------------------------------------------------------
 # Running the node
 # ---------------------------------------------------------------------------
+
+# What a node that reads `arg` with no input delivered fails with: the same
+# text as ``worker.NO_INPUT_MESSAGE``, kept here for the reason
+# ``_code_reads_arg`` below is.
+NO_INPUT_MESSAGE = (
+    "This node received no input but its code references `arg`. "
+    "An upstream node has not run yet, failed, or is not wired "
+    "to this node's input handle. Check the nodes feeding this "
+    "one: fix any that show an error, run them until each shows "
+    "'Done', then run this node again."
+)
+
 
 def _code_reads_arg(code):
     """Whether the node's code actually *reads* the ``arg`` parameter.
@@ -471,7 +498,7 @@ def _code_reads_arg(code):
     )
 
 
-def _hoisted_import_statements(code):
+def _hoisted_import_statements(code, skip=()):
     """Top-level import statements in *code*, as source lines.
 
     The in-process path caches live module objects for this
@@ -480,10 +507,14 @@ def _hoisted_import_statements(code):
     them in the next child. Only top-level imports, matching
     ``worker._hoist_user_imports``: an import nested in ``try`` is conditional
     by intent and replaying it would turn a guarded optional dependency into a
-    hard failure.
+    hard failure. *skip* names the modules the node's package ships (#468),
+    whose imports are left to the function body and never replayed, as
+    in process.
     """
     import ast
     import textwrap
+
+    from utk_curio.sandbox.util.package_modules import without_package_imports
 
     try:
         tree = ast.parse(textwrap.dedent(code))
@@ -492,6 +523,8 @@ def _hoisted_import_statements(code):
 
     statements = []
     for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            node = without_package_imports(node, skip)
         if isinstance(node, ast.Import):
             for alias in node.names:
                 statements.append(
@@ -525,8 +558,20 @@ def run_node(request, namespace_factory):
     import io
     import traceback
 
+    from utk_curio.sandbox.util.package_modules import importable
+
     scratch_dir = request["scratch_dir"]
     code = request["code"]
+    # dev/116: taken OUT of the request before anything else runs, so no later
+    # traceback, dump or manifest can carry the values.
+    secrets = shape_secrets(request.pop("secrets", None))
+    # #468: the package's own modules, staged by the parent, importable from
+    # before the session's imports are replayed until the node returns.
+    modules = request.get("package_modules") or {}
+    module_names = tuple(modules.get("names") or ())
+    module_folder = (
+        os.path.join(scratch_dir, modules["root"]) if modules.get("root") and module_names else None
+    )
 
     captured_stdout = io.StringIO()
     captured_stderr = io.StringIO()
@@ -536,10 +581,27 @@ def run_node(request, namespace_factory):
 
     try:
         with contextlib.redirect_stdout(captured_stdout), \
-             contextlib.redirect_stderr(captured_stderr):
+             contextlib.redirect_stderr(captured_stderr), \
+             importable(module_folder, module_names):
             namespace = namespace_factory()
-            namespace["curio_dataset_path"] = _make_dataset_path_resolver(
-                request.get("dataset_paths") or {}, scratch_dir
+            namespace["curio_secret"] = make_curio_secret(secrets)
+
+            from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
+
+            install_catalog_helpers(
+                namespace,
+                data_path=_make_dataset_path_resolver(
+                    request.get("dataset_paths") or {}, scratch_dir
+                ),
+                formats=request.get("dataset_formats") or {},
+                collections=request.get("collections") or {},
+                media_dir=request.get("media_dir"),
+                # The staged model folders, under the scratch directory.
+                models=request.get("models") or {},
+                model_base=scratch_dir,
+                # A file a node returns must sit in scratch, flat-named: the
+                # parent moves it into the artifact store from there.
+                output_dir=scratch_dir,
             )
 
             # Replay this session's earlier imports so an upstream node's
@@ -555,7 +617,7 @@ def run_node(request, namespace_factory):
 
             # This node's own top-level imports, recorded for later nodes only
             # if they actually work here.
-            for statement in _hoisted_import_statements(code):
+            for statement in _hoisted_import_statements(code, skip=module_names):
                 try:
                     exec(statement, namespace)
                     succeeded_imports.append(statement)
@@ -566,16 +628,18 @@ def run_node(request, namespace_factory):
 
             argument = rebuild_input(request.get("input") or {"kind": "none"},
                                      scratch_dir)
+            # A raster an Autark node handed on arrives as a rasterio dataset,
+            # written into the scratch directory, the one place this child
+            # writes and where a raster it returns is collected from.
+            from utk_curio.sandbox.util.rasters import rasters_for_python
+
+            argument = rasters_for_python(argument, scratch_dir)
 
             # Same tripwire as the in-process path, and the same AST walk: a
             # node that never reads an input is not refused for merely
             # containing the letters "arg" (#273).
             if argument is None and _code_reads_arg(code):
-                raise RuntimeError(
-                    "This node's code refers to 'arg' but no input was "
-                    "delivered. Check that an upstream node is connected and "
-                    "has been run."
-                )
+                raise RuntimeError(NO_INPUT_MESSAGE)
 
             result = namespace["userCode"](argument)
             output_descriptor = serialize_output(result, scratch_dir)
@@ -583,22 +647,25 @@ def run_node(request, namespace_factory):
     except BaseException:  # noqa: BLE001 - mirrors execute_code's catch-all
         captured_stderr.write(traceback.format_exc())
 
+    # dev/116: redacted before the manifest is written — a printed key never
+    # touches the scratch directory or the parent.
+    stdout_text = redact(captured_stdout.getvalue(), secrets)
     stdout_lines = [
         line[:_MAX_STDOUT_LINE_CHARS]
-        for line in captured_stdout.getvalue().split("\n") if line
+        for line in stdout_text.split("\n") if line
     ][:_MAX_STDOUT_LINES]
 
     return {
         "ok": ok,
         "stdout": stdout_lines,
-        "stderr": captured_stderr.getvalue()[:_MAX_STDERR_CHARS],
+        "stderr": redact(captured_stderr.getvalue(), secrets)[:_MAX_STDERR_CHARS],
         "output": output_descriptor,
         "imports": succeeded_imports,
     }
 
 
 def _make_dataset_path_resolver(staged, scratch_dir):
-    """Rebuild ``curio_dataset_path`` over the staged copies.
+    """Rebuild ``curio_data_path`` over the staged copies.
 
     The in-process path injects a closure over absolute paths. Here the files
     were linked into the scratch directory, so the closure resolves to those
@@ -606,7 +673,7 @@ def _make_dataset_path_resolver(staged, scratch_dir):
     """
     mapping = dict(staged)
 
-    def curio_dataset_path(dataset_id):
+    def curio_data_path(dataset_id):
         name = mapping.get(str(dataset_id))
         if name is None:
             raise RuntimeError(
@@ -615,7 +682,7 @@ def _make_dataset_path_resolver(staged, scratch_dir):
             )
         return os.path.join(scratch_dir, name)
 
-    return curio_dataset_path
+    return curio_data_path
 
 
 def write_result(manifest, scratch_dir):
@@ -632,6 +699,31 @@ def write_result(manifest, scratch_dir):
         json.dump(manifest, handle, ensure_ascii=False, allow_nan=False)
     # Atomic rename, so the parent never observes a truncated manifest.
     os.replace(temporary, path)
+
+
+#: Where numba keeps what a library compiles with ``cache=True``, inside the
+#: child's scratch directory.
+NUMBA_CACHE_DIRNAME = "numba-cache"
+
+
+def point_numba_at_scratch(scratch_dir):
+    """Give numba a cache folder this child can write: one in its scratch directory.
+
+    numba keeps what a library compiles with ``cache=True`` beside the
+    library's source, else under HOME, and refuses to import the library when
+    it can write to neither ("cannot cache function ...: no locator
+    available"). Under an execution user both belong to the account the
+    sandbox runs as, so pythermalcomfort (``curio.weather``) failed at import.
+    The scratch directory is made for this run and removed when it ends, so
+    the cache lasts one run and no later run, or user, picks it up.
+    """
+    folder = os.path.join(scratch_dir, NUMBA_CACHE_DIRNAME)
+    os.environ["NUMBA_CACHE_DIR"] = folder
+    # numba reads the variable when it is first imported; one the zygote
+    # already holds is told directly.
+    config = sys.modules.get("numba.core.config")
+    if config is not None:
+        config.CACHE_DIR = folder
 
 
 def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=False):
@@ -665,6 +757,7 @@ def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=Fals
             work_dir=request.get("work_dir"),
             overlay_dir=request.get("overlay_dir"),
         )
+        point_numba_at_scratch(scratch_dir)
     except BaseException:
         import traceback
         try:

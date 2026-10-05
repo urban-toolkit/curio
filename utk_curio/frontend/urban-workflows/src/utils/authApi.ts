@@ -1,19 +1,39 @@
 import Cookies from "js-cookie";
 import { backendUrl } from "./backendUrl";
+import { basePath } from "./basePath";
 
 const BACKEND_URL = backendUrl();
-const TOKEN_KEY = "session_token";
+
+// The app's base path names the cookie and scopes it, so two instances on one
+// host (/app and /app-dev) keep separate sign-ins. At the root it is
+// session_token.
+function tokenCookie(): { name: string; path: string } {
+  const base = basePath();
+  return { name: `session_token${base.replace(/\//g, "_")}`, path: base || "/" };
+}
 
 export function getToken(): string | undefined {
-  return Cookies.get(TOKEN_KEY);
+  return Cookies.get(tokenCookie().name);
 }
 
 export function setToken(token: string): void {
-  Cookies.set(TOKEN_KEY, token, { expires: 30 });
+  const { name, path } = tokenCookie();
+  Cookies.set(name, token, { path, expires: 30 });
 }
 
 export function clearToken(): void {
-  Cookies.remove(TOKEN_KEY);
+  const { name, path } = tokenCookie();
+  Cookies.remove(name, { path });
+}
+
+/**
+ * Whether a failed request says the session is over. The server answers a dead
+ * session (no token, an unknown or expired one, a deleted account) with 401
+ * and nothing else. An aborted request, a network failure or a server error
+ * says nothing about the session.
+ */
+export function isUnauthorized(error: unknown): boolean {
+  return (error as { status?: number } | null)?.status === 401;
 }
 
 export async function apiFetch<T = unknown>(
@@ -57,16 +77,14 @@ export interface UserData {
   profile_image: string | null;
   type: string | null;
   is_guest: boolean;
-  has_llm_api_key: boolean;
-  llm_api_type: string | null;
-  llm_base_url: string | null;
-  llm_model: string | null;
   /** Whether a HuggingFace token is stored. The token itself never leaves the
-   * server; this is what AI Settings shows instead. */
+   * server; this is what API Settings shows instead. */
   has_huggingface_token?: boolean;
-  /** Whether a Socrata app token is stored, for the Data Lake Catalog. Same
+  /** Whether a Socrata app token is stored, for the Discovery Catalog. Same
    * rule: a boolean, never the value. */
   has_socrata_app_token?: boolean;
+  has_google_maps_api_key?: boolean;
+  has_mapillary_access_token?: boolean;
 }
 
 export interface PublicConfig {
@@ -78,9 +96,6 @@ export interface PublicConfig {
   shared_guest_username: string;
   enable_collab: boolean;
   default_save_node_output: boolean;
-  /** Whether this install supplies a Socrata app token that users inherit.
-   * A boolean; the token itself never leaves the server. */
-  has_default_socrata_app_token?: boolean;
 }
 
 export const authApi = {
@@ -122,16 +137,13 @@ export const authApi = {
     return apiFetch("/api/auth/me");
   },
 
+  /** Profile fields, and account keys by their column name (an API Settings
+   *  row's `field`). */
   patchMe(data: {
     name?: string;
     email?: string;
     type?: string;
-    llm_api_type?: string;
-    llm_base_url?: string;
-    llm_api_key?: string;
-    llm_model?: string;
-    huggingface_token?: string;
-    socrata_app_token?: string;
+    [keyField: string]: string | undefined;
   }): Promise<UserData> {
     return apiFetch("/api/auth/me", {
       method: "PATCH",

@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { PackageCard } from "../../components/packages/publishing/PackageCard";
 import type { PackageCardProps } from "../../components/packages/publishing/PackageCard";
-import type { PackagePayload } from "../../api/packagesApi";
+import type { PackagePayload } from "../../services/packages";
 
 /**
  * Which action a package card offers is a pure function of its props, and it had
@@ -40,6 +40,7 @@ const base = {
   catalogRow: undefined,
   busy: false,
   onInstall: jest.fn(),
+  onUpdate: jest.fn(),
 };
 
 const renderCard = (over: Partial<PackageCardProps> = {}) =>
@@ -73,13 +74,16 @@ describe("PackageCard - primary action", () => {
     expect(button("Add to project")).toBeNull();
   });
 
-  it("passes the catalog row to onInstall when updating, not the stale local one", () => {
-    // Installing the local row would reinstall the version already present.
+  it("hands the catalog row to onUpdate, never to onInstall (#434)", () => {
+    // An install of a package already in the store copies nothing, so Update
+    // has to be its own action: a replace of the store copy from the catalog.
     const onInstall = jest.fn();
+    const onUpdate = jest.fn();
     const catalogRow = pkg({ version: "2.0.0" });
-    renderCard({ isInstalled: true, hasUpdate: true, catalogRow, onInstall });
+    renderCard({ isInstalled: true, hasUpdate: true, catalogRow, onInstall, onUpdate });
     fireEvent.click(button("Update")!);
-    expect(onInstall).toHaveBeenCalledWith(catalogRow);
+    expect(onUpdate).toHaveBeenCalledWith(catalogRow);
+    expect(onInstall).not.toHaveBeenCalled();
   });
 
   it("disables its actions while the drawer is busy", () => {

@@ -13,12 +13,12 @@ dependencies.
 
 | Canonical id | Category | Label | Purpose |
 |---|---|---|---|
-| `curio.weather/mrt-load` | data | Milan MRT Loader | Open the `data.urbanlab.milan-mrt` GeoTIFF from the Data Catalog and return the rasterio dataset. |
-| `curio.weather/weather-load` | data | ERA5 Milan Weather | Load `data.urbanlab.milan-era5-weather` from the Data Catalog (Td / Wind / RH per hour). |
-| `curio.weather/census-load` | data | Milan Census Polygons | Load `data.urbanlab.milan-census-gt65` from the Data Catalog as a GeoDataFrame. |
+| `curio.weather/mrt-load` | data | Milan MRT Loader | Open the `data.utk.milan-mrt` GeoTIFF from the Data Catalog and return the rasterio dataset. |
+| `curio.weather/weather-load` | data | ERA5 Milan Weather | Load `data.utk.milan-era5-weather` from the Data Catalog (Td / Wind / RH per hour). |
+| `curio.weather/census-load` | data | Milan Census Polygons | Load `data.utk.milan-census-gt65` from the Data Catalog as a GeoDataFrame. |
 | `curio.weather/utci-compute` | computation | UTCI from raster + weather | Per-pixel Universal Thermal Climate Index via `pythermalcomfort`. |
 | `curio.weather/utci-zonal` | computation | UTCI Zonal Mean | `rasterstats.zonal_stats` of the UTCI grid into census polygons. |
-| `curio.weather/census-reproject` | computation | Reproject census to EPSG:3395 | Reproject from UTM 32632 to the projection `AUTK_MAP` expects; tag as `census`. |
+| `curio.weather/census-reproject` | computation | Reproject census to EPSG:3395 | Reproject from UTM 32632 to EPSG:3395; tag as `census`. |
 | `curio.weather/gt65-projection` | computation | Project gt_65 column | Project down to `gt_65` for an independent boxplot view. |
 
 ## Demo wiring
@@ -34,8 +34,8 @@ dependencies.
                                         [ Reproject to EPSG:3395 ]   [ Project gt_65 column ]
 ```
 
-Multi-input nodes read their edges positionally (`arg[0]`, `arg[1]`, …) using the
-`MERGE_FLOW` pattern, so **wiring order matters**. `utci-compute` expects
+Multi-input nodes read their input circles in order (`[!! input 0 !!]`,
+`[!! input 1 !!]`, …), so **wiring order matters**. `utci-compute` expects
 (raster, weather DataFrame); `utci-zonal` expects (raster, UTCI tuple, polygons).
 
 ## Setup

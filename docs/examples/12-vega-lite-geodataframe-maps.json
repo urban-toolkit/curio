@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "complexity": ["Beginner"]},
     "description": "A GeoDataFrame drawn directly by the Vega-Lite node: ZIP polygons, their centroids, and ordinary charts over the same frame.",
     "nodes": [
       {
@@ -7,7 +8,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 430,
-        "content": "import geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.urbanlab.chicago-boundary\")\ngdf = gpd.read_file(dataset_path)\n\nreturn gdf",
+        "content": "import geopandas as gpd\n\ngdf = curio_load_data(\"data.utk.chicago-boundary\")\n\nreturn gdf",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -96,8 +97,8 @@
     "provenance_id": "DefaultWorkflow",
     "datasets": [
       {
-        "datasetId": "data.urbanlab.chicago-boundary",
-        "dirName": "data.urbanlab.chicago-boundary@1",
+        "datasetId": "data.utk.chicago-boundary",
+        "dirName": "data.utk.chicago-boundary@1",
         "origin": "imported",
         "producerNodeId": null,
         "consumerNodeIds": [],

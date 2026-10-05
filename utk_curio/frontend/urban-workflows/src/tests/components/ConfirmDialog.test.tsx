@@ -30,18 +30,18 @@ describe("ConfirmDialog", () => {
   test("renders the title, the body and both buttons", () => {
     render(
       <ConfirmDialog
-        title="Remove node-explainer?"
-        body="Remove node-explainer (agent.node-explainer@1.0.0) from this dataflow?"
+        title="Remove my-explainer?"
+        body="Remove my-explainer (agent.my-explainer@1.0.0) from this dataflow?"
         confirmLabel="Remove"
         onConfirm={jest.fn()}
         onCancel={jest.fn()}
       />,
     );
 
-    expect(screen.getByText("Remove node-explainer?")).toBeInTheDocument();
+    expect(screen.getByText("Remove my-explainer?")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Remove node-explainer (agent.node-explainer@1.0.0) from this dataflow?",
+        "Remove my-explainer (agent.my-explainer@1.0.0) from this dataflow?",
       ),
     ).toBeInTheDocument();
     expect(within(dialog()).getByRole("button", { name: "Remove" })).toBeInTheDocument();

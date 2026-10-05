@@ -23,6 +23,15 @@ import os
 import threading
 import time
 
+from utk_curio.common.redaction import redact
+from utk_curio.sandbox.util.node_runtime import (
+    OVERPASS_USER_AGENT,
+    ROOT_NODE_MODULES,
+    node_env,
+    resolve_pkg_entry_url,
+)
+from utk_curio.sandbox.util.secrets import make_curio_secret
+
 _globals_cache: dict = {}
 
 
@@ -191,6 +200,17 @@ def _import_bindings_for(session_id):
     return bindings
 
 
+# What a node that reads `arg` with no input delivered fails with. The isolated
+# child (isolation/child.py) raises the same text from its own copy.
+NO_INPUT_MESSAGE = (
+    "This node received no input but its code references `arg`. "
+    "An upstream node has not run yet, failed, or is not wired "
+    "to this node's input handle. Check the nodes feeding this "
+    "one: fix any that show an error, run them until each shows "
+    "'Done', then run this node again."
+)
+
+
 def _code_reads_arg(code):
     """Whether the node's code actually *reads* the ``arg`` parameter.
 
@@ -224,7 +244,7 @@ def _code_reads_arg(code):
     )
 
 
-def _hoist_user_imports(code, ns, session_id):
+def _hoist_user_imports(code, ns, session_id, skip=()):
     """Execute the user's top-level imports into ``ns`` and remember them.
 
     ``code`` is the node body as the frontend sends it - every line already
@@ -240,10 +260,16 @@ def _hoist_user_imports(code, ns, session_id):
     body, so it raises there - at the line the user wrote, with the traceback they
     expect - instead of failing the node from inside this helper.
 
+    *skip* names the modules the node's package ships (#468). Importing one of
+    those is left to the function body and never remembered: they are this
+    package's nodes' alone, and the isolated path does the same.
+
     Call under ``_exec_lock``.
     """
     import ast
     import textwrap
+
+    from utk_curio.sandbox.util.package_modules import without_package_imports
 
     try:
         tree = ast.parse(textwrap.dedent(code))
@@ -252,8 +278,11 @@ def _hoist_user_imports(code, ns, session_id):
         return
 
     statements = [
-        node for node in tree.body
-        if isinstance(node, (ast.Import, ast.ImportFrom))
+        kept for kept in (
+            without_package_imports(node, skip) for node in tree.body
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+        )
+        if kept is not None
     ]
     if not statements:
         return
@@ -367,6 +396,8 @@ def _worker_init():
         checkIOType,
         save_dataset_parquet,
     )
+    from utk_curio.sandbox.util.scenario_difference import difference_scenarios
+    from utk_curio.sandbox.util.scenario_stack import stack_scenarios
 
     _globals_cache = {
         '__builtins__': __builtins__,
@@ -395,14 +426,18 @@ def _worker_init():
         'detect_kind': detect_kind,
         'checkIOType': checkIOType,
         'save_dataset_parquet': save_dataset_parquet,
+        # The Compare Scenarios node's code stacks its inputs with it (#662),
+        # or, in Difference, subtracts one from the other.
+        'curio_stack_scenarios': stack_scenarios,
+        'curio_difference_scenarios': difference_scenarios,
     }
 
 
 def _resolve_outputs_elem(elem, session_id=None):
     """Resolve one element of an 'outputs' bundle to its concrete Python value.
 
-    An 'outputs' input - from a Merge Flow, or a Data Pool's multi-layer wrapper -
-    bundles one entry per connected slot / layer. An entry is one of:
+    An 'outputs' input - from a node's several input circles, or a Data Pool's
+    multi-layer wrapper - bundles one entry per connected circle / layer. An entry is one of:
       * a DuckDB reference: a `{'path', ...}` dict, or a bare artifact-id/filename
         string (a project restored from persisted outputs seeds the latter) -
         loaded from DuckDB;
@@ -413,26 +448,26 @@ def _resolve_outputs_elem(elem, session_id=None):
     Distinguishing on the keys keeps refs loading while letting inline values flow
     through instead of raising KeyError('path').
     """
-    from utk_curio.sandbox.util.parsers import load_from_duckdb, parseInput
+    from utk_curio.sandbox.util.parsers import load_artifact, parseInput
     if isinstance(elem, str):
-        return load_from_duckdb(elem, session_id=session_id)
+        return load_artifact(elem, session_id=session_id)
     if isinstance(elem, dict):
         if 'path' in elem:
-            return load_from_duckdb(elem['path'], session_id=session_id)
+            return load_artifact(elem['path'], session_id=session_id)
         if 'dataType' in elem and 'data' in elem:
             return parseInput(elem)
     return elem
 
 
 def _expand_outputs_wrapper(input_data, session_id=None):
-    """Resolve a merge ('outputs') input to the per-slot list user code expects.
+    """Resolve a bundled ('outputs') input to the per-circle list user code expects.
 
-    A merge output reaches a code node in one of two shapes:
+    A bundle reaches a code node in one of two shapes:
       * live  - an inline list of refs, already expanded by the caller's
         `data_type == 'outputs'` branch; passed through here untouched.
-      * reloaded - when the upstream merge output was persisted (project save, or
+      * reloaded - when the upstream bundle was persisted (project save, or
         the JS-node I/O round-trip through DuckDB), the node receives a single ref
-        to it. `_parse_input_ref` remaps that ref's 'outputs' dataType to a plain
+        to it. `parse_input_ref` remaps that ref's 'outputs' dataType to a plain
         load, so `load_from_duckdb` hands back the whole
         `{dataType:'outputs', data:[refs]}` wrapper dict. Without this, user code
         gets the wrapper object (e.g. `const [a,b] = arg` → "arg is not iterable").
@@ -445,8 +480,8 @@ def _expand_outputs_wrapper(input_data, session_id=None):
     return input_data
 
 
-def _make_curio_dataset_path(dataset_paths):
-    """Resolver injected into user code as ``curio_dataset_path(dataset_id)``.
+def _make_curio_data_path(dataset_paths):
+    """Resolver injected into user code as ``curio_data_path(dataset_id)``.
 
     Generated Data Loading nodes reference datasets by id instead of a baked-in
     absolute path; the backend resolves the ids it finds in the code and passes
@@ -455,7 +490,7 @@ def _make_curio_dataset_path(dataset_paths):
     """
     mapping = dict(dataset_paths or {})
 
-    def curio_dataset_path(dataset_id):
+    def curio_data_path(dataset_id):
         path = mapping.get(str(dataset_id))
         if not path:
             raise RuntimeError(
@@ -465,11 +500,37 @@ def _make_curio_dataset_path(dataset_paths):
             )
         return path
 
-    return curio_dataset_path
+    return curio_data_path
+
+
+def _stage_package_modules(package_modules):
+    """The modules the node's package ships, linked into a folder of this run's
+    own as the isolated path links them into the child's scratch (#468).
+
+    Returns ``(run_dir, (folder, names))``: *run_dir* is removed when the run
+    ends, and ``(folder, names)`` is what ``package_modules.importable`` takes.
+    ``(None, (None, ()))`` when the package ships none or nothing could be
+    staged; the node's import then fails naming the module.
+    """
+    if not package_modules:
+        return None, (None, ())
+    from utk_curio.sandbox.isolation.supervisor import make_scratch_dir
+    from utk_curio.sandbox.util.parsers import _shared_data_dir
+    from utk_curio.sandbox.util.staging import stage_package_modules
+
+    try:
+        run_dir = make_scratch_dir(str(_shared_data_dir()))
+    except OSError:
+        return None, (None, ())
+    staged = stage_package_modules(package_modules, run_dir)
+    if not staged:
+        return run_dir, (None, ())
+    return run_dir, (os.path.join(run_dir, staged["root"]), tuple(staged["names"]))
 
 
 def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True,
-                 dataset_paths=None):
+                 dataset_paths=None, secrets=None, collections=None, media_dir=None, models=None,
+                 dataset_formats=None, package_modules=None):
     """
     Execute user code in-process using pre-loaded library globals.
 
@@ -478,8 +539,22 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 execution state - even if they share the same user account.
 
     dataset_paths: {datasetId: absolutePath} for the code's
-                curio_dataset_path("<id>") calls, resolved (auth-scoped and
-                containment-checked) by the backend.
+                curio_load_data / curio_data_path / curio_load_collection
+                calls, resolved (auth-scoped and containment-checked) by the
+                backend.
+
+    dataset_formats: {datasetId: {"format", "layerType"}}, how
+                curio_load_data reads each of those datasets.
+
+    collections, media_dir: where each curio_load_collection("<id>")
+                collection's files are, and where a node may write the files
+                it derives.
+
+    models:     {modelId: folder} for the code's curio_load_model("<id>") calls.
+
+    package_modules: {"root", "names"}: the modules the node's package ships
+                beside its templates, importable by name for this run only
+                (#468, ``util/package_modules.py``).
 
     Returns {'stdout': [str, ...], 'stderr': str, 'output': {'path': str, 'dataType': str}}
     """
@@ -490,10 +565,11 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
     import contextlib
     import traceback
 
-    load_from_duckdb = _globals_cache['load_from_duckdb']
+    from utk_curio.sandbox.isolation.supervisor import cleanup_scratch
+    from utk_curio.sandbox.util.package_modules import importable
+    from utk_curio.sandbox.util.parsers import load_artifact
     save_to_duckdb   = _globals_cache['save_to_duckdb']
     detect_kind      = _globals_cache['detect_kind']
-    checkIOType      = _globals_cache['checkIOType']
     save_dataset_parquet = _globals_cache['save_dataset_parquet']
 
     # _exec_lock serializes sys.stdout mutation and os.chdir.
@@ -507,10 +583,13 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
         captured_stderr = _io.StringIO()
         result = {'path': '', 'dataType': 'str'}
         t_load = t_code = t_save = t0
+        # #468: the package's own modules, importable until the run ends.
+        modules_dir, modules = _stage_package_modules(package_modules)
 
         try:
             with contextlib.redirect_stdout(captured_stdout), \
-                 contextlib.redirect_stderr(captured_stderr):
+                 contextlib.redirect_stderr(captured_stderr), \
+                 importable(*modules):
 
                 # Fresh namespace per call, so user *variables* never leak between
                 # executions. Imports are the deliberate exception: this session's
@@ -518,12 +597,24 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 # `import numpy as np` reaches downstream nodes (#158).
                 ns = dict(_globals_cache)
                 ns.update(_import_bindings_for(session_id))
-                ns['curio_dataset_path'] = _make_curio_dataset_path(dataset_paths)
+                # dev/116: connection keys, reachable only through this callable.
+                ns['curio_secret'] = make_curio_secret(secrets)
+
+                from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
+
+                install_catalog_helpers(
+                    ns,
+                    data_path=_make_curio_data_path(dataset_paths),
+                    formats=dataset_formats,
+                    collections=collections,
+                    media_dir=media_dir,
+                    models=models,
+                )
                 # Hoist this node's own top-level imports before defining userCode,
                 # so they are recorded for later nodes in the same session. The
                 # statements stay in the function body too - re-importing is a
                 # sys.modules hit, and it keeps a standalone run of this node working.
-                _hoist_user_imports(code, ns, session_id)
+                _hoist_user_imports(code, ns, session_id, skip=modules[1])
                 exec(f"def userCode(arg):\n{code}", ns)
 
                 # Load input from DuckDB.
@@ -532,59 +623,41 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                     file_path_list = eval(file_path, {'__builtins__': {}})
                     input_data = [_resolve_outputs_elem(elem, session_id=session_id) for elem in file_path_list]
                 elif file_path:
-                    input_data = load_from_duckdb(file_path, session_id=session_id)
+                    # The store, or the output a project load hydrated (#407).
+                    input_data = load_artifact(file_path, session_id=session_id)
                 input_data = _expand_outputs_wrapper(input_data, session_id=session_id)
+                # A raster an Autark node handed on arrives as a rasterio
+                # dataset, as a Python node's raster does.
+                from utk_curio.sandbox.util.rasters import python_raster_dir, rasters_for_python
+                input_data = rasters_for_python(input_data, python_raster_dir)
                 t_load = time.perf_counter()
 
                 # Validate and prepare input.
+                # dev/120: no name-keyed I/O check here any more — the type
+                # contract is the template's declared ports, enforced by the
+                # canvas at connect time (see parsers.checkIOType's note).
                 incomingInput = None
                 if input_data is not None and not (isinstance(input_data, str) and input_data == ''):
-                    if data_type == 'outputs':
-                        synthetic = {
-                            'dataType': 'outputs',
-                            'data': [{'dataType': detect_kind(v), 'data': None} for v in input_data],
-                        }
-                        checkIOType(synthetic, node_type)
-                        incomingInput = input_data
-                    else:
-                        synthetic = {'dataType': detect_kind(input_data), 'data': None}
-                        checkIOType(synthetic, node_type)
-                        incomingInput = input_data
+                    incomingInput = input_data
 
                 # Tripwire: if the user code reads `arg` but no input was
                 # delivered, the historical behaviour was to bubble up a
                 # confusing `'NoneType' object is not subscriptable` from the
                 # first `arg[…]`. Fail fast here with a message that points the
                 # user at the actual cause (unwired/unrun upstream, or a stale
-                # `data.input` because the merge-flow output effect hadn't
-                # propagated yet). The check is an AST walk rather than a
+                # `data.input` because an upstream output hadn't propagated
+                # yet). The check is an AST walk rather than a
                 # substring test, so a node that never reads an input is not
                 # refused for merely containing the letters "arg" (#273).
                 if incomingInput is None and _code_reads_arg(code):
-                    raise RuntimeError(
-                        "This node received no input but its code references `arg`. "
-                        "An upstream node has not run yet, failed, or is not wired "
-                        "to this node's input handle. Check the nodes feeding this "
-                        "one: fix any that show an error, run them until each shows "
-                        "'Done', then run this node again. If the inputs come "
-                        "through a Merge Flow node, give it a moment after the last "
-                        "upstream finishes so the merged tuple can propagate."
-                    )
+                    raise RuntimeError(NO_INPUT_MESSAGE)
 
                 # Run user code.
                 output = ns['userCode'](incomingInput)
                 t_code = time.perf_counter()
 
-                # Validate output.
+                # Classify output (dev/120: classified, never refused by node name).
                 out_kind = detect_kind(output)
-                if out_kind == 'outputs':
-                    synthetic_out = {
-                        'dataType': 'outputs',
-                        'data': [{'dataType': detect_kind(v), 'data': None} for v in output],
-                    }
-                else:
-                    synthetic_out = {'dataType': out_kind, 'data': None}
-                checkIOType(synthetic_out, node_type, False)
 
                 # Save output to DuckDB, tagged with the session that produced it.
                 result_path = save_to_duckdb(output, node_id=node_type, session_id=session_id)
@@ -603,6 +676,8 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
         finally:
             os.chdir(original_dir)
+            if modules_dir:
+                cleanup_scratch(modules_dir)
             # The connection stays open. It used to be dropped here so the
             # backend could open the file read-only between runs, which made
             # the handle's lifetime a negotiation between two processes: the
@@ -621,10 +696,13 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 flush=True,
             )
 
-        stdout_lines = [line for line in captured_stdout.getvalue().split('\n') if line]
+        # dev/116: a printed key must not ride the response into the runtime
+        # journal, the validation trail or a card.
+        stdout_text = redact(captured_stdout.getvalue(), secrets)
+        stdout_lines = [line for line in stdout_text.split('\n') if line]
         return {
             'stdout': stdout_lines,
-            'stderr': captured_stderr.getvalue(),
+            'stderr': redact(captured_stderr.getvalue(), secrets),
             'output': result,
         }
 
@@ -676,76 +754,6 @@ def _js_value_to_saveable_frame(value):
     if isinstance(value, list) and value and all(isinstance(row, dict) for row in value):
         return 'dataframe', parse_dataframe(value)
     return None, None
-
-
-def _pick_export_entry(node):
-    """Resolve a package.json ``exports`` subtree down to a relative path string.
-
-    Node's export conditions NEST: ``exports["."]["import"]`` is frequently
-    another condition object (``{"types": ..., "default": "./x.mjs"}``) rather
-    than a path. Walking only one level and handing the resulting dict to
-    ``pathlib`` raises TypeError, which the caller used to swallow - silently
-    degrading to the bare specifier, which then resolves only when the Node
-    subprocess cwd happens to sit inside the repo.
-
-    Condition order matches what the js_wrapper needs: it runs under
-    ``--input-type=commonjs`` but reaches packages through dynamic ``import()``,
-    so the ESM conditions win over ``require``.
-    """
-    if isinstance(node, str):
-        return node
-    if not isinstance(node, dict):
-        return None
-    for key in ('import', 'module', 'node', 'default', 'require'):
-        if key in node:
-            entry = _pick_export_entry(node[key])
-            if entry:
-                return entry
-    return None
-
-
-def resolve_pkg_entry_url(specifier, root_node_modules):
-    """Map a bare package specifier to an absolute ``file://`` URL, or None.
-
-    Returns None for anything that is not a bare specifier (relative, absolute,
-    URL, ``node:`` builtin), for a package that isn't installed under
-    ``root_node_modules``, or for an entry that escapes it.
-    """
-    import json
-    import pathlib
-
-    # Only bare specifiers (not relative / absolute / URL / node: builtin).
-    if not specifier or specifier[0] in './' or ':' in specifier:
-        return None
-    root_node_modules = pathlib.Path(root_node_modules)
-    seg = specifier.split('/')
-    pkg = '/'.join(seg[:2]) if specifier.startswith('@') else seg[0]
-    pkg_dir = root_node_modules / pkg
-    pj = pkg_dir / 'package.json'
-    if not pj.is_file():
-        return None
-    try:
-        meta = json.loads(pj.read_text(encoding='utf-8'))
-    except Exception:
-        return None
-    exp = meta.get('exports')
-    entry = None
-    if isinstance(exp, str):
-        entry = exp
-    elif isinstance(exp, dict):
-        # A subpath map keys on "."; a bare condition map has no "." and applies
-        # to the root itself.
-        entry = _pick_export_entry(exp.get('.', exp))
-    entry = entry or meta.get('module') or meta.get('main') or 'index.js'
-    if not isinstance(entry, str):
-        return None
-    try:
-        entry_path = (pkg_dir / entry).resolve()
-    except Exception:
-        return None
-    if not entry_path.is_file() or root_node_modules.resolve() not in entry_path.parents:
-        return None
-    return entry_path.as_uri()
 
 
 # ── Node-internal stream crash ───────────────────────────────────────────────
@@ -811,7 +819,7 @@ _SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__'
 def backend_base_url():
     """``http://host:port`` for the backend, as reachable from this process.
 
-    ``main.py::set_environment_variables`` exports FLASK_BACKEND_HOST/PORT and
+    ``cli/environment.py::set_environment_variables`` exports FLASK_BACKEND_HOST/PORT and
     start_sandbox passes the environment through, so a sandbox launched with the
     stack always has the true values - including on a custom-port stack, where
     the browser's own port would be wrong, and inside a container, where a
@@ -829,6 +837,204 @@ def backend_base_url():
     return f'http://{host}:{port}'
 
 
+def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=()):
+    """Run JavaScript in one Node.js subprocess, the way a JS node runs.
+
+    The code is wrapped by ``util/js_wrapper.mjs`` with *input_data* as
+    ``arg``, its bare package imports are resolved against the repo-root
+    node_modules, and it runs under the JS slot, once more if Node died in its
+    own HTTP parser. *node_flags* go to ``node`` before the script.
+
+    :func:`execute_js_code` and the Compare Scenarios node's raster difference
+    (``util/scenario_difference.py``) both run Node through this, so they run
+    it one way. Returns ``(result_json, user_log_lines, stderr_lines)``: the
+    text of the result line, or None when Node printed none. A timeout or a
+    missing Node raises, as ``subprocess`` does.
+    """
+    import json
+    import pathlib
+    import re
+    import subprocess
+    import sys as _sys
+    import threading
+    import time
+
+    if t0 is None:
+        t0 = time.perf_counter()
+
+    # Resolve bare package specifiers (e.g. '@urban-toolkit/autk-db') to an
+    # ABSOLUTE file URL under the repo-root node_modules so the dynamic ESM
+    # import() below resolves regardless of the Node subprocess cwd. Node's ESM
+    # resolver does NOT consult NODE_PATH and resolves a bare specifier only by
+    # walking node_modules up from the importing module - which fails when
+    # CURIO_LAUNCH_CWD is outside the repo. Rewriting only the top-level
+    # specifier is enough: the package's own internal imports still resolve
+    # relative to its installed location.
+    root_node_modules = ROOT_NODE_MODULES
+
+    def _resolved_source(quoted_source):
+        # quoted_source keeps its surrounding quotes, e.g. "'@urban-toolkit/autk-db'".
+        spec = quoted_source[1:-1]
+        url = resolve_pkg_entry_url(spec, root_node_modules)
+        return f"'{url}'" if url else quoted_source
+
+    # Rewrite static `import` statements to dynamic `await import()` calls
+    # so user code runs inside a CJS IIFE (--input-type=commonjs), which
+    # lets autk-db's eval'd Worker threads use require() without errors.
+    named_re = re.compile(
+        r'^import\s+(.*?)\s+from\s+([\'"][^\'"]+[\'"])\s*;?\s*$', re.MULTILINE)
+    bare_re  = re.compile(
+        r'^import\s+([\'"][^\'"]+[\'"])\s*;?\s*$', re.MULTILINE)
+
+    dynamic_import_lines: list[str] = []
+
+    def _rewrite_named(m):
+        specs, source = m.group(1).strip(), _resolved_source(m.group(2))
+        if specs.startswith('* as '):
+            return f'  const {specs[5:].strip()} = await import({source});'
+        if specs.startswith('{'):
+            return f'  const {specs} = await import({source});'
+        parts = specs.split(',', 1)
+        default_name = parts[0].strip()
+        if len(parts) == 2:
+            named = parts[1].strip()
+            inner = named[1:-1] if named.startswith('{') and named.endswith('}') else named
+            return f'  const {{ default: {default_name}, {inner} }} = await import({source});'
+        return f'  const {{ default: {default_name} }} = await import({source});'
+
+    def _collect_named(m):
+        dynamic_import_lines.append(_rewrite_named(m))
+        return ''
+
+    def _collect_bare(m):
+        dynamic_import_lines.append(f'  await import({_resolved_source(m.group(1))});')
+        return ''
+
+    clean_code = bare_re.sub(_collect_bare, code)
+    clean_code = named_re.sub(_collect_named, clean_code).strip()
+    dynamic_imports_block = '\n'.join(dynamic_import_lines)
+    indented = '\n'.join('    ' + line for line in clean_code.splitlines())
+
+    # Serialize input as an inline JS literal.
+    arg_json = json.dumps(_to_js_value(input_data))
+
+    # Build script from static template - no temp file written to disk.
+    template_path = pathlib.Path(__file__).parent.parent / 'util' / 'js_wrapper.mjs'
+    template = template_path.read_text(encoding='utf-8')
+    script = (template
+              .replace('__DYNAMIC_IMPORTS__', dynamic_imports_block)
+              .replace('__ARG_JSON__', arg_json)
+              .replace('__OVERPASS_USER_AGENT__', json.dumps(OVERPASS_USER_AGENT))
+              .replace('__USER_CODE__', indented))
+
+    # NODE_PATH is a belt-and-braces aid for any CJS require() autk-db's
+    # worker threads perform (see node_runtime.node_env). cwd stays
+    # launch_dir so other JS nodes' relative file reads keep working.
+    node_env_vars = node_env()
+
+    def _run_node():
+        """Run the script in one Node subprocess, up to the JS ceiling.
+
+        Returns ``(exit_code, stdout_lines, stderr_lines)``. Factored out of
+        the body only so a crash inside Node itself can be retried: every
+        input it reads (``script``, ``cwd``, ``node_env_vars``) is fully built by
+        this point, so a second call re-runs the same execution rather than a
+        different one.
+        """
+        slot = _js_slot()
+        waited_at = time.perf_counter()
+        slot.acquire()
+        queued = time.perf_counter() - waited_at
+        if queued > 1.0:
+            print(f"[execJs] waited {queued:.1f}s for a slot  node={node_type}",
+                  file=_sys.stderr, flush=True)
+        try:
+            return _run_node_holding_slot()
+        finally:
+            slot.release()
+
+    def _run_node_holding_slot():
+        print(f"[execJs] starting Node.js  node={node_type}", file=_sys.stderr, flush=True)
+        t_start = time.perf_counter()
+
+        proc = subprocess.Popen(
+            ['node', '--input-type=commonjs', *node_flags],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding='utf-8', errors='replace', cwd=cwd,
+            env=node_env_vars,
+        )
+
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+
+        def _stream(pipe, lines, label):
+            for line in pipe:
+                line = line.rstrip('\n')
+                lines.append(line)
+                if not line.startswith('__CURIO_JSON_RESULT__'):
+                    print(f"[execJs] {label}: {line}", file=_sys.stderr, flush=True)
+
+        def _write_stdin(proc, data):
+            try:
+                proc.stdin.write(data)
+                proc.stdin.close()
+            except BrokenPipeError:
+                pass
+
+        t_in  = threading.Thread(target=_write_stdin, args=(proc, script), daemon=True)
+        t_out = threading.Thread(target=_stream, args=(proc.stdout, stdout_lines, 'stdout'), daemon=True)
+        t_err = threading.Thread(target=_stream, args=(proc.stderr, stderr_lines, 'stderr'), daemon=True)
+        t_in.start()
+        t_out.start()
+        t_err.start()
+
+        try:
+            proc.wait(timeout=3000)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            t_in.join()
+            t_out.join()
+            t_err.join()
+            raise
+
+        t_in.join()
+        t_out.join()
+        t_err.join()
+
+        print(f"[execJs] Node.js finished  total={time.perf_counter()-t_start:.3f}s  "
+              f"exit={proc.returncode}  node={node_type}",
+              file=_sys.stderr, flush=True)
+        return proc.returncode, stdout_lines, stderr_lines
+
+    exit_code, stdout_lines, stderr_lines = _run_node()
+
+    # One retry, and only for a crash inside Node's own HTTP parser. See
+    # is_node_internal_stream_crash for why re-running is the only response
+    # available to us. The cost is bounded: a run that does not hit it pays
+    # one substring scan of stderr.
+    if is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines):
+        print(f"[execJs] Node died inside its own HTTP parser before user code "
+              f"could either fail or produce a result; retrying once  "
+              f"node={node_type}", file=_sys.stderr, flush=True)
+        exit_code, stdout_lines, stderr_lines = _run_node()
+        print(f"[execJs] retry {'hit it too' if is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines) else 'cleared it'}"
+              f"  total_with_retry={time.perf_counter()-t0:.3f}s  node={node_type}",
+              file=_sys.stderr, flush=True)
+
+    # Extract result from stdout - a single line prefixed with __CURIO_JSON_RESULT__.
+    RESULT_PREFIX = '__CURIO_JSON_RESULT__'
+    result_json = None
+    user_log_lines = []
+    for line in stdout_lines:
+        if line.startswith(RESULT_PREFIX):
+            result_json = line[len(RESULT_PREFIX):]
+        else:
+            user_log_lines.append(line)
+
+    return result_json, user_log_lines, stderr_lines
+
+
 def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True):
     """
     Execute user JavaScript code in an isolated Node.js subprocess.
@@ -842,16 +1048,13 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
     """
     import json
     import os
-    import pathlib
-    import re
     import subprocess
     import sys as _sys
-    import threading
     import time
     import traceback
 
     from utk_curio.sandbox.util.parsers import (
-        load_from_duckdb, save_to_duckdb, detect_kind, save_dataset_parquet,
+        load_artifact, save_to_duckdb, detect_kind, save_dataset_parquet,
     )
 
     t0 = time.perf_counter()
@@ -870,186 +1073,12 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
             input_data = [_resolve_outputs_elem(elem, session_id=session_id)
                           for elem in file_path_list]
         elif file_path:
-            input_data = load_from_duckdb(file_path, session_id=session_id)
+            input_data = load_artifact(file_path, session_id=session_id)
         input_data = _expand_outputs_wrapper(input_data, session_id=session_id)
 
-        # Resolve bare package specifiers (e.g. '@urban-toolkit/autk-db') to an
-        # ABSOLUTE file URL under the repo-root node_modules so the dynamic ESM
-        # import() below resolves regardless of the Node subprocess cwd. Node's ESM
-        # resolver does NOT consult NODE_PATH and resolves a bare specifier only by
-        # walking node_modules up from the importing module - which fails when
-        # CURIO_LAUNCH_CWD is outside the repo. Rewriting only the top-level
-        # specifier is enough: the package's own internal imports still resolve
-        # relative to its installed location.
-        repo_root = pathlib.Path(__file__).resolve().parents[3]
-        root_node_modules = repo_root / 'node_modules'
-
-        def _resolved_source(quoted_source):
-            # quoted_source keeps its surrounding quotes, e.g. "'@urban-toolkit/autk-db'".
-            spec = quoted_source[1:-1]
-            url = resolve_pkg_entry_url(spec, root_node_modules)
-            return f"'{url}'" if url else quoted_source
-
-        # Rewrite static `import` statements to dynamic `await import()` calls
-        # so user code runs inside a CJS IIFE (--input-type=commonjs), which
-        # lets autk-db's eval'd Worker threads use require() without errors.
-        named_re = re.compile(
-            r'^import\s+(.*?)\s+from\s+([\'"][^\'"]+[\'"])\s*;?\s*$', re.MULTILINE)
-        bare_re  = re.compile(
-            r'^import\s+([\'"][^\'"]+[\'"])\s*;?\s*$', re.MULTILINE)
-
-        dynamic_import_lines: list[str] = []
-
-        def _rewrite_named(m):
-            specs, source = m.group(1).strip(), _resolved_source(m.group(2))
-            if specs.startswith('* as '):
-                return f'  const {specs[5:].strip()} = await import({source});'
-            if specs.startswith('{'):
-                return f'  const {specs} = await import({source});'
-            parts = specs.split(',', 1)
-            default_name = parts[0].strip()
-            if len(parts) == 2:
-                named = parts[1].strip()
-                inner = named[1:-1] if named.startswith('{') and named.endswith('}') else named
-                return f'  const {{ default: {default_name}, {inner} }} = await import({source});'
-            return f'  const {{ default: {default_name} }} = await import({source});'
-
-        def _collect_named(m):
-            dynamic_import_lines.append(_rewrite_named(m))
-            return ''
-
-        def _collect_bare(m):
-            dynamic_import_lines.append(f'  await import({_resolved_source(m.group(1))});')
-            return ''
-
-        clean_code = bare_re.sub(_collect_bare, code)
-        clean_code = named_re.sub(_collect_named, clean_code).strip()
-        dynamic_imports_block = '\n'.join(dynamic_import_lines)
-        indented = '\n'.join('    ' + line for line in clean_code.splitlines())
-
-        # Serialize input as an inline JS literal.
-        arg_json = json.dumps(_to_js_value(input_data))
-
-        # Build script from static template - no temp file written to disk.
-        template_path = pathlib.Path(__file__).parent.parent / 'util' / 'js_wrapper.mjs'
-        template = template_path.read_text(encoding='utf-8')
-        script = (template
-                  .replace('__DYNAMIC_IMPORTS__', dynamic_imports_block)
-                  .replace('__ARG_JSON__', arg_json)
-                  .replace('__USER_CODE__', indented))
-
-        # NODE_PATH is consulted only by the CommonJS require() resolver (not ESM),
-        # so it does NOT resolve the top-level autk-db ESM import - that is handled
-        # by rewriting it to an absolute file URL above. We still point NODE_PATH at
-        # the repo-root node_modules as a belt-and-braces aid for any CJS require()
-        # autk-db's worker threads perform. cwd stays launch_dir so other JS nodes'
-        # relative file reads keep working.
-        node_env = {**os.environ}
-        if root_node_modules.is_dir():
-            existing = node_env.get('NODE_PATH', '')
-            node_env['NODE_PATH'] = (
-                str(root_node_modules) + (os.pathsep + existing if existing else '')
-            )
-
-        def _run_node():
-            """Run the script in one Node subprocess, up to the JS ceiling.
-
-            Returns ``(exit_code, stdout_lines, stderr_lines)``. Factored out of
-            the body only so a crash inside Node itself can be retried: every
-            input it reads (``script``, ``cwd``, ``node_env``) is fully built by
-            this point, so a second call re-runs the same execution rather than a
-            different one.
-            """
-            slot = _js_slot()
-            waited_at = time.perf_counter()
-            slot.acquire()
-            queued = time.perf_counter() - waited_at
-            if queued > 1.0:
-                print(f"[execJs] waited {queued:.1f}s for a slot  node={node_type}",
-                      file=_sys.stderr, flush=True)
-            try:
-                return _run_node_holding_slot()
-            finally:
-                slot.release()
-
-        def _run_node_holding_slot():
-            print(f"[execJs] starting Node.js  node={node_type}", file=_sys.stderr, flush=True)
-            t_start = time.perf_counter()
-
-            proc = subprocess.Popen(
-                ['node', '--input-type=commonjs'],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, encoding='utf-8', errors='replace', cwd=cwd,
-                env=node_env,
-            )
-
-            stdout_lines: list[str] = []
-            stderr_lines: list[str] = []
-
-            def _stream(pipe, lines, label):
-                for line in pipe:
-                    line = line.rstrip('\n')
-                    lines.append(line)
-                    if not line.startswith('__CURIO_JSON_RESULT__'):
-                        print(f"[execJs] {label}: {line}", file=_sys.stderr, flush=True)
-
-            def _write_stdin(proc, data):
-                try:
-                    proc.stdin.write(data)
-                    proc.stdin.close()
-                except BrokenPipeError:
-                    pass
-
-            t_in  = threading.Thread(target=_write_stdin, args=(proc, script), daemon=True)
-            t_out = threading.Thread(target=_stream, args=(proc.stdout, stdout_lines, 'stdout'), daemon=True)
-            t_err = threading.Thread(target=_stream, args=(proc.stderr, stderr_lines, 'stderr'), daemon=True)
-            t_in.start()
-            t_out.start()
-            t_err.start()
-
-            try:
-                proc.wait(timeout=3000)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                t_in.join()
-                t_out.join()
-                t_err.join()
-                raise
-
-            t_in.join()
-            t_out.join()
-            t_err.join()
-
-            print(f"[execJs] Node.js finished  total={time.perf_counter()-t_start:.3f}s  "
-                  f"exit={proc.returncode}  node={node_type}",
-                  file=_sys.stderr, flush=True)
-            return proc.returncode, stdout_lines, stderr_lines
-
-        exit_code, stdout_lines, stderr_lines = _run_node()
-
-        # One retry, and only for a crash inside Node's own HTTP parser. See
-        # is_node_internal_stream_crash for why re-running is the only response
-        # available to us. The cost is bounded: a run that does not hit it pays
-        # one substring scan of stderr.
-        if is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines):
-            print(f"[execJs] Node died inside its own HTTP parser before user code "
-                  f"could either fail or produce a result; retrying once  "
-                  f"node={node_type}", file=_sys.stderr, flush=True)
-            exit_code, stdout_lines, stderr_lines = _run_node()
-            print(f"[execJs] retry {'hit it too' if is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines) else 'cleared it'}"
-                  f"  total_with_retry={time.perf_counter()-t0:.3f}s  node={node_type}",
-                  file=_sys.stderr, flush=True)
-
-        # Extract result from stdout - a single line prefixed with __CURIO_JSON_RESULT__.
-        RESULT_PREFIX = '__CURIO_JSON_RESULT__'
-        result_json = None
-        user_log_lines = []
-        for line in stdout_lines:
-            if line.startswith(RESULT_PREFIX):
-                result_json = line[len(RESULT_PREFIX):]
-            else:
-                user_log_lines.append(line)
+        result_json, user_log_lines, stderr_lines = run_js_script(
+            code, input_data, cwd=cwd, node_type=node_type, t0=t0,
+        )
 
         stderr_text = '\n'.join(stderr_lines)
 

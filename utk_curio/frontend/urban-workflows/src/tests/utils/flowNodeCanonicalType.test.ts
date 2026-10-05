@@ -8,7 +8,7 @@ import {
 describe('unversionedNodeType', () => {
   test('strips a trailing @<major>', () => {
     expect(unversionedNodeType('curio.builtin/vis-vega@1')).toBe('curio.builtin/vis-vega');
-    expect(unversionedNodeType('ai.urbanlab.uhvi/uhvi-load@12')).toBe('ai.urbanlab.uhvi/uhvi-load');
+    expect(unversionedNodeType('ai.utk.uhvi/uhvi-load@12')).toBe('ai.utk.uhvi/uhvi-load');
   });
 
   test('returns non-canonical strings unchanged', () => {
@@ -60,21 +60,21 @@ describe('unversionedNodeType only strips the canonical <pkg>/<template>@<major>
 });
 
 describe('getUnversionedFlowNodeType against the NodeType enum', () => {
-  test('the versioned merge-flow regression: raw keeps the version, helper strips it', () => {
+  test('the versioned id regression (#159): raw keeps the version, helper strips it', () => {
     const node = {
       type: CURIO_UNIVERSAL_NODE_TYPE,
-      data: { nodeType: 'curio.builtin/merge-flow@1' },
+      data: { nodeType: 'curio.builtin/data-pool@1' },
     };
-    expect(getFlowNodeCanonicalType(node) === NodeType.MERGE_FLOW).toBe(false);
-    expect(getUnversionedFlowNodeType(node)).toBe(NodeType.MERGE_FLOW);
+    expect(getFlowNodeCanonicalType(node) === NodeType.DATA_POOL).toBe(false);
+    expect(getUnversionedFlowNodeType(node)).toBe(NodeType.DATA_POOL);
   });
 
   test('legacy unversioned specs keep matching', () => {
     const node = {
       type: CURIO_UNIVERSAL_NODE_TYPE,
-      data: { nodeType: 'curio.builtin/merge-flow' },
+      data: { nodeType: 'curio.builtin/data-pool' },
     };
-    expect(getUnversionedFlowNodeType(node)).toBe(NodeType.MERGE_FLOW);
+    expect(getUnversionedFlowNodeType(node)).toBe(NodeType.DATA_POOL);
   });
 
   test('non-universal nodes fall back to node.type, unversioned', () => {

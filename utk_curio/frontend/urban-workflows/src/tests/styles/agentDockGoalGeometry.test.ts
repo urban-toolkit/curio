@@ -42,6 +42,13 @@ describe("the dataflow goal field's geometry", () => {
     expect(field).toContain("max-width");
   });
 
+  it("gives the field a definite width to fill", () => {
+    // The dock is absolutely positioned and as wide as its content, so the
+    // input's `width: 100%` had nothing definite to fill and fell back to about
+    // twenty characters, still cutting the placeholder after the fixes above.
+    expect(ruleBody(".goalField")).toMatch(/\n\s*width: 320px;/);
+  });
+
   it("sizes the input to its box, not to its content", () => {
     // `min-width: 260px` with no width made the input size to its CONTENT
     // inside the flex row, so a placeholder longer than the box was clipped and

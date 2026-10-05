@@ -13,6 +13,7 @@ E2E — starts against an empty database, and the dev
 import os
 import shutil
 import sys
+from pathlib import Path
 
 _REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..")
@@ -42,6 +43,7 @@ _REPO_ROOT = os.path.abspath(
 # worker's ports and state root before anything below (or any backend import)
 # reads the environment. A no-op in a serial run. See shards.py.
 from .shards import apply_shard_env, seed_package_catalog  # noqa: E402
+from . import parts as suite_parts  # noqa: E402
 apply_shard_env()
 
 _PERSISTENT_WS = os.environ.get("CURIO_TEST_WORKSPACE")
@@ -332,6 +334,10 @@ def browser_type_launch_args(browser_type_launch_args):
                     "--ignore-gpu-blocklist",
                     "--enable-features=Vulkan",
                     "--use-angle=vulkan",
+                    # Headless has no window to present to; without this,
+                    # Chrome in a container (arcade's GPU runners) gives up on Vulkan and
+                    # WebGPU falls back to SwiftShader.
+                    "--disable-vulkan-surface",
                 ]
             else:
                 base_args = [
@@ -376,6 +382,18 @@ def pytest_addoption(parser):
         help="record the walkthrough screencasts (slow; needs a browser)",
     )
     parser.addoption(
+        "--live-eval",
+        action="store_true",
+        dest="live_eval",
+        default=False,
+        help=(
+            "run the live-model reconstruction evaluation (memo dev/121): it "
+            "calls the account's configured provider once per fixture and "
+            "writes an evaluation REPORT, never a pass/fail gate. Also needs "
+            "CURIO_EVAL_LIVE=1 and a running stack; never part of CI"
+        ),
+    )
+    parser.addoption(
         "--with-examples",
         action="store_true",
         dest="examples",
@@ -393,10 +411,30 @@ def pytest_addoption(parser):
         default=False,
         help=(
             "write a screenshot baseline where none exists, instead of failing. "
-            "Creating one is a deliberate act: whatever the app renders that day "
-            "becomes the definition of correct, so it has to be a build you "
-            "trust, on a machine whose rendering matches CI's, and you have to "
-            "look at the PNG before committing it"
+            "CI only (GITHUB_ACTIONS=true): whatever the app renders becomes the "
+            "definition of correct, and only CI renders what CI compares"
+        ),
+    )
+    parser.addoption(
+        "--remint-baselines",
+        action="store_true",
+        dest="remint_baselines",
+        default=False,
+        help=(
+            "compare every screenshot with its committed baseline and write the "
+            "ones whose screen changed over it; a missing one is minted. CI "
+            "only: dispatch the Full stack build with remint=true and review "
+            "the frames on its CI report page"
+        ),
+    )
+    parser.addoption(
+        "--remint-force",
+        dest="remint_force",
+        default="",
+        help=(
+            "with --remint-baselines: comma-separated parts of baseline file "
+            "names to re-mint whatever the comparison finds, for a fix known to "
+            "change them by less than the re-mint's threshold"
         ),
     )
 
@@ -414,6 +452,11 @@ def pytest_configure(config):
         "markers",
         "examples: needs a stack seeded with the examples; needs --with-examples",
     )
+    config.addinivalue_line(
+        "markers",
+        "live_eval: calls a real model and reports on it; needs --live-eval "
+        "and CURIO_EVAL_LIVE=1 (memo dev/121 — a report, not a gate)",
+    )
     # Registered here so applying them stops emitting PytestUnknownMarkWarning.
     # ``externalapi`` has been referenced by the exclusion list below since
     # before this comment and was never registered or applied to anything;
@@ -429,12 +472,15 @@ def pytest_configure(config):
         "contract: checks a third party's response SHAPE; runs in CI, skips when unreachable",
     )
     netguard.install()
-    # Imported only when the flag is passed, so an ordinary run never pays for
-    # (or is broken by) importing the e2e helper module.
-    if getattr(config.option, "mint_baselines", False):
+    # Imported only when a flag is passed, so an ordinary run never pays for
+    # (or is broken by) importing the e2e helper module. Refused off CI.
+    mint = getattr(config.option, "mint_baselines", False)
+    remint = getattr(config.option, "remint_baselines", False)
+    force = [part.strip() for part in (getattr(config.option, "remint_force", "") or "").split(",")]
+    if mint or remint or any(force):
         from utk_curio.backend.tests.test_frontend import utils as e2e_utils
 
-        e2e_utils.MINT_BASELINES = True
+        e2e_utils.allow_baseline_writes(mint=mint, remint=remint, force=force)
 
     excluded = []
     if not config.option.longrun:
@@ -443,11 +489,51 @@ def pytest_configure(config):
         excluded.append("not video")
     if not config.option.examples:
         excluded.append("not examples")
+    if not config.option.live_eval:
+        excluded.append("not live_eval")
     if not excluded:
         return
     existing = getattr(config.option, "markexpr", "") or ""
     parts = ([f"({existing})"] if existing else []) + excluded
     setattr(config.option, "markexpr", " and ".join(parts))
+
+
+#: Seconds per backend test file, for balancing CURIO_UNIT_PART. Refresh it
+#: from a run's backend JUnit with scripts/unit_durations.py.
+UNIT_DURATIONS_FILE = Path(__file__).with_name("unit_durations.json")
+
+
+def unit_group_of(item) -> str:
+    """The test file an item is in, dotted from this folder (test_agents.test_routes_solve)."""
+    try:
+        rel = Path(str(item.path)).resolve().relative_to(Path(__file__).resolve().parent)
+    except ValueError:
+        return item.nodeid
+    return ".".join(rel.with_suffix("").parts)
+
+
+def pytest_collection_modifyitems(config, items):
+    """``CURIO_UNIT_PART=k/n`` keeps one balanced part of the backend suite.
+
+    CI runs the backend unit suite as parts on separate CPU runner jobs, one
+    test file never split across two of them (tests/parts.py). Unset, as in any
+    local run, everything runs.
+    """
+    value = (os.environ.get("CURIO_UNIT_PART") or "").strip()
+    if not value:
+        return
+    # The e2e suite under test_frontend/ is split its own way (CURIO_E2E_PART),
+    # so its items are left alone even when both are collected in one session.
+    e2e_dir = Path(__file__).resolve().parent / "test_frontend"
+    unit, e2e = [], []
+    for item in items:
+        (e2e if Path(str(item.path)).resolve().is_relative_to(e2e_dir) else unit).append(item)
+    kept, dropped = suite_parts.keep_part(
+        unit, value, unit_group_of,
+        suite_parts.load_durations(UNIT_DURATIONS_FILE), "CURIO_UNIT_PART")
+    if dropped:
+        config.hook.pytest_deselected(items=dropped)
+        items[:] = kept + e2e
 
 
 @pytest.fixture(scope="session")
@@ -504,11 +590,6 @@ def session_app():
     # unchanged. They are overridable because two checkouts of this repo cannot
     # otherwise run their suites at the same time -- the second one's servers
     # collide with the first one's on every port.
-    #
-    # BACKEND_PORT must agree with the frontend's ``BACKEND_URL``, which
-    # dotenv-webpack bakes into the bundle at BUILD time: changing it means
-    # editing ``utk_curio/frontend/urban-workflows/.env`` and rebuilding, not
-    # just exporting a variable.
     backend_port = int(os.environ.get("BACKEND_PORT") or 5002)
     application.config.update(
         {

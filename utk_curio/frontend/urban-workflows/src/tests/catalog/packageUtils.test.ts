@@ -1,5 +1,5 @@
-import type { PackagePayload } from "../../api/packagesApi";
-import { matchesSearch } from "../../components/packages/publishing/packageUtils";
+import type { PackagePayload } from "../../services/packages";
+import { matchesSearch } from "../../services/packages";
 
 /**
  * `matchesSearch` is the Node Catalog's search predicate and the convention every
@@ -13,7 +13,7 @@ function pkg(over: Partial<PackagePayload> = {}): PackagePayload {
     major: 1,
     version: "1.0.0",
     name: "Weather Analysis",
-    publisher: "urbanlab",
+    publisher: "Example Org",
     description: "Temperature and precipitation summaries for a city boundary.",
     license: null,
     permissions: [],
@@ -35,7 +35,7 @@ describe("matchesSearch", () => {
 
   it("matches each promised field, case-insensitively", () => {
     expect(matchesSearch(pkg(), "WEATHER ANALYSIS")).toBe(true); // name
-    expect(matchesSearch(pkg(), "UrbanLab")).toBe(true); // publisher
+    expect(matchesSearch(pkg(), "example ORG")).toBe(true); // publisher
     expect(matchesSearch(pkg(), "precipitation")).toBe(true); // description
     expect(matchesSearch(pkg(), "curio.weather")).toBe(true); // packageId
   });

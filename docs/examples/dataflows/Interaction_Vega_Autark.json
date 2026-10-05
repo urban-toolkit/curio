@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Seattle"], "topic": ["Mobility and streets"], "complexity": ["Beginner"]},
     "nodes": [
       {
         "id": "node2",
@@ -85,7 +86,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 1436.2658130217023,
         "y": 1381.590014538249,
-        "content": "{\r\n  \"map\": {\r\n    \"layerRefs\": [\r\n      {\r\n        \"dataRef\": \"upstream\",\r\n        \"getFnv\": \"accessibility\",\r\n        \"getFnvType\": \"quantitative\",\r\n        \"isColorMap\": true,\r\n        \"isPick\": true,\r\n        \"defaultFnv\": 0\r\n      }\r\n    ]\r\n  }\r\n}",
+        "content": "{\r\n  \"map\": {\r\n    \"layerRefs\": [\r\n      {\r\n        \"dataRef\": \"[!! input 0 !!]\",\r\n        \"getFnv\": \"accessibility\",\r\n        \"getFnvType\": \"quantitative\",\r\n        \"isColorMap\": true,\r\n        \"isPick\": true,\r\n        \"defaultFnv\": 0\r\n      }\r\n    ]\r\n  }\r\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Render neighborhood accessibility map coloured by the 'accessibility' score.",

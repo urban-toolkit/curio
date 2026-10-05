@@ -9,6 +9,7 @@ import {
   endDatasetDrag,
   writeDatasetDragData,
   DATASET_FORMAT_LABEL,
+  layerGroupFormat,
   DatasetCatalogItem,
   datasetDisplayTitle,
   datasetSubtitle,
@@ -22,18 +23,31 @@ import {
 import packageStyles from "../toolsMenuPackagePalette/ToolsMenuPackagePalette.module.css";
 import { OVERLAY_TRIGGER_DELAY_PROPS, type ToolsMenuTooltipSide } from "../toolsMenuPackagePalette";
 import rowStyles from "./DatasetPaletteRows.module.css";
-import packageCardStyles from "../../../packages/publishing/PackageCard.module.css";
 
 import { DatasetConnectionBadge } from "../../../datasets/catalog/DatasetConnectionBadge";
 import { useReactFlow } from "reactflow";
 import { isNodeLinkedToAnyDataset } from "../../../../services/datasetCatalog";
 import { focusLinkedNodes } from "../../../../utils/focusDatasetNodes";
+import { useNotebookViewContext } from "../../../../providers/flow/notebookViewContext";
 import { useToastContext } from "../../../../providers/ToastProvider";
 import { CopyButton } from "../../../CopyButton";
 import { DetailsButton } from "../../../DetailsButton";
 import { useDatasetDetails } from "../../../datasets/catalog/datasetDetailsContext";
 import { datasetReferenceCode } from "../../../../services/datasetCatalog";
 
+
+/**
+ * An id with a break opportunity after each `.` and before its `@version`, so a
+ * long one wraps where it reads instead of losing the version (#527).
+ */
+export function breakableId(text: string | null | undefined): React.ReactNode {
+  if (!text) return text;
+  return text.split(/([.@])/).map((part, index) => {
+    if (part === ".") return <React.Fragment key={index}>.<wbr /></React.Fragment>;
+    if (part === "@") return <React.Fragment key={index}><wbr />@</React.Fragment>;
+    return part;
+  });
+}
 
 export const DatasetRow = memo(function DatasetRow({
   dataset,
@@ -50,6 +64,7 @@ export const DatasetRow = memo(function DatasetRow({
     rowStyles[`chip_${dataset.format}` as keyof typeof rowStyles] ?? rowStyles.formatChip;
 
   const reactFlow = useReactFlow();
+  const { reveal } = useNotebookViewContext();
   const { showToast } = useToastContext();
   const { openDatasetDetails } = useDatasetDetails();
 
@@ -64,11 +79,11 @@ export const DatasetRow = memo(function DatasetRow({
       //  - producer: the node that generated this computed dataset.
       const isLinked = (n: { id: string; data: any }) =>
         isNodeLinkedToAnyDataset(n.data, [dataset.id]) || n.id === dataset.producerNodeId;
-      if (focusLinkedNodes(reactFlow, isLinked) === 0) {
+      if (focusLinkedNodes(reactFlow, isLinked, reveal) === 0) {
         showToast("No nodes on the canvas use this dataset", "info");
       }
     },
-    [dataset.id, dataset.producerNodeId, reactFlow, showToast],
+    [dataset.id, dataset.producerNodeId, reactFlow, showToast, reveal],
   );
 
   return (
@@ -95,12 +110,8 @@ export const DatasetRow = memo(function DatasetRow({
           </span>
         </div>
         <button type="button" className={packageStyles.packageKindRowMeta} onClick={selectOnCanvas}>
-          <span className={packageStyles.packageKindRowLabel}>
-            {datasetDisplayTitle(dataset)}
-          </span>
-          <span className={packageCardStyles.cardMetaText}>
-            {datasetSubtitle(dataset)}
-          </span>
+          <span className={rowStyles.datasetRowTitle}>{datasetDisplayTitle(dataset)}</span>
+          <span className={rowStyles.datasetRowId}>{breakableId(datasetSubtitle(dataset))}</span>
 
           <div className={rowStyles.rowMeta}>
             <span className={packageStyles.packageKindCategoryChip}>
@@ -147,11 +158,16 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
   const [open, setOpen] = useState(false);
   const layerCount = group.members.length;
   const time = relativeTime(group.updatedAt);
-  const osmChipClass = rowStyles.chip_osm ?? rowStyles.formatChip;
+  // An OSM PBF or a GeoPackage import, as its id says, or the layers of one
+  // Discovery download, which say their own format.
+  const groupFormat = layerGroupFormat(group);
+  const formatLabel = DATASET_FORMAT_LABEL[groupFormat];
+  const formatChipClass = rowStyles[`chip_${groupFormat}`] ?? rowStyles.formatChip;
   // Dragging the parent creates one node loading ALL layers (the full import).
   const dragPayload = useMemo(() => createOsmGroupDragPayload(group), [group]);
 
   const reactFlow = useReactFlow();
+  const { reveal } = useNotebookViewContext();
   const { showToast } = useToastContext();
 
   // Highlight every node linked to this import: any node referencing a member
@@ -168,11 +184,11 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
       );
       const isLinked = (n: { id: string; data: any }) =>
         isNodeLinkedToAnyDataset(n.data, linkIds) || producerIds.has(n.id);
-      if (focusLinkedNodes(reactFlow, isLinked) === 0) {
+      if (focusLinkedNodes(reactFlow, isLinked, reveal) === 0) {
         showToast("No nodes on the canvas use this dataset", "info");
       }
     },
-    [group.groupId, group.members, reactFlow, showToast],
+    [group.groupId, group.members, reactFlow, showToast, reveal],
   );
 
   return (
@@ -183,7 +199,7 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
         placement={tooltipPlacement}
         delay={OVERLAY_TRIGGER_DELAY_PROPS}
         overlay={
-          <Tooltip>{`${group.title} · OSM PBF · ${layerCount} layer${layerCount === 1 ? "" : "s"}`}</Tooltip>
+          <Tooltip>{`${group.title} · ${formatLabel} · ${layerCount} layer${layerCount === 1 ? "" : "s"}`}</Tooltip>
         }
       >
         <div className={rowStyles.groupHeader} data-dataset-id={group.groupId}>
@@ -200,8 +216,8 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
               icon={faDatabase}
               className={`${packageStyles.packageKindDragIcon} ${rowStyles.datasetDragIcon}`}
             />
-            <span className={`${rowStyles.iconBadge} ${osmChipClass}`}>
-              {DATASET_FORMAT_LABEL.osm}
+            <span className={`${rowStyles.iconBadge} ${formatChipClass}`}>
+              {formatLabel}
             </span>
           </div>
           {/* Meta area highlights linked nodes (like a single row); the caret
@@ -222,7 +238,7 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
             className={rowStyles.groupCaretButton}
             onClick={() => setOpen((value) => !value)}
             aria-expanded={open}
-            aria-label={`${open ? "Collapse" : "Expand"} ${group.title}: OSM PBF import with ${layerCount} layer${layerCount === 1 ? "" : "s"}`}
+            aria-label={`${open ? "Collapse" : "Expand"} ${group.title}: ${formatLabel} import with ${layerCount} layer${layerCount === 1 ? "" : "s"}`}
           >
             <FontAwesomeIcon
               icon={open ? faChevronUp : faChevronDown}

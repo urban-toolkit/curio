@@ -15,8 +15,10 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents import imports, project_agents, storage
-from utk_curio.backend.app.agents.manifest import AgentManifestError
+from utk_curio.backend.app.agents.repositories import imports
+from utk_curio.backend.app.agents.repositories import project_agents
+from utk_curio.backend.app.agents.repositories import storage
+from utk_curio.backend.app.agents.domain.manifest import AgentManifestError
 
 
 @pytest.fixture
@@ -26,10 +28,10 @@ def user_key(tmp_path, monkeypatch):
     return "42"
 
 
-def _manifest_dict(agent_id="agent.node-explainer", version="1.0.0"):
+def _manifest_dict(agent_id="agent.my-explainer", version="1.0.0"):
     return {
         "id": agent_id,
-        "name": "Node Explainer",
+        "name": "My Explainer",
         "category": "node",
         "version": version,
         "capabilities": [{"id": "node.explain", "contractVersion": "1"}],
@@ -37,7 +39,7 @@ def _manifest_dict(agent_id="agent.node-explainer", version="1.0.0"):
     }
 
 
-def _write_definition(user_key, agent_id="agent.node-explainer", version="1.0.0"):
+def _write_definition(user_key, agent_id="agent.my-explainer", version="1.0.0"):
     d = storage.user_agents_dir(user_key) / f"{agent_id}@{version}"
     d.mkdir(parents=True, exist_ok=True)
     (d / "manifest.json").write_text(json.dumps(_manifest_dict(agent_id, version)), encoding="utf-8")
@@ -47,14 +49,14 @@ def _write_definition(user_key, agent_id="agent.node-explainer", version="1.0.0"
 # ── storage: definition artifact store ──────────────────────────────────────
 class TestDefinitionStore:
     def test_dir_name_grammar(self):
-        assert storage.AGENT_DIR_RE.match("agent.node-explainer@1.0.0")
+        assert storage.AGENT_DIR_RE.match("agent.my-explainer@1.0.0")
         assert storage.AGENT_DIR_RE.match("agent.dataflow-builder@2.1.0-beta.1")
         assert not storage.AGENT_DIR_RE.match("curio.builtin@1")       # not an agent id
-        assert not storage.AGENT_DIR_RE.match("agent.node-explainer@1")  # not semver
+        assert not storage.AGENT_DIR_RE.match("agent.my-explainer@1")  # not semver
 
     def test_parse_dir_name(self):
-        assert storage.parse_agent_dir_name("agent.node-explainer@1.0.0") == (
-            "agent.node-explainer",
+        assert storage.parse_agent_dir_name("agent.my-explainer@1.0.0") == (
+            "agent.my-explainer",
             "1.0.0",
         )
         with pytest.raises(AgentManifestError):
@@ -65,20 +67,20 @@ class TestDefinitionStore:
         assert storage.load_installed_agent_definition(user_key, "agent.x@1.0.0") is None
 
     def test_load_and_list(self, user_key):
-        _write_definition(user_key, "agent.node-explainer", "1.0.0")
+        _write_definition(user_key, "agent.my-explainer", "1.0.0")
         _write_definition(user_key, "agent.dataflow-builder", "1.0.0")
         listed = storage.list_installed_agent_definitions(user_key)
-        assert [m.agent_id for m in listed] == ["agent.dataflow-builder", "agent.node-explainer"]
-        one = storage.load_installed_agent_definition(user_key, "agent.node-explainer@1.0.0")
-        assert one is not None and one.agent_id == "agent.node-explainer"
+        assert [m.agent_id for m in listed] == ["agent.dataflow-builder", "agent.my-explainer"]
+        one = storage.load_installed_agent_definition(user_key, "agent.my-explainer@1.0.0")
+        assert one is not None and one.agent_id == "agent.my-explainer"
 
     def test_invalid_definition_is_skipped_not_fatal(self, user_key):
-        _write_definition(user_key, "agent.node-explainer", "1.0.0")
+        _write_definition(user_key, "agent.my-explainer", "1.0.0")
         bad = storage.user_agents_dir(user_key) / "agent.broken@1.0.0"
         bad.mkdir(parents=True, exist_ok=True)
         (bad / "manifest.json").write_text("{not json", encoding="utf-8")
         listed = storage.list_installed_agent_definitions(user_key)
-        assert [m.agent_id for m in listed] == ["agent.node-explainer"]
+        assert [m.agent_id for m in listed] == ["agent.my-explainer"]
 
     def test_path_traversal_blocked(self, user_key):
         with pytest.raises(AgentManifestError):
@@ -91,19 +93,19 @@ class TestImportsRegistry:
         assert imports.load_imported_agents(user_key) == set()
 
     def test_add_and_remove_roundtrip(self, user_key):
-        imports.add_imported_agent(user_key, "agent.node-explainer@1.0.0")
+        imports.add_imported_agent(user_key, "agent.my-explainer@1.0.0")
         imports.add_imported_agent(user_key, "agent.dataflow-builder@1.0.0")
         assert imports.load_imported_agents(user_key) == {
-            "agent.node-explainer@1.0.0",
+            "agent.my-explainer@1.0.0",
             "agent.dataflow-builder@1.0.0",
         }
-        imports.remove_imported_agent(user_key, "agent.node-explainer@1.0.0")
+        imports.remove_imported_agent(user_key, "agent.my-explainer@1.0.0")
         assert imports.load_imported_agents(user_key) == {"agent.dataflow-builder@1.0.0"}
 
     def test_add_is_idempotent(self, user_key):
-        imports.add_imported_agent(user_key, "agent.node-explainer@1.0.0")
-        imports.add_imported_agent(user_key, "agent.node-explainer@1.0.0")
-        assert imports.load_imported_agents(user_key) == {"agent.node-explainer@1.0.0"}
+        imports.add_imported_agent(user_key, "agent.my-explainer@1.0.0")
+        imports.add_imported_agent(user_key, "agent.my-explainer@1.0.0")
+        assert imports.load_imported_agents(user_key) == {"agent.my-explainer@1.0.0"}
 
     def test_add_invalid_coord_rejected(self, user_key):
         with pytest.raises(ValueError):
@@ -124,18 +126,18 @@ class TestProjectLockfile:
         assert project_agents.project_agents({"dataflow": {}}) == []
 
     def test_read_declared(self):
-        spec = {"dataflow": {"agents": ["agent.node-explainer@1.0.0", "curio.builtin@1", "junk"]}}
+        spec = {"dataflow": {"agents": ["agent.my-explainer@1.0.0", "curio.builtin@1", "junk"]}}
         # invalid coordinates are filtered out
-        assert project_agents.project_agents(spec) == ["agent.node-explainer@1.0.0"]
+        assert project_agents.project_agents(spec) == ["agent.my-explainer@1.0.0"]
 
     def test_set_creates_dataflow_and_sorts(self):
         spec: dict = {}
         out = project_agents.set_project_agents(
-            spec, ["agent.node-explainer@1.0.0", "agent.dataflow-builder@1.0.0"]
+            spec, ["agent.my-explainer@1.0.0", "agent.dataflow-builder@1.0.0"]
         )
         assert out["dataflow"]["agents"] == [
             "agent.dataflow-builder@1.0.0",
-            "agent.node-explainer@1.0.0",
+            "agent.my-explainer@1.0.0",
         ]
         assert out is spec  # mutates in place
 

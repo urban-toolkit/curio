@@ -76,8 +76,12 @@ describe("a tile", () => {
   });
 
   it("nothing still refers to the canvas mode this replaced", () => {
+    // FlowProvider's sections are hooks in providers/flow/, so read every file there.
+    const flowModules = fs.readdirSync(path.join(SRC, "providers/flow")).map((f) => `providers/flow/${f}`);
+    expect(flowModules).toContain("providers/flow/useDashboardPins.ts");
     for (const file of [
       "providers/FlowProvider.tsx",
+      ...flowModules,
       "components/MainCanvas.tsx",
       "hook/useWorkflowOperations.ts",
     ]) {

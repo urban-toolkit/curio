@@ -70,7 +70,6 @@ def _one_node_spec(name: str) -> dict:
 
 
 def _open_node_catalog(page):
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
     page.get_by_role("button", name="Node Catalog", exact=True).click()
     page.locator(DRAWER_ROOT).wait_for(state="attached", timeout=15000)
     dialog = page.get_by_role("dialog").filter(

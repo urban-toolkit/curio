@@ -12,7 +12,7 @@
 }
 
 .title {
-    margin: 0 32px 6px 0;
+    margin: 0;
     font-size: 1.125rem;
     font-weight: 600;
     color: var(--curio-text-primary);
@@ -23,6 +23,11 @@
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
+    /* The room for the close button and the space under the heading belong
+       to the row. On the heading they pushed the READ-ONLY badge 42 px away
+       and set it 3 px below the heading's centre line (#520). */
+    padding-right: 32px;
+    margin-bottom: 6px;
 }
 
 .readOnlyBadge {
@@ -143,7 +148,7 @@
 }
 
 /* Two columns, so a port declaring all six types is three rows rather than six
-   -- computation-analysis and merge-flow both declare six. */
+   -- computation-analysis declares six. */
 .typeGrid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

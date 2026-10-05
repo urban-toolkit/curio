@@ -420,44 +420,16 @@ class UserSession:
 # Palette tiles
 # ---------------------------------------------------------------------------
 #
-# ToolsMenu.tsx renders each built-in tile as ``<div id={tutorialID}>`` - and
-# packages/curio.builtin@1/manifest.json gives no ``tutorialId`` to data-export,
-# data-summary, js-computation or spatial-join. Those four tiles are therefore an
-# icon div with a hover tooltip and no id, no aria-label and no accessible name,
-# which is both why they have to be reached positionally here and a finding in
-# its own right.
-#
-# The rail is three group containers (PALETTE_GROUPS in ToolsMenu.tsx) whose
-# children are ordered by ``paletteOrder`` (getPaletteNodeTypes sorts on it), so
-# an anchor id plus an index is stable.
-
-#: template id -> (anchor tile id, index within that anchor's group container)
-PALETTE_TILES: dict[str, tuple[str, int]] = {
-    # group: data + flow
-    "data-loading": ("#step-loading", 0),
-    "data-export": ("#step-loading", 1),
-    "data-transformation": ("#step-loading", 2),
-    "spatial-join": ("#step-loading", 3),
-    "merge-flow": ("#step-loading", 4),
-    "data-pool": ("#step-loading", 5),
-    # group: computation
-    "computation-analysis": ("#step-analysis", 0),
-    "data-summary": ("#step-analysis", 1),
-    "js-computation": ("#step-analysis", 2),
-    # group: vis
-    "autk-grammar": ("#step-utk", 0),
-    "vis-vega": ("#step-utk", 1),
-    "vis-simple": ("#step-utk", 2),
-}
+# ToolsMenu.tsx renders each built-in tile as ``<div id="tile-<template>">``
+# (``paletteTileId``), so every tile is reached by its own id.
 
 #: The tooltip each tile should show, from the manifest's ``label``. Used to
-#: prove a positional lookup landed on the tile the caller meant.
+#: prove a lookup landed on the tile the caller meant.
 PALETTE_LABELS: dict[str, str] = {
     "data-loading": "Data Loading",
     "data-export": "Data Export",
     "data-transformation": "Data Transformation",
     "spatial-join": "Spatial Join",
-    "merge-flow": "Merge Flow",
     "data-pool": "Data Pool",
     "computation-analysis": "Python Computation",
     "data-summary": "Data Summary",
@@ -469,25 +441,18 @@ PALETTE_LABELS: dict[str, str] = {
 
 
 def palette_tile(page, template_id: str):
-    """A locator for one built-in palette tile, by manifest template id.
-
-    Uses the tile's own id where the manifest gave it a ``tutorialId``, and falls
-    back to its position inside the group container otherwise.
-    """
-    try:
-        anchor, index = PALETTE_TILES[template_id]
-    except KeyError:
+    """A locator for one built-in palette tile, by manifest template id."""
+    if template_id not in PALETTE_LABELS:
         raise ValueError(
             f"unknown built-in template {template_id!r}; "
-            f"known: {sorted(PALETTE_TILES)}"
-        ) from None
-    group = page.locator(anchor).locator("xpath=..")
-    return group.locator("> div").nth(index)
+            f"known: {sorted(PALETTE_LABELS)}"
+        )
+    return page.locator(f"#tile-{template_id}")
 
 
 #: The FontAwesome class each tile's svg must carry, derived from the manifest's
-#: ``iconRef`` (``fa-solid:upload`` -> ``fa-upload``). This is how a positional
-#: lookup is proved to have landed on the tile the caller meant.
+#: ``iconRef`` (``fa-solid:upload`` -> ``fa-upload``). This is how a lookup
+#: is proved to have landed on the tile the caller meant.
 #:
 #: Deliberately not the hover tooltip: the React Flow pane overlaps the rail, so
 #: ``Locator.hover`` fails its actionability check and times out - which is how
@@ -504,7 +469,6 @@ PALETTE_ICON_CLASS: dict[str, str] = {
     "vis-simple": "fa-table",
     "autk-grammar": "fa-city",
     "spatial-join": "fa-object-group",
-    "merge-flow": "fa-code-merge",
 }
 
 
@@ -512,7 +476,7 @@ def palette_tile_identity(page, template_id: str) -> dict:
     """What the rail exposes about one tile, without touching it.
 
     Returns ``{found, iconOk, icon, id, ariaLabel, title, accessibleText}``.
-    ``iconOk`` is the check that the positional lookup landed correctly; the
+    ``iconOk`` is the check that the lookup landed correctly; the
     remaining fields are the evidence for whether the tile is identifiable to
     anything other than a sighted user with a mouse.
     """
@@ -658,7 +622,6 @@ def write_report(sessions: list[dict], *, videos: dict[str, dict]) -> str:
 __all__ = [
     "Finding",
     "PALETTE_LABELS",
-    "PALETTE_TILES",
     "UserSession",
     "collect_sessions",
     "finalize_video",

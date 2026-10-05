@@ -1,5 +1,5 @@
 # Compose override for the isolated-execution CI job
-# (.github/workflows/docker-compose.yml, job `test-gpu-isolated`).
+# (.github/workflows/docker-compose.yml, job `test-isolated`).
 #
 # Boots the same image with CURIO_ISOLATION=fork, so a real workload runs through
 # the confined path instead of in-process. The unit suite proves the boundary
@@ -18,7 +18,7 @@
 # 2. NO execution user (CURIO_EXEC_USER is empty). Setting one makes the sandbox chmod ./instance and
 #    ./.curio/data to 0700/0600 root-owned. The e2e harness computes its
 #    ground truth by executing every code node IN THE HOST TEST PROCESS
-#    (test_frontend/utils.py::execute_workflow_programmatically) and writing
+#    (test_frontend/utils/sandbox.py::execute_workflow_programmatically) and writing
 #    the artifacts into .curio/data as the runner user -- so hardening those
 #    paths makes the comparison step fail with EACCES before the browser is
 #    ever driven. The filesystem half of the boundary is therefore NOT covered
@@ -40,13 +40,13 @@ services:
     pids_limit: 4096
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
-      # The Data Lake Catalog's recorded portal corpus. The host-side e2e specs
+      # The Discovery Catalog's recorded portal corpus. The host-side e2e specs
       # drive this container with --use-existing, so it is the CONTAINER that
-      # needs this, not the pytest process: without it the lake transport falls
+      # needs this, not the pytest process: without it the discovery transport falls
       # back to real HTTP and those specs would reach live portals. Honoured
       # only alongside --testing on the command below, which is what sets
-      # CURIO_TESTING (see datalakes/infrastructure/transport.py).
-      - CURIO_DATALAKE_FIXTURES=/app/utk_curio/backend/tests/test_datalakes/fixtures
+      # CURIO_TESTING (see discovery/infrastructure/transport.py).
+      - CURIO_DISCOVERY_FIXTURES=/app/utk_curio/backend/tests/test_discovery/fixtures
       # ``--testing`` on the command mounts the /api/testing/* stubs the e2e
       # fixtures depend on; see docker-compose.ci.yml.
       - CURIO_LAUNCH_CWD=/app
@@ -59,10 +59,14 @@ services:
       # Empty, deliberately. This image contains curio-exec and the container
       # runs as root, so the launcher would otherwise discover it -- and this
       # job is the one that covers isolation WITHOUT a filesystem boundary.
-      # test-gpu-exec-user covers the other half.
+      # test-exec-user covers the other half.
       - CURIO_EXEC_USER=
-    ports:
-      - "127.0.0.1:${CURIO_PORT_2000:-2030}:2000"
+    # The job's own host ports, in place of the base file's 5002/8080, which
+    # are the production stack's on the runner.
+    ports: !override
+      - "${CURIO_E2E_BACKEND_PORT:?this job's host port for the backend}:5002"
+      - "${CURIO_E2E_FRONTEND_PORT:?this job's host port for the web app}:8080"
+      - "127.0.0.1:${CURIO_E2E_SANDBOX_PORT:-2030}:2000"
     command:
       - sh
       - -c
@@ -70,5 +74,5 @@ services:
       # Playwright writes into the bind-mounted .curio as the runner user.
       - >-
         umask 000 && exec python curio.py start all --testing --with-examples
-        --backend-host 0.0.0.0 --backend-port 5002
+        --backend-host 0.0.0.0 --backend-port 5002 --backend-url "${CURIO_E2E_BACKEND_URL:?the host address of this stack's backend}"
         --sandbox-host 0.0.0.0 --sandbox-port 2000

@@ -229,7 +229,7 @@ def _node(doc: dict) -> dict:
 def _attachment(**over) -> dict:
     record = {
         "attachmentId": "a" * 32,
-        "coord": "agent.node-explainer@1.0.0",
+        "coord": "agent.my-explainer@1.0.0",
         "target": {"kind": "node", "targetId": "n1"},
         "sessionId": "b" * 32,
         "revision": 1,
@@ -299,9 +299,97 @@ REJECTED = {
     "unknown dataset origin": lambda d: d["dataflow"].update(
         datasets=[{"datasetId": "d1", "origin": "elsewhere"}]
     ),
+    # The node settings config is stored without the editor's port row ids and
+    # without the code copy, which the node's content already holds (#412).
+    "node settings port carrying its editor row id": lambda d: _node(d)["metadata"].update(
+        packageTemplateConfig={
+            "inputPorts": [{"id": "k3j9x0a1", "types": ["DATAFRAME"], "cardinality": "1"}]
+        }
+    ),
+    "node settings carrying a code copy": lambda d: _node(d)["metadata"].update(
+        packageTemplateConfig={"hasCode": True, "sourceCode": "return arg"}
+    ),
+    # The value the old widget built from "Merge (AND)", which matched no mode (#581).
+    "data pool mode that is no resolution type": lambda d: _node(d)["metadata"].update(
+        dataPool={"betweenCharts": "MERGE_(AND)"}
+    ),
+    "data pool setting the pool does not have": lambda d: _node(d)["metadata"].update(
+        dataPool={"propagate": "MERGE_OR"}
+    ),
+    # A node's widgets (#662): named, typed, and nothing else.
+    "widget without a type": lambda d: _node(d)["metadata"].update(
+        widgets=[{"name": "factor", "default": 1}]
+    ),
+    "widget with an old marker type": lambda d: _node(d)["metadata"].update(
+        widgets=[{"name": "factor", "type": "INPUT_VALUE", "default": 1}]
+    ),
+    "widget named as an old marker": lambda d: _node(d)["metadata"].update(
+        widgets=[{"name": "factor$INPUT_VALUE$1", "type": "number", "default": 1}]
+    ),
+    # A model ref is the object a Model Catalog drop writes, not a bare id.
+    "model ref as a bare id": lambda d: _node(d)["metadata"].update(
+        modelRefs=["model.curio.ddrnet23-slim"]
+    ),
+    "model ref without an id": lambda d: _node(d)["metadata"].update(
+        modelRefs=[{"name": "DDRNet23-Slim (street scenes)"}]
+    ),
     "dataflow without a name": lambda d: d["dataflow"].pop("name"),
     "dataflow without a timestamp": lambda d: d["dataflow"].pop("timestamp"),
     "spec without a dataflow": lambda d: d.pop("dataflow"),
+    # #662: a scenario is a named, colored selection of node ids.
+    "scenario color as a name": lambda d: d["dataflow"].update(
+        scenarios=[{"id": "s1", "name": "Baseline", "color": "green", "nodes": ["n1"]}]
+    ),
+    "scenario without its nodes": lambda d: d["dataflow"].update(
+        scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f"}]
+    ),
+    "scenario with a field the format does not have": lambda d: d["dataflow"].update(
+        scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["n1"], "members": ["n1"]}]
+    ),
+    "scenario box without a y": lambda d: d["dataflow"].update(
+        scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": [], "box": {"x": 1}}]
+    ),
+    # #662: a copy's lineage is a list of node ids, written only on a copy.
+    "copiedFrom as a bare id": lambda d: _node(d)["metadata"].update(copiedFrom="n0"),
+    "copiedFrom empty": lambda d: _node(d)["metadata"].update(copiedFrom=[]),
+    "copiedFrom holding an empty id": lambda d: _node(d)["metadata"].update(copiedFrom=[""]),
+    # #662: a selection tag names its view and id column, and holds its ids or
+    # how many there were, never both and never more ids than a tag takes.
+    "selection tag without its column": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "ids": [1]}]
+    ),
+    "selection tag holding neither ids nor a count": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "column": "osm_id"}]
+    ),
+    "selection tag holding ids and a count": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "column": "osm_id", "ids": [1], "count": 20000}]
+    ),
+    "selection tag holding more ids than a tag takes": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "column": "osm_id", "ids": list(range(10001))}]
+    ),
+    "selection tag counting fewer ids than a tag takes": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "column": "osm_id", "count": 12}]
+    ),
+    "selection tag holding an object as an id": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "column": "geometry", "ids": [{"type": "Point"}]}]
+    ),
+    "selection tag named as a reference": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "selection picked", "node": "n2", "column": "osm_id", "ids": []}]
+    ),
+    # #662: a Compare Scenarios node labels each input by name and hex color.
+    "compare label without a color": lambda d: _node(d)["metadata"].update(
+        compareScenarios={"inputs": [{"scenario": "s1", "name": "Baseline"}]}
+    ),
+    "compare label color as a name": lambda d: _node(d)["metadata"].update(
+        compareScenarios={"inputs": [{"scenario": "s1", "name": "Baseline", "color": "green"}]}
+    ),
+    "compare label with a field the format does not have": lambda d: _node(d)["metadata"].update(
+        compareScenarios={"inputs": [{"name": "Baseline", "color": "#2a9d8f", "slot": 0}]}
+    ),
+    "compare labels written empty": lambda d: _node(d)["metadata"].update(compareScenarios={"inputs": []}),
+    "compare chart the node does not draw": lambda d: _node(d)["metadata"].update(
+        compareScenarios={"chart": {"preset": "radar"}}
+    ),
 }
 
 # Cases that look like they should be rejected but must not be. Each one is a
@@ -320,7 +408,72 @@ ACCEPTED = {
     ),
     "empty graph": lambda d: d["dataflow"].update(nodes=[], edges=[]),
     "fractional coordinates": lambda d: _node(d).update(x=12.5, y=-3.25),
+    "widgets with a set value and choices": lambda d: _node(d)["metadata"].update(
+        widgets=[
+            {"name": "factor", "type": "number", "label": "Factor", "default": 1, "value": 2},
+            {"name": "season", "type": "choice", "default": "summer", "options": {"choices": ["summer", "winter"]}},
+        ]
+    ),
+    "a scenario with every field": lambda d: d["dataflow"].update(scenarios=[{
+        "id": "s1", "name": "Twice as tall", "color": "#e76f51", "description": "Every building doubled",
+        "nodes": ["n1"], "collapsed": True, "box": {"x": 120, "y": -40.5},
+        "source": {"project": "p-06", "scenario": "s-tall"},
+    }]),
+    # Its last node was deleted; it keeps its name until it is deleted too.
+    "a scenario with no nodes left": lambda d: d["dataflow"].update(
+        scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": []}]
+    ),
+    # A copy of a copy: its lineage, oldest first (Duplicate selection, #662).
+    "a copy's lineage": lambda d: _node(d)["metadata"].update(copiedFrom=["n0", "n0-copy"]),
+    # #662: selection tags holding ids, nothing, and a count over the cap.
+    "selection tags with ids, none, and a count": lambda d: _node(d)["metadata"].update(selections=[
+        {"name": "picked", "node": "n2", "column": "osm_id", "ids": [101, "w2", 1.5]},
+        {"name": "nothing_yet", "node": "n2", "column": "building_id", "ids": []},
+        {"name": "many", "node": "n2", "column": "osm_id", "count": 25000},
+    ]),
+    # A Compare Scenarios node (#662): an input in no scenario has no id.
+    "compare labels, one in no scenario, and a chart": lambda d: _node(d)["metadata"].update(
+        compareScenarios={
+            "inputs": [
+                {"scenario": "s1", "name": "Baseline", "color": "#2a9d8f"},
+                {"name": "Python Computation", "color": "#8a8f98"},
+            ],
+            "chart": {"preset": "lollipop", "y": "sunlight", "aggregate": "median"},
+        }
+    ),
 }
+
+
+class TestScenariosBeyondTheSchema:
+    """What the schema cannot say about ``dataflow.scenarios`` (#662): a node in
+    at most one scenario, and every member a node of the dataflow. One checker
+    says it, for the save path, ``scripts/validate_trill.py`` and this corpus."""
+
+    def test_an_overlap_has_the_shape_but_is_refused(self):
+        from utk_curio.backend.app.projects.scenarios import scenario_problems
+
+        doc = _good()
+        doc["dataflow"]["scenarios"] = [
+            {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["n1"]},
+            {"id": "s2", "name": "Twice as tall", "color": "#e76f51", "nodes": ["n1"]},
+        ]
+        assert not _errors(doc), "the overlap is a valid shape; the checker is what refuses it"
+        assert scenario_problems(doc) == [
+            "Node n1 is in two scenarios, Baseline and Twice as tall. A node belongs to at most one scenario."
+        ]
+
+    def test_a_member_that_is_not_a_node_is_named(self):
+        from utk_curio.backend.app.projects.scenarios import scenario_problems
+
+        doc = _good()
+        doc["dataflow"]["scenarios"] = [{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["n9"]}]
+        assert scenario_problems(doc) == ["Scenario Baseline names node n9, which the dataflow does not have."]
+
+    def test_every_committed_spec_has_sound_scenarios(self):
+        from utk_curio.backend.app.projects.scenarios import scenario_problems
+
+        unsound = {_stem(path): scenario_problems(_spec(path)) for path in CORPUS}
+        assert not {stem: p for stem, p in unsound.items() if p}
 
 
 def test_the_baseline_fixture_validates():
@@ -410,12 +563,63 @@ WRITER_SHAPES = {
     "agent-minimal edge": _flow(nodes=[AGENT_NODE], edges=[AGENT_EDGE]),
     "all three agent sections": _flow(
         nodes=[AGENT_NODE],
-        agents=["agent.node-explainer@1.0.0"],
+        agents=["agent.my-explainer@1.0.0"],
         agentAttachments=[FULL_ATTACHMENT],
-        agentDefaults={"agent.node-explainer@1.0.0": {"model": "x"}},
+        agentDefaults={"agent.my-explainer@1.0.0": {"model": "x"}},
     ),
     "canvas-scoped attachment": _flow(
         agentAttachments=[_attachment(target={"kind": "canvas"})]
+    ),
+    # TrillGenerator.generateTrill on a save, #662: an empty list clears them.
+    "canvas save with scenarios": _flow(
+        nodes=[AGENT_NODE],
+        scenarios=[{"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": [AGENT_NODE["id"]]}],
+    ),
+    "canvas save clearing its scenarios": _flow(nodes=[AGENT_NODE], scenarios=[]),
+    # Written by TrillGenerator after Duplicate as scenario (#662): the copy
+    # names its original, and both are scenarios.
+    "canvas save with a duplicated scenario": _flow(
+        nodes=[
+            AGENT_NODE,
+            {**AGENT_NODE, "id": "n1-copy", "y": 302, "metadata": {"copiedFrom": [AGENT_NODE["id"]]}},
+        ],
+        scenarios=[
+            {"id": "s1", "name": "Scenario 1", "color": "#3567c7", "nodes": [AGENT_NODE["id"]]},
+            {"id": "s2", "name": "Scenario 2", "color": "#e86a3c", "nodes": ["n1-copy"],
+             "collapsed": True, "box": {"x": 1, "y": 302}},
+        ],
+    ),
+    # Written by TrillGenerator for a Compare Scenarios node fed by two
+    # scenarios (#662): its code, its labels and its chart.
+    "canvas save with a Compare Scenarios node": _flow(
+        nodes=[
+            AGENT_NODE,
+            {**AGENT_NODE, "id": "n1-copy", "metadata": {"copiedFrom": [AGENT_NODE["id"]]}},
+            {
+                "id": "cmp",
+                "type": "curio.builtin/compare-scenarios@1",
+                "x": 700,
+                "y": 0,
+                "content": "return curio_stack_scenarios([])\n",
+                "metadata": {
+                    "compareScenarios": {
+                        "inputs": [
+                            {"scenario": "s1", "name": "Baseline", "color": "#2a9d8f"},
+                            {"scenario": "s2", "name": "Twice as tall", "color": "#e76f51"},
+                        ],
+                        "chart": {"preset": "bar", "y": "sunlight", "aggregate": "mean"},
+                    }
+                },
+            },
+        ],
+        edges=[
+            {"id": "e1", "source": AGENT_NODE["id"], "target": "cmp", "sourceHandle": "out", "targetHandle": "in"},
+            {"id": "e2", "source": "n1-copy", "target": "cmp", "sourceHandle": "out", "targetHandle": "in_1"},
+        ],
+        scenarios=[
+            {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": [AGENT_NODE["id"]]},
+            {"id": "s2", "name": "Twice as tall", "color": "#e76f51", "nodes": ["n1-copy"]},
+        ],
     ),
     # strip_agent_state removes all three sections from a shared copy, so the
     # stripped result has to stay valid or sharing would produce invalid specs.
@@ -482,15 +686,75 @@ WRITER_SHAPES = {
             {
                 **AGENT_NODE,
                 "metadata": {
-                    "datasetRefs": ["data.urbanlab.acs"],
+                    "datasetRefs": ["data.utk.acs"],
                     "datasetSource": {
-                        "datasetId": "data.urbanlab.acs",
+                        "datasetId": "data.utk.acs",
                         "title": "ACS",
                         "format": "csv",
                         "origin": "imported",
                     },
                 },
             }
+        ]
+    ),
+    # Written by TrillGenerator after a Model Catalog drop.
+    "model refs on a node": _flow(
+        nodes=[
+            {
+                **AGENT_NODE,
+                "metadata": {
+                    "modelRefs": [
+                        {"id": "model.curio.ddrnet23-slim", "name": "DDRNet23-Slim (street scenes)"}
+                    ],
+                },
+            }
+        ]
+    ),
+    # Written by TrillGenerator from the node settings modal (#412).
+    "node settings config": _flow(
+        nodes=[
+            {
+                **AGENT_NODE,
+                "metadata": {
+                    "packageTemplateLabel": "Clean the parcels",
+                    "packageTemplateConfig": {
+                        "label": "Clean the parcels",
+                        "category": "computation",
+                        "engine": "python",
+                        "editor": "code",
+                        "description": "Drops parcels without a zoning code",
+                        "hasCode": True,
+                        "hasWidgets": False,
+                        "hasGrammar": False,
+                        "hasProvenance": False,
+                        "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
+                        "outputPorts": [
+                            {"types": ["DATAFRAME", "JSON"], "cardinality": "[1,n]"}
+                        ],
+                        "sourceFilename": "clean.py",
+                    },
+                },
+            }
+        ]
+    ),
+    # Written by TrillGenerator from a Data Pool's two selects (#581): only the
+    # modes that are not OVERWRITE.
+    "data pool conflict modes": _flow(
+        nodes=[
+            {
+                "id": "pool-1",
+                "type": "curio.builtin/data-pool",
+                "x": 1,
+                "y": 2,
+                "metadata": {"dataPool": {"insideChart": "MERGE_AND", "betweenCharts": "MERGE_OR"}},
+            },
+            {
+                "id": "pool-2",
+                "type": "curio.builtin/data-pool",
+                "x": 3,
+                "y": 4,
+                "metadata": {"dataPool": {"betweenCharts": "MERGE_AND"}},
+            },
         ]
     ),
     "dashboard placement": _flow(
@@ -695,7 +959,7 @@ class TestStubSpecsValidate:
         that would mean inventing a name. What matters is that a valid spec in
         stays valid on the way out.
         """
-        from utk_curio.backend.app.packages.services import seed_spec_with_defaults
+        from utk_curio.backend.app.packages.application.seeding import seed_spec_with_defaults
 
         merged = seed_spec_with_defaults("guest", _good())
         errors = _errors(merged)
@@ -712,7 +976,7 @@ class TestSchemaMatchesConstants:
     """
 
     def test_the_node_type_pattern_uses_the_backend_grammar(self):
-        from utk_curio.backend.app.packages import spec_packages as sp
+        from utk_curio.backend.app.packages.domain import spec_packages as sp
 
         expected = (
             f"^{sp._PKG_ID}/{sp._TEMPLATE_ID}(?:@{sp._MAJOR})?$"
@@ -723,13 +987,13 @@ class TestSchemaMatchesConstants:
         )
 
     def test_the_node_type_pattern_accepts_what_the_backend_accepts(self):
-        from utk_curio.backend.app.packages import spec_packages as sp
+        from utk_curio.backend.app.packages.domain import spec_packages as sp
 
         schema_re = re.compile(DEFS["nodeTypeRef"]["pattern"])
         for candidate in (
             "curio.builtin/data-loading",
             "curio.builtin/vis-vega@1",
-            "ai.urbanlab.uhvi/uhvi-load",
+            "ai.utk.uhvi/uhvi-load",
             "a.b.c.d.e.f/thing@0",
         ):
             backend_ok = bool(
@@ -745,7 +1009,7 @@ class TestSchemaMatchesConstants:
             assert bool(schema_re.match(candidate)) == backend_ok, candidate
 
     def test_the_agent_coord_pattern_is_the_storage_grammar(self):
-        from utk_curio.backend.app.agents.storage import AGENT_DIR_RE
+        from utk_curio.backend.app.agents.repositories.storage import AGENT_DIR_RE
 
         assert DEFS["agentCoord"]["pattern"] == AGENT_DIR_RE.pattern, (
             "dataflow.agents entries are agent directory names; the schema must "
@@ -753,7 +1017,7 @@ class TestSchemaMatchesConstants:
         )
 
     def test_the_target_kinds_match_the_validator(self):
-        from utk_curio.backend.app.agents.attachments import _TARGET_KINDS
+        from utk_curio.backend.app.agents.application.attachments import _TARGET_KINDS
 
         declared = DEFS["agentTarget"]["properties"]["kind"]["enum"]
         assert set(declared) == set(_TARGET_KINDS), (
@@ -762,12 +1026,12 @@ class TestSchemaMatchesConstants:
         )
 
     def test_the_attachment_title_cap_matches(self):
-        from utk_curio.backend.app.agents.attachments import TITLE_MAX_CHARS
+        from utk_curio.backend.app.agents.application.attachments import TITLE_MAX_CHARS
 
         assert DEFS["agentAttachment"]["properties"]["title"]["maxLength"] == TITLE_MAX_CHARS
 
     def test_every_agent_spec_key_is_declared(self):
-        from utk_curio.backend.app.agents.project_agents import _AGENT_SPEC_KEYS
+        from utk_curio.backend.app.agents.repositories.project_agents import _AGENT_SPEC_KEYS
 
         declared = set(DEFS["dataflowBase"]["properties"])
         missing = set(_AGENT_SPEC_KEYS) - declared
@@ -804,6 +1068,25 @@ class TestSchemaMatchesConstants:
             "serialized onto a node"
         )
 
+    def test_the_data_pool_modes_mirror_the_frontend_enum(self):
+        """metadata.dataPool's modes are exactly ResolutionType (#581)."""
+        source = os.path.join(
+            REPO_ROOT, "utk_curio", "frontend", "urban-workflows", "src", "constants.ts"
+        )
+        with open(source, encoding="utf-8") as fh:
+            text = fh.read()
+        block = re.search(r"export enum ResolutionType\s*\{(.*?)\}", text, re.S)
+        assert block, "could not find the ResolutionType enum in constants.ts"
+        modes = set(re.findall(r'=\s*"([A-Z_]+)"', block.group(1)))
+        assert modes, "parsed no members out of ResolutionType"
+
+        declared = DEFS["nodeMetadata"]["properties"]["dataPool"]["properties"]
+        for member in ("insideChart", "betweenCharts"):
+            assert set(declared[member]["enum"]) == modes, (
+                f"metadata.dataPool.{member} must list ResolutionType: "
+                f"{sorted(declared[member]['enum'])} vs {sorted(modes)}"
+            )
+
     def test_the_port_types_extend_the_manifest_schema_by_exactly_default(self):
         """The manifest's port enum declares capability; this one records state.
 
@@ -821,7 +1104,7 @@ class TestSchemaMatchesConstants:
 
     def test_the_template_id_grammar_matches_the_manifest_schema(self):
         """node.type's template half is the manifest's templates[].id grammar."""
-        from utk_curio.backend.app.packages import spec_packages as sp
+        from utk_curio.backend.app.packages.domain import spec_packages as sp
 
         manifest_path = os.path.join(REPO_ROOT, "docs", "schemas", "node-package.v4.json")
         with open(manifest_path, encoding="utf-8") as fh:
@@ -873,7 +1156,7 @@ class TestNodeTypesResolve:
 
     @pytest.mark.parametrize("path", CORPUS, ids=CORPUS_IDS)
     def test_every_node_type_resolves_to_a_template(self, path: str):
-        from utk_curio.backend.app.packages.spec_packages import unversioned_node_type
+        from utk_curio.backend.app.packages.domain.spec_packages import unversioned_node_type
 
         unresolved = sorted(
             {
@@ -893,7 +1176,7 @@ class TestNodeTypesResolve:
         Asserted rather than assumed, so the trill schema does not have to guess
         which templates may omit content.
         """
-        from utk_curio.backend.app.packages.spec_packages import unversioned_node_type
+        from utk_curio.backend.app.packages.domain.spec_packages import unversioned_node_type
 
         wrong = []
         for path in CORPUS:
@@ -914,7 +1197,7 @@ class TestNodeTypesResolve:
         )
 
     def test_interaction_edges_touch_a_bidirectional_template(self):
-        from utk_curio.backend.app.packages.spec_packages import unversioned_node_type
+        from utk_curio.backend.app.packages.domain.spec_packages import unversioned_node_type
 
         offenders = []
         for path in CORPUS:

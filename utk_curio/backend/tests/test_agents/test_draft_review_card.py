@@ -12,13 +12,13 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.agents.services import (
+from utk_curio.backend.app.agents.application.proposals.cards import (
     _DRAFT_CARD_MAX_DEP_ROWS,
     _DRAFT_CARD_MAX_FILES,
     _DRAFT_CARD_MAX_FINDINGS,
     _draft_card_payload,
 )
-from utk_curio.backend.app.packages.build_models import (
+from utk_curio.backend.app.packages.builder.models import (
     PackageBuildResult,
     parse_build_request,
 )
@@ -174,9 +174,9 @@ class TestDraftCardOnTheMintedPart:
                                                 tmp_curio, monkeypatch):
         # The existing draft lane, re-driven: the PART (reload-safe render
         # source) and the mirror both carry the composed slice.
-        from utk_curio.backend.tests.test_agents.test_routes import (
+        from utk_curio.backend.tests._support.agent_routes import _auth as routes_auth
+        from utk_curio.backend.tests.test_agents.test_routes_proposals import (
             TestPackageBuilderTools,
-            _auth as routes_auth,
         )
 
         _, token = user_and_token
@@ -185,7 +185,7 @@ class TestDraftCardOnTheMintedPart:
                                                "packages": []}}, "outputs": [],
         }, headers=routes_auth(token))
         pid = resp.get_json()["id"]
-        from utk_curio.backend.app.packages import build_jobs
+        from utk_curio.backend.app.packages.builder import jobs as build_jobs
 
         build_jobs.reset_registry()
         helper = TestPackageBuilderTools()

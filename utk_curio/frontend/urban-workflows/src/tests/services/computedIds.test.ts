@@ -40,7 +40,7 @@ describe("segment extraction round-trips both id forms", () => {
   });
 
   test("non-computed inputs", () => {
-    expect(nodeSegmentFromComputedId("it.urbanlab.milan")).toBeNull();
+    expect(nodeSegmentFromComputedId("it.utk.milan")).toBeNull();
     expect(dataflowSegmentFromComputedId(null)).toBeNull();
     expect(nodeSegmentFromComputedId(undefined)).toBeNull();
   });

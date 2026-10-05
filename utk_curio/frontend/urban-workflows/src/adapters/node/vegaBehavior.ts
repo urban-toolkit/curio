@@ -1,102 +1,74 @@
-import { useEffect, useRef, useState } from 'react';
-import { useEdges } from 'reactflow';
 
 import { NodeBehaviorHook } from '../../registry/types';
 import { useVega } from '../../hook/useVega';
+import { useGrammarInputState } from '../../hook/useGrammarInputState';
+import { useStarterSpec } from '../../hook/useStarterSpec';
+import { useFlowContext } from '../../providers/FlowProvider';
 import { useToastContext } from '../../providers/ToastProvider';
-import { fetchPreviewData } from '../../services/api';
-import { hasIncomingEdge } from '../../utils/nodeEmptyState';
-import { defaultSpecText, isEmptySpecBuffer } from '../../utils/vegaDefaultSpec';
-import { activeGeometryName } from '../../utils/parsing';
+import { emptyRenderKind, renderOutcome, type RenderCounts } from '../../utils/renderOutcome';
+import { defaultSpecText } from '../../utils/vegaDefaultSpec';
+import { isEmptySpecBuffer } from '../../utils/starterSpec';
 import { toRows } from '../../utils/rowSource';
+import { resolveGeometryField } from '../../utils/geometryField';
+import { readGrammarInput, type GrammarInput } from '../../utils/grammarInput';
 
 export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   const { showToast } = useToastContext();
-  const edges = useEdges();
-  const connected = hasIncomingEdge(edges, data.nodeId);
+  const { connected, upstreamErrored } = useGrammarInputState(data.nodeId);
+  // A failed chart says so to the nodes it feeds, as a failed code node does.
+  const { markNodeErrored } = useFlowContext() as { markNodeErrored?: (nodeId: string) => void };
 
-  // A starter spec chosen from the arriving input's column types.
-  //
-  // Deliberately narrow: it fills only a buffer that is still empty, and only
-  // once per node per session. `useMonacoExternalValue` no-ops when the value
-  // is unchanged, so re-asserting it is safe for the cursor and undo stack, but
-  // that is not licence to re-assert it over something the user has typed.
-  const [generatedSpec, setGeneratedSpec] = useState<string | null>(null);
-  const hasAutoFilledRef = useRef(false);
+  // A starter spec chosen from the arriving input's column types, the way
+  // every grammar node fills an empty editor (hook/useStarterSpec).
+  const generatedSpec = useStarterSpec({
+    input: data.input,
+    buffer: nodeState.code,
+    written: data.defaultCode,
+    read: readVegaPreview,
+    choose: chooseVegaStarter,
+  });
 
-  const currentBuffer = data.defaultCode ?? nodeState.templateData.code;
-  const bufferIsEmpty = isEmptySpecBuffer(currentBuffer) && generatedSpec == null;
+  // dev/136: compiling is not drawing. A schema-valid spec over zero rows
+  // renders its axes and nothing else, and a spec whose encoded field is
+  // entirely null renders an empty panel — both used to land as `success`, so
+  // the node showed a green Done over a blank chart and every agent reading
+  // the journal was told the node was fine. The same judgement for a chart's
+  // first draw and for every redraw its new rows cause.
+  const reportDrawn = (counts: RenderCounts | undefined) => {
+    const outcome = renderOutcome(counts ?? {});
+    if (outcome.empty) {
+      nodeState.setOutput({
+        code: 'error', content: outcome.message, outputType: '',
+        // dev/136: the harness reads this rather than the prose — the
+        // cause rides the kind, because the fix differs per cause.
+        kind: emptyRenderKind(outcome.cause),
+      } as any);
+      showToast(outcome.message, 'error');
+      markNodeErrored?.(data.nodeId);
+      return;
+    }
+    nodeState.setOutput({ code: 'success', content: '', outputType: '' });
+  };
 
   const { handleCompileGrammar } = useVega({
     data,
     code: nodeState.code,
     connected,
-    hasSpec: !isEmptySpecBuffer(generatedSpec ?? currentBuffer),
+    upstreamErrored,
+    // What the editor holds now, typing included.
+    hasSpec: !isEmptySpecBuffer(nodeState.code) || generatedSpec !== undefined,
+    // A chart first drawn over zero rows said so; when its rows arrive and it
+    // draws them, that has to be said too.
+    onRedraw: reportDrawn,
   });
-
-  useEffect(() => {
-    if (hasAutoFilledRef.current) return;
-    if (!bufferIsEmpty) return;
-
-    const input = data.input;
-    // An edge alone carries no schema. `data.input` is set only once an
-    // upstream node has actually produced output (or a saved workflow replayed
-    // one), which is exactly when the column types become knowable.
-    if (input == null || input === '') return;
-
-    let cancelled = false;
-
-    const fill = async () => {
-      // Whatever arrives is parseOutput's envelope, `{ dataType, data, schema }`,
-      // with the column dtypes BESIDE `data`, not inside it. In the app an input
-      // is an artifact reference (`{ path, dataType }`, see normalizeFlowInput),
-      // so the envelope is the /get-preview response; only merge bundles and
-      // Data Pool layers arrive inline.
-      let envelope: any = input;
-      if (input.path) {
-        // /get-preview returns 100 rows, which is cheaper than /get and plenty
-        // for classifying columns.
-        envelope = await fetchPreviewData(input.path);
-      }
-      if (cancelled || envelope == null) return;
-      const payload: any = envelope.data;
-      if (payload == null) return;
-
-      const isGeo = (envelope.dataType ?? input.dataType) === 'geodataframe';
-      // The schema comes off the envelope. Reading it off the payload was a bug:
-      // a FeatureCollection carries none, so the classifier fell back to the
-      // feature properties, which never list the active geometry column, and a
-      // GeoDataFrame of string attributes came out as a bar of counts.
-      const schema = envelope.schema ?? payload.schema ?? input.schema ?? null;
-      const geometryName = isGeo ? activeGeometryName(payload) : null;
-      const rows = isGeo
-        ? (payload.features ?? []).map((f: any) => f?.properties ?? {})
-        : rowsFromColumns(payload);
-
-      const text = defaultSpecText(schema, rows, geometryName);
-      if (!cancelled && text) {
-        hasAutoFilledRef.current = true;
-        setGeneratedSpec(text);
-      }
-    };
-
-    fill().catch(() => {
-      // A default is a convenience. Failing to pick one leaves the editor
-      // empty, which is the honest state anyway.
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [data.input, bufferIsEmpty]);
 
   const applyGrammar = async (spec: string) => {
     try {
-      await handleCompileGrammar(spec);
-      nodeState.setOutput({ code: 'success', content: '', outputType: '' });
+      reportDrawn(await handleCompileGrammar(spec));
     } catch (error: any) {
       nodeState.setOutput({ code: 'error', content: error.message, outputType: '' });
       showToast(error.message, 'error');
+      markNodeErrored?.(data.nodeId);
     }
   };
 
@@ -108,13 +80,27 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     applyGrammar,
     outputIdOverride: 'vega' + data.nodeId,
     // Only ever offered for an empty buffer, so it cannot displace real work.
-    defaultValueOverride: generatedSpec ?? undefined,
+    defaultValueOverride: generatedSpec,
   };
 };
 
-/** Column-oriented dataframe payload -> row records, for classification. */
-function rowsFromColumns(payload: any): any[] {
-  // Fifth copy of the same flatten, now utils/rowSource. Eager: these rows go
-  // to vega-lite's `values`, which wants a real array.
-  return toRows({ data: payload });
+/** The input's 100-row preview: plenty for classifying columns, and cheaper than /get. */
+function readVegaPreview(input: unknown): Promise<GrammarInput> {
+  return readGrammarInput(input, { label: 'the 2D Plot (Vega-Lite)', preview: true, circles: true });
+}
+
+/** The Vega-Lite ladder over the input's first frame, its first input's (utils/vegaDefaultSpec). */
+function chooseVegaStarter(read: GrammarInput): string | null {
+  const frame = read.frames[0];
+  if (!frame) return null;
+  const geo = frame.dataType === 'geodataframe';
+  // A FeatureCollection's properties never list its active geometry column,
+  // which is why that column is named by the payload rather than found here.
+  const rows = geo
+    ? (frame.payload?.features ?? []).map((f: any) => f?.properties ?? {})
+    : toRows({ data: frame.payload });
+  // A DataFrame's geometry column is typed `str` or `object`, so it is found
+  // by value, as the Autark node finds it.
+  const geometryName = geo ? frame.geometryName : resolveGeometryField(rows, null).field;
+  return defaultSpecText(frame.schema, rows, geometryName);
 }

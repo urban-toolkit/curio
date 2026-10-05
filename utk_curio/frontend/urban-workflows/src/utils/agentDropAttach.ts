@@ -1,4 +1,4 @@
-import type { AgentDropTarget } from "./agentCatalogEvents";
+import type { AgentDropTarget } from "../services/agents";
 
 /**
  * Orchestrates a palette-agent drop → attach. A node target is validated by the

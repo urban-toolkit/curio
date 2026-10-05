@@ -45,7 +45,7 @@ export interface LineageCanvasNode {
       string,
       { id?: string; datasetId?: string; title?: string } | null | undefined
     > | null;
-    /** Node source, scanned for ``curio_dataset_path`` references (#205). */
+    /** Node source, scanned for ``curio_data_path`` references (#205). */
     code?: string;
     defaultCode?: string;
   } | null;
@@ -404,7 +404,7 @@ export interface UpstreamLineageParams {
  * A computed id is a pair of uuids (``computed.<dataflow>.<node>``), which is
  * unreadable in a card, so name it by its producing node the way the rest of
  * the lineage view names nodes. Anything else (a hub/imported id like
- * ``data.urbanlab.acs-neighborhood-profile``) reads fine as its last segment.
+ * ``data.utk.acs-neighborhood-profile``) reads fine as its last segment.
  */
 export function sourceDatasetLabel(datasetId: string): string {
   const nodeSeg = nodeSegmentFromComputedId(datasetId);

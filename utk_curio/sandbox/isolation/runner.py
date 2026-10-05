@@ -110,14 +110,14 @@ def _persist_output(descriptor, *, node_type, session_id, save_dataset):
 
 
 def _parse_outputs_refs(file_path):
-    """Return the list of refs a merge input names, or None if it names one.
+    """Return the list of refs a bundled input names, or None if it names one.
 
-    A merge output reaches a node in two shapes, both documented on
+    A bundle of several inputs reaches a node in two shapes, both documented on
     ``worker._expand_outputs_wrapper``:
 
     * **live** -- a list literal of ``{'path': id}`` dicts, which is what the
       ``eval`` here was written for.
-    * **reloaded** -- when the upstream merge output was persisted (a project
+    * **reloaded** -- when the upstream bundle was persisted (a project
       save, or the JS-node round trip through DuckDB), the node receives a
       single bare ref to it instead.
 
@@ -176,6 +176,12 @@ def execute_isolated(
     dataset_paths=None,
     user_key=None,
     config,
+    secrets=None,
+    collections=None,
+    media_dir=None,
+    models=None,
+    dataset_formats=None,
+    package_modules=None,
 ):
     """Run one node in an isolated child. Returns the standard response dict.
 
@@ -189,6 +195,11 @@ def execute_isolated(
     *user_key* also selects that user's node-library overlay (#332), which the
     child puts on ``sys.path``: a library one user installed is importable by
     their nodes and by nobody else's.
+
+    *package_modules* (``{"root", "names"}``, #468) are the modules the node's
+    package ships beside its templates. The package store is out of the
+    child's reach, so they are staged into the scratch directory, as models
+    are, and the child makes that folder importable for the run.
 
     *user_key* switches the child into that user's own work directory instead:
     persistent, writable, owned by the execution user, and the one place an
@@ -235,6 +246,10 @@ def execute_isolated(
         staged_datasets = staging.stage_dataset_paths(
             dataset_paths or {}, scratch_dir
         )
+        # A model is a folder: linked in whole, at its own relative paths.
+        staged_models = staging.stage_model_dirs(models or {}, scratch_dir)
+        # So are the package's modules, the in-process path's way too.
+        staged_modules = staging.stage_package_modules(package_modules, scratch_dir)
 
         request = protocol.build_exec_request(
             code=code,
@@ -245,9 +260,15 @@ def execute_isolated(
             work_dir=work_dir,
             overlay_dir=overlay_dir,
             dataset_paths=staged_datasets,
+            models=staged_models,
+            package_modules=staged_modules,
+            dataset_formats=dataset_formats,
+            collections=collections,
+            media_dir=media_dir,
             session_imports=_imports_for(session_id),
             limits=config.limits,
             wall_timeout=config.wall_timeout,
+            secrets=secrets,
         )
 
         client = supervisor.ZygoteClient(config.socket_path)
@@ -384,9 +405,13 @@ class IsolationConfig:
         wall_timeout = _int(
             "CURIO_EXEC_TIMEOUT", supervisor.DEFAULT_WALL_TIMEOUT_SECONDS
         )
-        # CPU time tracks the wall allowance: a node allowed 300s of wall time
-        # should not be killed at 60s of CPU, and vice versa.
-        limits["cpu_seconds"] = wall_timeout
+        # RLIMIT_CPU counts the CPU time of every thread, so a node busy on
+        # every CPU spends it that many times faster than wall time. The
+        # allowance is the wall allowance on every CPU: the wall clock is what
+        # stops a node, and this is a backstop behind it. Equal to the wall
+        # allowance, it killed example 10's Image Segmentation after 9 s of
+        # its 300 on the 64-CPU deploy host.
+        limits["cpu_seconds"] = wall_timeout * supervisor.usable_cpus()
 
         return cls(
             socket_path=env.get("CURIO_EXEC_SOCKET")

@@ -2,7 +2,7 @@
 
 Every other isolation test runs its children as **root**, and root ignores mode
 bits. ``test_isolation_linux.py`` builds its own workspace and drops privileges
-by hand; the ``test-gpu-isolated`` CI job boots ``CURIO_ISOLATION=fork`` with no
+by hand; the ``test-isolated`` CI job boots ``CURIO_ISOLATION=fork`` with no
 exec user at all, because setting one hardens ``.curio/data`` and the e2e
 harness writes its ground truth there from the host process. So the filesystem
 half of the boundary -- the part that only exists when the child is an
@@ -23,7 +23,7 @@ cannot reach from the other side of the fork.
 
 It is skipped unless ``CURIO_LIVE_SANDBOX_URL`` names a running sandbox, so it
 is inert during the ordinary unit run (``scripts/test.sh``, which collects this
-whole tree) and only does anything in the ``test-gpu-exec-user`` job.
+whole tree) and only does anything in the ``test-exec-user`` job.
 
 Note the deliberate asymmetry with the unit suites: nothing here reaches into
 the container's filesystem or reads a log. The only channel is the API a node
@@ -32,6 +32,7 @@ not under ``/exec`` is not a boundary.
 """
 
 import json
+import math
 import os
 import textwrap
 import urllib.error
@@ -257,6 +258,7 @@ DENIED = (
     (".curio/data", "the artifact store: every session's data"),
     (".curio/users", "every user's imported datasets, projects and packages"),
     ("datasets", "the shared Data Catalog's published files"),
+    (".curio/discovery", "the operator's source manifests: each names a folder or host the server reads"),
 )
 
 
@@ -355,9 +357,9 @@ def test_another_users_dataset_cannot_be_read_by_absolute_path():
 def test_the_deployment_secret_cannot_be_read():
     """``.env`` carries SECRET_KEY, which forges sessions. Unlike the paths
     above it is a plain file with no directory to hide behind, so it is
-    hardened by mode -- and unlike them it legitimately may not exist, since a
-    CI stack has no .env. Skip rather than pass in that case: a test that
-    silently proves nothing is worse than an absent one."""
+    hardened by mode. The workflow plants one, world-readable, before the
+    stack boots; a missing one fails, since a test that silently proves
+    nothing is worse than an absent one."""
     target = os.path.join(LAUNCH_DIR, ".env")
     result = run_node("""
         import os
@@ -373,6 +375,166 @@ def test_the_deployment_secret_cannot_be_read():
     """ % (target, target))
     assert_ran(result, "reading " + target)
     outcome = printed(result).strip()
-    if outcome == "absent":
-        pytest.skip("this stack has no .env, so there is nothing to deny")
+    assert outcome != "absent", (
+        "%s was not planted, so this proved nothing. The workflow's seeding "
+        "step creates it before the stack boots." % target
+    )
     assert outcome == "denied", "an isolated node could read " + target
+
+
+# ---------------------------------------------------------------------------
+# A collection's files, from the child's side
+# ---------------------------------------------------------------------------
+
+#: The committed example collection and the folder source its files are in.
+#: Both ship in the image, so nothing has to be seeded for these.
+EXAMPLE_COLLECTION = "data.curio.storage-orthos"
+
+
+def _collection_request(code):
+    """Execute *code* with the example collection resolved the way the backend
+    resolves it for ``/processPythonCode``: its index as a dataset path, its
+    folder as the collection's root, and this user's media directory."""
+    body = textwrap.indent(textwrap.dedent(code).strip("\n"), "    ")
+    return _request("/exec", {
+        "code": body + "\n",
+        "file_path": "",
+        "nodeType": NODE_TYPE,
+        "dataType": "",
+        "user_key": USER_KEY,
+        "save_dataset": False,
+        "dataset_paths": {
+            EXAMPLE_COLLECTION: LAUNCH_DIR
+            + "/datasets/" + EXAMPLE_COLLECTION + "@1/data/index.parquet",
+        },
+        "collections": {
+            EXAMPLE_COLLECTION: {
+                "kind": "rasters",
+                "root": LAUNCH_DIR + "/docs/examples/data/storage",
+            },
+        },
+        "media_dir": LAUNCH_DIR + "/.curio/exec-scratch/users/" + USER_KEY + "/media",
+    })
+
+
+def test_a_folder_collections_files_are_readable_by_the_exec_user():
+    """A folder source is read in place, by the child, as the execution user.
+
+    The index reaches the child staged like any dataset; the files do not, so
+    the folder itself has to be readable by ``curio-exec``. That is what the
+    backend's boot audit warns about for an operator's own folders.
+    """
+    result = assert_ran(_collection_request("""
+        import os
+        tiles = curio_load_collection("%s")
+        print(len(tiles))
+        print(sum(1 for p in tiles["path"] if p and os.access(p, os.R_OK)))
+    """ % EXAMPLE_COLLECTION), "reading the example collection")
+    total, readable = printed(result).splitlines()
+    assert int(total) > 0, "the example collection indexes no files"
+    assert readable == total, (
+        "%s of %s of the collection's files are readable as the execution user"
+        % (readable, total)
+    )
+
+
+def test_a_node_can_write_what_it_derives_from_a_collection():
+    """``curio_derived_file`` names a file in the user's media directory, under
+    the work tree the execution user owns, and the node can write it there."""
+    result = assert_ran(_collection_request("""
+        import os
+        tiles = curio_load_collection("%s")
+        row = curio_derived_file("%s", tiles["file_id"].iloc[0], 0, "txt", kind="video")
+        with open(row["path"], "w") as handle:
+            handle.write("derived")
+        print(open(row["path"]).read())
+        print(os.stat(row["path"]).st_uid == os.getuid())
+    """ % (EXAMPLE_COLLECTION, EXAMPLE_COLLECTION)), "writing a derived file")
+    content, owned = printed(result).splitlines()
+    assert content == "derived"
+    assert owned == "True", "the derived file is not owned by the execution user"
+
+
+# ---------------------------------------------------------------------------
+# Libraries that compile with numba
+# ---------------------------------------------------------------------------
+
+def test_a_library_numba_caches_imports_as_the_exec_user():
+    """pythermalcomfort, the library ``curio.weather`` brings for example 09,
+    compiles numba code with ``cache=True`` as it is imported. numba keeps that
+    code beside the library, else under HOME, and refuses the import when it
+    can write to neither; for this user both are the sandbox's."""
+    result = assert_ran(run_node("""
+        import pythermalcomfort.models
+        print("imported")
+    """), "importing pythermalcomfort")
+    assert printed(result).splitlines()[-1] == "imported"
+
+
+def test_utci_computes_as_the_exec_user():
+    """What example 09's UTCI node (``curio.weather/utci-compute``) does with
+    the library, in a run of its own: the import, then the call with
+    ``limit_inputs=False``. The NaN cell stands for the raster's nodata, which
+    the node turns into NaN before the call."""
+    result = assert_ran(run_node("""
+        import json
+        import numpy as np
+        from pythermalcomfort import models
+        mean_radiant = np.array([[40.0, 50.0], [60.0, np.nan]])
+        utci = models.utci(tdb=30.0, tr=mean_radiant, v=1.0, rh=50.0,
+                           units="SI", limit_inputs=False)
+        grid = np.asarray(getattr(utci, "utci", utci), dtype=float)
+        print(json.dumps(grid.tolist()))
+    """), "computing UTCI")
+    grid = json.loads(printed(result).splitlines()[-1])
+    assert [len(row) for row in grid] == [2, 2], grid
+    (warm, warmer), (warmest, nodata) = grid
+    assert math.isnan(nodata), "the nodata cell came back as %r" % (nodata,)
+    assert warm < warmer < warmest, "UTCI does not rise with radiant heat: %r" % (grid,)
+
+
+#: ``scout.raster-conversion@1``'s modules, in the image. The stack's
+#: ``--with-examples`` boot installs its libraries: a shipped test dataflow
+#: (``BuildingRasters.json``) declares it.
+RASTER_CONVERSION_SOURCES = LAUNCH_DIR + "/packages/scout.raster-conversion@1/sources"
+
+
+def test_scouts_rasterizer_runs_as_the_exec_user():
+    """The Rasterize Buildings node's code, as the execution user, at the
+    stack's own budget. Its libraries compile with numba when they are
+    imported and when the node first rasterizes, and numba caches some of that
+    code where it can write, which for this user is not site-packages or the
+    sandbox's home."""
+    body = textwrap.indent(textwrap.dedent("""
+        import geopandas as gpd
+        from shapely.geometry import box
+        from scout_raster_conversion.node_outputs import rasterize_buildings
+
+        buildings = gpd.GeoDataFrame(
+            {"height": [35.0, 110.0, 240.0, 420.0]},
+            geometry=[
+                box(-87.6335, 41.8838, -87.6328, 41.8843),
+                box(-87.6318, 41.8838, -87.6309, 41.8845),
+                box(-87.6335, 41.8822, -87.6326, 41.8829),
+                box(-87.6316, 41.8820, -87.6305, 41.8830),
+            ],
+            crs="EPSG:4326",
+        )
+        mosaic, tiles = rasterize_buildings(buildings, "height", 16, 550, curio_output_file)
+        print(mosaic.crs.to_epsg(), mosaic.width, mosaic.height)
+        print(",".join(f"{z}_{x}_{y}" for z, x, y in zip(tiles["zoom"], tiles["x"], tiles["y"])))
+        return mosaic, tiles
+    """).strip("\n"), "    ")
+    result = assert_ran(_request("/exec", {
+        "code": body + "\n",
+        "file_path": "",
+        "nodeType": "scout.raster-conversion/rasterize-buildings",
+        "dataType": "",
+        "user_key": USER_KEY,
+        "save_dataset": False,
+        "package_modules": {"root": RASTER_CONVERSION_SOURCES, "names": ["scout_raster_conversion"]},
+    }), "rasterizing buildings")
+    grid, names = printed(result).splitlines()[-2:]
+    assert grid == "3395 512 256", grid
+    assert names == "16_16814_24356,16_16815_24356", names
+    assert result["output"]["dataType"] == "outputs", result["output"]

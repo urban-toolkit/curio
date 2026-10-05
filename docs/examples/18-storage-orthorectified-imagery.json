@@ -1,0 +1,130 @@
+{
+  "dataflow": {
+    "categories": {"city": ["Chicago"], "complexity": ["Intermediate"]},
+    "name": "Storage: orthorectified imagery",
+    "description": "A folder of GeoTIFF tiles by year, indexed in place as one collection: footprints on a map, then one year's tiles joined into a mosaic.",
+    "task": "Map where each year's tiles fall, then join 2024's tiles into one raster and summarise its bands.",
+    "timestamp": 0,
+    "provenance_id": "storage-orthorectified-imagery",
+    "packages": [
+      "curio.media@1"
+    ],
+    "datasets": [
+      {
+        "datasetId": "data.curio.storage-orthos",
+        "dirName": "data.curio.storage-orthos@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-09-27T00:00:00Z"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "orthos-loader",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 215,
+        "content": "collection = curio_load_collection(\"data.curio.storage-orthos\")\n\nreturn collection\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the tile collection: one row per GeoTIFF, with its footprint.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "orthos-map",
+        "type": "curio.builtin/vis-vega",
+        "x": 645,
+        "y": 0,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Each tile's footprint, one panel per year it was flown.\",\n  \"facet\": {\n    \"column\": {\n      \"field\": \"year\",\n      \"type\": \"nominal\",\n      \"title\": \"Year\"\n    }\n  },\n  \"spec\": {\n    \"width\": 200,\n    \"height\": 200,\n    \"mark\": {\n      \"type\": \"geoshape\",\n      \"stroke\": \"white\",\n      \"strokeWidth\": 1\n    },\n    \"encoding\": {\n      \"color\": {\n        \"field\": \"year\",\n        \"type\": \"nominal\",\n        \"title\": \"Year\"\n      },\n      \"tooltip\": [\n        {\n          \"field\": \"tile\",\n          \"type\": \"nominal\"\n        },\n        {\n          \"field\": \"year\",\n          \"type\": \"nominal\"\n        },\n        {\n          \"field\": \"crs\",\n          \"type\": \"nominal\"\n        }\n      ]\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw each tile's footprint, coloured by year.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "orthos-2024",
+        "type": "curio.builtin/data-transformation",
+        "x": 645,
+        "y": 430,
+        "content": "tiles = arg\n\nreturn tiles[tiles[\"year\"] == 2024]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the tiles flown in 2024.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "orthos-mosaic",
+        "type": "curio.media/mosaic-rasters",
+        "x": 1290,
+        "y": 430,
+        "content": "\"\"\"Mosaic Rasters.\n\nInput: a raster collection's rows, as Data Loading's `curio_load_collection(...)`\nreturns them, usually filtered first to one year, one sensor or one area.\nOutput: one raster, a virtual mosaic (a GDAL VRT) of every tile, which any\nnode that takes a RASTER reads, the zonal-statistics nodes included. The\ntiles stay where they are: the mosaic points at them.\n\nEvery tile must share its CRS, resolution, band count, data type and no-data\nvalue, and be north-up. The node names the first difference it finds. Where\ntiles overlap, a tile's no-data pixels leave the tile below them showing.\n\"\"\"\n\nimport hashlib\nimport json\nimport math\nfrom xml.sax.saxutils import escape\n\nimport rasterio\n\nGDAL_TYPES = {\n    \"uint8\": \"Byte\", \"int8\": \"Int8\", \"uint16\": \"UInt16\", \"int16\": \"Int16\",\n    \"uint32\": \"UInt32\", \"int32\": \"Int32\", \"float32\": \"Float32\", \"float64\": \"Float64\",\n}\n\ntiles = arg\ntiles = tiles[tiles[\"kind\"] == \"raster\"]\nif tiles.empty:\n    raise ValueError(\"Mosaic Rasters needs a raster collection's rows\")\nmissing = tiles[tiles[\"path\"].isna()]\nif not missing.empty:\n    raise ValueError(\n        f\"{missing.iloc[0]['relpath']} is not on this machine yet; cache the collection's files first\"\n    )\n\nunplaced = tiles[tiles[\"transform\"].isna()] if \"transform\" in tiles.columns else tiles\nif not unplaced.empty:\n    first = unplaced.iloc[0]\n    reason = first.get(\"probe_error\") if isinstance(first.get(\"probe_error\"), str) else \"no georeferencing\"\n    raise ValueError(f\"{first['relpath']} cannot be placed on a map: {reason}\")\n\nfor column in (\"crs\", \"res\", \"bands\", \"dtype\", \"nodata\"):\n    if column not in tiles.columns:\n        continue\n    values = tiles[column].dropna().astype(str).unique()\n    if len(values) > 1:\n        raise ValueError(f\"these tiles differ in {column}: {', '.join(values[:4])}\")\n\ntransforms = [json.loads(t) for t in tiles[\"transform\"]]\nif any(abs(t[1]) > 1e-12 or abs(t[3]) > 1e-12 for t in transforms):\n    raise ValueError(\"a tile is rotated; only north-up tiles make a mosaic\")\nx_res, y_res = transforms[0][0], transforms[0][4]\nextents = []\nfor t, width, height in zip(transforms, tiles[\"width\"], tiles[\"height\"]):\n    x0, y0 = t[2], t[5]\n    extents.append((x0, y0 + int(height) * y_res, x0 + int(width) * x_res, y0))\nwest = min(e[0] for e in extents)\nsouth = min(e[1] for e in extents)\neast = max(e[2] for e in extents)\nnorth = max(e[3] for e in extents)\nsize_x = int(math.ceil((east - west) / x_res - 1e-9))\nsize_y = int(math.ceil((north - south) / -y_res - 1e-9))\n\nbands = int(tiles[\"bands\"].iloc[0])\ndtype = GDAL_TYPES.get(str(tiles[\"dtype\"].iloc[0]), \"Float64\")\ndeclared = tiles[\"nodata\"].dropna() if \"nodata\" in tiles.columns else []\nnodata = declared.iloc[0] if len(declared) else None\ncrs = str(tiles[\"crs\"].iloc[0])\n# With a no-data value, each tile is a ComplexSource whose no-data pixels are\n# see-through; a SimpleSource would copy them over its neighbour.\nsource = \"ComplexSource\" if nodata is not None else \"SimpleSource\"\n\nparts = [\n    f'<VRTDataset rasterXSize=\"{size_x}\" rasterYSize=\"{size_y}\">',\n    f\"  <SRS>{escape(crs)}</SRS>\",\n    f\"  <GeoTransform>{west}, {x_res}, 0, {north}, 0, {y_res}</GeoTransform>\",\n]\nfor band in range(1, bands + 1):\n    parts.append(f'  <VRTRasterBand dataType=\"{dtype}\" band=\"{band}\">')\n    if nodata is not None:\n        parts.append(f\"    <NoDataValue>{nodata}</NoDataValue>\")\n    for (x0, _s, _e, y0), path, width, height in zip(extents, tiles[\"path\"], tiles[\"width\"], tiles[\"height\"]):\n        x_off = int(round((x0 - west) / x_res))\n        y_off = int(round((north - y0) / -y_res))\n        parts += [\n            f\"    <{source}>\",\n            f'      <SourceFilename relativeToVRT=\"0\">{escape(str(path))}</SourceFilename>',\n            f\"      <SourceBand>{band}</SourceBand>\",\n            f'      <SrcRect xOff=\"0\" yOff=\"0\" xSize=\"{int(width)}\" ySize=\"{int(height)}\"/>',\n            f'      <DstRect xOff=\"{x_off}\" yOff=\"{y_off}\" xSize=\"{int(width)}\" ySize=\"{int(height)}\"/>',\n        ]\n        if nodata is not None:\n            parts.append(f\"      <NODATA>{nodata}</NODATA>\")\n        parts.append(f\"    </{source}>\")\n    parts.append(\"  </VRTRasterBand>\")\nparts.append(\"</VRTDataset>\")\n\nname = \"mosaic-\" + hashlib.sha1(\"\\n\".join(sorted(tiles[\"file_id\"])).encode()).hexdigest()[:16] + \".vrt\"\npath = curio_output_file(name)\nwith open(path, \"w\", encoding=\"utf-8\") as handle:\n    handle.write(\"\\n\".join(parts))\nreturn rasterio.open(path)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Join the kept tiles into one raster.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "orthos-bands",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1935,
+        "y": 430,
+        "content": "import pandas as pd\n\nmosaic = arg\npixels = mosaic.read()\n\nreturn pd.DataFrame({\n    \"band\": [f\"band {i + 1}\" for i in range(mosaic.count)],\n    \"mean\": [round(float(band.mean()), 2) for band in pixels],\n    \"width\": mosaic.width,\n    \"height\": mosaic.height,\n})\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Summarise the mosaic's bands.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "orthos-view",
+        "type": "curio.builtin/vis-simple",
+        "x": 2580,
+        "y": 430,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show the band summary.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-orthos-loaderout-orthos-mapin",
+        "source": "orthos-loader",
+        "target": "orthos-map"
+      },
+      {
+        "id": "reactflow__edge-orthos-loaderout-orthos-2024in",
+        "source": "orthos-loader",
+        "target": "orthos-2024"
+      },
+      {
+        "id": "reactflow__edge-orthos-2024out-orthos-mosaicin",
+        "source": "orthos-2024",
+        "target": "orthos-mosaic"
+      },
+      {
+        "id": "reactflow__edge-orthos-mosaicout-orthos-bandsin",
+        "source": "orthos-mosaic",
+        "target": "orthos-bands"
+      },
+      {
+        "id": "reactflow__edge-orthos-bandsout-orthos-viewin",
+        "source": "orthos-bands",
+        "target": "orthos-view"
+      }
+    ]
+  }
+}

@@ -4,6 +4,8 @@ import { Position, Edge } from 'reactflow';
 import React from 'react';
 import { INodeData, ICodeData } from '../types';
 import { IPropagation } from '../providers/FlowProvider';
+import type { SelectionEchoOptions } from '../utils/selectionEcho';
+import type { WidgetDef } from '../utils/widgets/widgetModel';
 
 /**
  * Identifier used as the dispatch key for a node kind.
@@ -11,7 +13,7 @@ import { IPropagation } from '../providers/FlowProvider';
  * - **Built-ins** keep using `NodeType` enum members (e.g. `NodeType.DATA_LOADING`)
  *   so existing call sites continue to type-check unchanged.
  * - **Package kinds** use a canonical string of the form `<packageId>/<templateId>@<major>`
- *   (e.g. `"ai.urbanlab.uhvi/uhvi-load@1"`). This is the string the frontend
+ *   (e.g. `"ai.utk.uhvi/uhvi-load@1"`). This is the string the frontend
  *   registry, saved Trill graphs, and `/processPythonCode` all dispatch on.
  *
  * See ``docs/NODE-CATALOG.md`` for the user-facing overview and
@@ -59,7 +61,8 @@ export interface NodePackageMeta {
 
 export interface PortDef {
   types: SupportedType[];
-  cardinality?: '0' | '1' | 'n' | '[0,1]' | '[1,n]' | '[1,2]' | '2';
+  /** `1`, `2`, `n`, `[1,n]`, `[0,1]`, `[1,2]` ... (node-package.v4.json). */
+  cardinality?: string;
 }
 
 export type EditorType = 'code' | 'widgets' | 'grammar' | 'none';
@@ -74,7 +77,7 @@ export interface HandleDef {
   type: 'source' | 'target';
   position: Position;
   style?: React.CSSProperties;
-  /** Compute handle style at render time (used by MergeFlow dynamic handles). */
+  /** Compute handle style at render time. */
   dynamicStyle?: (data: any, edges: Edge[]) => React.CSSProperties;
   /** Override default connectable logic per-handle. */
   isConnectableOverride?: (data: any, isConnectable: boolean, edges: Edge[]) => boolean;
@@ -115,7 +118,7 @@ export type UseNodeStateReturn = ReturnType<typeof import('../hook/useNodeState'
  */
 export interface NodeBehaviorData extends INodeData {
   /** FlowProvider callback — push this node's output to downstream nodes. */
-  outputCallback: (nodeId: string, output: any) => void;
+  outputCallback: (nodeId: string, output: any, options?: SelectionEchoOptions) => void;
   /** FlowProvider callback — propagate interaction resolution data. */
   propagationCallback: (propagation: IPropagation) => void;
   /** FlowProvider callback — push interactions to connected interaction nodes. */
@@ -148,15 +151,15 @@ export interface NodeBehaviorResult {
   showLoading?: boolean;
   /** Custom React subtree rendered inside the NodeEditor content area. */
   contentComponent?: React.ReactNode;
-  /** Replace `nodeState.setOutput` — used when output state is managed locally (DataPool, MergeFlow). */
+  /** Replace `nodeState.setOutput`, used when output state is managed locally (DataPool). */
   setOutputCallbackOverride?: any;
   outputOverride?: ICodeData;
-  /** Extra handles appended to `adapter.handles` at render time (MergeFlow dynamic inputs). */
+  /** Extra handles appended to `adapter.handles` at render time. */
   dynamicHandles?: HandleDef[];
   /**
    * Fully replaces `adapter.handles` at render time. Used by behaviors that
    * want exact control over handle ids / positions (e.g. multi-input nodes
-   * like Spatial Join or MergeFlow where the default `standardInOut()` "in"
+   * like Spatial Join where the default `standardInOut()` "in"
    * handle would leak through and render an unwanted gray circle at top:50%).
    * When set, both `adapter.handles` AND `dynamicHandles` are ignored.
    */
@@ -226,10 +229,11 @@ export interface NodeDescriptor {
   hasGrammar: boolean;
   hasProvenance?: boolean;
   adapter: NodeAdapter;
-  tutorialId?: string;
   /** dev/91: name of the declared package backend handler this template's
    * Run invokes through the sandbox route (absent = ordinary execution). */
   backendHandler?: string;
+  /** #662: the widgets a freshly dropped node of this template starts with. */
+  widgets?: WidgetDef[];
   /**
    * Origin of the descriptor. Omitted = `'core'` for backwards compatibility
    * with the built-in registrations in `registry/descriptors.ts`.

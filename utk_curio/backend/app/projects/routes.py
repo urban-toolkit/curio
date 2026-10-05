@@ -50,6 +50,19 @@ def create_project():
     return jsonify(asdict(detail)), 201
 
 
+def _optional_int(value):
+    """``None`` for anything that is not a whole number, so a malformed basis
+    is "no opinion" rather than a 400 — the guard's default is today's
+    behaviour, and refusing the request would be a worse answer than not
+    checking it."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # PUT /api/projects/:id - update
 # ---------------------------------------------------------------------------
@@ -70,6 +83,13 @@ def update_project(project_id: str):
             name=body.get("name"),
             description=body.get("description"),
             thumbnail_accent=body.get("thumbnail_accent"),
+            # dev/124: the counter this client last synced with. Accepted in
+            # either spelling because the wire is camelCase and the dataclass
+            # is not; absent means unchecked.
+            base_revision=_optional_int(
+                body.get("baseRevision", body.get("base_revision"))
+            ),
+            categories=body.get("categories"),
         )
     except (ValueError, TypeError) as exc:
         return _error(str(exc))
@@ -140,6 +160,56 @@ def get_shared_project(project_id: str):
         "spec": result["spec"],
         "outputs": result["outputs"],
     }), 200
+
+
+# ---------------------------------------------------------------------------
+# GET /api/projects/:id/dashboard - everything a standalone dashboard carries
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/dashboard", methods=["GET"])
+def get_dashboard_payload(project_id: str):
+    """The spec and the rows for one dashboard, in a single response.
+
+    Unauthenticated for the same reason ``/shared`` is: a dashboard is opened by
+    whoever holds the link, and this serves exactly what that page would have
+    fetched piecemeal anyway.
+
+    A dashboard whose rows will not fit in a page is a 413 carrying the
+    breakdown, not a truncated payload. Falling back to fetching would produce a
+    page that looks standalone and is not, and the owner would only find out
+    when somebody opened it where the server is unreachable.
+    """
+    from utk_curio.backend.app.projects.dashboard_payload import (
+        DashboardCannotBeStandaloneError,
+        DashboardTooLargeError,
+    )
+
+    try:
+        payload = services.build_standalone_dashboard(project_id)
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except DashboardCannotBeStandaloneError as exc:
+        # A tile that loads its own data cannot be published as a page that
+        # needs no server. Named here so the owner can move the data upstream,
+        # where its output is saved and travels with the page.
+        return jsonify({"error": exc.describe(), "tiles": exc.offenders}), 409
+    except DashboardTooLargeError as exc:
+        return jsonify({
+            "error": exc.describe(),
+            "totalBytes": exc.total_bytes,
+            "limitBytes": exc.limit_bytes,
+            "heaviest": [
+                {
+                    "nodeId": w.node_id,
+                    "bytes": w.bytes,
+                    "dataType": w.data_type,
+                }
+                for w in exc.weights[:10]
+            ],
+        }), 413
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+
+    return jsonify(payload), 200
 
 
 # ---------------------------------------------------------------------------

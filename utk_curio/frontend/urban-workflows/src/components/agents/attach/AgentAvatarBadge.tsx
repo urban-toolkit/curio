@@ -1,12 +1,11 @@
 import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
-import type { AgentAttachment } from "../../../api/agentsApi";
+import { attachmentDisplayName, type AgentAttachment } from "../../../services/agents";
 import {
   agentCategoryIcon,
   agentCategoryKey,
 } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
-import { attachmentDisplayName } from "./attachmentDisplayName";
 import styles from "./AgentAvatarBadge.module.css";
 
 /**
@@ -39,6 +38,15 @@ export const AgentAvatarBadge: React.FC<{
             attached to one canvas, and on the canvas the badge is all there
             is to tell them apart. */}
         <FontAwesomeIcon icon={agentCategoryIcon(attachment.category)} className={styles.icon} />
+        {attachment.liveJob?.status === "running" ? (
+          // dev/115 (docs/11:178): the dock's running dot — this agent's Solve
+          // is running in the background; opening the chat re-attaches.
+          <span
+            className={styles.runningDot}
+            role="img"
+            aria-label={`${displayName} is solving in the background`}
+          />
+        ) : null}
       </button>
       <button
         type="button"

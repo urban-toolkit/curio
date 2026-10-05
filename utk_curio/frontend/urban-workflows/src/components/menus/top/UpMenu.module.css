@@ -1,174 +1,32 @@
-.logo {
-  margin-right: 15px;
-  margin-left: 15px;
-  max-height: 100%;
-  width: auto;
-  cursor: pointer;
-  /* filter: brightness(0) invert(1); */
-}
+/* What the canvas adds to the shared top bar (GlobalPageHeader.module.css):
+   pinning it over the canvas, the save state, the catalogs, and the dataflow
+   title that sits under it. */
 
-.menuBar {
+/* The canvas is a full-window surface, so the bar floats over its top edge
+   instead of taking a row of the layout the way it does on a section page. */
+.canvasHeader {
   position: fixed;
-  width: 100%;
   top: 0;
-  display: flex;
-  align-items: center;
-  background-color: #1E1F23;
-  height: 65px;
-  padding: 10px 20px 10px 10px;
-  font-family: var(--curio-font-family);
-  z-index: 100;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.button {
-  margin: 0 10px;
-  padding: 6px 10px;
-  cursor: pointer;
-  font-weight: bold;
-  background-color: transparent;
-  color: #fbfcf6;
-  border: none;
-  /* border-bottom: 3px solid #fbfcf6; */
-  border-radius: 4px;
-  /* The dashboard bar wears this on a react-router <Link>, so the browser's
-     default anchor underline has to be turned off here rather than in one
-     caller. Harmless on the <button> elements the dataflow bar uses it for. */
-  text-decoration: none;
-}
-
-/* Must appear after .button so it wins the cascade when both classes are present */
-.aiIconActive {
-  color: #5cb85c;
-}
-
-.dropDownMenu {
-  position: absolute;
-  top: calc(100% + 20px);
-  left: 10px;
-  background-color: #1E1F23;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-  z-index: 100;
-  width: 200px;
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  border-radius: 0;
-}
-
-.dropDownRow {
+  left: 0;
   width: 100%;
-  border: none;
-  background-color: #1E1F23;
-  padding: 5px;
-  border-radius: 0;
-  display: flex;
-  flex-direction: row;
-  cursor: pointer;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  padding-left: 12px;
+  z-index: 100;
+  /* The view switch takes about 60px of the slot; the bar's buttons give it
+     back by 3px a side, so the catalogs keep their labels as long as before. */
+  --curio-bar-button-padding-x: 7px;
 }
 
-.dropDownRow button {
-  padding: 0;
-}
-
-.dropDownRow:hover {
-  background-color: rgb(251, 170, 105);
-}
-
-.dropDownRowActive {
-  background-color: #2B2C31;
-}
-
-.dropDownDivider {
-  height: 1px;
-  background-color: #2F3036;
-  margin: 0;
-}
-
-.dropDownIcon {
-  color: white;
-}
-
-.noStyleButton {
-  background: none;
-  border: none;
-  color: white;
-  /* "Open dashboard" is a real anchor so it can open a tab, and an anchor
-     arrives underlined. */
-  text-decoration: none;
-}
-
-.workflowNameContainer {
-  margin-top: 20px;
-  text-align: center;
-  z-index: 80;
-  top: 60px;
-  left: 50px;
-  position: fixed;
-}
-
-.workflowNameStyle {
-  font-size: 24px;
-  cursor: pointer;
-}
-
-.input {
-  font-size: 24px;
-  text-align: center;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  padding: 5px;
-}
-
-.subMenu {
-  background-color: #2A2B30;
-  border: 1px solid rgba(0, 0, 0, 0.3);
-  max-height: 240px;
-  overflow-y: auto;
-}
-
-.subMenuItem {
-  padding: 6px 16px;
-  color: white;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.subMenuItem:hover {
-  background-color: rgb(251, 170, 105);
-}
-
-.dropdownWrapper {
-  position: relative;
-}
-
-.rightSide {
-  display: flex;
-  position: absolute;
-  right: 90px;
-  top: 12px;
-  z-index: 200;
-}
+/* ── Save state ──────────────────────────────────────────────────────────── */
 
 .saveStatus {
-  cursor: default;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding-top: 8px;
+  font-size: var(--curio-font-size-sm);
 }
 
 .unsavedIcon {
-  color: rgb(251, 170, 105);
+  color: var(--curio-top-bar-unsaved);
 }
 
 .savedIcon {
-  color: #5cb85c;
+  color: var(--curio-top-bar-saved);
 }
 
 @keyframes pulse {
@@ -178,4 +36,109 @@
 
 .savingPulse {
   animation: pulse 1s ease-in-out infinite;
+}
+
+/* ── Catalogs ────────────────────────────────────────────────────────────── */
+
+.catalogs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.catalogIcon {
+  font-size: 13px;
+}
+
+/* The labels go first when the bar runs short, and the icons stay with their
+   tooltips. Queried against the header's slot rather than the window: the
+   account's name is as long as the user's, so the room left over is not a
+   function of the window width alone. The slot's controls need about 790px
+   with every catalog label showing and the view switch as icons, and about
+   40px more with the collaboration button. */
+@container (max-width: 800px) {
+  .catalogLabel {
+    display: none;
+  }
+}
+
+@container (max-width: 860px) {
+  .catalogsCrowded .catalogLabel {
+    display: none;
+  }
+}
+
+/* ── The view switch ─────────────────────────────────────────────────────── */
+
+/* At the slot's end, against Monitor: the auto margin takes whatever room the
+   slot has left, and the bar's own gap separates it from Monitor. */
+.canvasHeader .viewSwitch {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+/* ── Collaboration ───────────────────────────────────────────────────────── */
+
+.peerCount {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* ── The dataflow's title, under the bar ─────────────────────────────────── */
+
+.workflowNameContainer {
+  margin-top: 15px;
+  text-align: center;
+  z-index: 80;
+  top: var(--curio-top-bar-height);
+  left: 50px;
+  position: fixed;
+}
+
+/* The catalog pages' page title (CatalogBrowseLayout.module.css `.titleRow h1`). */
+.workflowNameStyle {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--curio-text-primary);
+  cursor: pointer;
+}
+
+/* The category chips hang under the title without widening its container,
+   so the title stays exactly where it was. */
+.workflowCategories {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: -6px;
+  width: max-content;
+  max-width: 60vw;
+  text-align: left;
+}
+
+.input {
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-sm);
+  padding: 5px;
+}
+
+/* ── Read-only notice for a shared dataflow ──────────────────────────────── */
+
+.sharedBanner {
+  position: absolute;
+  top: calc(var(--curio-top-bar-height) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #FFF4D6;
+  color: #7A5A00;
+  border: 1px solid #E6CD7A;
+  border-radius: var(--curio-radius-md);
+  padding: 6px 14px;
+  font-size: var(--curio-font-size-sm);
+  font-weight: 500;
+  z-index: 1000;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }

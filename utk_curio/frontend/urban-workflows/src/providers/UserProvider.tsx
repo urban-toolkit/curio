@@ -1,7 +1,5 @@
 import React, {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useState,
 } from "react";
@@ -9,76 +7,32 @@ import {
   authApi,
   clearToken,
   getToken,
+  isUnauthorized,
   setToken,
   UserData,
 } from "../utils/authApi";
 import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
+import { UserContext } from "./userContext";
 import { Loading } from "../components/login/Loading";
 import { isShareLinkPath } from "../utils/shareLinks";
+import { isStandaloneDashboard } from "../standalone/dashboardPayload";
 
-interface UserProviderProps {
-  user: UserData | null;
-  loading: boolean;
-  isAuthenticated: boolean;
-  enableUserAuth: boolean;
-  skipProjectPage: boolean;
-  allowGuest: boolean;
-  sharedGuestUsername: string;
-  /**
-   * Is the session browsing as the ONE account every guest sign-in resolves to?
-   *
-   * Not the same question as ``user.is_guest``. The shared guest is a single
-   * ``User`` row that every anonymous visitor shares, so anything scoped to
-   * "this account" -- its dataset store, and the ``publisher`` recorded when it
-   * publishes -- is really scoped to "all guests at once". Surfaces that offer
-   * to write shared state use this to withhold the control; the server refuses
-   * the request regardless (#222).
-   */
-  isSharedGuest: boolean;
-  signup: (data: {
-    name: string;
-    username: string;
-    password: string;
-    email?: string;
-  }) => Promise<UserData | null>;
-  signin: (identifier: string, password: string) => Promise<UserData | null>;
-  signinGuest: () => Promise<UserData | null>;
-  signout: () => Promise<void>;
-  updateProfile: (data: {
-    name?: string;
-    email?: string;
-    type?: string;
-  }) => Promise<void>;
-  updateLlmConfig: (config: {
-    apiType?: string;
-    baseUrl?: string;
-    apiKey?: string;
-    model?: string;
-    huggingfaceToken?: string;
-    socrataAppToken?: string;
-  }) => Promise<void>;
-  saveUserType: (newType: "programmer" | "expert") => Promise<void>;
-  logout: () => void;
-}
-
-export const UserContext = createContext<UserProviderProps>({
-  user: null,
-  loading: false,
-  isAuthenticated: false,
-  enableUserAuth: true,
-  skipProjectPage: false,
-  allowGuest: false,
-  sharedGuestUsername: "guest_shared",
-  isSharedGuest: false,
-  signup: async () => null,
-  signin: async () => null,
-  signinGuest: async () => null,
-  signout: async () => {},
-  updateProfile: async () => {},
-  updateLlmConfig: async () => {},
-  saveUserType: async () => {},
-  logout: () => {},
-});
+/**
+ * Who is looking at a page that was served complete.
+ *
+ * Not a real account and never sent anywhere: it exists so `RequireAuth` lets
+ * the page render, and so everything downstream treats the viewer as the guest
+ * they are, which is what makes the dashboard read-only.
+ */
+const STANDALONE_VIEWER: UserData = {
+  id: 0,
+  username: "guest_shared",
+  name: "Viewer",
+  email: null,
+  profile_image: null,
+  type: null,
+  is_guest: true,
+};
 
 const UserProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<UserData | null>(null);
@@ -112,6 +66,25 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
     const bootstrap = async () => {
       setLoading(true);
       try {
+        // A standalone dashboard is a document, not a session. There is nobody
+        // to sign in, no token to carry, and nothing a server could tell us
+        // that the page is not already holding.
+        //
+        // It still needs a user, because `RequireAuth` shows a sign-in form to
+        // anyone without one, and a page served complete must never ask a
+        // viewer to log in to read it. So it gets the viewer it actually is: a
+        // guest with no account, which is also what puts the page in its
+        // read-only presentation.
+        if (isStandaloneDashboard()) {
+          if (!cancelled) {
+            setEnableUserAuth(false);
+            setSkipProjectPage(false);
+            setAllowGuest(true);
+            setUser(STANDALONE_VIEWER);
+          }
+          return;
+        }
+
         const cfg = await authApi.getPublicConfig().catch(() => {
           console.error(
             "[Curio] Could not reach backend at /api/config/public. " +
@@ -140,21 +113,25 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (!authEnabled) {
           if (token) {
+            let current: UserData | null = null;
+            let refused = false;
             try {
-              const current = await authApi.getMe();
-              if (
-                !cancelled &&
-                current.is_guest &&
-                current.username === sharedGuestUsername
-              ) {
-                applyUser(current);
-                return;
-              }
-            } catch {
-              // fall through to shared auto guest bootstrap
+              current = await authApi.getMe();
+            } catch (e) {
+              refused = isUnauthorized(e);
             }
-            clearToken();
-            if (!cancelled) setUser(null);
+            // A check that ends after the provider unmounted leaves the token
+            // alone: the provider that replaced this one does its own.
+            if (cancelled) return;
+            if (current?.is_guest && current.username === sharedGuestUsername) {
+              applyUser(current);
+              return;
+            }
+            // Drop a token the server refused or one for another account. A
+            // check that failed any other way says nothing about the token,
+            // and the guest session below replaces it once it is issued.
+            if (refused || current) clearToken();
+            setUser(null);
           }
 
           const res = await authApi.signinAutoGuest();
@@ -186,8 +163,11 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
           if (!cancelled) {
             applyUser(current);
           }
-        } catch {
-          clearToken();
+        } catch (e) {
+          // Only a 401 ends the session. A check that was aborted (the page
+          // navigating away), could not connect or met a server error says
+          // nothing about it, so the token stays for the next load.
+          if (isUnauthorized(e)) clearToken();
           if (!cancelled) setUser(null);
         }
       } finally {
@@ -261,23 +241,9 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
     []
   );
 
-  const updateLlmConfig = useCallback(
-    async (config: {
-      apiType?: string;
-      baseUrl?: string;
-      apiKey?: string;
-      model?: string;
-      huggingfaceToken?: string;
-      socrataAppToken?: string;
-    }) => {
-      const updated = await authApi.patchMe({
-        llm_api_type: config.apiType,
-        llm_base_url: config.baseUrl,
-        llm_api_key: config.apiKey,
-        llm_model: config.model,
-        huggingface_token: config.huggingfaceToken,
-        socrata_app_token: config.socrataAppToken,
-      });
+  const updateTokens = useCallback(
+    async (fields: Record<string, string>) => {
+      const updated = await authApi.patchMe(fields);
       setUser(updated);
     },
     []
@@ -308,7 +274,7 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
         signinGuest,
         signout,
         updateProfile,
-        updateLlmConfig,
+        updateTokens,
         saveUserType,
         logout: signout,
       }}
@@ -318,12 +284,6 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-export const useUserContext = () => {
-  const context = useContext(UserContext);
-  if (!context) {
-    throw new Error("useUserContext must be used within a UserProvider");
-  }
-  return context;
-};
+export { UserContext, useUserContext } from "./userContext";
 
 export default UserProvider;

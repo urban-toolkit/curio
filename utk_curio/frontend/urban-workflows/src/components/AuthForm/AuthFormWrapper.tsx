@@ -31,13 +31,13 @@ export const AuthFormWrapper: React.FC<Props> = ({ children }) => {
     <div style={outerStyle}>
       <div style={leftPanelStyle}>
         <div style={centerContentStyle}>
-          <a href="https://urbantk.org/curio" target="_blank" rel="noreferrer" style={{ display: "block", textAlign: "center" }}>
+          <a href="https://curio.urbantk.org" target="_blank" rel="noreferrer" style={{ display: "block", textAlign: "center" }}>
             <img src={curioLogoWhite} alt="Curio" style={logoStyle} />
           </a>
           <div style={taglineGroupStyle}>
             <p style={taglineStyle}>Visual dataflows for urban data</p>
-            <a href="https://urbantk.org/curio" target="_blank" rel="noreferrer" style={urlStyle}>
-              urbantk.org/curio
+            <a href="https://curio.urbantk.org" target="_blank" rel="noreferrer" style={urlStyle}>
+              curio.urbantk.org
             </a>
           </div>
           <div style={siblingRowStyle}>

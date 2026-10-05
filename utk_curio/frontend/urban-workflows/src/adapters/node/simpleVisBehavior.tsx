@@ -15,6 +15,7 @@ import ContentTable from './components/ContentTable';
 import { CopyButton } from '../../components/CopyButton';
 import ImageCardGrid from './components/ImageCardGrid';
 import { toRows } from '../../utils/rowSource';
+import { unwrapValueEnvelopes } from '../../utils/sandboxEnvelope';
 
 function buildTableRows(parsedOutput: ICodeDataContent): any[] {
   // Was a fourth copy of the same column-major flatten; see utils/rowSource.
@@ -27,7 +28,9 @@ type SimpleVisMode = 'table' | 'image' | 'text';
 export const ALL_IMAGE_COLUMNS = 'all';
 
 function toDisplayString(input: any): string {
-  const value = input?.data !== undefined ? input.data : input;
+  // The payload's own envelope, whatever its type, then the ones the sandbox
+  // puts around each element of a list (#516).
+  const value = unwrapValueEnvelopes(input?.data !== undefined ? input.data : input);
   try {
     return JSON.stringify(value, null, 2);
   } catch {
@@ -80,7 +83,7 @@ function deriveView(parsedInput: any): {
 
 export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   // Which of the empty states this is depends on whether anything is wired in,
-  // which only the graph knows. Same read as mergeFlowBehavior.
+  // which only the graph knows.
   const edges = useEdges();
   const connected = hasIncomingEdge(edges, data.nodeId);
   // Lazy init: if input is already present on mount (e.g. in tests) seed the
@@ -112,7 +115,6 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
       if (data.input == null || data.input === '') return;
 
       const startTime = formatDate(new Date());
-      const execId = NodeType.VIS_SIMPLE + '-' + data.nodeId;
       const typesInput = data.input.dataType ? [data.input.dataType] : [];
 
       let parsedInput = data.input;
@@ -125,7 +127,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
         }
       }
 
-      nodeExecProv(startTime, startTime, workflowNameRef.current, execId, mapTypes(typesInput), mapTypes(typesInput), '');
+      nodeExecProv(startTime, startTime, workflowNameRef.current, data.nodeId, mapTypes(typesInput), mapTypes(typesInput), '');
 
       const view = deriveView(parsedInput);
       setCurrentMode(view.mode);
@@ -133,10 +135,12 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
       setImageColumns(view.imageColumns);
       setTextContent(view.textContent);
 
-      nodeState.setOutput({ code: 'success', content: parsedInput });
+      // Downstream first, then the outcome: the outcome is what tells a Run All
+      // this node is done, and the nodes it feeds must have the rows by then.
       if (typeof data.outputCallback === 'function') {
         data.outputCallback(data.nodeId, data.input);
       }
+      nodeState.setOutput({ code: 'success', content: parsedInput });
     };
 
     handleInput();

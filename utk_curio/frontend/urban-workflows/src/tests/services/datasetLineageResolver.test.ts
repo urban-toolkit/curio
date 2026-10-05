@@ -277,7 +277,7 @@ describe("producerNodeIdForDataset", () => {
 
   it("returns null for a non-computed dataset", () => {
     expect(
-      producerNodeIdForDataset({ id: "it.urbanlab.example", dirName: null, producerNodeId: null }),
+      producerNodeIdForDataset({ id: "it.utk.example", dirName: null, producerNodeId: null }),
     ).toBeNull();
   });
 
@@ -403,7 +403,7 @@ describe("selectDatasetUpstreamLineage", () => {
 
   it("does not invent a producer for a non-computed imported dataset", () => {
     const upstream = selectDatasetUpstreamLineage({
-      dataset: catalogItem({ id: "it.urbanlab.example", origin: "imported", producerNodeId: null }),
+      dataset: catalogItem({ id: "it.utk.example", origin: "imported", producerNodeId: null }),
       nodes: [],
     });
     expect(upstream.generatingNode).toBeNull();
@@ -494,13 +494,13 @@ describe("selectDatasetUpstreamLineage", () => {
     const upstream = selectDatasetUpstreamLineage({
       dataset: catalogItem({
         origin: "computed",
-        upstreamInputs: [{ datasetId: "data.urbanlab.acs-neighborhood-profile" }],
+        upstreamInputs: [{ datasetId: "data.utk.acs-neighborhood-profile" }],
       }),
       nodes: [],
     });
     expect(upstream.sourceDatasets).toEqual([
       {
-        datasetId: "data.urbanlab.acs-neighborhood-profile",
+        datasetId: "data.utk.acs-neighborhood-profile",
         title: "acs-neighborhood-profile",
       },
     ]);

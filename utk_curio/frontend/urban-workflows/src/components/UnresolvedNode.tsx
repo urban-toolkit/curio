@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { Handle, Position, useEdges } from "reactflow";
 
-import { useNodeCatalogDrawer } from "../providers/NodeCatalogDrawerProvider";
+import { useNodeCatalogDrawer } from "../providers/packages/NodeCatalogDrawerProvider";
 
 /**
  * What a node renders when the registry has no descriptor for its type.

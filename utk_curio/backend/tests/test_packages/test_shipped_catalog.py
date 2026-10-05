@@ -11,16 +11,17 @@ here is a package that silently vanishes from every user's Browse tab.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import re
+from pathlib import Path, PurePosixPath
 
 import pytest
 
-from utk_curio.backend.app.packages.manifest import load_packageage_manifest
-from utk_curio.backend.app.packages.resolver import merge_python_deps
-from utk_curio.backend.app.packages.routes import _manifest_to_payload
+from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+from utk_curio.backend.app.packages.domain.versions import merge_python_deps
+from utk_curio.backend.app.packages.schemas.responses import package_payload
 
 # The COMMITTED catalog, named directly rather than through
-# ``_catalog_root()``: these assertions are about what the repository ships,
+# ``catalog_root()``: these assertions are about what the repository ships,
 # and the runtime root is relocatable (``CURIO_PACKAGES_ROOT``) so a test
 # session gets its own copy to publish into.
 REAL_CATALOG = Path(__file__).resolve().parents[4] / "packages"
@@ -37,12 +38,12 @@ def test_the_catalog_is_not_empty():
 
 @pytest.mark.parametrize("package_root", PACKAGE_DIRS, ids=IDS)
 def test_manifest_loads(package_root: Path):
-    assert load_packageage_manifest(package_root) is not None
+    assert load_package_manifest(package_root) is not None
 
 
 @pytest.mark.parametrize("package_root", PACKAGE_DIRS, ids=IDS)
 def test_manifest_serializes_to_a_catalog_payload(package_root: Path):
-    payload = _manifest_to_payload(load_packageage_manifest(package_root))
+    payload = package_payload(load_package_manifest(package_root))
     assert payload["dirName"] == package_root.name
     assert payload["templates"], "a package with no templates adds nothing to the palette"
 
@@ -84,7 +85,7 @@ def test_declared_sources_and_behavior_bundle_exist(package_root: Path):
 # *uninstallable* - and the install dialog's only advice ("uninstall one of the
 # conflicting packages") cannot be followed.
 #
-# ``ai.urbanlab.uhvi@1`` shipped that way: ``geopandas ^0.14`` against builtin's
+# ``ai.utk.uhvi@1`` shipped that way: ``geopandas ^0.14`` against builtin's
 # ``>=1.1.3``. Generalized here so the next package with a stray upper bound
 # fails in CI instead of in a user's install dialog.
 
@@ -143,7 +144,7 @@ def test_sources_do_not_read_the_examples_data_directory(package_root: Path):
     ``docs/examples/data/...`` works on a repo checkout and silently breaks in
     every pip install and every isolated sandbox. ``curio.weather@1``'s three
     loader templates did exactly that until the Data Catalog migration; they now
-    resolve their inputs with ``curio_dataset_path("<id>")``.
+    resolve their inputs with ``curio_data_path("<id>")``.
 
     This is the check that catches migrating an example's nodes but forgetting
     the package whose templates those nodes were copied from.
@@ -154,5 +155,43 @@ def test_sources_do_not_read_the_examples_data_directory(package_root: Path):
             offenders.append(source.name)
     assert not offenders, (
         f"{package_root.name}: {offenders} read from docs/examples/data; "
-        f'resolve the file through curio_dataset_path("<id>") instead'
+        f'resolve the file through curio_data_path("<id>") instead'
     )
+
+
+# ---------------------------------------------------------------------------
+# ai.utk.uhvi@1 loader defaults (#585)
+# ---------------------------------------------------------------------------
+
+UHVI_DIR = CATALOG / "ai.utk.uhvi@1"
+
+
+def _input_text_default(source: Path) -> str:
+    """The default of the one text widget *source* references (#662).
+
+    The default lives in the manifest's template ``widgets``; *source* names
+    the widget with one ``[!! name !!]`` reference.
+    """
+    manifest = json.loads((source.parent.parent / "manifest.json").read_text(encoding="utf-8"))
+    rel = f"sources/{source.name}"
+    (template,) = [t for t in manifest["templates"] if t.get("source") == rel]
+    (widget,) = [w for w in template.get("widgets", []) if w.get("type") == "text"]
+    refs = re.findall(r"\[!!\s*(\w+)\s*!!\]", source.read_text(encoding="utf-8"))
+    assert refs == [widget["name"]], (source.name, refs)
+    return widget["default"]
+
+
+def test_uhvi_loader_defaults_share_one_folder_and_match_the_readme():
+    """The raster and zones loaders default to the Milan files the README names.
+
+    The README puts both files under ``./milan/``. The zones loader followed it
+    and the raster loader did not, so a workspace laid out as the README says
+    left the raster loader pointing at a file that is not there.
+    """
+    raster = _input_text_default(UHVI_DIR / "sources" / "uhvi-load.py")
+    zones = _input_text_default(UHVI_DIR / "sources" / "uhvi-zones.py")
+    assert PurePosixPath(raster).parent == PurePosixPath(zones).parent, (raster, zones)
+
+    readme = (UHVI_DIR / "README.md").read_text(encoding="utf-8")
+    for default in (raster, zones):
+        assert f"`{default}`" in readme, f"README.md does not give the loader default {default}"

@@ -6,6 +6,12 @@ import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { registerRunNodeAction } from "./runNodeMonacoAction";
 import { describeError } from "../../adapters/node/autkRunSettlement";
+import { ReferenceStrip } from "./widgets/WidgetTag";
+import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
+import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
+
+const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [], shared: [] };
+const NO_INPUTS: InputScope[] = [];
 
 type GrammarEditorProps = {
     output: ICodeData;
@@ -20,6 +26,13 @@ type GrammarEditorProps = {
     readOnly: boolean;
     /** Lets a rejected applyGrammar become an error output, so the run ends (#271). */
     setOutputCallback?: (output: { code: string; content: string }) => void;
+    /** #662: what the node's references name: its widgets and its inputs. */
+    references?: ReferenceScope;
+    /** The inputs whose tags sit above the editor, with the widgets'. */
+    stripInputs?: InputScope[];
+    /** Read an input's columns for its tags. */
+    onLoadColumns?: (slot: number) => void;
+    widgetLanguage?: CodeLanguage;
 };
 
 export default function GrammarEditor({
@@ -34,8 +47,18 @@ export default function GrammarEditor({
     floatCode,
     readOnly,
     setOutputCallback,
+    references = NO_REFERENCES,
+    stripInputs = NO_INPUTS,
+    onLoadColumns,
+    widgetLanguage = "json",
 }: GrammarEditorProps) {
     const [grammar, _setGrammar] = useState("{}");
+    // #662: the mounted editor, for the reference tags and chips. A
+    // reference is not JSON until it is resolved, so the errors it causes are hidden.
+    const [widgetEditor, setWidgetEditor] = useState<{ editor: any; monaco: any } | null>(null);
+    useCodeReferences(widgetEditor?.editor, widgetEditor?.monaco, references, widgetLanguage, {
+        hideJsonMarkers: true,
+    });
     const grammarRef = useRef(grammar);
     const setGrammar = (data: string) => {
         grammarRef.current = data;
@@ -104,6 +127,7 @@ export default function GrammarEditor({
                     setDiagnosticsOptions(options: {
                         validate?: boolean;
                         enableSchemaRequest?: boolean;
+                        schemaRequest?: "error" | "warning" | "ignore";
                         schemas?: unknown[];
                     }): void;
                 };
@@ -111,12 +135,17 @@ export default function GrammarEditor({
             jsonLanguage.jsonDefaults.setDiagnosticsOptions({
                 validate: true,
                 enableSchemaRequest: false,
+                // With fetching off, a `$schema` that cannot be loaded is not a
+                // problem with the spec; left unset, Monaco reported it as a
+                // warning squiggle under every valid Vega-Lite URL (#494).
+                schemaRequest: "ignore",
                 schemas: [],
             });
         } catch {
             // Defensive: older Monaco builds without languages.json — no-op.
         }
         attachEditor(editor);
+        setWidgetEditor({ editor, monaco });
         editor.onDidBlurEditorText(proposeOnBlur);
         // Same chord as the code editor, so a grammar node runs the way a
         // Python one does (#223).
@@ -226,6 +255,16 @@ export default function GrammarEditor({
                     )}
                 </div>
             )}
+            <ReferenceStrip
+                widgets={references.widgets}
+                inputs={stripInputs}
+                shared={references.shared}
+                selections={references.selections}
+                disabled={readOnly}
+                onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
+                onLoadColumns={onLoadColumns}
+                layerChips
+            />
             <div style={{ flex: 1, minHeight: 0 }}>
                 {/* Uncontrolled on purpose: a per-keystroke `value` round-trip
                     lets a render that lands with a stale string do a full-model
@@ -248,6 +287,10 @@ export default function GrammarEditor({
                         scrollBeyondLastLine: false,
                         formatOnType: true,
                         autoClosingBrackets: "always",
+                        // As in CodeEditor: a wheel the editor cannot use goes
+                        // on to the page, and `nowheel` on the wrapper keeps the
+                        // canvas from zooming. Read only at creation.
+                        scrollbar: { alwaysConsumeMouseWheel: false },
                     }}
                 />
             </div>

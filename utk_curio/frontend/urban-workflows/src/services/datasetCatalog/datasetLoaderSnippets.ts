@@ -5,8 +5,21 @@ import {
   DatasetGroupLayerRef,
   DatasetLoaderSnippet,
 } from "./datasetCatalogTypes";
+import { AUTARK_LAYER_TYPES } from "../../utils/autarkLayerTypes";
 
 type DatasetLike = DatasetCatalogItem | DatasetDragPayload;
+
+/**
+ * The Autark layer a dataset downloaded from the Discovery Catalog is, when its
+ * layer is one (an OpenStreetMap download's `buildings`). A GeoPackage layer
+ * may have any name, so the name alone decides nothing. KEEP IN SYNC with
+ * `autark_layer_type` in the backend generator.
+ */
+function autarkLayerType(dataset: DatasetLike): string | null {
+  if (!("discoverySource" in dataset) || !dataset.discoverySource) return null;
+  const layer = dataset.layerName;
+  return typeof layer === "string" && AUTARK_LAYER_TYPES.has(layer) ? layer : null;
+}
 
 function datasetPath(dataset: DatasetLike): string {
   return dataset.path || dataset.uri || "<dataset-path>";
@@ -14,22 +27,23 @@ function datasetPath(dataset: DatasetLike): string {
 
 /**
  * Dataset ids are interpolated into generated Python source, so only ids
- * matching this whitelist may appear inside a ``curio_dataset_path("<id>")``
+ * matching this whitelist may appear inside a ``curio_load_data("<id>")``
  * call — an id with a quote or backslash would break out of the string
  * literal. KEEP IN SYNC with ``_SAFE_DATASET_ID_RE`` in the backend generator
  * (``backend/app/datasets/domain/catalog_item.py``) and the scan regex in
- * ``backend/app/api/routes.py``.
+ * ``backend/app/datasets/domain/code_refs.py``.
  */
 const SAFE_DATASET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$/;
 
 /**
  * Every dataset id a piece of node code references through
- * ``curio_dataset_path("<id>")``.
+ * ``curio_load_data("<id>")``, ``curio_data_path("<id>")`` or
+ * ``curio_load_collection("<id>")``.
  *
  * The reader half of the contract the generators above write, kept beside them
  * so the grammar has one home. Both quote styles are accepted because users
- * edit the generated code, matching ``_DATASET_PATH_CALL_RE`` in
- * ``backend/app/api/routes.py``.
+ * edit the generated code, matching ``DATASET_PATH_CALL_RE`` in
+ * ``backend/app/datasets/domain/code_refs.py``.
  *
  * This exists because a node can reference a dataset two ways and only one was
  * ever looked at (#205). Dragging a dataset onto the canvas writes bindings
@@ -45,9 +59,11 @@ export function datasetIdsInCode(code: unknown): string[] {
   // Fresh matcher per call: a module-level /g regex carries lastIndex between
   // calls, so sharing one would make results depend on call order.
   //
-  // The  backreference is load-bearing: it requires the closing quote to
-  // match the opening one, so `curio_dataset_path("x')` is not a reference.
-  const re = /curio_dataset_path\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)/g;
+  // The \1 backreference is load-bearing: it requires the closing quote to
+  // match the opening one, so `curio_load_data("x')` is not a reference.
+  // `curio_data_path` (the file) and `curio_load_collection` (a collection's
+  // index) reference the dataset just as much (`DATASET_PATH_CALL_RE` matches all three).
+  const re = /(?:curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)/g;
   for (const match of code.matchAll(re)) {
     const id = match[2];
     if (seen.has(id)) continue;
@@ -70,16 +86,35 @@ function idOf(dataset: DatasetLike): string | null {
 }
 
 /**
- * Python expression for the location line of a loader snippet. Preferred form
- * is the portable ``curio_dataset_path("<id>")`` call — the sandbox resolves it
- * to a real filesystem path at execution time, so generated code carries no
- * machine-, user-, or mount-specific absolute path. Falls back to the literal
- * path when no (safe) id is available.
+ * Python expression for the location line of an id-less loader snippet. A
+ * dataset with a (safe) id never gets one: its loader is the portable
+ * ``curio_load_data("<id>")`` call, which the sandbox resolves and reads at
+ * execution time, so generated code carries no machine-, user-, or
+ * mount-specific absolute path.
  */
-function pathExpr(path: string, datasetId?: string | null): string {
-  const safeId = safeDatasetId(datasetId);
-  return safeId ? `curio_dataset_path(${JSON.stringify(safeId)})` : JSON.stringify(path);
+function pathExpr(path: string): string {
+  return JSON.stringify(path);
 }
+
+/** What a loader names the value `curio_load_data` returns, per format. KEEP IN
+ * SYNC with `LOADED_VARIABLES` in the backend generator. */
+const LOADED_VARIABLES: Partial<Record<DatasetFormat, string>> = {
+  csv: "df",
+  parquet: "df",
+  geojson: "gdf",
+  shp: "gdf",
+  json: "data",
+  geotiff: "src",
+  bundle: "bundle",
+  onnx: "session",
+  netcdf: "ds",
+};
+
+/** Formats whose loaded value stays in the node's own code: a node's output
+ * cannot carry an onnxruntime session or an xarray Dataset, so their loader
+ * names the value and returns nothing. KEEP IN SYNC with `KEPT_IN_CODE` in the
+ * backend generator. */
+const KEPT_IN_CODE: ReadonlySet<DatasetFormat> = new Set<DatasetFormat>(["onnx", "netcdf"]);
 
 /**
  * Loader body for ``format: bundle`` datasets (multi-output / tuple node
@@ -124,35 +159,50 @@ function bundleLoaderCode(locationExpr: string): string {
 }
 
 /**
- * Loader for a multilayer OSM PBF group: reads every extracted layer's
- * GeoParquet into one ``layers`` dict keyed by layer name, so a single node
- * represents the full multilayer import. GeoParquet is read with
- * ``gpd.read_parquet`` (geometry + CRS), falling back to ``pd.read_parquet``.
+ * Loader for a multilayer OSM group: reads every layer into one ``layers``
+ * dict keyed by layer name, so a single node represents the full multilayer
+ * import. An uploaded ``.pbf``'s layers are GeoParquet, read with
+ * ``gpd.read_parquet`` (geometry + CRS), falling back to ``pd.read_parquet``;
+ * a Discovery download's layers are GeoJSON, read with ``gpd.read_file`` as a
+ * single GeoJSON dataset is.
  */
 export function osmGroupLoaderSnippet(
   layers: DatasetGroupLayerRef[],
 ): DatasetLoaderSnippet {
   const readerLines = layers.map((layer, index) => {
     const key = layer.layerName || layer.title || `layer_${index}`;
+    const safeId = safeDatasetId(layer.id);
+    if (safeId) {
+      // The sandbox reads each layer by its own format (GeoJSON or GeoParquet).
+      return `layers[${JSON.stringify(key)}] = curio_load_data(${JSON.stringify(safeId)})`;
+    }
     const path = layer.path || layer.uri || "<dataset-path>";
-    return `layers[${JSON.stringify(key)}] = _curio_read_layer(${pathExpr(path, layer.id)})`;
+    const reader = layer.format === "geojson" || layer.format === "shp" ? "gpd.read_file" : "_curio_read_layer";
+    return `layers[${JSON.stringify(key)}] = ${reader}(${pathExpr(path)})`;
   });
+  const readsParquet = readerLines.some((line) => line.includes("_curio_read_layer("));
   const code = [
-    "def _curio_read_layer(path):",
-    "    try:",
-    "        return gpd.read_parquet(path)",
-    "    except Exception:",
-    "        return pd.read_parquet(path)",
-    "",
+    ...(readsParquet
+      ? [
+          "def _curio_read_layer(path):",
+          "    try:",
+          "        return gpd.read_parquet(path)",
+          "    except Exception:",
+          "        return pd.read_parquet(path)",
+          "",
+        ]
+      : []),
     "layers = {}",
     ...readerLines,
   ].join("\n");
+  const readsByPath = readerLines.some((line) => !line.includes("curio_load_data("));
   return {
     language: "python",
-    imports: ["import geopandas as gpd", "import pandas as pd"],
+    imports: readsByPath ? ["import geopandas as gpd", "import pandas as pd"] : [],
     pathVariable: "layers",
     code,
-    returnVariable: "layers",
+    // NetCDF variables stay in the node's code, as a single one does.
+    returnVariable: layers.some((layer) => KEPT_IN_CODE.has(layer.format)) ? null : "layers",
   };
 }
 
@@ -160,8 +210,39 @@ function snippetForFormat(
   format: DatasetFormat,
   path: string,
   datasetId?: string | null,
+  layerType?: string | null,
 ): DatasetLoaderSnippet {
-  const expr = pathExpr(path, datasetId);
+  const safeId = safeDatasetId(datasetId);
+  if (safeId) {
+    const quoted = JSON.stringify(safeId);
+    if (format === "collection") {
+      return {
+        language: "python",
+        imports: [],
+        pathVariable: null,
+        code: `collection = curio_load_collection(${quoted})`,
+        returnVariable: "collection",
+      };
+    }
+    const variable = LOADED_VARIABLES[format];
+    if (variable) {
+      return {
+        language: "python",
+        imports: [],
+        pathVariable: null,
+        code: `${variable} = curio_load_data(${quoted})`,
+        returnVariable: KEPT_IN_CODE.has(format) ? null : variable,
+      };
+    }
+    return {
+      language: "python",
+      imports: [],
+      pathVariable: "dataset_path",
+      code: `dataset_path = curio_data_path(${quoted})`,
+      returnVariable: null,
+    };
+  }
+  const expr = pathExpr(path);
   if (format === "csv") {
     return {
       language: "python",
@@ -172,11 +253,16 @@ function snippetForFormat(
     };
   }
   if (format === "geojson" || format === "shp") {
+    // A layer type is set as the frame's metadata, so an Autark node draws the
+    // frame as that layer.
+    const typed = layerType && AUTARK_LAYER_TYPES.has(layerType)
+      ? `\ngdf.metadata = {"layerType": ${JSON.stringify(layerType)}}`
+      : "";
     return {
       language: "python",
       imports: ["import geopandas as gpd"],
       pathVariable: "dataset_path",
-      code: `dataset_path = ${expr}\ngdf = gpd.read_file(dataset_path)`,
+      code: `dataset_path = ${expr}\ngdf = gpd.read_file(dataset_path)${typed}`,
       returnVariable: "gdf",
     };
   }
@@ -212,6 +298,35 @@ function snippetForFormat(
       returnVariable: "src",
     };
   }
+  if (format === "onnx") {
+    return {
+      language: "python",
+      imports: ["import onnxruntime as ort"],
+      pathVariable: "dataset_path",
+      code: `dataset_path = ${expr}\nsession = ort.InferenceSession(dataset_path, providers=["CPUExecutionProvider"])`,
+      returnVariable: null,
+    };
+  }
+  if (format === "netcdf") {
+    return {
+      language: "python",
+      imports: ["import xarray as xr"],
+      pathVariable: "dataset_path",
+      code: `dataset_path = ${expr}\nds = xr.open_dataset(dataset_path, engine="netcdf4")`,
+      returnVariable: null,
+    };
+  }
+  if (format === "collection") {
+    // A collection's data file is its index: one row per file. Without an id
+    // only the index can be read; `curio_load_collection` adds each file's path.
+    return {
+      language: "python",
+      imports: ["import pandas as pd"],
+      pathVariable: "dataset_path",
+      code: `dataset_path = ${expr}\ncollection = pd.read_parquet(dataset_path)`,
+      returnVariable: "collection",
+    };
+  }
   if (format === "bundle") {
     // A bundle is a multi-output (tuple / `outputs`) node result, stored as
     // `data/bundle.json` + `data/parts/*` under the dataset dir. Rebuild each
@@ -236,12 +351,16 @@ function snippetForFormat(
     // preserved); plain DataFrames as ordinary parquet. Read with
     // `gpd.read_parquet` first so a geo dataset reloads as a GeoDataFrame —
     // matching the output type/schema of the node that produced it — and fall
-    // back to `pd.read_parquet` for non-geo tables.
+    // back to `pd.read_parquet` for non-geo tables. A layer type is set as the
+    // frame's metadata, as for GeoJSON above.
+    const typed = layerType && AUTARK_LAYER_TYPES.has(layerType)
+      ? `\ndf.metadata = {"layerType": ${JSON.stringify(layerType)}}`
+      : "";
     return {
       language: "python",
       imports: ["import pandas as pd", "import geopandas as gpd"],
       pathVariable: "dataset_path",
-      code: `dataset_path = ${expr}\ntry:\n    df = gpd.read_parquet(dataset_path)\nexcept Exception:\n    df = pd.read_parquet(dataset_path)`,
+      code: `dataset_path = ${expr}\ntry:\n    df = gpd.read_parquet(dataset_path)\nexcept Exception:\n    df = pd.read_parquet(dataset_path)${typed}`,
       returnVariable: "df",
     };
   }
@@ -256,7 +375,7 @@ function snippetForFormat(
 
 export function getDatasetLoaderSnippet(dataset: DatasetLike): DatasetLoaderSnippet {
   if (dataset.loaderSnippet) return dataset.loaderSnippet;
-  return snippetForFormat(dataset.format, datasetPath(dataset), idOf(dataset));
+  return snippetForFormat(dataset.format, datasetPath(dataset), idOf(dataset), autarkLayerType(dataset));
 }
 
 export function buildDatasetLoaderCode(dataset: DatasetLike): string {
@@ -288,9 +407,10 @@ export function mergeDatasetLoaderCode(currentCode: string | undefined, dataset:
     "groupLayers" in dataset && dataset.groupLayers && dataset.groupLayers.length > 0
       ? dataset.groupLayers
       : null;
+  const call = dataset.format === "collection" && !groupLayers ? "curio_load_collection" : "curio_load_data";
   const idCalls = (groupLayers ? groupLayers.map((layer) => safeDatasetId(layer.id)) : [safeDatasetId(idOf(dataset))])
     .filter((id): id is string => Boolean(id))
-    .map((id) => `curio_dataset_path(${JSON.stringify(id)})`);
+    .map((id) => `${call}(${JSON.stringify(id)})`);
   const alreadyApplied =
     (idCalls.length > 0 && idCalls.every((call) => trimmed.includes(call))) ||
     (dataset.path ? trimmed.includes(dataset.path) : false);

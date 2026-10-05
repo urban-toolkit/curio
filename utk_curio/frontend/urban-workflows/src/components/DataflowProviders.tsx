@@ -4,10 +4,15 @@ import FlowProvider from "../providers/FlowProvider";
 import { CollaborationProvider } from "../providers/CollaborationProvider";
 import StarterProvider from "../providers/StarterProvider";
 import DialogProvider from "../providers/DialogProvider";
-import { NodeCatalogDrawerProvider } from "../providers/NodeCatalogDrawerProvider";
+import { NodeCatalogDrawerProvider } from "../providers/packages";
 import { AgentCatalogDrawerProvider } from "../providers/AgentCatalogDrawerProvider";
 import { DatasetCatalogDrawerProvider } from "../providers/datasetCatalog";
-import { PackagePaletteProvider } from "../providers/PackagePaletteContext";
+import { ModelCatalogDrawerProvider } from "../providers/modelCatalog";
+import { ScenarioCatalogDrawerProvider } from "../providers/scenarioCatalog";
+import { DiscoveryCatalogDrawerProvider } from "../providers/discoveryCatalog";
+import { ApiSettingsDrawerProvider } from "../providers/ApiSettingsDrawerProvider";
+import { MonitorDrawerProvider } from "../providers/MonitorDrawerProvider";
+import { PackagePaletteProvider } from "../providers/packages";
 import { DatasetPaletteProvider } from "../providers/DatasetPaletteContext";
 import { ProjectLoader } from "./ProjectLoader";
 import { CanvasDatasetDetailsProvider } from "./datasets/catalog/CanvasDatasetDetailsProvider";
@@ -40,6 +45,10 @@ export const DataflowProviders: React.FC<{
       {/* Above the drawers and the palettes: every one of them opens a
           dataset's details through it, and the modal reads the live graph. */}
       <CanvasDatasetDetailsProvider>
+      {/* The top bar's API Settings and Monitor open these drawers here, in
+          place of their pages, so the dataflow stays open. */}
+      <ApiSettingsDrawerProvider>
+      <MonitorDrawerProvider>
       {/* NodeCatalogDrawerProvider must sit INSIDE FlowProvider: the drawer
           calls useFlowContext to auto-save unsaved dataflows on Install, and
           a portal preserves React tree context, not DOM position. Outside
@@ -48,16 +57,30 @@ export const DataflowProviders: React.FC<{
       <NodeCatalogDrawerProvider>
         <DatasetCatalogDrawerProvider>
           <AgentCatalogDrawerProvider>
-            <StarterProvider>
-              <ProjectLoader presentation={presentation}>
-                <PackagePaletteProvider>
-                  <DatasetPaletteProvider>{children}</DatasetPaletteProvider>
-                </PackagePaletteProvider>
-              </ProjectLoader>
-            </StarterProvider>
+            {/* Inside FlowProvider like its peers: a model's details ask
+                before a link leaves a dataflow with unsaved changes. */}
+            <ModelCatalogDrawerProvider>
+              {/* Beside the Model drawer's, for the same reason: opening a
+                  scenario's project asks before leaving unsaved changes. */}
+              <ScenarioCatalogDrawerProvider>
+              {/* Inside the Model drawer's provider: a model added here is
+                  viewed by opening that drawer. */}
+              <DiscoveryCatalogDrawerProvider>
+                <StarterProvider>
+                  <ProjectLoader presentation={presentation}>
+                    <PackagePaletteProvider>
+                      <DatasetPaletteProvider>{children}</DatasetPaletteProvider>
+                    </PackagePaletteProvider>
+                  </ProjectLoader>
+                </StarterProvider>
+              </DiscoveryCatalogDrawerProvider>
+              </ScenarioCatalogDrawerProvider>
+            </ModelCatalogDrawerProvider>
           </AgentCatalogDrawerProvider>
         </DatasetCatalogDrawerProvider>
       </NodeCatalogDrawerProvider>
+      </MonitorDrawerProvider>
+      </ApiSettingsDrawerProvider>
       </CanvasDatasetDetailsProvider>
     </FlowProvider>
   );

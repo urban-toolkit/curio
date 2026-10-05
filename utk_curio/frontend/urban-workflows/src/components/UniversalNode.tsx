@@ -1,21 +1,33 @@
 import React, { useEffect, useRef, useSyncExternalStore } from 'react';
 import CSS from "csstype";
-import { Handle, Edge, useEdges } from 'reactflow';
+import { Handle, Edge, Position, useEdges, useUpdateNodeInternals } from 'reactflow';
+import { useNotebookViewContext } from '../providers/flow/notebookViewContext';
+import {
+  NOTEBOOK_CELL_HEIGHT,
+  NOTEBOOK_CELL_WIDTH,
+  notebookHandleOffsets,
+  notebookInputLabel,
+} from '../utils/notebookLayout';
+import { resolveNodeDisplayLabel } from '../utils/palettePackageFactoryDraft';
+import { withInputCircles } from '../adapters/node/handleHelpers';
+import { growsInputCircles, inputCapacity, wiredInputSlots } from '../utils/inputSlots';
 import { NodeContainer } from './styles';
 import NodeEditor from './editing/NodeEditor';
 import DescriptionModal from './DescriptionModal';
 import { OutputIcon } from './edges/OutputIcon';
 import { InputIcon } from './edges/InputIcon';
 import { getNodeDescriptor, tryGetNodeDescriptor, subscribeToRegistry } from '../registry/nodeRegistry';
-import { isRegistryReady, subscribeToRegistryReady } from '../registry/packageRegistryBootstrap';
+import { isRegistryReady, subscribeToRegistryReady } from '../registry/registryReadiness';
 import { UnresolvedNode } from './UnresolvedNode';
 import { behaviorDataView } from "../utils/behaviorDataView";
+import { isSelectionEcho } from "../utils/selectionEcho";
+import { detectWebGpuSupport } from "../utils/webgpuSupport";
 import { readCanvasTemplateConfig, resolveEditorTabFlags } from '../utils/canvasTemplateConfig';
 import { useNodeState } from '../hook/useNodeState';
 import { classifyAutkSpecString } from '../utils/autkSpecKind';
 import { unversionedNodeType } from '../utils/flowNodeCanonicalType';
-import { hasIncomingEdge } from '../utils/nodeEmptyState';
-import { isEmptySpecBuffer } from '../utils/vegaDefaultSpec';
+import { hasIncomingEdge, upstreamErroredMessage } from '../utils/nodeEmptyState';
+import { isEmptySpecBuffer } from '../utils/starterSpec';
 import {
   DASHBOARD_TILE_DEFAULT_HEIGHT,
   DASHBOARD_TILE_DEFAULT_WIDTH,
@@ -26,6 +38,7 @@ import { useFlowContext } from '../providers/FlowProvider';
 import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
 import { useCollab } from '../providers/CollaborationProvider';
 import ErrorBoundary from "./ErrorBoundary";
+import { NodeOutcomeStrip } from './nodes/NodeOutcomeStrip';
 import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
@@ -84,6 +97,20 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const behavior = adapter.useNodeBehavior(behaviorDataView(data), nodeState);
   const edges = useEdges();
 
+  // A template with one input port that takes several edges grows a circle
+  // per edge (utils/inputSlots). React Flow is told when the circles change,
+  // or an edge to a new circle would have nothing to attach to.
+  const growsCircles = !behavior.handlesOverride && growsInputCircles(descriptor.inputPorts);
+  const wiredSlots = growsCircles ? wiredInputSlots(edges, data.nodeId) : [];
+  const baseHandles = growsCircles
+    ? withInputCircles(adapter.handles, wiredSlots, inputCapacity(descriptor.inputPorts))
+    : adapter.handles;
+  const circleIds = baseHandles.map((h) => h.id).join(",");
+  const updateNodeInternals = useUpdateNodeInternals();
+  useEffect(() => {
+    if (growsCircles) updateNodeInternals(data.nodeId);
+  }, [circleIds]);
+
   const sendCode = behavior.sendCodeOverride ?? nodeState.sendCode;
   const setSendCodeCallback = behavior.setSendCodeCallbackOverride ?? nodeState.setSendCodeCallback;
   const setOutputCallback = behavior.setOutputCallbackOverride ?? nodeState.setOutput;
@@ -91,7 +118,12 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const showLoading = behavior.showLoading ?? false;
   const disablePlay = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
 
-  const { signalNodeExecDone, dashboardOn, edges: flowEdges, isRunActive } = useFlowContext();
+  const { signalNodeExecDone, dashboardOn, projectId, edges: flowEdges, isRunActive, serverRunActive, nodes: flowNodes } = useFlowContext();
+  // In the notebook view the node is a cell: a fixed size, its dots on the
+  // right edge where the bar draws its connections, no cardinality markers.
+  const notebook = useNotebookViewContext();
+  const notebookOn = notebook.on && !dashboardOn;
+  const cellHeight = notebook.heights.get(data.nodeId) ?? NOTEBOOK_CELL_HEIGHT;
   const kindConfig = readCanvasTemplateConfig({ data });
   const editorTabs = resolveEditorTabFlags(descriptor, kindConfig);
   const collab = useCollab();
@@ -138,6 +170,35 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     if (collab.enabled) collab.signalExecDisplay(data.nodeId);
   }, [data.triggerExec]);
 
+  // A run that stopped above this node: a node feeding it failed, so the run
+  // never triggered it (#603). It shows the reason as its outcome rather than
+  // keeping the output of an earlier run as if it had just run. The Data Pool
+  // owns the output it shows and says the same thing in its own empty state.
+  const lastSkipExecRef = useRef<number>(data.skipExec ?? 0);
+  useEffect(() => {
+    const current = data.skipExec ?? 0;
+    if (current <= lastSkipExecRef.current) return;
+    lastSkipExecRef.current = current;
+    if (behavior.outputOverride) return;
+    nodeState.setOutput({
+      code: "error",
+      content: data.skipReason || upstreamErroredMessage(),
+    });
+  }, [data.skipExec]);
+
+  // A step of a run on the server (useServerRun): running, its outcome, or
+  // stopped. Shown through the setter the node's own run uses, so the node
+  // reads, reports and records it the same way. `onlyIfRunning` gives a played
+  // node back its earlier output only if its own play showed nothing.
+  const lastServerOutputRef = useRef<number>(data.serverOutput?.seq ?? 0);
+  useEffect(() => {
+    const next = data.serverOutput;
+    if (!next || next.seq <= lastServerOutputRef.current) return;
+    lastServerOutputRef.current = next.seq;
+    if (next.onlyIfRunning && output?.code !== "exec") return;
+    setOutputCallback(next.output);
+  }, [data.serverOutput]);
+
   // ── Drawing from a restored input, with no Play ──────────────────────────
   //
   // A grammar node only draws when something calls its ``applyGrammar``, which
@@ -154,6 +215,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const connected = hasIncomingEdge(flowEdges ?? edges, data.nodeId);
   const hasInput = data.input != null && data.input !== "";
   const specIsEmpty = isEmptySpecBuffer(nodeState.code);
+  // The spec the node was written with: loaded, dropped or put in by an agent.
+  // The buffer above can read empty for a moment when it is not (see below).
+  const writtenSpecIsEmpty = isEmptySpecBuffer(data.defaultCode);
   // Vega compiles its spec against the rows its input names, so a restored input
   // is all it needs - on the canvas as much as on the dashboard. Keyed on the
   // input so a chart behind a Data Pool draws when the pool's fetch lands, and
@@ -163,37 +227,69 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   // widgets pass, so two toggles in the same batch leave the flag where it
   // started, the marker round trip never happens, and the node sits at "exec"
   // until its watchdog. Whatever a run leaves behind is what this draws from
-  // the next time an input arrives.
-  const runInFlight = !!isRunActive;
+  // the next time an input arrives. A run on the server counts too: its
+  // browser part compiles the maps and charts it walks as Run All does, and a
+  // chart it leaves out draws here once the run ends, from the input that
+  // arrived during it.
+  const runInFlight = !!isRunActive || !!serverRunActive;
+  const runInFlightRef = useRef(runInFlight);
+  runInFlightRef.current = runInFlight;
+  // The grammar nodes that draw from their input on their own, by one rule: a
+  // Vega chart, and an Autark document that renders (a map or a plot). An
+  // Autark data or compute step stays on Play.
+  const autarkRender = kind === NodeType.AUTK_GRAMMAR && classifyAutkSpecString(nodeState.code) === "render";
+  const drawsFromInput = kind === NodeType.VIS_VEGA || autarkRender;
   useEffect(() => {
-    if (kind !== NodeType.VIS_VEGA) return;
+    if (kind !== NodeType.VIS_VEGA && kind !== NodeType.AUTK_GRAMMAR) return;
     // An input that lands while the buffer is still empty belongs to a node
     // somebody is wiring up right now: `vegaBehavior` fetches a preview and
     // fills the buffer with a spec guessed from that input's columns a moment
     // later. Drawing the guess would run the node on connect and pull its
     // editor to the output pane while the author is still typing into it, which
-    // is not what a restore is for. A reload never looks like this, because the
-    // saved spec is in the buffer before the data is. Canvas only: a pinned
-    // tile always opens with its spec already loaded, and the dashboard has no
-    // author to interrupt.
-    if (!dashboardOn && hasInput && specIsEmpty) {
+    // is not what a restore is for. A reload looks like this for a moment, so
+    // the node's written spec decides, not the buffer: the editor mounts on
+    // `{}` and floats it into the buffer until Monaco loads and applies the
+    // saved spec, and a restored input lands in that window (#711). Canvas
+    // only: a pinned tile always opens with its spec already loaded, and the
+    // dashboard has no author to interrupt.
+    if (!dashboardOn && hasInput && specIsEmpty && writtenSpecIsEmpty) {
       starterFillInputRef.current = data.input;
     }
+    // Recorded above for either grammar, even before an empty Autark editor can
+    // say whether it renders: the starter it is about to receive does.
+    if (!drawsFromInput) return;
     if (!sendCode || disablePlay || specIsEmpty) return;
     if (runInFlight || output?.code === "exec") return;
     if (!hasInput) return;
+    // A selection coming back through a Data Pool: the same rows with new
+    // `interacted` flags, which useVega's hot reload sets on the rows the view
+    // already holds. Rebuilding the chart would throw its own selection away.
+    if (isSelectionEcho(data.input)) return;
     if (starterFillInputRef.current === data.input) return;
     if (lastRenderedInputRef.current === data.input) return;
     lastRenderedInputRef.current = data.input;
-    setOutputCallback({ code: "exec", content: "" });
-    sendCode(nodeState.code);
-  }, [kind, sendCode, disablePlay, specIsEmpty, hasInput, data.input, runInFlight, dashboardOn]);
+    const code = nodeState.code;
+    if (!autarkRender) {
+      setOutputCallback({ code: "exec", content: "" });
+      sendCode(code);
+      return;
+    }
+    // An Autark map needs WebGPU. Without it, opening a project must not raise
+    // one error per map: the node keeps its "not drawn yet" body, and a Play
+    // shows the in-node explanation. The probe is async, so the run state is
+    // read again once it answers.
+    void detectWebGpuSupport().then((support) => {
+      if (!support.supported) return;
+      if (runInFlightRef.current || outputCodeRef.current === "exec") return;
+      setOutputCallback({ code: "exec", content: "" });
+      sendCode(code);
+    });
+  }, [kind, drawsFromInput, autarkRender, sendCode, disablePlay, specIsEmpty, writtenSpecIsEmpty, hasInput, data.input, runInFlight, dashboardOn]);
 
-  // An Autark tile is drawn once, and only on the dashboard. Its render spec
-  // needs a WebGPU canvas, so this is real work rather than a recompile: the
-  // page it is pinned to is the only place worth doing it, and only for the tile
-  // itself. Its upstream data and compute nodes are not run - their layers come
-  // from the Data Catalog, which is the point.
+  // A wired Autark render tile draws by the rule above when its input lands. An
+  // unwired one never receives an input, so it is drawn once here, on the
+  // dashboard: its document loads everything it draws. Its upstream data and
+  // compute nodes are not run - their layers come from the Data Catalog.
   const autoRenderedRef = useRef(false);
   const isPinnedAutarkTile =
     dashboardOn
@@ -204,9 +300,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     if (!isPinnedAutarkTile || autoRenderedRef.current) return;
     if (!sendCode || disablePlay || specIsEmpty) return;
     if (runInFlight || output?.code === "exec") return;
-    // Wait for the input a wired tile needs; an unwired one has everything in
-    // its own spec.
-    if (connected && !hasInput) return;
+    if (connected) return;
     autoRenderedRef.current = true;
     setOutputCallback({ code: "exec", content: "" });
     sendCode(nodeState.code);
@@ -215,7 +309,8 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   useEffect(() => {
     outputCodeRef.current = output?.code;
     if (output?.code === "error" || output?.code === "success") {
-      signalNodeExecDone(data.nodeId);
+      // A failure stops the run below this node (#603).
+      signalNodeExecDone(data.nodeId, { failed: output.code === "error" });
       if (collab.enabled && output) {
         collab.broadcastOutputProduced({
           nodeId: data.nodeId,
@@ -225,7 +320,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
       }
     }
     // Keyed on the OBJECT, not `output?.code`: a node that errors twice in a
-    // row (e.g. a merge re-triggered by Play with inputs still missing) keeps
+    // row (e.g. a node re-triggered by Play with inputs still missing) keeps
     // code === "error", and a code-keyed effect never re-fires — the run then
     // hangs on the stall watchdog. setOutput always produces a fresh object,
     // and signalNodeExecDone ignores nodes outside the active level, so
@@ -252,7 +347,26 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     nodeState.templateData.custom != undefined && nodeState.templateData.custom === false;
 
   const allHandles = behavior.handlesOverride
-    ?? [...adapter.handles, ...(behavior.dynamicHandles ?? [])];
+    ?? [...baseHandles, ...(behavior.dynamicHandles ?? [])];
+  const notebookOffsets = notebookOn
+    ? notebookHandleOffsets(allHandles.map((h: HandleDef) => ({ id: h.id, type: h.type })), cellHeight)
+    : null;
+
+  /** What a dot in the notebook's bar says on hover: which input it is and what feeds it. */
+  const notebookDotTitle = (h: HandleDef): string => {
+    if (h.id === 'in/out') return 'interaction';
+    if (h.type === 'source') return 'output';
+    const edge = edges.find((e: Edge) => e.target === data.nodeId && (e.targetHandle ?? 'in') === h.id);
+    const source = edge ? (flowNodes ?? []).find((n: any) => n.id === edge.source) : undefined;
+    let name: string | null = null;
+    try {
+      name = source ? resolveNodeDisplayLabel(source.data) || null : null;
+    } catch {
+      name = null;
+    }
+    const input = `input ${notebookInputLabel(h.id)}`;
+    return name ? `${input} · ${name}` : input;
+  };
 
   return (
     // ``display: contents`` keeps the wrapper invisible to ReactFlow's
@@ -295,6 +409,26 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             ? h.isConnectableOverride(data, isConnectable, edges)
             : isConnectable;
         const style = h.dynamicStyle ? h.dynamicStyle(data, edges) : h.style;
+        if (notebookOffsets) {
+          // Every dot on the right edge, inputs numbered as the chips count them.
+          const label = h.type === 'target' && h.id !== 'in/out' ? notebookInputLabel(h.id) : '';
+          return (
+            <Handle
+              key={h.id}
+              id={h.id}
+              type={h.type}
+              position={Position.Right}
+              isConnectable={connectable}
+              style={{ ...(style ?? {}), top: notebookOffsets.get(h.id) }}
+              title={notebookDotTitle(h)}
+              className="curio-notebook-dot"
+            >
+              {label.length > 0 && label.length <= 2 ? (
+                <span className="curio-notebook-dot-label">{label}</span>
+              ) : null}
+            </Handle>
+          );
+        }
         return (
           <Handle
             key={h.id}
@@ -323,15 +457,21 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         // canvas, and at that size a tile reads as a stray node rather than as
         // the content of the page. The page fits every tile to the window, so
         // the larger default costs nothing when several are pinned.
+        // A notebook cell has the column's fixed size, and like a tile it never
+        // writes it back: the canvas size stays the node's own.
         nodeWidth={
           dashboardOn
             ? (data.dashboardWidth ?? DASHBOARD_TILE_DEFAULT_WIDTH)
-            : (data.nodeWidth ?? adapter.container.nodeWidth)
+            : notebookOn
+              ? NOTEBOOK_CELL_WIDTH
+              : (data.nodeWidth ?? adapter.container.nodeWidth)
         }
         nodeHeight={
           dashboardOn
             ? (data.dashboardHeight ?? DASHBOARD_TILE_DEFAULT_HEIGHT)
-            : (data.nodeHeight ?? adapter.container.nodeHeight)
+            : notebookOn
+              ? cellHeight
+              : (data.nodeHeight ?? adapter.container.nodeHeight)
         }
         styles={adapter.container.styles as CSS.Properties<0 | (string & {}), string & {}> | undefined}
         disablePlay={disablePlay}
@@ -343,7 +483,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         setOutputCallback={setOutputCallback}
         promptDescription={nodeState.promptDescription}
       >
-        {!dashboardOn && adapter.inputIconType && <InputIcon type={adapter.inputIconType as TIconCardinality} />}
+        {!dashboardOn && !notebookOn && adapter.inputIconType && <InputIcon type={adapter.inputIconType as TIconCardinality} />}
 
         <DescriptionModal
           nodeId={data.nodeId}
@@ -394,13 +534,26 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           // ``contentComponent`` (the streetvision place-picker, etc.).
           // Without this branch that UI would be silently dropped because
           // ``contentComponent`` is otherwise only rendered inside NodeEditor's
-          // output tab. ``noContent`` containers (merge-flow, spatial-join)
+          // output tab. ``noContent`` containers
           // legitimately return ``undefined`` here — they're icon-only.
           behavior.contentComponent ?? null
         )}
         </ErrorBoundary>
 
-        {!dashboardOn && adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}
+        {/* dev/138: the node carries its own reason. A toast fades and a code
+            node's traceback lives in its output area, but a grammar or
+            presentation node had no surface at all — so a failed render was a
+            red word with no text. Outside the boundary on purpose: a node whose
+            content subtree crashed is exactly the one that must still say why. */}
+        {!dashboardOn && (
+          <NodeOutcomeStrip
+            nodeId={data.nodeId}
+            projectId={projectId}
+            output={output}
+          />
+        )}
+
+        {!dashboardOn && !notebookOn && adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}
       </NodeContainer>
 
       {/* Agents attached to this node render as avatars at its bottom edge. */}

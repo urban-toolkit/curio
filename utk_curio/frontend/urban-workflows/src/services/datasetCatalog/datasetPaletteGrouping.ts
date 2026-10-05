@@ -1,8 +1,10 @@
 import type {
   DatasetCatalogItem,
   DatasetDragPayload,
+  DatasetFormat,
   DatasetGroupLayerRef,
 } from "./datasetCatalogTypes";
+import { layerGroupKind } from "./datasetCatalogTypes";
 import { osmGroupLoaderSnippet } from "./datasetLoaderSnippets";
 
 /**
@@ -146,22 +148,40 @@ export function osmGroupLayerRefs(
 }
 
 /**
- * Drag payload for a multilayer OSM PBF group parent. Dropping it creates a
- * single node representing the *whole* import: the loader reads every layer, and
- * the node references the real per-layer dataset ids (via ``groupLayers``) so the
- * saved spec never carries the synthetic group id. The group id is kept only as
- * the drag's identity/linkage marker.
+ * The format a layer group shows and drops as. Layers that were all downloaded
+ * from the Discovery Catalog show their own format, as each layer's row does
+ * (#586); an import shows its file's, which its id says. A GTFS feed is always
+ * a download and always shows GTFS: its tables' Parquet says nothing about it.
+ * Mirrors the backend ``build_layer_group_item``.
+ */
+export function layerGroupFormat(group: DatasetPaletteGroup): DatasetFormat {
+  const kind = layerGroupKind(group.groupId);
+  if (kind === "gtfs") return kind;
+  const [first] = group.members;
+  if (first && group.members.every((m) => m.discoverySource)) return first.format;
+  return kind;
+}
+
+/**
+ * Drag payload for a multilayer group parent (an OSM PBF or a GeoPackage
+ * import, or the layers of one Discovery download). Dropping it creates a
+ * single node representing the *whole* group: the loader reads every layer, and
+ * the node references the real per-layer dataset ids (via ``groupLayers``) so
+ * the saved spec never carries the synthetic group id. The group id is kept only
+ * as the drag's identity/linkage marker, and its prefix gives the ``curio://``
+ * scheme.
  */
 export function createOsmGroupDragPayload(
   group: DatasetPaletteGroup,
 ): DatasetDragPayload {
   const layers = osmGroupLayerRefs(group);
+  const kind = layerGroupKind(group.groupId);
   return {
     datasetId: group.groupId,
     title: group.title,
-    uri: `curio://osm/${group.groupId}`,
+    uri: `curio://${kind}/${group.groupId}`,
     path: null,
-    format: "osm",
+    format: layerGroupFormat(group),
     origin: "imported",
     loaderSnippet: osmGroupLoaderSnippet(layers),
     groupLayers: layers,

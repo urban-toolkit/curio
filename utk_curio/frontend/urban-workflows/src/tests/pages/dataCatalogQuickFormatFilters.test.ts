@@ -8,6 +8,10 @@ import type { DatasetFormat } from "../../services/datasetCatalog";
  * row off a hardcoded ``["geojson", "csv", "json"]``. So the chips advertised
  * JSON with zero datasets while hiding Parquet and GeoTIFF, which the rail beside
  * them was counting.
+ *
+ * The chip row is gone; this function now picks the rail's own format rows, so
+ * the same rules hold there: populated formats in the rail's order, plus the
+ * selected one.
  */
 describe("quickFormatFilters", () => {
   // The counts the shipped `datasets/` folder actually produces, so this case is
@@ -69,7 +73,8 @@ describe("quickFormatFilters", () => {
     // rail's domain and the type's domain have to be the same set.
     const everyFormat: Record<DatasetFormat, number> = {
       geojson: 1, csv: 1, json: 1, parquet: 1,
-      geotiff: 1, shp: 1, bundle: 1, osm: 1, gpkg: 1,
+      geotiff: 1, shp: 1, bundle: 1, osm: 1, gpkg: 1, gtfs: 1, collection: 1,
+      onnx: 1, netcdf: 1,
     };
     expect(quickFormatFilters(everyFormat).sort()).toEqual(
       (Object.keys(DATASET_FORMAT_LABEL) as DatasetFormat[]).sort(),

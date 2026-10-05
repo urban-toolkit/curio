@@ -146,6 +146,10 @@
 .format_bundle { background: var(--curio-format-bundle-bg); color: var(--curio-format-bundle-on-tint); }
 .format_osm { background: var(--curio-format-osm-bg); color: var(--curio-format-osm-on-tint); }
 .format_gpkg { background: var(--curio-format-gpkg-bg); color: var(--curio-format-gpkg-on-tint); }
+.format_gtfs { background: var(--curio-format-gtfs-bg); color: var(--curio-format-gtfs-on-tint); }
+.format_collection { background: var(--curio-format-collection-bg); color: var(--curio-format-collection-on-tint); }
+.format_onnx { background: var(--curio-format-onnx-bg); color: var(--curio-format-onnx-on-tint); }
+.format_netcdf { background: var(--curio-format-netcdf-bg); color: var(--curio-format-netcdf-on-tint); }
 
 .installedBadge {
   background: #1e1f23;
@@ -644,12 +648,16 @@
 /* "Use in a node": the reference to paste, and where the bytes live (#206). */
 .referenceRow {
     display: flex;
+    /* The info column is about 240 px wide and the labelled Copy button takes
+       about 174 of them, which left the code a 45 px box (#500). The code gets
+       the row to itself and the button goes under it. */
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
 }
 
 .referenceCode {
-    flex: 1 1 auto;
+    flex: 1 1 100%;
     /* A reference is one token and can be long; scroll it rather than wrap a
        string the reader is about to copy. */
     min-width: 0;

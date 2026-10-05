@@ -155,3 +155,15 @@
   word-break: break-word;
   color: var(--curio-text-secondary);
 }
+
+/* "Change in API Settings" beside the Model row: a link in look, a button in
+   behaviour (it opens a modal rather than navigating). */
+.inlineLink {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--curio-role-published-fg);
+  text-decoration: underline;
+  cursor: pointer;
+}

@@ -14,6 +14,7 @@ import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { shouldSaveOutputOnRun } from "../../utils/saveOutputDataset";
+import { executionResultOutput } from "../../utils/executionResult";
 import { registerRunNodeAction } from "./runNodeMonacoAction";
 import { MissingModuleNotice, type InstallState } from "./MissingModuleNotice";
 import { MIN_PROGRESS_MS, readInstallResponse } from "../../utils/libraryInstall";
@@ -21,8 +22,23 @@ import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft"
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
 import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
+import { CredentialHint } from "./CredentialHint";
+import {
+    credentialLiterals,
+    findingsKey,
+    firstHostInCode,
+    type CredentialFinding,
+} from "../../services/connectionKeys/credentialLiterals";
 import { usePackageBackendRun } from "../../hook/usePackageBackendRun";
+import { useGrammarInputState } from "../../hook/useGrammarInputState";
+import { upstreamErroredMessage } from "../../utils/nodeEmptyState";
 import { ICodeData } from "../../types";
+import { ReferenceStrip } from "./widgets/WidgetTag";
+import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
+import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
+
+const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [], shared: [] };
+const NO_INPUTS: InputScope[] = [];
 
 type CodeEditorProps = {
     setOutputCallback: any;
@@ -35,7 +51,36 @@ type CodeEditorProps = {
     readOnly: boolean;
     defaultValue?: any;
     floatCode?: any;
+    /** #662: what the node's references name: its widgets and its inputs. */
+    references?: ReferenceScope;
+    /** The inputs whose tags sit above the editor, with the widgets'. */
+    stripInputs?: InputScope[];
+    /** Read an input's columns for its tags. */
+    onLoadColumns?: (slot: number) => void;
+    widgetLanguage?: CodeLanguage;
 };
+
+/** dev/117: how long after the last keystroke the code is scanned for a credential literal. */
+export const CREDENTIAL_SCAN_DEBOUNCE_MS = 300;
+const CREDENTIAL_MARKER_OWNER = "curio-credential";
+
+/** Best-effort Monaco warning markers for the findings; skipped when the
+ * Monaco build (or the test fake) has no setModelMarkers. Never an error
+ * squiggle: nothing is wrong with the syntax. */
+function setCredentialMarkers(monaco: any, editor: any, findings: CredentialFinding[]): void {
+    const setMarkers = monaco?.editor?.setModelMarkers;
+    const model = editor?.getModel?.();
+    if (typeof setMarkers !== "function" || !model) return;
+    const severity = monaco?.MarkerSeverity?.Warning ?? 4;
+    setMarkers.call(monaco.editor, model, CREDENTIAL_MARKER_OWNER, findings.map((f) => ({
+        severity,
+        message: "Looks like an API key — use a connection key (curio_secret) instead.",
+        startLineNumber: f.line,
+        startColumn: 1,
+        endLineNumber: f.line,
+        endColumn: 1e6,
+    })));
+}
 
 function CodeEditor({
     setOutputCallback,
@@ -48,9 +93,16 @@ function CodeEditor({
     readOnly,
     defaultValue,
     floatCode,
+    references = NO_REFERENCES,
+    stripInputs = NO_INPUTS,
+    onLoadColumns,
+    widgetLanguage = "python",
 }: CodeEditorProps) {
     const [code, setCode] = useState<string>(""); // code with all original markers
     const [execCount, setExecCount] = useState<number>(0);
+    // #662: the mounted editor, for the reference tags and chips.
+    const [widgetEditor, setWidgetEditor] = useState<{ editor: any; monaco: any } | null>(null);
+    useCodeReferences(widgetEditor?.editor, widgetEditor?.monaco, references, widgetLanguage);
 
     const {
         workflowNameRef,
@@ -62,14 +114,63 @@ function CodeEditor({
         defaultSaveOutputDataset,
         isDashboardSource,
         playNodesUpTo,
+        nodes,
     } = useFlowContext();
     const { nodeExecProv } = useProvenanceContext();
     const collab = useCollab();
     // dev/91: non-null exactly when this template declares a backendHandler.
     const backendRun = usePackageBackendRun(nodeType);
+    // #603: whether a node wired into this one ran and failed, asked the way a
+    // chart or a Data Pool asks it.
+    const { upstreamErrored, erroredSourceIds } = useGrammarInputState(data.nodeId);
+    const failedUpstreamName = (): string | null => {
+        const failed = (nodes ?? []).find((n: any) => n?.id === erroredSourceIds[0]);
+        if (!failed?.data) return null;
+        try {
+            return resolveNodeDisplayLabel(failed.data as any);
+        } catch {
+            return null;
+        }
+    };
 
     const replacedCodeDirtyBypass = useRef(false);
     const outputRef = useRef<HTMLDivElement>(null);
+
+    // dev/117: a credential-shaped literal in the code gets a hint — never a
+    // block. Typing is scanned after a short pause; content that arrives whole
+    // (dataset drop, LLM apply, collab, provenance) is scanned at once.
+    const hintLanguage = unversionedNodeType(nodeType) === NodeType.JS_COMPUTATION ? "javascript" : "python";
+    const [credentialFindings, setCredentialFindings] = useState<CredentialFinding[]>([]);
+    const [credentialHost, setCredentialHost] = useState<string | null>(null);
+    const [dismissedFindingsKey, setDismissedFindingsKey] = useState<string | null>(null);
+    const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const mountedRef = useRef(true);
+    const monacoRef = useRef<Monaco | null>(null);
+    const editorInstanceRef = useRef<any>(null);
+    const scanNow = (value: string) => {
+        if (!mountedRef.current) return;
+        const found = credentialLiterals(value, hintLanguage);
+        setCredentialFindings(found);
+        setCredentialHost(found.length ? firstHostInCode(value) : null);
+    };
+    const scheduleScan = (value: string) => {
+        if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
+        scanTimerRef.current = setTimeout(() => scanNow(value), CREDENTIAL_SCAN_DEBOUNCE_MS);
+    };
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
+            setCredentialMarkers(monacoRef.current, editorInstanceRef.current, []);
+        };
+    }, []);
+    useEffect(() => {
+        setCredentialMarkers(monacoRef.current, editorInstanceRef.current, credentialFindings);
+    }, [credentialFindings]);
+    const currentFindingsKey = findingsKey(credentialFindings);
+    const showCredentialHint =
+        credentialFindings.length > 0 && dismissedFindingsKey !== currentFindingsKey;
 
     // The Monaco model is the source of truth while the user types; `code`
     // only mirrors it. Content flows INTO the editor exclusively through this
@@ -83,6 +184,7 @@ function CodeEditor({
         onExternalApply: (value) => {
             setCode(value);
             sendCodeToWidgets(value); // will resolve markers for templated boxes
+            scanNow(value); // dev/117: content that arrived whole is scanned at once
         },
     });
     const codeRef = useRef<string>("");
@@ -96,6 +198,7 @@ function CodeEditor({
     const handleCodeChange = (value, event) => {
         setCode(value);
         markNodeStale(data.nodeId);
+        scheduleScan(typeof value === "string" ? value : ""); // dev/117
     };
 
     // ------------------------------------------------------------------
@@ -132,7 +235,7 @@ function CodeEditor({
             // node needs to render, and which does not survive jsdom. A
             // static import here made three unrelated test suites carry a
             // mock for a dependency they never use.
-            const { packagesApi } = await import("../../api/packagesApi");
+            const { packagesApi } = await import("../../services/packages");
             const data = await packagesApi.addLibrary("python", distribution);
             // pip's already-satisfied path returns in microseconds; hold the
             // in-flight state long enough to be seen, without adding any delay
@@ -164,6 +267,9 @@ function CodeEditor({
 
     const handleEditorMount = (editor: any, monaco: Monaco) => {
         attachEditor(editor);
+        monacoRef.current = monaco;
+        editorInstanceRef.current = editor;
+        setWidgetEditor({ editor, monaco });
         editor.onDidBlurEditorText(proposeOnBlur);
         // Ctrl/Cmd+Enter. Registered here rather than on the window because
         // Monaco owns the chord while the editor has focus — and already bound
@@ -208,56 +314,30 @@ function CodeEditor({
     }, [output.code]);
 
     const processExecutionResult = (result: any) => {
-        const hasOutput = result.output?.path !== "";
-
-        // result.stdout is list[str] from the sandbox; join with newlines so
-        // multi-line autkdb output is readable instead of comma-coerced. Cap
-        // at the last 4000 chars so a runaway log loop can't lock the panel,
-        // and show the tail since errors usually surface there.
-        const STDOUT_CAP = 4000;
-        const stdoutLines: string[] = Array.isArray(result.stdout)
-            ? result.stdout
-            : (result.stdout ? [String(result.stdout)] : []);
-        let stdoutText = stdoutLines.join("\n");
-        let stdoutTruncated = false;
-        if (stdoutText.length > STDOUT_CAP) {
-            stdoutText = stdoutText.slice(-STDOUT_CAP);
-            stdoutTruncated = true;
-        }
-        const stdoutBlock = stdoutText
-            ? "stdout:\n" + (stdoutTruncated
-                ? `... [truncated to last ${STDOUT_CAP} chars]\n` + stdoutText
-                : stdoutText)
-            : "";
-
-        if (hasOutput) {
-            let outputContent = stdoutBlock;
-            if (result.stderr) {
-                outputContent += (outputContent ? "\n" : "") + "stderr:\n" + result.stderr;
-            }
-            outputContent += (outputContent ? "\n" : "") + "Saved to file: " + result.output.path;
-            setOutputCallback({ code: "success", content: outputContent });
+        // The same rule a step of a run on the server goes through (useServerRun).
+        const { shown, artifact } = executionResultOutput(result);
+        setOutputCallback(shown);
+        if (artifact) {
             // outputCallback → applyNewOutput, which centrally auto-installs +
             // surfaces the produced dataset (no manual disk-icon save needed).
-            data.outputCallback(data.nodeId, result.output);
+            data.outputCallback(data.nodeId, artifact);
             markNodeExecuted(data.nodeId);
         } else {
-            let errorContent = "";
-            if (stdoutBlock) errorContent += stdoutBlock + "\n";
-            errorContent += result.stderr || "(no stderr)";
-            // The traceback is unchanged; the notice rides alongside it (#299).
-            setOutputCallback({
-                code: "error",
-                content: errorContent,
-                missingModule: result.missingModule ?? null,
-            });
             // No artifact, so deliberately no outputCallback - nothing is
             // propagated downstream. That left every downstream node unable to
             // tell this apart from "never run", so it advised running the node
-            // the user had just watched fail (#347). Record the failure instead.
+            // the user had just watched fail (#347). Record the failure instead,
+            // and tell the runner, which then runs nothing below this node (#603).
             markNodeErrored(data.nodeId);
-            signalNodeExecDone(data.nodeId);
+            signalNodeExecDone(data.nodeId, { failed: true });
         }
+    };
+
+    /** A run that ended without an output: shown, recorded and reported alike. */
+    const failRun = (content: string) => {
+        setOutputCallback({ code: "error", content });
+        markNodeErrored(data.nodeId);
+        signalNodeExecDone(data.nodeId, { failed: true });
     };
 
     // marks were resolved and new code is available
@@ -268,7 +348,14 @@ function CodeEditor({
         }
         if (output.code !== "exec") return;
         if (replacedCode === "") {
-            setOutputCallback({ code: "error", content: "No code to execute" });
+            failRun("No code to execute");
+            return;
+        }
+        // #603: a node fed by one that failed has nothing to run on. It says
+        // which node failed and is not sent to the sandbox, where it could only
+        // fail again with a message about missing input.
+        if (upstreamErrored) {
+            failRun(upstreamErroredMessage(failedUpstreamName()));
             return;
         }
         if (backendRun) {
@@ -280,8 +367,7 @@ function CodeEditor({
                     setOutputCallback({ code: "success", content: outcome.content });
                     markNodeExecuted(data.nodeId);
                 } else {
-                    setOutputCallback({ code: "error", content: outcome.content });
-                    signalNodeExecDone(data.nodeId);
+                    failRun(outcome.content);
                 }
             });
             return;
@@ -336,6 +422,10 @@ function CodeEditor({
         const onMouseDown = (e: MouseEvent) => {
             if (e.button !== 0) return;
             if (!(e.target instanceof Node) || !el.contains(e.target)) return;
+            // The second press of a double-click (and the third of a triple)
+            // is the browser's: it selects the word, or the line, and that
+            // cannot leave the box. Driving it here cancelled it.
+            if (e.detail > 1) return;
 
             const anchor = caretFromPoint(e.clientX, e.clientY);
             if (!anchor || !el.contains(anchor.node)) return;
@@ -413,6 +503,14 @@ function CodeEditor({
 
     return (
         <div className="nowheel nodrag" style={{ height: "100%", display: "flex", flexDirection: "column", backgroundColor: "#fff", userSelect: "none" }}>
+            {showCredentialHint ? (
+                <CredentialHint
+                    findings={credentialFindings}
+                    readOnly={readOnly}
+                    host={credentialHost}
+                    onDismiss={() => setDismissedFindingsKey(currentFindingsKey)}
+                />
+            ) : null}
             {pendingProposal && (
                 <div
                     style={{
@@ -450,6 +548,15 @@ function CodeEditor({
                     )}
                 </div>
             )}
+            <ReferenceStrip
+                widgets={references.widgets}
+                inputs={stripInputs}
+                shared={references.shared}
+                selections={references.selections}
+                disabled={readOnly}
+                onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
+                onLoadColumns={onLoadColumns}
+            />
             <div style={{ flex: 2, minHeight: 0 }}>
                 {/* Uncontrolled on purpose: a per-keystroke `value` round-trip
                     lets a render that lands with a stale string do a full-model
@@ -472,12 +579,21 @@ function CodeEditor({
                         minimap: { enabled: false },
                         readOnly: readOnly,
                         scrollBeyondLastLine: false,
+                        // A wheel the editor cannot use goes on to the page, so
+                        // the notebook view scrolls past the editor's ends. On
+                        // the canvas the wrapper's `nowheel` keeps it from
+                        // zooming, as before. Monaco reads this option only when
+                        // the editor is created, so it is not tied to the view.
+                        scrollbar: { alwaysConsumeMouseWheel: false },
                     }}
                 />
             </div>
             <div
                 ref={outputRef}
-                className="nowheel nodrag"
+                // `nopan` as well as `nodrag`: in a node that cannot be
+                // dragged (a read-only dataflow), react-flow pans the canvas
+                // on a press and zooms it on a double-click unless told not to.
+                className="nowheel nodrag nopan"
                 // The wrapper above carries the same class, so a ".nowheel.nodrag"
                 // lookup resolves to it first and picks up Monaco's rendered code
                 // lines. Tests read the result through this attribute instead.
@@ -488,7 +604,10 @@ function CodeEditor({
                     overflowY: "auto",
                     backgroundColor: "#f7f7f7",
                     borderTop: "1px solid #e0e0e0",
-                    padding: "4px 8px",
+                    // A failed node's error line (NodeOutcomeStrip) sits over
+                    // the bottom of this box: room below the last line lets it
+                    // scroll clear of the strip.
+                    padding: output.code === "error" ? "4px 8px 32px" : "4px 8px",
                     fontSize: "11px",
                     fontFamily: "'Source Code Pro', Consolas, 'Courier New', monospace",
                     whiteSpace: "pre-wrap",

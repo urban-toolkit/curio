@@ -26,11 +26,11 @@ describe("projectActions", () => {
     expect(drawer).toContain("Open dataflow");
   });
 
-  test("a project the user made offers four actions", () => {
+  test("a project the user made offers five actions", () => {
     // No Archive. The one piece of state left subtracts Delete from a seeded
     // example; nothing adds an action, so the two surfaces still cannot show
     // different sets for the same project.
-    expect(ids()).toEqual(["open", "rename", "duplicate", "delete"]);
+    expect(ids()).toEqual(["open", "rename", "categories", "duplicate", "delete"]);
   });
 
   test("a seeded example offers no Delete", () => {
@@ -41,6 +41,7 @@ describe("projectActions", () => {
     expect(projectActions({ isExample: true }).map((a) => a.id)).toEqual([
       "open",
       "rename",
+      "categories",
       "duplicate",
     ]);
   });
@@ -48,7 +49,7 @@ describe("projectActions", () => {
   test("an example loses nothing else", () => {
     // Only the way out is withheld. An example is still fully usable.
     const example = projectActions({ isExample: true }).map((a) => a.id);
-    for (const id of ["open", "rename", "duplicate"]) {
+    for (const id of ["open", "rename", "categories", "duplicate"]) {
       expect(example).toContain(id);
     }
   });

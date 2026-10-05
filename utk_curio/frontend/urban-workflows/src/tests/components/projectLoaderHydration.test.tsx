@@ -36,12 +36,13 @@ jest.mock("../../providers/FlowProvider", () => ({
     hydrateRestoredOutputs: mockHydrateRestoredOutputs,
     loadParsedTrill: jest.fn(),
     projectId: null,
+    attachLatestRun: jest.fn(),
   }),
 }));
 jest.mock("../../hook/useCode", () => ({
   useCode: () => ({ loadTrill: mockLoadTrill }),
 }));
-jest.mock("../../hook/useEnsureWorkflowDeps", () => ({
+jest.mock("../../providers/packages/useEnsureWorkflowDeps", () => ({
   useEnsureWorkflowDeps: () => mockEnsureWorkflowDeps,
 }));
 jest.mock("../../TrillGenerator", () => ({ TrillGenerator: { reset: jest.fn() } }));
@@ -129,6 +130,19 @@ describe("restoring saved outputs", () => {
     expect(mockHydrateRestoredOutputs.mock.calls[0][0]).toEqual([
       { nodeId: "py", output: "art_py" },
     ]);
+  });
+
+  // #407/#408: without this the nodes are built as never-run, and the first
+  // downstream play re-runs every upstream node the load just restored.
+  it("hands the restored outputs to the load, so those nodes count as done", async () => {
+    mockLoadProject.mockResolvedValue({ spec: SPEC, outputs: OUTPUTS });
+
+    renderLoader();
+
+    await waitFor(() => expect(mockLoadTrill).toHaveBeenCalled());
+    expect(mockLoadTrill).toHaveBeenCalledWith(
+      SPEC, undefined, undefined, { py: OUTPUTS[0].filename },
+    );
   });
 
   it("restores nothing when nothing was saved", async () => {

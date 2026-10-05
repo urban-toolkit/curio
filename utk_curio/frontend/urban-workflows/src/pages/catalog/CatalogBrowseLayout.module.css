@@ -1,8 +1,9 @@
 /* ─────────────────────────────────────────────────────────────
-   Shared 3-column browse layout, used by all three browse pages: the Data
-   Catalog, the Node Catalog, and the project list (which imports the rail,
-   header band, filter bar and drawer from here and adds only its own card
-   styles in pages/projects/ProjectsBrowseLayout.module.css).
+   Shared 3-column browse layout, used by every browse page: the Node, Data,
+   Agent, Discovery and Model Catalogs, and the project list (which imports the
+   rail, header band and drawer from here and adds only its own card styles in
+   pages/projects/ProjectsBrowseLayout.module.css). The rail is CatalogRail.tsx
+   and the header band CatalogPageHeader.tsx, so the pages cannot drift apart.
 
    Colours, type and geometry come from ../../styles/curioTokens.css. Format
    and category colours in particular are tokens, not literals: they are shown
@@ -15,12 +16,14 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 212px minmax(0, 1fr) 0px;
+  grid-template-columns: 188px minmax(0, 1fr) 0px;
   grid-template-rows: minmax(0, 1fr);
-  /* Shared browse cards (Data + Nodes tabs; inherited by nested cards) */
-  --catalogBrowseCardMinHeight: 268px;
-  --catalogBrowseCardGridGap: 20px;
-  --catalogBrowseCardGridPadding: 24px;
+  /* Shared browse cards (every browse page; inherited by nested cards). A card
+     is as tall as its content and a row as tall as its tallest card: the old
+     268px floor left a band of blank card under every short description. */
+  --catalogBrowseCardMinWidth: 220px;
+  --catalogBrowseCardGridGap: 16px;
+  --catalogBrowseCardGridPadding: 16px;
   --catalogBrowseCardBodyPadX: 16px;
   --catalogBrowseCardBodyPadBottom: 8px;
   --catalogBrowseCardDescLineHeight: 1.4;
@@ -36,7 +39,7 @@
 }
 
 .pageWithDrawer {
-  grid-template-columns: 212px minmax(0, 1fr) 320px;
+  grid-template-columns: 188px minmax(0, 1fr) 320px;
 }
 
 .detailPage {
@@ -56,22 +59,27 @@
   border-right: 1px solid var(--curio-border);
   display: flex;
   flex-direction: column;
-  padding: 0 0 20px;
+  padding: 8px 0 16px;
   overflow-y: auto;
 }
 
+/* Nothing in the rail may shrink. It is a flex column that scrolls, so when it
+   is taller than the window the browser shrinks every child that allows it,
+   and an empty 1px divider allows it down to nothing: the section lines showed
+   on a rail that fit (Node, Agent, Data Lake) and vanished on one that did not
+   (Data, Projects). */
+.categoryRail > * {
+  flex-shrink: 0;
+}
+
 .railLabel {
-  margin: 28px 0 6px;
-  padding: 0 20px;
+  margin: 10px 0 4px;
+  padding: 0 16px;
   font-size: 10px;
   font-weight: 700;
   color: #BBBBBB;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-}
-
-.categoryRail > .railLabel:first-of-type {
-  margin-top: 18px;
 }
 
 .railButton {
@@ -84,16 +92,18 @@
   border: 0;
   background: transparent;
   color: var(--curio-text-secondary);
-  padding: 9px 18px;
+  padding: 6px 16px;
   font-family: inherit;
   font-size: 12px;
   font-weight: 400;
   cursor: pointer;
   text-align: left;
-  min-height: 34px;
+  min-height: 30px;
 }
 
-.railButton:hover { background: rgba(0,0,0,0.02); }
+/* Hover feedback is for rows you have NOT chosen: the selected row already
+   announces itself with its fill, its weight and its bar. */
+.railButton:hover:not(.railButtonActive) { background: rgba(0,0,0,0.02); }
 
 .railButtonActive {
   background: var(--curio-page-bg);
@@ -157,52 +167,66 @@
 .dot_bundle { background: var(--curio-format-bundle-fg); }
 .dot_osm { background: var(--curio-format-osm-fg); }
 .dot_gpkg { background: var(--curio-format-gpkg-fg); }
+.dot_gtfs { background: var(--curio-format-gtfs-fg); }
+.dot_collection { background: var(--curio-format-collection-fg); }
+.dot_onnx { background: var(--curio-format-onnx-fg); }
+.dot_netcdf { background: var(--curio-format-netcdf-fg); }
+
+/* Node Catalog category rows: the same keys and colours as the package card
+   strips (`primaryCategory()`: data | computation | vis | package). */
+.categoryDot_data        { background: var(--curio-category-data-fg); }
+.categoryDot_computation { background: var(--curio-category-computation-fg); }
+.categoryDot_vis         { background: var(--curio-category-vis-fg); }
+.categoryDot_package     { background: var(--curio-category-package-fg); }
+
+/* Agent Catalog category rows: the agent card strips' palette keys
+   (`agentCategoryKey()`), not the node categories. */
+.agentDot_node     { background: var(--curio-category-agent-node-fg); }
+.agentDot_canvas   { background: var(--curio-category-agent-canvas-fg); }
+.agentDot_data     { background: var(--curio-category-agent-data-fg); }
+.agentDot_evaluate { background: var(--curio-category-agent-evaluate-fg); }
+.agentDot_package  { background: var(--curio-category-agent-package-fg); }
 
 .railDivider {
   height: 1px;
-  margin: 14px 16px;
+  margin: 10px 16px 0;
   background: #EBEBEB;
 }
 
 /* ══════════════════════════════════════════
    MAIN BROWSE AREA
    ══════════════════════════════════════════ */
+/* The header stays put and the card grid owns the scroll, so the grid takes
+   exactly the height the header leaves. It used to be sized as
+   `calc(100vh - 290px)`, a guess at the header that was wrong as soon as an
+   intro wrapped, and then the whole column scrolled as well. */
 .browseMain {
   grid-column: 2;
   grid-row: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
-/* ── Page header (white) ── */
+/* ── Page header (white): one row, then a one-line intro ── */
 .browseHeader {
   background: var(--curio-card-bg);
-  padding: 16px 24px 0;
+  padding: 12px 20px 10px;
   border-bottom: 1px solid var(--curio-border);
   flex-shrink: 0;
-}
-
-.crumb {
-  margin: 0 0 4px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--curio-text-meta);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .titleRow {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px 10px;
 }
 
 .titleRow h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--curio-text-primary);
 }
@@ -221,25 +245,52 @@
   padding: 0 8px;
 }
 
-/* One-line page description under the title row. Was an inline style duplicated
-   verbatim in NodeCatalogBrowse and DataCatalogBrowse. */
-.pageIntro {
-  margin: 0 0 12px;
-  max-width: 720px;
-  font-size: var(--curio-font-size-md);
-  color: var(--curio-text-secondary);
-}
-
-.headerTools {
+/* The second header row: the intro, then sort (and Projects' grid or list
+   switch) at its end, right above the cards they arrange. Sort sat in the chip
+   row before; it moved here rather than into the title row, where the Projects
+   page's three actions left it no room. */
+.introRow {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-top: 6px;
+}
+
+/* Page description under the title row. Was an inline style duplicated
+   verbatim in NodeCatalogBrowse and DataCatalogBrowse. */
+.pageIntro {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--curio-font-size-sm);
+  line-height: 1.4;
+  color: var(--curio-text-secondary);
+}
+
+.viewTools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Search and the page's actions, at the end of the title row. It takes all
+   the width the title leaves and never wraps: the search box gives up width
+   instead, so the buttons stay on the title's line. */
+.headerTools {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 8px;
 }
 
 .hubSearch {
-  flex: 1;
-  min-width: 0;
+  flex: 0 1 240px;
+  min-width: 120px;
   max-width: 300px;
   height: 34px;
   border: 1px solid var(--curio-border);
@@ -288,7 +339,12 @@
 
 .primaryHeaderButton:hover { background: var(--curio-top-bar-bg-hover); }
 
-/* ── Filter chips bar ── */
+/* ── Search bar ──
+   Only the Data Lake source page has one now, above its results. The browse
+   pages had a chip row here that repeated the rail beside it: the same "All",
+   the same "In all projects", the same formats and categories. It cost every
+   page 49 to 84px above the cards and is gone; its sort control lives in the
+   header row. */
 .filterBar {
   background: #FAFAFA;
   border-bottom: 1px solid #E8E8E8;
@@ -300,87 +356,42 @@
   flex-wrap: wrap;
 }
 
-.chip {
-  height: 26px;
-  border: 1px solid var(--curio-border);
-  border-radius: 13px;
-  background: transparent;
-  color: var(--curio-text-secondary);
-  padding: 0 12px;
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-/* Hover feedback is for chips you have NOT chosen. `.chip:hover` is (0,2,0) and
-   `.chipActive` is (0,1,0), so hovering a selected chip used to replace its dark
-   background with the light one while leaving `--curio-text-on-dark` text in
-   place - #fbfcf6 on #f0f0f0, about 1.03:1, which reads as a blank chip. The
-   selected chip already announces itself with the fill and border, so it needs
-   no hover state at all. Same idiom as `.viewButton:hover:not(.viewButtonActive)`
-   in ProjectsBrowseLayout.module.css. */
-.chip:hover:not(.chipActive) { background: var(--curio-page-bg); }
-
-.chipActive {
-  background: var(--curio-top-bar-bg);
-  border-color: var(--curio-text-primary);
-  color: var(--curio-text-on-dark);
-}
-
-.chipDot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-/* One rule per DatasetFormat, from the same tokens the rail's .dot_* block uses.
-   Only three formats had one while the chip row was a hardcoded three (#232); the
-   row derives from the facets now, so any format can reach it - and a missing rule
-   resolves to "", i.e. an invisible dot rather than a wrong-coloured one. */
-.chipDot_geojson { background: var(--curio-format-geojson-fg); }
-.chipDot_csv     { background: var(--curio-format-csv-fg); }
-.chipDot_json    { background: var(--curio-format-json-fg); }
-.chipDot_parquet { background: var(--curio-format-parquet-fg); }
-.chipDot_geotiff { background: var(--curio-format-geotiff-fg); }
-.chipDot_shp     { background: var(--curio-format-shp-fg); }
-.chipDot_bundle  { background: var(--curio-format-bundle-fg); }
-.chipDot_osm     { background: var(--curio-format-osm-fg); }
-.chipDot_gpkg    { background: var(--curio-format-gpkg-fg); }
-.chipDotDefault { background: var(--curio-text-muted); }
-/* Node Catalog category chips (primaryCategory) */
-.chipDot_data         { background: var(--curio-category-data-fg); }
-.chipDot_computation  { background: var(--curio-category-computation-fg); }
-.chipDot_vis          { background: var(--curio-category-vis-fg); }
-.chipDot_package      { background: var(--curio-category-package-fg); }
-
 .filterSpacer { flex: 1; }
 
+/* Bordered like the search box above it, a step lower so the intro row it
+   shares stays one line of text tall. */
 .sortSelect {
-  height: 26px;
-  border: 0;
-  background: transparent;
-  color: #777777;
+  height: 28px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-lg);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-secondary);
+  padding: 0 8px;
   font-family: inherit;
   font-size: 12px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
-/* ── Card grid ── */
+/* ── Card grid ──
+   As many columns as fit, from the width the grid actually has: with the
+   details drawer open at 1280px that is three, with it closed four. It was
+   three fixed columns that fell to two below a 1300px VIEWPORT, whatever the
+   rail and the drawer left of it. */
 .cardGrid {
-  height: calc(100vh - 290px);
-  overflow-y: scroll;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   overflow-x: hidden;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--catalogBrowseCardGridGap, 20px);
-  padding: var(--catalogBrowseCardGridPadding, 24px);
+  grid-template-columns: repeat(auto-fill, minmax(var(--catalogBrowseCardMinWidth, 220px), 1fr));
+  /* A row is as tall as its tallest card, never less. The cards clip their
+     overflow, which gives them no automatic minimum height, so in a grid of
+     fixed height (this one scrolls) `auto` rows would share that height out
+     and crush every card to a strip and half a title. */
+  grid-auto-rows: max-content;
+  gap: var(--catalogBrowseCardGridGap, 16px);
+  padding: var(--catalogBrowseCardGridPadding, 16px);
   /* Pack rows to the top so a short filtered list does not stretch rows to fill the viewport */
   align-content: start;
   align-items: stretch;
@@ -450,7 +461,6 @@
   outline: none;
   transition: box-shadow 0.15s, border-color 0.15s;
   box-sizing: border-box;
-  min-height: var(--catalogBrowseCardMinHeight, 268px);
   height: auto;
   align-self: stretch;
 }
@@ -463,10 +473,10 @@
 
 /* Colored top strip */
 .cardStrip {
-  min-height: 32px;
+  min-height: 28px;
   display: flex;
   align-items: center;
-  padding: 4px 12px;
+  padding: 3px 12px;
   flex-shrink: 0;
 }
 
@@ -479,6 +489,10 @@
 .strip_bundle { background: var(--curio-format-bundle-fg); }
 .strip_osm { background: var(--curio-format-osm-fg); }
 .strip_gpkg { background: var(--curio-format-gpkg-fg); }
+.strip_gtfs { background: var(--curio-format-gtfs-fg); }
+.strip_collection { background: var(--curio-format-collection-fg); }
+.strip_onnx { background: var(--curio-format-onnx-fg); }
+.strip_netcdf { background: var(--curio-format-netcdf-fg); }
 
 /* Active card: colored border matches strip */
 .cardActive.card_geojson { border-color: var(--curio-format-geojson-fg); }
@@ -490,6 +504,10 @@
 .cardActive.card_bundle { border-color: var(--curio-format-bundle-fg); }
 .cardActive.card_osm { border-color: var(--curio-format-osm-fg); }
 .cardActive.card_gpkg { border-color: var(--curio-format-gpkg-fg); }
+.cardActive.card_gtfs { border-color: var(--curio-format-gtfs-fg); }
+.cardActive.card_collection { border-color: var(--curio-format-collection-fg); }
+.cardActive.card_onnx { border-color: var(--curio-format-onnx-fg); }
+.cardActive.card_netcdf { border-color: var(--curio-format-netcdf-fg); }
 
 .cardFormatBadge {
   height: 16px;
@@ -528,7 +546,7 @@
 }
 
 .cardTitle {
-  margin: 14px 0 2px;
+  margin: 10px 0 2px;
   font-size: 13px;
   font-weight: 700;
   color: var(--curio-text-primary);
@@ -640,6 +658,21 @@
   gap: 6px;
 }
 
+/* A card's state ("In all projects", "Link only"), at the start of its
+   actions row: the strip says what the item is, this says where it stands,
+   the link beside it says what you can do. It rode at the end of the strip
+   until the cards narrowed, where it ran over the format or category pill. */
+.cardStatus {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--curio-role-installed-fg);
+  white-space: nowrap;
+}
+
+.cardStatusMuted {
+  color: var(--curio-text-meta);
+}
+
 .cardActionsRight {
   flex-shrink: 0;
   display: flex;
@@ -711,7 +744,17 @@
   box-shadow: -4px 0 10px rgba(0,0,0,0.09);
   display: flex;
   flex-direction: column;
+  /* The body scrolls, not the drawer: the header and the action row stay
+     where they are (#526). */
+  overflow: hidden;
+}
+
+.drawerBody {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .drawerHeader {
@@ -865,7 +908,7 @@
   font-weight: 700;
   color: var(--curio-text-primary);
   line-height: 1.25;
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .drawerBadgesRow {
@@ -895,6 +938,10 @@
 .dfmt_bundle { background: var(--curio-format-bundle-bg); color: var(--curio-format-bundle-on-tint); }
 .dfmt_osm { background: var(--curio-format-osm-bg); color: var(--curio-format-osm-on-tint); }
 .dfmt_gpkg { background: var(--curio-format-gpkg-bg); color: var(--curio-format-gpkg-on-tint); }
+.dfmt_gtfs { background: var(--curio-format-gtfs-bg); color: var(--curio-format-gtfs-on-tint); }
+.dfmt_collection { background: var(--curio-format-collection-bg); color: var(--curio-format-collection-on-tint); }
+.dfmt_onnx { background: var(--curio-format-onnx-bg); color: var(--curio-format-onnx-on-tint); }
+.dfmt_netcdf { background: var(--curio-format-netcdf-bg); color: var(--curio-format-netcdf-on-tint); }
 
 .drawerInstalledBadge {
   height: 20px;
@@ -1117,22 +1164,22 @@
 /* ══════════════════════════════════════════
    RESPONSIVE
    ══════════════════════════════════════════ */
-@media (max-width: 1300px) {
-  .cardGrid { grid-template-columns: repeat(2, 1fr); }
-}
-
+/* No column counts here: the grid's auto-fill already follows the width it
+   has. These only move the drawer and the rail out of the way. */
 @media (max-width: 1100px) {
-  .page { grid-template-columns: 212px minmax(0, 1fr); }
+  .page { grid-template-columns: 188px minmax(0, 1fr); }
   .browseDrawerColumn { display: none; }
-  .cardGrid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  .headerTools { flex-wrap: wrap; }
 }
 
+/* One column of everything, and the page scrolls as a whole: the rail sits
+   above the header, so neither region has a height of its own to scroll in. */
 @media (max-width: 820px) {
-  .page { display: block; }
+  .page { display: block; overflow-y: auto; }
   .categoryRail { border-right: 0; border-bottom: 1px solid var(--curio-border); }
-  .browseMain { overflow-y: visible; }
-  .headerTools { flex-wrap: wrap; }
-  .hubSearch { max-width: none; width: 100%; }
-  .cardGrid { grid-template-columns: 1fr; }
+  .browseMain { overflow: visible; }
+  .cardGrid { overflow: visible; }
+  .headerTools { flex: 1 1 100%; justify-content: flex-start; }
+  .hubSearch { max-width: none; flex: 1 1 100%; }
 }
 

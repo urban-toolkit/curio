@@ -30,10 +30,15 @@ class TestTopLevelShape:
                     "platform", "pythonVersion"):
             assert isinstance(deployment[key], str), key
         for key in ("execUserConfigured", "authEnabled", "projectsEnabled",
-                    "guestLoginAllowed", "collabEnabled", "sharedInstallsAllowed",
+                    "guestLoginAllowed", "collabEnabled",
                     "factoryPublishAllowed", "saveNodeOutputDefault",
                     "llmProviderConfigured", "searchToolConfigured"):
             assert isinstance(deployment[key], bool), key
+
+    def test_no_chip_for_the_retired_shared_installs_flag(self, client):
+        # #450: --allow-shared-installs is gone (users/capabilities.py), and
+        # nothing sets CURIO_ALLOW_SHARED_INSTALLS, so the field could only say off.
+        assert "sharedInstallsAllowed" not in client.get("/api/monitor").get_json()["deployment"]
 
     def test_generated_at_parses_as_utc(self, client):
         stamp = client.get("/api/monitor").get_json()["generatedAt"]
@@ -47,6 +52,66 @@ class TestTopLevelShape:
         assert len(buckets) == 6
         assert buckets[-1]["leMs"] is None, "the last bin must be the overflow"
         assert all(isinstance(b["count"], int) for b in buckets)
+
+
+class TestTheDeploymentLlm:
+    """``llmProviderConfigured`` says whether there is a Deployment default: the
+    deployment's endpoint with a model, read at call time."""
+
+    def _flag(self, client, monkeypatch, **values):
+        from utk_curio.backend import config
+
+        for name, value in {"DEFAULT_LLM_BASE_URL": "", "DEFAULT_LLM_API_KEY": "",
+                            "DEFAULT_LLM_MODEL": "", **values}.items():
+            monkeypatch.setattr(config, name, value)
+        return client.get("/api/monitor").get_json()["deployment"]["llmProviderConfigured"]
+
+    def test_an_endpoint_with_a_model_is_configured(self, client, monkeypatch):
+        assert self._flag(client, monkeypatch, DEFAULT_LLM_BASE_URL="https://llm.example.com/v1",
+                          DEFAULT_LLM_MODEL="m") is True
+
+    def test_an_endpoint_without_a_model_is_not(self, client, monkeypatch):
+        assert self._flag(client, monkeypatch, DEFAULT_LLM_BASE_URL="https://llm.example.com/v1") is False
+
+    def test_nothing_set_is_not(self, client, monkeypatch):
+        assert self._flag(client, monkeypatch) is False
+
+
+class TestTheSearchProvider:
+    """#450: ``searchToolConfigured`` says whether the operator named a search
+    provider: ``--agent-search-url`` sets ``CURIO_SEARCH_URL``, the variable
+    ``web.search`` reads. Unset, search falls back to its keyless default."""
+
+    def _flag(self, client):
+        return client.get("/api/monitor").get_json()["deployment"]["searchToolConfigured"]
+
+    def test_a_named_provider_is_configured(self, client, monkeypatch):
+        monkeypatch.delenv("CURIO_AGENT_SEARCH_URL", raising=False)
+        monkeypatch.setenv("CURIO_SEARCH_URL", "https://search.example.com/?q={q}")
+        assert self._flag(client) is True
+
+    def test_unset_is_not(self, client, monkeypatch):
+        monkeypatch.delenv("CURIO_SEARCH_URL", raising=False)
+        monkeypatch.setenv("CURIO_AGENT_SEARCH_URL", "https://search.example.com/?q={q}")
+        assert self._flag(client) is False
+
+
+class TestThePublishSwitch:
+    """#450: ``factoryPublishAllowed`` reports the switch the catalog routes
+    obey, which defaults on, not an environment variable read as off when unset."""
+
+    def _flag(self, client, monkeypatch, allowed: bool):
+        from utk_curio.backend.app.packages.routes import common as routes_common
+
+        monkeypatch.delenv("CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", raising=False)
+        monkeypatch.setattr(routes_common, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", allowed)
+        return client.get("/api/monitor").get_json()["deployment"]["factoryPublishAllowed"]
+
+    def test_on(self, client, monkeypatch):
+        assert self._flag(client, monkeypatch, True) is True
+
+    def test_off(self, client, monkeypatch):
+        assert self._flag(client, monkeypatch, False) is False
 
 
 class TestSandboxSection:

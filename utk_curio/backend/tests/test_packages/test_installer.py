@@ -1,4 +1,4 @@
-"""Tests for :mod:`utk_curio.backend.app.packages.installer`.
+"""Tests for :mod:`utk_curio.backend.app.packages.repositories.archive`.
 
 Covers the happy path, the zip-slip guards, layout enforcement, manifest
 cross-checks, replace=True / replace=False semantics, uninstall, and
@@ -15,18 +15,18 @@ import zipfile
 
 import pytest
 
-from utk_curio.backend.app.packages.installer import (
-    InstallerError,
-    export_packageage_archive,
-    install_packageage_from_archive,
-    install_packageage_from_directory,
-    uninstall_packageage,
+from utk_curio.backend.app.packages.application.store_install import (
+    export_package_archive,
+    install_package_from_archive,
+    install_package_from_directory,
+    uninstall_package,
 )
-from utk_curio.backend.app.packages.storage import package_dir
+from utk_curio.backend.app.packages.repositories.archive import InstallerError
+from utk_curio.backend.app.packages.repositories.store import package_dir
 
 
 def test_install_happy_path(tmp_curio, make_archive):
-    result = install_packageage_from_archive("guest", make_archive())
+    result = install_package_from_archive("guest", make_archive())
     assert result.manifest.package_id == "ai.test.demo"
     assert result.manifest.major == 1
     assert result.replaced_existing is False
@@ -39,18 +39,18 @@ def test_install_happy_path(tmp_curio, make_archive):
 
 
 def test_install_rejects_duplicate_without_replace(tmp_curio, make_archive):
-    install_packageage_from_archive("guest", make_archive())
+    install_package_from_archive("guest", make_archive())
     with pytest.raises(InstallerError, match="already installed"):
-        install_packageage_from_archive("guest", make_archive())
+        install_package_from_archive("guest", make_archive())
 
 
 def test_install_replace_overwrites(tmp_curio, make_archive, manifest_dict):
-    install_packageage_from_archive("guest", make_archive())
+    install_package_from_archive("guest", make_archive())
     new_archive = make_archive(
         manifest=manifest_dict(version="2.0.0"),
         sources={"demo-kind": {"Default.py": "def run():\n    return {'v': 2}\n"}},
     )
-    result = install_packageage_from_archive("guest", new_archive, replace=True)
+    result = install_package_from_archive("guest", new_archive, replace=True)
     assert result.replaced_existing is True
     assert result.manifest.version == "2.0.0"
     target = package_dir("guest", "ai.test.demo@1")
@@ -60,14 +60,14 @@ def test_install_replace_overwrites(tmp_curio, make_archive, manifest_dict):
 
 def test_install_refreshes_manifest_mtime_for_api_recency(tmp_curio, make_archive, manifest_dict):
     """Reinstall must bump manifest mtime even when bundled zip entries carry stale timestamps."""
-    install_packageage_from_archive("guest", make_archive())
+    install_package_from_archive("guest", make_archive())
     target = package_dir("guest", "ai.test.demo@1")
     mp = target / "manifest.json"
     stale = 1_000_000.0
     os.utime(mp, (stale, stale))
 
     reinstall = make_archive(manifest=manifest_dict(version="1.0.1"))
-    install_packageage_from_archive("guest", reinstall, replace=True)
+    install_package_from_archive("guest", reinstall, replace=True)
     assert mp.stat().st_mtime > stale
 
 
@@ -84,7 +84,7 @@ def test_install_refreshes_manifest_mtime_for_api_recency(tmp_curio, make_archiv
 def test_install_blocks_unsafe_member(tmp_curio, make_archive, bad_member):
     archive = make_archive(extra_files={bad_member: b"x"})
     with pytest.raises(InstallerError):
-        install_packageage_from_archive("guest", archive)
+        install_package_from_archive("guest", archive)
 
 
 def test_install_rejects_disallowed_top_level(tmp_curio, manifest_dict):
@@ -93,7 +93,7 @@ def test_install_rejects_disallowed_top_level(tmp_curio, manifest_dict):
         zf.writestr("manifest.json", json.dumps(manifest_dict()))
         zf.writestr("bin/evil.sh", "#!/bin/sh\necho boom\n")
     with pytest.raises(InstallerError, match="not allowed"):
-        install_packageage_from_archive("guest", buf.getvalue())
+        install_package_from_archive("guest", buf.getvalue())
 
 
 def test_install_rejects_missing_manifest(tmp_curio):
@@ -101,7 +101,7 @@ def test_install_rejects_missing_manifest(tmp_curio):
     with zipfile.ZipFile(buf, mode="w") as zf:
         zf.writestr("starters/demo-kind/Default.py", "")
     with pytest.raises(InstallerError, match="manifest"):
-        install_packageage_from_archive("guest", buf.getvalue())
+        install_package_from_archive("guest", buf.getvalue())
 
 
 def test_install_rejects_invalid_json(tmp_curio):
@@ -109,12 +109,12 @@ def test_install_rejects_invalid_json(tmp_curio):
     with zipfile.ZipFile(buf, mode="w") as zf:
         zf.writestr("manifest.json", "{not valid")
     with pytest.raises(InstallerError, match="valid JSON|invalid JSON"):
-        install_packageage_from_archive("guest", buf.getvalue())
+        install_package_from_archive("guest", buf.getvalue())
 
 
 def test_install_rejects_bad_zip(tmp_curio):
     with pytest.raises(InstallerError, match="valid zip"):
-        install_packageage_from_archive("guest", b"plain text, not a zip")
+        install_package_from_archive("guest", b"plain text, not a zip")
 
 
 def test_install_rejects_size_cap(tmp_curio, make_archive, manifest_dict, monkeypatch):
@@ -122,36 +122,36 @@ def test_install_rejects_size_cap(tmp_curio, make_archive, manifest_dict, monkey
     # cap. The installer reads ZipInfo.file_size before extraction, so a
     # crafted but legitimate large file is rejected before any bytes are
     # written.
-    from utk_curio.backend.app.packages import installer as mod
-    monkeypatch.setattr(mod, "_MAX_FILE_BYTES", 1024)
+    from utk_curio.backend.app.packages.repositories import archive
+    monkeypatch.setattr(archive, "_MAX_FILE_BYTES", 1024)
     big = b"x" * 4096
     archive = make_archive(
         sources={"demo-kind": {"Default.py": big.decode()}},
     )
     with pytest.raises(InstallerError, match="exceeds per-file"):
-        install_packageage_from_archive("guest", archive)
+        install_package_from_archive("guest", archive)
 
 
 def test_uninstall_removes_directory(tmp_curio, make_archive):
-    install_packageage_from_archive("guest", make_archive())
-    assert uninstall_packageage("guest", "ai.test.demo@1") is True
+    install_package_from_archive("guest", make_archive())
+    assert uninstall_package("guest", "ai.test.demo@1") is True
     target = package_dir("guest", "ai.test.demo@1")
     assert not target.exists()
-    assert uninstall_packageage("guest", "ai.test.demo@1") is False
+    assert uninstall_package("guest", "ai.test.demo@1") is False
 
 
 def test_export_roundtrip(tmp_curio, make_archive):
-    install_packageage_from_archive("guest", make_archive())
-    archive_bytes = export_packageage_archive("guest", "ai.test.demo@1")
-    uninstall_packageage("guest", "ai.test.demo@1")
+    install_package_from_archive("guest", make_archive())
+    archive_bytes = export_package_archive("guest", "ai.test.demo@1")
+    uninstall_package("guest", "ai.test.demo@1")
     # Re-install from the exported bytes; must succeed.
-    result = install_packageage_from_archive("guest", archive_bytes)
+    result = install_package_from_archive("guest", archive_bytes)
     assert result.manifest.package_id == "ai.test.demo"
 
 
-def test_export_unknown_packageage(tmp_curio):
+def test_export_unknown_package(tmp_curio):
     with pytest.raises(InstallerError, match="not installed"):
-        export_packageage_archive("guest", "ai.test.demo@1")
+        export_package_archive("guest", "ai.test.demo@1")
 
 
 def test_export_omits_integrity_and_reinstall_rebuilds_it(tmp_curio, make_archive):
@@ -162,11 +162,11 @@ def test_export_omits_integrity_and_reinstall_rebuilds_it(tmp_curio, make_archiv
     ignored or actively wrong. Nothing verifies it on install, so a regression
     here is silent - hence asserting the absence, not just the presence.
     """
-    install_packageage_from_archive("guest", make_archive())
+    install_package_from_archive("guest", make_archive())
     installed = package_dir("guest", "ai.test.demo@1")
     assert (installed / "integrity.json").is_file(), "install should write integrity.json"
 
-    archive_bytes = export_packageage_archive("guest", "ai.test.demo@1")
+    archive_bytes = export_package_archive("guest", "ai.test.demo@1")
     with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
         names = set(zf.namelist())
     assert "manifest.json" in names
@@ -175,8 +175,8 @@ def test_export_omits_integrity_and_reinstall_rebuilds_it(tmp_curio, make_archiv
         f"exported archive must not carry integrity.json: {sorted(names)}"
     )
 
-    uninstall_packageage("guest", "ai.test.demo@1")
-    install_packageage_from_archive("guest", archive_bytes)
+    uninstall_package("guest", "ai.test.demo@1")
+    install_package_from_archive("guest", archive_bytes)
     rebuilt = json.loads((installed / "integrity.json").read_text(encoding="utf-8"))
     assert "manifest.json" in rebuilt["sha256"]
     # The map describes the files actually on disk, so every hashed path exists.
@@ -208,10 +208,10 @@ def test_renamed_archive_installs_alongside_original(tmp_curio, make_archive):
     re-import round trip usable without ``replace=True``.
     """
     original = make_archive()
-    install_packageage_from_archive("guest", original)
+    install_package_from_archive("guest", original)
 
     forked = _rewrite_archive_package_id(original, "ai.test.forked")
-    result = install_packageage_from_archive("guest", forked)
+    result = install_package_from_archive("guest", forked)
 
     assert result.manifest.package_id == "ai.test.forked"
     assert result.replaced_existing is False, "a new coordinate must not replace anything"
@@ -230,25 +230,25 @@ def test_reinstalling_the_same_coordinate_still_needs_replace(tmp_curio, make_ar
     """The fork above works *because* the coordinate changed, not because
     re-import is permissive: the unmodified archive is still refused."""
     archive = make_archive()
-    install_packageage_from_archive("guest", archive)
+    install_package_from_archive("guest", archive)
     with pytest.raises(InstallerError, match="already installed"):
-        install_packageage_from_archive("guest", archive)
+        install_package_from_archive("guest", archive)
 
 
-def test_install_packageage_from_directory_uses_committed_fixture(tmp_curio):
+def test_install_package_from_directory_uses_committed_fixture(tmp_curio):
     """The catalog install path turns a fixture dir into an installed package."""
     from pathlib import Path
 
-    fixtures_root = (
-        Path(__file__).resolve().parents[2] / "fixtures" / "packages"
-    )
-    fixture = fixtures_root / "ai.urbanlab.uhvi@1"
-    if not fixture.is_dir():
-        pytest.skip("UHVI fixture missing")
-    result = install_packageage_from_directory("guest", fixture)
-    assert result.manifest.package_id == "ai.urbanlab.uhvi"
-    target = package_dir("guest", "ai.urbanlab.uhvi@1")
-    assert (target / "starters" / "uhvi-load").is_dir()
+    # The shipped catalog at the repo root. An assert, not a skip: when the
+    # fixture moves, this should fail rather than quietly stop running.
+    fixture = Path(__file__).resolve().parents[4] / "packages" / "ai.utk.uhvi@1"
+    assert fixture.is_dir(), f"missing catalog package {fixture}"
+    result = install_package_from_directory("guest", fixture)
+    assert result.manifest.package_id == "ai.utk.uhvi"
+    target = package_dir("guest", "ai.utk.uhvi@1")
+    manifest = json.loads((target / "manifest.json").read_text())
+    loader = next(t for t in manifest["templates"] if t["id"] == "uhvi-load")
+    assert (target / loader["source"]).is_file()
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +265,7 @@ def _make_orphan(*paths):
     indistinguishable from the latter, so anything that is meant to *be* an
     orphan has to say so.
     """
-    from utk_curio.backend.app.packages.installer import _STAGING_ORPHAN_MIN_AGE_S
+    from utk_curio.backend.app.packages.application.store_install import _STAGING_ORPHAN_MIN_AGE_S
 
     stale = time.time() - (_STAGING_ORPHAN_MIN_AGE_S * 2)
     for path in paths:
@@ -276,12 +276,12 @@ def test_install_purges_orphan_staging_dirs(tmp_curio, make_archive):
     """A previous install that was SIGKILL'd / lost power leaves a
     ``stage-XXXX`` directory in ``<user>/.package-staging/``. The next
     install must sweep it so the orphans don't accumulate forever."""
-    from utk_curio.backend.app.packages.storage import (
-        user_packageage_staging_dir,
-        user_packageages_dir,
+    from utk_curio.backend.app.packages.repositories.store import (
+        user_package_staging_dir,
+        user_packages_dir,
     )
 
-    staging_base = user_packageage_staging_dir("guest")
+    staging_base = user_package_staging_dir("guest")
     staging_base.mkdir(parents=True, exist_ok=True)
     orphan_a = staging_base / "stage-abcd"
     orphan_b = staging_base / "stage-zzzz"
@@ -292,14 +292,14 @@ def test_install_purges_orphan_staging_dirs(tmp_curio, make_archive):
     # And a legacy orphan from older builds that staged inside the
     # package store — the sweep also has to clear that out so the watchdog
     # reloader doesn't keep tripping over its ``.py`` files.
-    legacy_base = user_packageages_dir("guest")
+    legacy_base = user_packages_dir("guest")
     legacy_base.mkdir(parents=True, exist_ok=True)
     legacy_orphan = legacy_base / ".staging-legacy"
     legacy_orphan.mkdir()
     (legacy_orphan / "leftover.py").write_text("# old")
     _make_orphan(orphan_a, orphan_b, legacy_orphan)
 
-    install_packageage_from_archive("guest", make_archive())
+    install_package_from_archive("guest", make_archive())
 
     assert not orphan_a.exists(), "stale staging dir should have been swept"
     assert not orphan_b.exists()
@@ -309,20 +309,20 @@ def test_install_purges_orphan_staging_dirs(tmp_curio, make_archive):
     assert target.is_dir()
 
 
-def test_install_stages_outside_packageage_store(tmp_curio, make_archive):
+def test_install_stages_outside_package_store(tmp_curio, make_archive):
     """Installs must write ``.py`` template files outside the user's
     package store. Staging inside ``<user>/packages/`` triggers Werkzeug's
     watchdog reloader mid-install and kills the response — which is
     exactly the "Failed to fetch" bug the new staging layout fixes."""
-    from utk_curio.backend.app.packages.storage import (
-        user_packageage_staging_dir,
-        user_packageages_dir,
+    from utk_curio.backend.app.packages.repositories.store import (
+        user_package_staging_dir,
+        user_packages_dir,
     )
 
-    install_packageage_from_archive("guest", make_archive())
+    install_package_from_archive("guest", make_archive())
 
-    staging_base = user_packageage_staging_dir("guest")
-    legacy_base = user_packageages_dir("guest")
+    staging_base = user_package_staging_dir("guest")
+    legacy_base = user_packages_dir("guest")
 
     # No stage-* leftovers in either location after a clean install.
     if staging_base.exists():
@@ -343,24 +343,24 @@ def test_seeder_purges_orphan_staging_dirs(tmp_curio):
     """The dev seeder runs on cold startup; it also has to sweep orphan
     staging dirs so a user who has not yet hit an install endpoint can
     still recover from a previously crashed install cycle."""
-    from utk_curio.backend.app.packages.seed import seed_dev_packageages
-    from utk_curio.backend.app.packages.storage import (
-        user_packageage_staging_dir,
-        user_packageages_dir,
+    from utk_curio.backend.app.packages.application.seeding import seed_dev_packages
+    from utk_curio.backend.app.packages.repositories.store import (
+        user_package_staging_dir,
+        user_packages_dir,
     )
 
-    staging_base = user_packageage_staging_dir("guest")
+    staging_base = user_package_staging_dir("guest")
     staging_base.mkdir(parents=True, exist_ok=True)
     new_orphan = staging_base / "stage-deadbeef"
     new_orphan.mkdir()
 
-    legacy_base = user_packageages_dir("guest")
+    legacy_base = user_packages_dir("guest")
     legacy_base.mkdir(parents=True, exist_ok=True)
     legacy_orphan = legacy_base / ".staging-legacy"
     legacy_orphan.mkdir()
     _make_orphan(new_orphan, legacy_orphan)
 
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
     assert not new_orphan.exists()
     assert not legacy_orphan.exists()
 
@@ -440,10 +440,10 @@ def test_purge_stale_staging_keeps_the_in_flight_dir(tmp_curio):
     ``test_purge_stale_staging_spares_a_fresh_dir_it_was_not_told_to_keep`` for
     the other half, which covers sweepers that have no ``keep`` to give.
     """
-    from utk_curio.backend.app.packages.installer import _purge_stale_staging
-    from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
+    from utk_curio.backend.app.packages.application.store_install import _purge_stale_staging
+    from utk_curio.backend.app.packages.repositories.store import user_package_staging_dir
 
-    base = user_packageage_staging_dir("guest")
+    base = user_package_staging_dir("guest")
     base.mkdir(parents=True, exist_ok=True)
     orphan = base / "stage-orphaned"
     in_flight = base / "stage-in-flight"
@@ -461,10 +461,10 @@ def test_purge_stale_staging_keeps_the_in_flight_dir(tmp_curio):
 
 
 def test_purge_stale_staging_sweeps_everything_when_nothing_is_kept(tmp_curio):
-    from utk_curio.backend.app.packages.installer import _purge_stale_staging
-    from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
+    from utk_curio.backend.app.packages.application.store_install import _purge_stale_staging
+    from utk_curio.backend.app.packages.repositories.store import user_package_staging_dir
 
-    base = user_packageage_staging_dir("guest")
+    base = user_package_staging_dir("guest")
     (base / "stage-a").mkdir(parents=True)
     (base / "stage-b").mkdir(parents=True)
     _make_orphan(base / "stage-a", base / "stage-b")
@@ -478,7 +478,7 @@ def test_purge_stale_staging_spares_a_fresh_dir_it_was_not_told_to_keep(tmp_curi
     """A live install survives a sweeper that has no ``keep`` to give.
 
     ``keep`` only protects the sweeper's *own* staging dir, which is no help
-    against a sweeper that is not installing anything. ``seed_dev_packageages``
+    against a sweeper that is not installing anything. ``seed_dev_packages``
     is exactly that: it sweeps with no ``keep`` and it runs on every
     ``GET /api/packages`` (routes.py), which the drawer's import flow fires
     from ``refreshPackageRegistry`` while the upload it just posted is still
@@ -488,10 +488,10 @@ def test_purge_stale_staging_spares_a_fresh_dir_it_was_not_told_to_keep(tmp_curi
     Age is the discriminator: an orphan is by definition one nothing is
     writing to.
     """
-    from utk_curio.backend.app.packages.installer import _purge_stale_staging
-    from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
+    from utk_curio.backend.app.packages.application.store_install import _purge_stale_staging
+    from utk_curio.backend.app.packages.repositories.store import user_package_staging_dir
 
-    base = user_packageage_staging_dir("guest")
+    base = user_package_staging_dir("guest")
     base.mkdir(parents=True, exist_ok=True)
     live = base / "stage-live"
     orphan = base / "stage-orphan"
@@ -511,16 +511,16 @@ def test_purge_stale_staging_spares_a_fresh_dir_it_was_not_told_to_keep(tmp_curi
 
 def test_seeder_spares_an_in_flight_install(tmp_curio):
     """The same guard, through the caller that actually triggers it."""
-    from utk_curio.backend.app.packages.seed import seed_dev_packageages
-    from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
+    from utk_curio.backend.app.packages.application.seeding import seed_dev_packages
+    from utk_curio.backend.app.packages.repositories.store import user_package_staging_dir
 
-    base = user_packageage_staging_dir("guest")
+    base = user_package_staging_dir("guest")
     base.mkdir(parents=True, exist_ok=True)
     live = base / "stage-live"
     (live / "sources").mkdir(parents=True)
     (live / "sources" / "default.py").write_text("return arg", encoding="utf-8")
 
-    seed_dev_packageages(user_key="guest")
+    seed_dev_packages(user_key="guest")
 
     assert (live / "sources" / "default.py").is_file(), (
         "seeding must not delete an install that is mid-extract"
@@ -531,14 +531,14 @@ def test_purge_stale_staging_only_sweeps_its_own_prefix(tmp_curio):
     """The sweep must not touch directories this module did not create.
 
     A concurrent install's manifest-validation copy lives in the same parent
-    (``load_packageage_manifest_from_dir`` stages it there to stay on one
+    (``load_package_manifest_from_dir`` stages it there to stay on one
     filesystem). Deleting it mid-copy surfaces as a shutil.Error with WinError 3
     on every destination path at once, from a request that looks unrelated.
     """
-    from utk_curio.backend.app.packages.installer import _purge_stale_staging
-    from utk_curio.backend.app.packages.storage import user_packageage_staging_dir
+    from utk_curio.backend.app.packages.application.store_install import _purge_stale_staging
+    from utk_curio.backend.app.packages.repositories.store import user_package_staging_dir
 
-    base = user_packageage_staging_dir("guest")
+    base = user_package_staging_dir("guest")
     base.mkdir(parents=True, exist_ok=True)
     ours = base / "stage-orphaned"
     theirs = base / ".validate-inflight"
@@ -562,7 +562,6 @@ def test_validate_copy_lands_beside_the_tree_it_validates(tmp_curio, make_archiv
     is exposed to OS cleaners and scanners, which was deleting it mid-copy.
     """
     import tempfile
-    from utk_curio.backend.app.packages import installer as inst
 
     seen: list[str] = []
     real_mkdtemp = tempfile.mkdtemp
@@ -573,12 +572,12 @@ def test_validate_copy_lands_beside_the_tree_it_validates(tmp_curio, make_archiv
             seen.append(str(kwargs.get("dir")))
         return path
 
-    original = inst.tempfile.mkdtemp
-    inst.tempfile.mkdtemp = spy
+    original = tempfile.mkdtemp
+    tempfile.mkdtemp = spy
     try:
-        install_packageage_from_archive("guest", make_archive())
+        install_package_from_archive("guest", make_archive())
     finally:
-        inst.tempfile.mkdtemp = original
+        tempfile.mkdtemp = original
 
     assert seen, "the validate copy should declare an explicit parent dir"
     assert all(d and "package-staging" in d for d in seen), seen
@@ -591,7 +590,7 @@ def test_zip_package_tree_is_what_both_install_and_export_emit(tmp_path):
     The two loops were byte-for-byte copies; when export learned to read the
     catalog they became one function, and this pins what it leaves out.
     """
-    from utk_curio.backend.app.packages.installer import zip_package_tree
+    from utk_curio.backend.app.packages.repositories.archive import zip_package_tree
 
     src = tmp_path / "pkg@1"
     (src / "sources").mkdir(parents=True)
@@ -614,10 +613,11 @@ def test_a_published_catalog_package_can_be_installed_again(tmp_path):
     workflow-deps auto-install) answered "archive member has unsafe segment"
     for anything published through Curio's own route.
     """
-    from utk_curio.backend.app.packages.installer import (
-        _safe_member_path, zip_package_tree,
+    from utk_curio.backend.app.packages.repositories.archive import (
+        _safe_member_path,
+        zip_package_tree,
     )
-    from utk_curio.backend.app.packages.publisher_record import record_publisher
+    from utk_curio.backend.app.packages.repositories.publisher_record import record_publisher
 
     src = tmp_path / "pkg@1"
     (src / "sources").mkdir(parents=True)
@@ -648,8 +648,8 @@ def test_an_exported_archive_carries_nobodys_user_key(tmp_path):
     deflated, so a substring check over the blob passes whether the file is in
     there or not.
     """
-    from utk_curio.backend.app.packages.installer import zip_package_tree
-    from utk_curio.backend.app.packages.publisher_record import record_publisher
+    from utk_curio.backend.app.packages.repositories.archive import zip_package_tree
+    from utk_curio.backend.app.packages.repositories.publisher_record import record_publisher
 
     src = tmp_path / "pkg@1"
     src.mkdir(parents=True)
@@ -671,8 +671,11 @@ def test_a_published_package_does_not_read_as_stale_forever(tmp_path):
     compares exactly those two, reads the mismatch as "the catalog has moved
     on", and re-copies the package on every pass.
     """
-    from utk_curio.backend.app.packages.installer import _build_integrity, zip_package_tree
-    from utk_curio.backend.app.packages.publisher_record import record_publisher
+    from utk_curio.backend.app.packages.repositories.archive import (
+        _build_integrity,
+        zip_package_tree,
+    )
+    from utk_curio.backend.app.packages.repositories.publisher_record import record_publisher
 
     src = tmp_path / "pkg@1"
     (src / "sources").mkdir(parents=True)
@@ -691,8 +694,8 @@ def test_a_published_package_does_not_read_as_stale_forever(tmp_path):
 
 def test_the_publisher_record_is_not_copied_into_a_users_store(tmp_path):
     """It names who published the package, and a store copy belongs to someone else."""
-    from utk_curio.backend.app.packages.publisher_record import record_publisher
-    from utk_curio.backend.app.packages.seed import _swap_in_package
+    from utk_curio.backend.app.packages.repositories.publisher_record import record_publisher
+    from utk_curio.backend.app.packages.application.seeding import _swap_in_package
 
     src = tmp_path / "catalog" / "pkg@1"
     src.mkdir(parents=True)
@@ -719,8 +722,9 @@ def test_a_half_written_publisher_record_leaves_the_package_installable(tmp_path
     dot is refused. One environment hiccup made the package uninstallable for
     everyone, through every route that re-zips a catalog directory.
     """
-    from utk_curio.backend.app.packages.installer import (
-        _safe_member_path, zip_package_tree,
+    from utk_curio.backend.app.packages.repositories.archive import (
+        _safe_member_path,
+        zip_package_tree,
     )
 
     src = tmp_path / "pkg@1"
@@ -744,8 +748,10 @@ def test_no_dotfile_is_ever_shipped_because_none_could_be_installed(tmp_path):
     in an archive can only ever abort the install - it can never be content
     somebody meant to ship.
     """
-    from utk_curio.backend.app.packages.installer import (
-        InstallerError, _safe_member_path, zip_package_tree,
+    from utk_curio.backend.app.packages.repositories.archive import (
+        InstallerError,
+        _safe_member_path,
+        zip_package_tree,
     )
 
     src = tmp_path / "pkg@1"

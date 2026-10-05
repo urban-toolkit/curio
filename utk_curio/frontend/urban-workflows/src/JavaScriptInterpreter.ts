@@ -1,8 +1,9 @@
 import { NodeType } from "./constants";
 import { NodeTemplateId } from "./registry/types";
-import { formatDate, mapTypes } from "./utils/formatters";
+import { recordExecProvenance } from "./utils/executionResult";
 import { getToken } from "./utils/authApi";
 import { backendUrl } from "./utils/backendUrl";
+import { executionInputRef } from "./utils/flowOutputRef";
 
 export class JavaScriptInterpreter {
     public interpretCode(
@@ -27,7 +28,7 @@ export class JavaScriptInterpreter {
             });
         };
 
-        let startTime = formatDate(new Date());
+        const startedAt = new Date();
 
         const _token = getToken();
         const url = backendUrl() + "/processJavaScriptCode";
@@ -39,7 +40,7 @@ export class JavaScriptInterpreter {
             method: "POST",
             body: JSON.stringify({
                 code: userCode,
-                input: input,
+                input: executionInputRef(input),
                 inputTypes: inputTypes,
                 nodeType: nodeType,
                 nodeId: nodeId,
@@ -73,29 +74,15 @@ export class JavaScriptInterpreter {
             })
             .then((json) => {
                 clearTimeout(timeoutId);
-                let endTime = formatDate(new Date());
-
-                let typesInput: string[] = [];
-                if (input != "") typesInput = json.input.dataType;
-
-                let typesOutput: string[] = [];
-                if (json.output != "") {
-                    if (json.stderr != "") {
-                        typesOutput = ["error"];
-                    } else {
-                        typesOutput = json.output.dataType;
-                    }
-                }
-
-                nodeExecProv(
-                    startTime,
-                    endTime,
-                    workflow_name,
-                    nodeType + "-" + nodeId,
-                    mapTypes(typesInput),
-                    mapTypes(typesOutput),
-                    unresolvedUserCode
-                );
+                recordExecProvenance(nodeExecProv, {
+                    startedAt,
+                    finishedAt: new Date(),
+                    workflowName: workflow_name,
+                    nodeId,
+                    input,
+                    reply: json,
+                    code: unresolvedUserCode,
+                });
 
                 callback(json);
             })

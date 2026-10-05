@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Mobility and streets", "Greenery"], "complexity": ["Intermediate"]},
     "description": "Writing the spec yourself, over three catalog formats and a spatial join.",
     "nodes": [
       {
@@ -7,7 +8,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 500,
-        "content": "import geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.urbanlab.chicago-boundary\")\ngdf = gpd.read_file(dataset_path)\n\nreturn gdf",
+        "content": "import geopandas as gpd\n\ngdf = curio_load_data(\"data.utk.chicago-boundary\")\n\nreturn gdf",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -20,7 +21,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 930,
-        "content": "import geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n\ndataset_path = curio_dataset_path(\"data.cityofchicago.green-roofs\")\ndf = pd.read_csv(dataset_path).dropna(subset=[\"LONGITUDE\", \"LATITUDE\"])\npoints = [Point(xy) for xy in zip(df[\"LONGITUDE\"], df[\"LATITUDE\"])]\n\nreturn gpd.GeoDataFrame(df, geometry=points, crs=4326)",
+        "content": "import geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n\ndataset_path = curio_data_path(\"data.cityofchicago.green-roofs\")\ndf = pd.read_csv(dataset_path).dropna(subset=[\"LONGITUDE\", \"LATITUDE\"])\npoints = [Point(xy) for xy in zip(df[\"LONGITUDE\"], df[\"LATITUDE\"])]\n\nreturn gpd.GeoDataFrame(df, geometry=points, crs=4326)",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -33,7 +34,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 1360,
-        "content": "import geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.projectsidewalk.chicago-labels\")\ngdf = gpd.read_parquet(dataset_path)\n\nreturn gdf[[\"label_type\", \"severity\", \"geometry\"]].head(400)",
+        "content": "import geopandas as gpd\n\ndataset_path = curio_data_path(\"data.projectsidewalk.chicago-labels\")\ngdf = gpd.read_parquet(dataset_path)\n\nreturn gdf[[\"label_type\", \"severity\", \"geometry\"]].head(400)",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -229,8 +230,8 @@
     "provenance_id": "DefaultWorkflow",
     "datasets": [
       {
-        "datasetId": "data.urbanlab.chicago-boundary",
-        "dirName": "data.urbanlab.chicago-boundary@1",
+        "datasetId": "data.utk.chicago-boundary",
+        "dirName": "data.utk.chicago-boundary@1",
         "origin": "imported",
         "producerNodeId": null,
         "consumerNodeIds": [],

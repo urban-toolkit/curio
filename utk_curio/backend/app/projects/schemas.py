@@ -12,6 +12,16 @@ def _slugify(name: str) -> str:
     return re.sub(r"[\s_-]+", "-", slug)[:240]
 
 
+def _refuse_scenario_conflicts(spec) -> None:
+    """A spec whose ``dataflow.scenarios`` puts a node in two scenarios, or
+    gives two scenarios one id, is refused (#662)."""
+    from utk_curio.backend.app.projects.scenarios import scenario_conflicts
+
+    conflicts = scenario_conflicts(spec)
+    if conflicts:
+        raise ValueError(" ".join(conflicts))
+
+
 @dataclass
 class OutputRef:
     node_id: str
@@ -39,6 +49,7 @@ class ProjectCreate:
     def __post_init__(self):
         if not self.name or not self.name.strip():
             raise ValueError("name is required")
+        _refuse_scenario_conflicts(self.spec)
         if self.thumbnail_accent not in VALID_ACCENTS:
             self.thumbnail_accent = "peach"
         self.outputs = [
@@ -53,10 +64,25 @@ class ProjectUpdate:
     name: Optional[str] = None
     description: Optional[str] = None
     thumbnail_accent: Optional[str] = None
+    #: The spec write counter this client last synced with (memo dev/124).
+    #: ``None`` means "no opinion" and is never checked, which is how scripts,
+    #: tests and internal callers keep working unchanged.
+    base_revision: Optional[int] = None
+    #: The hand-set categories (``categories.HAND_SECTIONS``), written into
+    #: ``dataflow.categories``. ``None`` leaves them as they are.
+    categories: Optional[dict] = None
 
     def __post_init__(self):
+        if self.spec is not None:
+            _refuse_scenario_conflicts(self.spec)
         if self.thumbnail_accent and self.thumbnail_accent not in VALID_ACCENTS:
             self.thumbnail_accent = None
+        if self.categories is not None:
+            if not isinstance(self.categories, dict):
+                raise ValueError("categories must be an object")
+            from utk_curio.backend.app.projects.categories import normalize_hand
+
+            self.categories = normalize_hand(self.categories)
         if self.outputs is not None:
             self.outputs = [
                 OutputRef(**o) if isinstance(o, dict) else o for o in self.outputs
@@ -79,6 +105,12 @@ class ProjectSummary:
     #: per request from the filenames rather than stored on the row - see
     #: ``seed.example_project_ids``.
     is_example: bool = False
+    #: ``{"source", "auto": {"tags", "data_type"}, "hand": {...}}`` - see
+    #: ``projects/categories.py``.
+    categories: dict = field(default_factory=dict)
+    #: The spec's scenarios, ``{id, name, color, description?, nodes}`` each -
+    #: see ``projects/scenarios.py``.
+    scenarios: list = field(default_factory=list)
 
 
 @dataclass

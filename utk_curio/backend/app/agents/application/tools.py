@@ -1,0 +1,1401 @@
+"""Server-authoritative tool contracts + grant resolution + read execution
+(memos ``dev/39``/``dev/41``).
+
+Manifest ``tools`` entries are untrusted *requirements*, never grants
+(`DEC-017`, `REQ-PERM-001`); this module owns what actually exists and what a
+run may be granted. Per `ADR-AG-007` a contract only *names* a domain-owned
+operation — the read executors below are thin wrappers over the owning
+domain's functions (``projects.storage``, ``project_agents``), and the one
+mutate contract is executed **only** by the review-before-apply apply endpoint
+(memo dev/41), never here and never by the model loop.
+
+Grant policy: ``granted = requested ∩ registry ∩ policy``. ``read`` contracts
+execute inside the bounded run loop; ``mutate`` contracts are grantable **for
+proposal purposes only** — requesting one mints a review proposal, and
+execution authority lives solely in the authenticated apply endpoint
+(`DEC-006`/`REQ-REVIEW-001` — the gate is structural, not a flag). Granted ids
+are pinned on the execution record (``pins.tools``, `REQ-CAP-002`).
+
+**Native tools.** Each contract carries the JSON Schema of its params. A run
+whose LLM configuration calls tools natively (``chat_capabilities``) is offered
+its grants as native tools (:func:`native_tools`), named by the reversible
+:func:`wire_name`; every other run asks for a tool in a fenced ``toolRequest``
+block (``content.tail_instruction``). Either way the request passes the same
+parser, budgets, grant check and mint: the schema tells the model the shape,
+and never replaces the server's own validation.
+"""
+
+from __future__ import annotations
+
+import copy
+import json
+from dataclasses import dataclass, field
+from typing import Iterable
+
+from utk_curio.backend.app.agents.application.turns import examples as worked_examples
+from utk_curio.backend.app.agents.domain import plan_topology
+from utk_curio.backend.app.agents.domain.tool_names import (
+    tool_id_of,
+    wire_name,
+)
+from utk_curio.backend.app.agents.domain.manifest import (
+    CAPABILITY_ID_RE,
+    ToolRequirement,
+)
+from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
+
+_EFFECTS = ("read", "mutate")
+
+# Tool results are untrusted context data: bounded, truncated with a marker.
+TOOL_RESULT_MAX_CHARS = 32_000
+_TRUNCATION_MARKER = "\n…[truncated: result exceeded the tool output bound]"
+
+
+def _object(properties: dict, *required: str) -> dict:
+    """A JSON Schema object. Keys it does not list stay allowed: the reader or
+    the mint refuses a wrong call, with a reason the model can act on."""
+    schema: dict = {"type": "object", "properties": properties}
+    if required:
+        schema["required"] = list(required)
+    return schema
+
+
+def _text(description: str) -> dict:
+    return {"type": "string", "description": description}
+
+
+def _texts(description: str) -> dict:
+    return {"type": "array", "items": {"type": "string"}, "description": description}
+
+
+def _map(description: str) -> dict:
+    """An object whose keys the tool does not fix, such as a manifest."""
+    return {"type": "object", "description": description}
+
+
+def _no_params() -> dict:
+    return _object({})
+
+
+#: models.search bounds: the most rows a call returns, and the most labels per
+#: row. A Transformers checkpoint may name hundreds of classes.
+_MODELS_SEARCH_MAX_ROWS = 40
+_MODEL_LABELS_MAX = 40
+
+_NODE_ID = _text("The node's id. Defaults to the node this agent is attached to.")
+_APPEARANCE = _object({"backgroundColor": _text("A palette name or #RRGGBB.")})
+#: #662: one widget a node declares (``$defs.widget``); the server checks the rest.
+_WIDGETS = {
+    "type": "array",
+    "items": {
+        **_object(
+            {
+                "name": _text("Letters, digits and underscores: the code places it as [!! name !!]."),
+                "type": {"type": "string", "enum": list(WIDGET_KINDS)},
+                "label": _text("What the Widgets tab shows beside the control."),
+            },
+            "name", "type",
+        ),
+        "description": "A widget: name, type, label, default, and options (choices, display, min, max, step, units).",
+    },
+    "description": "The node's widgets: values the user sets in its Widgets tab, which its code reads.",
+}
+#: #662: one scenario a plan saves: a selection, or a duplicate of one.
+_SCENARIO = _object(
+    {
+        "name": _text("The scenario's name."),
+        "nodes": _texts("A selection's nodes: refs of this plan or existing node ids."),
+        "duplicateOf": _text("A duplicate: the name of a scenario earlier in this list, whose nodes it copies."),
+        "copies": _map("A duplicate: each node of that scenario to the ref its copy takes."),
+        "values": _map("A duplicate: a copy's ref to the widget values it changes, {name: value}."),
+        "description": _text("What it changes, in one line."),
+        "color": _text("A #RRGGBB color; the next free one when absent."),
+    },
+    "name",
+)
+
+#: What a plan may do, told to both forms of dataflow.plan.write.
+_PLAN_RULES = (
+    "A plan may add "
+    "nodes, add connections (edge-only plans are valid), and/or remove — "
+    "each part optional. kind defaults to data; an interaction edge is the "
+    "feedback link between a visualization and a data-pool node, or between "
+    "two visualizations when one of them is a Vega-Lite or Autark node. Data "
+    "edges must keep the graph acyclic — a plan that closes a cycle is "
+    "refused with the loop named. nodeType must come from the Available "
+    "node templates list. A node may declare widgets, and a plan may save "
+    "scenarios: selections of its nodes, or duplicates of one. The user "
+    "reviews the whole plan (removals listed by name); nothing changes "
+    "without approval."
+)
+
+
+@dataclass(frozen=True)
+class ToolContract:
+    """A typed, versioned reference to one domain-owned operation.
+
+    ``parameters`` is the JSON Schema of its params, offered to a model that
+    calls tools natively. ``native_description`` replaces ``description`` there
+    when the fenced one teaches a block syntax a native call does not use."""
+
+    id: str
+    contract_version: str
+    effect: str  # "read" | "mutate"
+    description: str
+    parameters: dict = field(default_factory=_no_params, compare=False)
+    native_description: str | None = None
+
+    def __post_init__(self):
+        if self.effect not in _EFFECTS:
+            raise ValueError(f"tool effect must be one of {_EFFECTS}, got {self.effect!r}")
+
+
+# The server-owned allowlist (DEC-017). Each contract has a named consumer in
+# the built-in roster (dev/41 §4.3, dev/48) — nothing speculative.
+REGISTRY: dict[str, ToolContract] = {
+    "dataflow.read": ToolContract(
+        id="dataflow.read",
+        contract_version="2",
+        effect="read",
+        description=(
+            "Read the project's saved dataflow, structure-first: every node "
+            "(id, type, goal, content length, widgets) and ALL edges, plus each "
+            "node's last runtime status and the dataflow's scenarios with their "
+            "levers, fixed context and outcomes. Node content is elided: use "
+            'node.read for one node\'s content, or params {"include": ["content"]} '
+            "for the full spec (large)."
+        ),
+        parameters=_object({
+            "include": {
+                "type": "array",
+                "items": {"type": "string", "enum": ["content"]},
+                "description": 'Pass ["content"] for the full spec, node content included (large).',
+            },
+        }),
+    ),
+    # dev/67-4 (DEC-053) — consumer: agent.node-researcher. Policy-gated
+    # egress (SSRF guards, byte caps, per-run budget) — verification of
+    # external dataset APIs, never crawling.
+    "web.fetch": ToolContract(
+        id="web.fetch",
+        contract_version="1",
+        effect="read",
+        description=(
+            'Fetch one public https URL and return its status, content type, '
+            'and a bounded body preview. Params: {"url": "https://..."}. '
+            "Use it to VERIFY endpoints, dataset ids, and API shapes — never "
+            "to crawl. Private/internal addresses are refused; at most 4 "
+            "web calls per run."
+        ),
+        parameters=_object({"url": _text("One public https URL.")}, "url"),
+    ),
+    "web.search": ToolContract(
+        id="web.search",
+        contract_version="1",
+        effect="read",
+        description=(
+            'Search the web for factual verification. Params: {"q": "<query>"}. '
+            "Returns bounded {title, url, snippet} rows from this deployment's "
+            "search provider (DuckDuckGo unless the operator named another), "
+            "or an error that says why it could not search. At most 4 web "
+            "calls per run."
+        ),
+        parameters=_object({"q": _text("The search query.")}, "q"),
+    ),
+    # dev/67-2 (DEC-052) — consumers: the builder/debug/explainer agents. The
+    # runtime journal's read surface: why a node's last run failed.
+    "node.runtime.read": ToolContract(
+        id="node.runtime.read",
+        contract_version="1",
+        effect="read",
+        description=(
+            "Read one node's LAST execution outcome: status, error traceback "
+            "tail, stdout tail, output metadata, and whether the node's "
+            'content changed since that run. Params: {"nodeId": "..."} — '
+            "defaults to the node this agent is attached to. A node that "
+            'never ran reports status "never-executed".'
+        ),
+        parameters=_object({"nodeId": _NODE_ID}),
+    ),
+    "node.read": ToolContract(
+        id="node.read",
+        contract_version="1",
+        effect="read",
+        description=(
+            'Read one node from the saved spec. Params: {"nodeId": "..."} — '
+            "defaults to the node this agent is attached to."
+        ),
+        parameters=_object({"nodeId": _NODE_ID}),
+    ),
+    "node.content.write": ToolContract(
+        id="node.content.write",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            'Propose replacing one node\'s content. Params: {"nodeId": "...", '
+            '"content": "..."}. The user reviews the proposal before anything '
+            "is applied; nothing changes without their explicit approval."
+        ),
+        parameters=_object(
+            {"nodeId": _NODE_ID, "content": _text("The node's complete new content.")},
+            "content",
+        ),
+    ),
+    # dev/50 — consumer: agent.dataset-finder. Grounds the "From your Data
+    # Catalog" lane in the real catalog (the datasets domain owns the data;
+    # this module owns none of its own).
+    "catalog.search": ToolContract(
+        id="catalog.search",
+        contract_version="1",
+        effect="read",
+        description=(
+            "Search the project's Data Catalog. Params (all optional): "
+            '{"q": "<text>", "format": "<fmt>", "origin": "<origin>"}. '
+            "Returns dataset rows with id, name, format, origin, installed "
+            "state, and description — catalog-lane candidates must come from "
+            "these results only. Rows whose data file is resolved also carry "
+            "`path` (the absolute file a node may open) and `loader` (the "
+            "loader code for that path): the ONLY local paths generated node "
+            "content may reference (dev/114)."
+        ),
+        parameters=_object({
+            "q": _text("Text to search for."),
+            "format": _text("A dataset format."),
+            "origin": _text("A dataset origin."),
+        }),
+    ),
+    # Consumers: agent.node-builder and agent.node-content-builder. Grounds a
+    # node that runs a model in the real Model Catalog (the model catalog
+    # owns the data and the loader line; this module owns none of its own).
+    "models.search": ToolContract(
+        id="models.search",
+        contract_version="1",
+        effect="read",
+        description=(
+            "Search the Model Catalog: the trained models node code can run. "
+            'Params (all optional): {"q": "<text>", "limit": <1 to '
+            f"{_MODELS_SEARCH_MAX_ROWS}>}}; q matches a model's name, id, "
+            "description, publisher and tags. Returns model rows with id, "
+            "name, task, runtime, origin, description, labels (the classes "
+            "it answers, at most "
+            f"{_MODEL_LABELS_MAX}) and loader. Every row is a model this "
+            'account can run: origin "shipped" comes with Curio, "downloaded" '
+            "is one this account added from the Discovery Catalog. Copy the "
+            "row's `loader` line into the node's code exactly as given "
+            '(model = curio_load_model("<id>")); a model id that is not in '
+            "these results does not run. Reads no network."
+        ),
+        parameters=_object({
+            "q": _text("Text to search for."),
+            "limit": {
+                "type": "integer",
+                "description": f"The most rows to return, 1 to {_MODELS_SEARCH_MAX_ROWS}.",
+            },
+        }),
+    ),
+    # Consumer: agent.dataflow-builder. Any worked example on request, beside
+    # the ones its runs are given (turns/examples owns the index and the view).
+    "examples.read": ToolContract(
+        id="examples.read",
+        contract_version="1",
+        effect="read",
+        description=(
+            "Read Curio's worked examples: shipped dataflows that show how "
+            'nodes, code and specs fit together. Params (optional): {"key": '
+            '"<key from the list>"}. With no key, returns the list: each '
+            "example's key, title and one line on what it shows. With a key, "
+            "returns that example's line and its Trill (name, task, every node "
+            "with its type and content, every edge), without layout. An "
+            "unknown key is an error; call with no key for the keys. The "
+            "datasets and node types a plan uses come from this project, not "
+            "from an example. Reads no network."
+        ),
+        parameters=_object({
+            "key": _text("An example's key, from the list this tool returns with no key. Omit it for the list."),
+        }),
+    ),
+    # Discovery Catalog - consumer: agent.dataset-finder. Three contracts, not
+    # two, and deliberately the same roster/detail/reviewed-mutate shape
+    # packages.catalog + packages.resolve + package.install already has: it is
+    # the shape that stops the model inventing a source id.
+    "discovery.sources": ToolContract(
+        id="discovery.sources",
+        contract_version="1",
+        effect="read",
+        description=(
+            "List the data portals and storage this deployment connects to. "
+            "Params: none. Returns rows with sourceId, name, provider, "
+            "publisher, the formats it can deliver, whether it can be "
+            "searched, and whether this account holds the credential the "
+            "source needs - never the credential itself. Reads no network and "
+            "costs no web budget. External-lane dataset candidates must name a "
+            "sourceId from these results."
+        ),
+        parameters=_no_params(),
+    ),
+    "discovery.search": ToolContract(
+        id="discovery.search",
+        contract_version="1",
+        effect="read",
+        description=(
+            "Search connected data portals LIVE. Params: "
+            '{"q": "<text>", "sourceId": "<sourceId@major from '
+            'discovery.sources, optional>", "format": "<fmt, optional>"}. '
+            "PREFER naming a sourceId: without one this searches every portal "
+            "at once and is charged one web call PER PORTAL, which can spend "
+            "the whole per-run budget of 4 in a single request. Returns "
+            "resource rows with sourceId, resourceId, name, publisher, formats "
+            "and last-updated date - candidates must carry the sourceId and "
+            "resourceId these results returned, never an invented one."
+        ),
+        parameters=_object({
+            "q": _text("Text to search for."),
+            "sourceId": _text(
+                "A sourceId@major from discovery.sources. Without one, every "
+                "portal is searched and each is charged one web call."
+            ),
+            "format": _text("A format the resource must offer."),
+        }),
+    ),
+    "discovery.acquire": ToolContract(
+        id="discovery.acquire",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            "Propose downloading ONE resource from a connected data portal "
+            "into the Data Catalog, where it becomes an ordinary dataset. "
+            'Params: {"sourceId": "<sourceId@major>", "resourceId": "<id from '
+            'discovery.search results>", "format": "<one of the formats that '
+            'result listed, optional>"}. The user reviews the proposal; '
+            "nothing is downloaded and nothing is added to the catalog without "
+            "their approval. This never writes fetch code, and it never "
+            "installs a dataset into a dataflow - that is dataset.install."
+        ),
+        parameters=_object(
+            {
+                "sourceId": _text("The portal's sourceId@major."),
+                "resourceId": _text("A resourceId from discovery.search results."),
+                "format": _text("One of the formats that result listed."),
+            },
+            "sourceId", "resourceId",
+        ),
+    ),
+    # dev/84 — consumer: agent.package-recommendation. Grounds package
+    # recommendations in the real Nodes Catalog + this project's lockfile
+    # (the packages domain owns the data; this module owns none of its own).
+    "packages.catalog": ToolContract(
+        id="packages.catalog",
+        contract_version="1",
+        effect="read",
+        description=(
+            "List the Nodes Catalog's node packages with this project's "
+            'install state. Params (optional): {"q": "<text>"} substring '
+            "filter. Returns rows with dirName, packageId, name, description, "
+            "installed, and builtin — recommendation candidates must come from "
+            "these results only; builtin packages are always present and are "
+            "never proposed."
+        ),
+        parameters=_object({"q": _text("Text a package's name or description must contain.")}),
+    ),
+    # dev/84 — consumer: agent.package-recommendation. The identify half:
+    # deps/permissions/conflicts come from the real resolver, never invented.
+    "packages.resolve": ToolContract(
+        id="packages.resolve",
+        contract_version="1",
+        effect="read",
+        description=(
+            "Resolve one or more catalog packages against this account's "
+            'installed set. Params: {"dirNames": ["<dirName from '
+            'packages.catalog>", ...]}. Returns each package\'s requested '
+            "permissions and python/js dependencies, plus any version "
+            "conflicts — use it to enrich an identify/recommend answer before "
+            "proposing an install."
+        ),
+        parameters=_object({"dirNames": _texts("dirNames from packages.catalog results.")}, "dirNames"),
+    ),
+    # dev/52 — consumer: agent.dataflow-builder. The DR-1 graph-level
+    # mutation: the model emits a `dataflowPlan` tail block (not a
+    # toolRequest) and the runtime mints the reviewed plan proposal from it;
+    # the authenticated apply endpoint inserts the whole ADDITIVE graph.
+    "dataflow.plan.write": ToolContract(
+        id="dataflow.plan.write",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            "Propose a reviewed plan that changes the dataflow graph, by ending "
+            "a reply with a dataflowPlan block (not a toolRequest): "
+            '{"dataflowPlan": {"goal": "...", "nodes": [{"ref": "n1", '
+            '"nodeType": "<packageId>/<templateId>", "title": "...", '
+            '"intent": "...", "widgets": [...]}], "edges": [{"from": "n1", "to": '
+            '"<ref or existing node id>", "kind": "data"|"interaction"}], '
+            '"scenarios": [...], "removeNodes": ["<existing node id>"], '
+            '"removeEdges": ["<existing edge id>"]}}. '
+            + _PLAN_RULES
+        ),
+        native_description=(
+            "Propose a reviewed plan that changes the dataflow graph: its "
+            "arguments are the plan. " + _PLAN_RULES
+        ),
+        parameters=_object(
+            {
+                "goal": _text("What the plan achieves, in one line."),
+                "nodes": {
+                    "type": "array",
+                    "items": _object(
+                        {
+                            "ref": _text("A short id, unique in this plan, that edges name."),
+                            "nodeType": _text(
+                                "A <packageId>/<templateId> id from the Available node templates list."
+                            ),
+                            "title": _text("A short title."),
+                            "intent": _text("One line: what this step does and produces."),
+                            "expects": _text("The input or output this step expects, in one line."),
+                            "widgets": _WIDGETS,
+                        },
+                        "ref", "nodeType", "title", "intent",
+                    ),
+                },
+                "edges": {
+                    "type": "array",
+                    "items": _object(
+                        {
+                            "from": _text("A ref from this plan, or an existing node's id."),
+                            "to": _text("A ref from this plan, or an existing node's id."),
+                            "kind": {"type": "string", "enum": ["data", "interaction"]},
+                            "toHandle": _text("The target's input circle: in, in_1, in_2, ... Data edges only."),
+                        },
+                        "from", "to",
+                    ),
+                },
+                "scenarios": {"type": "array", "items": _SCENARIO},
+                "removeNodes": _texts("Existing node ids to remove."),
+                "removeEdges": _texts("Existing edge ids to remove."),
+            },
+            "goal",
+        ),
+    ),
+    # dev/50 — consumer: agent.dataset-finder. The catalog lane's reviewed
+    # handoff: applying installs ONE dataset through the existing
+    # dataset-only flow; never an agent.
+    "dataset.install": ToolContract(
+        id="dataset.install",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            "Propose installing ONE dataset from the Data Catalog into this "
+            'project. Params: {"datasetId": "<id from catalog.search results>"}. '
+            "The user reviews the proposal; nothing is installed without "
+            "their approval, and this never installs an agent."
+        ),
+        parameters=_object({"datasetId": _text("A dataset id from catalog.search results.")}, "datasetId"),
+    ),
+    # dev/84 — consumer: agent.package-recommendation. The reviewed install
+    # lane: applying routes through the existing package install flow
+    # (permissions + dependencies + conflicts); never a silent install,
+    # never a built-in.
+    "package.install": ToolContract(
+        id="package.install",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            "Propose installing ONE node package from the Nodes Catalog into "
+            'this project. Params: {"dirName": "<the versioned dirName, e.g. '
+            "curio.notes@1 — from packages.catalog results or shown in "
+            "parentheses in the 'Installed but NOT enlisted in this project' "
+            'list>", "reason": "why this work needs it"}. '
+            "The user reviews the proposal through the package install dialog "
+            "(permissions, dependencies, conflicts); nothing is installed "
+            "without their approval. Built-in packages are always present and "
+            "must never be proposed."
+        ),
+        parameters=_object(
+            {
+                "dirName": _text(
+                    "The versioned dirName, such as curio.notes@1, from packages.catalog "
+                    "results or the 'Installed but NOT enlisted in this project' list."
+                ),
+                "reason": _text("Why this work needs the package."),
+                "notes": {
+                    "type": "array",
+                    "items": _object(
+                        {
+                            "title": _text("The note's title."),
+                            "content": _text("The finding the note states."),
+                            "color": _text("A palette name or #RRGGBB."),
+                        },
+                        "content",
+                    ),
+                    "description": "Findings to add as notes once the package is enlisted.",
+                },
+            },
+            "dirName",
+        ),
+    ),
+    # dev/48 — consumer: agent.node-builder. Reuse-first: nodeType must come
+    # from the run's "Available node templates" list (composed at run time
+    # from the packages registry — this module owns no template knowledge).
+    "node.create": ToolContract(
+        id="node.create",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            "Propose adding ONE new node to the canvas. Params: "
+            '{"nodeType": "<packageId>/<templateId>", "content": "...", '
+            '"title": "<short header shown on the node>", "goal": "<one-line '
+            'purpose>", "appearance": {"backgroundColor": "<palette name or '
+            '#RRGGBB>"}, "widgets": [...]}: title, goal, appearance and '
+            "widgets are optional; a note "
+            "template renders title and backgroundColor, so give both for "
+            "notes. nodeType must be an id from the "
+            '"Available node templates" list — never invented. The user '
+            "reviews the proposal; nothing is added without their approval."
+        ),
+        parameters=_object(
+            {
+                "nodeType": _text(
+                    "A <packageId>/<templateId> id from the Available node templates list."
+                ),
+                "content": _text("The node's content."),
+                "title": _text("A short header shown on the node."),
+                "goal": _text("The node's purpose, in one line."),
+                "appearance": _APPEARANCE,
+                "widgets": _WIDGETS,
+            },
+            "nodeType", "content",
+        ),
+    ),
+    # dev/89 — consumer: agent.package-builder. The ONE package-authoring
+    # mutate contract: requesting it runs the isolated build service
+    # (validate → resolve → compile → preview → package, all staged and
+    # content-addressed) and mints the reviewed package-draft proposal;
+    # Apply promotes the exact reviewed artifact digest through the
+    # promotion coordinator — never a silent install.
+    "package.draft.apply": ToolContract(
+        id="package.draft.apply",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            "Propose ONE built node package as a reviewed draft. Params: the "
+            'typed build request — {"mode": "create"|"extend", '
+            '"baseDigest": "<64-hex, extend only>", '
+            '"manifest": {...}, "files": {"<path>": {"text"|"base64": "..."}}, '
+            "The draft's identity is manifest.id + compatibility.major; the "
+            "package id MUST be reverse-DNS (two or more dot-separated "
+            "segments, e.g. curio.notes — never a single segment like "
+            'curio-notes). An optional "target": "<packageId>@<major>" may '
+            "restate it but must agree. Other params: "
+            '"behaviorEntries": ["sources/<entry>.tsx", ...], "dependencies": '
+            '{"python"|"js"|"packages": {name: constraint}}, '
+            '"previewTemplates": [...], "nodes": [{"templateId": "...", '
+            '"title": "...", "content": "...", "appearance": '
+            '{"backgroundColor": "<palette name or #RRGGBB>"}}]}. The build '
+            "service compiles/validates/previews the draft; the user reviews "
+            "the diff, dependencies, and preview before anything installs. "
+            "Never claim the package exists before the user applies it."
+        ),
+        parameters=_object(
+            {
+                "mode": {"type": "string", "enum": ["create", "extend"]},
+                "baseDigest": _text("The installed target's 64-hex digest. Extend only."),
+                "target": _text("<packageId>@<major>, which must agree with the manifest."),
+                "manifest": _map("The package manifest."),
+                "files": _map('Each file path mapped to {"text": ...} or {"base64": ...}.'),
+                "behaviorEntries": _texts("The behavior sources, such as sources/<entry>.tsx."),
+                "dependencies": _map('{"python"|"js"|"packages": {name: constraint}}.'),
+                "previewTemplates": _texts("The ids of the templates to preview."),
+                "nodes": {
+                    "type": "array",
+                    "items": _object(
+                        {
+                            "templateId": _text("A template id from the manifest."),
+                            "title": _text("The node's title."),
+                            "content": _text("The node's content."),
+                            "appearance": _APPEARANCE,
+                        },
+                        "templateId",
+                    ),
+                    "description": "Nodes to add once the package is applied.",
+                },
+            },
+            "mode", "manifest",
+        ),
+    ),
+    # dev/48 §3.2b — consumer: agent.node-builder. The justified creation
+    # fallback: ONLY when no available template fits; the apply endpoint
+    # executes it solely through the existing package factory.
+    "node.template.create": ToolContract(
+        id="node.template.create",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            "Propose a NEW custom node type — only after the Available node "
+            "templates list has been considered and none can adequately hold "
+            'the task. Params: {"justification": "...", "template": {"label": '
+            '"...", "description": "...", "engine": "python"|"javascript", '
+            '"content": "..."}}. justification must name the closest existing '
+            "templates and why each is inadequate — the user judges it during "
+            "review. Applying registers the node type in this project AND "
+            "adds its first node; nothing happens without the user's approval."
+        ),
+        parameters=_object(
+            {
+                "justification": _text(
+                    "The closest existing templates, and why each is inadequate."
+                ),
+                "template": _object(
+                    {
+                        "label": _text("The node type's name."),
+                        "description": _text("What the node type does."),
+                        "engine": {"type": "string", "enum": ["python", "javascript"]},
+                        "content": _text("The first node's content."),
+                    },
+                    "label", "content",
+                ),
+            },
+            "justification", "template",
+        ),
+    ),
+}
+
+
+def resolve_grants(requested: Iterable[ToolRequirement]) -> list[str]:
+    """The tool ids this run is granted: requested ∩ registry ∩ policy.
+
+    Both effects are grantable (dev/41): ``read`` executes inside the bounded
+    loop; ``mutate`` may only be *proposed* — execution authority is the apply
+    endpoint alone. Anything unregistered resolves to "not granted" silently
+    (required-ness is :func:`missing_required`'s concern)."""
+    granted: list[str] = []
+    for req in requested:
+        contract = REGISTRY.get(req.id)
+        if contract is not None and contract.id not in granted:
+            granted.append(contract.id)
+    return granted
+
+
+def missing_required(requested: Iterable[ToolRequirement]) -> list[str]:
+    """Required tool ids that resolve no grant — each one refuses the run
+    (fail-closed, same posture as a missing instruction prompt)."""
+    requested = list(requested)
+    granted = set(resolve_grants(requested))
+    return [r.id for r in requested if r.required and r.id not in granted]
+
+
+def grant_descriptions(granted: Iterable[str]) -> list[tuple[str, str]]:
+    """(id, description) pairs for the grant-aware tail instruction."""
+    out: list[tuple[str, str]] = []
+    for tool_id in granted:
+        contract = REGISTRY.get(tool_id)
+        if contract is not None:
+            out.append((contract.id, contract.description))
+    return out
+
+
+#: The native name of delegation: one tool whose ``capability`` names what to
+#: delegate. It has no dot, so no tool id encodes to it.
+DELEGATE_TOOL = "delegate"
+
+
+
+
+def delegate_tool(capabilities: Iterable[str]) -> dict:
+    """The native delegation tool, its ``capability`` limited to *capabilities*
+    (the delegates this agent may use). Who handles each one is in the run's
+    delegation paragraph (``content.delegation_instruction``)."""
+    return {
+        "name": DELEGATE_TOOL,
+        "description": (
+            "Delegate one specialized capability to the agent that handles it, "
+            "and receive its result. The capabilities you may delegate, and who "
+            "handles each, are listed in your instructions."
+        ),
+        "parameters": _object(
+            {
+                "capability": {
+                    "type": "string",
+                    "enum": list(capabilities),
+                    "description": "The capability to delegate.",
+                },
+                "inputs": _map("What the delegate needs for the task."),
+            },
+            "capability",
+        ),
+    }
+
+
+def native_tools(granted: Iterable[str], delegate_capabilities: Iterable[str] = ()) -> list[dict]:
+    """The run's grants as native tools, ``{name, description, parameters}``
+    each, in grant order, then the delegation tool when there is something to
+    delegate. Copies: a provider's conversion never reaches the registry."""
+    specs: list[dict] = []
+    for tool_id in granted:
+        contract = REGISTRY.get(tool_id)
+        if contract is None:
+            continue
+        specs.append({
+            "name": wire_name(contract.id),
+            "description": contract.native_description or contract.description,
+            "parameters": copy.deepcopy(contract.parameters),
+        })
+    capabilities = list(dict.fromkeys(delegate_capabilities))
+    if capabilities:
+        specs.append(delegate_tool(capabilities))
+    return specs
+
+
+def _truncate(text: str) -> str:
+    if len(text) <= TOOL_RESULT_MAX_CHARS:
+        return text
+    return text[:TOOL_RESULT_MAX_CHARS] + _TRUNCATION_MARKER
+
+
+# catalog.search bounds (dev/50): plenty for ranking, small enough to never
+# crowd the context; description is display metadata, not a document.
+#: Bounds for the discovery tools, matching the catalog ones above. A portal can
+#: answer with hundreds; a model needs the first handful.
+_DISCOVERY_MAX_ROWS = 20
+_DISCOVERY_DESC_MAX_CHARS = 200
+
+_CATALOG_SEARCH_MAX_ROWS = 40
+_CATALOG_DESC_MAX_CHARS = 200
+_CATALOG_PARAM_MAX_CHARS = 200
+
+
+def _catalog_search_rows(user_key: str, project_id: str, params: dict) -> list[dict]:
+    """Bounded catalog rows for the dev/50 read tool.
+
+    Thin wrapper over the datasets domain (`ADR-AG-007`): the acting user
+    rides the request context (the datasets service is user-object keyed,
+    unlike the key-based agents/packages stores), and the listing is the
+    same `list_catalog` the Data Catalog drawer browses — one truth.
+    """
+    from flask import g
+
+    from utk_curio.backend.app.datasets.application.catalog_service import (
+        DatasetCatalogService,
+    )
+
+    user = getattr(g, "user", None)
+
+    def _param(name: str) -> str | None:
+        value = params.get(name)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:_CATALOG_PARAM_MAX_CHARS]
+        return None
+
+    listing = DatasetCatalogService(user).list_catalog(
+        dataflow_id=project_id,
+        q=_param("q"),
+        fmt=_param("format"),
+        origin=_param("origin"),
+    )
+    rows = []
+    for item in (listing.get("items") or [])[:_CATALOG_SEARCH_MAX_ROWS]:
+        row = {
+            "id": item.get("id"),
+            "name": item.get("title"),
+            "format": item.get("format"),
+            "origin": item.get("origin"),
+            "installed": bool(item.get("installed")),
+            "description": (item.get("description") or "")[:_CATALOG_DESC_MAX_CHARS],
+        }
+        # dev/114 (DEC-072): the resolved data path — the listing already
+        # confined it to the allowed read roots (#143 chokepoint) — and the
+        # domain's ONE loader recipe for it. These are the only local paths
+        # generated node content may open; the grounding gate checks against
+        # the same listing, so a row here is grounded by construction.
+        path = item.get("path")
+        if isinstance(path, str) and path.strip():
+            row["path"] = path
+            snippet = item.get("loaderSnippet")
+            if not (isinstance(snippet, dict) and isinstance(snippet.get("code"), str)):
+                from utk_curio.backend.app.datasets.domain.catalog_item import loader_snippet
+
+                snippet = loader_snippet(item.get("format"), path)
+            row["loader"] = snippet.get("code")
+        rows.append(row)
+    return rows
+
+
+def _row_limit(value: object, bound: int) -> int:
+    """A ``limit`` param as a row count from 1 to *bound*; *bound* when absent or not a whole number.
+    A native call may send ``5.0`` (Gemini's arguments carry every number as a float)."""
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return bound
+    return max(1, min(value, bound))
+
+
+def _models_search_rows(params: dict) -> list[dict]:
+    """Bounded Model Catalog rows for ``models.search``.
+
+    A thin wrapper over the model catalog (`ADR-AG-007`): the same listing the
+    Model Catalog page browses, for the user the request carries, and the
+    catalog's own loader line for each model.
+    """
+    from flask import g
+
+    from utk_curio.backend.app.model_catalog.service import ModelCatalogService, loader_line
+
+    query = params.get("q")
+    query = query.strip()[:_CATALOG_PARAM_MAX_CHARS] if isinstance(query, str) and query.strip() else None
+    listing = ModelCatalogService(getattr(g, "user", None)).list_catalog(q=query)
+    rows = []
+    for item in (listing.get("items") or [])[:_row_limit(params.get("limit"), _MODELS_SEARCH_MAX_ROWS)]:
+        rows.append({
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "task": item.get("task"),
+            "runtime": item.get("runtime"),
+            "origin": item.get("origin"),
+            "description": (item.get("description") or "")[:_CATALOG_DESC_MAX_CHARS],
+            "labels": list(item.get("labels") or [])[:_MODEL_LABELS_MAX],
+            "loader": loader_line(item.get("id")),
+        })
+    return rows
+
+
+def _execute_examples_read(user_key: str, project_id: str, params: dict) -> tuple[str, str]:
+    """``examples.read``: the list of worked examples, or one by key.
+
+    The project's spec decides what is left out, by the rule the per-run block
+    follows (``excluded_by``): an evaluation project never shows the example it
+    is scored against, nor one that shares part of it. A project with no saved
+    spec leaves nothing out.
+    """
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    key = params.get("key")
+    if key is not None and not isinstance(key, str):
+        return "error", "params.key must be an example's key; call examples.read with no key to list the keys"
+    exclude = worked_examples.excluded_by(projects_storage.read_spec(user_key, project_id))
+    if not (key or "").strip():
+        return "ok", _truncate(json.dumps({"examples": worked_examples.listing(exclude=exclude)}, ensure_ascii=False))
+    try:
+        example = worked_examples.find(key.strip(), exclude=exclude)
+    except LookupError as exc:
+        return "error", str(exc)
+    return "ok", _truncate(worked_examples.shown(example))
+
+
+# packages.catalog bounds (dev/84): mirrors the catalog.search posture —
+# plenty for ranking, small enough to never crowd the context.
+_PACKAGES_CATALOG_MAX_ROWS = 40
+_PACKAGES_DESC_MAX_CHARS = 200
+_PACKAGES_RESOLVE_MAX_DIRNAMES = 8
+
+
+def _packages_catalog_rows(user_key: str, project_id: str, params: dict) -> list[dict]:
+    """Bounded package rows for the dev/84 read tool — a thin wrapper over the
+    packages domain's agent overview (`ADR-AG-007`: one truth, owned there)."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    rows = packages_services.agent_catalog_overview(user_key, project_id)
+    query = params.get("q")
+    if isinstance(query, str) and query.strip():
+        needle = query.strip().lower()[:_CATALOG_PARAM_MAX_CHARS]
+        rows = [
+            r for r in rows
+            if needle in f"{r['dirName']} {r['packageId']} {r['name']} {r['description']}".lower()
+        ]
+    out = []
+    for r in rows[:_PACKAGES_CATALOG_MAX_ROWS]:
+        out.append({**r, "description": r["description"][:_PACKAGES_DESC_MAX_CHARS]})
+    return out
+
+
+def _execute_packages_resolve(user_key: str, params: dict) -> tuple[str, str]:
+    """The dev/84 identify surface: real resolver output, never invented."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    dir_names = params.get("dirNames")
+    if not isinstance(dir_names, list) or not dir_names or not all(
+        isinstance(d, str) and d.strip() for d in dir_names
+    ):
+        return "error", 'params.dirNames must be a non-empty list of package dirName strings'
+    cleaned = [d.strip() for d in dir_names[:_PACKAGES_RESOLVE_MAX_DIRNAMES]]
+    try:
+        report = packages_services.agent_resolve_report(user_key, cleaned)
+    except packages_services.PackageServiceError as exc:
+        return "error", str(exc)
+    return "ok", _truncate(json.dumps(report, ensure_ascii=False))
+
+
+def _node_row(node: dict, goal_cap: int) -> dict:
+    from utk_curio.backend.app.execution.code_references import effective_value, normalize_widgets
+
+    content = str(node.get("content") or "")
+    row = {
+        "id": node.get("id"),
+        "type": node.get("type"),
+        "goal": str(node.get("goal") or "")[:goal_cap],
+        "hasContent": bool(content.strip()),
+        "contentChars": len(content),
+    }
+    # #662: the values its code reads through widget references, and the node
+    # a copy was copied from; each only when there is one.
+    widgets = normalize_widgets((node.get("metadata") or {}).get("widgets"))
+    if widgets:
+        row["widgets"] = [{"name": w["name"], "type": w["type"], "value": effective_value(w)} for w in widgets]
+    lineage = (node.get("metadata") or {}).get("copiedFrom")
+    if isinstance(lineage, list) and lineage:
+        row["copiedFrom"] = [str(i) for i in lineage]
+    return row
+
+
+def _scenario_rows(stripped: dict) -> list[dict]:
+    """#662: the dataflow's scenarios, each with what it is made of: its
+    levers (its nodes), its fixed context (the nodes outside it that it reads)
+    and its outcomes (what gets compared). The parts are read by the rule the
+    canvas and the Scenario Catalog read them by (``scenarioParts``)."""
+    from utk_curio.backend.app.projects.scenarios import normalize_scenarios
+    from utk_curio.backend.app.scenario_catalog.domain.parts import scenario_parts, spec_nodes_and_edges
+
+    nodes, edges = spec_nodes_and_edges(stripped)
+    raw = (stripped.get("dataflow") or {}).get("scenarios")
+    rows = []
+    for scenario in normalize_scenarios(raw, [n["id"] for n in nodes]):
+        parts = scenario_parts(scenario, nodes, edges)
+        row = {"id": scenario["id"], "name": scenario["name"], "color": scenario["color"]}
+        if scenario.get("description"):
+            row["description"] = scenario["description"]
+        rows.append({**row, "levers": parts["levers"], "context": parts["context"], "outcomes": parts["outcomes"]})
+    return rows
+
+
+def _dataflow_projection(stripped: dict, user_key: str, project_id: str) -> dict:
+    """Structure-first dataflow.read payload (dev/67-2).
+
+    Edges are NEVER the truncation casualty: node content is elided to lengths
+    (node.read serves any one node's content), goals are bounded, and the
+    runtime journal's status map rides along so one call answers "what exists,
+    how it is wired, what ran, what failed". If the projection still exceeds
+    the tool budget, node GOALS shrink next — never the edge list.
+    """
+    from utk_curio.backend.app.execution import runtime_journal
+
+    dataflow = stripped.get("dataflow") or {}
+    nodes_raw = [n for n in dataflow.get("nodes") or [] if isinstance(n, dict)]
+    edges = []
+    for edge in dataflow.get("edges") or []:
+        if not isinstance(edge, dict):
+            continue
+        row = {"id": edge.get("id"), "source": edge.get("source"), "target": edge.get("target")}
+        for key in ("sourceHandle", "targetHandle"):
+            if edge.get(key) is not None:
+                row[key] = edge.get(key)
+        # dev/125 §3.6: the edge KIND, in the plan grammar's own vocabulary and
+        # with its byte-absent default (present only when "interaction"). The
+        # instruction tells the builder to re-read the graph and confirm the
+        # topology before claiming a repair; without this the projection could
+        # not show that the feedback edge it just asked for is in fact an
+        # interaction edge, so the read-back was not executable — the same
+        # DEC-063 defect the plan grammar had, one layer up.
+        if plan_topology.is_interaction_edge(edge):
+            row["kind"] = "interaction"
+        edges.append(row)
+    projection = {
+        "name": dataflow.get("name"),
+        "goal": dataflow.get("task"),
+        "nodes": [_node_row(n, goal_cap=200) for n in nodes_raw],
+        "edges": edges,
+        "datasets": dataflow.get("datasets") or [],
+        "runtime": runtime_journal.status_map(user_key, project_id),
+    }
+    scenarios = _scenario_rows(stripped)
+    if scenarios:
+        projection["scenarios"] = scenarios
+    if len(json.dumps(projection, ensure_ascii=False)) > TOOL_RESULT_MAX_CHARS:
+        projection["nodes"] = [_node_row(n, goal_cap=40) for n in nodes_raw]
+        projection["elided"] = "node goals shortened to fit the tool output bound"
+    return projection
+
+
+def _resolve_node_id(target: dict | None, params: dict) -> str | None:
+    node_id = params.get("nodeId")
+    if isinstance(node_id, str) and node_id:
+        return node_id
+    if isinstance(target, dict) and target.get("kind") == "node":
+        return target.get("targetId")
+    return None
+
+
+def _discovery_service():
+    """The discovery service for the acting user.
+
+    Thin wrapper over the discovery domain (`ADR-AG-007`), the same way
+    ``_catalog_search_rows`` wraps the datasets one: the user rides the request
+    context, and the service is the same one the Discovery Catalog pages use.
+    """
+    from flask import g
+
+    from utk_curio.backend.app.discovery.service import DiscoveryService
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user = getattr(g, "user", None)
+    return DiscoveryService(
+        _user_dir_key(user) if user is not None else None, user=user
+    )
+
+
+def _portal_rows(sources) -> list[dict]:
+    """The portals among *sources*. Storage and service sources are added from
+    the Discovery Catalog page, where a row can be narrowed and a service's area
+    is set, so no agent tool offers them; a model source adds models, not data."""
+    return [s for s in sources or [] if s.get("kind") not in ("storage", "service", "model")]
+
+
+def _discovery_source_rows() -> list[dict]:
+    """The roster. Disk only - no portal is contacted."""
+    listing = _discovery_service().list_catalog()
+    rows = []
+    for source in _portal_rows(listing.get("sources"))[:_DISCOVERY_MAX_ROWS]:
+        auth = source.get("auth") or {}
+        rows.append(
+            {
+                "sourceId": source.get("dirName"),
+                "name": source.get("name"),
+                "provider": source.get("provider"),
+                "publisher": source.get("publisher"),
+                "description": (source.get("description") or "")[:_DISCOVERY_DESC_MAX_CHARS],
+                "formats": (source.get("capabilities") or {}).get("formats") or [],
+                "searchable": bool((source.get("capabilities") or {}).get("search")),
+                # Whether a token will be sent, never the token. A model that
+                # knows a source is unusable can say so instead of proposing it.
+                "credentialReady": not auth.get("required") or bool(auth.get("present")),
+            }
+        )
+    return rows
+
+
+def _discovery_search_rows(params: dict) -> list[dict]:
+    def _param(name: str) -> str | None:
+        value = params.get(name)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:_CATALOG_PARAM_MAX_CHARS]
+        return None
+
+    service = _discovery_service()
+    query = _param("q") or ""
+    source_id = _param("sourceId")
+    fmt = _param("format")
+    if source_id:
+        from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
+
+        try:
+            manifest = service.get_manifest(source_id)
+            storage = manifest.is_storage or manifest.is_service or manifest.is_model
+        except DiscoveryError:
+            storage = False
+        if storage:
+            return [], [{"sourceId": source_id, "status": "unsupported"}]
+        payload = service.search_source(
+            source_id, q=query, fmt=fmt, limit=_DISCOVERY_MAX_ROWS
+        )
+    else:
+        payload = service.search_all(
+            q=query, fmt=fmt, limit=_DISCOVERY_MAX_ROWS, include_storage=False
+        )
+    rows = []
+    for row in (payload.get("resources") or [])[:_DISCOVERY_MAX_ROWS]:
+        rows.append(
+            {
+                "sourceId": row.get("sourceId"),
+                "sourceName": row.get("sourceName"),
+                "resourceId": row.get("resourceId"),
+                "name": row.get("name"),
+                "publisher": row.get("publisher"),
+                "description": (row.get("description") or "")[:_DISCOVERY_DESC_MAX_CHARS],
+                "formats": row.get("formats") or [],
+                "updatedAt": row.get("updatedAt"),
+                "alreadyInDataCatalog": bool(row.get("alreadyHeldDatasetId")),
+            }
+        )
+    # The per-source statuses ride along: a model told that one portal did not
+    # answer can say so, instead of reporting a short list as the whole truth.
+    return rows, [
+        {"sourceId": leg.get("sourceId"), "status": leg.get("status")}
+        for leg in (payload.get("sources") or [])
+        if leg.get("status") != "ok"
+    ]
+
+
+def discovery_sources_contacted(params: dict) -> int:
+    """How many portals a ``discovery.search`` with these params will contact.
+
+    The budget is charged per portal, so a fan-out costs what it costs. Counted
+    here rather than assumed to be one: charging a fan-out a single tick would
+    let one tool call issue five requests against a budget of four.
+    """
+    source_id = params.get("sourceId")
+    if isinstance(source_id, str) and source_id.strip():
+        return 1
+    try:
+        listing = _discovery_service().list_catalog()
+    except Exception:  # noqa: BLE001 - a count must never fail a run
+        return 1
+    return max(
+        1,
+        sum(
+            1
+            for s in _portal_rows(listing.get("sources"))
+            if (s.get("capabilities") or {}).get("search")
+        ),
+    )
+
+
+def execute_read_tool(
+    tool_id: str, *, user_key: str, project_id: str, target: dict | None, params: dict
+) -> tuple[str, str]:
+    """Execute one granted read contract; returns ``(status, text)``, never
+    raises (a tool failure is data the model recovers from, not a run error).
+
+    Implementations stay domain-owned (`ADR-AG-007`): these are thin wrappers
+    over ``projects.storage`` reads (+ the dev/67-2 runtime journal). Output
+    is untrusted context data — bounded, and the dataflow read passes
+    ``strip_agent_state`` so agent-private sections never enter model context
+    (the rule-9 posture applies to tool output too).
+    """
+    from utk_curio.backend.app.agents.repositories import project_agents
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    try:
+        # dev/67-4: the web tools need no project spec — handled first.
+        if tool_id == "web.fetch":
+            return _execute_web_fetch(params)
+        if tool_id == "web.search":
+            return _execute_web_search(params)
+        # dev/84: the package tools read through the packages domain (which
+        # does its own project/lockfile reads) — handled before the spec read.
+        # The discovery tools read the discovery domain, which does its own
+        # manifest reads - handled before the project spec read, like the
+        # package tools below.
+        if tool_id == "discovery.sources":
+            return "ok", _truncate(
+                json.dumps({"sources": _discovery_source_rows()}, ensure_ascii=False)
+            )
+        if tool_id == "discovery.search":
+            rows, unavailable = _discovery_search_rows(params)
+            payload = {"resources": rows}
+            if unavailable:
+                payload["unavailableSources"] = unavailable
+            return "ok", _truncate(json.dumps(payload, ensure_ascii=False))
+        if tool_id == "models.search":
+            return "ok", _truncate(json.dumps({"models": _models_search_rows(params)}, ensure_ascii=False))
+        if tool_id == "examples.read":
+            return _execute_examples_read(user_key, project_id, params)
+        if tool_id == "packages.catalog":
+            rows = _packages_catalog_rows(user_key, project_id, params)
+            return "ok", _truncate(json.dumps({"packages": rows}, ensure_ascii=False))
+        if tool_id == "packages.resolve":
+            return _execute_packages_resolve(user_key, params)
+        spec = projects_storage.read_spec(user_key, project_id)
+        if spec is None:
+            return "error", "no saved project spec is available"
+        if tool_id == "dataflow.read":
+            stripped = project_agents.strip_agent_state(spec)
+            include = params.get("include")
+            if isinstance(include, list) and "content" in include:
+                # The pre-dev/67-2 full dump, on request (large; may truncate).
+                return "ok", _truncate(json.dumps(stripped, ensure_ascii=False))
+            projection = _dataflow_projection(stripped, user_key, project_id)
+            return "ok", _truncate(json.dumps(projection, ensure_ascii=False))
+        if tool_id == "node.read":
+            node_id = _resolve_node_id(target, params)
+            if not node_id:
+                return "error", "no nodeId given and this agent is not attached to a node"
+            nodes = (spec.get("dataflow") or {}).get("nodes") or []
+            node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+            if node is None:
+                return "error", f"node {node_id!r} not found in the saved spec"
+            return "ok", _truncate(json.dumps(node, ensure_ascii=False))
+        if tool_id == "node.runtime.read":
+            from utk_curio.backend.app.execution import runtime_journal
+
+            node_id = _resolve_node_id(target, params)
+            if not node_id:
+                return "error", "no nodeId given and this agent is not attached to a node"
+            nodes = (spec.get("dataflow") or {}).get("nodes") or []
+            node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+            if node is None:
+                return "error", f"node {node_id!r} not found in the saved spec"
+            # dev/137: two origins describe two different things about one node
+            # — what its CODE did and what its RENDER drew. The run leads when
+            # there is one; a grammar node has only its render; and a code node
+            # that also rendered carries both, because a run that passed can
+            # still have drawn nothing (dev/136).
+            record = runtime_journal.read_record(user_key, project_id, node_id)
+            render = runtime_journal.read_render_record(user_key, project_id, node_id)
+            if record is None and render is None:
+                return "ok", json.dumps(
+                    {"nodeId": node_id, "status": "never-executed"}, ensure_ascii=False
+                )
+            record = dict(record or render or {})
+            if record is not None and render is not None and (
+                runtime_journal.read_record(user_key, project_id, node_id) is not None
+            ):
+                record["render"] = render
+            executed_sha = record.get("executedCodeSha256")
+            current_sha = runtime_journal.normalized_code_sha256(str(node.get("content") or ""))
+            # Best-effort staleness signal: the run predates the current content.
+            record["contentChangedSinceRun"] = bool(executed_sha) and executed_sha != current_sha
+            return "ok", _truncate(json.dumps(record, ensure_ascii=False))
+        if tool_id == "catalog.search":
+            rows = _catalog_search_rows(user_key, project_id, params)
+            return "ok", _truncate(json.dumps({"datasets": rows}, ensure_ascii=False))
+        return "error", f"unknown read tool {tool_id!r}"
+    except Exception as exc:  # tool failures are data, never run errors
+        return "error", f"tool failed: {exc}"
+
+
+# web.fetch preview bound: enough to judge an API's shape, small enough to
+# never crowd the context (the tool-result cap still applies on top).
+_WEB_BODY_PREVIEW_MAX_CHARS = 4000
+_WEB_SEARCH_MAX_ROWS = 8
+
+
+def _execute_web_fetch(params: dict) -> tuple[str, str]:
+    """dev/67-4 (DEC-053): one policy-gated fetch, framed as bounded data."""
+    from utk_curio.backend.app.agents.infrastructure import egress
+
+    url = params.get("url")
+    if not isinstance(url, str) or not url.strip():
+        return "error", "params.url must be a non-empty URL string"
+    try:
+        result = egress.fetch(url.strip())
+    except egress.EgressRefused as exc:
+        return "error", f"refused by the egress policy: {exc}"
+    except Exception as exc:
+        return "error", f"the endpoint is unreachable: {exc}"
+    return "ok", _truncate(json.dumps({
+        "url": result.url,
+        "finalUrl": result.final_url,
+        "status": result.status,
+        "contentType": result.content_type[:100],
+        "bodyPreview": result.body[:_WEB_BODY_PREVIEW_MAX_CHARS],
+        "truncated": result.truncated or len(result.body) > _WEB_BODY_PREVIEW_MAX_CHARS,
+    }, ensure_ascii=False))
+
+
+def _execute_web_search(params: dict) -> tuple[str, str]:
+    """Web search - ``CURIO_SEARCH_URL`` is a URL template with ``{q}``
+    (GET; any API key rides the URL) returning JSON. Unset, it falls back to
+    :data:`DEFAULT_SEARCH_URL`, so search works without configuration.
+
+    Accepted response shapes (dev/90 A3 — the common public search APIs over
+    a plain keyed GET, so no provider server is ever required): a top-level
+    list, or rows under ``results`` (SearXNG), ``organic_results`` (SerpAPI,
+    SearchApi.io), ``items`` (Google Programmable Search), or
+    ``web.results`` (Brave-shaped proxies); row fields ``title``,
+    ``url|link|href``, ``snippet|content|description``. Header-authenticated
+    APIs are NOT supported — the contract is key-in-URL, stated honestly.
+    DuckDuckGo's ``RelatedTopics`` is handled too, since that is the default.
+    Results flow through the egress policy either way; the provider host is
+    trusted because configuration (or this module's default) named it, never
+    because a model asked for it."""
+    import os
+    from urllib.parse import quote
+
+    from utk_curio.backend.app.agents.infrastructure import egress
+
+    query = params.get("q")
+    if not isinstance(query, str) or not query.strip():
+        return "error", "params.q must be a non-empty query string"
+    template = os.environ.get("CURIO_SEARCH_URL") or DEFAULT_SEARCH_URL
+    if "{q}" not in template:
+        return "error", (
+            "web search is not configured for this deployment: "
+            "CURIO_SEARCH_URL (--agent-search-url) has no {q} where the query "
+            "goes - verify direct URLs with web.fetch instead"
+        )
+    try:
+        # dev/90 A2: the provider host is OPERATOR configuration, so it is
+        # exempt from the address policy (a local SearXNG works); redirects
+        # off it — and every web.fetch URL — keep the full default-deny gate.
+        result = egress.fetch(
+            template.replace("{q}", quote(query.strip())),
+            trusted_host=egress.trusted_host_of(template),
+        )
+        payload = json.loads(result.body)
+    except egress.EgressRefused as exc:
+        return "error", f"refused by the egress policy: {exc}"
+    except Exception as exc:
+        return "error", f"the search provider failed: {exc}"
+    rows_raw = _search_rows_of(payload)
+    rows = []
+    for row in (rows_raw or [])[:_WEB_SEARCH_MAX_ROWS]:
+        if not isinstance(row, dict):
+            continue
+        rows.append({
+            "title": str(row.get("title") or "")[:160],
+            "url": str(row.get("url") or row.get("link") or row.get("href") or "")[:300],
+            "snippet": str(row.get("snippet") or row.get("content")
+                           or row.get("description") or "")[:300],
+        })
+    return "ok", _truncate(json.dumps({"results": rows}, ensure_ascii=False))
+
+
+#: Where ``web.search`` looks when the deployment names no provider.
+#:
+#: DuckDuckGo's Instant Answer API needs no key and no signup, so an install
+#: nobody configured still has a working search tool. Two honest caveats: it
+#: returns instant-answer topics rather than ranked web results, so coverage
+#: is thinner than a real search API; and, like any default endpoint, a query
+#: reaches a third party. That is narrower than it sounds - the tool runs only
+#: when a user runs an agent that declares a search capability, never on its
+#: own - but an operator who wants somewhere else (a local SearXNG, SerpAPI,
+#: Google Programmable Search) sets ``CURIO_SEARCH_URL`` or
+#: ``--agent-search-url``.
+DEFAULT_SEARCH_URL = "https://api.duckduckgo.com/?q={q}&format=json&no_html=1"
+
+
+def _search_rows_of(payload) -> list | None:
+    """The result rows of one provider response."""
+    if not isinstance(payload, dict):
+        return payload if isinstance(payload, list) else None
+    for key in ("results", "organic_results", "items"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+    web = payload.get("web")
+    if isinstance(web, dict) and isinstance(web.get("results"), list):
+        return web["results"]
+    related = payload.get("RelatedTopics")
+    if isinstance(related, list):
+        return _duckduckgo_rows(related)
+    return None
+
+
+def _duckduckgo_rows(related: list) -> list:
+    """Flatten DuckDuckGo's ``RelatedTopics`` into the common row shape.
+
+    The default provider answers in its own format: a flat list of
+    ``{FirstURL, Text}``, interleaved with category groups that nest the same
+    thing under ``{Name, Topics}``. One level of nesting is all the API
+    produces, so this flattens exactly one level rather than recursing.
+
+    ``Text`` is a single string that leads with the title, so it serves as
+    both title and snippet; the title is clipped at the first sentence-like
+    break so a card is not the whole paragraph twice over.
+    """
+    rows: list = []
+    for entry in related:
+        if not isinstance(entry, dict):
+            continue
+        nested = entry.get("Topics")
+        if isinstance(nested, list):
+            rows.extend(
+                item for item in nested
+                if isinstance(item, dict) and item.get("FirstURL")
+            )
+        elif entry.get("FirstURL"):
+            rows.append(entry)
+    out = []
+    for row in rows:
+        text = str(row.get("Text") or "")
+        title = text.split(" - ", 1)[0] if " - " in text else text
+        out.append({"title": title, "url": row.get("FirstURL"), "snippet": text})
+    return out

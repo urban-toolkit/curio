@@ -13,6 +13,7 @@ import {
   useDatasetCatalog,
 } from '../services/datasetCatalog';
 import { buildSaveableLiveOutputs } from '../utils/saveOutputDataset';
+import { isStandaloneDashboard } from '../standalone/dashboardPayload';
 
 export type DatasetPaletteContextValue = {
   /** datasetId targeted for reveal (open palette + scroll/highlight the row);
@@ -24,6 +25,9 @@ export type DatasetPaletteContextValue = {
    * the live catalog (one shared subscription) so producer chips stay in sync with
    * install/uninstall. See ``installedComputedByProducer``. */
   installedComputedByProducer: Map<string, DatasetCatalogItem>;
+
+  /** This dataflow's datasets by id, for naming a node's DATASET pill (#442). */
+  datasetsById?: Map<string, DatasetCatalogItem>;
 };
 
 const DatasetPaletteContext = createContext<DatasetPaletteContextValue | null>(null);
@@ -33,9 +37,9 @@ export function DatasetPaletteProvider({ children }: { children: React.ReactNode
 
   const { projectId, outputs, nodes, defaultSaveOutputDataset } = useFlowContext();
 
-  // Same query key as the palette dropdown so the module-level catalog cache is
-  // shared (single network fetch). Saveable live outputs surface freshly-installed
-  // computed datasets before the next project save.
+  // This dataflow's datasets only (`includeHub: false`), which is what the
+  // producer pills need. Saveable live outputs surface freshly saved computed
+  // datasets before the next project save.
   const liveOutputs = useMemo(
     () => buildSaveableLiveOutputs(outputs, nodes, defaultSaveOutputDataset),
     [outputs, nodes, defaultSaveOutputDataset],
@@ -46,7 +50,10 @@ export function DatasetPaletteProvider({ children }: { children: React.ReactNode
     includeHub: false,
     sort: 'recent',
     liveOutputs,
-    enabled: true,
+    // The palette this feeds is editor chrome, and a standalone dashboard has
+    // none of it. Left enabled it would refetch whenever `liveOutputs` changed,
+    // which is every time a tile draws itself.
+    enabled: !isStandaloneDashboard(),
   });
 
   // Auto-install / save fires this event; refetch so producer chips update live.
@@ -61,13 +68,19 @@ export function DatasetPaletteProvider({ children }: { children: React.ReactNode
     [catalog.items],
   );
 
+  const datasetsById = useMemo(
+    () => new Map(catalog.items.map((item) => [item.id, item] as const)),
+    [catalog.items],
+  );
+
   const value: DatasetPaletteContextValue = useMemo(
     () => ({
       datasetRevealId,
       setDatasetRevealId,
       installedComputedByProducer: producerMap,
+      datasetsById,
     }),
-    [datasetRevealId, producerMap],
+    [datasetRevealId, producerMap, datasetsById],
   );
 
   return <DatasetPaletteContext.Provider value={value}>{children}</DatasetPaletteContext.Provider>;

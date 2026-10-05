@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "complexity": ["Intermediate"]},
     "description": "Which column holds the geometry, and what happens when the answer is not obvious.",
     "nodes": [
       {
@@ -7,7 +8,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 1290,
-        "content": "import geopandas as gpd\n\ndataset_path = curio_dataset_path(\"data.urbanlab.chicago-boundary\")\ngdf = gpd.read_file(dataset_path)\n\nreturn gdf",
+        "content": "import geopandas as gpd\n\ngdf = curio_load_data(\"data.utk.chicago-boundary\")\n\nreturn gdf",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -258,8 +259,8 @@
     "provenance_id": "DefaultWorkflow",
     "datasets": [
       {
-        "datasetId": "data.urbanlab.chicago-boundary",
-        "dirName": "data.urbanlab.chicago-boundary@1",
+        "datasetId": "data.utk.chicago-boundary",
+        "dirName": "data.utk.chicago-boundary@1",
         "origin": "imported",
         "producerNodeId": null,
         "consumerNodeIds": [],

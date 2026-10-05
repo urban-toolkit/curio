@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import type { DatasetCatalogItem, DatasetFormat } from "../../services/datasetCatalog";
 import { datasetCatalogApi } from "../../services/datasetCatalog";
 import { visiblePreviewColumns } from "../../utils/tabularPreview";
+import { cellText } from "../../utils/cellText";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 
 const ROW_LIMIT = 3;
@@ -18,11 +19,15 @@ const colors: Record<DatasetFormat, { fill: string; stroke: string; bg: string }
   bundle: { fill: "rgba(91,100,114,0.1)", stroke: "rgba(91,100,114,0.25)", bg: "#F2F3F5" },
   osm: { fill: "rgba(122,182,72,0.12)", stroke: "rgba(122,182,72,0.3)", bg: "#F4FAEF" },
   gpkg: { fill: "rgba(166,84,35,0.1)", stroke: "rgba(166,84,35,0.25)", bg: "#FBF4EF" },
+  gtfs: { fill: "rgba(0,137,168,0.1)", stroke: "rgba(0,137,168,0.25)", bg: "#EFF9FB" },
+  collection: { fill: "rgba(184,58,94,0.1)", stroke: "rgba(184,58,94,0.25)", bg: "#FCF2F5" },
+  onnx: { fill: "rgba(138,106,18,0.1)", stroke: "rgba(138,106,18,0.25)", bg: "#FAF6EC" },
+  netcdf: { fill: "rgba(52,68,154,0.1)", stroke: "rgba(52,68,154,0.25)", bg: "#F1F3FB" },
 };
 
 function formatCell(value: unknown): string {
   if (value == null) return "—";
-  const text = String(value);
+  const text = cellText(value);
   return text.length > 20 ? `${text.slice(0, 17)}…` : text;
 }
 

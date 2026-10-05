@@ -1,0 +1,23 @@
+{
+  "GET https://overpass-api.de/api/status": {
+    "file": "5f7fbb4f0d0ad96a.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "text/plain; charset=utf-8"
+    }
+  },
+  "POST https://overpass-api.de/api/interpreter 6fe49be35ca5a2fe": {
+    "file": "e375337b49f518e7.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    }
+  },
+  "POST https://overpass-api.de/api/interpreter a9f4c2c82507672d": {
+    "file": "b3288c7447df83f7.gz",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    }
+  }
+}

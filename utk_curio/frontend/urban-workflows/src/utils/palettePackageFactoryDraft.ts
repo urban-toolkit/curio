@@ -1,10 +1,12 @@
 import { Node as RFNode } from "reactflow";
-import type { PackageTemplatePayload, PackagePayload } from "../api/packagesApi";
+import type { PackageTemplatePayload, PackagePayload } from "../services/packages/types";
 import { NodeDescriptor } from "../registry/types";
 import { NodeTemplateId } from "../registry/types";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
+import { BUILTIN_PACKAGE_ID } from "../registry/packageKeys";
 import { getFlowNodeCanonicalType } from "./flowNodeCanonicalType";
 import { normalizePortTypes } from "../constants/supportedPortTypes";
+import { normalizeWidgets } from "./widgets/widgetModel";
 import {
   applyCanvasTemplateConfigToTemplateDraft,
   readCanvasTemplateConfig,
@@ -18,12 +20,12 @@ import {
   factoryUiMakeId,
   STARTER_CODE,
   toApiPayload,
-} from "../pages/nodes/factoryDraftModel";
+} from "../services/packages/factoryDraft";
 
-/** Matches `PackageId` segment rules (`PACKAGE_DIR_RE` in `utk_curio.backend.app.packages.storage`). */
+/** Matches `PackageId` segment rules (`PACKAGE_DIR_RE` in `utk_curio.backend.app.packages.domain.package_id`). */
 const PACK_ID_SEGMENT_MAX_LEN = 63;
 
-/** Mirrors backend `KIND_ID_RE` (`utk_curio.backend.app.packages.storage`). */
+/** Mirrors backend `KIND_ID_RE` (`utk_curio.backend.app.packages.domain.package_id`). */
 const TEMPLATE_ID_SEGMENT_MAX_LEN = 63;
 
 const WIZARD_CATEGORIES = new Set<string>(["data", "computation", "vis_grammar", "vis_simple", "flow"]);
@@ -247,7 +249,13 @@ function templateDraftFromCanvasNode(
   const label = canvasTemplateLabelFromNode(node, desc);
   const base = descriptorToTemplateDraft(desc, body, kindIdOverride, label);
   const config = readCanvasTemplateConfig(node);
-  return applyCanvasTemplateConfigToTemplateDraft(base, config, label);
+  const draft = applyCanvasTemplateConfigToTemplateDraft(base, config, label);
+  // #662: the node's widgets travel with its code, so the package's source
+  // resolves its references. Set values become the template's defaults.
+  const widgets = normalizeWidgets(node.data?.widgets).map(({ value, ...w }) =>
+    value !== undefined ? { ...w, default: value } : w,
+  );
+  return widgets.length > 0 ? { ...draft, widgets } : draft;
 }
 
 function categoryFromPackageTemplate(cat: string): Category {
@@ -272,8 +280,9 @@ function seedCodeForPackageTemplatePayload(template: PackageTemplatePayload, get
 }
 
 function packageTemplatePayloadToTemplateDraft(template: PackageTemplatePayload, getStarters?: StartersLookup): TemplateDraft {
-  const sourceFilename =
-    template.source?.split("/").pop()?.trim() || `${template.templateId}.py`;
+  // Empty for a template that ships no source (a behavior bundle drives it):
+  // `toApiPayload` then sends it without one, as it is installed (#432).
+  const sourceFilename = template.source?.split("/").pop()?.trim() ?? "";
   const inputPorts =
     template.inputPorts?.map((p) => ({
       id: factoryUiMakeId(),
@@ -306,10 +315,12 @@ function packageTemplatePayloadToTemplateDraft(template: PackageTemplatePayload,
     paletteOrder: typeof template.paletteOrder === "number" ? template.paletteOrder : undefined,
     sourceFilename,
     sourceCode: seedCodeForPackageTemplatePayload(template, getStarters),
+    // #662: a Save As keeps the widgets the existing template declares.
+    ...(normalizeWidgets(template.widgets).length > 0 ? { widgets: normalizeWidgets(template.widgets) } : {}),
   };
 }
 
-/** Factory draft from ``GET /api/packages`` row — used for palette “publish to catalog”. */
+/** Factory draft from a ``GET /api/packages`` row: the base Save As adds a node to. */
 export function draftFromInstalledPackagePayload(
   pkg: PackagePayload,
   getStarters?: StartersLookup,
@@ -379,6 +390,18 @@ export function buildSaveAsInstallDraft(opts: {
     draft.publisher = "Local palette";
     draft.description = "Created from canvas Save As.";
     draft.templates = [templateDraftFromCanvasNode(opts.canvasNode, desc, body, slugBase)];
+    // A node of an installed package makes the new package a fork of it, so
+    // the Node Catalog groups the two. A built-in node forks nothing.
+    const src = desc.package;
+    if (src && src.packageId !== BUILTIN_PACKAGE_ID) {
+      const from = { packageId: src.packageId, major: src.major };
+      draft.lineage = {
+        forkedFrom: from,
+        root: src.lineage?.root
+          ? { packageId: src.lineage.root.packageId, major: src.lineage.root.major }
+          : from,
+      };
+    }
     return draft;
   }
 

@@ -107,18 +107,29 @@
   font-family: monospace;
 }
 
+/* A trash icon named "Remove", not a bare ×: the row's other × only dismissed
+   a status, and the two were told apart by colour alone (#518). An icon rather
+   than the word, so the one-line status beside it still fits the dialog. */
 .removeButton {
   background: none;
-  border: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 16px;
-  color: #999;
+  font-size: 13px;
+  color: #777;
   line-height: 1;
-  padding: 0 2px;
+  padding: 3px 5px;
+  white-space: nowrap;
 }
 
-.removeButton:hover {
-  color: #d00;
+.removeButton:hover:not(:disabled) {
+  color: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.removeButton:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .installButton {
@@ -269,6 +280,9 @@
   gap: 4px;
   color: #b91c1c;
   font-size: 11px;
+  /* An auto-layout table shrinks this column to its longest word, which split
+     "Cannot import" over two lines (#519). */
+  white-space: nowrap;
 }
 .statusDismiss {
   border: none;

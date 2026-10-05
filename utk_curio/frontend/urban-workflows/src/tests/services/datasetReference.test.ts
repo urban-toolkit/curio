@@ -5,9 +5,9 @@
  * hand out, and handing it out is part of why the request exists: an absolute
  * path is specific to one machine, one user and one mount, so pasting it into a
  * node produces code that works until someone else opens the dataflow. The
- * portable reference is ``curio_dataset_path("<id>")`` — exactly what the
- * palette's own generated loaders emit, and what the sandbox resolves at
- * execution time.
+ * portable reference is ``curio_load_data("<id>")`` — exactly what the
+ * palette's own generated loaders emit, and what the sandbox resolves and reads
+ * at execution time.
  *
  * The location is still shown in the details view, as information.
  */
@@ -17,11 +17,11 @@ import {
 } from "../../services/datasetCatalog/datasetReference";
 
 const item = (over: Record<string, unknown> = {}) =>
-  ({ id: "data.urbanlab.acs@1", path: "C:/Users/fabio/.curio/data/acs.parquet", ...over }) as never;
+  ({ id: "data.utk.acs@1", path: "C:/Users/fabio/.curio/data/acs.parquet", ...over }) as never;
 
 describe("datasetReference", () => {
   test("hands over the portable call, not the path", () => {
-    expect(datasetReference(item()).code).toBe('curio_dataset_path("data.urbanlab.acs@1")');
+    expect(datasetReference(item()).code).toBe('curio_load_data("data.utk.acs@1")');
   });
 
   test("still reports where the bytes are", () => {
@@ -51,16 +51,22 @@ describe("ids that cannot be embedded", () => {
   });
 
   test("an id starting with punctuation is not embedded", () => {
-    expect(datasetReference(item({ id: ".hidden" })).code).not.toContain("curio_dataset_path");
+    expect(datasetReference(item({ id: ".hidden" })).code).not.toContain("curio_");
   });
 
   test("a missing id is not embedded", () => {
-    expect(datasetReference(item({ id: undefined })).code).not.toContain("curio_dataset_path");
+    expect(datasetReference(item({ id: undefined })).code).not.toContain("curio_");
   });
 });
 
 describe("datasetReferenceCode", () => {
   test("is the code half of the reference", () => {
     expect(datasetReferenceCode(item())).toBe(datasetReference(item()).code);
+  });
+
+  test("hands over curio_load_collection for a collection", () => {
+    expect(
+      datasetReferenceCode({ id: "imported.xabc@1", path: "/x/index.parquet", uri: "", format: "collection" }),
+    ).toBe('curio_load_collection("imported.xabc@1")');
   });
 });

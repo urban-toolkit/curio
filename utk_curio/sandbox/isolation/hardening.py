@@ -43,7 +43,9 @@ SENSITIVE_PATHS = (
     (".curio/data", "the artifact store: every session's data"),
     (".curio/users", "every user's imported datasets, projects and packages"),
     ("datasets", "the shared Data Catalog's published files"),
+    ("models", "the Model Catalog's shipped models, staged into a child that runs one"),
     (".env", "the deployment's secrets, including SECRET_KEY"),
+    (".curio/discovery", "the operator's source manifests: each names a folder or host the server reads"),
 )
 
 # Directories whose contents reach a child as a hardlink, and which therefore
@@ -66,7 +68,7 @@ SENSITIVE_PATHS = (
 # The files keep whatever mode they had, which is exactly what the hardlink
 # needs. Copying instead of linking would allow per-copy permissions, at the
 # cost of duplicating a multi-gigabyte raster for every node run.
-HARDLINK_SOURCES = frozenset({".curio/data", ".curio/users", "datasets"})
+HARDLINK_SOURCES = frozenset({".curio/data", ".curio/users", "datasets", "models"})
 
 # What we want each of those to be. Owner-only: no read, no list, no traverse.
 DIRECTORY_MODE = 0o700

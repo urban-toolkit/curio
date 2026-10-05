@@ -30,7 +30,7 @@ jest.mock('../../utils/authApi', () => ({
 }));
 
 const mockListInstalled = jest.fn();
-jest.mock('../../api/packagesApi', () => ({
+jest.mock('../../services/packages/packagesApi', () => ({
   packagesApi: { listInstalled: (...a: unknown[]) => mockListInstalled(...a) },
 }));
 

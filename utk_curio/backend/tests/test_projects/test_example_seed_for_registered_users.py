@@ -26,17 +26,16 @@ from utk_curio.backend.app.projects.repositories import list_for_user
 from utk_curio.backend.app.projects.seed import (
     _seeded_marker,
     _EXAMPLES_NAMESPACE,
-    _example_files,
     _example_id,
-    _repo_root,
     ensure_user_examples_seeded,
     seed_example_projects,
+    shipped_dataflows,
 )
 from utk_curio.backend.app.users.models import User, UserSession
 
 
-def _example_stems() -> list[str]:
-    return [p.stem for p in _example_files(_repo_root() / "docs" / "examples")]
+def _shipped_keys() -> list[str]:
+    return [s.key for s in shipped_dataflows()]
 
 
 def _make_user(db, username: str, token: str) -> tuple[User, str]:
@@ -76,7 +75,7 @@ def test_registered_user_gets_examples(app, db, user_and_token):
 
     seeded = seed_example_projects(user)
 
-    stems = _example_stems()
+    stems = _shipped_keys()
     assert stems, "no example dataflows on disk to seed"
     assert seeded == len(stems)
 
@@ -93,14 +92,14 @@ def test_two_users_each_get_their_own_copy(app, db, user_and_token):
     alice, _ = user_and_token
     bob, _ = _make_user(db, "bob", "bob-token")
 
-    assert seed_example_projects(alice) == len(_example_stems())
-    assert seed_example_projects(bob) == len(_example_stems())
+    assert seed_example_projects(alice) == len(_shipped_keys())
+    assert seed_example_projects(bob) == len(_shipped_keys())
 
     alice_ids = {p.id for p in list_for_user(alice.id)}
     bob_ids = {p.id for p in list_for_user(bob.id)}
 
-    assert len(alice_ids) == len(_example_stems())
-    assert len(bob_ids) == len(_example_stems())
+    assert len(alice_ids) == len(_shipped_keys())
+    assert len(bob_ids) == len(_shipped_keys())
     assert alice_ids.isdisjoint(bob_ids), "both users share example project ids"
 
     # Each user's own copy is on disk under their own key.
@@ -144,13 +143,13 @@ def test_guest_prune_still_runs(app, db, shared_guest):
 
 def test_guest_ids_are_unchanged(app, db, shared_guest):
     """Installs seeded before this change must upsert, not duplicate."""
-    for stem in _example_stems():
+    for stem in _shipped_keys():
         assert _example_id(stem, shared_guest) == str(
             uuid.uuid5(_EXAMPLES_NAMESPACE, stem)
         )
     # And a registered user's are genuinely different.
     alice, _ = _make_user(db, "alice2", "alice2-token")
-    for stem in _example_stems():
+    for stem in _shipped_keys():
         assert _example_id(stem, alice) != _example_id(stem, shared_guest)
 
 
@@ -188,7 +187,7 @@ def test_backfill_does_not_resurrect_a_deleted_example(app, db, user_and_token):
     """The marker is what makes the listing back-fill safe to run every time."""
     user, _ = user_and_token
 
-    assert ensure_user_examples_seeded(user) == len(_example_stems())
+    assert ensure_user_examples_seeded(user) == len(_shipped_keys())
 
     victim = list_for_user(user.id)[0]
     _lose_example_row(user, victim.id)
@@ -206,7 +205,7 @@ def test_listing_backfills_for_a_user_seeded_before_the_fix(app, db, user_and_to
 
     summaries = services.list_projects(user)
 
-    assert len(summaries) == len(_example_stems())
+    assert len(summaries) == len(_shipped_keys())
 
 
 def test_a_reused_user_id_does_not_inherit_the_previous_occupant_marker(
@@ -223,7 +222,7 @@ def test_a_reused_user_id_does_not_inherit_the_previous_occupant_marker(
     truncates ``user`` between tests.
     """
     first, _ = user_and_token
-    assert ensure_user_examples_seeded(first) == len(_example_stems())
+    assert ensure_user_examples_seeded(first) == len(_shipped_keys())
     marker = storage.user_dir(str(first.id)) / "examples.seeded"
     assert marker.exists()
     assert f"user={first.username}" in marker.read_text(encoding="utf-8")
@@ -249,15 +248,15 @@ def test_a_reused_user_id_does_not_inherit_the_previous_occupant_marker(
     assert list_for_user(successor.id) == []
 
     # THE POINT: the successor gets their own examples, not an empty gallery.
-    assert ensure_user_examples_seeded(successor) == len(_example_stems())
-    assert len(list_for_user(successor.id)) == len(_example_stems())
+    assert ensure_user_examples_seeded(successor) == len(_shipped_keys())
+    assert len(list_for_user(successor.id)) == len(_shipped_keys())
     assert f"user={successor.username}" in marker.read_text(encoding="utf-8")
 
 
 def test_the_same_account_is_still_seeded_only_once(app, db, user_and_token):
     """The marker must still stop a deliberate deletion being undone."""
     user, _ = user_and_token
-    assert ensure_user_examples_seeded(user) == len(_example_stems())
+    assert ensure_user_examples_seeded(user) == len(_shipped_keys())
 
     victim = list_for_user(user.id)[0]
     _lose_example_row(user, victim.id)
@@ -279,7 +278,7 @@ def test_a_legacy_marker_without_an_owner_is_not_trusted(app, db, user_and_token
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text("11", encoding="utf-8")  # the old format: a bare count
 
-    assert ensure_user_examples_seeded(user) == len(_example_stems())
+    assert ensure_user_examples_seeded(user) == len(_shipped_keys())
     assert f"user={user.username}" in marker.read_text(encoding="utf-8")
     # ...and now it is trusted, so it does not re-seed a second time.
     assert ensure_user_examples_seeded(user) == 0
@@ -393,3 +392,69 @@ def test_guest_boot_still_resets_its_examples(app, db, shared_guest):
 
     seed_example_projects(shared_guest)
     assert next(p for p in list_for_user(shared_guest.id) if p.id == victim.id).name != "Scribbled on"
+
+
+# ---------------------------------------------------------------------------
+# What ships later still reaches an account seeded earlier
+# ---------------------------------------------------------------------------
+
+def test_the_tests_are_seeded_beside_the_examples(app, db, user_and_token):
+    """The e2e fixtures ship as tests, so the deploy lists them too."""
+    user, _ = user_and_token
+    ensure_user_examples_seeded(user)
+
+    summaries = services.list_projects(user)
+    by_name = {s.name: s for s in summaries}
+    fixture = by_name["Interaction_Vega_Autark"]
+    assert fixture.is_example is True
+    assert fixture.categories["source"] == "test"
+    assert by_name["Heterogeneous data + linked views"].categories["source"] == "use_case"
+    assert by_name["Autark GeoDataFrame maps"].categories["source"] == "example"
+
+
+def test_a_fresh_gallery_leads_with_the_examples(app, db, user_and_token):
+    """Newest first: the tests are seeded before the examples, not after."""
+    user, _ = user_and_token
+    ensure_user_examples_seeded(user)
+
+    first = services.list_projects(user)[0]
+    assert first.categories["source"] in ("example", "use_case")
+
+
+def test_a_dataflow_that_ships_later_still_arrives(app, db, user_and_token):
+    """The marker lists what it seeded, so a key it does not list is new."""
+    user, _ = user_and_token
+    keys = _shipped_keys()
+    first, later = keys[:-3], keys[-3:]
+    seed_example_projects(user, prune=False, overwrite=False, only_keys=first)
+    marker = storage.user_dir(str(user.id)) / "examples.seeded"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(
+        f"user={user.username}\nkeys={','.join(first)}\n", encoding="utf-8",
+    )
+
+    assert ensure_user_examples_seeded(user) == len(later)
+    assert len(list_for_user(user.id)) == len(keys)
+    assert ensure_user_examples_seeded(user) == 0
+
+
+def test_a_marker_from_before_keys_gets_what_shipped_since(app, db, user_and_token):
+    """The dev accounts' case: seeded with 01-16, marker has no keys line.
+
+    The rows that exist count as seeded, so 17-23 and every test arrive and
+    nothing the account already holds is touched.
+    """
+    user, _ = user_and_token
+    keys = _shipped_keys()
+    early = [k for k in keys if k[:2].isdigit() and int(k[:2]) <= 16]
+    seed_example_projects(user, prune=False, overwrite=False, only_keys=early)
+    services.rename_project(user, _example_id(early[0], user), "Renamed by me")
+    marker = storage.user_dir(str(user.id)) / "examples.seeded"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(f"user={user.username}\ncount={len(early)}\n", encoding="utf-8")
+
+    assert ensure_user_examples_seeded(user) == len(keys) - len(early)
+    rows = {p.id: p for p in list_for_user(user.id)}
+    assert len(rows) == len(keys)
+    assert rows[_example_id(early[0], user)].name == "Renamed by me"
+    assert "keys=" in marker.read_text(encoding="utf-8")

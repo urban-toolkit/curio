@@ -9,7 +9,7 @@ Covers the four pieces added in the lockfile epic:
   * REST endpoints under ``/api/packages/projects/...`` and
     ``/api/packages/defaults``.
 
-Uses real catalog packages (``ai.urbanlab.uhvi@1``, ``curio.builtin``)
+Uses real catalog packages (``ai.utk.uhvi@1``, ``curio.builtin``)
 so the install paths exercise the same code as production.
 """
 
@@ -20,18 +20,22 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.packages import defaults as defaults_io
-from utk_curio.backend.app.packages import services as packages_services
-from utk_curio.backend.app.packages.spec_packages import (
+from utk_curio.backend.app.packages.repositories import defaults as defaults_io
+from utk_curio.backend.app.packages import service as packages_services
+from utk_curio.backend.app.packages.application import (
+    store_install,
+    store_reads,
+)
+from utk_curio.backend.app.packages.domain.spec_packages import (
     dir_name_from_node_type,
     preserve_project_packages,
     project_packages,
     referencing_nodes,
     set_project_packages,
 )
-from utk_curio.backend.app.packages.storage import (
+from utk_curio.backend.app.packages.repositories.store import (
     package_dir,
-    user_packageages_dir,
+    user_packages_dir,
 )
 from utk_curio.backend.app.projects import services as projects_services
 from utk_curio.backend.app.projects import storage as projects_storage
@@ -39,8 +43,8 @@ from utk_curio.backend.app.projects.schemas import ProjectCreate
 
 
 REAL_CATALOG = Path(__file__).resolve().parents[4] / "packages"
-UHVI_DIR = "ai.urbanlab.uhvi@1"
-UHVI_TEMPLATE_REF = "ai.urbanlab.uhvi/uhvi-load@1"
+UHVI_DIR = "ai.utk.uhvi@1"
+UHVI_TEMPLATE_REF = "ai.utk.uhvi/uhvi-load@1"
 
 
 def _auth(token):
@@ -53,7 +57,7 @@ def _auth(token):
 
 class TestSpecPackagesHelpers:
     def test_versioned_type_yields_dir_name(self):
-        assert dir_name_from_node_type("ai.urbanlab.uhvi/uhvi-load@1") == "ai.urbanlab.uhvi@1"
+        assert dir_name_from_node_type("ai.utk.uhvi/uhvi-load@1") == "ai.utk.uhvi@1"
 
     def test_unversioned_without_resolver_returns_none(self):
         assert dir_name_from_node_type("curio.builtin/data-loading") is None
@@ -72,21 +76,21 @@ class TestSpecPackagesHelpers:
             assert dir_name_from_node_type(bad) is None  # type: ignore[arg-type]
 
     def test_project_packages_prefers_declared(self):
-        spec = {"dataflow": {"packages": ["ai.urbanlab.uhvi@1"], "nodes": []}}
-        assert project_packages(spec) == {"ai.urbanlab.uhvi@1"}
+        spec = {"dataflow": {"packages": ["ai.utk.uhvi@1"], "nodes": []}}
+        assert project_packages(spec) == {"ai.utk.uhvi@1"}
 
     def test_project_packages_backfills_from_nodes(self):
         spec = {
             "dataflow": {
                 "packages": [],  # empty triggers backfill
                 "nodes": [
-                    {"type": "ai.urbanlab.uhvi/uhvi-load@1"},
-                    {"type": "ai.urbanlab.uhvi/uhvi-load@1"},  # dedupe
+                    {"type": "ai.utk.uhvi/uhvi-load@1"},
+                    {"type": "ai.utk.uhvi/uhvi-load@1"},  # dedupe
                     {"type": "curio.builtin/data-loading"},  # unversioned, no resolver
                 ],
             }
         }
-        assert project_packages(spec) == {"ai.urbanlab.uhvi@1"}
+        assert project_packages(spec) == {"ai.utk.uhvi@1"}
 
     def test_project_packages_backfill_uses_resolver(self):
         spec = {
@@ -112,9 +116,9 @@ class TestDefaults:
         assert defaults_io.load_defaults("guest") == set()
 
     def test_round_trip(self, tmp_curio):
-        defaults_io.save_defaults("guest", ["ai.urbanlab.uhvi@1", "curio.builtin@1"])
+        defaults_io.save_defaults("guest", ["ai.utk.uhvi@1", "curio.builtin@1"])
         assert defaults_io.load_defaults("guest") == {
-            "ai.urbanlab.uhvi@1", "curio.builtin@1",
+            "ai.utk.uhvi@1", "curio.builtin@1",
         }
 
     def test_corrupt_file_treated_as_empty(self, tmp_curio):
@@ -127,11 +131,11 @@ class TestDefaults:
         assert defaults_io.load_defaults("guest") == {"valid.pkg@1"}
 
     def test_add_and_remove_idempotent(self, tmp_curio):
-        defaults_io.add_to_defaults("guest", "ai.urbanlab.uhvi@1")
-        defaults_io.add_to_defaults("guest", "ai.urbanlab.uhvi@1")  # idempotent
-        assert defaults_io.load_defaults("guest") == {"ai.urbanlab.uhvi@1"}
-        defaults_io.remove_from_defaults("guest", "ai.urbanlab.uhvi@1")
-        defaults_io.remove_from_defaults("guest", "ai.urbanlab.uhvi@1")  # idempotent
+        defaults_io.add_to_defaults("guest", "ai.utk.uhvi@1")
+        defaults_io.add_to_defaults("guest", "ai.utk.uhvi@1")  # idempotent
+        assert defaults_io.load_defaults("guest") == {"ai.utk.uhvi@1"}
+        defaults_io.remove_from_defaults("guest", "ai.utk.uhvi@1")
+        defaults_io.remove_from_defaults("guest", "ai.utk.uhvi@1")  # idempotent
         assert defaults_io.load_defaults("guest") == set()
 
 
@@ -162,7 +166,7 @@ class TestProjectInstall:
         user, _ = user_and_token
         user_key = _user_key_for(user)
 
-        assert not (user_packageages_dir(user_key) / UHVI_DIR).is_dir()
+        assert not (user_packages_dir(user_key) / UHVI_DIR).is_dir()
 
         result = packages_services.install_to_project(user_key, alice_project, UHVI_DIR)
         assert result["packages"] == [UHVI_DIR]
@@ -203,7 +207,7 @@ class TestProjectUninstall:
         assert UHVI_DIR in result["pruned"]
         # Defaults was never populated for this package, so nothing to remove there.
         assert result["removedFromDefaults"] == []
-        assert not (user_packageages_dir(user_key) / UHVI_DIR).is_dir()
+        assert not (user_packages_dir(user_key) / UHVI_DIR).is_dir()
 
     def test_uninstall_skips_prune_when_other_project_references(
         self, app, user_and_token, alice_project, client,
@@ -230,7 +234,7 @@ class TestProjectUninstall:
         # Now uninstall from the last project: the prune should fire.
         result = packages_services.uninstall_from_project(user_key, second_id, UHVI_DIR)
         assert result["pruned"] == [UHVI_DIR]
-        assert not (user_packageages_dir(user_key) / UHVI_DIR).is_dir()
+        assert not (user_packages_dir(user_key) / UHVI_DIR).is_dir()
 
     def test_uninstall_builtin_rejected(self, app, user_and_token, alice_project):
         user, _ = user_and_token
@@ -413,7 +417,7 @@ class TestRestartHonestyOnCatalogInstall:
         user, _ = user_and_token
         user_key = _user_key_for(user)
         monkeypatch.setattr(
-            packages_services, "_ensure_user_store_install",
+            store_install, "_ensure_user_store_install",
             lambda uk, dn: packages_services.InstallOutcome(
                 copied=True, installed=["geo-sdk", "tiny-lib"],
             ),
@@ -440,8 +444,9 @@ class TestCatalogOverlayRouting:
             self, app, user_and_token, alice_project, monkeypatch):
         from types import SimpleNamespace
 
-        from utk_curio.backend.app.packages import backend_runtime, pip_runner
-        from utk_curio.backend.app.packages import services as svc
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+        from utk_curio.backend.app.packages import service as svc
 
         user, _ = user_and_token
         user_key = _user_key_for(user)
@@ -453,12 +458,12 @@ class TestCatalogOverlayRouting:
             permissions=[],
         )
         monkeypatch.setattr(
-            svc, "install_packageage_from_directory",
+            store_install, "install_package_from_directory",
             lambda uk, src, replace=False: SimpleNamespace(manifest=fake_manifest))
         monkeypatch.setattr(
-            svc, "_is_installed_in_user_store", lambda uk, dn: False)
+            store_reads, "_is_installed_in_user_store", lambda uk, dn: False)
         monkeypatch.setattr(
-            "utk_curio.backend.app.packages.backend_runtime.record_entry_pin",
+            'utk_curio.backend.app.packages.infrastructure.backend_runtime.record_entry_pin',
             lambda uk, dn: None)
         monkeypatch.setattr(
             backend_runtime, "build_overlay",
@@ -473,6 +478,67 @@ class TestCatalogOverlayRouting:
         assert calls["overlay"] == (UHVI_DIR, {"tinylib": "1.0.0"})
         # Host portion empty → no restart notice (dev/92 narrowed by dev/97).
         assert "restartRecommended" not in result
+
+
+class TestUpdateFromCatalog:
+    """#434: an update is a replace of the one store copy from the catalog.
+
+    "Update all projects" and the drawer's "Update" used to post a plain install,
+    which returns early for a package already in the store. Lockfiles name only
+    ``<id>@<major>``, so replacing the store copy is the whole update.
+    """
+
+    COUNTER_DIR = "ai.test.counter@1"
+
+    def _write_counter(self, catalog: Path, version: str, handler: str) -> None:
+        from utk_curio.backend.app.packages.domain import backend_contract as bc
+
+        pkg = catalog / self.COUNTER_DIR
+        (pkg / "backend").mkdir(parents=True, exist_ok=True)
+        (pkg / "manifest.json").write_text(json.dumps({
+            "id": "ai.test.counter", "version": version, "name": "Counter",
+            "publisher": "Tests", "description": "d",
+            "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+            "permissions": [bc.PERMISSION_SERVER_CODE],
+            "templates": [{
+                "id": "counter", "label": "Counter", "category": "computation",
+                "engine": "python", "editor": "none", "hasCode": False,
+                "inputPorts": [], "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+                "backendHandler": "count",
+            }],
+            "backend": {"entry": "backend/handler.py",
+                        "handlers": [{"name": "count", "timeoutClass": "quick"}]},
+        }), encoding="utf-8")
+        (pkg / "backend" / "handler.py").write_text(handler, encoding="utf-8")
+
+    def test_the_replace_lands_the_new_version_and_repins_the_backend_entry(
+        self, app, user_and_token, alice_project, monkeypatch, tmp_path,
+    ):
+        from utk_curio.backend.app.packages.infrastructure import backend_runtime
+        from utk_curio.backend.app.packages.repositories import catalog_dir
+
+        catalog = tmp_path / "catalog"
+        monkeypatch.setattr(catalog_dir, "catalog_root", lambda: catalog)
+        user, _ = user_and_token
+        user_key = _user_key_for(user)
+
+        self._write_counter(catalog, "1.0.0", "HANDLERS = {}\n")
+        packages_services.install_to_project(user_key, alice_project, self.COUNTER_DIR)
+        new_handler = "HANDLERS = {'count': lambda payload: 1}\n"
+        self._write_counter(catalog, "1.1.0", new_handler)
+
+        store_install.install_from_catalog(user_key, self.COUNTER_DIR, replace=True)
+
+        manifest = json.loads(
+            (package_dir(user_key, self.COUNTER_DIR) / "manifest.json").read_text())
+        assert manifest["version"] == "1.1.0"
+        # Invocation checks the handler against this pin and refuses a drifted
+        # one with "reinstall": a replace that kept the old pin broke the
+        # package it had just updated.
+        assert backend_runtime.pinned_entry_digest(user_key, self.COUNTER_DIR) == \
+            backend_runtime.entry_digest(new_handler.encode("utf-8"))
+        spec = projects_storage.read_spec(user_key, alice_project)
+        assert self.COUNTER_DIR in spec["dataflow"]["packages"]
 
 
 # ---------------------------------------------------------------------------
@@ -516,11 +582,11 @@ class TestReferencingNodes:
     def test_versioned_and_unversioned_types_are_counted(self):
         spec = {"dataflow": {"nodes": [
             {"id": "a", "type": UHVI_TEMPLATE_REF},
-            {"id": "b", "type": "ai.urbanlab.uhvi/uhvi-load"},
+            {"id": "b", "type": "ai.utk.uhvi/uhvi-load"},
             {"id": "c", "type": "curio.builtin/data-loading@1"},
             "garbage",
         ]}}
-        assert referencing_nodes(spec, UHVI_DIR, {"ai.urbanlab.uhvi": [1]}) == ["a", "b"]
+        assert referencing_nodes(spec, UHVI_DIR, {"ai.utk.uhvi": [1]}) == ["a", "b"]
         # Without a resolver the unversioned reference cannot be attributed.
         assert referencing_nodes(spec, UHVI_DIR) == ["a"]
 
@@ -552,7 +618,7 @@ class TestUninstallRefusesWhileNodesUseThePackage:
         with pytest.raises(packages_services.PackageServiceError) as exc:
             packages_services.uninstall_from_project(user_key, alice_project, UHVI_DIR)
         assert exc.value.status == 409
-        assert "1 node on this canvas uses ai.urbanlab.uhvi@1" in str(exc.value)
+        assert "1 node on this canvas uses ai.utk.uhvi@1" in str(exc.value)
         # Nothing moved: lockfile intact, store copy intact.
         assert projects_storage.read_spec(user_key, alice_project)["dataflow"]["packages"] == [UHVI_DIR]
         assert (package_dir(user_key, UHVI_DIR) / "manifest.json").is_file()
@@ -572,7 +638,7 @@ class TestUninstallRefusesWhileNodesUseThePackage:
         with pytest.raises(packages_services.PackageServiceError) as exc:
             packages_services.uninstall_from_project(user_key, alice_project, UHVI_DIR)
         assert exc.value.status == 409
-        assert "2 nodes on this canvas use ai.urbanlab.uhvi@1 — delete them first" in str(exc.value)
+        assert "2 nodes on this canvas use ai.utk.uhvi@1 — delete them first" in str(exc.value)
 
     def test_after_the_nodes_go_the_uninstall_succeeds(self, app, user_and_token, alice_project):
         user, _ = user_and_token

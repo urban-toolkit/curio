@@ -27,7 +27,7 @@ which of the two is wrong when it fails.
 
 The "about a second" is not folklore: ``applyNewOutput`` ->
 ``scheduleInstallSyncRef`` paints an optimistic "Adding..." row and debounces
-500 ms before the save whose ``.finally`` clears it (``FlowProvider.tsx``). So
+500 ms before the save whose ``.then`` clears it (``providers/flow/useInstallSave.ts``). So
 the window the reporter describes is exactly the placeholder's lifetime, and
 anything asserted before that has settled is asserting against a state that has
 not happened yet.
@@ -52,6 +52,7 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    open_tools_palette,
     run_node_and_wait,
     set_node_code,
     stub_login_and_enter_workflow,
@@ -60,7 +61,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-ANALYSIS_TILE = "#step-analysis"
+ANALYSIS_TILE = "#tile-computation-analysis"
 ANALYSIS_TYPE = "curio.builtin/computation-analysis"
 DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
 
@@ -105,7 +106,6 @@ def _enable_save_toggle(page, node_id: str) -> None:
 
 
 def _open_data_catalog(page):
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
     page.get_by_role("button", name="Data Catalog", exact=True).click()
     page.locator(DRAWER_ROOT).wait_for(state="attached", timeout=15000)
     dialog = page.get_by_role("dialog").filter(
@@ -225,7 +225,7 @@ def test_the_row_survives_a_run_watched_from_an_open_drawer(
     That is not what #217 describes: "shows up for a moment and then
     disappears" is someone with the drawer ALREADY OPEN, seeing the optimistic
     "Adding..." row painted by ``beginPendingInstall`` and then cleared by the
-    save's ``.finally``.
+    save's ``.then``.
 
     So this holds the drawer open across the whole run. If the row the
     placeholder stood for does not take its place, the drawer visibly loses a
@@ -276,3 +276,96 @@ def test_the_row_survives_a_run_watched_from_an_open_drawer(
             else "The dataset does not exist server-side either."
         )
     )
+
+
+# Records, on the page, whether an "Adding ..." placeholder for the node was
+# ever painted in the Tools > Data Catalog panel. Installed before the run so a
+# placeholder that lives for well under a second is still seen.
+_WATCH_PLACEHOLDER = """(panel) => {
+  window.__curioPlaceholderSeen = false;
+  const look = () => {
+    if (panel.querySelector('[role="status"][aria-label^="Adding"]')) {
+      window.__curioPlaceholderSeen = true;
+    }
+  };
+  look();
+  new MutationObserver(look).observe(panel, { childList: true, subtree: true });
+}"""
+
+# Records whether the row's class list changes, which is how the reveal pulse
+# shows (a CSS-module class added, then removed 1.4 s later).
+_WATCH_ROW_CLASS = """(row) => {
+  window.__curioRowPulsed = false;
+  new MutationObserver(() => { window.__curioRowPulsed = true; })
+    .observe(row, { attributes: true, attributeFilter: ["class"] });
+}"""
+
+
+def test_the_output_stays_in_the_tools_data_catalog_and_its_pill_reveals_it(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    """#217 and #441, watched from the Tools rail's "Data Catalog" list.
+
+    That list is the one labelled "Data Catalog" on the canvas. It paints the
+    run's "Adding ..." placeholder, so a saved output must take the
+    placeholder's place there and stay, also after a reload. The node's OUTPUT
+    pill reveals that same row (#441).
+    """
+    require_project_page()
+    require_user_auth()
+
+    page.emulate_media(reduced_motion="reduce")
+    session = stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Rail User",
+        username="rail_user",
+        project_name="Saved output in the rail",
+    )
+    require_owner_view(page)
+    token = session["token"]
+    project_id = session["project"]["id"]
+
+    # Right of the open panel, which floats over the left of the canvas.
+    node_id = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=(860, 220))
+    set_node_code(page, node_id, SCALAR_CODE)
+    _enable_save_toggle(page, node_id)
+
+    panel = open_tools_palette(page, "datasets")
+    panel.evaluate(_WATCH_PLACEHOLDER)
+
+    with page.expect_response(
+        _install_save_response(project_id, node_id), timeout=180000
+    ) as save_info:
+        run_node_and_wait(page, node_id, node_type=ANALYSIS_TYPE)
+    assert save_info.value.ok
+
+    page.wait_for_timeout(SETTLE_MS)
+
+    rows = panel.locator(f'[data-dataset-id*="{node_id}"]')
+    placeholder_seen = page.evaluate("() => window.__curioPlaceholderSeen === true")
+    on_server = _server_has_dataset(current_server, token, project_id, node_id)
+    assert rows.count() > 0, (
+        "the saved output is not in the Tools > Data Catalog list after the run "
+        f"settled (#217). Placeholder painted during the run: {placeholder_seen}. "
+        f"Dataset on the server: {on_server}."
+    )
+    expect(panel.locator('[role="status"][aria-label^="Adding"]')).to_have_count(0)
+
+    page.reload()
+    require_owner_view(page)
+    panel = open_tools_palette(page, "datasets")
+    row = panel.locator(f'[data-dataset-id*="{node_id}"]').first
+    expect(row).to_be_visible(timeout=30000)
+
+    # #441: the OUTPUT pill reveals that row.
+    pill = node_locator(page, node_id).get_by_role(
+        "button", name=re.compile(r"^Reveal output ")
+    )
+    expect(pill).to_be_visible(timeout=30000)
+    row.evaluate(_WATCH_ROW_CLASS)
+    pill.click()
+    page.wait_for_function("() => window.__curioRowPulsed === true", timeout=10000)

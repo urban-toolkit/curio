@@ -49,6 +49,15 @@ _SHARED_SESSION_CLASSES = (
     # using it for the other five; a truncation between chapters would
     # invalidate the session token the browser is still holding.
     "TestCurioStressTour",
+    # dev/121: each reconstruction class holds one class-scoped session and
+    # stubs its own project per test; truncating between methods would
+    # invalidate the token the browser is still holding.
+    "TestPaletteShowsWhatWasProvisioned",
+    "TestReviewCardAndApply",
+    "TestSolveProgressAndReconnection",
+    # #662: the scripted Dataflow Builder's two-scenario build stubs its
+    # account in a class-scoped session, as the reconstruction classes do.
+    "TestTheDataflowBuilderBuildsTwoScenarios",
     # The browser stress tier stubs several accounts up front and drives them
     # all from one test; truncating would log every one of them out.
     "TestBrowserStressTier",
@@ -56,6 +65,8 @@ _SHARED_SESSION_CLASSES = (
 
 _SQLA_MUTABLE_TABLES = (
     "exec_cache_entry",
+    "dataflow_run_step",
+    "dataflow_run",
     "project",
     "auth_attempt",
     "user_session",
@@ -230,7 +241,7 @@ def repo_root():
 @pytest.fixture(scope="session")
 def curio_servers(session_app, request):
     """Start all Curio servers (backend, sandbox, frontend) together via curio start.
-    Backend port must match frontend's BACKEND_URL (default 5002 from .env) so the app can reach the API.
+    curio start gets --backend-url for the backend it starts, so the app reaches that API.
     Set CURIO_E2E_USE_EXISTING=1 to use already-running servers (e.g. in CI with docker compose).
     """
     if os.environ.get("CURIO_E2E_USE_EXISTING"):
@@ -257,7 +268,6 @@ def curio_servers(session_app, request):
     # leaves this unset, so hot-reload still applies there.
     env["FLASK_USE_RELOADER"] = "0"
     env["PORT"] = str(frontend_port)
-    env["BACKEND_URL"] = f"http://127.0.0.1:{backend_port}"
     env["DONT_REWRITE_URLS"] = "false"
     env["CURIO_NO_OPEN"] = "1"
     # Ensure the backend child uses the dedicated test DB (session fixture in
@@ -280,8 +290,8 @@ def curio_servers(session_app, request):
     # child's environment only, which this pytest process could not then read.
     # A couple of tests call the sandbox directly (test_alive,
     # test_library_install_integration), so pin it here instead and publish it
-    # via os.environ for the `sandbox_auth_headers` fixture. main.py honours a
-    # pre-set value.
+    # via os.environ for the `sandbox_auth_headers` fixture.
+    # utk_curio/cli/environment.py honours a pre-set value.
     sandbox_token = os.environ.get("CURIO_SANDBOX_TOKEN") or secrets.token_urlsafe(32)
     os.environ["CURIO_SANDBOX_TOKEN"] = sandbox_token
     env["CURIO_SANDBOX_TOKEN"] = sandbox_token
@@ -306,6 +316,11 @@ def curio_servers(session_app, request):
         extra_args.append("--testing")
     if env.get("CURIO_NO_PROJECT", "0") in ("1", "true", "yes", "on"):
         extra_args.append("--no-project")
+    # Real-time collaboration is off unless the server starts with --collab,
+    # and utk_curio/cli/environment.py sets ENABLE_COLLAB from that flag, so an env var alone cannot
+    # turn it on. The tour's collaboration scene records with CURIO_E2E_COLLAB=1.
+    if env.get("CURIO_E2E_COLLAB", "0") in ("1", "true", "yes", "on"):
+        extra_args.append("--collab")
     # Saving a node's output to the Data Catalog is opt-in per node by default
     # (#180). Several tests here are ABOUT that save - test_dataset_palette,
     # test_dataset_lineage_e2e, test_dataset_export all expect a computed dataset
@@ -318,10 +333,10 @@ def curio_servers(session_app, request):
     # An env var, not a flag: this only seeds a per-node UI toggle, so curio.py
     # deliberately has no argument for it and reads the environment instead.
     env["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] = "1"
-    # Point the Data Lake Catalog at the recorded portal corpus, so the e2e
+    # Point the Discovery Catalog at the recorded portal corpus, so the e2e
     # stack answers portal searches and downloads from disk.
     #
-    # This is what lets the lake specs drive the REAL backend - routes,
+    # This is what lets the Discovery Catalog specs drive the REAL backend - routes,
     # providers, format detection, the download, the hand-off into the Data
     # Catalog - while opening no socket. Stubbing at ``page.route`` instead
     # would test the page against a fiction and leave every one of those
@@ -329,9 +344,9 @@ def curio_servers(session_app, request):
     #
     # Honoured only because the harness also passes ``--testing``: the
     # transport refuses a fixture corpus in any process that is not a test rig
-    # (see datalakes/infrastructure/transport.py::build_transport).
-    env["CURIO_DATALAKE_FIXTURES"] = str(
-        Path(__file__).resolve().parents[1] / "test_datalakes" / "fixtures"
+    # (see discovery/infrastructure/transport.py::build_transport).
+    env["CURIO_DISCOVERY_FIXTURES"] = str(
+        Path(__file__).resolve().parents[1] / "test_discovery" / "fixtures"
     )
     # The examples are what #200 was about, and the gap that let it through:
     # this harness launched with ``--deploy`` but never ``--with-examples``, so
@@ -380,6 +395,7 @@ def curio_servers(session_app, request):
         [
             "python", "curio.py", "start",
             "--backend-port", str(backend_port),
+            "--backend-url", f"http://127.0.0.1:{backend_port}",
             "--sandbox-port", str(sandbox_port),
             # Passed explicitly, like the other two. Without it ``curio.py
             # start`` falls back to its own default of 8080 - and
@@ -690,8 +706,6 @@ def loaded_workflow(
     """
     from .workflow_spec import parse_workflow
 
-    # Example 10 (street-vision) is skipped at collection time by
-    # ``pytest_generate_tests`` (needs external services); see conftest.py.
     workflow_file = request.param
     spec = parse_workflow(workflow_file)
 
@@ -753,6 +767,9 @@ def loaded_workflow(
     )
     request.cls.spec = spec
     request.cls.page = workflow_page
+    # The ground-truth run resolves datasets as this user too, so the files a
+    # node derives land where the browser's run puts them.
+    request.cls.username = username
     yield
     os.unlink(seeded_tmp.name)
     if os.environ.get("CURIO_PAUSE_AFTER"):

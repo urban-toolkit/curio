@@ -18,12 +18,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Repo-root node_modules for the sandbox's Node.js subprocess
 # (@urban-toolkit/autk-db — see utk_curio/sandbox/app/worker.py).
 # Early layer: only rebuilds when the root lockfile changes; the
-# npm install in main.py::_ensure_root_node_modules at container
+# npm install in utk_curio/cli/dependencies.py::_ensure_root_node_modules at container
 # start then becomes a fast idempotent no-op.
 COPY package.json package-lock.json ./
+# The root package.json installs autk-db from the vendored tarball; see
+# utk_curio/frontend/urban-workflows/vendor/autark/README.md.
+COPY utk_curio/frontend/urban-workflows/vendor/autark/ utk_curio/frontend/urban-workflows/vendor/autark/
 RUN npm ci --no-audit --no-fund
 
-COPY requirements.txt curio.py ./
+# Before the source, so a code change reuses this layer: pip needs nothing but
+# the requirements file, and reinstalling everything on every commit was most
+# of a build.
+COPY requirements.txt ./
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --prefer-binary --no-cache-dir -r requirements.txt
+
+COPY curio.py ./
 # pyproject.toml / MANIFEST.in are what carry utk_curio/llm-prompts (not an
 # importable package -- the hyphen makes packages.find blind to it) into an
 # sdist and a wheel. tests/test_agents/test_prompt_assets.py asserts against
@@ -33,10 +43,12 @@ COPY pyproject.toml MANIFEST.in ./
 COPY scripts/ scripts/
 COPY packages/ packages/
 COPY datasets/ datasets/
-# The Data Lake Catalog's source manifests. Needed for the same reason
+# The Discovery Catalog's source manifests. Needed for the same reason
 # datasets/ is: the catalog root is read from the image, and without this the
 # roster is empty and every source is a 404.
-COPY datalakes/ datalakes/
+COPY discovery/ discovery/
+# The Model Catalog's shipped models, read from the image as datasets/ is.
+COPY models/ models/
 COPY docs/examples/ docs/examples/
 COPY docs/schemas/ docs/schemas/
 COPY utk_curio/ utk_curio/
@@ -45,66 +57,34 @@ COPY utk_curio/ utk_curio/
 # them here every fresh database reaches extensions.duckdb.org.
 COPY vendor/ vendor/
 
-RUN pip install --upgrade pip setuptools wheel && \
-    pip install --prefer-binary --no-cache-dir -r requirements.txt
-
 # -----------------------------------------------------------------------------
 # Stage 2: Build frontends with Node (avoids NodeSource on slim in CI)
 # -----------------------------------------------------------------------------
 FROM node:26-bookworm-slim AS frontend_builder
-WORKDIR /src
+# The dependencies first, from the manifests and the vendored tarballs they
+# point at, so a source change reuses the npm layer and only rebuilds.
+WORKDIR /src/utk_curio/frontend/urban-workflows
+COPY utk_curio/frontend/urban-workflows/package.json utk_curio/frontend/urban-workflows/package-lock.json ./
+COPY utk_curio/frontend/urban-workflows/vendor/ vendor/
+RUN npm install
+
 COPY utk_curio/frontend/ /src/utk_curio/frontend/
 COPY packages/ /src/packages/
+RUN npm run build
 
-# BACKEND_URL and PUBLIC_PATH are baked into the JS bundle at build time.
-# Passed in via docker compose build args (see docker-compose.yml).
-# PUBLIC_PATH is also exported as ENV so webpack.config.js (which runs in
-# Node before dotenv-webpack populates process.env from .env) can read it.
-ARG BACKEND_URL
-ARG PUBLIC_PATH
-ENV PUBLIC_PATH=$PUBLIC_PATH
-RUN if [ -n "$BACKEND_URL" ]; then \
-      sed -i "s|^BACKEND_URL=.*|BACKEND_URL=$BACKEND_URL|" \
-        /src/utk_curio/frontend/urban-workflows/.env; \
-    fi
-
-WORKDIR /src/utk_curio/frontend/urban-workflows
-RUN npm install && npm run build
-
-# Record what the bundle was built for, in the exact format curio.py's launcher
-# reads (utk_curio/main.py::_build_stamp_reason): webpack mode, then the backend
-# URL. The launcher writes this stamp itself, but only when IT runs the build --
-# this stage runs webpack directly, so the image used to ship a dist/ with no
-# stamp, which reads as "built in an unrecorded mode" and forced a full rebuild
-# of the 9 MB bundle on every container start. The mode is parsed from
-# package.json the same way _frontend_build_mode does, so the two cannot drift.
-RUN node -e "const s=require('./package.json').scripts.build||'';const m=/--mode\s+(\S+)/.exec(s);require('fs').writeFileSync('dist/.curio-backend-url',(m?m[1]:'unknown')+'\n'+(process.env.BACKEND_URL||'')+'\n')"
-
-# Jest runs in this stage too (`docker build --target frontend_builder`, then
-# `npm test`, in .github/workflows/docker-compose.yml), and
-# src/tests/utils/deoverlapExamples.test.ts reads the shipped examples from
-# <repo>/docs/examples. Only the specs, not the PNG baselines beside them, and
-# after the build so an example edit does not invalidate the npm layers.
-COPY docs/examples/*.json /src/docs/examples/
-# importExtensionsMatchBackend.test.ts reads the backend's format list to
-# prove the two agree. Same reason as the examples above: the frontend test
-# image needs the file, not just the frontend source.
-COPY utk_curio/backend/app/datasets/domain/constants.py /src/utk_curio/backend/app/datasets/domain/constants.py
+# Record the webpack mode the bundle was built in, in the file curio.py's
+# launcher reads (utk_curio/cli/frontend_build.py::_build_stamp_reason). The launcher writes
+# this stamp itself, but only when IT runs the build; this stage runs webpack
+# directly, and a dist/ with no stamp reads as "built in an unrecorded mode",
+# which rebuilds the 9 MB bundle on every container start. The mode is parsed
+# from package.json the same way _frontend_build_mode does, so the two cannot
+# drift.
+RUN node -e "const s=require('./package.json').scripts.build||'';const m=/--mode\s+(\S+)/.exec(s);require('fs').writeFileSync('dist/.curio-build',(m?m[1]:'unknown')+'\n')"
 
 # -----------------------------------------------------------------------------
 # Stage 3: Final image: Python runtime + built frontend assets
 # -----------------------------------------------------------------------------
 FROM runtime_base AS runtime
-
-# The address the bundle copied in below was built for. Build args do not cross
-# stages, so without re-declaring it here BACKEND_URL is unset at runtime and
-# set_environment_variables() falls back to its http://localhost:5002 default --
-# which dotenv-webpack then bakes into the bundle (systemvars: true makes the
-# environment beat the .env file). A deployment behind a public URL served a
-# frontend calling http://localhost:5002 for every request: the health banner
-# claimed the backend was down and guest sign-in failed as mixed content.
-ARG BACKEND_URL
-ENV BACKEND_URL=$BACKEND_URL
 
 # Production mode: serve built frontend with Python http.server on 8080
 ENV CURIO_DEV=0

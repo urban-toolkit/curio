@@ -66,10 +66,10 @@ from utk_curio.backend.tests.dataset_catalog_coverage import (
 
 from .utils import (
     accept_confirm_dialog,
+    assert_header_shows_save,
     assert_vega_canvas_rendered,
     canvas_node_type,
     connect_nodes,
-    dismiss_toasts,
     drag_to_canvas,
     close_tools_palette,
     open_tools_palette,
@@ -78,6 +78,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     run_node_and_wait,
+    save_dataflow_and_settle_header,
     save_workflow_test_screenshot,
     set_canvas_zoom,
     set_node_code,
@@ -93,8 +94,8 @@ LOADER_TYPE = "curio.builtin/data-loading"
 TRANSFORM_TYPE = "curio.builtin/data-transformation"
 VEGA_TYPE = "curio.builtin/vis-vega"
 
-TRANSFORM_TILE = "#step-transformation"
-VEGA_TILE = "#step-vega"
+TRANSFORM_TILE = "#tile-data-transformation"
+VEGA_TILE = "#tile-vis-vega"
 
 DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
 # The "Adding…" placeholder is an <article role="status"> carrying the same
@@ -259,8 +260,11 @@ def test_dataset_loads_and_feeds_a_consumer(
         f"not call {plan.loader_marker}:\n{loader_code}"
     )
     # The portable form: the sandbox resolves the id at execution time, so the
-    # generated code carries no machine- or user-specific absolute path.
-    assert f'curio_dataset_path("{dataset.dataset_id}")' in loader_code, (
+    # generated code carries no machine- or user-specific absolute path. A
+    # collection is read through ``curio_load_collection``, which resolves the same
+    # way and adds where each of its files is.
+    call = "curio_load_collection" if dataset.manifest.format == "collection" else "curio_load_data"
+    assert f'{call}("{dataset.dataset_id}")' in loader_code, (
         f"loader does not resolve the dataset by id:\n{loader_code}"
     )
 
@@ -311,13 +315,16 @@ def test_dataset_loads_and_feeds_a_consumer(
     # dataset. The semantic assertions above cover what each node computed;
     # this covers what the result *looks* like - most usefully that the chart
     # drew bars and the edges are actually rendered. Compared at the suite's
-    # default tolerance (20% of pixels, 30/255 per channel), which is what
-    # absorbs the per-run "Saved to file: <timestamp>_<hash>" text. The helper
-    # pins its own fitView first, so the authoring zoom above does not leak
-    # into the capture.
-    dismiss_toasts(page)
+    # default tolerance (10% of pixels, 30/255 per channel). The helper pins
+    # its own fitView first, so the authoring zoom above does not leak into the
+    # capture. Saved first, as test_workflows.py does: the header shows a save's
+    # icon, chips and catalog count, and without one the frame shows whatever
+    # the 30 s autosave last reached (#584).
+    save_dataflow_and_settle_header(page)
+    assert_header_shows_save(page)
     save_workflow_test_screenshot(
         page,
         dataset.slug,
         test_name="test_dataset_loads_and_feeds_a_consumer",
+        sweep_toasts=True,
     )

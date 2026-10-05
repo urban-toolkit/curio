@@ -20,7 +20,7 @@ Two different listings are involved, and only one of them is forgiving:
   ``dirName``, ``format`` defaulting to ``csv``, and no counts.
 
 So the failure this guards against is not an error anywhere. It is a palette
-full of rows reading ``data.urbanlab.chicago-boundary@1 / csv / (nothing)``.
+full of rows reading ``data.utk.chicago-boundary@1 / csv / (nothing)``.
 
 Run::
 
@@ -216,7 +216,7 @@ def test_the_drawer_works_either_way(
 def test_execution_paths_resolve_for_every_example_dataset(
     client, user_and_token, tmp_path, monkeypatch
 ):
-    """``curio_dataset_path`` must resolve with no ref and no dataflow id.
+    """``curio_data_path`` must resolve with no ref and no dataflow id.
 
     The path a seeded example takes on its first run: the dataset is not in the
     account-level index (that only covers ``imported.``/``computed.`` prefixes),
@@ -247,7 +247,7 @@ def test_execution_paths_resolve_for_every_example_dataset(
 
 
 def test_an_id_carrying_its_major_does_not_resolve(client, user_and_token, tmp_path, monkeypatch):
-    """``curio_dataset_path`` takes the bare id, and the failure is silent.
+    """``curio_data_path`` takes the bare id, and the failure is silent.
 
     ``SAFE_DATASET_ID_RE`` permits ``@``, so ``"<id>@1"`` passes validation but
     misses the by-id lookup, and ``routes.py`` swallows the miss and returns

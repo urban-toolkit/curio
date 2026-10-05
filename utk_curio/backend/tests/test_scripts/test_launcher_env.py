@@ -2,7 +2,7 @@
 
 ``set_environment_variables`` is the only translation layer between the
 launcher's argparse flags and the env vars every server reads. Nothing else in
-the suite imports ``utk_curio.main``, so this mapping has been unverified: the
+the suite imports ``utk_curio.cli.environment``, so this mapping has been unverified: the
 backend tests set the env vars directly and never exercise the code that
 derives them.
 
@@ -18,7 +18,17 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.main import set_environment_variables
+from utk_curio.cli.environment import set_environment_variables
+
+
+def _launcher_source() -> str:
+    """The launcher's whole text: utk_curio/main.py and every utk_curio/cli module."""
+    import utk_curio.cli as cli
+    import utk_curio.main as launcher
+
+    files = [Path(launcher.__file__)] + sorted(Path(cli.__file__).parent.glob("*.py"))
+    return "\n".join(f.read_text(encoding="utf-8") for f in files)
+
 
 BASE = dict(
     backend_host="127.0.0.1",
@@ -44,6 +54,15 @@ def _isolate_env(monkeypatch, tmp_path):
         "CURIO_ISOLATION",
         "CURIO_EXEC_USER",
         "CURIO_EXEC_MEMORY_MB",
+        "CURIO_DISCOVERY_ROOT",
+        "CURIO_MODELS_ROOT",
+        "CURIO_SOLVE_MAX_ATTEMPTS",
+        "CURIO_SOLVE_NODE_BUDGET",
+        "CURIO_SOLVE_SESSION_DEADLINE",
+        "CURIO_SOLVE_BATCH_DEADLINE",
+        "CURIO_VALIDATION_EXEC_TIMEOUT",
+        "CURIO_VALIDATION_NODE_LIMIT",
+        "CURIO_DISCOVERY_MAX_DOWNLOAD_MB",
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
@@ -131,11 +150,11 @@ def test_a_hosted_instance_that_cannot_isolate_refuses_at_launch(monkeypatch):
 @pytest.fixture
 def has_exec_account(monkeypatch):
     """A root launch on a host carrying the conventional execution account."""
-    import utk_curio.main as main_mod
+    import utk_curio.cli.environment as environment_mod
 
     monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
-    monkeypatch.setattr(main_mod, "_discover_exec_user",
-                        lambda: main_mod.DEFAULT_EXEC_USER)
+    monkeypatch.setattr(environment_mod, "_discover_exec_user",
+                        lambda: environment_mod.DEFAULT_EXEC_USER)
 
 
 def test_a_deployment_that_can_isolate_does(linux_host, has_exec_account):
@@ -324,6 +343,103 @@ def test_no_catalog_root_leaves_the_var_unset():
     assert "CURIO_CATALOG_ROOT" not in os.environ
 
 
+# ── Settings that used to be environment-only are curio.py arguments ───────
+
+
+def _shipped_discovery_root():
+    from utk_curio.backend.app.discovery.infrastructure import storage
+
+    return storage.discovery_root()
+
+
+def _shipped_models_root():
+    from utk_curio.backend.app.model_catalog.infrastructure import storage
+
+    return storage.models_root()
+
+
+@pytest.mark.parametrize("arg, env_name, reader", [
+    ("discovery_root", "CURIO_DISCOVERY_ROOT", _shipped_discovery_root),
+    ("models_root", "CURIO_MODELS_ROOT", _shipped_models_root),
+])
+def test_a_shipped_root_flag_is_resolved_and_read_by_the_backend(tmp_path, arg, env_name, reader):
+    nested = tmp_path / "a" / ".." / "shipped"
+    set_environment_variables(**BASE, **{arg: str(nested)})
+    assert Path(os.environ[env_name]) == (tmp_path / "shipped").resolve()
+    assert Path(reader()).resolve() == (tmp_path / "shipped").resolve()
+
+
+@pytest.mark.parametrize("env_name", ["CURIO_DISCOVERY_ROOT", "CURIO_MODELS_ROOT"])
+def test_no_shipped_root_flag_leaves_its_var_unset(env_name):
+    set_environment_variables(**BASE)
+    assert env_name not in os.environ
+
+
+def _budget(name):
+    from utk_curio.backend.app.agents.application.solve import budgets
+
+    return getattr(budgets, name)()
+
+
+def _validation_timeout():
+    from utk_curio.backend.app.execution import runner
+
+    return runner.exec_timeout_s()
+
+
+def _validation_node_limit():
+    from utk_curio.backend.app.execution import runner
+
+    return runner.validation_node_limit()
+
+
+@pytest.mark.parametrize("arg, env_name, value, reader", [
+    ("solve_max_attempts", "CURIO_SOLVE_MAX_ATTEMPTS", 12, lambda: _budget("solve_max_attempts")),
+    ("solve_node_budget", "CURIO_SOLVE_NODE_BUDGET", 300, lambda: _budget("solve_node_budget_s")),
+    ("solve_session_deadline", "CURIO_SOLVE_SESSION_DEADLINE", 600, lambda: _budget("solve_session_deadline_s")),
+    ("solve_batch_deadline", "CURIO_SOLVE_BATCH_DEADLINE", 1800, lambda: _budget("solve_batch_deadline_s")),
+    ("validation_exec_timeout", "CURIO_VALIDATION_EXEC_TIMEOUT", 120, _validation_timeout),
+    ("validation_node_limit", "CURIO_VALIDATION_NODE_LIMIT", 40, _validation_node_limit),
+])
+def test_a_solve_flag_reaches_the_setting_the_backend_reads(arg, env_name, value, reader):
+    set_environment_variables(**BASE, **{arg: value})
+    assert os.environ[env_name] == str(value)
+    assert reader() == value
+
+
+def test_the_discovery_download_ceiling_flag_reaches_the_setting_the_backend_reads():
+    from utk_curio.backend.app.discovery.domain import limits
+
+    set_environment_variables(**BASE, discovery_max_download_mb=2048)
+    assert os.environ["CURIO_DISCOVERY_MAX_DOWNLOAD_MB"] == "2048"
+    assert limits.max_download_bytes() == 2048 * 1024 * 1024
+
+
+def test_without_the_discovery_download_ceiling_flag_it_is_one_gibibyte():
+    from utk_curio.backend.app.discovery.domain import limits
+
+    set_environment_variables(**BASE)
+    assert "CURIO_DISCOVERY_MAX_DOWNLOAD_MB" not in os.environ
+    assert limits.max_download_bytes() == 1024 * 1024 * 1024
+
+
+def test_a_discovery_download_ceiling_of_zero_is_refused_at_launch():
+    with pytest.raises(ValueError, match="--discovery-max-download-mb"):
+        set_environment_variables(**BASE, discovery_max_download_mb=0)
+
+
+def test_save_node_outputs_flag_sets_the_toggles_default():
+    set_environment_variables(**BASE, save_node_outputs=True)
+    assert os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] == "1"
+    set_environment_variables(**BASE, save_node_outputs=False)
+    assert os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] == "0"
+
+
+def test_without_the_save_node_outputs_flag_the_toggle_starts_off():
+    set_environment_variables(**BASE)
+    assert os.environ["CURIO_DEFAULT_SAVE_NODE_OUTPUT"] == "0"
+
+
 def test_deploy_forces_auth_and_projects_on():
     set_environment_variables(**BASE, deploy=True)
     assert os.environ["CURIO_NO_AUTH"] == "0"
@@ -452,9 +568,7 @@ class TestAgentAndBuildFlags:
         """
         import re
 
-        import utk_curio.main as launcher
-
-        source = Path(launcher.__file__).read_text(encoding="utf-8")
+        source = _launcher_source()
         # Read from source rather than by building the parser: the parser is
         # constructed inside main(), and TestVariablesThatStayEnvOnly below
         # already reads the file the same way.
@@ -482,9 +596,7 @@ class TestVariablesThatStayEnvOnly:
         # Written by backend_runtime when it spawns a package backend, and by
         # install_preview_runner into the wrapper it generates. A user setting
         # these by hand would be configuring one subprocess invocation.
-        import utk_curio.main as launcher
-
-        source = Path(launcher.__file__).read_text(encoding="utf-8")
+        source = _launcher_source()
         for key in ("CURIO_PKG_ENTRY", "CURIO_PKG_NET_ALLOWED", "CURIO_PREVIEW_REACTFLOW_UMD"):
             assert key not in source, key
 
@@ -492,9 +604,7 @@ class TestVariablesThatStayEnvOnly:
         # CURIO_TESTING_LLM_SCRIPT is read only when CURIO_TESTING is set;
         # exposing it on the launcher would advertise a test seam as an
         # operator feature.
-        import utk_curio.main as launcher
-
-        source = Path(launcher.__file__).read_text(encoding="utf-8")
+        source = _launcher_source()
         assert "CURIO_TESTING_LLM_SCRIPT" not in source
 
 
@@ -502,12 +612,11 @@ class TestVariablesThatStayEnvOnly:
 
 
 def test_backend_url_follows_the_backend_port():
-    """The bundle must be built for the backend this launch actually starts.
+    """The page must name the backend this launch actually starts.
 
-    ``BACKEND_URL`` is substituted into the frontend at BUILD time. It used to
-    come only from a hand-maintained ``frontend/urban-workflows/.env``, so
-    ``--backend-port`` alone moved the server without moving the UI's idea of
-    where it is -- and the UI then called whatever Curio owned the old port.
+    ``--backend-port`` alone moves the server; without this the UI's idea of
+    where it is stayed behind, and the UI then called whatever Curio owned the
+    old port.
     """
     set_environment_variables(**{**BASE, "backend_port": 5102})
 
@@ -534,15 +643,17 @@ def test_a_real_host_is_kept():
     assert os.environ["BACKEND_URL"] == "http://curio.example.org:5002"
 
 
-def test_an_explicit_backend_url_wins(monkeypatch):
-    """An operator terminating TLS or proxying needs the last word.
+def test_backend_url_argument_wins():
+    """An operator terminating TLS or proxying needs the last word (--backend-url)."""
+    set_environment_variables(**{**BASE, "backend_port": 5102, "backend_url": "https://curio.example.org/app/api"})
+    assert os.environ["BACKEND_URL"] == "https://curio.example.org/app/api"
 
-    Everything else here is derived, so this is the one escape hatch -- hence
-    ``setdefault`` rather than an unconditional write, unlike its neighbours.
-    """
-    monkeypatch.setenv("BACKEND_URL", "https://curio.example.org")
+
+def test_an_inherited_backend_url_is_not_an_input(monkeypatch):
+    """The address is curio.py's to decide: from --backend-url, or derived."""
+    monkeypatch.setenv("BACKEND_URL", "https://someone-else.example.org")
     set_environment_variables(**{**BASE, "backend_port": 5102})
-    assert os.environ["BACKEND_URL"] == "https://curio.example.org"
+    assert os.environ["BACKEND_URL"] == "http://localhost:5102"
 
 
 class TestExecMemoryFloor:
@@ -677,7 +788,7 @@ def test_a_local_run_on_the_same_host_is_untouched(monkeypatch):
 
 def test_deploy_that_can_isolate_starts_and_isolates(linux_host, monkeypatch):
     """The supported deployment shape still resolves to fork."""
-    monkeypatch.setattr("utk_curio.main._discover_exec_user", lambda: "curio-exec")
+    monkeypatch.setattr("utk_curio.cli.environment._discover_exec_user", lambda: "curio-exec")
     monkeypatch.delenv("CURIO_TESTING", raising=False)
 
     set_environment_variables(**BASE, deploy=True)

@@ -1,0 +1,74 @@
+/*
+ * Canvas slide-over Scenario Catalog drawer: what is specific to this drawer.
+ *
+ * The panel itself is the shared
+ * ../../packages/publishing/CatalogDrawerShell.module.css and the card is
+ * ../../packages/publishing/PackageCard.module.css, as for the Model drawer;
+ * header and search row are the shared packages/publishing components.
+ */
+
+/* The Model drawer's tier: like it, this drawer opens a details modal on top
+   of itself, and the two are never open together. */
+.overlayRoot {
+  --curio-drawer-z: var(--curio-z-dataset-drawer);
+}
+
+/* While a card is dragged, the scrim and the root let the drag through to the
+   canvas beneath them; the panel itself still holds the pointer. Two classes,
+   to win over the shell's presented rule whatever order the sheets load in. */
+.overlayRoot.overlayRootDragging {
+  pointer-events: none;
+}
+
+.overlayRoot.overlayRootDragging > aside {
+  pointer-events: auto;
+}
+
+/* The avatar square holds the project graph instead of a glyph. */
+.avatarThumb {
+  overflow: hidden;
+  background: var(--curio-card-bg);
+}
+
+.cardDescription {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--curio-text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* A link, not a button: it navigates to the project rather than acting on
+   the scenario, so it takes neither the dark action fill nor the light
+   destructive one (the same reasoning as the avatar's View details). */
+.openLink {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--curio-text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.openLink:hover {
+  text-decoration: underline;
+}
+
+.retry {
+  margin-left: 8px;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

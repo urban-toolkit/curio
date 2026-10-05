@@ -34,7 +34,7 @@ import time
 import pytest
 from playwright.sync_api import expect
 
-from utk_curio.backend.app.agents import builtin
+from utk_curio.backend.app.agents.domain import builtin
 
 from .test_agent_runs_e2e import CODE_NODE_ID, _project_spec
 from .utils import (
@@ -73,7 +73,7 @@ def _spec() -> builtin.BuiltinAgentSpec:
 
 
 # Firing dragstart/dragover/drop in one page.evaluate is how the rest of the
-# suite drives a drag (utils.py::_DRAG_TO_CANVAS_JS). That helper fires all four
+# suite drives a drag (utils/canvas_authoring.py::_DRAG_TO_CANVAS_JS). That helper fires all four
 # events back to back, which is right for testing a DROP and useless for testing
 # what is true BETWEEN dragover and drop - so these stop after dragover and keep
 # the DataTransfer on window, because a fresh one would read as a different drag.
@@ -270,7 +270,11 @@ class TestConnectionAttachmentAffordances:
         # dropdown the feature tour opens before its connection-attach beat.
         row = _agent_row(page, coord)
         if row.count() == 0 or not row.first.is_visible():
-            page.get_by_role("button", name=re.compile("Agent Catalog")).first.click()
+            # Scoped to the rail: the top bar's Agent Catalog button opens the
+            # drawer, not this palette.
+            page.locator("#tools-palette-dock").get_by_role(
+                "button", name=re.compile("Agent Catalog")
+            ).first.click()
             row = _agent_row(page, coord)
         row.first.wait_for(state="visible", timeout=20000)
         row.first.scroll_into_view_if_needed()

@@ -1,0 +1,96 @@
+name: Start a Curio stack from the CI image
+description: >-
+  Pull the image build-image pushed for this commit, start it under a compose
+  project, and wait until it is healthy. The overlays come from the job's
+  COMPOSE_FILE, as they do for every other docker compose step.
+
+inputs:
+  image:
+    description: The image build-image pushed (its `image` output)
+    required: true
+  project:
+    description: The compose project, e.g. curio-ci
+    required: true
+  token:
+    description: A token that can read packages (secrets.GITHUB_TOKEN)
+    required: true
+  timeout:
+    description: Seconds to wait for the container to report healthy
+    default: "300"
+  seed:
+    description: Shell run after the pull and before the stack starts
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # A self-hosted runner keeps its Docker daemon between jobs, and a job that
+    # was cancelled may not have torn its stack down. Left running, compose
+    # would reuse it under the next job, on a workspace checkout has since
+    # wiped. Remove every curio CI stack still there, whatever its project
+    # (the daemon is this runner's own), by label so no compose file is needed.
+    - name: 🧹 Remove stacks an earlier job left (self-hosted)
+      if: runner.environment == 'self-hosted'
+      shell: bash
+      run: |
+        projects=$(docker ps -a --format '{{.Label "com.docker.compose.project"}}' | grep '^curio-ci' | sort -u || true)
+        for project in $projects; do
+          echo "removing stack $project"
+          label="label=com.docker.compose.project=$project"
+          docker ps -aq --filter "$label" | xargs -r docker rm -f
+          docker volume ls -q --filter "$label" | xargs -r docker volume rm
+          docker network ls -q --filter "$label" | xargs -r docker network rm
+        done
+
+    - uses: docker/login-action@v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.token }}
+
+    # Tagged with the name compose gives the service's image, so `up` finds it
+    # and builds nothing.
+    - name: 📥 Pull the image
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        PROJECT: ${{ inputs.project }}
+      run: |
+        set -euo pipefail
+        docker pull --quiet "$IMAGE"
+        docker tag "$IMAGE" "$PROJECT-curio"
+
+    - name: 🌱 Seed the workspace
+      if: inputs.seed != ''
+      shell: bash
+      run: ${{ inputs.seed }}
+
+    - name: ▶️ Start containers
+      shell: bash
+      run: docker compose -p "${{ inputs.project }}" up -d --no-build
+
+    - name: 🧪 Wait for services to become healthy
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project }}
+        WAIT: ${{ inputs.timeout }}
+      run: |
+        set -euo pipefail
+        timeout "$WAIT" bash -euo pipefail -c '
+          while true; do
+            cid="$(docker compose -p "$PROJECT" ps -a -q curio | head -n1 || true)"
+            if [[ -z "${cid}" ]]; then sleep 2; continue; fi
+            state="$(docker inspect --format "{{.State.Status}}" "${cid}" 2>/dev/null || true)"
+            health="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" "${cid}" 2>/dev/null || true)"
+            if [[ "${health}" == "healthy" ]]; then echo "$PROJECT is healthy."; break; fi
+            if [[ "${health}" == "no-healthcheck" && "${state}" == "running" ]]; then break; fi
+            if [[ "${state}" == "exited" ]]; then
+              echo "$PROJECT exited during startup. Logs:"
+              docker compose -p "$PROJECT" logs --no-color --tail=200 curio || true
+              exit 1
+            fi
+            sleep 2
+          done
+        ' || { echo "::error::$PROJECT did not become healthy in ${WAIT}s" >&2
+               docker compose -p "$PROJECT" logs --no-color --tail=200 curio || true
+               exit 1; }

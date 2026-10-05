@@ -156,6 +156,10 @@
 .chip_bundle { background: color-mix(in srgb, var(--curio-format-bundle-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-bundle-fg) 55%, white); }
 .chip_osm { background: color-mix(in srgb, var(--curio-format-osm-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-osm-fg) 55%, white); }
 .chip_gpkg { background: color-mix(in srgb, var(--curio-format-gpkg-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-gpkg-fg) 55%, white); }
+.chip_gtfs { background: color-mix(in srgb, var(--curio-format-gtfs-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-gtfs-fg) 55%, white); }
+.chip_collection { background: color-mix(in srgb, var(--curio-format-collection-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-collection-fg) 55%, white); }
+.chip_onnx { background: color-mix(in srgb, var(--curio-format-onnx-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-onnx-fg) 55%, white); }
+.chip_netcdf { background: color-mix(in srgb, var(--curio-format-netcdf-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-netcdf-fg) 55%, white); }
 
 
 /* ── OSM PBF group (collapsible parent + indented member layers) ──────────── */
@@ -250,4 +254,30 @@
     flex-shrink: 0;
     align-self: center;
     margin-left: 4px;
+}
+
+/* The row's own title and id, not the shared one-line palette label: in about
+   195 px an ordinary title lost its last word and the id its @version (#527).
+   The Node and Agent palettes keep .packageKindRowLabel as it is. */
+.datasetRowTitle {
+  max-width: 100%;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(251, 252, 246, 0.92);
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.datasetRowId {
+  width: 100%;
+  font-size: 11px;
+  color: var(--curio-text-meta);
+  /* Breaks come from the <wbr> after each "." and before "@"; this only
+     catches a single segment longer than the row. */
+  overflow-wrap: anywhere;
 }

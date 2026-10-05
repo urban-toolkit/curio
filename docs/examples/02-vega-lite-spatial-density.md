@@ -16,13 +16,12 @@ flowchart LR
 ## Data
 
 This example reads its inputs from the [Data Catalog](../DATA-CATALOG.md). Each loader node
-addresses a dataset by id via `curio_dataset_path("<id>")` rather than by a repo-relative path,
-so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
+addresses a dataset by id via `curio_data_path("<id>")`, so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
 
 | Dataset | Id | Format | Size |
 |---|---|---|---|
 | Chicago Green Roofs (rooftop inventory) | `data.cityofchicago.green-roofs` | csv | 359 rows |
-| Chicago Boundary (zip-coded neighborhood polygons) | `data.urbanlab.chicago-boundary` | geojson | 61 features |
+| Chicago Boundary (zip-coded neighborhood polygons) | `data.utk.chicago-boundary` | geojson | 61 features |
 
 Both ship in the committed catalog under `datasets/` and are already added to this dataflow, so they
 appear in the left rail's **Data Catalog** palette when you open it. Source: [Chicago Data Portal](https://data.cityofchicago.org/).
@@ -32,8 +31,7 @@ appear in the left rail's **Data Catalog** palette when you open it. Source: [Ch
 ```python
 import pandas as pd
 
-dataset_path = curio_dataset_path("data.cityofchicago.green-roofs")
-df = pd.read_csv(dataset_path)
+df = curio_load_data("data.cityofchicago.green-roofs")
 return df
 ```
 
@@ -97,13 +95,11 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 
-green_roofs_path = curio_dataset_path("data.cityofchicago.green-roofs")
-green_roofs_df = pd.read_csv(green_roofs_path)
+green_roofs_df = curio_load_data("data.cityofchicago.green-roofs")
 geometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]
 green_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)
 
-chicago_path = curio_dataset_path("data.urbanlab.chicago-boundary")
-chicago = gpd.read_file(chicago_path)
+chicago = curio_load_data("data.utk.chicago-boundary")
 joined = gpd.sjoin(green_roofs_df, chicago, predicate='within')
 
 return pd.DataFrame(joined[['LONGITUDE', 'LATITUDE', 'VEGETATED_SQFT', 'TOTAL_ROOF_SQFT', 'zip']])
@@ -121,8 +117,6 @@ Each circle is one rooftop, sized by vegetated area, plotted in lat/lon with bou
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "Dot Density Map of Green Roof Locations in Chicago with Zoom & Pan",
-  "width": 500,
-  "height": 600,
   "title": "Green Roof Locations in Chicago",
   "mark": "circle",
   "encoding": {

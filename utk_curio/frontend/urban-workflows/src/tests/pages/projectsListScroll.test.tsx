@@ -56,7 +56,6 @@ jest.mock('../../api/projectsApi', () => ({
 }));
 jest.mock('../../NotebookConvertor', () => ({ notebookToTrill: jest.fn() }));
 jest.mock('../../components/DataflowThumbnail', () => ({ __esModule: true, default: () => null }));
-jest.mock('../../components/AiSettingsModal', () => ({ __esModule: true, default: () => null }));
 jest.mock('../../components/VersionBadge', () => ({ __esModule: true, default: () => null }));
 jest.mock('react-router-dom', () => ({
   useNavigate: () => jest.fn(),
@@ -77,6 +76,19 @@ const LAYOUT_CSS = fs.readFileSync(
 // shape as `.pageShell`.
 const SHELL_CSS = fs.readFileSync(
   path.resolve(__dirname, '../../pages/catalog/CatalogMasterPage.module.css'),
+  'utf8'
+);
+
+// So is the main column: every browse page uses the catalog layout's
+// `.browseMain`, which owns no scroll of its own on any of them.
+const BROWSE_CSS = fs.readFileSync(
+  path.resolve(__dirname, '../../pages/catalog/CatalogBrowseLayout.module.css'),
+  'utf8'
+);
+
+// And the top bar is the one every page wears, styled by its own stylesheet.
+const HEADER_CSS = fs.readFileSync(
+  path.resolve(__dirname, '../../components/layout/GlobalPageHeader.module.css'),
   'utf8'
 );
 
@@ -131,17 +143,23 @@ describe('ProjectsList scroll ownership', () => {
     expect(cardScroll).toMatch(/flex:\s*1/);
   });
 
-  test('the column around it does not scroll instead', () => {
+  test('the column around it does not scroll instead', async () => {
     // Two scrollbars, or the header scrolling away with the cards, both come
     // from the main column also being scrollable.
-    const main = rule('main');
+    const { container } = await renderSettled();
+    expect(container.querySelector('main')).toHaveClass('browseMain');
+
+    const main = rule('browseMain', BROWSE_CSS);
     expect(main).toMatch(/overflow:\s*hidden/);
     expect(main).toMatch(/min-width:\s*0/);
   });
 
   test('the header does not shrink when the list is long', async () => {
     const { container } = await renderSettled();
+    // The bar's styles moved from inline to its stylesheet when the canvas
+    // started wearing it too, so the rule is read from there, as above.
     const header = container.querySelector('header') as HTMLElement;
-    expect(header.style.flexShrink).toBe('0');
+    expect(header).toHaveClass('header');
+    expect(rule('header', HEADER_CSS)).toMatch(/flex-shrink:\s*0/);
   });
 });

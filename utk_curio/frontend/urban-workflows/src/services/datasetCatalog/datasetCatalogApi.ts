@@ -6,6 +6,7 @@ import {
   DatasetCatalogResponse,
   DatasetDataflowUsageRef,
   DatasetFormat,
+  DatasetDiscoverySourceInput,
   DatasetPreviewQuery,
   DatasetPreviewResponse,
 } from "./datasetCatalogTypes";
@@ -21,6 +22,8 @@ const DATASET_FORMAT_EXTENSIONS: Record<string, string> = {
   parquet: ".parquet",
   geotiff: ".tif",
   shp: ".shp",
+  onnx: ".onnx",
+  netcdf: ".nc",
 };
 
 /** MIME type → extension, used as a last-resort fallback for the export name. */
@@ -30,6 +33,7 @@ const MIME_EXTENSIONS: Record<string, string> = {
   "application/geo+json": ".geojson",
   "application/vnd.apache.parquet": ".parquet",
   "image/tiff": ".tif",
+  "application/x-netcdf": ".nc",
 };
 
 /** Dispatched after a node auto-installs a computed dataset so open drawers reload. */
@@ -160,6 +164,11 @@ export const datasetCatalogApi = {
     return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}${queryString(query)}`);
   },
 
+  /** The WGS84 box a dataset covers, or a null box when it has no location. */
+  extent(datasetId: string): Promise<{ datasetId: string; title: string; box: number[] | null }> {
+    return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}/extent`);
+  },
+
   preview(datasetId: string, query: DatasetPreviewQuery = {}): Promise<DatasetPreviewResponse> {
     return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}/preview${previewQueryString(query)}`);
   },
@@ -174,13 +183,17 @@ export const datasetCatalogApi = {
 
   async importDataset(
     file: File,
-    opts: { dataflowId?: string | null; title?: string } = {},
+    opts: { dataflowId?: string | null; title?: string; discoverySource?: DatasetDiscoverySourceInput } = {},
   ): Promise<DatasetCatalogItem> {
     const token = getToken();
     const form = new FormData();
     form.append("file", file);
     if (opts.dataflowId) form.append("dataflowId", opts.dataflowId);
     if (opts.title) form.append("title", opts.title);
+    // Where a file the person downloaded themselves came from. The server
+    // records it, and answers with the dataset it already holds when the
+    // resource or the bytes are the same.
+    if (opts.discoverySource) form.append("discoverySource", JSON.stringify(opts.discoverySource));
     // The original file's last-modified date (epoch ms), so the catalog can show
     // the *source file's* date distinctly from the Curio import/record date.
     if (typeof file.lastModified === "number" && file.lastModified > 0) {

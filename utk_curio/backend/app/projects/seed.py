@@ -1,4 +1,4 @@
-"""Seed example projects from docs/examples/ into the guest user's projects."""
+"""Seed the dataflows Curio ships (see ``shipped.py``) into each account's projects."""
 from __future__ import annotations
 
 import json
@@ -6,7 +6,7 @@ import logging
 import re
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.projects import repositories as repo
@@ -14,6 +14,15 @@ from utk_curio.backend.app.projects import storage
 from utk_curio.backend.app.projects.models import Project
 from utk_curio.backend.app.projects.schemas import VALID_ACCENTS, _slugify
 from utk_curio.backend.app.projects.services import _is_shared_guest, _user_dir_key
+from utk_curio.backend.app.projects.shipped import (  # noqa: F401 - re-exported
+    SOURCE_EXAMPLE,
+    SOURCE_TEST,
+    SOURCE_USE_CASE,
+    USE_CASES,
+    ShippedDataflow,
+    examples_dir,
+    shipped_dataflows,
+)
 from utk_curio.backend.config import _env_flag
 
 logger = logging.getLogger(__name__)
@@ -32,8 +41,6 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
 
 
-def _example_files(examples_dir: Path) -> list[Path]:
-    return sorted(p for p in examples_dir.glob("*.json") if p.is_file())
 
 
 def _name_from_stem(stem: str) -> str:
@@ -72,8 +79,8 @@ def _description_from_spec(spec: dict) -> Optional[str]:
     return None
 
 
-def _example_id(stem: str, user=None) -> str:
-    """The deterministic project id for one example, scoped to ``user``.
+def _example_id(key: str, user=None) -> str:
+    """The deterministic project id for one shipped dataflow, scoped to ``user``.
 
     ``Project.id`` is a **global** primary key, so a namespace keyed on the
     filename alone gives every user the same ids. Seeding a second account then
@@ -86,44 +93,52 @@ def _example_id(stem: str, user=None) -> str:
     beside them.
     """
     if user is None or _is_shared_guest(user):
-        return str(uuid.uuid5(_EXAMPLES_NAMESPACE, stem))
-    return str(uuid.uuid5(_EXAMPLES_NAMESPACE, f"{user.id}:{stem}"))
+        return str(uuid.uuid5(_EXAMPLES_NAMESPACE, key))
+    return str(uuid.uuid5(_EXAMPLES_NAMESPACE, f"{user.id}:{key}"))
+
+
+def shipped_sources(user) -> dict[str, str]:
+    """``project id -> source`` for every dataflow Curio seeds for ``user``.
+
+    Derived, not stored: ``Project`` has no "this one shipped with Curio"
+    column, and it does not need one - a shipped dataflow's id is ``uuid5`` of
+    its key (scoped to the account since #200), so the map can be recomputed
+    from ``docs/examples/`` whenever it is asked for. That is also what makes a
+    duplicate or an imported copy the user's own: it has a fresh id.
+    """
+    return {_example_id(s.key, user): s.source for s in shipped_dataflows()}
 
 
 def example_project_ids(user) -> set[str]:
-    """The project ids this user's seeded examples occupy.
-
-    Derived, not stored: ``Project`` has no "this one shipped with Curio"
-    column, and it does not need one - an example's id is ``uuid5`` of its
-    filename (scoped to the account since #200), so the set can be recomputed
-    from ``docs/examples/`` whenever it is asked for.
+    """The project ids this user's shipped dataflows occupy.
 
     Callers use it to keep a shipped dataflow out of reach of Delete. That rule
     matches the one the Data Catalog has had since "hide delete for anything
     that came from the shared catalog": you may edit and rename what Curio
-    seeded for you, but removing it is not yours to do - and since #270 a
-    deleted example never comes back, so the mis-click was permanent.
+    seeded for you, but removing it is not yours to do.
     """
-    examples_dir = _repo_root() / "docs" / "examples"
-    if not examples_dir.exists():
-        return set()
-    return {_example_id(p.stem, user) for p in _example_files(examples_dir)}
+    return set(shipped_sources(user))
 
 
 def is_example_project(user, project_id: str) -> bool:
-    """Is ``project_id`` one of the examples Curio seeded for ``user``?"""
+    """Is ``project_id`` one of the dataflows Curio seeded for ``user``?"""
     return project_id in example_project_ids(user)
 
 
 def seed_example_projects(
-    user, *, prune: bool | None = None, overwrite: bool | None = None,
+    user,
+    *,
+    prune: bool | None = None,
+    overwrite: bool | None = None,
+    only_keys: Optional[Iterable[str]] = None,
 ) -> int:
-    """Seed/refresh example projects for ``user`` from docs/examples/.
+    """Seed/refresh the shipped dataflows for ``user``.
 
-    Each example JSON gets a deterministic project_id derived from its
-    filename, so re-running on the same set replaces the existing rows
-    (overwrite semantics) without ever colliding with user-created
-    projects (which use random uuid4s).
+    Each file gets a deterministic project_id derived from its key, so
+    re-running on the same set replaces the existing rows (overwrite semantics)
+    without ever colliding with user-created projects (which use random
+    uuid4s). *only_keys* limits the walk to those keys; prune still keeps the
+    whole shipped set.
     """
     # Registered accounts get their own copies (#200). Under ``--deploy`` the
     # signed-in user is not the guest that owned the seeded rows, so the
@@ -148,16 +163,24 @@ def seed_example_projects(
     if overwrite is None:
         overwrite = is_guest
 
-    examples_dir = _repo_root() / "docs" / "examples"
-    if not examples_dir.exists():
-        logger.warning("No examples directory at %s", examples_dir)
+    shipped = shipped_dataflows()
+    if not shipped:
+        logger.warning("No shipped dataflows under %s", examples_dir())
         return 0
 
     ukey = _user_dir_key(user)
     seeded = 0
-    keep_ids = {_example_id(p.stem, user) for p in _example_files(examples_dir)}
+    keep_ids = {_example_id(s.key, user) for s in shipped}
+    wanted = set(only_keys) if only_keys is not None else None
 
-    for i, json_path in enumerate(_example_files(examples_dir)):
+    # Tests first: "Recent activity" puts the newest row on top, so what is
+    # seeded last leads a fresh gallery, and that should be the examples. The
+    # accent stays keyed to the file's place in the list.
+    in_seed_order = sorted(enumerate(shipped), key=lambda pair: pair[1].source != SOURCE_TEST)
+    for i, entry in in_seed_order:
+        if wanted is not None and entry.key not in wanted:
+            continue
+        json_path = entry.path
         try:
             spec = json.loads(json_path.read_text(encoding="utf-8"))
         except Exception:
@@ -165,7 +188,7 @@ def seed_example_projects(
             continue
 
         stem = json_path.stem
-        project_id = _example_id(stem, user)
+        project_id = _example_id(entry.key, user)
         name = _name_from_spec(spec) or _name_from_stem(stem)
         description = _description_from_spec(spec)
         accent = _ACCENT_CYCLE[i % len(_ACCENT_CYCLE)]
@@ -239,24 +262,29 @@ def _seeded_marker(ukey: str) -> Path:
     return storage.user_dir(ukey) / "examples.seeded"
 
 
-def _marker_owner(marker: Path) -> str | None:
-    """The username the marker was written for, or ``None``.
+def _read_marker(marker: Path) -> tuple[str | None, set[str] | None]:
+    """``(owner, keys)`` from the marker.
 
-    ``None`` covers both "no marker" and "a marker from before this recorded an
-    owner", and both mean the same thing to the caller: it cannot be trusted to
-    describe whoever holds this id now.
+    *owner* is ``None`` for "no marker" and for "a marker from before this
+    recorded an owner", and both mean the same thing to the caller: it cannot
+    be trusted to describe whoever holds this id now. *keys* is ``None`` for a
+    marker written before it listed what it seeded.
     """
+    owner: str | None = None
+    keys: set[str] | None = None
     try:
         for line in marker.read_text(encoding="utf-8").splitlines():
             if line.startswith("user="):
-                return line[len("user="):].strip() or None
+                owner = line[len("user="):].strip() or None
+            elif line.startswith("keys="):
+                keys = {k for k in line[len("keys="):].strip().split(",") if k}
     except OSError:
-        return None
-    return None
+        return None, None
+    return owner, keys
 
 
 def ensure_user_examples_seeded(user) -> int:
-    """Give ``user`` their copy of the examples, once, on first listing.
+    """Give ``user`` each shipped dataflow once, on the listing after it ships.
 
     Seeding happens at sign-up, but that only covers accounts created after
     this shipped. Everyone who registered before it - and the shared guest on
@@ -264,9 +292,11 @@ def ensure_user_examples_seeded(user) -> int:
     gallery, so the listing back-fills the same way packages and datasets
     already self-heal per user.
 
-    The marker is what keeps it a back-fill rather than a reset: an example the
-    user deliberately deleted must stay deleted, and without a marker every
-    listing would resurrect it. Pruning is never enabled here.
+    The marker is what keeps it a back-fill rather than a reset: it lists the
+    keys already seeded, so a dataflow the user changed or removed is not put
+    back, while one that shipped after the account was seeded still arrives.
+    A marker from before it listed keys counts the rows that exist as seeded.
+    Pruning is never enabled here.
 
     **The marker names the account, not the id slot.** It lives on disk under
     ``.curio/users/<id>/`` while the id it is keyed to lives in the database,
@@ -286,18 +316,37 @@ def ensure_user_examples_seeded(user) -> int:
     ukey = _user_dir_key(user)
     marker = _seeded_marker(ukey)
     owner = str(getattr(user, "username", "") or "")
-    if marker.exists() and _marker_owner(marker) == owner:
+    shipped_keys = [s.key for s in shipped_dataflows()]
+
+    recorded: set[str] = set()
+    if marker.exists():
+        marker_owner, marker_keys = _read_marker(marker)
+        if marker_owner == owner:
+            if marker_keys is None:
+                ids = {
+                    row.id for row in
+                    Project.query.filter(Project.user_id == user.id).all()
+                }
+                marker_keys = {k for k in shipped_keys if _example_id(k, user) in ids}
+            recorded = marker_keys
+    missing = [k for k in shipped_keys if k not in recorded]
+    if not missing:
         return 0
     try:
-        seeded = seed_example_projects(user, prune=False, overwrite=False)
+        seeded = seed_example_projects(
+            user, prune=False, overwrite=False, only_keys=missing,
+        )
     except Exception:
         logger.exception("Back-filling examples failed for user %s", user.id)
         return 0
     # Written even for a zero-seed: a missing examples directory is not a
     # reason to retry the whole walk on every listing.
+    keys = ",".join(sorted(recorded | set(missing)))
     try:
         marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text(f"user={owner}\ncount={seeded}\n", encoding="utf-8")
+        marker.write_text(
+            f"user={owner}\nkeys={keys}\ncount={seeded}\n", encoding="utf-8",
+        )
     except OSError:
         logger.exception("Could not write the examples marker at %s", marker)
     return seeded
@@ -307,8 +356,8 @@ def _prune_non_example_projects(user, ukey: str, keep_ids: set[str]) -> int:
     """Delete every guest project that isn't part of the seeded set.
 
     Mirrors the overwrite posture: ``--with-examples`` always
-    lands on exactly the curated examples, with leftover scratch projects
-    (e.g. "DefaultDataflow", auto-generated test fixtures) cleaned up.
+    lands on exactly the shipped dataflows, with leftover scratch projects
+    (e.g. "DefaultDataflow") cleaned up.
     """
     pruned = 0
     stale = (

@@ -25,12 +25,12 @@ spec
 │   ├── packages[]              node-package lockfile      (backend-owned on update)
 │   ├── datasets[]              Data Catalog references    (backend-owned on update)
 │   ├── description
+│   ├── categories              tags, city, topic, complexity set by hand
+│   ├── scenarios[]             named selections of the nodes
 │   ├── agents[]                agent lockfile             (backend-owned, stripped on share)
-│   ├── agentAttachments[]      live agent bindings        (backend-owned, stripped on share)
-│   └── agentDefaults           deprecated
+│   └── agentAttachments[]      live agent bindings        (backend-owned, stripped on share)
 ├── nodeProvenance              per-node execution history (browser-side only)
-├── dataflowProvenance          version history of the whole dataflow
-└── name                        deprecated top-level alias
+└── dataflowProvenance          version history of the whole dataflow
 ```
 
 ### A node
@@ -45,6 +45,78 @@ document. It is absent on presentation-only templates. `title` and
 accepts a palette name *or* a `#rrggbb` value, because agents are instructed to
 supply either.
 
+`metadata.packageTemplateLabel` is the node's header when the user has renamed
+it. It is written only when non-blank; without it the header shows the
+template's label.
+
+`metadata.packageTemplateConfig` is what the node settings modal saved for the
+node: its title, description, editor mode, engine, which editor tabs it shows,
+and its ports. It is absent until the modal saves. It does not repeat the
+node's code, which is `content`, and its ports carry no ids.
+
+`metadata.dataPool` holds a Data Pool's two conflict modes,
+`{insideChart, betweenCharts}`, each `OVERWRITE`, `MERGE_AND` or `MERGE_OR`.
+Only a mode other than `OVERWRITE` is written; an absent member, or an absent
+`dataPool`, means `OVERWRITE`.
+
+`metadata.widgets` lists the node's widgets, written only when it has any. Each
+entry is `{name, type, label?, default, value?, options?}`, where `type` is one
+of `number`, `slider`, `text`, `choice`, `checkbox`, `checkbox-group`,
+`multi-select`, `datetime`, `location`, `number-list`, `text-list`, `range`
+and `file`. `options.choices` lists the options of a choice, checkbox group or
+multi-select widget, and `options.display` is `radio` for a choice drawn as
+radio buttons. A number or slider widget takes `options.min`, `max`, `step` and
+`units`; a slider needs `min` and `max`. A checkbox group or multi-select holds a
+list of its choices, a datetime `YYYY-MM-DDTHH:mm:ss` in local time, and a
+location `{"lat": ..., "lon": ...}` in WGS84. A widget without a `default` takes
+its type's: `min` or 0 for a number or slider, `false` for a checkbox, the first
+choice for a choice, `[]` for the list types, `[0, 1]` for a range,
+`1970-01-01T00:00:00` for a datetime, `{"lat": 0, "lon": 0}` for a location, and
+`""` otherwise. The node's
+`content` places a widget as `[!! name !!]`; a run replaces it with `value` when
+set, else `default`. A reference on its own becomes a literal of the code's
+language (quoted text, a number, a list, a boolean, an object); one inside a string literal
+becomes the value's text, escaped for that string. An old
+`[!! name$TYPE$default !!]` marker, or a name the node has no widget for, fails
+the run with a message naming it.
+
+A `curio.builtin/parameter` node holds one widget in `metadata.widgets` and has
+no edges. Any node's `content` places it as `[!! @name !!]`, written and
+replaced as its own widgets are. A name no Parameter node has, or that two
+Parameter nodes have, fails the run with a message naming it.
+
+`metadata.selections` lists the node's selection tags, written only when it has
+any. Each entry is `{name, node, column, ids}`: `node` is the id of a Vega-Lite
+or Autark node, and `ids` the values of `column` in the rows that view's latest
+selection picks, each once, in row order. The node's `content` places a tag as
+`[!! selection name !!]`; a run replaces it with `ids`, written as a list. A tag
+holds at most 10,000 ids; for a larger selection it holds `count` in place of
+`ids`, and a run that reads it fails with a message saying so, as it does for a
+name the node has no tag for.
+
+`metadata.copiedFrom` is written only on a copy made by Duplicate selection: the
+ids of the nodes it descends from, oldest first, ending with the node it was
+copied from. Two nodes are the same lever in two scenarios when their ids and
+these lists meet.
+
+`metadata.compareScenarios` holds a `curio.builtin/compare-scenarios` node's
+settings, written only when it has inputs or one of the settings below. `inputs`
+labels each input circle, in circle order, `{scenario?, name, color}`: the id, name
+and color of the scenario the input's node belongs to, or, for a node in no
+scenario, the node's name, a neutral color and no `scenario`. The node's `content`
+is written from them, one `(scenario, name, [!! input k !!])` entry per input handed
+to `curio_stack_scenarios`, which stacks the inputs into one table under `scenario`
+and `scenario_name`, or, in Difference, to `curio_difference_scenarios`, which
+subtracts input 0 from input 1. `chart` is `{preset?, x?, y?, aggregate?}`:
+`preset` is one of `bar`, `grouped-bar`, `line`, `scatter`, `pie`, `lollipop` and
+`table`, `x` and `y` name columns of that table, and `aggregate` is one of `mean`,
+`sum`, `median`, `min`, `max` and `count`. `mode` is `chart` or `difference`, written
+only when the user chose one; without it the node shows Difference for two rasters
+or two layers and Chart otherwise. `difference` is `{key?, value?}`: `key` is the
+column Difference matches the rows of two layers or tables on (without it,
+`osm_id` or `building_id`), passed to `curio_difference_scenarios` as `key=`, and
+`value` the column or band its map colors the difference by.
+
 `metadata.comments` carries the node's discussion, written only when non-empty.
 Each entry is `{id, text, author, authorName, createdAt, resolved}`. The author's
 avatar is not stored, because `profile_image` may be a full data URL; `canDelete`
@@ -57,22 +129,59 @@ current user.
 edge, where its single legal value is `"Interaction"`; absence means a plain data
 edge. There is no `"Data"` value.
 
-`sourceHandle` and `targetHandle` name the concrete ports. They matter: when they
-are absent, the reader infers a merge slot from an `in_N` substring of `edge.id`,
-which cannot recover a named port such as `in_points`.
+`sourceHandle` and `targetHandle` name the concrete ports. A node whose one input
+port takes several edges has a circle per edge: `in` is the first, then `in_1`,
+`in_2`, and so on. Its code reads circle N as `[!! input N !!]`, and the order of the
+circles is the order of `arg`. When the handles are absent, the reader infers a
+circle from an `in_N` suffix of `edge.id`, which cannot recover a named port such as
+`in_points`.
+
+### Categories
+
+`categories` holds what a person said the dataflow is about, each section a list
+of short labels: `tags`, `city`, `topic`, and `complexity` (one of Beginner,
+Intermediate or Advanced). The Projects page filters by these, and by two things
+this document does not store: where the dataflow came from (a use case, an
+example or a test that ships with Curio), and the tags and data types its nodes
+imply (an Autark node, `import geopandas`, a raster dataset). A save that leaves
+`categories` out keeps the ones already saved.
+
+### Scenarios
+
+`scenarios` lists named selections of the dataflow's nodes. Each one is
+`{id, name, color, description?, nodes, collapsed?, box?, source?}`:
+
+- `id` is unique among the scenarios, `color` a hex color such as `#2a9d8f`, and
+  `nodes` the ids of its nodes.
+- `collapsed` and `box` say whether the canvas draws it as one box, and where.
+- `source` names the project and scenario it was dragged in from.
+
+What enters a scenario from nodes outside it is its fixed context, its nodes are
+what it changes, and the outputs of its last nodes are what it produces. A
+Parameter node outside it whose tag its nodes' code names is context too.
+
+A node belongs to at most one scenario: a save that puts a node in two, or gives
+two scenarios one id, is refused. A save drops ids that are not nodes of the
+dataflow, so deleting a node removes it from its scenario. A scenario whose last
+node was deleted keeps its name and color until it is deleted itself.
+
+The canvas writes `scenarios` on every save, and an empty list clears them. A
+save that leaves the key out keeps the ones already saved, and a dataflow
+without scenarios has no key. Version snapshots and an agent's view of the
+dataflow carry them only when there are some.
 
 ### Ownership
 
-Three sections are **backend-owned on update** — the server overwrites whatever a
-client sends, so a stale browser tab cannot clobber them: `packages`, `datasets`,
-and the agent sections. Two are additionally **stripped on share**: `agents` and
+Three sections are **backend-owned on update**, so the server overwrites whatever
+a client sends and a stale browser tab cannot clobber them: `packages`,
+`datasets`, and the agent sections. Two are additionally **stripped on share**: `agents` and
 `agentAttachments` are removed from the copy served behind a share link, so a
 shared dataflow never carries them and they can never be required.
 
 ## What lives in the manifest, not here
 
-**Nodes are defined by package manifests.** A node's `type` is a coordinate —
-`<packageId>/<templateId>` or `…@<major>` — into a manifest's `templates[].id`,
+**Nodes are defined by package manifests.** A node's `type` is a coordinate
+(`<packageId>/<templateId>` or `…@<major>`) into a manifest's `templates[].id`,
 and `dataflow.packages` is the lockfile naming which manifests must be installed
 for those coordinates to resolve. The trill schema validates the *shape* of that
 coordinate and stops there.
@@ -111,7 +220,11 @@ python scripts/validate_trill.py --all --resolve          # also check types res
 ```
 
 `--resolve` adds the manifest check the schema cannot do: every node type must
-correspond to a template under `packages/`.
+correspond to a template under `packages/`. Every check also refuses a node in
+two scenarios and a scenario member that is not a node.
+
+Snapshots inside `dataflowProvenance.versions` are held to a **relaxed** version
+of the same shape, requiring only `nodes` and `edges`.
 
 ## Laying a dataflow out
 
@@ -126,37 +239,8 @@ python scripts/tidy_example_layout.py --all --write    # apply
 
 It rewrites nothing but `x` and `y` on `dataflow.nodes[]`, and it refuses a file
 it cannot reproduce byte-for-byte rather than reformatting it. Scope is the
-curated gallery examples only — `docs/examples/dataflows/` is hand-tuned fixture
-material and `.curio/` is your own work.
+curated gallery examples only: `docs/examples/dataflows/` is hand-tuned fixture
+material, and `.curio/` is your own work.
 
 CI validates the committed examples on every push. It cannot see your own
 projects, since `.curio/` is gitignored, which is what the CLI is for.
-
-### Your saved projects may report failures
-
-Projects saved before the schema existed may be missing `provenance_id`,
-`timestamp`, `name` or `task`. A non-zero exit from `--all` on those is
-information, not a broken build; fix them with the one-time rewrite
-[`docs/NODE-CATALOG.md`](NODE-CATALOG.md) describes.
-
-A missing `name` has a visible symptom: `dataflowProvenance.latest`
-interpolates the name into its version keys, so a spec saved without one carries
-keys that literally read `undefined_1787609706100`.
-
-Snapshots inside `dataflowProvenance.versions` are held to a **relaxed** version
-of the same shape, requiring only `nodes` and `edges`.
-
-## Known drift
-
-- **`llm-prompts/default_preamble.txt` embeds a stale Draft-07 schema** and sends
-  it to the model on every AI call. It declares `timestamp` as a string, node
-  types as a dead uppercase enum (`DATA_LOADING`), and three fields nothing reads
-  (`node.output`, `metadata.annotations`, edge type `"Data"`), while omitting
-  everything added since: `title`, the `dashboard*` family, `saveOutputDataset`,
-  `metadata.appearance`, the handles, and all of `packages`, `datasets`, `agents`
-  and `agentAttachments`. Until it is rewritten, LLM-generated specs will not
-  validate against this schema.
-- **Two name conventions coexist.** `dataflow.name` is authoritative, but
-  `execution/workflow_spec.py` still reads a top-level `name`. Both are valid; a
-  top-level one *without* a `dataflow.name` is the footgun documented in
-  `backend/tests/test_frontend/README.md`.

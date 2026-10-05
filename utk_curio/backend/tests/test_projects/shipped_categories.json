@@ -1,0 +1,436 @@
+{
+  "01-vega-lite-chained-transforms": {
+    "tags": [
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries"
+    ]
+  },
+  "02-vega-lite-spatial-density": {
+    "tags": [
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries"
+    ]
+  },
+  "03-vega-lite-linked-temporal-charts": {
+    "tags": [
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  },
+  "04-vega-lite-multi-flow-dashboard": {
+    "tags": [
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  },
+  "05-vega-lite-multi-view-drilldown": {
+    "tags": [
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  },
+  "06-autark-what-if-shadow-study": {
+    "tags": [
+      "Autark",
+      "GPU compute"
+    ],
+    "data_type": [
+      "Geometries",
+      "OpenStreetMap"
+    ]
+  },
+  "07-autark-gpu-shader": {
+    "tags": [
+      "Autark",
+      "GPU compute"
+    ],
+    "data_type": [
+      "Geometries",
+      "OpenStreetMap"
+    ]
+  },
+  "08-autark-spatial-join-regression": {
+    "tags": [
+      "Autark",
+      "GeoPandas",
+      "GPU compute"
+    ],
+    "data_type": [
+      "Geometries",
+      "OpenStreetMap",
+      "Rasters"
+    ]
+  },
+  "09-heterogeneous-data-linked-views": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "Rasters"
+    ]
+  },
+  "10-street-vision-cv-analysis": {
+    "tags": [
+      "Vega-Lite",
+      "GeoPandas",
+      "Computer vision"
+    ],
+    "data_type": [
+      "Geometries",
+      "Imagery"
+    ]
+  },
+  "11-autark-pbf-loading": {
+    "tags": [
+      "Autark"
+    ],
+    "data_type": [
+      "Geometries",
+      "OpenStreetMap"
+    ]
+  },
+  "12-vega-lite-geodataframe-maps": {
+    "tags": [
+      "Vega-Lite",
+      "GeoPandas"
+    ],
+    "data_type": [
+      "Geometries"
+    ]
+  },
+  "13-vega-lite-geometry-columns": {
+    "tags": [
+      "Vega-Lite",
+      "GeoPandas"
+    ],
+    "data_type": [
+      "Geometries"
+    ]
+  },
+  "14-vega-lite-crs-and-geometry-types": {
+    "tags": [
+      "Vega-Lite",
+      "GeoPandas"
+    ],
+    "data_type": [
+      "Geometries"
+    ]
+  },
+  "15-vega-lite-spec-forms-and-catalogs": {
+    "tags": [
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries"
+    ]
+  },
+  "16-simple-view-tables-and-images": {
+    "tags": [
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Imagery"
+    ]
+  },
+  "17-autark-geodataframe-maps": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries"
+    ]
+  },
+  "18-storage-orthorectified-imagery": {
+    "tags": [
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Imagery",
+      "Rasters"
+    ]
+  },
+  "19-storage-video-frames": {
+    "tags": [
+      "Vega-Lite"
+    ],
+    "data_type": [
+      "Imagery",
+      "Video"
+    ]
+  },
+  "20-storage-folder-of-csv-files": {
+    "tags": [
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries"
+    ]
+  },
+  "21-storage-photos-and-videos": {
+    "tags": [
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "Imagery",
+      "Video"
+    ]
+  },
+  "22-storage-audio-recordings": {
+    "tags": [
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Audio"
+    ]
+  },
+  "23-storage-folder-of-different-files": {
+    "tags": [
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries"
+    ]
+  },
+  "dataflows/AutkMap": {
+    "tags": [
+      "Autark",
+      "GeoPandas"
+    ],
+    "data_type": [
+      "Geometries"
+    ]
+  },
+  "dataflows/BuildingRasters": {
+    "tags": [
+      "Autark",
+      "GeoPandas"
+    ],
+    "data_type": [
+      "Geometries"
+    ]
+  },
+  "dataflows/DataPool_AutkMap": {
+    "tags": [
+      "Autark",
+      "GeoPandas"
+    ],
+    "data_type": [
+      "Geometries"
+    ]
+  },
+  "dataflows/DataPool_Dataframe": {
+    "tags": [
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  },
+  "dataflows/DataPool_Geodataframe": {
+    "tags": [
+      "GeoPandas"
+    ],
+    "data_type": [
+      "Geometries"
+    ]
+  },
+  "dataflows/DataPool_Vega": {
+    "tags": [
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  },
+  "dataflows/DataPool_Vega_2": {
+    "tags": [
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries"
+    ]
+  },
+  "dataflows/DefaultWorkflow": {
+    "tags": [],
+    "data_type": []
+  },
+  "dataflows/Image": {
+    "tags": [
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Imagery"
+    ]
+  },
+  "dataflows/ImageUrls": {
+    "tags": [
+      "GeoPandas"
+    ],
+    "data_type": [
+      "Geometries",
+      "Imagery"
+    ]
+  },
+  "dataflows/Interaction_Autark": {
+    "tags": [
+      "Autark",
+      "GPU compute"
+    ],
+    "data_type": [
+      "Geometries",
+      "OpenStreetMap"
+    ]
+  },
+  "dataflows/Interaction_AutkMap": {
+    "tags": [
+      "Autark",
+      "GeoPandas"
+    ],
+    "data_type": [
+      "Geometries"
+    ]
+  },
+  "dataflows/Interaction_Vega": {
+    "tags": [
+      "Vega-Lite",
+      "GeoPandas"
+    ],
+    "data_type": [
+      "Geometries"
+    ]
+  },
+  "dataflows/Interaction_Vega_Autark": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "GeoPandas"
+    ],
+    "data_type": [
+      "Geometries"
+    ]
+  },
+  "dataflows/Interaction_Vega_Simple": {
+    "tags": [
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  },
+  "dataflows/JSComputation": {
+    "tags": [],
+    "data_type": []
+  },
+  "dataflows/MultiInput": {
+    "tags": [
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  },
+  "dataflows/MultiInputDataPool": {
+    "tags": [
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  },
+  "dataflows/Regression": {
+    "tags": [
+      "Autark",
+      "GPU compute"
+    ],
+    "data_type": [
+      "Geometries",
+      "OpenStreetMap"
+    ]
+  },
+  "dataflows/Scenarios": {
+    "tags": [
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  },
+  "dataflows/SimpleView": {
+    "tags": [
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  },
+  "dataflows/Vega": {
+    "tags": [
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  },
+  "dataflows/Widget": {
+    "tags": [
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  }
+}

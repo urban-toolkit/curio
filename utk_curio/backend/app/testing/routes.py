@@ -33,13 +33,15 @@ import shutil
 from flask import Blueprint, jsonify, request
 
 from utk_curio.backend.app.common.safe_paths import is_within
+from utk_curio.backend import config
 from utk_curio.backend.config import _is_dev, _is_testing
-from utk_curio.backend.app.agents import testing_provider
+from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.users import repositories as user_repo
 from utk_curio.backend.app.users import security
 from utk_curio.backend.app.projects import services as project_services
 from utk_curio.backend.app.projects.schemas import ProjectCreate
+from utk_curio.backend.app.runs import jobs as run_jobs
 
 
 testing_bp = Blueprint("testing", __name__, url_prefix="/api/testing")
@@ -79,6 +81,8 @@ def _guard():
 #: deletes do not trip foreign keys.
 _RESETTABLE_TABLES: tuple[str, ...] = (
     "exec_cache_entry",
+    "dataflow_run_step",
+    "dataflow_run",
     "project",
     "auth_attempt",
     "user_session",
@@ -183,7 +187,7 @@ def stub_login():
 
 @testing_bp.route("/dataset-paths", methods=["POST"])
 def dataset_paths():
-    """Resolve ``curio_dataset_path("<id>")`` calls the way execution does.
+    """Resolve ``curio_data_path("<id>")`` calls the way execution does.
 
     For the e2e ground-truth harness. It computes each workflow's expected
     output by POSTing node code straight to the sandbox's ``/exec`` (bypassing
@@ -201,22 +205,42 @@ def dataset_paths():
 
     Resolving here fixes that by construction — the answer is computed in the
     process that shares a filesystem with the sandbox — and it reuses
-    ``_resolve_exec_dataset_paths``, so the harness and the real execution path
-    cannot drift.
+    ``node_exec.resolve_dataset_paths``, so the harness and the real execution
+    path cannot drift.
 
     Body (JSON):
-      * ``code`` – node source to scan for literal ``curio_dataset_path`` calls.
+      * ``code`` – node source to scan for literal ``curio_load_data`` /
+        ``curio_data_path`` / ``curio_load_collection`` calls.
       * ``username`` – optional; resolve as this user, for ids that live in an
         account store. Omitted means hub datasets only, which is what the
-        curated examples use.
+        curated examples use. Ignored without sign-in (``CURIO_NO_AUTH``),
+        where the browser runs every node as the shared guest.
       * ``dataflow_id`` – optional, forwarded to the catalog listing.
+      * ``nodeType``: optional, the node's type, for ``packageModules``.
 
-    Response: ``{"paths": {"<id>": "<absolute path>"}}``. Ids that do not
-    resolve are simply absent, matching production's fail-open behaviour.
+    Response: ``{"paths": {"<id>": "<absolute path>"}, "formats": {...},
+    "collections": {...}, "mediaDir": ..., "models": {...},
+    "packageModules": ...}``: ``formats`` as
+    ``/processPythonCode`` sends them for ``curio_load_data``, ``collections``
+    and ``mediaDir`` as ``resolve_exec_collections`` gives them for
+    ``curio_load_collection`` calls, ``models`` as ``node_exec.resolve_models``
+    does for ``curio_load_model`` calls, ``packageModules`` as
+    ``node_exec.resolve_package_modules`` does for the node's package, as
+    that user or the shared guest. Ids that do not resolve are simply absent,
+    matching production's fail-open behaviour.
     """
     from flask import g
 
-    from utk_curio.backend.app.api.routes import _resolve_exec_dataset_paths
+    from utk_curio.backend.app.discovery.application.exec_collections import (
+        resolve_exec_collections,
+    )
+    from utk_curio.backend.app.execution.node_exec import (
+        resolve_dataset_paths,
+        resolve_models,
+        resolve_package_modules,
+    )
+    from utk_curio.backend.app.common.user_storage import GUEST_KEY
+    from utk_curio.backend.app.projects.services import _user_dir_key
 
     body = request.get_json(silent=True) or {}
     code = body.get("code") or ""
@@ -224,10 +248,22 @@ def dataset_paths():
         return jsonify({"error": "code must be a string"}), 400
 
     username = (body.get("username") or "").strip()
+    # Without sign-in every request the browser makes is the shared guest's,
+    # whichever account a test created, so that is whom execution resolves as.
+    if config.CURIO_NO_AUTH:
+        username = ""
     g.user = user_repo.user_by_identifier(username) if username else None
 
-    paths = _resolve_exec_dataset_paths(code, body.get("dataflow_id"))
-    return jsonify({"paths": paths}), 200
+    formats: dict = {}
+    paths = resolve_dataset_paths(code, body.get("dataflow_id"), g.user, formats)
+    user_key = _user_dir_key(g.user) if g.user is not None else GUEST_KEY
+    collections, media_dir = resolve_exec_collections(code, user_key, user=g.user)
+    models = resolve_models(code, g.user)
+    package_modules = resolve_package_modules(body.get("nodeType"), user_key, body.get("dataflow_id"))
+    return jsonify({
+        "paths": paths, "formats": formats, "collections": collections, "mediaDir": media_dir,
+        "models": models, "packageModules": package_modules,
+    }), 200
 
 
 def _clear_test_user_stores() -> list[str]:
@@ -301,7 +337,29 @@ def reset_db():
     stores_cleared = []
     if body.get("stores", True):
         stores_cleared = _clear_test_user_stores()
+    # A hold a failed test left standing would stop the next test's runs.
+    run_jobs.set_hold(False)
     return jsonify({"truncated": truncated, "stores_cleared": stores_cleared}), 200
+
+
+@testing_bp.route("/run-hold", methods=["GET", "POST"])
+def run_hold():
+    """Hold runs on the server before each node they execute, or release them.
+
+    The server-side twin of holding a page's node requests (``run_all.py``): a
+    run started by the canvas executes on the server, out of the page's reach.
+
+    Body (POST): ``{"hold": true}`` or ``{"hold": false}``.
+    Response: ``{"held": bool, "waiting": n}``. ``waiting`` is how many nodes
+    wait right now; on a release, how many it let go.
+    """
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        if not isinstance(body.get("hold"), bool):
+            return jsonify({"error": "hold must be true or false"}), 400
+        waiting = run_jobs.set_hold(body["hold"])
+        return jsonify({"held": body["hold"], "waiting": waiting}), 200
+    return jsonify(run_jobs.hold_state()), 200
 
 
 @testing_bp.route("/stub-project", methods=["POST"])
@@ -376,14 +434,55 @@ def _scripted_guard():
     return None
 
 
+def _reply_entry_error(entry: object) -> str | None:
+    """Why *entry* is not a scripted reply, or None when it is one: a string,
+    ``{text, toolCalls}`` or ``{error, status}``."""
+    if isinstance(entry, str):
+        return None
+    if not isinstance(entry, dict):
+        return "each reply must be a string or an object"
+    if "error" in entry:
+        if set(entry) - {"error", "status"}:
+            return "an error reply takes only 'error' and 'status'"
+        if not isinstance(entry["error"], str) or not isinstance(entry.get("status", 500), int):
+            return "an error reply is {'error': <string>, 'status': <int>}"
+        return None
+    if set(entry) - {"text", "toolCalls"}:
+        return "a reply object takes only 'text' and 'toolCalls'"
+    if not isinstance(entry.get("text", ""), str):
+        return "'text' must be a string"
+    calls = entry.get("toolCalls", [])
+    if not isinstance(calls, list):
+        return "'toolCalls' must be a list"
+    for call in calls:
+        if not (
+            isinstance(call, dict)
+            and not set(call) - {"name", "arguments", "id"}
+            and isinstance(call.get("name"), str) and call["name"]
+            and isinstance(call.get("arguments", {}), dict)
+            and isinstance(call.get("id", ""), str)
+        ):
+            return "each tool call is {'name': <string>, 'arguments': <object>, 'id': <string, optional>}"
+    return None
+
+
 @testing_bp.route("/agent-script", methods=["POST"])
 def agent_script_push():
     """Queue scripted replies for the next agent turns.
 
     Body (JSON):
-      * ``replies`` - list of reply strings, consumed in order, one per
-        provider call. A multi-round run (a toolRequest and its follow-up)
-        needs one entry per round.
+      * ``replies`` - list of replies, consumed in order, one per provider
+        call. A multi-round run (a tool call and its follow-up) needs one entry
+        per round. A reply is its text, ``{"text", "toolCalls"}`` for native
+        tool calls (each ``{"name", "arguments", "id"}``, ``id`` optional), or
+        ``{"error", "status"}`` for an endpoint error (see
+        ``testing_provider``).
+      * ``byIntent`` - optional ``{substring: reply}``. A delegated call whose
+        ``intent`` contains a key gets that reply instead of the next queued
+        one (see ``testing_provider.route_by_intent``).
+      * ``chatCapabilities`` - optional ``{tools, structuredOutput}``: what the
+        scripted endpoint can do beyond text. ``{"tools": true}`` puts runs on
+        native tools; without it they use the fenced protocol.
       * ``reset`` - drop anything queued and captured first. Defaults to true,
         which is what a test almost always wants: a leftover reply from a
         previous test would be consumed by this one and the failure would point
@@ -398,11 +497,34 @@ def agent_script_push():
     replies = body.get("replies")
     if replies is None:
         replies = []
-    if not isinstance(replies, list) or not all(isinstance(r, str) for r in replies):
-        return jsonify({"error": "'replies' must be a list of strings"}), 400
+    if not isinstance(replies, list):
+        return jsonify({"error": "'replies' must be a list"}), 400
+    for entry in replies:
+        problem = _reply_entry_error(entry)
+        if problem:
+            return jsonify({"error": problem}), 400
+    by_intent = body.get("byIntent") or {}
+    if not isinstance(by_intent, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in by_intent.items()
+    ):
+        return jsonify({"error": "'byIntent' must map strings to strings"}), 400
+    capabilities = body.get("chatCapabilities")
+    if capabilities is not None and not (
+        isinstance(capabilities, dict)
+        and not set(capabilities) - {"tools", "structuredOutput"}
+        and all(isinstance(v, bool) for v in capabilities.values())
+    ):
+        return jsonify({"error": "'chatCapabilities' is {'tools': <bool>, 'structuredOutput': <bool>}"}), 400
     if body.get("reset", True):
         testing_provider.reset()
     testing_provider.push_replies(*replies)
+    if by_intent:
+        testing_provider.route_by_intent(by_intent)
+    if capabilities is not None:
+        testing_provider.script_chat_capabilities(
+            tools=capabilities.get("tools", False),
+            structured_output=capabilities.get("structuredOutput", False),
+        )
     return jsonify({"pending": testing_provider.pending()}), 200
 
 
@@ -416,7 +538,12 @@ def agent_script_read():
     agent's own instruction bytes - which a reply, being scripted, can never
     show.
 
-    Response: ``{"pending": n, "captured": [[{role, content}, ...], ...]}``
+    ``calls`` holds ``{configId, model}`` for each of those calls: which LLM
+    configuration answered it. ``offered`` holds ``{tools, toolChoice}`` for
+    each: the native tools it offered, none on the fenced protocol.
+
+    Response: ``{"pending": n, "captured": [[{role, content}, ...], ...],
+    "calls": [{configId, model}, ...], "offered": [{tools, toolChoice}, ...]}``
     """
     denied = _scripted_guard()
     if denied is not None:
@@ -426,6 +553,8 @@ def agent_script_read():
             {
                 "pending": testing_provider.pending(),
                 "captured": testing_provider.captured(),
+                "calls": testing_provider.calls(),
+                "offered": testing_provider.offered(),
             }
         ),
         200,
@@ -501,7 +630,7 @@ def broken_library():
     import os
     import sys
 
-    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     body = request.get_json(silent=True) or {}
     action = (body.get("action") or "install").strip()
@@ -655,7 +784,7 @@ def pip_behaviour():
     Overriding is idempotent and always restores from the ORIGINALS captured on
     the first call, so repeated or interleaved modes cannot stack wrappers.
     """
-    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     body = request.get_json(silent=True) or {}
     mode = (body.get("mode") or "normal").strip()
@@ -713,15 +842,18 @@ def package_store():
 
     ``hash`` answers ``{"sha256": "...", "catalog_sha256": "..."}`` so a caller
     can compare the store copy against the catalog it came from in one call.
-    ``stale`` appends a marker byte to the file and drops the package's
-    seed-state record, then answers the same shape — after which the two hashes
-    differ by construction.
+    ``stale`` appends a marker byte to the file and records the result as the
+    copy the catalog installed, then answers the same shape, after which the
+    two hashes differ by construction.
     """
     import hashlib
 
-    from utk_curio.backend.app.packages import seed_state
-    from utk_curio.backend.app.packages.seed import _catalog_root
-    from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE, package_dir
+    from utk_curio.backend.app.packages.repositories import seed_state
+    from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root as _catalog_root
+    from utk_curio.backend.app.packages.service import (
+        PACKAGE_DIR_RE,
+        package_dir,
+    )
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     body = request.get_json(silent=True) or {}
@@ -772,9 +904,7 @@ def package_store():
         return jsonify({"error": f"not in the store: {dir_name}/{rel}"}), 404
 
     if action == "stale":
-        from utk_curio.backend.app.packages.installer import (
-            refresh_packageage_integrity,
-        )
+        from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
 
         # A marker byte rather than a rewrite: the file stays valid for anything
         # that only parses it, so the ONLY thing this changes is the hash.
@@ -791,8 +921,15 @@ def package_store():
         # is damaged, not out of date, and repairing damage is a different job
         # (`_package_is_healthy`). Skipping this step made the first version of
         # this endpoint simulate the wrong thing entirely.
-        refresh_packageage_integrity(store_root)
-        seed_state.clear(_user_dir_key(user), dir_name)
+        #
+        # ...and record that older pair as the copy the catalog installed,
+        # which is what an upgrade leaves behind. Clearing the record instead
+        # made the copy look like one from before the record existed, and a
+        # copy recorded as the user's own is never refreshed at all (#564).
+        integrity = refresh_package_integrity(store_root)
+        seed_state.mark_installed(
+            _user_dir_key(user), dir_name, catalog_copy=seed_state.copy_digest(integrity),
+        )
 
     def _sha256(path):
         h = hashlib.sha256()

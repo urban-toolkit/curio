@@ -77,12 +77,12 @@ CARD = 'article:not([role="status"])'
 # manifest `name` verbatim (spaces and casing) and appends the data file's real
 # suffix, so these are the titles as shown in the catalog.
 GEOJSON = (
-    "data.urbanlab.chicago-community-areas",
+    "data.utk.chicago-community-areas",
     "Chicago Community Areas",
     "Chicago Community Areas.geojson",
 )
 CSV = (
-    "data.urbanlab.acs-neighborhood-profile",
+    "data.utk.acs-neighborhood-profile",
     "ACS Neighborhood Profile",
     "ACS Neighborhood Profile.csv",
 )
@@ -165,7 +165,6 @@ def _drawer(page):
 
 
 def _open_drawer_from_menu(page):
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
     page.get_by_role("button", name="Data Catalog", exact=True).click()
     return _drawer(page)
 
@@ -273,6 +272,9 @@ def test_export_downloads_the_server_named_file(
         page.get_by_label("Notifications").get_by_text("Could not export dataset.")
     ).to_have_count(0)
 
+    # The click left the pointer on Export, whose hover style would sit in the
+    # capture.
+    page.mouse.move(5, 5)
     save_workflow_test_screenshot(
         page, "dataset-export",
         test_name=f"test_export_downloads_the_server_named_file_{extension.lstrip('.')}",

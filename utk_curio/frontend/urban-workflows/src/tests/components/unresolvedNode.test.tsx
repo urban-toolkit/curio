@@ -12,7 +12,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const mockOpenDrawer = jest.fn();
-jest.mock("../../providers/NodeCatalogDrawerProvider", () => ({
+jest.mock("../../providers/packages/NodeCatalogDrawerProvider", () => ({
   useNodeCatalogDrawer: () => ({
     openNodeCatalogDrawer: mockOpenDrawer,
     closeNodeCatalogDrawer: jest.fn(),
@@ -38,7 +38,7 @@ import {
   packageIdFromNodeType,
 } from "../../components/UnresolvedNode";
 
-const STREETVISION = "curio.streetvision/street-view-fetcher";
+const STREETVISION = "curio.streetvision/image-segmentation";
 
 beforeEach(() => {
   mockEdges = [];
@@ -70,7 +70,7 @@ describe("packageIdFromNodeType", () => {
 describe("packageDisplayName", () => {
   it("turns a package id into something readable", () => {
     expect(packageDisplayName("curio.streetvision")).toBe("Streetvision");
-    expect(packageDisplayName("ai.urbanlab.uhvi")).toBe("Uhvi");
+    expect(packageDisplayName("ai.utk.uhvi")).toBe("Uhvi");
     expect(packageDisplayName("curio.example-ui")).toBe("Example Ui");
   });
 });
@@ -154,8 +154,8 @@ describe("UnresolvedNode", () => {
   });
 
   it("opens the catalog drawer on the package it needs", () => {
-    // Install stays the user's click - Street Vision pulls ~3 GB of torch, so
-    // this hands them the decision rather than making it.
+    // Install stays the user's click - a package can pull large dependencies,
+    // so this hands them the decision rather than making it.
     render(
       <UnresolvedNode nodeId="n1" nodeType={STREETVISION} registryReady />,
     );

@@ -1,0 +1,76 @@
+{
+  "id": "source.osm.openstreetmap",
+  "name": "OpenStreetMap",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "Buildings, roads, parks, water, land surface, points of interest and features by tag from OpenStreetMap, loaded through Autark for a box or for named areas. Each row but the surface's is one OpenStreetMap node, way or relation, with its tags and its id; heights, widths, speeds and counts are numbers.",
+  "publisher": "OpenStreetMap contributors",
+  "homepage": "https://www.openstreetmap.org",
+  "license": "ODbL 1.0",
+  "tags": ["openstreetmap", "osm", "buildings", "roads", "autark"],
+  "provider": {
+    "type": "autark-osm",
+    "baseUrl": "https://overpass-api.de",
+    "options": {}
+  },
+  "auth": { "mode": "public" },
+  "limits": { "requestsPerMinute": 2 },
+  "parameters": [
+    {
+      "id": "area", "type": "area", "label": "Area", "required": true, "accepts": ["box", "names"],
+      "maxAreaKm2": 25,
+      "description": "A box, or the areas inside a place as OpenStreetMap names their boundaries."
+    }
+  ],
+  "resources": [
+    {
+      "id": "buildings", "name": "Buildings", "kind": "table", "format": "geojson",
+      "description": "Buildings and building parts, one row each, named by osm_id. Footprints that touch share a building_id, as an Autark map draws them as one building. Sheds, garages, carports and other small structures are left out.",
+      "options": { "layers": ["buildings"] }
+    },
+    {
+      "id": "roads", "name": "Roads", "kind": "table", "format": "geojson",
+      "description": "Streets, roads, tracks and paths, as lines, without footways, cycleways, steps or pedestrian streets.",
+      "options": { "layers": ["roads"] }
+    },
+    {
+      "id": "parks", "name": "Parks", "kind": "table", "format": "geojson",
+      "description": "Parks, playgrounds, woods, grass, cemeteries and other green space.",
+      "options": { "layers": ["parks"] }
+    },
+    {
+      "id": "water", "name": "Water", "kind": "table", "format": "geojson",
+      "description": "Lakes, ponds, reservoirs, river areas and wetlands.",
+      "options": { "layers": ["water"] }
+    },
+    {
+      "id": "surface", "name": "Surface", "kind": "table", "format": "geojson",
+      "description": "The land inside the area: the box, or the named areas' outline.",
+      "options": { "layers": ["surface"] }
+    },
+    {
+      "id": "points-of-interest", "name": "Points of interest", "kind": "table", "format": "geojson",
+      "description": "Places people visit: amenities, shops, tourism, leisure, offices, crafts, healthcare and historic sites, as points, lines and polygons.",
+      "options": { "tags": ["amenity=*", "craft=*", "healthcare=*", "historic=*", "leisure=*", "office=*", "shop=*", "tourism=*"] }
+    },
+    {
+      "id": "features-by-tag", "name": "Features by tag", "kind": "table", "format": "geojson",
+      "description": "The nodes, ways and multipolygons with any of the tags you enter, as points, lines and polygons.",
+      "options": {},
+      "parameters": [
+        {
+          "id": "tags", "type": "tags", "label": "Tags", "required": true,
+          "description": "Tags as key=value, such as amenity=school, or key=* for any value.",
+          "suggestions": ["amenity", "shop", "tourism", "leisure", "office", "craft", "healthcare", "historic", "highway", "railway", "public_transport", "building", "natural", "landuse", "waterway", "power", "man_made", "emergency", "sport", "cuisine"]
+        }
+      ]
+    },
+    {
+      "id": "all-layers", "name": "All layers", "kind": "table", "format": "geojson",
+      "description": "Buildings, roads, parks, water and surface, as one group of five datasets.",
+      "options": { "layers": ["buildings", "roads", "parks", "water", "surface"] }
+    }
+  ],
+  "createdAt": "2026-10-01T00:00:00Z",
+  "updatedAt": "2026-10-01T00:00:00Z"
+}

@@ -6,7 +6,7 @@ run going red for the platform it runs on rather than for a change:
 
 The committed baselines are captured by CI, on Linux. Rendered anywhere else,
 the same 1280x720 page differs by 4.5-7.7% of its pixels from text antialiasing
-alone (measured over all 86 captures in ``walkthroughs.py``, macOS,
+alone (measured over all 86 captures in ``walkthroughs/``, macOS,
 2026-09-15). Seven sat above 90% of their budget, one at 97%, so any restyle —
 or any developer on a different machine — produced a failure indistinguishable
 from a regression. That is the attribution cost #308 was filed about.
@@ -19,6 +19,9 @@ as declared, and this file pins that distinction.
 """
 from __future__ import annotations
 
+import pytest
+
+from .utils import MAX_DIFF_RATIO, save_workflow_test_screenshot
 from .walkthroughs import FULL_PAGE_DIFF_FLOOR, WALKTHROUGHS, Walkthrough
 
 
@@ -31,10 +34,6 @@ class TestTheFloor:
         scene = _scene(max_diff_ratio=0.03)
         assert scene.clip_selector is None
         assert scene.effective_max_diff_ratio == FULL_PAGE_DIFF_FLOOR
-
-    def test_a_looser_full_page_budget_is_left_alone(self):
-        # The floor raises; it never tightens. The 0.20 default stays 0.20.
-        assert _scene(max_diff_ratio=0.20).effective_max_diff_ratio == 0.20
 
     def test_a_clipped_capture_keeps_its_declared_budget(self):
         # Here the subject fills the frame, so a tight budget bites: this is
@@ -90,7 +89,33 @@ class TestTheRegistry:
                 f"wide enough to hide the regression it exists to catch"
             )
 
-    def test_the_floor_is_about_twice_the_measured_cross_platform_cost(self):
-        # Measured worst case was 7.66% (project-drawer-offers-delete). A floor
-        # at less than ~1.5x that is not headroom; far above it is not a budget.
-        assert 0.12 <= FULL_PAGE_DIFF_FLOOR <= 0.20
+    def test_the_floor_clears_the_measured_cross_platform_cost(self):
+        # Measured worst case was 7.66% (project-drawer-offers-delete).
+        assert 0.0766 < FULL_PAGE_DIFF_FLOOR <= MAX_DIFF_RATIO
+
+
+class TestTheCeiling:
+    """No comparison may let more than ``MAX_DIFF_RATIO`` of its pixels differ.
+
+    Two CI captures of the same screen differ by at most about 1.3%, so the
+    ceiling leaves room for run-to-run noise and none for a screen that changed.
+    """
+
+    def test_no_scene_is_compared_looser_than_the_ceiling(self):
+        loose = {
+            w.slug: w.effective_max_diff_ratio
+            for w in WALKTHROUGHS
+            if w.effective_max_diff_ratio > MAX_DIFF_RATIO
+        }
+        assert loose == {}
+
+    def test_the_floor_sits_under_the_ceiling(self):
+        # Otherwise flooring a full-page scene would lift it past the ceiling.
+        assert FULL_PAGE_DIFF_FLOOR <= MAX_DIFF_RATIO
+
+    def test_a_scene_that_declares_no_budget_gets_the_ceiling(self):
+        assert _scene().effective_max_diff_ratio == MAX_DIFF_RATIO
+
+    def test_a_comparison_asking_for_more_is_refused_before_it_touches_the_page(self):
+        with pytest.raises(ValueError, match="ceiling"):
+            save_workflow_test_screenshot(None, "x.json", test_name="t", max_diff_ratio=0.35)

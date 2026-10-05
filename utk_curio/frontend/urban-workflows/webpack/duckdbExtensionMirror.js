@@ -22,7 +22,7 @@
  *
  * The Node side needs none of this: duckdb-wasm keeps installed extensions
  * under `~/.duckdb/extensions/`, which the launcher seeds from the same
- * vendored file (`utk_curio/main.py::seed_duckdb_extensions`).
+ * vendored file (`utk_curio/cli/dependencies.py::seed_duckdb_extensions`).
  */
 
 const DUCKDB_EXTENSION_CDN = "https://extensions.duckdb.org/";
@@ -30,15 +30,19 @@ const DUCKDB_EXTENSION_CDN = "https://extensions.duckdb.org/";
 /**
  * The redirect, as source to prepend to duckdb's worker.
  *
- * `mirrorBase` is absolute because the worker runs from a blob-ish asset URL
- * and the backend that serves `/file/` is a different origin from the frontend.
+ * The mirror is the backend the page resolved, which autkDbDuckdbAssets.js
+ * hands the worker as `self.__curioBackendUrl`; `mirrorBase` is the fallback.
+ * Both are absolute because the worker runs from a blob URL and the backend
+ * that serves `/file/` can be a different origin from the frontend.
  */
 function buildPrelude(mirrorBase) {
   return `/* Curio (#318): DuckDB extensions come from this instance, not the internet. */
 (function () {
   if (typeof XMLHttpRequest !== "function") return;
   var CDN = ${JSON.stringify(DUCKDB_EXTENSION_CDN)};
-  var MIRROR = ${JSON.stringify(mirrorBase)};
+  var MIRROR = self.__curioBackendUrl
+    ? String(self.__curioBackendUrl).replace(/\\/+$/, "") + "/file/vendor/duckdb-extensions/"
+    : ${JSON.stringify(mirrorBase)};
   var open = XMLHttpRequest.prototype.open;
   var send = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function (method, url) {
@@ -68,12 +72,10 @@ function buildPrelude(mirrorBase) {
 }
 
 /**
- * Where this instance serves `vendor/duckdb-extensions/` from.
+ * Where a backend serves `vendor/duckdb-extensions/` from.
  *
  * The backend's `/file/<path>` route, the same one the Autark examples fetch
- * their `.osm.pbf` extracts through. `BACKEND_URL` is already baked into the
- * bundle at build time (see `check_install_build`'s stamp), so the worker gets
- * a URL that matches the instance it was built for.
+ * their `.osm.pbf` extracts through.
  */
 function mirrorBaseFor(backendUrl) {
   const root = String(backendUrl || "").replace(/\/+$/, "");

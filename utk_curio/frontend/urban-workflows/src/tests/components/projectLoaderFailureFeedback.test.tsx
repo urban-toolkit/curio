@@ -33,12 +33,13 @@ jest.mock("../../providers/FlowProvider", () => ({
     hydrateRestoredOutputs: jest.fn(),
     loadParsedTrill: jest.fn(),
     projectId: null,
+    attachLatestRun: jest.fn(),
   }),
 }));
 jest.mock("../../hook/useCode", () => ({
   useCode: () => ({ loadTrill: mockLoadTrill }),
 }));
-jest.mock("../../hook/useEnsureWorkflowDeps", () => ({
+jest.mock("../../providers/packages/useEnsureWorkflowDeps", () => ({
   useEnsureWorkflowDeps: () => jest.fn(),
 }));
 jest.mock("../../TrillGenerator", () => ({

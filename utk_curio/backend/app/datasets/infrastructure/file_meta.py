@@ -10,6 +10,11 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+#: JSON and GeoJSON are counted by parsing the whole document, so a file above
+#: this size is left uncounted rather than loaded into memory. CSV streams and
+#: has no such bound.
+MAX_PARSED_COUNT_BYTES = 256 * 1024 * 1024
+
 
 def count_file(path: Path, fmt: str) -> tuple[int | None, int | None]:
     """Return (row_count, feature_count) for a local dataset file.
@@ -19,6 +24,8 @@ def count_file(path: Path, fmt: str) -> tuple[int | None, int | None]:
     only the feature array length is returned as feature_count.
     """
     try:
+        if fmt in ("json", "geojson") and path.stat().st_size > MAX_PARSED_COUNT_BYTES:
+            return None, None
         if fmt == "csv":
             with path.open("r", encoding="utf-8-sig", newline="") as fh:
                 reader = csv.reader(fh)

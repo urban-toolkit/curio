@@ -1,12 +1,12 @@
-import { IPropagation, useFlowContext } from "../providers/FlowProvider";
-import { NodeType, ResolutionType, VisInteractionType } from "../constants";
-import { ICodeDataContent, ICodeData, INodeData, INode } from "../types";
+import { useFlowContext } from "../providers/FlowProvider";
+import { ICodeDataContent, INodeData } from "../types";
 import { useEffect, useRef, useState } from "react";
 import { formatDate, mapTypes } from "../utils/formatters";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { fetchData } from "../services/api";
 import { sandboxArtifactId } from "../utils/flowOutputRef";
 import { lazyRows } from "../utils/rowSource";
+import { copyForFlags } from "../utils/poolFlagCopy";
 
 const useTableData = ({ data }: { data: INodeData }) => {
   const [tabData, setTabData] = useState<any[]>([]);
@@ -40,7 +40,7 @@ const useTableData = ({ data }: { data: INodeData }) => {
         startTime,
         startTime,
         workflowNameRef.current,
-        NodeType.DATA_POOL + "-" + data.nodeId,
+        data.nodeId,
         mapTypes(typesInput),
         mapTypes(typesOuput),
         ""
@@ -60,51 +60,11 @@ const useTableData = ({ data }: { data: INodeData }) => {
     return lazyRows(parsedOutput);
   };
 
-  const customWidgetsCallback = (div: HTMLElement) => {
-    const labelBetween = document.createElement("label");
-    labelBetween.setAttribute("for", "betweenPlot");
-    labelBetween.style.marginRight = "5px";
-    labelBetween.textContent = "Conflict between visualizations: ";
-
-    const selectBetween = document.createElement("select");
-    selectBetween.setAttribute("name", "betweenPlot");
-    selectBetween.setAttribute("id", data.nodeId + "_select_between");
-
-    ["Overwrite", "Merge (AND)", "Merge (OR)"].forEach((optionText) => {
-      const option = document.createElement("option");
-      option.setAttribute("value", optionText.toUpperCase().replace(/\s/g, "_"));
-      option.textContent = optionText;
-      selectBetween.appendChild(option);
-    });
-
-    const br = document.createElement("br");
-
-    const labelIntra = document.createElement("label");
-    labelIntra.setAttribute("for", "intraPlots");
-    labelIntra.style.marginRight = "5px";
-    labelIntra.textContent = "Conflict inside visualization: ";
-
-    const selectIntra = document.createElement("select");
-    selectIntra.setAttribute("name", "intraPlots");
-    selectIntra.setAttribute("id", data.nodeId + "_select_intra");
-
-    ["Overwrite", "Merge (AND)", "Merge (OR)"].forEach((optionText) => {
-      const option = document.createElement("option");
-      option.setAttribute("value", optionText.toUpperCase().replace(/\s/g, "_"));
-      option.textContent = optionText;
-      selectIntra.appendChild(option);
-    });
-
-    div.appendChild(labelBetween);
-    div.appendChild(selectBetween);
-    div.appendChild(br);
-    div.appendChild(labelIntra);
-    div.appendChild(selectIntra);
-  };
-
-  const processDataAsync = async () => {
+  // `selectionEcho`: this run re-emits the same rows because of a selection
+  // (another pool's propagation), so linked charts highlight rather than redraw.
+  const processDataAsync = async (options?: { selectionEcho?: boolean }) => {
     try {
-      // Normalize input wrappers: handle merge outputs
+      // Normalize input wrappers: handle a bundle of several inputs
       let wrappers: any[] = [];
       if (data.input && typeof data.input === "object") {
         if (data.input.dataType === "outputs" && Array.isArray(data.input.data)) {
@@ -205,12 +165,11 @@ const useTableData = ({ data }: { data: INodeData }) => {
         }
       }
 
-      // Drop layers with no rows/features. autk-db 2.1.2 can hand the pool an
-      // empty or null-feature layer (e.g. a PBF area with no parks); the
+      // Drop layers with no rows/features. autk-db can hand the pool an empty
+      // or null-feature layer (e.g. a PBF area with no parks); the
       // geodataframe branch below iterates `data.features`, which throws on
       // null ("can't access property Symbol.iterator"), and an empty layer
-      // would otherwise show as a blank tab. 2.0.1 created empty tables that
-      // rendered nothing — keep that behavior by skipping empties here.
+      // would otherwise show as a blank tab.
       tabd = tabd.filter((item: any) => {
         if (!item) return false;
         if (item.dataType === 'geodataframe') {
@@ -224,7 +183,9 @@ const useTableData = ({ data }: { data: INodeData }) => {
       });
 
       tabd = tabd.map ((item) => {
-        let parsedInput = Object.assign({}, item);
+        // The flags go on a copy: an inline input is the upstream node's own
+        // object (utils/poolFlagCopy).
+        const parsedInput = copyForFlags(item);
         if(parsedInput.dataType == "dataframe") {
           let columns = Object.keys(parsedInput.data);
           let dfIndices = Object.keys(parsedInput.data[columns[0]]);
@@ -288,7 +249,7 @@ const useTableData = ({ data }: { data: INodeData }) => {
 
       // Build the downstream output exactly as the original DataPoolBox did:
       // send the fetched data object directly (no path attached) so downstream
-      // boxes like AUTK_MAP use the in-memory data rather than re-fetching from
+      // boxes like the Autark node use the in-memory data rather than re-fetching from
       // the server and losing the initialised 'interacted' field.
       let callbackOutput: any;
       let contentOutput: any;
@@ -305,7 +266,8 @@ const useTableData = ({ data }: { data: INodeData }) => {
       }
 
       if (callbackOutput !== null && data.outputCallback) {
-        data.outputCallback(data.nodeId, callbackOutput);
+        data.outputCallback(data.nodeId, callbackOutput,
+          options?.selectionEcho ? { selectionEcho: true } : undefined);
       }
 
       setTabData(tabd);
@@ -321,7 +283,6 @@ const useTableData = ({ data }: { data: INodeData }) => {
 
   return {
     createTableData,
-    customWidgetsCallback,
     processDataAsync,
     setActiveTab,
     activeTab,

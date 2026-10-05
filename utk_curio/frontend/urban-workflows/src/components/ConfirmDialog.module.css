@@ -79,9 +79,11 @@
     padding: 0 20px;
     height: var(--curio-input-height);
     border-radius: var(--curio-radius-md);
-    font-weight: 600;
     cursor: pointer;
     font: inherit;
+    /* After `font: inherit`, which resets the weight when it comes later
+       (#525). */
+    font-weight: 600;
     font-size: var(--curio-font-size-lg);
 }
 
@@ -95,7 +97,10 @@
 }
 
 .destructive {
-    background: var(--curio-danger);
+    /* White on --curio-danger (#ff6b6b) is 2.78:1; on the danger text colour
+       it is 5.44:1 (#525). The token itself stays: it is also a text colour
+       on a dark menu. */
+    background: var(--curio-danger-text);
     color: #fff;
 }
 
@@ -109,9 +114,9 @@
     padding: 0 20px;
     height: var(--curio-input-height);
     border-radius: var(--curio-radius-md);
-    font-weight: 500;
     cursor: pointer;
     font: inherit;
+    font-weight: 500;
     font-size: var(--curio-font-size-lg);
     color: var(--curio-text-primary);
 }

@@ -77,7 +77,7 @@ def install_refusal(user, *, noun: str = "packages") -> str | None:
     There used to be a third: nobody may on a hosted instance that cannot scope
     installs. That instance no longer exists. ``--deploy`` now requires isolated
     node execution and refuses to start without it
-    (``main.py::_refuse_unisolated_deploy``), so a signed-in user's install
+    (``cli/environment.py::_refuse_unisolated_deploy``), so a signed-in user's install
     always lands in their own overlay. The rule had an escape hatch
     (``--allow-shared-installs``) which went with it: a configuration nobody can
     boot needs no flag to permit it.
@@ -100,6 +100,85 @@ def install_refusal(user, *, noun: str = "packages") -> str | None:
             f"guest shares one account. Sign in with an account to install one."
         )
 
+    return None
+
+
+def settings_refusal(user) -> str | None:
+    """Why *user* may not change the account's catalog settings, or ``None``.
+
+    The same two parts as :func:`install_refusal`: a local run always may, and
+    a hosted guest may not, because every guest shares one account and one
+    visitor's keyword types would become every visitor's.
+    """
+    from utk_curio.backend import config
+
+    if config.CURIO_NO_AUTH or user is None:
+        return None
+    if getattr(user, "is_guest", False):
+        return (
+            "Changing catalog settings is not available for guest users, because "
+            "every guest shares one account. Sign in with an account to change them."
+        )
+    return None
+
+
+def run_refusal(user) -> str | None:
+    """Why *user* may not run a dataflow on the server, or ``None``.
+
+    A run on the server runs the saved dataflow and records its outputs in it,
+    so it needs the right to save one. A hosted guest has none and runs in the
+    browser; without ``--deploy`` the shared guest is the one local user.
+    """
+    from utk_curio.backend import config
+
+    if user is None or config.CURIO_NO_AUTH:
+        return None
+    if getattr(user, "is_guest", False):
+        return (
+            "Runs on the server are not available to guests on this Curio, because "
+            "a guest cannot save a dataflow. Sign in with an account to use them."
+        )
+    return None
+
+
+def llm_config_refusal(user) -> str | None:
+    """Why *user* may not change LLM configurations, or ``None``.
+
+    A hosted guest may not: every visitor shares the one guest account, so it
+    runs on the guest configuration the operator set. Without ``--deploy`` the
+    shared guest is the one local user and owns its configurations, like any
+    account.
+    """
+    from utk_curio.backend import config
+
+    if user is None or config.CURIO_NO_AUTH:
+        return None
+    if getattr(user, "is_guest", False):
+        return (
+            "LLM configurations are not available to guests on this Curio, because "
+            "every guest shares one account and uses the model its operator set. "
+            "Sign in with an account to add your own."
+        )
+    return None
+
+
+def token_refusal(user, noun: str) -> str | None:
+    """Why *user* may not save a personal token (*noun*, such as "a HuggingFace
+    token"), or ``None``.
+
+    A hosted guest may not: every visitor shares the one guest account, so a
+    token saved on it would be everyone's. Without ``--deploy`` the shared
+    guest is the one local user and saves its tokens like any account.
+    """
+    from utk_curio.backend import config
+
+    if user is None or config.CURIO_NO_AUTH:
+        return None
+    if getattr(user, "is_guest", False):
+        return (
+            f"Guests on this Curio cannot save {noun}, because every guest shares "
+            "one account. Sign in with an account to save your own."
+        )
     return None
 
 

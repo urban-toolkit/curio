@@ -27,8 +27,7 @@ flowchart LR
 ## Data
 
 This example reads its inputs from the [Data Catalog](../DATA-CATALOG.md). Each loader node
-addresses a dataset by id via `curio_dataset_path("<id>")` rather than by a repo-relative path,
-so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
+addresses a dataset by id via `curio_data_path("<id>")`, so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
 
 | Dataset | Id | Format | Size |
 |---|---|---|---|
@@ -214,7 +213,6 @@ Load the CSV → categorise `AVERAGE STORIES` into `1 / 2 / 3-5 / 6-10 / 11+ sto
           "type": "nominal",
           "legend": {
             "orient": "right",
-            "anchor": "middle",
             "direction": "vertical"
           }
         },
@@ -259,7 +257,6 @@ Load the CSV → categorise `AVERAGE STORIES` into `1 / 2 / 3-5 / 6-10 / 11+ sto
           "type": "nominal",
           "legend": {
             "orient": "right",
-            "anchor": "middle",
             "direction": "vertical"
           }
         },
@@ -270,10 +267,7 @@ Load the CSV → categorise `AVERAGE STORIES` into `1 / 2 / 3-5 / 6-10 / 11+ sto
         ]
       }
     }
-  ],
-  "config": {
-    "concat": { "align": "center" }
-  }
+  ]
 }
 ```
 

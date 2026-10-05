@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useEffect, useMemo } from "react";
 import { CatalogPublishPill } from "../../../packages/CatalogPublishPill";
 import { ForkFamilyPicker } from "../../../packages/ForkFamilyPicker";
-import { FORK_SELECTION_SESSION_PREFIX, resolveForkFamilySelectionKey } from "../../../../utils/forkPackageLineage";
+import { FORK_SELECTION_SESSION_PREFIX, resolveForkFamilySelectionKey } from "../../../../services/packages";
 import { forkFamilyRootDisplayName, type PackagePaletteGroup } from "./model";
 import { InstalledPackageAccordion } from "./InstalledPackageAccordion";
 import packageStyles from "./ToolsMenuPackagePalette.module.css";

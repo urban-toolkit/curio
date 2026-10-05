@@ -1,28 +1,39 @@
 {
   "dataflow": {
+    "categories": {
+      "city": [
+        "Chicago"
+      ],
+      "topic": [
+        "Greenery"
+      ],
+      "complexity": [
+        "Advanced"
+      ]
+    },
     "nodes": [
       {
         "id": "5988175e-84aa-4964-84de-aba7d55cf122",
-        "type": "curio.streetvision/street-view-fetcher",
+        "type": "curio.builtin/data-loading",
         "x": 0,
-        "y": 0,
-        "content": "",
+        "y": 322,
+        "content": "photos = curio_load_collection(\"data.curio.mapillary-sample\")\n\nreturn photos\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Reproduce the Chicago Greenery case study: type 'Lincoln Park, Chicago' (bbox -87.66,41.91 → -87.62,41.94), set limit 20 (or up to 100 to match the paper), Verify Coverage, then Fetch Images.",
+        "goal": "Load the street photos: 40 Mapillary panoramas around Lincoln Park, one row per photo, with its photographer, capture time and place.",
         "metadata": {
           "keywords": []
         }
       },
       {
         "id": "4067fb98-3ed5-497a-97a5-41a98ce1085b",
-        "type": "curio.streetvision/hf-cv-inference",
+        "type": "curio.streetvision/image-segmentation",
         "x": 645,
-        "y": 0,
-        "content": "",
+        "y": 108,
+        "content": "\"\"\"Label every pixel of each image with a Model Catalog model.\n\nThe input is a collection's rows, each with a ``path``, as a Data Loading\nnode gives them for street-level images from the Data or Discovery Catalog.\nTo use another model, drag it from the Model Catalog onto this node.\n\n``classes`` are the model's labels to report; each becomes a\n``<class>_pct`` column, its share of the image's pixels in percent. ``None``\nreports every label.\n``dominant_class`` and ``dominant_pct`` name the one of them covering most,\nand ``overlay_url`` shows the image tinted by class.\n\"\"\"\n\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nclasses = [\"vegetation\", \"terrain\", \"sky\", \"road\", \"sidewalk\", \"building\"]\n\nreturn curio_segment(arg, model, classes)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Recommended model: nvidia/segformer-b2-finetuned-cityscapes-1024-1024 (SegFormer B2 Cityscapes, the one used in the Chicago Greenery case study). Recommended classes: vegetation, road, building, sidewalk, sky. Then Run Inference.",
+        "goal": "Label every pixel of each photo with DDRNet23-Slim, the model that ships with Curio, and report the share of vegetation, terrain, sky, road, sidewalk and building in each.",
         "metadata": {
           "keywords": []
         }
@@ -31,11 +42,11 @@
         "id": "5d2ac264-58a5-431d-83cd-d6785c6fd176",
         "type": "curio.builtin/vis-simple",
         "x": 1290,
-        "y": 215,
+        "y": 322,
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Inspect the panoramas the model scored. Each card shows the street view beside its segmentation overlay, with that image's dominant class underneath.",
+        "goal": "Inspect the photos the model scored: each card shows the photo beside its overlay, tinted by class, with the dominant class underneath.",
         "metadata": {
           "keywords": []
         }
@@ -44,8 +55,8 @@
         "id": "408e6f23-7b85-4470-9c91-f0c58c5769dd",
         "type": "curio.builtin/data-loading",
         "x": 0,
-        "y": 430,
-        "content": "import geopandas as gpd\n\n# Chicago official neighborhoods boundary (98 polygons, `pri_neigh` names),\n# vendored in the Data Catalog so this example runs offline. Any polygon\n# FeatureCollection with a string name property works here.\ndataset_path = curio_dataset_path(\"data.cityofchicago.neighborhoods\")\ngdf = gpd.read_file(dataset_path)\n\n# __dict__, not plain assignment: pandas warns about creating a column via\n# a new attribute name, and that warning lands in this node's output with\n# an absolute site-packages path. NOT gdf.attrs, and do not just delete the\n# line: the sandbox reads this name (sandbox/util/parsers.py) and both of\n# those drop it silently from the emitted FeatureCollection.\ngdf.__dict__[\"metadata\"] = {\"name\": \"chicago_neighborhoods\"}\nreturn gdf\n",
+        "y": 752,
+        "content": "import geopandas as gpd\n\n# Chicago official neighborhoods boundary (98 polygons, `pri_neigh` names),\n# vendored in the Data Catalog so this example runs offline. Any polygon\n# FeatureCollection with a string name property works here.\ngdf = curio_load_data(\"data.cityofchicago.neighborhoods\")\n\n# __dict__, not plain assignment: pandas warns about creating a column via\n# a new attribute name, and that warning lands in this node's output with\n# an absolute site-packages path. NOT gdf.attrs, and do not just delete the\n# line: the sandbox reads this name (sandbox/util/parsers.py) and both of\n# those drop it silently from the emitted FeatureCollection.\ngdf.__dict__[\"metadata\"] = {\"name\": \"chicago_neighborhoods\"}\nreturn gdf\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Load a polygon GeoDataFrame with a `pri_neigh` column (Chicago's neighborhood name field).",
@@ -57,11 +68,11 @@
         "id": "1cbd2725-458f-4617-86cd-2fd9d190f908",
         "type": "curio.builtin/data-transformation",
         "x": 645,
-        "y": 430,
-        "content": "# Spatial Join hardcodes the polygon tag column to `name`. Chicago's file uses\n# `pri_neigh`, so rename it here. For NYC boroughs use `BoroName` -> `name`,\n# for OSM admin polygons use `name` directly (this step becomes a no-op).\nimport geopandas as gpd\n\ngdf = arg.rename(columns={\"pri_neigh\": \"name\"})\n# __dict__, not plain assignment: pandas warns about creating a column via\n# a new attribute name, and that warning lands in this node's output with\n# an absolute site-packages path. NOT gdf.attrs, and do not just delete the\n# line: the sandbox reads this name (sandbox/util/parsers.py) and both of\n# those drop it silently from the emitted FeatureCollection.\ngdf.__dict__[\"metadata\"] = {\"name\": \"chicago_neighborhoods\"}\nreturn gdf\n",
+        "y": 538,
+        "content": "# Spatial Join tags each photo with the polygon column its body names,\n# `neighborhood` here. Chicago's file calls it `pri_neigh`. Not `name`: a\n# photo already has one, its file name.\nimport geopandas as gpd\n\ngdf = arg.rename(columns={\"pri_neigh\": \"neighborhood\"})\n# __dict__, not plain assignment: pandas warns about creating a column via\n# a new attribute name, and that warning lands in this node's output with\n# an absolute site-packages path. NOT gdf.attrs, and do not just delete the\n# line: the sandbox reads this name (sandbox/util/parsers.py) and both of\n# those drop it silently from the emitted FeatureCollection.\ngdf.__dict__[\"metadata\"] = {\"name\": \"chicago_neighborhoods\"}\nreturn gdf\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Rename the polygon name field to `name` so Spatial Join picks it up.",
+        "goal": "Rename the neighborhood column from pri_neigh to neighborhood, the polygon column both Spatial Joins tag with.",
         "metadata": {
           "keywords": []
         }
@@ -70,13 +81,16 @@
         "id": "7541416c-a960-4d64-b7f8-175b8978c563",
         "type": "curio.builtin/spatial-join",
         "x": 1935,
-        "y": 240,
+        "y": 372,
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Tag each image point with the polygon it falls in. Wire Simple View to in_points (top) and Data Transformation to in_polygons (bottom).",
+        "goal": "Tag each photo point with the neighborhood it falls in. Wire Simple View to in_points (top) and Data Transformation to in_polygons (bottom).",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "spatialJoin": {
+            "nameProperty": "neighborhood"
+          }
         }
       },
       {
@@ -84,10 +98,10 @@
         "type": "curio.builtin/vis-vega",
         "x": 2515,
         "y": 0,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 600,\n  \"height\": 600,\n  \"projection\": {\"type\": \"mercator\"},\n  \"layer\": [\n    {\n      \"transform\": [{\"filter\": \"datum.geometry != null\"}],\n      \"mark\": {\"type\": \"geoshape\", \"stroke\": \"#888\", \"strokeWidth\": 0.4},\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"name_dominant_class\",\n          \"type\": \"nominal\",\n          \"scale\": {\n            \"domain\": [\"road\", \"sidewalk\", \"building\", \"vegetation\", \"sky\", \"car\"],\n            \"range\":  [\"#4A90D9\", \"#8B5CF6\", \"#2ECC71\", \"#F5A623\", \"#3498DB\", \"#2C3E50\"]\n          },\n          \"legend\": {\"title\": \"Dominant class\"}\n        },\n        \"tooltip\": [\n          {\"field\": \"name\", \"title\": \"neighborhood\"},\n          {\"field\": \"name_dominant_class\", \"title\": \"dominant\"},\n          {\"field\": \"name_dominant_pct\",   \"title\": \"avg %\"}\n        ]\n      }\n    }\n  ]\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 600,\n  \"height\": 600,\n  \"projection\": {\"type\": \"mercator\"},\n  \"layer\": [\n    {\n      \"transform\": [{\"filter\": \"datum.geometry != null\"}],\n      \"mark\": {\"type\": \"geoshape\", \"stroke\": \"#888\", \"strokeWidth\": 0.4},\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"neighborhood_dominant_class\",\n          \"type\": \"nominal\",\n          \"scale\": {\n            \"domain\": [\"road\", \"sidewalk\", \"building\", \"vegetation\", \"sky\", \"terrain\"],\n            \"range\":  [\"#4A90D9\", \"#8B5CF6\", \"#2ECC71\", \"#F5A623\", \"#3498DB\", \"#2C3E50\"]\n          },\n          \"legend\": {\"title\": \"Dominant class\"}\n        },\n        \"tooltip\": [\n          {\"field\": \"neighborhood\", \"title\": \"neighborhood\"},\n          {\"field\": \"neighborhood_dominant_class\", \"title\": \"dominant\"},\n          {\"field\": \"neighborhood_dominant_pct\",   \"title\": \"avg %\"}\n        ]\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Polygon map: each neighborhood colored by its dominant detected class.",
+        "goal": "Map of the photos: each colored by the dominant class of its neighborhood.",
         "metadata": {
           "keywords": []
         }
@@ -97,10 +111,65 @@
         "type": "curio.builtin/vis-vega",
         "x": 2515,
         "y": 430,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 400,\n  \"height\": {\"step\": 16},\n  \"transform\": [\n    {\"filter\": \"datum.name != null\"},\n    {\n      \"aggregate\": [{\"op\": \"count\", \"as\": \"image_count\"}],\n      \"groupby\": [\"name\", \"dominant_class\"]\n    }\n  ],\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"y\": {\"field\": \"name\", \"type\": \"nominal\", \"sort\": \"-x\", \"title\": null},\n    \"x\": {\"field\": \"image_count\", \"type\": \"quantitative\", \"title\": \"images\"},\n    \"color\": {\n      \"field\": \"dominant_class\",\n      \"type\": \"nominal\",\n      \"scale\": {\n        \"domain\": [\"road\", \"sidewalk\", \"building\", \"vegetation\", \"sky\", \"car\"],\n        \"range\":  [\"#4A90D9\", \"#8B5CF6\", \"#2ECC71\", \"#F5A623\", \"#3498DB\", \"#2C3E50\"]\n      }\n    }\n  }\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 400,\n  \"height\": {\"step\": 16},\n  \"transform\": [\n    {\"filter\": \"datum.neighborhood != null\"},\n    {\n      \"aggregate\": [{\"op\": \"count\", \"as\": \"image_count\"}],\n      \"groupby\": [\"neighborhood\", \"dominant_class\"]\n    }\n  ],\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"y\": {\"field\": \"neighborhood\", \"type\": \"nominal\", \"sort\": \"-x\", \"title\": null},\n    \"x\": {\"field\": \"image_count\", \"type\": \"quantitative\", \"title\": \"images\"},\n    \"color\": {\n      \"field\": \"dominant_class\",\n      \"type\": \"nominal\",\n      \"scale\": {\n        \"domain\": [\"road\", \"sidewalk\", \"building\", \"vegetation\", \"sky\", \"terrain\"],\n        \"range\":  [\"#4A90D9\", \"#8B5CF6\", \"#2ECC71\", \"#F5A623\", \"#3498DB\", \"#2C3E50\"]\n      }\n    }\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Per-neighborhood image count, segmented by modal dominant class.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "b7d41c2e-5a8f-4c61-9e0b-2f3a6d9c8e14",
+        "type": "curio.streetvision/image-segmentation",
+        "x": 645,
+        "y": 968,
+        "content": "\"\"\"The same photos, with a model from Hugging Face.\n\nAdd one in the Discovery Catalog (Hugging Face models, for example\nopenmmlab/upernet-convnext-tiny), then drag it from the Model Catalog onto\nthis node. Until then it runs DDRNet23-Slim, the model that ships with Curio.\n\"\"\"\n\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nclasses = None  # every class the model names\n\nreturn curio_segment(arg, model, classes)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Run a Hugging Face model on the same photos: add it from the Discovery Catalog, then drag it from the Model Catalog onto this node.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c3e85a7f-1d2b-4f90-8a6c-5b7e9d0f2a31",
+        "type": "curio.builtin/vis-simple",
+        "x": 1290,
+        "y": 752,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Compare the second model's overlays with the first's.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "d4f19b2e-6c3a-4e85-b7d0-9a1e2f3c4b56",
+        "type": "curio.builtin/spatial-join",
+        "x": 1935,
+        "y": 752,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Tag the second model's photo points with their neighborhood. Wire Simple View to in_points (top) and Data Transformation to in_polygons (bottom).",
+        "metadata": {
+          "keywords": [],
+          "spatialJoin": {
+            "nameProperty": "neighborhood"
+          }
+        }
+      },
+      {
+        "id": "e5a27c3f-8d4b-4f16-a9e2-0b3c4d5e6f78",
+        "type": "curio.builtin/vis-vega",
+        "x": 2515,
+        "y": 860,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 400,\n  \"height\": {\"step\": 16},\n  \"transform\": [\n    {\"filter\": \"datum.neighborhood != null\"},\n    {\n      \"aggregate\": [{\"op\": \"count\", \"as\": \"image_count\"}],\n      \"groupby\": [\"neighborhood\", \"dominant_class\"]\n    }\n  ],\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"y\": {\"field\": \"neighborhood\", \"type\": \"nominal\", \"sort\": \"-x\", \"title\": null},\n    \"x\": {\"field\": \"image_count\", \"type\": \"quantitative\", \"title\": \"images\"},\n    \"color\": {\"field\": \"dominant_class\", \"type\": \"nominal\", \"title\": \"Dominant class\"}\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Per-neighborhood image count by the second model's dominant class, in whatever classes that model names.",
         "metadata": {
           "keywords": []
         }
@@ -155,10 +224,45 @@
         "sourceHandle": "out",
         "target": "1aa27f1a-5ed7-4872-a413-ce6fd1eb2c6b",
         "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-5988175e-84aa-4964-84de-aba7d55cf122out-b7d41c2e-5a8f-4c61-9e0b-2f3a6d9c8e14in",
+        "source": "5988175e-84aa-4964-84de-aba7d55cf122",
+        "sourceHandle": "out",
+        "target": "b7d41c2e-5a8f-4c61-9e0b-2f3a6d9c8e14",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-b7d41c2e-5a8f-4c61-9e0b-2f3a6d9c8e14out-c3e85a7f-1d2b-4f90-8a6c-5b7e9d0f2a31in",
+        "source": "b7d41c2e-5a8f-4c61-9e0b-2f3a6d9c8e14",
+        "sourceHandle": "out",
+        "target": "c3e85a7f-1d2b-4f90-8a6c-5b7e9d0f2a31",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-c3e85a7f-1d2b-4f90-8a6c-5b7e9d0f2a31out-d4f19b2e-6c3a-4e85-b7d0-9a1e2f3c4b56in_points",
+        "source": "c3e85a7f-1d2b-4f90-8a6c-5b7e9d0f2a31",
+        "sourceHandle": "out",
+        "target": "d4f19b2e-6c3a-4e85-b7d0-9a1e2f3c4b56",
+        "targetHandle": "in_points"
+      },
+      {
+        "id": "reactflow__edge-1cbd2725-458f-4617-86cd-2fd9d190f908out-d4f19b2e-6c3a-4e85-b7d0-9a1e2f3c4b56in_polygons",
+        "source": "1cbd2725-458f-4617-86cd-2fd9d190f908",
+        "sourceHandle": "out",
+        "target": "d4f19b2e-6c3a-4e85-b7d0-9a1e2f3c4b56",
+        "targetHandle": "in_polygons"
+      },
+      {
+        "id": "reactflow__edge-d4f19b2e-6c3a-4e85-b7d0-9a1e2f3c4b56out-e5a27c3f-8d4b-4f16-a9e2-0b3c4d5e6f78in",
+        "source": "d4f19b2e-6c3a-4e85-b7d0-9a1e2f3c4b56",
+        "sourceHandle": "out",
+        "target": "e5a27c3f-8d4b-4f16-a9e2-0b3c4d5e6f78",
+        "targetHandle": "in"
       }
     ],
     "name": "Street-level computer vision",
-    "description": "curio.streetvision@1 Fetcher to HF Inference to Simple View to Spatial Join to Vega-Lite polygons + bars.",
+    "description": "Mapillary photos to Image Segmentation (DDRNet, shipped) to Simple View to Spatial Join to Vega-Lite polygons + bars; and the same photos through a Hugging Face model to its own Spatial Join and bars.",
     "task": "",
     "timestamp": 1778306678524,
     "provenance_id": "Street-level computer vision",
@@ -173,6 +277,14 @@
         "producerNodeId": null,
         "consumerNodeIds": [],
         "installedAt": "2026-09-03T00:00:00Z"
+      },
+      {
+        "datasetId": "data.curio.mapillary-sample",
+        "dirName": "data.curio.mapillary-sample@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-01T00:00:00Z"
       }
     ]
   }

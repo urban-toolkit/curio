@@ -29,7 +29,7 @@ function activeLabels(container: HTMLElement): string[] {
 }
 
 describe('AppSectionTabs', () => {
-  test('renders the six sections as sibling links', () => {
+  test('renders the seven sections as sibling links', () => {
     const { getByRole } = renderAt('/projects');
 
     const nav = getByRole('navigation', { name: 'Main sections' });
@@ -43,8 +43,9 @@ describe('AppSectionTabs', () => {
       ['Node Catalog', '/catalog/nodes'],
       ['Data Catalog', '/catalog/data'],
       ['Agent Catalog', '/catalog/agents'],
-      ['Data Lake Catalog', '/catalog/lakes'],
-      ['Monitor', '/monitor'],
+      ['Discovery Catalog', '/catalog/discovery'],
+      ['Model Catalog', '/catalog/models'],
+      ['Scenario Catalog', '/catalog/scenarios'],
     ]);
   });
 
@@ -52,11 +53,18 @@ describe('AppSectionTabs', () => {
     ['/projects', 'Projects'],
     ['/catalog/nodes', 'Node Catalog'],
     ['/catalog/data', 'Data Catalog'],
-    ['/catalog/lakes', 'Data Lake Catalog'],
-    ['/monitor', 'Monitor'],
+    ['/catalog/discovery', 'Discovery Catalog'],
+    ['/catalog/models', 'Model Catalog'],
+    ['/catalog/scenarios', 'Scenario Catalog'],
   ])('%s marks exactly %s active', (path, label) => {
     const { container } = renderAt(path);
     expect(activeLabels(container)).toEqual([label]);
+  });
+
+  test('/monitor marks no tab active', () => {
+    // Monitor is a top-bar link (globalPageHeader.test.tsx), not a section.
+    const { container } = renderAt('/monitor');
+    expect(activeLabels(container)).toEqual([]);
   });
 
   test('a dataset detail route keeps Data Catalog active', () => {
@@ -66,24 +74,24 @@ describe('AppSectionTabs', () => {
     expect(activeLabels(container)).toEqual(['Data Catalog']);
   });
 
-  test('a portal detail route keeps Data Lake Catalog active', () => {
-    // Same reason the Data Catalog link is not `end`: /catalog/lakes/:sourceDir
+  test('a portal detail route keeps Discovery Catalog active', () => {
+    // Same reason the Data Catalog link is not `end`: /catalog/discovery/:sourceDir
     // is a page WITHIN that section, so the tab has to stay lit on it.
-    const { container } = renderAt('/catalog/lakes/lake.uk.data-gov@1');
-    expect(activeLabels(container)).toEqual(['Data Lake Catalog']);
+    const { container } = renderAt('/catalog/discovery/source.uk.data-gov@1');
+    expect(activeLabels(container)).toEqual(['Discovery Catalog']);
   });
 
-  test('the Monitor tab is unconditional', () => {
-    // It is deliberately not gated on deploy mode: the monitor exists on every
-    // instance. This renders with no provider at all, so if someone later
-    // gates the tab on context state, this fails rather than silently hiding
-    // the page on a laptop.
-    const { getByRole } = renderAt('/projects');
-    const nav = getByRole('navigation', { name: 'Main sections' });
-    expect(
-      Array.from(nav.querySelectorAll('a')).some(
-        (a) => a.getAttribute('href') === '/monitor'
-      )
-    ).toBe(true);
+  test('a model detail route keeps Model Catalog active', () => {
+    // /catalog/models/:modelId is the Model Catalog with that model's details
+    // open, so its link is not `end` either.
+    const { container } = renderAt('/catalog/models/model.curio.ddrnet23-slim');
+    expect(activeLabels(container)).toEqual(['Model Catalog']);
+  });
+
+  test('a scenario detail route keeps Scenario Catalog active', () => {
+    // /catalog/scenarios/:projectId/:scenarioId is the Scenario Catalog with
+    // that scenario's details open.
+    const { container } = renderAt('/catalog/scenarios/p1/s1');
+    expect(activeLabels(container)).toEqual(['Scenario Catalog']);
   });
 });

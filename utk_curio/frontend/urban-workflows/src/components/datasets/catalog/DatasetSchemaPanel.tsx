@@ -70,13 +70,18 @@ export const DatasetSchemaPanel: React.FC<DatasetSchemaPanelProps> = ({ schema }
                 <span className={`${styles.typeIcon} ${ICON_CLASS[kind]}`}>
                   {fieldIconGlyph(kind)}
                 </span>
-                <span className={styles.fieldName}>{field.name}</span>
+                <span className={styles.fieldName} title={field.name}>{field.name}</span>
                 {isPrimaryKeyField(field, sourceIndex >= 0 ? sourceIndex : index, fields) ? (
                   <span className={styles.pkBadge}>PK</span>
                 ) : null}
               </div>
               <span className={styles.typeCell}>{normalizeFieldType(field.type)}</span>
-              <span className={styles.nullCell}>{field.nullable ? "null" : ""}</span>
+              <span
+                className={styles.nullCell}
+                title={field.nullable === undefined ? "Not known: no nulls in the rows read" : undefined}
+              >
+                {field.nullable ? "null" : ""}
+              </span>
             </div>
           );
         })}

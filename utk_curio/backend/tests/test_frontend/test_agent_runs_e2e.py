@@ -2,7 +2,7 @@
 
 The catalog ships a roster of built-in agents and, until this module, nothing
 proved that any *given* one of them could be installed, attached and actually
-run. ``test_agents/test_routes.py`` covers the run loop richly but in-process
+run. ``test_agents/test_routes_turns.py`` covers the run loop richly but in-process
 and for a handful of coordinates; ``test_agent_catalog.py`` covers the drawer
 and the palette but never runs a turn. The gap was per-agent, end to end.
 
@@ -34,10 +34,11 @@ import re
 
 import pytest
 
-from utk_curio.backend.app.agents import builtin
+from utk_curio.backend.app.agents.domain import builtin
 
 from .utils import (
     api_json,
+    captured_agent_offers,
     captured_agent_prompts,
     captured_system_prompt,
     require_project_page,
@@ -58,22 +59,23 @@ CODE_NODE_ID = "agent-e2e-code"
 # really open sockets (app/agents/egress.py), and agent.node-researcher and
 # agent.researcher both declare a local read tool as well, so nothing is lost.
 #
-# datalake.search is absent for the same reason, with one qualification worth
-# knowing: this harness exports CURIO_DATALAKE_FIXTURES, so in THIS stack it
+# discovery.search is absent for the same reason, with one qualification worth
+# knowing: this harness exports CURIO_DISCOVERY_FIXTURES, so in THIS stack it
 # would answer from the recorded corpus rather than a portal. It stays out
 # anyway, because the safety would then depend on a harness detail rather than
-# on the tool, and agent.dataset-finder declares datalake.sources too - which
+# on the tool, and agent.dataset-finder declares discovery.sources too - which
 # reads manifests off disk and is safe unconditionally.
 SAFE_READ_TOOLS = (
     "dataflow.read", "node.read", "node.runtime.read", "packages.catalog",
-    "datalake.sources",
+    "discovery.sources",
 )
 
 # Mutate tools whose mint needs only what a test can state up front. The other
 # mutate contracts (dataset.install, package.install, package.draft.apply,
 # node.template.create) each need a real catalog row or, for the draft, a run of
 # the isolated build service; their mints are covered in-process by
-# test_agents/test_routes.py. An agent declaring only those falls through to the
+# test_agents/test_routes_turns.py and test_agents/test_routes_proposals.py. An
+# agent declaring only those falls through to the
 # read-tool leg below rather than getting a mint assertion that would be more
 # about fixture plumbing than about the agent.
 # Ordered MOST specific first, because an agent that declares several gets the
@@ -234,7 +236,12 @@ def _scripted_replies(spec: builtin.BuiltinAgentSpec) -> tuple[str, str | None, 
 
 # ── the roster ───────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("spec", builtin.BUILTIN_AGENTS, ids=_spec_id)
+#: The catalog cards: the internal built-ins run only as delegates, so they
+#: are never installed or attached.
+_CARDS = [s for s in builtin.BUILTIN_AGENTS if s.in_catalog]
+
+
+@pytest.mark.parametrize("spec", _CARDS, ids=_spec_id)
 def test_agent_installs_attaches_and_runs(spec, current_server: str):
     """One built-in agent, all the way through: install, attach, run, persist.
 
@@ -385,8 +392,179 @@ def test_the_roster_matches_the_served_catalog(current_server: str):
         )["items"]
         if row["provenance"]["trust"] == "built-in"
     }
-    covered = {f"{s.agent_id}@{builtin.BUILTIN_VERSION}" for s in builtin.BUILTIN_AGENTS}
+    covered = {f"{s.agent_id}@{builtin.BUILTIN_VERSION}" for s in _CARDS}
     assert served == covered, (
         f"served but not covered: {sorted(served - covered)}; "
         f"covered but not served: {sorted(covered - served)}"
     )
+
+
+# ── native tool calls ────────────────────────────────────────────────────────
+
+
+def _native_replies(spec: builtin.BuiltinAgentSpec) -> tuple[str, str | None, list]:
+    """The turn :func:`_scripted_replies` scripts, its request made as a native
+    call. Natively a plan is the call's arguments, with no dataflowPlan key."""
+    leg, tool = _characteristic(spec)
+    if leg == "prompts":
+        return _scripted_replies(spec)
+    if leg == "mint":
+        arguments = _mint_params(tool, spec)
+        arguments = arguments.get("dataflowPlan", arguments)
+    elif tool in ("node.read", "node.runtime.read"):
+        # A canvas attachment names no node, so the read has to.
+        arguments = {"nodeId": _mint_node_id(spec)}
+    else:
+        arguments = {}
+    follow_up = (
+        "I have proposed the change for your review." if leg == "mint"
+        else "That is what the project currently contains."
+    )
+    return leg, tool, [
+        {"text": VISIBLE_PROSE, "toolCalls": [{"name": tool, "arguments": arguments}]},
+        follow_up,
+    ]
+
+
+def _attached(
+    spec: builtin.BuiltinAgentSpec, current_server: str, suffix: str, project_spec: dict | None = None,
+) -> tuple[str, str, str]:
+    """A fresh account and project with *spec* installed and attached, on the
+    scripted provider: ``(token, agents base url, attachment id)``."""
+    coord = f"{spec.agent_id}@{builtin.BUILTIN_VERSION}"
+    session = stub_db_user(
+        current_server,
+        username=_username(spec.agent_id)[:32] + "_" + suffix,
+        name=f"{spec.name} E2E",
+        project_name=f"AgentRun {spec.name}",
+        project_spec=project_spec or _project_spec(),
+    )
+    token = session["token"]
+    base = f"{current_server}/api/agents/projects/{session['project']['id']}"
+    use_scripted_llm(current_server, token)
+    api_json(f"{base}/install", token, method="POST", payload={"coord": coord})
+    attachment = api_json(
+        f"{base}/attachments", token, method="POST",
+        payload={"coord": coord, "target": _target_for(spec)},
+    )
+    return token, base, attachment["attachmentId"]
+
+
+@pytest.mark.parametrize("spec", _CARDS, ids=_spec_id)
+def test_agent_runs_on_native_tools(spec, current_server: str):
+    """The same turn on an endpoint that calls tools natively: the run is
+    offered its tools instead of the fenced syntax, and the model's call does
+    what the fenced request does, its result answering the call."""
+    from utk_curio.backend.app.agents.application import tools
+
+    require_project_page()
+    require_user_auth()
+    token, base, attachment_id = _attached(spec, current_server, "native")
+    leg, tool, replies = _native_replies(spec)
+    script_agent_replies(current_server, *replies, native_tools=True)
+    run = api_json(
+        f"{base}/attachments/{attachment_id}/run", token, method="POST",
+        payload={"message": f"Hello {spec.name}, do your job."},
+    )
+    assert VISIBLE_PROSE in run["reply"], run["reply"]
+
+    system = captured_system_prompt(current_server)
+    assert '"toolRequest"' not in system and '"delegateRequest"' not in system, (
+        "a run on native tools was still taught the fenced request syntax"
+    )
+    offers = captured_agent_offers(current_server)
+    names = {tools.wire_name(t) for t in spec.tools} | ({"delegate"} if spec.delegates_to else set())
+    assert set(offers[0]["tools"]) <= names and offers[0]["toolChoice"] == "auto", offers[0]
+    if leg == "prompts":
+        return
+    assert tools.wire_name(tool) in offers[0]["tools"], offers[0]
+    result = captured_agent_prompts(current_server)[1][-1]
+    assert result["role"] == "tool" and result["is_error"] is False, result
+    if leg == "mint":
+        proposals = [p for p in run["content"] if p.get("type") == "proposal"]
+        assert proposals and proposals[0]["tool"] == tool, run["content"]
+    else:
+        assert result["name"] == tools.wire_name(tool)
+
+
+def test_a_refusal_of_native_tools_falls_back_to_the_fenced_protocol(current_server: str):
+    """An endpoint that refuses the tools it is offered (a 400) gets the same
+    round again on the fenced protocol, and the run completes."""
+    require_project_page()
+    require_user_auth()
+    spec = next(s for s in _CARDS if s.agent_id == "agent.chat-agent")
+    token, base, attachment_id = _attached(spec, current_server, "fallback")
+    script_agent_replies(
+        current_server,
+        {"error": "this model does not support tools", "status": 400},
+        _tail({"toolRequest": {"tool": "dataflow.read", "params": {}}}),
+        "That is what the project currently contains.",
+        native_tools=True,
+    )
+    run = api_json(
+        f"{base}/attachments/{attachment_id}/run", token, method="POST",
+        payload={"message": "What is in this project?"},
+    )
+    assert run["reply"].endswith("That is what the project currently contains.")
+    offers = captured_agent_offers(current_server)
+    assert offers[0]["tools"] and offers[1] == {"tools": [], "toolChoice": None, "replySchema": None}, offers
+    assert '"toolRequest"' in captured_system_prompt(current_server, call=1)
+    turns = api_json(f"{base}/attachments/{attachment_id}/session", token)["turns"]
+    pins = turns[-1]["execution"]["pins"]
+    assert pins["toolProtocol"] == "fenced" and pins["nativeToolsRefused"] is True
+
+
+# ── an Autark document under its schema ──────────────────────────────────────
+
+AUTK_NODE_ID = "agent-e2e-autk"
+
+#: Drawn from the node's own input, so no source is probed.
+AUTK_DOCUMENT = {
+    "compute": [{"dataRef": "input_0", "wglsFunction": "fn main() {}",
+                 "attributes": {"height": "properties.height"}, "outputColumnName": "shade"}],
+    "map": {"layerRefs": [{"dataRef": "input_0"}]},
+}
+
+
+def test_an_autark_document_is_written_under_its_schema(current_server: str):
+    """On an endpoint that takes a reply schema, the content the Node Builder
+    delegates for an Autark node is held to the Autark document's schema, and
+    the review minted at the node's own agent carries the document decoded
+    from that reply."""
+    from utk_curio.backend.app.agents.application import reply_schemas
+
+    require_project_page()
+    require_user_auth()
+    spec = next(s for s in _CARDS if s.agent_id == "agent.node-builder")
+    project = _project_spec()
+    project["dataflow"]["nodes"].append({
+        "id": AUTK_NODE_ID, "type": "curio.builtin/autk-grammar", "x": 1400, "y": 120,
+        "content": "", "in": "DEFAULT", "out": "DEFAULT", "goal": "map the points",
+        "metadata": {"keywords": []},
+    })
+    token, base, attachment_id = _attached(spec, current_server, "autkschema", project_spec=project)
+    api_json(f"{base}/install", token, method="POST",
+             payload={"coord": f"agent.node-content-builder@{builtin.BUILTIN_VERSION}"})
+    constrained, _ = reply_schemas.autk_reply_schema(reply_schemas.FLAVOR_STRICT).encode(AUTK_DOCUMENT)
+    script_agent_replies(
+        current_server,
+        _tail({"delegateRequest": {"capability": "node.content.generate",
+                                   "inputs": {"nodeId": AUTK_NODE_ID, "intent": "map the points"}}}),
+        json.dumps(constrained),
+        "I have proposed the document for your review.",
+        structured_output=True,
+    )
+    run = api_json(
+        f"{base}/attachments/{attachment_id}/run", token, method="POST",
+        payload={"message": "Write the map for the Autark node."},
+    )
+    offers = captured_agent_offers(current_server)
+    assert [o["replySchema"] for o in offers[:3]] == [None, "autk_grammar_document", None], offers
+    assert "held to the Autark document's schema" in captured_system_prompt(current_server, call=1)
+    (entry,) = [p for p in run["content"] if p.get("type") == "delegation"]
+    assert entry["status"] == "ok", entry
+    turns = api_json(f"{base}/attachments/{entry['attachmentId']}/session", token)["turns"]
+    proposals = [part for turn in turns for part in (turn.get("content") or [])
+                 if part.get("type") == "proposal"]
+    assert [p["tool"] for p in proposals] == ["node.content.write"], turns
+    assert json.loads(proposals[0]["preview"]) == AUTK_DOCUMENT

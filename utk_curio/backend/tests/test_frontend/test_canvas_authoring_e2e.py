@@ -37,6 +37,7 @@ from .utils import (
     REPO_ROOT,
     api_json,
     canvas_node_type,
+    close_tools_palette,
     connect_nodes,
     drag_to_canvas,
     open_tools_palette,
@@ -44,6 +45,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     run_node_and_wait,
+    save_dataflow,
     save_workflow_test_screenshot,
     set_node_code,
     require_owner_view,
@@ -56,7 +58,7 @@ if TYPE_CHECKING:
 # The CSV hub dataset: three rows, two numeric columns, and a loader that only
 # needs pandas. The geojson ones would drag geopandas and a geometry parse into
 # what is meant to be a test about the canvas.
-DATASET_ID = "data.urbanlab.acs-neighborhood-profile"
+DATASET_ID = "data.utk.acs-neighborhood-profile"
 DATASET_CSV = os.path.join(
     REPO_ROOT, "datasets", f"{DATASET_ID}@1", "data",
     "acs-neighborhood-profile.csv",
@@ -69,7 +71,7 @@ CARD = 'article:not([role="status"])'
 
 LOADER_TYPE = "curio.builtin/data-loading"
 TRANSFORM_TYPE = "curio.builtin/data-transformation"
-TRANSFORM_TILE = "#step-transformation"
+TRANSFORM_TILE = "#tile-data-transformation"
 
 # Node geometry: 525x350 at zoom 1 in a 1280x720 viewport. Anything closer than
 # ~600px apart horizontally overlaps, and the later node's body then covers the
@@ -202,13 +204,14 @@ def test_build_and_run_dataflow_from_scratch(
 
     # 2. LOADER NODE, by dragging the dataset onto the pane.
     loader_id = drag_to_canvas(page, dataset_row, at=POS_LOADER)
+    close_tools_palette(page, "datasets")
     assert _unversioned(canvas_node_type(page, loader_id)) == LOADER_TYPE, (
         "dropping a dataset must take the dataset branch of handleDrop and "
         "create a Data Loading node"
     )
     loader_code = read_node_code(page, loader_id)
-    assert "pd.read_csv" in loader_code and "return df" in loader_code, (
-        f"generated loader code does not read the CSV:\n{loader_code}"
+    assert "df = curio_load_data(" in loader_code and "return df" in loader_code, (
+        f"generated loader code does not load the CSV:\n{loader_code}"
     )
 
     # 3. SECOND NODE, from the built-in tool rail.
@@ -241,16 +244,10 @@ def test_build_and_run_dataflow_from_scratch(
     assert "Saved to file:" in transform_output, transform_output
 
     # 7. PERSIST. Server truth alongside the DOM: what the canvas built is what
-    #    a reload would get back.
-    file_btn = page.get_by_role("button", name=re.compile("File"))
-    file_btn.wait_for(state="visible", timeout=15000)
-    file_btn.click(force=True)
-    save_btn = page.get_by_role("button", name="Save dataflow", exact=True)
-    save_btn.wait_for(state="visible", timeout=10000)
-    save_btn.click()
-    # handleSave closes the File menu once the save round-trip completes, so the
-    # button going hidden is the signal that the write finished.
-    save_btn.wait_for(state="hidden", timeout=30000)
+    #    a reload would get back. File > Save dataflow, gated on the save's own
+    #    response: the menu can close before the PUT is answered, and a read
+    #    made then sees the spec from before the save (no nodes).
+    save_dataflow(page)
 
     spec = api_json(f"{current_server}/api/projects/{project_id}", token)["spec"]
     dataflow = spec["dataflow"]
@@ -269,11 +266,10 @@ def test_build_and_run_dataflow_from_scratch(
     # assertions above cover what each node computed; this covers what the
     # canvas *looks* like - most usefully that the edge is actually drawn, which
     # a store-level edge assertion cannot see. Compared at the suite's default
-    # tolerance (20% of pixels, 30/255 per channel), which is what absorbs the
-    # per-run "Saved to file: <timestamp>_<hash>" text in each output box.
-    # The helper fitViews first, so baseline and comparison share one viewport,
-    # and it writes the baseline on the first run if the file is absent.
+    # tolerance (10% of pixels, 30/255 per channel). The helper fitViews first,
+    # so baseline and comparison share one viewport.
     save_workflow_test_screenshot(
         page, "canvas-authoring", test_name="test_build_and_run_dataflow_from_scratch",
+        sweep_toasts=True,
     )
 

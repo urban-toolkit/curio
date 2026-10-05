@@ -1,6 +1,6 @@
 """Playwright E2E for #154: the UHVI package must be installable from the catalog.
 
-``ai.urbanlab.uhvi@1`` declared ``geopandas ^0.14`` (i.e. ``<1.0.0``) while the
+``ai.utk.uhvi@1`` declared ``geopandas ^0.14`` (i.e. ``<1.0.0``) while the
 mandatory ``curio.builtin@1`` declares ``>=1.1.3``. Disjoint, so the resolver
 correctly reported a conflict and the Install button stayed disabled - and it
 could never be resolved, because builtin is ``readOnly`` and refuses to
@@ -37,7 +37,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-PKG_DIR = "ai.urbanlab.uhvi@1"
+PKG_DIR = "ai.utk.uhvi@1"
 PKG_NAME = "Urban Heat Vulnerability Index"
 DRAWER_ROOT = '[data-curio-node-catalog-drawer="true"]'
 
@@ -98,7 +98,6 @@ def test_the_uhvi_package_installs_without_a_geopandas_conflict(
     )
     require_owner_view(page)
 
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
     page.get_by_role("button", name="Node Catalog", exact=True).click()
     drawer = _drawer(page)
 

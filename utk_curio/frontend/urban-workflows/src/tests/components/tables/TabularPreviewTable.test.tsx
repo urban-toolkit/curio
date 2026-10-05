@@ -88,6 +88,31 @@ describe('TabularPreviewTable still renders its content', () => {
     expect(container.querySelectorAll('tbody tr')).toHaveLength(10);
   });
 
+  test('a table showing fewer rows than it has says so (#517)', () => {
+    const { container, getByText } = render(
+      <TabularPreviewTable rows={wideRows(3, 150)} rowKeyPrefix="t" />,
+    );
+    expect(getByText('Showing first 100 of 150 rows')).toBeInTheDocument();
+    // Beside the table, not a row of it: consumers count the rows.
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(100);
+  });
+
+  test('a preview the server cut says how many rows the whole table has', () => {
+    const { getByText } = render(
+      <TabularPreviewTable rows={wideRows(3, 100)} totalRows={5000} rowKeyPrefix="t" />,
+    );
+    expect(getByText('Showing first 100 of 5,000 rows')).toBeInTheDocument();
+  });
+
+  test('a table shown whole says nothing about rows', () => {
+    const { queryByTestId, rerender } = render(
+      <TabularPreviewTable rows={wideRows(3, 3)} totalRows={3} rowKeyPrefix="t" />,
+    );
+    expect(queryByTestId('tabular-preview-row-notice')).toBeNull();
+    rerender(<TabularPreviewTable rows={wideRows(3, 3)} rowKeyPrefix="t" />);
+    expect(queryByTestId('tabular-preview-row-notice')).toBeNull();
+  });
+
   test('an empty frame renders no headers and does not throw', () => {
     const { container } = render(<TabularPreviewTable rows={[]} rowKeyPrefix="t" />);
     expect(container.querySelectorAll('thead th')).toHaveLength(0);
@@ -103,5 +128,39 @@ describe('TabularPreviewTable still renders its content', () => {
       />,
     );
     expect(getByText('Loading preview…')).toBeInTheDocument();
+  });
+});
+
+describe('TabularPreviewTable object cells (#443)', () => {
+  // The Data Pool builds its rows in the browser from a GeoJSON
+  // FeatureCollection, so a property holding a dict or a secondary geometry
+  // reaches the cell as an object. String(value) printed "[object Object]".
+  const cells = (rows: Record<string, unknown>[]) => {
+    const { container } = render(<TabularPreviewTable rows={rows} rowKeyPrefix="t" />);
+    return Array.from(container.querySelectorAll('tbody td')).map((td) => td.textContent);
+  };
+
+  test('a geometry reads as WKT, the way the server writes it', () => {
+    expect(cells([
+      { g: { type: 'Point', coordinates: [1, 2] } },
+      { g: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } },
+      { g: { type: 'MultiPoint', coordinates: [[0, 0], [1.5, 2]] } },
+    ])).toEqual([
+      'POINT (1 2)',
+      'POLYGON ((0 0, 1 0, 1 1, 0 0))',
+      'MULTIPOINT ((0 0), (1.5 2))',
+    ]);
+  });
+
+  test('any other object reads as JSON', () => {
+    expect(cells([
+      { a: { CurbRamp: 1.93, Obstacle: 0.5 } },
+      { a: [1, 2] },
+    ])).toEqual(['{"CurbRamp":1.93,"Obstacle":0.5}', '[1,2]']);
+  });
+
+  test('no cell says [object Object]', () => {
+    const text = cells([{ a: { x: 1 }, g: { type: 'LineString', coordinates: [[0, 0], [1, 1]] } }]);
+    expect(text.join(' ')).not.toContain('[object Object]');
   });
 });

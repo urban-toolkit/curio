@@ -17,6 +17,7 @@ import json
 
 import pytest
 
+from utk_curio.backend.app.datasets.domain.manifest import SUPPORTED_FORMATS
 from utk_curio.backend.app.datasets.infrastructure.storage import (
     catalog_root,
     dataset_dir,
@@ -76,7 +77,7 @@ def test_every_declared_dataset_exists_in_the_committed_catalog():
 
 
 def test_declared_dirs_are_addressable_ids_plus_a_major():
-    """``dirName`` is ``<id>@<major>``; ``curio_dataset_path`` takes the bare id.
+    """``dirName`` is ``<id>@<major>``; ``curio_data_path`` takes the bare id.
 
     Getting this wrong is silent - ``SAFE_DATASET_ID_RE`` permits ``@``, so an
     id with the major appended passes validation, misses the by-id lookup in
@@ -187,7 +188,7 @@ def test_seeded_datasets_carry_their_real_metadata():
     ``dirName`` and whose format defaults to ``csv``. After seeding, the store
     manifest is the real one - so this is the difference between a palette row
     reading "Chicago Green Roofs / geojson / 61 features" and one reading
-    "data.urbanlab.chicago-boundary@1 / csv / (nothing)".
+    "data.utk.chicago-boundary@1 / csv / (nothing)".
     """
     seed_example_datasets(USER_KEY)
 
@@ -199,15 +200,7 @@ def test_seeded_datasets_carry_their_real_metadata():
             f"{dir_name}: name is the directory name, so the palette would show "
             f"no real title"
         )
-        assert manifest["format"] in {
-            "csv",
-            "geojson",
-            "json",
-            "parquet",
-            "geotiff",
-            "shp",
-            "bundle",
-        }, manifest["format"]
+        assert manifest["format"] in SUPPORTED_FORMATS, manifest["format"]
 
 
 @pytest.mark.usefixtures("app")

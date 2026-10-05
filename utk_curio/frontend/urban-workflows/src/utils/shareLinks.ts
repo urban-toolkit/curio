@@ -14,7 +14,7 @@ export const SHARE_UUID_RE =
 
 // Unanchored on the left on purpose: this runs against
 // ``window.location.pathname``, which carries the router's basename
-// (``PUBLIC_PATH``, see index.tsx), so a prefixed deployment must still match.
+// (the app's base path, see basePath.ts), so a prefixed deployment must still match.
 // Anchored on the right by a delimiter so ``/dashboards/<uuid>`` does not.
 const SHARE_PATH_RE =
   /\/(?:dataflow|dashboard)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[/?#]|$)/i;

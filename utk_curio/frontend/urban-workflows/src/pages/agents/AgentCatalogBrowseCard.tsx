@@ -1,7 +1,7 @@
 import React from "react";
 
 import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
-import type { AgentCard } from "../../api/agentsApi";
+import type { AgentCard } from "../../services/agents";
 import { agentCategoryKey } from "../../components/menus/nodes/agentsPalette/agentCategoryStyle";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 import cardStyles from "./AgentCatalogBrowseCard.module.css";
@@ -70,9 +70,6 @@ export function AgentCatalogBrowseCard({
         <CatalogItemStripHeader
           kind="agent"
           badge={<span className={styles.cardFormatBadge}>{agent.category}</span>}
-          trailing={
-            agent.imported ? <span className={styles.stripBadgePopular}>✓ In all projects</span> : null
-          }
         />
       </div>
 
@@ -105,7 +102,9 @@ export function AgentCatalogBrowseCard({
         {/* Identity and one way in. Publishing is an account-level decision
             about one agent and belongs in the detail drawer beside the other
             decisions, not on every tile in the grid. */}
-        <div className={styles.cardActionsLeft} />
+        <div className={styles.cardActionsLeft}>
+          {agent.imported ? <span className={styles.cardStatus}>✓ In all projects</span> : null}
+        </div>
         <div className={styles.cardActionsRight}>
           <button
             className={styles.linkButton}

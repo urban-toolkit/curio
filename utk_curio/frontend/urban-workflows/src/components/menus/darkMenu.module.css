@@ -1,0 +1,76 @@
+/* The one dark pop-up menu: a browse card's right-click menu (CardContextMenu)
+   and the top bar's menus (HeaderMenu) wear the same panel and rows. They used
+   to be two designs, and the bar's had square corners and an orange hover with
+   white text on it. Position is the caller's: a context menu sits at the
+   pointer, a bar menu under its trigger. */
+
+.panel {
+  background-color: var(--curio-top-bar-bg);
+  border: 1px solid var(--curio-border-context-menu);
+  border-radius: var(--curio-radius-sm);
+  box-shadow: var(--curio-shadow-context-menu);
+  min-width: 160px;
+  padding: 4px 0;
+  font-family: var(--curio-font-family);
+}
+
+/* Rows are <button>s (or the odd <a>), so the browser's own chrome is reset
+   here rather than left to Bootstrap's reboot, which the canvas loads. */
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 8px 16px;
+  color: var(--curio-text-on-dark);
+  font-family: inherit;
+  font-size: var(--curio-font-size-md);
+  font-weight: 400;
+  line-height: 1.4;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.item:hover:not(:disabled),
+.item:focus-visible {
+  background-color: var(--curio-top-bar-bg-hover);
+  color: var(--curio-text-on-dark);
+  text-decoration: none;
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--curio-focus-ring);
+  outline-offset: -2px;
+}
+
+.item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.itemDestructive {
+  color: var(--curio-danger);
+}
+
+.itemDestructive:hover:not(:disabled) {
+  color: var(--curio-danger);
+}
+
+/* A fixed-width glyph column, so the labels line up whatever the icon. */
+.itemIcon {
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--curio-text-on-dark-muted);
+}
+
+.divider {
+  height: 1px;
+  margin: 4px 0;
+  background-color: var(--curio-border-context-menu);
+}

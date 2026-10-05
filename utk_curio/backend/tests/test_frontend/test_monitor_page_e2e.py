@@ -19,6 +19,9 @@ if TYPE_CHECKING:
 
 # An IPv4 in the rendered aggregate panels would mean a sign-in source leaked.
 IPV4 = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
+# An address, not any "@": the hardware panel names the CPU, and an Intel
+# model reads "Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz".
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 
 
 def test_monitor_page_shows_stats_errors_and_polls(app_frontend: FrontendPage, page):
@@ -68,7 +71,7 @@ def test_monitor_page_shows_stats_errors_and_polls(app_frontend: FrontendPage, p
     for panel in ("monitor-deployment", "monitor-hardware",
                   "monitor-execution", "monitor-accounts", "monitor-storage"):
         text = page.get_by_test_id(panel).inner_text()
-        assert "@" not in text, f"{panel} rendered an email-shaped string"
+        assert EMAIL.search(text) is None, f"{panel} rendered an email-shaped string"
         assert IPV4.search(text) is None, f"{panel} rendered an IP-shaped string"
 
     # 8. A browser error travels: window handler -> public POST -> ring buffer

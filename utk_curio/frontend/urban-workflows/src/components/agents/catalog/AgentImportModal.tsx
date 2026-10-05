@@ -1,12 +1,11 @@
 import React, { useState } from "react";
 import ModalShell from "../../ModalShell";
-import { agentsApi } from "../../../api/agentsApi";
-import { buildUploadPayload, type NamedText } from "./buildUploadPayload";
+import { agentsApi, buildUploadPayload, type NamedText } from "../../../services/agents";
 import styles from "./AgentImportModal.module.css";
 
 /**
  * Import package (memo dev/36): upload a user-authored agent definition —
- * one `manifest.json` plus its `.txt` prompt files - into My imports as an
+ * one `manifest.json` plus its `.md` or `.txt` prompt files - into My imports as an
  * owned, publishable definition. Server-side rules are authoritative (forced
  * `imported` trust, digest stamping, exact file correspondence, size limits,
  * immutability 409s); this modal assembles the payload and shows the server's
@@ -25,7 +24,7 @@ export const AgentImportModal: React.FC<{
    *
    * This used to `setFiles(read)`, which made the documented package layout
    * impossible to import. An agent package is `<id>@<version>/manifest.json`
-   * plus `<id>@<version>/prompts/*.txt` (docs/AGENT-CATALOG.md) - two
+   * plus `<id>@<version>/prompts/*.md` (docs/AGENT-CATALOG.md) - two
    * directories - and one OS file dialog cannot span two directories. So the
    * manifest and its prompts had to be picked in two goes, and the second go
    * discarded the first. The only way through was to flatten the package into
@@ -67,8 +66,8 @@ export const AgentImportModal: React.FC<{
         <h2 id="agent-import-title" className={styles.title}>Import agent package</h2>
         <p className={styles.hint}>
           Pick a <code>.curio-agent.json</code> exported from an agent&apos;s details
-          screen, or one <code>manifest.json</code> and its <code>.txt</code> prompt
-          files. Those live in separate folders, so you can pick them in more than one
+          screen, or one <code>manifest.json</code> and its <code>.md</code> or{" "}
+          <code>.txt</code> prompt files. Those live in separate folders, so you can pick them in more than one
           go - each selection adds to the list.
         </p>
 
@@ -76,7 +75,7 @@ export const AgentImportModal: React.FC<{
           <input
             type="file"
             multiple
-            accept=".json,.txt"
+            accept=".json,.md,.txt"
             aria-label="Package files"
             onChange={(e) => void pick(e.target.files)}
           />

@@ -385,6 +385,17 @@
   color: var(--curio-text-on-dark, var(--curio-text-on-dark));
 }
 
+/* The clamp's `overflow: hidden` clips at the padding box, so the bubble's
+   vertical padding showed the top half of the fifth line (#502). A
+   transparent border takes the padding's place: the background still runs
+   under it, and the clip falls right under the fourth line. */
+.msgUser.intentClamped {
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+}
+
 .agentRow {
   align-self: flex-start;
   display: flex;

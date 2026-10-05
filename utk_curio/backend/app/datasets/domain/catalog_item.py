@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import iso_from_timestamp, stable_id, title_from_filename
-from utk_curio.backend.app.datasets.domain.constants import SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.domain.constants import AUTARK_LAYER_TYPES, SUPPORTED_SUFFIXES
 from utk_curio.backend.app.datasets.infrastructure.file_meta import read_file_meta
 from utk_curio.backend.app.datasets.domain.manifest import DatasetManifest
 
@@ -18,7 +18,7 @@ def format_for_path(path: Path) -> str | None:
 
 
 # Dataset ids are interpolated into generated Python source, so only ids matching
-# this whitelist may appear inside a ``curio_dataset_path("<id>")`` call. Ids can
+# this whitelist may appear inside a ``curio_data_path("<id>")`` call. Ids can
 # come from user-editable spec JSON (legacy ref fallbacks), so an id with a quote
 # or backslash would otherwise break out of the string literal. Must stay in sync
 # with the scan regex in api/routes.py and SAFE_DATASET_ID_RE in the frontend
@@ -32,18 +32,18 @@ def _safe_dataset_id(dataset_id: Any) -> str | None:
     return dataset_id
 
 
-def _path_expr(path: str | None, dataset_id: str | None) -> str:
-    """Python expression for the location line of a loader snippet.
+def is_safe_dataset_id(dataset_id: Any) -> bool:
+    """True when *dataset_id* may appear inside a generated ``curio_load_data("<id>")``."""
+    return _safe_dataset_id(dataset_id) is not None
 
-    Preferred form is the portable ``curio_dataset_path("<id>")`` call — the
-    sandbox resolves it to a real filesystem path at execution time, so the
-    generated code carries no machine-, user-, or mount-specific absolute path.
-    Falls back to the historical literal path when no (safe) id is available,
-    which also keeps legacy fat refs and id-less items working unchanged.
+
+def _path_expr(path: str | None) -> str:
+    """Python expression for the location line of an id-less loader snippet.
+
+    A dataset with a (safe) id never gets one: its loader is the portable
+    ``curio_load_data("<id>")`` call. This literal path keeps legacy fat refs
+    and id-less items working unchanged.
     """
-    safe_id = _safe_dataset_id(dataset_id)
-    if safe_id:
-        return f"curio_dataset_path({json.dumps(safe_id)})"
     # Embed the path in POSIX form so the generated source parses on every
     # platform: a raw Windows path ("C:\Users\...") inside a Python string
     # literal forms escape sequences like \U and the snippet is a SyntaxError.
@@ -98,19 +98,91 @@ def _curio_load_bundle(path):
 bundle = _curio_load_bundle(bundle_path)'''
 
 
-def loader_snippet(fmt: str, path: str | None, dataset_id: str | None = None) -> dict[str, Any]:
+def autark_layer_type(item: dict[str, Any]) -> str | None:
+    """The Autark layer a dataset downloaded from the Discovery Catalog is, when
+    its layer is one (an OpenStreetMap download's ``buildings``). A GeoPackage
+    layer may have any name, so the name alone decides nothing."""
+    layer = item.get("layerName")
+    if item.get("discoverySource") and isinstance(layer, str) and layer in AUTARK_LAYER_TYPES:
+        return layer
+    return None
+
+
+def execution_format(item: dict[str, Any]) -> dict[str, str]:
+    """How the sandbox's ``curio_load_data`` reads *item*: its ``format`` and,
+    for an Autark layer, its ``layerType``. Built from a catalog item or the
+    same fields of an index row (``format``, ``layerName``, ``discoverySource``)."""
+    entry = {"format": str(item.get("format") or "")}
+    layer = autark_layer_type(item)
+    if layer:
+        entry["layerType"] = layer
+    return {k: v for k, v in entry.items() if v}
+
+
+#: What a loader names the value ``curio_load_data`` returns, per format.
+LOADED_VARIABLES = {
+    "csv": "df",
+    "parquet": "df",
+    "geojson": "gdf",
+    "shp": "gdf",
+    "json": "data",
+    "geotiff": "src",
+    "bundle": "bundle",
+    "onnx": "session",
+    "netcdf": "ds",
+}
+
+#: Formats whose loaded value stays in the node's own code: a node's output
+#: cannot carry an onnxruntime session or an xarray Dataset, so their loader
+#: names the value and returns nothing. KEEP IN SYNC with ``KEPT_IN_CODE`` in
+#: the frontend generator.
+KEPT_IN_CODE = frozenset({"onnx", "netcdf"})
+
+
+def loader_snippet(
+    fmt: str, path: str | None, dataset_id: str | None = None, layer_type: str | None = None,
+) -> dict[str, Any]:
     """Build the Python loader snippet for a dataset.
 
-    When a (safe) *dataset_id* is given, the location line is the portable
-    ``curio_dataset_path("<id>")`` call, resolved to a real path at execution
-    time by the sandbox (mapping supplied by ``/processPythonCode``). Without
-    one it falls back to embedding the literal path — see :func:`_path_expr`.
+    When a (safe) *dataset_id* is given, the loader is one portable call the
+    sandbox resolves at execution time (``/processPythonCode`` sends the paths
+    and formats): ``curio_load_data("<id>")``, which reads the dataset by its
+    format, ``curio_load_collection("<id>")`` for a collection, and
+    ``curio_data_path("<id>")`` for a format nothing reads, so the node's own
+    code reads the file. A format in :data:`KEPT_IN_CODE` is loaded but not
+    returned. Without an id it falls back to the literal path and
+    the reader spelled out, see :func:`_path_expr`; a *layer_type* (one of
+    :data:`AUTARK_LAYER_TYPES`) is then set as the frame's ``metadata``, so an
+    Autark node draws the frame as that layer.
 
     KEEP IN SYNC with the frontend generator
     ``frontend/urban-workflows/src/services/datasetCatalog/datasetLoaderSnippets.ts``
-    (same call syntax) and the scan regex in ``backend/app/api/routes.py``.
+    (same call syntax) and the scan regex in ``datasets/domain/code_refs.py``.
     """
-    expr = _path_expr(path, dataset_id)
+    safe_id = _safe_dataset_id(dataset_id)
+    if safe_id:
+        quoted = json.dumps(safe_id)
+        if fmt == "collection":
+            code, variable = f"collection = curio_load_collection({quoted})", "collection"
+        elif fmt in LOADED_VARIABLES:
+            variable = LOADED_VARIABLES[fmt]
+            code = f"{variable} = curio_load_data({quoted})"
+        else:
+            return {
+                "language": "python",
+                "imports": [],
+                "pathVariable": "dataset_path",
+                "code": f"dataset_path = curio_data_path({quoted})",
+                "returnVariable": None,
+            }
+        return {
+            "language": "python",
+            "imports": [],
+            "pathVariable": None,
+            "code": code,
+            "returnVariable": None if fmt in KEPT_IN_CODE else variable,
+        }
+    expr = _path_expr(path)
     if fmt == "csv":
         return {
             "language": "python",
@@ -120,11 +192,14 @@ def loader_snippet(fmt: str, path: str | None, dataset_id: str | None = None) ->
             "returnVariable": "df",
         }
     if fmt in {"geojson", "shp"}:
+        code = f"dataset_path = {expr}\ngdf = gpd.read_file(dataset_path)"
+        if layer_type in AUTARK_LAYER_TYPES:
+            code += f"\ngdf.metadata = {{\"layerType\": {json.dumps(layer_type)}}}"
         return {
             "language": "python",
             "imports": ["import geopandas as gpd"],
             "pathVariable": "dataset_path",
-            "code": f"dataset_path = {expr}\ngdf = gpd.read_file(dataset_path)",
+            "code": code,
             "returnVariable": "gdf",
         }
     if fmt == "parquet":
@@ -133,26 +208,29 @@ def loader_snippet(fmt: str, path: str | None, dataset_id: str | None = None) ->
         # ``gpd.read_parquet`` first so a geo dataset reloads as a GeoDataFrame
         # — matching the output type/schema of the node that produced it — and
         # fall back to ``pd.read_parquet`` for non-geo tables.
+        code = (
+            f"dataset_path = {expr}\n"
+            "try:\n"
+            "    df = gpd.read_parquet(dataset_path)\n"
+            "except Exception:\n"
+            "    df = pd.read_parquet(dataset_path)\n"
+            "# Restore object columns (dict/list cells) that were JSON-encoded\n"
+            "# on save; the column list lives in a <file>.decode.json sidecar.\n"
+            "_meta_path = dataset_path + \".decode.json\"\n"
+            "if os.path.exists(_meta_path):\n"
+            "    with open(_meta_path) as _meta_file:\n"
+            "        _encoded_cols = json.load(_meta_file).get(\"encoded_object_columns\", [])\n"
+            "    for _col in _encoded_cols:\n"
+            "        if _col in df.columns:\n"
+            "            df[_col] = df[_col].apply(lambda _v: json.loads(_v) if isinstance(_v, str) and _v else _v)"
+        )
+        if layer_type in AUTARK_LAYER_TYPES:
+            code += f"\ndf.metadata = {{\"layerType\": {json.dumps(layer_type)}}}"
         return {
             "language": "python",
             "imports": ["import os", "import json", "import pandas as pd", "import geopandas as gpd"],
             "pathVariable": "dataset_path",
-            "code": (
-                f"dataset_path = {expr}\n"
-                "try:\n"
-                "    df = gpd.read_parquet(dataset_path)\n"
-                "except Exception:\n"
-                "    df = pd.read_parquet(dataset_path)\n"
-                "# Restore object columns (dict/list cells) that were JSON-encoded\n"
-                "# on save; the column list lives in a <file>.decode.json sidecar.\n"
-                "_meta_path = dataset_path + \".decode.json\"\n"
-                "if os.path.exists(_meta_path):\n"
-                "    with open(_meta_path) as _meta_file:\n"
-                "        _encoded_cols = json.load(_meta_file).get(\"encoded_object_columns\", [])\n"
-                "    for _col in _encoded_cols:\n"
-                "        if _col in df.columns:\n"
-                "            df[_col] = df[_col].apply(lambda _v: json.loads(_v) if isinstance(_v, str) and _v else _v)"
-            ),
+            "code": code,
             "returnVariable": "df",
         }
     if fmt == "json":
@@ -185,6 +263,45 @@ def loader_snippet(fmt: str, path: str | None, dataset_id: str | None = None) ->
             "pathVariable": "dataset_path",
             "code": f"dataset_path = {expr}\nsrc = rasterio.open(dataset_path)",
             "returnVariable": "src",
+        }
+    if fmt == "onnx":
+        return {
+            "language": "python",
+            "imports": ["import onnxruntime as ort"],
+            "pathVariable": "dataset_path",
+            "code": (
+                f"dataset_path = {expr}\n"
+                'session = ort.InferenceSession(dataset_path, providers=["CPUExecutionProvider"])'
+            ),
+            "returnVariable": None,
+        }
+    if fmt == "netcdf":
+        return {
+            "language": "python",
+            "imports": ["import xarray as xr"],
+            "pathVariable": "dataset_path",
+            "code": f'dataset_path = {expr}\nds = xr.open_dataset(dataset_path, engine="netcdf4")',
+            "returnVariable": None,
+        }
+    if fmt == "collection":
+        # A collection's data file is its index: one row per file. The sandbox
+        # resolves ``curio_load_collection`` to that index plus a readable path for
+        # every file, wherever this execution runs.
+        safe_id = _safe_dataset_id(dataset_id)
+        if safe_id:
+            return {
+                "language": "python",
+                "imports": [],
+                "pathVariable": None,
+                "code": f"collection = curio_load_collection({json.dumps(safe_id)})",
+                "returnVariable": "collection",
+            }
+        return {
+            "language": "python",
+            "imports": ["import pandas as pd"],
+            "pathVariable": "dataset_path",
+            "code": f"dataset_path = {expr}\ncollection = pd.read_parquet(dataset_path)",
+            "returnVariable": "collection",
         }
     if fmt == "bundle":
         # A bundle is a multi-output (tuple / ``outputs``) node result, stored as
@@ -270,17 +387,21 @@ def base_item(**overrides: Any) -> dict[str, Any]:
         # sibling layer datasets; ``layerName`` is this dataset's layer.
         "groupId": None,
         "layerName": None,
-        # Where a dataset downloaded from the Data Lake Catalog came from. Null
+        # Where a dataset downloaded from the Discovery Catalog came from. Null
         # for everything else, which is most datasets. Not an ``origin`` of its
         # own: such a dataset IS imported, and a fifth origin would ripple
         # through the labels, facets, filters and dedup for a distinction this
         # block already carries losslessly.
-        "lakeSource": None,
+        "discoverySource": None,
+        # A ``collection`` dataset's block: which source and resource its
+        # files belong to, their kind and counts. Null for every other format.
+        "collection": None,
     }
     item.update(overrides)
     if item["loaderSnippet"] is None:
         item["loaderSnippet"] = loader_snippet(
-            item["format"], item.get("path"), dataset_id=item.get("id") or None
+            item["format"], item.get("path"), dataset_id=item.get("id") or None,
+            layer_type=autark_layer_type(item),
         )
     return item
 
@@ -362,5 +483,6 @@ def item_from_manifest(manifest: DatasetManifest, dataset_root: Path, *, origin:
         producerDataflowId=manifest.producer_dataflow_id,
         producerDataflowName=manifest.producer_dataflow_name,
         upstreamInputs=list(manifest.upstream_inputs) if manifest.upstream_inputs else [],
-        lakeSource=dict(manifest.lake_source) if manifest.lake_source else None,
+        discoverySource=dict(manifest.discovery_source) if manifest.discovery_source else None,
+        collection=dict(manifest.collection) if manifest.collection else None,
     )

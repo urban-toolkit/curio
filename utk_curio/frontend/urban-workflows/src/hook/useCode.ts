@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { Node } from "reactflow";
 import { v4 as uuid } from "uuid";
 
-import { IInteraction, useFlowContext } from "../providers/FlowProvider";
+import { useFlowContext } from "../providers/FlowProvider";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { PythonInterpreter } from "../PythonInterpreter";
 import { JavaScriptInterpreter } from "../JavaScriptInterpreter";
@@ -11,6 +11,16 @@ import { usePosition } from "./usePosition";
 import { AccessLevelType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 import { DatasetNodeSource } from "../services/datasetCatalog";
 import { deoverlapNodes } from "../utils/deoverlapLayout";
+import { rekeyNodeProvenance } from "../utils/nodeProvenanceKeys";
+import type { SelectionEchoOptions } from "../utils/selectionEcho";
+import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
+import { canvasTemplateConfigFromSpec } from "../utils/canvasTemplateConfigSpec";
+import { dataPoolFromSpec } from "../utils/dataPoolSpec";
+import { normalizeWidgets, type WidgetDef } from "../utils/widgets/widgetModel";
+import { runKeyWithShared, sharedWidgetsOfSpec } from "../utils/references/sharedParameters";
+import { normalizeSelections, type SelectionTag } from "../utils/references/selectionTags";
+import { lineageFromSpec } from "../utils/scenarios/duplicateSelection";
+import { normalizeCompareSettings, type CompareSettings } from "../utils/compare/compareSettings";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -44,6 +54,8 @@ type CreateCodeNodeOptions = {
     datasetRefs?: string[];
     appliedDatasets?: Record<string, unknown>;
     datasetSource?: DatasetNodeSource;
+    // The model a Model Catalog drop set (canonical shape metadata.modelRefs).
+    modelRefs?: { id: string; name: string }[];
     saveOutputDataset?: boolean;
     // dev/89: per-node appearance (canonical spec shape metadata.appearance;
     // normalized values only — validation is utils/nodeAppearance's job).
@@ -60,6 +72,27 @@ type CreateCodeNodeOptions = {
     // list: the setting survived a save and never a load.
     spatialJoin?: { nameProperty?: string; output?: "points" | "polygons" };
     simpleVis?: { imageColumn?: string };
+    // #412: a renamed node header (metadata.packageTemplateLabel), which the
+    // header reads through resolveNodeDisplayLabel.
+    packageTemplateLabel?: string;
+    // #412: the rest of what the node settings modal saved
+    // (metadata.packageTemplateConfig), which the editor tabs read.
+    packageTemplateConfig?: Partial<CanvasTemplateConfig>;
+    // #581: a Data Pool's conflict modes (metadata.dataPool).
+    dataPool?: { insideChart?: string; betweenCharts?: string };
+    // #662: the node's widgets and their values (metadata.widgets).
+    widgets?: WidgetDef[];
+    // #662: the ids a copy descends from, oldest first (metadata.copiedFrom).
+    copiedFrom?: string[];
+    // #662: the node's selection tags and the ids they hold (metadata.selections).
+    selections?: SelectionTag[];
+    // #662: a Compare Scenarios node's input labels and chart
+    // (metadata.compareScenarios).
+    compareScenarios?: CompareSettings;
+    // #407: a node whose saved output a project load restored mounts as having
+    // run: the output it shows, and the source that produced it.
+    output?: { code: string; content: string };
+    executedCode?: string;
 };
 
 /** What a load built, so a caller can hydrate against it. */
@@ -70,14 +103,19 @@ export interface LoadedGraph {
 
 interface IUseCode {
     createCodeNode: (nodeType: string, options?: CreateCodeNodeOptions) => void;
-    loadTrill: (trill: any, suggestionType?: string) => LoadedGraph;
+    loadTrill: (
+        trill: any,
+        suggestionType?: string,
+        fromProvenance?: boolean,
+        restoredOutputs?: Record<string, string>,
+    ) => LoadedGraph;
 }
 
 export function useCode(): IUseCode {
     const {
         addNode,
         setOutputs,
-        setInteractions,
+        interactionsCallback,
         applyNewPropagation,
         applyNewOutput,
         loadParsedTrill,
@@ -88,32 +126,11 @@ export function useCode(): IUseCode {
     const { getPosition } = usePosition();
 
     const outputCallback = useCallback(
-        (nodeId: string, output: string) => {
-            applyNewOutput({nodeId: nodeId, output: output});
+        (nodeId: string, output: string, options?: SelectionEchoOptions) => {
+            applyNewOutput({nodeId: nodeId, output: output, ...options});
         },
         [setOutputs]
     );
-
-    const interactionsCallback = useCallback((interactions: any, nodeId: string) => {
-        setInteractions((prevInteractions: IInteraction[]) => {
-            let newInteractions: IInteraction[] = [];
-            let newNode = true;
-
-            for(const interaction of prevInteractions){
-                if(interaction.nodeId == nodeId){
-                    newInteractions.push({nodeId: nodeId, details: interactions, priority: 1});
-                    newNode = false;
-                }else{
-                    newInteractions.push({...interaction, priority: 0});
-                }
-            }
-
-            if(newNode)
-                newInteractions.push({nodeId: nodeId, details: interactions, priority: 1});
-
-            return newInteractions;
-        })
-    }, [setInteractions]);
 
     /**
      * Turn a spec into canvas nodes and edges and hand them to the provider.
@@ -122,11 +139,24 @@ export function useCode(): IUseCode {
      * nodes downstream of its producer, and the only reliable statement of who
      * those are, at this moment, is the edge list this function just built:
      * React Flow's own store is written from an effect and is a render behind.
+     *
+     * `restoredOutputs` maps a node id to the saved output a project load
+     * restored for it. Those nodes are built as having run, from their current
+     * code, so a downstream play reuses them instead of re-running the chain
+     * (#407); without it every node counted as never run.
      */
-    const loadTrill = (trill: any, suggestionType?: string, fromProvenance?: boolean): LoadedGraph => {
+    const loadTrill = (
+        trill: any,
+        suggestionType?: string,
+        fromProvenance?: boolean,
+        restoredOutputs?: Record<string, string>,
+    ): LoadedGraph => {
 
         let nodes = [];
         let edges = [];
+        // #662: the Parameter nodes' widgets, which a restored output's run
+        // key covers, as a run's does.
+        const shared = sharedWidgetsOfSpec(trill.dataflow.nodes);
 
         for(const node of trill.dataflow.nodes){
             let x = node.x;
@@ -185,6 +215,9 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && node.metadata.datasetSource != undefined)
                 nodeMeta.datasetSource = node.metadata.datasetSource;
 
+            if(node.metadata != undefined && Array.isArray(node.metadata.modelRefs))
+                nodeMeta.modelRefs = node.metadata.modelRefs;
+
             // dev/89: the canonical per-node appearance round-trips into live
             // data (rendered via utils/nodeAppearance — invalid legacy values
             // fall back at render, never here).
@@ -203,6 +236,34 @@ export function useCode(): IUseCode {
             // #276: the Simple View's chosen image column round-trips too.
             if(node.metadata != undefined && node.metadata.simpleVis != undefined)
                 nodeMeta.simpleVis = node.metadata.simpleVis;
+
+            // #412: and so does a renamed node header.
+            if(node.metadata != undefined && typeof node.metadata.packageTemplateLabel === "string")
+                nodeMeta.packageTemplateLabel = node.metadata.packageTemplateLabel;
+
+            // #412: and the rest of the node settings config, with fresh port ids.
+            if(node.metadata != undefined && node.metadata.packageTemplateConfig != undefined)
+                nodeMeta.packageTemplateConfig = canvasTemplateConfigFromSpec(node.metadata.packageTemplateConfig);
+
+            // #581: and a Data Pool's conflict modes, the ones that name a mode.
+            if(node.metadata != undefined && node.metadata.dataPool != undefined)
+                nodeMeta.dataPool = dataPoolFromSpec(node.metadata.dataPool);
+
+            // #662: and the node's widgets, with the values they were saved with.
+            if(node.metadata != undefined && Array.isArray(node.metadata.widgets))
+                nodeMeta.widgets = normalizeWidgets(node.metadata.widgets);
+
+            // #662: and the lineage of a copy Duplicate selection made.
+            if(node.metadata != undefined && Array.isArray(node.metadata.copiedFrom))
+                nodeMeta.copiedFrom = lineageFromSpec(node.metadata.copiedFrom);
+
+            // #662: and the node's selection tags, with the ids they held.
+            if(node.metadata != undefined && Array.isArray(node.metadata.selections))
+                nodeMeta.selections = normalizeSelections(node.metadata.selections);
+
+            // #662: and a Compare Scenarios node's input labels and chart.
+            if(node.metadata != undefined && node.metadata.compareScenarios != undefined)
+                nodeMeta.compareScenarios = normalizeCompareSettings(node.metadata.compareScenarios);
 
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
@@ -232,6 +293,14 @@ export function useCode(): IUseCode {
             if(suggestionType != undefined)
                 nodeMeta.suggestionType = suggestionType;
 
+            const restored = restoredOutputs?.[node.id];
+            if (restored !== undefined) {
+                // The same content a run shows (CodeEditor), and the source
+                // playNodesUpTo compares against to tell a valid result.
+                nodeMeta.output = { code: "success", content: "Saved to file: " + restored };
+                nodeMeta.executedCode = runKeyWithShared(node.content, nodeMeta.widgets, shared, nodeMeta.selections);
+            }
+
             nodes.push(generateCodeNode(node.type, nodeMeta));
 
         }
@@ -258,15 +327,13 @@ export function useCode(): IUseCode {
         for(const edge of trill.dataflow.edges){
 
             // Respect explicit handle ids in the spec (named handles like
-            // `in_points` / `in_polygons` on spatial-join). Fall back to
-            // legacy in_0 / in_1 / ... inference from the edge id, then to
-            // the default "in" handle.
+            // `in_points` / `in_polygons` on spatial-join). Fall back to the
+            // legacy `in_N` suffix of the edge id, then to the default "in"
+            // handle, as `named_input_slot` reads them in the runner.
             let targetHandle = edge.targetHandle || "in";
             if (!edge.targetHandle) {
-                for(let i = 0; i < 5; i++){
-                    if(edge.id && edge.id.includes("in_"+i))
-                        targetHandle = "in_"+i;
-                }
+                const legacy = typeof edge.id === "string" ? edge.id.match(/in_(\d+)$/) : null;
+                if (legacy) targetHandle = "in_" + legacy[1];
             }
 
             let add_edge: any = {
@@ -301,7 +368,9 @@ export function useCode(): IUseCode {
             // Reverting to a historical version: preserve the current provenance graph.
             // latestTrill was already set to the target version by switchProvenanceTrill.
             const savedProv = TrillGenerator.getSerializableDataflowProvenance();
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || []);
+            // #662: a snapshot carries scenarios only when it had some, so an
+            // absent key restores none.
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], undefined, trill.dataflow.scenarios ?? []);
             TrillGenerator.loadDataflowProvenance(savedProv);
             // Reverting puts a DIFFERENT graph on the canvas than the one on
             // disk, so it is an edit. The edge replay inside loadParsedTrill no
@@ -310,8 +379,8 @@ export function useCode(): IUseCode {
             // reach loadParsedTrill identically from there down.
             markDirty();
         } else if(suggestionType == undefined) {
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || []);
-            if (trill.nodeProvenance) loadNodeProvenance(trill.nodeProvenance);
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || [], trill.dataflow.categories || {}, trill.dataflow.scenarios ?? []);
+            if (trill.nodeProvenance) loadNodeProvenance(rekeyNodeProvenance(trill.nodeProvenance, nodes.map((n) => n.id)));
             if (trill.dataflowProvenance) TrillGenerator.loadDataflowProvenance(trill.dataflowProvenance);
         } else {
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true, undefined, trill.dataflow.description || "", trill.dataflow.datasets || []);
@@ -346,12 +415,22 @@ export function useCode(): IUseCode {
             datasetRefs = undefined,
             appliedDatasets = undefined,
             datasetSource = undefined,
+            modelRefs = undefined,
             saveOutputDataset = undefined,
             appearance = undefined,
             title = undefined,
             comments = undefined,
             spatialJoin = undefined,
             simpleVis = undefined,
+            packageTemplateLabel = undefined,
+            packageTemplateConfig = undefined,
+            dataPool = undefined,
+            widgets = undefined,
+            copiedFrom = undefined,
+            selections = undefined,
+            compareScenarios = undefined,
+            output = undefined,
+            executedCode = undefined,
         } = options;
 
         const node: Node = {
@@ -395,6 +474,13 @@ export function useCode(): IUseCode {
                 comments,
                 spatialJoin,
                 simpleVis,
+                packageTemplateLabel,
+                packageTemplateConfig,
+                dataPool,
+                widgets,
+                copiedFrom,
+                selections,
+                compareScenarios,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset
@@ -405,6 +491,9 @@ export function useCode(): IUseCode {
                 outputCallback,
                 interactionsCallback,
                 propagationCallback: applyNewPropagation,
+                ...(output !== undefined ? { output } : {}),
+                ...(executedCode !== undefined ? { executedCode } : {}),
+                ...(modelRefs !== undefined ? { modelRefs } : {}),
             },
         };
 
@@ -415,6 +504,7 @@ export function useCode(): IUseCode {
     const createCodeNode = useCallback((nodeType: string, options: CreateCodeNodeOptions = {}) => {
         let node = generateCodeNode(nodeType, options);
         addNode(node, undefined, true);
+        return node;
     }, [addNode, outputCallback, getPosition]);
 
     return { createCodeNode, loadTrill };

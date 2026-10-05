@@ -143,7 +143,7 @@ NOTEBOOK = os.path.join(DATAFLOWS, "test_notebook.ipynb")
 
 #: The dataset the authoring chapters build on: three rows, two numeric columns,
 #: and a generated loader that only needs pandas.
-DATASET_ID = "data.urbanlab.acs-neighborhood-profile"
+DATASET_ID = "data.utk.acs-neighborhood-profile"
 
 DATAFLOW_GOAL = (
     "Stress every surface: compare income per capita across neighborhoods, "
@@ -192,10 +192,8 @@ VEGA_SPEC = json.dumps(
 PACKAGE_DEPS: dict[str, tuple[str, ...]] = {
     "curio.example-ui@1": (),
     "curio.weather@1": ("pythermalcomfort", "rasterio", "rasterstats"),
-    "ai.urbanlab.uhvi@1": ("rasterio",),
-    "curio.streetvision@1": (
-        "torch", "transformers", "ultralytics", "huggingface_hub",
-    ),
+    "ai.utk.uhvi@1": ("rasterio",),
+    "curio.streetvision@1": ("onnxruntime",),
 }
 
 
@@ -777,20 +775,20 @@ def chapter_access(run: StressRun) -> None:
 def chapter_canvas(run: StressRun) -> None:
     page, tour = run.page, run.tour
     tour.chapter("Chapter 2", "The canvas",
-                 "All twelve built-in nodes, their editors, and the guards.")
+                 "All eleven built-in nodes, their editors, and the guards.")
 
     with run.step("Open a fresh dataflow"):
         _enter_project(run, name="Stress: canvas")
 
-    with run.step("Drag all twelve built-in node types onto the canvas"):
+    with run.step("Drag all eleven built-in node types onto the canvas"):
         reset_zoom(page)
         sources = [
             (template, builtin_tile(page, template))
-            for template, _ in stress.BUILTIN_TILES
+            for template in stress.BUILTIN_TILES
         ]
         placed = _drop_grid(run, sources)
         run.state["placed"] = dict(placed)
-        assert len(placed) == 12, f"only {len(placed)} of 12 tiles produced a node"
+        assert len(placed) == 11, f"only {len(placed)} of 11 tiles produced a node"
         fit_view(page)
         run.snap("all-builtin-nodes")
 
@@ -1098,8 +1096,8 @@ def chapter_canvas(run: StressRun) -> None:
 
     with run.step("Run every node from the rail"):
         play_all(run, timeout_ms=300000)
-        # This canvas is deliberately a mess of unwired nodes by now - a Merge
-        # Flow with no inputs and two bare transformations - so a red node here
+        # This canvas is deliberately a mess of unwired nodes by now - nodes
+        # with no inputs and two bare transformations - so a red node here
         # is the expected outcome, not a finding. The examples chapter is where
         # an errored node means something.
         errored = report_errored_nodes(
@@ -1229,9 +1227,9 @@ def chapter_nodes(run: StressRun) -> None:
             search.first.fill("")
             page.wait_for_timeout(800)
 
-    # Install every catalog package for real. curio.weather, ai.urbanlab.uhvi and
-    # curio.streetvision each shell out to pip (rasterio / geopandas / torch), so
-    # the response wait is generous by design rather than optimistic.
+    # Install every catalog package for real. curio.weather, ai.utk.uhvi and
+    # curio.streetvision each shell out to pip (rasterio / geopandas /
+    # onnxruntime), so the response wait is generous by design rather than optimistic.
     installable = [
         pkg for pkg in catalog
         if not pkg.get("installed") and "builtin" not in (pkg.get("dirName") or "")
@@ -1265,7 +1263,7 @@ def chapter_nodes(run: StressRun) -> None:
                     "button", name=re.compile("^Add to project")
                 ).first.click()
             # pip runs synchronously inside the request for the heavy packages
-            # (torch, rasterio, geopandas), capped at 30 minutes server-side.
+            # (rasterio, geopandas), capped at 30 minutes server-side.
             expect(
                 card.first.get_by_role("button", name=re.compile("Remove from project"))
             ).to_be_visible(timeout=1_900_000)
@@ -1503,7 +1501,7 @@ def chapter_nodes(run: StressRun) -> None:
         close_drawer(page, DRAWER_NODES, "Node Catalog drawer")
 
     with run.step("Installed libraries: add titlecase for real"):
-        tour.click(menu(page, "Data"), force=True)
+        tour.click(menu(page, "File"), force=True)
         tour.click(page.get_by_role("button", name="Installed libraries", exact=True))
         expect(
             page.get_by_role("heading", name="Installed libraries")
@@ -2035,7 +2033,7 @@ def _shapefile_bundle() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Chapter 05 - agents: AI settings, every built-in agent, live turns
+# Chapter 05 - agents: API settings, every built-in agent, live turns
 # ---------------------------------------------------------------------------
 
 
@@ -2057,25 +2055,37 @@ def chapter_agents(run: StressRun) -> None:
         run.state.update(loader=loader, transform=transform)
         fit_view(page)
 
-    with run.step("AI Settings from the Agent Catalog drawer"):
+    with run.step("API Settings from the Agent Catalog drawer"):
         drawer = open_agent_drawer(run)
-        cog = drawer.get_by_role("button", name=re.compile("AI Settings"))
-        assert cog.count(), "the Agent Catalog drawer has no AI Settings control"
+        cog = drawer.get_by_role("button", name=re.compile("API Settings"))
+        assert cog.count(), "the Agent Catalog drawer has no API Settings control"
         tour.click(cog.first)
+        # The API Settings drawer opens over the Agent Catalog one, on the
+        # model each agent runs on.
         expect(
-            page.get_by_role("heading", name="AI Settings", level=2)
+            page.get_by_role("heading", name="API Settings", level=2)
         ).to_be_visible(timeout=20000)
-        run.snap("ai-settings")
+        expect(page.get_by_test_id("agent-config-tab")).to_be_visible(timeout=20000)
+        run.snap("api-settings")
 
+    with run.step("Add an LLM configuration"):
+        page.get_by_role("tab", name="API keys", exact=True).click()
+        page.get_by_test_id("api-keys-tab").get_by_role(
+            "button", name="Add configuration", exact=True
+        ).click()
+        expect(page.get_by_test_id("llm-config-editor")).to_be_visible(timeout=15000)
+
+    editor = page.get_by_test_id("llm-config-editor")
     for provider in ("OpenAI", "Anthropic", "Gemini", "Custom"):
-        with run.step(f"AI Settings provider tab: {provider}", may_fail=True):
-            tab = page.get_by_role("button", name=provider, exact=True)
+        with run.step(f"API Settings provider tab: {provider}", may_fail=True):
+            tab = editor.get_by_role("button", name=provider, exact=True)
             tab.first.click()
             page.wait_for_timeout(900)
 
     with run.step("Configure the live provider"):
-        page.get_by_role("button", name="Custom", exact=True).first.click()
+        editor.get_by_role("button", name="Custom", exact=True).first.click()
         page.wait_for_timeout(700)
+        ai_field(page, "Label").fill("Stress provider")
         tour.type_into(ai_field(page, "Base URL"), LLM_BASE_URL)
         if LLM_API_KEY:
             ai_field(page, "API Key").fill(LLM_API_KEY)
@@ -2083,19 +2093,30 @@ def chapter_agents(run: StressRun) -> None:
             run.note("no provider key configured; the live turns will be skipped",
                      step="Configure the live provider", severity="warning")
         ai_field(page, "Model").fill(LLM_MODEL)
-        run.snap("ai-settings-filled")
+        run.snap("api-settings-filled")
 
     with run.step("Ask the provider for its model list", may_fail=True):
-        fetch = page.get_by_role("button", name=re.compile("(Fetch|Refresh) models", re.I))
+        fetch = editor.get_by_role("button", name=re.compile("(Fetch|Refresh) models", re.I))
         if fetch.count():
             fetch.first.click()
             page.wait_for_timeout(9000)
-            run.snap("ai-settings-models")
+            run.snap("api-settings-models")
 
-    with run.step("Save the provider settings"):
-        page.get_by_role("button", name="Save", exact=True).first.click()
-        page.wait_for_timeout(3500)
+    with run.step("Save the configuration as the default"):
+        expect(editor.get_by_label("Make this my default")).to_be_checked()
+        with page.expect_response(
+            lambda r: r.url.endswith("/api/agents/llm/configs")
+            and r.request.method == "POST",
+            timeout=45000,
+        ) as saved:
+            editor.get_by_role("button", name="Add configuration", exact=True).click()
+        assert saved.value.status == 201, saved.value.text()
+        expect(editor).to_have_count(0, timeout=20000)
+        page.wait_for_timeout(1500)
         dismiss_toasts(page)
+        # Back to the Agent Catalog drawer under it.
+        page.get_by_role("button", name="Close API Settings", exact=True).click()
+        expect(page.locator('[data-curio-settings-drawer="true"]')).to_have_count(0, timeout=15000)
 
     agents: list[dict] = []
     with run.step("Read the Agent Catalog over the API"):
@@ -2166,7 +2187,7 @@ def chapter_agents(run: StressRun) -> None:
     with run.step("Attach an agent to a node by dragging"):
         dismiss_toasts(page)
         target = run.state["transform"]
-        drag_agent_to(run, _first_coord(installed, "node-explainer"),
+        drag_agent_to(run, _first_coord(installed, "node-content-builder"),
                       lambda: node_client_point(page, target))
         expect_attach_toast(run, "the node")
 
@@ -2199,7 +2220,7 @@ def chapter_agents(run: StressRun) -> None:
         dismiss_toasts(page)
         point = empty_canvas_point(page)
         assert point, "no empty canvas point for a canvas attach"
-        drag_agent_to(run, _first_coord(installed, "dataflow-explainer"),
+        drag_agent_to(run, _first_coord(installed, "dataflow-builder"),
                       lambda: empty_canvas_point(page))
         expect_attach_toast(run, "the canvas")
         close_tools_palette(page, "agents")
@@ -2207,7 +2228,7 @@ def chapter_agents(run: StressRun) -> None:
     with run.step("Attach every remaining agent, so all of them can be asked"):
         # The three drags above are the gesture worth filming, but the chat
         # panel cycles ATTACHMENTS - so with three attachments only three of the
-        # twenty-one agents would ever be asked anything. The rest are attached
+        # ten agents would ever be asked anything. The rest are attached
         # through the same REST endpoint the drop handler calls, picking the
         # first target kind each agent's manifest accepts (the API refuses an
         # incompatible one with a 400 naming what it does accept).
@@ -2219,9 +2240,9 @@ def chapter_agents(run: StressRun) -> None:
         ) or []
         edge_id = edges[0] if edges else None
         already = {
-            _first_coord(installed, "node-explainer"),
+            _first_coord(installed, "node-content-builder"),
             _first_coord(installed, "connection-builder"),
-            _first_coord(installed, "dataflow-explainer"),
+            _first_coord(installed, "dataflow-builder"),
         }
         attached, refused = list(already), []
         for coord in installed:
@@ -2353,18 +2374,22 @@ def chapter_agents(run: StressRun) -> None:
         page.wait_for_timeout(1800)
         run.snap("catalog-agents-page")
 
-    with run.step("AI Settings from the global header"):
-        button = page.get_by_role("button", name="AI Settings", exact=True)
-        assert button.count(), "the catalog header has no AI Settings button"
-        tour.click(button.first)
+    with run.step("API Settings from the global header"):
+        link = page.get_by_role("link", name="API Settings", exact=True)
+        assert link.count(), "the catalog header has no API Settings link"
+        tour.click(link.first)
         expect(
-            page.get_by_role("heading", name="AI Settings", level=2)
+            page.get_by_role("heading", name="API Settings", level=1)
         ).to_be_visible(timeout=20000)
-        hf = ai_field(page, "HuggingFace token")
-        if hf.count():
-            hf.fill("hf_stress_placeholder")
-        run.snap("ai-settings-header")
-        page.get_by_role("button", name="Cancel", exact=True).first.click()
+        add = page.get_by_role("button", name="Add configuration", exact=True)
+        expect(add).to_be_visible(timeout=20000)
+        add.click()
+        kind = page.get_by_label("Kind")
+        if kind.locator('option[value="source:huggingface.token"]').count():
+            kind.select_option("source:huggingface.token")
+            ai_field(page, "HuggingFace token").fill("hf_stress_placeholder")
+        run.snap("api-settings-header")
+        page.go_back()
         page.wait_for_timeout(900)
 
 
@@ -2425,16 +2450,15 @@ EXAMPLE_RUNS: tuple[tuple[str, int, bool], ...] = (
     ("01-vega-lite-chained-transforms.json", 6, False),
     ("02-vega-lite-spatial-density.json", 8, False),
     ("03-vega-lite-linked-temporal-charts.json", 4, False),
-    ("04-vega-lite-multi-flow-dashboard.json", 24, False),
+    ("04-vega-lite-multi-flow-dashboard.json", 21, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, False),
-    ("09-heterogeneous-data-linked-views.json", 13, False),
+    ("09-heterogeneous-data-linked-views.json", 11, False),
     ("06-autark-what-if-shadow-study.json", 6, True),
     ("07-autark-gpu-shader.json", 5, True),
-    ("08-autark-spatial-join-regression.json", 8, True),
+    ("08-autark-spatial-join-regression.json", 7, True),
     ("11-autark-pbf-loading.json", 2, True),
-    # Needs curio.streetvision, which the `nodes` chapter installs, and a
-    # HuggingFace token for its gated model.
-    ("10-street-vision-cv-analysis.json", 8, False),
+    # Needs curio.streetvision, which the `nodes` chapter installs.
+    ("10-street-vision-cv-analysis.json", 12, False),
 )
 
 
@@ -2503,10 +2527,10 @@ def chapter_views(run: StressRun) -> None:
                     page.wait_for_timeout(220)
                 run.snap("data-pool-scrolled")
 
-    with run.step("A Merge Flow dataflow", may_fail=True):
-        load_example(run, os.path.join(DATAFLOWS, "Merge.json"), expected_nodes=5)
+    with run.step("A node with several inputs", may_fail=True):
+        load_example(run, os.path.join(DATAFLOWS, "MultiInput.json"), expected_nodes=4)
         play_all(run, timeout_ms=300000)
-        report_errored_nodes(run, "A Merge Flow dataflow")
+        report_errored_nodes(run, "A node with several inputs")
 
     with run.step("A JavaScript computation node", may_fail=True):
         load_example(run, os.path.join(DATAFLOWS, "JSComputation.json"),
@@ -2516,14 +2540,14 @@ def chapter_views(run: StressRun) -> None:
         run.snap("js-computation")
 
     with run.step("Widgets drive a node", may_fail=True):
-        load_example(run, os.path.join(DATAFLOWS, "Widget.json"), expected_nodes=6)
+        load_example(run, os.path.join(DATAFLOWS, "Widget.json"), expected_nodes=4)
         play_all(run, timeout_ms=300000)
         run.snap("widgets")
 
     with run.step("Dashboard: pin, save, open the page, edit its layout, come back"):
         load_example(run, os.path.join(EXAMPLES,
                                        "04-vega-lite-multi-flow-dashboard.json"),
-                     expected_nodes=24)
+                     expected_nodes=21)
         play_all(run, timeout_ms=420000)
         before = len(canvas_nodes(page))
         for node in canvas_nodes(page)[:2]:
@@ -2565,8 +2589,8 @@ def chapter_views(run: StressRun) -> None:
         )
 
     with run.step("The provenance window", may_fail=True):
-        tour.click(menu(page, "Provenance"), force=True)
-        tour.click(page.get_by_role("button", name="Provenance", exact=True).first)
+        tour.click(page.get_by_role("button", name="View menu", exact=True))
+        tour.click(page.get_by_test_id("provenance-menu-item"))
         page.wait_for_timeout(2500)
         run.snap("provenance-window")
         _close_modal(page)
@@ -2583,7 +2607,7 @@ def chapter_views(run: StressRun) -> None:
                 run.snap("node-provenance")
 
     with run.step("Share the dataflow read-only", may_fail=True):
-        share = page.get_by_role("button", name=re.compile("Share", re.I))
+        share = page.get_by_test_id("share-menu-btn")
         if share.count():
             share.first.click()
             page.wait_for_timeout(2000)
@@ -2592,22 +2616,6 @@ def chapter_views(run: StressRun) -> None:
         else:
             run.note("no Share control found on the canvas",
                      step="Share the dataflow read-only")
-
-    with run.step("The in-app tutorial walks the palette"):
-        tour.click(menu(page, "Help"), force=True)
-        tour.click(page.get_by_role("button", name="Tutorial", exact=True).first)
-        page.wait_for_timeout(2000)
-        run.snap("intro-tutorial")
-        for index in range(9):
-            nxt = page.locator(".introjs-nextbutton")
-            if not nxt.count() or not nxt.first.is_visible():
-                break
-            nxt.first.click()
-            page.wait_for_timeout(900)
-        done = page.locator(".introjs-donebutton, .introjs-skipbutton")
-        if done.count():
-            done.first.click()
-        page.wait_for_timeout(1200)
 
     tour.chapter("That is the tour", "Curio",
                  "Every surface, every node, every agent.")

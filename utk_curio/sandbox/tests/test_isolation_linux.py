@@ -1,9 +1,9 @@
 """The parts of isolation that only exist on Linux: fork, confine, kill.
 
-**Run by the ``test-gpu`` CI job, and by nothing else.** Not by
-``test-gpu-isolated``, which boots a stack with ``CURIO_ISOLATION=fork`` and
+**Run by the sandbox half of the ``unit`` CI job, and by nothing else.** Not by
+``test-isolated``, which boots a stack with ``CURIO_ISOLATION=fork`` and
 runs ``scripts/test.sh --e2e-only`` against it, and not by
-``test-gpu-exec-user``, which runs ``sandbox/tests/live``. Nothing here touches
+``test-exec-user``, which runs ``sandbox/tests/live``. Nothing here touches
 a running stack: each test builds its own ``IsolationConfig`` and starts its
 own zygote, so the ambient ``CURIO_ISOLATION`` is not consulted and a green run
 of either other job says nothing about this file.
@@ -571,6 +571,89 @@ def test_the_limits_are_actually_applied_in_the_child(isolated):
     assert limits["core"] == 0, limits
 
 
+#: Burns CPU on every CPU this process may use, with threads that release the
+#: GIL (hashlib does for large buffers), until it has spent CPU_GOAL seconds
+#: of CPU time or WALL_CAP seconds of wall time.
+_BURN_EVERY_CPU = r'''
+    import hashlib, os, resource, threading, time
+    block = os.urandom(1 << 20)
+    start = time.monotonic()
+    def cpu():
+        ru = resource.getrusage(resource.RUSAGE_SELF)
+        return ru.ru_utime + ru.ru_stime
+    def burn():
+        while cpu() < CPU_GOAL and time.monotonic() - start < WALL_CAP:
+            for _ in range(64):
+                hashlib.sha256(block).digest()
+    threads = [threading.Thread(target=burn) for _ in os.sched_getaffinity(0)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return {"cpu": cpu(), "wall": time.monotonic() - start, "threads": len(threads)}
+'''
+
+
+def test_a_node_may_spend_more_cpu_time_than_its_wall_allowance(isolated):
+    """A node busy on every CPU for half its wall allowance must finish.
+
+    RLIMIT_CPU counts every thread, and it was set to the wall allowance, so
+    a node whose library runs a thread per core was killed long before its
+    wall clock ran out: example 10's Image Segmentation spent its 300 CPU-
+    seconds in 9 s on the 64-CPU deploy host. The kill was a SIGKILL, which
+    the node then reported as the memory limit.
+    """
+    if len(os.sched_getaffinity(0)) < 2:
+        pytest.skip("needs at least two CPUs to spend CPU time faster than wall time")
+    wall_allowance = isolated.wall_timeout
+    code = (_BURN_EVERY_CPU
+            .replace("CPU_GOAL", str(1.5 * wall_allowance))
+            .replace("WALL_CAP", str(0.75 * wall_allowance)))
+    result = run_isolated(isolated, code)
+    assert result["stderr"] == "", result["stderr"]
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    spent = load_from_duckdb(result["output"]["path"])
+    # The claim is only made when the node really outran the wall clock.
+    assert spent["cpu"] > wall_allowance, spent
+    assert spent["wall"] < wall_allowance, spent
+
+
+def test_a_node_past_its_cpu_allowance_is_told_so(isolated):
+    """The kernel warns at the soft limit and kills at the hard one.
+
+    With the two equal, its first signal was SIGKILL, which the node reported
+    as the memory limit. With the hard limit above the soft one, SIGXCPU
+    comes first, and the node says which allowance it ran out of.
+    """
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    probe = run_isolated(
+        isolated,
+        "    import resource\n"
+        "    return list(resource.getrlimit(resource.RLIMIT_CPU))\n",
+    )
+    assert probe["stderr"] == "", probe["stderr"]
+    soft, hard = load_from_duckdb(probe["output"]["path"])
+    assert soft == isolated.limits["cpu_seconds"], (soft, hard)
+    assert hard > soft, f"RLIMIT_CPU soft {soft} and hard {hard}: the first signal is SIGKILL"
+
+    # And SIGXCPU reaches the node's message: a node that lowers its own soft
+    # limit (always allowed) and then burns past it is told about CPU time.
+    burn = (
+        "    import resource\n"
+        "    soft, hard = resource.getrlimit(resource.RLIMIT_CPU)\n"
+        "    resource.setrlimit(resource.RLIMIT_CPU, (1, hard))\n"
+        "    while True:\n"
+        "        pass\n"
+    )
+    result = run_isolated(isolated, burn)
+    assert result["output"]["path"] == ""
+    assert "CPU allowance" in result["stderr"], result["stderr"]
+    assert "memory" not in result["stderr"], result["stderr"]
+
+
 def resource_unlimited():
     import resource
 
@@ -760,6 +843,167 @@ def test_the_writer_is_configured_for_a_capped_child(isolated):
     )
 
 
+#: glibc's own arena limit on a 64-core host, eight per core. Handed to the
+#: zygote, which the children inherit it from, so a four-core runner allows
+#: what a deployment's host does; ``lifecycle.zygote_environment`` lowers it
+#: to the budget's cap.
+MANY_CORE_ARENA_MAX = 8 * 64
+
+
+def test_the_zygote_starts_with_the_budgets_arena_cap():
+    """The cap is in the zygote's environment, where glibc reads it first.
+
+    16 arenas at the default 4096 MB, a quarter of the budget at 64 MiB each;
+    an operator's lower ``MALLOC_ARENA_MAX`` stands, and with no memory cap
+    the environment is left as it is.
+    """
+    from utk_curio.sandbox.isolation import lifecycle
+
+    assert lifecycle.zygote_environment({"memory_mb": 4096}, {})["MALLOC_ARENA_MAX"] == "16"
+    assert lifecycle.zygote_environment({"memory_mb": 256}, {})["MALLOC_ARENA_MAX"] == "2"
+    many = {"MALLOC_ARENA_MAX": str(MANY_CORE_ARENA_MAX), "PATH": "/bin"}
+    env = lifecycle.zygote_environment({"memory_mb": 4096}, many)
+    assert env == {"MALLOC_ARENA_MAX": "16", "PATH": "/bin"}
+    lower = lifecycle.zygote_environment({"memory_mb": 4096}, {"MALLOC_ARENA_MAX": "4"})
+    assert lower["MALLOC_ARENA_MAX"] == "4"
+    assert lifecycle.zygote_environment({"memory_mb": None}, {"PATH": "/bin"}) == {"PATH": "/bin"}
+
+
+@pytest.fixture
+def isolated_deployed(request, workspace, monkeypatch):
+    """A zygote at the budget and wall allowance a deployment runs with.
+
+    Parametrize indirectly with ``"many-core"`` to give it a 64-core host's
+    malloc arena limit (``MANY_CORE_ARENA_MAX``).
+    """
+    from utk_curio.sandbox.isolation import lifecycle, runner, supervisor
+
+    if getattr(request, "param", None) == "many-core":
+        monkeypatch.setenv("MALLOC_ARENA_MAX", str(MANY_CORE_ARENA_MAX))
+    monkeypatch.setenv("CURIO_EXEC_SOCKET", str(workspace / "zygote.sock"))
+    monkeypatch.setenv("CURIO_EXEC_TIMEOUT", str(supervisor.DEFAULT_WALL_TIMEOUT_SECONDS))
+    monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", str(supervisor.DEFAULT_LIMITS["memory_mb"]))
+    config = runner.IsolationConfig.from_environment()
+    lifecycle.ensure_running(config, exec_user=None, require_seccomp=HAS_PYSECCOMP)
+    try:
+        yield config
+    finally:
+        lifecycle.shutdown()
+
+
+#: Starts *threads* threads that each malloc and stay alive, then counts the
+#: process's malloc arenas from glibc's own report (one ``<heap nr=...>`` each).
+_COUNT_MALLOC_ARENAS = r'''
+    import ctypes, os, re, tempfile, threading
+    libc = ctypes.CDLL("libc.so.6")
+    libc.malloc.restype = ctypes.c_void_p
+    libc.malloc.argtypes = [ctypes.c_size_t]
+    libc.free.argtypes = [ctypes.c_void_p]
+    libc.fopen.restype = ctypes.c_void_p
+    libc.fopen.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+    libc.fclose.argtypes = [ctypes.c_void_p]
+    libc.malloc_info.argtypes = [ctypes.c_int, ctypes.c_void_p]
+    ready = threading.Barrier(THREADS + 1)
+    done = threading.Event()
+    def work():
+        block = libc.malloc(4096)
+        ready.wait()
+        done.wait()
+        libc.free(block)
+    threads = [threading.Thread(target=work) for _ in range(THREADS)]
+    for thread in threads:
+        thread.start()
+    ready.wait()
+    path = os.path.join(tempfile.mkdtemp(), "arenas.xml")
+    handle = libc.fopen(path.encode(), b"w")
+    libc.malloc_info(0, handle)
+    libc.fclose(handle)
+    done.set()
+    for thread in threads:
+        thread.join()
+    with open(path, encoding="utf-8") as fh:
+        report = fh.read()
+    return {"arenas": len(re.findall(r"<heap nr=", report)), "cpus": os.cpu_count()}
+'''
+
+
+@pytest.mark.parametrize("isolated_deployed", ["many-core"], indirect=True)
+def test_threads_share_a_bounded_number_of_malloc_arenas(isolated_deployed):
+    """However many threads a node's libraries start, the arenas are capped.
+
+    glibc gives each thread that mallocs an arena of its own, up to eight per
+    core, and each reserves 64 MiB of the address space RLIMIT_AS counts.
+    Counted from glibc's own ``malloc_info`` rather than inferred from VmSize,
+    with twice the cap's threads alive at once.
+    """
+    from utk_curio.sandbox.isolation import lifecycle
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    cap = lifecycle.malloc_arena_cap(isolated_deployed.limits["memory_mb"])
+    threads = max(64, 2 * cap)
+    result = run_isolated(
+        isolated_deployed, _COUNT_MALLOC_ARENAS.replace("THREADS", str(threads))
+    )
+    assert result["stderr"] == "", result["stderr"]
+    seen = load_from_duckdb(result["output"]["path"])
+    assert seen["arenas"] <= cap, (
+        f"{threads} threads made {seen['arenas']} malloc arenas on {seen['cpus']} "
+        f"cores, above the cap of {cap} for a "
+        f"{isolated_deployed.limits['memory_mb']}MB budget"
+    )
+
+
+DDRNET = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..",
+    "models", "model.curio.ddrnet23-slim@1",
+)
+
+#: Example 10's shipped model, run once at its own input size with *THREADS*
+#: intra-op threads, as ``curio_segment`` runs it.
+_RUN_DDRNET = r'''
+    import json, os
+    import numpy as np
+    import onnxruntime as ort
+    folder = curio_load_model("model.curio.ddrnet23-slim").folder
+    with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as fh:
+        manifest = json.load(fh)
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = THREADS
+    session = ort.InferenceSession(
+        os.path.join(folder, manifest["entry"]), sess_options=options,
+        providers=["CPUExecutionProvider"],
+    )
+    size = manifest["input"]
+    pixels = np.zeros((1, 3, int(size["height"]), int(size["width"])), dtype=np.uint8)
+    scores = session.run(None, {session.get_inputs()[0].name: pixels})[0]
+    return "x".join(str(n) for n in scores.shape)
+'''
+
+
+@pytest.mark.parametrize("isolated_deployed", ["many-core"], indirect=True)
+def test_the_street_vision_model_runs_on_a_many_core_host(isolated_deployed):
+    """Example 10's Image Segmentation, at the default budget, on 64 cores.
+
+    onnxruntime starts a thread per physical core, and each took a malloc
+    arena of its own: at 64 threads the session reserved the whole budget and
+    failed at creation with ``std::bad_alloc``. On a deployment the same run
+    failed on a model buffer (``BFCArena ... Failed to allocate memory for
+    requested buffer of size 67108864``). The threads are the library's own
+    choice and stay as they are; the cap on arenas is what keeps them inside
+    the budget.
+    """
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    result = run_isolated(
+        isolated_deployed,
+        _RUN_DDRNET.replace("THREADS", "64"),
+        models={"model.curio.ddrnet23-slim": os.path.abspath(DDRNET)},
+    )
+    assert result["stderr"] == "", result["stderr"][-2000:]
+    # 19 Cityscapes classes over the model's 128x256 output grid.
+    assert load_from_duckdb(result["output"]["path"]) == "1x19x128x256"
+
+
 def test_a_runaway_allocation_hits_the_memory_limit(isolated):
     """RLIMIT_AS turns this into a MemoryError instead of an OOM kill.
 
@@ -818,39 +1062,6 @@ def test_a_spawned_grandchild_does_not_survive_the_timeout(isolated):
     time.sleep(2)
     survivors = [line for line in _all_process_cmdlines() if marker in line]
     assert not survivors, f"a grandchild outlived the killed node: {survivors}"
-
-
-@pytest.mark.skipif(
-    os.environ.get("CURIO_ISOLATION_DESTRUCTIVE_TESTS") != "1",
-    reason=(
-        "fork bomb: opt in with CURIO_ISOLATION_DESTRUCTIVE_TESTS=1. "
-        "RLIMIT_NPROC is per-uid and root bypasses it, and inside the container "
-        "these run as root, so without an execution user this forks until the "
-        "container's pids_limit. docker-compose.ci.yml caps that, but the "
-        "self-hosted runner shares a host with the live instances and the limit "
-        "being configured is already covered by "
-        "test_the_limits_are_actually_applied_in_the_child. This only adds risk."
-    ),
-)
-def test_a_fork_bomb_is_bounded(isolated):
-    """Forks are reaped as we go, so the peak is bounded even when it succeeds."""
-    result = run_isolated(
-        isolated,
-        "    import os\n"
-        "    for _ in range(2000):\n"
-        "        try:\n"
-        "            pid = os.fork()\n"
-        "        except OSError:\n"
-        "            return 'limited'\n"
-        "        if pid == 0:\n"
-        "            os._exit(0)\n"
-        "        os.waitpid(pid, 0)\n"
-        "    return 'unlimited'\n",
-    )
-    from utk_curio.sandbox.util.parsers import load_from_duckdb
-
-    if result["output"]["path"]:
-        assert load_from_duckdb(result["output"]["path"]) == "limited"
 
 
 # ---------------------------------------------------------------------------
@@ -977,3 +1188,85 @@ def test_a_node_cannot_read_another_sessions_artifact(isolated, workspace):
     )
     assert result["output"]["path"] == ""
     assert "could not be loaded" in result["stderr"]
+
+
+# ---------------------------------------------------------------------------
+# #468: a template imports the modules bundled beside it in its package
+# ---------------------------------------------------------------------------
+
+#: The layout of #468's report: a package of modules beside the caller
+#: template, which imports a sibling relatively.
+_HEIGHTS = {
+    "building_height/__init__.py": "",
+    "building_height/convert_to_raster.py": (
+        "from .scale import FACTOR\n"
+        "\n"
+        "def convert_raster(value):\n"
+        "    return value * FACTOR\n"
+    ),
+    "building_height/scale.py": "FACTOR = 2\n",
+}
+
+_CALLER = (
+    "    from building_height.convert_to_raster import convert_raster\n"
+    "    return convert_raster(21)\n"
+)
+
+
+def _package_sources(package_root, modules):
+    """A package's ``sources/``, files 0644 and folders 0755, as an install
+    leaves them, and the caller template beside the modules."""
+    sources = package_root / "sources"
+    for relative, text in modules.items():
+        path = sources / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    (sources / "caller.py").write_text(_CALLER, encoding="utf-8")
+    for path in [sources, *sources.rglob("*")]:
+        os.chmod(path, 0o755 if path.is_dir() else 0o644)
+    return sources
+
+
+def test_a_forked_child_imports_the_module_bundled_beside_it(isolated, tmp_path):
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    sources = _package_sources(tmp_path / "ai.test.heights@1", _HEIGHTS)
+    result = run_isolated(
+        isolated, _CALLER, package_modules={"root": str(sources), "names": ["building_height"]},
+    )
+    assert result["stderr"] == "", result["stderr"]
+    assert load_from_duckdb(result["output"]["path"]) == 42
+
+
+def test_forked_children_of_two_packages_each_import_their_own_module(isolated, tmp_path):
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    code = "    import shared_name\n    return shared_name.WHO\n"
+    seen = []
+    for package in ("a", "b", "a"):
+        sources = tmp_path / f"ai.test.{package}@1" / "sources"
+        if not sources.is_dir():
+            _package_sources(sources.parent, {"shared_name.py": f"WHO = {package!r}\n"})
+        result = run_isolated(
+            isolated, code, package_modules={"root": str(sources), "names": ["shared_name"]},
+        )
+        assert result["stderr"] == "", result["stderr"]
+        seen.append(load_from_duckdb(result["output"]["path"]))
+    assert seen == ["a", "b", "a"]
+
+
+def test_the_execution_user_imports_modules_whose_store_it_cannot_reach(isolated_dropped, tmp_path):
+    """The package store is 0700 root-owned under isolation, so the execution
+    user reads the modules through their staged links in its scratch
+    directory, never at their path in the store."""
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    store = tmp_path / "packages"
+    sources = _package_sources(store / "ai.test.heights@1", _HEIGHTS)
+    os.chmod(store, 0o700)
+    result = run_isolated(
+        isolated_dropped, _CALLER,
+        package_modules={"root": str(sources), "names": ["building_height"]},
+    )
+    assert result["stderr"] == "", result["stderr"]
+    assert load_from_duckdb(result["output"]["path"]) == 42

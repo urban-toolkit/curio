@@ -130,6 +130,9 @@ It checks the column names it knows first, in this order:
 | `thumbnail` | a URL or a `data:` URI |
 | `overlay_url` | a URL or a `data:` URI |
 
+When a frame carries both `image_url` and `thumbnail`, as a collection's rows
+do, the cards show the `thumbnail`.
+
 If a frame carries none of those, it falls back to reading the values: a column
 whose cells are `data:` URIs, URLs ending in an image extension, or paths under
 `/api/` is treated as images too. So a column you named something else still
@@ -152,7 +155,7 @@ with an interaction edge and the selection travels to it.
 ### Images the backend serves
 
 A value that points at Curio's own backend, like
-`/api/streetvision/inference/overlay/<id>`, is fetched with your session rather
+`/api/datasets/<dataset id>/media/<file_id>@0?variant=original`, is fetched with your session rather
 than handed straight to the browser. Those routes resolve *which* user is asking
 from the request, and an image tag cannot say. This example does not need that
 path, but the Street Vision example relies on it to show segmentation overlays.

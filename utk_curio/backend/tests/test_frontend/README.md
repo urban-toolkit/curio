@@ -38,8 +38,38 @@ runtime (`window.__CURIO_BACKEND_URL__`, injected per browser context by the
 
 Tests are scheduled with `--dist loadgroup`: one group per workflow in
 `test_workflows.py` (its four class-scoped methods share a browser and a login),
-one group per file everywhere else. A missing screenshot baseline **fails** in
-any run unless `--mint-baselines` was passed -- see *Screenshot baselines*.
+one per scene in `test_walkthrough_baselines.py`, one group per file everywhere
+else. A missing screenshot baseline **fails** in every run; baselines are made
+on CI -- see *Screenshot baselines*.
+
+### Where CI runs each test
+
+CI splits the suite between a self-hosted GPU runner, the only kind with
+hardware WebGPU, and a matrix of CPU runners
+([`runner_split.py`](runner_split.py)). The run's `pick-runners` job chooses
+each job's runner: GitHub-hosted `ubuntu-latest` while the organization's
+hosted runners have room and the self-hosted arcade runners (`[self-hosted,
+cpu]`) after that, and for the GPU
+share an arcade GPU runner (`arcade-gpu-01` to `arcade-gpu-06`) while one is free and `utk-gpu` otherwise. The GPU share is
+still called `utk`, after the first GPU runner. A test runs on `utk` when its
+browser runs WebGPU: a `test_workflows.py` case whose dataflow has an Autark node, a
+walkthrough scene whose example or script drives Autark or the GPU, and any
+other module whose source mentions Autark or WebGPU. Such tests carry the
+`webgpu` marker. A test that needs the sibling backends of `--parallel` is
+marked `needs_parallel` and runs on `utk` too. Everything else runs on the
+CPU runners. Two variables select a share, and a run with neither runs
+everything:
+
+```bash
+CURIO_E2E_RUNNER=utk pytest utk_curio/backend/tests/test_frontend/       # the webgpu share
+CURIO_E2E_RUNNER=desktop CURIO_E2E_PART=3/10 pytest ...                  # one of ten desktop parts
+```
+
+`CURIO_E2E_PART` balances the parts by the group durations in
+`e2e_durations.json`. Refresh it from a run's e2e JUnit, `e2e.xml` in the
+`ci-inputs-test-gpu` and `ci-inputs-e2e-desktop-*` artifacts, with
+`python scripts/e2e_durations.py <e2e.xml> ...`; a group missing from it is
+priced at a default.
 
 With `--use-existing`, pairs 1..N-1 must already be running on the ports
 `python -m utk_curio.backend.tests.shards K` prints (that is what CI does,
@@ -127,7 +157,7 @@ In other words: **every pytest invocation starts against an empty database**, an
 
 ## Authenticated test setup
 
-The SPA wraps `/projects` and `/workflow/:id?` in `RequireAuth`, so every E2E test needs an authenticated browser session before it can interact with those pages. Two reusable strategies live in [`utils.py`](utils.py); pick based on what the test is actually asserting.
+The SPA wraps `/projects` and `/workflow/:id?` in `RequireAuth`, so every E2E test needs an authenticated browser session before it can interact with those pages. Two reusable strategies live in [`utils/auth.py`](utils/auth.py) and [`utils/db_stubs.py`](utils/db_stubs.py); pick based on what the test is actually asserting.
 
 ### Strategy A - drive the signup form (UI coverage)
 
@@ -158,24 +188,12 @@ The blueprint lives in [`utk_curio/backend/app/testing/routes.py`](../../app/tes
 
 The DB stub is strictly additive - Strategy A still works against the same test DB. Keep project-ownership / signup UI tests on Strategy A so regressions in the real auth flow still fail those tests.
 
-**One footgun in the stub spec.** `_empty_spec()` sets a top-level `name` but no
-`dataflow.name`, so `loadParsedTrill` calls `setWorkflowName(undefined)` and the
-canvas ends up with no workflow name at all (it clobbers `FlowProvider`'s
-`"DefaultDataflow"` default). Nothing notices until a test presses **File > New
-dataflow** and then **Save**: `discardProject()` clears `projectName`, so
-`saveCurrentProject` sends `nameOverride || projectName || workflowNameRef.current`
-= `undefined`, and `ProjectCreate` rejects it with `name is required`. The symptom
-is an error toast and a URL that stays on `/dataflow/new`, because `handleSave`
-only navigates after a successful create. A test that needs a second empty
-dataflow should stub another project rather than create one through the File
-menu.
-
 ### Shared helpers
 
 | Helper | What it does |
 |---|---|
 | `api_json(url, token, *, method="GET", payload=None, timeout=10.0, raw=False)` | Authenticated JSON request, stdlib only. The escape hatch for asserting backend state from a browser test: a seeding or persistence problem then fails in about a second with the offending payload, instead of as a 15-second locator timeout that says nothing about which side broke. `raw=True` returns bytes, for binary endpoints such as a `.curio.zip`. |
-| `require_owner_view(page, *, timeout=4000)` | **Fails** when the dataflow opened read-only as the shared guest. A guest cannot see another user's installed packages, datasets or agents, so every catalog fetch comes back empty and the test asserts nothing. This used to skip, which hid the problem: `scripts/test.sh` booted its shared stack without `--deploy` and 43 tests across 22 files quietly skipped while the run reported green. The environment being wrong is a setup bug, so it is loud. Boot with `--deploy`. |
+| `require_owner_view(page, *, timeout=4000)` | **Fails** when the dataflow opened read-only as the shared guest. A guest cannot see another user's installed packages, datasets or agents, so every catalog fetch comes back empty and the test asserts nothing. That is a setup bug: boot the stack with `--deploy`. |
 | `open_tools_palette(page, kind)` | Opens the left-rail `"packages"` or `"datasets"` palette and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` title and clicks only when the panel is not already showing, so a test that needs both palettes can come back to the first one. They are still mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. |
 
 ### Canvas authoring helpers
@@ -228,98 +246,61 @@ canvas, which means a real click at the button's centre lands on the overlay.
 Three things are easy to get wrong against the catalog drawers:
 
 - **Disable motion before navigating.** `page.emulate_media(reduced_motion="reduce")` - both drawer providers read `prefers-reduced-motion` through `useSyncExternalStore`, so this makes presentation synchronous and collapses the 380 ms close timer to zero. Do it *before* `stub_login_and_enter_workflow`; a `page.reload()` afterwards races `ProjectLoader` into the shared-guest fallback.
-- **`to_be_visible()` is not a gate for a drawer.** All three slide in via `transform: translate3d(100%, 0, 0)`, which keeps a full bounding box off-screen. **`aria-hidden="false"` is not a gate either, despite what this file used to say.** It is the presented signal for the Dataset and Agent drawers, but the Node Catalog drawer carried no `aria-hidden` at all until the fix that added it, so waiting for the attribute to flip there waited forever - a whole chapter of the stress run died on that advice. Gate on where the panel actually *is*: `stress.py::wait_for_drawer_presented` polls the dialog's bounding box until its left edge is inside the viewport, which is true of all three regardless of what they advertise. `canvasDrawerParity.test.ts` now keeps the three from diverging again. Never `force=True` on drawer internals - `force` skips the very hit-target check that protects against clicking a mid-slide panel.
+- **`to_be_visible()` is not a gate for a drawer.** All three slide in via `transform: translate3d(100%, 0, 0)`, which keeps a full bounding box off-screen. Gate on where the panel actually *is*: `stress.py::wait_for_drawer_presented` polls the dialog's bounding box until its left edge is inside the viewport. `canvasDrawerParity.test.ts` keeps the three drawers from diverging. Never `force=True` on drawer internals - `force` skips the very hit-target check that protects against clicking a mid-slide panel.
 
-  **The agent chat panel slides too, as of #295.** It is a fourth surface on the same 300 ms curve, presented through the same `useSlideDrawerPresentation` the three drawers now share, so everything above applies to `[role="dialog"][aria-label^="Chat with"]` as well. Two differences worth knowing: it carries `aria-hidden="true"` for the length of its exit, so a `get_by_role("dialog")` locator stops matching as soon as it starts closing rather than when it unmounts; and it stays in the DOM through that exit showing the agent it last showed, so a detach is not instantly followed by an empty canvas.
+  **The agent chat panel slides too.** It is a fourth surface on the same 300 ms curve, presented through the same `useSlideDrawerPresentation` as the three drawers, so everything above applies to `[role="dialog"][aria-label^="Chat with"]` as well. Two differences worth knowing: it carries `aria-hidden="true"` for the length of its exit, so a `get_by_role("dialog")` locator stops matching as soon as it starts closing rather than when it unmounts; and it stays in the DOM through that exit showing the agent it last showed, so a detach is not instantly followed by an empty canvas.
 - **Settle the canvas before clicking anything on a node.** ReactFlow's initial `fitView` animates the viewport, and a visible-but-still-moving element makes `click()` time out with no useful message. Call `_wait_for_reactflow_ready(page)` first.
 
 ## Screenshot baselines
 
 `save_workflow_test_screenshot` compares the canvas against a PNG in
 `docs/examples/dataflows/expected_outputs/`, named
-`screenshot_<stem>_<test_name>.png`. **A missing baseline fails the run.** Create
-one deliberately:
+`screenshot_<stem>_<test_name>.png`. **A missing baseline fails the run.**
+
+Baselines are made on CI and nowhere else. Push the branch, then dispatch a
+re-mint run of the Full stack build:
 
 ```
-pytest ... --mint-baselines
+gh workflow run docker-compose.yml --ref <branch> -f remint=true
+# only some tests: add -f remint_filter='<a pytest -k expression>'
+# frames a fix changes by only a few words: add -f remint_force='<name part>,<name part>'
 ```
 
-It used to mint implicitly, which meant the first run of a new test always passed
-and silently established whatever it happened to render. Two ways that bites,
-both seen here: a capture taken against a broken build enshrines the bug as
-expected output, and the suite then defends it; and a capture taken on the wrong
-machine enshrines that machine. The macOS captures of the two #333 scenes looked
-perfect by eye and sat 6.11% and 10.05% from what CI renders, the second past its
-budget, because macOS rasterizes text with grayscale antialiasing while the
-runner uses LCD subpixel.
+That run is the e2e suite alone, under `--remint-baselines`, on the GPU share
+and the CPU parts alike, each re-minting the baselines it compares: each
+capture is compared with its committed baseline, and when its screen changed
+the capture is written over the baseline; a missing baseline is minted. Then:
 
-So mint on a build you trust, on a machine whose rendering matches CI's (a Linux
-container is the cheap way - see *Minting on Linux* below), and look at the PNG
-before committing it. Minting also refuses outright if the Rubik webfont did not
-load or the capture came out blank, because both produce a baseline that is wrong
-in a way no diff percentage explains.
+1. Open the run's `curio-ci-report.html`. Its **Re-minted** cards show each new
+   frame next to the baseline it replaced, biggest change first; the baselines
+   it kept are listed below the cards.
+2. Check every re-minted frame: every node in it finished, no toast, no stray
+   tooltip or hover, nothing cut off.
+3. Download the run's `reminted-baselines` artifact into
+   `docs/examples/dataflows/expected_outputs/` and commit it.
 
-### Minting on Linux
+A screen counts as changed when more than 0.05% of its pixels differ
+(`REMINT_MIN_RATIO`), not counting text a run writes fresh every time (file
+names, ids, dates, times of day and the app version, `VOLATILE_TEXT`) or the
+rest of its line, which such text moves. The report's difference images draw
+those pixels blue. A baseline whose name contains a `remint_force` part is
+replaced whatever changed, and its card says it was requested. A few frames
+change a little between any two runs (an id wrapping at another character, a
+node a pixel away), so each re-mint replaces some of them too. A re-minted frame is captured twice, and
+when the two differ by more than the budget the screen had not settled: the
+baseline is left as committed and the test fails. Minting refuses a capture
+whose webfont did not load or that came out blank.
 
-Only the browser has to be Linux. The app is just a server, and the harness
-injects `window.__CURIO_BACKEND_URL__` per browser context, so a containerised
-Chromium can drive a stack running on the host:
+`--mint-baselines` and `--remint-baselines` refuse to run anywhere but CI
+(`GITHUB_ACTIONS=true`).
 
-```
-# 1. stack on the host, bound so the container can reach it.
-#    CURIO_TESTING=1 is what makes /api/testing/* exist; without it the autouse
-#    e2e_clean_db fixture errors on setup and every scene fails before it draws.
-#    The token has to be knowable: curio.py start otherwise mints a random one
-#    the container cannot recover, and sandbox calls come back 401.
-#    The three hosts default to loopback, which a container cannot reach.
-export CURIO_SANDBOX_TOKEN=local-mint-token
-CURIO_TESTING=1 python curio.py start --deploy --with-examples \
-  --backend-host 0.0.0.0 --sandbox-host 0.0.0.0 --frontend-host 0.0.0.0
-
-# 2. Chromium in a container carrying the same pair scripts/test.sh installs.
-#    --add-host is required on Linux: host.docker.internal is Docker Desktop
-#    magic and does not otherwise resolve, which is the whole point here.
-#    The harness composes its URLs from ONE host plus three ports; there is no
-#    base-url variable.
-docker run --rm --ipc=host \
-  --add-host=host.docker.internal:host-gateway \
-  -e CURIO_E2E_USE_EXISTING=1 \
-  -e CURIO_E2E_HOST=host.docker.internal \
-  -e CURIO_E2E_FRONTEND_PORT=8080 \
-  -e CURIO_E2E_BACKEND_PORT=5002 \
-  -e CURIO_E2E_SANDBOX_PORT=2000 \
-  -e CURIO_SANDBOX_TOKEN="$CURIO_SANDBOX_TOKEN" \
-  -v "$PWD:/w" -w /w mcr.microsoft.com/playwright/python:<tag> \
-  bash -c 'pip install -r requirements.txt \
-           && python -m playwright install chromium \
-           && pytest <the scene> --mint-baselines'
-```
-
-The container runs as root, so with `-v "$PWD:/w"` the minted PNGs land
-root-owned in your worktree. `sudo chown` them before committing, or run the
-container with `--user "$(id -u):$(id -g)"` and a writable `HOME` for the
-browser download.
-
-`requirements.txt` pins `pytest-playwright` but not `playwright`, and CI passes
-no `--browser-channel`, so both CI and this container end up on whatever
-`playwright install chromium` resolves that day. That is the drift to watch if
-baselines start failing for no reason; pinning `playwright` separately would
-close it.
-
-Why bother: measured against the render CI actually produces, a Linux container
-sat 0.88% and 5.89% away on the two #333 scenes where macOS sat 6.11% and
-10.05%. The cause is antialiasing mode, and it is checkable - count pixels whose
-RGB channels disagree, since grayscale AA keeps `R == G == B` and LCD subpixel
-does not. CI and the container both come out around 8-9%; macOS comes out at 0%.
-
-Alternatively, let CI mint: `--mint-baselines` works under xdist too (this module
-is its own xdist group, so there is no write race), which is what `d12cc220` and
-`9f27df5e` did. Commit what the runner produces.
-
-The helper calls `_wait_for_reactflow_ready` first, so baseline and comparison
-always share one fitView'd viewport. Comparison allows 20% of pixels to differ by
-more than 30/255 per channel; that budget exists because every executed code node
-renders `Saved to file: <timestamp>_<hash>`, which changes on every run.
+The helper waits until no node on the canvas is running, so a view that draws on
+its own after its input arrives is captured drawn; pass `allow_running=True` only
+for a frame whose subject is a run in progress. It then calls
+`_wait_for_reactflow_ready`, so baseline and comparison always share one
+fitView'd viewport. Comparison allows 10% of pixels (`MAX_DIFF_RATIO`) to differ
+by more than 30/255 per channel. Two CI runs capture the same screen within about
+1.3% of each other.
 
 Pass `fit_reactflow=False` for a page that has no canvas - the projects list, the
 catalog. That fitView step waits on `.react-flow__node`, so it would otherwise
@@ -329,13 +310,13 @@ lives in an inner `overflow-y: auto` container needs two captures, at the top an
 at the bottom, to show anything moved; `test_project_page_scroll_e2e.py` does
 exactly that.
 
-Call `dismiss_toasts(page)` before capturing anything that follows a node run.
+Pass `sweep_toasts=True` when capturing anything that follows a node run.
 Toasts are bottom-right, up to 360px wide, and land exactly where canvas content
 usually is - and a node reaching "Done" does not mean its follow-up work has
 finished: the dataset install-save is debounced 500 ms past it and answers
-seconds later, so any toast it raises lands well after the status flips. A single
-sweep dismisses nothing and the toast still makes the capture; the helper sweeps,
-waits for a quiet window, and sweeps again.
+seconds later, so any toast it raises lands well after the status flips. The
+helper sweeps, waits for a quiet window, and sweeps again, right before the
+shutter.
 
 A *"couldn't be generated"* warning is a **bug**, not routine noise (#180):
 `test_computed_json_output_e2e.py` fails on it. Sweeping is for the ordinary
@@ -345,7 +326,26 @@ Two families of baseline live in that folder:
 
 - one per bundled dataflow JSON, for `TestWorkflowCanvas` (two per workflow,
   `test_node_type_and_content` and `test_node_execution`), each paired with a
-  `_browser_log.txt` because autk swallows its errors into React state;
+  `_browser_log.txt` because autk swallows its errors into React state. Every
+  Autark node whose grammar has a `map` or `plot` also gets a
+  `test_node_execution_closeup_<node id>` baseline: the node alone, framed at up
+  to 100% zoom (`save_node_closeup`) and compared at a per-channel tolerance of
+  5 instead of 30, against a 5% budget instead of 10%. In the full-page frame a
+  map or plot that drew nothing can stay under the budget; up close it cannot. Walkthrough scenes with a drawn map
+  take one with `ctx.capture_node`. A workflow in `INTERACTIONS`
+  (test_workflows.py) also gets
+  `test_node_interaction_<step>_{before,after}_<node id>` baselines. Each step
+  frames its two nodes together, captures both, does its gesture (a hover held
+  on a Vega mark, a double-click pick on an Autark map, or a drag across a
+  Vega-Lite interval or an Autark plot's brush), and captures both
+  again without moving the pointer (`save_interaction_frame`, compared like a
+  close-up). The test asserts
+  that the target changed and kept its drawing (a highlight, not a redraw), and
+  that taking the gesture back restores it. The CI report shows these frames as
+  Interaction pairs. Re-mint them with the workflow's whole class selected
+  (`remint_filter="TestWorkflowCanvas and <workflow>"`), as CI runs them: the
+  class's earlier tests can move the pair by a fraction of a pixel, which shifts
+  the node's text and borders past the close-up budget;
 - one per hand-built surface, keyed by the stem the test passes in place of a
   workflow path: `canvas-authoring`, `package-roundtrip`,
   `package-metadata-roundtrip`, `package-export-drawer`, `save-as-modal`,
@@ -353,7 +353,7 @@ Two families of baseline live in that folder:
   `agent-catalog-drawer`, `agent-run` (one per built-in agent, plus a
   `_chat` companion for the four that mutate), `agent-review-card`,
   `dataset-export`, `dataset-lineage`, `autark-grammar-edit`,
-  `merge-flow-authoring`, `canvas-delete-key`, `projects-page-scroll`,
+  `multi-input-authoring`, `canvas-delete-key`, `projects-page-scroll`,
   `global-imports`, `uhvi-install`, `data-pool-scroll`,
   `computed-json-output` and `workflow-deps-import`. These guard what the semantic assertions cannot see -
   most usefully that an edge is actually *drawn*, not merely present in the
@@ -367,22 +367,32 @@ and a single end-state shot would show none of them. Capture while the modal is
 still open: `_capture_full_page` uses `full_page=True` and `ModalShell` portals
 into `document.body`, so an open modal is in the shot.
 
-Non-determinism inside a capture is normal and the 20% budget is what absorbs it.
+Non-determinism inside a capture is normal and the 10% budget is what absorbs it.
 The metadata modal, for instance, renders the generated coordinate
-(`curio.canvas.draft.<random>@1`) in its subtitle, which differs on every run. Do
-not tighten the tolerance to chase a crisper diff.
+(`curio.canvas.draft.<random>@1`) in its subtitle, which differs on every run.
 
-Measured run-to-run drift for the three full-canvas baselines
-(`canvas-authoring`, `package-roundtrip`, `library-manager`) is 1.24% (library
-manager) and under 0.1% (the other two) against the 20% budget, so the headroom is
-wide. They were captured with the executable `browser_type_launch_args` resolves
+Baselines are captured with the executable `browser_type_launch_args` resolves
 to - **system Google Chrome** when it is installed, bundled Chromium otherwise -
-so regenerate them on the machine that will police them if that ever diverges. To
-regenerate, delete the PNG and re-run the test.
+so regenerate them on the machine that will police them if that ever diverges.
 
 A failing comparison writes `screenshot_<stem>_<test_name>_actual.png` next to the
 baseline and attaches expected/actual/diff to the Allure report. Those `_actual`
 files are debris; do not commit them.
+
+With `CURIO_E2E_COMPARE_DIR` set, every comparison, passing or not, also writes a
+folder there: the expected and created images, a difference image (red: pixels
+counted against the budget; amber: different, but within the per-channel
+tolerance), and `record.json` with the tolerance, the budget and the measured
+share. Every CI e2e job sets it, and the run's `ci-report` job builds
+`curio-ci-report.html` from all of them; open it from the run's artifact list.
+The same page from a local run:
+
+```bash
+CURIO_E2E_COMPARE_DIR=$PWD/.curio/compare PYTEST_ADDOPTS=--junitxml=$PWD/.curio/e2e.xml \
+  bash scripts/test.sh --e2e-only
+python scripts/ci_report.py --junit "End-to-end tests=.curio/e2e.xml" \
+  --comparisons .curio/compare --failures .curio/playwright/failures --out report.html
+```
 
 ## Workflow Subset Filtering
 
@@ -429,7 +439,26 @@ pytest utk_curio/backend/tests/test_frontend/test_workflows.py -k "Vega.json"
 test_frontend/
   conftest.py                 # workflow list, env filtering, pytest_generate_tests hook
   fixtures.py                 # server startup, browser/page fixtures, loaded_workflow (DB-stub login)
-  utils.py                    # FrontendPage, upload_workflow, signup helpers, stub_* helpers
+  utils/                      # helpers, one module per area; `from .utils import X` finds any of them
+    environment.py            # REPO_ROOT, state_root, stack flags, require_* skips, debug_log
+    sandbox.py                # direct sandbox calls, execute_workflow_programmatically
+    vega_svg.py               # Vega-Lite SVG helpers
+    capture_waits.py          # viewport fit, dismiss_toasts, webfont and running-node waits
+    images.py                 # captures, _compare_images
+    dialogs.py                # accept_confirm_dialog, leave_agent_badge
+    screenshots.py            # save_workflow_test_screenshot, mint and re-mint, frame_nodes
+    closeups.py               # save_node_closeup, close-up budgets, viewport hints
+    interactions.py           # interaction frames, brush and mark probes
+    servers.py                # ports, e2e_existing_servers
+    auth.py                   # signup helpers, require_owner_view
+    db_stubs.py               # stub_* helpers, api_json
+    palettes.py               # open_tools_palette, close_tools_palette
+    upload.py                 # upload_workflow
+    canvas_authoring.py       # drag_to_canvas, connect_nodes, set_node_code, play_node
+    run_all.py                # Run All state, holding a run open
+    node_drawings.py          # assert_vega_canvas_rendered and the other drawing checks
+    page.py                   # FrontendPage
+    scripted_llm.py           # scripted agent turns
   test_alive.py               # smoke tests: backend, sandbox, frontend are live
   test_auth_flow.py           # signup → projects → signout → signin (UI path)
   test_workflows.py           # TestWorkflowCanvas - DB-stubbed auth via loaded_workflow
@@ -455,7 +484,7 @@ test_frontend/
   test_package_export_import.py   # palette export download -> re-import (dup + renamed clone)
   test_save_as_package.py     # node -> Save as package -> Export -> load back
   test_canvas_authoring_e2e.py     # build by hand: dataset -> drag -> connect -> run
-  test_merge_flow_authoring_e2e.py # palette-dragged Merge Flow feeds `arg` downstream (#159)
+  test_multi_input_authoring_e2e.py # two palette-dragged producers wired into one node's circles (#159, #662)
   test_canvas_delete_key_e2e.py    # Delete and Backspace both delete; neither does inside Monaco (#153)
   test_autark_grammar_edit_e2e.py  # a mid-document grammar edit sticks on the first keystroke (#157)
   test_project_page_scroll_e2e.py  # the projects grid scrolls inside the viewport (#161) - no canvas
@@ -496,10 +525,10 @@ described under **Agent runs** below.
 
 The suite has two configurations with mutually-exclusive UI surfaces:
 
-- **default** (`CURIO_NO_PROJECT=0`, the implicit value): the SPA exposes a per-user `/projects` page and the File menu offers `New dataflow` / `Load dataflow` / `Save dataflow` / `Save dataflow as` / `Export as notebook` / `Go to projects`.
-- **no-project** (`CURIO_NO_PROJECT=1`): the SPA auto-guest-signs in, routes `/` directly to `/dataflow`, and hides only the project-backed entries (`Save dataflow` and `Go to projects`); `New dataflow`, `Load dataflow`, `Save dataflow as`, and `Export as notebook` remain visible.
+- **default** (`CURIO_NO_PROJECT=0`, the implicit value): the SPA exposes a per-user `/projects` page and the File menu offers `New dataflow` / `Load dataflow` / `Save dataflow` / `Save dataflow as` / `Export as notebook` / `Installed libraries` / `Go to projects`.
+- **no-project** (`CURIO_NO_PROJECT=1`): the SPA auto-guest-signs in, routes `/` directly to `/dataflow`, and hides only the project-backed entries (`Save dataflow` and `Go to projects`); `New dataflow`, `Load dataflow`, `Save dataflow as`, `Export as notebook` and `Installed libraries` remain visible.
 
-Tests that depend on either surface call `require_project_page()` / `require_no_project_mode()` from [`utils.py`](utils.py) (both consult the live backend's `/api/config/public` so the pytest process and the `curio start` subprocess never disagree). To exercise the no-project UI explicitly:
+Tests that depend on either surface call `require_project_page()` / `require_no_project_mode()` from [`utils/environment.py`](utils/environment.py) (both consult the live backend's `/api/config/public` so the pytest process and the `curio start` subprocess never disagree). To exercise the no-project UI explicitly:
 
 ```bash
 CURIO_NO_PROJECT=1 pytest \
@@ -515,14 +544,14 @@ CURIO_NO_PROJECT=1 pytest \
 content: the Node Catalog reads `<repo_root>/packages/`, the Data Catalog reads
 `<repo_root>/datasets/` (surfacing as `origin: "hub"`), and the Agent Catalog
 reads the built-in roster in `app/agents/builtin.py`. A fresh test user already
-sees five packages, three datasets and twenty-one agents.
+sees five packages, three datasets and ten agents.
 
 **Only `curio.example-ui@1` may be installed in a test.** It declares no python
 dependencies, so nothing shells out to pip. `curio.weather@1`,
-`ai.urbanlab.uhvi@1` and `curio.streetvision@1` pull rasterio / geopandas /
+`ai.utk.uhvi@1` and `curio.streetvision@1` pull rasterio / geopandas /
 **torch** through a synchronous call capped at 30 minutes - and worse, the
 resulting user-store copy makes *every later* `curio start` re-resolve those deps
-(`main.py` walks every user store on boot and `sys.exit(1)`s if pip fails). The
+(`utk_curio/cli/dependencies.py` walks every user store on boot and `sys.exit(1)`s if pip fails). The
 e2e suite cannot stub pip: it runs in the backend subprocess, not the pytest
 process. Guard the install endpoint with `page.route` so a mis-targeted click
 fails in milliseconds instead.
@@ -535,18 +564,15 @@ Other things that surprise people here:
 - `curio.builtin@*` is always treated as installed and offers **no** buttons: it
   ships with every instance and can be neither uninstalled nor published.
 - **Export is palette-only** and gated to (user store ∩ project lockfile) minus
-  builtin. The drawer's `MyPackagesList` also renders an export control.
+  builtin.
 - **A plain re-import is expected to 400.** `onPickArchive` never sets
   `replace`, and no UI path does, so re-importing an installed coordinate fails
   by design. Rename the manifest `id` to fork it instead.
-- The **"In project" tab renders `MyPackagesList`, not `PackageCard`**, so the
-  `data-pkg-dir` attribute is absent there; key on the row's `Remove {name}`
-  aria-label.
 - Card roots carry `data-pkg-dir` / `data-dataset-id` / `data-agent-coord`.
-  Prefer them over display copy, which has been renamed repeatedly.
+  Prefer them over display copy.
 - **Every catalog confirms an add and a remove, with an in-app dialog** (#196,
-  #197). `window.confirm` is gone from all three drawers, so `page.on("dialog",
-  ...)` never fires for them - a test still written that way clicks the card
+  #197). No drawer calls `window.confirm`, so `page.on("dialog", ...)` never
+  fires for them - a test written that way clicks the card
   button, silently does nothing, and fails later for the wrong reason. Use
   `utils.accept_confirm_dialog(page, title=..., button=...)`, and note the
   ordering: the card click only *opens* the dialog, so the request to wait on
@@ -555,20 +581,8 @@ Other things that surprise people here:
   conflicts); Data and Agent use the plain ConfirmDialog.
 - **`get_by_role("dialog")` is ambiguous while a drawer is open.** The drawers
   are themselves `role="dialog"`, so scope by accessible name -
-  `page.get_by_role("dialog", name="Remove Node Explainer?")` - which
+  `page.get_by_role("dialog", name="Remove Chat?")` - which
   ConfirmDialog wires from its heading via `aria-labelledby`.
-- **The unsaved-changes guards in `UpMenu` are still native**, so the tours'
-  blanket `page.on("dialog", lambda d: d.accept())` is still required for
-  File > New dataflow. Do not remove it.
-- **The agent palette's footer used to sit below the fold at 1280x720.** Its
-  panel hung down from its own trigger, which is the third and lowest in the
-  rail, so `Browse Agent Catalog +` (how the Node suite enters) was off screen.
-  That was a missed conversion rather than a viewport limit: the Datasets and
-  Packages panels became `position: absolute; top: 0; left: 100%` when the
-  palettes moved into the rail, and the Agent Catalog arrived later without the
-  matching CSS. `paletteShell.module.css` now positions it the same way, so the
-  footer is reachable and either entry point works. Reaching the drawer from the
-  **Data** menu is still fine, and is what the tour does.
 - **`packagesApi` percent-encodes the dirName**, so the `@` in
   `curio.canvas.draft.<slug>@1` reaches the wire as `%40`. An
   `expect_response` predicate built from the raw dirName never fires; match on
@@ -581,8 +595,7 @@ Other things that surprise people here:
   `applyCanvasTemplateConfigToTemplateDraft` does not copy `hasProvenance` into
   the template draft and `toApiPayload` emits no such manifest field. Asserting
   it through an archive fails for reasons that have nothing to do with the
-  archive. (The Explanation tab it used to sit beside is gone;
-  `agent.node-explainer` replaced it.)
+  archive.
 - **Node settings port rows have no label, id or test id**, and their class
   names are hashed CSS modules. Locate the section by its heading text and step
   up one level (`get_by_text("Input ports", exact=True).locator("xpath=..")`),
@@ -591,9 +604,8 @@ Other things that surprise people here:
   `onSave` calls `updateDataNode` and `setSaveAsOpen(true)` in one batch, but
   `updateDataNode` writes FlowProvider's `useNodesState` array, which reaches
   React Flow's store only when its prop-sync effect runs - after the render
-  where `show` flips true. `NodeSaveAsModal` used to `useMemo` the node on
-  `[show, nodeId, getNodes]` and so packaged the pre-edit one, dropping every
-  edit; it now selects off the store with `useStore`. Guarded by
+  where `show` flips true. `NodeSaveAsModal` selects the node off the store
+  with `useStore`, so it packages the edited node. Guarded by
   `test_package_metadata_roundtrip_e2e.py::test_node_settings_configuration_reaches_the_saved_package`
   and, in milliseconds, by `src/tests/components/nodeSaveAsModalNodeSource.test.tsx`.
   Worth knowing when reading `test_package_roundtrip_e2e.py`, which sets its
@@ -617,16 +629,16 @@ agent arriving by some other path cannot slip past.
 
 | Module | Browser | What it is for |
 |---|---|---|
-| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the minted proposal or tool round, and the persisted transcript. ~1-2 s per agent. |
+| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the minted proposal or tool round, and the persisted transcript. ~1-2 s per agent. Each agent runs twice, fenced and on native tools, and one run falls back from native to fenced. One more writes an Autark document under its reply schema. |
 | `test_agent_chat_e2e.py` | yes | Drives a real chat turn per agent and captures the baselines below. A mutate-capable agent additionally **applies its proposal and is held to the canvas actually changing**; a report-only one is held to the canvas NOT changing. |
 
-**What gets captured, and why it differs by agent.** Only 4 of the 21 built-ins
+**What gets captured, and why it differs by agent.** Only 4 of the 10 catalog agents
 can mutate anything - the rest are `report-only` by contract - so there are two
 kinds of evidence and two capture shapes.
 
 | Agent kind | Baselines under `agent-run` | The assertion behind it |
 |---|---|---|
-| report-only (17) | `<agent-id>.png` - the chat panel, clipped | the reply rendered, and the saved dataflow is byte-identical afterwards |
+| report-only (6) | `<agent-id>.png` - the chat panel, clipped | the reply rendered, and the saved dataflow is byte-identical afterwards |
 | mutate-capable (4) | `<agent-id>_chat.png` (panel) + `<agent-id>.png` (full canvas) | the proposal was applied and the node was really created or rewritten, on the server *and* on the canvas |
 
 Three things about those captures are deliberate:
@@ -634,7 +646,7 @@ Three things about those captures are deliberate:
 - **The report-only baseline is clipped to the panel** (`clip_selector` on
   `save_workflow_test_screenshot`). A full-page capture was more than half
   canvas and left rail - nothing about the agent - and worse, it diluted the
-  comparison: a regression inside the panel had to move 20 % of a frame it only
+  comparison: a regression inside the panel had to move 10 % of a frame it only
   partly occupies before the diff would notice.
 - **The mutate baseline closes the chat panel first.** `fitView` spreads nodes
   across the whole viewport while the panel covers its right ~44 %, so the node
@@ -652,9 +664,10 @@ handed. Three things make that usable from a test:
 
 | Step | How |
 |---|---|
-| Point the user at it | `use_scripted_llm(backend, token)` - a real `PATCH /api/auth/me` writing `llm_api_type: "testing"`, so the production `resolve_provider_config` path is the one under test |
+| Point the user at it | `use_scripted_llm(backend, token)` - real `/api/agents/llm` calls that add a `testing` LLM configuration and make it the default, so the production `resolve_llm` path is the one under test |
 | Script the replies | `script_agent_replies(backend, *replies)` -> `POST /api/testing/agent-script`. One entry **per provider call**: a reply carrying a `toolRequest` tail is answered by the runtime and the model is prompted again, so script the follow-up too |
-| Read what reached the model | `captured_system_prompt(backend)` / `captured_agent_prompts(backend)` -> `GET /api/testing/agent-script` |
+| Script native tool calls | `script_agent_replies(backend, *replies, native_tools=True)`: the scripted endpoint calls tools natively, so runs are offered their tools instead of the fenced syntax (a reset puts it back). A reply is then `{"text", "toolCalls": [{"name", "arguments"}]}`, the name a tool id or its native name; `{"error": ..., "status": 400}` makes the call refuse the tools, which is how a test reaches the fallback tool calls: the same round again on the fenced protocol. `structured_output=True` makes it take a reply schema, so content written for an Autark node is scripted as the constrained JSON (`reply_schemas.autk_reply_schema(...).encode(document)`) |
+| Read what reached the model | `captured_system_prompt(backend)` / `captured_agent_prompts(backend)` -> `GET /api/testing/agent-script`; `captured_agent_calls(backend)` says which configuration answered each call, and `captured_agent_offers(backend)` which native tools and which reply schema each call carried |
 
 The `agent-script` routes 404 unless `CURIO_TESTING` is set, on top of the
 production guard every route in that blueprint carries - unlike `stub-login`,
@@ -669,13 +682,13 @@ Things worth knowing before adding to these:
 - **Never script `web.search` / `web.fetch`.** `agent.node-researcher` and
   `agent.researcher` declare them and `app/agents/egress.py` really opens
   sockets. Both also declare a local read tool, which is what the suite uses.
-- **`datalake.search` is the exception, and only because of the corpus.**
+- **`discovery.search` is the exception, and only because of the corpus.**
   `agent.dataset-finder` declares it, and it too really opens sockets - but the
-  harness exports `CURIO_DATALAKE_FIXTURES`, so in this stack the lake
+  harness exports `CURIO_DISCOVERY_FIXTURES`, so in this stack the discovery
   transport answers from recorded responses instead. That is what makes an
   agent-driven download testable at all. It holds only while that variable is
-  set: if you copy a lake spec into a harness that does not export it, the
-  stack will reach a real portal. `datalake.sources` is safe unconditionally -
+  set: if you copy a Discovery Catalog spec into a harness that does not export it, the
+  stack will reach a real portal. `discovery.sources` is safe unconditionally -
   it reads manifests off disk.
 - **Only three mutate tools are minted here**, and `MINTABLE_TOOLS` is ordered
   most-specific-first because an agent that declares several gets the first
@@ -687,7 +700,8 @@ Things worth knowing before adding to these:
   (`dataset.install`, `package.install`, `package.draft.apply`,
   `node.template.create`) each need a real catalog row, or a run of the isolated
   build service; their mints are covered in-process by
-  `test_agents/test_routes.py`, and an agent declaring only those falls through
+  `test_agents/test_routes_turns.py` and `test_agents/test_routes_proposals.py`,
+  and an agent declaring only those falls through
   to the read-tool leg.
 - **A plan is applied per node**, through the planned row's own
   `Create node <title>` button and the `apply-node` route - not the card's
@@ -698,7 +712,7 @@ Things worth knowing before adding to these:
   DB is not truncated between its parameters - it logs in once and each
   parameter stubs its own *project*. A reset would invalidate the stub user's
   token while the browser still holds the cookie.
-- Two things inside a capture vary run to run and the 20 % budget absorbs both:
+- Two things inside a capture vary run to run and the 10 % budget absorbs both:
   the run-status line's wall-clock duration, and the session id in the panel
   header. Token counts do not vary (`DEFAULT_USAGE` is fixed), so
   `2 calls x 46 = 92 tokens` is stable for a one-tool-round turn.
@@ -740,9 +754,7 @@ plus `.curio/test/agents-catalog/` between tests, over
 `/api/testing/reset-db` when it is talking to a separately-started backend and
 on the files otherwise (#308). That matters because `user.id` is a bare sqlite
 rowid alias, so ids recycle from 1: a store left behind is handed to the next
-account a test creates. It did exactly that until #308 - the walkthrough
-baselines failed only in a full run, because one scene's imported agent was
-still in the "fresh" account of the scene after it.
+account a test creates.
 
 What that clean does NOT undo is anything a test leaves outside those trees:
 libraries pip-installed into the interpreter, the shared Data Catalog, files
@@ -784,13 +796,14 @@ invisible and a click would look unmotivated.
 
 ### The agent scenes need a provider
 
-`aisettings` types a base URL, an API key and a model into AI Settings on
-camera, and `agentrun` then asks that endpoint a real question. Curio ships no
-provider of its own and the tour's account starts with none, so this is
-load-bearing rather than decorative.
+`apisettings` adds an LLM configuration (a base URL, an API key and a model) on
+the API keys tab of API Settings on camera, and `agentrun` then asks that
+endpoint a real question.
+Curio ships no provider of its own and the tour's account starts with no
+configuration, so this is load-bearing rather than decorative.
 
 The endpoint and model default to the `LLM_*` constants at the top of the
-module. **The key is not a constant** — put it in `.curio/tour-provider.json`
+module. **The key is not a constant**: put it in `.curio/tour-provider.json`
 (`.curio/` is gitignored) or in `CURIO_TOUR_LLM_API_KEY`:
 
 ```json
@@ -843,11 +856,11 @@ file and the next run dies at conftest import with `PermissionError: [WinError
 | Chapter | What it drives |
 |---|---|
 | `access` | signup validation, real signup, the persona picker, sign out, a wrong password, sign in; the projects page - search, all three sorts, grid/list, card click / Enter / Space / right-click, Duplicate, Rename, Delete, the detail drawer; Jupyter notebook import |
-| `canvas` | all twelve built-in tiles dropped and identity-checked; header band, resize, comments, pin; every editor tab; Node settings including the port editor; invalid connections and cycles; the guarded delete; Backspace inside Monaco; box select; zoom; minimize/expand all; a node that raises; Play All; Save-as JSON and notebook export |
-| `nodes` | the Node Catalog drawer's four tabs; **a real install of every catalog package** (`curio.weather`, `ai.urbanlab.uhvi`, `curio.streetvision` each shell out to pip); every template those packages ship dropped onto the canvas; **authoring a new node type** through Node settings -> Save as package node -> a new package, then dragging it back out of the palette; package metadata; export, re-import (400 by design), the library manager (a real `titlecase` install, then a JS install that 501s) |
+| `canvas` | all eleven built-in tiles dropped and identity-checked; header band, resize, comments, pin; every editor tab; Node settings including the port editor; invalid connections and cycles; the guarded delete; Backspace inside Monaco; box select; zoom; minimize/expand all; a node that raises; Play All; Save-as JSON and notebook export |
+| `nodes` | the Node Catalog drawer's four tabs; **a real install of every catalog package** (`curio.weather`, `ai.utk.uhvi`, `curio.streetvision` each shell out to pip); every template those packages ship dropped onto the canvas; **authoring a new node type** through Node settings -> Save as package node -> a new package, then dragging it back out of the palette; package metadata; export, re-import (400 by design), the library manager (a real `titlecase` install, then a JS install that 501s) |
 | `data` | the Data Catalog drawer's four tabs; **every hub dataset added to the dataflow**; the detail panel's four tabs; **a real import of every format** - CSV, Parquet, GeoJSON, GeoTIFF, an OSM PBF (split per layer) and a shapefile the chapter synthesises, since the repo ships none; dataset drag to canvas; a computed dataset and its lineage; the catalog pages and a deliberately bad dataset id |
-| `agents` | AI Settings from both of its entry points, all four provider tabs, Fetch models, the HF token; **every agent in the catalog installed**; all three attach targets (node, connection, canvas); the chat panel's controls; **one live turn per attached agent** against the configured provider; applying a proposal |
-| `views` | all eleven bundled examples loaded and run, Autark/WebGPU among them; linked brushing; the Data Pool scroll; Merge Flow; JS Computation; widgets; the dashboard page and its layout editing; the provenance window and a node's provenance tab; the in-app intro.js tutorial |
+| `agents` | API Settings from both of its entry points, a new LLM configuration with all four provider tabs and Fetch models, the HF token; **every agent in the catalog installed**; all three attach targets (node, connection, canvas); the chat panel's controls; **one live turn per attached agent** against the configured provider; applying a proposal |
+| `views` | all eleven bundled examples loaded and run, Autark/WebGPU among them; linked brushing; the Data Pool scroll; a node with several inputs; JS Computation; widgets; the dashboard page and its layout editing; the provenance window and a node's provenance tab |
 
 ### What it produces
 
@@ -882,7 +895,7 @@ the recording - `_record` finalizes the video in a `finally`.
 
 - **It installs packages and libraries for real.** When pytest owns the stack,
   `tests/conftest.py` sets `CURIO_LAUNCH_CWD` to the **repo root**, so user
-  package stores land in `<repo>/.curio/users/<id>/` - and `main.py` walks every
+  package stores land in `<repo>/.curio/users/<id>/` - and `utk_curio/cli/dependencies.py` walks every
   user store on boot and `sys.exit(1)`s if pip cannot re-resolve one. Budget
   10-25 minutes for the torch install in `nodes`, and check that
   `python curio.py start` still boots afterwards.
@@ -904,9 +917,10 @@ the autouse `e2e_clean_db` must not truncate between them.
 | `CURIO_E2E_USE_EXISTING` | Set to `1` to skip server startup and use running servers. Those servers **must** carry `CURIO_TESTING=1` or every `/api/testing/*` call 404s and the autouse `e2e_clean_db` fixture errors on setup; the CI overlays (`docker-compose.ci.yml`, `docker-compose.ci-isolated.yml`) and `scripts/test.sh` set it. `scripts/test.sh` also exports this variable for its whole run, so the backend unit suite does not claim ownership of a DB the running stack is serving from. |
 | `CURIO_E2E_HOST` | Host for existing servers (default: `localhost`) |
 | `CURIO_E2E_BACKEND_PORT` | Backend port for existing servers (default: `5002`) |
-| `CURIO_E2E_SANDBOX_PORT` | Sandbox port for existing servers (default: `2000`). Reaches both the `/live` wait in `e2e_existing_servers` **and** the two helpers that call the sandbox directly, via `utils.py::sandbox_base_url`. It used to reach only the first, so on a non-default port `load_artifact_as_dict` and `execute_workflow_programmatically` silently addressed port 2000 and every `test_node_execution` died on an unexplained `401`. |
-| `CURIO_SANDBOX_TOKEN` | The sandbox's shared secret for `/exec`, `/execJs`, `/get` and `/install` (`sandbox/app/auth.py`). The self-managed path mints one and publishes it to this process; **with `CURIO_E2E_USE_EXISTING=1` you must set it yourself, to the same value the running stack was started with** — `curio.py start` mints a random one otherwise, and nothing can recover it. A mismatch now fails with that sentence rather than a bare `401`. |
+| `CURIO_E2E_SANDBOX_PORT` | Sandbox port for existing servers (default: `2000`). Reaches both the `/live` wait in `e2e_existing_servers` **and** the two helpers that call the sandbox directly, via `utils/sandbox.py::sandbox_base_url`. |
+| `CURIO_SANDBOX_TOKEN` | The sandbox's shared secret for `/exec`, `/execJs`, `/get`, `/artifact-meta` and `/monitor` (`sandbox/app/auth.py`). The self-managed path mints one and publishes it to this process; **with `CURIO_E2E_USE_EXISTING=1` you must set it yourself, to the same value the running stack was started with**: `curio.py start` mints a random one otherwise, and nothing can recover it. A mismatch fails with that sentence. |
 | `CURIO_E2E_FRONTEND_PORT` | Frontend port for existing servers (default: `8080`) |
+| `CURIO_E2E_COMPARE_DIR` | Record every screenshot comparison, passing or not, into this directory: one folder each with the expected, created and difference images and `record.json`, which `scripts/ci_report.py` turns into one HTML page. Unset, nothing is recorded. |
 | `CURIO_TESTING` | Two jobs: switches the backend to test-only DB paths under `.curio/test/`, **and** is the second factor the `/api/testing/*` blueprint and the scripted LLM provider require. Exported by `../conftest.py`; externally-booted servers (compose stacks included) must be given it explicitly. |
 | `DATABASE_URL_TEST` | SQLAlchemy URL for the test DB (defaults to `sqlite:///…/.curio/test/urban_workflow_test.db`). |
 | `CURIO_TEST_WORKSPACE` | Persist the per-session test workspace here instead of a temp dir (debugging). |

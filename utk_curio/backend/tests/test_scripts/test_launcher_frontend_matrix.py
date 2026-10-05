@@ -4,8 +4,7 @@ The rule these pin: on a supported Node anything stale is refreshed, and only
 an out-of-date Node refuses to start. The three states interact, so the cases
 that matter are the products, not the axes:
 
-* ``dist/`` is missing, current, or stale (built in the wrong webpack mode, or
-  for a different BACKEND_URL; both read the same stamp).
+* ``dist/`` is missing, current, or stale (built in the wrong webpack mode).
 * ``node_modules/`` is absent, installed by this Node major, or by another.
 * the launcher is invoked plain, with ``--dev``, or with ``--force-rebuild``.
 
@@ -22,8 +21,8 @@ import os
 
 import pytest
 
-import utk_curio.main as main
-from utk_curio.main import NODE_MAJOR
+from utk_curio.cli import frontend_build, services
+from utk_curio.cli.frontend_build import NODE_MAJOR
 
 OTHER_MAJOR = NODE_MAJOR - 2
 BUILD_SCRIPT = {"scripts": {"build": "webpack --mode production && npm run build:packages"}}
@@ -40,21 +39,21 @@ def _make(root, dist, tree, *, source=True):
         (root / "dist" / "index.html").write_text("<html></html>", encoding="utf-8")
         (root / "dist" / "bundle.js").write_text("the bundle", encoding="utf-8")
         mode = "production" if dist == "current" else "development"
-        (root / "dist" / ".curio-backend-url").write_text(f"{mode}\n\n", encoding="utf-8")
+        (root / "dist" / frontend_build.BUILD_STAMP).write_text(f"{mode}\n", encoding="utf-8")
     if tree != "absent":
         (root / "node_modules").mkdir(exist_ok=True)
         major = NODE_MAJOR if tree == "this major" else OTHER_MAJOR
-        (root / "node_modules" / main.NODE_STAMP).write_text(str(major), encoding="utf-8")
+        (root / "node_modules" / frontend_build.NODE_STAMP).write_text(str(major), encoding="utf-8")
         (root / "node_modules" / "marker").write_text("x", encoding="utf-8")
 
 
 @pytest.fixture
 def frontend(tmp_path, monkeypatch):
     """A frontend tree at tmp_path, with npm, node and a supported version."""
-    monkeypatch.setattr(main, "_frontend_dir", lambda: str(tmp_path))
-    monkeypatch.setattr(main.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(frontend_build, "_frontend_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(frontend_build.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(
-        main, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR)
+        frontend_build, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR)
     )
     monkeypatch.delenv("BACKEND_URL", raising=False)
     monkeypatch.delenv("CURIO_DEV", raising=False)
@@ -70,15 +69,15 @@ def frontend(tmp_path, monkeypatch):
 def _gate(monkeypatch, root, mode):
     """Run start_frontend far enough to see the gate, and report what it did."""
     calls = []
-    monkeypatch.setattr(main, "_kill_port", lambda port: None)
+    monkeypatch.setattr(services, "_kill_port", lambda port: None)
     monkeypatch.setattr(
-        main, "check_install_build",
+        services, "check_install_build",
         lambda d, force_rebuild=False: calls.append(force_rebuild),
     )
     if mode == "--dev":
         monkeypatch.setenv("CURIO_DEV", "1")
     # no_server returns right after the gate, before anything is spawned.
-    main.start_frontend(port=0, force_rebuild=(mode == "--force-rebuild"), no_server=True)
+    services.start_frontend(port=0, force_rebuild=(mode == "--force-rebuild"), no_server=True)
     return calls
 
 
@@ -126,8 +125,8 @@ def test_no_source_never_runs_npm_on_a_plain_start(frontend, monkeypatch, dist, 
 
 def _build_run(monkeypatch, root, force_rebuild=False):
     ran = []
-    monkeypatch.setattr(main.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
-    main.check_install_build(str(root), force_rebuild=force_rebuild)
+    monkeypatch.setattr(frontend_build.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
+    frontend_build.check_install_build(str(root), force_rebuild=force_rebuild)
     return ran
 
 
@@ -173,22 +172,22 @@ def test_force_rebuild_drops_everything(frontend, monkeypatch, dist, tree):
 def test_the_upgrade_case_end_to_end(frontend, monkeypatch):
     """Node 24 checkout, upgraded: one plain start leaves everything correct.
 
-    The bundle predates the production build (old one-line stamp) and the tree
-    predates the upgrade, so both are stale for different reasons and both are
-    repaired in the right order: reinstall, then rebuild.
+    The bundle has no mode on record and the tree predates the upgrade, so both
+    are stale for different reasons and both are repaired in the right order:
+    reinstall, then rebuild.
     """
     _make(frontend, "current", "other major")
-    (frontend / "dist" / ".curio-backend-url").write_text("", encoding="utf-8")
+    (frontend / "dist" / frontend_build.BUILD_STAMP).write_text("", encoding="utf-8")
 
-    assert main._frontend_needs_build() is True   # one-line stamp is stale
-    assert main._frontend_tree_is_stale() is True
+    assert frontend_build._frontend_needs_build() is True   # an unrecorded mode is stale
+    assert frontend_build._frontend_tree_is_stale() is True
 
     ran = _build_run(monkeypatch, frontend)
 
     assert not (frontend / "node_modules" / "marker").exists()
     assert ran == [["npm", "install"], ["npm", "run", "build"]]
-    assert (frontend / "node_modules" / main.NODE_STAMP).read_text() == str(NODE_MAJOR)
-    assert main._build_stamp_reason() is None
+    assert (frontend / "node_modules" / frontend_build.NODE_STAMP).read_text() == str(NODE_MAJOR)
+    assert frontend_build._build_stamp_reason() is None
 
 
 # --------------------------------------------------------------------------
@@ -205,11 +204,11 @@ def test_an_old_node_refuses_whatever_else_is_on_disk(frontend, monkeypatch, dis
     """
     _make(frontend, dist, tree)
     monkeypatch.setattr(
-        main, "_read_node_version", lambda: (f"v{OTHER_MAJOR}.0.0", OTHER_MAJOR)
+        frontend_build, "_read_node_version", lambda: (f"v{OTHER_MAJOR}.0.0", OTHER_MAJOR)
     )
 
     with pytest.raises(SystemExit) as exit_info:
-        main._require_supported_node()
+        frontend_build._require_supported_node()
     assert exit_info.value.code == 1
 
 
@@ -217,11 +216,11 @@ def test_check_install_build_also_refuses_an_old_node(frontend, monkeypatch):
     """The gate inside the builder, for callers that did not pass the start check."""
     _make(frontend, "missing", "absent")
     monkeypatch.setattr(
-        main, "_read_node_version", lambda: (f"v{OTHER_MAJOR}.0.0", OTHER_MAJOR)
+        frontend_build, "_read_node_version", lambda: (f"v{OTHER_MAJOR}.0.0", OTHER_MAJOR)
     )
     ran = []
-    monkeypatch.setattr(main.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
+    monkeypatch.setattr(frontend_build.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
 
     with pytest.raises(SystemExit):
-        main.check_install_build(str(frontend))
+        frontend_build.check_install_build(str(frontend))
     assert ran == []

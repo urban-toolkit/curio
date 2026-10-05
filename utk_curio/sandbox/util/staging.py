@@ -24,6 +24,7 @@ reach it: ``stage_input`` refuses an artifact belonging to another session, the
 same rule ``load_from_duckdb`` enforces.
 """
 
+import glob
 import json
 import os
 import shutil
@@ -32,6 +33,8 @@ from pathlib import Path
 from utk_curio.sandbox.util.db import get_connection, get_read_connection, init_db
 from utk_curio.sandbox.util import codec
 from utk_curio.sandbox.util.parsers import (
+    load_shared_output_file,
+    save_to_duckdb,
     _json_artifact_rel_path,
     _make_id,
     _read_json_artifact,
@@ -96,11 +99,23 @@ def _read_row(art_id, session_id):
 def stage_input(art_id, scratch_dir, *, session_id=None, slot="in"):
     """Stage the artifact *art_id* into *scratch_dir* and return its input spec.
 
-    *slot* prefixes the staged filenames so a merge node's several inputs do
+    *slot* prefixes the staged filenames so a node's several inputs do
     not collide. Recurses for container kinds, extending the prefix as it goes.
     """
     scratch_dir = Path(scratch_dir)
-    kind, v_int, v_float, v_str, v_json, blob = _read_row(art_id, session_id)
+    try:
+        kind, v_int, v_float, v_str, v_json, blob = _read_row(art_id, session_id)
+    except Exception as store_error:
+        # The rule parsers.load_artifact applies in-process (#407): a project
+        # output the store cannot serve to this session is read from the copy
+        # the project load hydrated. Staging works from a store row, so that
+        # value is stored for this session and staged like any other.
+        try:
+            value = load_shared_output_file(art_id)
+        except KeyError:
+            raise store_error
+        adopted = save_to_duckdb(value, node_id="hydrated", session_id=session_id)
+        return stage_input(adopted, scratch_dir, session_id=session_id, slot=slot)
 
     if kind == "null":
         return {"kind": "null"}
@@ -182,7 +197,7 @@ def stage_input(art_id, scratch_dir, *, session_id=None, slot="in"):
 
 
 def stage_outputs_list(refs, scratch_dir, *, session_id=None):
-    """Stage a merge node's list of upstream references.
+    """Stage the list of upstream references of a node with several inputs.
 
     ``/exec`` receives ``dataType == 'outputs'`` with a list of ``{'path': id}``
     dicts (or bare ids). This is the entry point for that shape.
@@ -197,9 +212,9 @@ def stage_outputs_list(refs, scratch_dir, *, session_id=None):
 
 
 def read_outputs_wrapper(art_id, *, session_id=None):
-    """Return the inner ref list when *art_id* holds a persisted merge output.
+    """Return the inner ref list when *art_id* holds a persisted input bundle.
 
-    A merge output that was persisted is stored as the whole
+    A bundle that was persisted is stored as the whole
     ``{'dataType': 'outputs', 'data': [refs]}`` envelope, and a node downstream
     of it receives one ref to that envelope rather than the list. The parent
     resolves it here -- reading the store is exactly what the child cannot do --
@@ -222,8 +237,48 @@ def read_outputs_wrapper(art_id, *, session_id=None):
     return None
 
 
+def _stage_with_companions(source: Path, folder: Path) -> None:
+    """Link *source* into *folder* with the files read beside it: those named
+    after it (``labels.parquet.decode.json``, a raster's ``.aux.xml``) or after
+    its stem (a shapefile's ``.shx``, ``.dbf`` and ``.prj``). Only regular
+    files are linked; a file already staged is left as it is."""
+    folder.mkdir(parents=True, exist_ok=True)
+    companions = [
+        path for path in sorted(source.parent.glob(glob.escape(source.stem) + ".*"))
+        if path.name != source.name and path.is_file() and not path.is_symlink()
+    ]
+    for path in [source, *companions]:
+        if not (folder / path.name).exists():
+            _link_or_copy(path, folder / path.name)
+
+
+def _bundle_parts(bundle: Path):
+    """The part files a ``bundle.json`` names, with their paths relative to the
+    folder the reader resolves them against, the dataset's (two levels up).
+    A part outside that folder, or not a regular file, is left out."""
+    base = bundle.parent.parent.resolve()
+    try:
+        spec = json.loads(bundle.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    parts = spec.get("parts") if isinstance(spec, dict) else None
+    found = []
+    for part in parts if isinstance(parts, list) else []:
+        name = part.get("file") if isinstance(part, dict) else None
+        if not isinstance(name, str) or not name:
+            continue
+        path = base / name
+        if path.is_symlink() or not path.is_file():
+            continue
+        resolved = path.resolve()
+        if base not in resolved.parents:
+            continue
+        found.append((resolved, resolved.relative_to(base)))
+    return found
+
+
 def stage_dataset_paths(dataset_paths, scratch_dir):
-    """Stage the files behind ``curio_dataset_path`` calls.
+    """Stage the files behind ``curio_data_path`` calls.
 
     The child cannot reach the dataset stores by path -- ``datasets/`` and
     ``.curio/users`` are 0700 root-owned once isolation is on
@@ -232,8 +287,15 @@ def stage_dataset_paths(dataset_paths, scratch_dir):
     source's inode and therefore its mode: what makes this a boundary is the
     unreachable *path*, not a tighter file. A missing file is dropped rather
     than raised: the injected
-    ``curio_dataset_path`` already raises a clear per-id error, and resolution
+    ``curio_data_path`` already raises a clear per-id error, and resolution
     is documented as fail-open (see docs/ARCHITECTURE.md).
+
+    Each dataset gets a folder, ``ds_<i>/``, holding its file and the files
+    read beside it (``_stage_with_companions``), never the rest of the folder
+    the file sits in, which can be a workspace folder or the artifact store. A
+    ``bundle.json`` is staged as ``ds_<i>/data/bundle.json`` with each part it
+    names at the same path relative to ``ds_<i>/`` that it has relative to the
+    dataset's folder, which is where ``curio_load_data`` looks for them.
     """
     scratch_dir = Path(scratch_dir)
     staged = {}
@@ -242,12 +304,99 @@ def stage_dataset_paths(dataset_paths, scratch_dir):
             source_path = Path(source)
             if not source_path.exists():
                 continue
-            name = f"ds_{index}{source_path.suffix}"
-            _link_or_copy(source_path, scratch_dir / name)
-            staged[dataset_id] = name
+            folder = Path(f"ds_{index}")
+            if source_path.name == "bundle.json":
+                for part, relative in _bundle_parts(source_path):
+                    _stage_with_companions(part, scratch_dir / folder / relative.parent)
+                folder = folder / source_path.parent.name
+            _stage_with_companions(source_path, scratch_dir / folder)
+            staged[dataset_id] = (folder / source_path.name).as_posix()
         except OSError:
             continue
     return staged
+
+
+def stage_model_dirs(model_dirs, scratch_dir):
+    """Stage the folders behind ``curio_load_model`` calls, as datasets are staged.
+
+    A model is a folder, and its files name each other: an ``.onnx`` graph
+    reads its external weights by relative name, a Transformers checkpoint is
+    read by ``from_pretrained`` as a folder. So the tree is linked in whole,
+    each file at its own relative path under ``model_<i>/``. Only regular
+    files inside the folder are linked; a link pointing out of it is skipped.
+    A folder that cannot be staged is dropped, and the injected
+    ``curio_load_model`` names it.
+    """
+    scratch_dir = Path(scratch_dir)
+    staged = {}
+    for index, (model_id, source) in enumerate(model_dirs.items()):
+        try:
+            root = Path(source).resolve()
+            if not root.is_dir():
+                continue
+            name = f"model_{index}"
+            _link_tree(root, scratch_dir / name)
+            staged[model_id] = name
+        except OSError:
+            continue
+    return staged
+
+
+def _link_tree(root: Path, target: Path) -> None:
+    """Link every regular file inside the folder *root* into *target*, each at
+    its own relative path. A link pointing out of *root* is skipped."""
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        if root not in path.resolve().parents:
+            continue
+        destination = target / path.relative_to(root)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        _link_or_copy(path, destination)
+
+
+#: Where a run's package modules are staged, inside the run's own folder.
+PACKAGE_MODULES_DIR = "package_modules"
+
+
+def stage_package_modules(package_modules, run_dir):
+    """Stage the modules a node's package ships, as models are staged (#468).
+
+    *package_modules* is ``{"root": <the package's sources folder>, "names":
+    [...]}``. Each named module, the file ``<name>.py`` or the folder
+    ``<name>/``, is linked into ``<run_dir>/package_modules/`` at its own
+    relative path, and nothing else in the sources folder is. Returns
+    ``{"root": "package_modules", "names": [...]}``, relative to *run_dir*,
+    with the names that were staged, or None when none was. A module that
+    cannot be staged is left out, and the node's import of it fails naming it.
+    """
+    if not package_modules:
+        return None
+    try:
+        root = Path(package_modules["root"]).resolve()
+    except (KeyError, TypeError, OSError):
+        return None
+    if not root.is_dir():
+        return None
+    target = Path(run_dir) / PACKAGE_MODULES_DIR
+    staged = []
+    for name in package_modules.get("names") or []:
+        try:
+            module_file = root / f"{name}.py"
+            folder = root / name
+            linked = False
+            if module_file.is_file() and not module_file.is_symlink():
+                target.mkdir(parents=True, exist_ok=True)
+                _link_or_copy(module_file, target / module_file.name)
+                linked = True
+            if folder.is_dir() and not folder.is_symlink():
+                _link_tree(folder.resolve(), target / name)
+                linked = True
+            if linked:
+                staged.append(name)
+        except OSError:
+            continue
+    return {"root": PACKAGE_MODULES_DIR, "names": staged} if staged else None
 
 
 def _insert_row(con, art_id, kind, *, node_id=None, session_id=None,

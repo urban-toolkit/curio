@@ -1,0 +1,461 @@
+/* A node's widgets (#662): the Widgets tab, and the tags dragged into code.
+   Colours, radii and fonts are the tokens in styles/curioTokens.css. Tags,
+   fields and buttons share one height, --widget-h, so a row's tag, control
+   and buttons line up. */
+
+/* A widget's tag: the same rounded box as its chip in the code
+   (widgetReferences.css). */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid #b6cbf2;
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-accent-sky-bg);
+  color: var(--curio-accent-sky-fg);
+  font-family: var(--curio-font-mono);
+  font-size: var(--curio-font-size-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: grab;
+  user-select: none;
+}
+
+.tag:active {
+  cursor: grabbing;
+}
+
+.tag:focus-visible {
+  outline: 2px solid var(--curio-role-update-fg);
+  outline-offset: 1px;
+}
+
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--curio-border);
+  background: var(--curio-card-bg);
+}
+
+.stripHint {
+  font-size: 10px;
+  color: var(--curio-text-secondary);
+  margin-right: 2px;
+}
+
+/* An input's tag and its columns (#662): green, like their chips in the code. */
+.inputTag {
+  composes: tag;
+  border-color: #a8d5b1;
+  background: var(--curio-accent-mint-bg);
+  color: var(--curio-accent-mint-fg);
+}
+
+/* A shared tag, a Parameter node's widget: amber, like its chips. */
+.sharedTag {
+  composes: tag;
+  border-color: #e8c99a;
+  background: var(--curio-accent-amber-bg);
+  color: var(--curio-accent-amber-fg);
+}
+
+/* A selection tag, the ids a view's selection picks: peach, like its chips. */
+.selectionTag {
+  composes: tag;
+  border-color: #f2b9a3;
+  background: var(--curio-accent-peach-bg);
+  color: #b8461d;
+}
+
+.columnTag {
+  composes: tag;
+  border-color: #a8d5b1;
+  background: var(--curio-card-bg);
+  color: var(--curio-accent-mint-fg);
+}
+
+.expand {
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  font-size: 10px;
+  color: #444;
+  cursor: pointer;
+}
+
+.columns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding-left: 12px;
+}
+
+.columnFilter {
+  font-size: 10px;
+  width: 110px;
+}
+
+.panel {
+  --widget-h: 22px;
+  height: 100%;
+  padding: 8px 10px;
+  overflow-y: auto;
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-primary);
+}
+
+/* WidgetsEditor.css gives every label a right margin. */
+.panel label {
+  margin: 0;
+}
+
+.panel input[type="text"],
+.panel input[type="number"],
+.panel input[type="search"],
+.panel input[type="datetime-local"],
+.panel select {
+  box-sizing: border-box;
+  height: var(--widget-h);
+  min-width: 0;
+  padding: 0 6px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  box-shadow: none;
+}
+
+.panel input:focus,
+.panel select:focus {
+  outline: 2px solid var(--curio-role-update-fg);
+  outline-offset: -1px;
+  box-shadow: none;
+}
+
+.panel input[type="checkbox"],
+.panel input[type="radio"] {
+  margin: 0;
+}
+
+.panel input[type="range"] {
+  height: var(--widget-h);
+  margin: 0;
+}
+
+.panel input[type="file"] {
+  font-size: var(--curio-font-size-xs);
+}
+
+.empty {
+  color: var(--curio-text-secondary);
+  margin: 0 0 8px;
+}
+
+/* One widget: its label above the control, then the tag, the control and
+   the buttons on one line. A control that takes several lines (a checkbox
+   group, a location) grows below that line. */
+.row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    ". label ."
+    "tag control actions";
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: start;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--curio-border);
+}
+
+.row > .tag {
+  grid-area: tag;
+}
+
+.rowLabel {
+  grid-area: label;
+  overflow: hidden;
+  color: var(--curio-text-secondary);
+  font-size: 10px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowControl {
+  grid-area: control;
+  min-width: 0;
+}
+
+.rowActions {
+  grid-area: actions;
+  display: flex;
+  gap: 4px;
+}
+
+/* The dataflow's shared tags, below the node's own widgets: each with the
+   value its Parameter node holds. */
+.shared {
+  margin-top: 10px;
+}
+
+.sharedHeading {
+  margin: 0;
+  color: var(--curio-text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* A Parameter node's list of the nodes whose code uses it. */
+.users {
+  margin: 2px 0 0;
+  padding-left: 16px;
+}
+
+.sharedValue {
+  grid-area: control;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--curio-font-mono);
+  line-height: var(--widget-h);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A selection tag that holds no ids it can give: too many, or a deleted view. */
+.selectionProblem {
+  grid-area: control;
+  min-width: 0;
+  color: var(--curio-danger-text);
+  line-height: 1.3;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.control > input[type="text"],
+.control > input[type="number"],
+.control > input[type="datetime-local"],
+.control > select {
+  width: 100%;
+}
+
+.inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: var(--widget-h);
+}
+
+.inline > input[type="number"],
+.inline > input[type="range"] {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+.units {
+  white-space: nowrap;
+  color: var(--curio-text-secondary);
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 10px;
+}
+
+.choices .choiceItem {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  height: var(--widget-h);
+  color: var(--curio-text-primary);
+  font-size: var(--curio-font-size-xs);
+  font-weight: normal;
+}
+
+.multi {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pick {
+  composes: chip from "../../../pages/discovery/DiscoveryAddDialog.module.css";
+}
+
+.location {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* The place search the Discovery dialog shares, at this tab's size. */
+.location > div {
+  gap: 4px;
+  font-size: var(--curio-font-size-xs);
+}
+
+.location > div > button {
+  box-sizing: border-box;
+  height: var(--widget-h);
+  padding: 0 8px;
+  font-size: var(--curio-font-size-xs);
+}
+
+.location p {
+  margin: 0;
+  font-size: 10px;
+}
+
+.places {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 120px;
+  overflow-y: auto;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-sm);
+}
+
+.places button {
+  width: 100%;
+  padding: 3px 6px;
+  border: 0;
+  background: none;
+  color: var(--curio-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.places button:hover {
+  background: var(--curio-surface-muted);
+}
+
+.hint {
+  color: var(--curio-text-secondary);
+}
+
+/* Buttons, at this tab's size: a white one, a dark one for the main action
+   (as ConfirmDialog's), and a red-text one for Delete. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: var(--widget-h);
+  padding: 0 8px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--curio-text-secondary);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.primary {
+  composes: button;
+  border-color: var(--curio-top-bar-bg);
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  font-weight: 600;
+}
+
+.primary:hover:not(:disabled) {
+  border-color: var(--curio-top-bar-bg-hover);
+  background: var(--curio-top-bar-bg-hover);
+}
+
+.danger {
+  composes: button;
+  color: var(--curio-danger-text);
+}
+
+.danger:hover:not(:disabled) {
+  border-color: var(--curio-danger-border);
+  background: var(--curio-danger-bg);
+}
+
+.add {
+  margin-top: 8px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0;
+  padding: 8px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
+  box-shadow: var(--curio-shadow-card);
+}
+
+.form label,
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--curio-text-secondary);
+  font-size: 10px;
+}
+
+.bounds {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.problem {
+  color: var(--curio-danger-text);
+  margin: 0;
+}
+
+.problems {
+  color: var(--curio-danger-text);
+  margin: 8px 0 0;
+  padding-left: 16px;
+}

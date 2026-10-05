@@ -46,15 +46,12 @@ jobs:
 
     env:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci-isolated.yml
-      # Its own port triple and container: prod is 2000/5002/8080, curio-dev
-      # 2010/5012/8090, and the CI stacks use 2020-2040 / 5022-5042 / 8100-8120.
-      CURIO_CONTAINER_NAME: curio-ci-repro
-      CURIO_PORT_2000: "2050"
-      CURIO_PORT_5002: "5052"
-      CURIO_PORT_8080: "8130"
-      # Same build arg as test-gpu-isolated, so the image comes from its cache.
-      # Nothing here talks to the frontend.
-      BACKEND_URL: "http://localhost:5032"
+      # Its own port triple: prod is 2000/5002/8080, curio-dev 2010/5012/8090,
+      # and the CI stacks use 2020-2040 / 5022-5042 / 8100-8120.
+      CURIO_E2E_BACKEND_PORT: "5052"
+      CURIO_E2E_SANDBOX_PORT: "2050"
+      CURIO_E2E_FRONTEND_PORT: "8130"
+      CURIO_E2E_BACKEND_URL: "http://localhost:5052"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
       ITERATIONS: ${{ inputs.iterations || '300' }}
       NODE_SHAPE: ${{ inputs.node || 'string' }}

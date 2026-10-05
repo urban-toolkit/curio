@@ -45,7 +45,7 @@ RUN_ALL = '#tools-menu button[title="Run all nodes"]'
 #: CSS-Modules hashes `.menuStyle` into something opaque, so a `[class*=…]`
 #: selector matches nothing in a real build.
 TILE_BLOCK_JS = """() => {
-    const tile = document.querySelector('#step-loading');
+    const tile = document.querySelector('#tile-data-loading');
     const rail = document.querySelector('#tools-menu');
     if (!tile || !rail) return null;
     let el = tile;
@@ -204,12 +204,13 @@ def test_opening_the_agent_palette_does_not_widen_the_rail(
         context.close()
 
 
-#: The three palettes' roots. They are siblings of equal standing in the rail and
+#: The four palettes' roots. They are siblings of equal standing in the rail and
 #: should be indistinguishable apart from their icon, label and count.
 PALETTES = (
     ("Node Catalog", "#packages-palette"),
     ("Data Catalog", "#datasets-palette"),
     ("Agent Catalog", "#agents-palette"),
+    ("Model Catalog", "#models-palette"),
 )
 
 #: Measured through the rendered DOM rather than by class name: CSS-Modules
@@ -238,7 +239,7 @@ TRIGGER_METRICS_JS = """(sel) => {
 }"""
 
 
-def test_the_three_palette_triggers_are_the_same_size(
+def test_the_palette_triggers_are_the_same_size(
     browser, frontend_server: str, current_server: str
 ):
     """Node, Data and Agent must look like one another in the rail.
@@ -273,7 +274,7 @@ def test_the_three_palette_triggers_are_the_same_size(
         context.close()
 
 
-def test_the_three_palette_panels_open_in_the_same_place(
+def test_the_palette_panels_open_in_the_same_place(
     browser, frontend_server: str, current_server: str
 ):
     """Each panel opens beside the rail, anchored to the dock - not to its own
@@ -290,6 +291,7 @@ def test_the_three_palette_panels_open_in_the_same_place(
             ("packages", "#packages-palette"),
             ("datasets", "#datasets-palette"),
             ("agents", "#agents-palette"),
+            ("models", "#models-palette"),
         ):
             open_tools_palette(page, kind)
             box = page.evaluate(
@@ -321,7 +323,7 @@ def test_the_three_palette_panels_open_in_the_same_place(
         context.close()
 
 
-def test_the_three_panel_headers_place_their_title_alike(
+def test_the_panel_headers_place_their_title_alike(
     browser, frontend_server: str, current_server: str
 ):
     """The panel title sits at the same inset in all three palettes.
@@ -343,6 +345,7 @@ def test_the_three_panel_headers_place_their_title_alike(
             ("packages", "#packages-palette"),
             ("datasets", "#datasets-palette"),
             ("agents", "#agents-palette"),
+            ("models", "#models-palette"),
         ):
             open_tools_palette(page, kind)
             insets[kind] = page.evaluate(
@@ -395,6 +398,7 @@ def test_escape_does_not_close_any_palette(
             ("packages", "#packages-palette"),
             ("datasets", "#datasets-palette"),
             ("agents", "#agents-palette"),
+            ("models", "#models-palette"),
         ):
             open_tools_palette(page, kind)
             panel = page.locator(f'{sel} [role="region"]')

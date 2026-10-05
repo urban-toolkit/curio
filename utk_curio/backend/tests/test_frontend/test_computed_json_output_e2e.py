@@ -12,7 +12,7 @@ DuckDB ``artifacts`` row), and the single-output installer only knew how to
 hard-link a file.
 
 The chain is invisible from the canvas: ``applyNewOutput`` ->
-``scheduleInstallSyncRef`` (500 ms debounce, ``FlowProvider.tsx``) ->
+``scheduleInstallSyncRef`` (500 ms debounce, ``providers/flow/useInstallSave.ts``) ->
 ``persistDataflowForInstall`` -> a project PUT -> ``_auto_install_computed_outputs``
 -> ``dataset_install_warnings`` in the response -> ``surfaceInstallWarnings`` ->
 the toast. Every hop but the last is server-side or debounced, which is why the
@@ -23,7 +23,8 @@ This test pins the chain from the only place it is observable end to end:
 
   * the save that carried the node's output ref answers with
     ``dataset_install_warnings: []`` - the deterministic signal, read off the
-    response rather than the DOM;
+    response rather than the DOM; for a run on the server, the node's step
+    records no ``installWarnings`` and the dataset it installed;
   * no "couldn't be generated" toast is raised, recorded from a MutationObserver
     so a toast that appeared and auto-dismissed still counts as a failure;
   * the dataset genuinely exists, is ``format: "json"``, and **downloads as real
@@ -46,12 +47,14 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import TYPE_CHECKING
 
 import pytest
 from playwright.sync_api import expect
 
 from .utils import (
+    SandboxRuns,
     _wait_for_reactflow_ready,
     api_json,
     canvas_node_type,
@@ -70,7 +73,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-ANALYSIS_TILE = "#step-analysis"  # curio.builtin/computation-analysis's tutorialId
+ANALYSIS_TILE = "#tile-computation-analysis"  # curio.builtin/computation-analysis's palette tile
 ANALYSIS_TYPE = "curio.builtin/computation-analysis"
 
 DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
@@ -251,14 +254,14 @@ def delete_computed_datasets(current_server):
 def _author_analysis_node(page, at, code: str) -> str:
     """Drop a Python Computation node, set its code, and turn its save toggle on.
 
-    No upstream edge: ``#step-analysis`` runs standalone as long as the code does
+    No upstream edge: ``#tile-computation-analysis`` runs standalone as long as the code does
     not reference ``arg`` (see worker.py's "received no input" guard), which is
     what ``test_global_imports_e2e.py`` relies on too.
     """
     node_id = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=at)
     actual = (canvas_node_type(page, node_id) or "").split("@", 1)[0]
     assert actual == ANALYSIS_TYPE, (
-        "#step-analysis did not drop a Python Computation node: {!r}".format(actual)
+        "#tile-computation-analysis did not drop a Python Computation node: {!r}".format(actual)
     )
     # Through Monaco's setValue: autoClosingBrackets + formatOnType mean typed
     # Python does not round-trip, and setValue fires the same onChange chain.
@@ -284,20 +287,46 @@ def _enable_save_toggle(page, node_id: str) -> None:
     )
 
 
-def _run_and_capture_save(page, project_id: str, node_id: str) -> tuple[str, dict]:
-    """Run one node and return ``(output text, parsed save response)``.
+def _run_and_capture_save(page, token: str, project_id: str, node_id: str) -> tuple[str, dict]:
+    """Run one node and return ``(output text, install outcome)``, the outcome
+    carrying ``dataset_install_warnings``.
 
-    The waiter is armed BEFORE the run on purpose. ``wait_for_node_done`` only
-    watches ``data-curio-node-status``, which flips in the same synchronous block
-    that calls ``applyNewOutput``, while the install-save is 500 ms debounced
-    after that plus a round trip. Asserting anything the moment the node says
-    Done is asserting against a state that has not happened yet.
+    A run in the page installs at the save that carries the node's output ref,
+    so the outcome is that save's response. Its listener is armed BEFORE the run
+    on purpose: ``wait_for_node_done`` only watches ``data-curio-node-status``,
+    which flips in the same synchronous block that calls ``applyNewOutput``,
+    while the install-save is 500 ms debounced after that plus a round trip.
+
+    A run on the server (a signed-in owner's) installs as it records the node's
+    output, and the node's step carries the same warnings (``installWarnings``)
+    and the dataset it installed.
     """
-    with page.expect_response(
-        _install_save_response(project_id, node_id), timeout=180000
-    ) as save_info:
+    saves = []
+    is_install_save = _install_save_response(project_id, node_id)
+
+    def _on_response(response) -> None:
+        if is_install_save(response):
+            saves.append(response)
+
+    page.on("response", _on_response)
+    sent = SandboxRuns(page, token, project_id)
+    try:
         output = run_node_and_wait(page, node_id, node_type=ANALYSIS_TYPE)
-    response = save_info.value
+        steps = [s for s in sent.new_steps() if s["nodeId"] == node_id and s["status"] == "ok"]
+        if steps:
+            step = steps[-1]
+            assert step.get("installedDatasetId"), (
+                "the run on the server installed no dataset for {}: {}".format(node_id, step)
+            )
+            return output, {"dataset_install_warnings": step.get("installWarnings") or []}
+        deadline = time.monotonic() + 180
+        while not saves:
+            assert time.monotonic() < deadline, "no save carried {}'s output ref".format(node_id)
+            page.wait_for_timeout(250)
+    finally:
+        page.remove_listener("response", _on_response)
+        sent.stop()
+    response = saves[-1]
     assert response.ok, "install-save failed: {} {}".format(response.status, response.url)
     return output, response.json()
 
@@ -346,7 +375,7 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
         delete_computed_datasets(token, dataset_id)
 
     # 1. The dict node.
-    dict_output, dict_save = _run_and_capture_save(page, project_id, dict_node)
+    dict_output, dict_save = _run_and_capture_save(page, token, project_id, dict_node)
     assert "Saved to file:" in dict_output, dict_output
     assert dict_save.get("dataset_install_warnings") == [], (
         "the save that carried {}'s output reported install warnings {!r}; a dict "
@@ -357,7 +386,7 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
     # 2. The scalar node. Run second and assert separately rather than relying on
     #    the 500 ms debounce to collapse both: the two runs are seconds apart, so
     #    which save covers which node is not something to guess at.
-    scalar_output, scalar_save = _run_and_capture_save(page, project_id, scalar_node)
+    scalar_output, scalar_save = _run_and_capture_save(page, token, project_id, scalar_node)
     assert "Saved to file:" in scalar_output, scalar_output
     assert scalar_save.get("dataset_install_warnings") == [], (
         "the save that carried {}'s output reported install warnings {!r}; a "
@@ -426,6 +455,10 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
     #    requires: they are bottom-right, up to 360px wide, and land exactly
     #    where canvas content usually is.
     dismiss_toasts(page)
+    # Clear the selection the test's own clicks left, the way a user would: a
+    # click on empty canvas.
+    pane = page.locator(".react-flow__pane").bounding_box()
+    page.mouse.click(pane["x"] + pane["width"] / 2, pane["y"] + pane["height"] - 60)
     save_workflow_test_screenshot(
         page,
         "computed-json-output",
@@ -447,7 +480,6 @@ def _open_computed_tab(page, dataset_ids) -> None:
     The visual counterpart to the API assertions: nothing else in the suite pins
     that a JSON computed dataset renders as a card at all.
     """
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
     page.get_by_role("button", name="Data Catalog", exact=True).click(force=True)
 
     root = page.locator(DRAWER_ROOT)

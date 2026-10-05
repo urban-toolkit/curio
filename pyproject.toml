@@ -31,7 +31,8 @@ dependencies = [
   "flask-socketio>=5.6.0",
   "python-socketio>=5.16.2",
   "python-engineio>=4.13.2",
-  # Validates manifests and dataflow specs against docs/schemas/*.json.
+  # Validates manifests and dataflow specs against docs/schemas/*.json, and
+  # Autark documents against the vendored autk-grammar schema.
   # See requirements.txt for why this is a floor and not an exact pin.
   "jsonschema>=4.18",
   # Detects the encoding of text dataset imports so they can be stored as
@@ -61,7 +62,7 @@ include-package-data = true
 # "llm-prompts" is a data directory inside the utk_curio package rather than a
 # package of its own (the hyphen makes it unimportable), so packages.find never
 # sees it and it needs naming explicitly or the built-in agents ship promptless.
-utk_curio = ["llm-prompts/*.txt"]
+utk_curio = ["llm-prompts/*.md"]
 
 [tool.setuptools.dynamic]
 version = {attr = "utk_curio.__version__"}

@@ -14,10 +14,10 @@
 import {
   EDGE_AGENT_BADGES_ATTR,
   pickEdgeAtPoint,
+  composeAgentRunContext,
   type AgentDropTarget,
-} from "../../utils/agentCatalogEvents";
+} from "../../services/agents";
 import { attachAgentOnDrop } from "../../utils/agentDropAttach";
-import { composeAgentRunContext } from "../../components/agents/attach/agentRunContext";
 
 describe("pickEdgeAtPoint", () => {
   const atPoint = (el: Element | null) => {
@@ -156,7 +156,7 @@ describe("attachAgentOnDrop with a connection target", () => {
 
 describe("the connectionSide fragment", () => {
   it("names both ends in the vocabulary the prompt expects", () => {
-    // new_connection_prompt.txt expects to be "informed if the nodes you are
+    // new_connection_prompt.md expects to be "informed if the nodes you are
     // suggesting will be connected into the input or output of the node", so
     // the fragment speaks in inputs and outputs rather than source/target.
     // Before edge attach existed, connectionSide had no producer at all and

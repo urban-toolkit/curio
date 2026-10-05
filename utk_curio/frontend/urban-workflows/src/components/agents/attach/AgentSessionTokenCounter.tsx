@@ -1,6 +1,5 @@
 import React from "react";
-import type { AgentUsage } from "../../../api/agentsApi";
-import { formatTokenCount } from "./agentRunStatus";
+import { formatTokenCount, type AgentUsage } from "../../../services/agents";
 import styles from "./AgentSessionTokenCounter.module.css";
 
 /**

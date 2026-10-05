@@ -2,8 +2,10 @@ html, body {
     overflow: hidden;
 }
 
-/* Promote the panning layer to a GPU compositor layer in Firefox */
-.react-flow__viewport {
+/* Promote the panning layer to a GPU compositor layer while the user pans or
+   zooms it (useViewportMotionHint). At rest it is painted at the zoom it shows.
+   The child combinators keep the rule off a flow drawn inside a node. */
+.react-flow.curio-viewport-moving > .react-flow__renderer > .react-flow__pane > .react-flow__viewport {
     will-change: transform;
 }
 
@@ -22,4 +24,35 @@ path.react-flow__edge-path:hover {
 
 .react-flow__handle {
     background: #888787;
+}
+
+/* A node in an expanded scenario wears the scenario's color (#662); the
+   canvas view sets --scenario-color on it, a per-node value, not a token. */
+.react-flow__node.curio-scenario-member {
+    outline: 3px solid var(--scenario-color);
+    outline-offset: 3px;
+    border-radius: var(--curio-radius-lg);
+}
+
+/* The fixed context of the scenario the Scenarios panel points at. */
+.react-flow__node.curio-scenario-fixed {
+    outline: 3px dashed var(--curio-text-secondary);
+    outline-offset: 6px;
+    border-radius: var(--curio-radius-lg);
+}
+
+.react-flow__node.curio-scenario-fixed::before {
+    content: "Fixed context";
+    position: absolute;
+    top: -30px;
+    left: 0;
+    padding: 0 8px;
+    line-height: 20px;
+    border-radius: var(--curio-radius-pill);
+    background: var(--curio-top-bar-bg);
+    color: var(--curio-text-on-dark);
+    font-family: var(--curio-font-family);
+    font-size: var(--curio-font-size-xs);
+    white-space: nowrap;
+    pointer-events: none;
 }

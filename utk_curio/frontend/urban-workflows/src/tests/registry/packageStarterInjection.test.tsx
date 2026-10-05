@@ -3,7 +3,7 @@
  * that code injected into a freshly-dropped node's editor — even when its
  * manifest names a behavior key that resolves to a registered built-in hook.
  *
- * Every `curio.weather@1` / `ai.urbanlab.uhvi@1` template declares
+ * Every `curio.weather@1` / `ai.utk.uhvi@1` template declares
  * `behavior: "code"` next to `source: "sources/<x>.py"`. Resolving `"code"`
  * through the behavior registry yields the no-op `useCodeNodeBehavior`, which
  * used to win outright over the starter-injecting `usePackageNodeBehavior` —
@@ -32,6 +32,8 @@ import '../../registry/builtinBehaviors'; // side-effect: registers 'code', 'veg
 import '../../registry/iconRegistry';
 import { registerPackageTemplates } from '../../registry/packagesClient';
 import { clearPackageNodes } from '../../registry/nodeRegistry';
+import { packageStarterCode } from '../../adapters/node/packageNodeBehavior';
+import { useStarterContext } from '../../providers/StarterProvider';
 import type { NodeBehaviorData, UseNodeStateReturn } from '../../registry/types';
 
 const TEMPLATE = {
@@ -57,7 +59,6 @@ const TEMPLATE = {
   bidirectional: false,
   containerStyle: null,
   hasProvenance: null,
-  tutorialId: null,
 };
 
 const FIXTURE_PACK = {
@@ -65,7 +66,7 @@ const FIXTURE_PACK = {
   major: 1,
   version: '1.0.0',
   name: 'Weather Analysis',
-  publisher: 'Urban Analytics Lab',
+  publisher: 'Curio',
   description: '',
   license: 'MIT',
   permissions: [],
@@ -116,5 +117,32 @@ describe('package starter injection', () => {
   test('no source → nothing injected', () => {
     const pack = { ...FIXTURE_PACK, templates: [{ ...TEMPLATE, source: null }] };
     expect(runBehavior(pack, undefined)).not.toContain(STARTER_CODE);
+  });
+});
+
+describe('packageStarterCode', () => {
+  beforeEach(() => clearPackageNodes());
+  // The mocked context is a plain function, so it can be read outside React.
+  const { getStarters } = useStarterContext();
+
+  test('is the code a fresh node of the template opens with', () => {
+    const [desc] = registerPackageTemplates([FIXTURE_PACK]);
+    expect(packageStarterCode(desc, getStarters)).toBe(STARTER_CODE);
+    expect(runBehavior(FIXTURE_PACK, undefined)).toContain(packageStarterCode(desc, getStarters));
+  });
+
+  test('a template without a source has none', () => {
+    const [desc] = registerPackageTemplates([{ ...FIXTURE_PACK, templates: [{ ...TEMPLATE, source: null }] }]);
+    expect(packageStarterCode(desc, getStarters)).toBeUndefined();
+  });
+
+  test('nor does a template the feed has not sent yet, or no template', () => {
+    const [desc] = registerPackageTemplates([{
+      ...FIXTURE_PACK,
+      packageId: 'curio.elsewhere',
+      templates: [{ ...TEMPLATE, id: 'curio.elsewhere/mrt-load@1' }],
+    }]);
+    expect(packageStarterCode(desc, getStarters)).toBeUndefined();
+    expect(packageStarterCode(undefined, getStarters)).toBeUndefined();
   });
 });

@@ -14,10 +14,10 @@ shows for a given prop set.
 
 ``curio.example-ui@1`` is the ONLY package a test may install: it declares no
 python dependencies, so nothing shells out to pip. ``curio.weather@1``,
-``ai.urbanlab.uhvi@1`` and ``curio.streetvision@1`` pull
-rasterio/geopandas/torch through a synchronous call capped at 30 minutes, and
+``ai.utk.uhvi@1`` and ``curio.streetvision@1`` pull
+rasterio/geopandas/onnxruntime through a synchronous call capped at 30 minutes, and
 the resulting user-store copy makes every later ``curio start`` re-resolve them
-(``main.py`` walks every user store on boot and exits on pip failure).
+(``utk_curio/cli/dependencies.py`` walks every user store on boot and exits on pip failure).
 
 Run::
 
@@ -109,10 +109,9 @@ def _enter_dataflow(page, app_frontend, current_server, *, username, project):
 
 
 def _open_drawer_from_menu(page):
-    """Data menu -> Node Catalog."""
-    page.get_by_role("button", name="Data ⏷", exact=True).click(force=True)
+    """The top bar's Node Catalog button."""
     # "Node Catalog" also labels the palette trigger, whose accessible name
-    # includes a count span - exact=True picks out the menu row's own button.
+    # includes a count span - exact=True picks out the bar's own button.
     page.get_by_role("button", name="Node Catalog", exact=True).click()
     return _drawer(page)
 

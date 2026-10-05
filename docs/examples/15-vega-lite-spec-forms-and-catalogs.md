@@ -32,7 +32,7 @@ anywhere without editing paths.
 
 | Dataset | Id | Format |
 |---|---|---|
-| Chicago Boundary (ZIP polygons) | `data.urbanlab.chicago-boundary` | geojson |
+| Chicago Boundary (ZIP polygons) | `data.utk.chicago-boundary` | geojson |
 | Chicago Green Roofs | `data.cityofchicago.green-roofs` | csv |
 | Project Sidewalk labels | `data.projectsidewalk.chicago-labels` | parquet |
 
@@ -56,7 +56,7 @@ points that way, sized by roof area, with no geometry column involved at all.
 ```python
 import geopandas as gpd
 
-dataset_path = curio_dataset_path("data.projectsidewalk.chicago-labels")
+dataset_path = curio_data_path("data.projectsidewalk.chicago-labels")
 gdf = gpd.read_parquet(dataset_path)
 
 return gdf[["label_type", "severity", "geometry"]].head(400)
@@ -66,10 +66,11 @@ GeoParquet, read with `gpd.read_parquet`. The spec is no different from the
 geojson one.
 
 The join is a node, not code. `Spatial Join` takes the green-roof points on
-its upper, blue handle and the ZIP polygons on its lower, green handle, and
+its upper, blue circle and the ZIP polygons on its lower, green circle, and
 works out which
 polygon each point falls in. Its two settings are which polygon column is the
-tag (`name` by default; `zip` here) and what comes out: the points, each tagged
+tag, picked from a list of the polygons' columns (`name` by default; `zip`
+here), and what comes out: the points, each tagged
 with that column under its own name, or, as here, the polygons, each with a
 `point_count`. The polygons feed two views. A choropleth first:
 

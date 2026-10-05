@@ -28,9 +28,9 @@ const CARDS = [
     provenance: { publisher: "curio", trust: "built-in" },
   },
   {
-    dirName: "agent.debug-agent",
-    id: "agent.debug-agent",
-    name: "Debug",
+    dirName: "agent.my-debugger",
+    id: "agent.my-debugger",
+    name: "My Debugger",
     purpose: "Diagnose errors",
     category: "node",
     capabilities: [],
@@ -42,7 +42,7 @@ const CARDS = [
   },
 ];
 
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: {
     catalog: jest.fn(() => Promise.resolve({ items: CARDS, agents: CARDS, facets: null })),
     listImports: jest.fn(() => Promise.resolve({ agents: [] })),
@@ -66,8 +66,8 @@ describe("/catalog/agents selection", () => {
     const { result } = renderHook(() => useAgentCatalogBrowse());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    act(() => result.current.setSelectedCoord("agent.debug-agent"));
-    expect(result.current.selectedAgent?.dirName).toBe("agent.debug-agent");
+    act(() => result.current.setSelectedCoord("agent.my-debugger"));
+    expect(result.current.selectedAgent?.dirName).toBe("agent.my-debugger");
 
     // What the drawer's Close button does.
     act(() => result.current.setSelectedCoord(null));
@@ -85,15 +85,15 @@ describe("/catalog/agents selection", () => {
     act(() => result.current.setSelectedCoord(null));
     expect(result.current.selectedAgent).toBeNull();
 
-    act(() => result.current.setSelectedCoord("agent.debug-agent"));
-    expect(result.current.selectedAgent?.dirName).toBe("agent.debug-agent");
+    act(() => result.current.setSelectedCoord("agent.my-debugger"));
+    expect(result.current.selectedAgent?.dirName).toBe("agent.my-debugger");
   });
 
   it("falls back to the default when the selected agent is filtered out", async () => {
     const { result } = renderHook(() => useAgentCatalogBrowse());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    act(() => result.current.setSelectedCoord("agent.debug-agent"));
+    act(() => result.current.setSelectedCoord("agent.my-debugger"));
     act(() => result.current.setSearch("Chat"));
 
     await waitFor(() =>
@@ -113,7 +113,7 @@ describe("/catalog/agents search matches the drawer", () => {
     act(() => result.current.setSearch("node"));
     expect(result.current.filtered.map((a) => a.dirName)).toEqual([
       "agent.chat-agent",
-      "agent.debug-agent",
+      "agent.my-debugger",
     ]);
   });
 
@@ -122,6 +122,6 @@ describe("/catalog/agents search matches the drawer", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     act(() => result.current.setSearch("  Debug  "));
-    expect(result.current.filtered.map((a) => a.dirName)).toEqual(["agent.debug-agent"]);
+    expect(result.current.filtered.map((a) => a.dirName)).toEqual(["agent.my-debugger"]);
   });
 });

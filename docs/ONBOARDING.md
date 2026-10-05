@@ -22,16 +22,16 @@ This document is meant for **undergraduate students** involved in the Curio proj
     - [Why are there two different instances of `curio` when I use pip versus cloning?](#why-are-there-two-different-instances-of-curio-when-i-use-pip-versus-cloning)
     - [Why do I get `bash: conda: command not found`?](#why-do-i-get-bash-conda-command-not-found)
     - [How do I know if my issue is with Curio, Conda, or Pip?](#how-do-i-know-if-my-issue-is-with-curio-conda-or-pip)
-    - [Why does `curio start` take so long to run the first time?](#why-does-curio-start-take-so-long-to-run-the-first-time)
+    - [Why does `curio start` take so long to run the first time?](#why-does-curio-start-or-python-curiopy-start-take-so-long-to-run-the-first-time)
     - [I am getting a "No such file or directory" error when loading a file](#i-am-getting-a-no-such-file-or-directory-error-when-loading-a-file)
 
 ## 1. Overview: Curio
 
 **Curio** is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations. [GitHub](https://github.com/urban-toolkit/curio)
 
-In-browser map rendering and GPU compute are provided by the **Autark** grammar (`@urban-toolkit/autk-grammar`). It is exposed in dataflows through a single `Autark` node whose "UrbanSpec" declaratively combines data loading (OSM/PBF), GPU `compute` (WGSL), and `map` / `plot` rendering. How a spec references data arriving from upstream nodes, using either the `upstream` keyword or named layer references, is covered in [ARCHITECTURE.md](ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
+In-browser map rendering and GPU compute are provided by the **Autark** grammar (`@urban-toolkit/autk-grammar`). It is exposed in dataflows through a single `Autark` node whose "UrbanSpec" declaratively combines data loading (OSM/PBF), GPU `compute` (WGSL), and `map` / `plot` rendering. How a spec references data arriving from upstream nodes, by input (`input_0`, `input_1`, ..., written with input chips) or by named layer references, is covered in [ARCHITECTURE.md](ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
-The **Agent Catalog** adds model-backed help for dataflow authoring: attach an agent to a node, a connection, or the canvas, and chat with it from the dock. Which model answers is configured in **AI Settings**.
+The **Agent Catalog** adds model-backed help for dataflow authoring: attach an agent to a node, a connection, or the canvas, and chat with it from the dock. Which model answers each agent is chosen on the **Agent configuration** tab of **API Settings**.
 
 If you would like to learn more about the design and research behind Curio, please see the research papers linked in the repository.
 
@@ -109,7 +109,7 @@ These functions handle environment setup, server startup, and process management
 The `mainCanvas` component (located here: `utk_curio/frontend/urban-workflows/src/components/MainCanvas.tsx`) is responsible for building and rendering the entire editor canvas. Inside the `components` folder, you will find modular subcomponents. For example:
 
 - `ToolsMenu` → the left rail: built-in node icons, plus the Node Catalog and Data Catalog dropdowns
-- `UpMenu` → the top menu bar (File, Data, and the rest)
+- `UpMenu` → the canvas's controls in the top bar (File, View with Provenance, Share, the save state, the catalog buttons, and the Canvas | Notebook switch beside Monitor), rendered inside `GlobalPageHeader`, the bar every page shares
 - `UniversalNode` → the single component every node type renders through
 
 If you scroll to the component's `return (`, currently around line 471, you will see something similar to:
@@ -334,7 +334,7 @@ or
 python curio.py start
 ```
 
-is taking a long time, this is normal. From a git clone, the first run has no built frontend, so Curio installs the Node.js dependencies and runs a production webpack build of the whole UI. Expect a few minutes. Later runs reuse the result and start in seconds, until you pass `--force-rebuild`.
+is taking a long time, this is normal. From a git clone, the first run has no built frontend, so Curio installs the Node.js dependencies and runs a production webpack build of the whole UI. Expect a few minutes. Later runs reuse the build and start in seconds, unless you pass `--force-rebuild` or a different `--backend-port`.
 
 A pip install and the Docker image skip this entirely: both ship a frontend that is already built.
 

@@ -1,0 +1,574 @@
+{
+  "about": "Code reference cases: widget, input, column, shared and selection references. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their columns when known; its selections are the node's selection tags, with the ids each holds.",
+  "cases": [
+    {
+      "name": "a number on its own",
+      "language": "python",
+      "code": "x = [!! n !!]",
+      "widgets": [{"name": "n", "type": "number", "default": 10}],
+      "expected": "x = 10"
+    },
+    {
+      "name": "a set value wins over the default",
+      "language": "python",
+      "code": "x = [!! n !!] * 2",
+      "widgets": [{"name": "n", "type": "number", "default": 10, "value": 2.5}],
+      "expected": "x = 2.5 * 2"
+    },
+    {
+      "name": "numbers print as JavaScript prints them",
+      "language": "python",
+      "code": "a = [!! a !!]\nb = [!! b !!]\nc = [!! c !!]\nd = [!! d !!]\ne = [!! e !!]\nf = [!! f !!]",
+      "widgets": [
+        {"name": "a", "type": "number", "default": 1e-7},
+        {"name": "b", "type": "number", "default": 0.00001},
+        {"name": "c", "type": "number", "default": 1e21},
+        {"name": "d", "type": "number", "default": 100.0},
+        {"name": "e", "type": "number", "default": -0.5},
+        {"name": "f", "type": "number", "default": 123456789012345680000}
+      ],
+      "expected": "a = 1e-7\nb = 0.00001\nc = 1e+21\nd = 100\ne = -0.5\nf = 123456789012345680000"
+    },
+    {
+      "name": "text on its own is a quoted literal",
+      "language": "python",
+      "code": "s = [!! s !!]",
+      "widgets": [{"name": "s", "type": "text", "default": "it's \"x\" Niterói"}],
+      "expected": "s = \"it's \\\"x\\\" Niterói\""
+    },
+    {
+      "name": "text inside a double-quoted string is escaped text",
+      "language": "python",
+      "code": "title = \"Season: [!! s !!]\"",
+      "widgets": [{"name": "s", "type": "text", "default": "winter \"cold\""}],
+      "expected": "title = \"Season: winter \\\"cold\\\"\""
+    },
+    {
+      "name": "a choice inside a single-quoted string",
+      "language": "python",
+      "code": "s = 'it is [!! s !!]'",
+      "widgets": [{"name": "s", "type": "choice", "default": "Bob's", "options": {"choices": ["Bob's"]}}],
+      "expected": "s = 'it is Bob\\'s'"
+    },
+    {
+      "name": "line breaks and backslashes inside a one-line string",
+      "language": "python",
+      "code": "s = \"[!! s !!]\"",
+      "widgets": [{"name": "s", "type": "text", "default": "a\\b\nc"}],
+      "expected": "s = \"a\\\\b\\nc\""
+    },
+    {
+      "name": "a triple-quoted string keeps line breaks",
+      "language": "python",
+      "code": "doc = \"\"\"note: [!! s !!]\"\"\"",
+      "widgets": [{"name": "s", "type": "text", "default": "two\nlines \"q\""}],
+      "expected": "doc = \"\"\"note: two\nlines \\\"q\\\"\"\"\""
+    },
+    {
+      "name": "a comment gets the plain text on one line",
+      "language": "python",
+      "code": "# season is [!! s !!]\nx = [!! s !!]",
+      "widgets": [{"name": "s", "type": "text", "default": "win\nter"}],
+      "expected": "# season is win ter\nx = \"win\\nter\""
+    },
+    {
+      "name": "a hash inside a string is not a comment",
+      "language": "python",
+      "code": "x = \"#\"; y = [!! n !!]",
+      "widgets": [{"name": "n", "type": "number", "default": 3}],
+      "expected": "x = \"#\"; y = 3"
+    },
+    {
+      "name": "an escaped quote does not end the string",
+      "language": "python",
+      "code": "x = \"a\\\" [!! s !!]\"",
+      "widgets": [{"name": "s", "type": "text", "default": "b"}],
+      "expected": "x = \"a\\\" b\""
+    },
+    {
+      "name": "an unterminated string ends with its line",
+      "language": "python",
+      "code": "x = \"abc\ny = [!! n !!]",
+      "widgets": [{"name": "n", "type": "number", "default": 4}],
+      "expected": "x = \"abc\ny = 4"
+    },
+    {
+      "name": "booleans, lists and ranges in Python",
+      "language": "python",
+      "code": "a = [!! a !!]; b = [!! b !!]; c = [!! c !!]; d = [!! d !!]",
+      "widgets": [
+        {"name": "a", "type": "checkbox", "default": true},
+        {"name": "b", "type": "number-list", "default": [1, 2.5]},
+        {"name": "c", "type": "text-list", "default": ["x", "y"]},
+        {"name": "d", "type": "range", "default": [0, 5]}
+      ],
+      "expected": "a = True; b = [1, 2.5]; c = [\"x\", \"y\"]; d = [0, 5]"
+    },
+    {
+      "name": "a list inside a string is its literal, escaped",
+      "language": "python",
+      "code": "s = \"[!! c !!]\"",
+      "widgets": [{"name": "c", "type": "text-list", "default": ["x"]}],
+      "expected": "s = \"[\\\"x\\\"]\""
+    },
+    {
+      "name": "JavaScript booleans, in code and in a line comment",
+      "language": "javascript",
+      "code": "const a = [!! a !!]; // [!! a !!]",
+      "widgets": [{"name": "a", "type": "checkbox", "default": false}],
+      "expected": "const a = false; // false"
+    },
+    {
+      "name": "a JavaScript template literal",
+      "language": "javascript",
+      "code": "const t = `v=${x} [!! s !!]`;",
+      "widgets": [{"name": "s", "type": "text", "default": "a`b${c}\\d"}],
+      "expected": "const t = `v=${x} a\\`b\\${c}\\\\d`;"
+    },
+    {
+      "name": "a JavaScript block comment",
+      "language": "javascript",
+      "code": "/* [!! s !!] */ let y = [!! s !!];",
+      "widgets": [{"name": "s", "type": "text", "default": "q"}],
+      "expected": "/* q */ let y = \"q\";"
+    },
+    {
+      "name": "JSON values",
+      "language": "json",
+      "code": "{\"opacity\": [!! o !!], \"show\": [!! b !!], \"mark\": [!! m !!]}",
+      "widgets": [
+        {"name": "o", "type": "number", "default": 0.5},
+        {"name": "b", "type": "checkbox", "default": true},
+        {"name": "m", "type": "choice", "default": "bar", "options": {"choices": ["bar", "line"]}}
+      ],
+      "expected": "{\"opacity\": 0.5, \"show\": true, \"mark\": \"bar\"}"
+    },
+    {
+      "name": "inside a JSON string",
+      "language": "json",
+      "code": "{\"title\": \"Season: [!! s !!]\"}",
+      "widgets": [{"name": "s", "type": "text", "default": "a\"b\\c\td"}],
+      "expected": "{\"title\": \"Season: a\\\"b\\\\c\\td\"}"
+    },
+    {
+      "name": "no references leaves the code alone",
+      "language": "python",
+      "code": "x = [1, 2]\n",
+      "widgets": [],
+      "expected": "x = [1, 2]\n"
+    },
+    {
+      "name": "an old marker is refused",
+      "language": "python",
+      "code": "x = [!! n$INPUT_VALUE$10 !!]",
+      "widgets": [],
+      "expected": "x = [!! n$INPUT_VALUE$10 !!]",
+      "problems": ["[!! n$INPUT_VALUE$10 !!] is an old widget marker. Add the widget in the node's Widgets tab and drag its tag into the code."]
+    },
+    {
+      "name": "a name the node has no widget for",
+      "language": "python",
+      "code": "x = [!! missing !!]",
+      "widgets": [{"name": "n", "type": "number", "default": 1}],
+      "expected": "x = [!! missing !!]",
+      "problems": ["[!! missing !!]: this node has no widget named missing. Add it in the Widgets tab."]
+    },
+    {
+      "name": "a reference that is not a name, beside one that resolves",
+      "language": "python",
+      "code": "x = [!! 2 bad !!] + [!! n !!]",
+      "widgets": [{"name": "n", "type": "number", "default": 1}],
+      "expected": "x = [!! 2 bad !!] + 1",
+      "problems": ["[!! 2 bad !!] does not name a widget. Widget names are letters, digits and underscores."]
+    },
+    {
+      "name": "a slider, a radio choice, a checkbox group and a multi-select in Python",
+      "language": "python",
+      "code": "a = [!! a !!]; b = [!! b !!]; c = [!! c !!]; d = [!! d !!]",
+      "widgets": [
+        {"name": "a", "type": "slider", "default": 5, "value": 7.5, "options": {"min": 0, "max": 10, "step": 0.5, "units": "m"}},
+        {"name": "b", "type": "choice", "default": "winter", "options": {"choices": ["summer", "winter"], "display": "radio"}},
+        {"name": "c", "type": "checkbox-group", "default": ["x"], "value": ["x", "y"], "options": {"choices": ["x", "y"]}},
+        {"name": "d", "type": "multi-select", "default": [], "options": {"choices": ["p", "q"]}}
+      ],
+      "expected": "a = 7.5; b = \"winter\"; c = [\"x\", \"y\"]; d = []"
+    },
+    {
+      "name": "a date and time on its own and inside an f-string",
+      "language": "python",
+      "code": "t = [!! t !!]\nlabel = f\"at [!! t !!]\"",
+      "widgets": [{"name": "t", "type": "datetime", "default": "2026-06-21T12:00:00"}],
+      "expected": "t = \"2026-06-21T12:00:00\"\nlabel = f\"at 2026-06-21T12:00:00\""
+    },
+    {
+      "name": "a location is a dict in Python",
+      "language": "python",
+      "code": "origin = [!! origin !!]",
+      "widgets": [{"name": "origin", "type": "location", "default": {"lat": 41.8781, "lon": -87.6298}}],
+      "expected": "origin = {\"lat\": 41.8781, \"lon\": -87.6298}"
+    },
+    {
+      "name": "a location in JavaScript, on its own and inside a template literal",
+      "language": "javascript",
+      "code": "const p = [!! loc !!];\nconst s = `at [!! loc !!]`;",
+      "widgets": [{"name": "loc", "type": "location", "default": {"lat": 0, "lon": 0}, "value": {"lat": 41.8781, "lon": -87.6298}}],
+      "expected": "const p = {\"lat\": 41.8781, \"lon\": -87.6298};\nconst s = `at {\"lat\": 41.8781, \"lon\": -87.6298}`;"
+    },
+    {
+      "name": "a location in JSON, on its own and inside a string",
+      "language": "json",
+      "code": "{\"center\": [!! loc !!], \"title\": \"Near [!! loc !!]\"}",
+      "widgets": [{"name": "loc", "type": "location", "default": {"lat": 41.8781, "lon": -87.6298}}],
+      "expected": "{\"center\": {\"lat\": 41.8781, \"lon\": -87.6298}, \"title\": \"Near {\\\"lat\\\": 41.8781, \\\"lon\\\": -87.6298}\"}"
+    },
+    {
+      "name": "a widget without a default takes its kind's",
+      "language": "python",
+      "code": "a = [!! a !!]; b = [!! b !!]; c = [!! c !!]; d = [!! d !!]; e = [!! e !!]",
+      "widgets": [
+        {"name": "a", "type": "slider", "options": {"min": 2, "max": 9}},
+        {"name": "b", "type": "choice", "options": {"choices": ["u", "v"]}},
+        {"name": "c", "type": "location"},
+        {"name": "d", "type": "datetime", "default": null},
+        {"name": "e", "type": "checkbox-group", "options": {"choices": ["u"]}}
+      ],
+      "expected": "a = 2; b = \"u\"; c = {\"lat\": 0, \"lon\": 0}; d = \"1970-01-01T00:00:00\"; e = []"
+    },
+    {
+      "name": "a widget of an unknown kind is no widget",
+      "language": "python",
+      "code": "x = [!! w !!]",
+      "widgets": [{"name": "w", "type": "nonsense", "default": 1}],
+      "expected": "x = [!! w !!]",
+      "problems": ["[!! w !!]: this node has no widget named w. Add it in the Widgets tab."]
+    },
+    {
+      "name": "the only input is arg itself",
+      "language": "python",
+      "code": "df = [!! input 0 !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "df = arg"
+    },
+    {
+      "name": "several inputs index arg in circle order",
+      "language": "python",
+      "code": "a = [!! input 0 !!]\nc = [!! input 2 !!]",
+      "widgets": [],
+      "inputs": [{"slot": 2}, {"slot": 0}, {"slot": 1}],
+      "expected": "a = arg[0]\nc = arg[2]"
+    },
+    {
+      "name": "an empty circle takes no place in arg",
+      "language": "python",
+      "code": "a = [!! input 1 !!]; b = [!! input 2 !!]",
+      "widgets": [],
+      "inputs": [{"slot": 1}, {"slot": 2}],
+      "expected": "a = arg[0]; b = arg[1]"
+    },
+    {
+      "name": "a JavaScript input",
+      "language": "javascript",
+      "code": "const n = [!! input 1 !!].length;",
+      "widgets": [],
+      "inputs": [{"slot": 0}, {"slot": 1}],
+      "expected": "const n = arg[1].length;"
+    },
+    {
+      "name": "a column on its own is its quoted name",
+      "language": "python",
+      "code": "s = arg[[!! input 0.population !!]]",
+      "widgets": [],
+      "inputs": [{"slot": 0, "columns": ["population", "area"]}],
+      "expected": "s = arg[\"population\"]"
+    },
+    {
+      "name": "a column inside a string and a comment is its name",
+      "language": "python",
+      "code": "label = f\"mean of [!! input 0.pop 2020 !!]\"  # [!! input 0.pop 2020 !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "label = f\"mean of pop 2020\"  # pop 2020"
+    },
+    {
+      "name": "a column with a quote inside a single-quoted string",
+      "language": "python",
+      "code": "s = '[!! input 0.Bob's !!]'",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "s = 'Bob\\'s'"
+    },
+    {
+      "name": "a column name takes everything after the first dot",
+      "language": "javascript",
+      "code": "const k = [!! input 1.a.b !!];",
+      "widgets": [],
+      "inputs": [{"slot": 0}, {"slot": 1, "columns": ["a.b"]}],
+      "expected": "const k = \"a.b\";"
+    },
+    {
+      "name": "columns in JSON, on their own and inside a string",
+      "language": "json",
+      "code": "{\"field\": [!! input 0.height !!], \"title\": \"Mean [!! input 0.height !!]\"}",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "{\"field\": \"height\", \"title\": \"Mean height\"}"
+    },
+    {
+      "name": "a widget named input is still a widget",
+      "language": "python",
+      "code": "x = [!! input !!] + [!! input 0 !!]",
+      "widgets": [{"name": "input", "type": "number", "default": 5}],
+      "inputs": [{"slot": 0}],
+      "expected": "x = 5 + arg"
+    },
+    {
+      "name": "an input with no edge",
+      "language": "python",
+      "code": "x = [!! input 3 !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0}, {"slot": 1}],
+      "expected": "x = [!! input 3 !!]",
+      "problems": ["[!! input 3 !!]: input 3 has no edge. Connect one to that circle, or drag one of this node's input chips here."]
+    },
+    {
+      "name": "an input inside a string is not text",
+      "language": "python",
+      "code": "s = \"[!! input 0 !!]\"",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "s = \"[!! input 0 !!]\"",
+      "problems": ["[!! input 0 !!] is an input, not text. Use it outside quotes and comments."]
+    },
+    {
+      "name": "an input chip in JSON is the name the input is read by",
+      "language": "json",
+      "code": "{\"data\": {\"name\": [!! input 0 !!]}}",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "{\"data\": {\"name\": \"input_0\"}}"
+    },
+    {
+      "name": "JSON input chips count in circle order, on their own and inside a string",
+      "language": "json",
+      "code": "{\"dataRef\": [!! input 2 !!], \"title\": \"From [!! input 1 !!]\"}",
+      "widgets": [],
+      "inputs": [{"slot": 1}, {"slot": 2}],
+      "expected": "{\"dataRef\": \"input_1\", \"title\": \"From input_0\"}"
+    },
+    {
+      "name": "a layer and a layer's column in JSON are their names",
+      "language": "json",
+      "code": "{\"dataRef\": [!! input 0:roads !!], \"property\": \"[!! input 0:roads.lanes !!]\"}",
+      "widgets": [],
+      "inputs": [{"slot": 0, "layers": [{"name": "roads", "columns": ["lanes"]}, {"name": "buildings"}]}],
+      "expected": "{\"dataRef\": \"roads\", \"property\": \"lanes\"}"
+    },
+    {
+      "name": "an input of several layers is named by a layer chip",
+      "language": "json",
+      "code": "{\"dataRef\": [!! input 0 !!]}",
+      "widgets": [],
+      "inputs": [{"slot": 0, "layers": [{"name": "roads"}, {"name": "buildings"}]}],
+      "expected": "{\"dataRef\": [!! input 0 !!]}",
+      "problems": ["[!! input 0 !!]: input 0 carries several layers (roads, buildings). Drag one of its layer chips here."]
+    },
+    {
+      "name": "a layer or a layer's column the input does not have",
+      "language": "json",
+      "code": "{\"a\": [!! input 0:parks !!], \"b\": [!! input 0:roads.width !!]}",
+      "widgets": [],
+      "inputs": [{"slot": 0, "layers": [{"name": "roads", "columns": ["lanes"]}, {"name": "buildings"}]}],
+      "expected": "{\"a\": [!! input 0:parks !!], \"b\": [!! input 0:roads.width !!]}",
+      "problems": [
+        "[!! input 0:parks !!]: input 0 has no layer parks.",
+        "[!! input 0:roads.width !!]: layer roads of input 0 has no column width."
+      ]
+    },
+    {
+      "name": "a layer chip in Python",
+      "language": "python",
+      "code": "x = [!! input 0:roads !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "x = [!! input 0:roads !!]",
+      "problems": ["[!! input 0:roads !!]: a layer chip works in Vega-Lite and Autark specs."]
+    },
+    {
+      "name": "the chip of a deleted input",
+      "language": "python",
+      "code": "x = [!! input ? !!]; y = [!! input ?.area !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0}],
+      "expected": "x = [!! input ? !!]; y = [!! input ?.area !!]",
+      "problems": [
+        "[!! input ? !!]: the edge for this input was deleted. Drag one of this node's input chips here.",
+        "[!! input ?.area !!]: the edge for this input was deleted. Drag one of this node's input chips here."
+      ]
+    },
+    {
+      "name": "a column the input does not have, once its columns are known",
+      "language": "python",
+      "code": "x = [!! input 0.missing !!]",
+      "widgets": [],
+      "inputs": [{"slot": 0, "columns": ["a"]}],
+      "expected": "x = [!! input 0.missing !!]",
+      "problems": ["[!! input 0.missing !!]: input 0 has no column missing."]
+    },
+    {
+      "name": "a shared tag takes its Parameter node's set value",
+      "language": "python",
+      "code": "season = [!! @season !!]",
+      "widgets": [],
+      "shared": [{"name": "season", "type": "choice", "options": {"choices": ["summer", "winter"]}, "default": "summer", "value": "winter"}],
+      "expected": "season = \"winter\""
+    },
+    {
+      "name": "a shared tag and a widget of the same name are two values",
+      "language": "javascript",
+      "code": "return [!! @n !!] + [!! n !!];",
+      "widgets": [{"name": "n", "type": "number", "default": 1}],
+      "shared": [{"name": "n", "type": "number", "default": 10}],
+      "expected": "return 10 + 1;"
+    },
+    {
+      "name": "shared tags in a Vega-Lite spec, inside a title and on their own",
+      "language": "json",
+      "code": "{\"title\": \"Season: [!! @season !!]\", \"width\": [!! @width !!]}",
+      "widgets": [],
+      "shared": [
+        {"name": "season", "type": "text", "default": "winter"},
+        {"name": "width", "type": "number", "default": 300}
+      ],
+      "expected": "{\"title\": \"Season: winter\", \"width\": 300}"
+    },
+    {
+      "name": "a shared tag inside a string and a comment",
+      "language": "python",
+      "code": "s = 'It is [!! @season !!]'  # [!! @season !!]",
+      "widgets": [],
+      "shared": [{"name": "season", "type": "text", "default": "Ann's winter"}],
+      "expected": "s = 'It is Ann\\'s winter'  # Ann's winter"
+    },
+    {
+      "name": "a shared tag no Parameter node holds",
+      "language": "python",
+      "code": "x = [!! @missing !!]",
+      "widgets": [{"name": "missing", "type": "number", "default": 1}],
+      "shared": [],
+      "expected": "x = [!! @missing !!]",
+      "problems": ["[!! @missing !!]: no Parameter node is named missing. Add one, or drag a tag from Shared."]
+    },
+    {
+      "name": "two Parameter nodes with one name",
+      "language": "javascript",
+      "code": "const k = [!! @k !!];",
+      "widgets": [],
+      "shared": [
+        {"name": "k", "type": "number", "default": 1},
+        {"name": "k", "type": "number", "default": 2}
+      ],
+      "expected": "const k = [!! @k !!];",
+      "problems": ["[!! @k !!]: 2 Parameter nodes are named k. Rename all but one."]
+    },
+    {
+      "name": "a shared tag that does not name a Parameter node",
+      "language": "json",
+      "code": "{\"a\": [!! @9lives !!]}",
+      "widgets": [],
+      "shared": [],
+      "expected": "{\"a\": [!! @9lives !!]}",
+      "problems": ["[!! @9lives !!] does not name a Parameter node. Parameter names are letters, digits and underscores."]
+    },
+    {
+      "name": "a selection tag's ids on their own are a list",
+      "language": "python",
+      "code": "picked = [!! selection picked !!]\nreturn arg[arg[\"osm_id\"].isin(picked)]",
+      "widgets": [],
+      "selections": [{"name": "picked", "node": "chart", "column": "osm_id", "ids": [101, 104, 12345678901]}],
+      "expected": "picked = [101, 104, 12345678901]\nreturn arg[arg[\"osm_id\"].isin(picked)]"
+    },
+    {
+      "name": "a selection's text and number ids in JavaScript",
+      "language": "javascript",
+      "code": "const ids = [!! selection roads !!];\nreturn ids.length;",
+      "widgets": [],
+      "selections": [{"name": "roads", "node": "map", "column": "way", "ids": ["w12", "w9", 1.5]}],
+      "expected": "const ids = [\"w12\", \"w9\", 1.5];\nreturn ids.length;"
+    },
+    {
+      "name": "a selection in a Vega-Lite filter and inside a title",
+      "language": "json",
+      "code": "{\"title\": \"Picked [!! selection picked !!]\", \"transform\": [{\"filter\": {\"field\": \"osm_id\", \"oneOf\": [!! selection picked !!]}}]}",
+      "widgets": [],
+      "selections": [{"name": "picked", "node": "chart", "column": "osm_id", "ids": [101, 104]}],
+      "expected": "{\"title\": \"Picked [101, 104]\", \"transform\": [{\"filter\": {\"field\": \"osm_id\", \"oneOf\": [101, 104]}}]}"
+    },
+    {
+      "name": "text ids inside a Vega-Lite title are escaped for JSON",
+      "language": "json",
+      "code": "{\"title\": \"Roads [!! selection roads !!]\"}",
+      "widgets": [],
+      "selections": [{"name": "roads", "node": "map", "column": "way", "ids": ["w12"]}],
+      "expected": "{\"title\": \"Roads [\\\"w12\\\"]\"}"
+    },
+    {
+      "name": "a selection inside a string and a comment",
+      "language": "python",
+      "code": "print('picked: [!! selection names !!]')  # [!! selection names !!]",
+      "widgets": [],
+      "selections": [{"name": "names", "node": "chart", "column": "name", "ids": ["Ann's", "Bo"]}],
+      "expected": "print('picked: [\"Ann\\'s\", \"Bo\"]')  # [\"Ann's\", \"Bo\"]"
+    },
+    {
+      "name": "nothing selected is an empty list",
+      "language": "python",
+      "code": "ids = [!! selection picked !!]",
+      "widgets": [],
+      "selections": [{"name": "picked", "node": "chart", "column": "osm_id", "ids": []}],
+      "expected": "ids = []"
+    },
+    {
+      "name": "a selection tag and a widget of the same name are two values",
+      "language": "python",
+      "code": "return [!! picked !!], [!! selection picked !!]",
+      "widgets": [{"name": "picked", "type": "number", "default": 3}],
+      "selections": [{"name": "picked", "node": "chart", "column": "osm_id", "ids": [7]}],
+      "expected": "return 3, [7]"
+    },
+    {
+      "name": "a widget named selection is a widget",
+      "language": "javascript",
+      "code": "return [!! selection !!];",
+      "widgets": [{"name": "selection", "type": "text", "default": "all"}],
+      "expected": "return \"all\";"
+    },
+    {
+      "name": "a selection tag the node does not have",
+      "language": "python",
+      "code": "x = [!! selection missing !!]",
+      "widgets": [{"name": "missing", "type": "number", "default": 1}],
+      "selections": [],
+      "expected": "x = [!! selection missing !!]",
+      "problems": ["[!! selection missing !!]: this node has no selection tag named missing. Add it in the Widgets tab."]
+    },
+    {
+      "name": "a selection reference that does not name a tag",
+      "language": "javascript",
+      "code": "const a = [!! selection 9lives !!];",
+      "widgets": [],
+      "selections": [],
+      "expected": "const a = [!! selection 9lives !!];",
+      "problems": ["[!! selection 9lives !!] does not name a selection tag. Selection tag names are letters, digits and underscores."]
+    },
+    {
+      "name": "a selection holding more ids than a tag takes",
+      "language": "json",
+      "code": "{\"oneOf\": [!! selection picked !!]}",
+      "widgets": [],
+      "selections": [{"name": "picked", "node": "chart", "column": "osm_id", "count": 25000}],
+      "expected": "{\"oneOf\": [!! selection picked !!]}",
+      "problems": ["[!! selection picked !!]: the selection holds 25000 ids, more than the 10000 a selection tag takes. Select fewer rows in its view."]
+    }
+  ]
+}

@@ -9,11 +9,16 @@ jest.mock("../../hook/useCode", () => ({
 const mockApplyNodeContent = jest.fn();
 const mockOnEdgesChange = jest.fn();
 const mockApplyReviewedRemovals = jest.fn();
+// #662: the canvas's scenarios, which an applied plan's join.
+const mockSetScenarios = jest.fn();
+const mockScenarios = { current: [] as Array<{ id: string; name: string; color: string; nodes: string[] }> };
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
     applyNodeContent: mockApplyNodeContent,
     onEdgesChange: mockOnEdgesChange,
     applyReviewedRemovals: mockApplyReviewedRemovals,
+    scenarios: mockScenarios.current,
+    setScenarios: mockSetScenarios,
   }),
 }));
 
@@ -50,7 +55,7 @@ import { useAgentCanvasMutations } from "../../components/agents/attach/useAgent
 import {
   notifyAgentCanvasMutation,
   subscribeAgentCanvasMutations,
-} from "../../utils/agentCanvasEvents";
+} from "../../services/agents";
 
 const Host: React.FC = () => {
   useAgentCanvasMutations();
@@ -69,6 +74,7 @@ const NODE = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockGetNodes.mockReturnValue([]);
+  mockScenarios.current = [];
 });
 
 describe("agentCanvasEvents", () => {
@@ -248,7 +254,7 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
     expect(mockOnEdgesChange).toHaveBeenCalledTimes(1);
   });
 
-  it("passes the apply's explicit handles through (merge slots, dev/67-3)", () => {
+  it("passes the apply's explicit handles through (input circles, dev/67-3)", () => {
     render(<Host />);
     act(() =>
       notifyAgentCanvasMutation({
@@ -261,9 +267,30 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
       }),
     );
     const changes = mockOnEdgesChange.mock.calls[0][0];
-    // The merge slot survives; handle-less edges keep loadTrill defaults.
+    // The input circle survives; handle-less edges keep loadTrill defaults.
     expect(changes[0].item).toMatchObject({ id: "e-m", targetHandle: "in_1", sourceHandle: "out" });
     expect(changes[1].item).toMatchObject({ id: "e-plain", targetHandle: "in", sourceHandle: "out" });
+  });
+
+  it("materializes an Interaction edge as bidirectional on in/out handles (dev/112)", () => {
+    render(<Host />);
+    act(() =>
+      notifyAgentCanvasMutation({
+        kind: "edges-created",
+        batchId: "batch-ix",
+        edges: [
+          { id: "ix", source: "gv", target: "gp", sourceHandle: "in/out", targetHandle: "in/out", type: "Interaction" },
+          { id: "dx", source: "ga", target: "gb" },
+        ],
+      }),
+    );
+    const changes = mockOnEdgesChange.mock.calls[0][0];
+    expect(changes[0].item).toMatchObject({
+      id: "ix", sourceHandle: "in/out", targetHandle: "in/out",
+      type: "BIDIRECTIONAL_EDGE", markerStart: { type: "arrow" }, markerEnd: { type: "arrow" },
+    });
+    expect(changes[1].item).toMatchObject({ id: "dx", type: "UNIDIRECTIONAL_EDGE", sourceHandle: "out", targetHandle: "in" });
+    expect(changes[1].item.markerStart).toBeUndefined();
   });
 
   it("skips nodes already live (partial replays)", () => {
@@ -275,6 +302,71 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
       "curio.builtin/computation-analysis",
       expect.objectContaining({ nodeId: "gb" }),
     );
+  });
+});
+
+describe("#662: a plan's widgets, copies and scenarios reach the live canvas", () => {
+  const COPY = {
+    id: "copy-id",
+    type: "curio.builtin/computation-analysis",
+    content: "",
+    goal: "Shadows: shadow lengths",
+    x: 500,
+    y: 460,
+    metadata: {
+      widgets: [{ name: "height_factor", type: "number", default: 1, value: 2 }],
+      copiedFrom: ["original-id"],
+    },
+  };
+  const SAVED = [
+    { id: "s-real", name: "Real heights", color: "#3567c7", nodes: ["original-id"] },
+    { id: "s-tall", name: "Twice as tall", color: "#e86a3c", nodes: ["copy-id"] },
+  ];
+
+  it("a created node carries its widgets and a copy its lineage into the factory, as a load reads them", () => {
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: COPY }));
+    expect(mockCreateCodeNode).toHaveBeenCalledWith(
+      "curio.builtin/computation-analysis",
+      expect.objectContaining({
+        nodeId: "copy-id",
+        widgets: [{ name: "height_factor", type: "number", default: 1, value: 2 }],
+        copiedFrom: ["original-id"],
+      }),
+    );
+  });
+
+  it("a node without them gets neither (regression)", () => {
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: NODE }));
+    const options = mockCreateCodeNode.mock.calls[0][1];
+    expect("widgets" in options).toBe(false);
+    expect("copiedFrom" in options).toBe(false);
+  });
+
+  it("graph-created joins the plan's saved scenarios after the canvas's own", () => {
+    const own = { id: "s-own", name: "Baseline", color: "#2f8f4a", nodes: ["n0"] };
+    mockScenarios.current = [own];
+    render(<Host />);
+    act(() =>
+      notifyAgentCanvasMutation({
+        kind: "graph-created", planId: "plan-scn", nodes: [COPY], edges: [], scenarios: SAVED,
+      }),
+    );
+    expect(mockSetScenarios).toHaveBeenCalledWith([own, ...SAVED]);
+  });
+
+  it("scenarios-created joins them once: one already on the canvas is not added twice", () => {
+    mockScenarios.current = [SAVED[0]];
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation({ kind: "scenarios-created", scenarios: SAVED }));
+    expect(mockSetScenarios).toHaveBeenCalledWith(SAVED);
+  });
+
+  it("a plan that saves no scenario leaves the canvas's alone (regression)", () => {
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation({ kind: "graph-created", planId: "plan-none", nodes: [], edges: [] }));
+    expect(mockSetScenarios).not.toHaveBeenCalled();
   });
 });
 

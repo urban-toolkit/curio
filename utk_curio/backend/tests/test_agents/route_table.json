@@ -1,0 +1,310 @@
+[
+ {
+  "rule": "/api/agents/catalog",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.list_catalog"
+ },
+ {
+  "rule": "/api/agents/definitions/<coord>",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.read_definition"
+ },
+ {
+  "rule": "/api/agents/imports",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.list_imports"
+ },
+ {
+  "rule": "/api/agents/imports",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.import_agent"
+ },
+ {
+  "rule": "/api/agents/imports/<coord>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "agents_api.remove_import"
+ },
+ {
+  "rule": "/api/agents/imports/upload",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.upload_import"
+ },
+ {
+  "rule": "/api/agents/llm",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.get_llm"
+ },
+ {
+  "rule": "/api/agents/llm/assignments",
+  "methods": [
+   "PUT"
+  ],
+  "endpoint": "agents_api.put_llm_assignments"
+ },
+ {
+  "rule": "/api/agents/llm/configs",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.create_llm_config"
+ },
+ {
+  "rule": "/api/agents/llm/configs/<config_id>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "agents_api.delete_llm_config"
+ },
+ {
+  "rule": "/api/agents/llm/configs/<config_id>",
+  "methods": [
+   "PATCH"
+  ],
+  "endpoint": "agents_api.update_llm_config"
+ },
+ {
+  "rule": "/api/agents/llm/configs/<config_id>/duplicate",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.duplicate_llm_config"
+ },
+ {
+  "rule": "/api/agents/llm/default",
+  "methods": [
+   "PUT"
+  ],
+  "endpoint": "agents_api.put_llm_default"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.list_project_agents"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/<coord>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "agents_api.uninstall_from_project"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.list_attachments"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.attach_agent"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "agents_api.detach_agent"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>",
+  "methods": [
+   "PATCH"
+  ],
+  "endpoint": "agents_api.update_attachment"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/dataset-selection",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.record_dataset_selection"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/jobs/stream",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.attach_job_stream"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "agents_api.dismiss_proposal"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/apply",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.apply_proposal"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/apply-edges",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.apply_plan_edges"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/apply-node",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.apply_plan_node"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/plan-goals",
+  "methods": [
+   "PATCH"
+  ],
+  "endpoint": "agents_api.set_plan_goal"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/run",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.run_attachment"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/run-node",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.run_node"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/run/stream",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.stream_attachment"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/session",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "agents_api.clear_attachment_session"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/session",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.get_attachment_session"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/simulate",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.simulate"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/simulate/cancel",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.cancel_simulate"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/solve",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.solve_attachment"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/solve-node",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.solve_node"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/solve/cancel",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.cancel_solve"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/solve/stream",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.solve_attachment_stream"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/attachments/<attachment_id>/validate-node",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.validate_node"
+ },
+ {
+  "rule": "/api/agents/projects/<project_id>/install",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.install_in_project"
+ },
+ {
+  "rule": "/api/agents/provider-models",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.list_provider_models"
+ },
+ {
+  "rule": "/api/agents/publications",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "agents_api.publish_agent"
+ },
+ {
+  "rule": "/api/agents/publications/<coord>",
+  "methods": [
+   "DELETE"
+  ],
+  "endpoint": "agents_api.unpublish_agent"
+ },
+ {
+  "rule": "/api/agents/settings",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "agents_api.get_catalog_settings"
+ },
+ {
+  "rule": "/api/agents/settings",
+  "methods": [
+   "PUT"
+  ],
+  "endpoint": "agents_api.put_catalog_settings"
+ }
+]

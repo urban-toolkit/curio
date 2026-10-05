@@ -41,8 +41,8 @@ the backend health polls, and the Playwright stack all talk to 127.0.0.1.
 
 - **The e2e backend subprocess.** ``test_frontend`` starts the backend with
   ``subprocess``, so this guard - which lives in the pytest process - has no
-  reach into it. Covering that needs a seam inside the backend itself; the Data
-  Lake Catalog uses ``CURIO_DATALAKE_FIXTURES`` for exactly this reason.
+  reach into it. Covering that needs a seam inside the backend itself; the Discovery
+  Catalog uses ``CURIO_DISCOVERY_FIXTURES`` for exactly this reason.
 - **The browser.** Playwright's Chromium is its own process and still reaches
   whatever a page asks for.
 

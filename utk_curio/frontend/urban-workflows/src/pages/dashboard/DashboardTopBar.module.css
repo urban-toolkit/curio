@@ -1,21 +1,28 @@
-/* Only what the dataflow bar does not already provide. Everything else comes
-   from UpMenu.module.css, so the two bars are the same bar. */
+/* Only what the dashboard adds to the shared top bar
+   (GlobalPageHeader.module.css). */
 
+/* The page is laid out under a bar that floats over it, like the canvas. */
+.bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 100;
+}
+
+/* The dashboard has no room under the bar for a page title, so its name sits
+   in the bar, first after the logo. */
 .title {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
-  text-align: center;
-  color: #fbfcf6;
-  font-size: 16px;
-  font-weight: 500;
-  margin: 0 12px;
+  max-width: 420px;
+  margin: 0 12px 0 4px;
+  color: var(--curio-text-on-dark);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* "Edit layout" while the layout is unlocked: the same accent the dataflow bar
-   uses for an active control. */
-.buttonActive {
-  color: rgb(251, 170, 105);
 }

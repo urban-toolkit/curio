@@ -30,26 +30,26 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/data-pool": 1, "curio.builtin/vis-vega": 2}, False),
     ("03-vega-lite-linked-temporal-charts.json", 4, 3,
      {"curio.builtin/vis-vega": 2}, False),
-    ("04-vega-lite-multi-flow-dashboard.json", 24, 26,
-     {"curio.builtin/merge-flow": 1, "curio.builtin/vis-vega": 2}, False),
+    ("04-vega-lite-multi-flow-dashboard.json", 21, 23,
+     {"curio.builtin/computation-analysis": 3, "curio.builtin/vis-vega": 2}, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, 22,
      {"curio.builtin/data-loading": 5, "curio.builtin/vis-vega": 2}, False),
     ("06-autark-what-if-shadow-study.json", 6, 5,
      {"curio.builtin/autk-grammar": 5, "curio.builtin/data-pool": 1}, False),
     ("07-autark-gpu-shader.json", 5, 6,
      {"curio.builtin/autk-grammar": 4, "curio.builtin/data-pool": 1}, True),
-    ("08-autark-spatial-join-regression.json", 8, 9,
+    ("08-autark-spatial-join-regression.json", 7, 8,
      {"curio.builtin/autk-grammar": 4, "curio.builtin/js-computation": 1,
-      "curio.builtin/merge-flow": 1, "curio.builtin/data-pool": 1}, True),
-    ("09-heterogeneous-data-linked-views.json", 13, 15,
+      "curio.builtin/data-pool": 1}, True),
+    ("09-heterogeneous-data-linked-views.json", 11, 13,
      {"curio.builtin/autk-grammar": 1, "curio.builtin/vis-vega": 2}, True),
-    ("10-street-vision-cv-analysis.json", 8, 7,
+    ("10-street-vision-cv-analysis.json", 12, 12,
      {
-         "curio.streetvision/street-view-fetcher": 1,
-         "curio.streetvision/hf-cv-inference": 1,
-         "curio.builtin/vis-simple": 1,
-         "curio.builtin/spatial-join": 1,
-         "curio.builtin/vis-vega": 2,
+         "curio.builtin/data-loading": 2,
+         "curio.streetvision/image-segmentation": 2,
+         "curio.builtin/vis-simple": 2,
+         "curio.builtin/spatial-join": 2,
+         "curio.builtin/vis-vega": 3,
      }, False),
     ("11-autark-pbf-loading.json", 2, 1,
      {"curio.builtin/autk-grammar": 2}, False),
@@ -67,7 +67,41 @@ EXAMPLE_INVARIANTS = [
       "curio.builtin/vis-vega": 8}, False),
     ("16-simple-view-tables-and-images.json", 4, 2,
      {"curio.builtin/data-loading": 2, "curio.builtin/vis-simple": 2}, False),
+    ("17-autark-geodataframe-maps.json", 15, 15,
+     {"curio.builtin/data-loading": 1, "curio.builtin/data-transformation": 4,
+      "curio.builtin/autk-grammar": 5, "curio.builtin/vis-vega": 5}, True),
+    ("18-storage-orthorectified-imagery.json", 6, 5,
+     {"curio.builtin/data-loading": 1, "curio.media/mosaic-rasters": 1,
+      "curio.builtin/vis-vega": 1, "curio.builtin/vis-simple": 1}, False),
+    ("19-storage-video-frames.json", 3, 2,
+     {"curio.builtin/data-loading": 1, "curio.builtin/vis-simple": 1,
+      "curio.builtin/vis-vega": 1}, False),
+    ("20-storage-folder-of-csv-files.json", 5, 4,
+     {"curio.builtin/data-loading": 2, "curio.builtin/computation-analysis": 1,
+      "curio.builtin/vis-vega": 2}, False),
+    ("21-storage-photos-and-videos.json", 5, 4,
+     {"curio.builtin/data-loading": 1, "curio.media/video-frames": 1,
+      "curio.builtin/vis-simple": 2, "curio.builtin/vis-vega": 1}, False),
+    ("22-storage-audio-recordings.json", 4, 3,
+     {"curio.builtin/data-loading": 1, "curio.media/split-audio": 1,
+      "curio.builtin/vis-simple": 1, "curio.builtin/vis-vega": 1}, False),
+    ("23-storage-folder-of-different-files.json", 4, 3,
+     {"curio.builtin/data-loading": 2, "curio.builtin/computation-analysis": 1,
+      "curio.builtin/vis-vega": 1}, False),
 ]
+
+
+#: Examples whose flows meet in one node, and how many nodes take several data
+#: inputs. Each such node reads its inputs in circle order (``in``, ``in_1``,
+#: ...), so its edges must name every circle from the first, once each: a gap or
+#: a repeat changes which input the node's ``[!! input N !!]`` chips read.
+FAN_IN_NODES = {
+    "04-vega-lite-multi-flow-dashboard.json": 3,
+    "08-autark-spatial-join-regression.json": 1,
+    "09-heterogeneous-data-linked-views.json": 2,
+    "20-storage-folder-of-csv-files.json": 1,
+    "23-storage-folder-of-different-files.json": 1,
+}
 
 
 def test_examples_present():
@@ -134,7 +168,9 @@ def test_example_documented_invariants(
 ):
     """Each example must keep the structural invariants documented in
     docs/README.md and the per-example walkthrough (node count / edge count /
-    presence of marquee node types like MERGE_FLOW, AUTK_DB, AUTK_COMPUTE)."""
+    presence of marquee node types like AUTK_GRAMMAR, DATA_POOL, VIS_VEGA).
+    Where flows meet in one node, ``test_example_flows_meet_on_input_circles``
+    checks the circles they arrive on."""
     path = os.path.join(EXAMPLES_DIR, basename)
     with open(path, "r", encoding="utf-8") as f:
         wf = json.load(f)
@@ -166,6 +202,40 @@ def test_example_documented_invariants(
             f"{basename}: expected >=1 Interaction edge for cross-view "
             f"brushing, got 0. Edge types: "
             f"{sorted({e.get('type') or 'data' for e in edges})}"
+        )
+
+
+def _circle_index(handle) -> int:
+    if handle == "in":
+        return 0
+    match = re.fullmatch(r"in_(\d+)", str(handle))
+    return int(match.group(1)) if match else -1
+
+
+@pytest.mark.parametrize("basename,expected_fan_in", FAN_IN_NODES.items(), ids=list(FAN_IN_NODES))
+def test_example_flows_meet_on_input_circles(basename, expected_fan_in):
+    """Each node that takes several data edges takes them on its circles
+    ``in``, ``in_1``, ... ``in_<k-1>``, one edge per circle, with no gap: the
+    same order the canvas draws and the chips ``[!! input N !!]`` read."""
+    with open(os.path.join(EXAMPLES_DIR, basename), "r", encoding="utf-8") as f:
+        wf = json.load(f)
+    types = {n["id"]: n["type"] for n in wf["dataflow"]["nodes"]}
+    handles: dict[str, list] = {}
+    for e in wf["dataflow"]["edges"]:
+        if e.get("type") == "Interaction":
+            continue
+        handles.setdefault(e["target"], []).append(e.get("targetHandle"))
+    fan_in = {target: hs for target, hs in handles.items() if len(hs) > 1}
+
+    assert len(fan_in) == expected_fan_in, (
+        f"{basename}: expected {expected_fan_in} node(s) taking several inputs, "
+        f"got {len(fan_in)}: { {t: (types.get(t), hs) for t, hs in fan_in.items()} }"
+    )
+    for target, hs in fan_in.items():
+        circles = ["in"] + [f"in_{k}" for k in range(1, len(hs))]
+        assert sorted(hs, key=_circle_index) == circles, (
+            f"{basename}: node {target} ({types.get(target)}) takes its inputs on "
+            f"{hs}, not once each on {circles}"
         )
 
 
@@ -238,14 +308,15 @@ def test_examples_read_their_data_from_the_catalog(basename):
         })
         assert not stragglers, (
             f"{os.path.basename(path)} still reads {stragglers} by path. Use "
-            f'curio_dataset_path("<id>") against the Data Catalog '
+            f'curio_data_path("<id>") against the Data Catalog '
             f"(datasets/), or add the file to _DATA_DIR_ALLOWLIST with a reason "
             f"if it genuinely cannot move."
         )
 
 
 def test_examples_that_load_catalog_data_declare_it_in_the_spec():
-    """A ``curio_dataset_path`` call and a ``dataflow.datasets`` ref go together.
+    """A ``curio_load_data``, ``curio_data_path`` or ``curio_load_collection``
+    call and a ``dataflow.datasets`` ref go together.
 
     The call alone is enough to *execute* -- ``resolve_execution_paths`` hardcodes
     ``include_hub=True`` -- so an example missing its ref runs fine and simply
@@ -260,7 +331,7 @@ def test_examples_that_load_catalog_data_declare_it_in_the_spec():
         for node in dataflow["nodes"]:
             used.update(
                 re.findall(
-                    r"""curio_dataset_path\(\s*["']([^"']+)["']\s*\)""",
+                    r"""curio_(?:load_data|data_path|load_collection)\(\s*["']([^"']+)["']\s*\)""",
                     node.get("content") or "",
                 )
             )
@@ -328,7 +399,7 @@ def test_example_nodes_do_not_fetch_external_urls():
     the portal later retired, so a curated example failed on its first node with
     a 404 on a fresh install. Open-data portals rename and retire resources; a
     layer an example depends on belongs in ``datasets/`` as a catalog entry,
-    loaded with ``curio_dataset_path``. Anything else here needs an allowlist
+    loaded with ``curio_data_path``. Anything else here needs an allowlist
     entry with a reason.
     """
     for path in _example_json_paths():
@@ -342,7 +413,7 @@ def test_example_nodes_do_not_fetch_external_urls():
             assert not urls, (
                 f"{os.path.basename(path)} node {node.get('id')} fetches "
                 f"{urls}. Vendor the data under datasets/ and load it with "
-                f'curio_dataset_path("<id>"), or allowlist the prefix with a '
+                f'curio_data_path("<id>"), or allowlist the prefix with a '
                 f"reason in _EXTERNAL_URL_ALLOWLIST."
             )
 
@@ -353,7 +424,7 @@ def test_examples_declared_datasets_exist_in_the_catalog():
     The parity test above proves the ref matches the node; this proves the ref
     matches the repository. A ref to a directory that is not committed passes
     every structural check and then fails at run time, when the seeder has
-    nothing to provision and ``curio_dataset_path`` cannot resolve.
+    nothing to provision and ``curio_data_path`` cannot resolve.
     """
     datasets_dir = os.path.join(REPO_ROOT, "datasets")
     for path in _example_json_paths():

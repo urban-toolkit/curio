@@ -349,3 +349,176 @@ def test_get_shared_project_deleted(client, user_and_token, tmp_curio):
 
     resp = client.get(f"/api/projects/{pid}/shared")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# dev/124 — a save may not delete what the client never saw
+# ---------------------------------------------------------------------------
+
+def _spec_with(nodes, edges=()):
+    spec = _spec()
+    spec["dataflow"]["nodes"] = list(nodes)
+    spec["dataflow"]["edges"] = list(edges)
+    return spec
+
+
+def _node(node_id, content=""):
+    return {"id": node_id, "type": "curio.builtin/data-loading",
+            "x": 0, "y": 0, "content": content}
+
+
+def _open_project(client, token, name="Concurrency"):
+    """Create a project and read it the way the canvas does, returning the id
+    and the basis a canvas would then be holding."""
+    pid = client.post(
+        "/api/projects", data=json.dumps({"name": name, "spec": _spec()}),
+        headers=_auth(token),
+    ).get_json()["id"]
+    loaded = client.get(f"/api/projects/{pid}", headers=_auth(token)).get_json()
+    return pid, loaded["project"]["spec_revision"]
+
+
+def _server_side_write(user_key, pid, nodes, edges=()):
+    """What an agent apply or a Solve wave does: straight through the spec,
+    with no idea a browser is holding the old one."""
+    spec = storage.read_spec(user_key, pid)
+    spec["dataflow"]["nodes"] = list(nodes)
+    spec["dataflow"]["edges"] = list(edges)
+    storage.write_spec(user_key, pid, spec)
+
+
+def test_a_stale_save_that_would_delete_a_server_side_write_is_refused(
+    client, user_and_token, tmp_curio
+):
+    """The defect in its general form: load, background write, stale save."""
+    user, token = user_and_token
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    pid, basis = _open_project(client, token)
+    _server_side_write(_user_dir_key(user), pid, [_node("a"), _node("b")])
+
+    resp = client.put(
+        f"/api/projects/{pid}",
+        data=json.dumps({"spec": _spec(), "outputs": [], "baseRevision": basis}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 409
+    assert "2 nodes" in resp.get_json()["error"]
+    # Nothing was written: the two nodes are still there.
+    spec = storage.read_spec(_user_dir_key(user), pid)
+    assert [n["id"] for n in spec["dataflow"]["nodes"]] == ["a", "b"]
+
+
+def test_the_same_save_with_a_current_basis_is_accepted(
+    client, user_and_token, tmp_curio
+):
+    """A person deleting nodes they can see is not a conflict."""
+    user, token = user_and_token
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    pid, _ = _open_project(client, token)
+    _server_side_write(_user_dir_key(user), pid, [_node("a")])
+    fresh = client.get(f"/api/projects/{pid}", headers=_auth(token)).get_json()
+
+    resp = client.put(
+        f"/api/projects/{pid}",
+        data=json.dumps({
+            "spec": _spec(), "outputs": [],
+            "baseRevision": fresh["project"]["spec_revision"],
+        }),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    assert storage.read_spec(_user_dir_key(user), pid)["dataflow"]["nodes"] == []
+
+
+def test_a_stale_save_that_adds_without_deleting_is_accepted(
+    client, user_and_token, tmp_curio
+):
+    """Staleness alone never refuses — the canvas hears about an apply through
+    a live event and its basis goes stale while its content stays current."""
+    user, token = user_and_token
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    pid, basis = _open_project(client, token)
+    _server_side_write(_user_dir_key(user), pid, [_node("a")])
+
+    resp = client.put(
+        f"/api/projects/{pid}",
+        data=json.dumps({
+            "spec": _spec_with([_node("a"), _node("mine")]),
+            "outputs": [], "baseRevision": basis,
+        }),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    saved = storage.read_spec(_user_dir_key(user), pid)["dataflow"]["nodes"]
+    assert sorted(n["id"] for n in saved) == ["a", "mine"]
+
+
+def test_a_stale_save_may_not_blank_code_solve_wrote(
+    client, user_and_token, tmp_curio
+):
+    user, token = user_and_token
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    pid, basis = _open_project(client, token)
+    _server_side_write(_user_dir_key(user), pid, [_node("a", content="import x")])
+
+    resp = client.put(
+        f"/api/projects/{pid}",
+        data=json.dumps({
+            "spec": _spec_with([_node("a", content="")]),
+            "outputs": [], "baseRevision": basis,
+        }),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 409
+    assert "the code in 1 node" in resp.get_json()["error"]
+
+
+def test_a_save_with_no_basis_is_unchecked_as_before(
+    client, user_and_token, tmp_curio
+):
+    """The contract that keeps scripts, tests and internal callers working."""
+    user, token = user_and_token
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    pid, _ = _open_project(client, token)
+    _server_side_write(_user_dir_key(user), pid, [_node("a")])
+
+    resp = client.put(
+        f"/api/projects/{pid}",
+        data=json.dumps({"spec": _spec(), "outputs": []}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+
+
+def test_a_malformed_basis_is_no_opinion_rather_than_a_400(
+    client, user_and_token, tmp_curio
+):
+    _, token = user_and_token
+    pid, _ = _open_project(client, token)
+    resp = client.put(
+        f"/api/projects/{pid}",
+        data=json.dumps({"spec": _spec(), "outputs": [], "baseRevision": "nonsense"}),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+
+
+def test_the_reported_revision_counts_background_writes(
+    client, user_and_token, tmp_curio
+):
+    """The property the spec_revision column could not have: a write nobody
+    routed through the projects service still moves the number."""
+    user, token = user_and_token
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    pid, basis = _open_project(client, token)
+    _server_side_write(_user_dir_key(user), pid, [_node("a")])
+    after = client.get(
+        f"/api/projects/{pid}", headers=_auth(token)
+    ).get_json()["project"]["spec_revision"]
+    assert after > basis

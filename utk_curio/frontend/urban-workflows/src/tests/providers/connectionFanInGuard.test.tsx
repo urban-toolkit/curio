@@ -1,15 +1,17 @@
 /**
  * dev/67-3 (DEC-051) — the onConnect fan-in guard: one edge per rendered
- * input handle. Before the guard, a second edge into an occupied non-merge
- * handle was accepted and silently overwrote `data.input` (last writer wins);
- * merge's slot machinery stays the only multi-edge surface, byte-identical.
+ * input handle. Before the guard, a second edge into an occupied single-input
+ * handle was accepted and silently overwrote `data.input` (last writer wins).
+ * A node whose one input port takes several edges grows a circle per edge
+ * instead (#662), so it is the only multi-edge surface.
  *
  * Drives the REAL FlowProvider (`api.onConnect`) with the same minimal
- * <ReactFlow> bridge as mergeFlowPropagation.test.tsx.
+ * <ReactFlow> bridge as growingInputPropagation.test.tsx.
  */
 import React from 'react';
 import { render, act } from '@testing-library/react';
-import { ReactFlow, ReactFlowProvider } from 'reactflow';
+import { Position, ReactFlow, ReactFlowProvider } from 'reactflow';
+import { faCircle } from '@fortawesome/free-solid-svg-icons';
 
 // ── jsdom polyfills ReactFlow needs ────────────────────────────────────────
 class ResizeObserverStub {
@@ -83,7 +85,40 @@ jest.mock('../../ConnectionValidator', () => ({
 }));
 
 import FlowProvider, { useFlowContext } from '../../providers/FlowProvider';
-import { CURIO_UNIVERSAL_NODE_TYPE } from '../../constants';
+import { CURIO_UNIVERSAL_NODE_TYPE, NodeType, SupportedType } from '../../constants';
+import { registerNode } from '../../registry/nodeRegistry';
+import type { NodeDescriptor } from '../../registry/types';
+
+// The Data Pool as the shipped manifest declares its input: one port taking
+// `[1,n]` edges, so it grows a circle per edge. The other node types here stay
+// unregistered, so each takes one input on `in`.
+const GROWING_POOL: NodeDescriptor = {
+  id: 'curio.builtin/data-pool@1' as NodeType,
+  category: 'data',
+  label: 'Data Pool',
+  icon: faCircle,
+  inputPorts: [{ types: [SupportedType.DATAFRAME], cardinality: '[1,n]' }],
+  outputPorts: [{ types: [SupportedType.DATAFRAME] }],
+  editor: 'none',
+  inPalette: true,
+  description: '',
+  hasCode: false,
+  hasWidgets: false,
+  hasGrammar: false,
+  adapter: {
+    handles: [
+      { id: 'in', type: 'target', position: Position.Left },
+      { id: 'out', type: 'source', position: Position.Right },
+    ],
+    editor: null,
+    container: {},
+    useNodeBehavior: () => ({}),
+  },
+};
+
+beforeAll(() => {
+  registerNode(GROWING_POOL);
+});
 
 type FlowApi = ReturnType<typeof useFlowContext>;
 let api: FlowApi;
@@ -150,7 +185,7 @@ afterEach(() => {
 });
 
 describe('onConnect fan-in guard (dev/67-3, DEC-051)', () => {
-  test('a second edge into an occupied non-merge handle is refused with the Merge suggestion', async () => {
+  test('a second edge into an occupied single-input handle is refused, saying the node takes one input there', async () => {
     renderFlow();
     await flush();
     await addNodes([
@@ -163,23 +198,23 @@ describe('onConnect fan-in guard (dev/67-3, DEC-051)', () => {
     await connect('b', 'c');
     expect(api.edges).toHaveLength(1); // refused — never silently overwritten
     expect(mockShowToast).toHaveBeenCalledWith(
-      'This input already has a connection — route multiple flows through a Merge node.',
+      'This input already has a connection. The node takes one input here.',
       'warning',
     );
   });
 
-  test('merge slot behavior is byte-identical (two edges land on in_0/in_1)', async () => {
+  test('a growing node takes a second edge on its next circle (in, in_1)', async () => {
     renderFlow();
     await flush();
     await addNodes([
       makeNode('a', 'curio.builtin/data-loading@1'),
       makeNode('b', 'curio.builtin/data-loading@1'),
-      makeNode('m', 'curio.builtin/merge-flow@1'),
+      makeNode('pool', 'curio.builtin/data-pool@1'),
     ]);
-    await connect('a', 'm');
-    await connect('b', 'm');
+    await connect('a', 'pool');
+    await connect('b', 'pool'); // dropped on the taken `in`
     expect(api.edges).toHaveLength(2);
-    expect(api.edges.map((e: any) => e.targetHandle).sort()).toEqual(['in_0', 'in_1']);
+    expect(api.edges.map((e: any) => e.targetHandle).sort()).toEqual(['in', 'in_1']);
     expect(mockShowToast).not.toHaveBeenCalled();
   });
 
@@ -211,7 +246,7 @@ describe('onConnect fan-in guard (dev/67-3, DEC-051)', () => {
       await connect('a', 'c', 'in', true);
       await connect('b', 'c', 'in', true); // persisted duplicate on load
       expect(api.edges).toHaveLength(2); // surfaced, never destroyed
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('multi-input'));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('persisted second edge'));
       expect(mockShowToast).not.toHaveBeenCalledWith(
         expect.stringContaining('already has a connection'),
         'warning',

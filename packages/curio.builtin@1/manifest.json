@@ -17,7 +17,11 @@
       "pyarrow": ">=24.0.0",
       "duckdb": ">=1.5.0",
       "fiona": ">=1.10.1",
-      "pillow": ">=12.2.0"
+      "pillow": ">=12.2.0",
+      "av": ">=15.0",
+      "rasterio": ">=1.4",
+      "xarray": ">=2026.1.0",
+      "netCDF4": ">=1.7"
     }
   },
   "description": "The default set of nodes that ships with Curio. Auto-installed for every user; provides Data Loading/Export/Transformation, Computation, Visualization, AUTK integrations, and flow control.",
@@ -51,17 +55,20 @@
           ]
         }
       ],
-      "paletteOrder": 0,
-      "tutorialId": "step-loading"
+      "paletteOrder": 0
     },
     {
       "category": "data",
-      "description": "The Export box is responsible for getting data from the dataflow to the outside world.",
-      "editor": "code",
+      "containerStyle": {
+        "nodeHeight": 170,
+        "nodeWidth": 320
+      },
+      "description": "One Download button for the data connected to it. The file is named after the node or dataset that feeds it, and its format follows the data: a table downloads as CSV, a geodataframe as GeoJSON, anything else as JSON.",
+      "editor": "none",
       "engine": "python",
-      "hasCode": true,
+      "hasCode": false,
       "hasGrammar": false,
-      "hasWidgets": true,
+      "hasWidgets": false,
       "iconRef": "fa-solid:download",
       "id": "data-export",
       "inputPorts": [
@@ -77,8 +84,7 @@
       "label": "Data Export",
       "behavior": "data-export",
       "outputPorts": [],
-      "paletteOrder": 1,
-      "tutorialId": "step-export"
+      "paletteOrder": 1
     },
     {
       "category": "data",
@@ -92,7 +98,7 @@
       "id": "data-transformation",
       "inputPorts": [
         {
-          "cardinality": "[1,2]",
+          "cardinality": "[1,n]",
           "types": [
             "DATAFRAME",
             "GEODATAFRAME",
@@ -112,8 +118,7 @@
           ]
         }
       ],
-      "paletteOrder": 3,
-      "tutorialId": "step-transformation"
+      "paletteOrder": 3
     },
     {
       "bidirectional": true,
@@ -128,7 +133,7 @@
       "id": "data-pool",
       "inputPorts": [
         {
-          "cardinality": "1",
+          "cardinality": "[1,n]",
           "types": [
             "DATAFRAME",
             "GEODATAFRAME"
@@ -146,8 +151,7 @@
           ]
         }
       ],
-      "paletteOrder": 13,
-      "tutorialId": "step-pool"
+      "paletteOrder": 13
     },
     {
       "category": "computation",
@@ -187,8 +191,7 @@
           ]
         }
       ],
-      "paletteOrder": 2,
-      "tutorialId": "step-analysis"
+      "paletteOrder": 2
     },
     {
       "category": "computation",
@@ -219,8 +222,7 @@
           ]
         }
       ],
-      "paletteOrder": 10,
-      "tutorialId": "step-summary"
+      "paletteOrder": 10
     },
     {
       "category": "computation",
@@ -234,7 +236,7 @@
       "id": "js-computation",
       "inputPorts": [
         {
-          "cardinality": "[0,1]",
+          "cardinality": "[0,n]",
           "types": [
             "DATAFRAME",
             "GEODATAFRAME",
@@ -260,8 +262,7 @@
           ]
         }
       ],
-      "paletteOrder": 11,
-      "tutorialId": "step-js"
+      "paletteOrder": 11
     },
     {
       "badge": "VEGA",
@@ -279,7 +280,7 @@
       "id": "vis-vega",
       "inputPorts": [
         {
-          "cardinality": "1",
+          "cardinality": "[1,n]",
           "types": [
             "DATAFRAME",
             "GEODATAFRAME"
@@ -297,8 +298,7 @@
           ]
         }
       ],
-      "paletteOrder": 7,
-      "tutorialId": "step-vega"
+      "paletteOrder": 7
     },
     {
       "bidirectional": true,
@@ -340,14 +340,13 @@
           ]
         }
       ],
-      "paletteOrder": 8,
-      "tutorialId": "step-image"
+      "paletteOrder": 8
     },
     {
       "badge": "AUTK",
       "bidirectional": true,
       "category": "vis_grammar",
-      "description": "Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering, and/or plot rendering in one declarative spec. Runs entirely in the browser via WebGPU + DuckDB-WASM.",
+      "description": "Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering of layers and rasters, and/or plot rendering in one declarative spec.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "autk-grammar",
@@ -358,12 +357,13 @@
       "id": "autk-grammar",
       "inputPorts": [
         {
-          "cardinality": "[0,1]",
+          "cardinality": "[0,n]",
           "types": [
             "LIST",
             "JSON",
             "GEODATAFRAME",
-            "DATAFRAME"
+            "DATAFRAME",
+            "RASTER"
           ]
         }
       ],
@@ -376,12 +376,12 @@
             "LIST",
             "JSON",
             "GEODATAFRAME",
-            "DATAFRAME"
+            "DATAFRAME",
+            "RASTER"
           ]
         }
       ],
-      "paletteOrder": 6,
-      "tutorialId": "step-utk"
+      "paletteOrder": 6
     },
     {
       "category": "data",
@@ -389,7 +389,7 @@
         "nodeHeight": 300,
         "nodeWidth": 460
       },
-      "description": "Tag each point with the polygon it falls in (point-in-polygon spatial join). Two input handles on its left edge, each taking a GEODATAFRAME / GeoJSON FeatureCollection: the upper, blue one for the points and the lower, green one for the polygons (top and bottom). Two settings in the node body. Which polygon column to tag with: `name` by default; Chicago's neighborhoods use `pri_neigh`, its ZIP boundaries `zip`, NYC's boroughs `BoroName`; the node warns when no polygon carries it. And what comes out: the points, each with that column under its own name (`zip` stays `zip`; `<column>_polygon` if the points already had one; null outside every polygon) plus a `<column>_point_count`; or the polygons, each with a `point_count`, ready for a choropleth or a bar chart of counts. Points that carry a `dominant_class` also get the per-polygon `<column>_dominant_class` and `<column>_dominant_pct` roll-ups.",
+      "description": "Finds the polygon each point falls in. Connect the points to the blue circle at the top and the polygons to the green circle at the bottom, then pick the polygon column to copy onto the points, such as a neighborhood name. The output is either the points, each tagged with its polygon's value, or the polygons, each with a count of the points inside. Points outside every polygon get no value.",
       "editor": "none",
       "engine": "python",
       "hasCode": false,
@@ -415,54 +415,68 @@
           "types": ["GEODATAFRAME"]
         }
       ],
-      "paletteOrder": 4,
-      "tutorialId": "step-spatial-join"
+      "paletteOrder": 4
     },
     {
       "category": "flow",
       "containerStyle": {
-        "noContent": true,
-        "nodeHeight": 180,
-        "nodeWidth": 50
+        "nodeHeight": 230,
+        "nodeWidth": 360
       },
-      "description": "The Merge Flow box merges multiple incoming data flows into one.",
+      "description": "One value any node can use. Give it a name, a type and a default. Its tag then shows under Shared in every node's Widgets tab and above every code editor; drag it into a node's code to use the value there. Changing the value makes the nodes that use it run again, and renaming it updates their code. It has no edges, and it lists the nodes that use it.",
       "editor": "none",
       "engine": "python",
       "hasCode": false,
       "hasGrammar": false,
+      "hasWidgets": true,
+      "iconRef": "fa-solid:sliders",
+      "id": "parameter",
+      "inputPorts": [],
+      "label": "Parameter",
+      "behavior": "parameter",
+      "outputPorts": [],
+      "paletteOrder": 12
+    },
+    {
+      "category": "vis_grammar",
+      "containerStyle": {
+        "nodeHeight": 420,
+        "nodeWidth": 560
+      },
+      "description": "Compares scenarios. Connect each scenario's outcome to its own input circle: each input is labelled by the scenario its node belongs to, and the node stacks the inputs into one table, with the scenario's id and name on every row. That table is its output. Its Chart tab draws the table in the scenarios' colors, as bars, grouped bars, lines, points, a pie, lollipops or a table. In Difference it takes two inputs and subtracts input 0 from input 1: two rasters cell by cell, two layers or two tables row by row, matched on a stable id (osm_id or building_id, or a key you pick), with rows only one side has marked removed or added. The difference is its output, drawn on a map. It shows Difference for two rasters or two layers and a Chart otherwise, and you can switch. Its What differs tab lists what changed between the scenarios: widget values and code lines. It warns when the scenarios read different context.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
       "hasWidgets": false,
-      "iconRef": "fa-solid:code-merge",
-      "id": "merge-flow",
+      "iconRef": "fa-solid:code-compare",
+      "id": "compare-scenarios",
       "inputPorts": [
         {
           "cardinality": "[1,n]",
           "types": [
             "DATAFRAME",
             "GEODATAFRAME",
+            "RASTER",
             "VALUE",
             "LIST",
-            "JSON",
-            "RASTER"
+            "JSON"
           ]
         }
       ],
-      "label": "Merge Flow",
-      "behavior": "merge-flow",
+      "label": "Compare Scenarios",
+      "behavior": "compare-scenarios",
       "outputPorts": [
         {
-          "cardinality": "1",
+          "cardinality": "[1,n]",
           "types": [
             "DATAFRAME",
             "GEODATAFRAME",
-            "VALUE",
-            "LIST",
-            "JSON",
             "RASTER"
           ]
         }
       ],
-      "paletteOrder": 9,
-      "tutorialId": "step-merge"
+      "paletteOrder": 13
     }
   ],
   "version": "1.0.2"

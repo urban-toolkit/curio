@@ -22,6 +22,9 @@ Output lands in ``.curio/walkthroughs/`` (gitignored, the same convention as
 ``tour.py``'s ``.curio/tour``): ``<slug>.webm``, ``<slug>.mp4`` when a system
 ffmpeg is on PATH, and ``<slug>.md`` -- a short report naming whatever the
 journey closes, to paste beside the video.
+
+``CURIO_WALKTHROUGH_CURSOR=1`` adds the tour's synthetic cursor and click pulse
+(no captions, no spotlight ring), for clips shown on their own.
 """
 from __future__ import annotations
 
@@ -51,6 +54,11 @@ pytestmark = pytest.mark.video
 
 OUT_DIR = os.path.join(REPO_ROOT, ".curio", "walkthroughs")
 VIDEO_SIZE = {"width": 1280, "height": 800}
+
+
+def _cursor_on() -> bool:
+    """``CURIO_WALKTHROUGH_CURSOR=1``: record with the tour's cursor (off by default)."""
+    return os.environ.get("CURIO_WALKTHROUGH_CURSOR", "0").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _report(walk: Walkthrough) -> str:
@@ -140,7 +148,15 @@ def test_record_walkthrough(walk: Walkthrough, app_frontend, current_server, bro
     # any Narrator, and `SilentNarrator` implements the same calls with the
     # presentation removed - the interactions still happen, at the app's own
     # pace rather than a narrated one.
-    narrator = SilentNarrator(page, beat_cap=None)
+    #
+    # CURIO_WALKTHROUGH_CURSOR=1 records with the tour's synthetic cursor and
+    # click pulse instead, still without captions or the spotlight ring, for
+    # clips shown on a page of their own (the Curio guide): there a click with
+    # no pointer reads as the app changing by itself.
+    if _cursor_on():
+        narrator = tour.Tour(page, captions=False, ring=False)
+    else:
+        narrator = SilentNarrator(page, beat_cap=None)
     failure: str | None = None
     try:
         stub_login_and_enter_workflow(
@@ -149,7 +165,7 @@ def test_record_walkthrough(walk: Walkthrough, app_frontend, current_server, bro
             backend_url=current_server,
             name="Walkthrough",
             username=f"walkvid_{walk.slug.replace(chr(45), chr(95))[:24]}",
-            project_name=walk.title[:40],
+            project_name=walk.title,
             project_spec=load_example_spec(walk.example) if walk.example else None,
         )
         require_owner_view(page)

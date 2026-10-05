@@ -1,6 +1,6 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
 
-jest.mock("../../api/agentsApi", () => ({
+jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: {
     catalog: jest.fn(),
     listImports: jest.fn(),
@@ -19,7 +19,7 @@ jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
 
-import { agentsApi } from "../../api/agentsApi";
+import { agentsApi } from "../../services/agents";
 import { useAgentCatalogDrawer } from "../../components/agents/catalog/useAgentCatalogDrawer";
 
 const api = agentsApi as jest.Mocked<typeof agentsApi>;
@@ -46,9 +46,9 @@ function card(id: string) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  api.catalog.mockResolvedValue({ agents: [card("agent.node-explainer")] });
+  api.catalog.mockResolvedValue({ agents: [card("agent.my-explainer")] });
   api.listImports.mockResolvedValue({ agents: [card("agent.chat-agent")] });
-  api.listProjectAgents.mockResolvedValue({ agents: [card("agent.debug-agent")] });
+  api.listProjectAgents.mockResolvedValue({ agents: [card("agent.my-debugger")] });
   api.import.mockResolvedValue({ coord: "x", imported: true });
   api.installToProject.mockResolvedValue({ agents: [], installed: [], required: [] });
   api.publish.mockResolvedValue({ coord: "x", published: true });
@@ -59,7 +59,7 @@ describe("useAgentCatalogDrawer", () => {
     const { result } = renderHook(() => useAgentCatalogDrawer(true, "p1"));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(api.catalog).toHaveBeenCalledWith("p1");
-    expect(result.current.cards.map((c) => c.id)).toEqual(["agent.node-explainer"]);
+    expect(result.current.cards.map((c) => c.id)).toEqual(["agent.my-explainer"]);
   });
 
   it("does not fetch when not presented", async () => {
@@ -87,9 +87,9 @@ describe("useAgentCatalogDrawer", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     api.catalog.mockClear();
     await act(async () => {
-      await result.current.install(card("agent.node-explainer"));
+      await result.current.install(card("agent.my-explainer"));
     });
-    expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0");
+    expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.my-explainer@1.0.0");
     expect(api.catalog).toHaveBeenCalled(); // reloaded
     expect(result.current.busyCoord).toBeNull();
   });
@@ -100,20 +100,20 @@ describe("useAgentCatalogDrawer", () => {
     mockShowToast.mockClear();
 
     await act(async () => {
-      await result.current.install(card("agent.node-explainer"));
+      await result.current.install(card("agent.my-explainer"));
     });
     // The exact copy the Data catalog established, so all three agree.
     expect(mockShowToast).toHaveBeenCalledWith(
-      "Added agent.node-explainer to this project.",
+      "Added agent.my-explainer to this project.",
       "success",
     );
 
     mockShowToast.mockClear();
     await act(async () => {
-      await result.current.uninstall(card("agent.node-explainer"));
+      await result.current.uninstall(card("agent.my-explainer"));
     });
     expect(mockShowToast).toHaveBeenCalledWith(
-      "Removed agent.node-explainer from this project.",
+      "Removed agent.my-explainer from this project.",
       "success",
     );
   });
@@ -125,7 +125,7 @@ describe("useAgentCatalogDrawer", () => {
     api.installToProject.mockRejectedValueOnce(new Error("pip exploded"));
 
     await act(async () => {
-      await result.current.install(card("agent.node-explainer"));
+      await result.current.install(card("agent.my-explainer"));
     });
 
     // The drawer's own banner carries failures; a success toast here would

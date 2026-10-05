@@ -1,0 +1,1355 @@
+{
+  "https://ckan.publishing.service.gov.uk/api/3/action/package_search?rows=20&start=0&q=cycling": {
+    "file": "ckan/01.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://ckan.publishing.service.gov.uk/api/3/action/package_show?id=00bb666d-8952-49a2-8784-b2625ff5442d": {
+    "file": "ckan/02.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://data.cityofchicago.org/api/catalog/v1?search_context=data.cityofchicago.org&only=dataset&limit=20&offset=0&q=crimes": {
+    "file": "socrata/01.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://data.cityofchicago.org/api/views/ijzp-q8t2.json": {
+    "file": "socrata/02.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://data.cityofchicago.org/resource/ijzp-q8t2.csv?$limit=2147483647": {
+    "file": "download/crimes.csv",
+    "headers": {
+      "Content-Length": "44",
+      "Content-Type": "text/csv"
+    },
+    "status": 200
+  },
+  "https://data.cityofchicago.org/resource/ijzp-q8t2.csv?$limit=2147483647&$where=within_box%28location%2C%2041.89%2C%20-87.64%2C%2041.875%2C%20-87.62%29": {
+    "file": "download/crimes_loop.csv",
+    "headers": {
+      "Content-Length": "34",
+      "Content-Type": "text/csv"
+    },
+    "status": 200
+  },
+  "https://graph.mapillary.com/images?bbox=-87.642%2C41.918%2C-87.639%2C41.92&fields=id%2Ccaptured_at%2Ccompass_angle%2Ccomputed_geometry%2Cgeometry%2Csequence%2Cis_pano%2Ccreator&is_pano=true&start_captured_at=2023-01-01T00%3A00%3A00Z&limit=2000": {
+    "file": "mapillary/03.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://graph.mapillary.com/images?bbox=-87.642%2C41.918%2C-87.639%2C41.92&fields=id%2Ccaptured_at%2Ccompass_angle%2Ccomputed_geometry%2Cgeometry%2Csequence%2Cis_pano%2Ccreator&limit=2000": {
+    "file": "mapillary/01.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://graph.mapillary.com/images?image_ids=1008112840327216%2C1020162146004439%2C1247565019285675%2C1262669307756764%2C1268008964105904%2C137275552708784&fields=id%2Cthumb_256_url": {
+    "file": "mapillary/04.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://graph.mapillary.com/map_features?bbox=-87.642%2C41.918%2C-87.639%2C41.92&fields=id%2Cobject_value%2Cobject_type%2Cgeometry%2Cfirst_seen_at%2Clast_seen_at&limit=2000": {
+    "file": "mapillary/05.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://hub.arcgis.com/api/v3/datasets/a971ab89a5ca4da2ae44b5f55b06edfd": {
+    "file": "arcgis/02.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://hub.arcgis.com/api/v3/datasets?page[size]=20&page[number]=1&q=bike%20lanes": {
+    "file": "arcgis/01.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/Xenova/segformer-b0-finetuned-ade-512-512/resolve/d3e5499fa8701ff0453ca940a8dfeae39b2f1504/config.json": {
+    "file": "huggingface-models/04-config.json",
+    "headers": {
+      "Content-Length": "6957",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/Xenova/segformer-b0-finetuned-ade-512-512/resolve/d3e5499fa8701ff0453ca940a8dfeae39b2f1504/onnx/model.onnx": {
+    "file": "huggingface-models/synthetic-segmentation.onnx",
+    "headers": {
+      "Content-Length": "29677",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/Xenova/segformer-b0-finetuned-ade-512-512/resolve/d3e5499fa8701ff0453ca940a8dfeae39b2f1504/preprocessor_config.json": {
+    "file": "huggingface-models/05-preprocessor_config.json",
+    "headers": {
+      "Content-Length": "373",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/api/datasets/huggingface/documentation-images/tree/main/transformers/tasks?recursive=true&expand=false": {
+    "file": "huggingface/01.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/api/models/Xenova/segformer-b0-finetuned-ade-512-512?blobs=true": {
+    "file": "huggingface-models/03.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/api/models/openmmlab/upernet-convnext-small?blobs=true": {
+    "file": "huggingface-models/09.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/api/models/openmmlab/upernet-convnext-tiny?blobs=true": {
+    "file": "huggingface-models/06.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/api/models?pipeline_tag=image-segmentation&sort=downloads&direction=-1&limit=20&search=segformer": {
+    "file": "huggingface-models/01.json",
+    "headers": {
+      "Content-Type": "application/json",
+      "Link": "<https://huggingface.co/api/models?pipeline_tag=image-segmentation&sort=downloads&direction=-1&limit=20&search=segformer&cursor=eyIkb3IiOlt7ImRvd25sb2FkcyI6MzIwNiwiX2lkIjp7IiRndCI6IjY0NTE3OTIzNDFmM2M3NjliOTE2NWE1MSJ9fSx7ImRvd25sb2FkcyI6eyIkbHQiOjMyMDZ9fSx7ImRvd25sb2FkcyI6bnVsbH1dLCJzZWFyY2hTZXF1ZW5jZVRva2VuIjoiQ0tuc25BSWFDU0VBQUFBQUFBeXBRQm9PV2d4a1VYa2pRZlBIYWJrV1dsRWlEbG9NWkZGNUkwSHp4Mm01RmxwUiJ9>; rel=\"next\""
+    },
+    "status": 200
+  },
+  "https://huggingface.co/api/models?pipeline_tag=image-segmentation&sort=downloads&direction=-1&limit=20&search=upernet": {
+    "file": "huggingface-models/02.json",
+    "headers": {
+      "Content-Type": "application/json",
+      "Link": "<https://huggingface.co/api/models?pipeline_tag=image-segmentation&sort=downloads&direction=-1&limit=20&search=upernet&cursor=eyIkb3IiOlt7ImRvd25sb2FkcyI6MTcsIl9pZCI6eyIkZ3QiOiI2OWRjY2Y4YjY2MmJmMjg1NmMyODYwZDkifX0seyJkb3dubG9hZHMiOnsiJGx0IjoxN319LHsiZG93bmxvYWRzIjpudWxsfV0sInNlYXJjaFNlcXVlbmNlVG9rZW4iOiJDUERWdkFFYUNTRUFBQUFBQUFBeFFCb09XZ3hwM00rTFppdnloV3dvWU5raURsb01hZHpQaTJZcjhvVnNLR0RaIn0%3D>; rel=\"next\""
+    },
+    "status": 200
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/ai2d-demo-2.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/ai2d-demo.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/australia.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/backbone_training_results.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/bbox.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/bee.JPG bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/box_inference.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/cat.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/cat_upscaled.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/depth-estimation-example.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/depth-visualization-zoe.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/depth-visualization.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/docvqa_example.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/finetuned-results.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/idefics-classification.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/idefics-few-shot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/idefics-im-captioning.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/idefics-prompted-im-captioning.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/idefics-story-generation.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/idefics-vqa.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/instance_segmentation_output.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/masks.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/owl.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/panoptic_segmentation_output.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/sam.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/sam2_after_training.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/sam2_before_training.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/sample_gif.gif bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/sample_gif_two.gif bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/sample_training_images_image_cap.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/satellite-dataset.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/segmentation-comparison.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/segmentation_input.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/semantic_segmentation_output.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/temple-bar-dublin-world-famous-irish-pub.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/test_image_image_cap.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/tts_logmelspectrogram_1.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/tts_logmelspectrogram_2.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/tts_speakers_histogram.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/vqa-example.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/zero-sh-obj-detection_1.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/zero-sh-obj-detection_2.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/zero-sh-obj-detection_3.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/zero-sh-obj-detection_4.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/zero-sh-obj-detection_5.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/zero-sh-obj-detection_6.png bytes=0-65535": {
+    "file": "download/storage/head.png",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://huggingface.co/openmmlab/upernet-convnext-tiny/resolve/876ffc56b819a829448f7e81e9f8606deef6fb65/config.json": {
+    "file": "huggingface-models/07-config.json",
+    "headers": {
+      "Content-Length": "8755",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/openmmlab/upernet-convnext-tiny/resolve/876ffc56b819a829448f7e81e9f8606deef6fb65/model.safetensors": {
+    "file": "huggingface-models/synthetic.safetensors",
+    "headers": {
+      "Content-Length": "10",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://huggingface.co/openmmlab/upernet-convnext-tiny/resolve/876ffc56b819a829448f7e81e9f8606deef6fb65/preprocessor_config.json": {
+    "file": "huggingface-models/08-preprocessor_config.json",
+    "headers": {
+      "Content-Length": "372",
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.9105%2C-87.6315&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-denied-01.json",
+    "headers": {
+      "Content-Length": "89",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.918333%2C-87.639375&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-07.json",
+    "headers": {
+      "Content-Length": "170",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.918333%2C-87.640125&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-06.json",
+    "headers": {
+      "Content-Length": "170",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.918333%2C-87.640875&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-01.json",
+    "headers": {
+      "Content-Length": "170",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.919%2C-87.639375&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-08.json",
+    "headers": {
+      "Content-Length": "31",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.919%2C-87.640875&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-04.json",
+    "headers": {
+      "Content-Length": "170",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.919%2C-87.641625&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-09.json",
+    "headers": {
+      "Content-Length": "170",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.919667%2C-87.640125&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-05.json",
+    "headers": {
+      "Content-Length": "31",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.919667%2C-87.640875&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-02.json",
+    "headers": {
+      "Content-Length": "31",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview/metadata?location=41.919667%2C-87.641625&radius=60&source=outdoor": {
+    "file": "google-streetview/metadata-lincoln-park-03.json",
+    "headers": {
+      "Content-Length": "170",
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano01&heading=0&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano01&heading=180&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano01&heading=270&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano01&heading=90&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano02&heading=0&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano02&heading=180&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano02&heading=270&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano02&heading=90&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano03&heading=0&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano03&heading=180&fov=90&pitch=0": {
+    "file": "google-streetview/placeholder.jpg",
+    "headers": {
+      "Content-Length": "692",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano03&heading=270&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano03&heading=90&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano04&heading=0&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano04&heading=180&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano04&heading=270&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano04&heading=90&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano05&heading=0&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano05&heading=180&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano05&heading=270&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://maps.googleapis.com/maps/api/streetview?size=640x640&pano=CurioFixturePano05&heading=90&fov=90&pitch=0": {
+    "file": "google-streetview/image.jpg",
+    "headers": {
+      "Content-Length": "8895",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&namedetails=1&q=Chicago%2C%20Illinois": {
+    "file": "nominatim/chicago-illinois.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&namedetails=1&q=Golf%2C%20Illinois": {
+    "file": "nominatim/golf-illinois.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&namedetails=1&q=Kenilworth%2C%20Illinois": {
+    "file": "nominatim/kenilworth-illinois.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&namedetails=1&q=Loop%2C%20Chicago": {
+    "file": "nominatim/loop-chicago.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&namedetails=1&q=Nowhere%20Land%2C%20Illinois": {
+    "file": "nominatim/nowhere-land-illinois.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&namedetails=1&q=Nowhere%20at%20all": {
+    "file": "nominatim/none.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00000-synthetic.zstd.parquet bytes=0-11272": {
+    "file": "overture/ranges/buildings-part-00000-synthetic-0-11272.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00000-synthetic.zstd.parquet bytes=11265-11272": {
+    "file": "overture/ranges/buildings-part-00000-synthetic-11265-11272.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00000-synthetic.zstd.parquet bytes=1668-3314": {
+    "file": "overture/ranges/buildings-part-00000-synthetic-1668-3314.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00000-synthetic.zstd.parquet bytes=3315-4990": {
+    "file": "overture/ranges/buildings-part-00000-synthetic-3315-4990.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00000-synthetic.zstd.parquet bytes=4-1667": {
+    "file": "overture/ranges/buildings-part-00000-synthetic-4-1667.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00001-synthetic.zstd.parquet bytes=0-5186": {
+    "file": "overture/ranges/buildings-part-00001-synthetic-0-5186.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00001-synthetic.zstd.parquet bytes=4-1669": {
+    "file": "overture/ranges/buildings-part-00001-synthetic-4-1669.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=buildings/type=building/part-00001-synthetic.zstd.parquet bytes=5179-5186": {
+    "file": "overture/ranges/buildings-part-00001-synthetic-5179-5186.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=transportation/type=segment/part-00000-synthetic.zstd.parquet bytes=0-4573": {
+    "file": "overture/ranges/transportation-part-00000-synthetic-0-4573.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=transportation/type=segment/part-00000-synthetic.zstd.parquet bytes=4-1346": {
+    "file": "overture/ranges/transportation-part-00000-synthetic-4-1346.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://overturemaps-us-west-2.s3.us-west-2.amazonaws.com/release/2000-01-01.0/theme=transportation/type=segment/part-00000-synthetic.zstd.parquet bytes=4566-4573": {
+    "file": "overture/ranges/transportation-part-00000-synthetic-4566-4573.bin",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://portal.test/archive.zip": {
+    "file": "download/crimes.csv",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
+  },
+  "https://portal.test/bomb.zip": {
+    "file": "download/archives/bomb.zip",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
+  },
+  "https://portal.test/bundle.7z": {
+    "file": "download/archives/bundle.7z",
+    "headers": {
+      "Content-Type": "application/x-7z-compressed"
+    },
+    "status": 200
+  },
+  "https://portal.test/declares-100mb.csv": {
+    "file": "download/crimes.csv",
+    "headers": {
+      "Content-Length": "104857600",
+      "Content-Type": "text/csv"
+    },
+    "status": 200
+  },
+  "https://portal.test/declares-huge.csv": {
+    "file": "download/crimes.csv",
+    "headers": {
+      "Content-Length": "99999999999",
+      "Content-Type": "text/csv"
+    },
+    "status": 200
+  },
+  "https://portal.test/export": {
+    "file": "download/archives/export.tar",
+    "headers": {
+      "Content-Type": "application/x-tar"
+    },
+    "status": 200
+  },
+  "https://portal.test/feed.zip": {
+    "file": "download/archives/gtfs_in_folder.zip",
+    "headers": {
+      "Content-Type": "application/x-zip-compressed"
+    },
+    "status": 200
+  },
+  "https://portal.test/files-7731": {
+    "file": "download/archives/ghsl_tile.zip",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://portal.test/ghsl_tile.zip": {
+    "file": "download/archives/ghsl_tile.zip",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
+  },
+  "https://portal.test/google_transit.zip": {
+    "file": "download/archives/google_transit.zip",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
+  },
+  "https://portal.test/il_wac_S000_JT00_2022.csv.gz": {
+    "file": "download/archives/il_wac_S000_JT00_2022.csv.gz",
+    "headers": {
+      "Content-Type": "application/x-gzip"
+    },
+    "status": 200
+  },
+  "https://portal.test/link.zip": {
+    "file": "download/archives/link.zip",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
+  },
+  "https://portal.test/nameless": {
+    "file": "download/nameless",
+    "headers": {},
+    "status": 200
+  },
+  "https://portal.test/nested.zip": {
+    "file": "download/archives/nested.zip",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
+  },
+  "https://portal.test/not-a-tiff.tif": {
+    "file": "download/crimes.csv",
+    "headers": {
+      "Content-Type": "image/tiff"
+    },
+    "status": 200
+  },
+  "https://portal.test/oversized.csv": {
+    "error": "too-large"
+  },
+  "https://portal.test/slip.zip": {
+    "file": "download/archives/slip.zip",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
+  },
+  "https://portal.test/timeout.csv": {
+    "error": "timeout"
+  },
+  "https://portal.test/tl_2022_17_tabblock20.zip": {
+    "file": "download/archives/tl_2022_17_tabblock20.zip",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
+  },
+  "https://portal.test/two_tables.zip": {
+    "file": "download/archives/two_tables.zip",
+    "headers": {
+      "Content-Type": "application/zip"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An-lhZc-BAgmEK33PqsLVwc_kO61aLgHxVh2N6NGxVn5Cu9pZ99kLMSK6cRbHQao8FR58m3v5VfoIGcu0Um1BPV1XtHGsSg-sgdQGswl8RNWe4EqgB91F_TdCWaNl9q2CXyNM-FHGb10bxQd-3v7Qw?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=pSsvTyeJnJjC8gSU7QfweA&_nc_oc=AdrQGenJDBez0nQ7aZINOs1dPa8uMnD-Pcsx7l-irVsNhbOKdHO3rpUxHAbuD8IB3cc&ccb=10-5&oh=00_AQMfIW24VduZYlfcl0YJO-yTipk0Ir5eeC8bb0V5rqc8wQ&oe=6AE6584A&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An-lhZc-BAgmEK33PqsLVwc_kO61aLgHxVh2N6NGxVn5Cu9pZ99kLMSK6cRbHQao8FR58m3v5VfoIGcu0Um1BPV1XtHGsSg-sgdQGswl8RNWe4EqgB91F_TdCWaNl9q2CXyNM-FHGb10bxQd-3v7Qw?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=zRDM8KWKSNQectM_MdE7Pg&_nc_oc=AdrQGenJDBez0nQ7aZINOs1dPa8uMnD-Pcsx7l-irVsNhbOKdHO3rpUxHAbuD8IB3cc&ccb=10-5&oh=00_AQNSDGPXXcnVzCjCim0UEeLNt47srh7yFbDxro-qS_yfXA&oe=6AE6584A&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An-oRJWNaxpQXDCfRwKlc0mnFLR9HpUkKLtMopDjvTNvpGhQGZPsN0-8VhMlyCmBu3oasTATRQ7i7DwhZW1WVTlAyAGaboh7uN7CLLCcJndi8E3hFRakB3iQcsQU3hsEeoPgAdc_SN8fbw8eN6NSvkM?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=pSsvTyeJnJjC8gSU7QfweA&_nc_oc=AdpGm1xDJkCQw1TQnUdsvPLtWi-uGAsyDk6xrNMOCRGtKAT3E6OnkYe-F2EfhpSOsXQ&ccb=10-5&oh=00_AQMVSprmUU1-W1J7O-XMSlpE_NNeIqObZkH0hFk7Al9Ikg&oe=6AE6573C&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An-oRJWNaxpQXDCfRwKlc0mnFLR9HpUkKLtMopDjvTNvpGhQGZPsN0-8VhMlyCmBu3oasTATRQ7i7DwhZW1WVTlAyAGaboh7uN7CLLCcJndi8E3hFRakB3iQcsQU3hsEeoPgAdc_SN8fbw8eN6NSvkM?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=zRDM8KWKSNQectM_MdE7Pg&_nc_oc=AdpGm1xDJkCQw1TQnUdsvPLtWi-uGAsyDk6xrNMOCRGtKAT3E6OnkYe-F2EfhpSOsXQ&ccb=10-5&oh=00_AQNflo_RQ1Yv4mtg9ZTN1FRyxp9EGgmpohYQVP-GbapScA&oe=6AE6573C&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An8u02QY5Nw560hoTaMjvcwQSvYFM0dHuzRj0DvBvamF5Ww7_sQNOlM58UzboXt8zxM4kLju11QwaZOBrmI9SOULppickovSTOsd3MVmfa4_XE1WF2iEG1lukRBFdTg7OMeqm0amXPe7W7BDN6hvmGQ?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=pSsvTyeJnJjC8gSU7QfweA&_nc_oc=AdrCVJFdpKRWLIJTXlurfykK4lA9Ardt8LvvsvbZHjm8ac4mCjeUvCkTR_n07Ih8E8E&ccb=10-5&oh=00_AQOlGB4qZ4ZbD6Gx524B6tFnd4ILrWNM7XGBbU9Fz9899Q&oe=6AE64C74&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An8u02QY5Nw560hoTaMjvcwQSvYFM0dHuzRj0DvBvamF5Ww7_sQNOlM58UzboXt8zxM4kLju11QwaZOBrmI9SOULppickovSTOsd3MVmfa4_XE1WF2iEG1lukRBFdTg7OMeqm0amXPe7W7BDN6hvmGQ?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=zRDM8KWKSNQectM_MdE7Pg&_nc_oc=AdrCVJFdpKRWLIJTXlurfykK4lA9Ardt8LvvsvbZHjm8ac4mCjeUvCkTR_n07Ih8E8E&ccb=10-5&oh=00_AQNe8BY-ldNmgr6SkfO1WW3FyJ8zRNkJDdkCh_5Jp0mg0g&oe=6AE64C74&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An_1JJ1izAsR8McOb8zJ-WKlpoHBThZIUcCV_TU32ClCACSuWa0LZrSu43pACaFIxMhN6872eeU_bZbm751-yzTDPm_Qd8cUdcT84ogHJNA5B6EgnE7JVUQPs4L9dLjF_YNGkZiVwl3nfTiI9-HF9V4?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=pSsvTyeJnJjC8gSU7QfweA&_nc_oc=AdqwIsrpVpRX_Dsp1PSjhauME0dimbnAAvretxSpOfk-nRc7ks86rcQnZtzZmE8KsHY&ccb=10-5&oh=00_AQMOmX0vjpSVCFjX7wmGc0IzFJYwfMQp9khmfcLnYuQTRg&oe=6AE66A8C&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An_1JJ1izAsR8McOb8zJ-WKlpoHBThZIUcCV_TU32ClCACSuWa0LZrSu43pACaFIxMhN6872eeU_bZbm751-yzTDPm_Qd8cUdcT84ogHJNA5B6EgnE7JVUQPs4L9dLjF_YNGkZiVwl3nfTiI9-HF9V4?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=zRDM8KWKSNQectM_MdE7Pg&_nc_oc=AdqwIsrpVpRX_Dsp1PSjhauME0dimbnAAvretxSpOfk-nRc7ks86rcQnZtzZmE8KsHY&ccb=10-5&oh=00_AQMJejoo3_Hw1crFYoB0kkwTbIlCEU-AN4c8_nHvfTwiIQ&oe=6AE66A8C&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An_ep5apGTVSNopGiqd9U2qLDfkg3-RcZ4-5yhlzUuxjQGaysMTKYHwPhx20HoqMBPr0VDzO3-zs-35Z8CIh65924y6WxCEUbnCEyvmaEk_ztA50e_fddSi2LM9-fDPIt85v1CnpvmQjhbzJqrK6tA?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=pSsvTyeJnJjC8gSU7QfweA&_nc_oc=AdpUL_lIHEKDpbtw98b4HZzUzkdE6pgpCb60p_frtSyHdhd_JpCmWD-EM_c4lBQN3Lo&ccb=10-5&oh=00_AQMOZwUOtZQcSZQmtU-RE8qY_nutSwCBnSCrpL0ecwW6Hg&oe=6AE65496&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An_ep5apGTVSNopGiqd9U2qLDfkg3-RcZ4-5yhlzUuxjQGaysMTKYHwPhx20HoqMBPr0VDzO3-zs-35Z8CIh65924y6WxCEUbnCEyvmaEk_ztA50e_fddSi2LM9-fDPIt85v1CnpvmQjhbzJqrK6tA?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=zRDM8KWKSNQectM_MdE7Pg&_nc_oc=AdpUL_lIHEKDpbtw98b4HZzUzkdE6pgpCb60p_frtSyHdhd_JpCmWD-EM_c4lBQN3Lo&ccb=10-5&oh=00_AQOVvdLMfoTIcbE73XWKtMkCmFOTu_2KvrvgSX5GbUAcEg&oe=6AE65496&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An_zF1xGCmUyLreecS-Oze55PwPqzKpg4dkJk73LmdSPL_QbX4SlZpuu0uwzAzhHB1r6ruZO5z8yPgzS8qN5m7JsKHAU2pL14693xYsVcDsa_fbS6ynbHYiIZ5F9eli5UziPSctPniTvJIwZkttVZ-E?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=pSsvTyeJnJjC8gSU7QfweA&_nc_oc=AdqUyHV1-wHf1ZwKn0w3znqfwMsinQ6lBDm4v5H1O5Yz2CxZPIosuQCg1w_PJgdKnrA&ccb=10-5&oh=00_AQNMQ_QogvZEmWvvM02QI8jh_WNQqjEWMqQN4W3ccXNxlg&oe=6AE666BD&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://scontent-ord5-1.xx.fbcdn.net/m1/v/t6/An_zF1xGCmUyLreecS-Oze55PwPqzKpg4dkJk73LmdSPL_QbX4SlZpuu0uwzAzhHB1r6ruZO5z8yPgzS8qN5m7JsKHAU2pL14693xYsVcDsa_fbS6ynbHYiIZ5F9eli5UziPSctPniTvJIwZkttVZ-E?stp=s256x128&edm=AOnQwmMEAAAA&_nc_gid=zRDM8KWKSNQectM_MdE7Pg&_nc_oc=AdqUyHV1-wHf1ZwKn0w3znqfwMsinQ6lBDm4v5H1O5Yz2CxZPIosuQCg1w_PJgdKnrA&ccb=10-5&oh=00_AQNHIYyQ_C-5gU2r4AsIXWjLff8PeobiFhq3S3qHLp81Xw&oe=6AE666BD&_nc_sid=201bca": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Length": "1166",
+      "Content-Type": "image/jpeg"
+    },
+    "status": 200
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/?list-type=2&max-keys=1000&prefix=sentinel-s2-l2a-cogs%2F16%2FT%2FDM%2F2024%2F7%2F": {
+    "file": "s3/01.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2A_16TDM_20240703_0_L2A/L2A_PVI.tif bytes=0-65535": {
+    "file": "download/storage/head.tif",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2A_16TDM_20240703_0_L2A/thumbnail.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2A_16TDM_20240710_0_L2A/L2A_PVI.tif bytes=0-65535": {
+    "file": "download/storage/head.tif",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2A_16TDM_20240710_0_L2A/thumbnail.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2A_16TDM_20240713_0_L2A/L2A_PVI.tif bytes=0-65535": {
+    "file": "download/storage/head.tif",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2A_16TDM_20240713_0_L2A/thumbnail.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2A_16TDM_20240716_0_L2A/L2A_PVI.tif bytes=0-65535": {
+    "file": "download/storage/head.tif",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2A_16TDM_20240720_0_L2A/L2A_PVI.tif bytes=0-65535": {
+    "file": "download/storage/head.tif",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2A_16TDM_20240720_0_L2A/thumbnail.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2A_16TDM_20240723_0_L2A/L2A_PVI.tif bytes=0-65535": {
+    "file": "download/storage/head.tif",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2A_16TDM_20240723_0_L2A/thumbnail.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2A_16TDM_20240730_0_L2A/L2A_PVI.tif bytes=0-65535": {
+    "file": "download/storage/head.tif",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2A_16TDM_20240730_0_L2A/thumbnail.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2B_16TDM_20240705_0_L2A/L2A_PVI.tif bytes=0-65535": {
+    "file": "download/storage/head.tif",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2B_16TDM_20240705_0_L2A/thumbnail.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2B_16TDM_20240708_0_L2A/L2A_PVI.tif bytes=0-65535": {
+    "file": "download/storage/head.tif",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2B_16TDM_20240708_0_L2A/thumbnail.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2B_16TDM_20240715_0_L2A/L2A_PVI.tif bytes=0-65535": {
+    "file": "download/storage/head.tif",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2B_16TDM_20240715_0_L2A/thumbnail.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2B_16TDM_20240718_0_L2A/L2A_PVI.tif bytes=0-65535": {
+    "file": "download/storage/head.tif",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2B_16TDM_20240718_0_L2A/thumbnail.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2B_16TDM_20240725_0_L2A/L2A_PVI.tif bytes=0-65535": {
+    "file": "download/storage/head.tif",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2B_16TDM_20240725_0_L2A/thumbnail.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2B_16TDM_20240728_0_L2A/L2A_PVI.tif bytes=0-65535": {
+    "file": "download/storage/head.tif",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2B_16TDM_20240728_0_L2A/thumbnail.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/16/T/DM/2024/7/S2B_16TDM_20240731_0_L2A/L2A_PVI.tif bytes=0-65535": {
+    "file": "download/storage/head.tif",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://stac.overturemaps.org/2000-01-01.0/buildings/building/00000/00000.json": {
+    "file": "overture/buildings-building-00000.json",
+    "headers": {
+      "Content-Type": "application/geo+json"
+    },
+    "status": 200
+  },
+  "https://stac.overturemaps.org/2000-01-01.0/buildings/building/00001/00001.json": {
+    "file": "overture/buildings-building-00001.json",
+    "headers": {
+      "Content-Type": "application/geo+json"
+    },
+    "status": 200
+  },
+  "https://stac.overturemaps.org/2000-01-01.0/buildings/building/collection.json": {
+    "file": "overture/buildings-building-collection.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://stac.overturemaps.org/2000-01-01.0/transportation/segment/00000/00000.json": {
+    "file": "overture/transportation-segment-00000.json",
+    "headers": {
+      "Content-Type": "application/geo+json"
+    },
+    "status": 200
+  },
+  "https://stac.overturemaps.org/2000-01-01.0/transportation/segment/collection.json": {
+    "file": "overture/transportation-segment-collection.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://stac.overturemaps.org/catalog.json": {
+    "file": "overture/catalog.json",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://wms.geosampa.prefeitura.sp.gov.br/geoserver/ows?service=WFS&request=DescribeFeatureType&version=2.0.0&typeName=geoportal%3Abicicletario_paraciclo": {
+    "file": "wfs/02.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://wms.geosampa.prefeitura.sp.gov.br/geoserver/ows?service=WFS&request=GetCapabilities&version=2.0.0": {
+    "file": "wfs/01.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://wms.geosampa.prefeitura.sp.gov.br/geoserver/ows?service=WFS&request=GetFeature&version=2.0.0&typeName=geoportal%3Abicicletario_paraciclo&outputFormat=application%2Fjson&srsName=EPSG:4326": {
+    "file": "download/paraciclo.geojson",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  },
+  "https://wms.geosampa.prefeitura.sp.gov.br/geoserver/ows?service=WFS&request=GetFeature&version=2.0.0&typeName=geoportal%3Abicicletario_paraciclo&outputFormat=application%2Fjson&srsName=EPSG:4326&bbox=-23.57%2C-46.66%2C-23.54%2C-46.62%2Curn%3Aogc%3Adef%3Acrs%3AEPSG%3A%3A4326": {
+    "file": "download/paraciclo.geojson",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "status": 200
+  }
+}

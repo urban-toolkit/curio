@@ -1,26 +1,80 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Feature, FeatureCollection } from 'geojson';
-import { NodeBehaviorHook } from '../../registry/types';
-import { fetchData } from '../../services/api';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Feature } from 'geojson';
+import type { NodeBehaviorData, NodeBehaviorResult, UseNodeStateReturn } from '../../registry/types';
 import { detectWebGpuSupport, reprobeWebGpuSupport } from '../../utils/webgpuSupport';
 import { useToastContext } from '../../providers/ToastProvider';
-import { autkGrammarAdapter } from '../../adapters/autkGrammarAdapter';
 import { VisInteractionType, NodeType } from '../../constants';
-import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
-import { NodeEmptyState } from '../../components/nodes/NodeEmptyState';
+import { useGrammarInputState } from '../../hook/useGrammarInputState';
+import { useStarterSpec } from '../../hook/useStarterSpec';
+import { autkStarterText } from '../../utils/autkDefaultSpec';
+import { useFlowContext } from '../../providers/FlowProvider';
+import { resolveGrammarEmptyReason, type NodeEmptyReason } from '../../utils/nodeEmptyState';
+import { clearEmptyState, writeEmptyState } from '../../utils/writeEmptyState';
+import { isEmptySpecBuffer } from '../../utils/starterSpec';
 import { backendUrl } from '../../utils/backendUrl';
+import { RenderCounts, emptyRenderKind, partialRenderNote, renderOutcome } from '../../utils/renderOutcome';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
+import { snapSourceToGrid } from '../../utils/geoPrecision';
+import { fitPlotToPane } from '../../utils/autkPlotSizing';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
+import {
+    autkNeedsInput, autkSourcesFrom, documentTableRefs, inputRow, loadableSource, ownTableNames,
+    readAutkInput, tablePositions, type LoadOrder, type PreparedAutkInput,
+} from '../../utils/autkInput';
+import { type GrammarInput } from '../../utils/grammarInput';
+import { featureRows, matchSelections, type IncomingSelection } from '../../utils/selectionMatch';
+import { provideViewRows } from '../../utils/references/viewSelections';
+import { selectionEchoSource } from '../../utils/selectionEcho';
 import {
     SANDBOX_BACKEND_URL_TOKEN,
     compileDataSpecToAutkDbJs,
     requestedLayerTables,
     resolveDataSourceUrls as resolveDataSourceUrlsWithBase,
 } from './autkDataCompile';
+import { attachMapInteractionZoomFix } from './autkMapZoom';
+import {
+    countedItem, describeAutkRun, emptyStateWords, featureCount, hasFeatures, totalCount,
+} from './autkRunDescriptions';
+import { loadSpecLayers, materializeBackendLayers, runDataInBackend, toPoolOutput } from './autkLayerMaterialize';
+import {
+    isCurioRasterSource, newAutkDb, resolveRasterInputs, withRasterSources, type CurioRasterSource,
+} from './autkRasters';
+import { applyComputeBlocks } from './autkComputeBlocks';
 
-export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
+/**
+ * The layer a document's selections come from when they name none: its map's
+ * pickable layer (or its first), else its plot's. The same layers a pick and a
+ * plot brush report below.
+ */
+function selectionLayerOf(spec: any): string | undefined {
+    const maps: any[] = Array.isArray(spec?.map) ? spec.map : spec?.map ? [spec.map] : [];
+    for (const map of maps) {
+        const refs: any[] = Array.isArray(map?.layerRefs) ? map.layerRefs : [];
+        const layer = refs.find((l) => l?.isPick)?.dataRef ?? refs[0]?.dataRef;
+        if (typeof layer === 'string') return layer;
+    }
+    const plots: any[] = Array.isArray(spec?.plot) ? spec.plot : spec?.plot ? [spec.plot] : [];
+    const plot = plots.find((p) => typeof p?.dataRef === 'string');
+    return plot?.dataRef;
+}
+
+export type AutkBehaviorOptions = {
+    /**
+     * Whether a failed run marks the node errored, as an Autark node's does, so
+     * the nodes it feeds say so. A Compare Scenarios node (#662) draws its own
+     * output, the difference, through this map: a map that cannot draw says so
+     * in its body, and the node's run stands as it ran.
+     */
+    marksNodeErrored?: boolean;
+};
+
+export const useAutkGrammarBehavior = (
+    data: NodeBehaviorData,
+    nodeState: UseNodeStateReturn,
+    { marksNodeErrored = true }: AutkBehaviorOptions = {},
+): NodeBehaviorResult => {
     const { showToast } = useToastContext();
     const wrapperRef = useRef<HTMLDivElement>(null);
     // Set when the browser cannot run Autark at all (#201). Renders an
@@ -34,11 +88,11 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     const lastSpecRef = useRef<string | null>(null);
     // What kind of step this spec is, so the body can say so. A data-only or
     // compute-only node has no map/plot to draw, and used to render a blank
-    // 400px box under a green "Done" chip - indistinguishable from a node that
+    // box under a green "Done" chip - indistinguishable from a node that
     // never ran or silently failed (#282). Seeded from the authored spec so the
     // pre-run body already says what running it will do; updated on every run.
     const [specKind, setSpecKind] = useState<AutkSpecKind>(() =>
-        classifyAutkSpecString((data as any).code || data.defaultCode || autkGrammarAdapter.getDefaultSpec?.()),
+        classifyAutkSpecString((data as any).code || data.defaultCode),
     );
     // One line per table/layer the last successful run produced. Null while
     // running and after an error, so a stale summary never outlives its data.
@@ -65,6 +119,68 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     // the backend. The cached DuckDB artifact stays valid until the data section
     // or the upstream input changes.
     const dataCacheRef = useRef<{ key: string; ref: { path: string; dataType: string } } | null>(null);
+
+    // The input, read once per input object and shared by the render path,
+    // the compute path and the highlight sync (utils/autkInput).
+    const inputReadRef = useRef<{ input: unknown; read: Promise<GrammarInput> } | null>(null);
+    const readInput = (input: unknown): Promise<GrammarInput> => {
+        if (inputReadRef.current?.input !== input) {
+            const read = readAutkInput(input);
+            inputReadRef.current = { input, read };
+            // A failed read is not kept: the next run tries again.
+            read.catch(() => {
+                if (inputReadRef.current?.read === read) inputReadRef.current = null;
+            });
+        }
+        return inputReadRef.current!.read;
+    };
+    // How each loaded input table's positions map to the input's rows
+    // (loadableSource), by name: a pick or a highlight goes through it, so a
+    // position always names the row the Data Pool and the other charts mean.
+    const loadOrdersRef = useRef<Record<string, LoadOrder>>({});
+
+    // What the node knows about its input edge, asked the way the Vega-Lite
+    // node asks (hook/useGrammarInputState).
+    const { connected, upstreamErrored } = useGrammarInputState(data.nodeId);
+    // A failed node says so to the nodes it feeds, as a failed code node does.
+    const { markNodeErrored } = useFlowContext() as { markNodeErrored?: (nodeId: string) => void };
+    // Whether a run has been tried, whether one is under way, and what the last
+    // one could not read from its input: the pre-run notice reads these.
+    const hasRunRef = useRef(false);
+    const runningRef = useRef(false);
+    const pendingSpecRef = useRef<string | null>(null);
+    const inputProblemRef = useRef<{ reason: NodeEmptyReason; detail?: string } | null>(null);
+    // The notice the body should show now, kept so a container that mounts
+    // later (the editor remounting its output pane) gets it too.
+    const noticeRef = useRef<{ reason: NodeEmptyReason; words: { title?: string; hint?: string } } | null>(null);
+    const writeNotice = () => {
+        const host = wrapperRef.current;
+        if (!host || runningRef.current || grammarRef.current != null) return;
+        const notice = noticeRef.current;
+        if (notice) {
+            writeEmptyState(host, notice.reason, notice.words);
+        } else if (host.hasAttribute('data-curio-node-empty')) {
+            // A notice that no longer applies is not left behind.
+            host.replaceChildren();
+            clearEmptyState(host);
+        }
+    };
+    const attachWrapper = useCallback((el: HTMLDivElement | null) => {
+        wrapperRef.current = el;
+        if (el) writeNotice();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    // A run that ends on an input it cannot draw names it in the body at once,
+    // as the Vega-Lite node does when it prepares its input.
+    const showInputProblem = (kind: AutkSpecKind) => {
+        const problem = inputProblemRef.current;
+        if (!problem) return;
+        noticeRef.current = {
+            reason: problem.reason,
+            words: emptyStateWords(problem.reason, kind, problem.detail),
+        };
+        writeEmptyState(wrapperRef.current, problem.reason, noticeRef.current.words);
+    };
 
     const runGrammar = async (
         specString: string,
@@ -120,6 +236,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             pickFixCleanupRef.current?.();
             pickFixCleanupRef.current = null;
             while (wrapper.firstChild) wrapper.removeChild(wrapper.firstChild);
+            clearEmptyState(wrapper);
             if (hasMaps) {
                 const canvas = document.createElement('canvas');
                 canvas.id = mapCanvasId;
@@ -139,35 +256,49 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         // autk-db. Capture them before we touch spec.data.
         const specDataSources: any[] = Array.isArray(spec.data) ? spec.data : [];
 
-        // Inject upstream input as 'geojson' data sources the spec can reference.
-        // A single upstream frame (e.g. a Python GeoDataFrame) is exposed as
-        // "upstream"; a multi-layer array from an upstream grammar node is exposed
-        // under each layer's own name (table_osm_buildings, …), with "upstream"
-        // kept as an alias for the first layer (back-compat). Upstream geojson is
-        // already serialized data the browser holds, so it stays client-side and
-        // is NOT sent to the backend.
+        // The input as the tables the document reads (utils/autkInput): each
+        // input is `input_<k>`, the layers an input carries keep their own
+        // names, and `input_<k>` also names an input of one named layer when
+        // the document names it. Upstream geojson
+        // is data the browser already holds, so it stays client-side and is NOT
+        // sent to the backend. A data-only document does not read it.
         let upstreamSources: any[] = [];
-        if (data.input) {
+        // The input's rasters, loaded into the grammar's database by
+        // loadGeoTiff (adapters/node/autkRasters), for a document that draws.
+        let rasterSources: CurioRasterSource[] = [];
+        let preparedInput: PreparedAutkInput | null = null;
+        const readsInput = hasMaps || hasPlot || specDataSources.length === 0;
+        if (data.input && readsInput) {
             try {
-                const layers = await resolveUpstreamLayers(data.input);
-                if (layers.length > 0) {
-                    upstreamSources = layers.map(({ name, fc, layerType }) => ({
-                        type: 'geojson', geojsonObject: fc, outputTableName: name,
-                        coordinateFormat: detectCoordinateFormat(fc),
-                        // Preserve the autk-db layer type so relation-built layers
-                        // (water/parks/buildings) re-load with the right processing.
-                        ...(layerType ? { layerType } : {}),
-                    }));
-                    if (!layers.some((l) => l.name === 'upstream')) {
-                        const { fc } = layers[0];
-                        upstreamSources.unshift({
-                            type: 'geojson', geojsonObject: fc, outputTableName: 'upstream',
-                            coordinateFormat: detectCoordinateFormat(fc),
-                        });
+                let prepared = autkSourcesFrom(await readInput(data.input), spec);
+                if ((hasMaps || hasPlot) && prepared.rasters.length > 0) {
+                    const resolved = await resolveRasterInputs(prepared.rasters);
+                    rasterSources = resolved.sources;
+                    if (resolved.problems.length > 0) {
+                        prepared = {
+                            ...prepared,
+                            unusable: [...prepared.unusable, ...resolved.unusable],
+                            inputProblem: [prepared.inputProblem, ...resolved.problems].filter(Boolean).join(' '),
+                            ...(prepared.sources.length === 0 && rasterSources.length === 0
+                                ? { emptyReason: 'input-type-rejected' as NodeEmptyReason, detail: resolved.problems[0] }
+                                : {}),
+                        };
                     }
                 }
-            } catch {
-                // Non-fatal: upstream injection is best-effort only
+                preparedInput = prepared;
+                if (prepared.emptyReason && prepared.sources.length === 0 && rasterSources.length === 0) {
+                    inputProblemRef.current = { reason: prepared.emptyReason, detail: prepared.detail };
+                }
+                const orders: Record<string, LoadOrder> = {};
+                upstreamSources = prepared.sources.map((source) => {
+                    const loadable = loadableSource(source);
+                    orders[source.outputTableName] = loadable.order;
+                    return loadable.source;
+                });
+                loadOrdersRef.current = orders;
+            } catch (e) {
+                // What the render then cannot find is what gets reported.
+                console.warn('[autk-grammar] reading the input failed:', e);
             }
         }
 
@@ -182,6 +313,13 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
 
         emit({ code: 'exec', content: '' });
         let summary: string | null = null;
+        // What a data or compute run can count about itself, read by the
+        // empty-render gate below. Null when the run made no count at all.
+        let runCounts: RenderCounts | null = null;
+        // Whether `summary` lists what the run produced. An empty list reads
+        // "the spec names no tables", which must not follow an empty-render
+        // verdict that already said what went wrong.
+        let summaryListsItems = false;
         try {
             // ── Data section → backend sandbox ──────────────────────────────
             // The authored data sources are compiled to autk-db JavaScript and
@@ -239,7 +377,10 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 // sources (so the grammar engine never re-loads from URL), then run
                 // compute/map/plot in the browser. Backend layers are already
                 // projected to the workspace CRS (EPSG:3395).
-                let dataSectionSources = upstreamSources;
+                let dataSectionSources: any[] = [...rasterSources, ...upstreamSources];
+                // The sources this node's own data section loaded, as opposed to
+                // what arrived from upstream: an empty one is the document's fault.
+                let ownSources: any[] = [];
                 if (specDataSources.length > 0) {
                     let layers: Array<{ name: string; type?: string; geojson: any }> = [];
                     try {
@@ -258,9 +399,9 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         const resolvedForFrontend = resolveDataSourceUrls({ data: specDataSources }, false).data;
                         layers = await loadSpecLayers({ data: resolvedForFrontend });
                     }
-                    // coordinateFormat must reflect the coordinates as loaded:
-                    // autk-db 2.0.1 projected to EPSG:3395 at load, 2.1.2 keeps
-                    // EPSG:4326 — the layers carry a crs stamp set by the loader,
+                    // coordinateFormat must reflect the coordinates as loaded
+                    // (autk-db returns layers in the workspace CRS, EPSG:3395
+                    // meters): the layers carry a crs stamp set by the loader,
                     // which detectCoordinateFormat reads (falling back to the
                     // coordinate-magnitude heuristic).
                     const backendAsSources = layers.map((l) => ({
@@ -270,23 +411,52 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         coordinateFormat: detectCoordinateFormat(l.geojson as any),
                         ...(l.type && l.type !== 'polygons' ? { layerType: l.type } : {}),
                     }));
-                    dataSectionSources = [...upstreamSources, ...backendAsSources];
+                    ownSources = backendAsSources;
+                    dataSectionSources = [...rasterSources, ...upstreamSources, ...backendAsSources];
                 }
-                // autk-db 2.1.2's loadGeojson throws on an empty FeatureCollection,
-                // where 2.0.1 created an empty table that refs could still resolve
-                // against. Two consequences for sparse data (e.g. a PBF area with no
-                // parks, or a join that empties a layer):
+                // What the document can draw from, counted BEFORE any source is
+                // dropped: an empty table still exists, so a ref to it is not a
+                // ref to data the dataflow does not produce (that would be rule
+                // 1, `no-layers`, blaming the wrong thing). `rows` is undefined
+                // when the collection could not be counted.
+                const tableRows = new Map<string, { rows: number | undefined; own: boolean }>();
+                for (const s of dataSectionSources) {
+                    if (typeof s?.outputTableName !== 'string' || !s.outputTableName) continue;
+                    tableRows.set(s.outputTableName, {
+                        // A raster's rows are its cells.
+                        rows: isCurioRasterSource(s) ? s.cells : featureCount(s.geojsonObject),
+                        own: ownSources.includes(s),
+                    });
+                }
+                // Tables the document reads from its input that the input could
+                // not provide (a DataFrame with no geometry column, a refused
+                // input type) are known zeros from upstream: the verdict blames
+                // the upstream and says why, instead of calling the ref one to
+                // data the dataflow does not produce.
+                if (preparedInput?.inputProblem) {
+                    const own = new Set(ownTableNames(spec));
+                    const unusable = new Set(preparedInput.unusable);
+                    const refused = preparedInput.sources.length === 0;
+                    for (const ref of documentTableRefs(spec)) {
+                        if (tableRows.has(ref) || own.has(ref)) continue;
+                        if (refused || unusable.has(ref)) tableRows.set(ref, { rows: 0, own: false });
+                    }
+                }
+                // autk-db's loadGeojson throws on an empty FeatureCollection. Two
+                // consequences for sparse data (e.g. a PBF area with no parks, or a
+                // join that empties a layer):
                 //   1. an empty geojson source must be dropped before grammar.run,
                 //   2. a map/plot ref to a table that is empty — or that an upstream
                 //      node already dropped, so it never arrives here — dangles and
                 //      fails grammar.run with "Table <name> not found".
                 // Drop empty sources, then keep only refs that point at a table this
-                // node can actually create. Net effect mirrors 2.0.1: layers with
-                // data render; empty/absent ones contribute nothing. Each drop is
-                // logged — a silently stripped layer otherwise reads as a blank map.
+                // node can actually create: layers with data render; empty/absent
+                // ones contribute nothing. Each drop is
+                // logged, since a silently stripped layer otherwise reads as a
+                // blank map. A collection that cannot be counted cannot be loaded
+                // either, so it is dropped too; its count above stays unknown.
                 const emptySources = dataSectionSources.filter(
-                    (s: any) => s?.type === 'geojson'
-                        && (s?.geojsonObject?.features?.length ?? 0) === 0,
+                    (s: any) => s?.type === 'geojson' && !hasFeatures(s?.geojsonObject),
                 );
                 if (emptySources.length > 0) {
                     console.warn(
@@ -297,7 +467,9 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         (s: any) => !emptySources.includes(s),
                     );
                 }
-                spec = { ...spec, data: dataSectionSources };
+                // On a 1 cm grid, so autk-db's second clip of these already
+                // clipped layers holds (see utils/geoPrecision).
+                spec = { ...spec, data: dataSectionSources.map(snapSourceToGrid) };
                 if (dataSectionSources.length === 0 && (hasMaps || hasPlot)) {
                     console.warn(
                         '[autk-grammar] render node has no data sources left — the '
@@ -305,7 +477,24 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         + 'map/plot will render blank. Check the upstream nodes.',
                     );
                 }
-                if (dataSectionSources.length > 0) {
+                // dev/136: what this render ASKED for, before any resolution
+                // drops a thing. A dropped layerRef used to leave a
+                // console.warn as its only trace, so a map whose every ref was
+                // dropped rendered a grey canvas under a green "Done".
+                const requestedRefs: string[] = [
+                    ...(Array.isArray(spec.map?.layerRefs)
+                        ? spec.map.layerRefs
+                            .map((r: any) => r?.dataRef)
+                            .filter((r: any): r is string => typeof r === 'string' && !!r)
+                        : []),
+                    ...(spec.plot?.dataRef ? [String(spec.plot.dataRef)] : []),
+                ];
+                // Every table this node holds, empty ones included, is what the
+                // document could have named; only the non-empty ones can be
+                // handed to the grammar.
+                const knownNames = new Set<string>(tableRows.keys());
+                const availableRefs: string[] = [...knownNames];
+                if (knownNames.size > 0) {
                     const availableNames = new Set<string>(
                         dataSectionSources
                             .map((s: any) => s?.outputTableName)
@@ -313,23 +502,35 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     );
                     if (spec.map && Array.isArray(spec.map.layerRefs)) {
                         const dangling = spec.map.layerRefs.filter(
-                            (r: any) => r?.dataRef && !availableNames.has(r.dataRef),
+                            (r: any) => r?.dataRef && !knownNames.has(r.dataRef),
+                        );
+                        const empty = spec.map.layerRefs.filter(
+                            (r: any) => r?.dataRef && knownNames.has(r.dataRef)
+                                && !availableNames.has(r.dataRef),
                         );
                         if (dangling.length > 0) {
                             console.warn(
                                 '[autk-grammar] dropping map layerRef(s) to unavailable table(s): '
                                 + dangling.map((r: any) => r.dataRef).join(', ')
-                                + ' — available: ' + [...availableNames].join(', '),
+                                + ' - available: ' + [...availableNames].join(', '),
                             );
+                        }
+                        if (empty.length > 0) {
+                            console.warn(
+                                '[autk-grammar] dropping map layerRef(s) to empty table(s): '
+                                + empty.map((r: any) => r.dataRef).join(', '),
+                            );
+                        }
+                        if (dangling.length > 0 || empty.length > 0) {
                             spec.map = {
                                 ...spec.map,
                                 layerRefs: spec.map.layerRefs.filter(
-                                    (r: any) => !dangling.includes(r),
+                                    (r: any) => !dangling.includes(r) && !empty.includes(r),
                                 ),
                             };
                         }
                     }
-                    // A plot bound to an unavailable layer has nothing to draw —
+                    // A plot bound to an unavailable layer has nothing to draw:
                     // drop it rather than fail resolving the missing table.
                     if (spec.plot && (
                         (spec.plot.dataRef && !availableNames.has(spec.plot.dataRef))
@@ -338,22 +539,100 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         console.warn(
                             '[autk-grammar] dropping plot bound to unavailable table: '
                             + (spec.plot.dataRef ?? spec.plot.mapRef)
-                            + ' — available: ' + [...availableNames].join(', '),
+                            + ' - available: ' + [...availableNames].join(', '),
                         );
                         const { plot, ...rest } = spec;
                         spec = rest;
                     }
+                }
+                // The refs that name a table this node holds, whether or not it
+                // had rows: what the document resolved against, and what its
+                // row counts are read from.
+                const resolvedRefs = [...new Set(requestedRefs)].filter((r) => knownNames.has(r));
+                const resolvedRows = resolvedRefs.map((r) => tableRows.get(r)!);
+                const ownRows = resolvedRows.filter((t) => t.own);
+
+                // dev/136: did this map/plot actually draw? The layers that
+                // resolved are what there was to draw FROM, so an empty set is
+                // an empty render, reported rather than warned about. A ref to
+                // an EMPTY table resolved; its zero rows are what `rowsIn` and
+                // `sourceRows` report instead. The layers handed to the grammar
+                // are what it drew, and the gap is what the partial note names.
+                // autk-grammar's run() returns nothing, so there is no
+                // drawn-mark count, and nothing here depends on the run: an empty
+                // verdict is reached before it, so the grammar is never handed a
+                // plot with no data context to fail on.
+                const layersResolved = requestedRefs.filter((r) => knownNames.has(r)).length
+                    + (spec.plot && !spec.plot.dataRef ? 1 : 0);
+                const layersDrawn = (Array.isArray(spec.map?.layerRefs)
+                    ? spec.map.layerRefs.length
+                    : 0) + (spec.plot ? 1 : 0);
+                const emptyRefs = requestedRefs.filter((r) => {
+                    const table = tableRows.get(r);
+                    return !!table && !(typeof table.rows === 'number' && table.rows > 0);
+                });
+                const renderCounts: RenderCounts = {
+                    layersRequested: requestedRefs.length,
+                    layersResolved,
+                    layersDrawn,
+                    requestedRefs,
+                    availableRefs,
+                    emptyRefs,
+                    // A table named while none is at hand is a known zero:
+                    // nothing arrived and nothing was loaded. Otherwise no
+                    // claim when the document names no table to count.
+                    rowsIn: knownNames.size === 0 && requestedRefs.length > 0
+                        ? 0
+                        : resolvedRows.length > 0
+                            ? totalCount(resolvedRows.map((t) => t.rows))
+                            : undefined,
+                    sourceRows: ownRows.length > 0
+                        ? totalCount(ownRows.map((t) => t.rows))
+                        : undefined,
+                    ...(preparedInput?.inputProblem ? { inputProblem: preparedInput.inputProblem } : {}),
+                };
+                const outcome = renderOutcome(renderCounts);
+                if (outcome.empty) {
+                    grammarRef.current = null;
+                    specRef.current = null;
+                    showInputProblem('render');
+                    emit({ code: 'error', content: outcome.message,
+                           kind: emptyRenderKind(outcome.cause) } as any);
+                    showToast(outcome.message, 'error');
+                    return;
+                }
+
+                // A plot the document did not size fills its pane (see
+                // utils/autkPlotSizing), measured now because the node can be
+                // resized while its data loads.
+                const plotPane = targets.plot ? document.getElementById(targets.plot) : null;
+                if (plotPane && spec.plot) {
+                    spec = {
+                        ...spec,
+                        plot: fitPlotToPane(spec.plot, {
+                            width: plotPane.clientWidth,
+                            height: plotPane.clientHeight,
+                        }),
+                    };
                 }
 
                 const { AutkGrammar } = await import('@urban-toolkit/autk-grammar');
                 // A fresh grammar per attempt: it builds its own AutkDb, and a
                 // DuckDB worker that failed to fetch the spatial extension keeps
                 // that state, so only a new one can succeed (#318).
+                const drawsRasters = (spec.data as any[]).some(isCurioRasterSource);
                 const grammar = await withExtensionRetry(async () => {
                     const g = new AutkGrammar(targets);
+                    if (drawsRasters) withRasterSources(g, newAutkDb);
                     await g.run(spec);
                     return g;
                 });
+                // autk-plot's SVG is inline, so it sits on a line of text whose
+                // descender space overflows a pane the plot exactly fills, and
+                // brings the scrollbars back. As a block it fits.
+                for (const child of Array.from(plotPane?.children ?? [])) {
+                    if (child.tagName.toLowerCase() === 'svg') (child as SVGElement).style.display = 'block';
+                }
 
                 // Store for interaction effects
                 grammarRef.current = grammar;
@@ -374,12 +653,19 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         ?? spec.map?.layerRefs?.[0]?.dataRef;
                     const plotLayerRef: string | undefined = spec.plot?.dataRef;
 
-                    const emitInteraction = (selection: number[], layerRef: string | undefined) => {
+                    const emitInteraction = (
+                        selection: number[],
+                        layerRef: string | undefined,
+                        from: 'map' | 'plot',
+                    ) => {
                         const d = dataRef.current;
+                        // Rows of the input, not positions in what was drawn.
+                        const order = layerRef ? loadOrdersRef.current[layerRef]?.[from === 'map' ? 'map' : 'load'] : null;
+                        const rows = selection.map((position) => inputRow(position, order));
                         d.interactionsCallback?.({
                             autk_selection: {
-                                type: selection.length > 0 ? VisInteractionType.POINT : VisInteractionType.UNDETERMINED,
-                                data: selection,
+                                type: rows.length > 0 ? VisInteractionType.POINT : VisInteractionType.UNDETERMINED,
+                                data: rows,
                                 priority: 1,
                                 source: NodeType.AUTK_GRAMMAR,
                                 layerRef,
@@ -387,14 +673,22 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         }, d.nodeId);
                     };
 
-                    const off1 = grammar.interactions.on('map:picking',    ({ selection }) => emitInteraction(selection, pickedLayerRef));
-                    const off2 = grammar.interactions.on('plot:selection', ({ selection }) => emitInteraction(selection, plotLayerRef));
+                    const off1 = grammar.interactions.on('map:picking',    ({ selection }) => emitInteraction(selection, pickedLayerRef, 'map'));
+                    const off2 = grammar.interactions.on('plot:selection', ({ selection }) => emitInteraction(selection, plotLayerRef, 'plot'));
                     interactionOffRef.current = [off1, off2];
                 }
 
                 if (data.outputCallback) {
                     data.outputCallback(data.nodeId, data.input ?? null);
                 }
+                // A selection still active from before this draw lights up
+                // the new map too, as a Vega chart re-applies its own.
+                syncHighlightsNow();
+                // A partial drop still drew something; say what it lost rather
+                // than leaving the console as the only record. It rides as the
+                // success output, since a render node's body is its map.
+                const note = partialRenderNote(renderCounts);
+                if (note) summary = note;
             } else {
                 // Data-only node: emit the data downstream.
                 grammarRef.current = null;
@@ -415,30 +709,61 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     // The backend path hands back an artifact ref, not the
                     // tables, so name what the spec asked autk-db to create -
                     // a short load has already failed above, so these exist.
+                    // Their rows are unknown there, so no emptiness is claimed;
+                    // only layers in hand are counted.
                     const tables = backendLayers
-                        ? backendLayers.map((l) => `${l.name} (${l.geojson?.features?.length ?? 0} features)`)
+                        ? backendLayers.map((l) => countedItem(l.name, featureCount(l.geojson), 'features'))
                         : requestedLayerTables(specDataSources);
                     summary = describeAutkRun('Loaded', 'table', tables);
+                    summaryListsItems = tables.length > 0;
+                    runCounts = {
+                        sourceRows: backendLayers
+                            ? totalCount(backendLayers.map((l) => featureCount(l.geojson)))
+                            : undefined,
+                    };
                 } else {
                     // Compute-only node: skip the extra AutkDb round-trip — upstream layers
                     // (from backend, or the in-browser fallback) are already normalized and
                     // exploded. Re-loading them through DuckDB + the buildings clusterer can
                     // strip custom per-feature properties. Apply WGSL blocks directly so the
                     // outputs (feature.properties.compute.<col>) reach downstream untouched.
-                    const upstream = await resolveUpstreamLayers(data.input);
+                    let computeInput = data.input
+                        ? autkSourcesFrom(await readInput(data.input), spec, { alias: false })
+                        : null;
+                    // Compute blocks run over layers' features; a raster has none.
+                    if (computeInput && computeInput.rasters.length > 0) {
+                        const note = 'Left out: the raster '
+                            + computeInput.rasters.map((r) => r.outputTableName).join(', ')
+                            + ', since a compute step works on layers. Draw it on a map instead.';
+                        computeInput = {
+                            ...computeInput,
+                            inputProblem: [computeInput.inputProblem, note].filter(Boolean).join(' '),
+                        };
+                    }
+                    if (computeInput?.emptyReason && computeInput.sources.length === 0) {
+                        inputProblemRef.current = { reason: computeInput.emptyReason, detail: computeInput.detail };
+                    }
+                    const upstream = (computeInput?.sources ?? []).map((source) => ({
+                        name: source.outputTableName,
+                        fc: source.geojsonObject,
+                        layerType: source.layerType,
+                    }));
+                    // The rows that arrived, counted before the empty-layer drop
+                    // below hides them. No layer at all (nothing connected, or
+                    // an input this node cannot read) is no claim, not zero.
+                    const rowsIn = upstream.length > 0
+                        ? totalCount(upstream.map((u) => featureCount(u.fc)))
+                        : computeInput?.inputProblem ? 0 : undefined;
                     let layers = upstream.map((u) => ({
                         name: u.name,
                         type: u.layerType ?? 'polygons',
                         geojson: u.fc,
                     }));
-                    // Drop empty layers (autk-db 2.1.2 throws on an empty
+                    // Drop empty layers (autk-db throws on an empty
                     // FeatureCollection, and an empty layer would surface as a
-                    // blank tab in the downstream Data Pool). Mirrors 2.0.1's
-                    // empty-table tolerance; the compute below then only runs on
-                    // layers that have features.
-                    const emptyLayers = layers.filter(
-                        (l) => ((l.geojson as any)?.features?.length ?? 0) === 0,
-                    );
+                    // blank tab in the downstream Data Pool); the compute below
+                    // then only runs on layers that have features.
+                    const emptyLayers = layers.filter((l) => !hasFeatures(l.geojson));
                     if (emptyLayers.length > 0) {
                         console.warn(
                             '[autk-grammar] compute node dropping empty upstream layer(s): '
@@ -461,16 +786,42 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                             return;
                         }
                     }
-                    const out = await toPoolOutput(layers, data.jsInterpreter, data.nodeId);
-                    if (data.outputCallback) data.outputCallback(data.nodeId, out ?? layers);
                     summary = describeAutkRun(
                         'Computed',
                         'layer',
-                        layers.map((l) => `${l.name} (${(l.geojson as any)?.features?.length ?? 0} rows)`),
+                        layers.map((l) => countedItem(l.name, featureCount(l.geojson), 'rows')),
                     );
+                    summaryListsItems = layers.length > 0;
+                    runCounts = {
+                        rowsIn,
+                        drawn: totalCount(layers.map((l) => featureCount(l.geojson))),
+                        ...(computeInput?.inputProblem ? { inputProblem: computeInput.inputProblem } : {}),
+                    };
+                    // An empty result is not passed on: downstream would get
+                    // nothing under this node's error. The verdict below says why.
+                    if (!renderOutcome(runCounts).empty) {
+                        const out = await toPoolOutput(layers, data.jsInterpreter, data.nodeId);
+                        if (data.outputCallback) data.outputCallback(data.nodeId, out ?? layers);
+                    }
                 }
             }
 
+            // dev/136: a data or compute run that produced only EMPTY tables
+            // produced nothing. The counts ride as data, so the same rules
+            // that judge a map decide who is at fault: a data node's own
+            // sources loading nothing is `empty-source`, a compute node fed
+            // nothing is `no-input-rows`.
+            const outcome = runCounts ? renderOutcome(runCounts) : null;
+            if (outcome?.empty) {
+                showInputProblem(classifyAutkSpec(spec));
+                const message = summary && summaryListsItems
+                    ? `${outcome.message} ${summary.replace(/\.+$/, '')}.`
+                    : outcome.message;
+                emit({ code: 'error', content: message,
+                       kind: emptyRenderKind(outcome.cause) } as any);
+                showToast(message, 'error');
+                return;
+            }
             // A render node reports through its map/plot; a data or compute
             // node has only this line to show that it did something (#282).
             setRunSummary(summary);
@@ -497,29 +848,47 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
      * ways its inner try/catch never sees. So the terminal output is
      * guaranteed here, in a finally, rather than hoped for in the body.
      */
-    const applyGrammar = async (specString: string) => {
+    const applyGrammar = async (specString: string): Promise<void> => {
+        if (runningRef.current) {
+            // A run is under way (a redraw on new input, or a Play): run once
+            // more when it ends, with the latest document, rather than two runs
+            // racing for the same canvas.
+            pendingSpecRef.current = typeof specString === 'string' ? specString : JSON.stringify(specString);
+            return;
+        }
         lastSpecRef.current = typeof specString === 'string' ? specString : JSON.stringify(specString);
+        hasRunRef.current = true;
+        runningRef.current = true;
+        inputProblemRef.current = null;
         let settled = false;
         const emit = (o: { code: string; content: string }) => {
             if (o.code === 'success' || o.code === 'error') settled = true;
+            if (o.code === 'error' && marksNodeErrored) markNodeErrored?.(data.nodeId);
             nodeState.setOutput(o);
         };
         // The net itself lives in autkRunSettlement so it can be tested; see the
         // note there for why it is unreachable through this hook.
-        await runAndAlwaysSettle(() => runGrammar(specString, emit), {
-            settled: () => settled,
-            onError: (msg) => {
-                // The toast is transient and the node UI has no error tab, so
-                // also log to console - the only durable place tooling (and the
-                // e2e browser-log dump) can read the failure from.
-                console.error('[autk-grammar] node error:', msg);
-                emit({ code: 'error', content: msg });
-                showToast(msg, 'error');
-            },
-            onUnreported: () => {
-                emit({ code: 'error', content: UNREPORTED_MESSAGE });
-            },
-        });
+        try {
+            await runAndAlwaysSettle(() => runGrammar(specString, emit), {
+                settled: () => settled,
+                onError: (msg) => {
+                    // The toast is transient and the node UI has no error tab, so
+                    // also log to console - the only durable place tooling (and the
+                    // e2e browser-log dump) can read the failure from.
+                    console.error('[autk-grammar] node error:', msg);
+                    emit({ code: 'error', content: msg });
+                    showToast(msg, 'error');
+                },
+                onUnreported: () => {
+                    emit({ code: 'error', content: UNREPORTED_MESSAGE });
+                },
+            });
+        } finally {
+            runningRef.current = false;
+        }
+        const next = pendingSpecRef.current;
+        pendingSpecRef.current = null;
+        if (next != null) await applyGrammar(next);
     };
 
     /** Re-probe WebGPU and, if it is there now, run the last spec (#272). */
@@ -540,56 +909,169 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         }
     };
 
-    // Curio → grammar: the Data Pool marks each feature with interacted:'1'/'0'
-    // after resolving interactions, then sends updated data via outputCallback.
-    // When data.input changes here, read those flags and apply highlights so
-    // the grammar map/plot stays in sync with whatever the Data Pool resolved.
+    // Curio → grammar: which rows to highlight, from two places. A Data Pool
+    // marks each feature interacted:'1'/'0' and re-emits its rows, so the input
+    // carries the flags. A chart joined to this one by a direct interaction edge
+    // sends its selection as `data.interactions`, matched against this node's
+    // own rows the way the pool matches (utils/selectionMatch). A row is
+    // highlighted when either says so; nothing is redrawn for it.
     //
-    // Multi-layer wrappers carry interacted flags on whichever layer the source
-    // brush/pick was for; the others have all-zero flags. Read each layer's flags
-    // independently and dispatch the highlight per layer name so a roads-only
-    // brush only lights up roads even when surface/parks/water are riding along.
-    useEffect(() => {
+    // Per layer: a multi-layer wrapper carries flags on the layer the brush was
+    // for, and an Autark pick names its layer, so a roads-only brush lights up
+    // roads alone. A selection that names no layer (a Vega chart's) lands on the
+    // first, as the Data Pool does.
+    const syncHighlights = async () => {
         const grammar = grammarRef.current;
         const spec    = specRef.current;
-        if (!grammar || !spec || !data.input) return;
+        const current = dataRef.current;
+        if (!grammar || !spec || !current.input) return;
 
-        (async () => {
-            const layers = await resolveUpstreamLayers(data.input);
-            if (layers.length === 0) return;
+        const layers = autkSourcesFrom(await readInput(current.input), spec).sources;
+        if (layers.length === 0) return;
 
-            const indicesByLayer = new Map<string, number[]>();
-            for (const { name, fc } of layers) {
-                const sel = fc.features.reduce<number[]>((acc, f, i) => {
-                    if (f.properties?.interacted === '1') acc.push(i);
-                    return acc;
-                }, []);
-                indicesByLayer.set(name, sel);
-            }
+        const incoming: IncomingSelection[] = Array.isArray((current as any).interactions)
+            ? (current as any).interactions
+            : [];
+        const direct = new Map<string, IncomingSelection[]>();
+        for (const selection of incoming) {
+            const named = (selection as any)?.details?.autk_selection?.layerRef;
+            const target = layers.some((l) => l.outputTableName === named) ? named : layers[0].outputTableName;
+            direct.set(target, [...(direct.get(target) ?? []), selection]);
+        }
 
-            const maps  = spec.map  ? (Array.isArray(spec.map)  ? spec.map  : [spec.map])  : [];
-            const plots = spec.plot ? (Array.isArray(spec.plot) ? spec.plot : [spec.plot]) : [];
+        // Input rows per layer; each target turns them into its own positions.
+        const rowsByLayer = new Map<string, number[]>();
+        for (const { outputTableName: name, geojsonObject: fc } of layers) {
+            const flagged = ((fc.features ?? []) as any[]).reduce<number[]>((acc, f, i) => {
+                if (f.properties?.interacted === '1') acc.push(i);
+                return acc;
+            }, []);
+            const selected = direct.has(name) ? matchSelections(direct.get(name)!, featureRows(fc)) : [];
+            rowsByLayer.set(name, [...new Set([...flagged, ...selected])]);
+        }
+        const positions = (name: string, from: 'map' | 'load') =>
+            tablePositions(rowsByLayer.get(name) ?? [], loadOrdersRef.current[name]?.[from]);
 
-            for (const mapSpec of maps) {
-                for (const lr of mapSpec.layerRefs) {
-                    const sel = indicesByLayer.get(lr.dataRef) ?? [];
-                    sel.length === 0
-                        ? grammar.clearHighlightOnMap?.(lr.dataRef)
-                        : grammar.highlightOnMap?.(lr.dataRef, sel);
-                }
-            }
-            for (const plotSpec of plots) {
-                const sel = indicesByLayer.get(plotSpec.dataRef) ?? [];
+        const maps  = spec.map  ? (Array.isArray(spec.map)  ? spec.map  : [spec.map])  : [];
+        const plots = spec.plot ? (Array.isArray(spec.plot) ? spec.plot : [spec.plot]) : [];
+
+        for (const mapSpec of maps) {
+            for (const lr of mapSpec.layerRefs) {
+                const sel = positions(lr.dataRef, 'map');
                 sel.length === 0
-                    ? grammar.clearHighlightOnPlot?.(plotSpec.dataRef)
-                    : grammar.setPlotSelection?.(plotSpec.dataRef, sel);
+                    ? grammar.clearHighlightOnMap?.(lr.dataRef)
+                    : grammar.highlightOnMap?.(lr.dataRef, sel);
             }
-        })().catch((err) => {
+        }
+        for (const plotSpec of plots) {
+            const sel = positions(plotSpec.dataRef, 'load');
+            sel.length === 0
+                ? grammar.clearHighlightOnPlot?.(plotSpec.dataRef)
+                : grammar.setPlotSelection?.(plotSpec.dataRef, sel);
+        }
+    };
+    const syncHighlightsNow = () => {
+        syncHighlights().catch((err) => {
             // Same reason as GrammarEditor's: an escaped rejection here
             // surfaces as the dev-server overlay rather than as a node error.
             console.error("[autk-grammar] interaction sync failed:", err);
         });
+    };
+    // A selection this node made, back through a Data Pool, is what it already
+    // shows. A plot's brush IS its selection, so putting it back replaces the
+    // brush, and an empty one (a press between two bars) erases the brush the
+    // pointer is still drawing. A redraw and a direct selection still apply it.
+    useEffect(() => {
+        if (selectionEchoSource(data.input) === data.nodeId) return;
+        syncHighlightsNow();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data.input]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(syncHighlightsNow, [(data as any).interactions]);
+
+    // #662: a selection tag on this node reads the features of the layer its
+    // pick or brush came from, the rows a direct selection is matched against
+    // above (utils/references/viewSelections). A pick names their positions.
+    useEffect(
+        () =>
+            provideViewRows(data.nodeId, async (layer) => {
+                const spec = specRef.current;
+                const input = dataRef.current.input;
+                if (!spec || !input) return null;
+                const sources = autkSourcesFrom(await readInput(input), spec).sources;
+                const named = layer ?? selectionLayerOf(spec);
+                const source = sources.find((s) => s.outputTableName === named) ?? sources[0];
+                if (!source) return null;
+                const fc = source.geojsonObject as { features?: any[] };
+                const first = (fc.features ?? []).find((f) => f?.properties);
+                return { rows: featureRows(fc), columns: Object.keys(first?.properties ?? {}) };
+            }),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [data.nodeId],
+    );
+
+    // A starter document chosen from the arriving input, the way every grammar
+    // node fills an empty editor (hook/useStarterSpec): once, only into an
+    // empty editor, only after an input has arrived, never over a document
+    // written in from outside. A bundle is read the way the run reads it, so
+    // it downloads once; a single frame needs only its preview.
+    const starterSpec = useStarterSpec({
+        input: data.input,
+        buffer: nodeState.code,
+        written: data.defaultCode,
+        read: (input) => {
+            const type = (input as any)?.dataType;
+            return type === 'list' || type === 'dict' || type === 'outputs'
+                ? readInput(input)
+                : readAutkInput(input, { preview: true });
+        },
+        choose: autkStarterText,
+    });
+
+    // The states before anything is drawn: nothing connected, an upstream that
+    // has not run or failed, an input this node cannot read, an empty editor, a
+    // document not run yet. Written into the container the map draws into, the
+    // way the Vega-Lite node writes into its own (utils/writeEmptyState), so no
+    // React state changes while someone types. A document that draws only what
+    // it loads itself has nothing to say about an input. The editor counts as
+    // holding the starter once one is chosen, as the Vega-Lite node counts it.
+    const liveCode = isEmptySpecBuffer(nodeState.code) && starterSpec !== undefined
+        ? starterSpec
+        : nodeState.code;
+    const liveKind = classifyAutkSpecString(liveCode);
+    const hasSpec = !isEmptySpecBuffer(liveCode);
+    const needsInput = (() => {
+        if (!hasSpec) return true;
+        try {
+            return autkNeedsInput(JSON.parse(liveCode));
+        } catch {
+            return true;
+        }
+    })();
+    const hasInput = data.input != null && data.input !== '';
+    useEffect(() => {
+        if (runningRef.current || gpuBlocked) return;
+        // A map, a plot or a run summary is what the body shows then.
+        if (grammarRef.current != null || runSummary) {
+            noticeRef.current = null;
+            return;
+        }
+        const problem = inputProblemRef.current;
+        const reason = resolveGrammarEmptyReason({
+            connected,
+            upstreamErrored,
+            hasInput,
+            hasSpec,
+            needsInput,
+            hasRun: hasRunRef.current,
+            inputProblem: problem?.reason ?? null,
+        });
+        noticeRef.current = reason == null
+            ? null
+            : { reason, words: emptyStateWords(reason, liveKind, problem?.detail) };
+        writeNotice();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [connected, upstreamErrored, hasInput, hasSpec, needsInput, liveKind, gpuBlocked, nodeState.output?.code, runSummary]);
 
     // Forward parent container resizes to AutkMap via a synthetic window.resize.
     // AutkMap binds only to window.resize (and exposes no per-instance resize API),
@@ -628,6 +1110,9 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             // Cheap: track the parent every tick so the 100% canvas fills the node.
             const w = target.clientWidth, h = target.clientHeight;
             if (w > 0 && h > 0) { wrapper.style.width = w + 'px'; wrapper.style.height = h + 'px'; }
+            // Hidden (a collapsed scenario's member, #662): shown again, even at
+            // the size it had, the map gets its one GPU resize.
+            else { lastW = -1; lastH = -1; }
             // Expensive: debounce the GPU rebuild until the drag settles.
             if (timer) clearTimeout(timer);
             timer = setTimeout(commit, 150);
@@ -702,9 +1187,10 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 // The wrapper is always mounted - applyGrammar owns its
                 // children (canvas / plot div) and empties it on every run - so
                 // the data/compute feedback is a SIBLING React owns, not a child
-                // the next run would wipe (#282). A render node keeps the old
-                // 400px box; a data/compute node has nothing to draw there, so
-                // the box collapses and the summary is the body.
+                // the next run would wipe (#282). A map or plot fills the node
+                // body, as a Vega-Lite chart does (#534): with a floor, the
+                // drawing ran on under the node's footer. A data/compute node
+                // has nothing to draw there, so the summary is the body.
                 <div
                     className="nodrag nopan nowheel"
                     style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}
@@ -731,24 +1217,15 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                             >
                                 {runSummary}
                             </div>
-                        ) : (
-                            <NodeEmptyState
-                                reason="upstream-not-run"
-                                hint={
-                                    specKind === 'data'
-                                        ? 'This step loads data; run it to pass tables downstream.'
-                                        : 'This step computes on upstream layers; run it to pass results downstream.'
-                                }
-                            />
-                        )
+                        ) : null
                     ) : null}
                     <div
-                        ref={wrapperRef}
+                        ref={attachWrapper}
                         style={{
                             position: 'relative',
                             width: '100%',
                             flex: 1,
-                            minHeight: specKind === 'data' || specKind === 'compute' ? 0 : 400,
+                            minHeight: 0,
                             overflow: 'hidden',
                         }}
                     />
@@ -758,26 +1235,12 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         [nodeState.output, gpuBlocked, gpuChecking, runSummary, specKind],
     );
 
-    // Editor seed, decided ONCE at mount: a node that arrives with no code gets
-    // the default example spec. This must NOT be re-derived per render from
-    // ``data.code`` — that field is written back by the editor one commit late
-    // (useNodeState's post-commit mutation), so a render-time check flip-flops
-    // while the user types, oscillating ``defaultValue`` and resetting the
-    // editor to the default spec (dev/70, the same bug as #157).
-    const seedSpecRef = useRef<string | undefined>(
-        (data.defaultCode || (data as any).code)
-            ? undefined
-            : (autkGrammarAdapter.getDefaultSpec?.() as string | undefined),
-    );
-
     return {
         applyGrammar,
         contentComponent,
-        // Yield to a real external update: dataset drop / LLM apply write
-        // ``data.defaultCode`` via updateDefaultCode, and that must win over
-        // the mount-time seed. (``data.defaultCode`` only changes through
-        // setNodes, never mid-keystroke, so this stays stable while typing.)
-        defaultValueOverride: data.defaultCode ? undefined : seedSpecRef.current,
+        // Only ever offered for an empty editor, so it cannot displace real
+        // work, and it steps aside for a document written in from outside.
+        defaultValueOverride: starterSpec,
     };
 };
 
@@ -785,1040 +1248,12 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Flag stamped on the synthetic events we re-dispatch, so the interceptor
-// recognizes its own event and lets it through to autk-map untouched.
-const ZOOM_FIX_CORRECTED = '__curioMapZoomCorrected';
-
-// PointerEvent isn't constructable in every test DOM; fall back to MouseEvent
-// (autk-map reads only MouseEvent-level fields — clientX/Y, buttons, target — off
-// the pointer events it handles).
-const PointerEventCtor: typeof MouseEvent =
-    typeof PointerEvent !== 'undefined' ? (PointerEvent as unknown as typeof MouseEvent) : MouseEvent;
-
-// Correct autk-map's pointer math for the React Flow viewport scale.
-//
-// Each node renders inside React Flow's viewport, which is CSS-scaled by the
-// current zoom (`transform: scale(zoom)`). autk-map reads pointer positions from
-// getBoundingClientRect() — which is *post*-scale — but feeds them to camera /
-// picking math sized from the canvas's *unscaled* offsetWidth/offsetHeight (its
-// renderer resizes from offsetWidth). At any zoom != 1 the two disagree by the
-// zoom factor, so:
-//   • picking (double-click) lands toward the canvas's top-left corner,
-//   • wheel-zoom recenters on the wrong point,
-//   • drag-pan moves the map too slowly — all by the zoom factor.
-//
-// Curio owns this canvas element, so intercept the relevant events in the capture
-// phase on `window` (above autk-map's document/canvas listeners), suppress the
-// mis-scaled native event, and re-dispatch an equivalent one *on the canvas* whose
-// client coordinates are mapped back into the canvas's unscaled CSS space — exactly
-// what autk-map's math assumes (the conversion is the same for all three: each
-// divides a screen-space delta by the unscaled cssWidth, so each needs the delta
-// un-scaled first). `scale` is read straight off the DOM (rect.width / offsetWidth),
-// so this tracks any ancestor transform without needing React Flow's zoom value.
-// (The real fix belongs upstream in autk-map's coordinate conversion; this is the
-// in-Curio compensation until then.)
-//
-// Returns a disposer that removes the window listeners — they outlive the canvas,
-// so the caller must call it before replacing the canvas and on unmount.
-export function attachMapInteractionZoomFix(canvas: HTMLCanvasElement): () => void {
-    // Mirrors autk-map's drag state so pointermove/up that wander off the canvas
-    // mid-drag stay corrected (autk-map keeps dragging via its document listeners
-    // regardless of the event target).
-    let dragging = false;
-
-    // The CSS scale ancestors apply to the canvas (React Flow zoom), or null when
-    // there's nothing to correct (no layout yet, or scale ~ 1).
-    const measure = (): { rect: DOMRect; sx: number; sy: number } | null => {
-        const rect = canvas.getBoundingClientRect();
-        const lw = canvas.offsetWidth, lh = canvas.offsetHeight;
-        if (lw <= 0 || lh <= 0) return null;
-        const sx = rect.width / lw, sy = rect.height / lh;
-        if (Math.abs(sx - 1) < 0.001 && Math.abs(sy - 1) < 0.001) return null;
-        return { rect, sx, sy };
-    };
-
-    // Map a client coordinate from rendered (scaled) space back to the unscaled CSS
-    // space autk-map expects.
-    const cx = (rect: DOMRect, sx: number, clientX: number) => rect.left + (clientX - rect.left) / sx;
-    const cy = (rect: DOMRect, sy: number, clientY: number) => rect.top + (clientY - rect.top) / sy;
-
-    const mine = (e: Event) => (e as any)[ZOOM_FIX_CORRECTED] === true;
-
-    const onDblClick = (e: MouseEvent) => {
-        if (mine(e) || e.target !== canvas) return;
-        const m = measure();
-        if (!m) return;
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        const corrected = new MouseEvent('dblclick', {
-            bubbles: true, cancelable: true, view: window,
-            button: e.button, buttons: e.buttons,
-            clientX: cx(m.rect, m.sx, e.clientX),
-            clientY: cy(m.rect, m.sy, e.clientY),
-        });
-        (corrected as any)[ZOOM_FIX_CORRECTED] = true;
-        canvas.dispatchEvent(corrected);
-    };
-
-    const onWheel = (e: WheelEvent) => {
-        if (mine(e) || e.target !== canvas) return;
-        const m = measure();
-        if (!m) return;
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        const corrected = new WheelEvent('wheel', {
-            bubbles: true, cancelable: true, view: window,
-            deltaX: e.deltaX, deltaY: e.deltaY, deltaZ: e.deltaZ, deltaMode: e.deltaMode,
-            ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey,
-            button: e.button, buttons: e.buttons,
-            clientX: cx(m.rect, m.sx, e.clientX),
-            clientY: cy(m.rect, m.sy, e.clientY),
-        });
-        (corrected as any)[ZOOM_FIX_CORRECTED] = true;
-        canvas.dispatchEvent(corrected);
-    };
-
-    const redispatchPointer = (e: PointerEvent, m: { rect: DOMRect; sx: number; sy: number }) => {
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        const init: any = {
-            bubbles: true, cancelable: true, view: window,
-            button: e.button, buttons: e.buttons,
-            ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey,
-            clientX: cx(m.rect, m.sx, e.clientX),
-            clientY: cy(m.rect, m.sy, e.clientY),
-            // Pointer-specific fields (ignored by the MouseEvent fallback).
-            pointerId: e.pointerId, pointerType: e.pointerType, isPrimary: e.isPrimary,
-        };
-        const corrected = new PointerEventCtor(e.type, init);
-        (corrected as any)[ZOOM_FIX_CORRECTED] = true;
-        canvas.dispatchEvent(corrected);
-    };
-
-    const onPointerDown = (e: PointerEvent) => {
-        if (mine(e)) return;
-        if (e.target === canvas && (e.button === 0 || e.button === 1)) dragging = true;
-        if (!dragging) return;
-        const m = measure();
-        if (!m) return; // scale ~ 1: leave the native event alone (drag still tracked)
-        redispatchPointer(e, m);
-    };
-
-    const onPointerMove = (e: PointerEvent) => {
-        if (mine(e)) return;
-        // Mirror autk-map's alternate drag-start (button already held on entry).
-        if (!dragging && e.target === canvas && (e.buttons === 1 || e.buttons === 4)) dragging = true;
-        if (!dragging) return;
-        const m = measure();
-        if (!m) return;
-        redispatchPointer(e, m);
-    };
-
-    const onPointerUp = (e: PointerEvent) => {
-        if (mine(e)) return;
-        // autk-map's pointerup/cancel use no coordinates; just clear our mirrored
-        // state and let the native event through so autk-map ends the drag.
-        dragging = false;
-    };
-
-    const cap: AddEventListenerOptions = { capture: true };
-    const wheelCap: AddEventListenerOptions = { capture: true, passive: false };
-    window.addEventListener('dblclick', onDblClick as EventListener, cap);
-    window.addEventListener('wheel', onWheel as EventListener, wheelCap);
-    window.addEventListener('pointerdown', onPointerDown as EventListener, cap);
-    window.addEventListener('pointermove', onPointerMove as EventListener, cap);
-    window.addEventListener('pointerup', onPointerUp as EventListener, cap);
-    window.addEventListener('pointercancel', onPointerUp as EventListener, cap);
-
-    return () => {
-        window.removeEventListener('dblclick', onDblClick as EventListener, cap);
-        window.removeEventListener('wheel', onWheel as EventListener, wheelCap);
-        window.removeEventListener('pointerdown', onPointerDown as EventListener, cap);
-        window.removeEventListener('pointermove', onPointerMove as EventListener, cap);
-        window.removeEventListener('pointerup', onPointerUp as EventListener, cap);
-        window.removeEventListener('pointercancel', onPointerUp as EventListener, cap);
-    };
-}
-
-// Table names a data spec is contractually asking autk-db to create.
-//
-// The point is to tell a load that came back SHORT apart from one that came back
-// empty. autk-db's `loadOsm` walks `autoLoadLayers.layers` sequentially and lets
-// a per-layer failure propagate, so a throw partway leaves the earlier tables
-// registered and the later ones absent. Both loaders below used to publish
-// whatever `getLayerTables()` happened to hold, which surfaces downstream as an
-// opaque "Table <last layer> not found" from a node two hops away, with the node
-// that actually failed showing "Done" (#248).
-//
-// Naming mirrors autk-db's own, which derives a layer table as
-// `outputTableName || `${osmInputTableName}_${layer}``.
 // The spec classifier moved to ``utils/autkSpecKind`` so the dashboard's layout
 // pass can ask what kind of step a node is without importing this module and
 // with it the WebGPU renderer. Re-exported here because every existing caller,
 // including the behaviour tests, imports it from this file.
 export type { AutkSpecKind } from '../../utils/autkSpecKind';
 export { classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
-
-/** ``Loaded 3 tables: a, b, c`` - the one line a data/compute node shows after a run. */
-export function describeAutkRun(verb: string, noun: string, items: string[]): string {
-    if (items.length === 0) return `${verb} nothing - the spec names no ${noun}s.`;
-    const plural = items.length === 1 ? noun : `${noun}s`;
-    return `${verb} ${items.length} ${plural}: ${items.join(', ')}`;
-}
-
-// Message for a load that produced layers, but not the ones the spec asked for.
-// Shared by both loaders so the two paths report a short load identically.
-//
-// `errors` is what makes this safe to throw on rather than merely warn about:
-// autk-db propagates rather than swallows, so a table missing *because the load
-// broke* always arrives with a caught reason, while a sparse-but-successful
-// query area does not (`loadOsmLayer` creates the table even at zero features,
-// and autk-db counts rows on it immediately after). Missing with no recorded
-// error is therefore a warning, not a failure.
-function missingLayerMessage(missing: string[], errors: string[]): string {
-    return `autk data load produced ${missing.length} fewer table(s) than the spec asked for`
-        + ` - missing: ${missing.join(', ')}`
-        + (errors.length > 0 ? ` (${errors.join('; ')})` : '');
-}
-
-// Message for a `join` source that failed. A join rewrites a table another
-// source created, so a failed one never leaves a table missing and the check
-// above cannot see it: Regression.json's join died with a Binder Error on every
-// run while its node reported Done (#319). Shared by both loaders.
-function joinFailureMessage(errors: string[]): string {
-    return `spatial join failed - ${errors.join('; ')}`;
-}
-
-// Run the compiled autk-db loader in the backend sandbox and resolve to the
-// DuckDB artifact reference ({path, dataType}) the sandbox returns. Wraps the
-// callback-based JavaScriptInterpreter in a Promise. No DuckDB input is loaded
-// (input is ''); the data spec is inlined in the code, so the wrapper's `arg`
-// is unused.
-function runDataInBackendOnce(
-    jsInterpreter: JavaScriptInterpreter,
-    code: string,
-    nodeId: string,
-): Promise<{ path: string; dataType: string }> {
-    return new Promise((resolve, reject) => {
-        jsInterpreter.interpretCode(
-            code,            // unresolvedUserCode (provenance only)
-            code,            // userCode — runs in the sandbox
-            '',              // input — empty: spec is inlined, no DuckDB input
-            [],              // inputTypes
-            (json: any) => { // callback
-                if (!json || !json.output || !json.output.path) {
-                    reject(new Error(json?.stderr || 'Backend data load returned no output.'));
-                    return;
-                }
-                resolve(json.output);
-            },
-            NodeType.AUTK_GRAMMAR,
-            nodeId,
-            '',              // workflow_name (best-effort)
-            () => {},        // nodeExecProv — no provenance hook here
-        );
-    });
-}
-
-// The authored OSM/PBF (and other file) sources are local and deterministic, so
-// a failed attempt is a transient hiccup — sandbox cold-start, a dropped /file/
-// range fetch under thread contention, a momentary connection reset — not a
-// real data error. Retry once before giving up: the caller only falls back to
-// the in-browser loader (markedly less reliable in a headless browser, where a
-// failed PBF fetch crashes autk-db rather than degrading), so absorbing a
-// transient failure here keeps the deterministic backend path in control.
-// Re-throws the LAST failure so the caller can surface its reason.
-async function runDataInBackend(
-    jsInterpreter: JavaScriptInterpreter,
-    code: string,
-    nodeId: string,
-    attempts = 2,
-): Promise<{ path: string; dataType: string }> {
-    let lastErr: any;
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-        try {
-            return await runDataInBackendOnce(jsInterpreter, code, nodeId);
-        } catch (e: any) {
-            lastErr = e;
-            if (attempt < attempts) {
-                console.warn(
-                    `[autk-grammar] backend data load attempt ${attempt}/${attempts} `
-                    + `failed; retrying:`,
-                    e?.message ?? e,
-                );
-            }
-        }
-    }
-    throw lastErr ?? new Error('Backend data load failed.');
-}
-
-// Resolve the backend data load into in-browser layers for the render path:
-// the in-memory fallback layers if present, otherwise fetch + normalize the
-// DuckDB artifact (resolveUpstreamLayers handles the {path} fetch and unwrap).
-async function materializeBackendLayers(
-    fallbackLayers: Array<{ name: string; type?: string; geojson: any }> | null,
-    ref: { path: string; dataType: string } | null,
-): Promise<Array<{ name: string; type?: string; geojson: any }>> {
-    if (fallbackLayers) return fallbackLayers;
-    if (!ref) return [];
-    const layers = await resolveUpstreamLayers(ref);
-    return layers.map((l) => ({ name: l.name, type: l.layerType, geojson: l.fc }));
-}
-
-// Flatten any (possibly nested) geometry into a single MultiPolygon by collecting
-// every Polygon ring set it contains. Returns null if it has no polygonal parts.
-function flattenToMultiPolygon(geom: any): any | null {
-    const polys: any[] = [];
-    const collect = (g: any) => {
-        if (!g) return;
-        if (g.type === 'Polygon') polys.push(g.coordinates);
-        else if (g.type === 'MultiPolygon') polys.push(...g.coordinates);
-        else if (g.type === 'GeometryCollection') (g.geometries || []).forEach(collect);
-    };
-    collect(geom);
-    return polys.length > 0 ? { type: 'MultiPolygon', coordinates: polys } : null;
-}
-
-// Guarantee a footprint extrudes instead of being culled as "no valid height
-// metadata". autk-map culls a building part when its top height <= its base
-// (`min_height`) — which also covers the no-height case (0 <= 0). Mirror that
-// computation and, only when the part would be culled, return a height that clears
-// the base by a visible amount; otherwise return null to leave the real tags
-// untouched. `parts` lifting covers a feature whose height lived only per-part.
-function deriveBuildingHeight(props: any): number | null {
-    const num = (v: any) => { const n = parseFloat(String(v)); return Number.isFinite(n) && n > 0 ? n : 0; };
-    const LEVEL = 3.4; // metres per level (matches autk-map's building renderer)
-    const base = num(props?.min_height) || LEVEL * num(props?.min_level) || LEVEL * num(props?.['building:min_level']);
-    let top = num(props?.height) || LEVEL * num(props?.levels) || LEVEL * num(props?.['building:levels']);
-    if (top === 0 && Array.isArray(props?.parts)) {
-        for (const p of props.parts) { const h = num(p?.height) || LEVEL * num(p?.levels); if (h > top) top = h; }
-    }
-    return top > base ? null : base + 6;
-}
-
-// Explode autk-db's grouped building features into one footprint feature per part.
-// autk-db's 3D building model — per-part polygons keyed by `building_id`, each with
-// its own height, which `getLayer` exports as a GeometryCollection with a parallel
-// `properties.parts` metadata array — is a `loadOsm` construct that `loadGeojson`
-// cannot rebuild from the grouped GeometryCollection. Splitting each building back
-// into its individual part footprints (each carrying that part's height) lets the
-// downstream `loadGeojson('buildings')` re-cluster them by `building_id` and have
-// `getLayer` re-emit proper per-part GeometryCollections, so autk-map extrudes each
-// part by its own height instead of collapsing the whole building into one box.
-function explodeBuildingParts(features: any[]): any[] {
-    const out: any[] = [];
-    for (const f of features ?? []) {
-        const geom = f?.geometry;
-        const props = f?.properties ?? {};
-        const partMeta: any[] | null = Array.isArray(props.parts) ? props.parts : null;
-        const pushPart = (g: any, meta: any) => {
-            if (!g) return;
-            const gg = g.type === 'GeometryCollection' ? flattenToMultiPolygon(g) : g;
-            if (!gg) return;
-            const p = { ...(meta ?? {}) };
-            delete p.parts;
-            const h = deriveBuildingHeight(p);
-            if (h != null) p.height = h;
-            out.push({ type: 'Feature', geometry: gg, properties: p });
-        };
-        if (geom?.type === 'GeometryCollection' && Array.isArray(geom.geometries)) {
-            geom.geometries.forEach((g: any, i: number) => pushPart(g, partMeta?.[i] ?? props));
-        } else if (geom) {
-            pushPart(geom, props);
-        }
-    }
-    return out;
-}
-
-// Load a data-only grammar spec's sources directly with AutkDb and return the
-// resulting layers, so a grammar node can export its parsed data downstream.
-// (The grammar engine itself never exposes the loaded DB — createEngine returns
-// no `context` — so we drive the same AutkDb the grammar uses internally.)
-async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: string; geojson: FeatureCollection }>> {
-    const mod: any = await import('@urban-toolkit/autk-db');
-    // Accept both the v2.0 frontend export (AutkDb) and the older root-level
-    // install (AutkSpatialDb). Same dual-name handling as the backend sandbox JS.
-    const AutkDbCtor = mod.AutkDb || mod.AutkSpatialDb;
-    if (typeof AutkDbCtor !== 'function') {
-        throw new Error('@urban-toolkit/autk-db: neither AutkDb nor AutkSpatialDb is exported');
-    }
-    // Old AutkSpatialDb does not export this; fall back to the workspace default.
-    const DEFAULT_WORKSPACE_COORDINATE_FORMAT = mod.DEFAULT_WORKSPACE_COORDINATE_FORMAT || 'EPSG:3395';
-    // `init()` downloads the DuckDB spatial extension; a flaky fetch is worth
-    // another instance rather than a failed node (#318).
-    const db: any = await withExtensionRetry(async () => {
-        const instance: any = new AutkDbCtor();
-        await instance.init();
-        return instance;
-    });
-    // Reasons individual sources / reads failed, surfaced below when the load
-    // produced no usable layer at all — so a total failure reports WHY instead
-    // of crashing later with an opaque "Cannot read properties of null".
-    const loadErrors: string[] = [];
-    const joinErrors: string[] = [];
-    for (const source of (spec?.data ?? [])) {
-        const { type, ...rest } = source ?? {};
-        // Old AutkSpatialDb.loadOsm dereferences autoLoadLayers.coordinateFormat
-        // unconditionally — inject the default when the spec omits it.
-        if (type === 'osm' && rest.autoLoadLayers && !rest.autoLoadLayers.coordinateFormat) {
-            rest.autoLoadLayers = { ...rest.autoLoadLayers, coordinateFormat: DEFAULT_WORKSPACE_COORDINATE_FORMAT };
-        }
-        try {
-            if (type === 'osm') await db.loadOsm(rest);
-            else if (type === 'geojson') await db.loadGeojson(rest);
-            else if (type === 'csv') await db.loadCsv(rest);
-            else if (type === 'json') await db.loadJson(rest);
-            // In-grammar spatial join between already-loaded tables (sources
-            // run in spec order, so the join must come after the tables it
-            // references). Mirrors the sandbox emit in compileDataSpecToAutkDbJs.
-            else if (type === 'join') {
-                if (typeof db.spatialQuery !== 'function') throw new Error('this autk-db has no spatialQuery');
-                await db.spatialQuery(rest);
-            }
-            else console.warn(`[autk-grammar] unsupported data source type "${type}" — skipped`);
-        } catch (e) {
-            // Record + skip a source that fails to load; others may still
-            // produce layers. The recorded reason is surfaced below if the load
-            // produced nothing at all.
-            loadErrors.push(`${type}: ${(e as any)?.message ?? String(e)}`);
-            if (type === 'join') joinErrors.push((e as any)?.message || String(e));
-            console.warn(`[autk-grammar] data-only load failed for source type "${type}"`, e);
-        }
-    }
-    // Tag each layer with the CRS its coordinates are ACTUALLY in, so a
-    // downstream grammar node injects it with the right coordinateFormat.
-    // autk-db 2.0.1's getLayer() returned geometry projected to the workspace
-    // CRS (EPSG:3395 meters); 2.1.2 keeps it in EPSG:4326 degrees. Assuming
-    // the workspace CRS (the old behavior here) makes the renderer read
-    // degree values as meters near the origin — a silently blank map — so
-    // detect by coordinate magnitude. Strip any pre-existing crs field first:
-    // detectCoordinateFormat trusts it over the heuristic.
-    let tables: Array<{ name: string; type?: string }> = [];
-    try {
-        tables = (db.getLayerTables ? db.getLayerTables() : []) as Array<{ name: string; type?: string }>;
-    } catch (e) {
-        // A partially-loaded DB can throw here (rather than return []). Treat it
-        // as "no usable tables" and let the empty-result guard below report it,
-        // instead of letting an opaque TypeError escape the loader.
-        loadErrors.push(`getLayerTables: ${(e as any)?.message ?? String(e)}`);
-    }
-    const layers = await Promise.all(
-        tables.map(async (t) => {
-            try {
-                const geojson = (await db.getLayer(t.name)) as any;
-                // Keep the autk-db layer type ('roads', 'surface', 'water', 'parks',
-                // 'buildings', …) so a downstream grammar node re-loads it with the
-                // right rendering.
-                const type = (t.type as string) ?? 'polygons';
-                // Buildings: explode the grouped GeometryCollection into one footprint
-                // feature per part (each with its own height) and KEEP type 'buildings',
-                // so the downstream loadGeojson('buildings') re-clusters them and autk-map
-                // extrudes each part by its real height. See explodeBuildingParts.
-                if (type === 'buildings' && Array.isArray(geojson?.features)) {
-                    geojson.features = explodeBuildingParts(geojson.features);
-                }
-                if (geojson && typeof geojson === 'object') {
-                    delete geojson.crs;
-                    const fmt = detectCoordinateFormat(geojson as FeatureCollection);
-                    const epsg = fmt.match(/(\d+)/)?.[1]
-                        ?? String(DEFAULT_WORKSPACE_COORDINATE_FORMAT).match(/(\d+)/)?.[1]
-                        ?? '3395';
-                    geojson.crs = { type: 'name', properties: { name: `urn:ogc:def:crs:EPSG::${epsg}` } };
-                }
-                return { name: t.name, type, geojson: geojson as FeatureCollection };
-            } catch (e) {
-                loadErrors.push(`getLayer(${t.name}): ${(e as any)?.message ?? String(e)}`);
-                return null;
-            }
-        }),
-    );
-    const usable = layers.filter(
-        (l): l is { name: string; type: string; geojson: FeatureCollection } => l != null,
-    );
-    // Same contract check as the sandbox emit: a load that came back short is a
-    // failure, not a success with fewer layers. Without this, the caller's
-    // "backend failed, fall back in-browser" path would quietly publish the same
-    // short layer array the backend path just refused to.
-    //
-    // Diffed against `usable` - what a consumer actually receives. A layer that
-    // was never created and one that exists but could not be exported are the
-    // same loss downstream: the array comes back short either way. An empty
-    // layer is NOT caught by this, because getLayer returns an empty
-    // FeatureCollection for it and it stays in `usable`; only a getLayer that
-    // throws counts, and that is a defect rather than sparse data.
-    const requested = requestedLayerTables(spec?.data ?? []);
-    if (requested.length > 0) {
-        const have = new Set(usable.map((l) => l.name));
-        const missing = requested.filter((n) => !have.has(n));
-        if (missing.length > 0) {
-            if (loadErrors.length > 0) {
-                throw new Error(missingLayerMessage(missing, loadErrors));
-            }
-            console.warn(`[autk-grammar] ${missingLayerMessage(missing, [])} - no load `
-                + `error recorded, treating as a genuinely empty query area`);
-        }
-    }
-    if (joinErrors.length > 0) throw new Error(joinFailureMessage(joinErrors));
-    // A load that asked for sources but produced no usable layer AND hit errors
-    // is a real failure (e.g. every PBF range fetch 404'd) — throw an ATTRIBUTED
-    // error so the node reports the reason, instead of crashing later with an
-    // opaque "Cannot read properties of null (reading 'length')" or silently
-    // emitting an empty layer set. A genuinely empty area (no errors) returns [].
-    if (
-        usable.length === 0
-        && loadErrors.length > 0
-        && Array.isArray(spec?.data) && spec.data.length > 0
-    ) {
-        throw new Error(`in-browser AutkDb load produced no layers (${loadErrors.join('; ')})`);
-    }
-    return usable;
-}
-
-// Persist a pool-compatible wrapper (output of `layersToPoolWrapper`) to the
-// backend sandbox so a downstream Data Pool can ingest it via its normal
-// `{path, dataType}` fetch path — the same convention `ia-data` uses. The
-// augmented FC was computed in the browser (WGSL needs a GPU); this just
-// ships the result to the backend for persistence, so every downstream node
-// sees a DuckDB artifact reference instead of an inline payload.
-function persistLayersToBackend(
-    jsInterpreter: JavaScriptInterpreter,
-    wrapper: any,
-    nodeId: string,
-): Promise<{ path: string; dataType: string }> {
-    // The sandbox JS just inlines the wrapper as a literal and returns it; the
-    // sandbox wraps return values into a `{path, dataType}` artifact ref.
-    const code = `const __wrapper = ${JSON.stringify(wrapper)};\nreturn __wrapper;`;
-    return new Promise((resolve, reject) => {
-        jsInterpreter.interpretCode(
-            code, code, '', [],
-            (json: any) => {
-                if (!json || !json.output || !json.output.path) {
-                    reject(new Error(json?.stderr || 'Backend persist returned no path.'));
-                    return;
-                }
-                resolve(json.output);
-            },
-            NodeType.AUTK_GRAMMAR,
-            nodeId, '', () => {},
-        );
-    });
-}
-
-// Hand layers downstream in a shape the Data Pool can read: the pool-compatible
-// wrapper, persisted to the backend sandbox so downstream nodes see a
-// `{path, dataType}` ref — same shape `ia-data` emits, so the Data Pool's normal
-// fetch path handles it without a special case. Falls back to the inline
-// wrapper when no JS interpreter is available or the persist call fails, and
-// to null when there are no layers to wrap.
-async function toPoolOutput(
-    layers: Array<{ name: string; type?: string; geojson: FeatureCollection }>,
-    jsInterpreter: JavaScriptInterpreter | undefined,
-    nodeId: string,
-): Promise<any> {
-    const wrapper = layersToPoolWrapper(layers);
-    if (wrapper && jsInterpreter) {
-        try {
-            return await persistLayersToBackend(jsInterpreter, wrapper, nodeId);
-        } catch (e) {
-            console.warn('[autk-grammar] backend persist failed; emitting inline wrapper', e);
-        }
-    }
-    return wrapper;
-}
-
-// Convert an autk-db-style layer array into a Curio Data Pool-compatible wrapper.
-// The pool's `processDataAsync` recognizes `dataType: 'geodataframe'` (single layer)
-// and `dataType: 'outputs'` (multi-layer envelope) — but not bare layer arrays. So
-// when a compute-only or data-only autk-grammar node feeds a Data Pool, we wrap
-// the output in a shape the pool can ingest, carrying `layerName`/`layerType`
-// metadata at the wrapper level so downstream `resolveUpstreamLayers` can restore
-// the original layer identity (e.g. `dataRef: "table_osm_buildings"`).
-function layersToPoolWrapper(
-    layers: Array<{ name: string; type?: string; geojson: FeatureCollection }>,
-): any {
-    if (!Array.isArray(layers) || layers.length === 0) return null;
-    if (layers.length === 1) {
-        return {
-            dataType: 'geodataframe',
-            data: layers[0].geojson,
-            layerName: layers[0].name,
-            layerType: layers[0].type,
-        };
-    }
-    return {
-        dataType: 'outputs',
-        data: layers.map((l) => ({
-            dataType: 'geodataframe',
-            data: l.geojson,
-            layerName: l.name,
-            layerType: l.type,
-        })),
-    };
-}
-
-// Normalize an attribute path used by `compute.attributes` into a dot-path
-// `ComputeGpgpu` can resolve via `valueAtPath(feature, path)`. The grammar
-// engine accepts bare property names like `"height"` and auto-prefixes them;
-// `ComputeGpgpu` does not — it reads paths directly off the raw Feature,
-// where `height` would be undefined but `properties.height` resolves. So
-// prepend `properties.` for everything except paths the engine already
-// understands as feature-root (`geometry.*` and explicit `properties.*`).
-function normalizeAttrPath(p: string): string {
-    if (typeof p !== 'string') return p;
-    if (p === 'geometry' || p === 'properties') return p;
-    if (p.startsWith('geometry.') || p.startsWith('properties.')) return p;
-    return `properties.${p}`;
-}
-
-// Read a value out of a feature using a dot-path — same semantics autk-compute
-// uses for its `variableMapping` attributes. Kept local rather than re-imported
-// from autk-core because the grammar runtime here has no other dependency on it.
-function valueAtPath(item: any, path: string): any {
-    return path.split('.').reduce<any>((acc, key) => {
-        if (acc == null || typeof acc !== 'object') return undefined;
-        return acc[key];
-    }, item);
-}
-
-// Resolve `fromFeature` directives in a `compute.uniforms` / `compute.uniformMatrices`
-// config against the upstream layer array. Each entry in the config can be:
-//   - a plain value (passed through unchanged)
-//   - an object with a `fromFeature: { layer, index?, iterate?, path }` directive,
-//     optionally carrying a `cols` field (signalling a matrix uniform) and/or a
-//     `default` to fall back to when the path can't be resolved.
-//
-// `iterateIndex`, when defined, overrides the directive's own `index` for entries
-// that opt into iteration via `iterate: 'all'`. This is how the per-feature
-// iteration loop below drives the same spec over N source features.
-function resolveFromFeatures(
-    config: Record<string, any> | undefined,
-    layers: Array<{ name: string; type?: string; geojson: FeatureCollection }>,
-    iterateIndex?: number,
-): Record<string, any> | undefined {
-    if (!config) return config;
-    const out: Record<string, any> = {};
-    for (const [key, val] of Object.entries(config)) {
-        if (val && typeof val === 'object' && (val as any).fromFeature) {
-            const ff = (val as any).fromFeature;
-            const layer = layers.find((l) => l.name === ff.layer);
-            const idx = iterateIndex !== undefined && ff.iterate === 'all'
-                ? iterateIndex
-                : (ff.index ?? 0);
-            const feature = layer?.geojson?.features?.[idx];
-            const resolved = feature ? valueAtPath(feature, ff.path) : undefined;
-            const hasCols = 'cols' in (val as any);
-            if (resolved === undefined || resolved === null) {
-                if ('default' in (val as any)) {
-                    const def = (val as any).default;
-                    out[key] = hasCols ? { ...(val as any), data: def, fromFeature: undefined } : def;
-                }
-                // No default → drop the entry; ComputeGpgpu will surface the error.
-                continue;
-            }
-            const { fromFeature: _ff, default: _def, ...rest } = (val as any);
-            out[key] = hasCols ? { ...rest, data: resolved } : resolved;
-        } else {
-            out[key] = val;
-        }
-    }
-    return out;
-}
-
-// Walk the spec and return the iterate-source layer name + mode, or null when
-// no entry opts into per-feature iteration. Two modes are supported:
-//   - 'all'     → run the shader once per source feature and accumulate output
-//                 columns (sum over features). Slow but trivial WGSL.
-//   - 'batched' → pack every source feature's values into uniform arrays and
-//                 run the shader exactly once; the WGSL loops over features
-//                 inside. Fast and lets the shader express per-hour union /
-//                 complement semantics across features.
-// All iterating entries must share the same source layer; the first one wins
-// (a tensor product over independent sources isn't a use case we need here).
-function findIterateSource(
-    ...configs: Array<Record<string, any> | undefined>
-): { mode: 'all' | 'batched'; layer: string } | null {
-    for (const cfg of configs) {
-        if (!cfg) continue;
-        for (const v of Object.values(cfg)) {
-            const ff = v && typeof v === 'object' ? (v as any).fromFeature : undefined;
-            if (ff && (ff.iterate === 'all' || ff.iterate === 'batched')) {
-                return { mode: ff.iterate, layer: ff.layer };
-            }
-        }
-    }
-    return null;
-}
-
-// Hard cap on batched source features. ComputeGpgpu exposes uniformArrays via
-// WebGPU uniform buffers, which DX12 limits to 64 KB. Each matrix entry packs
-// 8 floats per source feature (the AABB's four corners, see below), so 2048
-// features = exactly 64 KB; 2000 × 32 B = 64,000 B keeps a small margin while
-// covering real OSM extracts (e.g. back_bay's 1556 buildings in example 06).
-const MAX_BATCHED_FEATURES = 2000;
-
-// For the `batched` iteration mode, pack every source feature's resolved value
-// into flat typed arrays exposed via ComputeGpgpu.uniformArrays:
-//   - scalar uniforms become a length-N array under their original name
-//   - matrix entries become a length-(8 × N) array under their original name,
-//     holding each source feature's *axis-aligned bounding box* as four corners
-//     [xmin,ymin, xmax,ymin, xmax,ymax, xmin,ymax]. Full polygon outlines blow
-//     past the uniform buffer cap on Chicago-Loop-scale data; the AABB is a
-//     correct conservative envelope (slightly over-estimates the projected
-//     shadow for non-axis-aligned buildings, never under-estimates).
-//   - a `num_features` uniform exposes the loop bound
-// Non-batched entries in the same spec (e.g. `doy: 172`) pass through unchanged.
-function buildBatchedUniforms(
-    uniforms: Record<string, any> | undefined,
-    uniformMatrices: Record<string, any> | undefined,
-    sources: Feature<any, any>[],
-): { uniforms: Record<string, number>; uniformArrays: Record<string, number[]> } {
-    const outUniforms: Record<string, number> = {};
-    const outUniformArrays: Record<string, number[]> = {};
-
-    // Drop source features whose required batched paths can't resolve. A path
-    // is required when any of its batched `fromFeature` directives carries
-    // `required: true` — in 07 the building height is required, so OSM
-    // buildings without a `properties.height` tag don't get a fake default
-    // height that would over-extrude their shadow. The filter runs once,
-    // upfront, so every batched entry sees the same surviving feature list.
-    const requiredPaths: string[] = [];
-    for (const cfg of [uniforms, uniformMatrices]) {
-        if (!cfg) continue;
-        for (const val of Object.values(cfg)) {
-            const ff = val && typeof val === 'object' ? (val as any).fromFeature : undefined;
-            if (ff && ff.iterate === 'batched' && ff.required && ff.path) {
-                requiredPaths.push(ff.path);
-            }
-        }
-    }
-    if (requiredPaths.length > 0) {
-        const before = sources.length;
-        sources = sources.filter((f) =>
-            requiredPaths.every((p) => {
-                const v = valueAtPath(f, p);
-                return v !== undefined && v !== null
-                    && !(typeof v === 'number' && !Number.isFinite(v));
-            }),
-        );
-        if (sources.length < before) {
-            console.info(
-                `[autk-grammar] batched compute filtered ${before - sources.length} source` +
-                ` feature(s) missing required path(s): ${requiredPaths.join(', ')}`,
-            );
-        }
-    }
-
-    if (sources.length > MAX_BATCHED_FEATURES) {
-        console.warn(
-            `[autk-grammar] batched compute capped at ${MAX_BATCHED_FEATURES} source features` +
-            ` (got ${sources.length}); excess features ignored.`,
-        );
-        sources = sources.slice(0, MAX_BATCHED_FEATURES);
-    }
-
-    for (const [key, val] of Object.entries(uniforms ?? {})) {
-        const ff = val && typeof val === 'object' ? (val as any).fromFeature : undefined;
-        if (ff && ff.iterate === 'batched') {
-            const fallback = (val as any).default;
-            const arr: number[] = [];
-            for (const f of sources) {
-                const v = valueAtPath(f, ff.path);
-                const num = Number(v ?? fallback);
-                arr.push(Number.isFinite(num) ? num : 0);
-            }
-            outUniformArrays[key] = arr;
-        } else if (typeof val === 'number') {
-            outUniforms[key] = val;
-        }
-    }
-
-    for (const [key, val] of Object.entries(uniformMatrices ?? {})) {
-        const ff = val && typeof val === 'object' ? (val as any).fromFeature : undefined;
-        if (ff && ff.iterate === 'batched') {
-            const data: number[] = [];
-            for (const f of sources) {
-                const ring = valueAtPath(f, ff.path);
-                let xmin =  Infinity, ymin =  Infinity;
-                let xmax = -Infinity, ymax = -Infinity;
-                if (Array.isArray(ring)) {
-                    for (const coord of ring) {
-                        if (Array.isArray(coord) && coord.length >= 2) {
-                            const x = Number(coord[0]);
-                            const y = Number(coord[1]);
-                            if (Number.isFinite(x) && Number.isFinite(y)) {
-                                if (x < xmin) xmin = x;
-                                if (y < ymin) ymin = y;
-                                if (x > xmax) xmax = x;
-                                if (y > ymax) ymax = y;
-                            }
-                        }
-                    }
-                }
-                if (!Number.isFinite(xmin)) {
-                    // Degenerate feature — emit a zero-area AABB at (0,0) so the
-                    // shader's loop still runs but contributes nothing.
-                    xmin = 0; ymin = 0; xmax = 0; ymax = 0;
-                }
-                data.push(xmin, ymin, xmax, ymin, xmax, ymax, xmin, ymax);
-            }
-            outUniformArrays[key] = data;
-        }
-    }
-
-    outUniforms.num_features = sources.length;
-    return { uniforms: outUniforms, uniformArrays: outUniformArrays };
-}
-
-// Apply a grammar `compute` section to an array of named GeoJSON layers,
-// returning a new array where each block's target layer has been replaced by a
-// FeatureCollection enriched with the WGSL output under `feature.properties.compute.<col>`.
-// This is what makes a compute-only autk-grammar node useful: the grammar engine
-// only runs compute when it's part of a render pipeline (map/plot), so without
-// this helper, a node whose spec contains *only* a `compute` block would pass
-// upstream through unchanged. We instead invoke `ComputeGpgpu` ourselves, which
-// is the same GPGPU runner the grammar engine drives internally.
-//
-// A block whose `dataRef` doesn't match any upstream layer is skipped quietly:
-// chained compute nodes can target different layers, and a no-op block is far
-// less surprising than aborting the whole pipeline.
-async function applyComputeBlocks(
-    layers: Array<{ name: string; type: string; geojson: FeatureCollection }>,
-    computeBlocks: any[],
-    /** Appended to for every block that failed, so the caller can refuse to
-     *  report success. A block whose ``dataRef`` matches no upstream layer is
-     *  still skipped quietly - that is a no-op, not a failure. */
-    failures: string[] = [],
-): Promise<Array<{ name: string; type: string; geojson: FeatureCollection }>> {
-    if (!Array.isArray(computeBlocks) || computeBlocks.length === 0) return layers;
-    const { ComputeGpgpu } = await import('@urban-toolkit/autk-compute');
-    let result = layers;
-    for (const block of computeBlocks) {
-        if (!block || !block.dataRef || !block.wglsFunction) continue;
-        const idx = result.findIndex((l) => l.name === block.dataRef);
-        if (idx < 0) continue;
-        const variableMapping: Record<string, string> = {};
-        for (const [k, v] of Object.entries(block.attributes ?? {})) {
-            variableMapping[k] = normalizeAttrPath(String(v));
-        }
-        // Accept the wglsFunction as either a single string (existing form) or
-        // an array of lines. The array form keeps the WGSL readable inside the
-        // JSON file — JSON has no multi-line strings, but an array of one-line
-        // strings is just as valid and far easier to author / review than one
-        // long `\n`-escaped blob.
-        const wgslBody: string = Array.isArray(block.wglsFunction)
-            ? block.wglsFunction.join('\n')
-            : String(block.wglsFunction ?? '');
-        const params: any = {
-            collection: result[idx].geojson,
-            variableMapping,
-            wgslBody,
-        };
-        if (block.attributeArrays) params.attributeArrays = block.attributeArrays;
-        if (block.attributeMatrices) params.attributeMatrices = block.attributeMatrices;
-        if (block.uniformArrays) params.uniformArrays = block.uniformArrays;
-        if (block.outputColumnName) params.resultField = block.outputColumnName;
-        if (block.outputColumns) params.outputColumns = block.outputColumns;
-        const outCols: string[] = block.outputColumns ?? (block.outputColumnName ? [block.outputColumnName] : []);
-        try {
-            const gpgpu = new ComputeGpgpu();
-            // Compute spec iteration modes — see `findIterateSource` for the full
-            // semantics:
-            //   - 'batched' → single dispatch; flat per-feature arrays exposed
-            //                 as uniformArrays; WGSL loops over features.
-            //   - 'all'     → N dispatches, runtime sums output columns.
-            //   - undefined → single dispatch, plain spec (today's behaviour).
-            const iterSource = findIterateSource(block.uniforms, block.uniformMatrices);
-            let augmented: FeatureCollection;
-            if (iterSource?.mode === 'batched') {
-                const iterLayer = result.find((l) => l.name === iterSource.layer);
-                const sources = iterLayer?.geojson?.features ?? [];
-                const { uniforms: uf, uniformArrays: ua } = buildBatchedUniforms(
-                    block.uniforms, block.uniformMatrices, sources as Feature<any, any>[],
-                );
-                params.uniforms = uf;
-                params.uniformArrays = { ...(params.uniformArrays ?? {}), ...ua };
-                // `uniformMatrices` were already absorbed into uniformArrays above.
-                delete params.uniformMatrices;
-                augmented = await gpgpu.run(params);
-            } else if (iterSource?.mode === 'all') {
-                const iterLayer = result.find((l) => l.name === iterSource.layer);
-                const sources = iterLayer?.geojson?.features ?? [];
-                augmented = JSON.parse(JSON.stringify(result[idx].geojson));
-                for (const f of augmented.features) {
-                    const p: any = (f.properties = f.properties ?? {});
-                    const c: any = (p.compute = p.compute ?? {});
-                    for (const col of outCols) c[col] = 0;
-                }
-                for (let i = 0; i < sources.length; i++) {
-                    const stepUniforms = resolveFromFeatures(block.uniforms, result, i);
-                    const stepMatrices = resolveFromFeatures(block.uniformMatrices, result, i);
-                    const stepParams: any = {
-                        ...params,
-                        collection: augmented,
-                    };
-                    if (stepUniforms) stepParams.uniforms = stepUniforms;
-                    if (stepMatrices) stepParams.uniformMatrices = stepMatrices;
-                    const oneShot = await gpgpu.run(stepParams);
-                    for (let j = 0; j < augmented.features.length; j++) {
-                        const dst = (augmented.features[j].properties as any)?.compute;
-                        const src = (oneShot.features[j]?.properties as any)?.compute;
-                        if (!dst || !src) continue;
-                        for (const col of outCols) {
-                            const inc = Number(src[col]);
-                            if (Number.isFinite(inc)) dst[col] += inc;
-                        }
-                    }
-                }
-            } else {
-                if (block.uniforms) params.uniforms = resolveFromFeatures(block.uniforms, result);
-                if (block.uniformMatrices) params.uniformMatrices = resolveFromFeatures(block.uniformMatrices, result);
-                augmented = await gpgpu.run(params);
-            }
-            // ComputeGpgpu writes outputs under properties.compute.<col>. Also lift them
-            // to top-level properties so downstream nodes can reference the column by
-            // its bare name (e.g. `height_m`) without worrying about whether the nested
-            // `compute` object round-trips through AutkDb's DuckDB storage. Both
-            // `compute.<col>` and `<col>` dot-paths then resolve.
-            if (outCols.length > 0 && augmented?.features) {
-                for (const f of augmented.features) {
-                    const p: any = f?.properties;
-                    const c = p?.compute;
-                    if (!p || !c) continue;
-                    for (const col of outCols) {
-                        if (col in c && !(col in p)) p[col] = c[col];
-                    }
-                }
-            }
-            // Re-attach the source crs hint so downstream re-loads keep coords aligned.
-            const sourceCrs = (result[idx].geojson as any)?.crs;
-            if (sourceCrs && augmented) (augmented as any).crs = sourceCrs;
-            result = result.map((l, i) => (i === idx ? { ...l, geojson: augmented } : l));
-        } catch (e) {
-            // Recorded, not just warned (#201). A failed block leaves the layer
-            // exactly as it arrived, so swallowing this emitted UNCOMPUTED data
-            // under a green "Done" badge - the node reported success for work
-            // it had not done. The caller turns a non-empty list into an error.
-            console.warn(`[autk-grammar] compute block on '${block.dataRef}' failed`, e);
-            failures.push(
-                `${block.dataRef}: ${(e as Error)?.message ?? "compute failed"}`,
-            );
-        }
-    }
-    return result;
-}
-
-// Resolve an upstream input into named GeoJSON layers.
-//  - a single frame (e.g. a Python GeoDataFrame) -> one layer named "upstream"
-//  - a multi-layer array from an upstream grammar node -> one layer per element,
-//    keyed by the layer's own name (table_osm_buildings, …) so the downstream
-//    spec can reference each layer individually.
-async function resolveUpstreamLayers(raw: any): Promise<Array<{ name: string; fc: FeatureCollection; layerType?: string }>> {
-    if (!raw || raw === '') return [];
-
-    let arg: any = raw;
-
-    // Resolve DuckDB artifact reference
-    if (typeof arg === 'object' && arg !== null && arg.path) {
-        arg = (await fetchData(arg.path)) ?? null;
-    }
-    if (!arg) return [];
-
-    // Peel any generic envelope (`dict`, `list`, …) the sandbox adds around a
-    // persisted artifact until we reach a recognised application-level shape
-    // (`outputs` / `geodataframe`) or a non-envelope value. This must happen
-    // BEFORE the outputs/geodataframe checks below, because a multi-layer
-    // wrapper persisted via `persistLayersToBackend` arrives as
-    //   { dataType:'dict', data:{ dataType:'outputs', data:[…] } }
-    // and the previous single-step unwrap would skip the outputs check and
-    // fall through to the asFc fallback — which would silently collapse the
-    // whole multi-layer wrapper to its FIRST layer (renamed 'upstream'),
-    // losing every other layer (including the one a downstream compute block
-    // had targeted).
-    const KNOWN_SHAPES = new Set(['outputs', 'geodataframe']);
-    while (
-        arg && typeof arg === 'object' &&
-        typeof arg.dataType === 'string' &&
-        !KNOWN_SHAPES.has(arg.dataType) &&
-        'data' in arg
-    ) {
-        arg = arg.data;
-    }
-    if (!arg) return [];
-
-    // Curio Data Pool wrapper round-trip: recognise the pool-compatible
-    // shape produced by `layersToPoolWrapper` (and re-emitted by the pool
-    // with `interacted` flags applied) before the generic envelope unwrap
-    // strips the layerName/layerType metadata that lives at the wrapper level.
-    if (typeof arg === 'object' && arg && arg.dataType === 'outputs' && Array.isArray(arg.data)) {
-        const out: Array<{ name: string; fc: FeatureCollection; layerType?: string }> = [];
-        arg.data.forEach((item: any, i: number) => {
-            if (item && item.dataType === 'geodataframe' && item.data?.type === 'FeatureCollection') {
-                out.push({
-                    name: item.layerName ?? `upstream_${i}`,
-                    fc: item.data as FeatureCollection,
-                    layerType: item.layerType,
-                });
-            }
-        });
-        if (out.length > 0) return out;
-    }
-    if (typeof arg === 'object' && arg && arg.dataType === 'geodataframe' && arg.data) {
-        const fc = arg.data;
-        if (fc.type === 'FeatureCollection') {
-            return [{
-                name: arg.layerName ?? 'upstream',
-                fc: fc as FeatureCollection,
-                layerType: arg.layerType,
-            }];
-        }
-    }
-
-    // Strip Curio's {dataType, data} envelope. The sandbox's parseOutput (run by
-    // GET /get) wraps every artifact, and for a 'list' it ALSO wraps each element,
-    // so a backend layer array round-trips as
-    //   { dataType:'list', data:[ { dataType:'dict', data:{name,type,geojson} }, … ] }.
-    // Unwrap recursively so the real layer record / FeatureCollection underneath is
-    // reachable (a raw, un-enveloped value passes through untouched).
-    const unwrap = (v: any): any =>
-        (v && typeof v === 'object' && 'data' in v && 'dataType' in v) ? unwrap(v.data) : v;
-
-    const asFc = (v: any): FeatureCollection | null => {
-        const u = unwrap(v);
-        if (!u || typeof u !== 'object') return null;
-        if (u.geojson?.type === 'FeatureCollection') return u.geojson as FeatureCollection;
-        if (u.type === 'FeatureCollection') return u as FeatureCollection;
-        return null;
-    };
-
-    // Layer array from an upstream grammar node / backend DuckDB ref: keep every
-    // layer, named. Read name/type from the UNWRAPPED record, not the envelope.
-    if (Array.isArray(arg)) {
-        const out: Array<{ name: string; fc: FeatureCollection; layerType?: string }> = [];
-        arg.forEach((item, i) => {
-            const fc = asFc(item);
-            if (fc) {
-                const u = unwrap(item);
-                const name = u && typeof u === 'object' && u.name ? String(u.name) : `upstream_${i}`;
-                // u.type is the autk-db layer type ('surface'/'roads'/…) on a layer
-                // record; ignore a bare FeatureCollection's own type field.
-                const layerType = u && typeof u === 'object' && u.geojson && typeof u.type === 'string'
-                    ? u.type : undefined;
-                out.push({ name, fc, layerType });
-            }
-        });
-        return out;
-    }
-
-    // Direct FeatureCollection (e.g. a single Python GeoDataFrame).
-    const fc = asFc(arg);
-    return fc ? [{ name: 'upstream', fc }] : [];
-}
-
-async function resolveUpstreamAsGeoJson(raw: any): Promise<FeatureCollection | null> {
-    const layers = await resolveUpstreamLayers(raw);
-    return layers.length > 0 ? layers[0].fc : null;
-}
-
 
 // Re-exported so existing importers keep this module as their entry point
 // while the implementations live in autkDataCompile.

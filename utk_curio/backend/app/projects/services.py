@@ -5,14 +5,19 @@ import logging
 import re
 import shutil
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, List, Optional
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
 from utk_curio.backend.extensions import db
+from utk_curio.backend.app.projects import concurrency
 from utk_curio.backend.app.projects import repositories as repo
+from utk_curio.backend.app.projects import scenarios
 from utk_curio.backend.app.projects import storage
+from utk_curio.backend.app.projects.shipped import shipped_dataflows
 from utk_curio.backend.app.projects.schemas import (
     OutputRef,
     ProjectCreate,
@@ -32,6 +37,13 @@ class ProjectError(Exception):
         self.status = status
 
 
+def shipped_dataflow_paths() -> Dict[str, Path]:
+    """Every dataflow Curio ships, by its key (``shipped.shipped_dataflows``),
+    for a feature that reads the files themselves. Empty when this install
+    ships no ``docs/examples`` (a pip install)."""
+    return {s.key: s.path for s in shipped_dataflows()}
+
+
 # Visualization "sink" node types: they consume a dataframe to render and pass
 # their INPUT straight through as their output, so they never produce a new
 # dataset. A computed dataset ref keyed on such a node is always a duplicate of
@@ -45,7 +57,7 @@ _SINK_NODE_TYPES = frozenset({
 def _is_sink_node_type(node_type) -> bool:
     """Membership in ``_SINK_NODE_TYPES``, tolerant of the versioned canonical
     form palette-dragged nodes carry (``curio.builtin/vis-vega@1``) (#169)."""
-    from utk_curio.backend.app.packages.spec_packages import unversioned_node_type
+    from utk_curio.backend.app.packages.service import unversioned_node_type
 
     return unversioned_node_type(node_type) in _SINK_NODE_TYPES
 
@@ -209,7 +221,8 @@ def _computed_output_title(
     generated filename:
 
       1. the producing node's client-resolved display label (``ref.node_name``);
-      2. the node's custom label in the spec (``data.packageTemplateLabel``);
+      2. the node's custom label in the spec (``metadata.packageTemplateLabel``,
+         or the older ``data.packageTemplateLabel``);
       3. a friendly name derived from the node type;
       4. ``None`` — the installer then derives a filename-based title, which the
          frontend renders as ``dirName`` via ``datasetDisplayTitle``.
@@ -223,7 +236,10 @@ def _computed_output_title(
         if not isinstance(node, dict) or node.get("id") != ref.node_id:
             continue
         data = node.get("data") if isinstance(node.get("data"), dict) else {}
-        label = (data.get("packageTemplateLabel") or "").strip()
+        metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
+        label = (
+            metadata.get("packageTemplateLabel") or data.get("packageTemplateLabel") or ""
+        ).strip()
         if label:
             return label
         return _humanize_node_type(node.get("type") or data.get("nodeType"))
@@ -382,30 +398,90 @@ def _extract_graph_preview(spec: Optional[dict]) -> Optional[dict]:
     return {"nodes": nodes, "edges": edges}
 
 
-def _to_summary(p, graph_preview=None, is_example=False) -> ProjectSummary:
+def _categories(user, project_id: str, spec, *, sources=None, dataset_kind=None) -> dict:
+    """``categories`` for one project: its source, and what its spec says.
+
+    *sources* and *dataset_kind* let a listing compute the shipped-id map and
+    read each dataset manifest once for every row.
+    """
+    from utk_curio.backend.app.projects.categories import DatasetKinds, categories_for
+    from utk_curio.backend.app.projects.seed import shipped_sources
+
+    if sources is None:
+        sources = shipped_sources(user) if user is not None else {}
+    if dataset_kind is None:
+        dataset_kind = DatasetKinds(_user_dir_key(user) if user is not None else None)
+    return categories_for(spec, sources.get(project_id), dataset_kind)
+
+
+def _normalize_spec_categories(spec) -> None:
+    """Clean ``dataflow.categories`` in place; an empty one is dropped."""
+    from utk_curio.backend.app.projects.categories import normalize_hand
+
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    if not isinstance(dataflow, dict) or "categories" not in dataflow:
+        return
+    hand = normalize_hand(dataflow["categories"])
+    if hand:
+        dataflow["categories"] = hand
+    else:
+        del dataflow["categories"]
+
+
+def _carry_hand_categories(new_spec, old_spec) -> None:
+    """A spec written without ``dataflow.categories`` keeps the on-disk ones.
+
+    Five writers emit specs (see ``docs/schemas/trill.v1.json``) and only the
+    canvas knows this field, so an agent's graph edit must not clear what the
+    user set. A spec that carries the key is authoritative: the canvas always
+    writes it, and an empty one clears them.
+    """
+    new_df = new_spec.get("dataflow") if isinstance(new_spec, dict) else None
+    old_df = old_spec.get("dataflow") if isinstance(old_spec, dict) else None
+    if not isinstance(new_df, dict) or not isinstance(old_df, dict):
+        return
+    if "categories" not in new_df and "categories" in old_df:
+        new_df["categories"] = old_df["categories"]
+
+
+def _to_summary(
+    p, graph_preview=None, spec_revision=None, is_example=False, categories=None, scenario_list=None,
+) -> ProjectSummary:
+    """*spec_revision* keeps one meaning for the field across the API (memo
+    dev/124): how many times the spec has been written, background writes
+    included. ``None`` falls back to the column."""
     return ProjectSummary(
         id=p.id,
         name=p.name,
         slug=p.slug,
         description=p.description,
         thumbnail_accent=p.thumbnail_accent or "peach",
-        spec_revision=p.spec_revision,
+        spec_revision=spec_revision if spec_revision is not None else p.spec_revision,
         last_opened_at=p.last_opened_at.isoformat() if p.last_opened_at else None,
         created_at=p.created_at.isoformat() if p.created_at else "",
         updated_at=p.updated_at.isoformat() if p.updated_at else "",
         graph_preview=graph_preview,
         is_example=is_example,
+        categories=categories or {},
+        scenarios=scenario_list or [],
     )
 
 
-def _to_detail(p, spec=None, outputs=None, dataset_install_warnings=None) -> ProjectDetail:
+def _to_detail(
+    p, spec=None, outputs=None, dataset_install_warnings=None, spec_revision=None,
+    categories=None,
+) -> ProjectDetail:
+    """*spec_revision* is the project's write counter (memo dev/124) — the
+    number a client holds as its basis, which counts every write rather than
+    only client saves. ``None`` falls back to the database column, for a
+    caller that has no user key to read the counter with."""
     return ProjectDetail(
         id=p.id,
         name=p.name,
         slug=p.slug,
         description=p.description,
         thumbnail_accent=p.thumbnail_accent or "peach",
-        spec_revision=p.spec_revision,
+        spec_revision=spec_revision if spec_revision is not None else p.spec_revision,
         last_opened_at=p.last_opened_at.isoformat() if p.last_opened_at else None,
         created_at=p.created_at.isoformat() if p.created_at else "",
         updated_at=p.updated_at.isoformat() if p.updated_at else "",
@@ -413,6 +489,8 @@ def _to_detail(p, spec=None, outputs=None, dataset_install_warnings=None) -> Pro
         spec=spec,
         outputs=outputs or [],
         dataset_install_warnings=dataset_install_warnings or [],
+        categories=categories or {},
+        scenarios=scenarios.scenario_summaries(spec),
     )
 
 
@@ -467,6 +545,94 @@ def _persisted_output_refs(
     return persisted
 
 
+#: An artifact id, and a node's parquet output, begin with the sandbox's clock
+#: in milliseconds (``sandbox/util/parsers.py::_make_id``).
+_ARTIFACT_TIME_RE = re.compile(r"^(\d{13})_[0-9a-f]{8}(?:[._]|$)")
+
+
+def _produced_at(filename: str) -> str:
+    """When an output was made, as the server knows it: the artifact id's own
+    timestamp, else now. Never the browser's clock."""
+    match = _ARTIFACT_TIME_RE.match(filename or "")
+    if match:
+        moment = datetime.fromtimestamp(int(match.group(1)) / 1000, tz=timezone.utc)
+    else:
+        moment = datetime.now(timezone.utc)
+    return moment.isoformat(timespec="milliseconds")
+
+
+def _is_newer(stamp: Optional[str], than: Optional[str]) -> bool:
+    """Whether *stamp* is later than *than*; a missing stamp is the oldest."""
+    if not stamp:
+        return False
+    if not than:
+        return True
+    try:
+        return datetime.fromisoformat(stamp) > datetime.fromisoformat(than)
+    except ValueError:
+        return False
+
+
+def _manifest_entries(manifest: Optional[dict]) -> Dict[str, dict]:
+    return {
+        o["node_id"]: o
+        for o in (manifest or {}).get("outputs", [])
+        if isinstance(o, dict) and o.get("node_id") and o.get("filename")
+    }
+
+
+def _merge_outputs(
+    incoming: List[OutputRef],
+    manifest: Optional[dict],
+    *,
+    keep_unsent: bool,
+) -> tuple[List[OutputRef], List[OutputRef], Dict[str, Optional[str]]]:
+    """Merge *incoming* output refs into the manifest's, node by node.
+
+    For a node in both, the newer output wins by ``produced_at``, so a tab that
+    never saw a run on the server cannot put back the older output it holds.
+    Returns the merged refs, the incoming refs that won (the only ones to
+    install, so an older output never overwrites a newer installed copy), and
+    each node's ``produced_at``. With *keep_unsent* the manifest's other nodes
+    stay, as when a run records one node; without it they are dropped, as when
+    a save names every output the dataflow keeps.
+    """
+    existing = _manifest_entries(manifest)
+    merged: List[OutputRef] = []
+    to_install: List[OutputRef] = []
+    stamps: Dict[str, Optional[str]] = {}
+    sent = set()
+    for ref in incoming:
+        sent.add(ref.node_id)
+        prior = existing.get(ref.node_id)
+        if prior is not None and prior["filename"] == ref.filename:
+            stamp = prior.get("produced_at")
+        else:
+            stamp = _produced_at(ref.filename)
+        if prior is not None and prior["filename"] != ref.filename and _is_newer(
+            prior.get("produced_at"), stamp
+        ):
+            merged.append(OutputRef(
+                node_id=ref.node_id, filename=prior["filename"],
+                data_type=prior.get("data_type"),
+            ))
+            stamps[ref.node_id] = prior.get("produced_at")
+            continue
+        merged.append(ref)
+        to_install.append(ref)
+        stamps[ref.node_id] = stamp
+    if keep_unsent:
+        for node_id, prior in existing.items():
+            if node_id in sent:
+                continue
+            merged.append(OutputRef(
+                node_id=node_id, filename=prior["filename"],
+                data_type=prior.get("data_type"),
+            ))
+            stamps[node_id] = prior.get("produced_at")
+    return merged, to_install, stamps
+
+
 # ---------------------------------------------------------------------------
 # Save
 # ---------------------------------------------------------------------------
@@ -516,7 +682,7 @@ def _seed_dataset_defaults(user, ukey: str, project_id: str, spec: dict) -> dict
 
 
 def save_project(user, data: ProjectCreate) -> ProjectDetail:
-    from utk_curio.backend.app.packages.services import (
+    from utk_curio.backend.app.packages.service import (
         ensure_user_packages_initialized,
         seed_spec_with_defaults,
     )
@@ -546,6 +712,8 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     # A spec that does not name itself is a spec the canvas reloads with an
     # undefined workflow name; fill what the client left out (never overwrite).
     _ensure_dataflow_identity(data.spec, data.name)
+    _normalize_spec_categories(data.spec)
+    scenarios.normalize_spec_scenarios(data.spec)
 
     storage.write_spec(ukey, project_id, data.spec)
     output_refs = list(data.outputs)
@@ -570,9 +738,7 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     # reads the PROJECT lockfile, so an account-level import that never reaches
     # a lockfile is invisible on the canvas however the catalog labels it.
     try:
-        from utk_curio.backend.app.agents.services import (
-            seed_project_with_imported_agents,
-        )
+        from utk_curio.backend.app.agents.service import seed_project_with_imported_agents
 
         seed_project_with_imported_agents(ukey, project_id)
         effective_spec = storage.read_spec(ukey, project_id) or effective_spec
@@ -587,11 +753,14 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
         name=data.name,
         description=data.description,
         thumbnail_accent=data.thumbnail_accent or "peach",
+        produced_at={ref.node_id: _produced_at(ref.filename) for ref in persisted_refs},
     )
 
     db.session.commit()
     return _to_detail(project, spec=effective_spec, outputs=persisted_refs,
-                      dataset_install_warnings=install_warnings)
+                      dataset_install_warnings=install_warnings,
+                      spec_revision=storage.spec_revision(ukey, project_id),
+                      categories=_categories(user, project_id, effective_spec))
 
 
 def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
@@ -599,7 +768,6 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     project = repo.get_for_user(project_id, user.id)
     ukey = _user_dir_key(user)
     existing_spec = storage.read_spec(ukey, project_id)
-    existing_manifest = storage.read_manifest(ukey, project_id)
 
     folder = str(storage.project_dir(ukey, project_id))
     project = repo.upsert_project(
@@ -625,9 +793,22 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         # from the on-disk spec — otherwise a client save wipes installed agents
         # and attachments. No-op on an outputs-only update (effective is existing).
         if data.spec is not None:
-            from utk_curio.backend.app.agents.project_agents import preserve_agent_state
-            from utk_curio.backend.app.agents.attachments import prune_orphaned_attachments
-            from utk_curio.backend.app.agents.sessions import delete_session
+            # A save may not delete what the client never saw (memo dev/124).
+            # This is where the canvas's whole-spec PUT meets whatever the
+            # backend wrote since the client loaded — an agent apply, a Solve
+            # wave, an install — and the check runs on the bytes the write
+            # would replace, under the lock that performs it.
+            try:
+                concurrency.assert_save_keeps_server_work(
+                    existing_spec or {}, effective_spec or {},
+                    base_revision=data.base_revision,
+                    current_revision=storage.spec_revision(ukey, project_id),
+                )
+            except concurrency.SaveWouldLoseWork as refusal:
+                raise ProjectError(str(refusal), 409) from refusal
+            from utk_curio.backend.app.agents.repositories.project_agents import preserve_agent_state
+            from utk_curio.backend.app.agents.application.attachments import prune_orphaned_attachments
+            from utk_curio.backend.app.agents.repositories.sessions import delete_session
             from utk_curio.backend.app.datasets.application.ref_ownership import (
                 preserve_dataset_refs,
             )
@@ -636,12 +817,8 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
             # dev/101): the client's mirror of the lockfile could overwrite
             # what a promotion or the drawer had just written. The on-disk
             # effective lockfile (backfill included) is what survives.
-            from utk_curio.backend.app.packages.services import (
-                _installed_majors_by_pkg,
-            )
-            from utk_curio.backend.app.packages.spec_packages import (
-                preserve_project_packages,
-            )
+            from utk_curio.backend.app.packages.application.store_reads import _installed_majors_by_pkg
+            from utk_curio.backend.app.packages.service import preserve_project_packages
             preserve_project_packages(
                 effective_spec, existing_spec, _installed_majors_by_pkg(ukey),
             )
@@ -651,6 +828,10 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
             # drop a fresh install. (The client-sent section still seeds
             # ``create()`` — Save a copy / trill import.)
             preserve_dataset_refs(effective_spec, existing_spec)
+            _carry_hand_categories(effective_spec, existing_spec)
+            _normalize_spec_categories(effective_spec)
+            scenarios.carry_scenarios(effective_spec, existing_spec)
+            scenarios.normalize_spec_scenarios(effective_spec)
             # Same identity backfill as on create: an update may be the first
             # time a spec written elsewhere reaches disk.
             if _ensure_dataflow_identity(effective_spec, data.name or project.name):
@@ -665,12 +846,19 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
                     session_id = rec.get("sessionId")
                     if isinstance(session_id, str):
                         delete_session(ukey, project_id, session_id)
+        # Read under the lock: a run on the server records outputs under it too.
+        existing_manifest = storage.read_manifest(ukey, project_id)
         if data.outputs is not None:
-            output_refs = list(data.outputs)
+            # A node's newer output already on record (a run on the server
+            # while this tab was open) wins over the one sent, and only the
+            # winners are installed.
+            output_refs, refs_to_install, produced_at = _merge_outputs(
+                list(data.outputs), existing_manifest, keep_unsent=False,
+            )
             # Install into users/<user>/datasets/ and register lean refs in the spec.
             # Do not copy artifacts into project/data/ — that folder is legacy-only.
             updated_spec = _auto_install_computed_outputs(
-                ukey, output_refs, effective_spec, install_warnings,
+                ukey, refs_to_install, effective_spec, install_warnings,
                 dataflow_id=project_id, dataflow_name=(data.name or project.name),
             )
             if updated_spec is not None and updated_spec is not effective_spec:
@@ -678,6 +866,10 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
                 spec_dirty = True
         else:
             output_refs = _output_refs_from_manifest(existing_manifest)
+            produced_at = {
+                node_id: entry.get("produced_at")
+                for node_id, entry in _manifest_entries(existing_manifest).items()
+            }
 
         # NOTE: dataset refs are created ONLY by an explicit install through the
         # dataset endpoints; on a client save the carry-forward above
@@ -705,21 +897,75 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         if data.name and _sync_dataflow_name(effective_spec, project.name):
             spec_dirty = True
 
+        # A categories-only PUT - the Projects page's "Edit categories" -
+        # writes into the on-disk spec, under the same lock as any save.
+        if data.categories is not None:
+            dataflow = (
+                effective_spec.get("dataflow") if isinstance(effective_spec, dict) else None
+            )
+            if isinstance(dataflow, dict):
+                dataflow["categories"] = data.categories
+                _normalize_spec_categories(effective_spec)
+                spec_dirty = True
+
         if data.spec is not None or spec_dirty:
             storage.write_spec(ukey, project_id, effective_spec)
 
-    # Record only outputs the reload path can restore from a durable source so a
-    # swallowed install error can't leave a phantom manifest entry (#144).
-    persisted_refs = _persisted_output_refs(ukey, project_id, output_refs, effective_spec)
-    storage.write_manifest(ukey, project_id, project.spec_revision, persisted_refs,
-        name=project.name,
-        description=project.description,
-        thumbnail_accent=project.thumbnail_accent or "peach",
-    )
+        # Record only outputs the reload path can restore from a durable source so a
+        # swallowed install error can't leave a phantom manifest entry (#144).
+        # Still under the lock, so a run recording an output cannot land between
+        # the read above and this write.
+        persisted_refs = _persisted_output_refs(ukey, project_id, output_refs, effective_spec)
+        storage.write_manifest(ukey, project_id, project.spec_revision, persisted_refs,
+            name=project.name,
+            description=project.description,
+            thumbnail_accent=project.thumbnail_accent or "peach",
+            produced_at=produced_at,
+        )
 
     db.session.commit()
     return _to_detail(project, spec=effective_spec, outputs=persisted_refs,
-                      dataset_install_warnings=install_warnings)
+                      dataset_install_warnings=install_warnings,
+                      spec_revision=storage.spec_revision(ukey, project_id),
+                      categories=_categories(user, project_id, effective_spec))
+
+
+def record_node_outputs(
+    user, project_id: str, outputs: List[OutputRef], warnings: Optional[list] = None,
+) -> List[OutputRef]:
+    """Record outputs a run on the server produced, without a save.
+
+    The outputs half of :func:`update_project`, node by node: each output is
+    installed in the account's Data Catalog and replaces its node's entry in
+    the manifest, and every other node's entry stays. A newer output already on
+    record for a node is kept. Nothing else is written: not the spec, and not
+    the project's revision, so a canvas open on the dataflow still saves on
+    top of it. Returns the refs the manifest now records; an output that could
+    not be installed is added to *warnings*, as a save's
+    ``dataset_install_warnings`` lists it.
+    """
+    _assert_guest_can_save(user)
+    project = repo.get_for_user(project_id, user.id)
+    ukey = _user_dir_key(user)
+    install_warnings: list = warnings if warnings is not None else []
+    with storage.spec_write_lock(ukey, project_id):
+        spec = storage.read_spec(ukey, project_id)
+        manifest = storage.read_manifest(ukey, project_id)
+        output_refs, refs_to_install, produced_at = _merge_outputs(
+            list(outputs), manifest, keep_unsent=True,
+        )
+        _auto_install_computed_outputs(
+            ukey, refs_to_install, spec, install_warnings,
+            dataflow_id=project_id, dataflow_name=project.name,
+        )
+        persisted_refs = _persisted_output_refs(ukey, project_id, output_refs, spec)
+        storage.write_manifest(ukey, project_id, project.spec_revision, persisted_refs,
+            name=project.name,
+            description=project.description,
+            thumbnail_accent=project.thumbnail_accent or "peach",
+            produced_at=produced_at,
+        )
+    return persisted_refs
 
 
 def mutate_dataflow_datasets(user, project_id: str, mutate) -> Optional[dict]:
@@ -779,7 +1025,7 @@ def _with_effective_packages(spec, ukey: str, project_id: str):
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     if not isinstance(dataflow, dict) or not isinstance(dataflow.get("packages"), list):
         return spec
-    from utk_curio.backend.app.packages.services import (
+    from utk_curio.backend.app.packages.service import (
         PackageServiceError,
         get_project_lockfile,
     )
@@ -797,9 +1043,7 @@ def load_project(user, project_id: str) -> dict:
     from utk_curio.backend.app.datasets.seed import (
         ensure_dataflow_datasets_installed,
     )
-    from utk_curio.backend.app.packages.services import (
-        ensure_user_packages_initialized,
-    )
+    from utk_curio.backend.app.packages.service import ensure_user_packages_initialized
 
     project = repo.get_for_user(project_id, user.id)
     repo.touch_last_opened(project_id, user.id)
@@ -833,7 +1077,11 @@ def load_project(user, project_id: str) -> dict:
 
     db.session.commit()
     return {
-        "project": _to_detail(project, spec=spec, outputs=hydrated),
+        "project": _to_detail(
+            project, spec=spec, outputs=hydrated,
+            spec_revision=storage.spec_revision(ukey, project_id),
+            categories=_categories(user, project_id, spec),
+        ),
         "spec": spec,
         "outputs": [_output_ref_dict(r) for r in hydrated],
     }
@@ -865,7 +1113,7 @@ def load_shared_project(project_id: str) -> dict:
     # agent-private data — strip the backend-owned agent sections (install
     # lockfile, attachments incl. intents/titles/session ids, project
     # defaults) from the served copy. The on-disk spec is untouched.
-    from utk_curio.backend.app.agents.project_agents import strip_agent_state
+    from utk_curio.backend.app.agents.repositories.project_agents import strip_agent_state
     spec = strip_agent_state(spec)
 
     manifest = storage.read_manifest(ukey, project_id)
@@ -883,7 +1131,11 @@ def load_shared_project(project_id: str) -> dict:
     hydrated = storage.hydrate_outputs(ukey, project_id, output_refs, spec=spec)
     spec = _with_effective_packages(spec, ukey, project_id)
 
-    detail = _to_detail(project, spec=spec, outputs=hydrated)
+    detail = _to_detail(
+        project, spec=spec, outputs=hydrated,
+        spec_revision=storage.spec_revision(ukey, project_id),
+        categories=_categories(project.owner, project_id, spec),
+    )
     # Don't leak server filesystem layout to shared-link visitors.
     detail.folder_path = ""
 
@@ -892,6 +1144,136 @@ def load_shared_project(project_id: str) -> dict:
         "spec": spec,
         "outputs": [_output_ref_dict(r) for r in hydrated],
     }
+
+
+# ---------------------------------------------------------------------------
+# Standalone dashboard
+# ---------------------------------------------------------------------------
+
+def _dashboard_envelope_reader():
+    """Read one saved output as the wire envelope ``/get`` would return.
+
+    Goes to the sandbox rather than parsing the file here, so an embedded page
+    carries byte-for-byte what a fetching page would have received. Reproducing
+    the parsing would be a second implementation of the wire format, and the
+    two would drift the first time either changed.
+
+    No session id is sent, deliberately. The artifact store is keyed to the
+    session that produced a row, which the owner's browser had and this call
+    never will; ``load_shared_project`` has just hydrated every saved output
+    into the shared data dir, and the sandbox falls back to reading it by name
+    from there. That fallback is the only reason a dashboard can be assembled
+    for anyone other than the person who ran the dataflow.
+    """
+    from utk_curio.backend.app.api.routes import _sandbox_call, SANDBOX_GET_TIMEOUT
+
+    def read(filename: str) -> dict:
+        resp = _sandbox_call(
+            "get", "/get",
+            label="/get (dashboard)", timeout=SANDBOX_GET_TIMEOUT,
+            params={"fileName": filename},
+        )
+        if isinstance(resp, tuple):  # transport failure, already a Flask tuple
+            raise KeyError(filename)
+        resp.raise_for_status()
+        return resp.json()
+
+    return read
+
+
+def _dashboard_registry(project_id: str) -> dict:
+    """The node descriptors and starter bodies a tile needs to render at all.
+
+    Not an optimisation. Curio's bundle ships node *implementations* but not node
+    *descriptors*: the only thing that calls ``registerNode`` is the package
+    loader, fed by ``GET /api/packages``, and ``curio.builtin`` is a real package
+    in the owner's store rather than a bundle constant. A page without this
+    renders every tile as "Loading node...", data or no data.
+
+    Read from the project OWNER's store, because that is whose packages the
+    dataflow was authored against, and a visitor holding a link may have no
+    store of their own.
+    """
+    from utk_curio.backend.app.packages.application import catalog as packages_catalog
+    from utk_curio.backend.app.packages.application import starters as packages_starters
+    from utk_curio.backend.app.packages.application import seeding as packages_seeding
+    from utk_curio.backend.app.projects.models import Project
+
+    project = db.session.get(Project, project_id)
+    if project is None:
+        return {"packages": [], "starters": []}
+    ukey = _owner_user_dir_key(project)
+    packages_seeding.ensure_user_seeded(ukey)
+    packages = packages_catalog.installed_package_payloads(ukey)
+    return {
+        "packages": packages,
+        "starters": packages_starters.generate_package_starters(ukey),
+        # A package can ship its node's behaviour as a script the page fetches
+        # and runs. Builtins have none, so an ordinary dashboard carries nothing
+        # here; a tile from a package that does would otherwise fall back to a
+        # generic editor, which on a published page looks like a broken tile.
+        "behaviorScripts": _dashboard_behavior_scripts(ukey, packages),
+    }
+
+
+def _dashboard_behavior_scripts(user_key: str, packages: List[dict]) -> dict:
+    """``{"<packageId>@<major>": "<script text>"}`` for packages that ship one."""
+    from utk_curio.backend.app.packages.application import package_files
+
+    out: dict = {}
+    for package in packages:
+        script = package.get("behaviorScript")
+        dir_name = package.get("dirName")
+        if not script or not dir_name:
+            continue
+        try:
+            raw, _mime = package_files.package_file(user_key, dir_name, script)
+            text = raw.decode("utf-8")
+        except Exception:
+            # A package whose script cannot be read is the same as one that has
+            # none: the node falls back to the generic editor. Better than
+            # refusing to build the whole page over one tile.
+            continue
+        if text:
+            out[f"{package.get('packageId')}@{package.get('major')}"] = text
+    return out
+
+
+def build_standalone_dashboard(
+    project_id: str,
+    *,
+    limit_bytes: Optional[int] = None,
+    fetch_envelope=None,
+    registry=None,
+) -> dict:
+    """Everything the page at ``/dashboard/<id>`` needs, with nothing left to fetch.
+
+    Built on the shared-project load rather than the owner's, because a
+    dashboard is opened by whoever holds the link and the two must see the same
+    thing. Raises :class:`DashboardTooLargeError` when the rows would not fit in
+    a page; the caller turns that into a message naming the heavy tiles.
+    """
+    from utk_curio.backend.app.projects.dashboard_payload import (
+        DEFAULT_PAYLOAD_LIMIT_BYTES,
+        build_dashboard_payload,
+    )
+
+    loaded = load_shared_project(project_id)
+    detail = loaded["project"]
+    payload = build_dashboard_payload(
+        spec=loaded["spec"],
+        output_refs=loaded["outputs"],
+        fetch_envelope=fetch_envelope or _dashboard_envelope_reader(),
+        meta={
+            "projectId": project_id,
+            "name": getattr(detail, "name", None),
+            "generatedAt": datetime.now(timezone.utc).isoformat(),
+        },
+        limit_bytes=limit_bytes if limit_bytes is not None else DEFAULT_PAYLOAD_LIMIT_BYTES,
+    )
+    body = payload.to_dict()
+    body["registry"] = registry if registry is not None else _dashboard_registry(project_id)
+    return body
 
 
 # ---------------------------------------------------------------------------
@@ -905,18 +1287,20 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
     # deleted on purpose is not resurrected on the next listing. Imported here
     # rather than at module scope: ``seed`` imports this module for
     # ``_is_shared_guest`` / ``_user_dir_key``.
+    from utk_curio.backend.app.projects.categories import DatasetKinds
     from utk_curio.backend.app.projects.seed import (
         ensure_user_examples_seeded,
-        example_project_ids,
+        shipped_sources,
     )
 
     ensure_user_examples_seeded(user)
     projects = repo.list_for_user(user.id, sort=sort)
-    # Once for the whole listing: the set is read off ``docs/examples/``, and
+    # Once for the whole listing: the map is read off ``docs/examples/``, and
     # every row below is checked against it so the page knows which cards may
-    # not offer Delete.
-    example_ids = example_project_ids(user)
+    # not offer Delete and where each one came from.
+    sources = shipped_sources(user)
     ukey = _user_dir_key(user)
+    dataset_kind = DatasetKinds(ukey)
     summaries = []
     dropped_stale_row = False
     for p in projects:
@@ -927,13 +1311,15 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
             repo.delete_project_row(p.id, user.id)
             dropped_stale_row = True
             continue
-        summaries.append(
-            _to_summary(
-                p,
-                graph_preview=_extract_graph_preview(spec),
-                is_example=p.id in example_ids,
-            )
-        )
+        summaries.append(_to_summary(
+            p, graph_preview=_extract_graph_preview(spec),
+            spec_revision=storage.spec_revision(ukey, p.id),
+            is_example=p.id in sources,
+            categories=_categories(
+                user, p.id, spec, sources=sources, dataset_kind=dataset_kind,
+            ),
+            scenario_list=scenarios.scenario_summaries(spec),
+        ))
     if dropped_stale_row:
         db.session.commit()
     return summaries
@@ -948,7 +1334,9 @@ def rename_project(user, project_id: str, new_name: str) -> ProjectSummary:
     project.name = new_name
     project.slug = repo._unique_slug(user.id, _slugify(new_name), exclude_id=project_id)
     db.session.commit()
-    return _to_summary(project)
+    return _to_summary(
+        project, spec_revision=storage.spec_revision(_user_dir_key(user), project_id)
+    )
 
 
 # ---------------------------------------------------------------------------

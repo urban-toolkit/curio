@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "categories": {"city": ["Chicago"], "topic": ["Greenery"], "complexity": ["Beginner"]},
     "description": "Spatial density + zip-code aggregation in Vega-Lite, fanned out via a Data Pool (Chicago green roofs).",
     "nodes": [
       {
@@ -7,7 +8,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 108,
-        "content": "import pandas as pd\n\ndataset_path = curio_dataset_path(\"data.cityofchicago.green-roofs\")\ndf = pd.read_csv(dataset_path)\nreturn df",
+        "content": "import pandas as pd\n\ndf = curio_load_data(\"data.cityofchicago.green-roofs\")\nreturn df",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -46,7 +47,7 @@
         "type": "curio.builtin/data-loading",
         "x": 0,
         "y": 538,
-        "content": "import geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n\n# Read the green-roofs CSV and project to a GeoDataFrame in WGS84.\ngreen_roofs_path = curio_dataset_path(\"data.cityofchicago.green-roofs\")\ngreen_roofs_df = pd.read_csv(green_roofs_path)\ngeometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]\ngreen_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)\n\n# Spatially attach the Chicago zip-code polygon to each rooftop.\nchicago_path = curio_dataset_path(\"data.urbanlab.chicago-boundary\")\nchicago = gpd.read_file(chicago_path)\njoined = gpd.sjoin(green_roofs_df, chicago, predicate='within')\n\n# Keep only the columns downstream views actually use, and drop geometry so the\n# DATA_POOL serializes a plain DataFrame instead of the full GeoDataFrame.\nreturn pd.DataFrame(joined[['LONGITUDE', 'LATITUDE', 'VEGETATED_SQFT', 'TOTAL_ROOF_SQFT', 'zip']])\n",
+        "content": "import geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n\n# Read the green-roofs CSV and project to a GeoDataFrame in WGS84.\ngreen_roofs_df = curio_load_data(\"data.cityofchicago.green-roofs\")\ngeometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]\ngreen_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)\n\n# Spatially attach the Chicago zip-code polygon to each rooftop.\nchicago = curio_load_data(\"data.utk.chicago-boundary\")\njoined = gpd.sjoin(green_roofs_df, chicago, predicate='within')\n\n# Keep only the columns downstream views actually use, and drop geometry so the\n# DATA_POOL serializes a plain DataFrame instead of the full GeoDataFrame.\nreturn pd.DataFrame(joined[['LONGITUDE', 'LATITUDE', 'VEGETATED_SQFT', 'TOTAL_ROOF_SQFT', 'zip']])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -72,7 +73,7 @@
         "type": "curio.builtin/vis-vega",
         "x": 1290,
         "y": 860,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Dot Density Map of Green Roof Locations in Chicago with Zoom & Pan\",\n  \"width\": 500,\n  \"height\": 600,\n  \"title\": \"Green Roof Locations in Chicago\",\n  \"mark\": \"circle\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"LONGITUDE\",\n      \"type\": \"quantitative\",\n      \"scale\": {\n        \"domain\": [\n          -88.0,\n          -87.5\n        ]\n      },\n      \"axis\": {\n        \"title\": \"Longitude\"\n      }\n    },\n    \"y\": {\n      \"field\": \"LATITUDE\",\n      \"type\": \"quantitative\",\n      \"scale\": {\n        \"domain\": [\n          41.6,\n          42.1\n        ]\n      },\n      \"axis\": {\n        \"title\": \"Latitude\"\n      }\n    },\n    \"size\": {\n      \"field\": \"VEGETATED_SQFT\",\n      \"type\": \"quantitative\",\n      \"legend\": {\n        \"title\": \"Vegetated Sqft\"\n      }\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"VEGETATED_SQFT\",\n        \"type\": \"quantitative\"\n      },\n      {\n        \"field\": \"TOTAL_ROOF_SQFT\",\n        \"type\": \"quantitative\"\n      },\n      {\n        \"field\": \"zip\",\n        \"type\": \"nominal\"\n      }\n    ]\n  },\n  \"config\": {\n    \"view\": {\n      \"stroke\": \"transparent\"\n    }\n  },\n  \"params\": [\n    {\n      \"name\": \"grid\",\n      \"select\": \"interval\",\n      \"bind\": \"scales\"\n    }\n  ]\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Dot Density Map of Green Roof Locations in Chicago with Zoom & Pan\",\n  \"title\": \"Green Roof Locations in Chicago\",\n  \"mark\": \"circle\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"LONGITUDE\",\n      \"type\": \"quantitative\",\n      \"scale\": {\n        \"domain\": [\n          -88.0,\n          -87.5\n        ]\n      },\n      \"axis\": {\n        \"title\": \"Longitude\"\n      }\n    },\n    \"y\": {\n      \"field\": \"LATITUDE\",\n      \"type\": \"quantitative\",\n      \"scale\": {\n        \"domain\": [\n          41.6,\n          42.1\n        ]\n      },\n      \"axis\": {\n        \"title\": \"Latitude\"\n      }\n    },\n    \"size\": {\n      \"field\": \"VEGETATED_SQFT\",\n      \"type\": \"quantitative\",\n      \"legend\": {\n        \"title\": \"Vegetated Sqft\"\n      }\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"VEGETATED_SQFT\",\n        \"type\": \"quantitative\"\n      },\n      {\n        \"field\": \"TOTAL_ROOF_SQFT\",\n        \"type\": \"quantitative\"\n      },\n      {\n        \"field\": \"zip\",\n        \"type\": \"nominal\"\n      }\n    ]\n  },\n  \"config\": {\n    \"view\": {\n      \"stroke\": \"transparent\"\n    }\n  },\n  \"params\": [\n    {\n      \"name\": \"grid\",\n      \"select\": \"interval\",\n      \"bind\": \"scales\"\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -153,8 +154,8 @@
         "installedAt": "2026-08-27T00:00:00Z"
       },
       {
-        "datasetId": "data.urbanlab.chicago-boundary",
-        "dirName": "data.urbanlab.chicago-boundary@1",
+        "datasetId": "data.utk.chicago-boundary",
+        "dirName": "data.utk.chicago-boundary@1",
         "origin": "imported",
         "producerNodeId": null,
         "consumerNodeIds": [],

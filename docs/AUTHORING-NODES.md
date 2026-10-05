@@ -65,7 +65,9 @@ Full installation notes, including Docker, are in [USAGE.md](USAGE.md).
 
 A Python node reuses Curio's built-in `code` behavior: Curio renders its
 standard editor, and your Python runs in the sandbox. You never write any
-JavaScript, and you can do the whole thing from the canvas.
+JavaScript, and you can do the whole thing from the canvas. An agent's
+**Solve** runs your node's code in the sandbox to verify it, as it does for the
+built-in nodes, with nothing extra to declare.
 
 ### From the canvas
 
@@ -104,7 +106,76 @@ python scripts/new_package.py me.roughness
 
 That writes a valid `packages/me.roughness@1/` with a manifest, a Python
 starter, a README, a LICENSE and an `integrity.json`. Install it from the canvas
-via **Node Catalog → Browse Node Catalog + → Browse → Add to dataflow**.
+via **Node Catalog → Browse Node Catalog + → Browse all → Add to project**.
+
+### Widgets in a template
+
+A template's starter can read values the user sets in the node's **Widgets** tab
+([Widgets](USAGE.md#widgets)). Declare them in the template's `widgets`, and
+place each one in the source as `[!! name !!]`:
+
+```json
+{
+  "id": "roughness",
+  "source": "sources/roughness.py",
+  "hasWidgets": true,
+  "widgets": [
+    { "name": "window", "type": "number", "label": "Window size", "default": 5 },
+    { "name": "method", "type": "choice", "default": "std", "options": { "choices": ["std", "range"] } }
+  ]
+}
+```
+
+```python
+return arg.rolling([!! window !!]).agg([!! method !!])
+```
+
+A node dropped from the palette starts with these widgets and their defaults.
+**Save as package node…** writes the node's widgets into the template, with the
+values it had as the defaults. The shape of each entry is the `widget`
+definition in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json).
+
+A node made from a template can also read a view's selection through a
+selection tag, `[!! selection name !!]` ([Selection tags](USAGE.md#selection-tags)).
+A template does not declare selection tags: each names a view of one dataflow,
+so it is added on the canvas, in the node's **Widgets** tab.
+
+### Modules beside your template
+
+A template can import Python modules that ship in the package's `sources/`
+folder, with ordinary `import` statements:
+
+```
+packages/me.heights@1/
+├── manifest.json                  # "source": "sources/caller.py"
+└── sources/
+    ├── caller.py
+    └── building_height/
+        ├── __init__.py
+        └── convert_to_raster.py
+```
+
+```python
+from building_height.convert_to_raster import convert_raster
+
+return convert_raster(arg, zoom=[!! zoom !!])
+```
+
+- A module is a `.py` file, or a folder of `.py` files, directly in `sources/`,
+  named like a Python identifier. The files your templates name as their
+  `source` are not modules.
+- Modules import each other by name or relatively (`from .scale import FACTOR`).
+- They are importable while a node of your package runs, and by no other node.
+  A new version of the package takes effect on the next run.
+- **One name, one package.** Two installed packages cannot ship a module of the
+  same name: installing the second is refused, and the message names both
+  packages and the module. Name a module after your package
+  (`heights_raster/`), not `scripts/` or `utils/`. Two majors of one package may
+  keep the same names.
+- A module named like a library the node already has loaded (`json`, `pandas`)
+  is refused when the node runs.
+- Imports inside your modules are not detected: list the libraries they need in
+  `manifest.dependencies.python`.
 
 ---
 
@@ -115,11 +186,11 @@ that renders JSX inside the node body, reads upstream data, and pushes results
 downstream.
 
 > [!IMPORTANT]
-> **Save as package node cannot do this.** The archive it builds carries
-> `manifest.json`, `sources/`, `README.md` and `LICENSE`, but never the
-> compiled bundle a custom UI needs. So the in-canvas flow always produces a
-> code-editor node, and forking a custom-UI package that way silently loses its
-> interface. Tier 2 has to be authored from files.
+> **Save as package node cannot do this.** A new package it builds carries
+> `manifest.json` and `sources/`, never the compiled bundle a custom UI needs.
+> So the in-canvas flow always produces a code-editor node, and forking a
+> custom-UI package that way loses its interface. Saving into an existing
+> package keeps its bundle. Tier 2 has to be authored from files.
 
 ### The loop
 
@@ -134,16 +205,14 @@ cd utk_curio/frontend/urban-workflows
 npm run build:packages          # seconds, not the full app build
 
 # then, in the browser
-#   first time:  Node Catalog -> Browse Node Catalog + -> Browse -> Add to dataflow
-#   after that:  Node Catalog -> Browse Node Catalog + -> In dataflow -> Reload
+#   first time:  Node Catalog -> Browse Node Catalog + -> Browse all -> Add to project
+#   after that:  reload the page
 ```
 
-**That last step is the one people miss.** Curio serves your node's bundle from
-your *installed copy* in the user store, not from `packages/`. Adding a package
-that is already installed does nothing, so without **Reload** your rebuilt code
-never runs and it looks as though your edit had no effect. The Reload button
-(circular arrows, on each row of the **In dataflow** tab) re-copies the package
-from `packages/` over the installed copy and reloads the page.
+Curio serves your node's bundle from your *installed copy* in the user store,
+not from `packages/`. Opening a dataflow, which a page reload does, replaces
+that copy with the one in `packages/` when the files there changed and you have
+not edited the installed copy yourself.
 
 ### What the scaffold gives you
 
@@ -306,18 +375,20 @@ not an empty `geodataframe`.
 A grammar node can offer a starter spec once it knows what the data looks like.
 The hook is `defaultValueOverride` in your behavior, which
 [`UniversalNode`](../utk_curio/frontend/urban-workflows/src/components/UniversalNode.tsx)
-gives top priority in the `defaultValue` chain. Gate it on an **empty buffer**
-and fill at most once: `useMonacoExternalValue` no-ops when the value is
-unchanged, so re-asserting is safe for the cursor and undo stack, but that is
-not licence to overwrite what someone has typed. `vegaBehavior.ts` is the
-worked example.
+gives top priority in the `defaultValue` chain.
+[`useStarterSpec`](../utk_curio/frontend/urban-workflows/src/hook/useStarterSpec.ts)
+does the gating for you: it fills only an empty editor, at most
+once, only after an input has arrived, and never over `data.defaultCode`. Give
+it a reader and a ladder; `vegaBehavior.ts` and `autkGrammarBehavior.tsx` are
+the worked examples.
 
 ## Things that will trip you up
 
 All of these are real, and none of them produce an obvious error message.
 
-- **Your edit did nothing.** You rebuilt but did not click **Reload**. See
-  [the loop](#the-loop).
+- **Your edit did nothing.** You rebuilt but did not reload the page, or you
+  edited the installed copy in the user store, which Curio then keeps as yours.
+  See [the loop](#the-loop).
 - **Your node renders an empty code editor.** The bundle failed to load or the
   behavior key does not match, so Curio fell back to the generic editor. Open
   the browser console, where a failed bundle logs a warning.
@@ -334,17 +405,14 @@ All of these are real, and none of them produce an obvious error message.
 - **An unregistered `iconRef` is not an error.** It silently falls back to a
   cube with one console warning. The registered refs are in
   [`iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts).
-- **One source file per template.** The manifest's `source` field takes a single
-  path, so a template cannot ship helper modules next to it. For a Tier 2 node
-  the bundle can import as many files as you like; the limit only applies to
-  Tier 1 Python sources.
 - **`integrity.json` goes stale.** Regenerate it with
   `python scripts/regen_integrity.py packages/<id>@<major>`. Nothing verifies
   these hashes today, so a stale file will not break your node, but keep it
   honest anyway. On Windows, expect every file to show as changed; that is a
   line-ending artifact, not a real diff.
 - **Restart Curio for a new backend blueprint.** Only relevant if your node adds
-  Flask endpoints; a frontend-only change never needs a restart, just Reload.
+  Flask endpoints; a frontend-only change never needs a restart, just a page
+  reload.
 
 ---
 
@@ -363,19 +431,13 @@ Tier 2 submission carries its compiled bundle and the recipient needs no build
 step.
 
 Before you submit, check that the archive works from a clean state: uninstall
-your package (**In dataflow → remove**), then re-import the archive
+your package (**Remove from project** on its **In project** card), then re-import the archive
 (**Import package** in the drawer footer) and confirm the node still behaves.
 That catches the most common packaging mistake: a node that only works because
 of a file that never made it into the manifest.
 
-If you built a package under `packages/` and never installed it, there is no
-export button for it. Zip it by hand: `manifest.json`, `sources/`, `scripts/`,
-`README.md` and `LICENSE` at the **root of the zip**, no wrapper directory, and
-leave `integrity.json` out.
-
 To open someone else's submission: **Import package** in the drawer footer. An
-id collision is rejected rather than merged, so remove the previous package of
-the same id first.
+archive whose `<packageId>@<major>` you already have is refused.
 
 ---
 

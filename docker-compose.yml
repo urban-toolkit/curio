@@ -3,10 +3,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        BACKEND_URL: ${BACKEND_URL:-http://localhost:5002}
-        PUBLIC_PATH: ${PUBLIC_PATH:-/}
-    container_name: ${CURIO_CONTAINER_NAME:-curio}
     tty: true
     stdin_open: true
     environment:
@@ -21,8 +17,11 @@ services:
       # Port 2000 (the sandbox) is deliberately not published. It executes
       # arbitrary user code and the backend reaches it over loopback inside
       # the container; publishing it exposed that API to the host network.
-      - "${CURIO_PORT_5002:-5002}:5002"
-      - "${CURIO_PORT_8080:-8080}:8080"
+      # Another stack on the same host publishes other host ports with
+      # `ports: !override` in its own file (docker-compose.site.yml, the CI
+      # overlays).
+      - "5002:5002"
+      - "8080:8080"
     volumes:
       # NOTE: `packages/` is deliberately NOT bind-mounted. The package catalog
       # (`_catalog_root()` -> /app/packages) is baked into the image by the

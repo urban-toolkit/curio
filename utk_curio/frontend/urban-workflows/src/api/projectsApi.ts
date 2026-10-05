@@ -1,4 +1,6 @@
 import { apiFetch } from "../utils/authApi";
+import type { DataflowCategories, HandCategories } from "../utils/dataflowCategories";
+import type { Scenario } from "../utils/scenarios/scenarioModel";
 
 export interface OutputRef {
   node_id: string;
@@ -48,6 +50,11 @@ export interface ProjectSummary {
    *  offered for it - see `projectActions`. Absent on older responses, which
    *  read as "not an example" and leave the actions as they were. */
   is_example?: boolean;
+  /** Source, automatic and hand-set categories - see `utils/dataflowCategories`. */
+  categories?: DataflowCategories;
+  /** The dataflow's scenarios (#662), as `projects/scenarios.py` lists them.
+   *  Absent on older responses. */
+  scenarios?: Array<Pick<Scenario, "id" | "name" | "color" | "description" | "nodes">>;
 }
 
 /** A computed output the backend could not auto-install on a save (e.g. its
@@ -80,6 +87,13 @@ export interface UpdateBody {
   name?: string;
   description?: string;
   thumbnail_accent?: string;
+  /** The spec revision this client last synced with (memo dev/124). The
+   *  server refuses a save whose basis is older than the spec on disk AND
+   *  which would delete a node, an edge or a node's code that the client
+   *  never saw. Omitting it means "no opinion" and is not checked. */
+  baseRevision?: number;
+  /** Replaces the hand-set categories (`dataflow.categories`). */
+  categories?: HandCategories;
 }
 
 export interface LoadResponse {

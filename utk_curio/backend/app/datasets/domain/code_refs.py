@@ -2,7 +2,8 @@
 
 A node can reach a dataset two ways: a *binding*, recorded in
 ``node.metadata.datasetRefs`` when the dataset is dragged onto it, and a literal
-``curio_dataset_path("<id>")`` call in the node's own source. The second is the
+``curio_load_data("<id>")`` (or ``curio_data_path`` / ``curio_load_collection``)
+call in the node's own source. The second is the
 common one. Curio's shipped examples all use it, because a hand-written or
 generated loader is just code, and the generators emit exactly this call.
 
@@ -21,19 +22,39 @@ from __future__ import annotations
 
 import re
 
-#: Literal ``curio_dataset_path("<id>")`` calls in node code. The id charset must
+#: Literal ``curio_load_data("<id>")`` calls in node code, and the two other ways
+#: a node names a dataset: ``curio_data_path`` (its file, for a reader of your
+#: own) and ``curio_load_collection`` (a collection, whose index is the dataset's
+#: data file). The id charset must
 #: stay in sync with ``_SAFE_DATASET_ID_RE`` in ``catalog_item.py`` (the backend
 #: snippet generator) and the frontend ``datasetLoaderSnippets.ts``: the
 #: generators only ever emit ids this scan can find. Single or double quotes are
 #: accepted because users edit the generated code, and the backreference means a
 #: mismatched pair is not a reference at all.
 DATASET_PATH_CALL_RE = re.compile(
-    r"""curio_dataset_path\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
+    r"""(?:curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
+)
+
+#: The calls that may read a collection, for the ids whose files a node will
+#: read: ``curio_load_collection``, and ``curio_load_data`` on a collection id
+#: (the resolver keeps only the ids that are collections).
+COLLECTION_CALL_RE = re.compile(
+    r"""(?:curio_load_collection|curio_load_data)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
+)
+
+#: Literal ``curio_load_model("<id>")`` calls: the Model Catalog's models a node
+#: runs, with the same id charset (the frontend's ``modelIdsInCode`` mirrors
+#: it). Not a dataset reference, so not in ``DATASET_PATH_CALL_RE``.
+MODEL_CALL_RE = re.compile(
+    r"""curio_load_model\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
 )
 
 #: Bound the work against pathological or generated code. Shared with the
 #: execution path, which has always had this cap.
 MAX_DATASET_IDS = 32
+
+#: The most models one node's code names.
+MAX_MODEL_IDS = 8
 
 
 def dataset_ids_in_code(code: object, *, limit: int = MAX_DATASET_IDS) -> list[str]:
@@ -47,7 +68,9 @@ def dataset_ids_in_code(code: object, *, limit: int = MAX_DATASET_IDS) -> list[s
     can see, which is the same limitation the execution resolver has always had
     and is why the result is used to *add* usage, never to deny it.
     """
-    if not isinstance(code, str) or "curio_dataset_path" not in code:
+    if not isinstance(code, str) or (
+        "curio_load_" not in code and "curio_data_path" not in code
+    ):
         return []
     ids: list[str] = []
     for match in DATASET_PATH_CALL_RE.finditer(code):
@@ -78,3 +101,30 @@ def node_code(node: object) -> str:
         return ""
     content = node.get("content")
     return content if isinstance(content, str) else ""
+
+
+def model_ids_in_code(code: object, *, limit: int = MAX_MODEL_IDS) -> list[str]:
+    """Model ids referenced by literal ``curio_load_model`` calls, first seen first."""
+    if not isinstance(code, str) or "curio_load_model" not in code:
+        return []
+    ids: list[str] = []
+    for match in MODEL_CALL_RE.finditer(code):
+        if match.group(2) not in ids:
+            ids.append(match.group(2))
+        if len(ids) >= limit:
+            break
+    return ids
+
+
+def collection_ids_in_code(code: object, *, limit: int = MAX_DATASET_IDS) -> list[str]:
+    """Ids a node may read as a collection: literal ``curio_load_collection``
+    and ``curio_load_data`` calls. Callers keep the ones that are collections."""
+    if not isinstance(code, str) or "curio_load_" not in code:
+        return []
+    ids: list[str] = []
+    for match in COLLECTION_CALL_RE.finditer(code):
+        if match.group(2) not in ids:
+            ids.append(match.group(2))
+        if len(ids) >= limit:
+            break
+    return ids

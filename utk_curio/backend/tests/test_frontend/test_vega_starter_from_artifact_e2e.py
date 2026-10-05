@@ -45,7 +45,7 @@ VEGA_ID = "starter-vega"
 LOADER_CODE = (
     "import geopandas as gpd\n"
     "\n"
-    'dataset_path = curio_dataset_path("data.urbanlab.chicago-boundary")\n'
+    'dataset_path = curio_data_path("data.utk.chicago-boundary")\n'
     "gdf = gpd.read_file(dataset_path)\n"
     "\n"
     "return gdf\n"
@@ -104,8 +104,8 @@ def _spec() -> dict:
             ],
             "datasets": [
                 {
-                    "datasetId": "data.urbanlab.chicago-boundary",
-                    "dirName": "data.urbanlab.chicago-boundary@1",
+                    "datasetId": "data.utk.chicago-boundary",
+                    "dirName": "data.utk.chicago-boundary@1",
                     "origin": "imported",
                     "producerNodeId": None,
                     "consumerNodeIds": [],

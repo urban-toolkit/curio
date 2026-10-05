@@ -3,7 +3,7 @@
 ``dataset_usage`` counts a dataset as used when a node's *source* mentions it
 (#250), which is right for the detail page and for lineage. The uninstall
 orphan gate consulted the same query, and applying a dataset writes
-``curio_dataset_path("<id>")`` straight into the node's source - so for the
+``curio_data_path("<id>")`` straight into the node's source - so for the
 ordinary drag-it-in-then-uninstall flow the gate always fired: the store folder
 survived, the Data Hub card survived, and "uninstalling removes all traces"
 stopped being true.
@@ -57,7 +57,7 @@ def _project_with_loader(client, token, dataset_id, *, name="Uses it in code"):
                     "y": 0,
                     "content": (
                         "import pandas as pd\n"
-                        f'dataset_path = curio_dataset_path("{dataset_id}")\n'
+                        f'dataset_path = curio_data_path("{dataset_id}")\n'
                         "df = pd.read_csv(dataset_path)\n"
                     ),
                     "metadata": {"keywords": []},
@@ -112,7 +112,7 @@ def test_a_code_reference_does_not_keep_the_store_folder_alive(
 
     assert not store_dir.exists(), (
         "a code-only mention must not keep the store folder alive: applying a "
-        "dataset writes curio_dataset_path into the node, so this is the "
+        "dataset writes curio_data_path into the node, so this is the "
         "ordinary flow, not an edge case"
     )
     listed = client.get("/api/datasets/catalog", headers=_auth(token)).get_json()["items"]

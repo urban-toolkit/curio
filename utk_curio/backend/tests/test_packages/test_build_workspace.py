@@ -1,4 +1,4 @@
-"""Isolation tests for :mod:`utk_curio.backend.app.packages.build_workspace`
+"""Isolation tests for :mod:`utk_curio.backend.app.packages.infrastructure.workspace`
 (dev/89 commit 3): scrubbed env, read-only inputs, resource/wall/output
 bounds, process-group cancellation, sanitized diagnostics, bounded output
 collection, and workspace destruction.
@@ -15,8 +15,8 @@ from unittest import mock
 
 import pytest
 
-from utk_curio.backend.app.packages import build_workspace
-from utk_curio.backend.app.packages.build_workspace import (
+from utk_curio.backend.app.packages.infrastructure import workspace as build_workspace
+from utk_curio.backend.app.packages.infrastructure.workspace import (
     WorkerLimits,
     WorkspaceError,
     collect_outputs,
@@ -53,9 +53,9 @@ def unprivileged_worker(workspace, monkeypatch):
     would leave the guarantee unexercised in the one environment that runs it
     on every push, so drop privileges instead.
 
-    Wraps the ``preexec_fn`` ``run_worker`` already installs rather than
-    adding a run-as parameter to ``build_workspace`` that no production caller
-    would pass. Same account and the same 0711 traversal as ``isolated_dropped``
+    Adds a ``drop`` to the bounds ``run_worker`` already applies after exec
+    rather than adding a run-as parameter to ``build_workspace`` that no
+    production caller would pass. Same account and the same 0711 traversal as ``isolated_dropped``
     in ``utk_curio/sandbox/tests/test_isolation_linux.py``.
     """
     if os.name != "posix" or os.geteuid() != 0:
@@ -83,15 +83,10 @@ def unprivileged_worker(workspace, monkeypatch):
     original = build_workspace._apply_rlimits
 
     def _dropping(limits):
-        applied, preexec = original(limits)
-
-        def _child() -> None:  # runs in the child, pre-exec
-            preexec()  # rlimits first: after setuid they can only be lowered
-            os.setgroups([])
-            os.setgid(account.pw_gid)
-            os.setuid(account.pw_uid)  # last — nothing can be dropped after
-
-        return applied, _child
+        applied, bounds = original(limits)
+        # bounded_exec sets the rlimits first, then drops: after setuid they
+        # could only be lowered.
+        return applied, {**bounds, "drop": [account.pw_uid, account.pw_gid]}
 
     monkeypatch.setattr(build_workspace, "_apply_rlimits", _dropping)
 
@@ -215,6 +210,36 @@ class TestBounds:
         )
         assert result.status == "ok"
         assert "7" in result.stdout_tail
+
+    @pytest.mark.skipif(not sys.platform.startswith("linux"),
+                        reason="the address-space bound is Linux-only on POSIX")
+    def test_an_address_space_bound_of_zero_is_not_applied(self, workspace):
+        # Not a ceiling of zero, which no process could start under.
+        result = _run(
+            workspace,
+            "print('worker ran')",
+            limits=WorkerLimits(wall_time_seconds=20.0, memory_bytes=0),
+        )
+        assert result.status == "ok", result.stderr_tail
+        assert "worker ran" in result.stdout_tail
+        assert "as" not in result.limits_applied and "cpu" in result.limits_applied
+
+    @pytest.mark.skipif(os.name == "nt", reason="the Windows job bounds the process count")
+    def test_a_worker_starts_threads_and_children_however_many_its_user_runs(self, workspace):
+        # RLIMIT_NPROC counts every process and thread of the user, so a worker
+        # of a user who already runs 32 could start none: it is not applied.
+        result = _run(
+            workspace,
+            "import subprocess, sys, threading\n"
+            "thread = threading.Thread(target=lambda: None)\n"
+            "thread.start(); thread.join()\n"
+            "subprocess.run([sys.executable, '-c', 'pass'], check=True)\n"
+            "print('started both')",
+            limits=WorkerLimits(wall_time_seconds=30.0),
+        )
+        assert result.status == "ok", result.stderr_tail
+        assert "started both" in result.stdout_tail
+        assert "nproc" not in result.limits_applied
 
     def test_cancellation_kills_promptly(self, workspace):
         cancel = threading.Event()

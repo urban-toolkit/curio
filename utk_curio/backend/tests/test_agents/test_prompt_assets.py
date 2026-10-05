@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from utk_curio.backend.app.agents import builtin
+from utk_curio.backend.app.agents.domain import builtin
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -27,7 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 class TestPromptFilesResolve:
     @pytest.mark.parametrize("spec", builtin.BUILTIN_AGENTS, ids=lambda s: s.agent_id)
     def test_every_declared_prompt_file_exists(self, spec):
-        for filename in (spec.prompt_file, spec.preamble_file):
+        for filename in spec.prompt_files().values():
             assert (builtin.PROMPT_SOURCE_DIR / filename).is_file(), (
                 f"{spec.agent_id} names {filename!r}, which is not in "
                 f"{builtin.PROMPT_SOURCE_DIR}"
@@ -36,9 +36,23 @@ class TestPromptFilesResolve:
     @pytest.mark.parametrize("spec", builtin.BUILTIN_AGENTS, ids=lambda s: s.agent_id)
     def test_every_agent_materializes_with_prompt_bytes(self, spec):
         coord = f"{spec.agent_id}@{builtin.BUILTIN_VERSION}"
-        for name in ("instruction", "system"):
+        for name in spec.prompt_files():
             text = builtin.read_prompt_text(coord, name)
             assert text, f"{coord} resolved no {name} prompt"
+
+
+class TestUserOwnedValuesStayOutOfPrompts:
+    """A value the user owns is a catalog setting, rendered into the run that
+    reads it. A copy in a prompt file would be a second source that edits in
+    the Agent Catalog never reach."""
+
+    def test_no_prompt_file_carries_a_keyword_type(self):
+        from utk_curio.backend.app.agents.domain import contracts
+
+        lines = set(contracts.KEYWORD_TYPES.render(contracts.KEYWORD_TYPES.default).splitlines())
+        for path in sorted(builtin.PROMPT_SOURCE_DIR.glob("*.md")):
+            found = lines & set(path.read_text(encoding="utf-8").splitlines())
+            assert not found, f"{path.name} carries keyword types: {sorted(found)[:2]}"
 
 
 class TestPromptsArePackaged:
@@ -46,19 +60,19 @@ class TestPromptsArePackaged:
 
     Asserted against the packaging config rather than by building an sdist,
     which keeps this in the unit suite. The plan's end-to-end check (build an
-    sdist and a wheel, confirm the .txt files are inside both) stays a manual
+    sdist and a wheel, confirm the .md files are inside both) stays a manual
     release step.
     """
 
     def test_manifest_in_includes_the_prompts(self):
         manifest = (REPO_ROOT / "MANIFEST.in").read_text(encoding="utf-8")
         assert re.search(
-            r"^recursive-include\s+utk_curio/llm-prompts\s", manifest, re.MULTILINE
+            r"^recursive-include\s+utk_curio/llm-prompts\s+\*\.md\s*$", manifest, re.MULTILINE
         ), "MANIFEST.in must carry utk_curio/llm-prompts into the sdist"
 
     def test_pyproject_ships_them_in_the_wheel(self):
         pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        assert "llm-prompts/*.txt" in pyproject, (
+        assert "llm-prompts/*.md" in pyproject, (
             "pyproject must declare llm-prompts as package-data, or the wheel "
             "ships without it even when the sdist has it"
         )

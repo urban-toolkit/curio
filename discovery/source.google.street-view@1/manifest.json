@@ -1,0 +1,81 @@
+{
+  "id": "source.google.street-view",
+  "name": "Google Street View",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "Street View images for a box: the panoramas Google holds there, one image per panorama and heading, at the field of view, pitch and size you choose. Needs your own Google Maps API key with the Street View Static API enabled; Google bills its requests to you, and its terms allow storing only panorama IDs.",
+  "publisher": "Google",
+  "homepage": "https://developers.google.com/maps/documentation/streetview",
+  "license": "Google Street View: see the Google Maps Platform Terms",
+  "tags": ["google", "street view", "street-level", "imagery", "panoramas"],
+  "provider": {
+    "type": "google-streetview",
+    "baseUrl": "https://maps.googleapis.com",
+    "options": {}
+  },
+  "auth": {
+    "mode": "required-token",
+    "secretId": "google.maps-key",
+    "scheme": "query",
+    "paramName": "key",
+    "helpUrl": "https://developers.google.com/maps/documentation/streetview/get-api-key"
+  },
+  "limits": { "requestsPerMinute": 10 },
+  "resources": [
+    {
+      "id": "images", "name": "Street View images", "kind": "images",
+      "description": "One image per panorama and heading, each with the panorama's ID, place and capture month.",
+      "options": {},
+      "parameters": [
+        {
+          "id": "area", "type": "area", "label": "Area", "required": true, "accepts": ["box"],
+          "maxAreaKm2": 2,
+          "description": "The box to find panoramas in."
+        },
+        {
+          "id": "spacing", "type": "number", "label": "Spacing", "unit": "m", "default": 30,
+          "min": 10, "max": 200,
+          "description": "How far apart the points asked for a panorama are."
+        },
+        {
+          "id": "headings", "type": "choice", "label": "Headings", "multiple": true,
+          "default": ["0", "90", "180", "270"],
+          "options": [
+            { "value": "0", "label": "North" },
+            { "value": "90", "label": "East" },
+            { "value": "180", "label": "South" },
+            { "value": "270", "label": "West" }
+          ],
+          "description": "One image per panorama for each heading chosen."
+        },
+        {
+          "id": "fov", "type": "integer", "label": "Field of view", "unit": "degrees", "default": 90,
+          "min": 10, "max": 120
+        },
+        {
+          "id": "pitch", "type": "integer", "label": "Pitch", "unit": "degrees", "default": 0,
+          "min": -90, "max": 90,
+          "description": "Up or down from the horizon."
+        },
+        {
+          "id": "size", "type": "choice", "label": "Size", "default": "640x640",
+          "options": [
+            { "value": "640x640", "label": "640 x 640" },
+            { "value": "640x480", "label": "640 x 480" },
+            { "value": "320x240", "label": "320 x 240" }
+          ]
+        },
+        {
+          "id": "outdoorOnly", "type": "boolean", "label": "Outdoor panoramas only", "default": true
+        },
+        {
+          "id": "maxImages", "type": "integer", "label": "Most images", "default": 50,
+          "min": 1, "max": 1000,
+          "description": "Panoramas are taken from across the box until there are this many images."
+        }
+      ]
+    }
+  ],
+  "createdAt": "2026-10-01T00:00:00Z",
+  "updatedAt": "2026-10-01T00:00:00Z"
+}

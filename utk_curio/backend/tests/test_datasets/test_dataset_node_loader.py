@@ -223,42 +223,49 @@ def test_bundle_loader_preserves_part_order(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# Portable id form (curio_dataset_path)
+# Portable id form: curio_load_data, curio_load_collection, curio_data_path
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.parametrize(
-    "fmt,path_variable",
+    "fmt,code",
     [
-        ("csv", "dataset_path"),
-        ("geojson", "dataset_path"),
-        ("shp", "dataset_path"),
-        ("json", "dataset_path"),
-        ("geotiff", "dataset_path"),
-        ("parquet", "dataset_path"),
-        ("bundle", "bundle_path"),
+        ("csv", 'df = curio_load_data("imported.xabc123")'),
+        ("parquet", 'df = curio_load_data("imported.xabc123")'),
+        ("geojson", 'gdf = curio_load_data("imported.xabc123")'),
+        ("shp", 'gdf = curio_load_data("imported.xabc123")'),
+        ("json", 'data = curio_load_data("imported.xabc123")'),
+        ("geotiff", 'src = curio_load_data("imported.xabc123")'),
+        ("bundle", 'bundle = curio_load_data("imported.xabc123")'),
+        ("collection", 'collection = curio_load_collection("imported.xabc123")'),
+        ("osm", 'dataset_path = curio_data_path("imported.xabc123")'),
     ],
 )
-def test_snippet_uses_id_call_when_id_given(fmt, path_variable):
-    """With a dataset id the location line is the portable resolver call and the
-    generated code carries no machine-specific absolute path."""
+def test_snippet_uses_id_call_when_id_given(fmt, code):
+    """With a dataset id the loader is one portable call the sandbox resolves and
+    reads by format; the generated code carries no machine-specific path and
+    imports nothing. A format nothing reads gets the file's path instead."""
     snippet = loader_snippet(fmt, "C:/Users/someone/.curio/users/3/datasets/x@1/data/f", dataset_id="imported.xabc123")
-    assert f'{path_variable} = curio_dataset_path("imported.xabc123")' in snippet["code"]
+    assert snippet["code"] == code
     assert "C:/Users" not in snippet["code"]
-    # The reader body and contract fields are unchanged by the id form.
-    assert snippet["pathVariable"] == path_variable
+    assert snippet["imports"] == []
 
 
-def test_id_call_resolves_via_injected_resolver(tmp_path):
-    """The id-form snippet executes against the sandbox-injected resolver."""
+def test_id_call_reads_through_the_sandbox_helpers(tmp_path):
+    """The id-form snippet executes against the helpers the sandbox injects,
+    and reads the dataset by its format."""
     pd = pytest.importorskip("pandas")
+    from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
 
     path = tmp_path / "table.parquet"
     pd.DataFrame({"a": [1, 2]}).to_parquet(path)
 
     snippet = loader_snippet("parquet", None, dataset_id="imported.xabc123")
-    namespace = {"curio_dataset_path": {"imported.xabc123": str(path)}.__getitem__}
-    code = "\n".join(snippet["imports"]) + "\n" + snippet["code"]
-    exec(code, namespace)  # noqa: S102 — exercising generated loader code on purpose
+    namespace: dict = {}
+    install_catalog_helpers(
+        namespace, data_path={"imported.xabc123": str(path)}.__getitem__,
+        formats={"imported.xabc123": {"format": "parquet"}}, collections=None, media_dir=None, models=None,
+    )
+    exec(snippet["code"], namespace)  # noqa: S102 — exercising generated loader code on purpose
     assert list(namespace[snippet["returnVariable"]]["a"]) == [1, 2]
 
 
@@ -277,7 +284,7 @@ def test_unsafe_or_missing_id_falls_back_to_literal_path(bad_id):
     """Ids can come from user-editable spec JSON; anything outside the whitelist
     must never be interpolated into generated Python source."""
     snippet = loader_snippet("csv", "/data/file.csv", dataset_id=bad_id)
-    assert "curio_dataset_path" not in snippet["code"]
+    assert "curio_" not in snippet["code"]
     assert 'dataset_path = "/data/file.csv"' in snippet["code"]
 
 def test_json_loader_reads_plain_json(tmp_path):
@@ -304,3 +311,90 @@ def test_json_loader_reads_zlib_compressed_json(tmp_path):
     path.write_bytes(zlib.compress(json.dumps(doc, ensure_ascii=False).encode("utf-8")))
 
     assert _run_loader(loader_snippet("json", str(path))) == doc
+
+
+# --------------------------------------------------------------------------- #
+# A Discovery download's Autark layer
+# --------------------------------------------------------------------------- #
+
+_DISCOVERY_OSM = {"sourceId": "source.osm.openstreetmap@1", "resourceId": "buildings"}
+
+
+def _catalog_item(**overrides):
+    from utk_curio.backend.app.datasets.domain.catalog_item import base_item
+
+    return base_item(**{
+        "id": "imported.osm-buildings@1",
+        "format": "geojson",
+        "path": "/tmp/osm_buildings.geojson",
+        "layerName": "buildings",
+        "discoverySource": _DISCOVERY_OSM,
+        **overrides,
+    })
+
+
+def test_a_discovery_layer_loader_names_its_autark_layer():
+    """An Autark node draws the frame as the layer it is: an OpenStreetMap
+    Buildings download extrudes. The loader is one ``curio_load_data`` call
+    (the frontend's twin writes the same, datasetLoaderSnippets.test.ts); the
+    layer travels to the sandbox with the dataset's format."""
+    from utk_curio.backend.app.datasets.domain.catalog_item import execution_format
+
+    item = _catalog_item()
+    assert item["loaderSnippet"]["code"] == 'gdf = curio_load_data("imported.osm-buildings@1")'
+    assert item["loaderSnippet"]["returnVariable"] == "gdf"
+    assert execution_format(item) == {"format": "geojson", "layerType": "buildings"}
+
+
+@pytest.mark.parametrize("overrides", [
+    # A GeoPackage layer (or any hand import) may be called "buildings".
+    {"discoverySource": None},
+    # A Discovery layer that is not one of Autark's.
+    {"layerName": "map-features"},
+    {"layerName": None},
+])
+def test_only_a_discovery_download_of_an_autark_layer_is_typed(overrides):
+    from utk_curio.backend.app.datasets.domain.catalog_item import execution_format
+
+    assert "layerType" not in execution_format(_catalog_item(**overrides))
+
+
+def test_curio_load_data_names_the_layer_it_was_sent(tmp_path):
+    """The sandbox half: a dataset sent with a layerType loads as a frame naming it."""
+    import warnings
+
+    from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
+
+    path = tmp_path / "osm_buildings.geojson"
+    path.write_text(json.dumps({"type": "FeatureCollection", "features": [{
+        "type": "Feature",
+        "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]},
+        "properties": {"building": "yes"},
+    }]}), encoding="utf-8")
+    namespace: dict = {}
+    install_catalog_helpers(
+        namespace, data_path={"imported.osm-buildings@1": str(path)}.__getitem__,
+        formats={"imported.osm-buildings@1": {"format": "geojson", "layerType": "buildings"}},
+        collections=None, media_dir=None, models=None,
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        gdf = namespace["curio_load_data"]("imported.osm-buildings@1")
+    assert gdf.metadata == {"layerType": "buildings"}
+
+
+def test_the_typed_loader_returns_a_geodataframe_naming_its_layer(tmp_path):
+    import warnings
+
+    path = tmp_path / "osm_buildings.geojson"
+    path.write_text(json.dumps({"type": "FeatureCollection", "features": [{
+        "type": "Feature",
+        "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]},
+        "properties": {"building": "yes", "height": 12.0},
+    }]}), encoding="utf-8")
+    snippet = loader_snippet("geojson", str(path), layer_type="buildings")
+    # pandas warns on a new attribute; the sandbox runs node code with warnings off.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        gdf = _run_loader(snippet)
+    assert len(gdf) == 1 and gdf.metadata == {"layerType": "buildings"}
