@@ -359,6 +359,8 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 
 **Relocating the catalog.** The default root resolves relative to the installed package. That suits a checkout, but on a `pip` install it lands inside `site-packages`, where it is read-only and publishing fails. Set `CURIO_CATALOG_ROOT` (or `--catalog-root`) to a writable, persistent path there.
 
+**SCOUT's shadow model is not in the pip package.** `data.scout.deep-umbra@1`, the ONNX model the Accumulated Shadow node of `scout.shadow@1` runs, is in the repository's `datasets/` and in its Docker image only. To add it to a `pip` install, copy the repository's folder `datasets/data.scout.deep-umbra@1` into the shared catalog's root.
+
 **Only a dataset's publisher can unpublish or delete it.**
 
 **The dataset index needs no care.** Listings are served from a database table that mirrors each user's store, checked against disk on every listing. Dropping every row is safe, since the next listing rebuilds it, and there is no cleanup job to schedule.

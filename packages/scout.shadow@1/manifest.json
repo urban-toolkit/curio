@@ -1,0 +1,61 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-10-05T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "onnxruntime": ">=1.17",
+      "rasterio": ">=1.4"
+    }
+  },
+  "description": "SCOUT's Deep Umbra shadow model, ported from SCOUT (urban-toolkit/scout): the Accumulated Shadow node predicts how long the ground stays in shadow over a season's day from the zoom-16 height tiles of SCOUT Raster Conversion, as a mosaic in minutes that an Autark map draws and a table of the mean and median. The model is the Data Catalog dataset data.scout.deep-umbra@1, which ships in the Curio repository but not in the pip package.",
+  "id": "scout.shadow",
+  "license": "MIT",
+  "name": "SCOUT Shadow",
+  "permissions": [],
+  "publisher": "Curio",
+  "readOnly": true,
+  "templates": [
+    {
+      "category": "computation",
+      "description": "SCOUT's accumulated shadow simulation: Deep Umbra, a generator network, predicts for each map tile how much of a season's day each pixel spends in shadow, from the heights of the buildings on the tile and its eight neighbours, the tile's latitude and the season. Input: the (mosaic, tiles) output of Rasterize Buildings, or its tiles table: zoom-16 tiles where 255 is 550 m. Output: (mosaic, metrics): one RASTER of the tiles' shadow side by side, in minutes, for an Autark map; and a one-row table with the season and the mean and median accumulated shadow in minutes over the ground (pixels with no building), as SCOUT reports them. The model is the Data Catalog dataset data.scout.deep-umbra.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": true,
+      "iconRef": "fa-solid:sun",
+      "id": "accumulated-shadow",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["DATAFRAME"]
+        }
+      ],
+      "label": "Accumulated Shadow",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": ["RASTER", "DATAFRAME"]
+        }
+      ],
+      "source": "sources/accumulated-shadow.py",
+      "widgets": [
+        {
+          "name": "season",
+          "type": "choice",
+          "label": "Season",
+          "default": "summer",
+          "options": {"choices": ["spring", "summer", "winter"], "display": "radio"}
+        }
+      ]
+    }
+  ],
+  "version": "1.0.0"
+}
