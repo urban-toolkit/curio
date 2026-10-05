@@ -145,6 +145,23 @@ def test_dataset_parses_and_yields_expectations(dataset: CatalogDataset):
         missing = [r for r in relpaths if not (root / r).is_file()]
         assert not missing, f"{dataset.dataset_id} indexes files its source does not hold: {missing}"
         assert int(markers["CURIO_E2E_ROWS"]) == len(relpaths)
+    elif fmt == "onnx":
+        from utk_curio.backend.app.datasets.domain.onnx_model import is_onnx_model
+
+        with open(dataset.data_file, "rb") as handle:
+            assert is_onnx_model(handle, dataset.data_file.stat().st_size), (
+                f"{dataset.data_file} is not an ONNX model"
+            )
+        assert markers["CURIO_E2E_INPUTS"] and markers["CURIO_E2E_OUTPUTS"], markers
+    elif fmt == "netcdf":
+        from utk_curio.backend.app.datasets.domain.constants import NETCDF_SIGNATURES
+
+        with open(dataset.data_file, "rb") as handle:
+            assert handle.read(8).startswith(NETCDF_SIGNATURES), f"{dataset.data_file} is not a NetCDF file"
+        assert markers["CURIO_E2E_VARIABLES"] and int(markers["CURIO_E2E_FINITE"]) >= 1, markers
+        # A variable of a NetCDF group is the variable its layer names.
+        if dataset.manifest.layer_name:
+            assert markers["CURIO_E2E_VARIABLES"].split(":")[0] == dataset.manifest.layer_name, markers
     else:  # pragma: no cover - plan_for() gates this
         pytest.fail(
             f"format {fmt!r} has a FormatPlan but no parse check here; add one "

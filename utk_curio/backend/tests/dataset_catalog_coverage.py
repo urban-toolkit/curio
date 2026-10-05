@@ -15,7 +15,10 @@ without pulling Playwright in. ``pyarrow`` and ``rasterio``/``numpy`` are
 imported lazily inside the parquet and geotiff expectations, so collection stays
 in the milliseconds - and both are declared dependencies of ``curio.builtin@1``
 and ``curio.weather@1``, which ``python curio.py setup`` installs before any
-suite runs.
+suite runs. ``onnxruntime`` is imported lazily inside the ONNX expectations the
+same way; ``curio.streetvision@1`` and ``scout.routing@1`` declare it. The
+NetCDF expectations read the file through the sandbox's own reader (xarray,
+a ``curio.builtin@1`` dependency).
 
 WHY THE COMMITTED FILE IS THE ORACLE, NOT THE MANIFEST
 ------------------------------------------------------
@@ -139,6 +142,11 @@ class FormatPlan:
     vega_spec: str | None
     #: Marker name -> expected value, parsed from the committed data file.
     expectations: Callable[[Path], dict[str, str]]
+    #: Code the test appends to the generated loader, for a format whose value
+    #: stays in the loader's own code (``KEPT_IN_CODE`` in
+    #: ``datasetLoaderSnippets.ts``: a node's output cannot carry it). The
+    #: loader uses the value there and returns a table its consumer reads.
+    loader_suffix: str | None = None
 
 
 _CSV_TRANSFORM = '''df = arg
@@ -414,6 +422,111 @@ def _collection_expectations(data_file: Path) -> dict[str, str]:
     }
 
 
+# An ONNX model's loader holds an onnxruntime session, which no node output can
+# carry, so the loader itself runs the model once, on zeros of each input's
+# shape, and returns each input's and output's name and shape: proof that the
+# file loaded and ran, not only that it was found.
+_ONNX_LOADER_SUFFIX = '''import numpy as np
+import pandas as pd
+
+dtypes = {
+    "tensor(float)": np.float32, "tensor(double)": np.float64, "tensor(float16)": np.float16,
+    "tensor(int64)": np.int64, "tensor(int32)": np.int32, "tensor(uint8)": np.uint8, "tensor(bool)": np.bool_,
+}
+inputs, outputs = session.get_inputs(), session.get_outputs()
+feed = {i.name: np.zeros([d if isinstance(d, int) else 1 for d in i.shape], dtype=dtypes[i.type]) for i in inputs}
+results = session.run(None, feed)
+return pd.DataFrame({
+    "port": ["input"] * len(inputs) + ["output"] * len(outputs),
+    "name": [i.name for i in inputs] + [o.name for o in outputs],
+    "shape": ["x".join(str(d) for d in i.shape) for i in inputs] + ["x".join(str(d) for d in r.shape) for r in results],
+})
+'''
+
+_ONNX_TRANSFORM = '''df = arg
+inputs = df[df["port"] == "input"]
+outputs = df[df["port"] == "output"]
+print("CURIO_E2E_INPUTS=%s;" % ",".join(n + ":" + s for n, s in zip(inputs["name"], inputs["shape"])))
+print("CURIO_E2E_OUTPUTS=%s;" % ",".join(n + ":" + s for n, s in zip(outputs["name"], outputs["shape"])))
+return df
+'''
+
+
+def _onnx_expectations(data_file: Path) -> dict[str, str]:
+    """Run the committed model the way the loader suffix runs it, and read its
+    inputs and outputs off the table the suffix returns."""
+    import textwrap
+
+    try:
+        import onnxruntime as ort
+    except ImportError as exc:  # pragma: no cover - environment problem
+        raise AssertionError(
+            f"reading {data_file.name} needs onnxruntime, declared by "
+            f"packages/curio.streetvision@1 and packages/scout.routing@1, OPT-IN "
+            f"catalog packages: boot once with `python curio.py start "
+            f"--with-examples` (what scripts/test.sh does before this suite runs), "
+            f"or pip-install it directly."
+        ) from exc
+
+    namespace: dict = {}
+    exec("def describe(session):\n" + textwrap.indent(_ONNX_LOADER_SUFFIX, "    "), namespace)
+    table = namespace["describe"](ort.InferenceSession(str(data_file), providers=["CPUExecutionProvider"]))
+    assert len(table), f"{data_file} declares no inputs or outputs"
+
+    def ports(kind: str) -> str:
+        rows = table[table["port"] == kind]
+        return ",".join(n + ":" + s for n, s in zip(rows["name"], rows["shape"]))
+
+    return {"CURIO_E2E_INPUTS": ports("input"), "CURIO_E2E_OUTPUTS": ports("output")}
+
+
+# A NetCDF file's loader holds an xarray Dataset, which no node output can
+# carry, so the loader describes it: each data variable, its dimensions and
+# shape, and how many of its values are finite, proof that the values were read
+# and not only the header.
+_NETCDF_LOADER_SUFFIX = '''import numpy as np
+import pandas as pd
+
+names = list(ds.data_vars)
+return pd.DataFrame({
+    "variable": names,
+    "dims": ["x".join(ds[name].dims) for name in names],
+    "shape": ["x".join(str(n) for n in ds[name].shape) for name in names],
+    "finite": [int(np.isfinite(ds[name].values).sum()) for name in names],
+})
+'''
+
+_NETCDF_TRANSFORM = '''df = arg
+print("CURIO_E2E_VARIABLES=%s;" % ",".join(v + ":" + s for v, s in zip(df["variable"], df["shape"])))
+print("CURIO_E2E_DIMS=%s;" % ",".join(df["dims"]))
+print("CURIO_E2E_FINITE=%d;" % int(df["finite"].sum()))
+return df
+'''
+
+
+def _netcdf_expectations(data_file: Path) -> dict[str, str]:
+    """Read the committed file as ``curio_load_data`` reads it and describe it
+    the way the loader suffix does."""
+    import textwrap
+
+    from utk_curio.sandbox.util.catalog_helpers import read_dataset
+
+    namespace: dict = {}
+    exec("def describe(ds):\n" + textwrap.indent(_NETCDF_LOADER_SUFFIX, "    "), namespace)
+    ds = read_dataset(str(data_file), "netcdf")
+    try:
+        table = namespace["describe"](ds)
+    finally:
+        ds.close()
+    assert len(table), f"{data_file} holds no data variable"
+    assert int(table["finite"].sum()) > 0, f"{data_file} holds no finite value"
+    return {
+        "CURIO_E2E_VARIABLES": ",".join(v + ":" + s for v, s in zip(table["variable"], table["shape"])),
+        "CURIO_E2E_DIMS": ",".join(table["dims"]),
+        "CURIO_E2E_FINITE": str(int(table["finite"].sum())),
+    }
+
+
 FORMAT_PLANS: dict[str, FormatPlan] = {
     "csv": FormatPlan(
         loader_marker="df = curio_load_data(",
@@ -446,6 +559,20 @@ FORMAT_PLANS: dict[str, FormatPlan] = {
         transform_code=_COLLECTION_TRANSFORM,
         vega_spec=None,
         expectations=_collection_expectations,
+    ),
+    "onnx": FormatPlan(
+        loader_marker="session = curio_load_data(",
+        transform_code=_ONNX_TRANSFORM,
+        vega_spec=None,
+        expectations=_onnx_expectations,
+        loader_suffix=_ONNX_LOADER_SUFFIX,
+    ),
+    "netcdf": FormatPlan(
+        loader_marker="ds = curio_load_data(",
+        transform_code=_NETCDF_TRANSFORM,
+        vega_spec=None,
+        expectations=_netcdf_expectations,
+        loader_suffix=_NETCDF_LOADER_SUFFIX,
     ),
 }
 

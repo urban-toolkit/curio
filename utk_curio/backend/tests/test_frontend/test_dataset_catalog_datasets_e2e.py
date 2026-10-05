@@ -191,6 +191,16 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
     expect(page.locator(DRAWER_ROOT)).to_have_count(0, timeout=5000)
 
     row = page.locator(f'#datasets-palette [data-dataset-id="{dataset.dataset_id}"]')
+    if dataset.manifest.group_id:
+        # The palette folds the datasets of a group (a NetCDF file's variables,
+        # a PBF's layers) under one header, and shows a member's row once the
+        # group is open.
+        group = page.locator(f'#datasets-palette [data-osm-group-id="{dataset.manifest.group_id}"]')
+        expect(group).to_have_count(1, timeout=20000)
+        caret = group.locator("button[aria-expanded]")
+        if caret.get_attribute("aria-expanded") != "true":
+            caret.click()
+        expect(caret).to_have_attribute("aria-expanded", "true", timeout=5000)
     expect(row).to_have_count(1, timeout=20000)
     return row
 
@@ -267,6 +277,11 @@ def test_dataset_loads_and_feeds_a_consumer(
     assert f'{call}("{dataset.dataset_id}")' in loader_code, (
         f"loader does not resolve the dataset by id:\n{loader_code}"
     )
+    if plan.loader_suffix:
+        # The format's value stays in the loader's own code (an onnxruntime
+        # session cannot cross an edge), so the loader uses it there and
+        # returns a table for its consumer.
+        set_node_code(page, loader_id, loader_code.rstrip("\n") + "\n" + plan.loader_suffix)
 
     # 3. A CONSUMER, wired to it. The edge id is derived, not random, so it
     #    doubles as an assertion that the handles the drag hit were the

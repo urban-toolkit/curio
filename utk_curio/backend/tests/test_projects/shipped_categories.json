@@ -389,6 +389,15 @@
       "Tables"
     ]
   },
+  "dataflows/NetCDF": {
+    "tags": [
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  },
   "dataflows/Regression": {
     "tags": [
       "Autark",
@@ -423,6 +432,16 @@
     ],
     "data_type": [
       "Tables"
+    ]
+  },
+  "dataflows/WeatherRouting": {
+    "tags": [
+      "Autark",
+      "GeoPandas"
+    ],
+    "data_type": [
+      "Geometries",
+      "OpenStreetMap"
     ]
   },
   "dataflows/Widget": {

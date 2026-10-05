@@ -1,0 +1,316 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "WeatherRouting",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/WeatherRouting.json",
+    "sha256": "bbdaf4365de465cae45486d20136c7e1e10463af9cf99cba495fa8ddbcce139f",
+    "walkthrough": null
+  },
+  "prompt": "Compare two weather-aware routes across the Chicago Loop at noon on 6 July 2025, using SCOUT's routing model and its forecast. Load the Loop's roads from the OpenStreetMap extract the examples ship, and set the start time once for both scenarios. In the first scenario rain counts most and wind least; the second is a copy of it with the two the other way round. Each scenario finds the rain-aware, the wind-aware and the fastest route between the same two points, then takes the routes and their metrics apart. Draw both scenarios' routes over the roads on one map, and chart each route's duration, distance, rain exposure and wind exposure in each scenario. The routing model is not part of the standard node set, so whatever provides it needs installing first.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.scout.weather-gnn",
+      "data.scout.wrf-rain",
+      "data.scout.wrf-rh2",
+      "data.scout.wrf-t2",
+      "data.scout.wrf-wdir10",
+      "data.scout.wrf-wspd10"
+    ],
+    "packages": [
+      "scout.routing@1"
+    ],
+    "paths": [
+      "docs/examples/data/chicago_loop.osm.pbf"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/compare-scenarios",
+        "role": "visualization",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/compare-scenarios",
+        "role": "visualization",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/compare-scenarios",
+        "role": "visualization",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.builtin/compare-scenarios",
+        "role": "visualization",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis5",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "endpoint1",
+        "type": "curio.builtin/parameter",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "analysis6",
+        "type": "scout.routing/weather-routing",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis7",
+        "type": "scout.routing/weather-routing",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "visualization1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "visualization1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis7",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization3",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization4",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization5",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization6",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis6",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis6",
+        "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis7",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis7",
+        "to": "analysis5",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.scout.weather-gnn",
+        "data.scout.wrf-rain",
+        "data.scout.wrf-rh2",
+        "data.scout.wrf-t2",
+        "data.scout.wrf-wdir10",
+        "data.scout.wrf-wspd10"
+      ],
+      "paths": [
+        "docs/examples/data/chicago_loop.osm.pbf"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "analysis6",
+      "mustMention": [
+        "route"
+      ]
+    },
+    {
+      "ref": "analysis7",
+      "mustMention": [
+        "route"
+      ]
+    }
+  ],
+  "execution": {
+    "mode": "browser",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T1",
+    "needs": [
+      "browser-only-execution",
+      "package-enlist:templates"
+    ],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON, 2026-10-05",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "sourceLicences": [
+      {
+        "datasetId": "data.scout.weather-gnn",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.scout.wrf-rain",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.scout.wrf-rh2",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.scout.wrf-t2",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.scout.wrf-wdir10",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.scout.wrf-wspd10",
+        "licence": ""
+      }
+    ],
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "A package node with widgets in two scenarios over Autark's roads and a shared Parameter node: SCOUT's weather routing with rain or wind weighed most, mapped through Autark and compared on four charts."
+}
