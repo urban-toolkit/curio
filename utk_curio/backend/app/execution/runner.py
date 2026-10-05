@@ -431,6 +431,16 @@ def run_through_node(
             models = resolve_exec_models(seeded, user=acting_user)
             if models:
                 payload["models"] = models
+        if is_py:
+            # The modules the node's package ships beside its templates, as
+            # /processPythonCode resolves them (#468).
+            from utk_curio.backend.app.execution.node_exec import resolve_package_modules
+
+            package_modules = resolve_package_modules(
+                node.raw_type, exec_user_key or user_key, project_id,
+            )
+            if package_modules:
+                payload["package_modules"] = package_modules
         endpoint = "/exec" if is_py else "/execJs"
         started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         t0 = time.monotonic()

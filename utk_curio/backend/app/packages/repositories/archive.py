@@ -51,6 +51,11 @@ _ALLOWED_TOP_DIRS: frozenset[str] = frozenset({
 # strictly ``[a-z][a-z0-9-]{0,62}`` (cf. ``storage.TEMPLATE_ID_RE``).
 _SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
 
+# The one file name a member may have that starts with an underscore: a folder
+# of Python modules in ``sources/`` is a regular package when it holds one
+# (#468). ``__pycache__`` and every other leading underscore stay refused.
+_PYTHON_PACKAGE_FILE = "__init__.py"
+
 
 # Cap an extracted file at 32 MiB. Packages are template-and-asset-oriented;
 # real models and datasets travel out-of-band. This bound also prevents
@@ -82,7 +87,8 @@ def _safe_member_path(raw_name: str) -> tuple[str, ...]:
     * Empty names, absolute paths, drive-letter prefixes.
     * Any segment equal to ``.`` or ``..``.
     * NUL bytes, control characters, non-printables.
-    * Anything outside ``[A-Za-z0-9][A-Za-z0-9._-]*``.
+    * Anything outside ``[A-Za-z0-9][A-Za-z0-9._-]*``, except a file named
+      ``__init__.py``.
 
     The check happens *before* the archive is touched on disk; together
     with the post-extract :func:`is_within` guard this makes zip-slip
@@ -93,7 +99,9 @@ def _safe_member_path(raw_name: str) -> tuple[str, ...]:
         parts = safe_archive.member_segments(raw_name)
     except safe_archive.ArchiveRefused as exc:
         raise InstallerError(str(exc)) from exc
-    for seg in parts:
+    for index, seg in enumerate(parts):
+        if seg == _PYTHON_PACKAGE_FILE and index == len(parts) - 1:
+            continue
         if not _SAFE_SEGMENT_RE.match(seg):
             raise InstallerError(
                 f"archive member has unsafe segment {seg!r}: {raw_name!r}"

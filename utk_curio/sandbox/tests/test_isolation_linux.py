@@ -1188,3 +1188,85 @@ def test_a_node_cannot_read_another_sessions_artifact(isolated, workspace):
     )
     assert result["output"]["path"] == ""
     assert "could not be loaded" in result["stderr"]
+
+
+# ---------------------------------------------------------------------------
+# #468: a template imports the modules bundled beside it in its package
+# ---------------------------------------------------------------------------
+
+#: The layout of #468's report: a package of modules beside the caller
+#: template, which imports a sibling relatively.
+_HEIGHTS = {
+    "building_height/__init__.py": "",
+    "building_height/convert_to_raster.py": (
+        "from .scale import FACTOR\n"
+        "\n"
+        "def convert_raster(value):\n"
+        "    return value * FACTOR\n"
+    ),
+    "building_height/scale.py": "FACTOR = 2\n",
+}
+
+_CALLER = (
+    "    from building_height.convert_to_raster import convert_raster\n"
+    "    return convert_raster(21)\n"
+)
+
+
+def _package_sources(package_root, modules):
+    """A package's ``sources/``, files 0644 and folders 0755, as an install
+    leaves them, and the caller template beside the modules."""
+    sources = package_root / "sources"
+    for relative, text in modules.items():
+        path = sources / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    (sources / "caller.py").write_text(_CALLER, encoding="utf-8")
+    for path in [sources, *sources.rglob("*")]:
+        os.chmod(path, 0o755 if path.is_dir() else 0o644)
+    return sources
+
+
+def test_a_forked_child_imports_the_module_bundled_beside_it(isolated, tmp_path):
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    sources = _package_sources(tmp_path / "ai.test.heights@1", _HEIGHTS)
+    result = run_isolated(
+        isolated, _CALLER, package_modules={"root": str(sources), "names": ["building_height"]},
+    )
+    assert result["stderr"] == "", result["stderr"]
+    assert load_from_duckdb(result["output"]["path"]) == 42
+
+
+def test_forked_children_of_two_packages_each_import_their_own_module(isolated, tmp_path):
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    code = "    import shared_name\n    return shared_name.WHO\n"
+    seen = []
+    for package in ("a", "b", "a"):
+        sources = tmp_path / f"ai.test.{package}@1" / "sources"
+        if not sources.is_dir():
+            _package_sources(sources.parent, {"shared_name.py": f"WHO = {package!r}\n"})
+        result = run_isolated(
+            isolated, code, package_modules={"root": str(sources), "names": ["shared_name"]},
+        )
+        assert result["stderr"] == "", result["stderr"]
+        seen.append(load_from_duckdb(result["output"]["path"]))
+    assert seen == ["a", "b", "a"]
+
+
+def test_the_execution_user_imports_modules_whose_store_it_cannot_reach(isolated_dropped, tmp_path):
+    """The package store is 0700 root-owned under isolation, so the execution
+    user reads the modules through their staged links in its scratch
+    directory, never at their path in the store."""
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    store = tmp_path / "packages"
+    sources = _package_sources(store / "ai.test.heights@1", _HEIGHTS)
+    os.chmod(store, 0o700)
+    result = run_isolated(
+        isolated_dropped, _CALLER,
+        package_modules={"root": str(sources), "names": ["building_height"]},
+    )
+    assert result["stderr"] == "", result["stderr"]
+    assert load_from_duckdb(result["output"]["path"]) == 42

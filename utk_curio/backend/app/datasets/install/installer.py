@@ -18,7 +18,8 @@ from utk_curio.backend.app.datasets.domain.manifest import (
     write_manifest,
 )
 from utk_curio.backend.app.common.safe_paths import PathTraversalError, validate_component
-from utk_curio.backend.app.datasets.domain.constants import TIFF_SIGNATURES
+from utk_curio.backend.app.datasets.domain.constants import NETCDF_SIGNATURES, TIFF_SIGNATURES
+from utk_curio.backend.app.datasets.domain.onnx_model import is_onnx_model
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import title_from_filename
 from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root, dataset_dir
 
@@ -515,17 +516,25 @@ def _check_content(data_path: Path, fmt: str, safe_filename: str) -> None:
     """Refuse an import whose bytes are not the format it is stored as.
 
     An upload's format comes from its name, and a download's from its URL and
-    headers, so a ``geotiff`` is checked for a TIFF's first bytes. The loader
-    opens it with rasterio, which reads whatever format the bytes are.
+    headers, so a ``geotiff`` is checked for a TIFF's first bytes and a
+    ``netcdf`` for a NetCDF file's. The loader opens a GeoTIFF with rasterio,
+    which reads whatever format the bytes are. An ``onnx`` model has no such
+    bytes, so its protobuf fields are read instead (``domain/onnx_model.py``).
     """
-    if fmt != "geotiff":
+    if fmt not in ("geotiff", "netcdf", "onnx"):
         return
     with open(data_path, "rb") as fh:
-        head = fh.read(4)
-    if head not in TIFF_SIGNATURES:
-        raise InstallerError(
-            f"{safe_filename} is not a TIFF file, so it cannot be imported as a GeoTIFF."
-        )
+        if fmt == "geotiff":
+            matches = fh.read(4) in TIFF_SIGNATURES
+            what = "a TIFF file, so it cannot be imported as a GeoTIFF"
+        elif fmt == "netcdf":
+            matches = fh.read(8).startswith(NETCDF_SIGNATURES)
+            what = "a NetCDF file, so it cannot be imported as NetCDF"
+        else:
+            matches = is_onnx_model(fh, data_path.stat().st_size)
+            what = "an ONNX model, so it cannot be imported as ONNX"
+    if not matches:
+        raise InstallerError(f"{safe_filename} is not {what}.")
 
 
 def _install_imported(

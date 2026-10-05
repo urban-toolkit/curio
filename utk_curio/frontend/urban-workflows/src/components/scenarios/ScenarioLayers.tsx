@@ -1,14 +1,12 @@
 import React, { useMemo, useRef, useState } from "react";
 import { internalsSymbol, useStore, type ReactFlowState } from "reactflow";
 
-import { useFlowContext } from "../../providers/FlowProvider";
 import type {
   ScenarioBox,
   ScenarioCanvasView,
+  ScenarioFrame,
   StandInEnd,
 } from "../../utils/scenarios/scenarioCanvasView";
-import { nodeLabel, outputStatus } from "./scenarioLabels";
-import { useScenarioActions } from "./useScenarioActions";
 import styles from "./ScenarioLayers.module.css";
 
 /** A collapsed scenario's box: its size, and the height of each port's row. */
@@ -19,6 +17,10 @@ const BOX_ROW = 24;
 const BOX_PAD = 8;
 /** Room a frame leaves around its scenario's nodes. */
 const FRAME_PAD = 18;
+/** How far above its frame a frame's header sits. */
+const FRAME_HEADER_OFFSET = 28;
+/** Room above a scenario's top node that its frame and header take. */
+export const FRAME_HEADER_ROOM = FRAME_PAD + FRAME_HEADER_OFFSET;
 
 export interface BoxLayout {
   width: number;
@@ -89,7 +91,8 @@ export interface ScenarioLayersProps {
   labelOf: (id: string) => string;
   statusOf: (id: string) => { text: string; tone: "done" | "error" | "stale" | "none" };
   onExpand: (id: string) => void;
-  onCollapse: (id: string) => void;
+  /** Absent on the dashboard: a frame's header then has no Collapse. */
+  onCollapse?: (id: string) => void;
   onMoveBox: (id: string, at: { x: number; y: number }) => void;
   /** False in a read-only view: boxes stay where they are. */
   editable: boolean;
@@ -213,19 +216,22 @@ export function ScenarioLayers({ view, labelOf, statusOf, onExpand, onCollapse, 
             <div
               key={f.scenario.id}
               className={styles.frameHeader}
-              style={{ left: f.left, top: f.top - 28 }}
+              data-scenario-header={f.scenario.id}
+              style={{ left: f.left, top: f.top - FRAME_HEADER_OFFSET }}
             >
               <span className={styles.chip} style={{ background: f.scenario.color }}>
                 {f.scenario.name}
               </span>
-              <button
-                type="button"
-                className={styles.headerButton}
-                data-testid={`scenario-collapse-${f.scenario.id}`}
-                onClick={() => onCollapse(f.scenario.id)}
-              >
-                Collapse
-              </button>
+              {onCollapse && (
+                <button
+                  type="button"
+                  className={styles.headerButton}
+                  data-testid={`scenario-collapse-${f.scenario.id}`}
+                  onClick={() => onCollapse(f.scenario.id)}
+                >
+                  Collapse
+                </button>
+              )}
             </div>
           ))}
           {boxes.map(({ box, x, y, layout }) => (
@@ -283,20 +289,26 @@ export function ScenarioLayers({ view, labelOf, statusOf, onExpand, onCollapse, 
   );
 }
 
-/** The layers on the canvas, reading the flow for labels and outputs. */
-export function CanvasScenarioLayers({ view, editable }: { view: ScenarioCanvasView<any, any>; editable: boolean }) {
-  const { nodes, nodeExecStatus } = useFlowContext();
-  const actions = useScenarioActions();
-  const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+const NO_STATUS = () => ({ text: "", tone: "none" as const });
+const NOTHING = () => {};
+
+/**
+ * The dashboard's: each scenario's column of tiles framed, under a header in
+ * its color (#662). No box, nothing to collapse or move.
+ */
+export function DashboardScenarioLayers({ frames }: { frames: ScenarioFrame[] }) {
+  const view = useMemo(
+    () => ({ nodes: [], edges: [], boxes: [], frames, standIns: [] }),
+    [frames],
+  );
   return (
     <ScenarioLayers
       view={view}
-      editable={editable}
-      labelOf={(id) => nodeLabel(byId.get(id), id)}
-      statusOf={(id) => outputStatus(byId.get(id), nodeExecStatus ?? {})}
-      onExpand={(id) => actions.setCollapsed(id, false)}
-      onCollapse={(id) => actions.setCollapsed(id, true)}
-      onMoveBox={actions.moveBox}
+      editable={false}
+      labelOf={(id) => id}
+      statusOf={NO_STATUS}
+      onExpand={NOTHING}
+      onMoveBox={NOTHING}
     />
   );
 }

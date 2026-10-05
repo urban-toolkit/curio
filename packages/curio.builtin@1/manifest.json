@@ -19,7 +19,9 @@
       "fiona": ">=1.10.1",
       "pillow": ">=12.2.0",
       "av": ">=15.0",
-      "rasterio": ">=1.4"
+      "rasterio": ">=1.4",
+      "xarray": ">=2026.1.0",
+      "netCDF4": ">=1.7"
     }
   },
   "description": "The default set of nodes that ships with Curio. Auto-installed for every user; provides Data Loading/Export/Transformation, Computation, Visualization, AUTK integrations, and flow control.",
@@ -344,7 +346,7 @@
       "badge": "AUTK",
       "bidirectional": true,
       "category": "vis_grammar",
-      "description": "Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering, and/or plot rendering in one declarative spec.",
+      "description": "Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering of layers and rasters, and/or plot rendering in one declarative spec.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "autk-grammar",
@@ -360,7 +362,8 @@
             "LIST",
             "JSON",
             "GEODATAFRAME",
-            "DATAFRAME"
+            "DATAFRAME",
+            "RASTER"
           ]
         }
       ],
@@ -373,7 +376,8 @@
             "LIST",
             "JSON",
             "GEODATAFRAME",
-            "DATAFRAME"
+            "DATAFRAME",
+            "RASTER"
           ]
         }
       ],
@@ -432,6 +436,45 @@
       "behavior": "parameter",
       "outputPorts": [],
       "paletteOrder": 12
+    },
+    {
+      "category": "vis_grammar",
+      "containerStyle": {
+        "nodeHeight": 420,
+        "nodeWidth": 560
+      },
+      "description": "Compares scenarios. Connect each scenario's outcome to its own input circle: each input is labelled by the scenario its node belongs to, and the node stacks the inputs into one table, with the scenario's id and name on every row. That table is its output. Its Chart tab draws the table in the scenarios' colors, as bars, grouped bars, lines, points, a pie, lollipops or a table. Its What differs tab lists what changed between the scenarios: widget values and code lines. It warns when the scenarios read different context.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "iconRef": "fa-solid:code-compare",
+      "id": "compare-scenarios",
+      "inputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON"
+          ]
+        }
+      ],
+      "label": "Compare Scenarios",
+      "behavior": "compare-scenarios",
+      "outputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME"
+          ]
+        }
+      ],
+      "paletteOrder": 13
     }
   ],
   "version": "1.0.2"

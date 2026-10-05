@@ -12,11 +12,20 @@ SUPPORTED_SUFFIXES = {
     ".tif": "geotiff",
     ".tiff": "geotiff",
     ".shp": "shp",
+    ".onnx": "onnx",
+    ".nc": "netcdf",
 }
 
 # The first four bytes of a TIFF, little- and big-endian, then of a BigTIFF.
 # A ``geotiff`` dataset is one of these whatever its name says.
 TIFF_SIGNATURES = (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+")
+
+# The first bytes of a NetCDF file: "CDF" and the version byte of a classic,
+# 64-bit offset or 64-bit data file, or the eight bytes every HDF5 file starts
+# with, which a NetCDF-4 file is. A ``netcdf`` dataset is one of these whatever
+# its name says. An ``onnx`` model has no such bytes; ``domain/onnx_model.py``
+# reads its protobuf fields instead.
+NETCDF_SIGNATURES = (b"CDF\x01", b"CDF\x02", b"CDF\x05", b"\x89HDF\r\n\x1a\n")
 
 # Formats whose bytes are text, and which every reader downstream therefore
 # assumes are UTF-8: the row counter, the preview, and the generated loader
@@ -46,13 +55,20 @@ GPKG_SUFFIXES = (".gpkg",)
 # The prefix also says which *kind* of import produced the group, which is what
 # lets the group card name itself honestly. A GeoPackage shown as an OSM PBF
 # import is a visible bug, so the kind is carried in the id rather than guessed.
+#
+# ``netcdf.`` groups NetCDF variables stored a file each, the way a WRF run
+# writes them (``RAIN.nc``, ``T2.nc``, ...). Their manifests carry the group id
+# and each variable's name as its ``layerName``, so a shipped set is grouped by
+# its manifests alone.
 OSM_GROUP_ID_PREFIX = "osm."
 GPKG_GROUP_ID_PREFIX = "gpkg."
 GTFS_GROUP_ID_PREFIX = "gtfs."
+NETCDF_GROUP_ID_PREFIX = "netcdf."
 LAYER_GROUP_ID_PREFIXES = {
     OSM_GROUP_ID_PREFIX: "osm",
     GPKG_GROUP_ID_PREFIX: "gpkg",
     GTFS_GROUP_ID_PREFIX: "gtfs",
+    NETCDF_GROUP_ID_PREFIX: "netcdf",
 }
 
 # Canonical tab order for OSM layers in the grouped detail view. GeoPackage
@@ -80,7 +96,7 @@ AUTARK_LAYER_TYPES = frozenset({
 
 
 def layer_group_kind(dataset_id: object) -> str | None:
-    """``"osm"`` / ``"gpkg"`` / ``"gtfs"`` when *dataset_id* addresses a layer group, else None."""
+    """``"osm"`` / ``"gpkg"`` / ``"gtfs"`` / ``"netcdf"`` when *dataset_id* addresses a layer group, else None."""
     if not isinstance(dataset_id, str):
         return None
     for prefix, kind in LAYER_GROUP_ID_PREFIXES.items():
@@ -138,6 +154,8 @@ FORMAT_TO_EXTENSION: dict[str, str] = {
     "parquet": ".parquet",
     "geotiff": ".tif",
     "shp": ".shp",
+    "onnx": ".onnx",
+    "netcdf": ".nc",
 }
 
 # Generic/auto-generated source labels that must never be persisted as a

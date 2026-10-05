@@ -494,6 +494,33 @@ describe("a layer group's drag payload takes its kind from the group id (#440)",
     const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
     expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("OSM PBF");
   });
+
+  test("a group of NetCDF variables drops as NetCDF and loads each variable without returning it", () => {
+    // One file per variable, as WRF writes them, under one netcdf. group id.
+    const members = ["RAIN", "T2"].map((variable) =>
+      makeDataset({
+        id: `data.test.wrf-${variable.toLowerCase()}`,
+        title: `WRF sample (${variable})`,
+        origin: "hub",
+        format: "netcdf",
+        path: `/catalog/data.test.wrf-${variable.toLowerCase()}@1/data/${variable}.nc`,
+        layerName: variable,
+        groupId: "netcdf.wrf-sample",
+      }),
+    );
+    const [group] = groupDatasetsForPalette(members) as [DatasetPaletteGroup];
+    const payload = createOsmGroupDragPayload(group);
+    expect(payload.format).toBe("netcdf");
+    expect(payload.uri).toBe("curio://netcdf/netcdf.wrf-sample");
+
+    const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
+    expect(DATASET_FORMAT_LABEL[options.datasetSource.format]).toBe("NetCDF");
+    expect(options.datasetRefs).toEqual(["data.test.wrf-rain", "data.test.wrf-t2"]);
+    expect(options.code).toContain('layers["RAIN"] = curio_load_data("data.test.wrf-rain")');
+    expect(options.code).toContain('layers["T2"] = curio_load_data("data.test.wrf-t2")');
+    // A node's output cannot carry an xarray Dataset, so the node returns nothing.
+    expect(options.code).not.toContain("return");
+  });
 });
 
 describe("a Discovery download's group drops as its layers' format (#586)", () => {

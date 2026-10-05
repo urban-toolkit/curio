@@ -3,9 +3,11 @@
 ``curio_load_data("<id>")``
     A Data Catalog dataset, read the way its format is read: a table, a
     GeoDataFrame, a raster, a JSON document, the parts of a multi-output result,
-    or a collection's index.
+    a collection's index, an onnxruntime session for an ONNX model, or an
+    xarray Dataset for a NetCDF file.
 ``curio_data_path("<id>")``
-    The dataset's file, for a reader of your own (``pd.read_csv(..., sep=";")``).
+    The dataset's file, for a reader of your own (``pd.read_csv(..., sep=";")``,
+    ``netCDF4.Dataset(...)``).
 ``curio_load_collection("<id>")``
     A collection's index, one row per file with a readable ``path``.
 ``curio_load_model("<id>")``
@@ -38,6 +40,8 @@ _FORMAT_BY_SUFFIX = {
     ".zlib": "json",
     ".tif": "geotiff",
     ".tiff": "geotiff",
+    ".onnx": "onnx",
+    ".nc": "netcdf",
 }
 
 
@@ -109,6 +113,20 @@ def _read_bundle(path: str):
     return tuple(items)
 
 
+def _read_onnx(path: str):
+    """An ONNX model as an onnxruntime session on the CPU, opened the way
+    ``curio_segment`` opens a Model Catalog model's."""
+    try:
+        import onnxruntime as ort
+    except ImportError as exc:
+        raise RuntimeError(
+            "This dataset is an ONNX model, which runs on onnxruntime, and this Curio "
+            "does not have it: install a package that brings it, such as Street Vision, "
+            "from the Node Catalog."
+        ) from exc
+    return ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+
+
 def read_dataset(path: str, fmt: str | None, *, layer_type: str | None = None):
     """The value a dataset at *path* holds, read the way *fmt* is read.
 
@@ -139,6 +157,14 @@ def read_dataset(path: str, fmt: str | None, *, layer_type: str | None = None):
         import rasterio
 
         return rasterio.open(path)
+    if fmt == "onnx":
+        return _read_onnx(path)
+    if fmt == "netcdf":
+        import xarray as xr
+
+        # netCDF4 reads every NetCDF format: classic, 64-bit offset, 64-bit
+        # data and NetCDF-4.
+        return xr.open_dataset(path, engine="netcdf4")
     if fmt == "bundle":
         return _read_bundle(path)
     raise RuntimeError(

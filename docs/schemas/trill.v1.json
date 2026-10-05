@@ -408,6 +408,37 @@
           "items": { "$ref": "#/$defs/selectionTag" },
           "description": "The node's selection tags (#662), added in its Widgets tab. Its code places each one as a `[!! selection name !!]` reference, which a run replaces with the tag's `ids`. A new selection in the view writes new ids. Emitted only when the node has selection tags."
         },
+        "compareScenarios": {
+          "type": "object",
+          "description": "Settings of a Compare Scenarios node (#662). `inputs` labels each input circle, in circle order, by the scenario its node belongs to: the scenario's `scenario` id, `name` and `color`. An input whose node is in no scenario carries the node's name, a neutral color and no `scenario`. The node's code is written from these labels, and its stacked table carries them. `chart` is what its Chart tab draws from that table: the `preset`, the columns it reads as `x` and `y`, and the `aggregate` that combines the y values of a group. Emitted only when the node has inputs or a chart setting.",
+          "additionalProperties": false,
+          "properties": {
+            "inputs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["name", "color"],
+                "additionalProperties": false,
+                "properties": {
+                  "scenario": { "type": "string", "minLength": 1 },
+                  "name": { "type": "string", "minLength": 1 },
+                  "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+                }
+              }
+            },
+            "chart": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": { "type": "string", "enum": ["bar", "grouped-bar", "line", "scatter", "pie", "lollipop", "table"] },
+                "x": { "type": "string", "minLength": 1 },
+                "y": { "type": "string", "minLength": 1 },
+                "aggregate": { "type": "string", "enum": ["mean", "sum", "median", "min", "max", "count"] }
+              }
+            }
+          }
+        },
         "dataPool": {
           "type": "object",
           "description": "A Data Pool's conflict modes (#581): how the selections that reach it combine. `insideChart` resolves the selects of one chart, `betweenCharts` the latest selection of each chart linked to the pool. OVERWRITE keeps the newest, MERGE_AND the rows every active selection picked, MERGE_OR the rows any of them picked. An absent member means OVERWRITE, and only the other modes are written.",
@@ -513,7 +544,7 @@
         "title": { "type": "string", "description": "Display title at the time it was applied." },
         "format": {
           "type": "string",
-          "enum": ["csv", "geojson", "json", "parquet", "geotiff", "shp", "bundle", "osm", "gpkg"],
+          "enum": ["csv", "geojson", "json", "parquet", "geotiff", "shp", "onnx", "netcdf", "bundle", "osm", "gpkg"],
           "description": "Dataset format, mirroring DatasetFormat in services/datasetCatalog/datasetCatalogTypes.ts."
         },
         "origin": { "$ref": "#/$defs/datasetOrigin" }
