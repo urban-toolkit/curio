@@ -8,14 +8,8 @@
  * a run on the server does and runs it through the stacking step.
  */
 import cases from "../../utils/compare/compareCode.cases.json";
-import {
-  STACK_HELPER,
-  compareCode,
-  differenceCode,
-  keyOfCode,
-  layerOfCode,
-  stackCode,
-} from "../../utils/compare/compareCode";
+import * as writer from "../../utils/compare/compareCode";
+import { STACK_HELPER, stackCode } from "../../utils/compare/compareCode";
 import { resolveReferences } from "../../utils/references/codeReferences";
 import type { CompareInputLabel } from "../../utils/compare/compareSettings";
 
@@ -49,6 +43,8 @@ describe("stackCode", () => {
 
 describe("the layer read from an Autark node's several", () => {
   const [two] = cases.cases as CodeCase[];
+  // Read through the module, so a checkout without the layer fails test by test.
+  const { compareCode, differenceCode, keyOfCode, layerOfCode } = writer;
 
   test("the stacking code names it after the inputs, and reads back", () => {
     const code = stackCode(two.inputs, "table_osm_roads");

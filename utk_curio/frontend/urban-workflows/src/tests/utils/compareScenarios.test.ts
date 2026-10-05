@@ -7,9 +7,9 @@ import {
   compareInputs,
   labelsNeedWriting,
   labelWarnings,
-  layersToPick,
   listOf,
 } from "../../utils/compare/compareInputs";
+import * as compareInputsModule from "../../utils/compare/compareInputs";
 import { NO_SCENARIO_COLOR, normalizeCompareSettings, sameLabels } from "../../utils/compare/compareSettings";
 import {
   changedLines,
@@ -190,6 +190,8 @@ describe("normalizeCompareSettings", () => {
 });
 
 describe("layersToPick", () => {
+  // Read through the module, so a checkout without it fails test by test.
+  const { layersToPick } = compareInputsModule;
   const roads = ["table_osm_surface", "table_osm_buildings", "table_osm_roads"];
 
   test("offers the layers every input of several layers has, in the first one's order", () => {
