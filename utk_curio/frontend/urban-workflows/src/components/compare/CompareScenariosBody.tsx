@@ -73,8 +73,10 @@ function columnsOf(read: GrammarInput): { columns: ClassifiedColumn[]; dataType:
  * output is read, the chart keeps the last one. A restored output names its
  * file alone, so the reference takes the type the read found.
  */
-function useStackedRead(stacked: StackedRef | null): { ref: StackedRef; columns: ClassifiedColumn[] } | null {
-  const [read, setRead] = useState<{ ref: StackedRef; columns: ClassifiedColumn[] } | null>(null);
+function useStackedRead(
+  stacked: StackedRef | null,
+): { ref: StackedRef; columns: ClassifiedColumn[]; table: boolean } | null {
+  const [read, setRead] = useState<{ ref: StackedRef; columns: ClassifiedColumn[]; table: boolean } | null>(null);
   useEffect(() => {
     if (!stacked) {
       setRead(null);
@@ -88,7 +90,8 @@ function useStackedRead(stacked: StackedRef | null): { ref: StackedRef; columns:
       .then((found) => {
         if (!current) return;
         const dataType = stacked.dataType ?? found?.dataType;
-        setRead({ ref: dataType ? { ...stacked, dataType } : stacked, columns: found?.columns ?? [] });
+        // Not a table at all: the difference a Difference run left behind.
+        setRead({ ref: dataType ? { ...stacked, dataType } : stacked, columns: found?.columns ?? [], table: found !== null });
       });
     return () => {
       current = false;
@@ -242,6 +245,8 @@ export function CompareScenariosBody({
     stage = <NodeEmptyState reason="not-run" hint="Run this node to stack its inputs and draw them." />;
   } else if (!read) {
     stage = <NodeEmptyState reason="not-run" hint="Reading the stacked table." />;
+  } else if (!read.table) {
+    stage = <NodeEmptyState reason="not-run" hint="Run this node again to stack its inputs." />;
   } else if (!("spec" in drawn)) {
     stage = <p className={styles.problem} data-compare-chart-problem="true">{drawn.problem}</p>;
   } else {
@@ -289,7 +294,7 @@ export function CompareScenariosBody({
             onChange={setMode}
           />
         ) : null}
-        {view === "chart" && mode === "chart" && read && !dashboardOn ? (
+        {view === "chart" && mode === "chart" && read?.table && !dashboardOn ? (
           <>
             <Select<ComparePreset>
               label="Chart"
