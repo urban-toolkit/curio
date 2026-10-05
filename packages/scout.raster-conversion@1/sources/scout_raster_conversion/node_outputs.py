@@ -26,24 +26,16 @@ import numpy as np
 import pandas as pd
 import rasterio
 from PIL import Image
-from rasterio.transform import Affine
-from rasterio.windows import Window
 
-from .convert_to_raster import convert_raster, invtransformer, num2deg
+# Curio's raster helpers: web map tiles side by side in one GeoTIFF, on the
+# tiles' own grid, where ``compute_tile`` draws each tile.
+from utk_curio.sandbox.util.rasters import mosaic_web_tiles
+
+from .convert_to_raster import convert_raster
 
 TILE_SIZE = 256
 MOSAIC_CRS = "EPSG:3395"
 TILE_FILE = re.compile(r"^(\d+)_(\d+)_(\d+)\.png$")
-
-
-def tile_bounds(x, y, zoom):
-    """``(west, south, east, north)`` of tile *x*, *y* in EPSG:3395: the box
-    ``compute_tile`` draws the tile over."""
-    north_lat, west_lon = num2deg(x, y, zoom)
-    south_lat, east_lon = num2deg(x + 1, y + 1, zoom)
-    west, north = invtransformer.transform(north_lat, west_lon)
-    east, south = invtransformer.transform(south_lat, east_lon)
-    return west, south, east, north
 
 
 def height_layer(buildings, attribute):
@@ -102,33 +94,19 @@ def mosaic_name(tiles, max_height):
 def write_mosaic(tiles, max_height, path):
     """The tiles side by side at *path*, as the module docstring describes."""
     zoom = int(tiles["zoom"].iloc[0])
-    xs = range(int(tiles["x"].min()), int(tiles["x"].max()) + 1)
-    ys = range(int(tiles["y"].min()), int(tiles["y"].max()) + 1)
-    west, _, east, north = tile_bounds(xs[0], ys[0], zoom)
-    _, south, _, _ = tile_bounds(xs[0], ys[-1], zoom)
-    width, height = TILE_SIZE * len(xs), TILE_SIZE * len(ys)
-    # Every column of tiles has the same width in EPSG:3395. Rows differ in
-    # height by a few millionths, so one grid places every tile row within a
-    # small fraction of a cell.
-    transform = Affine((east - west) / TILE_SIZE, 0.0, west, 0.0, -(north - south) / height, north)
-    pixels = {(int(row.x), int(row.y)): tile_pixels(row.png) for row in tiles.itertuples(index=False)}
     metres = float(max_height) / 255.0
-    ground = np.zeros((TILE_SIZE, TILE_SIZE), dtype="float32")
-    profile = {
-        "driver": "GTiff", "width": width, "height": height, "count": 1, "dtype": "float32",
-        "crs": MOSAIC_CRS, "transform": transform, "tiled": True,
-        "blockxsize": TILE_SIZE, "blockysize": TILE_SIZE, "compress": "deflate",
+    heights = {
+        (int(row.x), int(row.y)): tile_pixels(row.png).astype("float32") * metres
+        for row in tiles.itertuples(index=False)
     }
-    with rasterio.open(path, "w", **profile) as mosaic:
-        for x in xs:
-            for y in ys:
-                gray = pixels.get((x, y))
-                cells = ground if gray is None else gray.astype("float32") * metres
-                window = Window((x - xs[0]) * TILE_SIZE, (y - ys[0]) * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-                mosaic.write(cells, 1, window=window)
-        mosaic.set_band_description(1, "height (m)")
-        mosaic.update_tags(zoom=zoom, tile_x=xs[0], tile_y=ys[0], tile_size=TILE_SIZE, max_height=float(max_height))
-    return path
+    return mosaic_web_tiles(
+        heights, zoom, path, crs=MOSAIC_CRS, tile_size=TILE_SIZE, dtype="float32",
+        band_descriptions=["height (m)"],
+        tags={
+            "zoom": zoom, "tile_x": int(tiles["x"].min()), "tile_y": int(tiles["y"].min()),
+            "tile_size": TILE_SIZE, "max_height": float(max_height),
+        },
+    )
 
 
 def rasterize_buildings(buildings, attribute, zoom, max_height, output_file):

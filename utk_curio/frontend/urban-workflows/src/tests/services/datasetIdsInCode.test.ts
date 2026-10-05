@@ -38,6 +38,16 @@ describe("datasetIdsInCode", () => {
     expect(datasetIdsInCode(code)).toEqual(["one@1", "two@1"]);
   });
 
+  test("finds the id when options follow it", () => {
+    // A raster's loader reads a window: curio_load_data("<id>", bounds=...).
+    expect(datasetIdsInCode('src = curio_load_data("data.scout.depth@1", bounds=(1.0, 2.0, 3.0, 4.0))')).toEqual([
+      "data.scout.depth@1",
+    ]);
+    expect(datasetIdsInCode("src = curio_load_data( 'a.b@1' , bounds=None)")).toEqual(["a.b@1"]);
+    // The id must still be the whole first argument.
+    expect(datasetIdsInCode('curio_load_data("a.b@1" + suffix)')).toEqual([]);
+  });
+
   test("rejects mismatched quotes", () => {
     // The backreference in the pattern is what makes this not a reference;
     // without it a broken call would register as a usage.
