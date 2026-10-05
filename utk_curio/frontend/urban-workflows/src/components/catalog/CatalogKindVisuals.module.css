@@ -210,6 +210,16 @@
   color: var(--curio-format-gtfs-on-tint);
 }
 
+.formatBadge_onnx {
+  background: var(--curio-format-onnx-bg);
+  color: var(--curio-format-onnx-on-tint);
+}
+
+.formatBadge_netcdf {
+  background: var(--curio-format-netcdf-bg);
+  color: var(--curio-format-netcdf-on-tint);
+}
+
 .formatBadge_collection {
   background: var(--curio-format-collection-bg);
   color: var(--curio-format-collection-on-tint);

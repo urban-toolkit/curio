@@ -32,6 +32,11 @@ def _safe_dataset_id(dataset_id: Any) -> str | None:
     return dataset_id
 
 
+def is_safe_dataset_id(dataset_id: Any) -> bool:
+    """True when *dataset_id* may appear inside a generated ``curio_load_data("<id>")``."""
+    return _safe_dataset_id(dataset_id) is not None
+
+
 def _path_expr(path: str | None) -> str:
     """Python expression for the location line of an id-less loader snippet.
 
@@ -123,7 +128,15 @@ LOADED_VARIABLES = {
     "json": "data",
     "geotiff": "src",
     "bundle": "bundle",
+    "onnx": "session",
+    "netcdf": "ds",
 }
+
+#: Formats whose loaded value stays in the node's own code: a node's output
+#: cannot carry an onnxruntime session or an xarray Dataset, so their loader
+#: names the value and returns nothing. KEEP IN SYNC with ``KEPT_IN_CODE`` in
+#: the frontend generator.
+KEPT_IN_CODE = frozenset({"onnx", "netcdf"})
 
 
 def loader_snippet(
@@ -136,7 +149,8 @@ def loader_snippet(
     and formats): ``curio_load_data("<id>")``, which reads the dataset by its
     format, ``curio_load_collection("<id>")`` for a collection, and
     ``curio_data_path("<id>")`` for a format nothing reads, so the node's own
-    code reads the file. Without an id it falls back to the literal path and
+    code reads the file. A format in :data:`KEPT_IN_CODE` is loaded but not
+    returned. Without an id it falls back to the literal path and
     the reader spelled out, see :func:`_path_expr`; a *layer_type* (one of
     :data:`AUTARK_LAYER_TYPES`) is then set as the frame's ``metadata``, so an
     Autark node draws the frame as that layer.
@@ -166,7 +180,7 @@ def loader_snippet(
             "imports": [],
             "pathVariable": None,
             "code": code,
-            "returnVariable": variable,
+            "returnVariable": None if fmt in KEPT_IN_CODE else variable,
         }
     expr = _path_expr(path)
     if fmt == "csv":
@@ -249,6 +263,25 @@ def loader_snippet(
             "pathVariable": "dataset_path",
             "code": f"dataset_path = {expr}\nsrc = rasterio.open(dataset_path)",
             "returnVariable": "src",
+        }
+    if fmt == "onnx":
+        return {
+            "language": "python",
+            "imports": ["import onnxruntime as ort"],
+            "pathVariable": "dataset_path",
+            "code": (
+                f"dataset_path = {expr}\n"
+                'session = ort.InferenceSession(dataset_path, providers=["CPUExecutionProvider"])'
+            ),
+            "returnVariable": None,
+        }
+    if fmt == "netcdf":
+        return {
+            "language": "python",
+            "imports": ["import xarray as xr"],
+            "pathVariable": "dataset_path",
+            "code": f'dataset_path = {expr}\nds = xr.open_dataset(dataset_path, engine="netcdf4")',
+            "returnVariable": None,
         }
     if fmt == "collection":
         # A collection's data file is its index: one row per file. The sandbox

@@ -11,7 +11,7 @@ This guide is in seven parts, plus operator notes:
 - [3. Using a dataset in a dataflow](#3-using-a-dataset-in-a-dataflow): drag and drop, generated loader code, collections, and linkage badges.
 - [4. Computed datasets (node outputs)](#4-computed-datasets-node-outputs): the save-output toggle, lineage, and bundles.
 - [5. Previews, schema, and export](#5-previews-schema-and-export): what each format supports.
-- [6. Importing, publishing, and sharing](#6-importing-publishing-and-sharing): supported formats, OSM PBF and GeoPackage, publish, unpublish, and delete.
+- [6. Importing, publishing, and sharing](#6-importing-publishing-and-sharing): supported formats, OSM PBF and GeoPackage, NetCDF groups, publish, unpublish, and delete.
 - [7. The manifest](#7-the-manifest): the fields a dataset declares.
 - [Operator notes](#operator-notes): relocating the catalog, and what needs no care.
 
@@ -63,6 +63,7 @@ Ids are 2 to 6 dot-separated lowercase segments (`[a-z][a-z0-9-]*`, at most 63 c
 | Imported | `imported.x<uuid12>` | New for every import: uploading the same bytes twice creates **two** datasets. |
 | Computed | `computed.<dataflowId>.<nodeId>` | One per node per dataflow, so the same node id in two dataflows never collides. |
 | OSM group | `osm.x<uuid8>` | The parent of the layers of one `.pbf` import or one OpenStreetMap download. |
+| NetCDF group | `netcdf.<name>` | The parent of NetCDF variables stored a file each, named by their manifests' `groupId`. |
 
 ### Storage layers
 
@@ -107,7 +108,7 @@ There are three places you work with datasets, and they are **not** interchangea
 
 **I want to use a catalog dataset in my dataflow.** Open the dataflow, then click **Data Catalog** in the top bar. Find the dataset and click **Add to project**. It now appears in the left Tools panel's **Data Catalog** dropdown. Drag it onto the canvas to get a Data Loading node wired to it ([part 3](#3-using-a-dataset-in-a-dataflow)).
 
-**I want to use a file from my computer.** Open the drawer and click **Import dataset** in the footer. Pick the file (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.shp`, `.pbf`, `.gpkg`). Import only registers the dataset in your account: click **Add to project** on it to add it to the open dataflow.
+**I want to use a file from my computer.** Open the drawer and click **Import dataset** in the footer. Pick the file (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.shp`, `.onnx`, `.nc`, `.pbf`, `.gpkg`). Import only registers the dataset in your account: click **Add to project** on it to add it to the open dataflow.
 
 **I want a dataset from an open data portal.** Download it from the [Discovery Catalog](DISCOVERY-CATALOG.md). It lands here as an imported dataset.
 
@@ -139,11 +140,16 @@ The generated Python is one line, `curio_load_data("<datasetId>")`, which reads 
 | `parquet` | A GeoDataFrame when the file has geometry, otherwise a DataFrame, with JSON-encoded object columns restored → `df` |
 | `json` | The parsed document, compressed or plain → `data` |
 | `geotiff` | An open rasterio dataset → `src` |
+| `onnx` | An onnxruntime `InferenceSession` on the CPU → `session`. onnxruntime comes with the Street Vision package. |
+| `netcdf` | An xarray `Dataset`, read with netCDF4 → `ds` |
 | `bundle` | Every part, as a tuple → `bundle` |
 | OSM group | A `layers` dict, one `curio_load_data` per layer |
+| NetCDF group | A `layers` dict, one `curio_load_data` per variable |
 | `collection` | `curio_load_collection("<datasetId>")`: the collection's index, one row per file with a readable `path` → `collection` |
 
-To read the file another way, for example a CSV with another separator, use `curio_data_path("<datasetId>")`, which gives the file's path: `pd.read_csv(curio_data_path("<datasetId>"), sep=";")`.
+A node's output cannot be a model session or an xarray Dataset, so the loader for an `onnx` or `netcdf` dataset, or a NetCDF group, returns nothing: the node's own code uses `session` or `ds` and returns a table, a raster or a value.
+
+To read the file another way, for example a CSV with another separator, use `curio_data_path("<datasetId>")`, which gives the file's path: `pd.read_csv(curio_data_path("<datasetId>"), sep=";")`, or `netCDF4.Dataset(curio_data_path("<datasetId>"))` for a NetCDF file.
 
 These calls name the dataset by id instead of a file path, so the code keeps working when the dataflow is shared or moved. The details' **Use in a node** box shows the `curio_load_data` call, with a copy button.
 
@@ -238,8 +244,9 @@ A dataset's details have four tabs: **Overview**, **Schema**, **Table Preview**,
 | Format | Preview |
 |---|---|
 | `csv`, `json`, `geojson`, `parquet` | Full table preview with inferred schema; GeoJSON also reports geometry type and CRS. |
-| `bundle`, OSM group | One tab per part or layer. |
+| `bundle`, OSM group, NetCDF group | One tab per part, layer or variable. |
 | `geotiff` | Not previewable: *"Raster preview is not available in the catalog yet. Use the map canvas."* |
+| `onnx`, `netcdf` | No row preview: *"An ONNX model has no rows to preview. A node reads it with curio_load_data."*, and the same for *"A NetCDF file"*. Cards and details show the format and the file's size. |
 | `shp` | Not previewable. |
 | `collection` | The index, one row per file, below a strip of its first files. |
 
@@ -259,12 +266,16 @@ A dataset's details have four tabs: **Overview**, **Schema**, **Table Preview**,
 | `.parquet` | `parquet` |
 | `.tif`, `.tiff` | `geotiff` |
 | `.shp` | `shp` |
+| `.onnx` | `onnx` |
+| `.nc` | `netcdf` (classic, 64-bit offset, 64-bit data or NetCDF-4) |
 | `.pbf`, `.osm.pbf` | **converted** (see below) |
 | `.gpkg` | **converted** (see below) |
 
 Anything else is rejected with *"Unsupported dataset format"*.
 
 A `.tif` or `.tiff` file that is not a TIFF is refused: *"roads.tif is not a TIFF file, so it cannot be imported as a GeoTIFF."* A GeoTIFF downloaded from the [Discovery Catalog](DISCOVERY-CATALOG.md) is checked the same way.
+
+A `.nc` file that is not a NetCDF file is refused the same way (*"rain.nc is not a NetCDF file, so it cannot be imported as NetCDF."*), and so is an `.onnx` file that is not an ONNX model (*"model.onnx is not an ONNX model, so it cannot be imported as ONNX."*).
 
 ### Text imports are stored as UTF-8
 
@@ -291,6 +302,10 @@ A GeoPackage holding exactly one layer is imported as an ordinary parquet datase
 
 A group whose layers all came from the Discovery Catalog, such as an OpenStreetMap download of several layers, reads as each of its layers does: their format, their tags, and the **Downloaded from** section naming the source.
 
+### NetCDF variables as one group
+
+NetCDF variables stored a file each, as a WRF run writes `RAIN.nc` and `T2.nc`, form one **NetCDF** entry when their manifests share a `groupId` that starts with `netcdf.` and each names its variable as `layerName`. The drawer folds them into that entry, which adds or removes every variable together, and its preview has a tab per variable. Each variable is still its own dataset, read by its own id. A group whose variables all ship in the shared catalog reads as its variables do: their source label and their tags.
+
 ### Publish, unpublish, delete
 
 For a bundle, **Publish** copies the whole `data/` tree, not just the index.
@@ -314,7 +329,7 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 | `id` | Yes | Dataset id (see [Dataset ids](#dataset-ids)). |
 | `name` | Yes | Display title. |
 | `version` | Yes | Free-form version string (e.g. `"1.0.0"`), independent of `compatibility.major`. |
-| `format` | Yes | One of `csv`, `geojson`, `json`, `parquet`, `geotiff`, `shp`, `bundle`, `collection`. (`osm` and `gpkg` are group cards, never written to a manifest.) |
+| `format` | Yes | One of `csv`, `geojson`, `json`, `parquet`, `geotiff`, `shp`, `onnx`, `netcdf`, `bundle`, `collection`. (`osm` and `gpkg` are group cards, never written to a manifest.) |
 | `dataFile` | Yes | Path to the data within the dataset folder, e.g. `data/chicago.geojson`. |
 | `sourceEncoding` | | For text formats, the encoding the upload was decoded from before it was stored as UTF-8. `"utf-8"` when nothing had to change. |
 | `compatibility.major` | | Integer major version; defaults to `1`. Together with `id` it forms the folder name. |
@@ -329,7 +344,7 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 | `collection` | For `collection` | The source and resource its files belong to (`sourceId`, `resource`, `resourceId`, `path`), its `kind`, the path `fields`, `counts` per kind, `fileCount`, `totalBytes`, `hasGps`, when it was indexed, and what an add narrowed it to. |
 | `featureCount` / `rowCount` | | Counts for geo and tabular data. |
 | `schema` | | Object describing the fields; inferred from a preview when absent. |
-| `groupId` / `layerName` | | Multi-layer imports: every layer of one import shares a `groupId`. |
+| `groupId` / `layerName` | | Multi-layer imports: every layer of one import shares a `groupId`. NetCDF variables stored a file each share one that starts with `netcdf.`, and each names its variable as `layerName`. |
 | `producerNodeId`, `producerNodeType`, `producerDataflowId`, `producerDataflowName`, `upstreamInputs` | | Lineage for computed datasets (see [Lineage](#lineage)). |
 
 ---

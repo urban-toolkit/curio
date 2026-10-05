@@ -28,6 +28,8 @@ export const FORMAT_FILTERS: DatasetFormat[] = [
   "gpkg",
   "gtfs",
   "collection",
+  "onnx",
+  "netcdf",
 ];
 
 /**
