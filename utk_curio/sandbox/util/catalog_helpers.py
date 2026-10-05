@@ -4,7 +4,13 @@
     A Data Catalog dataset, read the way its format is read: a table, a
     GeoDataFrame, a raster, a JSON document, the parts of a multi-output result,
     a collection's index, an onnxruntime session for an ONNX model, or an
-    xarray Dataset for a NetCDF file.
+    xarray Dataset for a NetCDF file. For a GeoTIFF,
+    ``curio_load_data("<id>", bounds=(west, south, east, north))`` reads only
+    the cells inside the bounds, in the raster's CRS, at its own cell size.
+``curio_raster_calculate(operation, rasters, codes=None)``,
+``curio_raster_statistics(raster, band=1, mask=None, mask_values=None, where=None)``
+    The Raster Calculator and Raster Statistics nodes' steps
+    (``util/raster_algebra.py``).
 ``curio_data_path("<id>")``
     The dataset's file, for a reader of your own (``pd.read_csv(..., sep=";")``,
     ``netCDF4.Dataset(...)``).
@@ -258,15 +264,54 @@ def install_catalog_helpers(
 
     known_collections = {str(k) for k in (collections or {})}
 
-    def curio_load_data(dataset_id):
+    def raster_output_file(name):
+        """Where a raster this node returns is written: the node's output
+        folder, else, in process with no media folder, beside the artifacts."""
+        if output_dir or media_dir:
+            return collection_helpers["curio_output_file"](name)
+        from utk_curio.sandbox.util.rasters import python_raster_dir
+
+        return str(python_raster_dir() / name)
+
+    def curio_load_data(dataset_id, bounds=None):
         dataset_id = str(dataset_id)
         info = known_formats.get(dataset_id, {})
         # The backend resolves only the ids that are collections into
         # *collections*, on every path (Play, a node run, Solve's validation),
         # so that alone says a collection even where no format travelled.
         if info.get("format") == "collection" or dataset_id in known_collections:
+            if bounds is not None:
+                raise ValueError(f"bounds read a window of a raster, and {dataset_id} is a collection.")
             return curio_load_collection(dataset_id)
-        return read_dataset(data_path(dataset_id), info.get("format"), layer_type=info.get("layerType"))
+        path = data_path(dataset_id)
+        if bounds is None:
+            return read_dataset(path, info.get("format"), layer_type=info.get("layerType"))
+        fmt = _format_of(path, info.get("format"))
+        if fmt != "geotiff":
+            raise ValueError(
+                f"bounds read a window of a raster, and {dataset_id} is {fmt or 'not a raster'}: "
+                f'load it without bounds, curio_load_data("{dataset_id}").'
+            )
+        import rasterio
+
+        from utk_curio.sandbox.util.rasters import read_window
+
+        with rasterio.open(path) as whole:
+            return read_window(whole, bounds, raster_output_file, name=dataset_id)
+
+    def curio_raster_calculate(operation, rasters, codes=None):
+        """The Raster Calculator's step: *operation* over *rasters*, cell by cell
+        (``util/raster_algebra.calculate``)."""
+        from utk_curio.sandbox.util.raster_algebra import calculate
+
+        return calculate(operation, rasters, codes=codes, output_file=raster_output_file)
+
+    def curio_raster_statistics(raster, band=1, mask=None, mask_values=None, where=None):
+        """The Raster Statistics node's step: a raster's mean, median, minimum,
+        maximum and count, nodata left out (``util/raster_algebra.statistics``)."""
+        from utk_curio.sandbox.util.raster_algebra import statistics
+
+        return statistics(raster, band=band, mask=mask, mask_values=mask_values, where=where)
 
     def curio_load_model(model_id):
         model_id = str(model_id)
@@ -274,6 +319,8 @@ def install_catalog_helpers(
 
     namespace["curio_data_path"] = data_path
     namespace["curio_load_data"] = curio_load_data
+    namespace["curio_raster_calculate"] = curio_raster_calculate
+    namespace["curio_raster_statistics"] = curio_raster_statistics
     namespace.update(collection_helpers)
     namespace["curio_load_model"] = curio_load_model
     namespace["curio_segment"] = make_curio_segment(collection_helpers["curio_derived_file"])

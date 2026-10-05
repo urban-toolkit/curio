@@ -74,12 +74,13 @@ _URL_SCHEMES = ("http://", "https://")
 # the gate, execution and lineage find the same ids.
 from utk_curio.backend.app.datasets.domain.code_refs import DATASET_PATH_CALL_RE  # noqa: E402,F401
 
-#: The calls whose one string argument is a Data Catalog dataset id.
+#: The calls whose first argument, a string, is a Data Catalog dataset id.
 CATALOG_REF_CALLS = ("curio_load_data", "curio_data_path", "curio_load_collection")
 
-# The same calls with the call's name captured, for the regex fallback scan.
+# The same calls with the call's name captured, for the regex fallback scan;
+# options may follow the id, as DATASET_PATH_CALL_RE allows.
 _CATALOG_CALL_RE = re.compile(
-    r"""\b(curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\2\s*\)"""
+    r"""\b(curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\2\s*[,)]"""
 )
 # dev/116 (DEC-074): connection keys. The call shape is owned by
 # users/connection_keys (ONE regex); a credential-shaped literal is what the

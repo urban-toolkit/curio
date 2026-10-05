@@ -72,6 +72,9 @@ const LITERAL_READERS: Partial<Record<DatasetFormat, string>> = {
  */
 const KEPT_IN_CODE: DatasetFormat[] = ["onnx", "netcdf"];
 
+/** The options a loader names after the id: a GeoTIFF's window. */
+const LOADER_OPTIONS: Partial<Record<DatasetFormat, string>> = { geotiff: ", bounds=None" };
+
 function snippetFor(format: DatasetFormat) {
   return getDatasetLoaderSnippet({
     id: "data.utk.example",
@@ -118,7 +121,7 @@ describe("snippetForFormat", () => {
   it.each(covered)("addresses %s by dataset id, not by path", (format) => {
     const snippet = snippetFor(format);
     const call = format === "collection" ? "curio_load_collection" : "curio_load_data";
-    expect(snippet.code).toContain(`${call}("data.utk.example")`);
+    expect(snippet.code).toContain(`${call}("data.utk.example"${LOADER_OPTIONS[format] ?? ""})`);
     // A machine-specific absolute path in generated code is what the portable
     // id call exists to avoid; it must not appear when an id is available.
     expect(snippet.code).not.toContain("/tmp/example-file");

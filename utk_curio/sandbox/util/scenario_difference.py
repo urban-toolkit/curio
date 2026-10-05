@@ -18,16 +18,16 @@ reference. Its code calls ``curio_difference_scenarios`` with one
   the reference is ``removed`` and one only in the comparison ``added``; their
   numbers are empty, nested ones included. Every other column and value, and
   the geometry, is the comparison's (the reference's for a removed row).
-- Two rasters are subtracted cell by cell by Curio's Autark adapter
-  (``utils/raster/rasterArithmetic.ts``), on the band arrays autk-db's
-  ``getRaster`` exports once its ``loadGeoTiff`` has loaded both, in the
-  sandbox's Node process, where Autark data sections run. Node code may run in
-  an isolated child that cannot start Node, so the step returns a request
-  instead (``RASTER_DIFFERENCE``: JSON only, each raster's GeoTIFF bytes and
-  its description), and the sandbox completes it once the code has returned
-  (:func:`complete_raster_difference`). The result is the envelope a raster
-  travels in between nodes (``utils/raster/rasterWire.ts``): an Autark map
-  draws it, and a Python node receives it as a rasterio dataset.
+- Two rasters are loaded as an Autark map loads them, by autk-db's
+  ``loadGeoTiff`` in the sandbox's Node process, where Autark data sections
+  run, and Curio's raster algebra (``raster_algebra.subtract_envelopes``)
+  subtracts the band arrays autk-db's ``getRaster`` exports, cell by cell.
+  Node code may run in an isolated child that cannot start Node, so the step
+  returns a request instead (``RASTER_DIFFERENCE``: JSON only, each raster's
+  GeoTIFF bytes and its description), and the sandbox completes it once the
+  code has returned (:func:`complete_raster_difference`). The result is the
+  envelope a raster travels in between nodes (``utils/raster/rasterWire.ts``):
+  an Autark map draws it, and a Python node receives it as a rasterio dataset.
 
 Anything else is refused with a sentence naming both inputs.
 """
@@ -446,9 +446,25 @@ def program_text() -> str:
 
 
 def subtract_in_autark(request: dict, *, cwd=None, node_type="curio.builtin/compare-scenarios") -> dict:
-    """Run the raster program on *request* in the sandbox's Node process, as a
-    JavaScript node runs: the envelope of comparison minus reference, or
+    """Load both rasters of *request* through Autark in the sandbox's Node
+    process, as a JavaScript node runs, and subtract what autk-db exports with
+    Curio's raster algebra: the envelope of comparison minus reference, or
     :class:`RasterDifferenceFailed` with what refused it."""
+    from utk_curio.sandbox.util.raster_algebra import RasterAlgebraError, subtract_envelopes
+
+    envelopes = _load_in_autark(request, cwd=cwd, node_type=node_type)
+    try:
+        return subtract_envelopes(
+            (request["reference"]["label"], envelopes["reference"]),
+            (request["comparison"]["label"], envelopes["comparison"]),
+        )
+    except RasterAlgebraError as refused:
+        raise RasterDifferenceFailed(f"Compare Scenarios: {refused}") from refused
+
+
+def _load_in_autark(request: dict, *, cwd, node_type) -> dict:
+    """Run the raster program on *request*: ``{"reference", "comparison"}``,
+    each the envelope autk-db's ``getRaster`` exports."""
     import json
     import subprocess
     import time
