@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/06-autark-what-if-shadow-study.json",
-    "sha256": "cf7db74381e3fa8cb34bd5cbb0bb55929011d322ad8147f265d8cc5a3a1f3637",
+    "sha256": "21af41621373eeeffd87f90a4b31372ba6cf94a914dc947f0c344673c73a8cc2",
     "walkthrough": "docs/examples/06-autark-what-if-shadow-study.md"
   },
-  "prompt": "I want a what-if shadow study for the Back Bay area of Boston, comparing today's buildings against a scenario where they are three times taller. The OSM extract is a file in this checkout at docs/examples/data/back_bay.osm.pbf. Load the buildings from it in the browser with Autark, and build two parallel branches that each accumulate shadow on the ground with a GPU shader over a solstice day: one using the real building heights and one using the raised heights, with the footprint-area criterion deciding which buildings get raised. Render each branch as its own 3D map so I can compare them side by side, and route both through a shared fan-out.",
+  "prompt": "I want a what-if shadow study for the Back Bay area of Boston, set up as two scenarios I can compare. The OSM extract is a file in this checkout at docs/examples/data/back_bay.osm.pbf. Load its layers in the browser with Autark once, and hand them to both scenarios through a shared fan-out. In each scenario a GPU shader adds up every road segment's minutes of sunlight over the June solstice, with the building heights scaled by a height factor I set in a widget: 1 in a scenario called Baseline, and 2 in a copy of it called Twice as tall. Show each scenario's roads on its own 3D map coloured by sunlight, and keep each scenario's roads with their sunlight and a key per road. Then compare the two scenarios side by side: a bar chart of their mean road sunlight, and a map of how much sunlight each road loses.",
   "context": null,
   "required": {
     "datasets": [],
@@ -54,6 +54,34 @@
         "hasContent": true
       },
       {
+        "ref": "visualization6",
+        "type": "curio.builtin/compare-scenarios",
+        "role": "visualization",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization7",
+        "type": "curio.builtin/compare-scenarios",
+        "role": "visualization",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "pool1",
         "type": "curio.builtin/data-pool",
         "role": "pool",
@@ -73,9 +101,41 @@
         "kind": "data"
       },
       {
+        "from": "visualization4",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
         "from": "visualization5",
         "to": "visualization3",
         "kind": "data"
+      },
+      {
+        "from": "visualization5",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization6",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization7",
+        "kind": "data",
+        "slot": 1
       },
       {
         "from": "pool1",
@@ -109,7 +169,8 @@
     "tier": "T3",
     "needs": [
       "browser-only-execution",
-      "gpu"
+      "gpu",
+      "widgets"
     ],
     "skip": [
       {
@@ -128,7 +189,7 @@
   "split": "validation",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "claude-fable-5-1 from the example JSON and its walkthrough, 2026-09-09",
+    "draftedBy": "the example 06 scenario study (#662), from the example JSON and its walkthrough, 2026-10-05",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -137,5 +198,5 @@
     "licence": "MIT (this repository)",
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "Grammar-only: nothing here runs in the sandbox. GPU shader work, so execution is opt-in."
+  "notes": "The Autark steps run in the browser, and the Python steps after them in the sandbox. GPU shader work, so execution is opt-in."
 }
