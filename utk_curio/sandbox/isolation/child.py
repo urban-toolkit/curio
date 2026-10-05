@@ -701,6 +701,31 @@ def write_result(manifest, scratch_dir):
     os.replace(temporary, path)
 
 
+#: Where numba keeps what a library compiles with ``cache=True``, inside the
+#: child's scratch directory.
+NUMBA_CACHE_DIRNAME = "numba-cache"
+
+
+def point_numba_at_scratch(scratch_dir):
+    """Give numba a cache folder this child can write: one in its scratch directory.
+
+    numba keeps what a library compiles with ``cache=True`` beside the
+    library's source, else under HOME, and refuses to import the library when
+    it can write to neither ("cannot cache function ...: no locator
+    available"). Under an execution user both belong to the account the
+    sandbox runs as, so datashader (``scout.raster-conversion``) and
+    pythermalcomfort (``curio.weather``) failed at import. The scratch
+    directory is the child's own and goes when the run ends.
+    """
+    folder = os.path.join(scratch_dir, NUMBA_CACHE_DIRNAME)
+    os.environ["NUMBA_CACHE_DIR"] = folder
+    # numba reads the variable when it is first imported; one the zygote
+    # already holds is told directly.
+    config = sys.modules.get("numba.core.config")
+    if config is not None:
+        config.CACHE_DIR = folder
+
+
 def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=False):
     """Full child lifecycle: confine, run, write, exit. Never returns.
 
@@ -744,6 +769,7 @@ def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=Fals
             pass
         os._exit(3)
 
+    point_numba_at_scratch(scratch_dir)
     try:
         manifest = run_node(request, namespace_factory)
         write_result(manifest, scratch_dir)

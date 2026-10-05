@@ -1,0 +1,111 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "BuildingRasters",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/BuildingRasters.json",
+    "sha256": "297a8ed9bdb867167489c9ba6058db6c71df1b69d7952b04f4a49d1889f68159",
+    "walkthrough": null
+  },
+  "prompt": "Make me twelve rectangular buildings in two rows in the Chicago Loop in a loading step, each with a different height in metres. Turn their heights into zoom 16 map tiles and a height mosaic with SCOUT's building rasterizer, and draw the mosaic on an Autark map. The rasterizer is not part of the standard node set, so whatever provides it needs installing first.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [
+      "scout.raster-conversion@1"
+    ],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "scout.raster-conversion/rasterize-buildings",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "loader1",
+      "mustMention": [
+        "building",
+        "height"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis1",
+      "mustMention": [
+        "tile"
+      ]
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T2",
+    "needs": [
+      "package-enlist:templates",
+      "widgets"
+    ],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON, 2026-10-05",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; no dataset is read."
+  },
+  "notes": "A package node with widgets: synthetic buildings into SCOUT's building rasterizer, whose mosaic a map draws."
+}
