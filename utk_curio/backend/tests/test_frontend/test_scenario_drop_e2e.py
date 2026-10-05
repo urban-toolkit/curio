@@ -41,6 +41,7 @@ from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
 from .utils import (
     api_json,
     assert_autark_map_drawn,
+    assert_in_view,
     frame_nodes,
     node_locator,
     play_node,
@@ -236,13 +237,16 @@ def _drag_card_with_the_mouse(page, project_id: str, scenario_id: str, at=(300.0
     drawer = page.locator('[data-curio-scenario-catalog-drawer="true"]')
     card = drawer.locator(f'[data-scenario-key="{project_id}/{scenario_id}"]')
     card.wait_for(state="visible", timeout=20000)
+    # The account's seeded dataflows bring scenarios of their own, which can
+    # list above this one: the press must land on the card, in the window.
+    card.scroll_into_view_if_needed()
     card_box = card.bounding_box()
     pane_box = page.locator(CANVAS_DROP_TARGET).bounding_box()
     assert card_box and pane_box, "the card or the canvas has no layout box"
     target = (pane_box["x"] + at[0], pane_box["y"] + at[1])
     assert page.evaluate(_UNDER_THE_DRAWER_JS, list(target)), f"{target} is not under the drawer's scrim"
 
-    start = (card_box["x"] + 40, card_box["y"] + 20)
+    start = assert_in_view(page, card_box["x"] + 40, card_box["y"] + 20, "the scenario card")
     page.mouse.move(*start)
     page.mouse.down()
     page.mouse.move(start[0] - 40, start[1] + 10, steps=6)
