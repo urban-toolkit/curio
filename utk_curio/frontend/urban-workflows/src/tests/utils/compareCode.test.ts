@@ -62,7 +62,11 @@ describe("the layer read from an Autark node's several", () => {
   });
 
   test("compareCode hands it to the view's step", () => {
-    expect(compareCode("chart", two.inputs, undefined, "roads")).toBe(stackCode(two.inputs, "roads"));
-    expect(compareCode("difference", two.inputs, { key: "k" }, "roads")).toBe(differenceCode(two.inputs, "k", "roads"));
+    const chart = compareCode("chart", two.inputs, undefined, "roads");
+    const difference = compareCode("difference", two.inputs, { key: "k" }, "roads");
+    expect(layerOfCode(chart)).toBe("roads");
+    expect(layerOfCode(difference)).toBe("roads");
+    expect(chart).toBe(stackCode(two.inputs, "roads"));
+    expect(difference).toBe(differenceCode(two.inputs, "k", "roads"));
   });
 });
