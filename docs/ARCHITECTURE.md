@@ -802,7 +802,10 @@ Five design points worth knowing:
   write: it is `0700` and owned by the execution account, it persists between
   runs, and a `docs` symlink is dropped in so the bundled examples' relative
   reads still resolve. A relative write anywhere else fails, since the launch
-  tree is root-owned by then.
+  tree is root-owned by then. The child's scratch directory also holds numba's
+  cache (`NUMBA_CACHE_DIR`, `child.point_numba_at_scratch`): numba refuses to
+  import a library that compiles with `cache=True` unless it can write beside
+  the library or under HOME, and the execution account can do neither.
 - **No pickle in either direction.** A child's manifest carries a kind tag,
   JSON scalars, and flat filenames only. Unpickling a hostile child's output in
   the privileged parent would hand back most of what isolation removed.
