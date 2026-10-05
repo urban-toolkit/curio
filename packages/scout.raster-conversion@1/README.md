@@ -49,7 +49,7 @@ than the maximum height is drawn at the maximum.
 ```
 
 The test dataflow [BuildingRasters](../../docs/examples/dataflows/BuildingRasters.json)
-is this dataflow, on four buildings built in code.
+is this dataflow, on twelve buildings built in code.
 
 ## Setup
 

@@ -11,10 +11,10 @@
         "type": "curio.builtin/data-loading",
         "x": 200,
         "y": 300,
-        "content": "import geopandas as gpd\nfrom shapely.geometry import box\n\n# Four buildings in the Chicago Loop, in longitude and latitude, each with its\n# height in metres.\nbuildings = gpd.GeoDataFrame(\n    {\"height\": [35.0, 110.0, 240.0, 420.0]},\n    geometry=[\n        box(-87.6335, 41.8838, -87.6328, 41.8843),\n        box(-87.6318, 41.8838, -87.6309, 41.8845),\n        box(-87.6335, 41.8822, -87.6326, 41.8829),\n        box(-87.6316, 41.8820, -87.6305, 41.8830),\n    ],\n    crs=\"EPSG:4326\",\n)\nreturn buildings",
+        "content": "import geopandas as gpd\nfrom shapely.geometry import box\n\n# Twelve buildings in the Chicago Loop, in longitude and latitude, each with\n# its height in metres.\nheights = [25.0, 50.0, 75.0, 100.0, 125.0, 150.0, 175.0, 200.0, 225.0, 250.0, 275.0, 300.0]\nblocks = []\nfor index, height in enumerate(heights):\n    west = -87.6350 + 0.0008 * (index % 6)\n    south = 41.8822 + 0.0012 * (index // 6)\n    blocks.append(box(west, south, west + 0.0005, south + 0.0005))\nreturn gpd.GeoDataFrame({\"height\": heights}, geometry=blocks, crs=\"EPSG:4326\")",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Build four buildings with their heights in the Chicago Loop.",
+        "goal": "Build twelve buildings with their heights in the Chicago Loop.",
         "metadata": {
           "keywords": []
         }
