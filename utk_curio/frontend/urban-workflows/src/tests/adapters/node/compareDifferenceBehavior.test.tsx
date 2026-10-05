@@ -31,10 +31,15 @@ jest.mock("../../../hook/useVega", () => ({
 jest.mock("vega", () => ({}), { virtual: true });
 jest.mock("vega-lite", () => ({}), { virtual: true });
 
-// What a read of a reference finds, by its path.
+// What a read of a reference finds, by its path: a raster only for a reader
+// that takes rasters, as utils/grammarInput reads them.
 let mockFrames: Record<string, any[]> = {};
 jest.mock("../../../utils/grammarInput", () => ({
-  readGrammarInput: jest.fn((ref: any) => Promise.resolve({ frames: mockFrames[ref?.path] ?? [] })),
+  readGrammarInput: jest.fn((ref: any, opts: any) =>
+    Promise.resolve({
+      frames: (mockFrames[ref?.path] ?? []).filter((frame: any) => frame.dataType !== "raster" || opts?.rasters),
+    }),
+  ),
 }));
 
 // The Autark node's map code, as the difference map calls it.
@@ -236,6 +241,12 @@ describe("its body in Difference", () => {
     });
     expect(screen.getByText(/the middle color is halfway between them, not zero/)).not.toBeNull();
     expect(screen.queryByRole("combobox", { name: "Key" })).toBeNull();
+    // The map says it drew once the Autark code reports so, for this document.
+    const map = () => document.querySelector("[data-compare-map-state]")!;
+    expect(map().getAttribute("data-compare-map-state")).toBe("drawing");
+    expect(map().getAttribute("data-compare-map-color")).toBe("band_1");
+    act(() => state.setOutput({ code: "success", content: "" }));
+    expect(map().getAttribute("data-compare-map-state")).toBe("drawn");
   });
 
   test("a layer's difference is colored by its first number, or by its change", async () => {
@@ -295,6 +306,24 @@ describe("its body in Difference", () => {
     }];
     mount({ inputSlots: holding("dataframe"), code: DIFFERENCE, compareScenarios: { inputs: [BASE, TALL], mode: "difference" } }, nodeState(ran));
     expect(await screen.findByText("Run this node again to compute the difference.")).not.toBeNull();
+    expect(mockUseVega).not.toHaveBeenCalled();
+    expect(mockAutk).not.toHaveBeenCalled();
+  });
+
+  test("switched back to Chart, the difference it left asks for a run, not a chart", async () => {
+    mockFrames["diff-1"] = [{
+      dataType: "raster",
+      payload: { envelope: { dataType: "raster", data: { features: [{ properties: { bands: [{ id: "band_1" }] } }] } } },
+      schema: null,
+      geometryName: null,
+    }];
+    mount(
+      { inputSlots: holding("raster"), code: STACKED, compareScenarios: { inputs: [BASE, TALL], mode: "chart" } },
+      nodeState(ran),
+    );
+    expect(await screen.findByText("Run this node again to stack its inputs.")).not.toBeNull();
+    expect(screen.getByRole("tab", { name: "Chart" })).not.toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Chart" })).toBeNull();
     expect(mockUseVega).not.toHaveBeenCalled();
     expect(mockAutk).not.toHaveBeenCalled();
   });

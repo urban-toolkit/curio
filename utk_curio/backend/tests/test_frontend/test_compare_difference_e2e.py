@@ -66,6 +66,20 @@ COMPARE = "cdf-compare"
 BASELINE = {"scenario": "s-base", "name": "Baseline", "color": "#2a9d8f"}
 TWICE = {"scenario": "s-tall", "name": "Twice as tall", "color": "#e76f51"}
 
+#: A layer of 36 small squares near the Loop, each with its osm_id and a
+#: sunlight of id over the factor. With factor 2 the first square is gone and a
+#: 37th is new, so the difference has a removed row and an added one.
+LAYER_CODE = (
+    "import geopandas as gpd\n"
+    "from shapely.geometry import box\n"
+    "factor = [!! factor !!]\n"
+    "ids = list(range(1, 37)) if factor == 1 else list(range(2, 38))\n"
+    "cells = [box(-87.64 + (i % 6) * 0.001, 41.88 + (i // 6) * 0.001,\n"
+    "             -87.6392 + (i % 6) * 0.001, 41.8808 + (i // 6) * 0.001) for i in ids]\n"
+    "return gpd.GeoDataFrame({'osm_id': ids, 'sunlight': [i / factor for i in ids]},\n"
+    "                        geometry=cells, crs='EPSG:4326')\n"
+)
+
 #: The committed raster, scaled by the node's factor and written to a file of
 #: the node's own, which it returns as a rasterio dataset.
 RASTER_CODE = (
@@ -92,7 +106,7 @@ def _factor(value: int) -> dict:
     return {"widgets": [{"name": "factor", "type": "number", "default": 1, "value": value}]}
 
 
-def _spec() -> dict:
+def _spec(code: str = RASTER_CODE, name: str = "Compare Difference") -> dict:
     def node(node_id, node_type, x, y, content, title=None, metadata=None, **fields):
         saved = {
             "id": node_id, "type": node_type, "x": x, "y": y, "content": content,
@@ -105,13 +119,13 @@ def _spec() -> dict:
 
     return {
         "dataflow": {
-            "name": "Compare Difference",
+            "name": name,
             "task": "",
             "timestamp": 1789193389280,
-            "provenance_id": "Compare Difference",
+            "provenance_id": name,
             "nodes": [
-                node(BASE, PYTHON_TYPE, 0, 0, RASTER_CODE, "Raster", _factor(1)),
-                node(TALL, PYTHON_TYPE, 0, 520, RASTER_CODE, "Raster", {**_factor(2), "copiedFrom": [BASE]}),
+                node(BASE, PYTHON_TYPE, 0, 0, code, "Outcome", _factor(1)),
+                node(TALL, PYTHON_TYPE, 0, 520, code, "Outcome", {**_factor(2), "copiedFrom": [BASE]}),
                 node(COMPARE, COMPARE_TYPE, 760, 160, "", dashboardPinned=True),
             ],
             "edges": [],
@@ -141,29 +155,36 @@ _OUTPUT_ARTIFACT_JS = """(id) => {
     return match ? match[1] : null;
 }"""
 
-# The view the body shows, and where its map stands: "drawing", "drawn" or
-# "problem" (components/compare/CompareMap.tsx).
+# The view the body shows, where its map stands ("drawing", "drawn" or
+# "problem", for the document it shows now) and what the map colors by
+# (components/compare/CompareMap.tsx).
 _MAP_STATE_JS = """(id) => {
     const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
     const body = node && node.querySelector("[data-compare-mode]");
     const map = node && node.querySelector("[data-compare-map-state]");
     if (!body) return null;
-    return [body.getAttribute("data-compare-mode"), map ? map.getAttribute("data-compare-map-state") : null];
+    return [
+        body.getAttribute("data-compare-mode"),
+        map ? map.getAttribute("data-compare-map-state") : null,
+        map ? map.getAttribute("data-compare-map-color") : null,
+    ];
 }"""
 
 
-def _assert_difference_mapped(page, node_id: str, attach_as: str) -> None:
-    """The body is in Difference, its map's run settled with no problem, and the
-    node's canvas holds a drawn map."""
+def _assert_difference_mapped(page, node_id: str, attach_as: str, color: str = "") -> None:
+    """The body is in Difference, its map's run of the document it shows (one
+    that colors by *color*, when given) settled with no problem, and the node's
+    canvas holds a drawn map."""
     deadline = time.time() + 90
     state = None
     while time.time() < deadline:
         state = page.evaluate(_MAP_STATE_JS, node_id)
-        if state and state[1] in ("drawn", "problem"):
+        if state and state[1] in ("drawn", "problem") and (not color or state[2] == color):
             break
         page.wait_for_timeout(250)
     problem = node_locator(page, node_id).locator("[data-compare-map-problem]").all_inner_texts()
-    assert state == ["difference", "drawn"], f"the difference map ended {state!r}: {problem}"
+    assert state and state[:2] == ["difference", "drawn"], f"the difference map ended {state!r}: {problem}"
+    assert not color or state[2] == color, f"the map colors by {state[2]!r}, not {color!r}"
     assert_autark_map_drawn(page, node_id, timeout=60000, attach_as=attach_as)
 
 
@@ -174,28 +195,29 @@ def _band(envelope: dict) -> list[float]:
     return list(struct.unpack(f"<{len(raw) // 4}f", raw))
 
 
-def test_two_rasters_are_compared_in_difference_and_mapped(
-    app_frontend: "FrontendPage", current_server: str, page,
-):
+def _enter(page, app_frontend, current_server, spec: dict, username: str) -> dict:
     require_project_page()
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
-    spec = _spec()
+    name = spec["dataflow"]["name"]
     session = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
-        name="Compare Difference",
-        username="compare_difference_e2e",
-        project_name="Compare Difference",
+        name=name,
+        username=username,
+        project_name=name,
         project_spec=spec,
     )
     require_owner_view(page)
-    project_id = session["project"]["id"]
     for node in spec["dataflow"]["nodes"]:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
+    return session
 
-    # 1. Both outcomes run, then go into the circles: two rasters, so Difference.
+
+def _run_outcomes_then_wire_them(page) -> None:
+    """Both scenarios' outcomes run, then go into the node's circles in order,
+    so the node knows what they are as they arrive."""
     for outcome in (BASE, TALL):
         play_node(page, outcome)
         wait_for_node_done(page, outcome, node_type=PYTHON_TYPE)
@@ -205,18 +227,36 @@ def test_two_rasters_are_compared_in_difference_and_mapped(
     _wait_for_circles(page, COMPARE, ["in", "in_1"])
     frame_nodes(page, [TALL, COMPARE])
     connect_nodes(page, TALL, COMPARE, target_handle="in_1")
-    _wait_for_code(page, COMPARE, DIFFERENCE_LINES)
 
-    # 2. Run All subtracts them through Autark, and the node maps the difference.
+
+def _run_and_read_output(page, attach_as: str) -> dict:
+    """Run All; the node subtracts its inputs and maps the difference. Returns
+    its output as the sandbox stores it."""
     run_all_and_wait(page, timeout_ms=240000)
     compare = node_locator(page, COMPARE)
     status = wait_for_node_settled(page, COMPARE, node_type=COMPARE_TYPE, timeout_ms=120000)
     assert status == "done", f"Compare Scenarios did not subtract its inputs: {read_node_error_text(compare)}"
     frame_nodes(page, [COMPARE])
-    _assert_difference_mapped(page, COMPARE, "the difference of two rasters")
+    _assert_difference_mapped(page, COMPARE, attach_as)
     artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, COMPARE)
     assert artifact, "Compare Scenarios shows no saved output"
-    stored = load_artifact_as_dict(artifact)
+    return load_artifact_as_dict(artifact)
+
+
+def test_two_rasters_are_compared_in_difference_and_mapped(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    spec = _spec()
+    session = _enter(page, app_frontend, current_server, spec, "compare_difference_e2e")
+    project_id = session["project"]["id"]
+
+    # 1. Both outcomes run, then go into the circles: two rasters, so Difference.
+    _run_outcomes_then_wire_them(page)
+    _wait_for_code(page, COMPARE, DIFFERENCE_LINES)
+
+    # 2. Run All subtracts them through Autark, and the node maps the difference.
+    stored = _run_and_read_output(page, "the difference of two rasters")
+    compare = node_locator(page, COMPARE)
     envelope = stored.get("data") if stored.get("dataType") == "dict" else stored
     assert envelope["dataType"] == "raster", stored.get("dataType")
     assert envelope["data"]["grid"] == {
@@ -274,3 +314,31 @@ def test_two_rasters_are_compared_in_difference_and_mapped(
         test_name="test_two_rasters_are_compared_in_difference_and_mapped",
         sweep_toasts=True,
     )
+
+
+def test_two_layers_are_joined_on_their_osm_id_and_mapped(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """Two layers that have run: Difference again, a Python join on osm_id, and
+    the difference layer mapped through the Autark node's map code, by its
+    number column and then by its change."""
+    spec = _spec(LAYER_CODE, "Compare Difference Layers")
+    _enter(page, app_frontend, current_server, spec, "compare_difference_layers_e2e")
+
+    _run_outcomes_then_wire_them(page)
+    _wait_for_code(page, COMPARE, DIFFERENCE_LINES)
+    stored = _run_and_read_output(page, "the difference of two layers")
+    assert stored["dataType"] == "geodataframe", stored["dataType"]
+    rows = [feature["properties"] for feature in stored["data"]["features"]]
+    # The reference's squares in its order, the first gone, then the new one.
+    assert [row["osm_id"] for row in rows] == list(range(1, 38))
+    assert [row["change"] for row in rows] == ["removed", *["changed"] * 35, "added"]
+    # Half the sunlight minus the sunlight, and nothing where a side has none.
+    assert rows[0]["sunlight"] is None and rows[-1]["sunlight"] is None, (rows[0], rows[-1])
+    assert [row["sunlight"] for row in rows[1:4]] == [-1.0, -1.5, -2.0], rows[1:4]
+
+    compare = node_locator(page, COMPARE)
+    color_by = compare.locator('select[aria-label="Color by"]')
+    assert color_by.input_value() == "sunlight"
+    color_by.select_option("change")
+    _assert_difference_mapped(page, COMPARE, "the difference of two layers by its change", color="change")
