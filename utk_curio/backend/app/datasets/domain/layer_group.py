@@ -155,8 +155,10 @@ def build_layer_group_item(group_id: str, members: list[dict[str, Any]]) -> dict
     # driven by the preview response's ``bundle`` flag, not this format. Layers
     # downloaded from the Discovery Catalog: the group says what each of them
     # says (format, source label, tags, where they came from), as a single
-    # download's card does, and so do layers that ship in the shared catalog.
-    # An upload says what its file was.
+    # download's card does. Layers that ship in the shared catalog give the
+    # group their source label and tags, and it keeps its kind's format, as
+    # the canvas palette shows it (``layerGroupFormat``). An upload says what
+    # its file was.
     downloaded = bool(members) and all(m.get("discoverySource") for m in members)
     shipped = bool(members) and all(_shared_catalog_member(m) for m in members)
     labels = (
@@ -173,7 +175,7 @@ def build_layer_group_item(group_id: str, members: list[dict[str, Any]]) -> dict
             "tags": list(kind["tags"]),
         }
     )
-    if kind.get("always_its_own_format"):
+    if kind.get("always_its_own_format") or (shipped and not downloaded):
         # A GTFS feed is always a download, and its tables' Parquet says
         # nothing about it; the group says GTFS.
         labels["format"] = kind["format"]
