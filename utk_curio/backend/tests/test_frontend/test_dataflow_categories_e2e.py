@@ -1,7 +1,7 @@
 """Playwright E2E: the Projects rail, and categories set on the canvas.
 
 The unit tests cover the pieces: ``test_projects/test_categories.py`` the
-server's derivation and the approved placement of the 48 shipped dataflows,
+server's derivation and the approved placement of the 49 shipped dataflows,
 ``projectsPageChrome.test.tsx`` the rail's arithmetic. What only a browser on a
 seeded stack shows is the whole trip: the fixtures seeded as tests, the
 categories the server computes reaching the canvas title, and a category added
@@ -61,11 +61,11 @@ def test_the_rail_lists_the_tests(app_frontend: "FrontendPage", frontend_server:
     """The deploy question that started this: the fixtures were never seeded."""
     _sign_up(page, frontend_server)
 
-    # #662: 25 with the Scenarios, BuildingRasters, WeatherRouting and NetCDF test dataflows.
-    _rail_entry(page, "Tests", 25).click()
+    # #662: 26 with the Scenarios, BuildingRasters, FloodScenarios, WeatherRouting and NetCDF test dataflows.
+    _rail_entry(page, "Tests", 26).click()
 
     expect(project_card(page, FIXTURE)).to_have_count(1, timeout=10000)
-    expect(page.locator("[data-curio-projects-scroll] [data-project-id]")).to_have_count(25)
+    expect(page.locator("[data-curio-projects-scroll] [data-project-id]")).to_have_count(26)
 
     # One entry per section: picking the use case replaces the tests.
     _rail_entry(page, "Use cases", 1).click()

@@ -70,6 +70,13 @@ def _run_kwargs():
 
 
 if __name__ == '__main__':
+    # DuckDB's import-time connection holds a thread per core and serves
+    # nothing here. Imported now, so a later import opens no pool of its own.
+    from utk_curio.sandbox.util.duckdb_threads import release_default_connection
+    release_default_connection(
+        "[backend]", "so its threads stay idle in this process", import_first=True,
+    )
+
     from utk_curio.backend.config import ENABLE_COLLAB
     if ENABLE_COLLAB:
         # SocketIO requires its own .run() so the engineio server can attach.

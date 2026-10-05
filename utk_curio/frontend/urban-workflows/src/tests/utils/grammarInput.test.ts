@@ -63,6 +63,26 @@ describe("readGrammarInput", () => {
     });
   });
 
+  test("a reference that names its table is read as that table, a raster too", async () => {
+    mockFetchData.mockResolvedValue({ dataType: "geodataframe", data: fc(1) });
+    const layer = await readGrammarInput({ path: "art", dataType: "geodataframe", layerName: "sunlight_change" }, AUTK);
+    expect(layer.frames[0]).toMatchObject({ name: "sunlight_change", dataType: "geodataframe", fromBundle: false });
+
+    const raster = await readGrammarInput(
+      { path: "grid", dataType: "raster", layerName: "band_1_change" },
+      { ...AUTK, rasters: true },
+    );
+    expect(raster.frames[0]).toMatchObject({ name: "band_1_change", dataType: "raster", payload: { artifact: "grid" } });
+
+    // A reference that does not declare its type is named once it is read,
+    // as a Compare Scenarios node's raster difference arrives.
+    const envelope = { dataType: "raster", data: { type: "FeatureCollection", features: [] } };
+    mockFetchData.mockResolvedValue(envelope);
+    const undeclared = await readGrammarInput({ path: "grid", layerName: "band_1_change" }, { ...AUTK, rasters: true });
+    expect(undeclared.frames).toHaveLength(1);
+    expect(undeclared.frames[0]).toMatchObject({ name: "band_1_change", dataType: "raster", payload: { envelope } });
+  });
+
   test("a geodataframe takes the Autark layer type its metadata names", async () => {
     // What the sandbox sends for `gdf.metadata = {"layerType": "buildings"}`, the
     // line a Discovery OpenStreetMap download's loader writes.

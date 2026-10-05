@@ -207,21 +207,37 @@ class TestAutkGrammar:
 
 
 def _shipped_autk_documents() -> list:
-    """Every Autark node's content in the shipped examples, as (where, content)."""
+    """Every Autark node's content in the shipped examples, as (where, content).
+
+    A dataflow's node is read as a run reads it, with its references resolved
+    (#662): a spec that places a widget as a value, ``"height_factor":
+    [!! height_factor !!]``, is not JSON until a run gives it the widget's value.
+    """
+    from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+
     found = []
 
-    def _walk(value, where):
+    def _resolver(doc):
+        flow = doc.get("dataflow") if isinstance(doc, dict) else None
+        if not isinstance(flow, dict) or not isinstance(flow.get("nodes"), list):
+            return {}
+        spec = parse_workflow_dict(doc)
+        return {node.id: (lambda node=node: spec.node_code(node, "json")) for node in spec.nodes}
+
+    def _walk(value, where, resolve):
         if isinstance(value, dict):
             if value.get("type") in ("AUTK_GRAMMAR", AUTK) and isinstance(value.get("content"), str):
-                found.append((f"{where}#{value.get('id')}", value["content"]))
+                read = resolve.get(value.get("id"))
+                found.append((f"{where}#{value.get('id')}", read() if read else value["content"]))
             for child in value.values():
-                _walk(child, where)
+                _walk(child, where, resolve)
         elif isinstance(value, list):
             for child in value:
-                _walk(child, where)
+                _walk(child, where, resolve)
 
     for path in sorted((REPO_ROOT / "docs" / "examples").rglob("*.json")):
-        _walk(json.loads(path.read_text(encoding="utf-8")), path.relative_to(REPO_ROOT))
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        _walk(doc, path.relative_to(REPO_ROOT), _resolver(doc))
     return found
 
 

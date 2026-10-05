@@ -16,6 +16,7 @@
 - [Node Catalog](#node-catalog)
 - [Vega-Lite node](#vega-lite-node)
 - [Autark node](#autark-node)
+- [Rasters](#rasters)
 - [Notebook view](#notebook-view)
 - [Dashboards](#dashboards)
 - [Data Catalog](#data-catalog)
@@ -620,6 +621,10 @@ It stacks inputs of one kind:
 - values (a number, a text, true or false, or a list of them), one row each under a
   `value` column.
 
+An Autark node hands on every layer of its workspace. From such an input the node
+reads the layer picked in **Layer**, in Chart and in Difference alike; the menu lists
+the layers every such input has.
+
 A table beside a value, a GeoDataFrame beside a plain table, two coordinate systems,
 an input with no value, an input that holds several tables, or a raster stops the run
 with a message naming the input.
@@ -632,12 +637,16 @@ comparison, and every number it gives is the comparison's minus the reference's.
   origin, cell size and CRS; otherwise the run stops with a message naming both. Each
   is read as an Autark map reads a raster, at its own size, up to 2048 by 2048 cells.
 - Two layers, or two tables, are matched row by row on a stable id: `osm_id`, else
-  `building_id`, or the column picked in **Key**. A row on both sides holds, in each
+  `building_id`, or the column picked in **Key**. Two layers with neither id are
+  matched by their shapes: rows with the same geometry are one row, and a shape that
+  repeats is matched in order. A row on both sides holds, in each
   number column both have, the difference, and a `change` column says `changed` or
-  `unchanged`. A row only in the reference is `removed` and one only in the comparison
-  `added`; their numbers are empty. The other columns and the geometry are the
-  comparison's, or the reference's for a removed row. A key that is empty or repeated
-  on one side stops the run, as does a layer beside a table.
+  `unchanged`. A column of nested values, such as the `compute` values an Autark
+  compute step writes, holds the difference of each number in it. A row only in the
+  reference is `removed` and one only in the comparison `added`; their numbers are
+  empty. The other columns and the geometry are the comparison's, or the reference's
+  for a removed row. A key that is empty or repeated on one side stops the run, as
+  does a layer beside a table.
 
 A raster's difference is a raster, which an Autark map draws and a Python node reads
 as a `rasterio` dataset.
@@ -650,7 +659,8 @@ The node has two tabs:
   (**Combine**: mean, sum, median, minimum, maximum, or a count of rows).
 - **Difference**, in its place in Difference, maps a raster's or a layer's
   difference, colored by a band or a number column, or by `change` (**Color by**).
-  A layer's colors run from the lowest difference, dark purple, to the highest,
+  The legend is titled with what it shows: `sunlight_change` for the column
+  `sunlight`, or `change`. A layer's colors run from the lowest difference, dark purple, to the highest,
   yellow. A raster's cells are redder the higher their difference, and fainter the
   closer they are to no difference. A table's difference is shown as a table, each
   row in the color of its change.
@@ -862,7 +872,8 @@ no `data` entry for its input; it names the tables the input provides.
   band, `{"dataRef": "input_0", "getFnv": "band_1"}`; its bands are `band_1`,
   `band_2`, and so on. It is drawn at its own size, cell for cell, up to 2048 by
   2048 cells and 8192 on a side. A larger one is not drawn and the node says so:
-  crop it in the node that makes it, for example with a rasterio window read.
+  crop it in the node that makes it, for example with a rasterio window read or
+  the `bounds` of `curio_load_data` (see the [Data Catalog](DATA-CATALOG.md)).
   It needs a CRS with an EPSG code and a north-up grid. A plot or a compute step
   does not read a raster.
 - A raster the node hands on reaches a Python node as a `rasterio` dataset on
@@ -902,6 +913,48 @@ The first matching rule wins:
 | one layer with a nominal column | a map coloured by the first nominal column, `schemeTableau10` |
 | one layer with geometry only | a plain map |
 | no geometry, or only rasters | the editor stays empty |
+
+## Rasters
+
+Two nodes in the palette's computation group work on rasters: a `rasterio`
+dataset from a Python node or the Data Catalog, or a raster an Autark node hands
+on. Each is a Python node whose code is written for it when it is dropped; edit
+the call to change what it does.
+
+**Raster Calculator** computes one operation over rasters on one grid, cell by
+cell. Connect the rasters to its input circles, in order:
+
+| operation | result |
+|---|---|
+| `curio_raster_calculate("add", arg)` | input 0 plus input 1 |
+| `curio_raster_calculate("subtract", arg)` | input 0 minus input 1 |
+| `curio_raster_calculate("multiply", arg)` | input 0 times input 1 |
+| `curio_raster_calculate("divide", arg)` | input 0 over input 1; a cell divided by 0 has no value |
+| `curio_raster_calculate("choose", arg, codes=[21, 31])` | input 1 where input 0's class is one of the codes, input 2 elsewhere |
+
+- A cell with no value (the raster's nodata, or a number that is not finite) in
+  an input the operation reads there has no value in the result. In `choose`, a
+  class with no value is no class, so its cell takes input 2.
+- The rasters must share their size, origin, cell size and CRS; otherwise the
+  node stops and describes both grids. Bands are computed one by one; a class
+  raster of one band applies to every band.
+- The result keeps the inputs' number type, at least float32, so a float64
+  raster keeps every digit. Its cells with no value are NaN.
+
+**Raster Statistics** gives a raster's `mean`, `median`, `min`, `max` and
+`count` over its cells with a value, as a table of one row, for example for
+**Compare Scenarios** to chart. `curio_raster_statistics(arg, band=2)` reads
+another band. A condition keeps only some cells:
+
+| call | counts |
+|---|---|
+| `curio_raster_statistics(arg, where=lambda value: value < 1.08)` | the cells whose value is under 1.08 |
+| `curio_raster_statistics(arg, where=lambda value: (value >= 2) & (value < 5))` | the cells from 2 up to 5 |
+| `curio_raster_statistics(arg, mask_values=[0])` | with a second raster on input 1, on the same grid: the cells where its value is 0 |
+| `curio_raster_statistics(arg, where=lambda height: height < 1.08)` | with a second raster on input 1: the cells where its value is under 1.08 |
+
+`where` receives the values as an array, with NaN for a cell with no value, and
+a cell with no value is never counted.
 
 ## Notebook view
 
