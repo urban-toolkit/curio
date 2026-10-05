@@ -21,6 +21,18 @@ import { stackCode } from "../../utils/compare/compareCode";
 import { normalizeCompareSettings, type CompareSettings } from "../../utils/compare/compareSettings";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
 
+/**
+ * What a failed run says, for the body: a traceback's last line without its
+ * exception's name (the stacking step's refusals end there), else the message.
+ */
+export function failureLine(content: unknown): string {
+  const text = String(content ?? "").trim();
+  if (!text.includes("Traceback (most recent call last)")) return text;
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const last = lines[lines.length - 1] ?? text;
+  return last.replace(/^[A-Za-z_][\w.]*(Error|Exception): /, "");
+}
+
 export const useCompareScenariosBehavior: NodeBehaviorHook = (data, nodeState) => {
   const flow = useFlowContext() as any;
   const nodes: any[] = flow?.nodes ?? [];
@@ -52,8 +64,19 @@ export const useCompareScenariosBehavior: NodeBehaviorHook = (data, nodeState) =
     if (nodeState.output?.code === "success") flow.markNodeStale?.(data.nodeId);
   }, [inputsKey, writable]);
 
-  // One identity per node: NodeEditor opens the Output tab whenever it changes.
-  const contentComponent = useMemo(() => <CompareScenariosBody nodeId={data.nodeId} />, [data.nodeId]);
+  // NodeEditor opens the Output tab whenever the body's identity changes, so
+  // it changes with the node's outcome and nothing else: a run shows its chart
+  // however it ran (a play, Run All in the browser, a run on the server, whose
+  // steps reach the node as its outcome alone), and typing never moves the tab.
+  const output = nodeState.output;
+  const outcome = output?.code === "success" || output?.code === "error"
+    ? `${output.code}:${String(output.content ?? "")}`
+    : String(output?.code ?? "");
+  const runError = output?.code === "error" ? failureLine(output.content) : null;
+  const contentComponent = useMemo(
+    () => <CompareScenariosBody nodeId={data.nodeId} runError={runError} />,
+    [data.nodeId, outcome],
+  );
   // A node just dropped has no code yet; it gets the code for its inputs.
   const fresh = typeof data.defaultCode !== "string" || data.defaultCode === "";
   return {

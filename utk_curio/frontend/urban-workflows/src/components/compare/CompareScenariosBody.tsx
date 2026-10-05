@@ -118,7 +118,7 @@ function Select<T extends string>({
   );
 }
 
-export function CompareScenariosBody({ nodeId }: { nodeId: string }) {
+export function CompareScenariosBody({ nodeId, runError = null }: { nodeId: string; runError?: string | null }) {
   const flow = useFlowContext() as any;
   const nodes: any[] = flow?.nodes ?? [];
   const edges: any[] = flow?.edges ?? [];
@@ -168,7 +168,13 @@ export function CompareScenariosBody({ nodeId }: { nodeId: string }) {
           : [];
 
   let stage: React.ReactNode;
-  if (inputs.length === 0) {
+  if (runError !== null) {
+    stage = (
+      <p className={`nodrag nopan ${styles.problem}`} data-compare-run-error="true">
+        {runError}
+      </p>
+    );
+  } else if (inputs.length === 0) {
     stage = <NodeEmptyState reason="disconnected" hint="Connect each scenario's outcome to one of its input circles." />;
   } else if (!stacked) {
     stage = <NodeEmptyState reason="not-run" hint="Run this node to stack its inputs and draw them." />;
