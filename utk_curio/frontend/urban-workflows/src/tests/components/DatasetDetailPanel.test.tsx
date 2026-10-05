@@ -159,6 +159,28 @@ describe("DatasetDetailPanel header actions", () => {
   });
 });
 
+describe("DatasetDetailPanel for a model or a NetCDF file", () => {
+  beforeEach(() => {
+    mockUseDatasetLineage.mockReset();
+  });
+
+  it.each([
+    ["onnx", "ONNX"],
+    ["netcdf", "NetCDF"],
+  ] as const)("says a %s file's format and size, and counts no rows", (format, label) => {
+    renderPanel(
+      lineageFixture(),
+      catalogItem({ format, tags: [format], sizeBytes: 34_000_000, rowCount: null, featureCount: null }),
+    );
+    const sidebar = within(screen.getByRole("complementary", { name: "Dataset info" }));
+    expect(sidebar.getByText("Format", { selector: "dt" }).nextElementSibling).toHaveTextContent(label);
+    expect(sidebar.getByText("File size", { selector: "dt" }).nextElementSibling).toHaveTextContent("32.4 MB");
+    expect(screen.queryByText(/\d rows\b/)).not.toBeInTheDocument();
+    // The file itself is what Export hands over, as a GeoTIFF's is.
+    expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
+  });
+});
+
 describe("DatasetDetailPanel timestamps (record vs. source file)", () => {
   beforeEach(() => {
     mockUseDatasetLineage.mockReset();
