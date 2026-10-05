@@ -82,6 +82,8 @@ class TestTheManifest:
         ({"id": "Not An Id"}, "is not a model id"),
         ({"version": "1"}, "version must look like"),
         ({"homepage": "http://x.example"}, "https"),
+        ({"input": {"width": 64, "height": 32, "layout": "CHW"}}, "input.layout must be one of"),
+        ({"input": {"width": 64, "height": 32, "layout": "NHWC"}}, "NCHW for this task"),
     ])
     def test_what_it_refuses(self, change, message):
         with pytest.raises(ModelManifestError, match=message):
@@ -94,6 +96,18 @@ class TestTheManifest:
     def test_a_transformers_checkpoint_may_leave_labels_to_its_config(self):
         manifest = parse_manifest(_onnx_manifest(runtime="transformers", entry="files", labels=[], input=None))
         assert manifest.labels == () and manifest.input is None
+
+    def test_an_image_to_image_model_has_no_labels_and_may_read_nhwc(self):
+        manifest = parse_manifest(_onnx_manifest(
+            task="image-to-image", labels=[],
+            input={"width": 512, "height": 512, "dtype": "float32", "layout": "NHWC"},
+        ))
+        assert manifest.labels == () and manifest.input.layout == "NHWC"
+        assert parse_manifest(manifest_dict(manifest)) == manifest
+
+    def test_the_shipped_deep_umbra_reads(self):
+        manifest = load_manifest(SHIPPED / "model.scout.deep-umbra@1")
+        assert (manifest.runtime, manifest.task, manifest.labels) == ("onnx", "image-to-image", ())
 
     def test_it_round_trips(self):
         parsed = parse_manifest(_onnx_manifest())

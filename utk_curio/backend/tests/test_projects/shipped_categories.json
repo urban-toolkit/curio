@@ -237,6 +237,15 @@
       "Geometries"
     ]
   },
+  "24-scout-building-rasters": {
+    "tags": [
+      "Autark"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries"
+    ]
+  },
   "dataflows/AutkMap": {
     "tags": [
       "Autark",

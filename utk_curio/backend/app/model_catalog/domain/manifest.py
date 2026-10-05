@@ -6,12 +6,16 @@ node needs to run it, so the node hard-codes nothing:
 
 - ``runtime``: ``onnx`` (one ``.onnx`` file, with any external data next to
   it) or ``transformers`` (a checkpoint folder ``from_pretrained`` reads);
-- ``task``: ``semantic-segmentation``, one label per pixel;
+- ``task``: ``semantic-segmentation``, one label per pixel, or
+  ``image-to-image``, images in and an image out, which the node that runs
+  the model feeds itself (``CurioModel.run``);
 - ``entry``: the ``.onnx`` file, or the checkpoint folder, under the model's
   folder;
 - ``labels``: the class of each output channel (a Transformers checkpoint
-  may leave them to its ``config.json``);
-- ``input``: an ONNX model's input, ``width`` x ``height`` in ``NCHW``, as
+  may leave them to its ``config.json``); an ``image-to-image`` model has
+  none;
+- ``input``: an ONNX model's input, ``width`` x ``height`` in ``NCHW`` (or
+  ``NHWC``, for an ``image-to-image`` model), as
   ``uint8`` pixels or as ``float32`` scaled by ``scale`` and then normalized
   by ``mean`` and ``std``;
 - ``license``, and ``licenseFile`` for its text: required, since a model is
@@ -34,8 +38,9 @@ from typing import Any
 from utk_curio.backend.app.datasets.infrastructure.storage import DATASET_ID_RE
 
 RUNTIMES = ("onnx", "transformers")
-TASKS = ("semantic-segmentation",)
+TASKS = ("semantic-segmentation", "image-to-image")
 INPUT_DTYPES = ("uint8", "float32")
+INPUT_LAYOUTS = ("NCHW", "NHWC")
 
 #: The most labels a model may name, and the longest one.
 MAX_LABELS = 1024
@@ -127,8 +132,9 @@ def _input(raw: object) -> ModelInput:
     dtype = raw.get("dtype", "float32")
     if dtype not in INPUT_DTYPES:
         raise ModelManifestError(f"model manifest input.dtype must be one of {list(INPUT_DTYPES)}")
-    if raw.get("layout", "NCHW") != "NCHW":
-        raise ModelManifestError("model manifest input.layout must be NCHW")
+    layout = raw.get("layout", "NCHW")
+    if layout not in INPUT_LAYOUTS:
+        raise ModelManifestError(f"model manifest input.layout must be one of {list(INPUT_LAYOUTS)}")
 
     def triple(key):
         value = raw.get(key)
@@ -146,7 +152,8 @@ def _input(raw: object) -> ModelInput:
     std = triple("std")
     if std is not None and any(v == 0 for v in std):
         raise ModelManifestError("model manifest input.std may not hold a zero")
-    return ModelInput(width=width, height=height, dtype=dtype, scale=float(scale), mean=triple("mean"), std=std)
+    return ModelInput(width=width, height=height, dtype=dtype, layout=layout, scale=float(scale),
+                      mean=triple("mean"), std=std)
 
 
 def parse_manifest(raw: object, *, dir_name: str | None = None) -> ModelManifest:
@@ -181,11 +188,13 @@ def parse_manifest(raw: object, *, dir_name: str | None = None) -> ModelManifest
     ):
         raise ModelManifestError(f"model manifest labels must list up to {MAX_LABELS} short names")
     labels = tuple(label.strip() for label in labels_raw)
-    if runtime == "onnx" and not labels:
+    if runtime == "onnx" and task == "semantic-segmentation" and not labels:
         raise ModelManifestError("an onnx model names its labels, one per output channel")
     model_input = _input(raw.get("input")) if runtime == "onnx" else (
         _input(raw["input"]) if raw.get("input") is not None else None
     )
+    if model_input is not None and model_input.layout != "NCHW" and task != "image-to-image":
+        raise ModelManifestError("model manifest input.layout must be NCHW for this task")
 
     license_text = _str(raw, "license")
     license_file = raw.get("licenseFile")

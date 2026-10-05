@@ -248,6 +248,31 @@ class TestLoadModel:
         with pytest.raises(RuntimeError, match="not available"):
             _helpers({})["curio_load_model"]("gone")
 
+    def test_an_image_to_image_model_is_run_with_its_own_inputs(self, tmp_path):
+        np = pytest.importorskip("numpy")
+        pytest.importorskip("onnxruntime")
+        from pathlib import Path
+
+        shipped = Path(__file__).resolve().parents[3] / "models" / "model.scout.deep-umbra@1"
+        model = _helpers({}, models={"m": str(shipped)})["curio_load_model"]("m")
+        plane = np.zeros((1, 512, 512, 1), dtype=np.float32)
+        (shadow,) = model.run({"height": plane - 1, "latitude": plane, "season": plane})
+        assert shadow.shape == (1, 512, 512, 1) and float(np.abs(shadow).max()) <= 1.0
+        with pytest.raises(ValueError, match="missing latitude, season"):
+            model.run({"height": plane})
+
+    def test_only_an_onnx_model_has_a_graph_to_run(self, tmp_path):
+        folder = self._model(tmp_path, {"runtime": "transformers", "entry": "files"})
+        model = _helpers({}, models={"m": str(folder)})["curio_load_model"]("m")
+        with pytest.raises(RuntimeError, match="not an ONNX model"):
+            model.run({})
+
+    def test_curio_segment_refuses_an_image_to_image_model(self, tmp_path):
+        folder = self._model(tmp_path, {"runtime": "onnx", "task": "image-to-image", "labels": []})
+        helpers = _helpers({}, models={"m": str(folder)})
+        with pytest.raises(ValueError, match="does not label pixels"):
+            helpers["curio_segment"](pd.DataFrame({"path": []}), helpers["curio_load_model"]("m"))
+
     def test_curio_segment_runs_a_loaded_model_not_a_folder(self, tmp_path):
         segment = _helpers({})["curio_segment"]
         with pytest.raises(TypeError, match="curio_load_model"):

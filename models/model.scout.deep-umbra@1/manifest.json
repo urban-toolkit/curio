@@ -1,0 +1,20 @@
+{
+  "id": "model.scout.deep-umbra",
+  "name": "Deep Umbra (accumulated shadows)",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "Estimates how long the ground around buildings is in shadow over a day, from a map of building heights. A generative network (resnet9 generator) that reads a 512 by 512 window of zoom-16 height tiles, where gray level 255 is 550 m, with the tile's latitude and the season, and draws the shadow accumulation of the 256 by 256 tile in its middle. The Simulate Shadows node of SCOUT Shadow Simulation runs it on Rasterize Buildings' tiles.",
+  "publisher": "Deep Umbra authors (UIC Electronic Visualization Laboratory); weights from SCOUT, ONNX export by Curio",
+  "homepage": "https://github.com/uic-evl/deep-umbra",
+  "license": "MIT",
+  "licenseFile": "LICENSE",
+  "runtime": "onnx",
+  "task": "image-to-image",
+  "entry": "files/deep_umbra.onnx",
+  "input": { "width": 512, "height": 512, "dtype": "float32", "layout": "NHWC", "scale": 1.0 },
+  "labels": [],
+  "tags": ["shadow", "sunlight", "buildings", "gan", "scout", "onnx"],
+  "sizeBytes": 10544442,
+  "createdAt": "2026-10-05T00:00:00Z",
+  "updatedAt": "2026-10-05T00:00:00Z"
+}

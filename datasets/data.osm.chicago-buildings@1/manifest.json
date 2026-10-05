@@ -1,0 +1,23 @@
+{
+  "id": "data.osm.chicago-buildings",
+  "name": "Chicago OSM Buildings",
+  "version": "1.0.0",
+  "format": "parquet",
+  "description": "Chicago building footprints and preprocessed heights from the local SCOUT OSM extract. Heights are in metres and may include estimates; they are not all surveyed measurements.",
+  "publisher": "OpenStreetMap contributors",
+  "license": "ODbL-1.0",
+  "tags": [
+    "chicago",
+    "osm",
+    "buildings",
+    "height"
+  ],
+  "dataFile": "data/buildings.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "OpenStreetMap contributors; SCOUT preprocessing",
+  "featureCount": 1117259,
+  "createdAt": "2026-09-27T00:00:00Z",
+  "updatedAt": "2026-09-27T00:00:00Z"
+}

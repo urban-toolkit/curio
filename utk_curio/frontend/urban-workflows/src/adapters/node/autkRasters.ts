@@ -164,35 +164,51 @@ const SERVED_RASTERS = Symbol.for('curio.autk.servedRasters');
 
 /**
  * Answer the grammar's `getLayer` for a raster Curio loaded with the raster's
- * own collection, framed. autk-db's `getLayer` gives a raster the workspace's
- * extent once any layer with geometry has set one, which stretches the raster
- * over that layer's extent instead; `getRaster` gives its own. Every other
- * table is the database's to answer, as before.
+ * own collection, framed, as it was read right after loading. autk-db's
+ * `getLayer` gives a raster the workspace's extent once any layer with
+ * geometry has set one, which stretches the raster over that layer's extent
+ * instead; `getRaster` gives its own. Every other table is the database's to
+ * answer, as before.
  */
-function serveRaster(db: any, table: string): void {
-    let served: Set<string> | undefined = db[SERVED_RASTERS];
+function serveRaster(db: any, table: string, collection: any): void {
+    let served: Map<string, any> | undefined = db[SERVED_RASTERS];
     if (!served) {
-        served = new Set();
-        const names = served;
+        served = new Map();
+        const rasters = served;
         const getLayer = typeof db.getLayer === 'function' ? db.getLayer.bind(db) : null;
         db.getLayer = async (name: string, ...rest: any[]) => {
-            if (!names.has(name)) {
+            if (!rasters.has(name)) {
                 if (!getLayer) throw new Error(`Table ${name} not found.`);
                 return getLayer(name, ...rest);
             }
-            if (typeof db.getRaster !== 'function') throw new Error(RASTER_EXPORT_MISSING);
-            return framedRaster(await db.getRaster(name));
+            return rasters.get(name);
         };
         db[SERVED_RASTERS] = served;
     }
-    served.add(table);
+    served.set(table, framedRaster(collection));
+}
+
+/**
+ * autk-db keeps a raster's cells in one store for the whole page, keyed by
+ * workspace and table (`autk.input_0`), not by database. Every Autark node's
+ * database has the workspace `autk`, and a node's input is `input_0`, so two
+ * maps that load a raster at once each drew whichever loaded last. A raster
+ * is loaded and read back here one at a time, and its node keeps what it
+ * read.
+ */
+let rasterLoads: Promise<unknown> = Promise.resolve();
+
+function oneRasterAtATime<T>(load: () => Promise<T>): Promise<T> {
+    const next = rasterLoads.then(load, load);
+    rasterLoads = next.catch(() => undefined);
+    return next;
 }
 
 /**
  * Let one grammar instance load `curio-raster` sources: each goes into the
  * grammar's own database (made with `newDb` when it is the first source), by
- * `loadGeoTiff`, and the map reads it back by `getRaster`. Any other source
- * is the grammar's to load, as before.
+ * `loadGeoTiff`, and the map is handed what `getRaster` read back. Any other
+ * source is the grammar's to load, as before.
  */
 export function withRasterSources(grammar: any, newDb: () => Promise<any>): void {
     const adapter = grammar?.dataAdapter;
@@ -203,11 +219,54 @@ export function withRasterSources(grammar: any, newDb: () => Promise<any>): void
         async resolveSource(db: any, source: any) {
             if (!isCurioRasterSource(source)) return resolveSource(db, source);
             const target = db ?? await newDb();
-            await target.loadGeoTiff(loadGeoTiffParams(source));
-            serveRaster(target, source.outputTableName);
+            if (typeof target.getRaster !== 'function') throw new Error(RASTER_EXPORT_MISSING);
+            const collection = await oneRasterAtATime(async () => {
+                await target.loadGeoTiff(loadGeoTiffParams(source));
+                return target.getRaster(source.outputTableName);
+            });
+            serveRaster(target, source.outputTableName, collection);
             return target;
         },
     };
+}
+
+/**
+ * autk-map's raster opacity grows with a cell's distance from 0
+ * (`far-zero`), so in a mosaic of heights up to 527 m a 7 m building was
+ * drawn 1% opaque, and the map looked faded beside the same buildings in 3D.
+ * Raised to this power the distance is 1 for any cell that is not 0: every
+ * such cell is drawn in its color, and a 0 (the ground, no shadow) stays
+ * clear.
+ */
+export const RASTER_OPACITY_GAMMA = 1e-4;
+
+/**
+ * Draw each raster layer in the scheme its layerRef names. autk-map colors a
+ * raster's cells when it loads it, in its default reds, and autk-grammar sets
+ * the layer's `colorMapInterpolator` after that, so the legend showed the
+ * scheme and the cells stayed red. autk-map's `updateColorMap` colors the
+ * cells again from the layer's own config, which the grammar already holds,
+ * opaque but for the 0s (`RASTER_OPACITY_GAMMA`), and gives the legend its
+ * domain. A raster's cells are colored whatever its `isColorMap`, so on a
+ * raster `"isColorMap": false` hides the legend alone; the grammar turns it
+ * on for any layer with a scheme. The grammar keeps each map by the dataRefs
+ * it draws (`_mapRegistry`); a layer that is not a raster is left as drawn.
+ */
+export function recolorRasters(grammar: any, spec: any): void {
+    const registry: Map<string, any> | undefined = grammar?._mapRegistry;
+    if (!registry) return;
+    const maps = spec?.map ? (Array.isArray(spec.map) ? spec.map : [spec.map]) : [];
+    for (const mapSpec of maps) {
+        for (const ref of mapSpec?.layerRefs ?? []) {
+            if (!ref?.colorMapInterpolator) continue;
+            const map = registry.get(ref.dataRef);
+            const layer = map?.layerManager?.searchByLayerId?.(ref.dataRef);
+            if (layer?.layerInfo?.typeLayer !== 'raster' || typeof map.updateColorMap !== 'function') continue;
+            layer.setTransferFunction?.({ gamma: RASTER_OPACITY_GAMMA });
+            map.updateColorMap(ref.dataRef, { colorMap: {} });
+            if (ref.isColorMap === false) map.updateRenderInfo(ref.dataRef, { isColorMap: false });
+        }
+    }
 }
 
 /** A fresh autk-db database, as autk-grammar makes its own. */

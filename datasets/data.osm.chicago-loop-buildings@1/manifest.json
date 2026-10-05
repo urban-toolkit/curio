@@ -1,0 +1,38 @@
+{
+  "id": "data.osm.chicago-loop-buildings",
+  "name": "Chicago Loop Buildings",
+  "version": "1.0.0",
+  "format": "parquet",
+  "description": "Building footprints of the Chicago Loop with heights in metres, cut from SCOUT's OpenStreetMap extract of Chicago. A height is OpenStreetMap's where a mapper set one, otherwise SCOUT's estimate from the number of levels or a default, so it is not always a surveyed measurement.",
+  "publisher": "OpenStreetMap contributors",
+  "license": "ODbL-1.0",
+  "tags": [
+    "chicago",
+    "loop",
+    "osm",
+    "buildings",
+    "height",
+    "parquet"
+  ],
+  "dataFile": "data/loop-buildings.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "OpenStreetMap contributors; SCOUT preprocessing",
+  "rowCount": 1365,
+  "featureCount": 1365,
+  "schema": null,
+  "createdAt": "2026-10-05T00:00:00Z",
+  "updatedAt": "2026-10-05T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "sourceEncoding": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null,
+  "discoverySource": null,
+  "collection": null
+}

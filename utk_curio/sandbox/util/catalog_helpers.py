@@ -17,7 +17,8 @@
 ``curio_load_collection("<id>")``
     A collection's index, one row per file with a readable ``path``.
 ``curio_load_model("<id>")``
-    A Model Catalog model, ready for ``curio_segment``.
+    A Model Catalog model, ready for ``curio_segment``, or, for an
+    ``image-to-image`` model, for ``model.run({input name: array})``.
 
 The backend resolves each id a node's code names, for the account running it,
 and sends the paths, the formats, the collections and the models with the
@@ -197,7 +198,8 @@ class CurioModel:
     both are read when the model is loaded, so a folder that is not a model
     fails there. ``runner``, the callable that labels one image's pixels, opens
     the model's runtime the first time it is used, and ``labels`` are the
-    classes it can name.
+    classes it can name. ``run`` feeds an ONNX model's graph arrays the node
+    prepared itself, as an ``image-to-image`` model is run.
     """
 
     def __init__(self, model_id: str, folder: str):
@@ -210,6 +212,7 @@ class CurioModel:
         except (OSError, ValueError) as exc:
             raise RuntimeError(f"Model '{model_id}' has no readable manifest: {exc}") from exc
         self._runner = None
+        self._session = None
 
     @property
     def runner(self):
@@ -218,6 +221,28 @@ class CurioModel:
 
             self._runner, _manifest = load_runner(self.folder)
         return self._runner
+
+    def run(self, feeds: dict) -> list:
+        """The outputs of an ONNX model's graph for *feeds*, ``{input name:
+        array}``, in the graph's output order."""
+        if self.manifest.get("runtime") != "onnx":
+            raise RuntimeError(f"Model '{self.id}' is not an ONNX model, so it has no graph to run.")
+        if self._session is None:
+            try:
+                import onnxruntime as ort
+            except ImportError as exc:  # pragma: no cover - a package dependency
+                raise RuntimeError(
+                    "This model runs on onnxruntime, which is not installed here: "
+                    "add the package whose node runs it from the Node Catalog."
+                ) from exc
+            self._session = ort.InferenceSession(
+                os.path.join(self.folder, self.manifest["entry"]), providers=["CPUExecutionProvider"]
+            )
+        names = [spec.name for spec in self._session.get_inputs()]
+        missing = [name for name in names if name not in feeds]
+        if missing:
+            raise ValueError(f"Model '{self.id}' needs the inputs {', '.join(names)}; missing {', '.join(missing)}")
+        return self._session.run(None, {name: feeds[name] for name in names})
 
     @property
     def labels(self) -> list:

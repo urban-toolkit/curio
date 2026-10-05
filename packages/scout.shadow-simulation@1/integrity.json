@@ -1,0 +1,10 @@
+{
+  "sha256": {
+    "README.md": "dfbcab9cbc690cf9c991abce8ee354cb423f5c5909ef0e797b9f6198042ba8f4",
+    "manifest.json": "77e0b0ba09d8b4aea43e10f7a877a455014865096c213dbebf721c98ef956d2a",
+    "sources/scout_shadow_simulation/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sources/scout_shadow_simulation/deep_umbra.py": "194aa696dc6a431c9a35bdf0ffdc9ff2d85ce6f37cb9c4a1e1dfc5f8f7e00e43",
+    "sources/scout_shadow_simulation/node_outputs.py": "e4f312b042ba450c8ba1c77c422e45acfab4ed11ec79b04dbd155bae4da46547",
+    "sources/simulate-shadows.py": "3cb19fcbf0bccb0fa518f07b4fea1949e860808676daae97ffae8a9dbe6f53f9"
+  }
+}

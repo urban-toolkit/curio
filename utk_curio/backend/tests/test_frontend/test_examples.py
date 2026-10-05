@@ -88,6 +88,9 @@ EXAMPLE_INVARIANTS = [
     ("23-storage-folder-of-different-files.json", 4, 3,
      {"curio.builtin/data-loading": 2, "curio.builtin/computation-analysis": 1,
       "curio.builtin/vis-vega": 1}, False),
+    ("24-scout-building-rasters.json", 6, 5,
+     {"curio.builtin/data-loading": 1, "scout.raster-conversion/rasterize-buildings": 1,
+      "scout.shadow-simulation/simulate-shadows": 1, "curio.builtin/autk-grammar": 3}, False),
 ]
 
 
@@ -387,6 +390,9 @@ def test_declared_dataset_refs_have_the_shape_the_backend_writes():
 #: carry their ``$schema`` URL, which the renderer never fetches.
 _EXTERNAL_URL_ALLOWLIST = (
     "https://vega.github.io/schema/",
+    # Credit in scout.raster-conversion@1's template docstring, which example 24's
+    # node carries unchanged; nothing is fetched from it.
+    "https://github.com/urban-toolkit/scout",
 )
 
 _EXTERNAL_URL = re.compile(r"""https?://[^\s"'\)\]]+""")

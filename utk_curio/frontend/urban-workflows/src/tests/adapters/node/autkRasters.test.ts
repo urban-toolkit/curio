@@ -16,6 +16,8 @@ import {
   RASTER_EXPORT_MISSING,
   framedRaster,
   loadGeoTiffParams,
+  RASTER_OPACITY_GAMMA,
+  recolorRasters,
   resolveRasterInputs,
   withRasterSources,
   type CurioRasterSource,
@@ -208,16 +210,52 @@ describe("withRasterSources", () => {
     await grammar.dataAdapter.resolveSource(db, { ...source, outputTableName: "input_1" });
 
     expect(db.getLayer).toBe(wrapped);
-    await db.getLayer("input_1");
     expect(db.getRaster).toHaveBeenCalledWith("input_1");
+    expect(await db.getLayer("input_1")).toEqual(framedRaster(RASTER));
   });
 
-  test("a database with no getRaster is named when the map asks for the raster", async () => {
+  test("a database with no getRaster is named when the raster is loaded", async () => {
     const { grammar } = fakeGrammar();
     const { getRaster: _missing, ...db } = fakeDb() as any;
     withRasterSources(grammar, jest.fn());
+    await expect(grammar.dataAdapter.resolveSource(db, source)).rejects.toThrow(RASTER_EXPORT_MISSING);
+  });
+
+  test("two maps loading a raster of the same name at once each draw their own", async () => {
+    // autk-db keeps raster cells in one store for the page, keyed by
+    // workspace and table: both nodes' input_0 is "autk.input_0".
+    const store = new Map<string, any>();
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const pageDb = (cells: string) => ({
+      loadGeoTiff: jest.fn(async () => { await tick(); store.set("autk.input_0", cells); await tick(); }),
+      // getRaster queries its table first, then reads the store.
+      getRaster: jest.fn(async () => { await tick(); return { ...RASTER, cells: store.get("autk.input_0") }; }),
+      getLayer: jest.fn(),
+    });
+    const heights = pageDb("heights");
+    const shadows = pageDb("shadows");
+    const first = fakeGrammar().grammar;
+    const second = fakeGrammar().grammar;
+    withRasterSources(first, jest.fn());
+    withRasterSources(second, jest.fn());
+
+    await Promise.all([
+      first.dataAdapter.resolveSource(heights, source),
+      second.dataAdapter.resolveSource(shadows, source),
+    ]);
+
+    expect((await heights.getLayer("input_0")).cells).toBe("heights");
+    expect((await shadows.getLayer("input_0")).cells).toBe("shadows");
+  });
+
+  test("a raster that fails to load does not hold up the next one", async () => {
+    const { grammar } = fakeGrammar();
+    const broken = { ...fakeDb(), loadGeoTiff: jest.fn().mockRejectedValue(new Error("bad tiff")) };
+    withRasterSources(grammar, jest.fn());
+    await expect(grammar.dataAdapter.resolveSource(broken, source)).rejects.toThrow("bad tiff");
+    const db = fakeDb();
     await grammar.dataAdapter.resolveSource(db, source);
-    await expect(db.getLayer("input_0")).rejects.toThrow(RASTER_EXPORT_MISSING);
+    expect(await db.getLayer("input_0")).toEqual(framedRaster(RASTER));
   });
 });
 
@@ -237,5 +275,68 @@ describe("framedRaster", () => {
     });
     // The raster handed to it is not changed.
     expect(raster.features).toHaveLength(1);
+  });
+});
+
+describe("recolorRasters", () => {
+  // A map as the grammar keeps it: its layers by id, and autk-map's updateColorMap.
+  function fakeMap(types: Record<string, string>) {
+    const layers: Record<string, any> = {};
+    for (const [id, typeLayer] of Object.entries(types)) {
+      layers[id] = { layerInfo: { typeLayer }, setTransferFunction: jest.fn() };
+    }
+    return {
+      layers,
+      layerManager: { searchByLayerId: (id: string) => layers[id] ?? null },
+      updateColorMap: jest.fn(),
+      updateRenderInfo: jest.fn(),
+    };
+  }
+
+  test("colors a raster's cells again in the scheme its layerRef names", () => {
+    const map = fakeMap({ input_0: "raster" });
+    const grammar = { _mapRegistry: new Map([["input_0", map]]) };
+    recolorRasters(grammar, {
+      map: { layerRefs: [{ dataRef: "input_0", getFnv: "band_1", colorMapInterpolator: "interpolateViridis" }] },
+    });
+    expect(map.updateColorMap).toHaveBeenCalledWith("input_0", { colorMap: {} });
+    // Its legend stays, as the grammar turned it on.
+    expect(map.updateRenderInfo).not.toHaveBeenCalled();
+  });
+
+  test("draws every cell but the 0s opaque, before the cells are colored again", () => {
+    const map = fakeMap({ input_0: "raster" });
+    recolorRasters({ _mapRegistry: new Map([["input_0", map]]) }, {
+      map: { layerRefs: [{ dataRef: "input_0", colorMapInterpolator: "interpolateReds" }] },
+    });
+    const setTransfer = map.layers.input_0.setTransferFunction;
+    expect(setTransfer).toHaveBeenCalledWith({ gamma: RASTER_OPACITY_GAMMA });
+    expect(setTransfer.mock.invocationCallOrder[0]).toBeLessThan(map.updateColorMap.mock.invocationCallOrder[0]);
+  });
+
+  test("a raster with isColorMap false keeps its colors and hides its legend", () => {
+    const map = fakeMap({ input_0: "raster" });
+    recolorRasters({ _mapRegistry: new Map([["input_0", map]]) }, {
+      map: { layerRefs: [{ dataRef: "input_0", colorMapInterpolator: "interpolateViridis", isColorMap: false }] },
+    });
+    expect(map.updateColorMap).toHaveBeenCalledWith("input_0", { colorMap: {} });
+    expect(map.updateRenderInfo).toHaveBeenCalledWith("input_0", { isColorMap: false });
+  });
+
+  test("leaves layers with geometry, and rasters that name no scheme, as drawn", () => {
+    const map = fakeMap({ buildings: "buildings", plain: "raster" });
+    const grammar = { _mapRegistry: new Map([["buildings", map], ["plain", map]]) };
+    recolorRasters(grammar, {
+      map: [{ layerRefs: [
+        { dataRef: "buildings", getFnv: "height", colorMapInterpolator: "interpolateViridis" },
+        { dataRef: "plain", getFnv: "band_1" },
+      ] }],
+    });
+    expect(map.updateColorMap).not.toHaveBeenCalled();
+  });
+
+  test("does nothing for a grammar without a map registry or a document without a map", () => {
+    expect(() => recolorRasters({}, { map: { layerRefs: [{ dataRef: "a", colorMapInterpolator: "x" }] } })).not.toThrow();
+    expect(() => recolorRasters({ _mapRegistry: new Map() }, { plot: {} })).not.toThrow();
   });
 });

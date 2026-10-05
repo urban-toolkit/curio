@@ -1,6 +1,6 @@
 # Model Catalog
 
-The Model Catalog is where Curio keeps the **trained models** your nodes can run. A model ships with Curio, or you add one from the [Discovery Catalog](DISCOVERY-CATALOG.md). An **Image Segmentation** node runs the model its code names, and you choose which by dragging a model onto it.
+The Model Catalog is where Curio keeps the **trained models** your nodes can run. A model ships with Curio, or you add one from the [Discovery Catalog](DISCOVERY-CATALOG.md). A node runs the model its code names, and you choose which by dragging a model onto it: an **Image Segmentation** node runs a segmentation model, and a **Simulate Shadows** node runs Deep Umbra.
 
 Curio has six catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the Model Catalog the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
 
@@ -30,15 +30,18 @@ model.curio.ddrnet23-slim@1/
   files/ddrnet23_slim.data
 ```
 
-The manifest says which runtime runs the model (**ONNX** or **Transformers**), its task (semantic segmentation: a class for every pixel), the **labels** of its classes, and how an image is prepared for it. A model is not a dataset and is never added to a dataflow: a node's code names the model it runs.
+The manifest says which runtime runs the model (**ONNX** or **Transformers**), its task, and how an image is prepared for it. The task is **semantic segmentation**, a class for every pixel, with the **labels** of its classes; or **image to image**, images in and an image out, which the node that runs the model prepares itself. A model is not a dataset and is never added to a dataflow: a node's code names the model it runs.
 
 ### What ships with Curio
 
-| Model | Runtime | Labels | License |
+| Model | Runtime | Task | License |
 |---|---|---|---|
-| DDRNet23-Slim (street scenes) | ONNX | The 19 Cityscapes classes: road, sidewalk, building, wall, fence, pole, traffic light, traffic sign, vegetation, terrain, sky, person, rider, car, truck, bus, train, motorcycle, bicycle | MIT; trained on Cityscapes |
+| DDRNet23-Slim (street scenes) | ONNX | Semantic segmentation, the 19 Cityscapes classes: road, sidewalk, building, wall, fence, pole, traffic light, traffic sign, vegetation, terrain, sky, person, rider, car, truck, bus, train, motorcycle, bicycle | MIT; trained on Cityscapes |
+| Deep Umbra (accumulated shadows) | ONNX | Image to image: building heights, latitude and season in, the shadow of a day out | MIT; [Deep Umbra](https://github.com/uic-evl/deep-umbra), the weights SCOUT runs |
 
 DDRNet23-Slim is about 23 MB and labels a street photo in a fraction of a second on a CPU. A new **Image Segmentation** node runs it.
+
+Deep Umbra is about 11 MB and draws the shadow of one map tile in under a second on a CPU. The **Simulate Shadows** node of the SCOUT Shadow Simulation package runs it on the height tiles **Rasterize Buildings** makes. It is an ONNX export of the TensorFlow checkpoint SCOUT runs ([`scripts/export_deep_umbra_onnx.py`](../scripts/export_deep_umbra_onnx.py)): on SCOUT's own high-rise example it draws SCOUT's committed shadows within two gray levels of 255, and SCOUT's metrics within a tenth of a minute.
 
 ### Storage layers
 
@@ -75,6 +78,8 @@ A model's details show its **Identifier**, **Version**, **Runtime**, **Input**, 
 
 **I want a different model.** Open the Discovery Catalog's **Hugging Face models**, search, and click **Add to Model Catalog** on a model ([DISCOVERY-CATALOG.md part 4](DISCOVERY-CATALOG.md#adding-a-model)). On the canvas, open **Model Catalog** in the left Tools panel and drag it onto the Image Segmentation node. Set `classes` in the node's code to the labels you want, or `None` for all of them; the model's details list its labels.
 
+**I want to know how long the streets around buildings are in shadow.** Load buildings with heights, add **Rasterize Buildings** (SCOUT Raster Conversion) and then **Simulate Shadows** (SCOUT Shadow Simulation), and draw its first output on an Autark map. [Example 24](examples/24-scout-building-rasters.md) does this for the Chicago Loop.
+
 **A node says its model is not available.** The node names a model that is not in your Model Catalog, for example in a dataflow someone shared with you. Add that model, or another, and drag it onto the node.
 
 ---
@@ -101,7 +106,18 @@ return curio_segment(arg, model, classes)
 
 Every input column follows. A class the model does not label stops the node, with a message naming the labels it has.
 
-Dragging a model onto a node rewrites the id in its first `curio_load_model(...)` call and nothing else, so `classes` stays as you set it. The dataflow saves the node's code, so it reopens with the same model.
+Dragging a model onto a node rewrites the id in its first `curio_load_model(...)` call and nothing else, so `classes` stays as you set it. The dataflow saves the node's code, so it reopens with the same model. A model dropped on the empty canvas becomes a node whose code already names it when a package has one, as Deep Umbra becomes Simulate Shadows, and otherwise the first node that runs a model.
+
+### Running an image-to-image model
+
+An image-to-image model has no labels, so `curio_segment` refuses it. The node prepares the model's inputs and runs its graph with `model.run`, which takes one array per input of the graph, by name, and returns its outputs in order:
+
+```python
+model = curio_load_model("model.scout.deep-umbra")
+(shadow,) = model.run({"height": height, "latitude": latitude, "season": season})
+```
+
+Deep Umbra's inputs are 512 by 512 float32 planes in `NHWC`, `(1, 512, 512, 1)`, as its details say; the Simulate Shadows node makes them from the height tiles.
 
 ---
 
@@ -134,10 +150,10 @@ A dataflow names its models by id. Someone you share it with runs a shipped mode
 | `name`, `version` | Yes | What the card says, and the manifest's own version string. |
 | `compatibility.major` | | Defaults to 1. Together with `id` it forms the folder name. |
 | `runtime` | Yes | `onnx` or `transformers`. |
-| `task` | Yes | `semantic-segmentation`. |
+| `task` | Yes | `semantic-segmentation` or `image-to-image`. |
 | `entry` | Yes | For `onnx`, the graph file; for `transformers`, the folder of the checkpoint. A path inside the model's folder. |
-| `labels` | | The classes, in the order the model numbers them. |
-| `input` | For `onnx` | How an image is prepared: `width` and `height` (8 to 8192 pixels), `dtype` (`uint8` or `float32`), `layout` (`NCHW`), `scale`, and an optional `mean` and `std` of three numbers each. |
+| `labels` | For an `onnx` segmentation model | The classes, in the order the model numbers them. An `image-to-image` model has none. |
+| `input` | For `onnx` | How an image is prepared: `width` and `height` (8 to 8192 pixels), `dtype` (`uint8` or `float32`), `layout` (`NCHW`, or `NHWC` for an `image-to-image` model), `scale`, and an optional `mean` and `std` of three numbers each. |
 | `license`, `licenseFile` | `license` | The license, and the file in the folder that holds its text. |
 | `description`, `publisher`, `homepage`, `tags`, `sizeBytes` | | Shown on the card and in the details. |
 
@@ -156,6 +172,7 @@ A dataflow names its models by id. Someone you share it with runs a shipped mode
 ## See also
 
 - [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md#adding-a-model): adding a model from Hugging Face.
-- [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the Street Vision package and its Image Segmentation node.
+- [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the Street Vision package and its Image Segmentation node, and the SCOUT Shadow Simulation package and its Simulate Shadows node.
+- [`packages/scout.shadow-simulation@1/README.md`](../packages/scout.shadow-simulation@1/README.md): how Simulate Shadows feeds Deep Umbra a tile, and what it returns.
 - [`docs/examples/10-street-vision-cv-analysis.md`](examples/10-street-vision-cv-analysis.md): two models over the same street photos.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#model-catalog): how models are stored, staged for a run, and resolved.

@@ -10,7 +10,7 @@
 export type ModelRuntime = "onnx" | "transformers";
 
 /** Matches `TASKS`. */
-export type ModelTask = "semantic-segmentation";
+export type ModelTask = "semantic-segmentation" | "image-to-image";
 
 /** `shipped` models come with Curio and stay where they are; `downloaded`
  *  ones arrived from the Discovery Catalog and belong to this account. */
@@ -79,6 +79,7 @@ export const MODEL_ORIGIN_LABEL: Record<ModelOrigin, string> = {
 
 export const MODEL_TASK_LABEL: Record<ModelTask, string> = {
   "semantic-segmentation": "Semantic segmentation",
+  "image-to-image": "Image to image",
 };
 
 /** Only a model this account downloaded can be deleted; the server answers

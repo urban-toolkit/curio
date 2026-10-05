@@ -1,0 +1,244 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "2ac73083-5bbd-5f6b-930f-a536392f4f33",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 215,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the Chicago Loop's buildings and their heights from the Data Catalog, inside the bounding box the shadows are simulated for.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "west",
+              "type": "number",
+              "label": "West (longitude)",
+              "default": -87.642,
+              "options": {
+                "min": -180,
+                "max": 180,
+                "step": 0.001,
+                "units": "°"
+              }
+            },
+            {
+              "name": "south",
+              "type": "number",
+              "label": "South (latitude)",
+              "default": 41.872,
+              "options": {
+                "min": -90,
+                "max": 90,
+                "step": 0.001,
+                "units": "°"
+              }
+            },
+            {
+              "name": "east",
+              "type": "number",
+              "label": "East (longitude)",
+              "default": -87.618,
+              "options": {
+                "min": -180,
+                "max": 180,
+                "step": 0.001,
+                "units": "°"
+              }
+            },
+            {
+              "name": "north",
+              "type": "number",
+              "label": "North (latitude)",
+              "default": 41.891,
+              "options": {
+                "min": -90,
+                "max": 90,
+                "step": 0.001,
+                "units": "°"
+              }
+            }
+          ]
+        },
+        "content": "# The Chicago Loop's buildings, with SCOUT's heights in metres.\ndf = curio_load_data(\"data.osm.chicago-loop-buildings\")\n\n# The area to rasterize and shade, as SCOUT's data layer sets its roi: the\n# buildings that reach into the box, in degrees of longitude and latitude.\n# The Widgets tab sets the box; its defaults hold the whole Loop.\nwest, south, east, north = [!! west !!], [!! south !!], [!! east !!], [!! north !!]\nif not (west < east and south < north):\n    raise ValueError(\"The bounding box needs west less than east and south less than north.\")\ndf = df.cx[west:east, south:north]\nif df.empty:\n    raise ValueError(\"No building reaches into the bounding box; widen it in the Widgets tab.\")\n\n# Mark the frame as buildings, so an Autark map extrudes each footprint\n# to its height.\ndf.metadata = {\"layerType\": \"buildings\"}\nreturn df\n"
+      },
+      {
+        "id": "e1b607c4-51b5-5b82-bf4a-0227284def51",
+        "type": "curio.builtin/autk-grammar",
+        "x": 645,
+        "y": 0,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the buildings in 3D, coloured by height.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\"\n      }\n    ]\n  }\n}"
+      },
+      {
+        "id": "333949c8-983a-5cdb-845b-04abe06c2dc7",
+        "type": "scout.raster-conversion/rasterize-buildings",
+        "x": 645,
+        "y": 430,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Rasterize the buildings' heights into SCOUT's zoom-16 tiles and their mosaic.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "attribute",
+              "type": "text",
+              "label": "Height column",
+              "default": "height"
+            },
+            {
+              "name": "zoom",
+              "type": "number",
+              "label": "Zoom level",
+              "default": 16,
+              "options": {
+                "min": 1,
+                "max": 20,
+                "step": 1
+              }
+            },
+            {
+              "name": "max_height",
+              "type": "number",
+              "label": "Maximum height",
+              "default": 550,
+              "options": {
+                "min": 1,
+                "step": 1,
+                "units": "m"
+              }
+            }
+          ]
+        },
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: (mosaic, tiles).\n- mosaic: one raster in EPSG:3395, each cell a height in metres. An Autark map\n  draws it as input_0, band band_1.\n- tiles: one row per map tile, with zoom, x, y and png, the 8-bit grayscale\n  PNG (base64) SCOUT's Deep Umbra shadow model reads, where 255 is the\n  maximum height.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    arg,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n"
+      },
+      {
+        "id": "ebac4811-abcc-50fe-a61a-cc9c9ac8c011",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1290,
+        "y": 215,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the mosaic of building heights on a map.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"isColorMap\": false\n      }\n    ]\n  }\n}"
+      },
+      {
+        "id": "45abcfa2-7705-50d4-adf2-db8f556a59c6",
+        "type": "scout.shadow-simulation/simulate-shadows",
+        "x": 1290,
+        "y": 645,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Simulate how many minutes of a summer day the ground around the buildings is in shadow, with SCOUT's Deep Umbra model.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "season",
+              "type": "choice",
+              "label": "Season",
+              "default": "summer",
+              "options": {
+                "choices": [
+                  "spring",
+                  "summer",
+                  "winter"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ]
+        },
+        "content": "\"\"\"Simulate Shadows: SCOUT's accumulated shadow simulation, with Deep Umbra.\n\nInput: Rasterize Buildings' output, (mosaic, tiles), made at zoom 16 with a\nmaximum height of 550 m, the tiles Deep Umbra was trained on.\nOutput: (mosaic, tiles, summary).\n- mosaic: one raster on the buildings mosaic's grid, each cell the minutes\n  of the day it is in shadow. An Autark map draws it as input_0, band band_1.\n- tiles: one row per map tile, with zoom, x, y, png, the 8-bit grayscale\n  PNG (base64) of its shadow, where 255 is shadow all day, and\n  mean_shadow_min, the mean over the ground around its buildings.\n- summary: one row, SCOUT's metrics: Mean Acc shadow and Median Acc shadow\n  over the ground, in minutes.\nThe Widgets tab sets the season. To use another model, drag it from the\nModel Catalog onto this node.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_shadow_simulation.node_outputs import simulate_shadows\n\nmodel = curio_load_model(\"model.scout.deep-umbra\")\n\nreturn simulate_shadows(\n    arg,\n    model,\n    season=[!! season !!],\n    output_file=curio_output_file,\n)\n"
+      },
+      {
+        "id": "6cef8611-e3ec-52d4-9caf-aa5d6cff3d6a",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1935,
+        "y": 645,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the minutes of shadow on a map.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\"\n      }\n    ]\n  }\n}"
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-2ac73083-5bbd-5f6b-930f-a536392f4f33out-e1b607c4-51b5-5b82-bf4a-0227284def51in",
+        "source": "2ac73083-5bbd-5f6b-930f-a536392f4f33",
+        "target": "e1b607c4-51b5-5b82-bf4a-0227284def51",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-2ac73083-5bbd-5f6b-930f-a536392f4f33out-333949c8-983a-5cdb-845b-04abe06c2dc7in",
+        "source": "2ac73083-5bbd-5f6b-930f-a536392f4f33",
+        "target": "333949c8-983a-5cdb-845b-04abe06c2dc7",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-333949c8-983a-5cdb-845b-04abe06c2dc7out-ebac4811-abcc-50fe-a61a-cc9c9ac8c011in",
+        "source": "333949c8-983a-5cdb-845b-04abe06c2dc7",
+        "target": "ebac4811-abcc-50fe-a61a-cc9c9ac8c011",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-333949c8-983a-5cdb-845b-04abe06c2dc7out-45abcfa2-7705-50d4-adf2-db8f556a59c6in",
+        "source": "333949c8-983a-5cdb-845b-04abe06c2dc7",
+        "target": "45abcfa2-7705-50d4-adf2-db8f556a59c6",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-45abcfa2-7705-50d4-adf2-db8f556a59c6out-6cef8611-e3ec-52d4-9caf-aa5d6cff3d6ain",
+        "source": "45abcfa2-7705-50d4-adf2-db8f556a59c6",
+        "target": "6cef8611-e3ec-52d4-9caf-aa5d6cff3d6a",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ],
+    "name": "SCOUT building rasters",
+    "description": "The Chicago Loop's buildings drawn in 3D, then turned by SCOUT's rasterizer into the zoom-16 height tiles its Deep Umbra shadow model reads: a map of the height mosaic, and Deep Umbra's summer shadows drawn on a map.",
+    "task": "",
+    "timestamp": 1791158400000,
+    "provenance_id": "DefaultWorkflow",
+    "categories": {
+      "city": [
+        "Chicago"
+      ],
+      "complexity": [
+        "Intermediate"
+      ]
+    },
+    "packages": [
+      "scout.raster-conversion@1",
+      "scout.shadow-simulation@1"
+    ],
+    "datasets": [
+      {
+        "datasetId": "data.osm.chicago-loop-buildings",
+        "dirName": "data.osm.chicago-loop-buildings@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      }
+    ]
+  }
+}

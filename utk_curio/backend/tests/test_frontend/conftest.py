@@ -129,6 +129,9 @@ WORKFLOW_FILES = [
     "docs/examples/21-storage-photos-and-videos.json",
     "docs/examples/22-storage-audio-recordings.json",
     "docs/examples/23-storage-folder-of-different-files.json",
+    # A package node: the stack installs scout.raster-conversion@1 because the
+    # dataflow declares it (--with-examples).
+    "docs/examples/24-scout-building-rasters.json",
 ]
 
 
