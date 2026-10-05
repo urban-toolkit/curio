@@ -44,7 +44,7 @@ jest.mock("../../../utils/grammarInput", () => ({
   }),
 }));
 
-import { failureLine, useCompareScenariosBehavior } from "../../../adapters/node/compareScenariosBehavior";
+import { failureLine, savedFile, useCompareScenariosBehavior } from "../../../adapters/node/compareScenariosBehavior";
 import { stackCode } from "../../../utils/compare/compareCode";
 
 const COMPARE = "cmp";
@@ -88,7 +88,7 @@ function flowOf(g: ReturnType<typeof graph>, extra: Record<string, unknown> = {}
   };
 }
 
-function nodeState(output: { code: string } = { code: "" }) {
+function nodeState(output: { code: string; content?: string } = { code: "" }) {
   return { setCode: jest.fn(), output } as unknown as UseNodeStateReturn;
 }
 
@@ -279,6 +279,24 @@ describe("a run's outcome", () => {
       "Compare Scenarios stacks inputs of one kind, and these differ: input 0 (Baseline) is a table, input 1 (Twice as tall) is a value. Connect outcomes of the same kind.",
     );
     expect(mockUseVega).not.toHaveBeenCalled();
+  });
+
+  test("restored by a load, it draws the saved output it names, though the flow lists no outputs yet", async () => {
+    // A load restores each node with its saved output's outcome, and the
+    // flow's outputs list starts empty: the dashboard and a reopened canvas.
+    const g = graph({ compareScenarios: { inputs: [BASE, TALL] } });
+    const compare = g.nodes.find((n) => n.id === COMPARE)!;
+    mockFlow = flowOf(g);
+    render(<Harness data={compare.data} state={nodeState({ code: "success", content: "Saved to file: computed.p1.cmp.parquet" })} />);
+    await waitFor(() => expect(mockUseVega).toHaveBeenCalled());
+    expect(mockUseVega.mock.calls.at(-1)![0].data.input).toEqual({ path: "computed.p1.cmp.parquet" });
+  });
+
+  test("the file a run saved is its outcome's last such line", () => {
+    expect(savedFile("stdout:\nSaved to file: printed-by-the-code\nSaved to file: 1791158683119_cf030fd5")).toBe(
+      "1791158683119_cf030fd5",
+    );
+    expect(savedFile("No output yet")).toBeNull();
   });
 
   test("a message that is no traceback is shown as it is", () => {
