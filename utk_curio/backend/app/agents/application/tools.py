@@ -42,6 +42,7 @@ from utk_curio.backend.app.agents.domain.manifest import (
     CAPABILITY_ID_RE,
     ToolRequirement,
 )
+from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
 
 _EFFECTS = ("read", "mutate")
 
@@ -83,6 +84,35 @@ _MODEL_LABELS_MAX = 40
 
 _NODE_ID = _text("The node's id. Defaults to the node this agent is attached to.")
 _APPEARANCE = _object({"backgroundColor": _text("A palette name or #RRGGBB.")})
+#: #662: one widget a node declares (``$defs.widget``); the server checks the rest.
+_WIDGETS = {
+    "type": "array",
+    "items": {
+        **_object(
+            {
+                "name": _text("Letters, digits and underscores: the code places it as [!! name !!]."),
+                "type": {"type": "string", "enum": list(WIDGET_KINDS)},
+                "label": _text("What the Widgets tab shows beside the control."),
+            },
+            "name", "type",
+        ),
+        "description": "A widget: name, type, label, default, and options (choices, display, min, max, step, units).",
+    },
+    "description": "The node's widgets: values the user sets in its Widgets tab, which its code reads.",
+}
+#: #662: one scenario a plan saves: a selection, or a duplicate of one.
+_SCENARIO = _object(
+    {
+        "name": _text("The scenario's name."),
+        "nodes": _texts("A selection's nodes: refs of this plan or existing node ids."),
+        "duplicateOf": _text("A duplicate: the name of a scenario earlier in this list, whose nodes it copies."),
+        "copies": _map("A duplicate: each node of that scenario to the ref its copy takes."),
+        "values": _map("A duplicate: a copy's ref to the widget values it changes, {name: value}."),
+        "description": _text("What it changes, in one line."),
+        "color": _text("A #RRGGBB color; the next free one when absent."),
+    },
+    "name",
+)
 
 #: What a plan may do, told to both forms of dataflow.plan.write.
 _PLAN_RULES = (
@@ -93,8 +123,10 @@ _PLAN_RULES = (
     "two visualizations when one of them is a Vega-Lite or Autark node. Data "
     "edges must keep the graph acyclic — a plan that closes a cycle is "
     "refused with the loop named. nodeType must come from the Available "
-    "node templates list. The user reviews the whole plan (removals "
-    "listed by name); nothing changes without approval."
+    "node templates list. A node may declare widgets, and a plan may save "
+    "scenarios: selections of its nodes, or duplicates of one. The user "
+    "reviews the whole plan (removals listed by name); nothing changes "
+    "without approval."
 )
 
 
@@ -127,10 +159,11 @@ REGISTRY: dict[str, ToolContract] = {
         effect="read",
         description=(
             "Read the project's saved dataflow, structure-first: every node "
-            "(id, type, goal, content length) and ALL edges, plus each node's "
-            "last runtime status. Node content is elided — use node.read for "
-            'one node\'s content, or params {"include": ["content"]} for the '
-            "full spec (large)."
+            "(id, type, goal, content length, widgets) and ALL edges, plus each "
+            "node's last runtime status and the dataflow's scenarios with their "
+            "levers, fixed context and outcomes. Node content is elided: use "
+            'node.read for one node\'s content, or params {"include": ["content"]} '
+            "for the full spec (large)."
         ),
         parameters=_object({
             "include": {
@@ -393,9 +426,10 @@ REGISTRY: dict[str, ToolContract] = {
             "a reply with a dataflowPlan block (not a toolRequest): "
             '{"dataflowPlan": {"goal": "...", "nodes": [{"ref": "n1", '
             '"nodeType": "<packageId>/<templateId>", "title": "...", '
-            '"intent": "..."}], "edges": [{"from": "n1", "to": "<ref or existing '
-            'node id>", "kind": "data"|"interaction"}], "removeNodes": ["<existing '
-            'node id>"], "removeEdges": ["<existing edge id>"]}}. '
+            '"intent": "...", "widgets": [...]}], "edges": [{"from": "n1", "to": '
+            '"<ref or existing node id>", "kind": "data"|"interaction"}], '
+            '"scenarios": [...], "removeNodes": ["<existing node id>"], '
+            '"removeEdges": ["<existing edge id>"]}}. '
             + _PLAN_RULES
         ),
         native_description=(
@@ -416,6 +450,7 @@ REGISTRY: dict[str, ToolContract] = {
                             "title": _text("A short title."),
                             "intent": _text("One line: what this step does and produces."),
                             "expects": _text("The input or output this step expects, in one line."),
+                            "widgets": _WIDGETS,
                         },
                         "ref", "nodeType", "title", "intent",
                     ),
@@ -432,6 +467,7 @@ REGISTRY: dict[str, ToolContract] = {
                         "from", "to",
                     ),
                 },
+                "scenarios": {"type": "array", "items": _SCENARIO},
                 "removeNodes": _texts("Existing node ids to remove."),
                 "removeEdges": _texts("Existing edge ids to remove."),
             },
@@ -507,7 +543,8 @@ REGISTRY: dict[str, ToolContract] = {
             '{"nodeType": "<packageId>/<templateId>", "content": "...", '
             '"title": "<short header shown on the node>", "goal": "<one-line '
             'purpose>", "appearance": {"backgroundColor": "<palette name or '
-            '#RRGGBB>"}} — title, goal and appearance are optional; a note '
+            '#RRGGBB>"}, "widgets": [...]}: title, goal, appearance and '
+            "widgets are optional; a note "
             "template renders title and backgroundColor, so give both for "
             "notes. nodeType must be an id from the "
             '"Available node templates" list — never invented. The user '
@@ -522,6 +559,7 @@ REGISTRY: dict[str, ToolContract] = {
                 "title": _text("A short header shown on the node."),
                 "goal": _text("The node's purpose, in one line."),
                 "appearance": _APPEARANCE,
+                "widgets": _WIDGETS,
             },
             "nodeType", "content",
         ),
@@ -887,14 +925,45 @@ def _execute_packages_resolve(user_key: str, params: dict) -> tuple[str, str]:
 
 
 def _node_row(node: dict, goal_cap: int) -> dict:
+    from utk_curio.backend.app.execution.code_references import effective_value, normalize_widgets
+
     content = str(node.get("content") or "")
-    return {
+    row = {
         "id": node.get("id"),
         "type": node.get("type"),
         "goal": str(node.get("goal") or "")[:goal_cap],
         "hasContent": bool(content.strip()),
         "contentChars": len(content),
     }
+    # #662: the values its code reads through widget references, and the node
+    # a copy was copied from; each only when there is one.
+    widgets = normalize_widgets((node.get("metadata") or {}).get("widgets"))
+    if widgets:
+        row["widgets"] = [{"name": w["name"], "type": w["type"], "value": effective_value(w)} for w in widgets]
+    lineage = (node.get("metadata") or {}).get("copiedFrom")
+    if isinstance(lineage, list) and lineage:
+        row["copiedFrom"] = [str(i) for i in lineage]
+    return row
+
+
+def _scenario_rows(stripped: dict) -> list[dict]:
+    """#662: the dataflow's scenarios, each with what it is made of: its
+    levers (its nodes), its fixed context (the nodes outside it that it reads)
+    and its outcomes (what gets compared). The parts are read by the rule the
+    canvas and the Scenario Catalog read them by (``scenarioParts``)."""
+    from utk_curio.backend.app.projects.scenarios import normalize_scenarios
+    from utk_curio.backend.app.scenario_catalog.domain.parts import scenario_parts, spec_nodes_and_edges
+
+    nodes, edges = spec_nodes_and_edges(stripped)
+    raw = (stripped.get("dataflow") or {}).get("scenarios")
+    rows = []
+    for scenario in normalize_scenarios(raw, [n["id"] for n in nodes]):
+        parts = scenario_parts(scenario, nodes, edges)
+        row = {"id": scenario["id"], "name": scenario["name"], "color": scenario["color"]}
+        if scenario.get("description"):
+            row["description"] = scenario["description"]
+        rows.append({**row, "levers": parts["levers"], "context": parts["context"], "outcomes": parts["outcomes"]})
+    return rows
 
 
 def _dataflow_projection(stripped: dict, user_key: str, project_id: str) -> dict:
@@ -936,6 +1005,9 @@ def _dataflow_projection(stripped: dict, user_key: str, project_id: str) -> dict
         "datasets": dataflow.get("datasets") or [],
         "runtime": runtime_journal.status_map(user_key, project_id),
     }
+    scenarios = _scenario_rows(stripped)
+    if scenarios:
+        projection["scenarios"] = scenarios
     if len(json.dumps(projection, ensure_ascii=False)) > TOOL_RESULT_MAX_CHARS:
         projection["nodes"] = [_node_row(n, goal_cap=40) for n in nodes_raw]
         projection["elided"] = "node goals shortened to fit the tool output bound"

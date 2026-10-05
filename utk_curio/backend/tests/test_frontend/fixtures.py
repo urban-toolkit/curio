@@ -55,6 +55,9 @@ _SHARED_SESSION_CLASSES = (
     "TestPaletteShowsWhatWasProvisioned",
     "TestReviewCardAndApply",
     "TestSolveProgressAndReconnection",
+    # #662: the scripted Dataflow Builder's two-scenario build stubs its
+    # account in a class-scoped session, as the reconstruction classes do.
+    "TestTheDataflowBuilderBuildsTwoScenarios",
     # The browser stress tier stubs several accounts up front and drives them
     # all from one test; truncating would log every one of them out.
     "TestBrowserStressTier",

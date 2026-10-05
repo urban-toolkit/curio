@@ -802,7 +802,9 @@ class TestResearcher:
         # examples.read, for a worked example beyond the two a run is given.
         # #662: fan-in goes straight onto a node's input circles, read
         # through chips; no Merge Flow to route through.
-        "caa3a01c6c6088448dc838839f875a90156dc8b219e1d5b8a679c943c4c4efd1"
+        # #662, 2026-10-05: a planned node declares the widgets its code
+        # reads, and a plan saves scenarios (selections and duplicates).
+        "31b6b8fd1eece7fc9db3409bde9a740016c436bffff13d30baeee3b38e4dc7d2"
     )
 
     def test_manifest_surface(self):

@@ -713,9 +713,9 @@ def point_numba_at_scratch(scratch_dir):
     library's source, else under HOME, and refuses to import the library when
     it can write to neither ("cannot cache function ...: no locator
     available"). Under an execution user both belong to the account the
-    sandbox runs as, so datashader (``scout.raster-conversion``) and
-    pythermalcomfort (``curio.weather``) failed at import. The scratch
-    directory is the child's own and goes when the run ends.
+    sandbox runs as, so pythermalcomfort (``curio.weather``) failed at import.
+    The scratch directory is made for this run and removed when it ends, so
+    the cache lasts one run and no later run, or user, picks it up.
     """
     folder = os.path.join(scratch_dir, NUMBA_CACHE_DIRNAME)
     os.environ["NUMBA_CACHE_DIR"] = folder
@@ -757,6 +757,7 @@ def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=Fals
             work_dir=request.get("work_dir"),
             overlay_dir=request.get("overlay_dir"),
         )
+        point_numba_at_scratch(scratch_dir)
     except BaseException:
         import traceback
         try:
@@ -769,7 +770,6 @@ def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=Fals
             pass
         os._exit(3)
 
-    point_numba_at_scratch(scratch_dir)
     try:
         manifest = run_node(request, namespace_factory)
         write_result(manifest, scratch_dir)

@@ -32,6 +32,7 @@ not under ``/exec`` is not a boundary.
 """
 
 import json
+import math
 import os
 import textwrap
 import urllib.error
@@ -455,7 +456,7 @@ def test_a_node_can_write_what_it_derives_from_a_collection():
 
 
 # ---------------------------------------------------------------------------
-# A shipped package's node, from the child's side
+# Libraries that compile with numba
 # ---------------------------------------------------------------------------
 
 def test_a_library_numba_caches_imports_as_the_exec_user():
@@ -468,6 +469,28 @@ def test_a_library_numba_caches_imports_as_the_exec_user():
         print("imported")
     """), "importing pythermalcomfort")
     assert printed(result).splitlines()[-1] == "imported"
+
+
+def test_utci_computes_as_the_exec_user():
+    """What example 09's UTCI node (``curio.weather/utci-compute``) does with
+    the library, in a run of its own: the import, then the call with
+    ``limit_inputs=False``. The NaN cell stands for the raster's nodata, which
+    the node turns into NaN before the call."""
+    result = assert_ran(run_node("""
+        import json
+        import numpy as np
+        from pythermalcomfort import models
+        mean_radiant = np.array([[40.0, 50.0], [60.0, np.nan]])
+        utci = models.utci(tdb=30.0, tr=mean_radiant, v=1.0, rh=50.0,
+                           units="SI", limit_inputs=False)
+        grid = np.asarray(getattr(utci, "utci", utci), dtype=float)
+        print(json.dumps(grid.tolist()))
+    """), "computing UTCI")
+    grid = json.loads(printed(result).splitlines()[-1])
+    assert [len(row) for row in grid] == [2, 2], grid
+    (warm, warmer), (warmest, nodata) = grid
+    assert math.isnan(nodata), "the nodata cell came back as %r" % (nodata,)
+    assert warm < warmer < warmest, "UTCI does not rise with radiant heat: %r" % (grid,)
 
 
 #: ``scout.raster-conversion@1``'s modules, in the image. The stack's

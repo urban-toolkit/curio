@@ -74,6 +74,7 @@ export function planNodeStateFor(
         edgeStates: mirror.edgeStates ?? {},
         nodeStates: attachment.builderSession?.nodeStates ?? {}, // dev/71: the lifecycle ledger
         nodeProposals: attachment.builderSession?.nodeProposals ?? {}, // dev/72: where each review lives
+        scenarioStates: mirror.scenarioStates ?? {}, // #662: which scenarios are saved
       }
     : undefined;
 }

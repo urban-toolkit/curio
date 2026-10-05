@@ -348,6 +348,34 @@
   font-weight: 600;
 }
 
+/* #662: a scenario the plan saves, in its color, with its nodes by name. */
+.planScenarioRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.planScenarioSwatch {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: var(--scenario-color);
+}
+
+.planScenarioText {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.planScenarioName {
+  font-weight: 600;
+}
+
 /* dev/96: the rich draft sections — native disclosure, calm by default. */
 .draftSection {
     margin: 8px 12px 0;

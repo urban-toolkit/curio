@@ -131,3 +131,13 @@ export function updateScenario(
 export function deleteScenario(scenarios: readonly Scenario[], id: string): Scenario[] {
   return scenarios.filter((s) => s.id !== id);
 }
+
+/**
+ * *scenarios* followed by *added*, the ones saved elsewhere (an applied agent
+ * plan saves its scenarios on the server first). One already in the list, by
+ * id, is not added twice.
+ */
+export function joinScenarios(scenarios: readonly Scenario[], added: readonly Scenario[]): Scenario[] {
+  const ids = new Set(scenarios.map((s) => s.id));
+  return [...scenarios, ...added.filter((s) => !ids.has(s.id))];
+}

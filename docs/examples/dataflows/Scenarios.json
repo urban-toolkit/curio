@@ -1,0 +1,198 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Beginner"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "5b0c2f1e-8a43-4d6e-9f21-3c7a1d9e4b60",
+        "type": "curio.builtin/computation-analysis",
+        "x": 0,
+        "y": 215,
+        "content": "import pandas as pd\n\nbuildings = pd.DataFrame({\n    'building': ['Library', 'Market', 'Station', 'School', 'Tower', 'Hall'],\n    'height_m': [12.0, 18.0, 25.0, 9.0, 60.0, 30.0],\n})\nbuildings.metadata = {'name': 'Buildings'}\nreturn buildings\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Buildings: six buildings and their heights"
+      },
+      {
+        "id": "a1e7c3d2-6b5f-4e8a-9c10-2f3d4e5a6b71",
+        "type": "curio.builtin/computation-analysis",
+        "x": 645,
+        "y": 0,
+        "content": "import math\n\nbuildings = [!! input 0 !!].copy()\n# The sun stands 35 degrees above the horizon, so a shadow is the height over tan(35).\nbuildings['height_m'] = buildings['height_m'] * [!! height_factor !!]\nbuildings['shadow_m'] = (buildings['height_m'] / math.tan(math.radians(35))).round(1)\nbuildings.metadata = {'name': 'Shadow lengths'}\nreturn buildings\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Shadow lengths: each building's shadow at the height factor",
+        "metadata": {
+          "widgets": [
+            {
+              "name": "height_factor",
+              "type": "number",
+              "label": "Height factor",
+              "default": 1,
+              "options": {
+                "min": 0.5,
+                "max": 4,
+                "step": 0.5
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "c3f9e1a4-2d7b-4c6e-8a91-5b0d2e3f4a82",
+        "type": "curio.builtin/vis-vega",
+        "x": 1290,
+        "y": 0,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"building\",\n      \"type\": \"nominal\",\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"aggregate\": \"sum\",\n      \"field\": \"shadow_m\",\n      \"type\": \"quantitative\",\n      \"title\": \"shadow (m)\"\n    }\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Shadow chart: one bar per building"
+      },
+      {
+        "id": "d4a8b2c6-1e9f-4a3d-8b72-6c1e0f9a8b93",
+        "type": "curio.builtin/computation-analysis",
+        "x": 645,
+        "y": 430,
+        "content": "import math\n\nbuildings = [!! input 0 !!].copy()\n# The sun stands 35 degrees above the horizon, so a shadow is the height over tan(35).\nbuildings['height_m'] = buildings['height_m'] * [!! height_factor !!]\nbuildings['shadow_m'] = (buildings['height_m'] / math.tan(math.radians(35))).round(1)\nbuildings.metadata = {'name': 'Shadow lengths'}\nreturn buildings\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Shadow lengths: each building's shadow at the height factor",
+        "metadata": {
+          "widgets": [
+            {
+              "name": "height_factor",
+              "type": "number",
+              "label": "Height factor",
+              "default": 1,
+              "options": {
+                "min": 0.5,
+                "max": 4,
+                "step": 0.5
+              },
+              "value": 2
+            }
+          ],
+          "copiedFrom": [
+            "a1e7c3d2-6b5f-4e8a-9c10-2f3d4e5a6b71"
+          ]
+        }
+      },
+      {
+        "id": "e5b9c3d7-2f0a-4b4e-9c83-7d2f1a0b9ca4",
+        "type": "curio.builtin/vis-vega",
+        "x": 1290,
+        "y": 430,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"building\",\n      \"type\": \"nominal\",\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"aggregate\": \"sum\",\n      \"field\": \"shadow_m\",\n      \"type\": \"quantitative\",\n      \"title\": \"shadow (m)\"\n    }\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Shadow chart: one bar per building",
+        "metadata": {
+          "copiedFrom": [
+            "c3f9e1a4-2d7b-4c6e-8a91-5b0d2e3f4a82"
+          ]
+        }
+      },
+      {
+        "id": "f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1935,
+        "y": 215,
+        "content": "import pandas as pd\n\nreal = [!! input 0 !!]\ntaller = [!! input 1 !!]\ncomparison = pd.DataFrame({\n    'scenario': ['Real heights', 'Twice as tall'],\n    'mean_shadow_m': [round(real['shadow_m'].mean(), 1), round(taller['shadow_m'].mean(), 1)],\n})\ncomparison.metadata = {'name': 'Mean shadow per scenario'}\nreturn comparison\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Compare: the mean shadow of each scenario"
+      },
+      {
+        "id": "a7d1e5f9-4b2c-4d6a-9ea5-9f4b3c2dbec6",
+        "type": "curio.builtin/vis-vega",
+        "x": 2580,
+        "y": 215,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"scenario\",\n      \"type\": \"nominal\",\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"aggregate\": \"sum\",\n      \"field\": \"mean_shadow_m\",\n      \"type\": \"quantitative\",\n      \"title\": \"mean shadow (m)\"\n    }\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Comparison chart: the mean shadow per scenario"
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-5b0c2f1e-8a43-4d6e-9f21-3c7a1d9e4b60out-a1e7c3d2-6b5f-4e8a-9c10-2f3d4e5a6b71in",
+        "source": "5b0c2f1e-8a43-4d6e-9f21-3c7a1d9e4b60",
+        "target": "a1e7c3d2-6b5f-4e8a-9c10-2f3d4e5a6b71",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-a1e7c3d2-6b5f-4e8a-9c10-2f3d4e5a6b71out-c3f9e1a4-2d7b-4c6e-8a91-5b0d2e3f4a82in",
+        "source": "a1e7c3d2-6b5f-4e8a-9c10-2f3d4e5a6b71",
+        "target": "c3f9e1a4-2d7b-4c6e-8a91-5b0d2e3f4a82",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-5b0c2f1e-8a43-4d6e-9f21-3c7a1d9e4b60out-d4a8b2c6-1e9f-4a3d-8b72-6c1e0f9a8b93in",
+        "source": "5b0c2f1e-8a43-4d6e-9f21-3c7a1d9e4b60",
+        "target": "d4a8b2c6-1e9f-4a3d-8b72-6c1e0f9a8b93",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d4a8b2c6-1e9f-4a3d-8b72-6c1e0f9a8b93out-e5b9c3d7-2f0a-4b4e-9c83-7d2f1a0b9ca4in",
+        "source": "d4a8b2c6-1e9f-4a3d-8b72-6c1e0f9a8b93",
+        "target": "e5b9c3d7-2f0a-4b4e-9c83-7d2f1a0b9ca4",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-a1e7c3d2-6b5f-4e8a-9c10-2f3d4e5a6b71out-f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5in",
+        "source": "a1e7c3d2-6b5f-4e8a-9c10-2f3d4e5a6b71",
+        "target": "f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-d4a8b2c6-1e9f-4a3d-8b72-6c1e0f9a8b93out-f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5in_1",
+        "source": "d4a8b2c6-1e9f-4a3d-8b72-6c1e0f9a8b93",
+        "target": "f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5out-a7d1e5f9-4b2c-4d6a-9ea5-9f4b3c2dbec6in",
+        "source": "f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5",
+        "target": "a7d1e5f9-4b2c-4d6a-9ea5-9f4b3c2dbec6",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ],
+    "scenarios": [
+      {
+        "id": "4c2e6a80-1b3d-4f57-9a8e-0d1c2b3a4f51",
+        "name": "Real heights",
+        "color": "#3567c7",
+        "description": "Each building at its mapped height.",
+        "nodes": [
+          "a1e7c3d2-6b5f-4e8a-9c10-2f3d4e5a6b71",
+          "c3f9e1a4-2d7b-4c6e-8a91-5b0d2e3f4a82"
+        ]
+      },
+      {
+        "id": "5d3f7b91-2c4e-4a68-8b9f-1e2d3c4b5a62",
+        "name": "Twice as tall",
+        "color": "#e86a3c",
+        "description": "Every building doubled through its height factor.",
+        "nodes": [
+          "d4a8b2c6-1e9f-4a3d-8b72-6c1e0f9a8b93",
+          "e5b9c3d7-2f0a-4b4e-9c83-7d2f1a0b9ca4"
+        ]
+      }
+    ],
+    "name": "Scenarios",
+    "task": "",
+    "timestamp": 1791158400000,
+    "provenance_id": "Scenarios",
+    "packages": []
+  }
+}
