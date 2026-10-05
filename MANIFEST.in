@@ -3,11 +3,11 @@ include pyproject.toml
 include LICENSE
 recursive-include packages *
 recursive-include datasets *
-# SCOUT's Deep Umbra model stays in the repository and out of the pip package;
-# a pip install's Accumulated Shadow node (scout.shadow@1) says how to add it.
-prune datasets/data.scout.deep-umbra@1
 recursive-include discovery *
 recursive-include models *
+# SCOUT's Deep Umbra model stays in the repository and out of the pip package;
+# a pip install's Accumulated Shadow node (scout.shadow@1) says how to add it.
+prune models/model.scout.deep-umbra@1
 recursive-include tests *
 
 recursive-include utk_curio/backend *

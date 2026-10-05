@@ -4,14 +4,13 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/ScoutShadows.json",
-    "sha256": "556d150f93c2252488793727855da01307ccf1c338dc582cdee5831b64a3ed21",
+    "sha256": "4456c551ebb4cb3daf681bdbcb4a57e54b8b586300a8eb13a2f9e138f44fac62",
     "walkthrough": null
   },
   "prompt": "Compare two scenarios of SCOUT's high-rise shadow case on the Chicago Loop. Load SCOUT's Loop buildings from the Data Catalog; in one scenario keep them as they are, in the other first take out the 15 buildings SCOUT's second scenario removes, by their building ids. In both, turn the buildings' heights into a zoom 16 height raster with SCOUT's building rasterizer, run SCOUT's Deep Umbra shadow model on it, with one season setting both scenarios share, set to summer, and take the accumulated shadow's mean and median over the ground, where the height raster is under 1.08 m. Then chart the two scenarios' mean accumulated shadow side by side, and map how the shadow changes when the buildings are removed. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
   "context": null,
   "required": {
     "datasets": [
-      "data.scout.deep-umbra",
       "data.scout.loop-buildings"
     ],
     "packages": [
@@ -196,7 +195,6 @@
     ],
     "sources": {
       "datasetIds": [
-        "data.scout.deep-umbra",
         "data.scout.loop-buildings"
       ],
       "paths": [],
@@ -280,7 +278,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "claude-opus-5-5 from the example JSON, 2026-10-05",
+    "draftedBy": "the SCOUT shadow step (#662), from the example JSON, 2026-10-05",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -289,15 +287,11 @@
     "licence": "MIT (this repository)",
     "sourceLicences": [
       {
-        "datasetId": "data.scout.deep-umbra",
-        "licence": ""
-      },
-      {
         "datasetId": "data.scout.loop-buildings",
         "licence": ""
       }
     ],
-    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the two datasets' identifiers only. Both datasets are SCOUT's (urban-toolkit/scout), used with the permission of its authors, and carry no licence string."
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the dataset's identifier only. The dataset, and the Deep Umbra model the shadow nodes name, are SCOUT's (urban-toolkit/scout), used with the permission of its authors; the dataset carries no licence string."
   },
   "notes": "Two scenarios over a shared context: SCOUT's buildings and a season Parameter node, SCOUT's rasterizer, the height mosaic, Deep Umbra and Raster Statistics of the shadow over the ground in each scenario, and two Compare Scenarios nodes, a chart and a difference map."
 }

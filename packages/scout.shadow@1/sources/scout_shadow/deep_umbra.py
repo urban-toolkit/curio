@@ -5,10 +5,10 @@
 Only the model: what SCOUT feeds its generator, the generator, and what SCOUT
 makes of its output. Deep Umbra is a generator network that SCOUT restores with
 TensorFlow from its ``tf_model/ckpt-44`` checkpoint. Curio runs the same
-generator as an ONNX file, the Data Catalog dataset ``data.scout.deep-umbra@1``
+generator as an ONNX file, the Model Catalog model ``model.scout.deep-umbra@1``
 that ``scripts/scout/export_deep_umbra.py`` exported, through onnxruntime. So
-every function here takes the onnxruntime session where SCOUT's took the
-generator.
+every function here takes the loaded model (``curio_load_model``, whose
+``run`` feeds the graph by input name) where SCOUT's took the generator.
 
 Every function keeps SCOUT's name and arithmetic. The changes:
 
@@ -17,7 +17,7 @@ Every function keeps SCOUT's name and arithmetic. The changes:
   height raster on the same tile grid (``node_outputs.py``), and does the rest
   as SCOUT does. The latitude is computed in float32, as SCOUT's TensorFlow
   operations compute it, so the three inputs are SCOUT's to the bit.
-- ``predict_shadow`` runs the session on one tile at a time. The generator
+- ``predict_shadow`` runs the model on one tile at a time. The generator
   normalizes each layer by the statistics of the tile it is given, as SCOUT's
   ``training=True`` call does, so tiles cannot share a batch.
 - ``shadow_fraction`` and ``season_factor`` are ``run_shadow_model``'s scaling
@@ -100,7 +100,7 @@ def predict_shadow(generator, neighbourhood, date, zoom, i, j):
     input_lat = input_lat.reshape(1, 512, 512, 1)
     input_date = input_date.reshape(1, 512, 512, 1)
 
-    prediction = generator.run([OUTPUT], dict(zip(INPUTS, (input_height, input_lat, input_date))))[0]
+    (prediction,) = generator.run(dict(zip(INPUTS, (input_height, input_lat, input_date))))
     prediction = prediction[:, 128:-128, 128:-128, :]
     prediction = prediction.reshape(256, 256)
 

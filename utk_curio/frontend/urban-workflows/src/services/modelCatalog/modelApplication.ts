@@ -134,15 +134,20 @@ export interface ModelCanvasNode extends ModelDropTemplate {
 
 /**
  * What a model dropped on the empty canvas becomes, as a dataset dropped there
- * becomes a Data Loading node: a node of the first of *templates* whose code
- * calls `curio_load_model("...")`, with that call naming *model*. `null` when none
- * of them runs a model. Pure, like `applyModelToNodeData`, which it goes through.
+ * becomes a Data Loading node: a node of the template whose code already names
+ * *model*, made to run it, else of the first of *templates* whose code calls
+ * `curio_load_model("...")`, with that call naming *model*. So a model with a
+ * node of its own (Deep Umbra, Accumulated Shadow) gets that node, not an
+ * Image Segmentation one. `null` when none of them runs a model. Pure, like
+ * `applyModelToNodeData`, which it goes through.
  */
 export function modelNodeForCanvas(
   templates: ModelDropTemplate[],
   model: ModelLike,
 ): ModelCanvasNode | null {
-  for (const template of templates) {
+  const modelId = modelIdOf(model);
+  const own = templates.filter((template) => modelIdsInCode(template.code).includes(modelId));
+  for (const template of [...own, ...templates]) {
     const applied = applyModelToNodeData({ code: template.code }, model);
     if (!applied.modelRefs) continue;
     return { ...template, code: applied.code, modelRefs: applied.modelRefs };

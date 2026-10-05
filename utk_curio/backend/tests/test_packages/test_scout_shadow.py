@@ -15,9 +15,10 @@ written by Rasterize Buildings' own ``write_mosaic``. Then:
 - the mosaic gives back SCOUT's tiles, gray level for gray level, and the
   generator's three inputs are the ones SCOUT's file-reading
   ``load_input_grid`` builds, to the bit;
-- with the ONNX export of SCOUT's generator that Curio ships (the Data Catalog
-  dataset ``data.scout.deep-umbra@1``), in summer, the shadow of each tile, in
-  SCOUT's 8 bits, is SCOUT's committed shadow tile;
+- with the ONNX export of SCOUT's generator that Curio ships (the Model Catalog
+  model ``model.scout.deep-umbra@1``), loaded as ``curio_load_model`` loads it,
+  in summer, the shadow of each tile, in SCOUT's 8 bits, is SCOUT's committed
+  shadow tile;
 - the dataflow's Raster Statistics node, run as it is written on the node's
   shadow raster and the mosaic, gives SCOUT's committed mean and median.
 
@@ -66,9 +67,9 @@ SOURCES = PACKAGE / "sources"
 MODULE = "scout_shadow"
 NODE_TYPE = "scout.shadow/accumulated-shadow"
 STATISTICS_TYPE = "curio.builtin/raster-statistics"
-MODEL_ID = "data.scout.deep-umbra"
-MODEL_DIR = REPO / "datasets" / "data.scout.deep-umbra@1"
-MODEL = MODEL_DIR / "data" / "deep_umbra.onnx"
+MODEL_ID = "model.scout.deep-umbra"
+MODEL_DIR = REPO / "models" / "model.scout.deep-umbra@1"
+MODEL = MODEL_DIR / "files" / "deep_umbra.onnx"
 #: The file ``scripts/scout/export_deep_umbra.py`` writes, in the environment its
 #: docstring pins.
 MODEL_SHA256 = "67afb9d2d56bd0a12164e6e651214d56860ff689728c5b6f29486f21c3cb188e"
@@ -153,6 +154,14 @@ def _session():
     import onnxruntime as ort
 
     return ort.InferenceSession(str(MODEL), providers=["CPUExecutionProvider"])
+
+
+def _model():
+    """Deep Umbra as the node gets it: what ``curio_load_model`` returns for the
+    model's folder, which the backend resolves from the Model Catalog."""
+    from utk_curio.sandbox.util.catalog_helpers import CurioModel
+
+    return CurioModel(MODEL_ID, str(MODEL_DIR))
 
 
 @contextlib.contextmanager
@@ -282,8 +291,7 @@ def run_node(value, workspace, *, data_type="raster", model=True, fails=False, *
     result = _execute(
         code, value, NODE_TYPE, workspace, data_type=data_type,
         package_modules={"root": str(SOURCES), "names": [MODULE]},
-        dataset_paths={MODEL_ID: str(MODEL)} if model else {},
-        dataset_formats={MODEL_ID: {"format": "onnx"}} if model else {},
+        models={MODEL_ID: str(MODEL_DIR)} if model else {},
     )
     if fails:
         assert result["stderr"], f"the node ran: {result['output']}"
@@ -383,8 +391,8 @@ def test_scouts_rasters_become_scouts_committed_shadows(workspace, tmp_path, sce
     heights_path = _mosaic(tmp_path, scenario)
     measured = {}
     with shadow_modules(tmp_path) as (_deep_umbra, outputs), _open(heights_path) as heights:
-        shadows = outputs.shadow_tiles(heights, "summer", _session())
-        shadow = outputs.accumulated_shadow(heights, "summer", _session(), lambda name: str(tmp_path / name))
+        shadows = outputs.shadow_tiles(heights, "summer", _model())
+        shadow = outputs.accumulated_shadow(heights, "summer", _model(), lambda name: str(tmp_path / name))
     for (column, row), fraction in shadows.items():
         name = _tile_name(column, row)
         measured[name] = _levels((fraction * 255).astype("uint8").astype(int),
@@ -423,33 +431,44 @@ def test_the_model_is_the_export_of_scouts_generator():
     assert [(o.name, o.shape, o.type) for o in session.get_outputs()] == [
         ("shadow", [1, 512, 512, 1], "tensor(float)")
     ]
-    manifest = json.loads((MODEL_DIR / "manifest.json").read_text(encoding="utf-8"))
-    assert (manifest["id"], manifest["format"], manifest["dataFile"]) == (MODEL_ID, "onnx", "data/deep_umbra.onnx")
+    # A Model Catalog model, as Curio's other ONNX models are, that the Model
+    # Catalog reads: an image-to-image graph the node feeds itself.
+    from utk_curio.backend.app.model_catalog.domain.manifest import load_manifest
+
+    manifest = load_manifest(MODEL_DIR)
+    assert (manifest.id, manifest.runtime, manifest.task, manifest.entry) == (
+        MODEL_ID, "onnx", "image-to-image", "files/deep_umbra.onnx",
+    )
+    assert manifest.size_bytes == MODEL.stat().st_size
 
 
 def test_the_model_stays_out_of_the_pip_package(monkeypatch):
-    """``MANIFEST.in`` ships ``datasets/`` in the sdist, which the wheel is built
-    from (``publish-pip-to-pypi.yml``), and leaves the model's folder out: it
+    """``MANIFEST.in`` ships ``models/`` in the sdist, which the wheel is built
+    from (``publish-pip-to-pypi.yml``), and leaves Deep Umbra's folder out: it
     stays in the repository only. The rules are applied the way setuptools
-    applies them, to the files under ``datasets/``."""
+    applies them, to the files under ``models/``; the Model Catalog's other
+    models still ship, and so does the Data Catalog's buildings dataset."""
     from setuptools._distutils.filelist import FileList
 
     monkeypatch.chdir(REPO)
     files = FileList()
     files.set_allfiles(sorted(
-        path.relative_to(REPO).as_posix() for path in (REPO / "datasets").rglob("*") if path.is_file()
+        path.relative_to(REPO).as_posix()
+        for folder in ("models", "datasets") for path in (REPO / folder).rglob("*") if path.is_file()
     ))
     for line in (REPO / "MANIFEST.in").read_text(encoding="utf-8").splitlines():
         line = line.strip()
-        if line.startswith(("include ", "recursive-include datasets", "prune datasets", "exclude ")):
+        if line.startswith(("include ", "recursive-include models", "prune models",
+                            "recursive-include datasets", "prune datasets", "exclude ")):
             files.process_template_line(line)
     shipped = set(files.files)
     model = MODEL.relative_to(REPO).as_posix()
     assert model in files.allfiles
-    assert not [path for path in shipped if path.startswith("datasets/data.scout.deep-umbra@1/")], sorted(shipped)
-    # The rest of the catalog still ships, the buildings beside the model included.
+    assert not [path for path in shipped if path.startswith("models/model.scout.deep-umbra@1/")], sorted(shipped)
+    # The rest still ships: DDRNet23-Slim's graph and the buildings dataset.
+    assert "models/model.curio.ddrnet23-slim@1/files/ddrnet23_slim.onnx" in shipped
     assert BUILDINGS.relative_to(REPO).as_posix() in shipped
-    assert len(shipped) == len(files.allfiles) - len(list(MODEL_DIR.rglob("*.*")))
+    assert len(shipped) == len(files.allfiles) - len([p for p in MODEL_DIR.rglob("*") if p.is_file()])
 
 
 # ---------------------------------------------------------------------------
@@ -458,9 +477,9 @@ def test_the_model_stays_out_of_the_pip_package(monkeypatch):
 
 def test_the_template_reads_the_season_and_loads_the_model_by_its_id():
     """A raster in, a raster out; the season is SCOUT's three choices, drawn as
-    radio buttons; the model is named as a literal the backend resolves before
-    the run."""
-    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+    radio buttons; the model is named as a literal ``curio_load_model`` call the
+    backend resolves from the Model Catalog before the run."""
+    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
 
     template = _template()
     assert template["inputPorts"] == [{"cardinality": "1", "types": ["RASTER"]}]
@@ -472,7 +491,8 @@ def test_the_template_reads_the_season_and_loads_the_model_by_its_id():
     }]
     source = _source()
     assert re.findall(r"\[!!\s*(@?\w+)\s*!!\]", source) == ["season"]
-    assert dataset_ids_in_code(source) == [MODEL_ID]
+    assert model_ids_in_code(source) == [MODEL_ID]
+    assert dataset_ids_in_code(source) == []
     assert _manifest()["dependencies"]["python"] == {"onnxruntime": ">=1.17", "rasterio": ">=1.4"}
 
 
@@ -512,7 +532,7 @@ def test_the_node_returns_the_shadow_raster_on_its_inputs_grid(workspace, tmp_pa
         assert shadow.tags()["season"] == "summer" and shadow.tags()["minutes"] == "720"
         cells = shadow.read(1)
         with shadow_modules(tmp_path) as (_deep_umbra, outputs), _open(path) as heights:
-            fractions = outputs.shadow_tiles(heights, "summer", _session())
+            fractions = outputs.shadow_tiles(heights, "summer", _model())
         assert sorted(fractions) == [(0, 0), (0, 1), (1, 0), (1, 1)]
         for (column, row), fraction in fractions.items():
             assert np.array_equal(_block(cells, column, row), fraction * np.float32(720)), (column, row)
@@ -630,26 +650,36 @@ def test_rasters_deep_umbra_cannot_read_are_refused_in_a_sentence(workspace, tmp
 
 
 def test_a_curio_without_the_model_says_how_to_add_it(workspace, tmp_path):
-    """A pip install has no ``datasets/data.scout.deep-umbra@1``: the backend
-    resolves no file for the model, and the node says what to copy where."""
+    """A pip install has no ``models/model.scout.deep-umbra@1``: the backend
+    resolves no folder for the model, and the node says what to copy where."""
     error = run_node(_open(_mosaic(tmp_path, "A")), workspace, model=False, fails=True)
     for words in (
-        "data.scout.deep-umbra@1, and this Curio does not have it",
+        "the Model Catalog model model.scout.deep-umbra@1, and this Curio does not have it",
         "not in the pip package",
-        "copy the repository's folder datasets/data.scout.deep-umbra@1",
-        "--catalog-root",
+        "copy the repository's folder models/model.scout.deep-umbra@1",
+        "--models-root",
     ):
         assert words in error, error
 
 
 def test_another_failure_to_open_the_model_is_not_hidden(tmp_path):
-    """Only a missing model reads as missing: onnxruntime absent, say, keeps its own sentence."""
+    """Only a missing model reads as missing: a model folder with no readable
+    manifest, say, keeps its own sentence, and so does another model missing
+    (one dragged onto the node in Deep Umbra's place)."""
     with shadow_modules(tmp_path) as (_deep_umbra, outputs):
-        def load():
-            raise RuntimeError("This dataset is an ONNX model, which runs on onnxruntime, and this Curio does not have it")
+        def unreadable():
+            raise RuntimeError("Model 'model.scout.deep-umbra' has no readable manifest: [Errno 2] No such file")
 
-        with pytest.raises(RuntimeError, match="runs on onnxruntime") as raised:
-            outputs.open_model(load)
+        with pytest.raises(RuntimeError, match="no readable manifest") as raised:
+            outputs.open_model(unreadable)
+        assert "pip package" not in str(raised.value)
+
+        def another():
+            raise RuntimeError("Model 'imported.x1f3a9c2b7d40' is not available in this environment - "
+                               "drag a model from the Model Catalog onto this node, then run it again.")
+
+        with pytest.raises(RuntimeError, match="imported.x1f3a9c2b7d40") as raised:
+            outputs.open_model(another)
         assert "pip package" not in str(raised.value)
 
 
@@ -662,12 +692,14 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     hold the templates' own sources and widgets, the shadow nodes reading the
     season from the one Parameter node both scenarios share; each scenario's
     Raster Statistics node reads its shadow on input 0 and its heights, the
-    mask, on input 1; the chart reads the statistics, the difference the shadows."""
-    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+    mask, on input 1; the chart reads the statistics, the difference the shadows.
+    The model is no dataset of the dataflow: the shadow nodes' code names it,
+    and the Model Catalog holds it."""
+    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
 
     spec = _dataflow()
     assert spec["packages"] == ["scout.raster-conversion@1", "scout.shadow@1"]
-    assert [ref["datasetId"] for ref in spec["datasets"]] == ["data.scout.loop-buildings", MODEL_ID]
+    assert [ref["datasetId"] for ref in spec["datasets"]] == ["data.scout.loop-buildings"]
     nodes = {node["id"]: node for node in spec["nodes"]}
     by_type: dict[str, list] = {}
     for node in spec["nodes"]:
@@ -686,7 +718,8 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     for node in shadows:
         assert node["content"] == _source().replace("[!! season !!]", "[!! @season !!]")
         assert not node["metadata"].get("widgets")
-        assert dataset_ids_in_code(node["content"]) == [MODEL_ID]
+        assert model_ids_in_code(node["content"]) == [MODEL_ID]
+        assert dataset_ids_in_code(node["content"]) == []
     (parameter,) = by_type["curio.builtin/parameter"]
     assert parameter["metadata"]["widgets"] == _template()["widgets"]
 

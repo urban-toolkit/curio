@@ -540,10 +540,11 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
     assert result["output"]["dataType"] == "outputs", result["output"]
 
 
-#: ``scout.shadow@1``'s modules and SCOUT's Deep Umbra model, in the image; a
-#: shipped test dataflow (``ScoutShadows.json``) declares both.
+#: ``scout.shadow@1``'s modules and SCOUT's Deep Umbra model (a Model Catalog
+#: model), in the image; a shipped test dataflow (``ScoutShadows.json``)
+#: declares the package.
 SHADOW_SOURCES = LAUNCH_DIR + "/packages/scout.shadow@1/sources"
-DEEP_UMBRA = "data.scout.deep-umbra"
+DEEP_UMBRA = "model.scout.deep-umbra"
 #: SCOUT's committed height tiles of its high-rise example's first scenario.
 SCOUT_A_RASTERS = LAUNCH_DIR + "/utk_curio/backend/tests/test_packages/fixtures/scout/A_rasters"
 
@@ -551,7 +552,8 @@ SCOUT_A_RASTERS = LAUNCH_DIR + "/utk_curio/backend/tests/test_packages/fixtures/
 def test_scouts_shadow_model_runs_as_the_exec_user():
     """The Accumulated Shadow node's code, as the execution user, on the height
     mosaic a Rasterize Buildings run hands on (here of SCOUT's committed tiles):
-    the model reaches the child staged like any dataset, onnxruntime opens it
+    the Model Catalog model reaches the child staged as a model folder is,
+    onnxruntime opens it
     and runs it there under the stack's limits, and the node returns its shadow
     raster, whose mean over the ground is SCOUT's mean accumulated shadow for
     these tiles, 128.6 minutes."""
@@ -574,7 +576,7 @@ def test_scouts_shadow_model_runs_as_the_exec_user():
     body = textwrap.indent(textwrap.dedent("""
         from scout_shadow.node_outputs import accumulated_shadow, open_model
 
-        model = open_model(lambda: curio_load_data("data.scout.deep-umbra"))
+        model = open_model(lambda: curio_load_model("model.scout.deep-umbra"))
         shadow = accumulated_shadow(arg, "summer", model, curio_output_file)
         # What the dataflow's Raster Statistics node computes: the shadow over
         # the ground, the heights as the mask.
@@ -591,8 +593,7 @@ def test_scouts_shadow_model_runs_as_the_exec_user():
         "user_key": USER_KEY,
         "save_dataset": False,
         "package_modules": {"root": SHADOW_SOURCES, "names": ["scout_shadow"]},
-        "dataset_paths": {DEEP_UMBRA: LAUNCH_DIR + "/datasets/" + DEEP_UMBRA + "@1/data/deep_umbra.onnx"},
-        "dataset_formats": {DEEP_UMBRA: {"format": "onnx"}},
+        "models": {DEEP_UMBRA: LAUNCH_DIR + "/models/" + DEEP_UMBRA + "@1"},
     }), "running Deep Umbra")
     grid, mean = printed(result).splitlines()[-2:]
     assert grid == "3395 512 512", grid

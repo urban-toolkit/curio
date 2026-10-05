@@ -1,6 +1,6 @@
 # Model Catalog
 
-The Model Catalog is where Curio keeps the **trained models** your nodes can run. A model ships with Curio, or you add one from the [Discovery Catalog](DISCOVERY-CATALOG.md). An **Image Segmentation** node runs the model its code names, and you choose which by dragging a model onto it.
+The Model Catalog is where Curio keeps the **trained models** your nodes can run. A model ships with Curio, or you add one from the [Discovery Catalog](DISCOVERY-CATALOG.md). A node such as **Image Segmentation** runs the model its code names, and you choose which by dragging a model onto it.
 
 Curio has six catalogs: the [Node Catalog](NODE-CATALOG.md) holds the nodes you drop on the canvas, the [Data Catalog](DATA-CATALOG.md) the datasets they read, the Model Catalog the models they run, the [Agent Catalog](AGENT-CATALOG.md) the assistants you attach to them, the [Discovery Catalog](DISCOVERY-CATALOG.md) the portals, storage, services and models you take datasets and models from, and the [Scenario Catalog](SCENARIO-CATALOG.md) the scenarios saved in your projects.
 
@@ -30,15 +30,18 @@ model.curio.ddrnet23-slim@1/
   files/ddrnet23_slim.data
 ```
 
-The manifest says which runtime runs the model (**ONNX** or **Transformers**), its task (semantic segmentation: a class for every pixel), the **labels** of its classes, and how an image is prepared for it. A model is not a dataset and is never added to a dataflow: a node's code names the model it runs.
+The manifest says which runtime runs the model (**ONNX** or **Transformers**), its task (semantic segmentation: a class for every pixel; or image to image: images in, an image out), the **labels** of its classes, and how an image is prepared for it. A model is not a dataset and is never added to a dataflow: a node's code names the model it runs.
 
 ### What ships with Curio
 
 | Model | Runtime | Labels | License |
 |---|---|---|---|
 | DDRNet23-Slim (street scenes) | ONNX | The 19 Cityscapes classes: road, sidewalk, building, wall, fence, pole, traffic light, traffic sign, vegetation, terrain, sky, person, rider, car, truck, bus, train, motorcycle, bicycle | MIT; trained on Cityscapes |
+| Deep Umbra (accumulated shadows) | ONNX | None: image to image, building heights in, the share of a day in shadow out | Used with the permission of SCOUT's authors |
 
 DDRNet23-Slim is about 23 MB and labels a street photo in a fraction of a second on a CPU. A new **Image Segmentation** node runs it.
+
+Deep Umbra, [SCOUT](https://github.com/urban-toolkit/scout)'s shadow model, is about 10.5 MB. The **Accumulated Shadow** node of the SCOUT Shadow package (`scout.shadow@1`) runs it on a raster of building heights ([example 24](examples/24-scout-building-rasters.md)). It ships in the repository and its Docker image, not in the pip package: see [Operator notes](#operator-notes).
 
 ### Storage layers
 
@@ -65,7 +68,7 @@ A model's details show its **Identifier**, **Version**, **Runtime**, **Input**, 
 | **View details** | A card, the drawer, or the canvas drawer | Nothing | The model's details. |
 | **View license** | The details | Nothing | The model's license text. |
 | **Drag onto a node** | The **Model Catalog** dropdown or the canvas drawer | The node's code | The node's `curio_load_model(...)` line names the model. A node whose code calls no `curio_load_model` says *This node does not run a model*. |
-| **Drag onto the canvas** | The **Model Catalog** dropdown or the canvas drawer | The dataflow | A new **Image Segmentation** node where you drop it, its `curio_load_model(...)` line naming the model. When no node in the dataflow runs a model, nothing is added and a message names the package to add from the Node Catalog. |
+| **Drag onto the canvas** | The **Model Catalog** dropdown or the canvas drawer | The dataflow | A new node where you drop it, its `curio_load_model(...)` line naming the model: the node made for that model (**Accumulated Shadow** for Deep Umbra), else an **Image Segmentation** node. When no node in the dataflow runs a model, nothing is added and a message names the package to add from the Node Catalog. |
 | **Delete** | A model you added: its card or the drawer | Your Model Catalog loses the model | A confirmation first; nodes that name it fail the next time they run. A shipped model offers no **Delete**. |
 | **Add to Model Catalog** | A **Hugging Face models** row, in the Discovery Catalog | Your Model Catalog gains a model | A progress bar, then *"Added `<name>` to your Model Catalog."* with **View model**. |
 
@@ -103,6 +106,8 @@ Every input column follows. A class the model does not label stops the node, wit
 
 Dragging a model onto a node rewrites the id in its first `curio_load_model(...)` call and nothing else, so `classes` stays as you set it. The dataflow saves the node's code, so it reopens with the same model.
 
+An image-to-image model is run by the node made for it, which prepares the model's inputs itself and calls `model.run({input name: array})`; it returns the graph's outputs in order. **Accumulated Shadow** runs Deep Umbra this way, one map tile at a time. `curio_segment` refuses an image-to-image model.
+
 ---
 
 ## 4. Runtimes and libraries
@@ -134,10 +139,10 @@ A dataflow names its models by id. Someone you share it with runs a shipped mode
 | `name`, `version` | Yes | What the card says, and the manifest's own version string. |
 | `compatibility.major` | | Defaults to 1. Together with `id` it forms the folder name. |
 | `runtime` | Yes | `onnx` or `transformers`. |
-| `task` | Yes | `semantic-segmentation`. |
+| `task` | Yes | `semantic-segmentation` or `image-to-image`. |
 | `entry` | Yes | For `onnx`, the graph file; for `transformers`, the folder of the checkpoint. A path inside the model's folder. |
-| `labels` | | The classes, in the order the model numbers them. |
-| `input` | For `onnx` | How an image is prepared: `width` and `height` (8 to 8192 pixels), `dtype` (`uint8` or `float32`), `layout` (`NCHW`), `scale`, and an optional `mean` and `std` of three numbers each. |
+| `labels` | | The classes, in the order the model numbers them. An `image-to-image` model has none. |
+| `input` | For `onnx` | How an image is prepared: `width` and `height` (8 to 8192 pixels), `dtype` (`uint8` or `float32`), `layout` (`NCHW`, or `NHWC` for an `image-to-image` model), `scale`, and an optional `mean` and `std` of three numbers each. |
 | `license`, `licenseFile` | `license` | The license, and the file in the folder that holds its text. |
 | `description`, `publisher`, `homepage`, `tags`, `sizeBytes` | | Shown on the card and in the details. |
 
@@ -151,11 +156,13 @@ A dataflow names its models by id. Someone you share it with runs a shipped mode
 
 **Shipping a model.** Add its folder to `models/` and restart. The Docker image bakes `models/` in, as it does `datasets/`. A model there must be one Curio may redistribute, with its license in the folder.
 
+**Deep Umbra on a pip install.** The pip package leaves out `models/model.scout.deep-umbra@1`, so Accumulated Shadow says the model is missing. Copy the repository's folder `models/model.scout.deep-umbra@1` into the shipped models folder (the one `--models-root` names, else the `models` folder beside the installed `utk_curio` package) and run the node again.
+
 ---
 
 ## See also
 
 - [`docs/DISCOVERY-CATALOG.md`](DISCOVERY-CATALOG.md#adding-a-model): adding a model from Hugging Face.
-- [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the Street Vision package and its Image Segmentation node.
+- [`docs/NODE-CATALOG.md`](NODE-CATALOG.md): the Street Vision package and its Image Segmentation node, and the SCOUT Shadow package and its Accumulated Shadow node.
 - [`docs/examples/10-street-vision-cv-analysis.md`](examples/10-street-vision-cv-analysis.md): two models over the same street photos.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md#model-catalog): how models are stored, staged for a run, and resolved.

@@ -35,8 +35,8 @@ from utk_curio.sandbox.util.rasters import mosaic_rasters, tile_bounds
 
 from .deep_umbra import TILE, predict_shadow, season_factor, shadow_fraction
 
-#: The Data Catalog dataset that holds Deep Umbra as an ONNX model.
-MODEL_ID = "data.scout.deep-umbra"
+#: The Model Catalog model that is Deep Umbra, an ONNX graph.
+MODEL_ID = "model.scout.deep-umbra"
 
 #: What Deep Umbra was trained on: zoom-16 tiles where 255 is 550 m.
 DEEP_UMBRA_ZOOM = 16
@@ -53,13 +53,13 @@ EQUATOR_METRES = 2.0 * math.pi * 6378137.0
 GRID_SLACK = 0.01
 
 MISSING_MODEL = (
-    f"Accumulated Shadow runs SCOUT's Deep Umbra model, the Data Catalog dataset "
+    f"Accumulated Shadow runs SCOUT's Deep Umbra model, the Model Catalog model "
     f"{MODEL_ID}@1, and this Curio does not have it. The model is in the Curio "
     "repository (https://github.com/urban-toolkit/curio) but not in the pip package: "
-    f"copy the repository's folder datasets/{MODEL_ID}@1 into this Curio's shared "
-    "Data Catalog folder (the one --catalog-root names, else the datasets folder "
-    "beside the installed utk_curio package), or start Curio from a clone of the "
-    "repository, then run this node again."
+    f"copy the repository's folder models/{MODEL_ID}@1 into this Curio's shipped "
+    "models folder (the one --models-root names, else the models folder beside the "
+    "installed utk_curio package), or start Curio from a clone of the repository, "
+    "then run this node again."
 )
 
 NOT_A_HEIGHT_RASTER = (
@@ -72,9 +72,9 @@ _TO_4326 = Transformer.from_crs(3395, 4326, always_xy=True)
 
 
 def open_model(load):
-    """The Deep Umbra session *load* returns, or :data:`MISSING_MODEL` when
-    this Curio has no such dataset. *load* is the node's
-    ``lambda: curio_load_data("data.scout.deep-umbra")``."""
+    """The Deep Umbra model *load* returns, or :data:`MISSING_MODEL` when
+    this Curio's Model Catalog has no such model. *load* is the node's
+    ``lambda: curio_load_model("model.scout.deep-umbra")``."""
     try:
         return load()
     except RuntimeError as error:

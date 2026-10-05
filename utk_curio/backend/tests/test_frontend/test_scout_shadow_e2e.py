@@ -5,7 +5,7 @@ The shipped test dataflow ``ScoutShadows.json``: SCOUT's Chicago Loop buildings
 node are the fixed context. In "Existing", Rasterize Buildings
 (``scout.raster-conversion@1``) draws them into a zoom-16 height mosaic,
 Accumulated Shadow (``scout.shadow@1``) runs SCOUT's Deep Umbra model (the
-dataset ``data.scout.deep-umbra``) on it, in the season both scenarios share,
+Model Catalog model ``model.scout.deep-umbra``) on it, in the season both scenarios share,
 and Raster Statistics (``curio.builtin@1``) takes the shadow's mean and median
 over the ground, the heights as its mask. "Towers removed" first removes the 15
 buildings SCOUT's second scenario removes. Two Compare Scenarios nodes read the

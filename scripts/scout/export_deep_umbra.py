@@ -3,8 +3,8 @@
 SCOUT (https://github.com/urban-toolkit/scout) predicts accumulated shadow with a
 TensorFlow generator restored from
 `backend/compute/accumulated_shadow_simulation/tf_model/ckpt-44`. Curio runs the
-same generator as an ONNX file through onnxruntime: the Data Catalog dataset
-`data.scout.deep-umbra@1`, which the package `scout.shadow@1` runs, so Curio's
+same generator as an ONNX file through onnxruntime: the Model Catalog model
+`model.scout.deep-umbra@1`, which the package `scout.shadow@1` runs, so Curio's
 environment never takes TensorFlow. This script made that file once, from a
 SCOUT checkout, and checks it, and the package's port of SCOUT's code, against
 SCOUT's own code and SCOUT's committed results.

@@ -36,9 +36,11 @@ export function modelInputLabel(model: Pick<ModelRow, "input">): string | null {
   return `${model.input.width} × ${model.input.height}, ${model.input.dtype}`;
 }
 
-/** The card meta line: runtime, label count, size. */
+/** The card meta line: runtime, label count (an image-to-image model has
+ *  none, so its task instead), size. */
 export function modelMetaLine(model: ModelRow): string {
-  return [MODEL_RUNTIME_LABEL[model.runtime], modelLabelCount(model), modelSizeLabel(model)]
+  const kind = model.labelCount > 0 ? modelLabelCount(model) : MODEL_TASK_LABEL[model.task] ?? model.task;
+  return [MODEL_RUNTIME_LABEL[model.runtime], kind, modelSizeLabel(model)]
     .filter(Boolean)
     .join(" · ");
 }
@@ -50,7 +52,7 @@ export function modelInfoRows(model: ModelRow): ModelFact[] {
     { label: "Runtime", value: MODEL_RUNTIME_LABEL[model.runtime] ?? model.runtime },
     { label: "Task", value: MODEL_TASK_LABEL[model.task] ?? model.task },
     input ? { label: "Input", value: input } : null,
-    { label: "Labels", value: String(model.labelCount) },
+    model.labelCount > 0 ? { label: "Labels", value: String(model.labelCount) } : null,
     size ? { label: "Size", value: size } : null,
     { label: "Version", value: model.version },
     { label: "License", value: model.license || "Unknown" },

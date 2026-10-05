@@ -49,16 +49,17 @@ at the edge of the raster sees no buildings beyond it.
 
 ## The model
 
-The model is the Data Catalog dataset `data.scout.deep-umbra@1`, an ONNX file
-exported from SCOUT's TensorFlow checkpoint by
+The model is Deep Umbra in the [Model Catalog](../../docs/MODEL-CATALOG.md),
+`model.scout.deep-umbra@1`, an ONNX file exported from SCOUT's TensorFlow
+checkpoint by
 [`scripts/scout/export_deep_umbra.py`](../../scripts/scout/export_deep_umbra.py).
-The node reads it with `curio_load_data("data.scout.deep-umbra")` and runs it with
-onnxruntime, one tile at a time.
+The node loads it with `curio_load_model("model.scout.deep-umbra")` and runs it
+with onnxruntime, one tile at a time.
 
 The model ships in the Curio repository but not in the pip package. On a pip
 install the node says so: copy the repository's folder
-`datasets/data.scout.deep-umbra@1` into the shared Data Catalog folder (the one
-`--catalog-root` names, else the `datasets` folder beside the installed
+`models/model.scout.deep-umbra@1` into the shipped models folder (the one
+`--models-root` names, else the `models` folder beside the installed
 `utk_curio` package), then run the node again.
 
 ## A dataflow
@@ -73,9 +74,11 @@ The Height mosaic node is a Python node that keeps the mosaic of Rasterize
 Buildings' `(mosaic, tiles)` (`return arg[0]`), since Raster Statistics reads
 rasters only.
 
-The test dataflow [ScoutShadows](../../docs/examples/dataflows/ScoutShadows.json)
-compares SCOUT's two building sets of the Chicago Loop as two scenarios: the
-buildings as they are, and with 15 of them removed.
+[Example 24](../../docs/examples/24-scout-building-rasters.md) maps the shadow
+of SCOUT's Chicago Loop buildings. The test dataflow
+[ScoutShadows](../../docs/examples/dataflows/ScoutShadows.json) compares SCOUT's
+two building sets of the Chicago Loop as two scenarios: the buildings as they
+are, and with 15 of them removed.
 
 ## Setup
 
