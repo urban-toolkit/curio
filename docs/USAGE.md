@@ -1070,6 +1070,9 @@ it when the run fails, and writes only code that ran. Applying a plan also
 gives every created node a **Node Builder**, and every data-loading node a
 **Dataset Finder**, which Solve asks for candidates when the node's source is
 not settled. See [Solve](AGENT-CATALOG.md#solve) in the Agent Catalog guide.
+A plan can also declare the widgets each node's code reads, and save
+[scenarios](#scenarios), including a copy of one with a widget value changed;
+see [Widgets and scenarios](AGENT-CATALOG.md#widgets-and-scenarios).
 
 The goal box in the dock is shared with your agents: several of them, the
 Dataflow Builder most of all, are written around knowing what the dataflow is

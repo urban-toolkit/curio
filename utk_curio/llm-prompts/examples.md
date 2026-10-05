@@ -30,6 +30,7 @@ This file indexes the dataflows Curio ships, for the built-in agents. A run of a
 - [DataPool_Vega_2](../../docs/examples/dataflows/DataPool_Vega_2.json): Green roof permits joined to ZIP code polygons, the ten ZIP codes with the most vegetated roof area kept, and a bar chart with a point selection over them.
 - [Interaction_Autark](../../docs/examples/dataflows/Interaction_Autark.json): OpenStreetMap buildings loaded from a .pbf file, missing heights filled on the GPU, and a map coloured by height linked both ways to a brushable height histogram.
 - [Regression](../../docs/examples/dataflows/Regression.json): OpenStreetMap roads joined to nearby surface polygons, lane counts clamped on the GPU, and a map of roads coloured by lanes linked both ways to a brushable lane histogram.
+- [Scenarios](../../docs/examples/dataflows/Scenarios.json): Two scenarios over one shared frame of building heights: shadow lengths and their bar chart at the real heights, and a copy of both whose height factor widget is set to 2; a step with two inputs compares the mean shadow of each scenario.
 
 ## Not used
 

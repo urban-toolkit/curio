@@ -255,11 +255,14 @@ def check(code: object, shape: dict | None) -> dict | None:
         return None
     if not isinstance(code, str):
         return None
-    from utk_curio.backend.app.execution.code_references import resolve_references
+    from utk_curio.backend.app.execution.code_references import REFERENCE_RE, resolve_references
 
     circles = shape.get("circles") or range(int(shape.get("length") or 0))
     inputs = [{"slot": circle} for circle in circles]
     code, _ = resolve_references(code, (), "python", inputs)
+    # #662: what is left is a widget or a shared tag, a value when the node
+    # runs; standing in as one, it keeps the code parseable for this gate.
+    code = REFERENCE_RE.sub("None", code)
     if "arg" not in code:
         return None
     try:

@@ -40,6 +40,36 @@ _RUNTIME_MESSAGE_CHARS = 240
 RUNTIME_BLOCK_KEYS = ("status", "message", "outputType", "origin", "kind", "ranAt", "durationMs", "render")
 
 
+def _widget_context(node: dict, nodes) -> dict:
+    """#662: the node's widgets, which its code places as ``[!! name !!]``
+    references, and the dataflow's shared tags (one per Parameter node), which
+    any node's code places as ``[!! @name !!]``. Each key only when there are
+    some, so a node without them is described as before."""
+    from utk_curio.backend.app.execution.code_references import effective_value, normalize_widgets
+    from utk_curio.backend.app.execution.workflow_spec import PARAMETER_TYPE
+
+    def rows(widgets) -> list[dict]:
+        return [
+            {"name": w["name"], "type": w["type"], **({"label": w["label"]} if w.get("label") else {}),
+             "value": effective_value(w), **({"options": w["options"]} if w.get("options") else {})}
+            for w in widgets
+        ]
+
+    out: dict = {}
+    own = normalize_widgets((node.get("metadata") or {}).get("widgets"))
+    if own and str(node.get("type") or "").split("@", 1)[0] != PARAMETER_TYPE:
+        out["widgets"] = rows(own)
+    shared = [
+        w
+        for n in nodes
+        if isinstance(n, dict) and str(n.get("type") or "").split("@", 1)[0] == PARAMETER_TYPE
+        for w in normalize_widgets((n.get("metadata") or {}).get("widgets"))
+    ]
+    if shared:
+        out["sharedTags"] = rows(shared)
+    return out
+
+
 def _neighbors(adjacency: dict[str, list[str]], start: str) -> list[str]:
     """Nearest-first BFS from *start*, capped at ``_MAX_NEIGHBORS``."""
     out: list[str] = []
@@ -187,4 +217,5 @@ def compose_node_context(
             "edges": len(edges),
         },
         "datasetRefs": datasets,
+        **_widget_context(node, nodes.values()),
     }

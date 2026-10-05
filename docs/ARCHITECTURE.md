@@ -802,7 +802,10 @@ Five design points worth knowing:
   write: it is `0700` and owned by the execution account, it persists between
   runs, and a `docs` symlink is dropped in so the bundled examples' relative
   reads still resolve. A relative write anywhere else fails, since the launch
-  tree is root-owned by then.
+  tree is root-owned by then. The child's scratch directory also holds numba's
+  cache (`NUMBA_CACHE_DIR`, `child.point_numba_at_scratch`): numba refuses to
+  import a library that compiles with `cache=True` unless it can write beside
+  the library or under HOME, and the execution account can do neither.
 - **No pickle in either direction.** A child's manifest carries a kind tag,
   JSON scalars, and flat filenames only. Unpickling a hostile child's output in
   the privileged parent would hand back most of what isolation removed.
@@ -1210,6 +1213,8 @@ A Dataflow Builder plan may add nodes, add connections, and remove, each part op
 - **Data connections stay a DAG.** A plan whose data edge would close a cycle is refused when it is proposed, with the loop written out and the fix named. The check runs again at Apply against the live canvas, so a cycle drawn in the meantime stops the apply. A cycle the plan did not create is reported, never blamed on the plan.
 
 Every removed connection is named on the card, and every applied result ends with a `Topology:` verdict, `acyclic` or the path of a cycle still present, which the agent is instructed to read before it claims a repair.
+
+A planned node may declare its widgets, checked by the Widgets tab's own rules (`checkWidgetDef` and `checkWidgetValue` in `widgetModel.ts`, twinned in `execution/code_references.py` and pinned by `widgetChecks.cases.json`), and the apply writes them at `metadata.widgets`. A plan may also save scenarios (`domain/plan_scenarios.py`, `proposals/plan_scenarios.py`): a selection names plan refs or existing node ids, and a duplicate names an earlier selection, the ref each copy takes, and the widget values a copy changes. The grammar expands a duplicate into plan nodes and edges by the canvas's own rule (`scenario_catalog/domain/duplicate.py`, the twin of `duplicateSelection.ts`, pinned by `duplicateSelection.cases.json`), so the card reviews each copy as a node and each copied connection as one. A copy carries `copyOf`, which the apply turns into `metadata.copiedFrom`; it is created after its original, by the whole-plan apply and the per-node one alike. A scenario is saved once all of its nodes exist, with the next of `SCENARIO_COLORS` when the plan gives none, and is refused when another scenario took one of its nodes since the plan was proposed. A plan is complete once its nodes, connections and scenarios all exist.
 
 ### Required agents
 

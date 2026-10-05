@@ -23,6 +23,7 @@ from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
+from utk_curio.backend.app.agents.application.proposals import plan_scenarios
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.projects import storage as projects_storage
 
@@ -278,6 +279,13 @@ def _mint_dataflow_plan(
     if revision_errors:
         return "refused", "\n- ".join(["the plan's revision targets are invalid:"] + revision_errors), None
     remove_node_set = set(remove_nodes)
+    # #662: widgets and scenarios against the saved dataflow; each scenario
+    # takes its color here, so the review card shows it.
+    scenarios = plan_scenarios.existing_scenarios(spec)
+    scenario_errors = plan_scenarios.mint_errors(plan, available, existing_nodes, scenarios, remove_node_set)
+    if scenario_errors:
+        return "refused", "\n- ".join(["the plan's widgets or scenarios are invalid:"] + scenario_errors), None
+    plan_scenarios.assign_colors(plan, scenarios)
     # dev/67-3 (DEC-051): fan-in validates BEFORE anything materializes — an
     # invalid multi-input topology is unmintable, and the corrective error
     # says how to rewire it.
@@ -461,6 +469,8 @@ def _plan_summary(plan: dict) -> str:
     remove_edges = plan.get("removeEdges", [])
     n_nodes, n_edges = len(plan["nodes"]), len(plan["edges"])
     summary = f"Apply plan · {count_label(n_nodes, 'node')}, {count_label(n_edges, 'edge')}"
+    if plan.get("scenarios"):
+        summary += f", {count_label(len(plan['scenarios']), 'scenario')}"
     if remove_nodes or remove_edges:
         # dev/112: removed connections counted too — the user approved edge
         # removals five times without seeing them named.
@@ -475,9 +485,11 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
     remove_nodes = plan.get("removeNodes", [])
     remove_edges = plan.get("removeEdges", [])
     n_edges = len(plan["edges"])
+    in_scenario = plan_scenarios.scenario_names(plan)
     preview_lines = [
         f"{node['title']} · {node['nodeType']} — {node['intent']}" for node in plan["nodes"]
     ]
+    preview_lines += plan_scenarios.preview_lines(plan)
     for node_id in remove_nodes:
         victim = existing_nodes[node_id]
         label = (victim.get("goal") or node_id)[:80]
@@ -498,6 +510,8 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
                 "ref": n["ref"], "nodeType": n["nodeType"], "title": n["title"],
                 "intent": n["intent"],
                 **({"expects": n["expects"]} if n.get("expects") else {}),
+                # #662: its widgets, its scenario, and the node a copy copies.
+                **plan_scenarios.node_display(n, in_scenario),
             }
             for n in plan["nodes"]
         ],
@@ -516,6 +530,9 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
             for e in plan["edges"]
         ],
     }
+    if plan.get("scenarios"):
+        # #662: the scenarios the plan saves, each with its nodes by name.
+        part["plan"]["scenarios"] = plan_scenarios.display_scenarios(plan, existing_nodes)
     if remove_nodes or remove_edges:
         # DEC-049.2: removals reviewed by NAME — every victim listed with a
         # content flag; the cascade counted.
@@ -773,10 +790,13 @@ def apply_plan_node(
             f"node type {plan_node['nodeType']!r} is no longer available — "
             "ask the agent to replan",
         )
-    created = _created_plan_node(proposal, plan_node, ref)
-    node_id = created["id"]
+    blocked = plan_scenarios.copy_blocker(plan, plan_node, applied_ids)
+    if blocked:
+        raise AgentServiceError(blocked, 409)
     dataflow = spec.setdefault("dataflow", {})
-    dataflow.setdefault("nodes", []).append(created)
+    created = _created_plan_node(proposal, plan_node, ref, dataflow.setdefault("nodes", []))
+    node_id = created["id"]
+    dataflow["nodes"].append(created)
     applied_refs.append(ref)
     applied_ids[ref] = node_id
     # dev/71: attach the Node Builder to the created node (best-effort,
@@ -802,6 +822,9 @@ def apply_plan_node(
             edge_results[str(index)] = result_row
         if created_edge is not None:
             created_edges.append(created_edge)
+    # #662: a scenario is saved once the last of its nodes exists, as an edge
+    # is connected once both of its ends do.
+    created_scenarios = plan_scenarios.apply_scenarios(spec, proposal, applied_ids, final=False)
     # Re-pin the shape digest to the spec THIS apply produced: the plan's own
     # per-node progress is legitimate drift for a later whole-plan apply;
     # foreign edits between applies still 409 + stale.
@@ -832,6 +855,9 @@ def apply_plan_node(
         "createdEdges": created_edges,
         "edgeResults": edge_results,
         "edgeStates": dict(ctx["edge_states"]),
+        # #662: the scenarios this node completed, for the live canvas.
+        **({"createdScenarios": created_scenarios} if created_scenarios else {}),
+        **({"scenarioStates": dict(proposal["scenarioStates"])} if proposal.get("scenarioStates") else {}),
         "attachedAgentId": attached_agent_id,
         # dev/126: every agent this apply gave the node, and anything it could
         # not — the apply SAYS what it attached instead of dropping it.
@@ -841,13 +867,15 @@ def apply_plan_node(
     }
 
 
-def _created_plan_node(proposal: dict, plan_node: dict, ref: str) -> dict:
-    """The canvas node one plan ref becomes: the mint-time position and the (possibly edited) goal."""
+def _created_plan_node(proposal: dict, plan_node: dict, ref: str, nodes: list) -> dict:
+    """The canvas node one plan ref becomes: the mint-time position and the (possibly edited) goal,
+    and #662's widgets and lineage (``plan_scenarios.created_node_metadata``, as the whole-plan
+    apply writes them)."""
     pos = (proposal.get("positions") or {}).get(ref) or {}
     goal_text = (proposal.get("editedGoals") or {}).get(ref) or (
         f"{plan_node['title']} — {plan_node['intent']}"
     )
-    return {
+    created = {
         "id": str(uuid.uuid4()),
         "type": plan_node["nodeType"],
         "content": "",
@@ -855,6 +883,10 @@ def _created_plan_node(proposal: dict, plan_node: dict, ref: str) -> dict:
         "x": float(pos.get("x", 80.0)),
         "y": float(pos.get("y", 80.0)),
     }
+    metadata = plan_scenarios.created_node_metadata(plan_node, proposal.get("appliedNodeIds") or {}, nodes)
+    if metadata:
+        created["metadata"] = metadata
+    return created
 
 
 def _log_plan_node_applied(user_key, project_id, session_id, attachment_id, proposal_id,
@@ -887,10 +919,12 @@ def _log_plan_node_applied(user_key, project_id, session_id, attachment_id, prop
 
 def _plan_endpoint_label(endpoint: str, plan: dict, existing_nodes: dict) -> str:
     """A human label for one plan-edge endpoint: the plan node's title, or the
-    existing node's goal (id as the last resort)."""
+    existing node's goal (id as the last resort). #662: a planned node in a
+    scenario is labelled with it too, so a copy and its original read apart."""
     for node in plan.get("nodes", []):
         if node["ref"] == endpoint:
-            return node["title"][:60]
+            scenario = plan_scenarios.scenario_names(plan).get(endpoint)
+            return node["title"][:60] + (f" ({scenario})" if scenario else "")
     existing = existing_nodes.get(endpoint) or {}
     return str(existing.get("goal") or endpoint)[:60]
 
@@ -1074,7 +1108,8 @@ def _complete_plan_if_done(record: dict, proposal: dict, session: dict) -> bool:
         edge_states.get(str(i)) == "applied"
         for i in range(len(plan.get("edges", [])))
     )
-    if not (all_refs_applied and all_edges_applied):
+    # #662: and every scenario the plan saves.
+    if not (all_refs_applied and all_edges_applied and plan_scenarios.all_saved(proposal)):
         return False
     proposal["status"] = "applied"
     runs = session.get("nodeRuns") or {}
@@ -1262,11 +1297,14 @@ def _apply_dataflow_plan(
     created_edges = _create_plan_edges(
         user_key, project_id, proposal_id, spec, proposal, session_id, plan, nodes, edges, ref_to_id, spec_nodes_by_id,
     )
+    # #662: the plan's scenarios, checked again against the dataflow's own.
+    created_scenarios = plan_scenarios.apply_scenarios(spec, proposal, ref_to_id, final=True)
     proposal["status"] = "applied"
     record, node_runs = _plan_apply_session(spec, attachment_id, proposal_id, created_nodes, remove_node_set, ref_to_id)
     projects_storage.write_spec(user_key, project_id, spec)
     _log_plan_applied(user_key, project_id, session_id, attachment_id, proposal_id, spec,
-                      created_nodes, created_edges, remove_node_set, removed_edge_ids, node_runs, attached_results)
+                      created_nodes, created_edges, remove_node_set, removed_edge_ids, node_runs, attached_results,
+                      created_scenarios)
     return {
         "attachmentId": attachment_id,
         "proposalId": proposal_id,
@@ -1278,6 +1316,8 @@ def _apply_dataflow_plan(
             "edges": created_edges,
             "removedNodeIds": sorted(remove_node_set),
             "removedEdgeIds": sorted(removed_edge_ids),
+            # #662: present only when the plan saved scenarios.
+            **({"scenarios": created_scenarios} if created_scenarios else {}),
         },
         # dev/126: as the per-node apply — what each created node was given.
         "attachedAgents": [row for r in attached_results for row in r["attached"]],
@@ -1423,6 +1463,11 @@ def _create_plan_nodes(user_key, spec: dict, nodes: list, plan: dict, proposal: 
             "x": float(pos.get("x", base_x + depth * _PLAN_COLUMN_OFFSET)),
             "y": float(pos.get("y", base_y + row * _PLAN_ROW_OFFSET)),
         }
+        # #662: its widgets, and for a copy its lineage; a copy follows the
+        # node it copies in the plan, so that node is already created.
+        metadata = plan_scenarios.created_node_metadata(plan_node, ref_to_id, nodes)
+        if metadata:
+            created["metadata"] = metadata
         nodes.append(created)
         created_nodes.append(created)
         # dev/126: the whole-plan apply gives every created node its agents,
@@ -1528,21 +1573,27 @@ def _plan_apply_session(spec: dict, attachment_id: str, proposal_id: str, create
 
 def _log_plan_applied(user_key, project_id, session_id, attachment_id, proposal_id, spec: dict,
                       created_nodes: list, created_edges: list, remove_node_set: set, removed_edge_ids: set,
-                      node_runs: dict, attached_results: list) -> None:
+                      node_runs: dict, attached_results: list, created_scenarios: list = ()) -> None:
     """The applied turn: truthful for edges (dev/112) plus the post-apply topology verdict the agent
-    needs to confirm a fix instead of asserting one."""
+    needs to confirm a fix instead of asserting one; #662: and the scenarios it saved."""
     # dev/112: truthful for edges (the old copy said "removed 0 nodes" after an
     # edge-only removal), plus the post-apply topology verdict the agent needs
     # to confirm a fix instead of asserting one.
     removed_summary = _removal_phrase(len(remove_node_set), len(removed_edge_ids))
     topology = _topology_clause(spec)
+    scenario_summary = (
+        f" It saved {count_label(len(created_scenarios), 'scenario')}: "
+        + ", ".join(s["name"] for s in created_scenarios) + "."
+        if created_scenarios else ""
+    )
     agents_store._log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
         f"Applied: plan added {count_label(len(created_nodes), 'node')} and "
-        f"{count_label(len(created_edges), 'connection')}{removed_summary}. {topology}",
+        f"{count_label(len(created_edges), 'connection')}{removed_summary}.{scenario_summary} {topology}",
         "Applied: dataflow plan",
         [
             f"+{count_label(len(created_nodes), 'node')} · +{count_label(len(created_edges), 'connection')}"
+            + (f" · +{count_label(len(created_scenarios), 'scenario')}" if created_scenarios else "")
             + (f" · −{count_label(len(remove_node_set), 'node')}" if remove_node_set else "")
             + (f" · −{count_label(len(removed_edge_ids), 'connection')}" if removed_edge_ids else ""),
             f"{sum(1 for s in node_runs.values() if s == 'pending')} pending for Solve",

@@ -169,8 +169,7 @@
     "tier": "T3",
     "needs": [
       "browser-only-execution",
-      "gpu",
-      "widgets"
+      "gpu"
     ],
     "skip": [
       {

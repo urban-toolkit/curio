@@ -8,7 +8,7 @@ import { ROW_STATE_CHIP } from "./reviewCardText";
 /** One planned node's review row (dev/67-5 + dev/71 progressive lifecycle):
  * editable goal, dependencies by name, Apply → Solve → Run per node. */
 export const PlanNodeRow: React.FC<{
-  node: { ref: string; nodeType: string; title: string; intent: string; expects?: string };
+  node: { ref: string; nodeType: string; title: string; intent: string; expects?: string; scenario?: string };
   applied: boolean;
   goal: string;
   /** dev/71: dependency labels + readiness. */
@@ -16,6 +16,10 @@ export const PlanNodeRow: React.FC<{
   state: string;
   solvable: boolean;
   solveBlocker: string | null;
+  /** #662: why it cannot be created yet (a copy before the node it copies). */
+  createBlocker?: string | null;
+  /** #662: its scenario, the node a copy copies, its widgets. */
+  extras?: string[];
   onApply: () => Promise<void>;
   onSaveGoal: (goal: string) => Promise<void>;
   onSolve?: () => Promise<void>;
@@ -23,9 +27,11 @@ export const PlanNodeRow: React.FC<{
   /** dev/72: opens the node agent's chat, where the content review lives. */
   onOpenReview?: () => void;
   reviewAgentName?: string;
-}> = ({ node, applied, goal, deps, state, solvable, solveBlocker, onApply, onSaveGoal, onSolve, onRun, onOpenReview, reviewAgentName }) => {
+}> = ({ node, applied, goal, deps, state, solvable, solveBlocker, createBlocker, extras, onApply, onSaveGoal, onSolve, onRun, onOpenReview, reviewAgentName }) => {
   const [draft, setDraft] = useState(goal);
   const [busy, setBusy] = useState(false);
+  // #662: a copy has its original's title; its scenario tells them apart.
+  const label = node.scenario ? `${node.title} (${node.scenario})` : node.title;
   const [rowBusy, setRowBusy] = useState<"solve" | "run" | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
 
@@ -75,9 +81,10 @@ export const PlanNodeRow: React.FC<{
           <button
             type="button"
             className={styles.apply}
-            disabled={busy}
+            disabled={busy || Boolean(createBlocker)}
+            title={createBlocker ?? undefined}
             onClick={() => void apply()}
-            aria-label={`Create node ${node.title}`}
+            aria-label={`Create node ${label}`}
           >
             {busy ? "Creating…" : "Apply"}
           </button>
@@ -114,7 +121,7 @@ export const PlanNodeRow: React.FC<{
                 disabled={rowBusy !== null || !solvable}
                 title={solveBlocker ?? undefined}
                 onClick={() => void act("solve", onSolve)}
-                aria-label={`Solve node ${node.title}`}
+                aria-label={`Solve node ${label}`}
               >
                 {rowBusy === "solve" ? "Solving…" : "Solve"}
               </button>
@@ -125,7 +132,7 @@ export const PlanNodeRow: React.FC<{
                 className={styles.run}
                 disabled={rowBusy !== null}
                 onClick={() => void act("run", onRun)}
-                aria-label={`Run through node ${node.title}`}
+                aria-label={`Run through node ${label}`}
               >
                 {rowBusy === "run" ? "Running…" : "Run"}
               </button>
@@ -137,12 +144,17 @@ export const PlanNodeRow: React.FC<{
         <div className={styles.planNodeExpects}>needs: {deps.join(", ")}</div>
       ) : null}
       {node.expects ? <div className={styles.planNodeExpects}>{node.expects}</div> : null}
+      {(extras ?? []).map((line) => (
+        <div key={line} className={styles.planNodeExpects}>
+          {line}
+        </div>
+      ))}
       <textarea
         className={styles.planGoalInput}
         value={draft}
         disabled={applied}
         rows={2}
-        aria-label={`Goal for ${node.title}`}
+        aria-label={`Goal for ${label}`}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => void saveGoal()}
       />

@@ -6,6 +6,7 @@ import { EffectLine } from "./reviewCard/EffectLine";
 import { PackageDraftDetails } from "./reviewCard/PackageDraftDetails";
 import { PlanEdgesList } from "./reviewCard/PlanEdgesList";
 import { PlanNodesList } from "./reviewCard/PlanNodesList";
+import { PlanScenariosList } from "./reviewCard/PlanScenariosList";
 import { PlanSummary } from "./reviewCard/PlanSummary";
 import { ReviewActions } from "./reviewCard/ReviewActions";
 import { SourceBlock } from "./reviewCard/SourceBlock";
@@ -116,6 +117,7 @@ export const AgentReviewCard: React.FC<{
       {isPlan && part.plan?.edges?.length && pending && onApplyPlanEdges ? (
         <PlanEdgesList part={part} planNodeState={planNodeState} edgeBusy={edgeBusy} onApplyEdges={applyEdges} />
       ) : null}
+      {isPlan ? <PlanScenariosList part={part} planNodeState={planNodeState} /> : null}
       <EffectLine part={part} />
       <ReviewActions
         part={part}
