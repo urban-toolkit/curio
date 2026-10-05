@@ -292,6 +292,32 @@
         }
       }
     },
+    "selectionTag": {
+      "type": "object",
+      "description": "One selection tag of a node (#662): the current selection of a view (a Vega-Lite or Autark node), which the node's code reads through a `[!! selection name !!]` reference as the ids of the selected rows. It holds `ids`, or `count` in their place when the selection holds more ids than a tag takes.",
+      "required": ["name", "node", "column"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$", "description": "What the code's `[!! selection name !!]` references name." },
+        "node": { "type": "string", "minLength": 1, "description": "The id of the view whose selection the tag reads." },
+        "column": { "type": "string", "minLength": 1, "description": "The column whose values identify the selected rows, such as `osm_id` or `building_id`." },
+        "ids": {
+          "type": "array",
+          "items": { "type": ["string", "number"] },
+          "maxItems": 10000,
+          "description": "The values of `column` in the rows the view's latest selection picks, each once, in row order. A run writes them as a list."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 10001,
+          "description": "How many ids the selection held, written in place of `ids` when there are more than a tag takes. A run that reads the tag fails with a message saying so."
+        }
+      },
+      "oneOf": [
+        { "required": ["ids"], "not": { "required": ["count"] } },
+        { "required": ["count"], "not": { "required": ["ids"] } }
+      ]
+    },
     "nodeMetadata": {
       "type": "object",
       "description": "Side-channel node information that is not part of the execution payload.",
@@ -376,6 +402,11 @@
           "items": { "type": "string", "minLength": 1 },
           "minItems": 1,
           "description": "Where a copy made by Duplicate selection (#662) comes from: the ids of the nodes it descends from, oldest first, ending with the node it was copied from. Two nodes are the same lever in two scenarios when their ids and these lists meet. Emitted only on a copy."
+        },
+        "selections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/selectionTag" },
+          "description": "The node's selection tags (#662), added in its Widgets tab. Its code places each one as a `[!! selection name !!]` reference, which a run replaces with the tag's `ids`. A new selection in the view writes new ids. Emitted only when the node has selection tags."
         },
         "dataPool": {
           "type": "object",

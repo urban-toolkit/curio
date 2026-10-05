@@ -5,6 +5,7 @@ import { unversionedNodeType } from "./utils/flowNodeCanonicalType";
 import { inputSlotOf } from "./utils/inputSlots";
 import { resolveReferences } from "./utils/references/codeReferences";
 import { PARAMETER_NODE_TYPE, sharedWidgetsOfSpec } from "./utils/references/sharedParameters";
+import { normalizeSelections } from "./utils/references/selectionTags";
 import { normalizeWidgets, type WidgetDef } from "./utils/widgets/widgetModel";
 import { namesDataset, usesNamedDatasets } from "./utils/vegaDatasets";
 import { inputTableName } from "./generated/autkGrammar";
@@ -22,7 +23,7 @@ interface TrillNode {
   title?: string;
   in?: unknown;
   out?: unknown;
-  metadata?: { widgets?: unknown };
+  metadata?: { widgets?: unknown; selections?: unknown };
 }
 
 interface TrillEdge {
@@ -438,8 +439,8 @@ function generateCells(
   // and third-party package ids never match a NodeType at all - so this
   // dispatch always ends in a default branch rather than an enumeration.
   const nodeType = unversionedNodeType(node.type);
-  // The code the canvas runs: its widget, input, column and shared references
-  // resolved, as the browser does before posting it (#662).
+  // The code the canvas runs: its widget, input, column, shared and selection
+  // references resolved, as the browser does before posting it (#662).
   const language = nodeType === NodeType.VIS_VEGA || nodeType === NodeType.AUTK_GRAMMAR
     ? "json"
     : nodeType === NodeType.JS_COMPUTATION ? "javascript" : "python";
@@ -449,6 +450,7 @@ function generateCells(
       widgets: normalizeWidgets(node.metadata?.widgets),
       inputs: inputSlots.map((slot) => ({ slot })),
       shared,
+      selections: normalizeSelections(node.metadata?.selections),
     },
     language,
   ).code;

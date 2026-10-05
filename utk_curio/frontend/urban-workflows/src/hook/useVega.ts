@@ -12,6 +12,7 @@ import { DEFAULT_INPUT_DATASET } from "../utils/vegaGeoSpec";
 import { inputTableName } from "../generated/autkGrammar";
 import { usableCounts } from "../utils/vegaUsableRows";
 import { matchSelections, objectRows } from "../utils/selectionMatch";
+import { columnsOfRows, provideViewRows } from "../utils/references/viewSelections";
 import { echoedCircle } from "../utils/selectionEcho";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
@@ -315,6 +316,20 @@ export const useVega = ({
   useEffect(() => {
     applyDirectSelection(currentViewRef.current);
   }, [data.interactions]);
+
+  // #662: a selection tag on this chart reads the rows its selections are
+  // matched against, the first input's, as a direct selection is
+  // (utils/references/viewSelections). A point selection names their positions.
+  useEffect(
+    () =>
+      provideViewRows(data.nodeId, () => {
+        const values = lastValuesRef.current;
+        return Array.isArray(values) && values.length > 0
+          ? { rows: objectRows(values), columns: columnsOfRows(values) }
+          : null;
+      }),
+    [data.nodeId],
+  );
 
 
   // The states that exist *before* anything compiles: nothing connected, an

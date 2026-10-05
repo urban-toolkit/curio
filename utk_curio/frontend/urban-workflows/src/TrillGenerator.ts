@@ -16,6 +16,7 @@ import { canvasPositionOf } from "./utils/canvasPosition";
 import { canvasTemplateConfigToSpec } from "./utils/canvasTemplateConfigSpec";
 import { dataPoolToSpec } from "./utils/dataPoolSpec";
 import { normalizeWidgets } from "./utils/widgets/widgetModel";
+import { normalizeSelections } from "./utils/references/selectionTags";
 import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
 
 export class TrillGenerator {
@@ -383,6 +384,17 @@ export class TrillGenerator {
                     trill_node.metadata = {};
 
                 trill_node.metadata.copiedFrom = [...node.data.copiedFrom];
+            }
+
+            // #662: the node's selection tags and the ids each holds persist
+            // at metadata.selections, only when it has any, so every run reads
+            // the selection the canvas showed.
+            const selections = normalizeSelections(node.data.selections);
+            if(selections.length > 0){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.selections = selections;
             }
 
             if(typeof node.data.title === "string" && node.data.title)

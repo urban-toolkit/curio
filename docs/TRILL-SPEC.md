@@ -85,6 +85,15 @@ no edges. Any node's `content` places it as `[!! @name !!]`, written and
 replaced as its own widgets are. A name no Parameter node has, or that two
 Parameter nodes have, fails the run with a message naming it.
 
+`metadata.selections` lists the node's selection tags, written only when it has
+any. Each entry is `{name, node, column, ids}`: `node` is the id of a Vega-Lite
+or Autark node, and `ids` the values of `column` in the rows that view's latest
+selection picks, each once, in row order. The node's `content` places a tag as
+`[!! selection name !!]`; a run replaces it with `ids`, written as a list. A tag
+holds at most 10,000 ids; for a larger selection it holds `count` in place of
+`ids`, and a run that reads it fails with a message saying so, as it does for a
+name the node has no tag for.
+
 `metadata.copiedFrom` is written only on a copy made by Duplicate selection: the
 ids of the nodes it descends from, oldest first, ending with the node it was
 copied from. Two nodes are the same lever in two scenarios when their ids and

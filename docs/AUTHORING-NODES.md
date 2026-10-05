@@ -135,6 +135,11 @@ A node dropped from the palette starts with these widgets and their defaults.
 values it had as the defaults. The shape of each entry is the `widget`
 definition in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json).
 
+A node made from a template can also read a view's selection through a
+selection tag, `[!! selection name !!]` ([Selection tags](USAGE.md#selection-tags)).
+A template does not declare selection tags: each names a view of one dataflow,
+so it is added on the canvas, in the node's **Widgets** tab.
+
 ---
 
 ## Tier 2: a node with its own interface
