@@ -253,7 +253,10 @@ color. The boxes, frames and stand-in edges it returns are drawn by
 `components/scenarios/ScenarioLayers.tsx` beside React Flow's renderer, in its
 coordinates, not as React Flow nodes and edges. React Flow's store is what
 `reactFlow.getNodes()` returns to Run All, a save and an agent's view, so it must
-never hold a node that is not in the dataflow.
+never hold a node that is not in the dataflow. The dashboard page draws its
+scenario columns' frames and headers with the same component;
+`src/utils/scenarios/scenarioDashboard.ts` decides which column each pinned tile goes
+in, and `prepareDashboardNodes` places the columns.
 
 A node drawn hidden is never measured, so code that needs a node's size or hit-tests
 nodes leaves it out (`isDrawnHidden`): the load fit (`fitViewWithMenuOffset`) and the

@@ -293,4 +293,20 @@ describe('fitViewWithMenuOffset', () => {
     expect(fitViewWithMenuOffset(rf)).toBe(true);
     expect(rf.setViewport).toHaveBeenCalledTimes(1);
   });
+
+  // The dashboard draws each scenario's header above its top tile (#662).
+  test('headroom keeps that much room in view above the nodes', () => {
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 800, height: 600, left: 0, top: 0 }) as DOMRect;
+    const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+
+    expect(fitViewWithMenuOffset(rf, { headroom: 46 })).toBe(true);
+    expect(getViewportForBoundsMock.mock.calls.at(-1)![0]).toEqual({ x: 0, y: -46, width: 100, height: 146 });
+
+    expect(fitViewWithMenuOffset(rf)).toBe(true);
+    expect(getViewportForBoundsMock.mock.calls.at(-1)![0]).toEqual({ x: 0, y: 0, width: 100, height: 100 });
+  });
 });
