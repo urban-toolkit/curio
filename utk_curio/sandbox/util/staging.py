@@ -335,19 +335,68 @@ def stage_model_dirs(model_dirs, scratch_dir):
             if not root.is_dir():
                 continue
             name = f"model_{index}"
-            target = scratch_dir / name
-            for path in sorted(root.rglob("*")):
-                if path.is_symlink() or not path.is_file():
-                    continue
-                if root not in path.resolve().parents:
-                    continue
-                destination = target / path.relative_to(root)
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                _link_or_copy(path, destination)
+            _link_tree(root, scratch_dir / name)
             staged[model_id] = name
         except OSError:
             continue
     return staged
+
+
+def _link_tree(root: Path, target: Path) -> None:
+    """Link every regular file inside the folder *root* into *target*, each at
+    its own relative path. A link pointing out of *root* is skipped."""
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        if root not in path.resolve().parents:
+            continue
+        destination = target / path.relative_to(root)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        _link_or_copy(path, destination)
+
+
+#: Where a run's package modules are staged, inside the run's own folder.
+PACKAGE_MODULES_DIR = "package_modules"
+
+
+def stage_package_modules(package_modules, run_dir):
+    """Stage the modules a node's package ships, as models are staged (#468).
+
+    *package_modules* is ``{"root": <the package's sources folder>, "names":
+    [...]}``. Each named module, the file ``<name>.py`` or the folder
+    ``<name>/``, is linked into ``<run_dir>/package_modules/`` at its own
+    relative path, and nothing else in the sources folder is. Returns
+    ``{"root": "package_modules", "names": [...]}``, relative to *run_dir*,
+    with the names that were staged, or None when none was. A module that
+    cannot be staged is left out, and the node's import of it fails naming it.
+    """
+    if not package_modules:
+        return None
+    try:
+        root = Path(package_modules["root"]).resolve()
+    except (KeyError, TypeError, OSError):
+        return None
+    if not root.is_dir():
+        return None
+    target = Path(run_dir) / PACKAGE_MODULES_DIR
+    staged = []
+    for name in package_modules.get("names") or []:
+        try:
+            module_file = root / f"{name}.py"
+            folder = root / name
+            linked = False
+            if module_file.is_file() and not module_file.is_symlink():
+                target.mkdir(parents=True, exist_ok=True)
+                _link_or_copy(module_file, target / module_file.name)
+                linked = True
+            if folder.is_dir() and not folder.is_symlink():
+                _link_tree(folder.resolve(), target / name)
+                linked = True
+            if linked:
+                staged.append(name)
+        except OSError:
+            continue
+    return {"root": PACKAGE_MODULES_DIR, "names": staged} if staged else None
 
 
 def _insert_row(con, art_id, kind, *, node_id=None, session_id=None,

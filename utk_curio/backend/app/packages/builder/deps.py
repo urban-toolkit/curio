@@ -48,6 +48,7 @@ from typing import Any, Callable, Mapping, Protocol
 from utk_curio.backend.app.packages.builder.models import PackageBuildRequest
 from utk_curio.backend.app.packages.domain.dependency_scanner import scan_imports_for_filename
 from utk_curio.backend.app.packages.domain.manifest import ManifestError
+from utk_curio.backend.app.packages.domain.python_modules import module_names_in
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 from utk_curio.backend.app.packages.domain.versions import (
     ResolverError,
@@ -154,6 +155,7 @@ def policy_from_env() -> DependencyPolicy:
 
 def merge_declared_and_detected(
     request: PackageBuildRequest,
+    base_paths: tuple[str, ...] = (),
 ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], list[Finding]]:
     """Scan the draft's sources and merge with explicit declarations.
 
@@ -162,7 +164,14 @@ def merge_declared_and_detected(
     explicit constraint is NEVER overwritten by the scanner; a detected
     import without a declaration defaults to ``"*"`` and is surfaced as a
     warning, never silently (dev/89 §3.4).
+
+    An import of one of the package's own modules is no dependency (#468):
+    the modules among the draft's files and *base_paths*, the files an
+    extended package keeps, as Save into a package leaves them out.
     """
+    own_modules = module_names_in([*request.files, *base_paths], [
+        t.get("source") for t in request.manifest.get("templates") or [] if isinstance(t, dict)
+    ])
     detected_py: set[str] = set()
     detected_js: set[str] = set()
     for path, body in request.files.items():
@@ -171,7 +180,7 @@ def merge_declared_and_detected(
             text = body.decode("utf-8")
         except UnicodeDecodeError:
             continue  # binary asset — nothing to scan
-        py_hits, js_hits = scan_imports_for_filename(filename, text)
+        py_hits, js_hits = scan_imports_for_filename(filename, text, own_modules)
         detected_py.update(py_hits)
         detected_js.update(js_hits)
 
@@ -703,11 +712,13 @@ def resolve_dependencies(
     fetcher: RegistryFetcher | None = None,
     policy: DependencyPolicy | None = None,
     cache_dir: Path | None = None,
+    # The files an extended package keeps (#468): its modules are no dependency.
+    base_paths: tuple[str, ...] = (),
 ) -> DependencyReport:
     """The resolving phase: scan+merge, JS registry resolution into the
     verified cache, python/package review — one SBOM out (dev/89 §3.4)."""
     policy = policy or policy_from_env()
-    python_entries, js_entries, findings = merge_declared_and_detected(request)
+    python_entries, js_entries, findings = merge_declared_and_detected(request, base_paths)
     if fetcher is None and js_entries and policy.js_registry_url:
         fetcher = HttpRegistryFetcher(policy.js_registry_url)
     js_direct, js_lock, js_findings = resolve_js_dependencies(
