@@ -24,8 +24,12 @@ export const CHANGE_COLORS = ["#2e8540", "#c0392b", "#b7791f", "#8a8f98"];
 /** The table the map document reads the difference by: the node's output is its one input. */
 export const DIFFERENCE_TABLE = "input_0";
 
-/** A signed difference: low red, high blue. */
-export const DIFFERENCE_INTERPOLATOR = "interpolateRdBu";
+/**
+ * A difference, from its lowest value (dark purple) to its highest (yellow).
+ * Sequential, since autk-map takes no domain that would centre a diverging
+ * scheme on zero, and colors a raster with one against its own legend.
+ */
+export const DIFFERENCE_INTERPOLATOR = "interpolateViridis";
 
 export type DifferenceKind = "raster" | "layer" | "table";
 

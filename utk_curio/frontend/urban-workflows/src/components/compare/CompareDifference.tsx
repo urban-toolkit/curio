@@ -267,7 +267,8 @@ export function CompareDifference({
       <div className={styles.mapCanvas}>{stage}</div>
       {drawn && drawn.kind !== "table" && value && !value.categorical ? (
         <p className={styles.note} data-compare-difference-note="true">
-          Red is the lowest difference and blue the highest; the middle color is halfway between them, not zero.
+          Dark purple is the lowest difference and yellow the highest.
+          {drawn.kind === "raster" ? " The closer a cell is to no difference, the fainter it is." : ""}
         </p>
       ) : null}
     </div>
