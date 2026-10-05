@@ -452,3 +452,54 @@ def test_a_node_can_write_what_it_derives_from_a_collection():
     content, owned = printed(result).splitlines()
     assert content == "derived"
     assert owned == "True", "the derived file is not owned by the execution user"
+
+
+# ---------------------------------------------------------------------------
+# A shipped package's node, from the child's side
+# ---------------------------------------------------------------------------
+
+#: ``scout.raster-conversion@1``'s modules, in the image. The stack's
+#: ``--with-examples`` boot installs its libraries: a shipped test dataflow
+#: (``BuildingRasters.json``) declares it.
+RASTER_CONVERSION_SOURCES = LAUNCH_DIR + "/packages/scout.raster-conversion@1/sources"
+
+
+def test_scouts_rasterizer_runs_as_the_exec_user():
+    """The Rasterize Buildings node's code, as the execution user, at the
+    stack's own budget. Its libraries compile with numba when they are
+    imported and when the node first rasterizes, and numba caches some of that
+    code where it can write, which for this user is not site-packages or the
+    sandbox's home."""
+    body = textwrap.indent(textwrap.dedent("""
+        import geopandas as gpd
+        from shapely.geometry import box
+        from scout_raster_conversion.node_outputs import rasterize_buildings
+
+        buildings = gpd.GeoDataFrame(
+            {"height": [35.0, 110.0, 240.0, 420.0]},
+            geometry=[
+                box(-87.6335, 41.8838, -87.6328, 41.8843),
+                box(-87.6318, 41.8838, -87.6309, 41.8845),
+                box(-87.6335, 41.8822, -87.6326, 41.8829),
+                box(-87.6316, 41.8820, -87.6305, 41.8830),
+            ],
+            crs="EPSG:4326",
+        )
+        mosaic, tiles = rasterize_buildings(buildings, "height", 16, 550, curio_output_file)
+        print(mosaic.crs.to_epsg(), mosaic.width, mosaic.height)
+        print(",".join(f"{z}_{x}_{y}" for z, x, y in zip(tiles["zoom"], tiles["x"], tiles["y"])))
+        return mosaic, tiles
+    """).strip("\n"), "    ")
+    result = assert_ran(_request("/exec", {
+        "code": body + "\n",
+        "file_path": "",
+        "nodeType": "scout.raster-conversion/rasterize-buildings",
+        "dataType": "",
+        "user_key": USER_KEY,
+        "save_dataset": False,
+        "package_modules": {"root": RASTER_CONVERSION_SOURCES, "names": ["scout_raster_conversion"]},
+    }), "rasterizing buildings")
+    grid, names = printed(result).splitlines()[-2:]
+    assert grid == "3395 512 256", grid
+    assert names == "16_16814_24356,16_16815_24356", names
+    assert result["output"]["dataType"] == "outputs", result["output"]

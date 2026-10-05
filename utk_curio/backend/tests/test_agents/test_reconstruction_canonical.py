@@ -411,8 +411,9 @@ class TestTheShippedCorpus:
     def test_these_are_the_examples_whose_templates_need_a_package(self):
         """Example 09 declares ``curio.weather@1`` for its python LIBRARIES
         while using only builtin templates -- a different resolution route
-        from examples 10, 18, 21 and 22, whose templates themselves live in a
-        package (``curio.streetvision@1`` and ``curio.media@1``)."""
+        from examples 10, 18, 21 and 22 and the BuildingRasters test dataflow,
+        whose templates themselves live in a package (``curio.streetvision@1``,
+        ``curio.media@1`` and ``scout.raster-conversion@1``)."""
         needs_package_templates = {}
         for path in example_paths():
             spec = json.loads(path.read_text(encoding="utf-8"))
@@ -427,6 +428,7 @@ class TestTheShippedCorpus:
             "18-storage-orthorectified-imagery",
             "21-storage-photos-and-videos",
             "22-storage-audio-recordings",
+            "BuildingRasters",
         ]
         assert declared_dependencies(
             json.loads(
