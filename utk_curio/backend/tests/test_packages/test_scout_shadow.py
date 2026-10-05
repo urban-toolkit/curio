@@ -250,14 +250,21 @@ def _with_values(**values) -> list:
 
 def _execute(code, value, node_type, workspace, *, data_type, **extra):
     """Run *code* on *value* as a node's play does, in process: the sandbox's
-    result."""
+    result. With *data_type* ``outputs``, *value* is one value per input
+    circle, each saved as its own upstream output, as a run hands them on."""
     from utk_curio.sandbox.app.worker import _worker_init, execute_code
     from utk_curio.sandbox.util.parsers import save_to_duckdb
 
     _worker_init()
-    art_id = save_to_duckdb(value, node_id="upstream")
+    if data_type == "outputs":
+        file_path = repr([
+            {"path": save_to_duckdb(item, node_id=f"upstream-{slot}"), "dataType": "raster"}
+            for slot, item in enumerate(value)
+        ])
+    else:
+        file_path = save_to_duckdb(value, node_id="upstream")
     return execute_code(
-        textwrap.indent(code, "    "), art_id, node_type, data_type,
+        textwrap.indent(code, "    "), file_path, node_type, data_type,
         save_dataset=False, media_dir=str(workspace / "media"), **extra,
     )
 
