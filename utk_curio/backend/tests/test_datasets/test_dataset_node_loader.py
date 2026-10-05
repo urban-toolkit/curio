@@ -234,7 +234,8 @@ def test_bundle_loader_preserves_part_order(tmp_path):
         ("geojson", 'gdf = curio_load_data("imported.xabc123")'),
         ("shp", 'gdf = curio_load_data("imported.xabc123")'),
         ("json", 'data = curio_load_data("imported.xabc123")'),
-        ("geotiff", 'src = curio_load_data("imported.xabc123")'),
+        # A GeoTIFF's loader names its window, so the node shows the option.
+        ("geotiff", 'src = curio_load_data("imported.xabc123", bounds=None)'),
         ("bundle", 'bundle = curio_load_data("imported.xabc123")'),
         ("collection", 'collection = curio_load_collection("imported.xabc123")'),
         ("osm", 'dataset_path = curio_data_path("imported.xabc123")'),

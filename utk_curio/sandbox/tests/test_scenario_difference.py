@@ -8,10 +8,10 @@ comparison (input 1), and every number it gives is comparison minus reference.
   differences and ``changed`` or ``unchanged``; rows on one side only are
   ``removed`` or ``added``.
 - Two rasters come back from the node's code as a request, which the sandbox
-  completes in its own Node process: autk-db loads both, Curio's Autark
-  adapter (``utils/raster/rasterArithmetic.ts``) subtracts the band arrays
-  ``getRaster`` exports, and the result is a raster envelope. Grids that differ
-  are refused, naming both. The raster tests run that Node process for real.
+  completes: autk-db loads both in its own Node process, Curio's raster
+  algebra (``util/raster_algebra.py``) subtracts the band arrays ``getRaster``
+  exports, and the result is a raster envelope. Grids that differ are refused,
+  naming both. The raster tests run that Node process for real.
 
 Every test imports the module itself, so a checkout without it fails test by
 test rather than at collection.

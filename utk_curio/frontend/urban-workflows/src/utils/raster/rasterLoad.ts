@@ -14,7 +14,8 @@
  *
  * Pure, so it is testable under jest, and with no imports at run time, so the
  * sandbox's Node process loads a Compare Scenarios node's two rasters by the
- * same rules (`utk_curio/sandbox/util/raster_difference.js`).
+ * same rules (`utk_curio/sandbox/util/raster_difference.js`) before Curio's
+ * raster algebra subtracts them.
  */
 import type { RasterGrid } from "./rasterWire";
 

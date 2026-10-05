@@ -10,10 +10,12 @@
 
 import {
   faBorderAll,
+  faCalculator,
   faCity,
   faCube,
   faChartColumn,
   faChartLine,
+  faChartSimple,
   faCodeCompare,
   faCodeMerge,
   faCubes,
@@ -76,6 +78,8 @@ registerIcon('fa-solid:code-merge', faCodeMerge);
 registerIcon('fa-solid:object-group', faObjectGroup);
 registerIcon('fa-solid:sliders', faSliders);
 registerIcon('fa-solid:code-compare', faCodeCompare);
+registerIcon('fa-solid:calculator', faCalculator);
+registerIcon('fa-solid:chart-simple', faChartSimple);
 registerIcon('fa-solid:street-view', faStreetView);
 registerIcon('fa-solid:wand-magic-sparkles', faWandMagicSparkles);
 // curio.media@1.
