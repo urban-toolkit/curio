@@ -218,10 +218,9 @@
     "notes": null
   },
   "capability": {
-    "tier": "T2",
+    "tier": "T1",
     "needs": [
-      "package-enlist:templates",
-      "widgets"
+      "package-enlist:templates"
     ],
     "skip": []
   },
@@ -244,14 +243,14 @@
     "sourceLicences": [
       {
         "datasetId": "data.scout.deep-umbra",
-        "licence": "MIT"
+        "licence": ""
       },
       {
         "datasetId": "data.scout.loop-buildings",
-        "licence": "MIT"
+        "licence": ""
       }
     ],
-    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the two datasets' identifiers only."
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the two datasets' identifiers only. Both datasets are SCOUT's (urban-toolkit/scout), used with the permission of its authors, and carry no licence string."
   },
   "notes": "Two scenarios over a shared context: SCOUT's buildings and a season Parameter node, SCOUT's rasterizer and Deep Umbra in each scenario, and two Compare Scenarios nodes, a chart and a difference map."
 }
