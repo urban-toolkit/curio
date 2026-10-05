@@ -143,6 +143,8 @@ from .canvas_authoring import (  # noqa: F401
     enable_save_output,
     save_dataflow,
     save_dataflow_and_settle_header,
+    settle_header_after_save,
+    assert_header_shows_save,
     frame_node,
     drag_to_canvas,
     set_node_code,

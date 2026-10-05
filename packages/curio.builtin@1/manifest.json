@@ -346,7 +346,7 @@
       "badge": "AUTK",
       "bidirectional": true,
       "category": "vis_grammar",
-      "description": "Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering, and/or plot rendering in one declarative spec.",
+      "description": "Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering of layers and rasters, and/or plot rendering in one declarative spec.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "autk-grammar",
@@ -362,7 +362,8 @@
             "LIST",
             "JSON",
             "GEODATAFRAME",
-            "DATAFRAME"
+            "DATAFRAME",
+            "RASTER"
           ]
         }
       ],
@@ -375,7 +376,8 @@
             "LIST",
             "JSON",
             "GEODATAFRAME",
-            "DATAFRAME"
+            "DATAFRAME",
+            "RASTER"
           ]
         }
       ],

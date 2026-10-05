@@ -128,6 +128,28 @@ describe("an expanded scenario", () => {
     fireEvent.click(screen.getByTestId("scenario-collapse-tall"));
     expect(onCollapse).toHaveBeenCalledWith("tall");
   });
+
+  test("on the dashboard, its frame's header names it, with nothing to collapse", () => {
+    render(
+      <ReactFlowProvider>
+        <Measured nodes={measured} />
+        <ScenarioLayers
+          view={view({ boxes: [], frames: [{ scenario: { ...scenario, collapsed: false }, members: ["a", "map"] }] })}
+          editable={false}
+          labelOf={(id) => id}
+          statusOf={() => ({ text: "", tone: "none" })}
+          onExpand={jest.fn()}
+          onMoveBox={jest.fn()}
+        />
+      </ReactFlowProvider>,
+    );
+    const header = document.querySelector('[data-scenario-header="tall"]') as HTMLElement;
+    expect(header).not.toBeNull();
+    expect(header.textContent).toBe("Twice as tall");
+    // Above the frame, which is 18 above the top node: 46 in all.
+    expect([header.style.left, header.style.top]).toEqual(["-18px", "-46px"]);
+    expect(screen.queryByTestId("scenario-collapse-tall")).toBeNull();
+  });
 });
 
 describe("a stand-in edge", () => {

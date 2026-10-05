@@ -213,6 +213,76 @@ describe("editing the layout", () => {
   });
 });
 
+describe("arranging by scenario", () => {
+  // A loader the two scenarios share, each scenario's one tile, all pinned.
+  const tile = (id: string, x: number, y: number) => ({
+    id,
+    position: { x, y },
+    data: { nodeId: id, nodeType: "curio.builtin/computation-analysis", code: "return arg", title: id },
+  });
+  const withScenarios = (over: Record<string, unknown> = {}) =>
+    flow({
+      nodes: [tile("load", 0, 0), tile("a", 600, 0), tile("b", 600, 600)],
+      edges: [
+        { id: "e1", source: "load", target: "a", sourceHandle: "out", targetHandle: "in" },
+        { id: "e2", source: "load", target: "b", sourceHandle: "out", targetHandle: "in" },
+      ],
+      dashboardPins: { load: true, a: true, b: true },
+      scenarios: [
+        { id: "base", name: "Baseline", color: "#2a9d8f", nodes: ["a"] },
+        { id: "tall", name: "Twice as tall", color: "#e86a3c", nodes: ["b"] },
+      ],
+      ...over,
+    });
+
+  test("is offered while the owner edits the layout of a dashboard with a scenario's tiles", async () => {
+    mockFlow = withScenarios({ dashboardLocked: false });
+    await renderPage();
+
+    expect(screen.getByTestId("arrange-by-scenario-btn").textContent).toBe("Arrange by scenario");
+  });
+
+  test("is not offered while the layout is locked, or without a scenario's tile", async () => {
+    mockFlow = withScenarios({ dashboardLocked: true });
+    const { unmount } = await renderPage();
+    expect(screen.queryByTestId("arrange-by-scenario-btn")).toBeNull();
+    unmount();
+
+    mockFlow = flow({ dashboardLocked: false });
+    await renderPage();
+    expect(screen.queryByTestId("save-layout-btn")).toBeTruthy();
+    expect(screen.queryByTestId("arrange-by-scenario-btn")).toBeNull();
+  });
+
+  test("moves every tile into its column and records the slots a Save layout writes", async () => {
+    mockFlow = withScenarios({ dashboardLocked: false });
+    await renderPage();
+
+    act(() => { fireEvent.click(screen.getByTestId("arrange-by-scenario-btn")); });
+
+    const moves = mockFlow.onNodesChange.mock.calls.flat(1).flat();
+    const x = Object.fromEntries(moves.map((change: any) => [change.id, change.position.x]));
+    expect(moves.every((change: any) => change.type === "position")).toBe(true);
+    expect(Object.keys(x).sort()).toEqual(["a", "b", "load"]);
+    // The shared loader first, then one column per scenario, in their order.
+    expect(x.load).toBeLessThan(x.a);
+    expect(x.a).toBeLessThan(x.b);
+
+    const slots = Object.fromEntries(
+      mockFlow.updateDataNode.mock.calls.map(([id, data]: [string, any]) => [id, data]),
+    );
+    for (const change of moves) {
+      expect([slots[change.id].dashboardX, slots[change.id].dashboardY]).toEqual([
+        change.position.x,
+        change.position.y,
+      ]);
+      // The rest of the node's data stays.
+      expect(slots[change.id].title).toBe(change.id);
+    }
+    expect(mockFlow.markDirty).toHaveBeenCalled();
+  });
+});
+
 describe("the canvas", () => {
   test("is locked by default: no drag, no pan, no zoom", async () => {
     await renderPage();

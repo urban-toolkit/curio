@@ -244,7 +244,7 @@ def _code_reads_arg(code):
     )
 
 
-def _hoist_user_imports(code, ns, session_id):
+def _hoist_user_imports(code, ns, session_id, skip=()):
     """Execute the user's top-level imports into ``ns`` and remember them.
 
     ``code`` is the node body as the frontend sends it - every line already
@@ -260,10 +260,16 @@ def _hoist_user_imports(code, ns, session_id):
     body, so it raises there - at the line the user wrote, with the traceback they
     expect - instead of failing the node from inside this helper.
 
+    *skip* names the modules the node's package ships (#468). Importing one of
+    those is left to the function body and never remembered: they are this
+    package's nodes' alone, and the isolated path does the same.
+
     Call under ``_exec_lock``.
     """
     import ast
     import textwrap
+
+    from utk_curio.sandbox.util.package_modules import without_package_imports
 
     try:
         tree = ast.parse(textwrap.dedent(code))
@@ -272,8 +278,11 @@ def _hoist_user_imports(code, ns, session_id):
         return
 
     statements = [
-        node for node in tree.body
-        if isinstance(node, (ast.Import, ast.ImportFrom))
+        kept for kept in (
+            without_package_imports(node, skip) for node in tree.body
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+        )
+        if kept is not None
     ]
     if not statements:
         return
@@ -488,9 +497,34 @@ def _make_curio_data_path(dataset_paths):
     return curio_data_path
 
 
+def _stage_package_modules(package_modules):
+    """The modules the node's package ships, linked into a folder of this run's
+    own as the isolated path links them into the child's scratch (#468).
+
+    Returns ``(run_dir, (folder, names))``: *run_dir* is removed when the run
+    ends, and ``(folder, names)`` is what ``package_modules.importable`` takes.
+    ``(None, (None, ()))`` when the package ships none or nothing could be
+    staged; the node's import then fails naming the module.
+    """
+    if not package_modules:
+        return None, (None, ())
+    from utk_curio.sandbox.isolation.supervisor import make_scratch_dir
+    from utk_curio.sandbox.util.parsers import _shared_data_dir
+    from utk_curio.sandbox.util.staging import stage_package_modules
+
+    try:
+        run_dir = make_scratch_dir(str(_shared_data_dir()))
+    except OSError:
+        return None, (None, ())
+    staged = stage_package_modules(package_modules, run_dir)
+    if not staged:
+        return run_dir, (None, ())
+    return run_dir, (os.path.join(run_dir, staged["root"]), tuple(staged["names"]))
+
+
 def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True,
                  dataset_paths=None, secrets=None, collections=None, media_dir=None, models=None,
-                 dataset_formats=None):
+                 dataset_formats=None, package_modules=None):
     """
     Execute user code in-process using pre-loaded library globals.
 
@@ -512,6 +546,10 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
     models:     {modelId: folder} for the code's curio_load_model("<id>") calls.
 
+    package_modules: {"root", "names"}: the modules the node's package ships
+                beside its templates, importable by name for this run only
+                (#468, ``util/package_modules.py``).
+
     Returns {'stdout': [str, ...], 'stderr': str, 'output': {'path': str, 'dataType': str}}
     """
     import io as _io
@@ -521,6 +559,8 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
     import contextlib
     import traceback
 
+    from utk_curio.sandbox.isolation.supervisor import cleanup_scratch
+    from utk_curio.sandbox.util.package_modules import importable
     from utk_curio.sandbox.util.parsers import load_artifact
     save_to_duckdb   = _globals_cache['save_to_duckdb']
     detect_kind      = _globals_cache['detect_kind']
@@ -537,10 +577,13 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
         captured_stderr = _io.StringIO()
         result = {'path': '', 'dataType': 'str'}
         t_load = t_code = t_save = t0
+        # #468: the package's own modules, importable until the run ends.
+        modules_dir, modules = _stage_package_modules(package_modules)
 
         try:
             with contextlib.redirect_stdout(captured_stdout), \
-                 contextlib.redirect_stderr(captured_stderr):
+                 contextlib.redirect_stderr(captured_stderr), \
+                 importable(*modules):
 
                 # Fresh namespace per call, so user *variables* never leak between
                 # executions. Imports are the deliberate exception: this session's
@@ -565,7 +608,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 # so they are recorded for later nodes in the same session. The
                 # statements stay in the function body too - re-importing is a
                 # sys.modules hit, and it keeps a standalone run of this node working.
-                _hoist_user_imports(code, ns, session_id)
+                _hoist_user_imports(code, ns, session_id, skip=modules[1])
                 exec(f"def userCode(arg):\n{code}", ns)
 
                 # Load input from DuckDB.
@@ -577,6 +620,10 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                     # The store, or the output a project load hydrated (#407).
                     input_data = load_artifact(file_path, session_id=session_id)
                 input_data = _expand_outputs_wrapper(input_data, session_id=session_id)
+                # A raster an Autark node handed on arrives as a rasterio
+                # dataset, as a Python node's raster does.
+                from utk_curio.sandbox.util.rasters import python_raster_dir, rasters_for_python
+                input_data = rasters_for_python(input_data, python_raster_dir)
                 t_load = time.perf_counter()
 
                 # Validate and prepare input.
@@ -623,6 +670,8 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
         finally:
             os.chdir(original_dir)
+            if modules_dir:
+                cleanup_scratch(modules_dir)
             # The connection stays open. It used to be dropped here so the
             # backend could open the file read-only between runs, which made
             # the handle's lifetime a negotiation between two processes: the
