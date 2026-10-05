@@ -285,6 +285,29 @@ node whose code it writes itself:
   code, and its run has already handed the table on. The presets are in
   `comparePresets.ts`, and `comparePresets.cases.json` holds one spec per preset for
   Jest and for the Vega-Lite check in `test_compare_scenarios_node.py`.
+- In Difference (`compareMode.ts`: `metadata.compareScenarios.mode`, else Difference
+  for two rasters or two layers by the `dataType` of what the circles hold) the code
+  calls `curio_difference_scenarios` (`utk_curio/sandbox/util/scenario_difference.py`)
+  instead; `compareDifference.cases.json` pins it for Jest and for
+  `test_compare_difference_node.py`. The behavior writes the code again when the
+  wanted view differs from the one the code calls, or the key from its `key=`, and
+  never while an input's kind is unknown, as after a load.
+- Two layers or tables are joined in Python. Two rasters cannot be: the arithmetic
+  is Curio's Autark adapter's (`utils/raster/rasterArithmetic.ts`), on what autk-db's
+  `getRaster` exports, and an isolated child may not start Node. So the code returns
+  a JSON request (each raster's GeoTIFF bytes and `raster_meta`), and the sandbox's
+  `/exec` completes it after either path ran the code
+  (`complete_raster_difference`): `util/raster_difference.js` runs through
+  `worker.run_js_script`, the runner `execute_js_code` uses, loads both rasters with
+  `loadGeoTiff` by `rasterLoad.ts`'s `planForMeta`, subtracts them with
+  `subtractRasters` and returns the envelope (`rasterWire.ts`). Those three modules
+  have no imports at run time, so Node loads them from `src/` by type stripping. The
+  envelope is stored as the node's output, a JSON artifact.
+- `components/compare/CompareDifference.tsx` shows the difference:
+  `CompareMap.tsx` draws a raster or a layer with `useAutkGrammarBehavior`, the
+  Autark node's own map code, on the node's `autk-grammar-map-<nodeId>` canvas, with
+  `marksNodeErrored` off and no output callback, from the document
+  `compareDifference.ts` writes; a table goes through `CompareChart`.
 - `whatDiffers.ts` reads each compared scenario's parts through `scenarioParts`,
   pairs levers whose ids and `copiedFrom` lists meet, and compares their widget
   values and code lines; `contextWarnings` compares their fixed context.

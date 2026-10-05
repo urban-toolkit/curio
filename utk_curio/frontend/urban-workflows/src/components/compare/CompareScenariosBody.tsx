@@ -1,8 +1,10 @@
 /**
  * The Compare Scenarios node's body (#662), its output pane: the warnings, the
- * Chart tab (its settings and the chart of the stacked table) and the What
- * differs tab. Read from the live graph, so a renamed scenario, a new widget
- * value or an edited line shows at once; the chart redraws when the node runs.
+ * Chart tab (its settings and the chart of the stacked table) or, in
+ * Difference, the Difference tab (its settings and the map of the difference),
+ * and the What differs tab. Read from the live graph, so a renamed scenario, a
+ * new widget value or an edited line shows at once; the chart and the map
+ * redraw when the node runs.
  */
 import React, { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useFlowContext } from "../../providers/FlowProvider";
@@ -23,18 +25,25 @@ import {
 } from "../../utils/compare/comparePresets";
 import {
   COMPARE_AGGREGATES,
+  COMPARE_MODES,
   COMPARE_PRESETS,
   normalizeCompareSettings,
   type CompareAggregate,
   type CompareChart as ChartSettings,
+  type CompareDifference as DifferenceSettings,
+  type CompareMode,
   type ComparePreset,
 } from "../../utils/compare/compareSettings";
+import { inputKinds, resolveMode } from "../../utils/compare/compareMode";
 import { comparedScenarios, contextWarnings, whatDiffers } from "../../utils/compare/whatDiffers";
 import { CompareChart } from "./CompareChart";
+import { CompareDifference } from "./CompareDifference";
 import { WhatDiffersList } from "./WhatDiffersList";
 import styles from "./CompareScenarios.module.css";
 
 const LABEL = "Compare Scenarios";
+
+const MODE_LABELS: Record<CompareMode, string> = { chart: "Chart", difference: "Difference" };
 
 /** The node's output as the reference a chart reads, or null before a run. */
 function stackedRef(raw: unknown): { path: string; dataType?: string } | null {
@@ -151,6 +160,12 @@ export function CompareScenariosBody({
   const warnings = [...labelWarnings(inputs), ...contextWarnings(compared, nodes, edges)];
   const differs = whatDiffers(compared, nodes, edges);
 
+  // Chart or Difference: the user's choice, else what the inputs call for
+  // (utils/compare/compareMode). The node's behavior writes its code for it.
+  const slots: unknown[] = Array.isArray(node?.data?.inputSlots) ? node.data.inputSlots : [];
+  const kinds = inputKinds(slots, inputs.map((input) => input.slot));
+  const { mode } = resolveMode(settings, kinds, node?.data?.code ?? node?.data?.defaultCode);
+
   // The node's own output: the file its outcome names, which a load restores
   // with the node (the flow's outputs list starts empty after a load), else,
   // while a run is in flight, the last output the flow holds for it.
@@ -158,7 +173,7 @@ export function CompareScenariosBody({
   const rawRef = savedPath ? (live?.path === savedPath ? live : { path: savedPath }) : live;
   const stackedKey = rawRef ? `${rawRef.path}|${rawRef.dataType ?? ""}` : "";
   const stacked = useMemo(() => rawRef, [stackedKey]);
-  const read = useStackedRead(stacked);
+  const read = useStackedRead(mode === "chart" ? stacked : null);
   const columns = read?.columns ?? [];
   const chart = resolveChart(settings?.chart, columns);
   const labels = settings?.inputs ?? inputs.map((input) => input.label);
@@ -170,6 +185,22 @@ export function CompareScenariosBody({
     flow.updateDataNode?.(nodeId, { ...node.data, compareScenarios: { ...(settings ?? {}), chart: next } });
     flow.markDirty?.();
   };
+  // A choice of view, or of the key rows are joined on, rewrites the node's
+  // code (its behavior does), which makes a node that has run stale.
+  const setMode = (next: CompareMode) => {
+    if (!node || !editable || next === mode) return;
+    flow.updateDataNode?.(nodeId, { ...node.data, compareScenarios: { ...(settings ?? {}), mode: next } });
+    flow.markDirty?.();
+  };
+  const setDifference = (next: DifferenceSettings) => {
+    if (!node || !editable) return;
+    const updated = { ...(settings ?? {}) };
+    if (Object.keys(next).length > 0) updated.difference = next;
+    else delete updated.difference;
+    flow.updateDataNode?.(nodeId, { ...node.data, compareScenarios: updated });
+    flow.markDirty?.();
+  };
+  const inputRefs = inputs.map((input) => stackedRef(slots[input.slot]));
   const choose = (patch: Partial<ChartSettings>) =>
     setChart({ preset: chart.preset, ...(chart.x ? { x: chart.x } : {}), ...(chart.y ? { y: chart.y } : {}),
       ...(chart.aggregate ? { aggregate: chart.aggregate } : {}), ...patch });
@@ -184,7 +215,22 @@ export function CompareScenariosBody({
           : [];
 
   let stage: React.ReactNode;
-  if (runError !== null) {
+  if (mode === "difference") {
+    stage = (
+      <CompareDifference
+        nodeData={node?.data ?? { nodeId }}
+        output={stacked}
+        inputRefs={inputRefs}
+        rastersIn={kinds.length > 0 && kinds.every((kind) => kind === "raster")}
+        settings={settings?.difference}
+        editable={editable}
+        dashboardOn={dashboardOn}
+        connected={inputs.length > 0}
+        runError={runError}
+        onChange={setDifference}
+      />
+    );
+  } else if (runError !== null) {
     stage = (
       <p className={`nodrag nopan ${styles.problem}`} data-compare-run-error="true">
         {runError}
@@ -203,7 +249,7 @@ export function CompareScenariosBody({
   }
 
   return (
-    <div className={styles.body} data-compare-body={nodeId}>
+    <div className={styles.body} data-compare-body={nodeId} data-compare-mode={mode}>
       {warnings.length > 0 ? (
         <ul className={`nodrag nopan nowheel ${styles.warnings}`} data-compare-warnings="true">
           {warnings.map((warning) => (
@@ -222,7 +268,7 @@ export function CompareScenariosBody({
             aria-selected={view === "chart"}
             onClick={() => setView("chart")}
           >
-            Chart
+            {MODE_LABELS[mode]}
           </button>
           <button
             type="button"
@@ -234,7 +280,16 @@ export function CompareScenariosBody({
             What differs
           </button>
         </div>
-        {view === "chart" && read && !dashboardOn ? (
+        {view === "chart" && !dashboardOn ? (
+          <Select<CompareMode>
+            label="Compare as"
+            value={mode}
+            disabled={!editable}
+            options={COMPARE_MODES.map((option) => ({ value: option, text: MODE_LABELS[option] }))}
+            onChange={setMode}
+          />
+        ) : null}
+        {view === "chart" && mode === "chart" && read && !dashboardOn ? (
           <>
             <Select<ComparePreset>
               label="Chart"
