@@ -10,7 +10,8 @@ read, so a large model costs a few small reads:
   has;
 - ``ir_version`` (field 1, a positive integer) and ``graph`` (field 7, a
   message) are both there;
-- the last field ends where the file ends.
+- no field runs past the end of the file, and the last one ends where the
+  file ends.
 
 A text file, an image, an archive or a NetCDF file renamed ``.onnx`` fails the
 check. The backend needs no model library for it: onnxruntime arrives with a
@@ -79,18 +80,16 @@ def is_onnx_model(handle: BinaryIO, size: int) -> bool:
             value = _varint(handle)
             if value is None or (field == _IR_VERSION and value < 1):
                 return False
-        elif wire == 2:
-            length = _varint(handle)
-            if length is None:
+        elif wire in (2, *_FIXED_WIDTH):
+            skip = _varint(handle) if wire == 2 else _FIXED_WIDTH[wire]
+            # A payload that runs past the file is refused before the skip: a
+            # length can decode to more than any offset ``seek`` accepts.
+            if skip is None or skip > size - handle.tell():
                 return False
-            handle.seek(length, 1)
-        elif wire in _FIXED_WIDTH:
-            handle.seek(_FIXED_WIDTH[wire], 1)
+            handle.seek(skip, 1)
         else:
             # 3 and 4 are protobuf's groups, which ONNX never uses; 6 and 7
             # are not wire types at all.
-            return False
-        if handle.tell() > size:
             return False
         seen.add(field)
     return False

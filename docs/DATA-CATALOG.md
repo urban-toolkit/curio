@@ -246,7 +246,7 @@ A dataset's details have four tabs: **Overview**, **Schema**, **Table Preview**,
 | `csv`, `json`, `geojson`, `parquet` | Full table preview with inferred schema; GeoJSON also reports geometry type and CRS. |
 | `bundle`, OSM group, NetCDF group | One tab per part, layer or variable. |
 | `geotiff` | Not previewable: *"Raster preview is not available in the catalog yet. Use the map canvas."* |
-| `onnx`, `netcdf` | No row preview: *"An ONNX model has no rows to preview. A node reads it with curio_load_data."* Cards and details show the format and the file's size. |
+| `onnx`, `netcdf` | No row preview: *"An ONNX model has no rows to preview. A node reads it with curio_load_data."*, and the same for *"A NetCDF file"*. Cards and details show the format and the file's size. |
 | `shp` | Not previewable. |
 | `collection` | The index, one row per file, below a strip of its first files. |
 
