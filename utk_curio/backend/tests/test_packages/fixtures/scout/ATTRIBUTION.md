@@ -2,7 +2,8 @@
 
 These files are copied unchanged from SCOUT, https://github.com/urban-toolkit/scout,
 commit b98369e5, folder `backend/data/dataflows/aedc4c6b73934b14979101108ee51f42_computed/`:
-the outputs SCOUT committed for its high-rise shadow example.
+the outputs SCOUT committed for its high-rise shadow example. Their publisher is SCOUT
+(urban-toolkit/scout), and they are used with the permission of SCOUT's authors.
 
 - `A_buildings.geojson`: the buildings of the example's scenario A, 123 polygons in
   EPSG:4326 with a `height` column in metres.

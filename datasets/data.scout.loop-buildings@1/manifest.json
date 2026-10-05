@@ -3,8 +3,8 @@
   "name": "SCOUT Chicago Loop Buildings",
   "version": "1.0.0",
   "format": "geojson",
-  "description": "The 123 buildings of SCOUT's high-rise shadow example in the Chicago Loop, with their heights in metres: SCOUT's A_buildings.geojson, its coordinates and heights unchanged, with a building_id column added (the row number, 0 to 122). SCOUT's B_buildings is this layer without building_id 8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106 and 122.",
-  "license": "MIT",
+  "description": "The 123 buildings of SCOUT's high-rise shadow example in the Chicago Loop, with their heights in metres: SCOUT's A_buildings.geojson, its coordinates and heights unchanged, with a building_id column added (the row number, 0 to 122). SCOUT's B_buildings is this layer without building_id 8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106 and 122. Used with the permission of SCOUT's authors.",
+  "publisher": "SCOUT (urban-toolkit/scout)",
   "tags": [
     "buildings",
     "chicago",
