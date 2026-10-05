@@ -170,6 +170,58 @@ EXAMPLE_09_MAP = "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b"
 EXAMPLE_08_SCATTER = "niteroi-plot"
 EXAMPLE_08_MAP = "niteroi-map"
 
+#: Compare Scenarios (#662) runs its inputs through Python behind its own play
+#: button, but it has no legacy category, so ``NodeSpec.has_play_button`` is
+#: False for it. The canvas tests play it and check it by its type.
+COMPARE_SCENARIOS = "curio.builtin/compare-scenarios"
+
+
+def _plays(node: NodeSpec) -> bool:
+    """Whether the canvas gives *node* a play button that the run clicks."""
+    return node.has_play_button or node.type == COMPARE_SCENARIOS
+
+
+#: A Compare Scenarios node's view and where its drawing stands: ``[mode,
+#: state, problem]``, from its chart, or its map in Difference.
+_COMPARE_VIEW_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    const body = node && node.querySelector("[data-compare-mode]");
+    if (!body) return null;
+    const mode = body.getAttribute("data-compare-mode");
+    const kind = mode === "difference" ? "map" : "chart";
+    const view = node.querySelector(`[data-compare-${kind}-state]`);
+    const problem = node.querySelector(`[data-compare-${kind}-problem]`);
+    return [
+        mode,
+        view ? view.getAttribute(`data-compare-${kind}-state`) : null,
+        problem ? problem.textContent : "",
+    ];
+}"""
+
+
+def _assert_compare_view_drew(page, node_id: str) -> None:
+    """A Compare Scenarios node that ran shows its view drawn: its chart
+    compiled with no problem and painted, or its difference map drawn."""
+    try:
+        page.wait_for_function(
+            "(id) => { const view = (" + _COMPARE_VIEW_JS + ")(id);"
+            " return !!view && !!view[1] && view[1] !== 'drawing'; }",
+            arg=node_id,
+            timeout=90000,
+        )
+    except PlaywrightTimeoutError:
+        pass
+    view = page.evaluate(_COMPARE_VIEW_JS, node_id)
+    assert view and view[1] == "drawn", (
+        f"Compare Scenarios node {node_id}: its view ended {view!r}"
+    )
+    if view[0] == "difference":
+        assert_autark_map_drawn(
+            page, node_id, timeout=60000, attach_as=f"{node_id}'s difference map"
+        )
+    else:
+        assert_vega_canvas_rendered(page, node_id)
+
 #: Interactions compared before and after, keyed by workflow, in the order
 #: they run. Each frames its two nodes together, so a hover held on one still
 #: shows while the other is captured. See ``test_node_interaction``.
@@ -545,7 +597,7 @@ class TestWorkflowCanvas:
                     f"data table"
                 )
 
-            if not node.has_play_button:
+            if not _plays(node):
                 continue
 
             play_node(self.page, node.id)
@@ -875,7 +927,7 @@ class TestWorkflowCanvas:
         _wait_for_no_node_running(self.page, report_as="running after the last Play")
 
         for node in self.spec.nodes:
-            if not node.has_play_button:
+            if not _plays(node):
                 continue
 
             node_el = self._node_locator(node)
@@ -1100,6 +1152,11 @@ class TestWorkflowCanvas:
                     f"contains neither table cells nor images"
                 )
             # text mode: no output tab → nothing further to assert.
+
+        # A Compare Scenarios node shows the view it drew from its inputs.
+        for node in self.spec.nodes:
+            if node.type == COMPARE_SCENARIOS:
+                _assert_compare_view_drew(self.page, node.id)
 
         # Every code and grammar node shows an editor and at least one marker.
         assert_editor_panes_clear_of_markers(
