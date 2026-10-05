@@ -136,6 +136,8 @@ class TestAnOnnxModel:
             pytest.param(tiny_onnx_model()[:-1], id="truncated"),
             pytest.param(tiny_onnx_model() + b"\x00", id="trailing-byte"),
             pytest.param(tiny_onnx_model()[:2], id="no-graph"),
+            # A graph field whose length runs past any file: refused, not a 500.
+            pytest.param(b"\x3a" + b"\xff" * 9 + b"\x01", id="huge-length"),
         ],
     )
     def test_a_file_that_is_not_a_model_is_refused(self, client, user_and_token, mutations, body):
