@@ -25,6 +25,30 @@ from typing import Iterable
 #: ``$defs.scenario.properties.color`` in ``docs/schemas/trill.v1.json``.
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
+#: The colors new scenarios take in turn. Kept in sync with ``SCENARIO_COLORS``
+#: in ``src/utils/scenarios/scenarioEdits.ts``, which a test reads.
+SCENARIO_COLORS = (
+    "#3567c7",
+    "#e86a3c",
+    "#2f8f4a",
+    "#7a4bd1",
+    "#c0392b",
+    "#2e6874",
+    "#996300",
+    "#a3417a",
+)
+
+
+def next_scenario_color(colors: Iterable[str]) -> str:
+    """The first of ``SCENARIO_COLORS`` none of *colors* is, or the next one
+    round; ``nextScenarioColor`` in ``scenarioEdits.ts``."""
+    worn = [str(c) for c in colors]
+    taken = {c.lower() for c in worn}
+    for color in SCENARIO_COLORS:
+        if color not in taken:
+            return color
+    return SCENARIO_COLORS[len(worn) % len(SCENARIO_COLORS)]
+
 
 def _is_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and value == value

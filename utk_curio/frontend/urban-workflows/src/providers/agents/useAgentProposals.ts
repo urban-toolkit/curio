@@ -108,6 +108,10 @@ export function useAgentProposals(opts: {
             edges: result.createdEdges,
           });
         }
+        // #662: and a scenario whose last node this was.
+        if (result.createdScenarios?.length) {
+          notifyAgentCanvasMutation({ kind: "scenarios-created", scenarios: result.createdScenarios });
+        }
       } finally {
         await refreshAfterMutation(attachmentId); // the result turn + the per-node ledger
       }
@@ -215,6 +219,8 @@ function bridgeApplyResult(proposalId: string, result: AgentApplyResult): void {
       edges: result.appliedGraph.edges,
       removedNodeIds: result.appliedGraph.removedNodeIds,
       removedEdgeIds: result.appliedGraph.removedEdgeIds,
+      // #662: the scenarios it saved, so the next canvas save keeps them.
+      ...(result.appliedGraph.scenarios?.length ? { scenarios: result.appliedGraph.scenarios } : {}),
     });
   }
 }

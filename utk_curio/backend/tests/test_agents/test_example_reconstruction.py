@@ -141,22 +141,38 @@ class TestReachability:
         # reads the answer out of the failure.
         assert "data" in caught.value.detail and "interaction" in caught.value.detail
 
-    def test_the_widgets_gap_is_exactly_the_examples_with_widgets(self):
-        """#662: a node's widgets live in ``metadata.widgets``, which no plan
-        or content reply can write yet, so an example with widgets is a named
-        gap. The gap may not spread: a fixture declares it only when its
-        example has widgets, and every example with widgets declares it."""
-        with_widgets = {
-            f.fixture_id
-            for f in FIXTURES
+    def test_the_widgets_gap_is_closed_and_no_fixture_needs_it(self):
+        """#662: the gap that #670 named is gone. A planned node declares its
+        widgets (``metadata.widgets``), so the examples with widgets are no
+        longer reported as a gap: they reach a perfect score in
+        ``test_reachable_or_named_gap`` like every other fixture. This pins
+        the closure: no fixture declares the need, the fixture schema no
+        longer knows it, the oracle has no refusal for it, and the plan it
+        writes for each example with widgets declares them on the right node."""
+        from utk_curio.backend.app.agents.evaluation.fixtures import FIXTURE_SCHEMA_PATH
+
+        assert not any("widgets" in f.needs for f in FIXTURES)
+        schema = json.loads(FIXTURE_SCHEMA_PATH.read_text(encoding="utf-8"))
+        assert "widgets" not in json.dumps(schema["properties"]["capability"]["properties"]["needs"])
+        assert not hasattr(oracle, "require_writable_widgets")
+        assert not hasattr(oracle, "WIDGETS_NEED")
+        with_widgets = [
+            f for f in FIXTURES
             if any((n.get("metadata") or {}).get("widgets") for n in _example(f)["dataflow"]["nodes"])
-        }
-        declared = {f.fixture_id for f in FIXTURES if oracle.WIDGETS_NEED in f.needs}
-        assert with_widgets == declared == {"Widget"}
-        with pytest.raises(oracle.Unrepresentable) as caught:
-            oracle.require_writable_widgets(_example(_by_id("Widget")))
-        assert caught.value.need == "widgets"
-        oracle.require_writable_widgets(_example(ONE))
+        ]
+        assert {f.fixture_id for f in with_widgets} == {"Widget", "Scenarios"}
+        for fixture in with_widgets:
+            example = _example(fixture)
+            origins = canonical_graph_from_spec(example, templates=TEMPLATES).origins
+            declared = oracle.widgets_for(fixture.expected, example=example, origins=origins)
+            plan = oracle.plan_for(fixture.expected, intents=fixture.intents, widgets=declared)
+            planned = {n["ref"]: n.get("widgets") for n in plan.nodes if n.get("widgets")}
+            nodes = example["dataflow"]["nodes"]
+            assert planned and planned == {
+                node["ref"]: nodes[origin]["metadata"]["widgets"]
+                for node, origin in zip(fixture.expected["nodes"], origins)
+                if (nodes[origin].get("metadata") or {}).get("widgets")
+            }, fixture.fixture_id
 
 
 class TestTheModelSeesOnlyThePrompt:

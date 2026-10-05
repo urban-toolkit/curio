@@ -72,6 +72,24 @@ def test_the_backend_keeps_what_the_canvas_keeps():
 # What a writer may not send
 # ---------------------------------------------------------------------------
 
+def test_new_scenarios_take_the_canvas_colors_in_turn():
+    """A scenario a Dataflow Builder plan makes takes the next color the way a
+    scenario made on the canvas does (``nextScenarioColor``)."""
+    import re
+
+    from utk_curio.backend.app.projects.scenarios import SCENARIO_COLORS, next_scenario_color
+
+    source = (CASES.parent / "scenarioEdits.ts").read_text(encoding="utf-8")
+    block = source.split("export const SCENARIO_COLORS = [", 1)[1].split("]", 1)[0]
+    assert tuple(re.findall(r'"(#[0-9a-fA-F]{6})"', block)) == SCENARIO_COLORS
+    assert next_scenario_color([]) == SCENARIO_COLORS[0]
+    # A color is taken whatever its case; the first free one wins, not the next in line.
+    assert next_scenario_color([SCENARIO_COLORS[0].upper(), SCENARIO_COLORS[2]]) == SCENARIO_COLORS[1]
+    # Every color worn: round again by how many there are.
+    worn = list(SCENARIO_COLORS) + [SCENARIO_COLORS[0]]
+    assert next_scenario_color(worn) == SCENARIO_COLORS[len(worn) % len(SCENARIO_COLORS)]
+
+
 def test_a_node_in_two_scenarios_is_a_conflict():
     spec = _spec(scenarios=[BASELINE, {**TALL, "nodes": ["b", "a"]}])
     assert _scenarios().scenario_conflicts(spec) == [

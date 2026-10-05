@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from utk_curio.backend.app.scenario_catalog.domain.duplicate import lineage_of
 from utk_curio.backend.app.scenario_catalog.domain.parts import (
     _template,
     is_parameter_node,
@@ -31,12 +32,6 @@ def node_label(node: dict) -> str:
     if isinstance(label, str) and label:
         return label
     return _humanize_node_type(_template(node)) or str(node.get("id"))
-
-
-def _lineage(node: dict) -> list[str]:
-    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
-    raw = metadata.get("copiedFrom")
-    return [i for i in raw if isinstance(i, str) and i] if isinstance(raw, list) else []
 
 
 def copy_plan(scenario: dict, nodes: list[dict], edges: list[dict]) -> dict[str, Any]:
@@ -59,7 +54,7 @@ def copy_plan(scenario: dict, nodes: list[dict], edges: list[dict]) -> dict[str,
             sources = saved_sources(node_id, nodes, edges)
             if len(sources) == 1:
                 source = by_id[sources[0]]
-                entry["source"] = {"nodeId": source["id"], "copiedFrom": _lineage(source)}
+                entry["source"] = {"nodeId": source["id"], "copiedFrom": lineage_of(source)}
             else:
                 entry["sources"] = sources
         context.append(entry)

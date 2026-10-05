@@ -12,6 +12,8 @@
  * attach/detach so the palette and the dock re-read without a page reload.
  */
 
+import type { AgentAppliedScenario, AgentPlanWidget } from "./types/proposal";
+
 export type AgentCreatedNode = {
   id: string;
   /** Canonical unversioned template id (``<packageId>/<templateId>``). */
@@ -24,8 +26,9 @@ export type AgentCreatedNode = {
   title?: string;
   /** dev/89: canonical persisted appearance (normalized by the backend's
    * shared node-appearance utility) — carried into live ``data.appearance``
-   * so the next canvas save round-trips it. */
-  metadata?: { appearance?: { backgroundColor?: string } };
+   * so the next canvas save round-trips it. #662: the same for the node's
+   * widgets and, on a copy, its lineage (``data.widgets``, ``data.copiedFrom``). */
+  metadata?: { appearance?: { backgroundColor?: string }; widgets?: AgentPlanWidget[]; copiedFrom?: string[] };
 };
 
 export type AgentCanvasMutation =
@@ -59,6 +62,13 @@ export type AgentCanvasMutation =
       }>;
       removedNodeIds?: string[];
       removedEdgeIds?: string[];
+      /** #662: the scenarios the plan saved, joined to the canvas's. */
+      scenarios?: AgentAppliedScenario[];
+    }
+  | {
+      /** #662: scenarios a per-node apply completed; idempotent per id. */
+      kind: "scenarios-created";
+      scenarios: AgentAppliedScenario[];
     }
   | {
       /** dev/67-8: connection-stage edges — inserted quietly (no fit, no
@@ -106,6 +116,7 @@ export function subscribeAgentCanvasMutations(
       (detail.kind === "node-created" ||
         detail.kind === "node-content-applied" ||
         detail.kind === "graph-created" ||
+        detail.kind === "scenarios-created" ||
         detail.kind === "edges-created" ||
         detail.kind === "package-nodes-created")
     ) {

@@ -576,9 +576,16 @@ class VerifiedRounds:
         (DEC-063). The roster's own row only: an unknown kind is not passive."""
         if self.verdict_result.get("verdict") != "not-executable" or not str(self.candidate or "").strip():
             return None
+        # #662: checked as it runs, its references resolved the way the canvas
+        # resolves them before it draws: widgets, input chips, shared tags.
+        resolved, unresolved = self._resolved_document()
+        if unresolved:
+            yield from self._record_failed_round("document-invalid", unresolved)
+            self._carry(unresolved)
+            return CONTINUE
         roster_row = (self.loop_templates or {}).get(str(self.node_type).split("@", 1)[0]) or {}
         document = document_validation.validate(
-            self.node_type, self.candidate,
+            self.node_type, resolved,
             grammar_id=workflow_spec.grammar_id_of(self.node_type, self.loop_templates),
             content_kind=roster_row.get("contentKind"),
             columns=upstream_schema.columns_of(
@@ -603,6 +610,22 @@ class VerifiedRounds:
             evidence["documentUnchecked"] = str(document.get("why") or "")[:300]
             evidence["documentPassive"] = bool(document.get("passive"))
         return None
+
+    def _resolved_document(self) -> tuple[str, str | None]:
+        """The candidate document with its references resolved against this
+        node in the saved spec, and why one cannot be, or None. A document with
+        no references is itself."""
+        candidate = str(self.candidate or "")
+        if "[!!" not in candidate:
+            return candidate, None
+        spec = workflow_spec.parse_workflow_dict(self.spec or {})
+        node = next((n for n in spec.nodes if n.id == self.node_id), None)
+        if node is None:
+            return candidate, None
+        try:
+            return spec.node_code(node, "json", candidate), None
+        except workflow_spec.CodeReferenceError as exc:
+            return candidate, f"the document's references cannot be resolved: {exc}"
 
     def _empty_render_check(self):
         """dev/136: a valid document is not a drawn picture. When the node's

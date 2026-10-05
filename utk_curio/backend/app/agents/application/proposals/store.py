@@ -48,6 +48,9 @@ def _proposal_summary(proposal: object) -> dict | None:
         summary["editedGoals"] = dict(proposal.get("editedGoals") or {})
         summary["appliedRefs"] = list(proposal.get("appliedRefs") or [])
         summary["edgeStates"] = dict(proposal.get("edgeStates") or {})
+        # #662: which of the plan's scenarios are saved, when it has any.
+        if proposal.get("scenarioStates"):
+            summary["scenarioStates"] = dict(proposal["scenarioStates"])
     return summary
 
 
