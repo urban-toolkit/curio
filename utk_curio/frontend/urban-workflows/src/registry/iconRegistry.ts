@@ -14,6 +14,7 @@ import {
   faCube,
   faChartColumn,
   faChartLine,
+  faCodeCompare,
   faCodeMerge,
   faCubes,
   faDatabase,
@@ -74,6 +75,7 @@ registerIcon('fa-solid:code-merge', faCodeMerge);
 // curio.builtin@1 + curio.streetvision@1 additions.
 registerIcon('fa-solid:object-group', faObjectGroup);
 registerIcon('fa-solid:sliders', faSliders);
+registerIcon('fa-solid:code-compare', faCodeCompare);
 registerIcon('fa-solid:street-view', faStreetView);
 registerIcon('fa-solid:wand-magic-sparkles', faWandMagicSparkles);
 // curio.media@1.

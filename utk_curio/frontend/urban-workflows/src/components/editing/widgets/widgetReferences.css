@@ -60,3 +60,11 @@
   border-color: #e8c99a;
   color: var(--curio-accent-amber-fg);
 }
+
+/* A selection reference, to the ids a view's selection picks: the same box,
+   peach. */
+.monaco-editor .view-line .curio-widget-ref.curio-selection-ref {
+  background: var(--curio-accent-peach-bg);
+  border-color: #f2b9a3;
+  color: #b8461d;
+}

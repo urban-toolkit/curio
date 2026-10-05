@@ -26,6 +26,7 @@ from .utils import (
     _wait_for_reactflow_ready,
     assert_autark_drawing_fits,
     assert_autark_map_drawn,
+    assert_editor_panes_clear_of_markers,
     assert_in_view,
     at_fraction,
     bar_boxes,
@@ -1098,6 +1099,11 @@ class TestWorkflowCanvas:
                 )
             # text mode: no output tab → nothing further to assert.
 
+        # Every code and grammar node shows an editor and at least one marker.
+        assert_editor_panes_clear_of_markers(
+            self.page,
+            expect_some=any(n.category in ("code", "grammar") for n in self.spec.nodes),
+        )
         self._save_screenshot(request)
 
         # A map or plot that drew nothing leaves a blank node, which in the

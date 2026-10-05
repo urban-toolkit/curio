@@ -84,7 +84,8 @@ import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentAttachmentsProvider } from "../providers/agents";
 import { isDrawnHidden } from "../utils/hiddenNodes";
 import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
-import { BOX_WIDTH, boxLayout, CanvasScenarioLayers } from "./scenarios/ScenarioLayers";
+import { BOX_WIDTH, boxLayout } from "./scenarios/ScenarioLayers";
+import { CanvasScenarioLayers } from "./scenarios/CanvasScenarioLayers";
 import { ScenariosPanel } from "./scenarios/ScenariosPanel";
 import { ScenarioUiContext, type ScenarioUi } from "./scenarios/scenarioUi";
 

@@ -54,3 +54,47 @@ def existing_cancel_flag(run_id: str) -> threading.Event | None:
 def drop_cancel_flag(run_id: str) -> None:
     with _CANCEL_LOCK:
         _CANCEL.pop(run_id, None)
+
+
+# A test rig holds runs on purpose (``/api/testing/run-hold``): a node a run is
+# about to execute waits until the hold is released, so a browser test owns the
+# window in which a run is going instead of racing it. Stop does not end the
+# wait, as a held request in a browser does not end on Stop either. Outside a
+# test rig ``hold_point`` returns at once.
+
+#: The longest a held node waits: a test that never releases costs this, not the process.
+HOLD_MAX_SECONDS = 600
+
+_HOLD = threading.Condition()
+_hold = {"on": False, "waiting": 0}
+
+
+def set_hold(on: bool) -> int:
+    """Hold or release the next node of every run. Returns how many nodes were
+    waiting at that moment."""
+    with _HOLD:
+        waiting = _hold["waiting"]
+        _hold["on"] = bool(on)
+        _HOLD.notify_all()
+        return waiting
+
+
+def hold_state() -> dict:
+    with _HOLD:
+        return {"held": _hold["on"], "waiting": _hold["waiting"]}
+
+
+def hold_point() -> None:
+    """Wait here while a test rig holds runs."""
+    from utk_curio.backend.config import _is_testing
+
+    if not _is_testing():
+        return
+    with _HOLD:
+        if not _hold["on"]:
+            return
+        _hold["waiting"] += 1
+        try:
+            _HOLD.wait_for(lambda: not _hold["on"], timeout=HOLD_MAX_SECONDS)
+        finally:
+            _hold["waiting"] -= 1

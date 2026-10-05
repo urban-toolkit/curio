@@ -50,10 +50,11 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
   // straight after a load, while identical content compares equal.
   useEffect(() => {
     data.output = output;
-    // #662: the key includes the node's widget values and the shared tags it
-    // names, so a new value re-runs it.
+    // #662: the key includes the node's widget values, the shared tags it
+    // names and the ids its selection tags hold, so a new value or a new
+    // selection re-runs it.
     if (output?.code === 'success') {
-      data.executedCode = runKeyWithShared(code, data.widgets, sharedWidgetsOf(nodes ?? []));
+      data.executedCode = runKeyWithShared(code, data.widgets, sharedWidgetsOf(nodes ?? []), data.selections);
     }
     // dev/135: the node instance already held its own outcome here — and only
     // here, in memory, so an agent asked about a node that had just failed in

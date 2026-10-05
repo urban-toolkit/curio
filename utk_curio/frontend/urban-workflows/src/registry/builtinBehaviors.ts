@@ -20,6 +20,7 @@ import {
   useAutkGrammarBehavior,
   useSpatialJoinBehavior,
   useParameterBehavior,
+  useCompareScenariosBehavior,
 } from '../adapters/node';
 import { registerBehavior } from './behaviorRegistry';
 
@@ -36,6 +37,9 @@ registerBehavior('spatial-join', useSpatialJoinBehavior);
 // curio.builtin@1 parameter node: one widget any node's code names as
 // [!! @name !!] (#662).
 registerBehavior('parameter', useParameterBehavior);
+// curio.builtin@1 compare-scenarios node: stacks scenarios' outcomes, charts
+// them in the scenarios' colors and lists what differs (#662).
+registerBehavior('compare-scenarios', useCompareScenariosBehavior);
 //
 // A package's own behaviors are NOT registered here: they ship as a
 // pre-built `behaviors.js` bundle inside the package directory and

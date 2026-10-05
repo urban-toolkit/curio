@@ -125,6 +125,25 @@ class TestPlayShapesEachNode:
         assert finished["p"]["status"] == "forwarded"
         assert outcome(events)["status"] == "succeeded"
 
+    def test_a_selection_tags_ids_reach_the_node_that_names_it(self):
+        # #662: the ids a view's selection picked, saved on the node that reads
+        # them, as the canvas saves them before a run.
+        tag = {"name": "picked", "node": "chart", "column": "osm_id", "ids": [101, 104]}
+        recorder, _, finished = run(spec([
+            node("a", content="return [!! selection picked !!]", metadata={"selections": [tag]}),
+        ]))
+        assert recorder.calls["a"]["code"] == "    return [101, 104]\n"
+        assert finished["a"]["status"] == "ok"
+
+    def test_a_selection_over_the_cap_fails_the_node_without_the_sandbox(self):
+        over = {"name": "picked", "node": "chart", "column": "osm_id", "count": 25000}
+        recorder, _, finished = run(spec([
+            node("a", content="return [!! selection picked !!]", metadata={"selections": [over]}),
+        ]))
+        assert "a" not in recorder.calls
+        assert finished["a"]["status"] == "error"
+        assert "the selection holds 25000 ids" in finished["a"]["stderrTail"]
+
     def test_a_reference_that_cannot_resolve_fails_the_node_without_the_sandbox(self):
         recorder, _, finished = run(spec([node("a", content="return [!! input 1 !!]")]))
         assert "a" not in recorder.calls
@@ -133,6 +152,13 @@ class TestPlayShapesEachNode:
     def test_a_javascript_node_runs_as_javascript(self):
         recorder, _, _ = run(spec([node("j", "curio.builtin/js-computation", "return 1;")]))
         assert recorder.calls["j"]["engine"] == "javascript"
+
+    def test_a_javascript_nodes_code_is_sent_as_written(self):
+        # As JavaScriptInterpreter.ts posts it: an indented import is no longer
+        # a module's own (example 08's join).
+        code = "import { AutkDb } from '@urban-toolkit/autk-db';\n\nreturn 1;"
+        recorder, _, _ = run(spec([node("j", "curio.builtin/js-computation", code)]))
+        assert recorder.calls["j"]["code"] == code
 
 
 class TestFailuresStayOnTheirBranch:

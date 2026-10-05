@@ -253,7 +253,10 @@ color. The boxes, frames and stand-in edges it returns are drawn by
 `components/scenarios/ScenarioLayers.tsx` beside React Flow's renderer, in its
 coordinates, not as React Flow nodes and edges. React Flow's store is what
 `reactFlow.getNodes()` returns to Run All, a save and an agent's view, so it must
-never hold a node that is not in the dataflow.
+never hold a node that is not in the dataflow. The dashboard page draws its
+scenario columns' frames and headers with the same component;
+`src/utils/scenarios/scenarioDashboard.ts` decides which column each pinned tile goes
+in, and `prepareDashboardNodes` places the columns.
 
 A node drawn hidden is never measured, so code that needs a node's size or hit-tests
 nodes leaves it out (`isDrawnHidden`): the load fit (`fitViewWithMenuOffset`) and the
@@ -262,6 +265,58 @@ context, levers and outcomes from the live graph, and `savedSourceNodeIds` there
 the one rule, read by a run and by a save, for which outputs are saved whatever a
 node's own toggle says: what a pinned tile reads and what a scenario's context and
 outcomes produce.
+
+### Comparing scenarios
+
+The Compare Scenarios node (`curio.builtin/compare-scenarios`) is a Python code
+node whose code it writes itself:
+
+- `src/utils/compare/compareInputs.ts` labels each input circle by the scenario its
+  source node is in (`metadata.compareScenarios.inputs`), and `compareCode.ts` writes
+  the code from the labels, one chip per input. `adapters/node/compareScenariosBehavior.tsx`
+  writes both again when the graph's labels differ from the stored ones, never on the
+  dashboard or a shared view, and not while a load has added the nodes but not yet
+  the edges.
+- The code calls `curio_stack_scenarios` (`utk_curio/sandbox/util/scenario_stack.py`),
+  seeded in the in-process namespace (`worker._globals_cache`) and the isolated one
+  (`zygote.build_namespace_template`). A run on the server runs the node as any
+  executable template; `compareCode.cases.json` pins the written code for Jest and
+  for `test_compare_scenarios_node.py`, which resolves it through
+  `WorkflowSpec.node_code` and runs it.
+- `components/compare/CompareChart.tsx` draws the node's own output with `useVega`,
+  with `recordsProvenance` and `forwardsInput` off: the node's provenance is its
+  code, and its run has already handed the table on. The presets are in
+  `comparePresets.ts`, and `comparePresets.cases.json` holds one spec per preset for
+  Jest and for the Vega-Lite check in `test_compare_scenarios_node.py`.
+- In Difference (`compareMode.ts`: `metadata.compareScenarios.mode`, else Difference
+  for two rasters or two layers by the `dataType` of what the circles hold) the code
+  calls `curio_difference_scenarios` (`utk_curio/sandbox/util/scenario_difference.py`)
+  instead; `compareDifference.cases.json` pins it for Jest and for
+  `test_compare_difference_node.py`. The behavior writes the code again when the
+  wanted view differs from the one the code calls, or the key from its `key=`, and
+  never while an input's kind is unknown, as after a load.
+- Two layers or tables are joined in Python. Two rasters cannot be: the arithmetic
+  is Curio's Autark adapter's (`utils/raster/rasterArithmetic.ts`), on what autk-db's
+  `getRaster` exports, and an isolated child may not start Node. So the code returns
+  a JSON request (each raster's GeoTIFF bytes and `raster_meta`), and the sandbox's
+  `/exec` completes it after either path ran the code
+  (`complete_raster_difference`): `util/raster_difference.js` runs through
+  `worker.run_js_script`, the runner `execute_js_code` uses, loads both rasters with
+  `loadGeoTiff` by `rasterLoad.ts`'s `planForMeta`, subtracts them with
+  `subtractRasters` and returns the envelope (`rasterWire.ts`). Those three modules
+  have no imports at run time, so Node loads them from `src/` by type stripping. The
+  envelope is stored as the node's output, a JSON artifact.
+- `components/compare/CompareDifference.tsx` shows the difference:
+  `CompareMap.tsx` draws a raster or a layer with `useAutkGrammarBehavior`, the
+  Autark node's own map code, on the node's `autk-grammar-map-<nodeId>` canvas, with
+  `marksNodeErrored` off and no output callback, from the document
+  `compareDifference.ts` writes; a table goes through `CompareChart`.
+- `whatDiffers.ts` reads each compared scenario's parts through `scenarioParts`,
+  pairs levers whose ids and `copiedFrom` lists meet, and compares their widget
+  values and code lines; `contextWarnings` compares their fixed context.
+- A pinned Compare Scenarios node draws its own output, so it is its own dashboard
+  source (`SELF_DRAWN_NODE_TYPES` in `dashboardLayout.ts`, `_SELF_DRAWN_KINDS` in
+  `projects/dashboard_payload.py`), and its inputs are not walked.
 
 ---
 
@@ -415,8 +470,8 @@ interface INodeData {
   nodeType: string;
   input?: ICodeDataContent;       // reference to upstream output file
   outputCallback?: Function;      // push output to FlowProvider
-  interactionsCallback?: Function; // push user interactions upstream
-  propagationCallback?: Function;  // receive interactions from upstream
+  interactionsCallback?: Function; // report the node's selection to FlowProvider
+  propagationCallback?: Function;  // a Data Pool hands its row flags to the pools linked to it
   interactions?: IInteraction[];
   propagation?: any;
 }
@@ -473,7 +528,7 @@ CREATE TABLE artifacts (
 | `list_of_ids` | `value_json` | JSON array of child artifact IDs (when list contains DataFrames etc.) |
 | `dict_of_ids` | `value_json` | JSON object mapping keys to child artifact IDs |
 | `outputs` | `value_json` | JSON array of child artifact IDs; used for multi-output nodes |
-| `raster` | `value_str` | File path; raster data stays on disk |
+| `raster` | `value_str` | File path; raster data stays on disk. A raster an Autark node hands on is a `dict` (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) |
 
 **Transfer flow:**
 
@@ -566,6 +621,15 @@ A `DataFrame` becomes a FeatureCollection from its one geometry column; with non
 
 The names `input_<k>` are defined once, as `INPUT_TABLE_PREFIX` and `input_table_name` in `contracts.py`; the Vega-Lite and Autark paths import the generated `inputTableName`, and the preamble states it (see [Generated Contracts](#generated-contracts)).
 
+**Rasters.** A raster on the input is a table under the same names, read through the same path; the Vega-Lite node still refuses it. Its frame says where the raster is and is not fetched as rows: a Python node's `rasterio` dataset by its artifact (`part` for its place in a tuple), or the envelope another node handed on. [`autkRasters.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkRasters.ts) turns each into GeoTIFF bytes and loads it with autk-db's `loadGeoTiff` into the grammar's own database:
+
+- The bytes of an artifact come from `GET /raster` (backend, proxied to the sandbox's `/raster`, [`sandbox/util/rasters.py`](../utk_curio/sandbox/util/rasters.py)): a GeoTIFF GDAL writes, whatever the source format (a VRT from Mosaic Rasters included), described in the `X-Curio-Raster` header (size, bands, CRS, transform, nodata). A raster over `maxCells` or `maxSide` is a 413 with its size, before anything is written.
+- An envelope's collection is written back to GeoTIFF bytes by [`geotiffWriter.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/geotiffWriter.ts).
+- [`rasterLoad.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/rasterLoad.ts) sets the parameters: `maxRasterCells` the raster's own size (up to 2048 by 2048 cells, 8192 on a side), so autk-db never resamples it; `resampleMethod: 'nearest'`; and `coordinateFormat` its EPSG CRS, since autk-db reads a raster as EPSG:4326 otherwise. A larger, rotated or unplaceable raster is refused with a sentence that names it.
+- autk-grammar's data sources have no GeoTIFF, so `withRasterSources` wraps one grammar instance's data adapter to load the `curio-raster` sources and hands every other source on. It also wraps that database's `getLayer` for those tables: the map gets `getRaster`'s collection, at the raster's own extent (autk-db's `getLayer` gives a raster the workspace's extent once a layer with geometry has set one), plus an outline of that extent (`framedRaster`), because autk-map places a map by the geometry of the first collection it loads and a raster has none.
+
+Between nodes a raster travels as autk-db's `getRaster` collection in an envelope, `{dataType: "raster", data, layerName}` ([`rasterWire.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/rasterWire.ts)): each band base64 of little-endian float32, rows from south to north, and the `grid` (CRS, size, origin, cell size) it was read on, which the collection does not carry. A Python node receives one as a `rasterio` dataset that `rasters_for_python` rebuilds on a GeoTIFF of its own (beside the artifacts in process, in the scratch directory in an isolated child). Both sides run `rasterWire.cases.json`. Raster arithmetic for comparisons ([`rasterArithmetic.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/rasterArithmetic.ts)) subtracts two such collections on one grid and refuses two grids that differ, naming both.
+
 A `dataRef` that names an unavailable table, whether an empty layer, a layer that was never loaded, or one dropped by an upstream node, is dropped before the grammar executes: the behavior removes the `map.layerRefs` entry or `plot` block and logs a console warning, which for a missing table lists the non-empty table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. A map that keeps some of its layers renders them, and its success output notes the ones it lost, naming an empty table apart from one the dataflow does not produce. One left with nothing to draw is reported as an empty render (see [Render Outcomes](#render-outcomes)), and a reference to a table that exists but holds no rows is blamed on that table's source rather than on the reference.
 
 [Example 09](examples/09-heterogeneous-data-linked-views.md) demonstrates an input chip; [Example 11](examples/11-autark-pbf-loading.md) demonstrates named layer references.
@@ -623,6 +687,8 @@ When a user clicks the play button on a node, the following sequence occurs:
 ```
 
 **Backend side:** both routes only parse the request and call [`execution/node_exec.py`](../utk_curio/backend/app/execution/node_exec.py). Its `execute_python_node` and `execute_js_node` take the account and the session token as arguments, so a node runs the same way from a route or from a thread with no request: they resolve dataset paths, collections, connection keys and models, call the sandbox, auto-install the output, write the runtime journal and count the run on the monitor. The HTTP session to the sandbox is in [`execution/sandbox_client.py`](../utk_curio/backend/app/execution/sandbox_client.py): `sandbox_request` raises `SandboxTransportError` when the sandbox times out, cannot be reached or refuses the shared secret, and the routes answer it as JSON with a 504 or 502.
+
+**Package modules (#468).** For a node whose package ships Python modules in `sources/`, `node_exec.resolve_package_modules` adds `package_modules: {"root", "names"}` to the `/exec` body: the package's `sources/` folder in the account's store and its module names, the importable names there that no template names as its `source` ([`packages/domain/python_modules.py`](../utk_curio/backend/app/packages/domain/python_modules.py)). The headless runner and the ground-truth harness send the same. In both execution modes the sandbox links those modules into a folder of the run's own with `staging.stage_package_modules` (under fork isolation, the child's scratch directory), puts the folder first on `sys.path` for the run, and when the run ends removes it and every module imported from it ([`sandbox/util/package_modules.py`](../utk_curio/sandbox/util/package_modules.py)): the next run, after an update or of another package, imports its own copy. An import of a package's module is not shared with the session's later nodes. A module name that is already loaded from somewhere else fails the node with that name. The installer refuses a package that ships a module another installed package ships (`refuse_a_module_name_in_use`); two majors of one package may share names. Save into a package and the Package Builder hand the package's module names to the import scanner (`scan_imports_for_filename`), which leaves them out of the detected dependencies.
 
 **JavaScript execution detail:** `JS Computation` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed; the Node subprocess is per-request and fully isolated.
 
@@ -896,7 +962,7 @@ quoted path. See [DATA-CATALOG.md](DATA-CATALOG.md) for the authoring view.
 
 ## Interactions and Propagation
 
-Visualization nodes (`Autark`, `Vega-Lite`, `Simple View`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
+Visualization nodes (`Autark`, `Vega-Lite`, `Simple View`) report the user's selections (clicks, hovers, brushes, picks). A selection travels over interaction edges, to a Data Pool or straight to another chart, and each of them highlights the rows it picks; no node runs again for it. A node's code reads a view's selection through a selection tag (below).
 
 ### IInteraction
 
@@ -929,7 +995,16 @@ A selection is active when it picks something: a point selection with rows, or a
 
 The pool writes its `interacted` flags into a copy of its output (`utils/poolFlagCopy`), never into its input or into an output it already sent, which the charts downstream still hold. Its echo names the chart that just selected (`selectionSource`, see `utils/selectionEcho`) under every mode. An Autark node skips an echo of its own selection, so a plot keeps its brush; a Vega chart applies it, which only recolours rows. Every other chart shows the resolved rows, and an Autark plot shows them as its selection in place of its own brush.
 
-The propagation counter (`INodeData.propagation`) is incremented each time an interaction change needs to trigger a re-execution, allowing nodes to detect when they need to re-run without comparing the full interaction payload.
+A Data Pool linked to another Data Pool by an interaction edge hands it the flags of the rows its `linked` column names (`INodeData.propagation`, through `applyNewPropagation`), and flips that pool's `newPropagation`, so the other pool flags those rows too.
+
+### Selection tags
+
+A node's code reads a view's current selection as `[!! selection name !!]`: the ids of the selected rows, a list. The tag lives on the node that reads it, in `data.selections` and in the spec at `metadata.selections` (`{name, node, column, ids}`), so a run on the server and the headless runner read the ids from the saved dataflow, as the browser does.
+
+- **Rows.** A view hands over the rows it matches selections against (`utils/references/viewSelections.provideViewRows`): a Vega-Lite node the rows it draws, whose positions its point selections name; an Autark node the features of each layer it reads, whose positions its picks name. Nothing is fetched again.
+- **Ids.** `utils/references/selectionTags.selectedIds` resolves the view's latest select with `matchSelections`, as a Data Pool in its default mode does, and reads the tag's column from those rows, each value once. `_vgsid_` and row positions are never stored: a node reads its own upstream artifact, where they mean nothing. `idColumns` offers `osm_id` and `building_id`, then any column whose values are all text or numbers and all different. More than `SELECTION_ID_CAP` (10,000) ids are stored as a `count`, which fails the run with a message.
+- **Updates.** `providers/flow/useSelectionTags` records each view's latest selection. On one the user made, or cleared (`changesSelection`: a select at priority 1 that holds a selection, or that empties one the view held), it rewrites the ids of every tag on that view and marks the nodes holding them stale. A chart declaring its selects as it compiles, or reporting them empty as its signal listeners hear the first pulse, changes nothing, so a reload or a redraw keeps the saved ids. `runKeyWithShared` takes the node's tags, so the run cache keys on the ids its code names.
+- **Resolution.** The selection kind is one more kind in the reference module (`codeReferences.ts`, `execution/code_references.py`), pinned by the shared cases table. `WorkflowSpec.node_code` passes a node's tags, which `run_engine` and `runner` both call.
 
 ---
 
@@ -1529,6 +1604,7 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/processJavaScriptCode` | POST | Execute JS node code via Node.js subprocess (proxies to sandbox `/execJs`) |
 | `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it). A name the session-tagged store cannot serve falls back to the shared data directory, where a project load hydrates that project's saved outputs, so they are readable by anyone who can load the project |
 | `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
+| `/raster` | GET | A raster artifact (or one `part` of a tuple) as GeoTIFF bytes for an Autark node, described in the `X-Curio-Raster` header; 413 with its size over `maxCells` or `maxSide` |
 | `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use. Unauthenticated, so it refuses hidden paths and Curio's own state: the instance folder, the `.curio` state root, the shared data directory, the dataset hub and the SQLite database |
 | `/starters` | GET | Per-template starter source bodies from every installed package |
 | `/spatial_join` | POST | Spatial join of two GeoJSON inputs (see `common/spatial.py`) |
@@ -1602,6 +1678,15 @@ A run executes the saved dataflow on a thread of the backend, so it goes on whet
 - **Jobs.** [`common/job_registry.py`](../utk_curio/backend/app/common/job_registry.py) holds live jobs in this process: one per dataflow, two per account (`runs/jobs.py`), keyed by attachment for agent jobs (`agents/infrastructure/agent_jobs.py`). A follower replays a job's events and then tails them; leaving only stops following.
 - **Restarts.** A run another backend process left queued or running becomes `interrupted` when this one starts, and when a run is read. Nothing runs again by itself.
 - **Cancel.** Nothing new starts once a run is cancelled; the node already running finishes and its output is dropped.
+- **Test rig.** `/api/testing/run-hold` holds every run before each node it executes (`runs/jobs.py::hold_point`), so a browser test acts while a run goes; outside a test rig the hold point returns at once.
+
+**The canvas.** [`providers/flow/useServerRun.ts`](../utk_curio/frontend/urban-workflows/src/providers/flow/useServerRun.ts) is what Run All, a node's play and Ctrl+Enter call for whoever may save the dataflow (`runsOnServer` in `FlowProvider.tsx`); hosted guests, shared viewers and `--no-project` keep `usePlayAll` as their whole run.
+
+- It saves through `requestProjectSave`, then starts a run of that revision, with a play's `reuse` from `nodesToRunUpTo` (`runLevels.ts`), the same decision the in-browser walk makes. A 409 naming a running run follows that run.
+- It follows the stream ([`services/runs/runsApi.ts`](../utk_curio/frontend/urban-workflows/src/services/runs/runsApi.ts), over `utils/sseStream.ts`). A step's reply reaches its node through `utils/executionResult.ts`, the rule `CodeEditor` applies to a run in the browser, and `applyNewOutput`; the provenance takes the step's own times. A node shows it through `data.serverOutput`, which `UniversalNode` hands to the setter its own run uses. A skipped node takes the in-browser walk's `skipExec`. The pure half is `serverRunSteps.ts`.
+- `serverRunActive` is apart from `isRunActive`, so a chart draws as its data arrives; the Run All button, a Data Export and the agent strip read both.
+- When the server's part ends, the tab that started the run walks the `browser` and `waiting` nodes, with the `forward` nodes above them, through `usePlayAll.playNodes`, and reports each to `/steps/<nodeId>`. Stop cancels the run and gives the button back at once.
+- After a load, `ProjectLoader` asks for the dataflow's last run: a run still going is followed; a finished one gives its `ok` steps whose `codeCurrent` is true and whose output the manifest did not restore, restored as a load restores outputs; a run that ended `needs_canvas` offers **Finish run**.
 
 `runner.py::run_through_node`, behind Solve's validation and an agent's run through a node, walks a slice one node at a time and stops at the first failure, sending seeded code straight to the sandbox. It takes upstreams, input circles, references, roles and the ancestor slice from the same places as a run; `tests/test_runs/test_run_parity.py` runs both on the same dataflows.
 
@@ -1610,7 +1695,7 @@ A run executes the saved dataflow on a thread of the backend, so it goes on whet
 | `/api/projects/<id>/runs` | POST | Start a run of the saved dataflow: `{target?, reuse?, specRevision?}`. 202; 409 for a revision that is not the saved one or while the dataflow runs (with `runId`); 429 over the account's two runs; 403 for a hosted guest |
 | `/api/projects/<id>/runs` | GET | The dataflow's runs, newest first; `?kind=all\|node` |
 | `/api/runs` | GET | Every run of the account; `?status=`, `?kind=` |
-| `/api/runs/<id>` | GET | A run with its steps |
+| `/api/runs/<id>` | GET | A run with its steps; each step's `codeCurrent` says whether its node holds, as saved now, the code the step ran |
 | `/api/runs/<id>/stream` | GET | SSE: a `run` event, then `run_started`, `step_started`, `step_finished` and `run_finished`, replayed and then followed |
 | `/api/runs/<id>/cancel` | POST | Stop before the next node |
 | `/api/runs/<id>/rerun` | POST | Run the same thing again |
@@ -1829,7 +1914,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/services/packages/` | The node-package service layer (memo dev/143): `packagesApi` (the request object) + `packagesBlobTransport` (sideload, archive download, factory build, `triggerBlobDownload`) + `packageBackendApi` (the only transports), `usePackageCatalog` (THE catalog hook the canvas drawer and the `/catalog/nodes` page both render, scope as an option, with `probeInstallConflicts` the one pre-install probe), the pure logic the surfaces share (`packageListUtils`, `forkPackageLineage`, `packageDependencyNotice`, `packageRestartCopy`, `factoryDraft`) and every package type by concern under `types/` (`SortMode` included). Import from its barrel, `services/packages`; `tests/packages/servicesBarrel.test.ts` enforces that the layer renders nothing, that no node-catalog surface reaches transport, and that the layer never imports `registry/` at runtime: the registry consumes the layer, never the reverse |
 | `src/providers/packages/` | `NodeCatalogDrawerProvider` and `PackagePaletteContext`, plus the two hooks that compose the layer with the node-kind registry (`usePackageArchiveImport`, the one sideload pathway, and `useEnsureWorkflowDeps`). `index.tsx` composes from the barrel; other consumers name the module (the barrel carries a rendering provider beside registry-touching hooks) |
 | `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog: a rendering surface over `usePackageCatalog({ kind: "project" })`; `pages/catalog/useNodeCatalogBrowse.ts` is the page's adapter over the same hook |
-| `src/services/agents/` | The agents service layer (memo dev/142): `agentsApi` + `agentStream` (the only two agent transports), the window events and drag helpers (`resolveAgentDropTarget` included), `useAgentCatalog` / `useAgentAttachments` (the hooks over the transport), the pure logic the surfaces share, and every agent type by concern under `types/`. Import from its barrel, `services/agents`; `tests/agents/servicesBarrel.test.ts` enforces that no agents component, page or provider reaches transport itself |
+| `src/services/agents/` | The agents service layer (memo dev/142): `agentsApi` over `utils/sseStream` (the only agent transport), the window events and drag helpers (`resolveAgentDropTarget` included), `useAgentCatalog` / `useAgentAttachments` (the hooks over the transport), the pure logic the surfaces share, and every agent type by concern under `types/`. Import from its barrel, `services/agents`; `tests/agents/servicesBarrel.test.ts` enforces that no agents component, page or provider reaches transport itself |
 | `src/providers/agents/` | `AgentAttachmentsProvider` composing `useAgentSession`, `useAgentProposals`, `useAgentSolve`, `useAgentSimulation` and `useAgentNodeRuns`; imported from its barrel, `providers/agents` |
 | `src/components/agents/catalog/AgentCatalogDrawer.tsx` | The canvas drawer that adds agents to the open dataflow |
 | `src/pages/agents/AgentCatalogBrowse.tsx` | The `/catalog/agents` browse page, the account-scope peer of the other two catalogs |

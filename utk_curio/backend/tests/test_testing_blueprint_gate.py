@@ -65,7 +65,8 @@ class TestTheGateNeedsBothFactors:
         assert resp.status_code == 404
 
     @pytest.mark.parametrize(
-        "path", ["/api/testing/stub-login", "/api/testing/reset-db", "/api/testing/stub-project"]
+        "path", ["/api/testing/stub-login", "/api/testing/reset-db", "/api/testing/stub-project",
+                 "/api/testing/run-hold"]
     )
     def test_every_stub_route_is_gated(self, client, monkeypatch, path):
         monkeypatch.setattr(testing_routes, "_is_testing", lambda: False)
@@ -137,6 +138,16 @@ class TestResetDbOnlyTouchesKnownTables:
         resp = _post(client, "/api/testing/reset-db", {"tables": ["project"]})
         assert resp.status_code == 200
         assert resp.get_json()["truncated"] == ["project"]
+
+    def test_it_releases_a_run_hold_a_failed_test_left(self, client):
+        from utk_curio.backend.app.runs import jobs
+
+        assert _post(client, "/api/testing/run-hold", {"hold": True}).get_json()["held"] is True
+        try:
+            assert _post(client, "/api/testing/reset-db", {"tables": ["project"]}).status_code == 200
+            assert jobs.hold_state() == {"held": False, "waiting": 0}
+        finally:
+            jobs.set_hold(False)
 
     def test_an_unlisted_table_is_refused_rather_than_executed(self, client):
         resp = _post(client, "/api/testing/reset-db", {"tables": ["alembic_version"]})

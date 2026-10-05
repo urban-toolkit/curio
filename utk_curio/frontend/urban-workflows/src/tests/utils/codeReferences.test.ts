@@ -21,6 +21,7 @@ import {
 } from "../../utils/references/codeReferences";
 import { normalizeWidgets } from "../../utils/widgets/widgetModel";
 import { normalizeShared } from "../../utils/references/sharedParameters";
+import type { SelectionTag } from "../../utils/references/selectionTags";
 
 type Case = {
   name: string;
@@ -29,6 +30,7 @@ type Case = {
   widgets: unknown[];
   inputs?: InputScope[];
   shared?: unknown[];
+  selections?: unknown[];
   expected: string;
   problems?: string[];
 };
@@ -37,11 +39,26 @@ describe("the shared reference cases", () => {
   test.each((cases.cases as Case[]).map((c) => [c.name, c]))("%s", (_name, c) => {
     const result = resolveReferences(
       c.code,
-      { widgets: normalizeWidgets(c.widgets), inputs: c.inputs ?? [], shared: normalizeShared(c.shared ?? []) },
+      {
+        widgets: normalizeWidgets(c.widgets),
+        inputs: c.inputs ?? [],
+        shared: normalizeShared(c.shared ?? []),
+        // The table's tags are well formed, as the editor's scope holds them.
+        selections: (c.selections ?? []) as SelectionTag[],
+      },
       c.language,
     );
     expect(result.code).toBe(c.expected);
     expect(result.problems.map((p) => p.message)).toEqual(c.problems ?? []);
+  });
+
+  test("the table has selection references that resolve in every language", () => {
+    for (const language of ["python", "javascript", "json"]) {
+      const resolved = (cases.cases as Case[]).filter(
+        (c) => c.language === language && c.code.includes("[!! selection ") && !c.problems,
+      );
+      expect(resolved.length).toBeGreaterThan(0);
+    }
   });
 
   test("the table covers every language", () => {
@@ -77,6 +94,13 @@ describe("references", () => {
     expect(parseReference("input ?")).toEqual({ kind: "input", slot: null });
     expect(parseReference("input")).toEqual({ kind: "widget", name: "input" });
     expect(parseReference("input_2")).toEqual({ kind: "widget", name: "input_2" });
+  });
+
+  test("a selection tag is told apart from a widget named selection", () => {
+    expect(parseReference("selection picked")).toEqual({ kind: "selection", name: "picked" });
+    expect(parseReference("selection")).toEqual({ kind: "widget", name: "selection" });
+    expect(parseReference("selection_2")).toEqual({ kind: "widget", name: "selection_2" });
+    expect(parseReference("@selection")).toEqual({ kind: "shared", name: "selection" });
   });
 
   test("a column name that would not read back is not offered", () => {

@@ -30,6 +30,7 @@ import { normalizeScenarios, type Scenario } from "../utils/scenarios/scenarioMo
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
 import { prepareDashboardNodes } from "../utils/dashboardLayout";
 import { savedSourceNodeIds } from "../utils/scenarios/scenarioParts";
+import { scenarioDashboard } from "../utils/scenarios/scenarioDashboard";
 import { notifyAgentDockRefresh } from "../services/agents";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
@@ -398,7 +399,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // has no "the load finished" signal to react to, and a transform applied
         // afterwards would fight React Flow over `position` on every tile drag.
         if (!merge && presentation) {
-            const prepared = prepareDashboardNodes(loaded_nodes, loaded_edges, pins);
+            // By scenario when a pinned tile is in one (#662); the scenarios
+            // were set just above.
+            const byScenario = scenarioDashboard(loaded_nodes, loaded_edges, pins, scenariosRef.current);
+            const prepared = prepareDashboardNodes(loaded_nodes, loaded_edges, pins, byScenario?.columns);
             loaded_nodes = prepared.nodes;
             loaded_edges = prepared.edges;
         }
@@ -1499,6 +1503,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         saveAsNewProject,
         ensureProjectId,
         persistDataflowForInstall,
+        surfaceInstallWarnings,
         requestProjectSave,
         loadProject,
         loadSharedProject,

@@ -158,3 +158,21 @@ def saved_sources(node_id: str, nodes: list[dict], edges: list[dict]) -> list[st
         return [node_id]
     feeding = producers_feeding([node_id], nodes, edges)
     return [n["id"] for n in nodes if n["id"] in feeding]
+
+
+def scenario_source_node_ids(spec: object) -> set[str]:
+    """The nodes whose outputs a saved spec's scenarios need saved: the saved
+    sources of each scenario's context and outcomes, so another project can
+    read them. The twin of ``scenarioSourceNodeIds``; a run on the server adds
+    them to the pinned tiles' sources, as ``savedSourceNodeIds`` does."""
+    nodes, edges = spec_nodes_and_edges(spec)
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    scenarios = (dataflow or {}).get("scenarios") if isinstance(dataflow, dict) else None
+    sources: set[str] = set()
+    for scenario in scenarios or []:
+        if not isinstance(scenario, dict):
+            continue
+        parts = scenario_parts(scenario, nodes, edges)
+        for node_id in [*parts["context"], *parts["outcomes"]]:
+            sources.update(saved_sources(node_id, nodes, edges))
+    return sources

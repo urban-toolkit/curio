@@ -1,0 +1,77 @@
+{
+  "description": "The code a Compare Scenarios node writes for its inputs in Difference (#662). compareMode.test.ts checks that compareCode.ts writes exactly this; test_compare_difference_node.py resolves each case's chips as a run on the server does and runs it through the sandbox's difference step.",
+  "cases": [
+    {
+      "name": "two scenarios",
+      "inputs": [
+        {
+          "slot": 0,
+          "label": {
+            "scenario": "s-base",
+            "name": "Baseline",
+            "color": "#2a9d8f"
+          }
+        },
+        {
+          "slot": 1,
+          "label": {
+            "scenario": "s-tall",
+            "name": "Twice as tall",
+            "color": "#e76f51"
+          }
+        }
+      ],
+      "code": "# Compare Scenarios writes this code from its inputs: input 1 minus input 0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"s-base\", \"Baseline\", [!! input 0 !!]),\n    (\"s-tall\", \"Twice as tall\", [!! input 1 !!]),\n])\n"
+    },
+    {
+      "name": "two scenarios joined on a key",
+      "key": "segment",
+      "inputs": [
+        {
+          "slot": 0,
+          "label": {
+            "scenario": "s-base",
+            "name": "Baseline",
+            "color": "#2a9d8f"
+          }
+        },
+        {
+          "slot": 1,
+          "label": {
+            "scenario": "s-tall",
+            "name": "Twice as tall",
+            "color": "#e76f51"
+          }
+        }
+      ],
+      "code": "# Compare Scenarios writes this code from its inputs: input 1 minus input 0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"s-base\", \"Baseline\", [!! input 0 !!]),\n    (\"s-tall\", \"Twice as tall\", [!! input 1 !!]),\n], key=\"segment\")\n"
+    },
+    {
+      "name": "a quoted name, and a node in no scenario",
+      "key": "the \"id\"",
+      "inputs": [
+        {
+          "slot": 0,
+          "label": {
+            "scenario": "s-1",
+            "name": "The \"tall\" one",
+            "color": "#e76f51"
+          }
+        },
+        {
+          "slot": 1,
+          "label": {
+            "name": "Python Computation",
+            "color": "#8a8f98"
+          }
+        }
+      ],
+      "code": "# Compare Scenarios writes this code from its inputs: input 1 minus input 0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([\n    (\"s-1\", \"The \\\"tall\\\" one\", [!! input 0 !!]),\n    (None, \"Python Computation\", [!! input 1 !!]),\n], key=\"the \\\"id\\\"\")\n"
+    },
+    {
+      "name": "no inputs",
+      "inputs": [],
+      "code": "# Compare Scenarios writes this code from its inputs: input 1 minus input 0,\n# each under the id and the name of its scenario. It is written again when\n# they change.\nreturn curio_difference_scenarios([])\n"
+    }
+  ]
+}

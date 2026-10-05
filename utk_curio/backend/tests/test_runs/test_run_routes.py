@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 
 import pytest
 
@@ -28,10 +29,13 @@ def _edge(source, target):
     return {"id": f"{source}-{target}", "source": source, "target": target}
 
 
-def _create(client, token, nodes, edges=(), name="Run routes"):
+def _create(client, token, nodes, edges=(), name="Run routes", scenarios=None):
+    dataflow = {"name": name, "nodes": list(nodes), "edges": list(edges)}
+    if scenarios is not None:
+        dataflow["scenarios"] = list(scenarios)
     resp = client.post("/api/projects", data=json.dumps({
         "name": name,
-        "spec": {"dataflow": {"name": name, "nodes": list(nodes), "edges": list(edges)}},
+        "spec": {"dataflow": dataflow},
         "outputs": [],
     }), headers=_auth(token))
     assert resp.status_code == 201, resp.get_data(as_text=True)
@@ -45,6 +49,8 @@ class FakeSandbox:
     def __init__(self, hold=(), fail=()):
         self.hold = set(hold)
         self.fail = set(fail)
+        # A failed node's stderr, by node id; "Traceback: boom" otherwise.
+        self.stderr = {}
         self.gate = threading.Event()
         self.started = threading.Event()
         self.bodies = {}
@@ -66,7 +72,8 @@ class FakeSandbox:
 
             def json(_self):
                 if node_id in self.fail:
-                    return {"stdout": [], "stderr": "Traceback: boom", "output": {"path": "", "dataType": "str"}}
+                    stderr = self.stderr.get(node_id, "Traceback: boom")
+                    return {"stdout": [], "stderr": stderr, "output": {"path": "", "dataType": "str"}}
                 return {"stdout": [f"ran {node_id}"], "stderr": "",
                         "output": {"path": f"art-{node_id}", "dataType": "dataframe"}}
 
@@ -334,7 +341,7 @@ class TestWhatARunSaves:
         recorded = []
         monkeypatch.setattr(
             project_services, "record_node_outputs",
-            lambda user, project_id, outputs: recorded.extend(o.node_id for o in outputs) or [],
+            lambda user, project_id, outputs, warnings=None: recorded.extend(o.node_id for o in outputs) or [],
         )
         user, token = user_and_token
         project_id, _ = _create(client, token, [
@@ -350,6 +357,73 @@ class TestWhatARunSaves:
         assert sandbox.bodies["plain"]["save_dataset"] is False
         assert sandbox.bodies["feeds"]["save_dataset"] is True  # a pinned tile reads it
         assert sorted(recorded) == ["feeds", "kept"]
+
+    def test_a_scenarios_context_and_outcomes_are_saved_as_the_canvas_saves_them(
+        self, client, user_and_token, sandbox, monkeypatch,
+    ):
+        # #662: another project reads a scenario's fixed context and its
+        # outcomes, so a run saves them whatever their own toggle says, by the
+        # canvas's rule (`savedSourceNodeIds`).
+        from utk_curio.backend.app.datasets.application import auto_install
+        from utk_curio.backend.app.projects import services as project_services
+
+        monkeypatch.setattr(
+            auto_install, "auto_install_node_output",
+            lambda **kwargs: {"status": "skipped", "nodeId": kwargs.get("node_id")},
+        )
+        recorded = []
+        monkeypatch.setattr(
+            project_services, "record_node_outputs",
+            lambda user, project_id, outputs, warnings=None: recorded.extend(o.node_id for o in outputs) or [],
+        )
+        user, token = user_and_token
+        project_id, _ = _create(client, token, [
+            _node("context", saveOutputDataset=False),
+            _node("lever", saveOutputDataset=False),
+            _node("outside", saveOutputDataset=False),
+        ], [_edge("context", "lever")], scenarios=[
+            {"id": "s1", "name": "Scenario", "color": "#336699", "nodes": ["lever"]},
+        ])
+        run_id = _start(client, token, project_id).get_json()["id"]
+        _wait(run_id)
+
+        assert sandbox.bodies["context"]["save_dataset"] is True  # its fixed context
+        assert sandbox.bodies["lever"]["save_dataset"] is True  # its outcome
+        assert sandbox.bodies["outside"]["save_dataset"] is False
+        assert sorted(recorded) == ["context", "lever"]
+
+    def test_an_output_the_run_could_not_install_is_on_its_step_and_event(
+        self, client, user_and_token, sandbox, monkeypatch,
+    ):
+        # #180's warning: what a save answers in `dataset_install_warnings`, a
+        # run records on the step and sends with its event, so the canvas warns
+        # as it does after a save.
+        from utk_curio.backend.app.datasets.application import auto_install
+        from utk_curio.backend.app.projects import services as project_services
+
+        monkeypatch.setattr(
+            auto_install, "auto_install_node_output",
+            lambda **kwargs: {"status": "skipped", "nodeId": kwargs.get("node_id")},
+        )
+        warning = {"node_id": "kept", "filename": "art-kept", "reason": "unsupported type"}
+
+        def record(user, project_id, outputs, warnings=None):
+            if warnings is not None:
+                warnings.append(warning)
+            return []
+
+        monkeypatch.setattr(project_services, "record_node_outputs", record)
+        user, token = user_and_token
+        project_id, _ = _create(client, token, [_node("kept", saveOutputDataset=True), _node("plain")])
+        run_id = _start(client, token, project_id).get_json()["id"]
+        _wait(run_id)
+
+        steps = {s["nodeId"]: s for s in _get(client, token, run_id)["steps"]}
+        assert steps["kept"]["installWarnings"] == [warning]
+        assert steps["plain"]["installWarnings"] == []
+        finished = {data["nodeId"]: data for kind, data in _events(client, token, run_id) if kind == "step_finished"}
+        assert finished["kept"].get("installWarnings") == [warning]
+        assert "installWarnings" not in finished["plain"]
 
 
 class TestNodesTheBrowserRuns:
@@ -389,3 +463,153 @@ class TestNodesTheBrowserRuns:
         assert early.status_code == 409
         sandbox.release()
         _wait(run_id)
+
+
+class TestACanvasOpenedLater:
+    def test_a_step_says_whether_its_node_still_holds_the_code_it_ran(self, client, user_and_token, sandbox):
+        user, token = user_and_token
+        nodes = [_node("a"), _node("b")]
+        project_id, _ = _create(client, token, nodes, [_edge("a", "b")])
+        run_id = _start(client, token, project_id).get_json()["id"]
+        _wait(run_id)
+        steps = {s["nodeId"]: s for s in _get(client, token, run_id)["steps"]}
+        assert steps["a"]["codeCurrent"] is True and steps["b"]["codeCurrent"] is True
+
+        # b's code changes and is saved; a's only moves, which is not a change.
+        edited = [{**_node("a"), "content": "    # node a\n    return arg\n"},
+                  {**_node("b"), "content": "# node b\nreturn arg * 2"}]
+        saved = client.put(f"/api/projects/{project_id}", data=json.dumps({
+            "name": "Run routes",
+            "spec": {"dataflow": {"name": "Run routes", "nodes": edited, "edges": [_edge("a", "b")]}},
+        }), headers=_auth(token))
+        assert saved.status_code == 200, saved.get_data(as_text=True)
+        steps = {s["nodeId"]: s for s in _get(client, token, run_id)["steps"]}
+        assert steps["a"]["codeCurrent"] is True
+        assert steps["b"]["codeCurrent"] is False
+
+    def test_a_step_keeps_the_library_its_code_could_not_import(self, client, user_and_token, sandbox):
+        # The reply's missingModule, so a canvas opened later offers the
+        # install the canvas that ran it offered (#299).
+        user, token = user_and_token
+        sandbox.fail.add("a")
+        sandbox.stderr["a"] = (
+            "Traceback (most recent call last):\n"
+            "ModuleNotFoundError: No module named 'zzz_absent_lib'"
+        )
+        project_id, _ = _create(client, token, [_node("a"), _node("b")])
+        run_id = _start(client, token, project_id).get_json()["id"]
+        _wait(run_id)
+        steps = {s["nodeId"]: s for s in _get(client, token, run_id)["steps"]}
+        assert steps["a"]["status"] == "error"
+        assert steps["a"]["missingModule"]["module"] == "zzz_absent_lib", steps["a"]
+        assert steps["b"]["missingModule"] is None
+
+
+def _until(predicate, timeout=10.0):
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        assert time.monotonic() < deadline, "the condition never came true"
+        time.sleep(0.02)
+
+
+def _hold(client, on):
+    resp = client.post("/api/testing/run-hold", data=json.dumps({"hold": on}),
+                       content_type="application/json")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    return resp.get_json()
+
+
+class TestTheTestRigHold:
+    def test_a_held_run_waits_before_its_node_until_released(self, client, user_and_token, sandbox):
+        from utk_curio.backend.app.runs import jobs
+
+        user, token = user_and_token
+        project_id, _ = _create(client, token, [_node("a"), _node("b")], [_edge("a", "b")])
+        _hold(client, True)
+        try:
+            run_id = _start(client, token, project_id).get_json()["id"]
+            _until(lambda: jobs.hold_state()["waiting"] == 1)
+            assert not sandbox.started.is_set()
+            # Stop does not end the wait, as Stop does not answer a request a
+            # page holds: a test can still see the node held after it.
+            assert client.post(f"/api/runs/{run_id}/cancel", headers=_auth(token)).status_code == 202
+            assert client.get("/api/testing/run-hold").get_json() == {"held": True, "waiting": 1}
+        finally:
+            released = _hold(client, False)
+        assert released["waiting"] == 1
+        _wait(run_id)
+        run = _get(client, token, run_id)
+        assert run["status"] == "cancelled"
+        assert "b" not in sandbox.bodies
+
+    def test_outside_a_test_rig_a_hold_holds_nothing(self, client, user_and_token, sandbox, monkeypatch):
+        from utk_curio.backend import config
+        from utk_curio.backend.app.runs import jobs
+
+        monkeypatch.setattr(config, "_is_testing", lambda: False)
+        user, token = user_and_token
+        project_id, _ = _create(client, token, [_node("a")])
+        jobs.set_hold(True)
+        try:
+            run_id = _start(client, token, project_id).get_json()["id"]
+            _wait(run_id)
+        finally:
+            jobs.set_hold(False)
+        assert _get(client, token, run_id)["status"] == "succeeded"
+
+
+class TestAPackageNodesModules:
+    """#468: a run hands a node the modules its package ships beside its
+    templates, as Play does (``node_exec.resolve_package_modules``)."""
+
+    def test_the_run_sends_them_for_the_package_node_only(self, client, user_and_token, sandbox):
+        import io
+        import zipfile
+
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
+        from utk_curio.backend.app.packages.repositories.store import package_dir
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        manifest = {
+            "id": "ai.test.heights", "version": "1.0.0", "name": "Heights", "publisher": "Test",
+            "description": "Test package", "license": "MIT",
+            "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+            "permissions": [], "dependencies": {"packages": {}, "python": {}, "js": {}},
+            "createdAt": "2026-06-01T12:00:00Z",
+            "templates": [{
+                "id": "caller", "label": "Caller", "category": "computation", "engine": "python",
+                "editor": "code", "hasCode": True, "hasWidgets": False, "hasGrammar": False,
+                "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
+                "outputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
+                "source": "sources/caller.py",
+            }],
+        }
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, mode="w") as zf:
+            zf.writestr("manifest.json", json.dumps(manifest))
+            zf.writestr("sources/caller.py", "return arg\n")
+            zf.writestr("sources/building_height/convert_to_raster.py", "FACTOR = 2\n")
+        install_package_from_archive(key, buf.getvalue())
+
+        dataflow = {
+            "name": "Package modules",
+            "nodes": [_node("a"), _node("b", node_type="ai.test.heights/caller")],
+            "edges": [_edge("a", "b")],
+            "packages": ["ai.test.heights@1", "curio.builtin@1"],
+        }
+        resp = client.post("/api/projects", data=json.dumps({
+            "name": "Package modules", "spec": {"dataflow": dataflow}, "outputs": [],
+        }), headers=_auth(token))
+        assert resp.status_code == 201, resp.get_data(as_text=True)
+        project_id, revision = resp.get_json()["id"], resp.get_json()["spec_revision"]
+
+        run_id = _start(client, token, project_id, specRevision=revision).get_json()["id"]
+        _wait(run_id)
+        assert _get(client, token, run_id)["status"] == "succeeded"
+        assert "package_modules" not in sandbox.bodies["a"]
+        assert sandbox.bodies["b"]["package_modules"] == {
+            "root": str(package_dir(key, "ai.test.heights@1") / "sources"),
+            "names": ["building_height"],
+        }

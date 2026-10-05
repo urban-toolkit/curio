@@ -41,6 +41,7 @@ from utk_curio.backend.app.users import repositories as user_repo
 from utk_curio.backend.app.users import security
 from utk_curio.backend.app.projects import services as project_services
 from utk_curio.backend.app.projects.schemas import ProjectCreate
+from utk_curio.backend.app.runs import jobs as run_jobs
 
 
 testing_bp = Blueprint("testing", __name__, url_prefix="/api/testing")
@@ -80,6 +81,8 @@ def _guard():
 #: deletes do not trip foreign keys.
 _RESETTABLE_TABLES: tuple[str, ...] = (
     "exec_cache_entry",
+    "dataflow_run_step",
+    "dataflow_run",
     "project",
     "auth_attempt",
     "user_session",
@@ -213,13 +216,16 @@ def dataset_paths():
         curated examples use. Ignored without sign-in (``CURIO_NO_AUTH``),
         where the browser runs every node as the shared guest.
       * ``dataflow_id`` – optional, forwarded to the catalog listing.
+      * ``nodeType``: optional, the node's type, for ``packageModules``.
 
     Response: ``{"paths": {"<id>": "<absolute path>"}, "formats": {...},
-    "collections": {...}, "mediaDir": ..., "models": {...}}``: ``formats`` as
+    "collections": {...}, "mediaDir": ..., "models": {...},
+    "packageModules": ...}``: ``formats`` as
     ``/processPythonCode`` sends them for ``curio_load_data``, ``collections``
     and ``mediaDir`` as ``resolve_exec_collections`` gives them for
     ``curio_load_collection`` calls, ``models`` as ``node_exec.resolve_models``
-    does for ``curio_load_model`` calls, as
+    does for ``curio_load_model`` calls, ``packageModules`` as
+    ``node_exec.resolve_package_modules`` does for the node's package, as
     that user or the shared guest. Ids that do not resolve are simply absent,
     matching production's fail-open behaviour.
     """
@@ -231,6 +237,7 @@ def dataset_paths():
     from utk_curio.backend.app.execution.node_exec import (
         resolve_dataset_paths,
         resolve_models,
+        resolve_package_modules,
     )
     from utk_curio.backend.app.common.user_storage import GUEST_KEY
     from utk_curio.backend.app.projects.services import _user_dir_key
@@ -252,9 +259,10 @@ def dataset_paths():
     user_key = _user_dir_key(g.user) if g.user is not None else GUEST_KEY
     collections, media_dir = resolve_exec_collections(code, user_key, user=g.user)
     models = resolve_models(code, g.user)
+    package_modules = resolve_package_modules(body.get("nodeType"), user_key, body.get("dataflow_id"))
     return jsonify({
         "paths": paths, "formats": formats, "collections": collections, "mediaDir": media_dir,
-        "models": models,
+        "models": models, "packageModules": package_modules,
     }), 200
 
 
@@ -329,7 +337,29 @@ def reset_db():
     stores_cleared = []
     if body.get("stores", True):
         stores_cleared = _clear_test_user_stores()
+    # A hold a failed test left standing would stop the next test's runs.
+    run_jobs.set_hold(False)
     return jsonify({"truncated": truncated, "stores_cleared": stores_cleared}), 200
+
+
+@testing_bp.route("/run-hold", methods=["GET", "POST"])
+def run_hold():
+    """Hold runs on the server before each node they execute, or release them.
+
+    The server-side twin of holding a page's node requests (``run_all.py``): a
+    run started by the canvas executes on the server, out of the page's reach.
+
+    Body (POST): ``{"hold": true}`` or ``{"hold": false}``.
+    Response: ``{"held": bool, "waiting": n}``. ``waiting`` is how many nodes
+    wait right now; on a release, how many it let go.
+    """
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        if not isinstance(body.get("hold"), bool):
+            return jsonify({"error": "hold must be true or false"}), 400
+        waiting = run_jobs.set_hold(body["hold"])
+        return jsonify({"held": body["hold"], "waiting": waiting}), 200
+    return jsonify(run_jobs.hold_state()), 200
 
 
 @testing_bp.route("/stub-project", methods=["POST"])

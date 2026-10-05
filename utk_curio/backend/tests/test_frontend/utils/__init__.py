@@ -143,6 +143,8 @@ from .canvas_authoring import (  # noqa: F401
     enable_save_output,
     save_dataflow,
     save_dataflow_and_settle_header,
+    settle_header_after_save,
+    assert_header_shows_save,
     frame_node,
     drag_to_canvas,
     set_node_code,
@@ -167,10 +169,14 @@ from .run_all import (  # noqa: F401
     wait_for_run_all_to_end,
     run_all_and_wait,
     wait_for_run_guard_released,
+    backend_url_of,
+    hold_server_runs,
+    held_server_nodes,
     hold_node_execution,
     wait_for_held_node_execution,
     held_node_executions,
     release_node_execution,
+    SandboxRuns,
 )
 from .node_drawings import (  # noqa: F401
     VEGA_CANVAS_PROBE_JS,
@@ -178,6 +184,7 @@ from .node_drawings import (  # noqa: F401
     _AUTK_MAP_PIXELS_JS,
     assert_autark_map_drawn,
     assert_autark_drawing_fits,
+    assert_editor_panes_clear_of_markers,
     assert_vega_node_empty_state,
 )
 from .page import FrontendPage  # noqa: F401

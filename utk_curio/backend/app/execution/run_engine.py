@@ -195,8 +195,12 @@ def _execute_step(plan: Plan, step: Step, input_ref, execute) -> _Outcome:
     except CodeReferenceError as exc:
         # The node's own failure, reported without asking the sandbox.
         return _Outcome("error", {}, stderr=str(exc), started_at=started, finished_at=time.time())
+    # Python is indented as PythonInterpreter.ts posts it; JavaScript goes as
+    # written, as JavaScriptInterpreter.ts posts it (an indented `import` is
+    # no longer a module's own).
+    sent = code if language == "javascript" else play_indent(code)
     try:
-        reply = execute(step, play_indent(code), input_ref) or {}
+        reply = execute(step, sent, input_ref) or {}
     except Exception as exc:  # a sandbox that cannot be asked fails this node only
         payload = getattr(exc, "payload", None)
         message = (payload or {}).get("message") if isinstance(payload, dict) else None

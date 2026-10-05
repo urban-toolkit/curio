@@ -14,6 +14,9 @@ from utk_curio.backend.app.datasets.infrastructure.text_encoding import open_tex
 
 logger = logging.getLogger(__name__)
 
+#: Formats stored as the file itself that hold no table, and what each is.
+_NO_ROWS = {"onnx": "An ONNX model", "netcdf": "A NetCDF file"}
+
 
 @lru_cache(maxsize=2)
 def _load_json_cached(path_str: str, mtime_ns: int, size: int) -> Any:
@@ -203,6 +206,17 @@ class DatasetPreviewService:
                 "truncated": False,
                 "unsupported": True,
                 "message": "Raster preview is not available in the catalog yet. Use the map canvas.",
+            }
+        if fmt in _NO_ROWS:
+            return {
+                "schema": item.get("schema") or {"fields": []},
+                "rows": [],
+                "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": 0,
+                "truncated": False,
+                "unsupported": True,
+                "message": f"{_NO_ROWS[fmt]} has no rows to preview. A node reads it with curio_load_data.",
             }
         return {
             "schema": {"fields": []},

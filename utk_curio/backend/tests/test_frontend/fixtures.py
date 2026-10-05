@@ -62,6 +62,8 @@ _SHARED_SESSION_CLASSES = (
 
 _SQLA_MUTABLE_TABLES = (
     "exec_cache_entry",
+    "dataflow_run_step",
+    "dataflow_run",
     "project",
     "auth_attempt",
     "user_session",

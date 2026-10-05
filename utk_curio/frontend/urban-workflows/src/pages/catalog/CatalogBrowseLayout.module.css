@@ -169,6 +169,8 @@
 .dot_gpkg { background: var(--curio-format-gpkg-fg); }
 .dot_gtfs { background: var(--curio-format-gtfs-fg); }
 .dot_collection { background: var(--curio-format-collection-fg); }
+.dot_onnx { background: var(--curio-format-onnx-fg); }
+.dot_netcdf { background: var(--curio-format-netcdf-fg); }
 
 /* Node Catalog category rows: the same keys and colours as the package card
    strips (`primaryCategory()`: data | computation | vis | package). */
@@ -489,6 +491,8 @@
 .strip_gpkg { background: var(--curio-format-gpkg-fg); }
 .strip_gtfs { background: var(--curio-format-gtfs-fg); }
 .strip_collection { background: var(--curio-format-collection-fg); }
+.strip_onnx { background: var(--curio-format-onnx-fg); }
+.strip_netcdf { background: var(--curio-format-netcdf-fg); }
 
 /* Active card: colored border matches strip */
 .cardActive.card_geojson { border-color: var(--curio-format-geojson-fg); }
@@ -502,6 +506,8 @@
 .cardActive.card_gpkg { border-color: var(--curio-format-gpkg-fg); }
 .cardActive.card_gtfs { border-color: var(--curio-format-gtfs-fg); }
 .cardActive.card_collection { border-color: var(--curio-format-collection-fg); }
+.cardActive.card_onnx { border-color: var(--curio-format-onnx-fg); }
+.cardActive.card_netcdf { border-color: var(--curio-format-netcdf-fg); }
 
 .cardFormatBadge {
   height: 16px;
@@ -934,6 +940,8 @@
 .dfmt_gpkg { background: var(--curio-format-gpkg-bg); color: var(--curio-format-gpkg-on-tint); }
 .dfmt_gtfs { background: var(--curio-format-gtfs-bg); color: var(--curio-format-gtfs-on-tint); }
 .dfmt_collection { background: var(--curio-format-collection-bg); color: var(--curio-format-collection-on-tint); }
+.dfmt_onnx { background: var(--curio-format-onnx-bg); color: var(--curio-format-onnx-on-tint); }
+.dfmt_netcdf { background: var(--curio-format-netcdf-bg); color: var(--curio-format-netcdf-on-tint); }
 
 .drawerInstalledBadge {
   height: 20px;

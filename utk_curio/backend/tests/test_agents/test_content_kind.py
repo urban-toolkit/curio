@@ -37,6 +37,8 @@ class TestTemplateContentKind:
         assert kinds["js-computation"] == "code"
         assert kinds["data-summary"] == "code"
         assert kinds["data-transformation"] == "code"
+        # Its code is written for it from its inputs, and runs (#662).
+        assert kinds["compare-scenarios"] == "code"
         # A document: authored, validated, never executed.
         assert kinds["vis-vega"] == "grammar"
         assert kinds["autk-grammar"] == "grammar"
@@ -56,6 +58,7 @@ class TestTemplateContentKind:
             "data-loading", "data-export", "data-transformation", "data-pool",
             "computation-analysis", "data-summary", "js-computation",
             "vis-vega", "vis-simple", "autk-grammar", "spatial-join", "parameter",
+            "compare-scenarios",
         }
 
     def test_no_content_makes_a_presentation_without_input_author_nothing(self):

@@ -69,12 +69,14 @@ def pypi_name_for_import(module: str) -> str:
     return _PY_NAME_ALIAS.get(module, module)
 
 
-def scan_python_imports(source: str) -> list[str]:
+def scan_python_imports(source: str, own_modules: frozenset[str] = frozenset()) -> list[str]:
     """Return a sorted, deduplicated list of top-level imports in *source*.
 
-    Stdlib modules and Curio-provided modules are filtered out; recognised
-    importable names are mapped to their PyPI install names via
-    :data:`_PY_NAME_ALIAS`. Unparseable source returns ``[]``.
+    Stdlib modules and Curio-provided modules are filtered out, and so are
+    *own_modules*, the modules the package itself ships beside its templates
+    (#468, ``python_modules.module_names_in``): its code imports them and
+    nobody installs them. Recognised importable names are mapped to their PyPI
+    install names via :data:`_PY_NAME_ALIAS`. Unparseable source returns ``[]``.
     """
     try:
         tree = ast.parse(source)
@@ -102,6 +104,8 @@ def scan_python_imports(source: str) -> list[str]:
         if name in stdlib:
             continue
         if name in _CURIO_PROVIDED:
+            continue
+        if name in own_modules:
             continue
         filtered.add(pypi_name_for_import(name))
     return sorted(filtered)
@@ -153,11 +157,14 @@ def scan_js_imports(source: str) -> list[str]:
     return sorted(out)
 
 
-def scan_imports_for_filename(filename: str, source: str) -> tuple[list[str], list[str]]:
-    """Dispatch on *filename* extension; returns ``(python_deps, js_deps)``."""
+def scan_imports_for_filename(
+    filename: str, source: str, own_modules: frozenset[str] = frozenset(),
+) -> tuple[list[str], list[str]]:
+    """Dispatch on *filename* extension; returns ``(python_deps, js_deps)``.
+    *own_modules* as :func:`scan_python_imports` takes them."""
     lower = filename.lower()
     if lower.endswith(".py"):
-        return scan_python_imports(source), []
+        return scan_python_imports(source, own_modules), []
     if lower.endswith((".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx")):
         # .tsx/.jsx: behavior-hook sources (dev/89) use the same import forms.
         return [], scan_js_imports(source)

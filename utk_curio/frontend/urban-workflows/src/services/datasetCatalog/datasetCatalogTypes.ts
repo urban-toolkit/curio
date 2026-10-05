@@ -11,7 +11,9 @@ export type DatasetFormat =
   | "osm"
   | "gpkg"
   | "gtfs"
-  | "collection";
+  | "collection"
+  | "onnx"
+  | "netcdf";
 
 export type DatasetSortMode = "recent" | "name";
 
@@ -34,6 +36,8 @@ export const IMPORTABLE_DATASET_EXTENSIONS = [
   ".tif",
   ".tiff",
   ".shp",
+  ".onnx",
+  ".nc",
   ".pbf",
   ".osm.pbf",
   ".gpkg",
@@ -45,14 +49,17 @@ export const DATASET_IMPORT_ACCEPT = IMPORTABLE_DATASET_EXTENSIONS.join(",");
 /** Prefixes of a synthetic layer-group id (mirrors the backend). The group is a
  * bundle-shaped catalog entry whose id addresses all its member layers. Two
  * importers make them, OSM PBF extracts and GeoPackages, and the Discovery
- * Catalog does for an OpenStreetMap download and a GTFS feed. */
+ * Catalog does for an OpenStreetMap download and a GTFS feed. NetCDF variables
+ * stored a file each form one from their manifests. */
 export const OSM_GROUP_ID_PREFIX = "osm.";
 export const GPKG_GROUP_ID_PREFIX = "gpkg.";
 export const GTFS_GROUP_ID_PREFIX = "gtfs.";
+export const NETCDF_GROUP_ID_PREFIX = "netcdf.";
 export const LAYER_GROUP_ID_PREFIXES = [
   OSM_GROUP_ID_PREFIX,
   GPKG_GROUP_ID_PREFIX,
   GTFS_GROUP_ID_PREFIX,
+  NETCDF_GROUP_ID_PREFIX,
 ] as const;
 
 /** True when an id addresses a synthetic multi-layer group. */
@@ -64,12 +71,13 @@ export function isLayerGroupId(id: string | null | undefined): boolean {
 }
 
 /** Which importer made a layer group, read from its id: ``"gpkg"`` for a
- * GeoPackage, ``"gtfs"`` for a GTFS feed, else ``"osm"``. Also the group's
- * format and its ``curio://`` scheme. Mirrors the backend ``layer_group_kind``
- * and its ``osm`` fallback. */
-export function layerGroupKind(groupId: string): "osm" | "gpkg" | "gtfs" {
+ * GeoPackage, ``"gtfs"`` for a GTFS feed, ``"netcdf"`` for NetCDF variables,
+ * else ``"osm"``. Also the group's format and its ``curio://`` scheme. Mirrors
+ * the backend ``layer_group_kind`` and its ``osm`` fallback. */
+export function layerGroupKind(groupId: string): "osm" | "gpkg" | "gtfs" | "netcdf" {
   if (groupId.startsWith(GPKG_GROUP_ID_PREFIX)) return "gpkg";
   if (groupId.startsWith(GTFS_GROUP_ID_PREFIX)) return "gtfs";
+  if (groupId.startsWith(NETCDF_GROUP_ID_PREFIX)) return "netcdf";
   return "osm";
 }
 
@@ -741,6 +749,8 @@ export const DATASET_FORMAT_LABEL: Record<DatasetFormat, string> = {
   gpkg: "GeoPackage",
   gtfs: "GTFS",
   collection: "Collection",
+  onnx: "ONNX",
+  netcdf: "NetCDF",
 };
 
 /** Mirrors `KIND_LABEL` in the Discovery Catalog's `application/scan.py`. */

@@ -11,8 +11,8 @@ for a reason:
   posts to the sandbox directly: a path, or the bundle's list as a string.
 - **Seed.** The runner prepends a fixed random seed, so a validation run is
   repeatable; Play does not.
-- **Indentation.** The engine indents every line as ``PythonInterpreter.ts``
-  does; the runner uses ``textwrap.indent``.
+- **Indentation.** The engine indents every line of Python as
+  ``PythonInterpreter.ts`` does; the runner uses ``textwrap.indent``.
 
 Outside this test they also differ by design: the runner runs one node after
 another and stops at the first failure, and the engine runs a level at once
@@ -53,6 +53,14 @@ SCENARIOS = {
                  metadata={"widgets": [{"name": "factor", "type": "number", "default": 2, "value": 5}]}),
             node("a", content="return [!! @factor !!] * 2"),
         ]),
+        "a",
+    ),
+    # #662: the ids a view's selection picked, saved on the node that reads them.
+    "a selection tag's ids": (
+        spec([node(
+            "a", content="return [!! selection picked !!]",
+            metadata={"selections": [{"name": "picked", "node": "chart", "column": "osm_id", "ids": [101, "w2"]}]},
+        )]),
         "a",
     ),
     "a pool in the middle": (

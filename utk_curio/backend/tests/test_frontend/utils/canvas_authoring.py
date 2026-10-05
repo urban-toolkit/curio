@@ -8,6 +8,7 @@ from playwright.sync_api import (
     expect,
 )
 
+from .run_all import wait_for_run_guard_released
 from .screenshots import park_pointer
 
 
@@ -307,12 +308,23 @@ def save_dataflow_and_settle_header(page, *, timeout: float = 30000) -> dict:
     Returns the saved project as the server answered it.
     """
     detail = save_dataflow(page, timeout=timeout)
-    categories = detail.get("categories") or {}
+    park_pointer(page)
+    settle_header_after_save(page, detail, timeout=timeout)
+    return detail
+
+
+def settle_header_after_save(page, saved_project: dict, *, timeout: float = 30000) -> None:
+    """Wait until the canvas header shows the save that answered *saved_project*.
+
+    For a save made any way (File menu, status icon): the save icon, the Data
+    Catalog count and, when the save gave the dataflow automatic categories,
+    their chips.
+    """
+    categories = saved_project.get("categories") or {}
     auto = categories.get("auto") or {}
     want_auto_chips = bool(
         categories.get("source") or auto.get("tags") or auto.get("data_type")
     )
-    park_pointer(page)
     try:
         page.wait_for_function(_HEADER_SHOWS_SAVE_JS, arg=want_auto_chips, timeout=timeout)
     except PlaywrightTimeoutError:
@@ -321,7 +333,6 @@ def save_dataflow_and_settle_header(page, *, timeout: float = 30000) -> dict:
             f"the header never showed the save within {timeout / 1000:.0f} s: {seen} "
             f"(automatic category chips expected: {want_auto_chips})"
         ) from None
-    return detail
 
 
 _HEADER_STATE_JS = """() => ({
@@ -332,6 +343,19 @@ _HEADER_STATE_JS = """() => ({
     autoChips: document.querySelectorAll(
         '[data-curio-canvas-title] [data-curio-category-chip="auto"]').length,
 })"""
+
+
+def assert_header_shows_save(page) -> None:
+    """Fail unless the canvas header shows a landed save right now.
+
+    No wait, on purpose: a frame taken without a save shows "Unsaved", or
+    whatever the 30 s autosave last left, and only a check made at the moment
+    of the capture tells the two apart.
+    """
+    seen = page.evaluate(_HEADER_STATE_JS)
+    assert seen["saveState"] == "saved" and seen["catalogBusy"] == "false", (
+        f"the header does not show a landed save at capture time: {seen}"
+    )
 
 
 def frame_node(page, node_id: str, *, zoom: float = 0.9,
@@ -794,7 +818,13 @@ def play_node(page, node_id: str, *, max_attempts: int = 3) -> None:
     ``dispatch_event("click")`` sends a bubbling synthetic ``MouseEvent``
     that React's onClick picks up regardless of where the element actually
     sits on screen.
+
+    It first waits for any run already going to end. A click during one is
+    refused with a toast, and a node that already reads Done would then pass
+    the acknowledgement below on its previous run's output. A run on the server
+    ends a moment after its last node shows its result.
     """
+    wait_for_run_guard_released(page, timeout_ms=300000)
     node_el = node_locator(page, node_id)
     node_el.scroll_into_view_if_needed()
     play_btn = node_el.locator("svg.fa-circle-play")
