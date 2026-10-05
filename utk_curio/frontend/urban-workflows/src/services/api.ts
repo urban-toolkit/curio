@@ -202,3 +202,58 @@ export async function fetchPreviewData(fileName: string) {
         throw error;
     }
 }
+
+/** The header the raster route describes the raster in, as JSON. */
+export const RASTER_META_HEADER = "X-Curio-Raster";
+
+export type FetchedRaster =
+    | { ok: true; bytes: ArrayBuffer; meta: any }
+    | { ok: false; status: number; meta?: any; message: string };
+
+/**
+ * A raster artifact's GeoTIFF bytes, for an Autark node to load, and what the
+ * sandbox read of it (size, CRS, transform) in the `X-Curio-Raster` header.
+ * `part` picks one raster out of a Python tuple. A raster larger than
+ * `maxCells` cells or `maxSide` on a side is not sent at all: the answer is a
+ * 413 with its size, so nothing that large is downloaded only to be refused.
+ */
+export async function fetchRaster(
+    fileName: string,
+    opts: { part?: number; maxCells: number; maxSide: number },
+): Promise<FetchedRaster> {
+    const params = new URLSearchParams({
+        fileName,
+        maxCells: String(opts.maxCells),
+        maxSide: String(opts.maxSide),
+    });
+    if (opts.part != null) params.set("part", String(opts.part));
+    const token = getToken();
+    const response = await fetch(`${backendUrl()}/raster?${params.toString()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) {
+        let body: any = null;
+        try {
+            body = await response.json();
+        } catch {
+            body = null;
+        }
+        return {
+            ok: false,
+            status: response.status,
+            meta: body?.meta,
+            message: typeof body?.message === "string" ? body.message : `HTTP ${response.status}`,
+        };
+    }
+    const header = response.headers.get(RASTER_META_HEADER);
+    let meta: any = null;
+    try {
+        meta = header ? JSON.parse(header) : null;
+    } catch {
+        meta = null;
+    }
+    if (!meta) {
+        return { ok: false, status: response.status, message: "the raster came without its description" };
+    }
+    return { ok: true, bytes: await response.arrayBuffer(), meta };
+}

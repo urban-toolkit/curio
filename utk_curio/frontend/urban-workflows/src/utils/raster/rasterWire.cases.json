@@ -1,0 +1,216 @@
+{
+  "about": "What an Autark raster looks like on the wire, and as the GeoTIFF Curio writes for autk-db. rasterWire.test.ts and geotiffWriter.test.ts (frontend) and test_rasters.py (sandbox) run these cases. Band values list rows from south to north, as autk-db's getRaster gives them; null is a nodata cell (NaN). rows_north_to_south is the same values as a GeoTIFF and rasterio read them.",
+  "cases": [
+    {
+      "name": "one band in a projected CRS, with a nodata cell",
+      "grid": {
+        "crs": "EPSG:32616",
+        "width": 4,
+        "height": 3,
+        "originX": 447000,
+        "originY": 4637000,
+        "resX": 30,
+        "resY": -30
+      },
+      "bbox": [
+        -9785700.5,
+        5110100.25,
+        -9785540.5,
+        5110220.25
+      ],
+      "bands": {
+        "band_1": [
+          1.5,
+          2.5,
+          3.5,
+          4.5,
+          -2.25,
+          0,
+          1000.125,
+          7,
+          null,
+          8,
+          9,
+          10.75
+        ]
+      },
+      "layerName": "heat",
+      "envelope": {
+        "dataType": "raster",
+        "data": {
+          "type": "FeatureCollection",
+          "bbox": [
+            -9785700.5,
+            5110100.25,
+            -9785540.5,
+            5110220.25
+          ],
+          "grid": {
+            "crs": "EPSG:32616",
+            "width": 4,
+            "height": 3,
+            "originX": 447000,
+            "originY": 4637000,
+            "resX": 30,
+            "resY": -30
+          },
+          "features": [
+            {
+              "type": "Feature",
+              "geometry": null,
+              "properties": {
+                "rasterResX": 4,
+                "rasterResY": 3,
+                "bands": [
+                  {
+                    "id": "band_1",
+                    "label": "band_1"
+                  }
+                ],
+                "band_1": {
+                  "float32le": "AADAPwAAIEAAAGBAAACQQAAAEMAAAAAAAAh6RAAA4EAAAMB/AAAAQQAAEEEAACxB"
+                }
+              }
+            }
+          ]
+        },
+        "layerName": "heat"
+      },
+      "geotiff_base64": "SUkqADgAAAAAAMB/AAAAQQAAEEEAACxBAAAQwAAAAAAACHpEAADgQAAAwD8AACBAAABgQAAAkEAPAAABBAABAAAABAAAAAEBBAABAAAAAwAAAAIBAwABAAAAIAAAAAMBAwABAAAAAQAAAAYBAwABAAAAAQAAABEBBAABAAAACAAAABUBAwABAAAAAQAAABYBBAABAAAAAwAAABcBBAABAAAAMAAAABwBAwABAAAAAQAAAFMBAwABAAAAAwAAAA6DDAADAAAA+AAAAIKEDAAGAAAAEAEAAK+HAwAQAAAAQAEAAIGkAgAEAAAAbmFuAAAAAAAAAAAAAAAAAAAAAAA+QAAAAAAAAD5AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYEgbQQAAAABSsFFBAAAAAAAAAAABAAEAAAADAAAEAAABAAEAAQQAAAEAAQAADAAAAQBofw==",
+      "rows_north_to_south": {
+        "band_1": [
+          [
+            null,
+            8,
+            9,
+            10.75
+          ],
+          [
+            -2.25,
+            0,
+            1000.125,
+            7
+          ],
+          [
+            1.5,
+            2.5,
+            3.5,
+            4.5
+          ]
+        ]
+      }
+    },
+    {
+      "name": "two bands in a geographic CRS",
+      "grid": {
+        "crs": "EPSG:4326",
+        "width": 3,
+        "height": 2,
+        "originX": -87.75,
+        "originY": 41.875,
+        "resX": 0.03125,
+        "resY": -0.015625
+      },
+      "bbox": [
+        -9768500,
+        5113900,
+        -9758000,
+        5116200
+      ],
+      "bands": {
+        "band_1": [
+          0.5,
+          1,
+          1.5,
+          2,
+          2.5,
+          3
+        ],
+        "band_2": [
+          -1,
+          null,
+          -3,
+          -4,
+          -5,
+          null
+        ]
+      },
+      "layerName": "heat",
+      "envelope": {
+        "dataType": "raster",
+        "data": {
+          "type": "FeatureCollection",
+          "bbox": [
+            -9768500,
+            5113900,
+            -9758000,
+            5116200
+          ],
+          "grid": {
+            "crs": "EPSG:4326",
+            "width": 3,
+            "height": 2,
+            "originX": -87.75,
+            "originY": 41.875,
+            "resX": 0.03125,
+            "resY": -0.015625
+          },
+          "features": [
+            {
+              "type": "Feature",
+              "geometry": null,
+              "properties": {
+                "rasterResX": 3,
+                "rasterResY": 2,
+                "bands": [
+                  {
+                    "id": "band_1",
+                    "label": "band_1"
+                  },
+                  {
+                    "id": "band_2",
+                    "label": "band_2"
+                  }
+                ],
+                "band_1": {
+                  "float32le": "AAAAPwAAgD8AAMA/AAAAQAAAIEAAAEBA"
+                },
+                "band_2": {
+                  "float32le": "AACAvwAAwH8AAEDAAACAwAAAoMAAAMB/"
+                }
+              }
+            }
+          ]
+        },
+        "layerName": "heat"
+      },
+      "geotiff_base64": "SUkqADgAAAAAAABAAAAgQAAAQEAAAAA/AACAPwAAwD8AAIDAAACgwAAAwH8AAIC/AADAfwAAQMAQAAABBAABAAAAAwAAAAEBBAABAAAAAgAAAAIBAwACAAAAIAAgAAMBAwABAAAAAQAAAAYBAwABAAAAAQAAABEBBAACAAAAAAEAABUBAwABAAAAAgAAABYBBAABAAAAAgAAABcBBAACAAAACAEAABwBAwABAAAAAgAAAFIBAwABAAAAAAAAAFMBAwACAAAAAwADAA6DDAADAAAAEAEAAIKEDAAGAAAAKAEAAK+HAwAQAAAAWAEAAIGkAgAEAAAAbmFuAAAAAAAAAAgAAAAgAAAAGAAAABgAAAAAAAAAAACgPwAAAAAAAJA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPBVwAAAAAAA8ERAAAAAAAAAAAABAAEAAAADAAAEAAABAAIAAQQAAAEAAQAACAAAAQDmEA==",
+      "rows_north_to_south": {
+        "band_1": [
+          [
+            2,
+            2.5,
+            3
+          ],
+          [
+            0.5,
+            1,
+            1.5
+          ]
+        ],
+        "band_2": [
+          [
+            -4,
+            -5,
+            null
+          ],
+          [
+            -1,
+            null,
+            -3
+          ]
+        ]
+      }
+    }
+  ]
+}

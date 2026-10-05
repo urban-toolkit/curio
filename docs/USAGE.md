@@ -748,6 +748,16 @@ no `data` entry for its input; it names the tables the input provides.
   as EPSG:3395 otherwise, so declare a projected CRS to place it correctly.
 - A row without a geometry stays in the table and draws nothing; a selection
   still lands on the row it names.
+- A raster is a table too: a `rasterio` dataset from a Python node, or a raster
+  another Autark node hands on. A map draws it as a raster layer coloured by one
+  band, `{"dataRef": "input_0", "getFnv": "band_1"}`; its bands are `band_1`,
+  `band_2`, and so on. It is drawn at its own size, cell for cell, up to 2048 by
+  2048 cells and 8192 on a side. A larger one is not drawn and the node says so:
+  crop it in the node that makes it, for example with a rasterio window read.
+  It needs a CRS with an EPSG code and a north-up grid. A plot or a compute step
+  does not read a raster.
+- A raster the node hands on reaches a Python node as a `rasterio` dataset on
+  the same grid: its bands, origin, cell size and CRS.
 - A `data` section runs in the sandbox, where the input is not available: its
   `join` and `heatmap` sources cannot read the input. Join it in a Python node,
   or name it from a map, plot or compute block.
@@ -782,7 +792,7 @@ The first matching rule wins:
 | one layer with a quantitative column | a map coloured by the first quantitative column, `interpolateViridis` |
 | one layer with a nominal column | a map coloured by the first nominal column, `schemeTableau10` |
 | one layer with geometry only | a plain map |
-| no geometry | the editor stays empty |
+| no geometry, or only rasters | the editor stays empty |
 
 ## Notebook view
 

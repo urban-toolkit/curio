@@ -204,7 +204,13 @@ def parseInput(parsed_json):
     elif data_type == 'geodataframe':
         return parse_geodataframe(data_value)
     elif data_type == 'raster':
-        return parse_raster(data_value)
+        # A path is a Python node's raster. Anything else is the collection an
+        # Autark node hands on, kept as its envelope: a Python node gets it as
+        # a rasterio dataset (util/rasters.rasters_for_python), a JavaScript
+        # node as the JSON it is.
+        if isinstance(data_value, str):
+            return parse_raster(data_value)
+        return parsed_json
     elif data_type == 'outputs':
         return tuple(parseInput(elem) for elem in data_value)
 

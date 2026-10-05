@@ -577,6 +577,10 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                     # The store, or the output a project load hydrated (#407).
                     input_data = load_artifact(file_path, session_id=session_id)
                 input_data = _expand_outputs_wrapper(input_data, session_id=session_id)
+                # A raster an Autark node handed on arrives as a rasterio
+                # dataset, as a Python node's raster does.
+                from utk_curio.sandbox.util.rasters import python_raster_dir, rasters_for_python
+                input_data = rasters_for_python(input_data, python_raster_dir)
                 t_load = time.perf_counter()
 
                 # Validate and prepare input.

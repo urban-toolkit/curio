@@ -7,8 +7,10 @@
  * several inputs, one per input circle, which arrive as an `outputs` bundle:
  * each becomes its own frame. An Autark document also takes an input that is
  * itself a bundle of named layers (a tuple, a Data Pool with tabs, an upstream
- * Autark node's tables), and that is the only thing it asks of this module that
- * Vega does not.
+ * Autark node's tables), and a raster; those are the only things it asks of
+ * this module that Vega does not. A raster is not fetched here: its frame says
+ * where it is (an artifact, or one part of a tuple) or holds the collection an
+ * upstream Autark node handed on, and the Autark node loads it.
  *
  * Never throws for an input problem: a refusal comes back as an `emptyReason`
  * and a `detail` the node shows in its body.
@@ -21,13 +23,23 @@ import { AUTARK_LAYER_TYPES } from "./autarkLayerTypes";
 import type { NodeEmptyReason } from "./nodeEmptyState";
 import { activeGeometryName } from "./parsing";
 
-export type FrameType = "dataframe" | "geodataframe";
+export type FrameType = "dataframe" | "geodataframe" | "raster";
+
+/**
+ * Where a raster frame's raster is: an artifact (a Python node's rasterio
+ * dataset, `part` naming its place in a tuple), or the envelope an upstream
+ * Autark node handed on (utils/raster/rasterWire).
+ */
+export type RasterPayload =
+  | { artifact: string; part?: number }
+  | { envelope: any };
 
 export type GrammarFrame = {
   /** The layer's own name, when it has one (a bundle item, a pool tab). */
   name: string | null;
   dataType: FrameType;
-  /** A column-major frame or a FeatureCollection, as the wire carries it. */
+  /** A column-major frame or a FeatureCollection, as the wire carries it; for
+   * a raster, a `RasterPayload`. */
   payload: any;
   /** Column name to pandas dtype, when the envelope carries one. */
   schema: Record<string, string> | null;
@@ -65,6 +77,8 @@ export type ReadOptions = {
   /** Accept several inputs, one frame each (an `outputs` bundle), but no
    * other bundle (Vega-Lite). */
   circles?: boolean;
+  /** Accept rasters, as frames that say where the raster is (Autark). */
+  rasters?: boolean;
   /** Read the 100-row preview instead of the whole artifact (starter specs). */
   preview?: boolean;
 };
@@ -117,6 +131,52 @@ function frameOf(
   };
 }
 
+type RasterOptions = { rasters?: boolean; source?: string };
+
+function rasterFrameOf(
+  payload: RasterPayload,
+  name: string | null,
+  place: { fromBundle: boolean; index: number; circle?: number },
+): GrammarFrame {
+  return {
+    name,
+    dataType: "raster",
+    payload,
+    schema: null,
+    geometryName: null,
+    crsName: null,
+    layerType: "raster",
+    fromBundle: place.fromBundle,
+    index: place.index,
+    circle: place.circle ?? 0,
+  };
+}
+
+/**
+ * The frame for a `{dataType: "raster"}` value: the collection it holds, or,
+ * for a Python raster (its data is the file's path), the artifact `source`
+ * that holds it, with `part` its place in a tuple. Null when rasters are not
+ * read or there is nothing to say where it is.
+ */
+function rasterFrame(
+  item: any,
+  opts: RasterOptions,
+  place: { fromBundle: boolean; index: number; circle?: number; part?: number },
+): GrammarFrame | null {
+  if (!opts.rasters || !isObject(item) || item.dataType !== "raster") return null;
+  const name = typeof item.layerName === "string" && item.layerName ? item.layerName : null;
+  if (isObject(item.data) && item.data.type === "FeatureCollection") {
+    return rasterFrameOf({ envelope: item }, name, place);
+  }
+  if (typeof item.data === "string" && opts.source) {
+    const payload: RasterPayload = place.part == null
+      ? { artifact: opts.source }
+      : { artifact: opts.source, part: place.part };
+    return rasterFrameOf(payload, name, place);
+  }
+  return null;
+}
+
 /** Strip Curio's `{dataType, data}` envelopes down to the value inside. */
 function unwrap(value: any): any {
   return isObject(value) && "data" in value && "dataType" in value ? unwrap(value.data) : value;
@@ -137,8 +197,11 @@ function asFeatureCollection(value: any): any | null {
  *
  * Bundle items that are references (a node's input circles) come back in
  * `refs` for the caller to fetch.
+ *
+ * With `rasters`, a raster becomes a frame too; `source` is the artifact the
+ * payload was read from, which is where a Python raster in it is loaded from.
  */
-export function framesFromPayload(value: any): {
+export function framesFromPayload(value: any, opts: RasterOptions = {}): {
   frames: GrammarFrame[];
   refs: Array<{ index: number; ref: any }>;
   skipped: string[];
@@ -154,6 +217,7 @@ export function framesFromPayload(value: any): {
     isObject(arg)
     && typeof arg.dataType === "string"
     && arg.dataType !== "outputs"
+    && !(opts.rasters && arg.dataType === "raster")
     && !FRAME_TYPES.has(arg.dataType)
     && "data" in arg
   ) {
@@ -168,12 +232,22 @@ export function framesFromPayload(value: any): {
     return { frames, refs, skipped };
   }
 
+  if (isObject(arg) && arg.dataType === "raster") {
+    const frame = rasterFrame(arg, opts, { fromBundle: false, index: 0 });
+    if (frame) frames.push(frame);
+    else skipped.push("raster at position 0");
+    return { frames, refs, skipped };
+  }
+
   if (isObject(arg) && arg.dataType === "outputs" && Array.isArray(arg.data)) {
     arg.data.forEach((item: any, index: number) => {
+      const raster = rasterFrame(item, opts, { fromBundle: true, index, circle: index, part: index });
       if (isObject(item) && typeof item.path === "string" && item.path) {
         refs.push({ index, ref: item });
       } else if (isObject(item) && FRAME_TYPES.has(item.dataType) && item.data != null) {
         frames.push(frameOf(item.dataType, item.data, item, null, { fromBundle: true, index, circle: index }));
+      } else if (raster) {
+        frames.push(raster);
       } else {
         skipped.push(`${isObject(item) ? item.dataType ?? "an item" : "an item"} at position ${index}`);
       }
@@ -216,6 +290,7 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
       FRAME_TYPES.has(type)
       || (!!opts.bundles && BUNDLE_TYPES.has(type))
       || (!!opts.circles && type === "outputs")
+      || (!!opts.rasters && type === "raster")
     );
 
   // A reference that names its type is gated before anything is fetched.
@@ -224,8 +299,15 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
     : undefined;
   if (declared !== undefined && !accepts(declared)) return refused(declared, opts.label);
 
+  // A raster artifact is not fetched here: the frame names it, and the node
+  // asks for the raster itself when it loads it.
+  if (declared === "raster" && isObject(input) && typeof input.path === "string" && input.path) {
+    return { frames: [rasterFrameOf({ artifact: input.path }, null, { fromBundle: false, index: 0 })] };
+  }
+
   const read = (path: string) => (opts.preview ? fetchPreviewData(path) : fetchData(path));
-  const envelope: any = isObject(input) && input.path ? await read(input.path) : input;
+  const source = isObject(input) && typeof input.path === "string" && input.path ? input.path : undefined;
+  const envelope: any = source ? await read(source) : input;
   if (envelope == null) return { frames: [] };
 
   // One restored without its type (a project saved without `data_type`) is
@@ -239,10 +321,15 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
     return { frames: [frameOf(dataType, payload, envelope, input, { fromBundle: false, index: 0 })] };
   }
 
-  const found = framesFromPayload(envelope);
+  const rasterOpts: RasterOptions = { rasters: opts.rasters };
+  const found = framesFromPayload(envelope, { ...rasterOpts, source });
   const frames = [...found.frames];
   const skipped = [...found.skipped];
   for (const { index, ref } of found.refs) {
+    if (opts.rasters && ref.dataType === "raster") {
+      frames.push(rasterFrameOf({ artifact: ref.path }, null, { fromBundle: true, index, circle: index }));
+      continue;
+    }
     const fetched = await read(ref.path);
     const type = ref.dataType ?? fetched?.dataType;
     if (FRAME_TYPES.has(type) && fetched?.data != null) {
@@ -250,8 +337,13 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
       continue;
     }
     // An input that is itself a bundle of layers (an Autark node's tables, a
-    // tuple, a pool with tabs) brings each of them, under the input's position.
-    const inner = opts.bundles && fetched != null ? framesFromPayload(fetched).frames : [];
+    // tuple, a pool with tabs) or a raster brings each of them, under the
+    // input's position.
+    const inner = (opts.bundles || opts.rasters) && fetched != null
+      ? framesFromPayload(fetched, { ...rasterOpts, source: ref.path }).frames.filter(
+        (frame) => opts.bundles || frame.dataType === "raster",
+      )
+      : [];
     if (inner.length > 0) {
       for (const frame of inner) frames.push({ ...frame, fromBundle: true, index, circle: index });
     } else {
