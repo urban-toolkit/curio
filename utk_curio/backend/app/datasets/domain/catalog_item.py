@@ -138,6 +138,11 @@ LOADED_VARIABLES = {
 #: the frontend generator.
 KEPT_IN_CODE = frozenset({"onnx", "netcdf"})
 
+#: The options a loader names after the id, so its node shows them: a
+#: GeoTIFF's ``bounds`` read only the cells inside them. KEEP IN SYNC with
+#: ``LOADER_OPTIONS`` in the frontend generator.
+LOADER_OPTIONS = {"geotiff": ", bounds=None"}
+
 
 def loader_snippet(
     fmt: str, path: str | None, dataset_id: str | None = None, layer_type: str | None = None,
@@ -166,7 +171,7 @@ def loader_snippet(
             code, variable = f"collection = curio_load_collection({quoted})", "collection"
         elif fmt in LOADED_VARIABLES:
             variable = LOADED_VARIABLES[fmt]
-            code = f"{variable} = curio_load_data({quoted})"
+            code = f"{variable} = curio_load_data({quoted}{LOADER_OPTIONS.get(fmt, '')})"
         else:
             return {
                 "language": "python",

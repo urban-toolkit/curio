@@ -131,7 +131,7 @@ Adding a dataset to a dataflow creates nothing on the canvas. You use it by **dr
 - **Drop on empty canvas**: Curio creates a **Data Loading** node filled in with loader code for that dataset, and says *"Created a Data Loading node for `<title>`."*
 - **Drop onto an existing node**: the loader code is merged into that node's code under a `# Curio dataset loader: <title>` marker, and Curio says *"Applied `<title>` to this node."* If the node's code ends in a `return`, the loader goes before it and the return is rewritten.
 
-The generated Python is one line, `curio_load_data("<datasetId>")`, which reads the dataset the way its format is read:
+The generated Python is one line, `curio_load_data("<datasetId>")` (`curio_load_data("<datasetId>", bounds=None)` for a GeoTIFF), which reads the dataset the way its format is read:
 
 | Format | What `curio_load_data` returns |
 |---|---|
@@ -148,6 +148,14 @@ The generated Python is one line, `curio_load_data("<datasetId>")`, which reads 
 | `collection` | `curio_load_collection("<datasetId>")`: the collection's index, one row per file with a readable `path` → `collection` |
 
 A node's output cannot be a model session or an xarray Dataset, so the loader for an `onnx` or `netcdf` dataset, or a NetCDF group, returns nothing: the node's own code uses `session` or `ds` and returns a table, a raster or a value.
+
+For a GeoTIFF, `bounds=(west, south, east, north)`, in the raster's CRS, reads only a window: the cells whose centres lie inside the bounds, at the raster's own cell size, with every band, its nodata and its number type. The window is a raster of its own, so a raster too large for an Autark map can be read a region at a time:
+
+```python
+src = curio_load_data("data.utk.elevation", bounds=(-87.64, 41.87, -87.62, 41.89))
+```
+
+Bounds that reach past the raster, or hold no cell's centre, stop the node with a message giving the area the raster covers.
 
 To read the file another way, for example a CSV with another separator, use `curio_data_path("<datasetId>")`, which gives the file's path: `pd.read_csv(curio_data_path("<datasetId>"), sep=";")`, or `netCDF4.Dataset(curio_data_path("<datasetId>"))` for a NetCDF file.
 
