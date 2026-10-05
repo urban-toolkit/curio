@@ -390,6 +390,15 @@
       "OpenStreetMap"
     ]
   },
+  "dataflows/Scenarios": {
+    "tags": [
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  },
   "dataflows/SimpleView": {
     "tags": [
       "Pandas"

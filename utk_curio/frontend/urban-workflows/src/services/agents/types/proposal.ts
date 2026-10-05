@@ -19,6 +19,39 @@ export interface AgentProposalSummary {
   appliedRefs?: string[];
   /** dev/67-8 (plan proposals): edge index → planned|applied|refused. */
   edgeStates?: Record<string, string>;
+  /** #662 (plan proposals): scenario index → applied|refused, once any is. */
+  scenarioStates?: Record<string, string>;
+}
+
+/** #662: a widget a planned or created node declares (`metadata.widgets`). */
+export interface AgentPlanWidget {
+  name: string;
+  type: string;
+  label?: string;
+  default?: unknown;
+  value?: unknown;
+  options?: Record<string, unknown>;
+}
+
+/** #662: a scenario a plan saves, on the review card. */
+export interface AgentPlanScenario {
+  name: string;
+  color: string;
+  description?: string;
+  /** Its nodes: plan refs, or ids of nodes already in the dataflow. */
+  nodes: Array<{ ref: string; label: string }>;
+  /** A duplicate: the scenario it copies, and the widget values its copies change. */
+  duplicateOf?: string;
+  values?: Record<string, Record<string, unknown>>;
+}
+
+/** #662: a scenario an apply saved, as `dataflow.scenarios` holds it. */
+export interface AgentAppliedScenario {
+  id: string;
+  name: string;
+  color: string;
+  description?: string;
+  nodes: string[];
 }
 
 /** dev/52 DR-2: the persisted Plan → Solve state riding the attachment.
@@ -173,6 +206,11 @@ export interface AgentProposalPart {
       intent: string;
       /** dev/67-5: expected input/output one-liner for the plan card. */
       expects?: string;
+      /** #662: the widgets it declares, the scenario it is in, and for a
+       * copy the ref of the node it copies. */
+      widgets?: AgentPlanWidget[];
+      scenario?: string;
+      copyOf?: string;
     }>;
     edgeCount: number;
     /** dev/67-8: the connection stage's labeled, index-stable edge rows. */
@@ -192,6 +230,8 @@ export interface AgentProposalPart {
     cascadeCount?: number;
     /** dev/112: removed CONNECTIONS reviewed by name too (DEC-049.2 for edges). */
     removedEdges?: Array<{ id: string; fromLabel: string; toLabel: string; kind?: "interaction" }>;
+    /** #662: the scenarios the plan saves, each with its nodes by name. */
+    scenarios?: AgentPlanScenario[];
   };
 }
 
@@ -215,8 +255,9 @@ export interface AgentCreatedNodePayload {
   y: number;
   /** dev/89: optional display title persisted on the spec node. */
   title?: string;
-  /** dev/89: canonical persisted appearance (backend-normalized). */
-  metadata?: { appearance?: { backgroundColor?: string } };
+  /** dev/89: canonical persisted appearance (backend-normalized). #662: the
+   * node's widgets, and for a copy the ids it descends from. */
+  metadata?: { appearance?: { backgroundColor?: string }; widgets?: AgentPlanWidget[]; copiedFrom?: string[] };
 }
 
 /** Apply-endpoint response (dev/41 base + the dev/48/52 bridge payloads). */
@@ -249,6 +290,8 @@ export interface AgentApplyResult {
     }>;
     removedNodeIds?: string[];
     removedEdgeIds?: string[];
+    /** #662: the scenarios the plan saved. */
+    scenarios?: AgentAppliedScenario[];
   };
   /** dev/126: the plan-node agents this apply attached (Node Builder on every
    * created node, Dataset Finder on every data-loading one) — and anything it
@@ -297,6 +340,9 @@ export interface AgentPlanNodeApplyResult {
     { status: string; reason?: string; fromLabel?: string; toLabel?: string }
   >;
   edgeStates?: Record<string, string>;
+  /** #662: the scenarios this node completed, and which of the plan's are saved. */
+  createdScenarios?: AgentAppliedScenario[];
+  scenarioStates?: Record<string, string>;
   /** dev/71: the auto-attached Node Builder's attachment id (null = skipped). */
   attachedAgentId?: string | null;
   /** dev/126: every agent this apply gave the created node(s) — and anything

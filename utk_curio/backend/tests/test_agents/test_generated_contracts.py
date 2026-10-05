@@ -194,6 +194,40 @@ class TestThePromptFacts:
         lists = contracts.builtin_lists(_manifest())
         assert "builtin.merge_slots" not in lists
 
+    def test_the_widget_facts_come_from_the_runtime(self):
+        """#662: the kinds a widget takes and the references code places one
+        by are the runtime's own (``WIDGET_KINDS``, ``reference_text``,
+        ``SHARED_PREFIX``), and the prompts that teach widgets and scenarios to
+        the node-writing agents say exactly that."""
+        from utk_curio.backend.app.execution.code_references import (
+            SHARED_PREFIX,
+            WIDGET_KINDS,
+            reference_text,
+        )
+
+        kinds = contracts.render_template("{{widgets.kinds}}")
+        assert kinds == ", ".join(WIDGET_KINDS[:-1]) + " or " + WIDGET_KINDS[-1]
+        factor = contracts.render_template("{{widgets.reference:factor}}")
+        assert factor == reference_text("factor") == "[!! factor !!]"
+        season = contracts.render_template("{{widgets.shared:season}}")
+        assert season == reference_text(SHARED_PREFIX + "season") == "[!! @season !!]"
+        with pytest.raises(contracts.PromptTemplateError, match="not a widget name"):
+            contracts.render_template("{{widgets.reference:2x}}")
+        preamble = contracts.render_prompt("default_preamble")
+        assert f'a "type" ({kinds})' in preamble
+        assert "`[!! threshold !!]` for the widget named threshold" in preamble
+        assert f"`{season}` for the Parameter node named season" in preamble
+        assert "## Scenarios" in preamble and '"metadata"."copiedFrom"' in preamble
+        orchestration = contracts.render_prompt("orchestration_instruction")
+        assert f"`{factor}` for the widget named factor" in orchestration
+        assert '"duplicateOf"' in orchestration and '"copies"' in orchestration and '"values"' in orchestration
+        content = contracts.render_prompt("new_content_prompt")
+        assert f"`{factor}` for the widget named factor" in content and '"sharedTags"' in content
+        assert "`[!! threshold !!]` for the widget named threshold" in contracts.render_prompt("node_build_instruction")
+        # No prompt teaches the old marker form any more.
+        for stem in contracts.PROMPT_TEMPLATES:
+            assert "$TYPE$" not in contracts.render_prompt(stem), stem
+
     def test_the_note_palette_is_the_named_colors(self):
         from utk_curio.backend.app.packages.domain.node_appearance import NAMED_COLORS
 
@@ -502,6 +536,23 @@ class TestTheTrillBlock:
         scenario = block["properties"]["dataflow"]["properties"]["scenarios"]["items"]
         assert list(scenario["properties"]) == list(contracts.TRILL_PROMPT_FIELDS["scenario"])
         assert scenario["required"] == ["id", "name", "color", "nodes"]
+
+    def test_a_nodes_widgets_and_lineage_show_what_an_agent_writes(self):
+        # #662: the widgets a node declares, in the schema's own shape, and the
+        # lineage a copy carries.
+        import json
+
+        from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
+
+        block = json.loads(contracts.render_trill_block(_trill()))
+        node = block["properties"]["dataflow"]["properties"]["nodes"]["items"]
+        metadata = node["properties"]["metadata"]
+        assert list(metadata["properties"]) == list(contracts.TRILL_PROMPT_FIELDS["nodeMetadata"])
+        widget = metadata["properties"]["widgets"]["items"]
+        assert list(widget["properties"]) == list(_trill()["$defs"]["widget"]["properties"])
+        assert widget["properties"]["type"]["enum"] == list(WIDGET_KINDS)
+        assert widget["required"] == ["name", "type"]
+        assert metadata["properties"]["copiedFrom"] == {"type": "array", "items": {"type": "string"}}
 
     def test_it_carries_no_field_the_format_does_not_have(self):
         text = contracts.render_trill_block(_trill())

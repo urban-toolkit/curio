@@ -15,7 +15,8 @@ export const PlanSummary: React.FC<{ part: AgentProposalPart }> = ({ part }) => 
   return (
     <>
       <div className={styles.meta}>
-        {countLabel(plan.nodes.length, "node")} · {countLabel(plan.edgeCount, "connection")} · {plan.goal}
+        {countLabel(plan.nodes.length, "node")} · {countLabel(plan.edgeCount, "connection")}
+        {plan.scenarios?.length ? ` · ${countLabel(plan.scenarios.length, "scenario")}` : ""} · {plan.goal}
       </div>
       {removes ? (
         <div className={styles.removals} role="group" aria-label="Nodes and connections this plan removes">

@@ -538,12 +538,15 @@ def oracle_attempt(
         paths=fixture.required.get("paths") or (),
     )
     try:
-        oracle.require_writable_widgets(example)
         plan = oracle.plan_for(
             fixture.expected,
             intents=fixture.intents,
             source_hints=hints,
             synthetic_refs=oracle.synthetic_refs_for(
+                fixture.expected, example=example, origins=expected_graph.origins
+            ),
+            # #662: a planned node declares the widgets its code reads.
+            widgets=oracle.widgets_for(
                 fixture.expected, example=example, origins=expected_graph.origins
             ),
         )

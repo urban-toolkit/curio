@@ -92,10 +92,8 @@
     "notes": null
   },
   "capability": {
-    "tier": "T2",
-    "needs": [
-      "widgets"
-    ],
+    "tier": "T0",
+    "needs": [],
     "skip": []
   },
   "thresholds": {

@@ -366,6 +366,131 @@ def default_value_for(kind, options) -> object:
     return ""
 
 
+#: Kept in sync with ``CHOICE_KINDS``, ``NUMERIC_KINDS`` and
+#: ``FILE_WIDGET_MAX_CHARS`` in ``widgetModel.ts``.
+CHOICE_KINDS = ("choice", "checkbox-group", "multi-select")
+NUMERIC_KINDS = ("number", "slider")
+FILE_WIDGET_MAX_CHARS = 1_000_000
+
+_DATETIME_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?")
+
+
+def normalize_datetime(text: str) -> str | None:
+    """*text* as a date-time widget's value, ``YYYY-MM-DDTHH:mm:ss``, or None
+    when it is not a real date and time; ``normalizeDateTime`` in
+    ``widgetModel.ts``, whose ``Date.UTC`` reads a year below 100 as 19xx."""
+    import datetime as _dt
+
+    m = _DATETIME_RE.fullmatch(text) if isinstance(text, str) else None
+    if not m:
+        return None
+    seconds = m.group(6) or "00"
+    y, mo, d, h, mi, s = (int(v) for v in (m.group(1), m.group(2), m.group(3), m.group(4), m.group(5), seconds))
+    if y < 100:
+        return None
+    try:
+        _dt.datetime(y, mo, d, h, mi, s)
+    except ValueError:
+        return None
+    return f"{m.group(1)}-{m.group(2)}-{m.group(3)}T{m.group(4)}:{m.group(5)}:{seconds}"
+
+
+def _bounds_problem(value, options: dict) -> str | None:
+    low = options.get("min") if _finite(options.get("min")) else None
+    high = options.get("max") if _finite(options.get("max")) else None
+    if low is not None and high is not None and (value < low or value > high):
+        return f"Enter a number from {js_number(low)} to {js_number(high)}."
+    if low is not None and value < low:
+        return f"Enter a number of at least {js_number(low)}."
+    if high is not None and value > high:
+        return f"Enter a number of at most {js_number(high)}."
+    return None
+
+
+def check_widget_value(widget: dict, value) -> str | None:
+    """What is wrong with *value* for *widget*, or None when it is fine:
+    ``checkWidgetValue`` in ``widgetModel.ts``, what the Widgets tab checks a
+    value with. Both read ``widgetChecks.cases.json`` beside it."""
+    kind = widget.get("type")
+    options = widget.get("options") if isinstance(widget.get("options"), dict) else {}
+    choices = options.get("choices") if isinstance(options.get("choices"), list) else []
+    if kind in NUMERIC_KINDS:
+        return _bounds_problem(value, options) if _finite(value) else "Enter a number."
+    if kind == "text":
+        return None if isinstance(value, str) else "Enter a text."
+    if kind == "file":
+        if not isinstance(value, str):
+            return "Choose a text file."
+        if len(value) > FILE_WIDGET_MAX_CHARS:
+            return (f"The file is longer than {FILE_WIDGET_MAX_CHARS:,} characters. "
+                    "Add it to the Data Catalog instead.")
+        return None
+    if kind == "checkbox":
+        return None if isinstance(value, bool) else "Choose true or false."
+    if kind == "choice":
+        return None if isinstance(value, str) and value in choices else "Pick one of the choices."
+    if kind in ("checkbox-group", "multi-select"):
+        fine = (
+            isinstance(value, list)
+            and all(isinstance(v, str) and v in choices for v in value)
+            and len(set(value)) == len(value)
+        )
+        return None if fine else "Pick among the choices, each at most once."
+    if kind == "datetime":
+        return None if isinstance(value, str) and normalize_datetime(value) == value else "Enter a date and time."
+    if kind == "location":
+        fine = (
+            isinstance(value, dict) and len(value) == 2
+            and _finite(value.get("lat")) and _finite(value.get("lon"))
+            and abs(value["lat"]) <= 90 and abs(value["lon"]) <= 180
+        )
+        return None if fine else "Enter a latitude from -90 to 90 and a longitude from -180 to 180."
+    if kind == "number-list":
+        fine = isinstance(value, list) and all(_finite(v) for v in value)
+        return None if fine else "Enter a list of numbers, such as [1, 2.5]."
+    if kind == "text-list":
+        fine = isinstance(value, list) and all(isinstance(v, str) for v in value)
+        return None if fine else 'Enter a list of texts, such as ["a", "b"].'
+    if kind == "range":
+        fine = (
+            isinstance(value, list) and len(value) == 2
+            and _finite(value[0]) and _finite(value[1]) and value[0] <= value[1]
+        )
+        return None if fine else "Enter two numbers, the first not larger than the second."
+    return "Unknown widget type."
+
+
+def check_widget_def(definition: dict, others=(), parameter: bool = False) -> str | None:
+    """What is wrong with a widget being added, or None: ``checkWidgetDef`` in
+    ``widgetModel.ts``, what the Widgets tab checks a widget with. *others*
+    are the node's other widgets, whose names it must not reuse; for a
+    Parameter node's widget (*parameter*), the other Parameter nodes'."""
+    name = definition.get("name")
+    if not isinstance(name, str) or not WIDGET_NAME_RE.match(name):
+        return "A name is letters, digits and underscores, and does not start with a digit."
+    if any(isinstance(w, dict) and w.get("name") == name for w in others):
+        return f"Another Parameter node is named {name}." if parameter else f"This node already has a widget named {name}."
+    kind = definition.get("type")
+    if kind not in WIDGET_KINDS:
+        return "Pick a widget type."
+    options = definition.get("options") if isinstance(definition.get("options"), dict) else {}
+    if kind in CHOICE_KINDS:
+        choices = options.get("choices") if isinstance(options.get("choices"), list) else []
+        if not choices:
+            return "Give at least one choice."
+        if len(set(choices)) != len(choices):
+            return "Each choice can appear only once."
+    if kind in NUMERIC_KINDS:
+        low, high, step = options.get("min"), options.get("max"), options.get("step")
+        if kind == "slider" and (low is None or high is None):
+            return "A slider needs a minimum and a maximum."
+        if low is not None and high is not None and not low < high:
+            return "The minimum must be below the maximum."
+        if step is not None and not step > 0:
+            return "The step must be above 0."
+    return check_widget_value(definition, definition.get("default"))
+
+
 def normalize_widgets(raw) -> list:
     """The well-formed widgets in *raw* (a spec's ``metadata.widgets``). A
     widget without a default gets its kind's, as the browser gives it."""

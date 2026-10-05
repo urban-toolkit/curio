@@ -3,7 +3,7 @@ import React from "react";
 import type { AgentProposalPart } from "../../../../services/agents";
 import styles from "../AgentReviewCard.module.css";
 import { PlanNodeRow } from "./PlanNodeRow";
-import { planNodeRowState, type PlanNodeReviewState } from "./reviewCardText";
+import { planNodeExtras, planNodeRowState, type PlanNodeReviewState } from "./reviewCardText";
 
 /** dev/67-5 (Simulation Mode: create): every planned node individually
  * inspectable — editable goal, expects, per-node Apply. Replaces the text
@@ -35,6 +35,8 @@ export const PlanNodesList: React.FC<{
           state={row.state}
           solvable={row.solvable}
           solveBlocker={row.solveBlocker}
+          createBlocker={row.createBlocker}
+          extras={planNodeExtras(part, node)}
           onApply={() => onApplyPlanNode(part.proposalId, node.ref)}
           onSaveGoal={(goal) => (onSavePlanGoal ? onSavePlanGoal(part.proposalId, node.ref, goal) : Promise.resolve())}
           onSolve={onSolvePlanNode ? () => onSolvePlanNode(node.ref) : undefined}

@@ -503,6 +503,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
     Returns ``(plan, [])`` on success or ``(None, errors)``."""
     # Local import: this module is otherwise dependency-free (json + re), and
     # the packages domain owns all template knowledge (`ADR-AG-007`).
+    from utk_curio.backend.app.agents.domain import plan_scenarios
     from utk_curio.backend.app.packages import service as packages_services
 
     errors: list[str] = []
@@ -526,17 +527,19 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         nodes_raw = []  # a remove-only revision carries no new nodes
     edges_raw_probe = raw.get("edges")
     has_edges = isinstance(edges_raw_probe, list) and len(edges_raw_probe) > 0
-    if nodes_raw is None and has_edges:
+    # #662: a plan may also only make scenarios of nodes the dataflow has.
+    has_scenarios = isinstance(raw.get("scenarios"), list) and len(raw["scenarios"]) > 0
+    if nodes_raw is None and (has_edges or has_scenarios):
         nodes_raw = []  # dev/112: an edge-only plan carries no new nodes
     if not isinstance(nodes_raw, list) or (
-        not nodes_raw and not (remove_nodes or remove_edges or has_edges)
+        not nodes_raw and not (remove_nodes or remove_edges or has_edges or has_scenarios)
     ):
         # dev/112: a plan may add nodes, add connections, or remove — any of
         # them. Refusing edge-only plans taught the model to invent filler
         # nodes "to make the plan valid".
         errors.append(
             "the plan changes nothing — add nodes, add edges (existing node ids "
-            "allowed), or remove nodes/edges"
+            "allowed), make scenarios, or remove nodes/edges"
         )
         nodes_raw = []
     elif len(nodes_raw) > _PLAN_MAX_NODES:
@@ -601,6 +604,10 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
                 errors.append(err)
                 continue
             node["expects"] = str(node_expects).strip()
+        widget_errors = _plan_node_widgets(node, node_raw.get("widgets"), where)
+        if widget_errors:
+            errors.extend(widget_errors)
+            continue
         nodes.append(node)
     plan["nodes"] = nodes
     edges_raw = raw.get("edges", [])
@@ -685,6 +692,17 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
             edge_entry["kind"] = kind  # dev/112: data stays byte-absent
         edges.append(edge_entry)
     plan["edges"] = edges
+    if not errors:
+        # #662: named selections and duplicates; a duplicate's copies join the
+        # plan's nodes and edges here, so the review names each of them.
+        errors.extend(plan_scenarios.parse_scenarios(
+            raw.get("scenarios"), plan, removed, _field_error, _PLAN_REF_MAX_CHARS,
+        ))
+        if len(plan["nodes"]) > _PLAN_MAX_NODES or len(plan["edges"]) > _PLAN_MAX_EDGES:
+            errors.append(
+                f"with its copies the plan has {len(plan['nodes'])} nodes and "
+                f"{len(plan['edges'])} edges (max {_PLAN_MAX_NODES} and {_PLAN_MAX_EDGES})"
+            )
     # dev/59: keys present only when used — additive plans stay byte-identical.
     if remove_nodes:
         plan["removeNodes"] = remove_nodes
@@ -693,6 +711,23 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
     if errors:
         return None, errors
     return plan, []
+
+
+def _plan_node_widgets(node: dict, raw: object, where: str) -> list[str]:
+    """#662: a planned node's widgets, set on *node* (absent when it has none),
+    or the errors. A Parameter node holds exactly one: the value every node's
+    code places as a shared tag."""
+    from utk_curio.backend.app.agents.domain import widget_grammar
+    from utk_curio.backend.app.execution.workflow_spec import PARAMETER_TYPE
+
+    widgets, problems = widget_grammar.parse_widgets(raw, f"{where}.widgets")
+    if problems:
+        return problems
+    if node["nodeType"].split("@", 1)[0] == PARAMETER_TYPE and len(widgets) != 1:
+        return [f"{where} is a Parameter node, which holds exactly one widget: give it in widgets"]
+    if widgets:
+        node["widgets"] = widgets
+    return []
 
 
 def _parse_dataflow_plan(raw: object) -> dict | None:

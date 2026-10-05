@@ -67,25 +67,6 @@ class Unrepresentable(Exception):
         self.detail = detail
 
 
-#: #662: a node's ``[!! name !!]`` references resolve against its
-#: ``metadata.widgets``, and neither a plan node nor a Solve content reply can
-#: declare widgets yet, so the example's code would reach the runner with
-#: references nothing resolves. Fixtures for such examples declare this need.
-WIDGETS_NEED = "widgets"
-
-
-def require_writable_widgets(example: Mapping) -> None:
-    """Raise :class:`Unrepresentable` when a node of *example* declares widgets."""
-    inner = example.get("dataflow")
-    dataflow = inner if isinstance(inner, Mapping) else example
-    for node in dataflow.get("nodes") or []:
-        if isinstance(node, Mapping) and (node.get("metadata") or {}).get("widgets"):
-            raise Unrepresentable(
-                WIDGETS_NEED,
-                f"node {node.get('id')!r} declares widgets, which no plan or content reply can write",
-            )
-
-
 @dataclass(frozen=True)
 class OraclePlan:
     goal: str
@@ -144,6 +125,7 @@ def plan_for(
     intents: Iterable = (),
     source_hints: Mapping | None = None,
     synthetic_refs: Iterable = (),
+    widgets: Mapping | None = None,
 ) -> OraclePlan:
     """The plan reply for a fixture's ``expected`` block.
 
@@ -156,11 +138,16 @@ def plan_for(
     mentioned only in conversation is not evidence when the node is filled.
     Harness finding, recorded as a follow-up in memo dev/121.
 
+    ``widgets`` (``{ref: [widget, ...]}``, :func:`widgets_for`) are declared on
+    their planned nodes (#662): the code Solve writes places them as
+    ``[!! name !!]`` references, which resolve against the node's widgets.
+
     Raises :class:`Unrepresentable` for an edge kind the grammar cannot carry.
     """
     by_ref = {str(i.get("ref")): dict(i) for i in intents}
     hints = {str(k): list(v) for k, v in (source_hints or {}).items()}
     synthetic_refs = {str(r) for r in synthetic_refs}
+    declared = {str(k): [dict(w) for w in v] for k, v in (widgets or {}).items() if v}
     nodes = []
     roles = {}
     for node in expected.get("nodes") or []:
@@ -175,6 +162,7 @@ def plan_for(
                 "intent": _intent_for(
                     ref, role, by_ref, hints.get(ref, ()), ref in synthetic_refs
                 ),
+                **({"widgets": declared[ref]} if ref in declared else {}),
             }
         )
     edges = []
@@ -238,6 +226,23 @@ def content_replies(
         if isinstance(content, str) and content.strip():
             replies[str(node.get("ref"))] = content
     return replies
+
+
+def widgets_for(expected: Mapping, *, example: Mapping, origins: Iterable) -> dict:
+    """``{ref: [widget, ...]}``: the widgets each example node declares at
+    ``metadata.widgets``, values included, for the planned node that rebuilds it."""
+    inner = example.get("dataflow")
+    dataflow = inner if isinstance(inner, Mapping) else example
+    raw_nodes = list(dataflow.get("nodes") or [])
+    order = list(origins)
+    found: dict = {}
+    for index, node in enumerate(expected.get("nodes") or []):
+        if index >= len(order) or order[index] >= len(raw_nodes):
+            continue
+        declared = (raw_nodes[order[index]].get("metadata") or {}).get("widgets")
+        if isinstance(declared, list) and declared:
+            found[str(node.get("ref"))] = [dict(w) for w in declared]
+    return found
 
 
 def source_hints_for(

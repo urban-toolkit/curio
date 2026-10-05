@@ -668,6 +668,7 @@ def _insert_node(
     *,
     appearance: dict | None = None,
     title: str | None = None,
+    widgets: list | None = None,
 ) -> dict:
     """Append one server-minted node to the spec's dataflow (dev/48): fresh
     uuid id (collision-impossible, never from any param), placed right of the
@@ -676,7 +677,8 @@ def _insert_node(
     ``appearance`` (dev/89, additive) is already normalized by the shared
     node-appearance utility and persists at the canonical
     ``metadata.appearance.backgroundColor`` shape; callers that omit it stay
-    byte-for-byte identical.
+    byte-for-byte identical. ``widgets`` (#662), checked at mint, persist at
+    ``metadata.widgets`` the same way.
     """
     dataflow = spec.setdefault("dataflow", {})
     nodes = dataflow.setdefault("nodes", [])
@@ -695,6 +697,8 @@ def _insert_node(
         created["title"] = title
     if appearance:
         created["metadata"] = {"appearance": dict(appearance)}
+    if widgets:
+        created.setdefault("metadata", {})["widgets"] = [dict(w) for w in widgets]
     nodes.append(created)
     return created
 
@@ -725,6 +729,7 @@ def _apply_node_create(
         spec, node_type, proposal.get("content", ""), proposal.get("goal"),
         appearance=proposal.get("appearance"),  # dev/89: typed round-trip
         title=proposal.get("title"),  # dev/105 A2: the header the note renders
+        widgets=proposal.get("widgets"),  # #662: what its code's references name
     )
     proposal["status"] = "applied"
     projects_storage.write_spec(user_key, project_id, spec)

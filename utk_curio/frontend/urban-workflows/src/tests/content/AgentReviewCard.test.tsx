@@ -325,6 +325,93 @@ describe("AgentReviewCard — dev/67-5 per-node plan review (Simulation Mode: cr
   });
 });
 
+describe("AgentReviewCard: #662 a plan's widgets and scenarios", () => {
+  const scenarioPart = (): AgentProposalPart => ({
+    type: "proposal",
+    proposalId: "p-scn",
+    tool: "dataflow.plan.write",
+    summary: "Apply plan · 3 nodes, 3 edges, 2 scenarios",
+    preview: "",
+    pins: { baseGraphDigest: "abc" },
+    status: "pending",
+    plan: {
+      goal: "compare two building heights",
+      nodes: [
+        { ref: "buildings", nodeType: "curio.builtin/computation-analysis", title: "Buildings", intent: "heights" },
+        {
+          ref: "shadows", nodeType: "curio.builtin/computation-analysis", title: "Shadows", intent: "shadow lengths",
+          widgets: [{ name: "height_factor", type: "number", default: 1 }], scenario: "Real heights",
+        },
+        {
+          ref: "shadows_tall", nodeType: "curio.builtin/computation-analysis", title: "Shadows", intent: "shadow lengths",
+          widgets: [{ name: "height_factor", type: "number", default: 1, value: 2 }],
+          scenario: "Twice as tall", copyOf: "shadows",
+        },
+      ],
+      edgeCount: 3,
+      scenarios: [
+        { name: "Real heights", color: "#3567c7", nodes: [{ ref: "shadows", label: "Shadows" }] },
+        {
+          name: "Twice as tall", color: "#e86a3c", description: "every building doubled",
+          nodes: [{ ref: "shadows_tall", label: "Shadows" }], duplicateOf: "Real heights",
+          values: { shadows_tall: { height_factor: 2 } },
+        },
+      ],
+    },
+  });
+
+  it("names each scenario with its nodes, what a duplicate copies and the value it changes", () => {
+    render(<AgentReviewCard part={scenarioPart()} onApply={jest.fn()} />);
+    const group = screen.getByRole("group", { name: "Scenarios this plan saves" });
+    expect(group).toHaveTextContent("Real heights");
+    const twin = screen.getByLabelText("Scenario Twice as tall");
+    expect(twin).toHaveTextContent("a copy of Real heights · Shadows · sets height_factor 2");
+    expect(twin).toHaveTextContent("every building doubled");
+    // Counted at a glance, and the effect line says what Apply saves.
+    expect(screen.getByText(/2 scenarios/)).toBeInTheDocument();
+    expect(screen.getByText(/It saves 2 scenarios\./)).toBeInTheDocument();
+  });
+
+  it("a copy's row reads apart from its original's and waits for it", () => {
+    render(
+      <AgentReviewCard
+        part={scenarioPart()}
+        onApplyPlanNode={jest.fn()}
+        onSavePlanGoal={jest.fn()}
+        planNodeState={{ appliedRefs: [], editedGoals: {} }}
+      />,
+    );
+    expect(screen.getByText("in Twice as tall · a copy of Shadows")).toBeInTheDocument();
+    expect(screen.getByText('widgets: height_factor (number, 2)')).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create node Shadows (Real heights)" })).toBeEnabled();
+    const copy = screen.getByRole("button", { name: "Create node Shadows (Twice as tall)" });
+    expect(copy).toBeDisabled();
+    expect(copy).toHaveAttribute("title", "create 'Shadows' first");
+  });
+
+  it("once its original exists the copy can be created, and a saved scenario says so", () => {
+    render(
+      <AgentReviewCard
+        part={scenarioPart()}
+        onApplyPlanNode={jest.fn()}
+        onSavePlanGoal={jest.fn()}
+        planNodeState={{ appliedRefs: ["shadows"], editedGoals: {}, scenarioStates: { "0": "applied" } }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Create node Shadows (Twice as tall)" })).toBeEnabled();
+    expect(screen.getByLabelText("Scenario Real heights")).toHaveTextContent("Saved ✓");
+    expect(screen.getByLabelText("Scenario Twice as tall")).not.toHaveTextContent("Saved");
+  });
+
+  it("a plan without scenarios renders no Scenarios section (regression)", () => {
+    const part = scenarioPart();
+    delete part.plan!.scenarios;
+    render(<AgentReviewCard part={part} onApply={jest.fn()} />);
+    expect(screen.queryByRole("group", { name: "Scenarios this plan saves" })).toBeNull();
+    expect(screen.queryByText(/It saves/)).toBeNull();
+  });
+});
+
 describe("AgentReviewCard — dev/67-7 validation block", () => {
   const validated = (verdict: "pass" | "fail", evidence = {}): AgentProposalPart => ({
     ...part(),
