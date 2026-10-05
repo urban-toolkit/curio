@@ -467,7 +467,8 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
     )
     require_owner_view(page)
     token, target = session["token"], session["project"]["id"]
-    listed = api_json(f"{current_server}/api/projects", token)
+    # The first listing seeds the account's copies of the shipped dataflows.
+    listed = api_json(f"{current_server}/api/projects", token, timeout=120)
     seeded = [p for p in listed if p.get("name") == EXAMPLE_NAME]
     assert seeded, f"the account has no seeded {EXAMPLE_NAME!r}: {sorted(p.get('name') for p in listed)}"
     source = seeded[0]["id"]
