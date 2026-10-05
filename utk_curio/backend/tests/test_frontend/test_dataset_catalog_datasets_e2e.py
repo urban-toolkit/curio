@@ -263,8 +263,12 @@ def test_dataset_loads_and_feeds_a_consumer(
     # generated code carries no machine- or user-specific absolute path. A
     # collection is read through ``curio_load_collection``, which resolves the same
     # way and adds where each of its files is.
+    # A GeoTIFF's loader names its window as well, `bounds=None`.
+    from utk_curio.backend.app.datasets.domain.catalog_item import LOADER_OPTIONS
+
     call = "curio_load_collection" if dataset.manifest.format == "collection" else "curio_load_data"
-    assert f'{call}("{dataset.dataset_id}")' in loader_code, (
+    options = LOADER_OPTIONS.get(dataset.manifest.format, "")
+    assert f'{call}("{dataset.dataset_id}"{options})' in loader_code, (
         f"loader does not resolve the dataset by id:\n{loader_code}"
     )
 
