@@ -658,7 +658,8 @@ The node has two tabs:
   (**Combine**: mean, sum, median, minimum, maximum, or a count of rows).
 - **Difference**, in its place in Difference, maps a raster's or a layer's
   difference, colored by a band or a number column, or by `change` (**Color by**).
-  A layer's colors run from the lowest difference, dark purple, to the highest,
+  The legend is titled with what it shows: `sunlight_change` for the column
+  `sunlight`, or `change`. A layer's colors run from the lowest difference, dark purple, to the highest,
   yellow. A raster's cells are redder the higher their difference, and fainter the
   closer they are to no difference. A table's difference is shown as a table, each
   row in the color of its change.

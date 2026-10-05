@@ -299,10 +299,15 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
     : undefined;
   if (declared !== undefined && !accepts(declared)) return refused(declared, opts.label);
 
+  // A reference can name the table it is read as, as an envelope's
+  // `layerName` does: Compare Scenarios' difference map names it after what
+  // it maps (#662).
+  const named = isObject(input) && typeof input.layerName === "string" && input.layerName ? input.layerName : null;
+
   // A raster artifact is not fetched here: the frame names it, and the node
   // asks for the raster itself when it loads it.
   if (declared === "raster" && isObject(input) && typeof input.path === "string" && input.path) {
-    return { frames: [rasterFrameOf({ artifact: input.path }, null, { fromBundle: false, index: 0 })] };
+    return { frames: [rasterFrameOf({ artifact: input.path }, named, { fromBundle: false, index: 0 })] };
   }
 
   const read = (path: string) => (opts.preview ? fetchPreviewData(path) : fetchData(path));
@@ -318,7 +323,7 @@ export async function readGrammarInput(input: any, opts: ReadOptions): Promise<G
   if (FRAME_TYPES.has(dataType)) {
     const payload = envelope.data;
     if (payload == null) return { frames: [] };
-    return { frames: [frameOf(dataType, payload, envelope, input, { fromBundle: false, index: 0 })] };
+    return { frames: [frameOf(dataType, payload, envelope, input, { fromBundle: false, index: 0, name: named })] };
   }
 
   const rasterOpts: RasterOptions = { rasters: opts.rasters };
