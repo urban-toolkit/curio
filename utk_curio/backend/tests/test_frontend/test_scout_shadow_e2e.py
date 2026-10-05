@@ -97,6 +97,7 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     app_frontend: "FrontendPage",
     current_server: str,
     page,
+    record_property,
 ):
     require_project_page()
     require_user_auth()
@@ -143,6 +144,7 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     assert table["scenario_name"] == ["Existing", "Towers removed"], table["scenario_name"]
     assert table["season"] == ["summer", "summer"], table["season"]
     means = dict(zip(table["scenario"], table["mean_minutes"]))
+    record_property("mean accumulated shadow (minutes)", json.dumps({"ours": means, "scout": SCOUT_MEANS}))
     assert all(abs(means[key] - SCOUT_MEANS[key]) <= 0.05 for key in SCOUT_MEANS), (
         f"mean accumulated shadow, ours {means}, SCOUT's {SCOUT_MEANS}"
     )
@@ -159,6 +161,7 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     assert len(cells) == 512 * 512
     assert not any(math.isnan(v) for v in cells), "the difference has nodata where both mosaics have shadow"
     mean_change = sum(cells) / len(cells)
+    record_property("difference (minutes)", json.dumps({"min": min(cells), "max": max(cells), "mean": mean_change}))
     assert min(cells) < -100 and mean_change < 0, (min(cells), max(cells), mean_change)
     assert -720 <= min(cells) and max(cells) <= 720, (min(cells), max(cells))
     frame_nodes(page, [difference])

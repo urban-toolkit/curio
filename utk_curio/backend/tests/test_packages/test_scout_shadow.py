@@ -215,9 +215,10 @@ def run_node(value, workspace, *, data_type="dataframe", model=True, fails=False
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("scenario", ["A", "B"])
-def test_scouts_rasters_become_scouts_committed_shadows(tmp_path, scenario):
+def test_scouts_rasters_become_scouts_committed_shadows(tmp_path, scenario, record_property):
     """SCOUT's call, on SCOUT's committed height tiles, writes SCOUT's committed
-    shadow tiles and metrics: the same four files, within the tolerance."""
+    shadow tiles and metrics: the same four files, within the tolerance. The
+    measured numbers are recorded in the run's JUnit report either way."""
     out = tmp_path / f"{scenario}_shadows"
     metrics_out = tmp_path / f"{scenario}_shadows_metric"
     with shadow_modules(tmp_path) as (deep_umbra, _outputs):
@@ -231,12 +232,14 @@ def test_scouts_rasters_become_scouts_committed_shadows(tmp_path, scenario):
     assert sorted(p.name for p in out.iterdir()) == TILE_NAMES
     committed = FIXTURES / f"{scenario}_shadows"
     measured = {name: _levels(_gray(out / name), _gray(committed / name)) for name in TILE_NAMES}
+    ours, scouts = _metrics(Path(f"{metrics_out}.csv")), _metrics(FIXTURES / f"{scenario}_shadows_metric.csv")
+    differences = [abs(a - b) for a, b in zip(ours, scouts)]
+    record_property("tiles (largest levels, pixels differing)", json.dumps(measured))
+    record_property("metrics (mean, median)", json.dumps({"ours": ours, "scout": scouts, "differences": differences}))
     assert _within(measured), (
         f"(largest gray-level difference, pixels that differ) per tile, against at most "
         f"{MAX_LEVELS} levels on {MAX_SHARE:.1%} of {TILE_PIXELS} pixels: {measured}"
     )
-    ours, scouts = _metrics(Path(f"{metrics_out}.csv")), _metrics(FIXTURES / f"{scenario}_shadows_metric.csv")
-    differences = [abs(a - b) for a, b in zip(ours, scouts)]
     assert all(d <= MAX_MINUTES for d in differences), (
         f"(mean, median) minutes: ours {ours}, SCOUT's {scouts}, differences {differences}, "
         f"against at most {MAX_MINUTES}"
