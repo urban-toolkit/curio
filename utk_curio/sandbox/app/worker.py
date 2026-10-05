@@ -387,6 +387,7 @@ def _worker_init():
         checkIOType,
         save_dataset_parquet,
     )
+    from utk_curio.sandbox.util.scenario_difference import difference_scenarios
     from utk_curio.sandbox.util.scenario_stack import stack_scenarios
 
     _globals_cache = {
@@ -416,8 +417,10 @@ def _worker_init():
         'detect_kind': detect_kind,
         'checkIOType': checkIOType,
         'save_dataset_parquet': save_dataset_parquet,
-        # The Compare Scenarios node's code stacks its inputs with it (#662).
+        # The Compare Scenarios node's code stacks its inputs with it (#662),
+        # or, in Difference, subtracts one from the other.
         'curio_stack_scenarios': stack_scenarios,
+        'curio_difference_scenarios': difference_scenarios,
     }
 
 
@@ -789,6 +792,204 @@ def backend_base_url():
     return f'http://{host}:{port}'
 
 
+def run_js_script(code, input_data, *, cwd, node_type, t0=None, node_flags=()):
+    """Run JavaScript in one Node.js subprocess, the way a JS node runs.
+
+    The code is wrapped by ``util/js_wrapper.mjs`` with *input_data* as
+    ``arg``, its bare package imports are resolved against the repo-root
+    node_modules, and it runs under the JS slot, once more if Node died in its
+    own HTTP parser. *node_flags* go to ``node`` before the script.
+
+    :func:`execute_js_code` and the Compare Scenarios node's raster difference
+    (``util/scenario_difference.py``) both run Node through this, so they run
+    it one way. Returns ``(result_json, user_log_lines, stderr_lines)``: the
+    text of the result line, or None when Node printed none. A timeout or a
+    missing Node raises, as ``subprocess`` does.
+    """
+    import json
+    import pathlib
+    import re
+    import subprocess
+    import sys as _sys
+    import threading
+    import time
+
+    if t0 is None:
+        t0 = time.perf_counter()
+
+    # Resolve bare package specifiers (e.g. '@urban-toolkit/autk-db') to an
+    # ABSOLUTE file URL under the repo-root node_modules so the dynamic ESM
+    # import() below resolves regardless of the Node subprocess cwd. Node's ESM
+    # resolver does NOT consult NODE_PATH and resolves a bare specifier only by
+    # walking node_modules up from the importing module - which fails when
+    # CURIO_LAUNCH_CWD is outside the repo. Rewriting only the top-level
+    # specifier is enough: the package's own internal imports still resolve
+    # relative to its installed location.
+    root_node_modules = ROOT_NODE_MODULES
+
+    def _resolved_source(quoted_source):
+        # quoted_source keeps its surrounding quotes, e.g. "'@urban-toolkit/autk-db'".
+        spec = quoted_source[1:-1]
+        url = resolve_pkg_entry_url(spec, root_node_modules)
+        return f"'{url}'" if url else quoted_source
+
+    # Rewrite static `import` statements to dynamic `await import()` calls
+    # so user code runs inside a CJS IIFE (--input-type=commonjs), which
+    # lets autk-db's eval'd Worker threads use require() without errors.
+    named_re = re.compile(
+        r'^import\s+(.*?)\s+from\s+([\'"][^\'"]+[\'"])\s*;?\s*$', re.MULTILINE)
+    bare_re  = re.compile(
+        r'^import\s+([\'"][^\'"]+[\'"])\s*;?\s*$', re.MULTILINE)
+
+    dynamic_import_lines: list[str] = []
+
+    def _rewrite_named(m):
+        specs, source = m.group(1).strip(), _resolved_source(m.group(2))
+        if specs.startswith('* as '):
+            return f'  const {specs[5:].strip()} = await import({source});'
+        if specs.startswith('{'):
+            return f'  const {specs} = await import({source});'
+        parts = specs.split(',', 1)
+        default_name = parts[0].strip()
+        if len(parts) == 2:
+            named = parts[1].strip()
+            inner = named[1:-1] if named.startswith('{') and named.endswith('}') else named
+            return f'  const {{ default: {default_name}, {inner} }} = await import({source});'
+        return f'  const {{ default: {default_name} }} = await import({source});'
+
+    def _collect_named(m):
+        dynamic_import_lines.append(_rewrite_named(m))
+        return ''
+
+    def _collect_bare(m):
+        dynamic_import_lines.append(f'  await import({_resolved_source(m.group(1))});')
+        return ''
+
+    clean_code = bare_re.sub(_collect_bare, code)
+    clean_code = named_re.sub(_collect_named, clean_code).strip()
+    dynamic_imports_block = '\n'.join(dynamic_import_lines)
+    indented = '\n'.join('    ' + line for line in clean_code.splitlines())
+
+    # Serialize input as an inline JS literal.
+    arg_json = json.dumps(_to_js_value(input_data))
+
+    # Build script from static template - no temp file written to disk.
+    template_path = pathlib.Path(__file__).parent.parent / 'util' / 'js_wrapper.mjs'
+    template = template_path.read_text(encoding='utf-8')
+    script = (template
+              .replace('__DYNAMIC_IMPORTS__', dynamic_imports_block)
+              .replace('__ARG_JSON__', arg_json)
+              .replace('__OVERPASS_USER_AGENT__', json.dumps(OVERPASS_USER_AGENT))
+              .replace('__USER_CODE__', indented))
+
+    # NODE_PATH is a belt-and-braces aid for any CJS require() autk-db's
+    # worker threads perform (see node_runtime.node_env). cwd stays
+    # launch_dir so other JS nodes' relative file reads keep working.
+    node_env_vars = node_env()
+
+    def _run_node():
+        """Run the script in one Node subprocess, up to the JS ceiling.
+
+        Returns ``(exit_code, stdout_lines, stderr_lines)``. Factored out of
+        the body only so a crash inside Node itself can be retried: every
+        input it reads (``script``, ``cwd``, ``node_env_vars``) is fully built by
+        this point, so a second call re-runs the same execution rather than a
+        different one.
+        """
+        slot = _js_slot()
+        waited_at = time.perf_counter()
+        slot.acquire()
+        queued = time.perf_counter() - waited_at
+        if queued > 1.0:
+            print(f"[execJs] waited {queued:.1f}s for a slot  node={node_type}",
+                  file=_sys.stderr, flush=True)
+        try:
+            return _run_node_holding_slot()
+        finally:
+            slot.release()
+
+    def _run_node_holding_slot():
+        print(f"[execJs] starting Node.js  node={node_type}", file=_sys.stderr, flush=True)
+        t_start = time.perf_counter()
+
+        proc = subprocess.Popen(
+            ['node', '--input-type=commonjs', *node_flags],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding='utf-8', errors='replace', cwd=cwd,
+            env=node_env_vars,
+        )
+
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+
+        def _stream(pipe, lines, label):
+            for line in pipe:
+                line = line.rstrip('\n')
+                lines.append(line)
+                if not line.startswith('__CURIO_JSON_RESULT__'):
+                    print(f"[execJs] {label}: {line}", file=_sys.stderr, flush=True)
+
+        def _write_stdin(proc, data):
+            try:
+                proc.stdin.write(data)
+                proc.stdin.close()
+            except BrokenPipeError:
+                pass
+
+        t_in  = threading.Thread(target=_write_stdin, args=(proc, script), daemon=True)
+        t_out = threading.Thread(target=_stream, args=(proc.stdout, stdout_lines, 'stdout'), daemon=True)
+        t_err = threading.Thread(target=_stream, args=(proc.stderr, stderr_lines, 'stderr'), daemon=True)
+        t_in.start()
+        t_out.start()
+        t_err.start()
+
+        try:
+            proc.wait(timeout=3000)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            t_in.join()
+            t_out.join()
+            t_err.join()
+            raise
+
+        t_in.join()
+        t_out.join()
+        t_err.join()
+
+        print(f"[execJs] Node.js finished  total={time.perf_counter()-t_start:.3f}s  "
+              f"exit={proc.returncode}  node={node_type}",
+              file=_sys.stderr, flush=True)
+        return proc.returncode, stdout_lines, stderr_lines
+
+    exit_code, stdout_lines, stderr_lines = _run_node()
+
+    # One retry, and only for a crash inside Node's own HTTP parser. See
+    # is_node_internal_stream_crash for why re-running is the only response
+    # available to us. The cost is bounded: a run that does not hit it pays
+    # one substring scan of stderr.
+    if is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines):
+        print(f"[execJs] Node died inside its own HTTP parser before user code "
+              f"could either fail or produce a result; retrying once  "
+              f"node={node_type}", file=_sys.stderr, flush=True)
+        exit_code, stdout_lines, stderr_lines = _run_node()
+        print(f"[execJs] retry {'hit it too' if is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines) else 'cleared it'}"
+              f"  total_with_retry={time.perf_counter()-t0:.3f}s  node={node_type}",
+              file=_sys.stderr, flush=True)
+
+    # Extract result from stdout - a single line prefixed with __CURIO_JSON_RESULT__.
+    RESULT_PREFIX = '__CURIO_JSON_RESULT__'
+    result_json = None
+    user_log_lines = []
+    for line in stdout_lines:
+        if line.startswith(RESULT_PREFIX):
+            result_json = line[len(RESULT_PREFIX):]
+        else:
+            user_log_lines.append(line)
+
+    return result_json, user_log_lines, stderr_lines
+
+
 def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True):
     """
     Execute user JavaScript code in an isolated Node.js subprocess.
@@ -802,11 +1003,8 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
     """
     import json
     import os
-    import pathlib
-    import re
     import subprocess
     import sys as _sys
-    import threading
     import time
     import traceback
 
@@ -833,175 +1031,9 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
             input_data = load_artifact(file_path, session_id=session_id)
         input_data = _expand_outputs_wrapper(input_data, session_id=session_id)
 
-        # Resolve bare package specifiers (e.g. '@urban-toolkit/autk-db') to an
-        # ABSOLUTE file URL under the repo-root node_modules so the dynamic ESM
-        # import() below resolves regardless of the Node subprocess cwd. Node's ESM
-        # resolver does NOT consult NODE_PATH and resolves a bare specifier only by
-        # walking node_modules up from the importing module - which fails when
-        # CURIO_LAUNCH_CWD is outside the repo. Rewriting only the top-level
-        # specifier is enough: the package's own internal imports still resolve
-        # relative to its installed location.
-        root_node_modules = ROOT_NODE_MODULES
-
-        def _resolved_source(quoted_source):
-            # quoted_source keeps its surrounding quotes, e.g. "'@urban-toolkit/autk-db'".
-            spec = quoted_source[1:-1]
-            url = resolve_pkg_entry_url(spec, root_node_modules)
-            return f"'{url}'" if url else quoted_source
-
-        # Rewrite static `import` statements to dynamic `await import()` calls
-        # so user code runs inside a CJS IIFE (--input-type=commonjs), which
-        # lets autk-db's eval'd Worker threads use require() without errors.
-        named_re = re.compile(
-            r'^import\s+(.*?)\s+from\s+([\'"][^\'"]+[\'"])\s*;?\s*$', re.MULTILINE)
-        bare_re  = re.compile(
-            r'^import\s+([\'"][^\'"]+[\'"])\s*;?\s*$', re.MULTILINE)
-
-        dynamic_import_lines: list[str] = []
-
-        def _rewrite_named(m):
-            specs, source = m.group(1).strip(), _resolved_source(m.group(2))
-            if specs.startswith('* as '):
-                return f'  const {specs[5:].strip()} = await import({source});'
-            if specs.startswith('{'):
-                return f'  const {specs} = await import({source});'
-            parts = specs.split(',', 1)
-            default_name = parts[0].strip()
-            if len(parts) == 2:
-                named = parts[1].strip()
-                inner = named[1:-1] if named.startswith('{') and named.endswith('}') else named
-                return f'  const {{ default: {default_name}, {inner} }} = await import({source});'
-            return f'  const {{ default: {default_name} }} = await import({source});'
-
-        def _collect_named(m):
-            dynamic_import_lines.append(_rewrite_named(m))
-            return ''
-
-        def _collect_bare(m):
-            dynamic_import_lines.append(f'  await import({_resolved_source(m.group(1))});')
-            return ''
-
-        clean_code = bare_re.sub(_collect_bare, code)
-        clean_code = named_re.sub(_collect_named, clean_code).strip()
-        dynamic_imports_block = '\n'.join(dynamic_import_lines)
-        indented = '\n'.join('    ' + line for line in clean_code.splitlines())
-
-        # Serialize input as an inline JS literal.
-        arg_json = json.dumps(_to_js_value(input_data))
-
-        # Build script from static template - no temp file written to disk.
-        template_path = pathlib.Path(__file__).parent.parent / 'util' / 'js_wrapper.mjs'
-        template = template_path.read_text(encoding='utf-8')
-        script = (template
-                  .replace('__DYNAMIC_IMPORTS__', dynamic_imports_block)
-                  .replace('__ARG_JSON__', arg_json)
-                  .replace('__OVERPASS_USER_AGENT__', json.dumps(OVERPASS_USER_AGENT))
-                  .replace('__USER_CODE__', indented))
-
-        # NODE_PATH is a belt-and-braces aid for any CJS require() autk-db's
-        # worker threads perform (see node_runtime.node_env). cwd stays
-        # launch_dir so other JS nodes' relative file reads keep working.
-        node_env_vars = node_env()
-
-        def _run_node():
-            """Run the script in one Node subprocess, up to the JS ceiling.
-
-            Returns ``(exit_code, stdout_lines, stderr_lines)``. Factored out of
-            the body only so a crash inside Node itself can be retried: every
-            input it reads (``script``, ``cwd``, ``node_env_vars``) is fully built by
-            this point, so a second call re-runs the same execution rather than a
-            different one.
-            """
-            slot = _js_slot()
-            waited_at = time.perf_counter()
-            slot.acquire()
-            queued = time.perf_counter() - waited_at
-            if queued > 1.0:
-                print(f"[execJs] waited {queued:.1f}s for a slot  node={node_type}",
-                      file=_sys.stderr, flush=True)
-            try:
-                return _run_node_holding_slot()
-            finally:
-                slot.release()
-
-        def _run_node_holding_slot():
-            print(f"[execJs] starting Node.js  node={node_type}", file=_sys.stderr, flush=True)
-            t_start = time.perf_counter()
-
-            proc = subprocess.Popen(
-                ['node', '--input-type=commonjs'],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, encoding='utf-8', errors='replace', cwd=cwd,
-                env=node_env_vars,
-            )
-
-            stdout_lines: list[str] = []
-            stderr_lines: list[str] = []
-
-            def _stream(pipe, lines, label):
-                for line in pipe:
-                    line = line.rstrip('\n')
-                    lines.append(line)
-                    if not line.startswith('__CURIO_JSON_RESULT__'):
-                        print(f"[execJs] {label}: {line}", file=_sys.stderr, flush=True)
-
-            def _write_stdin(proc, data):
-                try:
-                    proc.stdin.write(data)
-                    proc.stdin.close()
-                except BrokenPipeError:
-                    pass
-
-            t_in  = threading.Thread(target=_write_stdin, args=(proc, script), daemon=True)
-            t_out = threading.Thread(target=_stream, args=(proc.stdout, stdout_lines, 'stdout'), daemon=True)
-            t_err = threading.Thread(target=_stream, args=(proc.stderr, stderr_lines, 'stderr'), daemon=True)
-            t_in.start()
-            t_out.start()
-            t_err.start()
-
-            try:
-                proc.wait(timeout=3000)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                t_in.join()
-                t_out.join()
-                t_err.join()
-                raise
-
-            t_in.join()
-            t_out.join()
-            t_err.join()
-
-            print(f"[execJs] Node.js finished  total={time.perf_counter()-t_start:.3f}s  "
-                  f"exit={proc.returncode}  node={node_type}",
-                  file=_sys.stderr, flush=True)
-            return proc.returncode, stdout_lines, stderr_lines
-
-        exit_code, stdout_lines, stderr_lines = _run_node()
-
-        # One retry, and only for a crash inside Node's own HTTP parser. See
-        # is_node_internal_stream_crash for why re-running is the only response
-        # available to us. The cost is bounded: a run that does not hit it pays
-        # one substring scan of stderr.
-        if is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines):
-            print(f"[execJs] Node died inside its own HTTP parser before user code "
-                  f"could either fail or produce a result; retrying once  "
-                  f"node={node_type}", file=_sys.stderr, flush=True)
-            exit_code, stdout_lines, stderr_lines = _run_node()
-            print(f"[execJs] retry {'hit it too' if is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines) else 'cleared it'}"
-                  f"  total_with_retry={time.perf_counter()-t0:.3f}s  node={node_type}",
-                  file=_sys.stderr, flush=True)
-
-        # Extract result from stdout - a single line prefixed with __CURIO_JSON_RESULT__.
-        RESULT_PREFIX = '__CURIO_JSON_RESULT__'
-        result_json = None
-        user_log_lines = []
-        for line in stdout_lines:
-            if line.startswith(RESULT_PREFIX):
-                result_json = line[len(RESULT_PREFIX):]
-            else:
-                user_log_lines.append(line)
+        result_json, user_log_lines, stderr_lines = run_js_script(
+            code, input_data, cwd=cwd, node_type=node_type, t0=t0,
+        )
 
         stderr_text = '\n'.join(stderr_lines)
 
