@@ -48,13 +48,18 @@ concurrent executions work without any threads on this side.
 """
 
 import argparse
-import collections
 import errno
 import json
 import os
 import signal
 import socket
 import sys
+
+from utk_curio.sandbox.util.duckdb_threads import (  # noqa: F401  (_describe_threads: tests)
+    describe_threads as _describe_threads,
+    release_default_connection,
+    thread_names as _thread_names,
+)
 
 SOCKET_BACKLOG = 64
 
@@ -177,36 +182,6 @@ def _unavailable_under_isolation(name):
     return _stub
 
 
-def _thread_names():
-    """The name of every thread in this process, or None where /proc is absent.
-
-    Only Linux has ``/proc/self/task``. Everywhere else the answer is None
-    rather than a guess, and the callers skip what they would have reported.
-    """
-    task_dir = "/proc/self/task"
-    try:
-        thread_ids = os.listdir(task_dir)
-    except OSError:
-        return None
-    names = []
-    for thread_id in thread_ids:
-        try:
-            with open(os.path.join(task_dir, thread_id, "comm"),
-                      encoding="utf-8", errors="replace") as handle:
-                names.append(handle.read().strip() or "?")
-        except OSError:
-            # The thread exited between the listing and the read.
-            continue
-    return names
-
-
-def _describe_threads(names):
-    """``'17 (python3 x16, duckdb x1)'``: the count, then names by frequency."""
-    counts = collections.Counter(names)
-    listed = ", ".join(f"{name} x{count}" for name, count in counts.most_common())
-    return f"{len(names)} ({listed})"
-
-
 def _release_import_time_duckdb():
     """Close the connection ``import duckdb`` opened, before anything forks.
 
@@ -225,46 +200,22 @@ def _release_import_time_duckdb():
     and explicit ``duckdb.connect()`` calls were never affected.
 
     The thread counts on either side are logged so a run can see what
-    changed. Warnings only: a zygote that failed to start would send the
-    sandbox back to in-process execution (``sandbox/app/api.py::
-    _isolated_runner``), which is far worse than a fork from a busy process.
+    changed. What is left is expected: numpy's OpenBLAS pool, which tears
+    itself down on the first fork, and pyarrow's jemalloc background thread
+    ("jemalloc_bg_thd"), which is fork-aware. Neither crashed a child in 1,200
+    executions of scripts/repro_zygote_fork_crash.py.
+
+    Warnings only: a zygote that failed to start would send the sandbox back
+    to in-process execution (``sandbox/app/api.py::_isolated_runner``), which
+    is far worse than a fork from a busy process. The servers close the same
+    connection at startup (``sandbox/util/duckdb_threads.py``).
     """
-    duckdb = sys.modules.get("duckdb")
-    if duckdb is None:
-        return
-
-    before = _thread_names()
-    try:
-        connection = duckdb.default_connection
-        if callable(connection):  # a function in current DuckDB, an attribute before
-            connection = connection()
-        try:
-            # DuckDB can run a jemalloc background thread of its own, which
-            # is process-wide and would outlive the connection. It is off by
-            # default; this only makes sure.
-            connection.execute("SET GLOBAL allocator_background_threads = false")
-        except Exception:
-            pass
-        connection.close()
-    except Exception as exc:
-        print(f"[zygote] warning: could not close DuckDB's import-time "
-              f"connection, so children fork with its threads running: {exc}",
-              file=sys.stderr, flush=True)
-        return
-    after = _thread_names()
-
-    if before is None or after is None:
-        return
-    # What is left is expected: numpy's OpenBLAS pool, which tears itself
-    # down on the first fork, and pyarrow's jemalloc background thread
-    # ("jemalloc_bg_thd"), which is fork-aware. Neither crashed a child in
-    # 1,200 executions of scripts/repro_zygote_fork_crash.py.
-    if len(before) > 1:
-        print(
-            f"[zygote] released DuckDB's import-time connection: threads "
-            f"{_describe_threads(before)} -> {_describe_threads(after)}",
-            file=sys.stderr, flush=True,
-        )
+    release_default_connection(
+        "[zygote]",
+        "so children fork with its threads running",
+        # Looked up on each call, so a test can stand in for it.
+        names=lambda: _thread_names(),
+    )
 
 
 class Zygote:

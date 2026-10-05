@@ -178,6 +178,12 @@ if __name__ == '__main__':
                 "CURIO_ISOLATION=off to accept the risk explicitly."
             )
 
+    # DuckDB's import-time connection holds a thread per core and serves
+    # nothing here: node code that calls duckdb.sql reopens it with its full
+    # pool, and the store has a connection of its own.
+    from utk_curio.sandbox.util.duckdb_threads import release_default_connection
+    release_default_connection("[sandbox]", "so its threads stay idle in this process")
+
     app.run(
         host=os.getenv('FLASK_SANDBOX_HOST', '127.0.0.1'),
         port=int(os.getenv('FLASK_SANDBOX_PORT', 2000)),
