@@ -290,7 +290,30 @@ def _brush(page, start: tuple[float, float], end: tuple[float, float], what: str
     page.mouse.up()
 
 
+# play_node scrolls the node it plays into view, and the browser can do that by
+# scrolling an element around the canvas that hides its overflow. The canvas
+# then sits that far off wherever it is framed (seen on this test's first CI
+# run: the chart framed 300px too high). Every such element is put back first.
+_UNSCROLL_JS = r"""(nodeId) => {
+    const moved = [];
+    const node = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+    for (let el = node && node.parentElement; el; el = el.parentElement) {
+        if (el.scrollTop || el.scrollLeft) {
+            moved.push(`${el.tagName.toLowerCase()}.${String(el.className).split(" ")[0]}: ${el.scrollLeft},${el.scrollTop}`);
+            el.scrollTop = 0;
+            el.scrollLeft = 0;
+        }
+    }
+    if (window.scrollX || window.scrollY) {
+        moved.push(`window: ${window.scrollX},${window.scrollY}`);
+        window.scrollTo(0, 0);
+    }
+    return moved;
+}"""
+
+
 def _scatter_boxes(page) -> tuple[dict, dict]:
+    moved = page.evaluate(_UNSCROLL_JS, SCATTER_ID)
     frame_node(page, SCATTER_ID)
     canvas_selector = f"#vega{SCATTER_ID} canvas"
     page.locator(canvas_selector).first.wait_for(state="attached", timeout=60000)
@@ -298,6 +321,11 @@ def _scatter_boxes(page) -> tuple[dict, dict]:
     assert area, "the scatterplot drew no points to brush"
     canvas = page.locator(canvas_selector).first.bounding_box()
     assert canvas, "the scatterplot has no canvas box"
+    width, height = page.evaluate("() => [window.innerWidth, window.innerHeight]")
+    assert (
+        canvas["x"] >= 0 and canvas["y"] >= 0
+        and canvas["x"] + canvas["width"] <= width and canvas["y"] + canvas["height"] <= height
+    ), f"the framed scatterplot is not in the {width}x{height} window: {canvas}; scrolled back first: {moved}"
     return area, canvas
 
 
