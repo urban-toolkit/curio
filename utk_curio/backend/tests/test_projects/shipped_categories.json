@@ -312,6 +312,12 @@
     "tags": [],
     "data_type": []
   },
+  "dataflows/FloodScenarios": {
+    "tags": [],
+    "data_type": [
+      "Rasters"
+    ]
+  },
   "dataflows/Image": {
     "tags": [
       "Pandas"

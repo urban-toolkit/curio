@@ -161,8 +161,8 @@ class TestReachability:
             if any((n.get("metadata") or {}).get("widgets") for n in _example(f)["dataflow"]["nodes"])
         ]
         assert {f.fixture_id for f in with_widgets} == {
-            "Widget", "Scenarios", "BuildingRasters", "06-autark-what-if-shadow-study", "ScoutShadows",
-            "24-scout-building-rasters",
+            "Widget", "Scenarios", "BuildingRasters", "FloodScenarios", "06-autark-what-if-shadow-study",
+            "ScoutShadows", "24-scout-building-rasters",
         }
         for fixture in with_widgets:
             example = _example(fixture)

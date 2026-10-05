@@ -33,8 +33,8 @@ USER_KEY = "guest"
 
 def _declared_from_disk() -> set[str]:
     """The union of ``dataflow.datasets[].dirName`` across the committed
-    dataflows: the curated examples and the test dataflows beside them, every
-    dataflow the seeder seeds.
+    dataflows: the numbered examples and the test dataflows, the two folders
+    Curio seeds.
 
     Computed independently of the function under test, so the assertion compares
     two readings of the same source rather than a function against itself.
