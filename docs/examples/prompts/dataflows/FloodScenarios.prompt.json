@@ -1,0 +1,227 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "FloodScenarios",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/FloodScenarios.json",
+    "sha256": "7c91054bdfd9373cb4a859cfcfe4a0e4cd07efe33542fc2b5cfc45267c0001b2",
+    "walkthrough": null
+  },
+  "prompt": "Compare two scenarios of SCOUT's Quad Cities flood projection over the same small area: one with no nature-based solutions, and a copy of it with all six solutions in place. Both read the projection period, 2020 to 2040, from one shared setting. In each scenario, run SCOUT's flood function, then take its flood depth raster and its row of median and mean depth. Map how much the solutions change the depth, the second scenario minus the first, and chart each scenario's median flood depth. The flood function is not part of the standard node set, so whatever provides it needs installing first.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.scout.flood-depth-2020-2040-nbs",
+      "data.scout.flood-depth-2020-2040-no-nbs",
+      "data.scout.flood-depth-2050-2080-nbs",
+      "data.scout.flood-depth-2050-2080-no-nbs",
+      "data.scout.flood-depth-2080-2100-nbs",
+      "data.scout.flood-depth-2080-2100-no-nbs",
+      "data.scout.flood-nbs-classes"
+    ],
+    "packages": [
+      "scout.flood@1"
+    ],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/compare-scenarios",
+        "role": "visualization",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/compare-scenarios",
+        "role": "visualization",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "endpoint1",
+        "type": "curio.builtin/parameter",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "analysis5",
+        "type": "scout.flood/flood-projection",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis6",
+        "type": "scout.flood/flood-projection",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis5",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis6",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis6",
+        "to": "analysis4",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.scout.flood-depth-2020-2040-nbs",
+        "data.scout.flood-depth-2020-2040-no-nbs",
+        "data.scout.flood-depth-2050-2080-nbs",
+        "data.scout.flood-depth-2050-2080-no-nbs",
+        "data.scout.flood-depth-2080-2100-nbs",
+        "data.scout.flood-depth-2080-2100-no-nbs",
+        "data.scout.flood-nbs-classes"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "analysis5",
+      "mustMention": [
+        "flood"
+      ]
+    },
+    {
+      "ref": "analysis6",
+      "mustMention": [
+        "flood"
+      ]
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T2",
+    "needs": [
+      "package-enlist:templates",
+      "widgets"
+    ],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON, 2026-10-05",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "sourceLicences": [
+      {
+        "datasetId": "data.scout.flood-depth-2020-2040-nbs",
+        "licence": "Research use"
+      },
+      {
+        "datasetId": "data.scout.flood-depth-2020-2040-no-nbs",
+        "licence": "Research use"
+      },
+      {
+        "datasetId": "data.scout.flood-depth-2050-2080-nbs",
+        "licence": "Research use"
+      },
+      {
+        "datasetId": "data.scout.flood-depth-2050-2080-no-nbs",
+        "licence": "Research use"
+      },
+      {
+        "datasetId": "data.scout.flood-depth-2080-2100-nbs",
+        "licence": "Research use"
+      },
+      {
+        "datasetId": "data.scout.flood-depth-2080-2100-no-nbs",
+        "licence": "Research use"
+      },
+      {
+        "datasetId": "data.scout.flood-nbs-classes",
+        "licence": "Research use"
+      }
+    ],
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "A package node with widgets in two scenarios over a shared Parameter node: SCOUT's flood function with and without nature-based solutions, compared on a difference map and a chart."
+}

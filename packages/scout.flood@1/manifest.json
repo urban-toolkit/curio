@@ -1,0 +1,93 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-10-05T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "rasterio": ">=1.4"
+    }
+  },
+  "description": "SCOUT's flood function, ported from SCOUT (urban-toolkit/scout): the Flood Projection node reads a region of SCOUT's Quad Cities flood projections for a period and gives its flood depth with the nature-based solutions you choose in place, as a raster an Autark map draws, and its median and mean depth.",
+  "id": "scout.flood",
+  "license": "MIT",
+  "name": "SCOUT Flood",
+  "permissions": [],
+  "publisher": "Curio",
+  "readOnly": true,
+  "templates": [
+    {
+      "category": "computation",
+      "description": "SCOUT's flood projection: reads the region's window of SCOUT's nature-based solutions (NbS) class raster and of the period's flood depth rasters with and without NbS, from the Data Catalog. A cell takes the depth with NbS where its class is one of the chosen solutions, and the depth without NbS elsewhere. No input. Output: (depth, metrics): one RASTER of the region's flood depth in metres, in EPSG:4326, for an Autark map; and a one-row table of the median flood depth and the mean flood depth.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": true,
+      "iconRef": "fa-solid:map",
+      "id": "flood-projection",
+      "inputPorts": [],
+      "label": "Flood Projection",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": ["RASTER", "DATAFRAME"]
+        }
+      ],
+      "source": "sources/flood-projection.py",
+      "widgets": [
+        {
+          "name": "topleft",
+          "type": "location",
+          "label": "Top-left corner",
+          "default": {"lat": 41.4669, "lon": -90.4836}
+        },
+        {
+          "name": "bottomright",
+          "type": "location",
+          "label": "Bottom-right corner",
+          "default": {"lat": 41.441, "lon": -90.4577}
+        },
+        {
+          "name": "year",
+          "type": "choice",
+          "label": "Projection period",
+          "default": "2020 - 2040",
+          "options": {
+            "choices": ["2020 - 2040", "2050 - 2080", "2080 - 2100"],
+            "display": "radio"
+          }
+        },
+        {
+          "name": "use_NBS_classes",
+          "type": "checkbox-group",
+          "label": "Nature-based solutions",
+          "default": [
+            "Bioswales/Infiltration trenches",
+            "Permeable pavements",
+            "Retention ponds",
+            "Infiltration trench",
+            "Bioswales",
+            "Constructed wetlands"
+          ],
+          "options": {
+            "choices": [
+              "Bioswales/Infiltration trenches",
+              "Permeable pavements",
+              "Retention ponds",
+              "Infiltration trench",
+              "Bioswales",
+              "Constructed wetlands"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "version": "1.0.0"
+}

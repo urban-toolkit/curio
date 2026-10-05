@@ -152,7 +152,7 @@ class TestReachability:
             if any((n.get("metadata") or {}).get("widgets") for n in _example(f)["dataflow"]["nodes"])
         }
         declared = {f.fixture_id for f in FIXTURES if oracle.WIDGETS_NEED in f.needs}
-        assert with_widgets == declared == {"Widget"}
+        assert with_widgets == declared == {"Widget", "FloodScenarios"}
         with pytest.raises(oracle.Unrepresentable) as caught:
             oracle.require_writable_widgets(_example(_by_id("Widget")))
         assert caught.value.need == "widgets"
