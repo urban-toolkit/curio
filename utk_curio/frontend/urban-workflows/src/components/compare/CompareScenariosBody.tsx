@@ -118,7 +118,17 @@ function Select<T extends string>({
   );
 }
 
-export function CompareScenariosBody({ nodeId, runError = null }: { nodeId: string; runError?: string | null }) {
+export function CompareScenariosBody({
+  nodeId,
+  runError = null,
+  savedPath = null,
+}: {
+  nodeId: string;
+  /** Why the node's last run failed, shown where the chart goes. */
+  runError?: string | null;
+  /** The file the node's last successful run saved its output to. */
+  savedPath?: string | null;
+}) {
   const flow = useFlowContext() as any;
   const nodes: any[] = flow?.nodes ?? [];
   const edges: any[] = flow?.edges ?? [];
@@ -138,8 +148,11 @@ export function CompareScenariosBody({ nodeId, runError = null }: { nodeId: stri
   const warnings = [...labelWarnings(inputs), ...contextWarnings(compared, nodes, edges)];
   const differs = whatDiffers(compared, nodes, edges);
 
-  const raw = outputs.find((o) => o?.nodeId === nodeId)?.output;
-  const rawRef = stackedRef(raw);
+  // The node's own output: the file its outcome names, which a load restores
+  // with the node (the flow's outputs list starts empty after a load), else,
+  // while a run is in flight, the last output the flow holds for it.
+  const live = stackedRef(outputs.find((o) => o?.nodeId === nodeId)?.output);
+  const rawRef = savedPath ? (live?.path === savedPath ? live : { path: savedPath }) : live;
   const stackedKey = rawRef ? `${rawRef.path}|${rawRef.dataType ?? ""}` : "";
   const stacked = useMemo(() => rawRef, [stackedKey]);
   const read = useStackedRead(stacked);

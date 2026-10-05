@@ -33,6 +33,20 @@ export function failureLine(content: unknown): string {
   return last.replace(/^[A-Za-z_][\w.]*(Error|Exception): /, "");
 }
 
+/**
+ * The file a successful run saved its output to, from its outcome's last
+ * "Saved to file:" line: what a run shows, and what a project load restores
+ * the node with (`useCode.loadTrill`), on the canvas and on the dashboard.
+ */
+export function savedFile(content: unknown): string | null {
+  const lines = String(content ?? "").split("\n");
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const match = lines[i].match(/^Saved to file: (\S+)\s*$/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
 export const useCompareScenariosBehavior: NodeBehaviorHook = (data, nodeState) => {
   const flow = useFlowContext() as any;
   const nodes: any[] = flow?.nodes ?? [];
@@ -73,8 +87,9 @@ export const useCompareScenariosBehavior: NodeBehaviorHook = (data, nodeState) =
     ? `${output.code}:${String(output.content ?? "")}`
     : String(output?.code ?? "");
   const runError = output?.code === "error" ? failureLine(output.content) : null;
+  const ranTo = output?.code === "success" ? savedFile(output.content) : null;
   const contentComponent = useMemo(
-    () => <CompareScenariosBody nodeId={data.nodeId} runError={runError} />,
+    () => <CompareScenariosBody nodeId={data.nodeId} runError={runError} savedPath={ranTo} />,
     [data.nodeId, outcome],
   );
   // A node just dropped has no code yet; it gets the code for its inputs.
