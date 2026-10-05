@@ -193,16 +193,38 @@
   },
   "intents": [
     {
+      "ref": "loader1",
+      "outputKind": "raster"
+    },
+    {
+      "ref": "loader2",
+      "outputKind": "raster"
+    },
+    {
+      "ref": "loader3",
+      "outputKind": "raster"
+    },
+    {
       "ref": "analysis1",
       "mustMention": [
         "flood"
-      ]
+      ],
+      "outputKind": "raster"
     },
     {
       "ref": "analysis2",
       "mustMention": [
         "flood"
-      ]
+      ],
+      "outputKind": "raster"
+    },
+    {
+      "ref": "analysis3",
+      "outputKind": "dataframe"
+    },
+    {
+      "ref": "analysis4",
+      "outputKind": "dataframe"
     }
   ],
   "execution": {

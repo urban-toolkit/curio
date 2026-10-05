@@ -326,11 +326,18 @@ def test_each_scenario_chooses_by_scouts_classes_and_takes_the_statistics():
     differ in the solutions their widget chooses; the NbS scenario is a copy of
     the other. Each feeds a Raster Statistics node that holds the code it starts
     with."""
+    from utk_curio.backend.app.execution.code_references import resolve_references
+
     spec = _dataflow()
     nodes = {n["id"]: n for n in spec["nodes"]}
     calculators = _nodes(CALCULATOR)
     (code,) = {n["content"] for n in calculators}
-    assert _literal_dict(_function_body(code), "NBS_CLASSES") == _scout_classes()
+    for calculator in calculators:
+        # The code reads its widget through a chip, so it parses once resolved,
+        # as a run sends it.
+        resolved, problems = resolve_references(code, calculator["metadata"]["widgets"], "python")
+        assert problems == [], (calculator["id"], problems)
+        assert _literal_dict(_function_body(resolved), "NBS_CLASSES") == _scout_classes()
     assert "return curio_raster_calculate(\"choose\", arg, codes=codes)" in code
     assert {n["content"] for n in _nodes(STATISTICS)} == {_starter("RASTER_STATISTICS_CODE")}
 
