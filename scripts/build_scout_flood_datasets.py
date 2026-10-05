@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cut SCOUT's flood rasters down to the area the scout.flood package's example reads.
+"""Cut SCOUT's flood rasters down to the area the FloodScenarios test dataflow reads.
 
 SCOUT (https://github.com/urban-toolkit/scout) ships its Quad Cities flood
 projections in ``backend/compute/quad_city_flooding_simulation/data_substitutes/``:
@@ -9,8 +9,9 @@ cell GeoTIFF in EPSG:4326 (the depth rasters 42.8 MB each), too large for the
 repository. This script writes a crop of each into ``datasets/<id>@1/`` with its
 manifest:
 
-- the crop is the example's region (``EXAMPLE_REGION``, the scout.flood
-  template's default corners) plus ``MARGIN`` cells on every side;
+- the crop is the example's region (``EXAMPLE_REGION``, the corners the
+  FloodScenarios dataflow's Parameter nodes hold) plus ``MARGIN`` cells on
+  every side;
 - it keeps SCOUT's grid: the same CRS, cell size and cell edges, dtype and
   nodata, so a window read on a crop gives the cells the same window read on
   SCOUT's file gives;
@@ -59,9 +60,10 @@ SCOUT_FUNCTION = (
 STAMP = "2026-10-05T00:00:00Z"
 PUBLISHER = "SCOUT (urban-toolkit/scout)"
 
-#: (top, left, bottom, right) in degrees: the scout.flood template's default
-#: corners, 256 by 256 cells that hold every NbS class code.
-EXAMPLE_REGION = (41.4669, -90.4836, 41.4410, -90.4577)
+#: (top, left, bottom, right) in degrees: the FloodScenarios dataflow's corners,
+#: on the edges of SCOUT's cells (columns 2016 to 2271 and rows 1552 to 1807 of
+#: its grid), 256 by 256 cells that hold every NbS class code.
+EXAMPLE_REGION = (41.4669317349186, -90.48363204845099, 41.44098884583301, -90.4576891593654)
 #: Cells kept on every side of the region.
 MARGIN = 32
 
@@ -111,11 +113,12 @@ def _crop_window(transform):
     from rasterio.windows import Window, from_bounds
 
     top, left, bottom, right = EXAMPLE_REGION
+    # The region's corners lie on cell edges, so its window is whole cells.
     region = from_bounds(left, bottom, right, top, transform=transform)
-    col0 = math.floor(region.col_off) - MARGIN
-    row0 = math.floor(region.row_off) - MARGIN
-    col1 = math.ceil(region.col_off + region.width) + MARGIN
-    row1 = math.ceil(region.row_off + region.height) + MARGIN
+    col0 = round(region.col_off) - MARGIN
+    row0 = round(region.row_off) - MARGIN
+    col1 = round(region.col_off + region.width) + MARGIN
+    row1 = round(region.row_off + region.height) + MARGIN
     return Window(col0, row0, col1 - col0, row1 - row0)
 
 
@@ -124,7 +127,7 @@ def _describe(entry: dict, window, bounds) -> str:
         f"{entry['what']} A {window.width} by {window.height} cell crop of SCOUT's {entry['scout_file']} "
         f"on its own grid (EPSG:4326, cells of 0.000101 degrees), longitude {bounds.left:.4f} to "
         f"{bounds.right:.4f} and latitude {bounds.bottom:.4f} to {bounds.top:.4f}: the area the "
-        "scout.flood package's example reads. From SCOUT, https://github.com/urban-toolkit/scout, "
+        "FloodScenarios test dataflow reads. From SCOUT, https://github.com/urban-toolkit/scout, "
         "backend/compute/quad_city_flooding_simulation/data_substitutes, used with the permission of "
         "SCOUT's authors."
     )
@@ -234,7 +237,9 @@ PROOF_CASES = {
     "example-2050-none": (EXAMPLE_REGION, "2050 - 2080", []),
     "example-2050-all": (EXAMPLE_REGION, "2050 - 2080", ALL_NBS),
     "example-2080-some": (EXAMPLE_REGION, "2080 - 2100", ["Bioswales", "Constructed wetlands"]),
-    "inner-2020-some": ((41.46213, -90.47912, 41.44587, -90.46345), "2020 - 2040", ["Retention ponds", "Permeable pavements"]),
+    # Columns 2061 to 2215 and rows 1599 to 1758 of SCOUT's grid, on cell edges.
+    "inner-2020-some": ((41.46216878262555, -90.4790717749789, 41.44595447694705, -90.46336416635286),
+                        "2020 - 2040", ["Retention ponds", "Permeable pavements"]),
 }
 
 

@@ -41,7 +41,7 @@ This file indexes the dataflows Curio ships, for the built-in agents. A run of a
 - [DataPool_Geodataframe](../../docs/examples/dataflows/DataPool_Geodataframe.json): checks the pool grid on geometry, read from a repository file by path instead of a catalog dataset.
 - [DataPool_Vega](../../docs/examples/dataflows/DataPool_Vega.json): checks a chart fed through a pool, on a hand-typed frame.
 - [DefaultWorkflow](../../docs/examples/dataflows/DefaultWorkflow.json): the starter canvas, random numbers and their median.
-- [FloodScenarios](../../docs/examples/dataflows/FloodScenarios.json): checks SCOUT's flood package in two scenarios over a shared period, compared on a difference map and a chart.
+- [FloodScenarios](../../docs/examples/dataflows/FloodScenarios.json): checks SCOUT's flood example built from Curio's nodes (raster windows, a Raster Calculator and Raster Statistics) in two scenarios over a shared period and region, compared on a difference map and a chart.
 - [Image](../../docs/examples/dataflows/Image.json): checks image rendering, from a repository folder read by path.
 - [Simple View images](../../docs/examples/dataflows/ImageUrls.json): checks that image columns render as cards, which example 16 shows in full.
 - [Interaction_AutkMap](../../docs/examples/dataflows/Interaction_AutkMap.json): checks a selection from a pool to a map, on squares built in code.

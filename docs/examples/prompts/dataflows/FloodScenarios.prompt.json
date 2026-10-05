@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/FloodScenarios.json",
-    "sha256": "7c91054bdfd9373cb4a859cfcfe4a0e4cd07efe33542fc2b5cfc45267c0001b2",
+    "sha256": "8a6010b2876bf7055d8f43c73d0bddc235370e20e9d33ece797bb699f122d2da",
     "walkthrough": null
   },
-  "prompt": "Compare two scenarios of SCOUT's Quad Cities flood projection over the same small area: one with no nature-based solutions, and a copy of it with all six solutions in place. Both read the projection period, 2020 to 2040, from one shared setting. In each scenario, run SCOUT's flood function, then take its flood depth raster and its row of median and mean depth. Map how much the solutions change the depth, the second scenario minus the first, and chart each scenario's median flood depth. The flood function is not part of the standard node set, so whatever provides it needs installing first.",
+  "prompt": "Compare two scenarios of SCOUT's Quad Cities flood projection over the same small area: one with no nature-based solutions, and a copy of it with all six solutions in place. Three shared settings hold the projection period, 2020 to 2040, and the area's top-left and bottom-right corners. Read only that area of the solutions' class raster and of the period's flood depth with and without the solutions. In each scenario, take the depth with the solutions where a cell's class is one of the chosen solutions and the depth without them elsewhere, then the median and mean of that depth. Map how much the solutions change the depth, the second scenario minus the first, and chart each scenario's median flood depth.",
   "context": null,
   "required": {
     "datasets": [
@@ -19,9 +19,7 @@
       "data.scout.flood-depth-2080-2100-no-nbs",
       "data.scout.flood-nbs-classes"
     ],
-    "packages": [
-      "scout.flood@1"
-    ],
+    "packages": [],
     "paths": []
   },
   "expected": {
@@ -41,30 +39,23 @@
         "hasContent": true
       },
       {
-        "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "analysis2",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "analysis3",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis4",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
+        "ref": "loader3",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
         "executable": true,
         "hasContent": true
       },
@@ -76,15 +67,43 @@
         "hasContent": false
       },
       {
-        "ref": "analysis5",
-        "type": "scout.flood/flood-projection",
+        "ref": "endpoint2",
+        "type": "curio.builtin/parameter",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "endpoint3",
+        "type": "curio.builtin/parameter",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/raster-calculator",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "analysis6",
-        "type": "scout.flood/flood-projection",
+        "ref": "analysis2",
+        "type": "curio.builtin/raster-calculator",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/raster-statistics",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/raster-statistics",
         "role": "analysis",
         "executable": true,
         "hasContent": true
@@ -92,8 +111,47 @@
     ],
     "edges": [
       {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "analysis1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader2",
+        "to": "analysis2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader3",
+        "to": "analysis1",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "loader3",
+        "to": "analysis2",
+        "kind": "data",
+        "slot": 2
+      },
+      {
         "from": "analysis1",
         "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis3",
         "kind": "data"
       },
       {
@@ -101,6 +159,11 @@
         "to": "visualization1",
         "kind": "data",
         "slot": 1
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis4",
+        "kind": "data"
       },
       {
         "from": "analysis3",
@@ -112,26 +175,6 @@
         "to": "visualization2",
         "kind": "data",
         "slot": 1
-      },
-      {
-        "from": "analysis5",
-        "to": "analysis1",
-        "kind": "data"
-      },
-      {
-        "from": "analysis5",
-        "to": "analysis3",
-        "kind": "data"
-      },
-      {
-        "from": "analysis6",
-        "to": "analysis2",
-        "kind": "data"
-      },
-      {
-        "from": "analysis6",
-        "to": "analysis4",
-        "kind": "data"
       }
     ],
     "sources": {
@@ -150,13 +193,13 @@
   },
   "intents": [
     {
-      "ref": "analysis5",
+      "ref": "analysis1",
       "mustMention": [
         "flood"
       ]
     },
     {
-      "ref": "analysis6",
+      "ref": "analysis2",
       "mustMention": [
         "flood"
       ]
@@ -168,10 +211,8 @@
     "notes": null
   },
   "capability": {
-    "tier": "T1",
-    "needs": [
-      "package-enlist:templates"
-    ],
+    "tier": "T0",
+    "needs": [],
     "skip": []
   },
   "thresholds": {
@@ -222,5 +263,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "A package node with widgets in two scenarios over a shared Parameter node: SCOUT's flood function with and without nature-based solutions, compared on a difference map and a chart."
+  "notes": "Built-in nodes only, in two scenarios over three shared Parameter nodes: windowed raster loads, a Raster Calculator choosing by class and a Raster Statistics node per scenario, compared on a difference map and a chart. It reproduces SCOUT's flood function."
 }
