@@ -1,0 +1,103 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Beginner"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "6a1f5d3e-2b47-4c9a-9e0d-5f8b7c41a2d6",
+        "type": "curio.builtin/data-loading",
+        "x": 200,
+        "y": 300,
+        "content": "import geopandas as gpd\nfrom shapely.geometry import box\n\n# Four buildings in the Chicago Loop, in longitude and latitude, each with its\n# height in metres.\nbuildings = gpd.GeoDataFrame(\n    {\"height\": [35.0, 110.0, 240.0, 420.0]},\n    geometry=[\n        box(-87.6335, 41.8838, -87.6328, 41.8843),\n        box(-87.6318, 41.8838, -87.6309, 41.8845),\n        box(-87.6335, 41.8822, -87.6326, 41.8829),\n        box(-87.6316, 41.8820, -87.6305, 41.8830),\n    ],\n    crs=\"EPSG:4326\",\n)\nreturn buildings",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Build four buildings with their heights in the Chicago Loop.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c3e9b0a4-7d15-4f62-8a3b-91e4d6f02c7b",
+        "type": "scout.raster-conversion/rasterize-buildings",
+        "x": 800,
+        "y": 300,
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: (mosaic, tiles).\n- mosaic: one raster in EPSG:3395, each cell a height in metres. An Autark map\n  draws it as input_0, band band_1.\n- tiles: one row per map tile, with zoom, x, y and png, the 8-bit grayscale\n  PNG (base64) SCOUT's Deep Umbra shadow model reads, where 255 is the\n  maximum height.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    arg,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Rasterize the buildings' heights into zoom-16 tiles and their mosaic.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "attribute",
+              "type": "text",
+              "label": "Height column",
+              "default": "height"
+            },
+            {
+              "name": "zoom",
+              "type": "number",
+              "label": "Zoom level",
+              "default": 16,
+              "options": {
+                "min": 1,
+                "max": 20,
+                "step": 1
+              }
+            },
+            {
+              "name": "max_height",
+              "type": "number",
+              "label": "Maximum height",
+              "default": 550,
+              "options": {
+                "min": 1,
+                "step": 1,
+                "units": "m"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "f47b2c91-0e3d-4a85-b6c2-3d9a8e5f1b04",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1400,
+        "y": 300,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\",\n        \"getFnv\": \"band_1\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the mosaic of building heights on a map.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-6a1f5d3e-2b47-4c9a-9e0d-5f8b7c41a2d6out-c3e9b0a4-7d15-4f62-8a3b-91e4d6f02c7bin",
+        "source": "6a1f5d3e-2b47-4c9a-9e0d-5f8b7c41a2d6",
+        "target": "c3e9b0a4-7d15-4f62-8a3b-91e4d6f02c7b",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-c3e9b0a4-7d15-4f62-8a3b-91e4d6f02c7bout-f47b2c91-0e3d-4a85-b6c2-3d9a8e5f1b04in",
+        "source": "c3e9b0a4-7d15-4f62-8a3b-91e4d6f02c7b",
+        "target": "f47b2c91-0e3d-4a85-b6c2-3d9a8e5f1b04",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ],
+    "packages": [
+      "scout.raster-conversion@1"
+    ],
+    "name": "BuildingRasters",
+    "task": "",
+    "timestamp": 1791158400000,
+    "provenance_id": "BuildingRasters"
+  }
+}
