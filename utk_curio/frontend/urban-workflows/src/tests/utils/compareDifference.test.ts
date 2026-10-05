@@ -11,6 +11,7 @@ import {
   differenceTableSpec,
   differenceValues,
   isDifference,
+  joinKey,
   resolveValue,
 } from "../../utils/compare/compareDifference";
 import { TABLE_COLUMNS } from "../../utils/compare/comparePresets";
@@ -38,6 +39,21 @@ describe("what the map colors the difference by", () => {
     ]);
   });
 
+  test("the ids rows were joined on are left out by name, wherever they come, or the key the node names", () => {
+    const columns = [
+      { name: "change", role: "nominal" as const },
+      { name: "sunlight", role: "quantitative" as const },
+      { name: "segment", role: "quantitative" as const },
+      { name: "osm_id", role: "quantitative" as const },
+    ];
+    const names = columns.map((column) => column.name);
+    expect(differenceValues("layer", { names, columns }).map((v) => v.value)).toEqual(["sunlight", "segment", "change"]);
+    expect(differenceValues("layer", { names, columns }, "segment").map((v) => v.value)).toEqual(["sunlight", "osm_id", "change"]);
+    expect(joinKey(names)).toBe("osm_id");
+    expect(joinKey(["building_id", "height"])).toBe("building_id");
+    expect(joinKey(["height"], "segment")).toBeUndefined();
+  });
+
   test("the one the node keeps when the difference has it, else its first", () => {
     const values = differenceValues("layer", LAYER);
     expect(resolveValue("change", values)?.value).toBe("change");
@@ -47,14 +63,14 @@ describe("what the map colors the difference by", () => {
 });
 
 describe("the Autark document that draws it", () => {
-  test("a raster, by a band, from dark purple (lowest) to yellow (highest)", () => {
+  test("a raster, by a band, with the legend of the reds autk-map draws it in", () => {
     const [band] = differenceValues("raster", { bands: ["band_1"] });
     expect(differenceMapDoc("raster", band)).toEqual({
-      map: { layerRefs: [{ dataRef: "input_0", getFnv: "band_1", colorMapInterpolator: "interpolateViridis" }] },
+      map: { layerRefs: [{ dataRef: "input_0", getFnv: "band_1", isColorMap: true }] },
     });
   });
 
-  test("a layer, by a number column", () => {
+  test("a layer, by a number column, from dark purple (lowest) to yellow (highest)", () => {
     const [sunlight] = differenceValues("layer", LAYER);
     expect(differenceMapDoc("layer", sunlight)).toEqual({
       map: {
