@@ -292,6 +292,32 @@
         }
       }
     },
+    "selectionTag": {
+      "type": "object",
+      "description": "One selection tag of a node (#662): the current selection of a view (a Vega-Lite or Autark node), which the node's code reads through a `[!! selection name !!]` reference as the ids of the selected rows. It holds `ids`, or `count` in their place when the selection holds more ids than a tag takes.",
+      "required": ["name", "node", "column"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$", "description": "What the code's `[!! selection name !!]` references name." },
+        "node": { "type": "string", "minLength": 1, "description": "The id of the view whose selection the tag reads." },
+        "column": { "type": "string", "minLength": 1, "description": "The column whose values identify the selected rows, such as `osm_id` or `building_id`." },
+        "ids": {
+          "type": "array",
+          "items": { "type": ["string", "number"] },
+          "maxItems": 10000,
+          "description": "The values of `column` in the rows the view's latest selection picks, each once, in row order. A run writes them as a list."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 10001,
+          "description": "How many ids the selection held, written in place of `ids` when there are more than a tag takes. A run that reads the tag fails with a message saying so."
+        }
+      },
+      "oneOf": [
+        { "required": ["ids"], "not": { "required": ["count"] } },
+        { "required": ["count"], "not": { "required": ["ids"] } }
+      ]
+    },
     "nodeMetadata": {
       "type": "object",
       "description": "Side-channel node information that is not part of the execution payload.",
@@ -376,6 +402,51 @@
           "items": { "type": "string", "minLength": 1 },
           "minItems": 1,
           "description": "Where a copy made by Duplicate selection (#662) comes from: the ids of the nodes it descends from, oldest first, ending with the node it was copied from. Two nodes are the same lever in two scenarios when their ids and these lists meet. Emitted only on a copy."
+        },
+        "selections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/selectionTag" },
+          "description": "The node's selection tags (#662), added in its Widgets tab. Its code places each one as a `[!! selection name !!]` reference, which a run replaces with the tag's `ids`. A new selection in the view writes new ids. Emitted only when the node has selection tags."
+        },
+        "compareScenarios": {
+          "type": "object",
+          "description": "Settings of a Compare Scenarios node (#662). `inputs` labels each input circle, in circle order, by the scenario its node belongs to: the scenario's `scenario` id, `name` and `color`. An input whose node is in no scenario carries the node's name, a neutral color and no `scenario`. The node's code is written from these labels, and its stacked table carries them. `chart` is what its Chart tab draws from that table: the `preset`, the columns it reads as `x` and `y`, and the `aggregate` that combines the y values of a group. `mode` is the view the user chose, `chart` or `difference`; without it the node shows Difference for two rasters or two layers and Chart otherwise. `difference` is what Difference joins the rows of two layers or tables on (`key`; without it `osm_id` or `building_id`) and what its map colors the difference by (`value`, a column or a band). Emitted only when the node has inputs or one of these settings.",
+          "additionalProperties": false,
+          "properties": {
+            "inputs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["name", "color"],
+                "additionalProperties": false,
+                "properties": {
+                  "scenario": { "type": "string", "minLength": 1 },
+                  "name": { "type": "string", "minLength": 1 },
+                  "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+                }
+              }
+            },
+            "chart": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": { "type": "string", "enum": ["bar", "grouped-bar", "line", "scatter", "pie", "lollipop", "table"] },
+                "x": { "type": "string", "minLength": 1 },
+                "y": { "type": "string", "minLength": 1 },
+                "aggregate": { "type": "string", "enum": ["mean", "sum", "median", "min", "max", "count"] }
+              }
+            },
+            "mode": { "type": "string", "enum": ["chart", "difference"] },
+            "difference": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "key": { "type": "string", "minLength": 1 },
+                "value": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
         },
         "dataPool": {
           "type": "object",
@@ -482,7 +553,7 @@
         "title": { "type": "string", "description": "Display title at the time it was applied." },
         "format": {
           "type": "string",
-          "enum": ["csv", "geojson", "json", "parquet", "geotiff", "shp", "bundle", "osm", "gpkg"],
+          "enum": ["csv", "geojson", "json", "parquet", "geotiff", "shp", "onnx", "netcdf", "bundle", "osm", "gpkg"],
           "description": "Dataset format, mirroring DatasetFormat in services/datasetCatalog/datasetCatalogTypes.ts."
         },
         "origin": { "$ref": "#/$defs/datasetOrigin" }

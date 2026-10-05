@@ -20,6 +20,7 @@ import { usePlayAll } from "./flow/usePlayAll";
 import type { PlayAllState } from "./flow/usePlayAll";
 import { useApplyOutput } from "./flow/useApplyOutput";
 import { useInteractions } from "./flow/useInteractions";
+import { useSelectionTags } from "./flow/useSelectionTags";
 import { useCollaborationSync } from "./flow/useCollaborationSync";
 import { useInstallSave } from "./flow/useInstallSave";
 import { useServerRun } from "./flow/useServerRun";
@@ -337,6 +338,9 @@ const FlowProvider = ({
     const { applyNewPropagation, interactionsCallback } = useInteractions({
         interactions, setInteractions, nodes, edges, reactFlow, setNodes,
     });
+
+    // #662: a view's new selection reaches the selection tags that read it.
+    useSelectionTags({ interactions, reactFlow, setNodes, markNodeStaleRef, markDirtyRef });
 
     useCollaborationSync({
         collab, applyNewOutput, interactionsCallback, applyNewPropagation, setNodes, setEdges,

@@ -158,6 +158,8 @@
 .chip_gpkg { background: color-mix(in srgb, var(--curio-format-gpkg-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-gpkg-fg) 55%, white); }
 .chip_gtfs { background: color-mix(in srgb, var(--curio-format-gtfs-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-gtfs-fg) 55%, white); }
 .chip_collection { background: color-mix(in srgb, var(--curio-format-collection-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-collection-fg) 55%, white); }
+.chip_onnx { background: color-mix(in srgb, var(--curio-format-onnx-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-onnx-fg) 55%, white); }
+.chip_netcdf { background: color-mix(in srgb, var(--curio-format-netcdf-fg) 22%, transparent); color: color-mix(in srgb, var(--curio-format-netcdf-fg) 55%, white); }
 
 
 /* ── OSM PBF group (collapsible parent + indented member layers) ──────────── */

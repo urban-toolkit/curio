@@ -34,7 +34,12 @@ function generateCodeNodeSource(): string {
     return USE_CODE.slice(start, end);
 }
 
-const RESTORED_KEYS = ["spatialJoin", "simpleVis", "packageTemplateLabel", "packageTemplateConfig", "dataPool", "widgets", "copiedFrom"];
+const RESTORED_KEYS = [
+    "spatialJoin", "simpleVis", "packageTemplateLabel", "packageTemplateConfig", "dataPool", "widgets", "copiedFrom",
+    "selections",
+    // #662: a Compare Scenarios node's input labels and chart.
+    "compareScenarios",
+];
 
 describe("per-node settings survive a load", () => {
     test.each(RESTORED_KEYS)(
@@ -72,5 +77,7 @@ describe("per-node settings survive a load", () => {
         expect(typeBlock).toMatch(/dataPool\?: \{ insideChart\?: string; betweenCharts\?: string \};/);
         expect(typeBlock).toMatch(/widgets\?: WidgetDef\[\];/);
         expect(typeBlock).toMatch(/copiedFrom\?: string\[\];/);
+        expect(typeBlock).toMatch(/selections\?: SelectionTag\[\];/);
+        expect(typeBlock).toMatch(/compareScenarios\?: CompareSettings;/);
     });
 });

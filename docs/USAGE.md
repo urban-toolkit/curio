@@ -12,6 +12,7 @@
 - [Running a dataflow](#running-a-dataflow)
 - [Widgets](#widgets)
 - [Scenarios](#scenarios)
+  - [Comparing scenarios](#comparing-scenarios)
 - [Node Catalog](#node-catalog)
 - [Vega-Lite node](#vega-lite-node)
 - [Autark node](#autark-node)
@@ -462,6 +463,36 @@ and their code follows the new name. A reference to a name no Parameter node
 has, or that two Parameter nodes have, stops the run with a message naming it.
 Pinned to the dashboard, a Parameter node shows its value.
 
+### Selection tags
+
+A selection tag gives a node's code what you selected in a view: a brush or a
+click in a Vega-Lite chart, or a pick or a brush in an Autark map or plot. The
+code gets the ids of the selected rows.
+
+1. Run the view, so its rows are known.
+2. In the node's **Widgets** tab, under **Selections**, click **Add selection**.
+   Pick the view, and the column whose values identify its rows: `osm_id` or
+   `building_id` when the rows have them, or any column whose values differ
+   from row to row. A view whose rows have no such column is refused. Give the
+   tag a name and click **Add selection tag**.
+3. Drag the tag, **selection name**, from the strip above the code into the
+   code, or click it to insert it at the cursor. In the code it is written
+   `[!! selection name !!]` and drawn as a peach chip.
+4. Select in the view and run the node.
+
+The reference becomes the list of the selected rows' ids, each once:
+
+```python
+picked = [!! selection buildings !!]
+return arg[arg["osm_id"].isin(picked)]
+```
+
+runs as `picked = [101, 104]` when two buildings are selected, and as
+`picked = []` when nothing is. The **Widgets** tab shows how many ids each tag
+holds. A new selection in the view marks the node as needing a new run, and the
+ids are saved with the dataflow. A tag holds at most 10,000 ids: a larger
+selection stops the run with a message saying so.
+
 ## Several inputs
 
 Python Computation, Data Transformation, JS Computation, Data Pool, Vega-Lite and
@@ -559,10 +590,88 @@ chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios,
 their colors, descriptions, collapsed state and box positions are saved with the
 dataflow. Deleting a node removes it from its scenario.
 
+### Comparing scenarios
+
+The **Compare Scenarios** node compares scenarios' outcomes on the canvas:
+
+1. Drag **Compare Scenarios** from the palette onto the canvas.
+2. Connect each scenario's outcome to one of its input circles. Each edge takes the
+   next circle, as on any node with several inputs, and each input is labelled by
+   the scenario its node belongs to.
+3. Run it. In **Chart** it stacks its inputs into one table, with the scenario's id
+   in a `scenario` column and its name in a `scenario_name` column on every row. In
+   **Difference** it subtracts one input from the other. What it makes is its
+   output: other nodes can read it, and the node can be pinned to the dashboard.
+
+The node shows **Difference** when it has two inputs that are rasters, or two that
+are layers, once the nodes feeding them have run, and **Chart** otherwise. **Compare
+as** switches it.
+
+Its code is written for it, one line per input, reading the input through its chip
+under its scenario's id and name. It is written again when an input changes, a
+scenario is renamed or recolored, or the node switches between Chart and
+Difference, and the node then waits for a run.
+
+It stacks inputs of one kind:
+
+- tables (a DataFrame, a GeoDataFrame, a list of records, a dict of columns, or a
+  dict of values, which is one row), keeping their rows. A column one input lacks is
+  empty in its rows.
+- values (a number, a text, true or false, or a list of them), one row each under a
+  `value` column.
+
+A table beside a value, a GeoDataFrame beside a plain table, two coordinate systems,
+an input with no value, an input that holds several tables, or a raster stops the run
+with a message naming the input.
+
+In Difference it takes two inputs: input 0 is the reference and input 1 the
+comparison, and every number it gives is the comparison's minus the reference's.
+
+- Two rasters are subtracted cell by cell, band by band. A cell that is nodata in
+  either is nodata in the difference. Both must lie on one grid, with the same size,
+  origin, cell size and CRS; otherwise the run stops with a message naming both. Each
+  is read as an Autark map reads a raster, at its own size, up to 2048 by 2048 cells.
+- Two layers, or two tables, are matched row by row on a stable id: `osm_id`, else
+  `building_id`, or the column picked in **Key**. A row on both sides holds, in each
+  number column both have, the difference, and a `change` column says `changed` or
+  `unchanged`. A row only in the reference is `removed` and one only in the comparison
+  `added`; their numbers are empty. The other columns and the geometry are the
+  comparison's, or the reference's for a removed row. A key that is empty or repeated
+  on one side stops the run, as does a layer beside a table.
+
+A raster's difference is a raster, which an Autark map draws and a Python node reads
+as a `rasterio` dataset.
+
+The node has two tabs:
+
+- **Chart** draws the stacked table in the scenarios' colors, as **Bars**, **Grouped
+  bars**, **Lines**, **Points**, a **Pie**, **Lollipops** or a **Table**. Pick the
+  columns it reads (**X**, **Y**) and how the Y values of a group are combined
+  (**Combine**: mean, sum, median, minimum, maximum, or a count of rows).
+- **Difference**, in its place in Difference, maps a raster's or a layer's
+  difference, colored by a band or a number column, or by `change` (**Color by**).
+  A layer's colors run from the lowest difference, dark purple, to the highest,
+  yellow. A raster's cells are redder the higher their difference, and fainter the
+  closer they are to no difference. A table's difference is shown as a table, each
+  row in the color of its change.
+- **What differs** lists the levers that differ between the scenarios: for each, the
+  widget values and the code lines that changed, read against the first scenario's.
+  A node and the copies made from it with **Duplicate selection** or **Duplicate as
+  scenario** are one lever. A node with no copy in another scenario is listed as only
+  in the scenarios that have it.
+
+Above both tabs it warns when the scenarios read different fixed context, naming the
+inputs and the context only one of them reads, when an input comes from a node in no
+scenario (its rows carry that node's name, and What differs leaves it out), and when
+two inputs come from one scenario.
+
 The **Scenario Catalog** lists the scenarios of all your projects, each with its
 fixed context, levers and outcomes and the results its project saved. Open it from
 the **Scenario Catalog** tab, or from the **Scenario** button in the canvas's top
-bar. See [docs/SCENARIO-CATALOG.md](SCENARIO-CATALOG.md).
+bar. Drag a scenario from the **Scenario** drawer onto the canvas to bring a copy
+of it into the open dataflow: it arrives collapsed, with its results, and its
+fixed context arrives as Data Loading nodes that read copies of what its project
+saved. See [docs/SCENARIO-CATALOG.md](SCENARIO-CATALOG.md#4-using-a-scenario-in-a-dataflow).
 
 ## Node Catalog
 

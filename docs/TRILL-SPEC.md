@@ -85,10 +85,37 @@ no edges. Any node's `content` places it as `[!! @name !!]`, written and
 replaced as its own widgets are. A name no Parameter node has, or that two
 Parameter nodes have, fails the run with a message naming it.
 
+`metadata.selections` lists the node's selection tags, written only when it has
+any. Each entry is `{name, node, column, ids}`: `node` is the id of a Vega-Lite
+or Autark node, and `ids` the values of `column` in the rows that view's latest
+selection picks, each once, in row order. The node's `content` places a tag as
+`[!! selection name !!]`; a run replaces it with `ids`, written as a list. A tag
+holds at most 10,000 ids; for a larger selection it holds `count` in place of
+`ids`, and a run that reads it fails with a message saying so, as it does for a
+name the node has no tag for.
+
 `metadata.copiedFrom` is written only on a copy made by Duplicate selection: the
 ids of the nodes it descends from, oldest first, ending with the node it was
 copied from. Two nodes are the same lever in two scenarios when their ids and
 these lists meet.
+
+`metadata.compareScenarios` holds a `curio.builtin/compare-scenarios` node's
+settings, written only when it has inputs or one of the settings below. `inputs`
+labels each input circle, in circle order, `{scenario?, name, color}`: the id, name
+and color of the scenario the input's node belongs to, or, for a node in no
+scenario, the node's name, a neutral color and no `scenario`. The node's `content`
+is written from them, one `(scenario, name, [!! input k !!])` entry per input handed
+to `curio_stack_scenarios`, which stacks the inputs into one table under `scenario`
+and `scenario_name`, or, in Difference, to `curio_difference_scenarios`, which
+subtracts input 0 from input 1. `chart` is `{preset?, x?, y?, aggregate?}`:
+`preset` is one of `bar`, `grouped-bar`, `line`, `scatter`, `pie`, `lollipop` and
+`table`, `x` and `y` name columns of that table, and `aggregate` is one of `mean`,
+`sum`, `median`, `min`, `max` and `count`. `mode` is `chart` or `difference`, written
+only when the user chose one; without it the node shows Difference for two rasters
+or two layers and Chart otherwise. `difference` is `{key?, value?}`: `key` is the
+column Difference matches the rows of two layers or tables on (without it,
+`osm_id` or `building_id`), passed to `curio_difference_scenarios` as `key=`, and
+`value` the column or band its map colors the difference by.
 
 `metadata.comments` carries the node's discussion, written only when non-empty.
 Each entry is `{id, text, author, authorName, createdAt, resolved}`. The author's

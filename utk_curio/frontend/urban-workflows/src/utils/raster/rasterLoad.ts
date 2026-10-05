@@ -12,10 +12,17 @@
  * autk-db also reads a raster as EPSG:4326 unless told otherwise, so the CRS
  * goes with it, by its EPSG code.
  *
- * Pure, so it is testable under jest.
+ * Pure, so it is testable under jest, and with no imports at run time, so the
+ * sandbox's Node process loads a Compare Scenarios node's two rasters by the
+ * same rules (`utk_curio/sandbox/util/raster_difference.js`).
  */
-import { epsgCode } from "./geotiffWriter";
 import type { RasterGrid } from "./rasterWire";
+
+/** The EPSG code of `EPSG:<code>`, or null. */
+export function epsgCode(crs: string): number | null {
+  const match = /^EPSG:(\d+)$/i.exec(String(crs).trim());
+  return match ? Number(match[1]) : null;
+}
 
 /** The most cells an Autark map loads from one raster: 2048 by 2048. */
 export const RASTER_MAX_CELLS = 2048 * 2048;

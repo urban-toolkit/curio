@@ -11,6 +11,7 @@
  *
  * Pure, so it is testable under jest.
  */
+import { epsgCode } from "./rasterLoad";
 import type { RasterGrid } from "./rasterWire";
 
 const SHORT = 3;
@@ -20,12 +21,6 @@ const ASCII = 2;
 const TYPE_SIZE: Record<number, number> = { [SHORT]: 2, [LONG]: 4, [DOUBLE]: 8, [ASCII]: 1 };
 
 type Tag = { id: number; type: number; values: number[] | string };
-
-/** The EPSG code of `EPSG:<code>`, or null. */
-export function epsgCode(crs: string): number | null {
-  const match = /^EPSG:(\d+)$/i.exec(String(crs).trim());
-  return match ? Number(match[1]) : null;
-}
 
 /**
  * Whether an EPSG code names a geographic CRS. EPSG numbers its geographic 2D

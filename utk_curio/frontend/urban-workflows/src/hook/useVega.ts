@@ -12,6 +12,7 @@ import { DEFAULT_INPUT_DATASET } from "../utils/vegaGeoSpec";
 import { inputTableName } from "../generated/autkGrammar";
 import { usableCounts } from "../utils/vegaUsableRows";
 import { matchSelections, objectRows } from "../utils/selectionMatch";
+import { columnsOfRows, provideViewRows } from "../utils/references/viewSelections";
 import { echoedCircle } from "../utils/selectionEcho";
 import type { NodeEmptyReason } from "../utils/nodeEmptyState";
 import { resolveGrammarEmptyReason } from "../utils/nodeEmptyState";
@@ -70,6 +71,8 @@ export const useVega = ({
   upstreamErrored = false,
   hasSpec = true,
   onRedraw,
+  recordsProvenance = true,
+  forwardsInput = true,
 }: {
   data: any;
   code: string;
@@ -86,6 +89,19 @@ export const useVega = ({
    * arrived and it drew them.
    */
   onRedraw?: (counts: RenderCounts) => void;
+  /**
+   * Whether a compile is recorded in the node's provenance, its code being the
+   * spec. A Compare Scenarios node (#662) draws its own output: its provenance
+   * is the code that made that output, and a spec there would be offered as a
+   * version of its Python.
+   */
+  recordsProvenance?: boolean;
+  /**
+   * Whether a compile hands the node's input on as its output, as a chart
+   * does. A Compare Scenarios node's chart reads the node's own output, which
+   * its run has already handed on.
+   */
+  forwardsInput?: boolean;
 }) => {
   const onRedrawRef = React.useRef(onRedraw);
   onRedrawRef.current = onRedraw;
@@ -316,6 +332,20 @@ export const useVega = ({
     applyDirectSelection(currentViewRef.current);
   }, [data.interactions]);
 
+  // #662: a selection tag on this chart reads the rows its selections are
+  // matched against, the first input's, as a direct selection is
+  // (utils/references/viewSelections). A point selection names their positions.
+  useEffect(
+    () =>
+      provideViewRows(data.nodeId, () => {
+        const values = lastValuesRef.current;
+        return Array.isArray(values) && values.length > 0
+          ? { rows: objectRows(values), columns: columnsOfRows(values) }
+          : null;
+      }),
+    [data.nodeId],
+  );
+
 
   // The states that exist *before* anything compiles: nothing connected, an
   // upstream that has not run, an empty editor. Nothing else would report these
@@ -369,21 +399,23 @@ export const useVega = ({
     // END COMPILE GRAMMAR
     let endTime = formatDate(new Date());
 
-    let typesInput: string[] = [];
+    if (recordsProvenance) {
+      let typesInput: string[] = [];
 
-    if (data.input != "") typesInput = data.input.dataType; // getType([data.input]);
+      if (data.input != "") typesInput = data.input.dataType; // getType([data.input]);
 
-    let typesOuput: string[] = [...typesInput];
+      let typesOuput: string[] = [...typesInput];
 
-    nodeExecProv(
-      startTime,
-      endTime,
-      workflowNameRef.current,
-      data.nodeId,
-      mapTypes(typesInput),
-      mapTypes(typesOuput),
-      code
-    );
+      nodeExecProv(
+        startTime,
+        endTime,
+        workflowNameRef.current,
+        data.nodeId,
+        mapTypes(typesInput),
+        mapTypes(typesOuput),
+        code
+      );
+    }
 
     // dev/136: the counts travel to the behavior, which decides whether this
     // was a render or an empty panel under a green badge.
@@ -634,7 +666,7 @@ export const useVega = ({
     }
 
     // replicating input to the output
-    data.outputCallback(data.nodeId, data.input);
+    if (forwardsInput) data.outputCallback(data.nodeId, data.input);
 
     // dev/136: what this render actually amounted to. Awaited last, so the
     // listeners above are attached exactly when they were before.

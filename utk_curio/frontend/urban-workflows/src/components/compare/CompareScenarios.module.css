@@ -1,0 +1,214 @@
+/* The Compare Scenarios node's body (#662): its warnings, its two tabs, the
+   chart's settings and the chart, the difference and its map, and the What
+   differs list. */
+
+.body {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-primary);
+  background: var(--curio-card-bg);
+}
+
+.warnings {
+  margin: 0;
+  padding: 4px 8px 4px 22px;
+  max-height: 72px;
+  overflow-y: auto;
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-warning-bg);
+  color: var(--curio-warning-text);
+  font-size: var(--curio-font-size-xs);
+  user-select: text;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.tab {
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  line-height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-pill);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  background: var(--curio-surface-muted);
+  font-weight: 600;
+}
+
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-secondary);
+}
+
+.field select {
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  max-width: 130px;
+  padding: 1px 4px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+}
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.pane {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.mount {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: auto;
+  text-align: center;
+}
+
+.problem {
+  margin: 4px 0 0;
+  color: var(--curio-danger-text);
+  font-size: var(--curio-font-size-xs);
+}
+
+.map {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.mapCanvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.note {
+  margin: 2px 0 0;
+  color: var(--curio-text-secondary);
+  font-size: var(--curio-font-size-xs);
+}
+
+.differs {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  background: var(--curio-card-bg);
+  user-select: text;
+}
+
+.hidden {
+  visibility: hidden;
+}
+
+.empty {
+  margin: 0;
+  color: var(--curio-text-secondary);
+}
+
+.levers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lever {
+  padding: 6px 8px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-md);
+}
+
+.leverName {
+  font-weight: 600;
+}
+
+.onlyIn {
+  margin-left: 6px;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-secondary);
+}
+
+.values {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.value {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.widgetName {
+  font-family: var(--curio-font-mono);
+}
+
+.swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--scenario-color);
+}
+
+.code {
+  margin: 4px 0 0;
+  padding: 4px 6px;
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-surface-muted);
+  font-family: var(--curio-font-mono);
+  font-size: var(--curio-font-size-xs);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.removed {
+  color: var(--curio-danger-text);
+}
+
+.added {
+  color: var(--curio-success-text);
+}
+
+.same {
+  margin: 8px 0 0;
+  color: var(--curio-text-secondary);
+  font-size: var(--curio-font-size-xs);
+}

@@ -335,6 +335,19 @@ describe("dashboardSourceNodeIds", () => {
     expect([...dashboardSourceNodeIds(nodes, [])]).toEqual([]);
   });
 
+  test("a pinned Compare Scenarios node draws its own output, so it is its own source", () => {
+    // Its tile charts the table its own run stacked (#662); what feeds it is
+    // not what the tile reads, so it is not walked.
+    const nodes = [
+      node("a", NodeType.COMPUTATION_ANALYSIS),
+      node("b", NodeType.COMPUTATION_ANALYSIS),
+      node("compare", "curio.builtin/compare-scenarios@1", { dashboardPinned: true }),
+    ];
+
+    const sources = dashboardSourceNodeIds(nodes, [edge("a", "compare"), edge("b", "compare", "in_1")]);
+    expect([...sources]).toEqual(["compare"]);
+  });
+
   test("nothing pinned means nothing to save", () => {
     const nodes = [node("py", NodeType.COMPUTATION_ANALYSIS), node("chart", NodeType.VIS_VEGA)];
 

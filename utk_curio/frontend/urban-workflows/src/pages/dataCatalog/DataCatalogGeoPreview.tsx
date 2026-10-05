@@ -21,6 +21,8 @@ const colors: Record<DatasetFormat, { fill: string; stroke: string; bg: string }
   gpkg: { fill: "rgba(166,84,35,0.1)", stroke: "rgba(166,84,35,0.25)", bg: "#FBF4EF" },
   gtfs: { fill: "rgba(0,137,168,0.1)", stroke: "rgba(0,137,168,0.25)", bg: "#EFF9FB" },
   collection: { fill: "rgba(184,58,94,0.1)", stroke: "rgba(184,58,94,0.25)", bg: "#FCF2F5" },
+  onnx: { fill: "rgba(138,106,18,0.1)", stroke: "rgba(138,106,18,0.25)", bg: "#FAF6EC" },
+  netcdf: { fill: "rgba(52,68,154,0.1)", stroke: "rgba(52,68,154,0.25)", bg: "#F1F3FB" },
 };
 
 function formatCell(value: unknown): string {

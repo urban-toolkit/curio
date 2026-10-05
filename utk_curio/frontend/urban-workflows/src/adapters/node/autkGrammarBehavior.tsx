@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Feature } from 'geojson';
-import { NodeBehaviorHook } from '../../registry/types';
+import type { NodeBehaviorData, NodeBehaviorResult, UseNodeStateReturn } from '../../registry/types';
 import { detectWebGpuSupport, reprobeWebGpuSupport } from '../../utils/webgpuSupport';
 import { useToastContext } from '../../providers/ToastProvider';
 import { VisInteractionType, NodeType } from '../../constants';
@@ -25,6 +25,7 @@ import {
 } from '../../utils/autkInput';
 import { type GrammarInput } from '../../utils/grammarInput';
 import { featureRows, matchSelections, type IncomingSelection } from '../../utils/selectionMatch';
+import { provideViewRows } from '../../utils/references/viewSelections';
 import { selectionEchoSource } from '../../utils/selectionEcho';
 import {
     SANDBOX_BACKEND_URL_TOKEN,
@@ -42,7 +43,38 @@ import {
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
 
-export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
+/**
+ * The layer a document's selections come from when they name none: its map's
+ * pickable layer (or its first), else its plot's. The same layers a pick and a
+ * plot brush report below.
+ */
+function selectionLayerOf(spec: any): string | undefined {
+    const maps: any[] = Array.isArray(spec?.map) ? spec.map : spec?.map ? [spec.map] : [];
+    for (const map of maps) {
+        const refs: any[] = Array.isArray(map?.layerRefs) ? map.layerRefs : [];
+        const layer = refs.find((l) => l?.isPick)?.dataRef ?? refs[0]?.dataRef;
+        if (typeof layer === 'string') return layer;
+    }
+    const plots: any[] = Array.isArray(spec?.plot) ? spec.plot : spec?.plot ? [spec.plot] : [];
+    const plot = plots.find((p) => typeof p?.dataRef === 'string');
+    return plot?.dataRef;
+}
+
+export type AutkBehaviorOptions = {
+    /**
+     * Whether a failed run marks the node errored, as an Autark node's does, so
+     * the nodes it feeds say so. A Compare Scenarios node (#662) draws its own
+     * output, the difference, through this map: a map that cannot draw says so
+     * in its body, and the node's run stands as it ran.
+     */
+    marksNodeErrored?: boolean;
+};
+
+export const useAutkGrammarBehavior = (
+    data: NodeBehaviorData,
+    nodeState: UseNodeStateReturn,
+    { marksNodeErrored = true }: AutkBehaviorOptions = {},
+): NodeBehaviorResult => {
     const { showToast } = useToastContext();
     const wrapperRef = useRef<HTMLDivElement>(null);
     // Set when the browser cannot run Autark at all (#201). Renders an
@@ -831,7 +863,7 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
         let settled = false;
         const emit = (o: { code: string; content: string }) => {
             if (o.code === 'success' || o.code === 'error') settled = true;
-            if (o.code === 'error') markNodeErrored?.(data.nodeId);
+            if (o.code === 'error' && marksNodeErrored) markNodeErrored?.(data.nodeId);
             nodeState.setOutput(o);
         };
         // The net itself lives in autkRunSettlement so it can be tested; see the
@@ -956,6 +988,27 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     }, [data.input]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(syncHighlightsNow, [(data as any).interactions]);
+
+    // #662: a selection tag on this node reads the features of the layer its
+    // pick or brush came from, the rows a direct selection is matched against
+    // above (utils/references/viewSelections). A pick names their positions.
+    useEffect(
+        () =>
+            provideViewRows(data.nodeId, async (layer) => {
+                const spec = specRef.current;
+                const input = dataRef.current.input;
+                if (!spec || !input) return null;
+                const sources = autkSourcesFrom(await readInput(input), spec).sources;
+                const named = layer ?? selectionLayerOf(spec);
+                const source = sources.find((s) => s.outputTableName === named) ?? sources[0];
+                if (!source) return null;
+                const fc = source.geojsonObject as { features?: any[] };
+                const first = (fc.features ?? []).find((f) => f?.properties);
+                return { rows: featureRows(fc), columns: Object.keys(first?.properties ?? {}) };
+            }),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [data.nodeId],
+    );
 
     // A starter document chosen from the arriving input, the way every grammar
     // node fills an empty editor (hook/useStarterSpec): once, only into an

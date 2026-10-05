@@ -1,7 +1,7 @@
 /**
- * The canvas Scenario Catalog drawer: fetched only while open, read-only, and
- * the way to a scenario's project asks first when the dataflow behind it has
- * unsaved changes.
+ * The canvas Scenario Catalog drawer: fetched only while open, read-only, its
+ * cards dragged onto the canvas, and the way to a scenario's project asks
+ * first when the dataflow behind it has unsaved changes.
  */
 import React from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -93,12 +93,33 @@ describe("the canvas Scenario Catalog drawer", () => {
     expect(api.listCatalog).toHaveBeenCalledWith({ q: "" });
   });
 
-  test("a card cannot be dragged and offers nothing that edits", async () => {
+  test("a card is dragged onto the canvas as its scenario, and offers nothing that edits", async () => {
     renderDrawer();
     await within(root()).findByText("Cool roofs");
     const heat = card("p-heat/s-cool");
-    expect(heat).not.toHaveAttribute("draggable");
+    expect(heat).toHaveAttribute("draggable", "true");
     expect(within(heat).queryByRole("button", { name: /delete|rename|remove/i })).toBeNull();
+
+    const data: Record<string, string> = {};
+    const dataTransfer = {
+      setData: (type: string, value: string) => { data[type] = value; },
+      getData: (type: string) => data[type] ?? "",
+      types: [] as string[],
+      effectAllowed: "",
+    };
+    fireEvent.dragStart(heat, { dataTransfer });
+    // The canvas reads this type (MainCanvas, useScenarioDrop).
+    expect(JSON.parse(data["application/x-curio-scenario"])).toEqual({
+      projectId: "p-heat",
+      scenarioId: "s-cool",
+      name: "Cool roofs",
+    });
+    expect(dataTransfer.effectAllowed).toBe("copy");
+    // While it is dragged the scrim lets the drag through to the canvas.
+    expect(root()).toHaveAttribute("data-dragging", "true");
+
+    fireEvent.dragEnd(heat);
+    expect(root()).not.toHaveAttribute("data-dragging");
   });
 
   test("the search goes to the server as q", async () => {

@@ -353,6 +353,43 @@ REJECTED = {
     "copiedFrom as a bare id": lambda d: _node(d)["metadata"].update(copiedFrom="n0"),
     "copiedFrom empty": lambda d: _node(d)["metadata"].update(copiedFrom=[]),
     "copiedFrom holding an empty id": lambda d: _node(d)["metadata"].update(copiedFrom=[""]),
+    # #662: a selection tag names its view and id column, and holds its ids or
+    # how many there were, never both and never more ids than a tag takes.
+    "selection tag without its column": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "ids": [1]}]
+    ),
+    "selection tag holding neither ids nor a count": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "column": "osm_id"}]
+    ),
+    "selection tag holding ids and a count": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "column": "osm_id", "ids": [1], "count": 20000}]
+    ),
+    "selection tag holding more ids than a tag takes": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "column": "osm_id", "ids": list(range(10001))}]
+    ),
+    "selection tag counting fewer ids than a tag takes": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "column": "osm_id", "count": 12}]
+    ),
+    "selection tag holding an object as an id": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "picked", "node": "n2", "column": "geometry", "ids": [{"type": "Point"}]}]
+    ),
+    "selection tag named as a reference": lambda d: _node(d)["metadata"].update(
+        selections=[{"name": "selection picked", "node": "n2", "column": "osm_id", "ids": []}]
+    ),
+    # #662: a Compare Scenarios node labels each input by name and hex color.
+    "compare label without a color": lambda d: _node(d)["metadata"].update(
+        compareScenarios={"inputs": [{"scenario": "s1", "name": "Baseline"}]}
+    ),
+    "compare label color as a name": lambda d: _node(d)["metadata"].update(
+        compareScenarios={"inputs": [{"scenario": "s1", "name": "Baseline", "color": "green"}]}
+    ),
+    "compare label with a field the format does not have": lambda d: _node(d)["metadata"].update(
+        compareScenarios={"inputs": [{"name": "Baseline", "color": "#2a9d8f", "slot": 0}]}
+    ),
+    "compare labels written empty": lambda d: _node(d)["metadata"].update(compareScenarios={"inputs": []}),
+    "compare chart the node does not draw": lambda d: _node(d)["metadata"].update(
+        compareScenarios={"chart": {"preset": "radar"}}
+    ),
 }
 
 # Cases that look like they should be rejected but must not be. Each one is a
@@ -388,6 +425,22 @@ ACCEPTED = {
     ),
     # A copy of a copy: its lineage, oldest first (Duplicate selection, #662).
     "a copy's lineage": lambda d: _node(d)["metadata"].update(copiedFrom=["n0", "n0-copy"]),
+    # #662: selection tags holding ids, nothing, and a count over the cap.
+    "selection tags with ids, none, and a count": lambda d: _node(d)["metadata"].update(selections=[
+        {"name": "picked", "node": "n2", "column": "osm_id", "ids": [101, "w2", 1.5]},
+        {"name": "nothing_yet", "node": "n2", "column": "building_id", "ids": []},
+        {"name": "many", "node": "n2", "column": "osm_id", "count": 25000},
+    ]),
+    # A Compare Scenarios node (#662): an input in no scenario has no id.
+    "compare labels, one in no scenario, and a chart": lambda d: _node(d)["metadata"].update(
+        compareScenarios={
+            "inputs": [
+                {"scenario": "s1", "name": "Baseline", "color": "#2a9d8f"},
+                {"name": "Python Computation", "color": "#8a8f98"},
+            ],
+            "chart": {"preset": "lollipop", "y": "sunlight", "aggregate": "median"},
+        }
+    ),
 }
 
 
@@ -534,6 +587,38 @@ WRITER_SHAPES = {
             {"id": "s1", "name": "Scenario 1", "color": "#3567c7", "nodes": [AGENT_NODE["id"]]},
             {"id": "s2", "name": "Scenario 2", "color": "#e86a3c", "nodes": ["n1-copy"],
              "collapsed": True, "box": {"x": 1, "y": 302}},
+        ],
+    ),
+    # Written by TrillGenerator for a Compare Scenarios node fed by two
+    # scenarios (#662): its code, its labels and its chart.
+    "canvas save with a Compare Scenarios node": _flow(
+        nodes=[
+            AGENT_NODE,
+            {**AGENT_NODE, "id": "n1-copy", "metadata": {"copiedFrom": [AGENT_NODE["id"]]}},
+            {
+                "id": "cmp",
+                "type": "curio.builtin/compare-scenarios@1",
+                "x": 700,
+                "y": 0,
+                "content": "return curio_stack_scenarios([])\n",
+                "metadata": {
+                    "compareScenarios": {
+                        "inputs": [
+                            {"scenario": "s1", "name": "Baseline", "color": "#2a9d8f"},
+                            {"scenario": "s2", "name": "Twice as tall", "color": "#e76f51"},
+                        ],
+                        "chart": {"preset": "bar", "y": "sunlight", "aggregate": "mean"},
+                    }
+                },
+            },
+        ],
+        edges=[
+            {"id": "e1", "source": AGENT_NODE["id"], "target": "cmp", "sourceHandle": "out", "targetHandle": "in"},
+            {"id": "e2", "source": "n1-copy", "target": "cmp", "sourceHandle": "out", "targetHandle": "in_1"},
+        ],
+        scenarios=[
+            {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": [AGENT_NODE["id"]]},
+            {"id": "s2", "name": "Twice as tall", "color": "#e76f51", "nodes": ["n1-copy"]},
         ],
     ),
     # strip_agent_state removes all three sections from a shared copy, so the

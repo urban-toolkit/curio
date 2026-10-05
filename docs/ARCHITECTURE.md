@@ -266,6 +266,58 @@ the one rule, read by a run and by a save, for which outputs are saved whatever 
 node's own toggle says: what a pinned tile reads and what a scenario's context and
 outcomes produce.
 
+### Comparing scenarios
+
+The Compare Scenarios node (`curio.builtin/compare-scenarios`) is a Python code
+node whose code it writes itself:
+
+- `src/utils/compare/compareInputs.ts` labels each input circle by the scenario its
+  source node is in (`metadata.compareScenarios.inputs`), and `compareCode.ts` writes
+  the code from the labels, one chip per input. `adapters/node/compareScenariosBehavior.tsx`
+  writes both again when the graph's labels differ from the stored ones, never on the
+  dashboard or a shared view, and not while a load has added the nodes but not yet
+  the edges.
+- The code calls `curio_stack_scenarios` (`utk_curio/sandbox/util/scenario_stack.py`),
+  seeded in the in-process namespace (`worker._globals_cache`) and the isolated one
+  (`zygote.build_namespace_template`). A run on the server runs the node as any
+  executable template; `compareCode.cases.json` pins the written code for Jest and
+  for `test_compare_scenarios_node.py`, which resolves it through
+  `WorkflowSpec.node_code` and runs it.
+- `components/compare/CompareChart.tsx` draws the node's own output with `useVega`,
+  with `recordsProvenance` and `forwardsInput` off: the node's provenance is its
+  code, and its run has already handed the table on. The presets are in
+  `comparePresets.ts`, and `comparePresets.cases.json` holds one spec per preset for
+  Jest and for the Vega-Lite check in `test_compare_scenarios_node.py`.
+- In Difference (`compareMode.ts`: `metadata.compareScenarios.mode`, else Difference
+  for two rasters or two layers by the `dataType` of what the circles hold) the code
+  calls `curio_difference_scenarios` (`utk_curio/sandbox/util/scenario_difference.py`)
+  instead; `compareDifference.cases.json` pins it for Jest and for
+  `test_compare_difference_node.py`. The behavior writes the code again when the
+  wanted view differs from the one the code calls, or the key from its `key=`, and
+  never while an input's kind is unknown, as after a load.
+- Two layers or tables are joined in Python. Two rasters cannot be: the arithmetic
+  is Curio's Autark adapter's (`utils/raster/rasterArithmetic.ts`), on what autk-db's
+  `getRaster` exports, and an isolated child may not start Node. So the code returns
+  a JSON request (each raster's GeoTIFF bytes and `raster_meta`), and the sandbox's
+  `/exec` completes it after either path ran the code
+  (`complete_raster_difference`): `util/raster_difference.js` runs through
+  `worker.run_js_script`, the runner `execute_js_code` uses, loads both rasters with
+  `loadGeoTiff` by `rasterLoad.ts`'s `planForMeta`, subtracts them with
+  `subtractRasters` and returns the envelope (`rasterWire.ts`). Those three modules
+  have no imports at run time, so Node loads them from `src/` by type stripping. The
+  envelope is stored as the node's output, a JSON artifact.
+- `components/compare/CompareDifference.tsx` shows the difference:
+  `CompareMap.tsx` draws a raster or a layer with `useAutkGrammarBehavior`, the
+  Autark node's own map code, on the node's `autk-grammar-map-<nodeId>` canvas, with
+  `marksNodeErrored` off and no output callback, from the document
+  `compareDifference.ts` writes; a table goes through `CompareChart`.
+- `whatDiffers.ts` reads each compared scenario's parts through `scenarioParts`,
+  pairs levers whose ids and `copiedFrom` lists meet, and compares their widget
+  values and code lines; `contextWarnings` compares their fixed context.
+- A pinned Compare Scenarios node draws its own output, so it is its own dashboard
+  source (`SELF_DRAWN_NODE_TYPES` in `dashboardLayout.ts`, `_SELF_DRAWN_KINDS` in
+  `projects/dashboard_payload.py`), and its inputs are not walked.
+
 ---
 
 ## Nodes: Types and Structure
@@ -418,8 +470,8 @@ interface INodeData {
   nodeType: string;
   input?: ICodeDataContent;       // reference to upstream output file
   outputCallback?: Function;      // push output to FlowProvider
-  interactionsCallback?: Function; // push user interactions upstream
-  propagationCallback?: Function;  // receive interactions from upstream
+  interactionsCallback?: Function; // report the node's selection to FlowProvider
+  propagationCallback?: Function;  // a Data Pool hands its row flags to the pools linked to it
   interactions?: IInteraction[];
   propagation?: any;
 }
@@ -913,7 +965,7 @@ quoted path. See [DATA-CATALOG.md](DATA-CATALOG.md) for the authoring view.
 
 ## Interactions and Propagation
 
-Visualization nodes (`Autark`, `Vega-Lite`, `Simple View`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
+Visualization nodes (`Autark`, `Vega-Lite`, `Simple View`) report the user's selections (clicks, hovers, brushes, picks). A selection travels over interaction edges, to a Data Pool or straight to another chart, and each of them highlights the rows it picks; no node runs again for it. A node's code reads a view's selection through a selection tag (below).
 
 ### IInteraction
 
@@ -946,7 +998,16 @@ A selection is active when it picks something: a point selection with rows, or a
 
 The pool writes its `interacted` flags into a copy of its output (`utils/poolFlagCopy`), never into its input or into an output it already sent, which the charts downstream still hold. Its echo names the chart that just selected (`selectionSource`, see `utils/selectionEcho`) under every mode. An Autark node skips an echo of its own selection, so a plot keeps its brush; a Vega chart applies it, which only recolours rows. Every other chart shows the resolved rows, and an Autark plot shows them as its selection in place of its own brush.
 
-The propagation counter (`INodeData.propagation`) is incremented each time an interaction change needs to trigger a re-execution, allowing nodes to detect when they need to re-run without comparing the full interaction payload.
+A Data Pool linked to another Data Pool by an interaction edge hands it the flags of the rows its `linked` column names (`INodeData.propagation`, through `applyNewPropagation`), and flips that pool's `newPropagation`, so the other pool flags those rows too.
+
+### Selection tags
+
+A node's code reads a view's current selection as `[!! selection name !!]`: the ids of the selected rows, a list. The tag lives on the node that reads it, in `data.selections` and in the spec at `metadata.selections` (`{name, node, column, ids}`), so a run on the server and the headless runner read the ids from the saved dataflow, as the browser does.
+
+- **Rows.** A view hands over the rows it matches selections against (`utils/references/viewSelections.provideViewRows`): a Vega-Lite node the rows it draws, whose positions its point selections name; an Autark node the features of each layer it reads, whose positions its picks name. Nothing is fetched again.
+- **Ids.** `utils/references/selectionTags.selectedIds` resolves the view's latest select with `matchSelections`, as a Data Pool in its default mode does, and reads the tag's column from those rows, each value once. `_vgsid_` and row positions are never stored: a node reads its own upstream artifact, where they mean nothing. `idColumns` offers `osm_id` and `building_id`, then any column whose values are all text or numbers and all different. More than `SELECTION_ID_CAP` (10,000) ids are stored as a `count`, which fails the run with a message.
+- **Updates.** `providers/flow/useSelectionTags` records each view's latest selection. On one the user made, or cleared (`changesSelection`: a select at priority 1 that holds a selection, or that empties one the view held), it rewrites the ids of every tag on that view and marks the nodes holding them stale. A chart declaring its selects as it compiles, or reporting them empty as its signal listeners hear the first pulse, changes nothing, so a reload or a redraw keeps the saved ids. `runKeyWithShared` takes the node's tags, so the run cache keys on the ids its code names.
+- **Resolution.** The selection kind is one more kind in the reference module (`codeReferences.ts`, `execution/code_references.py`), pinned by the shared cases table. `WorkflowSpec.node_code` passes a node's tags, which `run_engine` and `runner` both call.
 
 ---
 
@@ -1516,12 +1577,19 @@ Models come from the Discovery Catalog's model family ([Models from the Discover
 
 ## Scenario Catalog
 
-The user-facing model is in [SCENARIO-CATALOG.md](SCENARIO-CATALOG.md) and the routes are in [Scenario Catalog Routes](#scenario-catalog-routes). The backend is `backend/app/scenario_catalog/`: `domain/parts.py` (a scenario's fixed context, levers and outcomes, read from a saved spec), `infrastructure/projects.py` (the account's projects and their saved outputs), `service.py` (listing and details) and `routes.py`.
+The user-facing model is in [SCENARIO-CATALOG.md](SCENARIO-CATALOG.md) and the routes are in [Scenario Catalog Routes](#scenario-catalog-routes). The backend is `backend/app/scenario_catalog/`: `domain/parts.py` (a scenario's fixed context, levers and outcomes, read from a saved spec), `domain/copy.py` (what a drop into another dataflow copies), `infrastructure/projects.py` (the account's projects and their saved outputs), `infrastructure/requirements.py` (the packages, datasets and models a drop needs), `service.py` (listing, details and the drop) and `routes.py`.
 
 - **No storage of its own.** Scenarios live in their projects' specs (`dataflow.scenarios`, see `projects/scenarios.py`). A listing reads `projects.services.list_projects`, whose summaries carry each project's scenarios and graph preview; a scenario's details read its project's spec. A scenario's id is unique in its project only (a duplicated project keeps its scenarios' ids), so the catalog keys each one as `<projectId>/<scenarioId>`.
 - **Parts.** `scenario_parts` is the twin of `scenarioParts` in `src/utils/scenarios/scenarioParts.ts`, and `saved_sources` the twin of `savedSourcesOf` (the save rule's per-node walk: a chart, a Data Pool or a drawing Autark node stands for the nodes feeding it, the walk pinned dashboard tiles use). Both read `scenarioParts.cases.json`, through Jest and `tests/test_scenario_catalog/test_parts.py`, so the catalog reads a scenario the way its canvas does. Shared tags are found with `code_references.shared_names_in`.
 - **Saved results.** For each node of a scenario's parts, the details name the outputs its project saved: the Data Catalog's computed datasets `computed.<projectId>.<nodeId>` of each node `saved_sources` gives, listed with `DatasetCatalogService.list_dataflow_outputs` (the `computed.<projectId>.` prefix), without file paths.
-- **Frontend.** `services/scenarioCatalog/` (client, types, hooks), the page `pages/scenarios/`, the canvas drawer `components/scenarios/catalog/` opened by `providers/scenarioCatalog/` from the bar's **Scenario** button, and the shared plain-box graph `components/DataflowThumbnail.tsx` with a `highlight`.
+- **Frontend.** `services/scenarioCatalog/` (client, types, hooks, the drag payload), the page `pages/scenarios/`, the canvas drawer `components/scenarios/catalog/` opened by `providers/scenarioCatalog/` from the bar's **Scenario** button, and the shared plain-box graph `components/DataflowThumbnail.tsx` with a `highlight`.
+- **Dragging a scenario into a dataflow.** A drawer card puts `application/x-curio-scenario` on the drag; `MainCanvas` hands the drop to `components/scenarios/useScenarioDrop.ts`, in four steps:
+  1. `GET .../copy?target=` returns the plan: the levers and the context's Parameter nodes as spec nodes, the edges into the levers, each context node with the one node whose saved output stands for it (`saved_sources`), the outcomes' saved sources, the packages the target lacks, and `problems`. Nothing changes, and a problem refuses the drop.
+  2. `utils/scenarios/scenarioDrop.ts` `planScenarioDrop` picks the ids: `duplicateSelection` copies the levers (fresh ids, `copiedFrom`), one Data Loading node stands in for each context node, Parameter nodes are copied, and the scenario is collapsed at the drop point with `source: {project, scenario}`. A context node an earlier drop from the same project brought (outside every scenario, with that lineage) is reused, and a Parameter name the dataflow already uses refuses the drop.
+  3. `POST .../copy` adds the packages through `install_to_project`, as the Node Catalog's Add does, then copies each saved output to its copy's id with `datasets/install/copy.py` (the dataset folder, manifest rewritten to the new producer node and dataflow, never re-read from sandbox artifacts) and hydrates the source's output refs for the copies (`storage.hydrate_outputs`).
+  4. The canvas refreshes the package registry, builds the loaders with `buildDatasetLoaderNodeOptions`, loads everything with `loadTrill(..., "none", ..., restored)` as Duplicate selection does, and applies the restored outputs with `utils/restoredOutputs.ts`, which `ProjectLoader` uses too.
+
+  A copy's dataset id is `computed.<targetId>.<nodeId>`, so a reload of the target restores it as that node's output (`_durable_source_for`), and a later run of the source rewrites only the source's.
 
 ---
 
@@ -1722,6 +1790,8 @@ A model is added only through the Discovery Catalog's acquire route, on a model 
 |---|---|---|
 | `/api/scenarios/catalog` | GET | Every scenario in the account's projects, each with its project and the project's graph preview (`q` filters by name, description and project name) |
 | `/api/scenarios/<projectId>/<scenarioId>` | GET | One scenario: its fixed context, levers and outcomes, each node with the outputs its project saved. **404** for another account's project, a deleted one, or a scenario the project does not have |
+| `/api/scenarios/<projectId>/<scenarioId>/copy?target=<projectId>` | GET | What dragging the scenario into the target project copies, and `problems` naming why it cannot be. Changes nothing. **400** without `target`; **404** when either project is not the caller's |
+| `/api/scenarios/<projectId>/<scenarioId>/copy` | POST | Body `{targetProjectId, outputs: [{source, node}]}`: adds the packages the plan names to the target, copies each named saved output to `computed.<targetId>.<node>`, and returns the target's packages, those added, each context loader's dataset, and the restored output refs. **409** while the plan has a problem; **400** for a source the scenario does not bring or a node id that is not fresh |
 
 ### Agent Routes
 

@@ -22,6 +22,7 @@ import {
 import { packagesApi } from "../services/packages";
 import { useToastContext } from "../providers/ToastProvider";
 import { loadFailedMessage } from "../utils/dataflowImport";
+import { restoredByNode, restoredOutputs, withOutputs } from "../utils/restoredOutputs";
 
 import { SHARE_UUID_RE as UUID_RE } from "../utils/shareLinks";
 import { getEmbeddedDashboard } from "../standalone/dashboardPayload";
@@ -172,10 +173,7 @@ export const ProjectLoader: React.FC<{
         }
         // The outputs the manifest restored, by node: those nodes are built as
         // having run, so a downstream play reuses them (#407).
-        const restored: Record<string, string> = {};
-        for (const o of outputs ?? []) {
-          if (o?.node_id && o.filename) restored[o.node_id] = o.filename;
-        }
+        const restored = restoredByNode(outputs);
         for (const nodeId of Object.keys(restored)) restoredIds.add(nodeId);
         loaded = loadTrill(spec, undefined, undefined, restored);
         // Auto-install missing deps only for the owner's own project — never
@@ -186,31 +184,8 @@ export const ProjectLoader: React.FC<{
       }
 
       if (outputs && outputs.length > 0) {
-        const newOutputs: IOutput[] = outputs.map((o) => ({
-          nodeId: o.node_id,
-          // Carry the TYPE, not just the name. A Vega node refuses an input
-          // whose type it cannot see ("undefined is not a valid input type"),
-          // and a bare filename has none, so a restored chart rejected its own
-          // data and rendered the empty state instead. The manifest records the
-          // type beside the filename precisely so this does not have to be
-          // guessed.
-          output: o.data_type
-            ? { path: o.filename, dataType: o.data_type }
-            : o.filename,
-        }));
-        setOutputs((prev: IOutput[]) => {
-          const existing = new Set(prev.map((p) => p.nodeId));
-          const merged = [...prev];
-          for (const o of newOutputs) {
-            if (existing.has(o.nodeId)) {
-              const idx = merged.findIndex((m) => m.nodeId === o.nodeId);
-              if (idx >= 0) merged[idx] = o;
-            } else {
-              merged.push(o);
-            }
-          }
-          return merged;
-        });
+        const newOutputs = restoredOutputs(outputs);
+        setOutputs((prev: IOutput[]) => withOutputs(prev, newOutputs));
         // Refill downstream data.input (incl. input circles) from the restored
         // outputs — otherwise every reload requires rerunning each upstream
         // node before downstream nodes and pools receive anything (dev/64).

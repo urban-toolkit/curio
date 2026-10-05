@@ -712,6 +712,14 @@ def exec():
             models=models, dataset_formats=dataset_formats, package_modules=package_modules,
         )
 
+    # A Compare Scenarios node's code hands two rasters back as a request: they
+    # are subtracted here, in this process's Node, whichever path ran the code.
+    from utk_curio.sandbox.util.scenario_difference import complete_raster_difference
+
+    result = complete_raster_difference(
+        result, node_type=str(node_type), session_id=session_id, launch_dir=launch_dir,
+    )
+
     print(f"[sandbox /exec] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)
     return jsonify(result)
 

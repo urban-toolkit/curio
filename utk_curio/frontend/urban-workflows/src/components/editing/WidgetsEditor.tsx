@@ -7,7 +7,10 @@ import styles from "./widgets/WidgetTags.module.css";
 import { SharedTag, WidgetTag, uniqueSharedNames } from "./widgets/WidgetTag";
 import { WidgetControl } from "./widgets/WidgetControl";
 import { WidgetForm } from "./widgets/WidgetForm";
+import { SelectionSection } from "./widgets/SelectionTags";
 import { checkWidgetValue, effectiveValue, type WidgetDef } from "../../utils/widgets/widgetModel";
+import type { SelectionTag } from "../../utils/references/selectionTags";
+import type { SelectionView } from "../../hook/useSelectionViews";
 import {
     describeEmptyInputs,
     describeReferenceProblems,
@@ -20,6 +23,10 @@ import {
 const NO_INPUTS: InputScope[] = [];
 const NO_SLOTS: number[] = [];
 const NO_SHARED: WidgetDef[] = [];
+const NO_SELECTIONS: SelectionTag[] = [];
+const NO_VIEWS: SelectionView[] = [];
+const NO_NODE_IDS: ReadonlySet<string> = new Set();
+const keepSelections = () => {};
 
 type WidgetsEditorProps = {
     userCode: any; // grammar or python, references unresolved
@@ -39,6 +46,13 @@ type WidgetsEditorProps = {
     emptyInputs?: number[];
     /** The Parameter nodes' widgets, offered under Shared as `[!! @name !!]`. */
     shared?: WidgetDef[];
+    /** The node's selection tags, `[!! selection name !!]`, saved at metadata.selections. */
+    selections?: SelectionTag[];
+    onSelectionsChange?: (selections: SelectionTag[]) => void;
+    /** The views a selection tag can read: the dataflow's Vega-Lite and Autark nodes. */
+    views?: SelectionView[];
+    /** Every node of the dataflow, so a tag whose view was deleted says so. */
+    nodeIds?: ReadonlySet<string>;
     customWidgetsCallback?: any;
     data?: any;
     disableWidgets?: boolean; // freeze the widget controls instead of hiding them
@@ -64,12 +78,19 @@ function WidgetsEditor({
     inputs = NO_INPUTS,
     emptyInputs = NO_SLOTS,
     shared = NO_SHARED,
+    selections = NO_SELECTIONS,
+    onSelectionsChange = keepSelections,
+    views = NO_VIEWS,
+    nodeIds = NO_NODE_IDS,
     customWidgetsCallback,
     disableWidgets,
 }: WidgetsEditorProps) {
     const markersDirtyBypass = useRef(false);
     const [editing, setEditing] = useState<Editing>(null);
-    const scope = useMemo(() => ({ widgets, inputs, shared }), [widgets, inputs, shared]);
+    const scope = useMemo(
+        () => ({ widgets, inputs, shared, selections }),
+        [widgets, inputs, shared, selections],
+    );
     const sharedNames = uniqueSharedNames(shared);
 
     useEffect(() => {
@@ -181,6 +202,14 @@ function WidgetsEditor({
                     Add widget
                 </button>
             )}
+            <SelectionSection
+                selections={selections}
+                onSelectionsChange={onSelectionsChange}
+                views={views}
+                allNodeIds={nodeIds}
+                disabled={disableWidgets}
+                locked={editing !== null}
+            />
             {sharedNames.length > 0 ? (
                 <div className={styles.shared} data-shared-panel="true">
                     <p className={styles.sharedHeading}>Shared</p>
