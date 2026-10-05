@@ -1,8 +1,13 @@
 """``scout.shadow@1``: SCOUT's Deep Umbra shadow model in Curio (#662, step 19).
 
 The node reads a height raster, the mosaic of Rasterize Buildings
-(``scout.raster-conversion@1``), and runs Deep Umbra on every zoom-16 tile of
-it. The proof starts from SCOUT's own files, copied unchanged into
+(``scout.raster-conversion@1``), runs Deep Umbra on every zoom-16 tile of it and
+returns the accumulated shadow as a raster on the same grid. SCOUT's metrics,
+the mean and median over the ground, are a Raster Statistics node's
+(``curio.builtin@1``) with the heights as its mask, as the shipped dataflow
+``ScoutShadows.json`` wires it.
+
+The proof starts from SCOUT's own files, copied unchanged into
 ``fixtures/scout/`` (see its ``ATTRIBUTION.md``): SCOUT's committed height tiles
 of both scenarios of its high-rise shadow example become one mosaic each,
 written by Rasterize Buildings' own ``write_mosaic``. Then:
@@ -12,8 +17,9 @@ written by Rasterize Buildings' own ``write_mosaic``. Then:
   ``load_input_grid`` builds, to the bit;
 - with the ONNX export of SCOUT's generator that Curio ships (the Data Catalog
   dataset ``data.scout.deep-umbra@1``), in summer, the shadow of each tile, in
-  SCOUT's 8 bits, is SCOUT's committed shadow tile, and the mean and median
-  over the ground are SCOUT's committed metrics.
+  SCOUT's 8 bits, is SCOUT's committed shadow tile;
+- the dataflow's Raster Statistics node, run as it is written on the node's
+  shadow raster and the mosaic, gives SCOUT's committed mean and median.
 
 Within a tolerance, not equal. Deep Umbra normalizes each layer by the tile's own
 mean and variance, which makes its float32 output sensitive to the order of its
@@ -35,7 +41,7 @@ the tile's statistics, a raw output 2.0 away where the right export is 0.0177.
 
 The node: its template, its widget resolved the way a run resolves it, runs in
 the sandbox with its package's modules (#719) and the model as the backend
-resolves it. It returns ``(mosaic, metrics)``, the mosaic on its input's grid.
+resolves it.
 
 Package code is imported inside each test, through a run's staged copy of the
 package's modules, so a checkout without the package or its libraries fails each
@@ -59,6 +65,7 @@ PACKAGE = REPO / "packages" / "scout.shadow@1"
 SOURCES = PACKAGE / "sources"
 MODULE = "scout_shadow"
 NODE_TYPE = "scout.shadow/accumulated-shadow"
+STATISTICS_TYPE = "curio.builtin/raster-statistics"
 MODEL_ID = "data.scout.deep-umbra"
 MODEL_DIR = REPO / "datasets" / "data.scout.deep-umbra@1"
 MODEL = MODEL_DIR / "data" / "deep_umbra.onnx"
@@ -241,22 +248,32 @@ def _with_values(**values) -> list:
     return widgets
 
 
+def _execute(code, value, node_type, workspace, *, data_type, **extra):
+    """Run *code* on *value* as a node's play does, in process: the sandbox's
+    result."""
+    from utk_curio.sandbox.app.worker import _worker_init, execute_code
+    from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+    _worker_init()
+    art_id = save_to_duckdb(value, node_id="upstream")
+    return execute_code(
+        textwrap.indent(code, "    "), art_id, node_type, data_type,
+        save_dataset=False, media_dir=str(workspace / "media"), **extra,
+    )
+
+
 def run_node(value, workspace, *, data_type="raster", model=True, fails=False, **values):
     """Run the node's template, its widget at *values*, on *value* in the
     sandbox, in process, with the model resolved as the backend resolves it
-    (or, without *model*, as a Curio without it does): ``(artifact id, output)``,
-    or with *fails* the node's error text."""
+    (or, without *model*, as a Curio without it does): ``(artifact id, the
+    raster)``, or with *fails* the node's error text."""
     from utk_curio.backend.app.execution.code_references import resolve_references
-    from utk_curio.sandbox.app.worker import _worker_init, execute_code
-    from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     code, problems = resolve_references(_source(), _with_values(**values), "python", inputs=[{"slot": 0}])
     assert problems == [], problems
-    _worker_init()
-    art_id = save_to_duckdb(value, node_id="heights")
-    result = execute_code(
-        textwrap.indent(code, "    "), art_id, NODE_TYPE, data_type,
-        save_dataset=False, media_dir=str(workspace / "media"),
+    result = _execute(
+        code, value, NODE_TYPE, workspace, data_type=data_type,
         package_modules={"root": str(SOURCES), "names": [MODULE]},
         dataset_paths={MODEL_ID: str(MODEL)} if model else {},
         dataset_formats={MODEL_ID: {"format": "onnx"}} if model else {},
@@ -265,8 +282,32 @@ def run_node(value, workspace, *, data_type="raster", model=True, fails=False, *
         assert result["stderr"], f"the node ran: {result['output']}"
         return result["stderr"]
     assert result["stderr"] == "", result["stderr"]
-    assert result["output"]["dataType"] == "outputs", result["output"]
+    assert result["output"]["dataType"] == "raster", result["output"]
     return result["output"]["path"], load_from_duckdb(result["output"]["path"])
+
+
+def _dataflow() -> dict:
+    return json.loads(DATAFLOW.read_text(encoding="utf-8"))["dataflow"]
+
+
+def _statistics_code() -> str:
+    """The code of the dataflow's Raster Statistics nodes (both scenarios' are one)."""
+    codes = {node["content"] for node in _dataflow()["nodes"] if node["type"] == STATISTICS_TYPE}
+    assert len(codes) == 1, codes
+    return codes.pop()
+
+
+def run_statistics(shadow, heights, workspace) -> tuple[float, float]:
+    """The dataflow's Raster Statistics node, its code as written, on *shadow*
+    (input 0) and *heights* (input 1, the mask): ``(mean, median)``."""
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    result = _execute(_statistics_code(), (shadow, heights), STATISTICS_TYPE, workspace, data_type="outputs")
+    assert result["stderr"] == "", result["stderr"]
+    assert result["output"]["dataType"] == "dataframe", result["output"]
+    table = load_from_duckdb(result["output"]["path"])
+    assert list(table.columns) == ["mean", "median", "min", "max", "count"], list(table.columns)
+    return float(table["mean"].iloc[0]), float(table["median"].iloc[0])
 
 
 # ---------------------------------------------------------------------------
@@ -304,7 +345,8 @@ def test_the_mosaic_gives_back_scouts_tiles_and_inputs(tmp_path, scenario):
 
 def test_every_height_level_comes_back_exactly(tmp_path):
     """Each of the 256 levels Rasterize Buildings writes as metres (level times
-    550 over 255, in float32) reads back as that level."""
+    550 over 255, in float32) reads back as that level; level 0, the ground, is
+    every height under 1.08 m, the condition the Raster Statistics node keeps."""
     import numpy as np
     import rasterio
     from rasterio.transform import from_origin
@@ -316,29 +358,33 @@ def test_every_height_level_comes_back_exactly(tmp_path):
         out.write(levels * np.float32(550.0 / 255.0), 1)
     with shadow_modules(tmp_path) as (_deep_umbra, outputs), rasterio.open(path) as raster:
         assert np.array_equal(outputs.gray_levels(raster), levels)
+        heights = raster.read(1)
+        assert np.array_equal(heights < 1.08, levels == 0)
+    assert "where=lambda height: height < 1.08" in _statistics_code()
 
 
 @pytest.mark.parametrize("scenario", ["A", "B"])
-def test_scouts_rasters_become_scouts_committed_shadows(tmp_path, scenario, record_property):
+def test_scouts_rasters_become_scouts_committed_shadows(workspace, tmp_path, scenario, record_property):
     """SCOUT's call, in summer, on the mosaic of SCOUT's committed height tiles:
     each tile's shadow, in the 8 bits SCOUT writes, is SCOUT's committed shadow
-    tile, and the mean and median over the ground are SCOUT's metrics, within
-    the tolerance. The measured numbers are recorded in the run's JUnit report
+    tile; and the dataflow's Raster Statistics node, on the node's shadow raster
+    with the mosaic as its mask, gives SCOUT's mean and median, within the
+    tolerance. The measured numbers are recorded in the run's JUnit report
     either way, with what the session ran on."""
-    import numpy as np
     import onnxruntime as ort
 
-    with shadow_modules(tmp_path) as (deep_umbra, outputs), _open(_mosaic(tmp_path, scenario)) as mosaic:
-        fraction, ground = outputs.shadow_fractions(mosaic, "summer", _session())
-        minutes = fraction * np.float32(deep_umbra.season_factor("summer"))
+    heights_path = _mosaic(tmp_path, scenario)
     measured = {}
-    _zoom, _x, _y, columns, rows = GRID
-    for row in range(rows):
-        for column in range(columns):
-            name = _tile_name(column, row)
-            ours = (_block(fraction, column, row) * 255).astype("uint8").astype(int)
-            measured[name] = _levels(ours, _gray(FIXTURES / f"{scenario}_shadows" / name))
-    ours = (float(np.mean(minutes[ground])), float(np.median(minutes[ground])))
+    with shadow_modules(tmp_path) as (_deep_umbra, outputs), _open(heights_path) as heights:
+        shadows = outputs.shadow_tiles(heights, "summer", _session())
+        shadow = outputs.accumulated_shadow(heights, "summer", _session(), lambda name: str(tmp_path / name))
+    for (column, row), fraction in shadows.items():
+        name = _tile_name(column, row)
+        measured[name] = _levels((fraction * 255).astype("uint8").astype(int),
+                                 _gray(FIXTURES / f"{scenario}_shadows" / name))
+    assert sorted(measured) == TILE_NAMES
+    with shadow, _open(heights_path) as heights:
+        ours = run_statistics(shadow, heights, workspace)
     scouts = _metrics(FIXTURES / f"{scenario}_shadows_metric.csv")
     differences = [abs(a - b) for a, b in zip(ours, scouts)]
     record_property("tiles (largest levels, pixels differing)", json.dumps(measured))
@@ -404,13 +450,14 @@ def test_the_model_stays_out_of_the_pip_package(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_the_template_reads_the_season_and_loads_the_model_by_its_id():
-    """The input is a raster; the season is SCOUT's three choices, drawn as
+    """A raster in, a raster out; the season is SCOUT's three choices, drawn as
     radio buttons; the model is named as a literal the backend resolves before
     the run."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
 
     template = _template()
     assert template["inputPorts"] == [{"cardinality": "1", "types": ["RASTER"]}]
+    assert template["outputPorts"] == [{"cardinality": "1", "types": ["RASTER"]}]
     assert template["hasWidgets"] is True
     assert template["widgets"] == [{
         "name": "season", "type": "choice", "label": "Season", "default": "summer",
@@ -422,62 +469,65 @@ def test_the_template_reads_the_season_and_loads_the_model_by_its_id():
     assert _manifest()["dependencies"]["python"] == {"onnxruntime": ">=1.17", "rasterio": ">=1.4"}
 
 
+def test_the_package_writes_its_raster_with_curios_mosaic_helper():
+    """The shadow raster is written by Curio's raster helpers, not a copy of
+    them in the package."""
+    modules = (SOURCES / MODULE).glob("*.py")
+    text = "\n".join(path.read_text(encoding="utf-8") for path in modules)
+    assert "from utk_curio.sandbox.util.rasters import mosaic_rasters, tile_bounds" in text
+    assert "rasterio.open(path, \"w\"" not in text and "Window(" not in text
+    assert "def write_mosaic" not in text and "def tile_bounds" not in text
+
+
 # ---------------------------------------------------------------------------
 # The node, in the sandbox
 # ---------------------------------------------------------------------------
 
-def test_the_node_returns_the_shadow_mosaic_and_scouts_metrics(workspace, tmp_path):
-    """The mosaic of SCOUT's A tiles in: SCOUT's metrics within the tolerance,
-    and a raster in minutes on the input's own grid, whose cells are the
-    port's shadow times summer's 720 minutes."""
+def test_the_node_returns_the_shadow_raster_on_its_inputs_grid(workspace, tmp_path):
+    """The mosaic of SCOUT's A tiles in: a raster in minutes on the input's own
+    grid, each tile the port's shadow times summer's 720 minutes."""
     import numpy as np
     import rasterio
 
     path = _mosaic(tmp_path, "A")
-    _art_id, (mosaic, metrics) = run_node(_open(path), workspace)
+    _art_id, shadow = run_node(_open(path), workspace)
     try:
-        assert list(metrics.columns) == ["season", "mean_minutes", "median_minutes"]
-        assert len(metrics) == 1 and metrics["season"].iloc[0] == "summer"
-        ours = (float(metrics["mean_minutes"].iloc[0]), float(metrics["median_minutes"].iloc[0]))
-        scouts = _metrics(FIXTURES / "A_shadows_metric.csv")
-        assert _metrics_within(ours, scouts), (
-            f"(mean, median) minutes: ours {ours}, SCOUT's {scouts}, "
-            f"against at most ({MAX_MEAN_MINUTES}, {MAX_MEDIAN_MINUTES})"
-        )
-
-        assert isinstance(mosaic, rasterio.io.DatasetReader)
+        assert isinstance(shadow, rasterio.io.DatasetReader)
         with _open(path) as heights:
-            assert (mosaic.crs, mosaic.transform, mosaic.width, mosaic.height) == (
+            assert (shadow.crs, shadow.transform, shadow.width, shadow.height) == (
                 heights.crs, heights.transform, heights.width, heights.height,
             )
-        assert (mosaic.count, mosaic.dtypes[0]) == (1, "float32")
-        assert mosaic.tags()["season"] == "summer" and mosaic.tags()["minutes"] == "720"
+        assert (shadow.count, shadow.dtypes[0]) == (1, "float32")
+        assert shadow.tags()["season"] == "summer" and shadow.tags()["minutes"] == "720"
+        cells = shadow.read(1)
         with shadow_modules(tmp_path) as (_deep_umbra, outputs), _open(path) as heights:
-            fraction, _ground = outputs.shadow_fractions(heights, "summer", _session())
-        assert np.array_equal(mosaic.read(1), fraction * np.float32(720)), "the raster is not the port's shadow"
+            fractions = outputs.shadow_tiles(heights, "summer", _session())
+        assert sorted(fractions) == [(0, 0), (0, 1), (1, 0), (1, 1)]
+        for (column, row), fraction in fractions.items():
+            assert np.array_equal(_block(cells, column, row), fraction * np.float32(720)), (column, row)
     finally:
-        mosaic.close()
+        shadow.close()
 
 
-def test_the_mosaic_is_a_raster_the_autark_node_loads(workspace, tmp_path):
-    """What #718's raster route serves for the tuple's first part: an EPSG CRS,
-    a north-up grid, inside the Autark node's caps."""
+def test_the_raster_is_one_the_autark_node_loads(workspace, tmp_path):
+    """What #718's raster route serves for the node's output: an EPSG CRS, a
+    north-up grid, inside the Autark node's caps."""
     from rasterio.io import MemoryFile
 
     from utk_curio.sandbox.util.rasters import serve_raster
 
-    art_id, (mosaic, _metrics) = run_node(_open(_mosaic(tmp_path, "A")), workspace)
+    art_id, shadow = run_node(_open(_mosaic(tmp_path, "A")), workspace)
     try:
-        payload, meta = serve_raster(art_id, part=0, max_cells=2048 * 2048, max_side=8192)
+        payload, meta = serve_raster(art_id, max_cells=2048 * 2048, max_side=8192)
         assert meta["crs"] == "EPSG:3395"
         a, b, c, d, e, f = meta["transform"]
         assert b == 0 and d == 0 and a > 0 and e < 0
         assert (meta["width"], meta["height"], meta["count"]) == (512, 512, 1)
         with MemoryFile(payload) as memory, memory.open() as served:
-            assert served.crs == mosaic.crs and served.transform == mosaic.transform
-            assert (served.read(1) == mosaic.read(1)).all()
+            assert served.crs == shadow.crs and served.transform == shadow.transform
+            assert (served.read(1) == shadow.read(1)).all()
     finally:
-        mosaic.close()
+        shadow.close()
 
 
 def test_the_season_reaches_the_call(workspace, tmp_path):
@@ -485,16 +535,18 @@ def test_the_season_reaches_the_call(workspace, tmp_path):
     in shadow, spring 540, summer 720."""
     import numpy as np
 
+    from utk_curio.sandbox.util.raster_algebra import statistics
+
     path = _mosaic(tmp_path, "A")
     results = {}
     for season in ("winter", "spring", "summer"):
-        _art_id, (mosaic, metrics) = run_node(_open(path), workspace, season=season)
+        _art_id, shadow = run_node(_open(path), workspace, season=season)
         try:
-            cells = mosaic.read(1)
-            results[season] = (float(np.nanmax(cells)), float(metrics["mean_minutes"].iloc[0]),
-                               metrics["season"].iloc[0], mosaic.tags()["minutes"])
+            with _open(path) as heights:
+                mean = float(statistics((shadow, heights), where=lambda height: height < 1.08)["mean"].iloc[0])
+            results[season] = (float(np.nanmax(shadow.read(1))), mean, shadow.tags()["season"], shadow.tags()["minutes"])
         finally:
-            mosaic.close()
+            shadow.close()
     for season, minutes in (("winter", 360), ("spring", 540), ("summer", 720)):
         top, mean, named, tagged = results[season]
         assert named == season and tagged == str(minutes), results
@@ -594,19 +646,18 @@ def test_another_failure_to_open_the_model_is_not_hidden(tmp_path):
 # The shipped dataflow
 # ---------------------------------------------------------------------------
 
-def _dataflow() -> dict:
-    return json.loads(DATAFLOW.read_text(encoding="utf-8"))["dataflow"]
-
-
 def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     """``ScoutShadows.json`` is how its CI run reaches this package: its nodes
     hold the templates' own sources and widgets, the shadow nodes reading the
-    season from the one Parameter node both scenarios share."""
+    season from the one Parameter node both scenarios share; each scenario's
+    Raster Statistics node reads its shadow on input 0 and its heights, the
+    mask, on input 1; the chart reads the statistics, the difference the shadows."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
 
     spec = _dataflow()
     assert spec["packages"] == ["scout.raster-conversion@1", "scout.shadow@1"]
     assert [ref["datasetId"] for ref in spec["datasets"]] == ["data.scout.loop-buildings", MODEL_ID]
+    nodes = {node["id"]: node for node in spec["nodes"]}
     by_type: dict[str, list] = {}
     for node in spec["nodes"]:
         by_type.setdefault(node["type"], []).append(node)
@@ -630,7 +681,23 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
 
     (loader,) = by_type["curio.builtin/data-loading"]
     assert dataset_ids_in_code(loader["content"]) == ["data.scout.loop-buildings"]
-    assert len(by_type["curio.builtin/compare-scenarios"]) == 2
+
+    into = {(edge["target"], edge["targetHandle"]): edge["source"] for edge in spec["edges"]}
+    statistics = by_type[STATISTICS_TYPE]
+    assert len(statistics) == 2
+    for node in statistics:
+        shadow, heights = nodes[into[(node["id"], "in")]], nodes[into[(node["id"], "in_1")]]
+        assert shadow["type"] == NODE_TYPE
+        assert heights["type"] == "curio.builtin/computation-analysis"
+        assert into[(shadow["id"], "in")] == heights["id"]
+        assert nodes[into[(heights["id"], "in")]]["type"] == "scout.raster-conversion/rasterize-buildings"
+        assert heights["content"].rstrip().endswith("return arg[0]")
+    chart, difference = sorted(by_type["curio.builtin/compare-scenarios"],
+                               key=lambda n: n["metadata"]["compareScenarios"]["mode"])
+    assert chart["metadata"]["compareScenarios"]["mode"] == "chart"
+    assert chart["metadata"]["compareScenarios"]["chart"]["y"] == "mean"
+    assert {nodes[into[(chart["id"], h)]]["type"] for h in ("in", "in_1")} == {STATISTICS_TYPE}
+    assert {nodes[into[(difference["id"], h)]]["type"] for h in ("in", "in_1")} == {NODE_TYPE}
 
 
 def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):

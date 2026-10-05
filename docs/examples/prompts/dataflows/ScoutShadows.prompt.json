@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/ScoutShadows.json",
-    "sha256": "58998d652f4b3483ae44bf96702bcaa5e2a524a243c6588d796c6bfdd7939846",
+    "sha256": "556d150f93c2252488793727855da01307ccf1c338dc582cdee5831b64a3ed21",
     "walkthrough": null
   },
-  "prompt": "Compare two scenarios of SCOUT's high-rise shadow case on the Chicago Loop. Load SCOUT's Loop buildings from the Data Catalog; in one scenario keep them as they are, in the other first take out the 15 buildings SCOUT's second scenario removes, by their building ids. In both, turn the buildings' heights into zoom 16 map tiles with SCOUT's building rasterizer and run SCOUT's Deep Umbra shadow model on the tiles, with one season setting both scenarios share, set to summer. Then chart the two scenarios' mean accumulated shadow side by side, and map how the shadow changes when the buildings are removed. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
+  "prompt": "Compare two scenarios of SCOUT's high-rise shadow case on the Chicago Loop. Load SCOUT's Loop buildings from the Data Catalog; in one scenario keep them as they are, in the other first take out the 15 buildings SCOUT's second scenario removes, by their building ids. In both, turn the buildings' heights into a zoom 16 height raster with SCOUT's building rasterizer, run SCOUT's Deep Umbra shadow model on it, with one season setting both scenarios share, set to summer, and take the accumulated shadow's mean and median over the ground, where the height raster is under 1.08 m. Then chart the two scenarios' mean accumulated shadow side by side, and map how the shadow changes when the buildings are removed. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
   "context": null,
   "required": {
     "datasets": [
@@ -50,20 +50,6 @@
         "hasContent": true
       },
       {
-        "ref": "analysis3",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis4",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
         "role": "loader",
@@ -83,6 +69,20 @@
         "role": "endpoint",
         "executable": false,
         "hasContent": false
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/raster-statistics",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/raster-statistics",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
       },
       {
         "ref": "analysis5",
@@ -116,25 +116,25 @@
     "edges": [
       {
         "from": "analysis1",
-        "to": "visualization1",
+        "to": "analysis3",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis7",
         "kind": "data"
       },
       {
         "from": "analysis2",
-        "to": "visualization2",
+        "to": "analysis4",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis8",
         "kind": "data"
-      },
-      {
-        "from": "analysis3",
-        "to": "visualization1",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis4",
-        "to": "visualization2",
-        "kind": "data",
-        "slot": 1
       },
       {
         "from": "loader1",
@@ -152,29 +152,41 @@
         "kind": "data"
       },
       {
+        "from": "analysis3",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
         "from": "analysis5",
-        "to": "analysis7",
-        "kind": "data"
-      },
-      {
-        "from": "analysis6",
-        "to": "analysis8",
-        "kind": "data"
-      },
-      {
-        "from": "analysis7",
         "to": "analysis1",
         "kind": "data"
       },
       {
-        "from": "analysis7",
+        "from": "analysis6",
         "to": "analysis2",
         "kind": "data"
       },
       {
-        "from": "analysis8",
+        "from": "analysis7",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis7",
         "to": "analysis3",
         "kind": "data"
+      },
+      {
+        "from": "analysis8",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 1
       },
       {
         "from": "analysis8",
@@ -207,18 +219,32 @@
       "outputKind": "geodataframe"
     },
     {
-      "ref": "analysis2",
+      "ref": "analysis1",
       "mustMention": [
-        "mosaic"
+        "height"
       ],
       "outputKind": "raster"
     },
     {
-      "ref": "analysis4",
+      "ref": "analysis2",
       "mustMention": [
-        "mosaic"
+        "height"
       ],
       "outputKind": "raster"
+    },
+    {
+      "ref": "analysis3",
+      "mustMention": [
+        "shadow"
+      ],
+      "outputKind": "dataframe"
+    },
+    {
+      "ref": "analysis4",
+      "mustMention": [
+        "shadow"
+      ],
+      "outputKind": "dataframe"
     },
     {
       "ref": "analysis7",
@@ -273,5 +299,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the two datasets' identifiers only. Both datasets are SCOUT's (urban-toolkit/scout), used with the permission of its authors, and carry no licence string."
   },
-  "notes": "Two scenarios over a shared context: SCOUT's buildings and a season Parameter node, SCOUT's rasterizer and Deep Umbra in each scenario, and two Compare Scenarios nodes, a chart and a difference map."
+  "notes": "Two scenarios over a shared context: SCOUT's buildings and a season Parameter node, SCOUT's rasterizer, the height mosaic, Deep Umbra and Raster Statistics of the shadow over the ground in each scenario, and two Compare Scenarios nodes, a chart and a difference map."
 }

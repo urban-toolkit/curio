@@ -1,4 +1,4 @@
-"""The Accumulated Shadow node's input and outputs, around SCOUT's Deep Umbra
+"""The Accumulated Shadow node's input and output, around SCOUT's Deep Umbra
 (``deep_umbra.py``). Curio's own code.
 
 - **input**: a raster of building heights in metres, in EPSG:3395 on the
@@ -7,25 +7,28 @@
   tiles)`` output, of which the node reads the mosaic. Every tile of the raster
   is predicted, from the tile and its eight neighbours; cells beyond the raster
   are ground.
-- **mosaic**: the accumulated shadow on the input's own grid, one float32 band
-  in minutes (Deep Umbra's output from 0 to 1, times the season's minutes).
-- **metrics**: one row, the season and the mean and median accumulated shadow in
-  minutes over the ground (cells with no building), as SCOUT's
-  ``run_shadow_model`` writes them to its metrics file.
+- **output**: the accumulated shadow on the input's own grid, one float32 band
+  in minutes (Deep Umbra's output from 0 to 1, times the season's minutes),
+  written with Curio's mosaic helper (``mosaic_rasters``). Its statistics over
+  the ground are a Raster Statistics node's, with the heights as the mask.
 
 Deep Umbra reads 8-bit heights where 255 is 550 m: a height becomes
 ``255 * height / 550``, rounded half to even and kept within 0 to 255, as SCOUT's
 rasterizer writes it (``cv2.imwrite``), so the heights of Rasterize Buildings'
-mosaic give back its tiles' gray levels exactly.
+mosaic give back its tiles' gray levels exactly. Level 0, the ground, is a
+height under 1.08 m (550 / 255 / 2 is 1.078).
 """
 
 import hashlib
 import math
 
 import numpy as np
-import pandas as pd
 import rasterio
 from pyproj import Transformer
+
+# Curio's raster helpers: a web map tile's bounds, and tiles side by side in
+# one GeoTIFF.
+from utk_curio.sandbox.util.rasters import mosaic_rasters, tile_bounds
 
 from .deep_umbra import TILE, predict_shadow, season_factor, shadow_fraction
 
@@ -39,8 +42,8 @@ DEEP_UMBRA_MAX_HEIGHT = 550.0
 #: The seasons SCOUT's code knows (its widget offers spring, summer and winter).
 SEASONS = ("spring", "summer", "fall", "winter")
 
-#: SCOUT's tile grid: EPSG:3395, whose x is the WGS 84 semi-major axis times the
-#: longitude in radians, so a zoom-z tile is this many metres wide over 2 ** z.
+#: SCOUT's tile grid is in EPSG:3395, whose x is the WGS 84 semi-major axis times
+#: the longitude in radians, so a zoom-z tile is this many metres wide over 2 ** z.
 MOSAIC_CRS = "EPSG:3395"
 EQUATOR_METRES = 2.0 * math.pi * 6378137.0
 #: How far, in cells, a raster's corner may sit from a tile corner.
@@ -91,15 +94,6 @@ def height_raster(value):
     return rasters[0]
 
 
-def _deg2num(lon_deg, lat_deg, zoom):
-    """The tile coordinates of a point, as SCOUT's rasterizer computes them
-    (``convert_to_raster.deg2num``), not rounded."""
-    n = 2.0 ** zoom
-    xtile = (lon_deg + 180.0) / 360.0 * n
-    ytile = (1.0 - math.asinh(math.tan(math.radians(lat_deg))) / math.pi) / 2.0 * n
-    return xtile, ytile
-
-
 def tile_grid(raster):
     """``(zoom, x, y, columns, rows)``: the zoom level of the raster's tile grid,
     the tile at its north-west corner, and how many tiles it spans, read from
@@ -124,9 +118,14 @@ def tile_grid(raster):
             f"Deep Umbra reads zoom-{DEEP_UMBRA_ZOOM} tiles, and this raster is at zoom {zoom}. "
             f"Set Rasterize Buildings' Zoom level to {DEEP_UMBRA_ZOOM}."
         )
-    xtile, ytile = _deg2num(*_TO_4326.transform(c, f), zoom)
-    x, y = round(xtile), round(ytile)
-    if abs(xtile - x) * TILE > GRID_SLACK or abs(ytile - y) * TILE > GRID_SLACK:
+    # The tile whose north-west corner the raster's corner is: x from the
+    # longitude, y from the latitude, then checked against the tile's bounds.
+    lon, lat = _TO_4326.transform(c, f)
+    n = 2.0 ** zoom
+    x = round((lon + 180.0) / 360.0 * n)
+    y = round((1.0 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2.0 * n)
+    west, _south, _east, north = tile_bounds(x, y, zoom, MOSAIC_CRS)
+    if abs(west - c) > GRID_SLACK * a or abs(north - f) > GRID_SLACK * -e:
         raise ValueError(f"{NOT_A_HEIGHT_RASTER} This one's corner is not a tile's corner.")
     if raster.width % TILE or raster.height % TILE:
         raise ValueError(f"{NOT_A_HEIGHT_RASTER} This one is not a whole number of tiles.")
@@ -163,23 +162,19 @@ def neighbourhood(padded, column, row):
     return padded[row * TILE:(row + 3) * TILE, column * TILE:(column + 3) * TILE]
 
 
-def shadow_fractions(raster, season, model):
-    """Deep Umbra on every tile of *raster*: ``(fraction, ground)``, two arrays
-    on the raster's grid: the shadow from 0 to 1, and where there is no building."""
+def shadow_tiles(raster, season, model):
+    """Deep Umbra on every tile of *raster*: ``{(column, row): shadow}``, each
+    tile's shadow from 0 to 1, 256 by 256."""
     zoom, x, y, columns, rows = tile_grid(raster)
-    levels = gray_levels(raster)
-    padded = np.pad(levels, TILE)
-    fraction = np.zeros(levels.shape, dtype=np.float32)
-    ground = np.zeros(levels.shape, dtype=bool)
+    padded = np.pad(gray_levels(raster), TILE)
+    shadows = {}
     for row in range(rows):
         for column in range(columns):
-            input_height, prediction = predict_shadow(
+            _input_height, prediction = predict_shadow(
                 model, neighbourhood(padded, column, row), season, zoom, x + column, y + row
             )
-            block = (slice(row * TILE, (row + 1) * TILE), slice(column * TILE, (column + 1) * TILE))
-            fraction[block] = shadow_fraction(prediction)
-            ground[block] = input_height == 0
-    return fraction, ground
+            shadows[(column, row)] = shadow_fraction(prediction)
+    return shadows
 
 
 def mosaic_name(raster, season):
@@ -191,30 +186,27 @@ def mosaic_name(raster, season):
 
 
 def accumulated_shadow(value, season, model, output_file):
-    """``(mosaic, metrics)`` for the heights in *value*, in *season*, from the
-    Deep Umbra session *model*. *output_file(name)* names where a file the node
-    returns is written."""
+    """The accumulated shadow of the heights in *value*, in *season*, from the
+    Deep Umbra session *model*: a raster in minutes on the heights' own grid.
+    *output_file(name)* names where it is written."""
     if season not in SEASONS:
         raise ValueError(f"Accumulated Shadow knows the seasons spring, summer and winter, not {season!r}.")
     raster = height_raster(value)
     zoom, x, y, _columns, _rows = tile_grid(raster)
-    fraction, ground = shadow_fractions(raster, season, model)
     factor = season_factor(season)
-    minutes = fraction * np.float32(factor)
-    every = minutes[ground]
-    metrics = pd.DataFrame([{
-        "season": season,
-        "mean_minutes": float(np.mean(every)),
-        "median_minutes": float(np.median(every)),
-    }])
-    profile = {
-        "driver": "GTiff", "width": raster.width, "height": raster.height, "count": 1,
-        "dtype": "float32", "crs": raster.crs, "transform": raster.transform, "tiled": True,
-        "blockxsize": TILE, "blockysize": TILE, "compress": "deflate",
-    }
-    path = output_file(mosaic_name(raster, season))
-    with rasterio.open(path, "w", **profile) as out:
-        out.write(minutes, 1)
-        out.set_band_description(1, "accumulated shadow (min)")
-        out.update_tags(zoom=zoom, tile_x=x, tile_y=y, tile_size=TILE, season=season, minutes=factor)
-    return rasterio.open(path), metrics
+    a, _b, c, _d, e, f = tuple(raster.transform)[:6]
+    # Each tile at its place on the heights' grid, so the shadow and the heights
+    # share one grid, as a Raster Statistics mask needs.
+    tiles = [
+        {
+            "transform": (a, 0.0, c + column * TILE * a, 0.0, e, f + row * TILE * e),
+            "width": TILE, "height": TILE, "cells": shadow * np.float32(factor),
+        }
+        for (column, row), shadow in shadow_tiles(raster, season, model).items()
+    ]
+    path = mosaic_rasters(
+        tiles, output_file(mosaic_name(raster, season)), crs=raster.crs, dtype="float32",
+        resolution=(a, e), band_descriptions=["accumulated shadow (min)"],
+        tags={"zoom": zoom, "tile_x": x, "tile_y": y, "tile_size": TILE, "season": season, "minutes": factor},
+    )
+    return rasterio.open(path)

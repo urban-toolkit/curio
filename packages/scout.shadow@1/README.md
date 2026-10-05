@@ -10,7 +10,7 @@ height mosaic of [SCOUT Raster Conversion](../scout.raster-conversion@1/README.m
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `scout.shadow/accumulated-shadow` | Accumulated Shadow | The height mosaic of Rasterize Buildings, or its `(mosaic, tiles)` output | `(mosaic, metrics)`: one RASTER and one table |
+| `scout.shadow/accumulated-shadow` | Accumulated Shadow | The height mosaic of Rasterize Buildings, or its `(mosaic, tiles)` output | One RASTER: the accumulated shadow in minutes |
 
 ## Settings
 
@@ -26,18 +26,23 @@ mosaic at its defaults. Deep Umbra reads heights where 255 is 550 m, so the node
 refuses a raster at another zoom level, off the tile grid, or drawn with another
 maximum height.
 
-## Outputs
+## Output
 
-- **mosaic**: the accumulated shadow of every tile of the input, on the input's
-  own grid, one band in minutes. An Autark map draws it as `input_0`:
+The accumulated shadow of every tile of the input, on the input's own grid, one
+band in minutes. An Autark map draws it as `input_0`:
 
-  ```json
-  {"map": {"layerRefs": [{"dataRef": "input_0", "getFnv": "band_1"}]}}
-  ```
+```json
+{"map": {"layerRefs": [{"dataRef": "input_0", "getFnv": "band_1"}]}}
+```
 
-- **metrics**: one row: `season`, and `mean_minutes` and `median_minutes`, the mean
-  and median accumulated shadow over the ground (cells with no building), as
-  SCOUT reports them.
+SCOUT's metrics, the mean and median accumulated shadow over the ground, come
+from a **Raster Statistics** node (`curio.builtin@1`): the shadow on its input 0,
+the heights on its input 1 as the mask, and the ground where Deep Umbra reads
+gray level 0, a height under 1.08 m:
+
+```python
+return curio_raster_statistics(arg, where=lambda height: height < 1.08)
+```
 
 Deep Umbra predicts each tile from the tile and its eight neighbours, so a tile
 at the edge of the raster sees no buildings beyond it.
@@ -59,8 +64,14 @@ install the node says so: copy the repository's folder
 ## A dataflow
 
 ```
-[ Buildings ] ──► [ Rasterize Buildings ] ──► [ Accumulated Shadow ] ──► [ Autark: map of the mosaic ]
+[ Buildings ] ──► [ Rasterize Buildings ] ──► [ Height mosaic ] ──► [ Accumulated Shadow ] ──► [ Autark: map of the shadow ]
+                                                    │                        │
+                                                    └──── mask ──► [ Raster Statistics ] ◄──┘
 ```
+
+The Height mosaic node is a Python node that keeps the mosaic of Rasterize
+Buildings' `(mosaic, tiles)` (`return arg[0]`), since Raster Statistics reads
+rasters only.
 
 The test dataflow [ScoutShadows](../../docs/examples/dataflows/ScoutShadows.json)
 compares SCOUT's two building sets of the Chicago Loop as two scenarios: the

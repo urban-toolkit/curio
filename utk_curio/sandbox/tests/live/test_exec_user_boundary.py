@@ -552,9 +552,9 @@ def test_scouts_shadow_model_runs_as_the_exec_user():
     """The Accumulated Shadow node's code, as the execution user, on the height
     mosaic a Rasterize Buildings run hands on (here of SCOUT's committed tiles):
     the model reaches the child staged like any dataset, onnxruntime opens it
-    and runs it there under the stack's limits, and the node returns its mosaic
-    and its metrics: SCOUT's mean accumulated shadow for these tiles, 128.6
-    minutes."""
+    and runs it there under the stack's limits, and the node returns its shadow
+    raster, whose mean over the ground is SCOUT's mean accumulated shadow for
+    these tiles, 128.6 minutes."""
     heights = textwrap.indent(textwrap.dedent("""
         import rasterio
         from scout_raster_conversion.node_outputs import read_tiles, write_mosaic
@@ -575,10 +575,13 @@ def test_scouts_shadow_model_runs_as_the_exec_user():
         from scout_shadow.node_outputs import accumulated_shadow, open_model
 
         model = open_model(lambda: curio_load_data("data.scout.deep-umbra"))
-        mosaic, metrics = accumulated_shadow(arg, "summer", model, curio_output_file)
-        print(mosaic.crs.to_epsg(), mosaic.width, mosaic.height)
-        print(round(float(metrics["mean_minutes"].iloc[0]), 2))
-        return mosaic, metrics
+        shadow = accumulated_shadow(arg, "summer", model, curio_output_file)
+        # What the dataflow's Raster Statistics node computes: the shadow over
+        # the ground, the heights as the mask.
+        metrics = curio_raster_statistics((shadow, arg), where=lambda height: height < 1.08)
+        print(shadow.crs.to_epsg(), shadow.width, shadow.height)
+        print(round(float(metrics["mean"].iloc[0]), 2))
+        return shadow
     """).strip("\n"), "    ")
     result = assert_ran(_request("/exec", {
         "code": body + "\n",
@@ -597,4 +600,4 @@ def test_scouts_shadow_model_runs_as_the_exec_user():
     # proof's (test_scout_shadow.py): Deep Umbra's output moves with
     # onnxruntime's thread count above 16.
     assert abs(float(mean) - 128.63593) <= 0.1, mean
-    assert result["output"]["dataType"] == "outputs", result["output"]
+    assert result["output"]["dataType"] == "raster", result["output"]

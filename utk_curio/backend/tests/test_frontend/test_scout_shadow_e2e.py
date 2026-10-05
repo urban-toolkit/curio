@@ -3,18 +3,20 @@
 The shipped test dataflow ``ScoutShadows.json``: SCOUT's Chicago Loop buildings
 (the Data Catalog dataset ``data.scout.loop-buildings``) and a season Parameter
 node are the fixed context. In "Existing", Rasterize Buildings
-(``scout.raster-conversion@1``) draws them into zoom-16 height tiles and
+(``scout.raster-conversion@1``) draws them into a zoom-16 height mosaic,
 Accumulated Shadow (``scout.shadow@1``) runs SCOUT's Deep Umbra model (the
-dataset ``data.scout.deep-umbra``) on them, in the season both scenarios share.
-"Towers removed" first removes the 15 buildings SCOUT's second scenario removes.
-Two Compare Scenarios nodes read the scenarios' outcomes: one charts the mean
-accumulated shadow, the other maps its change through Autark.
+dataset ``data.scout.deep-umbra``) on it, in the season both scenarios share,
+and Raster Statistics (``curio.builtin@1``) takes the shadow's mean and median
+over the ground, the heights as its mask. "Towers removed" first removes the 15
+buildings SCOUT's second scenario removes. Two Compare Scenarios nodes read the
+scenarios' outcomes: one charts the mean accumulated shadow, the other maps its
+change through Autark.
 
 Run All in the browser runs the whole dataflow:
 
-1. The chart's stacked table holds one row per scenario, in summer, with SCOUT's
-   mean accumulated shadow for each (128.64 and 106.73 minutes in SCOUT's
-   metrics files) within 0.1 minutes, and its bars draw in both scenarios'
+1. The chart's stacked table holds one row per scenario with SCOUT's mean
+   accumulated shadow for each (128.64 and 106.73 minutes in SCOUT's metrics
+   files, in summer) within 0.1 minutes, and its bars draw in both scenarios'
    colors.
 2. The difference is a raster on the shadow mosaics' grid, 512 by 512 cells in
    EPSG:3395, in minutes: towers removed minus existing, which takes shadow away
@@ -59,6 +61,7 @@ if TYPE_CHECKING:
 
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "ScoutShadows.json"
 SHADOW_TYPE = "scout.shadow/accumulated-shadow"
+STATISTICS_TYPE = "curio.builtin/raster-statistics"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 PACKAGES = ("scout.raster-conversion@1", "scout.shadow@1")
 #: SCOUT's A_shadows_metric.csv and B_shadows_metric.csv.
@@ -106,6 +109,8 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     dataflow = spec["dataflow"]
     nodes = {node["id"]: node for node in dataflow["nodes"]}
     shadows = [n for n, node in nodes.items() if node["type"] == SHADOW_TYPE]
+    statistics = [n for n, node in nodes.items() if node["type"] == STATISTICS_TYPE]
+    assert len(shadows) == len(statistics) == 2, (shadows, statistics)
     (chart,) = [n for n, node in nodes.items() if node["type"] == COMPARE_TYPE
                 and node["metadata"]["compareScenarios"]["mode"] == "chart"]
     (difference,) = [n for n, node in nodes.items() if node["type"] == COMPARE_TYPE
@@ -129,7 +134,7 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
         node_locator(page, node_id).wait_for(state="attached", timeout=45000)
 
     run_all_and_wait(page, timeout_ms=600000)
-    for node_id in [*shadows, chart, difference]:
+    for node_id in [*shadows, *statistics, chart, difference]:
         status = wait_for_node_settled(page, node_id, node_type=nodes[node_id]["type"], timeout_ms=180000)
         assert status == "done", (
             f"{nodes[node_id]['type']} {node_id} ended {status}: {read_node_error_text(node_locator(page, node_id))}"
@@ -140,11 +145,12 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     assert stacked["dataType"] == "dataframe", stacked["dataType"]
     table = stacked["data"]
     # The read-back returns the columns by name, sorted, not in the table's order.
-    assert sorted(table) == sorted(["scenario", "scenario_name", "season", "mean_minutes", "median_minutes"]), list(table)
+    assert sorted(table) == sorted(["scenario", "scenario_name", "mean", "median", "min", "max", "count"]), list(table)
     assert table["scenario"] == ["existing", "towers-removed"], table["scenario"]
     assert table["scenario_name"] == ["Existing", "Towers removed"], table["scenario_name"]
-    assert table["season"] == ["summer", "summer"], table["season"]
-    means = dict(zip(table["scenario"], table["mean_minutes"]))
+    # The ground: the cells with no building, most of SCOUT's four tiles.
+    assert all(100000 < count < 512 * 512 for count in table["count"]), table["count"]
+    means = dict(zip(table["scenario"], table["mean"]))
     record_property("mean accumulated shadow (minutes)", json.dumps({"ours": means, "scout": SCOUT_MEANS}))
     # The proof's tolerance (test_scout_shadow.py): Deep Umbra's output moves
     # with onnxruntime's thread count above 16.
