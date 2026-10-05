@@ -34,7 +34,10 @@ export function CompareChart({
     recordsProvenance: false,
     forwardsInput: false,
   });
-  const [problem, setProblem] = useState<string | null>(null);
+  // What the compile of this spec over this table came to. Keyed, so a new
+  // spec or table reads as drawing until its own compile settles.
+  const key = `${stacked.path}|${specText}`;
+  const [settled, setSettled] = useState<{ key: string; problem: string | null } | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -42,18 +45,21 @@ export function CompareChart({
       .then((counts) => {
         if (!current) return;
         const outcome = renderOutcome(counts ?? {});
-        setProblem(outcome.empty ? outcome.message : null);
+        setSettled({ key, problem: outcome.empty ? outcome.message : null });
       })
       .catch((error: any) => {
-        if (current) setProblem(String(error?.message ?? error));
+        if (current) setSettled({ key, problem: String(error?.message ?? error) });
       });
     return () => {
       current = false;
     };
   }, [stacked, specText]);
 
+  const problem = settled?.key === key ? settled.problem : null;
+  const state = settled?.key !== key ? "drawing" : problem ? "problem" : "drawn";
+
   return (
-    <div className={styles.chart}>
+    <div className={styles.chart} data-compare-chart-state={state}>
       <div
         id={"vega" + nodeData.nodeId}
         className={`nodrag nowheel curio-vega-mount ${styles.mount}`}

@@ -384,13 +384,13 @@ export const useVega = ({
     // END COMPILE GRAMMAR
     let endTime = formatDate(new Date());
 
-    let typesInput: string[] = [];
-
-    if (data.input != "") typesInput = data.input.dataType; // getType([data.input]);
-
-    let typesOuput: string[] = [...typesInput];
-
     if (recordsProvenance) {
+      let typesInput: string[] = [];
+
+      if (data.input != "") typesInput = data.input.dataType; // getType([data.input]);
+
+      let typesOuput: string[] = [...typesInput];
+
       nodeExecProv(
         startTime,
         endTime,

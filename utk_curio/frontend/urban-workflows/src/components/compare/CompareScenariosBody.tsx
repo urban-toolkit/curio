@@ -47,21 +47,22 @@ function stackedRef(raw: unknown): { path: string; dataType?: string } | null {
 
 type StackedRef = { path: string; dataType?: string };
 
-function columnsOf(read: GrammarInput): ClassifiedColumn[] | null {
+function columnsOf(read: GrammarInput): { columns: ClassifiedColumn[]; dataType: string } | null {
   const frame = read.frames[0];
   if (!frame) return null;
   const rows =
     frame.dataType === "geodataframe"
       ? (frame.payload?.features ?? []).map((f: any) => f?.properties ?? {})
       : toRows({ data: frame.payload });
-  return chartColumns(frame.schema, rows, frame.geometryName);
+  return { columns: chartColumns(frame.schema, rows, frame.geometryName), dataType: frame.dataType };
 }
 
 /**
  * The latest stacked table whose columns have been read, with them: from its
  * 100-row preview, else from the whole table. The chart draws this pair, so a
  * spec is never compiled against a table it was not made for; while a new
- * output is read, the chart keeps the last one.
+ * output is read, the chart keeps the last one. A restored output names its
+ * file alone, so the reference takes the type the read found.
  */
 function useStackedRead(stacked: StackedRef | null): { ref: StackedRef; columns: ClassifiedColumn[] } | null {
   const [read, setRead] = useState<{ ref: StackedRef; columns: ClassifiedColumn[] } | null>(null);
@@ -74,9 +75,11 @@ function useStackedRead(stacked: StackedRef | null): { ref: StackedRef; columns:
     const attempt = (preview: boolean) =>
       readGrammarInput(stacked, { label: LABEL, preview }).then(columnsOf, () => null);
     void attempt(true)
-      .then((columns) => columns ?? attempt(false))
-      .then((columns) => {
-        if (current) setRead({ ref: stacked, columns: columns ?? [] });
+      .then((found) => found ?? attempt(false))
+      .then((found) => {
+        if (!current) return;
+        const dataType = stacked.dataType ?? found?.dataType;
+        setRead({ ref: dataType ? { ...stacked, dataType } : stacked, columns: found?.columns ?? [] });
       });
     return () => {
       current = false;
@@ -265,7 +268,9 @@ export function CompareScenariosBody({
         ) : null}
       </div>
       <div className={styles.stage}>
-        <div className={`${styles.pane} ${view === "chart" ? "" : styles.hidden}`}>{stage}</div>
+        <div className={`${styles.pane} ${view === "chart" ? "" : styles.hidden}`} data-compare-preset={chart.preset}>
+          {stage}
+        </div>
         {view === "differs" ? (
           <div className={`nodrag nopan nowheel ${styles.differs}`}>
             <WhatDiffersList compared={compared} differs={differs} />
