@@ -1,10 +1,12 @@
 /**
  * A node shown as a notebook cell (UniversalNode under the notebook view).
  *
- * The cell is the column's fixed size, its dots sit on its right edge where the
- * bar draws the connections, each input dot carries the number its
- * `[!! input k !!]` chips use and names what feeds it, and the cardinality
- * markers at the box's edges are gone. On the canvas nothing of this applies.
+ * The cell is the column's fixed size, passed apart from the node's own size,
+ * which stays its canvas size so the node keeps it when the canvas comes back.
+ * Its dots sit on its right edge where the bar draws the connections, each
+ * input dot carries the number its `[!! input k !!]` chips use and names what
+ * feeds it, and the cardinality markers at the box's edges are gone. On the
+ * canvas nothing of this applies.
  * Harness as in universalNodeSkipped.test.tsx.
  */
 import React from "react";
@@ -129,10 +131,13 @@ async function mount(on: boolean) {
 const lastContainer = () => mockContainerProps[mockContainerProps.length - 1];
 
 describe("a node shown as a notebook cell", () => {
-  test("has the column's fixed size, not its canvas size", async () => {
+  test("has the column's fixed size, and its own size stays its canvas size", async () => {
     await mount(true);
-    expect(lastContainer().nodeWidth).toBe(NOTEBOOK_CELL_WIDTH);
-    expect(lastContainer().nodeHeight).toBe(NOTEBOOK_CELL_HEIGHT);
+    expect(lastContainer().cellBox).toEqual({ width: NOTEBOOK_CELL_WIDTH, height: NOTEBOOK_CELL_HEIGHT });
+    // The size props feed the node's own size state, which is what the canvas
+    // shows when it comes back: the cell's size must never reach them.
+    expect(lastContainer().nodeWidth).toBe(525);
+    expect(lastContainer().nodeHeight).toBe(350);
   });
 
   test("puts every dot on its right edge: inputs from the top, the output at the bottom", async () => {
@@ -167,6 +172,7 @@ describe("the same node on the canvas", () => {
     await mount(false);
     expect(lastContainer().nodeWidth).toBe(525);
     expect(lastContainer().nodeHeight).toBe(350);
+    expect(lastContainer().cellBox).toBeUndefined();
     expect(screen.getByTestId("handle-in")).toHaveAttribute("data-position", "left");
     expect(screen.getByTestId("handle-in_1")).toHaveAttribute("data-top", "66%");
     expect(screen.getByTestId("handle-in/out")).toHaveAttribute("data-position", "top");
