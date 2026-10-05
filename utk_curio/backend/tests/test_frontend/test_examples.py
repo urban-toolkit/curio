@@ -34,8 +34,9 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/computation-analysis": 3, "curio.builtin/vis-vega": 2}, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, 22,
      {"curio.builtin/data-loading": 5, "curio.builtin/vis-vega": 2}, False),
-    ("06-autark-what-if-shadow-study.json", 6, 5,
-     {"curio.builtin/autk-grammar": 5, "curio.builtin/data-pool": 1}, False),
+    ("06-autark-what-if-shadow-study.json", 8, 9,
+     {"curio.builtin/autk-grammar": 5, "curio.builtin/data-pool": 1,
+      "curio.builtin/compare-scenarios": 2}, False),
     ("07-autark-gpu-shader.json", 5, 6,
      {"curio.builtin/autk-grammar": 4, "curio.builtin/data-pool": 1}, True),
     ("08-autark-spatial-join-regression.json", 7, 8,
@@ -100,6 +101,7 @@ EXAMPLE_INVARIANTS = [
 #: a repeat changes which input the node's ``[!! input N !!]`` chips read.
 FAN_IN_NODES = {
     "04-vega-lite-multi-flow-dashboard.json": 3,
+    "06-autark-what-if-shadow-study.json": 2,
     "08-autark-spatial-join-regression.json": 1,
     "09-heterogeneous-data-linked-views.json": 2,
     "20-storage-folder-of-csv-files.json": 1,
@@ -240,6 +242,50 @@ def test_example_flows_meet_on_input_circles(basename, expected_fan_in):
             f"{basename}: node {target} ({types.get(target)}) takes its inputs on "
             f"{hs}, not once each on {circles}"
         )
+
+
+def test_example_06_is_two_scenarios_that_differ_only_in_height_factor():
+    """Example 06 is a scenario study (#662). Baseline and Twice as tall share
+    the loader and the pool as fixed context; each node of Twice as tall is a
+    copy that names its Baseline twin and holds the same code; and the one value
+    that differs is the shadow step's ``height_factor`` widget, 1 against 2,
+    which its spec reads as a uniform."""
+    path = os.path.join(EXAMPLES_DIR, "06-autark-what-if-shadow-study.json")
+    with open(path, "r", encoding="utf-8") as f:
+        flow = json.load(f)["dataflow"]
+    nodes = {n["id"]: n for n in flow["nodes"]}
+    baseline, twice = flow["scenarios"]
+    assert (baseline["name"], twice["name"]) == ("Baseline", "Twice as tall")
+    assert not baseline.get("collapsed") and not twice.get("collapsed"), (
+        "the shipped scenarios open expanded, so every node shows on the canvas"
+    )
+    outside = set(nodes) - set(baseline["nodes"]) - set(twice["nodes"])
+    assert outside == {"whatif-data", "whatif-pool", "whatif-compare-chart", "whatif-compare-difference"}
+    assert len(baseline["nodes"]) == len(twice["nodes"]) == 2
+    for original, copy in zip(baseline["nodes"], twice["nodes"]):
+        assert nodes[copy]["metadata"].get("copiedFrom") == [original], copy
+        assert nodes[copy]["content"] == nodes[original]["content"], (
+            f"{copy} holds other code than its twin {original}"
+        )
+
+    def factor(node_id):
+        [widget] = nodes[node_id]["metadata"]["widgets"]
+        assert widget["name"] == "height_factor"
+        return widget.get("value", widget["default"])
+
+    assert (factor("whatif-baseline-compute"), factor("whatif-modified-compute")) == (1, 2)
+    # Both comparisons read the roads layer of what each scenario's map draws,
+    # and Difference matches the roads by their shapes (they carry no id).
+    for compare in ("whatif-compare-chart", "whatif-compare-difference"):
+        settings = nodes[compare]["metadata"]["compareScenarios"]
+        assert settings["layer"] == "table_osm_roads", compare
+        assert 'layer="table_osm_roads")' in nodes[compare]["content"], compare
+        sources = sorted(edge["source"] for edge in flow["edges"] if edge["target"] == compare)
+        assert sources == ["whatif-baseline-map", "whatif-modified-map"], compare
+    assert "key" not in nodes["whatif-compare-difference"]["metadata"]["compareScenarios"].get("difference", {})
+    shader = nodes["whatif-baseline-compute"]["content"]
+    assert '"height_factor": [!! height_factor !!]' in shader
+    assert "let height = height_factor * bld_height[bi];" in shader
 
 
 def test_example_07_drives_compute_gpgpu():

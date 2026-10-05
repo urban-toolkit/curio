@@ -8,6 +8,7 @@ import {
   CHANGES,
   CHANGE_COLORS,
   differenceMapDoc,
+  differenceTableName,
   differenceTableSpec,
   differenceValues,
   isDifference,
@@ -62,11 +63,28 @@ describe("what the map colors the difference by", () => {
   });
 });
 
+describe("the table the map reads it as, whose name titles the map's legend", () => {
+  test("what it is colored by, a band or a column, and its change", () => {
+    const [band] = differenceValues("raster", { bands: ["band_1"] });
+    const [sunlight, change] = differenceValues("layer", LAYER);
+    expect(differenceTableName(band)).toBe("band_1_change");
+    expect(differenceTableName(sunlight)).toBe("sunlight_change");
+    expect(differenceTableName(change)).toBe("change");
+    expect(differenceTableName(undefined)).toBe("difference");
+  });
+
+  test("a name the map's database can take: letters, digits and _, not starting with a digit", () => {
+    const value = (name: string) => ({ value: name, text: name, categorical: false });
+    expect(differenceTableName(value("Road sunlight (h)"))).toBe("Road_sunlight__h__change");
+    expect(differenceTableName(value("2050 heat"))).toBe("_2050_heat_change");
+  });
+});
+
 describe("the Autark document that draws it", () => {
   test("a raster, by a band, with the legend of the reds autk-map draws it in", () => {
     const [band] = differenceValues("raster", { bands: ["band_1"] });
     expect(differenceMapDoc("raster", band)).toEqual({
-      map: { layerRefs: [{ dataRef: "input_0", getFnv: "band_1", isColorMap: true }] },
+      map: { layerRefs: [{ dataRef: "band_1_change", getFnv: "band_1", isColorMap: true }] },
     });
   });
 
@@ -75,7 +93,7 @@ describe("the Autark document that draws it", () => {
     expect(differenceMapDoc("layer", sunlight)).toEqual({
       map: {
         layerRefs: [{
-          dataRef: "input_0",
+          dataRef: "sunlight_change",
           getFnv: "sunlight",
           getFnvType: "quantitative",
           colorMapInterpolator: "interpolateViridis",
@@ -89,7 +107,7 @@ describe("the Autark document that draws it", () => {
     expect(differenceMapDoc("layer", change)).toEqual({
       map: {
         layerRefs: [{
-          dataRef: "input_0",
+          dataRef: "change",
           getFnv: "change",
           getFnvType: "categorical",
           colorMapInterpolator: "schemeTableau10",
@@ -100,7 +118,7 @@ describe("the Autark document that draws it", () => {
   });
 
   test("a layer with nothing to color by, plain", () => {
-    expect(differenceMapDoc("layer", undefined)).toEqual({ map: { layerRefs: [{ dataRef: "input_0" }] } });
+    expect(differenceMapDoc("layer", undefined)).toEqual({ map: { layerRefs: [{ dataRef: "difference" }] } });
   });
 });
 
