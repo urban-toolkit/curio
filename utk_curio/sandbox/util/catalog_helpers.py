@@ -64,16 +64,27 @@ def _read_parquet(path: str):
     except Exception:  # noqa: BLE001 - a table with no geometry column
         frame = pd.read_parquet(path)
     # Object columns (dict/list cells) are JSON-encoded on save; the columns
-    # are named in a <file>.decode.json sidecar.
+    # are named in a <file>.decode.json sidecar, beside the frame's own
+    # metadata (its name and Autark layer type), which parquet cannot hold.
     sidecar = path + ".decode.json"
     if os.path.exists(sidecar):
         with open(sidecar, encoding="utf-8") as handle:
-            encoded = json.load(handle).get("encoded_object_columns", [])
-        for column in encoded:
+            meta = json.load(handle)
+        for column in meta.get("encoded_object_columns", []):
             if column in frame.columns:
                 frame[column] = frame[column].apply(
                     lambda value: json.loads(value) if isinstance(value, str) and value else value
                 )
+        if isinstance(meta.get("frame_metadata"), dict):
+            frame.metadata = dict(meta["frame_metadata"])
+    return frame
+
+
+def _with_layer_type(frame, layer_type: str):
+    """*frame* drawn as the Autark layer *layer_type*, keeping the rest of the
+    metadata it was saved with."""
+    saved = frame.__dict__.get("metadata")
+    frame.metadata = {**(saved if isinstance(saved, dict) else {}), "layerType": layer_type}
     return frame
 
 
@@ -149,7 +160,7 @@ def read_dataset(path: str, fmt: str | None, *, layer_type: str | None = None):
     if fmt == "parquet":
         frame = _read_parquet(path)
         if layer_type:
-            frame.metadata = {"layerType": layer_type}
+            frame = _with_layer_type(frame, layer_type)
         return frame
     if fmt == "json":
         return _read_json(path)

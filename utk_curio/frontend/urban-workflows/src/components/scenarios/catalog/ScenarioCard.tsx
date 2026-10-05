@@ -10,6 +10,9 @@ export interface ScenarioCardProps {
   scenario: ScenarioRow;
   onOpenDetails?: (scenario: ScenarioRow) => void;
   onOpenProject?: (scenario: ScenarioRow) => void;
+  /** With these, the whole card is a drag source onto the canvas. */
+  onDragStart?: (event: React.DragEvent<HTMLElement>) => void;
+  onDragEnd?: () => void;
 }
 
 /**
@@ -18,22 +21,30 @@ export interface ScenarioCardProps {
  * The Model drawer's card body: an avatar with the way into the details
  * beneath it, a title and ONE meta line, then the description. The avatar is
  * the project's graph, the picture that tells two scenarios apart; which of its
- * nodes the scenario holds shows in the details, which load them. The card is
- * not draggable, and changes nothing: a scenario is edited in its project.
+ * nodes the scenario holds shows in the details, which load them. The whole
+ * card is the drag source, as a model card is: dropped on the canvas, the
+ * scenario arrives as a copy. The card changes nothing in its project, where
+ * the scenario is edited.
  */
 export const ScenarioCard: React.FC<ScenarioCardProps> = ({
   scenario,
   onOpenDetails,
   onOpenProject,
+  onDragStart,
+  onDragEnd,
 }) => {
   const detailsLabel = `View ${scenario.name} (${scenario.project.name}) details`;
+  const draggable = Boolean(onDragStart);
 
   return (
     <article
-      className={styles.card}
+      className={draggable ? `${styles.card} ${styles.cardDraggable}` : styles.card}
       /* Same attribute the browse cards carry, so a scenario shares one
          identifier across surfaces. */
       data-scenario-key={scenario.key}
+      draggable={draggable || undefined}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
     >
       <div className={styles.cardAvatarCol}>
         <button

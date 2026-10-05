@@ -64,6 +64,8 @@ import {
     readModelDragPayload,
     type ModelDropTemplate,
 } from "../services/modelCatalog";
+import { endScenarioDrag, hasScenarioDrag, readScenarioDragPayload } from "../services/scenarioCatalog/scenarioDrag";
+import { useScenarioDrop } from "./scenarios/useScenarioDrop";
 import { packageStarterCode } from "../adapters/node/packageNodeBehavior";
 import { useStarterContext } from "../providers/StarterProvider";
 import { getAllNodeTypes, getPaletteNodeTypes } from "../registry/nodeRegistry";
@@ -374,13 +376,14 @@ export function MainCanvas() {
 
     const handleDragOver = useCallback((event: React.DragEvent) => {
         event.preventDefault();
-        // Dataset, model AND agent drags use effectAllowed="copy"; a "move"
-        // dropEffect is an incompatible pair, so the browser cancels the drop
-        // (handleDrop never fires and the agent silently fails to attach).
+        // Dataset, model, scenario AND agent drags use effectAllowed="copy"; a
+        // "move" dropEffect is an incompatible pair, so the browser cancels the
+        // drop (handleDrop never fires and the agent silently fails to attach).
         // Node-creation drags keep "move".
         const wantsCopy =
             hasDatasetDrag(event.dataTransfer) ||
             hasModelDrag(event.dataTransfer) ||
+            hasScenarioDrag(event.dataTransfer) ||
             hasAgentDrag(event.dataTransfer);
         event.dataTransfer.dropEffect = wantsCopy ? "copy" : "move";
 
@@ -483,6 +486,20 @@ export function MainCanvas() {
         markDirty();
     }, [getStarters, dropPosition, revealCreated, createCodeNode, markDirty, showToast]);
 
+    // A scenario from the Scenario Catalog arrives as a copy: its box where it
+    // was dropped, its context as fixed data (useScenarioDrop).
+    const dropScenario = useScenarioDrop();
+    const handleScenarioCanvasDrop = useCallback((event: React.DragEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const scenario = readScenarioDragPayload(event.dataTransfer);
+        endScenarioDrag();
+        if (!scenario) return;
+        void dropScenario(scenario, dropPosition(event)).then((ids) => {
+            if (ids.length > 0) revealNodes(ids);
+        });
+    }, [dropScenario, dropPosition, revealNodes]);
+
     const handleDrop = useCallback((event: React.DragEvent) => {
         if (hasDatasetDrag(event.dataTransfer)) {
             handleCanvasDrop(event);
@@ -490,6 +507,10 @@ export function MainCanvas() {
         }
         if (hasModelDrag(event.dataTransfer)) {
             handleModelCanvasDrop(event);
+            return;
+        }
+        if (hasScenarioDrag(event.dataTransfer)) {
+            handleScenarioCanvasDrop(event);
             return;
         }
         const agentCoord = readAgentDragCoord(event.dataTransfer);
@@ -538,7 +559,7 @@ export function MainCanvas() {
         const position = dropPosition(event);
         revealCreated(createCodeNode(type, { position }));
         markDirty();
-    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
+    }, [screenToFlowPosition, dropPosition, revealCreated, createCodeNode, markDirty, handleCanvasDrop, handleModelCanvasDrop, handleScenarioCanvasDrop, projectId, showToast, saveCurrentProject, reactFlow]);
 
     // The Delete key reaches these through React Flow, which sends the
     // selected edges plus every edge attached to a deleted node first, then

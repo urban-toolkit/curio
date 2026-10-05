@@ -231,7 +231,7 @@ computed.<dataflowId>.<nodeId>@1/
   data/parts/00_dataframe.parquet, 01_json.json, ...
 ```
 
-Scalar parts (numbers, strings, booleans) are stored as `{"value": ...}`. The generated loader reads `bundle.json`, rebuilds each part, and returns a tuple, so a downstream node sees exactly the shape the producing node returned.
+Scalar parts (numbers, strings, booleans) are stored as `{"value": ...}`. The generated loader reads `bundle.json`, rebuilds each part, and returns a tuple, so a downstream node sees exactly the shape the producing node returned. A table part keeps its `metadata`, the name and Autark layer type the producing node gave it (`gdf.metadata = {"name": "roads", "layerType": "roads"}`), and `bundle.json` lists them as each part's `layerName` and `layerType`. A single saved table keeps its `metadata` the same way.
 
 Previewing a bundle gives you a **tab per part**; a part with no rows is labelled *"Scalar or metadata part"*. A bundle **cannot be exported** as a single file, and its Export button is disabled.
 
