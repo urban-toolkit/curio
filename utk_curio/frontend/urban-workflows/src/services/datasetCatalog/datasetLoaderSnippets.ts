@@ -63,7 +63,9 @@ export function datasetIdsInCode(code: unknown): string[] {
   // match the opening one, so `curio_load_data("x')` is not a reference.
   // `curio_data_path` (the file) and `curio_load_collection` (a collection's
   // index) reference the dataset just as much (`DATASET_PATH_CALL_RE` matches all three).
-  const re = /(?:curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)/g;
+  // The id is the first argument; options may follow it, as
+  // `curio_load_data("<id>", bounds=...)`.
+  const re = /(?:curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*[,)]/g;
   for (const match of code.matchAll(re)) {
     const id = match[2];
     if (seen.has(id)) continue;
@@ -115,6 +117,11 @@ const LOADED_VARIABLES: Partial<Record<DatasetFormat, string>> = {
  * names the value and returns nothing. KEEP IN SYNC with `KEPT_IN_CODE` in the
  * backend generator. */
 const KEPT_IN_CODE: ReadonlySet<DatasetFormat> = new Set<DatasetFormat>(["onnx", "netcdf"]);
+
+/** The options a loader names after the id, so its node shows them: a
+ * GeoTIFF's `bounds` read only the cells inside them. KEEP IN SYNC with
+ * `LOADER_OPTIONS` in the backend generator. */
+const LOADER_OPTIONS: Partial<Record<DatasetFormat, string>> = { geotiff: ", bounds=None" };
 
 /**
  * Loader body for ``format: bundle`` datasets (multi-output / tuple node
@@ -230,7 +237,7 @@ function snippetForFormat(
         language: "python",
         imports: [],
         pathVariable: null,
-        code: `${variable} = curio_load_data(${quoted})`,
+        code: `${variable} = curio_load_data(${quoted}${LOADER_OPTIONS[format] ?? ""})`,
         returnVariable: KEPT_IN_CODE.has(format) ? null : variable,
       };
     }
@@ -408,9 +415,11 @@ export function mergeDatasetLoaderCode(currentCode: string | undefined, dataset:
       ? dataset.groupLayers
       : null;
   const call = dataset.format === "collection" && !groupLayers ? "curio_load_collection" : "curio_load_data";
+  // Up to the id's closing quote: a call that goes on with options, such as a
+  // raster's bounds, loads the dataset just as much.
   const idCalls = (groupLayers ? groupLayers.map((layer) => safeDatasetId(layer.id)) : [safeDatasetId(idOf(dataset))])
     .filter((id): id is string => Boolean(id))
-    .map((id) => `${call}(${JSON.stringify(id)})`);
+    .map((id) => `${call}(${JSON.stringify(id)}`);
   const alreadyApplied =
     (idCalls.length > 0 && idCalls.every((call) => trimmed.includes(call))) ||
     (dataset.path ? trimmed.includes(dataset.path) : false);

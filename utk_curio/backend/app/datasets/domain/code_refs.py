@@ -30,16 +30,17 @@ import re
 #: snippet generator) and the frontend ``datasetLoaderSnippets.ts``: the
 #: generators only ever emit ids this scan can find. Single or double quotes are
 #: accepted because users edit the generated code, and the backreference means a
-#: mismatched pair is not a reference at all.
+#: mismatched pair is not a reference at all. The id is the call's first
+#: argument; options may follow it, as ``curio_load_data("<id>", bounds=...)``.
 DATASET_PATH_CALL_RE = re.compile(
-    r"""(?:curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
+    r"""(?:curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*[,)]"""
 )
 
 #: The calls that may read a collection, for the ids whose files a node will
 #: read: ``curio_load_collection``, and ``curio_load_data`` on a collection id
 #: (the resolver keeps only the ids that are collections).
 COLLECTION_CALL_RE = re.compile(
-    r"""(?:curio_load_collection|curio_load_data)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
+    r"""(?:curio_load_collection|curio_load_data)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*[,)]"""
 )
 
 #: Literal ``curio_load_model("<id>")`` calls: the Model Catalog's models a node

@@ -212,6 +212,8 @@ A node's "type" is the id of the template it was made from. A run that can place
 - Spatial Join: Finds the polygon each point falls in. Connect the points to the blue circle at the top and the polygons to the green circle at the bottom, then pick the polygon column to copy onto the points, such as a neighborhood name. The output is either the points, each tagged with its polygon's value, or the polygons, each with a count of the points inside. Points outside every polygon get no value.
 - Parameter: One value any node can use. Give it a name, a type and a default. Its tag then shows under Shared in every node's Widgets tab and above every code editor; drag it into a node's code to use the value there. Changing the value makes the nodes that use it run again, and renaming it updates their code. It has no edges, and it lists the nodes that use it.
 - Compare Scenarios: Compares scenarios. Connect each scenario's outcome to its own input circle: each input is labelled by the scenario its node belongs to, and the node stacks the inputs into one table, with the scenario's id and name on every row. That table is its output. Its Chart tab draws the table in the scenarios' colors, as bars, grouped bars, lines, points, a pie, lollipops or a table. In Difference it takes two inputs and subtracts input 0 from input 1: two rasters cell by cell, two layers or two tables row by row, matched on a stable id (osm_id or building_id, or a key you pick), with rows only one side has marked removed or added. The difference is its output, drawn on a map. It shows Difference for two rasters or two layers and a Chart otherwise, and you can switch. Its What differs tab lists what changed between the scenarios: widget values and code lines. It warns when the scenarios read different context.
+- Raster Calculator: One operation over rasters on one grid, cell by cell. Connect the rasters to its input circles, in order; its code names the operation: add, subtract, multiply or divide input 0 and input 1, or choose, which takes input 1 where input 0's class is one of the codes it names and input 2 elsewhere. A cell that is nodata in an input the operation reads there is nodata in the result, and rasters on different grids are refused. The output is the result, a raster an Autark map draws.
+- Raster Statistics: The mean, median, minimum, maximum and count of a raster's cells, nodata left out, as a table of one row. Its code can keep only the cells that meet a condition, such as a value under 1.08, on the raster itself or on a second raster on input 1, on the same grid, used as a mask: a test of the mask's values or a set of them. Compare Scenarios charts the table.
 
 A node that accepts more than one connection takes each one on its own input circle, numbered from 0 in the order they were connected. An edge names the circle it connects to in "targetHandle": "in", "in_1", "in_2", ..., circle 0 first.
 
@@ -236,6 +238,8 @@ Nodes are uncontrollable, controllable through code (python or JavaScript) or co
 - Spatial Join: uncontrollable.
 - Parameter: uncontrollable.
 - Compare Scenarios: controllable through python code.
+- Raster Calculator: controllable through python code.
+- Raster Statistics: controllable through python code.
 
 An output connection of a node can be connected to the input connection of different nodes.
 
@@ -342,6 +346,8 @@ Input supported:
 - Spatial Join: GEODATAFRAME
 - Parameter: no input supported
 - Compare Scenarios: DATAFRAME, GEODATAFRAME, RASTER, VALUE, LIST, JSON
+- Raster Calculator: RASTER
+- Raster Statistics: RASTER
 
 Output supported:
 
@@ -358,6 +364,8 @@ Output supported:
 - Spatial Join: GEODATAFRAME
 - Parameter: no output supported
 - Compare Scenarios: DATAFRAME, GEODATAFRAME, RASTER
+- Raster Calculator: RASTER
+- Raster Statistics: DATAFRAME
 
 Make sure to pay attention to the compatibility between output and input of the nodes.
 
@@ -374,6 +382,8 @@ Number of connections each node accepts into its inputs. A node that accepts mor
 - Autark: any number
 - Spatial Join: 2
 - Compare Scenarios: any number
+- Raster Calculator: 3
+- Raster Statistics: 2
 
 Number of outputs possible for each node (if you want to output more than one data unit you need to use a tuple):
 
@@ -388,6 +398,8 @@ Number of outputs possible for each node (if you want to output more than one da
 - Autark: [0,1]
 - Spatial Join: 1
 - Compare Scenarios: [1,n]
+- Raster Calculator: 1
+- Raster Statistics: 1
 
 Note that there is no problem connecting the output of a node into the input of multiple nodes.
 

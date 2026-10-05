@@ -295,17 +295,17 @@ node whose code it writes itself:
   `test_compare_difference_node.py`. The behavior writes the code again when the
   wanted view differs from the one the code calls, or the key from its `key=`, and
   never while an input's kind is unknown, as after a load.
-- Two layers or tables are joined in Python. Two rasters cannot be: the arithmetic
-  is Curio's Autark adapter's (`utils/raster/rasterArithmetic.ts`), on what autk-db's
-  `getRaster` exports, and an isolated child may not start Node. So the code returns
-  a JSON request (each raster's GeoTIFF bytes and `raster_meta`), and the sandbox's
-  `/exec` completes it after either path ran the code
-  (`complete_raster_difference`): `util/raster_difference.js` runs through
-  `worker.run_js_script`, the runner `execute_js_code` uses, loads both rasters with
-  `loadGeoTiff` by `rasterLoad.ts`'s `planForMeta`, subtracts them with
-  `subtractRasters` and returns the envelope (`rasterWire.ts`). Those three modules
-  have no imports at run time, so Node loads them from `src/` by type stripping. The
-  envelope is stored as the node's output, a JSON artifact.
+- Two layers or tables are joined in Python. Two rasters are loaded as an Autark map
+  loads them, and an isolated child may not start Node. So the code returns a JSON
+  request (each raster's GeoTIFF bytes and `raster_meta`), and the sandbox's `/exec`
+  completes it after either path ran the code (`complete_raster_difference`):
+  `util/raster_difference.js` runs through `worker.run_js_script`, the runner
+  `execute_js_code` uses, loads both rasters with `loadGeoTiff` by `rasterLoad.ts`'s
+  `planForMeta` and returns their envelopes (`rasterWire.ts`), whose float32 bands
+  `raster_algebra.subtract_envelopes` subtracts (see [Raster algebra](#raster-algebra)).
+  `rasterLoad.ts` and `rasterWire.ts` have no imports at run time, so Node loads them
+  from `src/` by type stripping. The envelope is stored as the node's output, a JSON
+  artifact.
 - `components/compare/CompareDifference.tsx` shows the difference:
   `CompareMap.tsx` draws a raster or a layer with `useAutkGrammarBehavior`, the
   Autark node's own map code, on the node's `autk-grammar-map-<nodeId>` canvas, with
@@ -628,7 +628,18 @@ The names `input_<k>` are defined once, as `INPUT_TABLE_PREFIX` and `input_table
 - [`rasterLoad.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/rasterLoad.ts) sets the parameters: `maxRasterCells` the raster's own size (up to 2048 by 2048 cells, 8192 on a side), so autk-db never resamples it; `resampleMethod: 'nearest'`; and `coordinateFormat` its EPSG CRS, since autk-db reads a raster as EPSG:4326 otherwise. A larger, rotated or unplaceable raster is refused with a sentence that names it.
 - autk-grammar's data sources have no GeoTIFF, so `withRasterSources` wraps one grammar instance's data adapter to load the `curio-raster` sources and hands every other source on. It also wraps that database's `getLayer` for those tables: the map gets `getRaster`'s collection, at the raster's own extent (autk-db's `getLayer` gives a raster the workspace's extent once a layer with geometry has set one), plus an outline of that extent (`framedRaster`), because autk-map places a map by the geometry of the first collection it loads and a raster has none.
 
-Between nodes a raster travels as autk-db's `getRaster` collection in an envelope, `{dataType: "raster", data, layerName}` ([`rasterWire.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/rasterWire.ts)): each band base64 of little-endian float32, rows from south to north, and the `grid` (CRS, size, origin, cell size) it was read on, which the collection does not carry. A Python node receives one as a `rasterio` dataset that `rasters_for_python` rebuilds on a GeoTIFF of its own (beside the artifacts in process, in the scratch directory in an isolated child). Both sides run `rasterWire.cases.json`. Raster arithmetic for comparisons ([`rasterArithmetic.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/rasterArithmetic.ts)) subtracts two such collections on one grid and refuses two grids that differ, naming both.
+Between nodes a raster travels as autk-db's `getRaster` collection in an envelope, `{dataType: "raster", data, layerName}` ([`rasterWire.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/rasterWire.ts)): each band base64 of little-endian float32, rows from south to north, and the `grid` (CRS, size, origin, cell size) it was read on, which the collection does not carry. A Python node receives one as a `rasterio` dataset that `rasters_for_python` rebuilds on a GeoTIFF of its own (beside the artifacts in process, in the scratch directory in an isolated child). Both sides run `rasterWire.cases.json`.
+
+### Raster algebra
+
+[`sandbox/util/raster_algebra.py`](../utk_curio/sandbox/util/raster_algebra.py) is the one implementation of operations over rasters: the Raster Calculator's `curio_raster_calculate`, Raster Statistics' `curio_raster_statistics` and Compare Scenarios' raster Difference all call it. It runs in Python, where a node's rasters are: autk-db reads every band as float32 and loads at most 2048 by 2048 cells, which is what a map draws, not what a computation needs. Rasters are combined only on one grid (`grid_differences`: size, origin, resolution, rotation, CRS, to a relative 1e-9), and a refusal names both grids in words (`describe_grid`, numbers written as JavaScript writes them). A cell is nodata where its raster holds its nodata value or a number that is not finite.
+
+- On rasterio datasets (`calculate`, `statistics`) it computes at the inputs' own number type, at least float32, and writes a result as a GeoTIFF with NaN as nodata, named after its content, where `curio_output_file` writes (in process with no media folder, beside the artifacts). Statistics are numpy's `nanmean`, `nanmedian`, `nanmin` and `nanmax` on the band's own 2-D float64 array, nodata and masked-out cells as NaN.
+- On envelopes (`subtract_envelopes`) it subtracts float32 bands as autk-db exported them: Compare Scenarios' Difference is stored as the envelope its map, a reopen and a dashboard tile read.
+
+`curio_load_data("<id>", bounds=(west, south, east, north))` reads a GeoTIFF's window (`rasters.read_window`): the whole cells whose centres lie inside the bounds, on the raster's own grid, every band at its own type and nodata, written as a GeoTIFF of its own. Bounds that reach past the raster, or hold no cell centre, are refused. The dataset scanners (`DATASET_PATH_CALL_RE` and `COLLECTION_CALL_RE` in `code_refs.py`, the agents' `_CATALOG_CALL_RE`, the frontend's `datasetIdsInCode`) take the id as the call's first argument, so options may follow it, and both loader generators name `bounds=None` on a GeoTIFF's line (`LOADER_OPTIONS`).
+
+`rasters.mosaic_rasters` lays rasters that lie on one grid side by side (`mosaic_grid`: the tiles' north-west corner, the first tile's cell size or a given one, each tile at the nearest cell): a GDAL VRT that points at their files, or a GeoTIFF of their cells. `curio.media@1`'s Mosaic Rasters calls it through `mosaic_collection` (a raster collection's rows); `mosaic_web_tiles` places web map tiles on their own grid (`tile_bounds`) for `scout.raster-conversion@1`. Package modules import them from `utk_curio.sandbox.util.rasters`.
 
 A `dataRef` that names an unavailable table, whether an empty layer, a layer that was never loaded, or one dropped by an upstream node, is dropped before the grammar executes: the behavior removes the `map.layerRefs` entry or `plot` block and logs a console warning, which for a missing table lists the non-empty table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. A map that keeps some of its layers renders them, and its success output notes the ones it lost, naming an empty table apart from one the dataflow does not produce. One left with nothing to draw is reported as an empty render (see [Render Outcomes](#render-outcomes)), and a reference to a table that exists but holds no rows is blamed on that table's source rather than on the reference.
 
