@@ -288,7 +288,7 @@ def execute_workflow_programmatically(
 
         # A Python node reading such a node has no input here, so it has no
         # ground truth either; the browser run is checked without one (#662:
-        # example 06's Road sunlight reads an Autark compute step). Any other
+        # example 06's Compare Scenarios nodes read its Autark maps). Any other
         # missing upstream is still the KeyError below.
         unrun = [uid for uid in spec.upstream_nodes(node.id) if uid not in outputs]
         if unrun and all(uid in browser_only for uid in unrun):

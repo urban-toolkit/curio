@@ -34,9 +34,9 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/computation-analysis": 3, "curio.builtin/vis-vega": 2}, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, 22,
      {"curio.builtin/data-loading": 5, "curio.builtin/vis-vega": 2}, False),
-    ("06-autark-what-if-shadow-study.json", 10, 11,
+    ("06-autark-what-if-shadow-study.json", 8, 9,
      {"curio.builtin/autk-grammar": 5, "curio.builtin/data-pool": 1,
-      "curio.builtin/computation-analysis": 2, "curio.builtin/compare-scenarios": 2}, False),
+      "curio.builtin/compare-scenarios": 2}, False),
     ("07-autark-gpu-shader.json", 5, 6,
      {"curio.builtin/autk-grammar": 4, "curio.builtin/data-pool": 1}, True),
     ("08-autark-spatial-join-regression.json", 7, 8,
@@ -258,7 +258,7 @@ def test_example_06_is_two_scenarios_that_differ_only_in_height_factor():
     )
     outside = set(nodes) - set(baseline["nodes"]) - set(twice["nodes"])
     assert outside == {"whatif-data", "whatif-pool", "whatif-compare-chart", "whatif-compare-difference"}
-    assert len(baseline["nodes"]) == len(twice["nodes"]) == 3
+    assert len(baseline["nodes"]) == len(twice["nodes"]) == 2
     for original, copy in zip(baseline["nodes"], twice["nodes"]):
         assert nodes[copy]["metadata"].get("copiedFrom") == [original], copy
         assert nodes[copy]["content"] == nodes[original]["content"], (
@@ -271,6 +271,15 @@ def test_example_06_is_two_scenarios_that_differ_only_in_height_factor():
         return widget.get("value", widget["default"])
 
     assert (factor("whatif-baseline-compute"), factor("whatif-modified-compute")) == (1, 2)
+    # Both comparisons read the roads layer of what each scenario's map draws,
+    # and Difference matches the roads by their shapes (they carry no id).
+    for compare in ("whatif-compare-chart", "whatif-compare-difference"):
+        settings = nodes[compare]["metadata"]["compareScenarios"]
+        assert settings["layer"] == "table_osm_roads", compare
+        assert 'layer="table_osm_roads")' in nodes[compare]["content"], compare
+        sources = sorted(edge["source"] for edge in flow["edges"] if edge["target"] == compare)
+        assert sources == ["whatif-baseline-map", "whatif-modified-map"], compare
+    assert "key" not in nodes["whatif-compare-difference"]["metadata"]["compareScenarios"].get("difference", {})
     shader = nodes["whatif-baseline-compute"]["content"]
     assert '"height_factor": [!! height_factor !!]' in shader
     assert "let height = height_factor * bld_height[bi];" in shader

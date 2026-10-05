@@ -20,28 +20,24 @@ flowchart LR
   P["data-pool"]
   BC["Baseline · autk-grammar<br/>shadow WGSL, height_factor 1"]
   BM["Baseline · autk-grammar<br/>map · roads by sunlight"]
-  BR["Baseline · Python<br/>road sunlight"]
   MC["Twice as tall · autk-grammar<br/>shadow WGSL, height_factor 2"]
   MM["Twice as tall · autk-grammar<br/>map · roads by sunlight"]
-  MR["Twice as tall · Python<br/>road sunlight"]
   CC["Compare Scenarios<br/>Chart · mean sunlight"]
   CD["Compare Scenarios<br/>Difference · sunlight change"]
   D --> P
   P --> BC --> BM
-  BC --> BR
   P --> MC --> MM
-  MC --> MR
-  BR --> CC
-  MR --> CC
-  BR --> CD
-  MR --> CD
+  BM --> CC
+  MM --> CC
+  BM --> CD
+  MM --> CD
 ```
 
 A single `data` node loads the PBF once, and a `data-pool` hands its layers to both scenarios.
 The loader and the pool are the scenarios' fixed context: they sit outside both, and both read
-them. Each scenario holds three nodes, its levers: the shadow step, its map and its Road sunlight
-node. In Twice as tall each one is a copy of its Baseline twin and names it, so the two
-scenarios' levers are paired when they are compared.
+them. Each scenario holds two nodes, its levers: the shadow step and its map. In Twice as tall
+each one is a copy of its Baseline twin and names it, so the two scenarios' levers are paired
+when they are compared.
 
 ## Data
 
@@ -69,8 +65,8 @@ expects. The downstream compute and map nodes reference these layers by name (`t
 
 | Scenario | Colour | Its nodes | height_factor |
 | --- | --- | --- | --- |
-| Baseline | blue | Shadow study, Roads by sunlight, Road sunlight | 1 |
-| Twice as tall | orange | copies of the three, each naming its twin | 2 |
+| Baseline | blue | Shadow study, Roads by sunlight | 1 |
+| Twice as tall | orange | copies of the two, each naming its twin | 2 |
 
 The **Scenarios** panel (View > Show scenarios) lists both, with the data pool as the fixed
 context each one reads. Collapse both and press **Run All**: each scenario is one box, the loader
@@ -149,41 +145,20 @@ coloured by the shader's `sunlight` output column:
 ]}
 ```
 
-## Road sunlight
-
-Each scenario's outcome for the comparison is its Road sunlight node: the roads layer the shadow
-step wrote its `sunlight` into, each road with its name and kind, its sunlight and the `compute`
-values it came in, and a `road` key made from its line. The roads carry no OSM id, so the key
-is what the two scenarios' roads are matched on.
-
-```python
-import hashlib
-
-# The roads layer: the one the shadow step gave each road's minutes of
-# sunlight. Autark loads every layer in EPSG:3395, in metres. Each road
-# keeps its name and kind, its sunlight and the compute values it came in.
-roads = next(layer for layer in arg if "sunlight" in layer.columns)
-roads = roads[["name", "highway", "sunlight", "compute", "geometry"]].set_crs(3395, allow_override=True)
-# A key for each road, made from its line and numbered in case two roads
-# share one. Both scenarios read the same roads in the same order, so a road
-# has the same key in both, and Compare Scenarios matches them on it.
-lines = roads.geometry.map(lambda line: hashlib.sha1(line.wkb).hexdigest()[:16])
-roads.insert(0, "road", lines + "-" + lines.groupby(lines).cumcount().astype(str))
-return roads
-```
-
 ## Comparing the scenarios
 
-Both Compare Scenarios nodes take Baseline's Road sunlight on their first input and Twice as
-tall's on their second, so each input is labelled by its scenario. Their code is written for them.
+Both Compare Scenarios nodes take Baseline's map on their first input and Twice as tall's on
+their second, so each input is labelled by its scenario. A map hands on the layers its shadow step
+computed, all five of them, so each node's **Layer** menu is set to `table_osm_roads`: the roads,
+with their `sunlight`. Their code is written for them.
 
 **Mean sunlight** is in Chart: it stacks the two scenarios' roads into one table under a
 `scenario` and a `scenario_name` column, and draws a bar for each scenario's mean `sunlight`, in
 the scenarios' colours. Its **What differs** tab lists one lever, the shadow step, whose
-`height_factor` is 1 in Baseline and 2 in Twice as tall; the maps and the Road sunlight nodes
-are alike. It warns about nothing, since both scenarios read the same pool.
+`height_factor` is 1 in Baseline and 2 in Twice as tall; the maps are alike. It warns about
+nothing, since both scenarios read the same pool.
 
-**Sunlight change** is in Difference, with **Key** set to `road`:
+**Sunlight change** is in Difference:
 
 ```python
 # Compare Scenarios writes this code from its inputs: input 1 minus input 0,
@@ -192,12 +167,14 @@ are alike. It warns about nothing, since both scenarios read the same pool.
 return curio_difference_scenarios([
     ("s-baseline", "Baseline", [!! input 0 !!]),
     ("s-twice", "Twice as tall", [!! input 1 !!]),
-], key="road")
+], layer="table_osm_roads")
 ```
 
-Each road holds Twice as tall's sunlight minus Baseline's, in `sunlight` and in the `compute`
-values the shadow step writes, and `change` says whether it changed. The map colours the roads
-by that difference, from the largest loss (dark purple) to no change (yellow).
+The roads carry no `osm_id` or `building_id`, so Difference matches them by their shapes: both
+scenarios read the same roads from the pool. Each road holds Twice as tall's sunlight minus
+Baseline's, in `sunlight` and in the `compute` values the shadow step writes, and `change` says
+whether it changed. The map colours the roads by that difference, from the largest loss (dark
+purple) to no change (yellow).
 
 ## Final result
 

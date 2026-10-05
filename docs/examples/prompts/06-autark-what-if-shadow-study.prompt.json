@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/06-autark-what-if-shadow-study.json",
-    "sha256": "4af84f17c16f72924c35c6687df6fbf001f54a104382551e1c3d74423e59d450",
+    "sha256": "526c00781ee3f0e118d3326ff83d6fda158999930654e064331e7790e1f32daf",
     "walkthrough": "docs/examples/06-autark-what-if-shadow-study.md"
   },
-  "prompt": "I want a what-if shadow study for the Back Bay area of Boston, set up as two scenarios I can compare. The OSM extract is a file in this checkout at docs/examples/data/back_bay.osm.pbf. Load its layers in the browser with Autark once, and hand them to both scenarios through a shared fan-out. In each scenario a GPU shader adds up every road segment's minutes of sunlight over the June solstice, with the building heights scaled by a height factor I set in a widget: 1 in a scenario called Baseline, and 2 in a copy of it called Twice as tall. Show each scenario's roads on its own 3D map coloured by sunlight, and keep each scenario's roads with their sunlight and a key per road. Then compare the two scenarios side by side: a bar chart of their mean road sunlight, and a map of how much sunlight each road loses.",
+  "prompt": "I want a what-if shadow study for the Back Bay area of Boston, set up as two scenarios I can compare. The OSM extract is a file in this checkout at docs/examples/data/back_bay.osm.pbf. Load its layers in the browser with Autark once, and hand them to both scenarios through a shared fan-out. In each scenario a GPU shader adds up every road segment's minutes of sunlight over the June solstice, with the building heights scaled by a height factor I set in a widget: 1 in a scenario called Baseline, and 2 in a copy of it called Twice as tall. Show each scenario's roads on its own 3D map coloured by sunlight. Then compare the two scenarios' roads side by side: a bar chart of their mean road sunlight, and a map of how much sunlight each road loses.",
   "context": null,
   "required": {
     "datasets": [],
@@ -68,20 +68,6 @@
         "hasContent": true
       },
       {
-        "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis2",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "pool1",
         "type": "curio.builtin/data-pool",
         "role": "pool",
@@ -96,46 +82,36 @@
         "kind": "data"
       },
       {
-        "from": "visualization4",
-        "to": "visualization2",
+        "from": "visualization2",
+        "to": "visualization6",
         "kind": "data"
       },
       {
+        "from": "visualization2",
+        "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "visualization3",
+        "to": "visualization6",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "visualization3",
+        "to": "visualization7",
+        "kind": "data",
+        "slot": 1
+      },
+      {
         "from": "visualization4",
-        "to": "analysis1",
+        "to": "visualization2",
         "kind": "data"
       },
       {
         "from": "visualization5",
         "to": "visualization3",
         "kind": "data"
-      },
-      {
-        "from": "visualization5",
-        "to": "analysis2",
-        "kind": "data"
-      },
-      {
-        "from": "analysis1",
-        "to": "visualization6",
-        "kind": "data"
-      },
-      {
-        "from": "analysis1",
-        "to": "visualization7",
-        "kind": "data"
-      },
-      {
-        "from": "analysis2",
-        "to": "visualization6",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis2",
-        "to": "visualization7",
-        "kind": "data",
-        "slot": 1
       },
       {
         "from": "pool1",
