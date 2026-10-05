@@ -5,6 +5,6 @@
     "sources/accumulated-shadow.py": "253214061418c50010be67824cdd00cceb3d550567b5d78fd389c80135ca901e",
     "sources/scout_shadow/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sources/scout_shadow/deep_umbra.py": "c1b39974ef2dfdcc4a76eb075754440cc8c52f1c09d5acfce9289b7c31ebd76b",
-    "sources/scout_shadow/node_outputs.py": "c90f66281ec1cf43eb09c27a5d614763358cff5a08c530fdc3e43942e0faac25"
+    "sources/scout_shadow/node_outputs.py": "d825f87ee3db05dae30b1d3e8b2f24079217aa0ea1925a882c55112783eebe8d"
   }
 }

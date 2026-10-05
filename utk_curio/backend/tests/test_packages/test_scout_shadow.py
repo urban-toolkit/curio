@@ -505,6 +505,10 @@ def test_the_node_returns_the_shadow_raster_on_its_inputs_grid(workspace, tmp_pa
                 heights.crs, heights.transform, heights.width, heights.height,
             )
         assert (shadow.count, shadow.dtypes[0]) == (1, "float32")
+        # NaN names the nodata, as Curio's raster tools write it: a GeoTIFF that
+        # names none is read by autk-db with 0 as its nodata, and every cell in
+        # the sun would drop out of an Autark map and a Compare Scenarios Difference.
+        assert shadow.nodata is not None and np.isnan(shadow.nodata), shadow.nodata
         assert shadow.tags()["season"] == "summer" and shadow.tags()["minutes"] == "720"
         cells = shadow.read(1)
         with shadow_modules(tmp_path) as (_deep_umbra, outputs), _open(path) as heights:

@@ -9,8 +9,11 @@
   are ground.
 - **output**: the accumulated shadow on the input's own grid, one float32 band
   in minutes (Deep Umbra's output from 0 to 1, times the season's minutes),
-  written with Curio's mosaic helper (``mosaic_rasters``). Its statistics over
-  the ground are a Raster Statistics node's, with the heights as the mask.
+  written with Curio's mosaic helper (``mosaic_rasters``), with NaN as its
+  nodata, as Curio's raster tools write theirs: a GeoTIFF that names no nodata
+  is read by autk-db with 0 as its nodata, which would leave every cell in the
+  sun out of an Autark map and a Compare Scenarios Difference. Its statistics
+  over the ground are a Raster Statistics node's, with the heights as the mask.
 
 Deep Umbra reads 8-bit heights where 255 is 550 m: a height becomes
 ``255 * height / 550``, rounded half to even and kept within 0 to 255, as SCOUT's
@@ -206,7 +209,7 @@ def accumulated_shadow(value, season, model, output_file):
     ]
     path = mosaic_rasters(
         tiles, output_file(mosaic_name(raster, season)), crs=raster.crs, dtype="float32",
-        resolution=(a, e), band_descriptions=["accumulated shadow (min)"],
+        nodata=float("nan"), resolution=(a, e), band_descriptions=["accumulated shadow (min)"],
         tags={"zoom": zoom, "tile_x": x, "tile_y": y, "tile_size": TILE, "season": season, "minutes": factor},
     )
     return rasterio.open(path)
