@@ -443,7 +443,7 @@
         "nodeHeight": 420,
         "nodeWidth": 560
       },
-      "description": "Compares scenarios. Connect each scenario's outcome to its own input circle: each input is labelled by the scenario its node belongs to, and the node stacks the inputs into one table, with the scenario's id and name on every row. That table is its output. Its Chart tab draws the table in the scenarios' colors, as bars, grouped bars, lines, points, a pie, lollipops or a table. Its What differs tab lists what changed between the scenarios: widget values and code lines. It warns when the scenarios read different context.",
+      "description": "Compares scenarios. Connect each scenario's outcome to its own input circle: each input is labelled by the scenario its node belongs to, and the node stacks the inputs into one table, with the scenario's id and name on every row. That table is its output. Its Chart tab draws the table in the scenarios' colors, as bars, grouped bars, lines, points, a pie, lollipops or a table. In Difference it takes two inputs and subtracts input 0 from input 1: two rasters cell by cell, two layers or two tables row by row, matched on a stable id (osm_id or building_id, or a key you pick), with rows only one side has marked removed or added. The difference is its output, drawn on a map. It shows Difference for two rasters or two layers and a Chart otherwise, and you can switch. Its What differs tab lists what changed between the scenarios: widget values and code lines. It warns when the scenarios read different context.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -457,6 +457,7 @@
           "types": [
             "DATAFRAME",
             "GEODATAFRAME",
+            "RASTER",
             "VALUE",
             "LIST",
             "JSON"
@@ -470,7 +471,8 @@
           "cardinality": "[1,n]",
           "types": [
             "DATAFRAME",
-            "GEODATAFRAME"
+            "GEODATAFRAME",
+            "RASTER"
           ]
         }
       ],

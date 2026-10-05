@@ -7,6 +7,10 @@
  *   from them, and the stacked table carries them.
  * - `chart`, what its Chart tab draws from that table: a preset, the columns it
  *   reads as x and y, and the aggregate that combines the y values.
+ * - `mode`, Chart or Difference, once the user has chosen one; without it the
+ *   node picks (`compareMode.ts`).
+ * - `difference`, what Difference joins rows on (`key`) and what its map
+ *   colors by (`value`).
  *
  * Written only when present, so a dataflow without one serializes as before.
  */
@@ -33,9 +37,22 @@ export interface CompareChart {
   aggregate?: CompareAggregate;
 }
 
+/** What the node shows: its inputs stacked and charted, or one minus the other. */
+export const COMPARE_MODES = ["chart", "difference"] as const;
+export type CompareMode = (typeof COMPARE_MODES)[number];
+
+export interface CompareDifference {
+  /** The column rows are joined on; absent means `osm_id` or `building_id`. */
+  key?: string;
+  /** The column, or the band, the map colors by; absent means the first number. */
+  value?: string;
+}
+
 export interface CompareSettings {
   inputs?: CompareInputLabel[];
   chart?: CompareChart;
+  mode?: CompareMode;
+  difference?: CompareDifference;
 }
 
 /** The color of an input whose node is in no scenario. */
@@ -65,6 +82,15 @@ function normalizeChart(raw: unknown): CompareChart | undefined {
   return Object.keys(chart).length > 0 ? chart : undefined;
 }
 
+function normalizeDifference(raw: unknown): CompareDifference | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const entry = raw as Record<string, unknown>;
+  const difference: CompareDifference = {};
+  if (nonEmpty(entry.key)) difference.key = entry.key;
+  if (nonEmpty(entry.value)) difference.value = entry.value;
+  return Object.keys(difference).length > 0 ? difference : undefined;
+}
+
 /**
  * The well-formed parts of *raw*, or undefined when nothing is left. The
  * inputs are kept whole or not at all: dropping one label would shift every
@@ -80,6 +106,9 @@ export function normalizeCompareSettings(raw: unknown): CompareSettings | undefi
   }
   const chart = normalizeChart(entry.chart);
   if (chart) settings.chart = chart;
+  if ((COMPARE_MODES as readonly unknown[]).includes(entry.mode)) settings.mode = entry.mode as CompareMode;
+  const difference = normalizeDifference(entry.difference);
+  if (difference) settings.difference = difference;
   return Object.keys(settings).length > 0 ? settings : undefined;
 }
 

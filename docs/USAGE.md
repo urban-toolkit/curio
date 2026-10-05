@@ -598,14 +598,19 @@ The **Compare Scenarios** node compares scenarios' outcomes on the canvas:
 2. Connect each scenario's outcome to one of its input circles. Each edge takes the
    next circle, as on any node with several inputs, and each input is labelled by
    the scenario its node belongs to.
-3. Run it. It stacks its inputs into one table, with the scenario's id in a
-   `scenario` column and its name in a `scenario_name` column on every row. That
-   table is its output: other nodes can read it, and the node can be pinned to the
-   dashboard.
+3. Run it. In **Chart** it stacks its inputs into one table, with the scenario's id
+   in a `scenario` column and its name in a `scenario_name` column on every row. In
+   **Difference** it subtracts one input from the other. What it makes is its
+   output: other nodes can read it, and the node can be pinned to the dashboard.
+
+The node shows **Difference** when it has two inputs that are rasters, or two that
+are layers, once the nodes feeding them have run, and **Chart** otherwise. **Compare
+as** switches it.
 
 Its code is written for it, one line per input, reading the input through its chip
-under its scenario's id and name. It is written again when an input changes or a
-scenario is renamed or recolored, and the node then waits for a run.
+under its scenario's id and name. It is written again when an input changes, a
+scenario is renamed or recolored, or the node switches between Chart and
+Difference, and the node then waits for a run.
 
 It stacks inputs of one kind:
 
@@ -619,12 +624,36 @@ A table beside a value, a GeoDataFrame beside a plain table, two coordinate syst
 an input with no value, an input that holds several tables, or a raster stops the run
 with a message naming the input.
 
+In Difference it takes two inputs: input 0 is the reference and input 1 the
+comparison, and every number it gives is the comparison's minus the reference's.
+
+- Two rasters are subtracted cell by cell, band by band. A cell that is nodata in
+  either is nodata in the difference. Both must lie on one grid, with the same size,
+  origin, cell size and CRS; otherwise the run stops with a message naming both. Each
+  is read as an Autark map reads a raster, at its own size, up to 2048 by 2048 cells.
+- Two layers, or two tables, are matched row by row on a stable id: `osm_id`, else
+  `building_id`, or the column picked in **Key**. A row on both sides holds, in each
+  number column both have, the difference, and a `change` column says `changed` or
+  `unchanged`. A row only in the reference is `removed` and one only in the comparison
+  `added`; their numbers are empty. The other columns and the geometry are the
+  comparison's, or the reference's for a removed row. A key that is empty or repeated
+  on one side stops the run, as does a layer beside a table.
+
+A raster's difference is a raster, which an Autark map draws and a Python node reads
+as a `rasterio` dataset.
+
 The node has two tabs:
 
 - **Chart** draws the stacked table in the scenarios' colors, as **Bars**, **Grouped
   bars**, **Lines**, **Points**, a **Pie**, **Lollipops** or a **Table**. Pick the
   columns it reads (**X**, **Y**) and how the Y values of a group are combined
   (**Combine**: mean, sum, median, minimum, maximum, or a count of rows).
+- **Difference**, in its place in Difference, maps a raster's or a layer's
+  difference, colored by a band or a number column, or by `change` (**Color by**).
+  A layer's colors run from the lowest difference, dark purple, to the highest,
+  yellow. A raster's cells are redder the higher their difference, and fainter the
+  closer they are to no difference. A table's difference is shown as a table, each
+  row in the color of its change.
 - **What differs** lists the levers that differ between the scenarios: for each, the
   widget values and the code lines that changed, read against the first scenario's.
   A node and the copies made from it with **Duplicate selection** or **Duplicate as
