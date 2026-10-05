@@ -458,6 +458,18 @@ def test_a_node_can_write_what_it_derives_from_a_collection():
 # A shipped package's node, from the child's side
 # ---------------------------------------------------------------------------
 
+def test_a_library_numba_caches_imports_as_the_exec_user():
+    """pythermalcomfort, the library ``curio.weather`` brings for example 09,
+    compiles numba code with ``cache=True`` as it is imported. numba keeps that
+    code beside the library, else under HOME, and refuses the import when it
+    can write to neither; for this user both are the sandbox's."""
+    result = assert_ran(run_node("""
+        import pythermalcomfort.models
+        print("imported")
+    """), "importing pythermalcomfort")
+    assert printed(result).splitlines()[-1] == "imported"
+
+
 #: ``scout.raster-conversion@1``'s modules, in the image. The stack's
 #: ``--with-examples`` boot installs its libraries: a shipped test dataflow
 #: (``BuildingRasters.json``) declares it.

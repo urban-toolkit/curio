@@ -514,5 +514,51 @@ class TestNoInputMessage(ChildTestCase):
         self.assertEqual(isolated_line, in_process_line)
 
 
+class TestNumbaCachesInTheScratchDirectory(unittest.TestCase):
+    """A forked child points numba's cache at its own scratch directory.
+
+    numba refuses to import a library that compiles with ``cache=True`` when it
+    can write neither beside the library nor under HOME, which is where an
+    execution user stands; ``live/test_exec_user_boundary.py`` imports two such
+    libraries as that user.
+    """
+
+    def test_the_cache_folder_is_in_the_scratch_directory(self):
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as scratch, mock.patch.dict(os.environ, {}):
+            child.point_numba_at_scratch(scratch)
+            self.assertEqual(os.environ["NUMBA_CACHE_DIR"], os.path.join(scratch, "numba-cache"))
+
+    def test_a_numba_already_imported_is_told_too(self):
+        import sys
+        import types
+        from unittest import mock
+
+        config = types.SimpleNamespace(CACHE_DIR="")
+        with tempfile.TemporaryDirectory() as scratch, mock.patch.dict(os.environ, {}), \
+                mock.patch.dict(sys.modules, {"numba.core.config": config}):
+            child.point_numba_at_scratch(scratch)
+            self.assertEqual(config.CACHE_DIR, os.path.join(scratch, "numba-cache"))
+
+    def test_main_points_it_there_before_the_node_runs(self):
+        from unittest import mock
+
+        seen = []
+
+        def run_node(request, namespace_factory):
+            seen.append(os.environ.get("NUMBA_CACHE_DIR"))
+            return {"ok": True, "stdout": [], "stderr": "", "output": None, "imports": []}
+
+        with tempfile.TemporaryDirectory() as scratch, mock.patch.dict(os.environ, {}), \
+                mock.patch.object(child, "confine"), \
+                mock.patch.object(child, "run_node", side_effect=run_node), \
+                mock.patch.object(child, "write_result"), \
+                mock.patch.object(child.os, "_exit", side_effect=SystemExit):
+            with self.assertRaises(SystemExit):
+                child.main({"scratch_dir": scratch, "code": ""}, dict)
+        self.assertEqual(seen, [os.path.join(scratch, "numba-cache")])
+
+
 if __name__ == "__main__":
     unittest.main()
