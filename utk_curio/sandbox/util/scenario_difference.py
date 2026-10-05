@@ -10,9 +10,12 @@ reference. Its code calls ``curio_difference_scenarios`` with one
   when the node names one, else ``osm_id`` or ``building_id``, the first both
   have. A row on both sides holds, in each number column both have, the
   comparison's value minus the reference's, and ``change`` says ``changed`` or
-  ``unchanged``. A row only in the reference is ``removed`` and one only in the
-  comparison ``added``; their numbers are empty. Every other column, and the
-  geometry, is the comparison's (the reference's for a removed row).
+  ``unchanged``. A column both have whose cells are dicts, such as the
+  ``compute`` an Autark compute step writes its outputs under, is read the same
+  way inside: each number both dicts hold is a difference too. A row only in
+  the reference is ``removed`` and one only in the comparison ``added``; their
+  numbers are empty, nested ones included. Every other column and value, and
+  the geometry, is the comparison's (the reference's for a removed row).
 - Two rasters are subtracted cell by cell by Curio's Autark adapter
   (``utils/raster/rasterArithmetic.ts``), on the band arrays autk-db's
   ``getRaster`` exports once its ``loadGeoTiff`` has loaded both, in the
@@ -174,6 +177,76 @@ def _ids(side: dict, key: str) -> list:
     return values.tolist()
 
 
+def _no_value(value) -> bool:
+    """Whether a cell holds nothing: None, or an empty number."""
+    import pandas as pd
+
+    if value is None:
+        return True
+    try:
+        return pd.api.types.is_scalar(value) and bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _is_nested(*columns) -> bool:
+    """Whether every cell of *columns* that holds something holds a dict."""
+    held = [value for column in columns for value in column if not _no_value(value)]
+    return bool(held) and all(isinstance(value, dict) for value in held)
+
+
+def _is_number_value(value) -> bool:
+    import numpy as np
+
+    return isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(value, (bool, np.bool_))
+
+
+def _without_numbers(value):
+    """*value* with each number in it, at any depth, made empty: what a row on
+    one side only holds in a nested column, as its number columns are empty."""
+    if isinstance(value, dict):
+        return {key: _without_numbers(inner) for key, inner in value.items()}
+    return None if _is_number_value(value) else value
+
+
+def _nested_difference(before, after):
+    """``(cell, changed)`` for one row of a nested column: *after* with each
+    number that *before* holds at the same place replaced by after minus
+    before, and whether any value differs. A value one side alone holds is kept
+    from that side, as a column one side alone has is."""
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        if _no_value(before) and _no_value(after):
+            return None, False
+        held = before if _no_value(after) else after
+        return _without_numbers(held), True
+    out = {}
+    changed = False
+    for key in [*after, *(key for key in before if key not in after)]:
+        if key not in before or key not in after:
+            out[key] = after[key] if key in after else before[key]
+            changed = True
+            continue
+        old, new = before[key], after[key]
+        if isinstance(old, dict) and isinstance(new, dict):
+            out[key], differs = _nested_difference(old, new)
+        elif _is_number_value(old) and _is_number_value(new):
+            old_empty, new_empty = _no_value(old), _no_value(new)
+            out[key] = None if old_empty or new_empty else float(new) - float(old)
+            differs = old_empty != new_empty or (not old_empty and not new_empty and float(new) != float(old))
+        else:
+            out[key] = new
+            differs = not (_no_value(old) and _no_value(new)) and bool(_differs_once(old, new))
+        changed = changed or differs
+    return out, changed
+
+
+def _differs_once(left, right) -> bool:
+    try:
+        return bool(left != right)
+    except (TypeError, ValueError):
+        return str(left) != str(right)
+
+
 def _differs(left, right):
     """Where two columns of one length hold different values; two empty cells
     are the same."""
@@ -231,7 +304,8 @@ def _join(reference: dict, comparison: dict, key):
     columns = [c for c in ref.columns if c != key] + [c for c in cmp.columns if c != key and c not in ref.columns]
     common = [c for c in columns if c in ref.columns and c in cmp.columns and c != geometry]
     numbers = [c for c in common if _is_number(ref[c]) and _is_number(cmp[c])]
-    others = [c for c in common if c not in numbers]
+    nested = [c for c in common if c not in numbers and _is_nested(ref[c], cmp[c])]
+    others = [c for c in common if c not in numbers and c not in nested]
     reference_only = [c for c in columns if c not in cmp.columns]
 
     cmp_at = {value: row for row, value in enumerate(cmp_ids)}
@@ -255,6 +329,10 @@ def _join(reference: dict, comparison: dict, key):
         on_both[column] = after - before
         before_empty, after_empty = np.isnan(before), np.isnan(after)
         changed |= (before_empty != after_empty) | (~before_empty & ~after_empty & (after != before))
+    for column in nested:
+        pairs = [_nested_difference(old, new) for old, new in zip(ref_both[column], on_both[column])]
+        on_both[column] = pd.Series([cell for cell, _ in pairs], index=on_both.index, dtype=object)
+        changed |= np.asarray([flag for _, flag in pairs], dtype=bool)
     for column in others:
         changed |= _differs(ref_both[column], on_both[column])
     on_both.insert(1, CHANGE_COLUMN, np.where(changed, CHANGED, UNCHANGED))
@@ -270,6 +348,8 @@ def _join(reference: dict, comparison: dict, key):
         part = rows_of(frame, rows)
         for column in numbers:
             part[column] = np.nan
+        for column in nested:
+            part[column] = pd.Series([_without_numbers(v) for v in part[column]], index=part.index, dtype=object)
         part.insert(1, CHANGE_COLUMN, change)
         parts.append(part)
         places.append(np.asarray(place, dtype="int64"))

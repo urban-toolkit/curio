@@ -634,10 +634,12 @@ comparison, and every number it gives is the comparison's minus the reference's.
 - Two layers, or two tables, are matched row by row on a stable id: `osm_id`, else
   `building_id`, or the column picked in **Key**. A row on both sides holds, in each
   number column both have, the difference, and a `change` column says `changed` or
-  `unchanged`. A row only in the reference is `removed` and one only in the comparison
-  `added`; their numbers are empty. The other columns and the geometry are the
-  comparison's, or the reference's for a removed row. A key that is empty or repeated
-  on one side stops the run, as does a layer beside a table.
+  `unchanged`. A column of nested values, such as the `compute` values an Autark
+  compute step writes, holds the difference of each number in it. A row only in the
+  reference is `removed` and one only in the comparison `added`; their numbers are
+  empty. The other columns and the geometry are the comparison's, or the reference's
+  for a removed row. A key that is empty or repeated on one side stops the run, as
+  does a layer beside a table.
 
 A raster's difference is a raster, which an Autark map draws and a Python node reads
 as a `rasterio` dataset.

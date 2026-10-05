@@ -204,6 +204,44 @@ class TestLayersJoinedOnAStableId:
         assert out["osm_id"].tolist() == [1, 2]
         assert _numbers(out["sunlight"]) == [-1.0, 0.0]
 
+    def test_numbers_nested_in_a_column_both_have_are_subtracted_too(self):
+        """An Autark compute step writes its outputs under ``compute``, a dict
+        on each row: each number in it is a difference too, at any depth, and
+        a row on one side only has none, as its number columns have none."""
+
+        def layer(ids, sunlight, hours):
+            frame = _roads(ids, sunlight)
+            frame["compute"] = [
+                {"sunlight": s, "shade": {"hours": h}, "label": "noon"} for s, h in zip(sunlight, hours)
+            ]
+            return frame
+
+        out = _diff(
+            layer([1, 2, 3], [600.0, 540.0, 780.0], [3, 4, 1]),
+            layer([2, 3, 4], [540.0, 660.0, 120.0], [4, 3, 11]),
+        )
+        assert out["change"].tolist() == ["removed", "unchanged", "changed", "added"]
+        assert out["compute"].tolist() == [
+            {"sunlight": None, "shade": {"hours": None}, "label": "noon"},
+            {"sunlight": 0.0, "shade": {"hours": 0.0}, "label": "noon"},
+            {"sunlight": -120.0, "shade": {"hours": 2.0}, "label": "noon"},
+            {"sunlight": None, "shade": {"hours": None}, "label": "noon"},
+        ]
+        # The column the step lifts its output into says the same.
+        assert _numbers(out["sunlight"]) == [None, 0.0, -120.0, None]
+
+    def test_a_nested_value_that_is_not_a_number_is_the_comparisons(self):
+        reference = _roads([1, 2], [5.0, 5.0])
+        reference["compute"] = [{"sunlight": 5.0, "label": "a"}, {"sunlight": 5.0}]
+        comparison = _roads([1, 2], [5.0, 5.0])
+        comparison["compute"] = [{"sunlight": 5.0, "label": "b"}, {"sunlight": 5.0, "lit": 1}]
+        out = _diff(reference, comparison)
+        # A text that differs, and a value only one side holds, change the row
+        # and are kept as that side holds them: a number one side alone holds
+        # has nothing to be subtracted from.
+        assert out["compute"].tolist() == [{"sunlight": 0.0, "label": "b"}, {"sunlight": 0.0, "lit": 1}]
+        assert out["change"].tolist() == ["changed", "changed"]
+
     def test_the_inputs_are_left_as_they_were(self):
         reference = _roads([1, 2], [5.0, 6.0])
         comparison = _roads([2, 3], [1.0, 2.0])
