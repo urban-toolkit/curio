@@ -1,27 +1,34 @@
 """``scout.shadow@1``: SCOUT's Deep Umbra shadow model in Curio (#662, step 19).
 
-The proof: the package's port of SCOUT's ``run_shadow_model``, called as SCOUT's
-high-rise shadow example calls it, in summer, with the ONNX export of SCOUT's
-generator that Curio ships (the Data Catalog dataset ``data.scout.deep-umbra@1``),
-turns SCOUT's committed height tiles of both of the example's scenarios into
-SCOUT's committed shadow tiles and metrics. All are SCOUT's own files, copied
-unchanged into ``fixtures/scout/`` (see its ``ATTRIBUTION.md``).
+The node reads a height raster, the mosaic of Rasterize Buildings
+(``scout.raster-conversion@1``), and runs Deep Umbra on every zoom-16 tile of
+it. The proof starts from SCOUT's own files, copied unchanged into
+``fixtures/scout/`` (see its ``ATTRIBUTION.md``): SCOUT's committed height tiles
+of both scenarios of its high-rise shadow example become one mosaic each,
+written by Rasterize Buildings' own ``write_mosaic``. Then:
+
+- the mosaic gives back SCOUT's tiles, gray level for gray level, and the
+  generator's three inputs are the ones SCOUT's file-reading
+  ``load_input_grid`` builds, to the bit;
+- with the ONNX export of SCOUT's generator that Curio ships (the Data Catalog
+  dataset ``data.scout.deep-umbra@1``), in summer, the shadow of each tile, in
+  SCOUT's 8 bits, is SCOUT's committed shadow tile, and the mean and median
+  over the ground are SCOUT's committed metrics.
 
 Within a tolerance, not equal. Deep Umbra normalizes each layer by the tile's own
-mean and variance, and two float32 runs of it differ by up to about 0.017 on a
-few pixels of its output from -1 to 1: ``scripts/scout/export_deep_umbra.py``
-measured TensorFlow's own float32 run 0.016 from a float64 run of the same
-generator, and the ONNX run no farther. On SCOUT's tiles that is one gray level
-on up to 691 of a tile's 65,536 pixels and two on 2 of them, where TensorFlow
-2.12 rerunning SCOUT's own code differs from SCOUT's files by one level on up to
-13 pixels and the float64 run by one level on up to 588. So a tile may differ by
-at most 3 gray levels on at most 1.5% of its pixels, and each metric by at most
-0.05 minutes. Moving averages in place of each tile's statistics, a wrong season
-or a wrong latitude miss by far more.
+mean and variance, which makes its float32 output sensitive to the order of its
+sums: ``scripts/scout/export_deep_umbra.py`` measured TensorFlow's own float32
+run up to 0.016 from a float64 run of the same generator, on an output from -1 to
+1, and onnxruntime on up to 16 intra-op threads within 0.0177 of TensorFlow. On
+SCOUT's tiles that is one gray level on up to 686 of a tile's 65,536 pixels and
+two on 2 of them. So a tile may differ by at most 3 gray levels on at most 1.5%
+of its pixels, and each metric by at most 0.05 minutes. A wrong season, or the
+latitude off by one degree, misses by 25 levels or more on 39% of a tile's
+pixels or more, and the mean by 1.8 minutes or more.
 
 The node: its template, its widget resolved the way a run resolves it, runs in
 the sandbox with its package's modules (#719) and the model as the backend
-resolves it. It returns ``(mosaic, metrics)``.
+resolves it. It returns ``(mosaic, metrics)``, the mosaic on its input's grid.
 
 Package code is imported inside each test, through a run's staged copy of the
 package's modules, so a checkout without the package or its libraries fails each
@@ -29,11 +36,11 @@ test on its own and no bytecode lands in ``packages/``.
 """
 from __future__ import annotations
 
-import base64
 import contextlib
 import hashlib
 import importlib
 import json
+import os
 import re
 import textwrap
 from pathlib import Path
@@ -54,6 +61,7 @@ MODEL_SHA256 = "67afb9d2d56bd0a12164e6e651214d56860ff689728c5b6f29486f21c3cb188e
 BUILDINGS = REPO / "datasets" / "data.scout.loop-buildings@1" / "data" / "loop-buildings.geojson"
 DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "ScoutShadows.json"
 RASTER_PACKAGE = REPO / "packages" / "scout.raster-conversion@1"
+RASTER_MODULE = "scout_raster_conversion"
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout"
 TILE_NAMES = [
@@ -62,6 +70,8 @@ TILE_NAMES = [
     "16_16815_24355.png",
     "16_16815_24356.png",
 ]
+#: SCOUT's example: tiles x 16814 and 16815, y 24355 and 24356, at zoom 16.
+GRID = (16, 16814, 24355, 2, 2)
 TILE_PIXELS = 256 * 256
 
 #: The tolerance the module docstring explains.
@@ -86,15 +96,12 @@ def _source() -> str:
     return (PACKAGE / _template()["source"]).read_text(encoding="utf-8")
 
 
-def _gray(path_or_png):
-    """A tile's gray levels as ints, from its file or its ``png`` value."""
-    import io
-
+def _gray(path):
+    """A tile's gray levels as ints, from its file."""
     import numpy as np
     from PIL import Image
 
-    source = path_or_png if isinstance(path_or_png, Path) else io.BytesIO(base64.b64decode(path_or_png))
-    with Image.open(source) as image:
+    with Image.open(path) as image:
         assert image.format == "PNG" and image.mode == "L" and image.size == (256, 256), (
             image.format, image.mode, image.size,
         )
@@ -147,17 +154,55 @@ def shadow_modules(tmp_path):
     return staged(tmp_path, SOURCES, MODULE, "deep_umbra", "node_outputs")
 
 
-def _tiles(scenario: str = "A"):
-    """SCOUT's height tiles of *scenario* as Rasterize Buildings returns them:
-    one row per tile with ``zoom``, ``x``, ``y`` and its PNG in base64."""
-    import pandas as pd
+def _mosaic(tmp_path, scenario: str = "A", *, zoom: int = 16, max_height: float = 550) -> Path:
+    """SCOUT's committed height tiles of *scenario* as one mosaic, written by
+    Rasterize Buildings' own ``write_mosaic``, as its node hands them on. With
+    *zoom*, the tiles are named at that zoom level instead."""
+    folder = tmp_path / f"mosaic-{scenario}-{zoom}-{max_height:g}"
+    folder.mkdir()
+    with staged(folder, RASTER_PACKAGE / "sources", RASTER_MODULE, "node_outputs") as (raster_outputs,):
+        tiles = raster_outputs.read_tiles(str(FIXTURES / f"{scenario}_rasters")).assign(zoom=zoom)
+        return Path(raster_outputs.write_mosaic(tiles, max_height, str(folder / "mosaic.tif")))
 
-    rows = []
-    for name in TILE_NAMES:
-        zoom, x, y = (int(part) for part in name[:-4].split("_"))
-        png = base64.b64encode((FIXTURES / f"{scenario}_rasters" / name).read_bytes()).decode("ascii")
-        rows.append({"zoom": zoom, "x": x, "y": y, "png": png})
-    return pd.DataFrame(rows, columns=["zoom", "x", "y", "png"])
+
+def _open(path):
+    import rasterio
+
+    return rasterio.open(path)
+
+
+def _block(cells, column: int, row: int):
+    return cells[256 * row:256 * (row + 1), 256 * column:256 * (column + 1)]
+
+
+def _tile_name(column: int, row: int) -> str:
+    zoom, x, y, _columns, _rows = GRID
+    return f"{zoom}_{x + column}_{y + row}.png"
+
+
+def _scouts_input_grid(folder: Path, date: str, zoom: int, i: int, j: int):
+    """SCOUT's ``load_input_grid`` (``deep_umbra.py`` at b98369e5), reading the
+    tile and its neighbours from SCOUT's PNG files, with numpy and Pillow in
+    place of its TensorFlow reads: the reference the port's inputs are held to."""
+    import numpy as np
+    from PIL import Image
+
+    all_input = np.zeros((256 * 3, 256 * 3, 1), dtype=np.float32)
+    for x in range(-1, 2):
+        for y in range(-1, 2):
+            filepath = "%s/%d_%d_%d.png" % (folder, zoom, i + y, j + x)
+            if os.path.isfile(filepath):
+                with Image.open(filepath) as image:
+                    tile = np.asarray(image).reshape(256, 256, 1).astype(np.float32)
+                all_input[256 + 256 * x:256 + 256 * (x + 1), 256 + 256 * y:256 + 256 * (y + 1)] = tile
+    n = float(2 ** zoom)
+    lat_rad = np.arctan(np.sinh(np.float32(3.14159265359 * (1.0 - 2.0 * float(j) / n))))
+    latitude = lat_rad / np.float32(0.017453292519943295)
+    all_input = all_input[128:-128, 128:-128]
+    all_lat = np.full((512, 512, 1), latitude, dtype=np.float32)
+    value = 0 if date == "winter" else 1 if date in ("spring", "fall") else 2
+    all_date = np.full((512, 512, 1), value, dtype=np.float32)
+    return all_input, all_lat, all_date
 
 
 @pytest.fixture
@@ -182,7 +227,7 @@ def _with_values(**values) -> list:
     return widgets
 
 
-def run_node(value, workspace, *, data_type="dataframe", model=True, fails=False, **values):
+def run_node(value, workspace, *, data_type="raster", model=True, fails=False, **values):
     """Run the node's template, its widget at *values*, on *value* in the
     sandbox, in process, with the model resolved as the backend resolves it
     (or, without *model*, as a Curio without it does): ``(artifact id, output)``,
@@ -194,7 +239,7 @@ def run_node(value, workspace, *, data_type="dataframe", model=True, fails=False
     code, problems = resolve_references(_source(), _with_values(**values), "python", inputs=[{"slot": 0}])
     assert problems == [], problems
     _worker_init()
-    art_id = save_to_duckdb(value, node_id="tiles")
+    art_id = save_to_duckdb(value, node_id="heights")
     result = execute_code(
         textwrap.indent(code, "    "), art_id, NODE_TYPE, data_type,
         save_dataset=False, media_dir=str(workspace / "media"),
@@ -215,27 +260,76 @@ def run_node(value, workspace, *, data_type="dataframe", model=True, fails=False
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("scenario", ["A", "B"])
+def test_the_mosaic_gives_back_scouts_tiles_and_inputs(tmp_path, scenario):
+    """Rasterize Buildings' mosaic of SCOUT's tiles, read as Deep Umbra reads
+    it, is SCOUT's tiles gray level for gray level, on SCOUT's tile grid; and
+    each tile's neighbourhood gives the generator SCOUT's three inputs, to the
+    bit, in each season."""
+    import numpy as np
+
+    with shadow_modules(tmp_path) as (deep_umbra, outputs), _open(_mosaic(tmp_path, scenario)) as mosaic:
+        grid = outputs.tile_grid(mosaic)
+        assert grid == GRID, grid
+        levels = outputs.gray_levels(mosaic)
+        assert levels.dtype == np.float32 and levels.shape == (512, 512)
+        padded = np.pad(levels, 256)
+        zoom, x, y, columns, rows = grid
+        for row in range(rows):
+            for column in range(columns):
+                name = _tile_name(column, row)
+                assert np.array_equal(_block(levels, column, row), _gray(FIXTURES / f"{scenario}_rasters" / name)), name
+                for season in ("summer", "spring", "winter"):
+                    ours = deep_umbra.load_input_grid(outputs.neighbourhood(padded, column, row), season, zoom, x + column, y + row)
+                    scouts = _scouts_input_grid(FIXTURES / f"{scenario}_rasters", season, zoom, x + column, y + row)
+                    for plane, mine, theirs in zip(("height", "latitude", "date"), ours, scouts):
+                        assert mine.dtype == theirs.dtype == np.float32 and mine.shape == theirs.shape == (512, 512, 1)
+                        assert mine.tobytes() == theirs.tobytes(), (name, season, plane)
+        # The neighbourhoods are not all ground: every tile sees buildings.
+        assert all(_block(levels, c, r).max() > 0 for r in range(rows) for c in range(columns))
+
+
+def test_every_height_level_comes_back_exactly(tmp_path):
+    """Each of the 256 levels Rasterize Buildings writes as metres (level times
+    550 over 255, in float32) reads back as that level."""
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+
+    levels = np.arange(256, dtype=np.float32).reshape(16, 16)
+    path = tmp_path / "levels.tif"
+    with rasterio.open(path, "w", driver="GTiff", width=16, height=16, count=1, dtype="float32",
+                       crs="EPSG:3395", transform=from_origin(0, 0, 1, 1)) as out:
+        out.write(levels * np.float32(550.0 / 255.0), 1)
+    with shadow_modules(tmp_path) as (_deep_umbra, outputs), rasterio.open(path) as raster:
+        assert np.array_equal(outputs.gray_levels(raster), levels)
+
+
+@pytest.mark.parametrize("scenario", ["A", "B"])
 def test_scouts_rasters_become_scouts_committed_shadows(tmp_path, scenario, record_property):
-    """SCOUT's call, on SCOUT's committed height tiles, writes SCOUT's committed
-    shadow tiles and metrics: the same four files, within the tolerance. The
-    measured numbers are recorded in the run's JUnit report either way."""
-    out = tmp_path / f"{scenario}_shadows"
-    metrics_out = tmp_path / f"{scenario}_shadows_metric"
-    with shadow_modules(tmp_path) as (deep_umbra, _outputs):
-        deep_umbra.run_shadow_model(
-            rasters_in=str(FIXTURES / f"{scenario}_rasters"),
-            season="summer",
-            rasters_out=str(out),
-            metrics_out=str(metrics_out),
-            generator=_session(),
-        )
-    assert sorted(p.name for p in out.iterdir()) == TILE_NAMES
-    committed = FIXTURES / f"{scenario}_shadows"
-    measured = {name: _levels(_gray(out / name), _gray(committed / name)) for name in TILE_NAMES}
-    ours, scouts = _metrics(Path(f"{metrics_out}.csv")), _metrics(FIXTURES / f"{scenario}_shadows_metric.csv")
+    """SCOUT's call, in summer, on the mosaic of SCOUT's committed height tiles:
+    each tile's shadow, in the 8 bits SCOUT writes, is SCOUT's committed shadow
+    tile, and the mean and median over the ground are SCOUT's metrics, within
+    the tolerance. The measured numbers are recorded in the run's JUnit report
+    either way, with what the session ran on."""
+    import numpy as np
+    import onnxruntime as ort
+
+    with shadow_modules(tmp_path) as (deep_umbra, outputs), _open(_mosaic(tmp_path, scenario)) as mosaic:
+        fraction, ground = outputs.shadow_fractions(mosaic, "summer", _session())
+        minutes = fraction * np.float32(deep_umbra.season_factor("summer"))
+    measured = {}
+    _zoom, _x, _y, columns, rows = GRID
+    for row in range(rows):
+        for column in range(columns):
+            name = _tile_name(column, row)
+            ours = (_block(fraction, column, row) * 255).astype("uint8").astype(int)
+            measured[name] = _levels(ours, _gray(FIXTURES / f"{scenario}_shadows" / name))
+    ours = (float(np.mean(minutes[ground])), float(np.median(minutes[ground])))
+    scouts = _metrics(FIXTURES / f"{scenario}_shadows_metric.csv")
     differences = [abs(a - b) for a, b in zip(ours, scouts)]
     record_property("tiles (largest levels, pixels differing)", json.dumps(measured))
     record_property("metrics (mean, median)", json.dumps({"ours": ours, "scout": scouts, "differences": differences}))
+    record_property("onnxruntime", json.dumps({"version": ort.__version__, "cpus": os.cpu_count()}))
     assert _within(measured), (
         f"(largest gray-level difference, pixels that differ) per tile, against at most "
         f"{MAX_LEVELS} levels on {MAX_SHARE:.1%} of {TILE_PIXELS} pixels: {measured}"
@@ -247,7 +341,7 @@ def test_scouts_rasters_become_scouts_committed_shadows(tmp_path, scenario, reco
     # Not blank tiles agreeing: every one of SCOUT's tiles holds full shadow
     # and open ground.
     for name in TILE_NAMES:
-        gray = _gray(committed / name)
+        gray = _gray(FIXTURES / f"{scenario}_shadows" / name)
         assert gray.max() >= 250 and (gray < 10).mean() > 0.1, name
 
 
@@ -296,11 +390,13 @@ def test_the_model_stays_out_of_the_pip_package(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_the_template_reads_the_season_and_loads_the_model_by_its_id():
-    """The season is SCOUT's three choices, drawn as radio buttons; the model is
-    named as a literal the backend resolves before the run."""
+    """The input is a raster; the season is SCOUT's three choices, drawn as
+    radio buttons; the model is named as a literal the backend resolves before
+    the run."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
 
     template = _template()
+    assert template["inputPorts"] == [{"cardinality": "1", "types": ["RASTER"]}]
     assert template["hasWidgets"] is True
     assert template["widgets"] == [{
         "name": "season", "type": "choice", "label": "Season", "default": "summer",
@@ -317,14 +413,14 @@ def test_the_template_reads_the_season_and_loads_the_model_by_its_id():
 # ---------------------------------------------------------------------------
 
 def test_the_node_returns_the_shadow_mosaic_and_scouts_metrics(workspace, tmp_path):
-    """SCOUT's A tiles in: SCOUT's metrics within the tolerance, and a mosaic in
-    minutes whose blocks are the port's own shadow tiles, on the rasterizer's grid."""
+    """The mosaic of SCOUT's A tiles in: SCOUT's metrics within the tolerance,
+    and a raster in minutes on the input's own grid, whose cells are the
+    port's shadow times summer's 720 minutes."""
+    import numpy as np
     import rasterio
-    from pyproj import Transformer
 
-    from utk_curio.sandbox.util.rasters import epsg_name
-
-    _art_id, (mosaic, metrics) = run_node(_tiles("A"), workspace)
+    path = _mosaic(tmp_path, "A")
+    _art_id, (mosaic, metrics) = run_node(_open(path), workspace)
     try:
         assert list(metrics.columns) == ["season", "mean_minutes", "median_minutes"]
         assert len(metrics) == 1 and metrics["season"].iloc[0] == "summer"
@@ -333,54 +429,27 @@ def test_the_node_returns_the_shadow_mosaic_and_scouts_metrics(workspace, tmp_pa
         assert all(abs(a - b) <= MAX_MINUTES for a, b in zip(ours, scouts)), (ours, scouts)
 
         assert isinstance(mosaic, rasterio.io.DatasetReader)
-        assert epsg_name(mosaic.crs) == "EPSG:3395"
-        assert (mosaic.width, mosaic.height, mosaic.count, mosaic.dtypes[0]) == (512, 512, 1, "float32")
+        with _open(path) as heights:
+            assert (mosaic.crs, mosaic.transform, mosaic.width, mosaic.height) == (
+                heights.crs, heights.transform, heights.width, heights.height,
+            )
+        assert (mosaic.count, mosaic.dtypes[0]) == (1, "float32")
         assert mosaic.tags()["season"] == "summer" and mosaic.tags()["minutes"] == "720"
-        cells = mosaic.read(1)
-
-        out = tmp_path / "port"
-        with shadow_modules(tmp_path) as (deep_umbra, _outputs):
-            deep_umbra.run_shadow_model(str(FIXTURES / "A_rasters"), "summer", str(out), str(tmp_path / "m"), _session())
-        # Columns of tiles run west to east with x, rows north to south with y.
-        for name, (row, col) in {
-            "16_16814_24355.png": (0, 0), "16_16815_24355.png": (0, 1),
-            "16_16814_24356.png": (1, 0), "16_16815_24356.png": (1, 1),
-        }.items():
-            block = cells[256 * row:256 * (row + 1), 256 * col:256 * (col + 1)]
-            # The tile truncates the shadow to 8 bits; the mosaic keeps it.
-            fraction = block / 720.0 * 255.0 - _gray(out / name)
-            assert fraction.min() >= -1e-3 and fraction.max() < 1 + 1e-3, (name, fraction.min(), fraction.max())
-
-        # The grid is the rasterizer's: the outer corners of the corner tiles.
-        to_3395 = Transformer.from_crs(4326, 3395, always_xy=True)
-        west, north = to_3395.transform(*_tile_corner(16814, 24355, 16))
-        east, south = to_3395.transform(*_tile_corner(16816, 24357, 16))
-        a, b, c, d, e, f = tuple(mosaic.transform)[:6]
-        assert b == 0 and d == 0
-        assert c == pytest.approx(west, abs=1e-6) and f == pytest.approx(north, abs=1e-6)
-        assert c + 512 * a == pytest.approx(east, abs=1e-6)
-        assert f + 512 * e == pytest.approx(south, abs=0.01 * abs(e))
+        with shadow_modules(tmp_path) as (_deep_umbra, outputs), _open(path) as heights:
+            fraction, _ground = outputs.shadow_fractions(heights, "summer", _session())
+        assert np.array_equal(mosaic.read(1), fraction * np.float32(720)), "the raster is not the port's shadow"
     finally:
         mosaic.close()
 
 
-def _tile_corner(x, y, zoom):
-    """``(lon, lat)`` of a tile's north-west corner."""
-    import math
-
-    n = 2.0 ** zoom
-    lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / n))))
-    return x / n * 360.0 - 180.0, lat
-
-
-def test_the_mosaic_is_a_raster_the_autark_node_loads(workspace):
+def test_the_mosaic_is_a_raster_the_autark_node_loads(workspace, tmp_path):
     """What #718's raster route serves for the tuple's first part: an EPSG CRS,
     a north-up grid, inside the Autark node's caps."""
     from rasterio.io import MemoryFile
 
     from utk_curio.sandbox.util.rasters import serve_raster
 
-    art_id, (mosaic, _metrics) = run_node(_tiles("A"), workspace)
+    art_id, (mosaic, _metrics) = run_node(_open(_mosaic(tmp_path, "A")), workspace)
     try:
         payload, meta = serve_raster(art_id, part=0, max_cells=2048 * 2048, max_side=8192)
         assert meta["crs"] == "EPSG:3395"
@@ -394,14 +463,15 @@ def test_the_mosaic_is_a_raster_the_autark_node_loads(workspace):
         mosaic.close()
 
 
-def test_the_season_reaches_the_call(workspace):
+def test_the_season_reaches_the_call(workspace, tmp_path):
     """Each season its own sun and its own minutes: winter counts 360 for a day
     in shadow, spring 540, summer 720."""
     import numpy as np
 
+    path = _mosaic(tmp_path, "A")
     results = {}
     for season in ("winter", "spring", "summer"):
-        _art_id, (mosaic, metrics) = run_node(_tiles("A"), workspace, season=season)
+        _art_id, (mosaic, metrics) = run_node(_open(path), workspace, season=season)
         try:
             cells = mosaic.read(1)
             results[season] = (float(np.nanmax(cells)), float(metrics["mean_minutes"].iloc[0]),
@@ -418,59 +488,71 @@ def test_the_season_reaches_the_call(workspace):
 
 def test_the_rasterizers_tuple_is_read_and_its_height_scale_checked(tmp_path):
     """Wired straight to Rasterize Buildings, the node gets its ``(mosaic,
-    tiles)``: it reads the tiles, and the mosaic's maximum height, which Deep
-    Umbra needs at 550 m."""
-    import numpy as np
-    import rasterio
-    from rasterio.transform import from_origin
-
-    def mosaic_drawn_with(max_height):
-        path = tmp_path / f"mosaic-{max_height}.tif"
-        profile = {"driver": "GTiff", "width": 2, "height": 2, "count": 1, "dtype": "float32",
-                   "crs": "EPSG:3395", "transform": from_origin(0, 0, 1, 1)}
-        with rasterio.open(path, "w", **profile) as out:
-            out.write(np.zeros((2, 2), dtype="float32"), 1)
-            out.update_tags(max_height=float(max_height))
-        return rasterio.open(path)
+    tiles)`` and reads the mosaic; a mosaic drawn with a maximum height other
+    than the 550 m Deep Umbra needs is refused in a sentence."""
+    import pandas as pd
 
     with shadow_modules(tmp_path) as (_deep_umbra, outputs):
-        tiles = _tiles("A")
-        for max_height in (550, 275):
-            mosaic = mosaic_drawn_with(max_height)
-            try:
-                found, scale = outputs.tiles_of([mosaic, tiles])
-                assert found is tiles and scale == float(max_height)
-            finally:
-                mosaic.close()
-        outputs.check_tiles(tiles, 550.0, "summer")
-        with pytest.raises(ValueError, match="Set Rasterize Buildings' Maximum height to 550"):
-            outputs.check_tiles(tiles, 275.0, "summer")
+        with _open(_mosaic(tmp_path, "A")) as mosaic:
+            tiles = pd.DataFrame({"zoom": [16], "x": [16814], "y": [24355], "png": [""]})
+            assert outputs.height_raster([mosaic, tiles]) is mosaic
+            assert outputs.height_raster(mosaic) is mosaic
+            assert outputs.gray_levels(mosaic).max() > 0
+        with _open(_mosaic(tmp_path, "A", max_height=275)) as mosaic:
+            with pytest.raises(ValueError, match="Set Rasterize Buildings' Maximum height to 550"):
+                outputs.gray_levels(mosaic)
+
+
+def _off_grid(tmp_path, change: str):
+    """The mosaic of SCOUT's A tiles, rewritten with one thing changed."""
+    import rasterio
+    from rasterio.transform import Affine
+
+    with _open(_mosaic(tmp_path, "A")) as mosaic:
+        cells, crs, transform = mosaic.read(1), mosaic.crs, mosaic.transform
+    a, b, c, d, e, f = tuple(transform)[:6]
+    if change == "corner":
+        transform = Affine(a, b, c + a / 2, d, e, f)
+    elif change == "crs":
+        crs = "EPSG:4326"
+    elif change == "size":
+        cells = cells[:, :500]
+    path = tmp_path / f"off-grid-{change}.tif"
+    profile = {"driver": "GTiff", "width": cells.shape[1], "height": cells.shape[0], "count": 1,
+               "dtype": "float32", "crs": crs, "transform": transform}
+    with rasterio.open(path, "w", **profile) as out:
+        out.write(cells, 1)
+    return _open(path)
 
 
 @pytest.mark.parametrize(
     "change, sentence",
     [
-        ("zoom 15", "Deep Umbra reads zoom-16 tiles, and these are zoom 15"),
-        ("no tiles", "Accumulated Shadow has no tiles to read"),
-        ("not tiles", "Accumulated Shadow reads the tiles of Rasterize Buildings"),
+        ("zoom 15", "Deep Umbra reads zoom-16 tiles, and this raster is at zoom 15"),
+        ("not a raster", "Accumulated Shadow reads a raster of building heights"),
+        ("crs", "Deep Umbra reads heights in EPSG:3395 (World Mercator) on SCOUT's tile grid, and this raster is in EPSG:4326"),
+        ("corner", "This one's corner is not a tile's corner"),
+        ("size", "This one is not a whole number of tiles"),
     ],
 )
-def test_tiles_deep_umbra_cannot_read_are_refused_in_a_sentence(workspace, change, sentence):
-    tiles = _tiles("A")
+def test_rasters_deep_umbra_cannot_read_are_refused_in_a_sentence(workspace, tmp_path, change, sentence):
+    import pandas as pd
+
     if change == "zoom 15":
-        tiles["zoom"] = 15
-    elif change == "no tiles":
-        tiles = tiles.iloc[0:0]
+        value = _open(_mosaic(tmp_path, "A", zoom=15))
+    elif change == "not a raster":
+        value = pd.DataFrame({"zoom": [16], "x": [16814], "y": [24355], "png": [""]})
     else:
-        tiles = tiles.drop(columns=["png"])
-    error = run_node(tiles, workspace, fails=True)
+        value = _off_grid(tmp_path, change)
+    data_type = "dataframe" if change == "not a raster" else "raster"
+    error = run_node(value, workspace, data_type=data_type, fails=True)
     assert sentence in error, error
 
 
-def test_a_curio_without_the_model_says_how_to_add_it(workspace):
+def test_a_curio_without_the_model_says_how_to_add_it(workspace, tmp_path):
     """A pip install has no ``datasets/data.scout.deep-umbra@1``: the backend
     resolves no file for the model, and the node says what to copy where."""
-    error = run_node(_tiles("A"), workspace, model=False, fails=True)
+    error = run_node(_open(_mosaic(tmp_path, "A")), workspace, model=False, fails=True)
     for words in (
         "data.scout.deep-umbra@1, and this Curio does not have it",
         "not in the pip package",
@@ -558,7 +640,7 @@ def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):
     layers = {"A": buildings, "B": namespace["remove"](buildings)}
     assert len(layers["B"]) == 108
 
-    with staged(tmp_path, RASTER_PACKAGE / "sources", "scout_raster_conversion", "convert_to_raster") as (convert,):
+    with staged(tmp_path, RASTER_PACKAGE / "sources", RASTER_MODULE, "convert_to_raster") as (convert,):
         for scenario, layer in layers.items():
             out = tmp_path / f"{scenario}_rasters"
             convert.convert_raster(vector_in=layer, attribute="height", zoom=16, raster_out=str(out))

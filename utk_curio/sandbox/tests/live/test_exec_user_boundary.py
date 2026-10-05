@@ -549,34 +549,42 @@ SCOUT_A_RASTERS = LAUNCH_DIR + "/utk_curio/backend/tests/test_packages/fixtures/
 
 
 def test_scouts_shadow_model_runs_as_the_exec_user():
-    """The Accumulated Shadow node's code, as the execution user: the model
-    reaches the child staged like any dataset, onnxruntime opens it and runs
-    it there under the stack's limits, and the node returns its mosaic and its
-    metrics: SCOUT's mean accumulated shadow for these tiles, 128.6 minutes."""
-    body = textwrap.indent(textwrap.dedent("""
-        import base64
-        import os
+    """The Accumulated Shadow node's code, as the execution user, on the height
+    mosaic a Rasterize Buildings run hands on (here of SCOUT's committed tiles):
+    the model reaches the child staged like any dataset, onnxruntime opens it
+    and runs it there under the stack's limits, and the node returns its mosaic
+    and its metrics: SCOUT's mean accumulated shadow for these tiles, 128.6
+    minutes."""
+    heights = textwrap.indent(textwrap.dedent("""
+        import rasterio
+        from scout_raster_conversion.node_outputs import read_tiles, write_mosaic
 
-        import pandas as pd
+        return rasterio.open(write_mosaic(read_tiles(%r), 550, curio_output_file("scout-a-heights.tif")))
+    """ % SCOUT_A_RASTERS).strip("\n"), "    ")
+    produced = assert_ran(_request("/exec", {
+        "code": heights + "\n",
+        "file_path": "",
+        "nodeType": "scout.raster-conversion/rasterize-buildings",
+        "dataType": "",
+        "user_key": USER_KEY,
+        "save_dataset": False,
+        "package_modules": {"root": RASTER_CONVERSION_SOURCES, "names": ["scout_raster_conversion"]},
+    }), "writing SCOUT's tiles as one mosaic")
+    assert produced["output"]["dataType"] == "raster", produced["output"]
+    body = textwrap.indent(textwrap.dedent("""
         from scout_shadow.node_outputs import accumulated_shadow, open_model
 
-        rows = []
-        for name in sorted(os.listdir(%r)):
-            zoom, x, y = (int(part) for part in name[:-4].split("_"))
-            with open(os.path.join(%r, name), "rb") as handle:
-                png = base64.b64encode(handle.read()).decode("ascii")
-            rows.append({"zoom": zoom, "x": x, "y": y, "png": png})
         model = open_model(lambda: curio_load_data("data.scout.deep-umbra"))
-        mosaic, metrics = accumulated_shadow(pd.DataFrame(rows), "summer", model, curio_output_file)
+        mosaic, metrics = accumulated_shadow(arg, "summer", model, curio_output_file)
         print(mosaic.crs.to_epsg(), mosaic.width, mosaic.height)
         print(round(float(metrics["mean_minutes"].iloc[0]), 2))
         return mosaic, metrics
-    """ % (SCOUT_A_RASTERS, SCOUT_A_RASTERS)).strip("\n"), "    ")
+    """).strip("\n"), "    ")
     result = assert_ran(_request("/exec", {
         "code": body + "\n",
-        "file_path": "",
+        "file_path": produced["output"]["path"],
         "nodeType": "scout.shadow/accumulated-shadow",
-        "dataType": "",
+        "dataType": produced["output"]["dataType"],
         "user_key": USER_KEY,
         "save_dataset": False,
         "package_modules": {"root": SHADOW_SOURCES, "names": ["scout_shadow"]},

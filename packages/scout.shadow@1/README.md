@@ -4,13 +4,13 @@ SCOUT's accumulated shadow simulation, ported from
 [SCOUT](https://github.com/urban-toolkit/scout)
 (`backend/compute/accumulated_shadow_simulation`). Deep Umbra, SCOUT's shadow
 model, predicts how much of a season's day the ground spends in shadow, from the
-height tiles of [SCOUT Raster Conversion](../scout.raster-conversion@1/README.md).
+height mosaic of [SCOUT Raster Conversion](../scout.raster-conversion@1/README.md).
 
 ## Nodes
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `scout.shadow/accumulated-shadow` | Accumulated Shadow | The `(mosaic, tiles)` output of Rasterize Buildings, or its tiles table | `(mosaic, metrics)`: one RASTER and one table |
+| `scout.shadow/accumulated-shadow` | Accumulated Shadow | The height mosaic of Rasterize Buildings, or its `(mosaic, tiles)` output | `(mosaic, metrics)`: one RASTER and one table |
 
 ## Settings
 
@@ -20,25 +20,27 @@ The node's **Widgets** tab holds its setting:
 |---|---|---|
 | Season (`season`) | `summer` | spring, summer or winter: the season's sun, and the minutes a day of shadow counts for (540, 720 and 360) |
 
-Deep Umbra reads zoom-16 tiles where 255 is 550 m, Rasterize Buildings' defaults;
-the node refuses tiles drawn at another zoom level or maximum height.
+The input is a raster of building heights in metres in EPSG:3395 (World
+Mercator) on the zoom-16 tile grid, 256 cells a tile: Rasterize Buildings'
+mosaic at its defaults. Deep Umbra reads heights where 255 is 550 m, so the node
+refuses a raster at another zoom level, off the tile grid, or drawn with another
+maximum height.
 
 ## Outputs
 
-- **mosaic**: the accumulated shadow of every tile, side by side in one GeoTIFF in
-  EPSG:3395 (World Mercator) on the tiles' own grid, one band in minutes. Places
-  no tile covers are nodata. An Autark map draws it as `input_0`:
+- **mosaic**: the accumulated shadow of every tile of the input, on the input's
+  own grid, one band in minutes. An Autark map draws it as `input_0`:
 
   ```json
   {"map": {"layerRefs": [{"dataRef": "input_0", "getFnv": "band_1"}]}}
   ```
 
 - **metrics**: one row: `season`, and `mean_minutes` and `median_minutes`, the mean
-  and median accumulated shadow over the ground of every tile (its pixels with no
-  building), as SCOUT reports them.
+  and median accumulated shadow over the ground (cells with no building), as
+  SCOUT reports them.
 
 Deep Umbra predicts each tile from the tile and its eight neighbours, so a tile
-at the edge of the area sees no buildings beyond it.
+at the edge of the raster sees no buildings beyond it.
 
 ## The model
 

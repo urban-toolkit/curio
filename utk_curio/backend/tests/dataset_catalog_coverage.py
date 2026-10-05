@@ -15,8 +15,9 @@ without pulling Playwright in. ``pyarrow`` and ``rasterio``/``numpy`` are
 imported lazily inside the parquet and geotiff expectations, so collection stays
 in the milliseconds - and both are declared dependencies of ``curio.builtin@1``
 and ``curio.weather@1``, which ``python curio.py setup`` installs before any
-suite runs. ``onnxruntime`` is imported lazily inside the ONNX expectations the
-same way; ``curio.streetvision@1`` and ``scout.shadow@1`` declare it.
+suite runs. The ONNX expectations need no model library: they read the
+model's declared inputs and outputs from its protobuf bytes, so they hold on a
+test host without onnxruntime, which only node packages bring.
 
 WHY THE COMMITTED FILE IS THE ORACLE, NOT THE MANIFEST
 ------------------------------------------------------
@@ -450,32 +451,86 @@ return df
 '''
 
 
+def _protobuf_fields(data: bytes):
+    """``(field number, wire type, value)`` for each field of one protobuf
+    message: an int for wire type 0, the payload's bytes for wire type 2."""
+    def varint(at: int) -> tuple[int, int]:
+        value = shift = 0
+        while True:
+            byte = data[at]
+            at += 1
+            value |= (byte & 0x7F) << shift
+            shift += 7
+            if not byte & 0x80:
+                return value, at
+
+    at = 0
+    while at < len(data):
+        tag, at = varint(at)
+        field, wire = tag >> 3, tag & 7
+        if wire == 0:
+            value, at = varint(at)
+        elif wire == 2:
+            length, at = varint(at)
+            value, at = data[at:at + length], at + length
+        elif wire in (1, 5):
+            width = 8 if wire == 1 else 4
+            value, at = data[at:at + width], at + width
+        else:
+            raise AssertionError(f"protobuf wire type {wire} is not one ONNX uses")
+        yield field, wire, value
+
+
+def _declared_ports(graph: bytes, field_number: int) -> list[tuple[str, list]]:
+    """``(name, dims)`` of a ``GraphProto``'s inputs (field 11) or outputs
+    (field 12), as onnx.proto declares them: ``ValueInfoProto.name`` (1) and
+    ``.type`` (2) > ``TypeProto.tensor_type`` (1) > ``.shape`` (2) >
+    ``TensorShapeProto.dim`` (1) > ``dim_value`` (1) or ``dim_param`` (2).
+    A dimension with neither is ``None``, as onnxruntime reports it."""
+    ports = []
+    for field, _wire, value_info in _protobuf_fields(graph):
+        if field != field_number:
+            continue
+        name, dims = "", []
+        for vfield, _w, vvalue in _protobuf_fields(value_info):
+            if vfield == 1:
+                name = vvalue.decode("utf-8")
+            elif vfield == 2:
+                for tfield, _w2, tensor in _protobuf_fields(vvalue):
+                    if tfield != 1:
+                        continue
+                    for sfield, _w3, shape in _protobuf_fields(tensor):
+                        if sfield != 2:
+                            continue
+                        for dfield, _w4, dim in _protobuf_fields(shape):
+                            if dfield != 1:
+                                continue
+                            size = None
+                            for kind, _w5, given in _protobuf_fields(dim):
+                                size = given if kind == 1 else given.decode("utf-8") if kind == 2 else size
+                            dims.append(size)
+        ports.append((name, dims))
+    return ports
+
+
 def _onnx_expectations(data_file: Path) -> dict[str, str]:
-    """Run the committed model the way the loader suffix runs it, and read its
-    inputs and outputs off the table the suffix returns."""
-    import textwrap
+    """The committed model's inputs and outputs as its file declares them,
+    read from the protobuf with no model library, in the form the loader
+    suffix prints them after running the model in the sandbox: an input's
+    declared shape, an output's computed one. A dynamic output dimension has
+    no declared size to expect, so it is refused here."""
+    model = dict((field, value) for field, _wire, value in _protobuf_fields(data_file.read_bytes()) if field == 7)
+    assert 7 in model, f"{data_file} holds no graph"
+    inputs = _declared_ports(model[7], 11)
+    outputs = _declared_ports(model[7], 12)
+    assert inputs and outputs, f"{data_file} declares no inputs or outputs"
+    dynamic = [name for name, dims in outputs if not all(isinstance(d, int) for d in dims)]
+    assert not dynamic, f"{data_file}: outputs {dynamic} have dynamic dimensions; expect them by hand"
 
-    try:
-        import onnxruntime as ort
-    except ImportError as exc:  # pragma: no cover - environment problem
-        raise AssertionError(
-            f"reading {data_file.name} needs onnxruntime, declared by "
-            f"packages/curio.streetvision@1 and packages/scout.shadow@1, OPT-IN "
-            f"catalog packages: boot once with `python curio.py start "
-            f"--with-examples` (what scripts/test.sh does before this suite runs), "
-            f"or pip-install it directly."
-        ) from exc
+    def ports(declared) -> str:
+        return ",".join(name + ":" + "x".join(str(d) for d in dims) for name, dims in declared)
 
-    namespace: dict = {}
-    exec("def describe(session):\n" + textwrap.indent(_ONNX_LOADER_SUFFIX, "    "), namespace)
-    table = namespace["describe"](ort.InferenceSession(str(data_file), providers=["CPUExecutionProvider"]))
-    assert len(table), f"{data_file} declares no inputs or outputs"
-
-    def ports(kind: str) -> str:
-        rows = table[table["port"] == kind]
-        return ",".join(n + ":" + s for n, s in zip(rows["name"], rows["shape"]))
-
-    return {"CURIO_E2E_INPUTS": ports("input"), "CURIO_E2E_OUTPUTS": ports("output")}
+    return {"CURIO_E2E_INPUTS": ports(inputs), "CURIO_E2E_OUTPUTS": ports(outputs)}
 
 
 FORMAT_PLANS: dict[str, FormatPlan] = {

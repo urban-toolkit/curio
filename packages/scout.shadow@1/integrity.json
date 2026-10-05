@@ -1,10 +1,10 @@
 {
   "sha256": {
-    "README.md": "a79454e77e47ce689b10ae2c3c16c6fd1879c7e7f975b32fdb5568450dd8906e",
-    "manifest.json": "3a6f8a112ea862d1bffd29a599beab86f7835bce6c13ef315fff779b389496fb",
-    "sources/accumulated-shadow.py": "24c6903272f56c590c18716aa17018cd73bf0dd6acaef6e0a49de8095bf840a1",
+    "README.md": "a0f53fa6d8eff1ddc311024df7797f9a64aea042b790ccfc250607db9c834882",
+    "manifest.json": "a7933072bae58d8c490ab5733af87bc162d8d11e205770d7f2675f6f0144518f",
+    "sources/accumulated-shadow.py": "fb49ef3791bee9b228c08cc4c8d9c7373fdf548f3ef6a07ad9004f2886f8fcb9",
     "sources/scout_shadow/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "sources/scout_shadow/deep_umbra.py": "00a6d791d1690bc8bb7369b4f6aa72a868b5382cd57e03c3e6cc9e126788f121",
-    "sources/scout_shadow/node_outputs.py": "0910959f327a7c7193d1bf756e975632e7d9f8cf06f4dff54ec29186d33f75aa"
+    "sources/scout_shadow/deep_umbra.py": "c1b39974ef2dfdcc4a76eb075754440cc8c52f1c09d5acfce9289b7c31ebd76b",
+    "sources/scout_shadow/node_outputs.py": "f1998067a8312d23f6f6a336186c8cfe11080170d7aadc6b1039b4526515753e"
   }
 }

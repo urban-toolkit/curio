@@ -139,7 +139,8 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     stacked = _saved_output(page, chart)
     assert stacked["dataType"] == "dataframe", stacked["dataType"]
     table = stacked["data"]
-    assert list(table) == ["scenario", "scenario_name", "season", "mean_minutes", "median_minutes"], list(table)
+    # The read-back returns the columns by name, sorted, not in the table's order.
+    assert sorted(table) == sorted(["scenario", "scenario_name", "season", "mean_minutes", "median_minutes"]), list(table)
     assert table["scenario"] == ["existing", "towers-removed"], table["scenario"]
     assert table["scenario_name"] == ["Existing", "Towers removed"], table["scenario_name"]
     assert table["season"] == ["summer", "summer"], table["season"]
