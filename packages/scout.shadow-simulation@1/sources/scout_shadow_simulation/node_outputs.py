@@ -6,7 +6,8 @@ SCOUT's ``deep_umbra.py``.
   Rasterize Buildings' mosaic (EPSG:3395), one float32 band of the minutes
   of the day each cell is in shadow, for an Autark map: a tile's gray level
   times the day's minutes over 255, so in SCOUT's steps (2.8 minutes in
-  summer). A cell of a tile with no building near it is 0.
+  summer). A building's pixels, and a tile with no building near it, hold
+  no data (NaN), so a map draws the ground's shadow alone.
 - **tiles**: one row per tile, ``zoom``, ``x``, ``y`` and ``png``, the 8-bit
   gray PNG (base64) SCOUT writes for it, where 255 is shadow all day, and
   ``mean_shadow_min``, the mean over its ground (the pixels with no
@@ -15,8 +16,9 @@ SCOUT's ``deep_umbra.py``.
 Deep Umbra answers for every pixel of a tile, those under a building too,
 where it gives next to nothing. SCOUT's PNG rounds most of those to 0 and
 its metrics read the ground alone; here a building's pixels are 0 in the PNG
-and the mosaic, so a map shows the shadow on the ground and nothing on the
-buildings that cast it. The metrics are SCOUT's, on the ground, unrounded.
+and no data in the mosaic, so a map shows the shadow on the ground, 0
+included as SCOUT draws it, and nothing on the buildings that cast it. The
+metrics are SCOUT's, on the ground, unrounded.
 - **summary**: one row, SCOUT's metrics: ``Mean Acc shadow`` and
   ``Median Acc shadow`` over the ground of every tile, in minutes, and the
   season.
@@ -61,7 +63,7 @@ def rasterized(arg):
         raise ValueError(
             f"Deep Umbra reads zoom-{MODEL_ZOOM} tiles where 255 is {MODEL_MAX_HEIGHT:g} m; these are "
             f"zoom {zoom} with 255 at {max_height:g} m. Set Rasterize Buildings' zoom level to "
-            f"{MODEL_ZOOM} and its maximum height to {MODEL_MAX_HEIGHT:g}."
+            f"{MODEL_ZOOM}."
         )
     return mosaic, tiles
 
@@ -103,7 +105,8 @@ def simulate_shadows(arg, model, season, output_file):
         input_height, prediction = predict_shadow(model, grid, season, zoom, x, y)
         gray, minutes, ground = shadow_tile(input_height, prediction, season)
         gray = np.where(ground, gray, 0).astype("uint8")
-        minutes_by_tile[(x, y)] = gray.astype("float32") * np.float32(season_minutes(season) / 255.0)
+        cells = gray.astype("float32") * np.float32(season_minutes(season) / 255.0)
+        minutes_by_tile[(x, y)] = np.where(ground, cells, np.float32(np.nan))
         ground_minutes.append(minutes[ground].ravel())
         rows.append({
             "zoom": zoom, "x": x, "y": y, "png": png_base64(gray),
@@ -121,10 +124,10 @@ def simulate_shadows(arg, model, season, output_file):
     tags = heights.tags()
     first_x, first_y = int(tags["tile_x"]), int(tags["tile_y"])
     profile = dict(heights.profile)
-    profile.update(dtype="float32", count=1, nodata=None)
+    profile.update(dtype="float32", count=1, nodata=np.nan)
     path = output_file(mosaic_name(shadows, season, model.id))
     with rasterio.open(path, "w", **profile) as mosaic:
-        mosaic.write(np.zeros((profile["height"], profile["width"]), dtype="float32"), 1)
+        mosaic.write(np.full((profile["height"], profile["width"]), np.nan, dtype="float32"), 1)
         for (x, y), minutes in minutes_by_tile.items():
             window = Window((x - first_x) * TILE, (y - first_y) * TILE, TILE, TILE)
             mosaic.write(minutes, 1, window=window)

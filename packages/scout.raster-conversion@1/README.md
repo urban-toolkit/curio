@@ -19,9 +19,10 @@ The node's **Widgets** tab holds its settings:
 |---|---|---|
 | Height column (`attribute`) | `height` | The column the heights are read from |
 | Zoom level (`zoom`) | `16` | The zoom level of the map tiles |
-| Maximum height (`max_height`) | `550` m | The height drawn as gray level 255 |
 
-Deep Umbra reads zoom-16 tiles where 255 is 550 m.
+A height is drawn as a gray level out of 255, where 255 is 550 m, as SCOUT
+draws it: a fixed value there, and the one Deep Umbra was trained on. Deep
+Umbra reads zoom-16 tiles.
 
 ## Outputs
 

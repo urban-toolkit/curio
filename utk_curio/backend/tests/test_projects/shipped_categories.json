@@ -246,6 +246,25 @@
       "Geometries"
     ]
   },
+  "25-scout-flooding": {
+    "tags": [
+      "Autark"
+    ],
+    "data_type": [
+      "Geometries",
+      "Rasters"
+    ]
+  },
+  "26-scout-weather-routing": {
+    "tags": [
+      "Autark",
+      "Vega-Lite"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries"
+    ]
+  },
   "dataflows/AutkMap": {
     "tags": [
       "Autark",

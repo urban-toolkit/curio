@@ -360,7 +360,7 @@ class TestTheShippedCorpus:
         paths = example_paths()
         curated = [p for p in paths if p.parent.name == "examples"]
         legacy = [p for p in paths if p.parent.name == "dataflows"]
-        assert len(curated) == 24, [p.name for p in curated]
+        assert len(curated) == 26, [p.name for p in curated]
         assert len(legacy) == 23, [p.name for p in legacy]
 
     @pytest.mark.parametrize("path", example_paths(), ids=lambda p: p.stem)
@@ -429,6 +429,8 @@ class TestTheShippedCorpus:
             "21-storage-photos-and-videos",
             "22-storage-audio-recordings",
             "24-scout-building-rasters",
+            "25-scout-flooding",
+            "26-scout-weather-routing",
             "BuildingRasters",
         ]
         assert declared_dependencies(

@@ -92,6 +92,9 @@ EXAMPLE_INVARIANTS = [
     ("24-scout-building-rasters.json", 6, 5,
      {"curio.builtin/data-loading": 1, "scout.raster-conversion/rasterize-buildings": 1,
       "scout.shadow-simulation/simulate-shadows": 1, "curio.builtin/autk-grammar": 3}, False),
+    ("26-scout-weather-routing.json", 4, 3,
+     {"curio.builtin/data-loading": 1, "scout.weather-routing/weather-aware-routes": 1,
+      "curio.builtin/autk-grammar": 1, "curio.builtin/vis-vega": 1}, False),
 ]
 
 

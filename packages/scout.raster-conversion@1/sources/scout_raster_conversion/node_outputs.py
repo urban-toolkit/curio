@@ -9,8 +9,9 @@
   ``<zoom>_<x>_<y>.png``.
 - **mosaic**: the tiles side by side in one GeoTIFF in EPSG:3395, one float32
   band of heights in metres (gray level times the maximum height over 255),
-  for an Autark map. A tile ``convert_raster`` does not write, because no
-  building is near it, is 0, the ground.
+  for an Autark map. The ground, a pixel of gray 0, and a tile
+  ``convert_raster`` does not write, because no building is near it, hold no
+  data (NaN), so a map draws the buildings alone.
 """
 
 import base64
@@ -83,6 +84,11 @@ def tile_pixels(png):
         return np.asarray(image)
 
 
+#: The height SCOUT's ``convert_raster`` draws as gray 255: a constant there,
+#: not an argument, and the one Deep Umbra was trained on.
+MAX_HEIGHT = 550.0
+
+
 def mosaic_name(tiles, max_height):
     """A file name that follows the tiles' content."""
     digest = hashlib.sha1(f"{float(max_height)!r}".encode("ascii"))
@@ -95,12 +101,13 @@ def write_mosaic(tiles, max_height, path):
     """The tiles side by side at *path*, as the module docstring describes."""
     zoom = int(tiles["zoom"].iloc[0])
     metres = float(max_height) / 255.0
-    heights = {
-        (int(row.x), int(row.y)): tile_pixels(row.png).astype("float32") * metres
-        for row in tiles.itertuples(index=False)
-    }
+    heights = {}
+    for row in tiles.itertuples(index=False):
+        gray = tile_pixels(row.png)
+        heights[(int(row.x), int(row.y))] = np.where(gray > 0, gray.astype("float32") * metres, np.nan)
     return mosaic_web_tiles(
         heights, zoom, path, crs=MOSAIC_CRS, tile_size=TILE_SIZE, dtype="float32",
+        fill=np.nan, nodata=np.nan,
         band_descriptions=["height (m)"],
         tags={
             "zoom": zoom, "tile_x": int(tiles["x"].min()), "tile_y": int(tiles["y"].min()),
@@ -109,9 +116,10 @@ def write_mosaic(tiles, max_height, path):
     )
 
 
-def rasterize_buildings(buildings, attribute, zoom, max_height, output_file):
+def rasterize_buildings(buildings, attribute, zoom, output_file, max_height=MAX_HEIGHT):
     """``(mosaic, tiles)`` for *buildings*: SCOUT's ``convert_raster`` at
-    *zoom* and *max_height* on the heights in column *attribute*.
+    *zoom* on the heights in column *attribute*, *max_height* drawn as gray
+    255 (SCOUT's fixed 550 m, which Deep Umbra was trained on).
     *output_file(name)* names where a file the node returns is written."""
     layer = height_layer(buildings, attribute)
     # convert_raster empties the folder it is given, so it gets one of its own.

@@ -61,13 +61,6 @@
           "label": "Zoom level",
           "default": 16,
           "options": {"min": 1, "max": 20, "step": 1}
-        },
-        {
-          "name": "max_height",
-          "type": "number",
-          "label": "Maximum height",
-          "default": 550,
-          "options": {"min": 1, "step": 1, "units": "m"}
         }
       ]
     }

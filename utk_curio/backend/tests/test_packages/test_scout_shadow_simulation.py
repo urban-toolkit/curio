@@ -267,18 +267,25 @@ def test_the_node_returns_scouts_shadows_and_their_mosaic(workspace):
         assert (mosaic.width, mosaic.height, mosaic.count) == (512, 512, 1)
         cells = mosaic.read(1)
         # Deep Umbra's tanh can land a hair past -1 or 1; SCOUT does not clip.
-        assert -0.01 <= cells.min() and cells.max() <= 720.01
-        # Each tile's block is its shadow in minutes: its gray level over 255, times 720.
+        assert -0.01 <= np.nanmin(cells) and np.nanmax(cells) <= 720.01
+        # Each tile's block is its shadow in minutes on the ground: its gray
+        # level over 255, times 720, in SCOUT's steps. A building has no data.
         for r in shadows.itertuples(index=False):
             col, row = r.x - 16814, r.y - 24355
             block = cells[256 * row:256 * (row + 1), 256 * col:256 * (col + 1)]
-            assert np.allclose(block, _gray(r.png) / 255.0 * 720, atol=720 / 255.0 + 1e-3)
+            buildings = _gray(SCOUT_TILES / f"{r.zoom}_{r.x}_{r.y}.png") > 0
+            assert np.isnan(block).mean() == pytest.approx(buildings.mean(), abs=0.01)
+            ground = ~np.isnan(block)
+            assert np.allclose(block[ground], _gray(r.png)[ground] / 255.0 * 720, atol=1e-3)
+            assert (_gray(r.png)[~ground] == 0).all()
     finally:
         mosaic.close()
 
 
 def test_the_season_reaches_the_model(workspace):
     """Winter counts 360 minutes and casts other shadows than summer."""
+    import numpy as np
+
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     result = run_pipeline(workspace, season="winter")
@@ -286,7 +293,7 @@ def test_the_season_reaches_the_model(workspace):
     mosaic, shadows, summary = load_from_duckdb(result["output"]["path"])
     try:
         assert summary["season"].iloc[0] == "winter"
-        assert mosaic.read(1).max() <= 360.01
+        assert np.nanmax(mosaic.read(1)) <= 360.01
         assert mosaic.tags()["day_minutes"] == "360"
         differs = [
             _worst(_gray(r.png), _gray(SCOUT_SHADOWS / f"{r.zoom}_{r.x}_{r.y}.png")) > 1

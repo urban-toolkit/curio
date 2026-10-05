@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/24-scout-building-rasters.json",
-    "sha256": "fda00ad15a49d4dc24288567aa6bb15a4f9930fdba96a750f750089a12815a1c",
+    "sha256": "e6cd370cde130282d40eb9047134ee3caf1a78c3ad2b9a666a0b033707ce9a07",
     "walkthrough": "docs/examples/24-scout-building-rasters.md"
   },
   "prompt": "Load the Chicago Loop buildings, with their heights in metres, from the Data Catalog, keeping only those that reach into a bounding box of west, south, east and north the user can change, the whole Loop by default, and mark them as buildings so a map can raise each footprint to its height. Draw them in 3D on an Autark map coloured by height. Then turn their heights into zoom 16 map tiles and a height mosaic with SCOUT's building rasterizer, leaving its settings at their defaults, and draw the mosaic on a second Autark map. Finally, run SCOUT's Deep Umbra shadow model on the rasterizer's tiles for a summer day, and draw the minutes of shadow on a third Autark map. The rasterizer and the shadow simulation are not part of the standard node set, so whatever provides them needs installing first.",

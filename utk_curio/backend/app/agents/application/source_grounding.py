@@ -272,6 +272,9 @@ def _parse_python(code: str) -> tuple[ast.AST, int] | None:
 #: value IS — not a list of schema hosts to trust.
 SCHEMA_DECLARATION_KEY = "$schema"
 _SCHEMA_KEY_RE = re.compile(r'"\$schema"\s*:\s*$')
+#: ``part="RAIN.nc"`` in a ``curio_load_data`` call names a file inside a
+#: catalog dataset (a bundle), not a path on disk; both scanners skip it.
+_PART_KEYWORD_RE = re.compile(r'\bpart\s*=\s*[fFrRbBuU]{0,2}$')
 
 
 def _scan_python(code: str) -> list[SourceRef] | None:
@@ -309,9 +312,16 @@ def _scan_python(code: str) -> list[SourceRef] | None:
                     "catalog-id", arg.value.strip(), max(1, getattr(node, "lineno", 1) - offset),
                     call=_call_name(node),
                 ))
+            # ``curio_load_data("<id>", part="RAIN.nc")`` names a file inside
+            # the catalog dataset, not a path the node reads from disk.
+            for keyword in node.keywords:
+                if keyword.arg == "part" and isinstance(keyword.value, (ast.Constant, ast.JoinedStr)):
+                    call_ids.add(id(keyword.value))
     for node in ast.walk(tree):
         line = max(1, getattr(node, "lineno", 1) - offset)
         if isinstance(node, ast.JoinedStr):
+            if id(node) in call_ids:
+                continue
             prefix, template, dynamic = _joined_str_parts(node)
             if not dynamic:
                 kind = classify_literal(template)
@@ -363,6 +373,8 @@ def _scan_regex(code: str) -> list[SourceRef]:
         # Keyed on the KEY, not on the host: any document's own `$schema`, not
         # a list of schema sites to trust.
         if _SCHEMA_KEY_RE.search(code, 0, match.start()):
+            continue
+        if _PART_KEYWORD_RE.search(code, 0, match.start()):
             continue
         body = match.group("body")
         kind = classify_literal(body)

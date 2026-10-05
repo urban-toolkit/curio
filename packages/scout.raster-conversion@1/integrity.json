@@ -1,10 +1,10 @@
 {
   "sha256": {
-    "README.md": "1330fa3a9540ac6eca0bfc153bd1a5382c603f4f6e2f077e68e04258f7a89068",
-    "manifest.json": "49e955431ee590648b172df6607930657b8b4a2cf4db440c8a0be6e8d33df0af",
-    "sources/rasterize-buildings.py": "c073be14e078792cf64f455864dc3717681da37241fca07a31224a233830c7a1",
+    "README.md": "8ad9bcb203578a241ec96c47e72fcf2b11cfdf0f44bda183a2f40ea95cd6bca4",
+    "manifest.json": "d26a615ee38acf9be447ae0e7522abe1ab0a3c254863e7d34bb7fb9db8e90d14",
+    "sources/rasterize-buildings.py": "9044a92513728ce2d963f1e17591dc7b149b305362d1bc276ac5e100d0fa6676",
     "sources/scout_raster_conversion/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sources/scout_raster_conversion/convert_to_raster.py": "9e5e844214f628735e362d23004b375e2ea825e55c7321bf026ad7fdcdd577ff",
-    "sources/scout_raster_conversion/node_outputs.py": "da13cee842fd0dcea13bd457456247a673d8ef284c1ba960b3f81a19405b7f30"
+    "sources/scout_raster_conversion/node_outputs.py": "5beb9f30ec6d7d374bfdd3b42af4007e55d42af41b6a997f77bf66d89d6cb160"
   }
 }

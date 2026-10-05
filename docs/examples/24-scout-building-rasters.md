@@ -1,4 +1,4 @@
-# Example: SCOUT building rasters
+# Example: SCOUT shadow simulation
 
 SCOUT's Deep Umbra shadow model does not read buildings: it reads map tiles in
 which each pixel's gray level is the height of the building under it. This
@@ -88,17 +88,21 @@ buildings, so it raises each footprint to its `height`:
         "dataRef": "[!! input 0 !!]",
         "getFnv": "height",
         "getFnvType": "quantitative",
-        "colorMapInterpolator": "interpolateViridis"
+        "colorMapInterpolator": "interpolateViridis",
+        "legendTitle": "Building height (m)"
       }
     ]
   }
 }
 ```
 
+`legendTitle` is Curio's own key, not the grammar's: it titles the legend,
+which would otherwise read `input_0`, the table the input became.
+
 ## Rasterize them
 
 Rasterize Buildings is a package node: its code calls the converter module the
-package ships beside it, and its **Widgets** tab holds the three settings.
+package ships beside it, and its **Widgets** tab holds its two settings.
 
 ```python
 """Rasterize Buildings: SCOUT's building rasterizer, "OSM vector to raster".
@@ -109,9 +113,9 @@ Output: (mosaic, tiles).
 - mosaic: one raster in EPSG:3395, each cell a height in metres. An Autark map
   draws it as input_0, band band_1.
 - tiles: one row per map tile, with zoom, x, y and png, the 8-bit grayscale
-  PNG (base64) SCOUT's Deep Umbra shadow model reads, where 255 is the
-  maximum height.
-The Widgets tab sets the height column, the zoom level and the maximum height.
+  PNG (base64) SCOUT's Deep Umbra shadow model reads, where 255 is 550 m,
+  SCOUT's fixed maximum height.
+The Widgets tab sets the height column and the zoom level.
 Ported from SCOUT, https://github.com/urban-toolkit/scout.
 """
 from scout_raster_conversion.node_outputs import rasterize_buildings
@@ -120,7 +124,6 @@ return rasterize_buildings(
     arg,
     attribute=[!! attribute !!],
     zoom=int([!! zoom !!]),
-    max_height=float([!! max_height !!]),
     output_file=curio_output_file,
 )
 ```
@@ -129,7 +132,10 @@ return rasterize_buildings(
 |---|---|---|
 | Height column | `height` | The column the heights are read from |
 | Zoom level | `16` | The zoom level of the tiles; Deep Umbra reads zoom 16 |
-| Maximum height | `550` m | The height drawn as gray level 255; Deep Umbra expects 550 |
+
+A height is drawn as a gray level out of 255, where 255 is 550 m. SCOUT fixes
+that maximum in its rasterizer, and Deep Umbra was trained on it, so the node
+has no widget for it.
 
 The node returns two things, `(mosaic, tiles)`:
 
@@ -138,8 +144,8 @@ The node returns two things, `(mosaic, tiles)`:
 - **tiles**, a table: one row per 256 by 256 tile, with its `zoom`, `x`, `y`
   and its PNG in base64, the file SCOUT names `<zoom>_<x>_<y>.png`.
 
-A tile is written only where a building is near it, so the corners of the
-mosaic with no tile are 0, the ground.
+A tile is written only where a building is near it. The ground, and the
+corners of the mosaic with no tile, hold no data, so a map leaves them clear.
 
 ## Draw the mosaic
 
@@ -236,7 +242,8 @@ A third Autark map reads the shadow mosaic as `input_0`:
       {
         "dataRef": "[!! input 0 !!]",
         "getFnv": "band_1",
-        "colorMapInterpolator": "interpolateReds"
+        "colorMapInterpolator": "interpolateReds",
+        "legendTitle": "Accumulated shadow (minutes)"
       }
     ]
   }
@@ -250,9 +257,9 @@ towers the height mosaic shows; the river and the open plazas stay dark.
 
 - **A smaller box runs faster.** Deep Umbra shades each tile in about a third
   of a second, so the box sets how long Simulate Shadows takes.
-- **Changing a widget re-runs the rasterizer.** A lower maximum height makes
-  every tile brighter; Deep Umbra's own tiles keep 550 m, and Simulate Shadows
-  stops with a message saying so when the tiles were made otherwise.
+- **Changing a widget re-runs the rasterizer.** Deep Umbra reads zoom-16
+  tiles, and Simulate Shadows stops with a message saying so when the tiles
+  were made at another zoom.
 - **A taller box takes longer.** The Loop's 24 tiles take about five seconds;
   the whole city is tens of thousands of tiles.
 - **Deep Umbra takes about a third of a second per tile.** The Loop's 24

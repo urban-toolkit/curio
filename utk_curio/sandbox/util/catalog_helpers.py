@@ -7,6 +7,10 @@
     xarray Dataset for a NetCDF file. For a GeoTIFF,
     ``curio_load_data("<id>", bounds=(west, south, east, north))`` reads only
     the cells inside the bounds, in the raster's CRS, at its own cell size.
+    For a dataset of several files (a ``bundle``),
+    ``curio_load_data("<id>", part="<file>")`` reads the one its
+    ``bundle.json`` lists by that file name or label, and ``bounds`` then
+    windows it if it is a GeoTIFF.
 ``curio_raster_calculate(operation, rasters, codes=None)``,
 ``curio_raster_statistics(raster, band=1, mask=None, mask_values=None, where=None)``
     The Raster Calculator and Raster Statistics nodes' steps
@@ -252,6 +256,20 @@ class CurioModel:
         return f"<CurioModel {self.id}>"
 
 
+def bundle_part(path: str, part: str, dataset_id: str = "the dataset") -> tuple[str, str | None]:
+    """``(file, format)`` of the part of the bundle at *path* (its
+    ``data/bundle.json``) that *part* names: by its file's name
+    (``2020_2040_NbS.tif``) or by its label."""
+    base = os.path.dirname(os.path.dirname(path))
+    with open(path, encoding="utf-8") as handle:
+        parts = [p for p in json.load(handle).get("parts", []) if isinstance(p, dict) and p.get("file")]
+    for entry in parts:
+        if part in (os.path.basename(entry["file"]), entry.get("label")):
+            return os.path.join(base, entry["file"]), entry.get("format") or _format_of(entry["file"], None)
+    names = ", ".join(os.path.basename(p["file"]) for p in parts)
+    raise ValueError(f"{dataset_id} has no file {part!r}; its files are {names}.")
+
+
 def _renamed(old: str, replacement: str) -> Callable[..., Any]:
     def gone(*_args, **_kwargs):
         raise RuntimeError(f"{old} was renamed: use {replacement}.")
@@ -298,7 +316,7 @@ def install_catalog_helpers(
 
         return str(python_raster_dir() / name)
 
-    def curio_load_data(dataset_id, bounds=None):
+    def curio_load_data(dataset_id, bounds=None, part=None):
         dataset_id = str(dataset_id)
         info = known_formats.get(dataset_id, {})
         # The backend resolves only the ids that are collections into
@@ -307,8 +325,20 @@ def install_catalog_helpers(
         if info.get("format") == "collection" or dataset_id in known_collections:
             if bounds is not None:
                 raise ValueError(f"bounds read a window of a raster, and {dataset_id} is a collection.")
+            if part is not None:
+                raise ValueError(f"part names one file of a dataset of several, and {dataset_id} is a collection.")
             return curio_load_collection(dataset_id)
         path = data_path(dataset_id)
+        if part is not None:
+            fmt = _format_of(path, info.get("format"))
+            if fmt != "bundle":
+                raise ValueError(
+                    f"part names one file of a dataset of several files, and {dataset_id} is one "
+                    f'{fmt or "file"}: load it without part, curio_load_data("{dataset_id}").'
+                )
+            path, part_format = bundle_part(path, part, dataset_id)
+            info = {"format": part_format}
+            dataset_id = f"{dataset_id} ({part})"
         if bounds is None:
             return read_dataset(path, info.get("format"), layer_type=info.get("layerType"))
         fmt = _format_of(path, info.get("format"))

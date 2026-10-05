@@ -30,7 +30,7 @@ model.curio.ddrnet23-slim@1/
   files/ddrnet23_slim.data
 ```
 
-The manifest says which runtime runs the model (**ONNX** or **Transformers**), its task, and how an image is prepared for it. The task is **semantic segmentation**, a class for every pixel, with the **labels** of its classes; or **image to image**, images in and an image out, which the node that runs the model prepares itself. A model is not a dataset and is never added to a dataflow: a node's code names the model it runs.
+The manifest says which runtime runs the model (**ONNX** or **Transformers**), its task, and how an image is prepared for it. The task is **semantic segmentation**, a class for every pixel, with the **labels** of its classes; **image to image**, images in and an image out; or **node regression**, a graph in (node features and edges) and values for each node out. The node that runs an image-to-image or node-regression model prepares its inputs itself. A model is not a dataset and is never added to a dataflow: a node's code names the model it runs.
 
 ### What ships with Curio
 
@@ -38,10 +38,13 @@ The manifest says which runtime runs the model (**ONNX** or **Transformers**), i
 |---|---|---|---|
 | DDRNet23-Slim (street scenes) | ONNX | Semantic segmentation, the 19 Cityscapes classes: road, sidewalk, building, wall, fence, pole, traffic light, traffic sign, vegetation, terrain, sky, person, rider, car, truck, bus, train, motorcycle, bicycle | MIT; trained on Cityscapes |
 | Deep Umbra (accumulated shadows) | ONNX | Image to image: building heights, latitude and season in, the shadow of a day out | MIT; [Deep Umbra](https://github.com/uic-evl/deep-umbra), the weights SCOUT runs |
+| SCOUT weather GNN (weather at road nodes) | ONNX | Node regression: a road graph with each node's coordinates and nearest weather cell in, rain, temperature, humidity and wind at each node out | To be confirmed; the weights SCOUT's routing runs |
 
 DDRNet23-Slim is about 23 MB and labels a street photo in a fraction of a second on a CPU. A new **Image Segmentation** node runs it.
 
 Deep Umbra is about 11 MB and draws the shadow of one map tile in under a second on a CPU. The **Simulate Shadows** node of the SCOUT Shadow Simulation package runs it on the height tiles **Rasterize Buildings** makes. It is an ONNX export of the TensorFlow checkpoint SCOUT runs ([`scripts/export_deep_umbra_onnx.py`](../scripts/export_deep_umbra_onnx.py)): on SCOUT's own high-rise example it draws SCOUT's committed shadows within two gray levels of 255, and SCOUT's metrics within a tenth of a minute.
+
+The SCOUT weather GNN is about 50 KB: two GraphSAGE layers and a linear head. The **Weather-Aware Routes** node of the SCOUT Weather Routing package runs it on a road network to weigh each street by the weather a trip meets there. It is an ONNX export of the PyTorch Geometric checkpoint SCOUT's routing loads ([`scripts/export_scout_weather_gnn_onnx.py`](../scripts/export_scout_weather_gnn_onnx.py)), so neither PyTorch nor PyTorch Geometric is needed; its graph takes `x`, `(nodes, 7)`, and `edge_index`, `(2, edges)`, and the node draws SCOUT's own routes with it ([example 26](examples/26-scout-weather-routing.md)).
 
 ### Storage layers
 
@@ -150,10 +153,10 @@ A dataflow names its models by id. Someone you share it with runs a shipped mode
 | `name`, `version` | Yes | What the card says, and the manifest's own version string. |
 | `compatibility.major` | | Defaults to 1. Together with `id` it forms the folder name. |
 | `runtime` | Yes | `onnx` or `transformers`. |
-| `task` | Yes | `semantic-segmentation` or `image-to-image`. |
+| `task` | Yes | `semantic-segmentation`, `image-to-image` or `node-regression`. |
 | `entry` | Yes | For `onnx`, the graph file; for `transformers`, the folder of the checkpoint. A path inside the model's folder. |
 | `labels` | For an `onnx` segmentation model | The classes, in the order the model numbers them. An `image-to-image` model has none. |
-| `input` | For `onnx` | How an image is prepared: `width` and `height` (8 to 8192 pixels), `dtype` (`uint8` or `float32`), `layout` (`NCHW`, or `NHWC` for an `image-to-image` model), `scale`, and an optional `mean` and `std` of three numbers each. |
+| `input` | For an `onnx` image model | How an image is prepared: `width` and `height` (8 to 8192 pixels), `dtype` (`uint8` or `float32`), `layout` (`NCHW`, or `NHWC` for an `image-to-image` model), `scale`, and an optional `mean` and `std` of three numbers each. |
 | `license`, `licenseFile` | `license` | The license, and the file in the folder that holds its text. |
 | `description`, `publisher`, `homepage`, `tags`, `sizeBytes` | | Shown on the card and in the details. |
 

@@ -132,6 +132,9 @@ WORKFLOW_FILES = [
     # A package node: the stack installs scout.raster-conversion@1 because the
     # dataflow declares it (--with-examples).
     "docs/examples/24-scout-building-rasters.json",
+    # A package node and a Model Catalog GNN: the stack installs
+    # scout.weather-routing@1 because the dataflow declares it.
+    "docs/examples/26-scout-weather-routing.json",
 ]
 
 

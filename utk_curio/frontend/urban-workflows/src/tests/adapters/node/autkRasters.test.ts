@@ -16,7 +16,8 @@ import {
   RASTER_EXPORT_MISSING,
   framedRaster,
   loadGeoTiffParams,
-  RASTER_OPACITY_GAMMA,
+  RASTER_TRANSFER_FUNCTION,
+  bleedIntoClearCells,
   recolorRasters,
   resolveRasterInputs,
   withRasterSources,
@@ -304,14 +305,28 @@ describe("recolorRasters", () => {
     expect(map.updateRenderInfo).not.toHaveBeenCalled();
   });
 
-  test("draws every cell but the 0s opaque, before the cells are colored again", () => {
+  test("draws every cell with a value opaque, as SCOUT does, before the cells are colored again", () => {
     const map = fakeMap({ input_0: "raster" });
     recolorRasters({ _mapRegistry: new Map([["input_0", map]]) }, {
       map: { layerRefs: [{ dataRef: "input_0", colorMapInterpolator: "interpolateReds" }] },
     });
     const setTransfer = map.layers.input_0.setTransferFunction;
-    expect(setTransfer).toHaveBeenCalledWith({ gamma: RASTER_OPACITY_GAMMA });
+    expect(setTransfer).toHaveBeenCalledWith(RASTER_TRANSFER_FUNCTION);
+    expect(RASTER_TRANSFER_FUNCTION).toEqual({ opacityMin: 1, opacityMax: 1 });
     expect(setTransfer.mock.invocationCallOrder[0]).toBeLessThan(map.updateColorMap.mock.invocationCallOrder[0]);
+  });
+
+  test("its clear cells take a neighbor's color once the cells are colored", () => {
+    const map = fakeMap({ input_0: "raster" });
+    const layer = map.layers.input_0;
+    // One row: a red cell with a value, then a cell with no data.
+    layer.rasterResX = 2;
+    layer.rasterResY = 1;
+    layer.rasterData = new Float32Array([200, 10, 10, 255, 0, 0, 0, 0]);
+    recolorRasters({ _mapRegistry: new Map([["input_0", map]]) }, {
+      map: { layerRefs: [{ dataRef: "input_0", colorMapInterpolator: "interpolateReds" }] },
+    });
+    expect(Array.from(layer.rasterData)).toEqual([200, 10, 10, 255, 200, 10, 10, 0]);
   });
 
   test("a raster with isColorMap false keeps its colors and hides its legend", () => {
@@ -338,5 +353,34 @@ describe("recolorRasters", () => {
   test("does nothing for a grammar without a map registry or a document without a map", () => {
     expect(() => recolorRasters({}, { map: { layerRefs: [{ dataRef: "a", colorMapInterpolator: "x" }] } })).not.toThrow();
     expect(() => recolorRasters({ _mapRegistry: new Map() }, { plot: {} })).not.toThrow();
+  });
+});
+
+describe("bleedIntoClearCells", () => {
+  // Four values a cell: red, green, blue, alpha.
+  const cell = (rgba: Float32Array, i: number) => Array.from(rgba.slice(i * 4, i * 4 + 4));
+
+  test("a clear region takes the color of the nearest cell with a value, and stays clear", () => {
+    // 4 by 1: blue, clear, clear, red.
+    const rgba = new Float32Array([0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 255]);
+    bleedIntoClearCells(rgba, 4, 1);
+    expect(cell(rgba, 1)).toEqual([0, 0, 255, 0]);
+    expect(cell(rgba, 2)).toEqual([255, 0, 0, 0]);
+    expect(cell(rgba, 0)).toEqual([0, 0, 255, 255]);
+    expect(cell(rgba, 3)).toEqual([255, 0, 0, 255]);
+  });
+
+  test("it reaches across rows and through a whole clear region", () => {
+    // 3 by 3, one green cell in a corner.
+    const rgba = new Float32Array(9 * 4);
+    rgba.set([0, 255, 0, 255], 0);
+    bleedIntoClearCells(rgba, 3, 3);
+    for (let i = 1; i < 9; i++) expect(cell(rgba, i)).toEqual([0, 255, 0, 0]);
+  });
+
+  test("a raster with no value at all is left as it is", () => {
+    const rgba = new Float32Array(4 * 4);
+    bleedIntoClearCells(rgba, 2, 2);
+    expect(Array.from(rgba).every((v) => v === 0)).toBe(true);
   });
 });

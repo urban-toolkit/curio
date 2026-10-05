@@ -6,15 +6,18 @@ node needs to run it, so the node hard-codes nothing:
 
 - ``runtime``: ``onnx`` (one ``.onnx`` file, with any external data next to
   it) or ``transformers`` (a checkpoint folder ``from_pretrained`` reads);
-- ``task``: ``semantic-segmentation``, one label per pixel, or
-  ``image-to-image``, images in and an image out, which the node that runs
-  the model feeds itself (``CurioModel.run``);
+- ``task``: ``semantic-segmentation``, one label per pixel,
+  ``image-to-image``, images in and an image out, or ``node-regression``, a
+  graph in (node features and edges) and values for each node out; the node
+  that runs an ``image-to-image`` or ``node-regression`` model feeds it
+  itself (``CurioModel.run``);
 - ``entry``: the ``.onnx`` file, or the checkpoint folder, under the model's
   folder;
 - ``labels``: the class of each output channel (a Transformers checkpoint
   may leave them to its ``config.json``); an ``image-to-image`` model has
   none;
-- ``input``: an ONNX model's input, ``width`` x ``height`` in ``NCHW`` (or
+- ``input``: an ONNX image model's input (a ``node-regression`` model reads
+  a graph of any size, so it has none), ``width`` x ``height`` in ``NCHW`` (or
   ``NHWC``, for an ``image-to-image`` model), as
   ``uint8`` pixels or as ``float32`` scaled by ``scale`` and then normalized
   by ``mean`` and ``std``;
@@ -38,7 +41,9 @@ from typing import Any
 from utk_curio.backend.app.datasets.infrastructure.storage import DATASET_ID_RE
 
 RUNTIMES = ("onnx", "transformers")
-TASKS = ("semantic-segmentation", "image-to-image")
+TASKS = ("semantic-segmentation", "image-to-image", "node-regression")
+#: The tasks whose ONNX models read an image of the manifest's ``input`` size.
+IMAGE_TASKS = ("semantic-segmentation", "image-to-image")
 INPUT_DTYPES = ("uint8", "float32")
 INPUT_LAYOUTS = ("NCHW", "NHWC")
 
@@ -190,7 +195,7 @@ def parse_manifest(raw: object, *, dir_name: str | None = None) -> ModelManifest
     labels = tuple(label.strip() for label in labels_raw)
     if runtime == "onnx" and task == "semantic-segmentation" and not labels:
         raise ModelManifestError("an onnx model names its labels, one per output channel")
-    model_input = _input(raw.get("input")) if runtime == "onnx" else (
+    model_input = _input(raw.get("input")) if runtime == "onnx" and task in IMAGE_TASKS else (
         _input(raw["input"]) if raw.get("input") is not None else None
     )
     if model_input is not None and model_input.layout != "NCHW" and task != "image-to-image":

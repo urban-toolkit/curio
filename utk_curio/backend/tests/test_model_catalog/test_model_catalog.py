@@ -109,6 +109,17 @@ class TestTheManifest:
         manifest = load_manifest(SHIPPED / "model.scout.deep-umbra@1")
         assert (manifest.runtime, manifest.task, manifest.labels) == ("onnx", "image-to-image", ())
 
+    def test_a_node_regression_model_reads_a_graph_of_any_size(self):
+        """It has no labels and no image input: the node feeds it a graph."""
+        manifest = parse_manifest(_onnx_manifest(task="node-regression", labels=[], input=None))
+        assert manifest.labels == () and manifest.input is None
+        assert parse_manifest(manifest_dict(manifest)) == manifest
+
+    def test_the_shipped_weather_gnn_reads(self):
+        manifest = load_manifest(SHIPPED / "model.scout.weather-gnn@1")
+        assert (manifest.runtime, manifest.task, manifest.labels, manifest.input) == (
+            "onnx", "node-regression", (), None)
+
     def test_it_round_trips(self):
         parsed = parse_manifest(_onnx_manifest())
         assert parse_manifest(manifest_dict(parsed)) == parsed

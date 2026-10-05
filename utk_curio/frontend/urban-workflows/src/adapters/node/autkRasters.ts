@@ -231,14 +231,46 @@ export function withRasterSources(grammar: any, newDb: () => Promise<any>): void
 }
 
 /**
- * autk-map's raster opacity grows with a cell's distance from 0
- * (`far-zero`), so in a mosaic of heights up to 527 m a 7 m building was
- * drawn 1% opaque, and the map looked faded beside the same buildings in 3D.
- * Raised to this power the distance is 1 for any cell that is not 0: every
- * such cell is drawn in its color, and a 0 (the ground, no shadow) stays
- * clear.
+ * How a raster layer with a scheme is drawn, as SCOUT draws its tiles: every
+ * cell with a value fully opaque, 0 included, and a cell with no data (NaN)
+ * clear. autk-map's own opacity grows with a cell's distance from 0
+ * (`far-zero`), so a 7 m building beside a 527 m tower was drawn 1% opaque.
  */
-export const RASTER_OPACITY_GAMMA = 1e-4;
+export const RASTER_TRANSFER_FUNCTION = { opacityMin: 1, opacityMax: 1 };
+
+/**
+ * Give each clear cell of *rgba* (autk-map's colored cells, four 0..255
+ * values a cell, rows of *width*) the color of the nearest cell with a value,
+ * keeping it clear. autk-map samples a raster linearly and a clear cell is
+ * black, so every edge between a cell with no data and one with a value was
+ * drawn as a dark line. One pass outward from every colored cell.
+ */
+export function bleedIntoClearCells(rgba: Float32Array, width: number, height: number): void {
+    const cells = width * height;
+    const seen = new Uint8Array(cells);
+    const queue = new Int32Array(cells);
+    let head = 0, tail = 0;
+    for (let i = 0; i < cells; i++) {
+        if (rgba[i * 4 + 3] !== 0) { seen[i] = 1; queue[tail++] = i; }
+    }
+    if (tail === 0) return;
+    while (head < tail) {
+        const from = queue[head++];
+        const x = from % width;
+        const neighbors = [
+            x > 0 ? from - 1 : -1, x < width - 1 ? from + 1 : -1,
+            from >= width ? from - width : -1, from + width < cells ? from + width : -1,
+        ];
+        for (const to of neighbors) {
+            if (to < 0 || seen[to]) continue;
+            seen[to] = 1;
+            rgba[to * 4] = rgba[from * 4];
+            rgba[to * 4 + 1] = rgba[from * 4 + 1];
+            rgba[to * 4 + 2] = rgba[from * 4 + 2];
+            queue[tail++] = to;
+        }
+    }
+}
 
 /**
  * Draw each raster layer in the scheme its layerRef names. autk-map colors a
@@ -246,11 +278,11 @@ export const RASTER_OPACITY_GAMMA = 1e-4;
  * the layer's `colorMapInterpolator` after that, so the legend showed the
  * scheme and the cells stayed red. autk-map's `updateColorMap` colors the
  * cells again from the layer's own config, which the grammar already holds,
- * opaque but for the 0s (`RASTER_OPACITY_GAMMA`), and gives the legend its
- * domain. A raster's cells are colored whatever its `isColorMap`, so on a
- * raster `"isColorMap": false` hides the legend alone; the grammar turns it
- * on for any layer with a scheme. The grammar keeps each map by the dataRefs
- * it draws (`_mapRegistry`); a layer that is not a raster is left as drawn.
+ * as `RASTER_TRANSFER_FUNCTION` says, and gives the legend its domain. A
+ * raster's cells are colored whatever its `isColorMap`, so on a raster
+ * `"isColorMap": false` hides the legend alone; the grammar turns it on for
+ * any layer with a scheme. The grammar keeps each map by the dataRefs it
+ * draws (`_mapRegistry`); a layer that is not a raster is left as drawn.
  */
 export function recolorRasters(grammar: any, spec: any): void {
     const registry: Map<string, any> | undefined = grammar?._mapRegistry;
@@ -262,8 +294,12 @@ export function recolorRasters(grammar: any, spec: any): void {
             const map = registry.get(ref.dataRef);
             const layer = map?.layerManager?.searchByLayerId?.(ref.dataRef);
             if (layer?.layerInfo?.typeLayer !== 'raster' || typeof map.updateColorMap !== 'function') continue;
-            layer.setTransferFunction?.({ gamma: RASTER_OPACITY_GAMMA });
+            layer.setTransferFunction?.(RASTER_TRANSFER_FUNCTION);
             map.updateColorMap(ref.dataRef, { colorMap: {} });
+            const rgba = layer.rasterData;
+            if (rgba instanceof Float32Array && layer.rasterResX > 0 && layer.rasterResY > 0) {
+                bleedIntoClearCells(rgba, layer.rasterResX, layer.rasterResY);
+            }
             if (ref.isColorMap === false) map.updateRenderInfo(ref.dataRef, { isColorMap: false });
         }
     }

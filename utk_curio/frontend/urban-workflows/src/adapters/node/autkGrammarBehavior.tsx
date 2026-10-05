@@ -42,6 +42,8 @@ import {
     isCurioRasterSource, newAutkDb, recolorRasters, resolveRasterInputs, withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
+import { titleLegends } from './autkLegendTitles';
+import { setBasemap } from './autkBasemap';
 
 /**
  * The layer a document's selections come from when they name none: its map's
@@ -97,6 +99,12 @@ export const useAutkGrammarBehavior = (
     // One line per table/layer the last successful run produced. Null while
     // running and after an error, so a stale summary never outlives its data.
     const [runSummary, setRunSummary] = useState<string | null>(null);
+    // The basemap toggle (autkBasemap), as SCOUT's view node has one: off at
+    // first and not saved with the node. The ref is what a run reads, so a
+    // map drawn again keeps the basemap the user turned on.
+    const [basemap, setBasemapState] = useState<'off' | 'loading' | 'on'>('off');
+    const basemapOnRef = useRef(false);
+    const [mapDrawn, setMapDrawn] = useState(false);
 
     // Grammar instance and last-run spec, kept in refs so effects can access
     // them without causing re-renders.
@@ -628,6 +636,13 @@ export const useAutkGrammarBehavior = (
                     return g;
                 });
                 recolorRasters(grammar, spec);
+                titleLegends(grammar, spec);
+                setMapDrawn(!!spec.map);
+                if (spec.map && basemapOnRef.current) {
+                    setBasemap(grammar, true).catch((err) => {
+                        console.error('[autk-grammar] basemap failed:', err);
+                    });
+                }
                 // autk-plot's SVG is inline, so it sits on a line of text whose
                 // descender space overflows a pane the plot exactly fills, and
                 // brings the scrollbars back. As a block it fits.
@@ -1136,6 +1151,26 @@ export const useAutkGrammarBehavior = (
         pickFixCleanupRef.current?.();
     }, []);
 
+    const toggleBasemap = async () => {
+        const on = !basemapOnRef.current;
+        basemapOnRef.current = on;
+        const grammar = grammarRef.current;
+        if (!grammar) {
+            setBasemapState(on ? 'on' : 'off');
+            return;
+        }
+        if (on) setBasemapState('loading');
+        try {
+            await setBasemap(grammar, on);
+            setBasemapState(on ? 'on' : 'off');
+        } catch (err) {
+            basemapOnRef.current = false;
+            setBasemapState('off');
+            const reason = err instanceof Error ? err.message : String(err);
+            showToast(`The basemap could not be loaded from OpenStreetMap: ${reason}`, 'error');
+        }
+    };
+
     // Stable JSX reference across incidental re-renders, but identity changes
     // on run completion so NodeEditor switches to the output tab automatically.
     const contentComponent = React.useMemo<React.ReactNode>(
@@ -1220,20 +1255,51 @@ export const useAutkGrammarBehavior = (
                             </div>
                         ) : null
                     ) : null}
-                    <div
-                        ref={attachWrapper}
-                        style={{
-                            position: 'relative',
-                            width: '100%',
-                            flex: 1,
-                            minHeight: 0,
-                            overflow: 'hidden',
-                        }}
-                    />
+                    <div style={{ position: 'relative', width: '100%', flex: 1, minHeight: 0 }}>
+                        <div
+                            ref={attachWrapper}
+                            style={{
+                                position: 'relative',
+                                width: '100%',
+                                height: '100%',
+                                overflow: 'hidden',
+                            }}
+                        />
+                        {specKind === 'render' && mapDrawn ? (
+                            // A sibling of the wrapper, which each run empties.
+                            <button
+                                type="button"
+                                className="nodrag nopan"
+                                data-curio-autk-basemap={basemap}
+                                aria-label="Toggle basemap"
+                                aria-pressed={basemap === 'on'}
+                                title={basemap === 'on' ? 'Hide the OpenStreetMap basemap' : 'Show an OpenStreetMap basemap'}
+                                disabled={basemap === 'loading'}
+                                onClick={() => { void toggleBasemap(); }}
+                                style={{
+                                    position: 'absolute',
+                                    top: 10,
+                                    right: 10,
+                                    zIndex: 2,
+                                    padding: '5px 10px',
+                                    border: '1px solid var(--curio-border, #d0d4da)',
+                                    borderRadius: 'var(--curio-radius-md, 6px)',
+                                    background: basemap === 'on' ? 'var(--curio-text-primary, #1E1F23)' : '#fff',
+                                    color: basemap === 'on' ? '#fff' : 'var(--curio-text-primary, #1E1F23)',
+                                    fontSize: 'var(--curio-font-size-sm, 12px)',
+                                    fontWeight: 600,
+                                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.15)',
+                                    cursor: basemap === 'loading' ? 'progress' : 'pointer',
+                                }}
+                            >
+                                {basemap === 'loading' ? 'Loading basemap…' : 'Basemap'}
+                            </button>
+                        ) : null}
+                    </div>
                 </div>
             ),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [nodeState.output, gpuBlocked, gpuChecking, runSummary, specKind],
+        [nodeState.output, gpuBlocked, gpuChecking, runSummary, specKind, mapDrawn, basemap],
     );
 
     return {

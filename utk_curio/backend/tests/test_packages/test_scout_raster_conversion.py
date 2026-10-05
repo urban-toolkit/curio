@@ -184,11 +184,11 @@ def test_the_eight_bit_conversion_is_opencvs(tmp_path):
 def test_the_template_declares_the_widgets_its_source_reads():
     template = _template()
     assert template["hasWidgets"] is True
-    assert {w["name"]: w["default"] for w in template["widgets"]} == {
-        "attribute": "height", "zoom": 16, "max_height": 550,
-    }
+    # The maximum height is SCOUT's fixed 550 m, not a setting.
+    assert {w["name"]: w["default"] for w in template["widgets"]} == {"attribute": "height", "zoom": 16}
     source = (PACKAGE / template["source"]).read_text(encoding="utf-8")
-    assert re.findall(r"\[!!\s*(\w+)\s*!!\]", source) == ["attribute", "zoom", "max_height"]
+    assert re.findall(r"\[!!\s*(\w+)\s*!!\]", source) == ["attribute", "zoom"]
+    assert "max_height" not in source
 
 
 def test_the_shipped_dataflow_runs_the_template_as_the_palette_drops_it():
@@ -233,7 +233,9 @@ def test_the_node_returns_scouts_tiles_and_their_mosaic(workspace):
             "16_16814_24356.png": (1, 0), "16_16815_24356.png": (1, 1),
         }.items():
             block = cells[256 * row:256 * (row + 1), 256 * col:256 * (col + 1)]
-            assert np.allclose(block, grays[name] * (550.0 / 255.0), atol=1e-3), name
+            # A building's height in metres; the ground, gray 0, has no data.
+            heights = np.where(grays[name] > 0, grays[name] * (550.0 / 255.0), np.nan)
+            assert np.allclose(block, heights, atol=1e-3, equal_nan=True), name
     finally:
         mosaic.close()
 
@@ -271,6 +273,7 @@ def test_the_mosaic_is_a_raster_the_autark_node_loads(workspace):
     """What #718's raster route serves for the tuple's first part, and what
     the Autark node then requires of it: an EPSG CRS, a north-up grid, at
     most 2048 by 2048 cells and 8192 on a side."""
+    import numpy as np
     from rasterio.io import MemoryFile
 
     from utk_curio.sandbox.util.rasters import serve_raster
@@ -284,7 +287,7 @@ def test_the_mosaic_is_a_raster_the_autark_node_loads(workspace):
         assert (meta["width"], meta["height"], meta["count"]) == (512, 512, 1)
         with MemoryFile(payload) as memory, memory.open() as served:
             assert served.crs == mosaic.crs and served.transform == mosaic.transform
-            assert (served.read(1) == mosaic.read(1)).all()
+            assert np.array_equal(served.read(1), mosaic.read(1), equal_nan=True)
     finally:
         mosaic.close()
 
@@ -302,13 +305,8 @@ def test_each_widget_reaches_the_call(workspace):
         assert {int(z) for z in zoomed[1]["zoom"]} == {15}
         assert sorted(zip(zoomed[1]["x"], zoomed[1]["y"])) == [(8407, 12177), (8407, 12178)]
 
-        # Half the maximum height: every gray level doubles.
-        lower = run_node(_buildings(), workspace, max_height=275)[1]
-        lower[0].close()
-        assert len(lower[1]) == len(tiles)
-        for ours, half in zip(lower[1]["png"], tiles["png"]):
-            assert _worst(_gray(ours), np.clip(2 * _gray(half), 0, 255)) <= 1
-        assert max(_gray(png).max() for png in lower[1]["png"]) > max(_gray(png).max() for png in tiles["png"])
+        # SCOUT's fixed maximum: gray 255 is 550 m.
+        assert float(default[0].tags()["max_height"]) == 550.0
 
         renamed = _buildings().rename(columns={"height": "roof_m"})
         by_column = run_node(renamed, workspace, attribute="roof_m")[1]
