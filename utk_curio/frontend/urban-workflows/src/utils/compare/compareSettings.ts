@@ -11,6 +11,8 @@
  *   node picks (`compareMode.ts`).
  * - `difference`, what Difference joins rows on (`key`) and what its map
  *   colors by (`value`).
+ * - `layer`, the layer it reads from an input that is an Autark node's
+ *   several layers (a compute step hands on its workspace's every layer).
  *
  * Written only when present, so a dataflow without one serializes as before.
  */
@@ -42,7 +44,7 @@ export const COMPARE_MODES = ["chart", "difference"] as const;
 export type CompareMode = (typeof COMPARE_MODES)[number];
 
 export interface CompareDifference {
-  /** The column rows are joined on; absent means `osm_id` or `building_id`. */
+  /** The column rows are joined on; absent means `osm_id` or `building_id`, else (two layers) the shapes. */
   key?: string;
   /** The column, or the band, the map colors by; absent means the first number. */
   value?: string;
@@ -53,6 +55,8 @@ export interface CompareSettings {
   chart?: CompareChart;
   mode?: CompareMode;
   difference?: CompareDifference;
+  /** The layer it reads from inputs that are an Autark node's several layers, by name. */
+  layer?: string;
 }
 
 /** The color of an input whose node is in no scenario. */
@@ -109,6 +113,7 @@ export function normalizeCompareSettings(raw: unknown): CompareSettings | undefi
   if ((COMPARE_MODES as readonly unknown[]).includes(entry.mode)) settings.mode = entry.mode as CompareMode;
   const difference = normalizeDifference(entry.difference);
   if (difference) settings.difference = difference;
+  if (nonEmpty(entry.layer)) settings.layer = entry.layer;
   return Object.keys(settings).length > 0 ? settings : undefined;
 }
 

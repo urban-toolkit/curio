@@ -251,6 +251,73 @@ class TestLayersJoinedOnAStableId:
         pd.testing.assert_frame_equal(comparison, before[1])
 
 
+class TestLayersWithNoIdJoinedOnTheirShapes:
+    """Two layers with neither ``osm_id`` nor ``building_id`` (an Autark data
+    load's roads) are matched by their shapes: equal geometries are one row,
+    and a shape that repeats is matched by its order."""
+
+    @staticmethod
+    def _lines(sunlight, shapes):
+        from shapely.geometry import LineString
+
+        return gpd.GeoDataFrame(
+            {"name": [f"road {points[0][0]}" for points in shapes], "sunlight": sunlight},
+            geometry=[LineString(points) for points in shapes],
+            crs="EPSG:3395",
+        )
+
+    def test_rows_with_equal_shapes_are_one_row(self):
+        a, b, c = [(0, 0), (1, 0)], [(3, 1), (4, 1)], [(5, 5), (6, 6)]
+        reference = self._lines([600.0, 540.0], [a, b])
+        comparison = self._lines([540.0, 300.0, 120.0], [b, a, c])
+        out = _diff(reference, comparison)
+        assert isinstance(out, gpd.GeoDataFrame)
+        # The reference's rows in its order, then the comparison's own.
+        assert out["name"].tolist() == ["road 0", "road 3", "road 5"]
+        assert out["change"].tolist() == ["changed", "unchanged", "added"]
+        assert _numbers(out["sunlight"]) == [-300.0, 0.0, None]
+        assert [list(shape.coords) for shape in out.geometry] == [
+            [(0.0, 0.0), (1.0, 0.0)], [(3.0, 1.0), (4.0, 1.0)], [(5.0, 5.0), (6.0, 6.0)],
+        ]
+
+    def test_a_shape_both_sides_repeat_is_matched_by_its_order(self):
+        a = [(0, 0), (1, 0)]
+        out = _diff(self._lines([10.0, 20.0], [a, a]), self._lines([7.0, 20.0], [a, a]))
+        assert _numbers(out["sunlight"]) == [-3.0, 0.0]
+        assert out["change"].tolist() == ["changed", "unchanged"]
+
+    def test_a_row_with_no_geometry_names_the_input(self):
+        reference = self._lines([1.0], [[(0, 0), (1, 0)]])
+        comparison = reference.copy()
+        comparison.loc[0, "geometry"] = None
+        with pytest.raises(ValueError, match=r"input 1 \(Twice as tall\) has 1 row with no geometry"):
+            _diff(reference, comparison)
+
+    def test_one_layer_of_an_autark_nodes_several(self):
+        """Example 06's roads: a compute step hands on its workspace's every
+        layer, and the roads carry no id."""
+        from .test_scenario_stack import autark_layers
+
+        out = difference().difference_scenarios(
+            [("s-base", "Baseline", autark_layers([5.0, 7.0])), ("s-tall", "Twice as tall", autark_layers([3.0, 7.0]))],
+            layer="table_osm_roads",
+        )
+        assert isinstance(out, gpd.GeoDataFrame)
+        assert out.crs.to_epsg() == 3395, "the layers' own coordinate system was lost"
+        assert out["name"].tolist() == ["road 0", "road 1"]
+        assert _numbers(out["sunlight"]) == [-2.0, 0.0]
+        assert out["change"].tolist() == ["changed", "unchanged"]
+        assert "height" not in out.columns
+
+    def test_an_id_both_layers_have_still_comes_first(self):
+        reference = _roads([1, 2], [5.0, 6.0])
+        comparison = _roads([2, 1], [6.0, 3.0])
+        comparison.geometry = [Point(9, 9), Point(8, 8)]  # moved: the id still matches them
+        out = _diff(reference, comparison)
+        assert out["osm_id"].tolist() == [1, 2]
+        assert _numbers(out["sunlight"]) == [-2.0, 0.0]
+
+
 class TestWhatTheJoinRefuses:
     def test_anything_but_two_inputs(self):
         with pytest.raises(ValueError, match=r"compares two inputs, a reference and a comparison, and it has 3"):

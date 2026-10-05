@@ -8,7 +8,14 @@
  * a run on the server does and runs it through the stacking step.
  */
 import cases from "../../utils/compare/compareCode.cases.json";
-import { STACK_HELPER, stackCode } from "../../utils/compare/compareCode";
+import {
+  STACK_HELPER,
+  compareCode,
+  differenceCode,
+  keyOfCode,
+  layerOfCode,
+  stackCode,
+} from "../../utils/compare/compareCode";
 import { resolveReferences } from "../../utils/references/codeReferences";
 import type { CompareInputLabel } from "../../utils/compare/compareSettings";
 
@@ -37,5 +44,29 @@ describe("stackCode", () => {
 
   test("calls the sandbox's stacking step", () => {
     expect(stackCode([])).toContain(`return ${STACK_HELPER}([])`);
+  });
+});
+
+describe("the layer read from an Autark node's several", () => {
+  const [two] = cases.cases as CodeCase[];
+
+  test("the stacking code names it after the inputs, and reads back", () => {
+    const code = stackCode(two.inputs, "table_osm_roads");
+    expect(code.endsWith('], layer="table_osm_roads")\n')).toBe(true);
+    expect(layerOfCode(code)).toBe("table_osm_roads");
+    expect(layerOfCode(stackCode(two.inputs))).toBeUndefined();
+  });
+
+  test("the difference code names it before the key, and both read back", () => {
+    const code = differenceCode(two.inputs, "osm_id", "table_osm_roads");
+    expect(code.endsWith('], layer="table_osm_roads", key="osm_id")\n')).toBe(true);
+    expect(layerOfCode(code)).toBe("table_osm_roads");
+    expect(keyOfCode(code)).toBe("osm_id");
+    expect(keyOfCode(differenceCode(two.inputs, undefined, "table_osm_roads"))).toBeUndefined();
+  });
+
+  test("compareCode hands it to the view's step", () => {
+    expect(compareCode("chart", two.inputs, undefined, "roads")).toBe(stackCode(two.inputs, "roads"));
+    expect(compareCode("difference", two.inputs, { key: "k" }, "roads")).toBe(differenceCode(two.inputs, "k", "roads"));
   });
 });

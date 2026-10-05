@@ -620,6 +620,10 @@ It stacks inputs of one kind:
 - values (a number, a text, true or false, or a list of them), one row each under a
   `value` column.
 
+An Autark node hands on every layer of its workspace. From such an input the node
+reads the layer picked in **Layer**, in Chart and in Difference alike; the menu lists
+the layers every such input has.
+
 A table beside a value, a GeoDataFrame beside a plain table, two coordinate systems,
 an input with no value, an input that holds several tables, or a raster stops the run
 with a message naming the input.
@@ -632,7 +636,9 @@ comparison, and every number it gives is the comparison's minus the reference's.
   origin, cell size and CRS; otherwise the run stops with a message naming both. Each
   is read as an Autark map reads a raster, at its own size, up to 2048 by 2048 cells.
 - Two layers, or two tables, are matched row by row on a stable id: `osm_id`, else
-  `building_id`, or the column picked in **Key**. A row on both sides holds, in each
+  `building_id`, or the column picked in **Key**. Two layers with neither id are
+  matched by their shapes: rows with the same geometry are one row, and a shape that
+  repeats is matched in order. A row on both sides holds, in each
   number column both have, the difference, and a `change` column says `changed` or
   `unchanged`. A column of nested values, such as the `compute` values an Autark
   compute step writes, holds the difference of each number in it. A row only in the

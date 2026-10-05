@@ -7,6 +7,7 @@ import {
   compareInputs,
   labelsNeedWriting,
   labelWarnings,
+  layersToPick,
   listOf,
 } from "../../utils/compare/compareInputs";
 import { NO_SCENARIO_COLOR, normalizeCompareSettings, sameLabels } from "../../utils/compare/compareSettings";
@@ -179,6 +180,29 @@ describe("normalizeCompareSettings", () => {
     expect(sameLabels(a, [{ ...a[0] }])).toBe(true);
     expect(sameLabels(a, [{ name: "B", color: "#000000" }])).toBe(false);
     expect(sameLabels(undefined, [])).toBe(true);
+  });
+
+  test("keeps the layer it reads from an Autark node's several, when it names one", () => {
+    expect(normalizeCompareSettings({ layer: "table_osm_roads" })).toEqual({ layer: "table_osm_roads" });
+    expect(normalizeCompareSettings({ layer: "" })).toBeUndefined();
+    expect(normalizeCompareSettings({ layer: 3 })).toBeUndefined();
+  });
+});
+
+describe("layersToPick", () => {
+  const roads = ["table_osm_surface", "table_osm_buildings", "table_osm_roads"];
+
+  test("offers the layers every input of several layers has, in the first one's order", () => {
+    expect(layersToPick([roads, ["table_osm_roads", "table_osm_buildings"]])).toEqual(["table_osm_buildings", "table_osm_roads"]);
+  });
+
+  test("an input of one table offers nothing and takes nothing away", () => {
+    expect(layersToPick([["only"], [null]])).toEqual([]);
+    expect(layersToPick([roads, ["only"]])).toEqual(roads);
+  });
+
+  test("offers nothing before the inputs are read", () => {
+    expect(layersToPick([])).toEqual([]);
   });
 });
 

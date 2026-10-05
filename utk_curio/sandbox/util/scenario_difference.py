@@ -8,7 +8,9 @@ reference. Its code calls ``curio_difference_scenarios`` with one
 
 - Two layers (GeoDataFrames) or two tables are joined on a stable id: ``key``
   when the node names one, else ``osm_id`` or ``building_id``, the first both
-  have. A row on both sides holds, in each number column both have, the
+  have. Two layers with neither are matched by their shapes: equal geometries
+  are one row, and a shape that repeats is matched by its order, as two layers
+  read from one source repeat it. A row on both sides holds, in each number column both have, the
   comparison's value minus the reference's, and ``change`` says ``changed`` or
   ``unchanged``. A column both have whose cells are dicts, such as the
   ``compute`` an Autark compute step writes its outputs under, is read the same
@@ -43,6 +45,7 @@ from utk_curio.sandbox.util.scenario_stack import (
     _crs_name,
     _is_raster,
     _label,
+    _pick_layer,
     _rows_of,
     _unwrap,
 )
@@ -86,7 +89,7 @@ class RasterDifferenceFailed(Exception):
     """Two rasters the sandbox could not subtract, with the reason in words."""
 
 
-def _side(position: int, entry) -> dict:
+def _side(position: int, entry, layer=None) -> dict:
     if not isinstance(entry, (tuple, list)) or len(entry) != 3:
         raise TypeError(
             f"Compare Scenarios: entry {position} is not (scenario, name, input). "
@@ -96,19 +99,20 @@ def _side(position: int, entry) -> dict:
     name = "" if name is None else str(name)
     label = _label(position, name)
     side = {"scenario": scenario, "name": name, "label": label}
-    value = _unwrap(value)
+    value = _unwrap(_pick_layer(label, value, layer))
     if value is not None and _is_raster(value):
         return {**side, "kind": _RASTER, "value": value}
     kind, frame = _rows_of(label, value)
     return {**side, "kind": kind, "frame": frame}
 
 
-def difference_scenarios(entries, key=None):
+def difference_scenarios(entries, key=None, layer=None):
     """The second input minus the first: a difference layer or table, or, for
     two rasters, the request the sandbox completes.
 
     *entries* lists ``(scenario_id, scenario_name, value)`` per input, in
-    circle order. *key* names the column rows are joined on.
+    circle order. *key* names the column rows are joined on, and *layer* the
+    layer to read from an input that is an Autark node's several layers.
     """
     entries = list(entries or [])
     if len(entries) != 2:
@@ -116,7 +120,7 @@ def difference_scenarios(entries, key=None):
             "Compare Scenarios in Difference compares two inputs, a reference and a comparison, "
             f"and it has {len(entries)}. Connect two outcomes, or show them as a Chart."
         )
-    reference, comparison = (_side(position, entry) for position, entry in enumerate(entries))
+    reference, comparison = (_side(position, entry, layer) for position, entry in enumerate(entries))
     if reference["kind"] == _RASTER and comparison["kind"] == _RASTER:
         return _raster_request(reference, comparison)
     if reference["kind"] == comparison["kind"] and reference["kind"] in (_GEO, _TABLE):
@@ -152,13 +156,39 @@ def _join_key(reference: dict, comparison: dict, key, geometry) -> str:
     for candidate in STABLE_IDS:
         if candidate in ref_columns and candidate in cmp_columns:
             return candidate
+    if geometry is not None:
+        # Two layers with no id: rows are matched by their shapes.
+        return geometry
     raise ValueError(
         f"Compare Scenarios cannot match the rows of {reference['label']} and {comparison['label']}: "
         f"they do not both have {' or '.join(STABLE_IDS)}. {pick}"
     )
 
 
-def _ids(side: dict, key: str) -> list:
+def _shape_ids(side: dict, geometry: str) -> list:
+    """Each row's shape, as its WKB, and how many rows before it have the same
+    one: two layers read from one source match row for row, a shape that
+    repeats by its order."""
+    shapes = side["frame"][geometry]
+    missing = int((shapes.isna() | shapes.is_empty).sum())
+    if missing:
+        raise ValueError(
+            f"Compare Scenarios: {side['label']} has {missing} row{'s' if missing != 1 else ''} with no geometry, "
+            "and with no osm_id or building_id its rows are matched by their shapes. Give every row one in "
+            "the node that feeds it, or pick a key."
+        )
+    seen: dict = {}
+    ids = []
+    for shape in shapes.to_wkb():
+        count = seen.get(shape, 0)
+        seen[shape] = count + 1
+        ids.append((shape, count))
+    return ids
+
+
+def _ids(side: dict, key: str, geometry=None) -> list:
+    if key == geometry:
+        return _shape_ids(side, geometry)
     values = side["frame"][key]
     missing = int(values.isna().sum())
     if missing:
@@ -298,8 +328,8 @@ def _join(reference: dict, comparison: dict, key):
             cmp = cmp.set_crs(crs)
 
     key = _join_key(reference, comparison, key, geometry)
-    ref_ids = _ids({**reference, "frame": ref}, key)
-    cmp_ids = _ids({**comparison, "frame": cmp}, key)
+    ref_ids = _ids({**reference, "frame": ref}, key, geometry)
+    cmp_ids = _ids({**comparison, "frame": cmp}, key, geometry)
 
     columns = [c for c in ref.columns if c != key] + [c for c in cmp.columns if c != key and c not in ref.columns]
     common = [c for c in columns if c in ref.columns and c in cmp.columns and c != geometry]

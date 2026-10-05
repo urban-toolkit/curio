@@ -410,7 +410,7 @@
         },
         "compareScenarios": {
           "type": "object",
-          "description": "Settings of a Compare Scenarios node (#662). `inputs` labels each input circle, in circle order, by the scenario its node belongs to: the scenario's `scenario` id, `name` and `color`. An input whose node is in no scenario carries the node's name, a neutral color and no `scenario`. The node's code is written from these labels, and its stacked table carries them. `chart` is what its Chart tab draws from that table: the `preset`, the columns it reads as `x` and `y`, and the `aggregate` that combines the y values of a group. `mode` is the view the user chose, `chart` or `difference`; without it the node shows Difference for two rasters or two layers and Chart otherwise. `difference` is what Difference joins the rows of two layers or tables on (`key`; without it `osm_id` or `building_id`) and what its map colors the difference by (`value`, a column or a band). Emitted only when the node has inputs or one of these settings.",
+          "description": "Settings of a Compare Scenarios node (#662). `inputs` labels each input circle, in circle order, by the scenario its node belongs to: the scenario's `scenario` id, `name` and `color`. An input whose node is in no scenario carries the node's name, a neutral color and no `scenario`. The node's code is written from these labels, and its stacked table carries them. `chart` is what its Chart tab draws from that table: the `preset`, the columns it reads as `x` and `y`, and the `aggregate` that combines the y values of a group. `mode` is the view the user chose, `chart` or `difference`; without it the node shows Difference for two rasters or two layers and Chart otherwise. `difference` is what Difference joins the rows of two layers or tables on (`key`; without it `osm_id` or `building_id`, else, for two layers, their shapes) and what its map colors the difference by (`value`, a column or a band). `layer` names the layer it reads from an input that is an Autark node's several layers. Emitted only when the node has inputs or one of these settings.",
           "additionalProperties": false,
           "properties": {
             "inputs": {
@@ -445,7 +445,8 @@
                 "key": { "type": "string", "minLength": 1 },
                 "value": { "type": "string", "minLength": 1 }
               }
-            }
+            },
+            "layer": { "type": "string", "minLength": 1 }
           }
         },
         "dataPool": {
