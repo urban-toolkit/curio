@@ -276,7 +276,7 @@ def test_two_scenarios_are_stacked_charted_and_compared(
     _assert_scenario_colors_drawn(page, COMPARE)
     assert compare.locator('select[aria-label="Chart"]').input_value() == "lollipop"
     assert compare.locator("[data-compare-warning]").count() == 0
-    assert page.locator("[data-curio-save-state]").get_attribute("data-curio-save-state") == "saved"
+    assert page.locator("[data-curio-save-state]").first.get_attribute("data-curio-save-state") == "saved"
 
     # 8. A second loader into the copy: now the scenarios read different context.
     frame_nodes(page, [LOAD_2050, TALL])
