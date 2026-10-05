@@ -1,8 +1,8 @@
 """Dataflow categories: what the Projects rail filters by.
 
 ``shipped_categories.json`` is the placement the owner approved for the 44
-shipped dataflows (2026-09-30), and the Scenarios test dataflow placed by the
-same rules (#662, 2026-10-05). The automatic sections must reproduce it from
+shipped dataflows (2026-09-30), and the Scenarios and BuildingRasters test
+dataflows placed by the same rules (#662, 2026-10-05). The automatic sections must reproduce it from
 the files alone, and the hand-set ones live in the files themselves.
 """
 from __future__ import annotations
@@ -50,7 +50,7 @@ def _spec(key: str) -> dict:
 
 def test_the_golden_file_covers_every_shipped_dataflow():
     assert set(GOLDEN) == set(SHIPPED)
-    assert len(SHIPPED) == 45
+    assert len(SHIPPED) == 46
 
 
 @pytest.mark.parametrize("key", sorted(SHIPPED))
@@ -77,7 +77,7 @@ def test_sources():
         by_source.setdefault(entry.source, []).append(entry.key)
     assert sorted(by_source[SOURCE_USE_CASE]) == sorted(USE_CASES)
     assert len(by_source[SOURCE_EXAMPLE]) == 22
-    assert len(by_source[SOURCE_TEST]) == 22
+    assert len(by_source[SOURCE_TEST]) == 23
 
 
 def test_no_spec_stores_a_source():

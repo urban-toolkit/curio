@@ -37,6 +37,7 @@ A package is a folder with a `manifest.json` (the contract), an optional `source
 | `ai.utk.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end to end. Both are plain Python nodes. `curio.weather@1` is also installed for you when Curio starts with `--with-examples`; you can still uninstall it. |
 | `curio.example-ui@1` | A minimal node with its **own interface** rather than a code editor: no API keys and no Python dependencies. The one to read and fork for custom-UI nodes; see [AUTHORING-NODES.md](AUTHORING-NODES.md). |
 | `curio.streetvision@1` | One **Image Segmentation** code node: runs a Model Catalog model over a collection's images and reports each class's share of every image (DDRNet23-Slim ships with Curio; Hugging Face models are added from the Discovery Catalog). Read-only, depends only on `onnxruntime`, and installed with the example that declares it ([example 10](examples/10-street-vision-cv-analysis.md)). |
+| `scout.raster-conversion@1` | SCOUT's building rasterizer, ported from [SCOUT](https://github.com/urban-toolkit/scout): one **Rasterize Buildings** code node turns a buildings layer into the height tiles SCOUT's Deep Umbra shadow model reads, and a mosaic of them an Autark map draws. Read-only, depends on `datashader`, `spatialpandas`, `dask` and `rasterio`, and installed when Curio starts with `--with-examples`. See its [README](../packages/scout.raster-conversion@1/README.md). |
 
 You can install any number of other packages, your own or archives shared by others.
 
