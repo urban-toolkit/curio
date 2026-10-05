@@ -200,6 +200,27 @@
       "outputKind": "geodataframe"
     },
     {
+      "ref": "transform1",
+      "mustMention": [
+        "building"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis2",
+      "mustMention": [
+        "mosaic"
+      ],
+      "outputKind": "raster"
+    },
+    {
+      "ref": "analysis4",
+      "mustMention": [
+        "mosaic"
+      ],
+      "outputKind": "raster"
+    },
+    {
       "ref": "analysis7",
       "mustMention": [
         "shadow"

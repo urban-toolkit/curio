@@ -14,7 +14,7 @@ Run All in the browser runs the whole dataflow:
 
 1. The chart's stacked table holds one row per scenario, in summer, with SCOUT's
    mean accumulated shadow for each (128.64 and 106.73 minutes in SCOUT's
-   metrics files) within 0.05 minutes, and its bars draw in both scenarios'
+   metrics files) within 0.1 minutes, and its bars draw in both scenarios'
    colors.
 2. The difference is a raster on the shadow mosaics' grid, 512 by 512 cells in
    EPSG:3395, in minutes: towers removed minus existing, which takes shadow away
@@ -146,7 +146,9 @@ def test_two_building_sets_are_shadowed_charted_and_mapped(
     assert table["season"] == ["summer", "summer"], table["season"]
     means = dict(zip(table["scenario"], table["mean_minutes"]))
     record_property("mean accumulated shadow (minutes)", json.dumps({"ours": means, "scout": SCOUT_MEANS}))
-    assert all(abs(means[key] - SCOUT_MEANS[key]) <= 0.05 for key in SCOUT_MEANS), (
+    # The proof's tolerance (test_scout_shadow.py): Deep Umbra's output moves
+    # with onnxruntime's thread count above 16.
+    assert all(abs(means[key] - SCOUT_MEANS[key]) <= 0.1 for key in SCOUT_MEANS), (
         f"mean accumulated shadow, ours {means}, SCOUT's {SCOUT_MEANS}"
     )
     frame_nodes(page, [chart])

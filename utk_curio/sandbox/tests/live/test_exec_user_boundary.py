@@ -593,6 +593,8 @@ def test_scouts_shadow_model_runs_as_the_exec_user():
     }), "running Deep Umbra")
     grid, mean = printed(result).splitlines()[-2:]
     assert grid == "3395 512 512", grid
-    # SCOUT's A_shadows_metric.csv holds 128.63593.
-    assert abs(float(mean) - 128.63593) <= 0.05, mean
+    # SCOUT's A_shadows_metric.csv holds 128.63593; the tolerance is the
+    # proof's (test_scout_shadow.py): Deep Umbra's output moves with
+    # onnxruntime's thread count above 16.
+    assert abs(float(mean) - 128.63593) <= 0.1, mean
     assert result["output"]["dataType"] == "outputs", result["output"]

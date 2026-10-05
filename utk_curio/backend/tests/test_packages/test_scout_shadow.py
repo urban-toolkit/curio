@@ -19,12 +19,19 @@ Within a tolerance, not equal. Deep Umbra normalizes each layer by the tile's ow
 mean and variance, which makes its float32 output sensitive to the order of its
 sums: ``scripts/scout/export_deep_umbra.py`` measured TensorFlow's own float32
 run up to 0.016 from a float64 run of the same generator, on an output from -1 to
-1, and onnxruntime on up to 16 intra-op threads within 0.0177 of TensorFlow. On
-SCOUT's tiles that is one gray level on up to 686 of a tile's 65,536 pixels and
-two on 2 of them. So a tile may differ by at most 3 gray levels on at most 1.5%
-of its pixels, and each metric by at most 0.05 minutes. A wrong season, or the
-latitude off by one degree, misses by 25 levels or more on 39% of a tile's
-pixels or more, and the mean by 1.8 minutes or more.
+1, and onnxruntime within 0.0177 of TensorFlow. onnxruntime's output is the same
+on 1 to 16 intra-op threads and moves from 17 on, by up to 0.027, as its sums are
+split differently; Curio leaves the thread count to onnxruntime, so a machine
+with more cores sees the second result. On SCOUT's tiles, up to 16 threads give
+one gray level on up to 686 of a tile's 65,536 pixels (2 on 2 of them) and the
+metrics within 0.013 minutes; 32 threads give up to 5 levels on up to 3,267
+pixels (5%), the mean within 0.052 minutes and the median within 0.012. So a
+tile may differ by at most 6 gray levels on at most 6% of its pixels, the mean
+by at most 0.1 minutes and the median by at most 0.05. What a wrong call gives is
+far outside that: the latitude off by one degree, 25 levels or more on 39% of a
+tile's pixels or more and the mean off by 1.8 minutes or more; a wrong season,
+200 levels or more; the export with BatchNorm on its stored averages instead of
+the tile's statistics, a raw output 2.0 away where the right export is 0.0177.
 
 The node: its template, its widget resolved the way a run resolves it, runs in
 the sandbox with its package's modules (#719) and the model as the backend
@@ -75,9 +82,10 @@ GRID = (16, 16814, 24355, 2, 2)
 TILE_PIXELS = 256 * 256
 
 #: The tolerance the module docstring explains.
-MAX_LEVELS = 3
-MAX_SHARE = 0.015
-MAX_MINUTES = 0.05
+MAX_LEVELS = 6
+MAX_SHARE = 0.06
+MAX_MEAN_MINUTES = 0.1
+MAX_MEDIAN_MINUTES = 0.05
 
 #: The buildings SCOUT's second scenario removes (the dataset's manifest names them).
 REMOVED_IDS = [8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106, 122]
@@ -118,6 +126,12 @@ def _levels(ours, theirs) -> tuple[int, int]:
 
 def _within(measured: dict) -> bool:
     return all(levels <= MAX_LEVELS and pixels <= MAX_SHARE * TILE_PIXELS for levels, pixels in measured.values())
+
+
+def _metrics_within(ours, scouts) -> bool:
+    """``(mean, median)`` within the tolerance of SCOUT's."""
+    return (abs(ours[0] - scouts[0]) <= MAX_MEAN_MINUTES
+            and abs(ours[1] - scouts[1]) <= MAX_MEDIAN_MINUTES)
 
 
 def _metrics(path: Path) -> tuple[float, float]:
@@ -334,9 +348,9 @@ def test_scouts_rasters_become_scouts_committed_shadows(tmp_path, scenario, reco
         f"(largest gray-level difference, pixels that differ) per tile, against at most "
         f"{MAX_LEVELS} levels on {MAX_SHARE:.1%} of {TILE_PIXELS} pixels: {measured}"
     )
-    assert all(d <= MAX_MINUTES for d in differences), (
+    assert _metrics_within(ours, scouts), (
         f"(mean, median) minutes: ours {ours}, SCOUT's {scouts}, differences {differences}, "
-        f"against at most {MAX_MINUTES}"
+        f"against at most ({MAX_MEAN_MINUTES}, {MAX_MEDIAN_MINUTES})"
     )
     # Not blank tiles agreeing: every one of SCOUT's tiles holds full shadow
     # and open ground.
@@ -426,7 +440,10 @@ def test_the_node_returns_the_shadow_mosaic_and_scouts_metrics(workspace, tmp_pa
         assert len(metrics) == 1 and metrics["season"].iloc[0] == "summer"
         ours = (float(metrics["mean_minutes"].iloc[0]), float(metrics["median_minutes"].iloc[0]))
         scouts = _metrics(FIXTURES / "A_shadows_metric.csv")
-        assert all(abs(a - b) <= MAX_MINUTES for a, b in zip(ours, scouts)), (ours, scouts)
+        assert _metrics_within(ours, scouts), (
+            f"(mean, median) minutes: ours {ours}, SCOUT's {scouts}, "
+            f"against at most ({MAX_MEAN_MINUTES}, {MAX_MEDIAN_MINUTES})"
+        )
 
         assert isinstance(mosaic, rasterio.io.DatasetReader)
         with _open(path) as heights:
