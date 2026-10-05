@@ -18,8 +18,8 @@ What each test pins:
   connection;
 * a tile dropped on the notebook becomes a cell, placed on the canvas past the
   others and scrolled into view;
-* back on the canvas every node is where it was, a save writes the canvas
-  layout, and a reload keeps the view the address names.
+* back on the canvas every node is where it was and the size it was, a save
+  writes the canvas layout, and a reload keeps the view the address names.
 
 The dataflow is built here rather than borrowed from ``docs/examples``: four
 Python and Vega-Lite nodes, no datasets, so a failure is about this feature.
@@ -163,6 +163,39 @@ def _positions(page) -> dict:
             canvas: (n.data && n.data.workflowPosition) || null,
         }]))"""
     )
+
+
+def _boxes(page) -> dict:
+    """Each node as the page draws it: its box's own size, where it sits on the
+    screen, and its editor's size."""
+    return page.evaluate(
+        """() => Object.fromEntries(window.__curio_reactFlow.getNodes().map((n) => {
+            const node = document.querySelector(`.react-flow__node[data-id="${n.id}"]`);
+            const box = document.getElementById(`${n.id}resizable`);
+            const editor = node && node.querySelector('.monaco-editor');
+            const rect = node ? node.getBoundingClientRect() : null;
+            return [n.id, {
+                box: box ? [box.offsetWidth, box.offsetHeight] : null,
+                screen: rect ? [rect.x, rect.y, rect.width, rect.height] : null,
+                editor: editor ? [editor.offsetWidth, editor.offsetHeight] : null,
+            }];
+        }))"""
+    )
+
+
+def _settled_boxes(page, *, timeout_ms: int = 15000) -> dict:
+    """``_boxes`` once two reads a few hundred milliseconds apart agree. React
+    Flow measures a node, and Monaco lays out its editor, frames after a switch."""
+    last = _boxes(page)
+    waited = 0
+    while waited < timeout_ms:
+        page.wait_for_timeout(300)
+        waited += 300
+        now = _boxes(page)
+        if now == last:
+            return now
+        last = now
+    raise AssertionError(f"the nodes kept changing size or place: last read {last}")
 
 
 def _show(page, view: str) -> None:
@@ -453,6 +486,7 @@ def test_back_on_the_canvas_every_node_is_where_it_was(
     page.wait_for_function("() => window.__curio_reactFlow.getViewport().zoom < 1", timeout=20000)
     viewport = _settled_viewport(page)
     before = _positions(page)
+    drawn = _settled_boxes(page)
 
     _show(page, "notebook")
     _show(page, "canvas")
@@ -467,6 +501,22 @@ def test_back_on_the_canvas_every_node_is_where_it_was(
     restored = _settled_viewport(page)
     for key in ("x", "y", "zoom"):
         assert abs(restored[key] - viewport[key]) < 0.5, f"the canvas viewport moved: {viewport} -> {restored}"
+
+    # What the owner sees: every node at its own size and on the same spot of
+    # the screen as before, not grown to the cell's size over its neighbours.
+    redrawn = _settled_boxes(page)
+    for node_id in CANVAS:
+        was, now = drawn[node_id], redrawn[node_id]
+        assert was["box"] and now["box"] == was["box"], (
+            f"{node_id} came back {now['box']} instead of its canvas size {was['box']}"
+        )
+        assert now["screen"] and all(abs(a - b) <= 1 for a, b in zip(now["screen"], was["screen"])), (
+            f"{node_id} is drawn elsewhere on the screen: {was['screen']} -> {now['screen']}"
+        )
+        if was["editor"] is not None:
+            assert now["editor"] == was["editor"], (
+                f"{node_id}'s editor came back {now['editor']} instead of {was['editor']}"
+            )
 
     # A save from the notebook view writes the canvas layout: the positions the
     # nodes had on the canvas, read from the store before the switch.
