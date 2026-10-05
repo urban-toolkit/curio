@@ -135,6 +135,43 @@ A node dropped from the palette starts with these widgets and their defaults.
 values it had as the defaults. The shape of each entry is the `widget`
 definition in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json).
 
+### Modules beside your template
+
+A template can import Python modules that ship in the package's `sources/`
+folder, with ordinary `import` statements:
+
+```
+packages/me.heights@1/
+├── manifest.json                  # "source": "sources/caller.py"
+└── sources/
+    ├── caller.py
+    └── building_height/
+        ├── __init__.py
+        └── convert_to_raster.py
+```
+
+```python
+from building_height.convert_to_raster import convert_raster
+
+return convert_raster(arg, zoom=[!! zoom !!])
+```
+
+- A module is a `.py` file, or a folder of `.py` files, directly in `sources/`,
+  named like a Python identifier. The files your templates name as their
+  `source` are not modules.
+- Modules import each other by name or relatively (`from .scale import FACTOR`).
+- They are importable while a node of your package runs, and by no other node.
+  A new version of the package takes effect on the next run.
+- **One name, one package.** Two installed packages cannot ship a module of the
+  same name: installing the second is refused, and the message names both
+  packages and the module. Name a module after your package
+  (`heights_raster/`), not `scripts/` or `utils/`. Two majors of one package may
+  keep the same names.
+- A module named like a library the node already has loaded (`json`, `pandas`)
+  is refused when the node runs.
+- Imports inside your modules are not detected: list the libraries they need in
+  `manifest.dependencies.python`.
+
 ---
 
 ## Tier 2: a node with its own interface
@@ -363,10 +400,6 @@ All of these are real, and none of them produce an obvious error message.
 - **An unregistered `iconRef` is not an error.** It silently falls back to a
   cube with one console warning. The registered refs are in
   [`iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts).
-- **One source file per template.** The manifest's `source` field takes a single
-  path, so a template cannot ship helper modules next to it. For a Tier 2 node
-  the bundle can import as many files as you like; the limit only applies to
-  Tier 1 Python sources.
 - **`integrity.json` goes stale.** Regenerate it with
   `python scripts/regen_integrity.py packages/<id>@<major>`. Nothing verifies
   these hashes today, so a stale file will not break your node, but keep it

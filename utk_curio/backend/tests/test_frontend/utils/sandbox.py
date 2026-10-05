@@ -190,16 +190,21 @@ def _catalog_dataset_paths(code: str) -> dict[str, str]:
     return _catalog_resolution(code)["paths"]
 
 
-def _catalog_resolution(code: str, username: str | None = None) -> dict:
-    """``{"paths", "formats", "collections", "mediaDir", "models"}`` for *code*, as the backend
-    resolves them for ``/processPythonCode``, as *username* when given; see
-    ``_catalog_dataset_paths``.
+def _catalog_resolution(code: str, username: str | None = None, node_type: str | None = None) -> dict:
+    """``{"paths", "formats", "collections", "mediaDir", "models", "packageModules"}`` for
+    *code*, as the backend resolves them for ``/processPythonCode``, as *username* when
+    given; see ``_catalog_dataset_paths``. ``packageModules`` are what the node of
+    *node_type* may import from its package.
 
     Asked for every node, not only one that names a dataset: ``mediaDir`` is
     where a node downstream of a collection writes the files it derives.
     """
     url = f"{_backend_base_url_for_config()}/api/testing/dataset-paths"
-    body = {"code": code, **({"username": username} if username else {})}
+    body = {
+        "code": code,
+        **({"username": username} if username else {}),
+        **({"nodeType": node_type} if node_type else {}),
+    }
     payload = json.dumps(body).encode("utf-8")
     req = Request(
         url, data=payload,
@@ -236,6 +241,7 @@ def _catalog_resolution(code: str, username: str | None = None) -> dict:
         "collections": answer.get("collections") or {},
         "mediaDir": answer.get("mediaDir"),
         "models": answer.get("models") or {},
+        "packageModules": answer.get("packageModules"),
     }
 
 
@@ -289,7 +295,7 @@ def execute_workflow_programmatically(
         resolved = spec.node_code(node, "python")
         seeded = seed_node_code(resolved, seed)
         indented_code = textwrap.indent(seeded, "    ")
-        resolution = _catalog_resolution(indented_code, username)
+        resolution = _catalog_resolution(indented_code, username, node.raw_type)
 
         resp = _req.post(
             f'{sandbox_url}/exec',
@@ -308,6 +314,8 @@ def execute_workflow_programmatically(
                 "collections": resolution["collections"],
                 "media_dir": resolution["mediaDir"],
                 "models": resolution["models"],
+                **({"package_modules": resolution["packageModules"]}
+                   if resolution["packageModules"] else {}),
             },
             headers=sandbox_auth_header(),
             timeout=120,

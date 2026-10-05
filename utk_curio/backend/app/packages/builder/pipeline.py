@@ -221,6 +221,8 @@ def _resolve_dependencies(ctx: BuildContext, job: build_jobs.BuildJob) -> None:
     ctx.report = resolve_dependencies(
         ctx.user_key, ctx.request, fetcher=ctx.fetcher, policy=ctx.policy,
         cache_dir=ctx.workspace.cache_dir,
+        # An extension keeps the base package's modules (#468).
+        base_paths=tuple(ctx.snapshot.files) if ctx.snapshot is not None else (),
     )
     if ctx.report.blocked:
         blocking = [f.message for f in ctx.report.findings if f.severity == "block"]
