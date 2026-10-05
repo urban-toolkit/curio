@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/06-autark-what-if-shadow-study.json",
-    "sha256": "21af41621373eeeffd87f90a4b31372ba6cf94a914dc947f0c344673c73a8cc2",
+    "sha256": "4af84f17c16f72924c35c6687df6fbf001f54a104382551e1c3d74423e59d450",
     "walkthrough": "docs/examples/06-autark-what-if-shadow-study.md"
   },
   "prompt": "I want a what-if shadow study for the Back Bay area of Boston, set up as two scenarios I can compare. The OSM extract is a file in this checkout at docs/examples/data/back_bay.osm.pbf. Load its layers in the browser with Autark once, and hand them to both scenarios through a shared fan-out. In each scenario a GPU shader adds up every road segment's minutes of sunlight over the June solstice, with the building heights scaled by a height factor I set in a widget: 1 in a scenario called Baseline, and 2 in a copy of it called Twice as tall. Show each scenario's roads on its own 3D map coloured by sunlight, and keep each scenario's roads with their sunlight and a key per road. Then compare the two scenarios side by side: a bar chart of their mean road sunlight, and a map of how much sunlight each road loses.",

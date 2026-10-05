@@ -152,15 +152,18 @@ coloured by the shader's `sunlight` output column:
 ## Road sunlight
 
 Each scenario's outcome for the comparison is its Road sunlight node: the roads layer the shadow
-step wrote its `sunlight` into, with a `road` key made from each road's line.
+step wrote its `sunlight` into, each road with its name and kind, its sunlight and the `compute`
+values it came in, and a `road` key made from its line. The roads carry no OSM id, so the key
+is what the two scenarios' roads are matched on.
 
 ```python
 import hashlib
 
 # The roads layer: the one the shadow step gave each road's minutes of
-# sunlight. Autark loads every layer in EPSG:3395, in metres.
+# sunlight. Autark loads every layer in EPSG:3395, in metres. Each road
+# keeps its name and kind, its sunlight and the compute values it came in.
 roads = next(layer for layer in arg if "sunlight" in layer.columns)
-roads = roads.set_crs(3395, allow_override=True)
+roads = roads[["name", "highway", "sunlight", "compute", "geometry"]].set_crs(3395, allow_override=True)
 # A key for each road, made from its line and numbered in case two roads
 # share one. Both scenarios read the same roads in the same order, so a road
 # has the same key in both, and Compare Scenarios matches them on it.
