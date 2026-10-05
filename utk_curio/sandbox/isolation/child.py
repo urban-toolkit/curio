@@ -498,7 +498,7 @@ def _code_reads_arg(code):
     )
 
 
-def _hoisted_import_statements(code):
+def _hoisted_import_statements(code, skip=()):
     """Top-level import statements in *code*, as source lines.
 
     The in-process path caches live module objects for this
@@ -507,10 +507,14 @@ def _hoisted_import_statements(code):
     them in the next child. Only top-level imports, matching
     ``worker._hoist_user_imports``: an import nested in ``try`` is conditional
     by intent and replaying it would turn a guarded optional dependency into a
-    hard failure.
+    hard failure. *skip* names the modules the node's package ships (#468),
+    whose imports are left to the function body and never replayed, as
+    in process.
     """
     import ast
     import textwrap
+
+    from utk_curio.sandbox.util.package_modules import without_package_imports
 
     try:
         tree = ast.parse(textwrap.dedent(code))
@@ -519,6 +523,8 @@ def _hoisted_import_statements(code):
 
     statements = []
     for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            node = without_package_imports(node, skip)
         if isinstance(node, ast.Import):
             for alias in node.names:
                 statements.append(
@@ -552,11 +558,20 @@ def run_node(request, namespace_factory):
     import io
     import traceback
 
+    from utk_curio.sandbox.util.package_modules import importable
+
     scratch_dir = request["scratch_dir"]
     code = request["code"]
     # dev/116: taken OUT of the request before anything else runs, so no later
     # traceback, dump or manifest can carry the values.
     secrets = shape_secrets(request.pop("secrets", None))
+    # #468: the package's own modules, staged by the parent, importable from
+    # before the session's imports are replayed until the node returns.
+    modules = request.get("package_modules") or {}
+    module_names = tuple(modules.get("names") or ())
+    module_folder = (
+        os.path.join(scratch_dir, modules["root"]) if modules.get("root") and module_names else None
+    )
 
     captured_stdout = io.StringIO()
     captured_stderr = io.StringIO()
@@ -566,7 +581,8 @@ def run_node(request, namespace_factory):
 
     try:
         with contextlib.redirect_stdout(captured_stdout), \
-             contextlib.redirect_stderr(captured_stderr):
+             contextlib.redirect_stderr(captured_stderr), \
+             importable(module_folder, module_names):
             namespace = namespace_factory()
             namespace["curio_secret"] = make_curio_secret(secrets)
 
@@ -601,7 +617,7 @@ def run_node(request, namespace_factory):
 
             # This node's own top-level imports, recorded for later nodes only
             # if they actually work here.
-            for statement in _hoisted_import_statements(code):
+            for statement in _hoisted_import_statements(code, skip=module_names):
                 try:
                     exec(statement, namespace)
                     succeeded_imports.append(statement)
@@ -612,6 +628,12 @@ def run_node(request, namespace_factory):
 
             argument = rebuild_input(request.get("input") or {"kind": "none"},
                                      scratch_dir)
+            # A raster an Autark node handed on arrives as a rasterio dataset,
+            # written into the scratch directory, the one place this child
+            # writes and where a raster it returns is collected from.
+            from utk_curio.sandbox.util.rasters import rasters_for_python
+
+            argument = rasters_for_python(argument, scratch_dir)
 
             # Same tripwire as the in-process path, and the same AST walk: a
             # node that never reads an input is not refused for merely

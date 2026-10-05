@@ -253,7 +253,10 @@ color. The boxes, frames and stand-in edges it returns are drawn by
 `components/scenarios/ScenarioLayers.tsx` beside React Flow's renderer, in its
 coordinates, not as React Flow nodes and edges. React Flow's store is what
 `reactFlow.getNodes()` returns to Run All, a save and an agent's view, so it must
-never hold a node that is not in the dataflow.
+never hold a node that is not in the dataflow. The dashboard page draws its
+scenario columns' frames and headers with the same component;
+`src/utils/scenarios/scenarioDashboard.ts` decides which column each pinned tile goes
+in, and `prepareDashboardNodes` places the columns.
 
 A node drawn hidden is never measured, so code that needs a node's size or hit-tests
 nodes leaves it out (`isDrawnHidden`): the load fit (`fitViewWithMenuOffset`) and the
@@ -502,7 +505,7 @@ CREATE TABLE artifacts (
 | `list_of_ids` | `value_json` | JSON array of child artifact IDs (when list contains DataFrames etc.) |
 | `dict_of_ids` | `value_json` | JSON object mapping keys to child artifact IDs |
 | `outputs` | `value_json` | JSON array of child artifact IDs; used for multi-output nodes |
-| `raster` | `value_str` | File path; raster data stays on disk |
+| `raster` | `value_str` | File path; raster data stays on disk. A raster an Autark node hands on is a `dict` (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) |
 
 **Transfer flow:**
 
@@ -595,6 +598,15 @@ A `DataFrame` becomes a FeatureCollection from its one geometry column; with non
 
 The names `input_<k>` are defined once, as `INPUT_TABLE_PREFIX` and `input_table_name` in `contracts.py`; the Vega-Lite and Autark paths import the generated `inputTableName`, and the preamble states it (see [Generated Contracts](#generated-contracts)).
 
+**Rasters.** A raster on the input is a table under the same names, read through the same path; the Vega-Lite node still refuses it. Its frame says where the raster is and is not fetched as rows: a Python node's `rasterio` dataset by its artifact (`part` for its place in a tuple), or the envelope another node handed on. [`autkRasters.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkRasters.ts) turns each into GeoTIFF bytes and loads it with autk-db's `loadGeoTiff` into the grammar's own database:
+
+- The bytes of an artifact come from `GET /raster` (backend, proxied to the sandbox's `/raster`, [`sandbox/util/rasters.py`](../utk_curio/sandbox/util/rasters.py)): a GeoTIFF GDAL writes, whatever the source format (a VRT from Mosaic Rasters included), described in the `X-Curio-Raster` header (size, bands, CRS, transform, nodata). A raster over `maxCells` or `maxSide` is a 413 with its size, before anything is written.
+- An envelope's collection is written back to GeoTIFF bytes by [`geotiffWriter.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/geotiffWriter.ts).
+- [`rasterLoad.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/rasterLoad.ts) sets the parameters: `maxRasterCells` the raster's own size (up to 2048 by 2048 cells, 8192 on a side), so autk-db never resamples it; `resampleMethod: 'nearest'`; and `coordinateFormat` its EPSG CRS, since autk-db reads a raster as EPSG:4326 otherwise. A larger, rotated or unplaceable raster is refused with a sentence that names it.
+- autk-grammar's data sources have no GeoTIFF, so `withRasterSources` wraps one grammar instance's data adapter to load the `curio-raster` sources and hands every other source on. It also wraps that database's `getLayer` for those tables: the map gets `getRaster`'s collection, at the raster's own extent (autk-db's `getLayer` gives a raster the workspace's extent once a layer with geometry has set one), plus an outline of that extent (`framedRaster`), because autk-map places a map by the geometry of the first collection it loads and a raster has none.
+
+Between nodes a raster travels as autk-db's `getRaster` collection in an envelope, `{dataType: "raster", data, layerName}` ([`rasterWire.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/rasterWire.ts)): each band base64 of little-endian float32, rows from south to north, and the `grid` (CRS, size, origin, cell size) it was read on, which the collection does not carry. A Python node receives one as a `rasterio` dataset that `rasters_for_python` rebuilds on a GeoTIFF of its own (beside the artifacts in process, in the scratch directory in an isolated child). Both sides run `rasterWire.cases.json`. Raster arithmetic for comparisons ([`rasterArithmetic.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/rasterArithmetic.ts)) subtracts two such collections on one grid and refuses two grids that differ, naming both.
+
 A `dataRef` that names an unavailable table, whether an empty layer, a layer that was never loaded, or one dropped by an upstream node, is dropped before the grammar executes: the behavior removes the `map.layerRefs` entry or `plot` block and logs a console warning, which for a missing table lists the non-empty table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. A map that keeps some of its layers renders them, and its success output notes the ones it lost, naming an empty table apart from one the dataflow does not produce. One left with nothing to draw is reported as an empty render (see [Render Outcomes](#render-outcomes)), and a reference to a table that exists but holds no rows is blamed on that table's source rather than on the reference.
 
 [Example 09](examples/09-heterogeneous-data-linked-views.md) demonstrates an input chip; [Example 11](examples/11-autark-pbf-loading.md) demonstrates named layer references.
@@ -652,6 +664,8 @@ When a user clicks the play button on a node, the following sequence occurs:
 ```
 
 **Backend side:** both routes only parse the request and call [`execution/node_exec.py`](../utk_curio/backend/app/execution/node_exec.py). Its `execute_python_node` and `execute_js_node` take the account and the session token as arguments, so a node runs the same way from a route or from a thread with no request: they resolve dataset paths, collections, connection keys and models, call the sandbox, auto-install the output, write the runtime journal and count the run on the monitor. The HTTP session to the sandbox is in [`execution/sandbox_client.py`](../utk_curio/backend/app/execution/sandbox_client.py): `sandbox_request` raises `SandboxTransportError` when the sandbox times out, cannot be reached or refuses the shared secret, and the routes answer it as JSON with a 504 or 502.
+
+**Package modules (#468).** For a node whose package ships Python modules in `sources/`, `node_exec.resolve_package_modules` adds `package_modules: {"root", "names"}` to the `/exec` body: the package's `sources/` folder in the account's store and its module names, the importable names there that no template names as its `source` ([`packages/domain/python_modules.py`](../utk_curio/backend/app/packages/domain/python_modules.py)). The headless runner and the ground-truth harness send the same. In both execution modes the sandbox links those modules into a folder of the run's own with `staging.stage_package_modules` (under fork isolation, the child's scratch directory), puts the folder first on `sys.path` for the run, and when the run ends removes it and every module imported from it ([`sandbox/util/package_modules.py`](../utk_curio/sandbox/util/package_modules.py)): the next run, after an update or of another package, imports its own copy. An import of a package's module is not shared with the session's later nodes. A module name that is already loaded from somewhere else fails the node with that name. The installer refuses a package that ships a module another installed package ships (`refuse_a_module_name_in_use`); two majors of one package may share names. Save into a package and the Package Builder hand the package's module names to the import scanner (`scan_imports_for_filename`), which leaves them out of the detected dependencies.
 
 **JavaScript execution detail:** `JS Computation` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed; the Node subprocess is per-request and fully isolated.
 
@@ -1551,6 +1565,7 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/processJavaScriptCode` | POST | Execute JS node code via Node.js subprocess (proxies to sandbox `/execJs`) |
 | `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it). A name the session-tagged store cannot serve falls back to the shared data directory, where a project load hydrates that project's saved outputs, so they are readable by anyone who can load the project |
 | `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
+| `/raster` | GET | A raster artifact (or one `part` of a tuple) as GeoTIFF bytes for an Autark node, described in the `X-Curio-Raster` header; 413 with its size over `maxCells` or `maxSide` |
 | `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use. Unauthenticated, so it refuses hidden paths and Curio's own state: the instance folder, the `.curio` state root, the shared data directory, the dataset hub and the SQLite database |
 | `/starters` | GET | Per-template starter source bodies from every installed package |
 | `/spatial_join` | POST | Spatial join of two GeoJSON inputs (see `common/spatial.py`) |

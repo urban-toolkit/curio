@@ -51,6 +51,7 @@ jest.mock('../../../providers/ToastProvider', () => ({
 jest.mock('../../../services/api', () => ({
   fetchData: jest.fn().mockResolvedValue({ data: {}, dataType: 'dataframe' }),
   fetchPreviewData: jest.fn().mockResolvedValue({ data: {}, dataType: 'dataframe' }),
+  fetchRaster: jest.fn(),
 }));
 
 jest.mock('../../../components/editing/OutputContent', () => {
@@ -107,9 +108,19 @@ const mockAutkDbSpatialQuery = jest.fn((..._a: unknown[]) => Promise.resolve(und
 const mockAutkDbGetLayer = jest.fn(
   (..._a: unknown[]) => Promise.resolve({ type: 'FeatureCollection', features: [] as any[] }),
 );
+// A raster on the input is loaded into the grammar's database this way.
+const mockAutkDbLoadGeoTiff = jest.fn((..._a: unknown[]) => Promise.resolve({ type: 'raster' }));
+// What it is read back as: its own extent, one feature with no geometry.
+const mockAutkDbGetRaster = jest.fn((..._a: unknown[]) => Promise.resolve({
+  type: 'FeatureCollection',
+  bbox: [-9785700, 5106000, -9781700, 5110000],
+  features: [{ type: 'Feature', geometry: null, properties: { rasterResX: 40, rasterResY: 30 } }],
+}));
 jest.mock('@urban-toolkit/autk-db', () => ({
   AutkDb: jest.fn().mockImplementation(() => ({
     init: jest.fn().mockResolvedValue(undefined),
+    loadGeoTiff: (...a: any[]) => mockAutkDbLoadGeoTiff(...a),
+    getRaster: (...a: any[]) => mockAutkDbGetRaster(...a),
     loadOsm: (...a: any[]) => mockAutkDbLoadOsm(...a),
     loadGeojson: jest.fn().mockResolvedValue(undefined),
     loadCsv: jest.fn().mockResolvedValue(undefined),
@@ -1160,15 +1171,103 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const setOutput = jest.fn();
         const result = await callBehavior(
           useAutkGrammarBehavior,
-          { outputCallback: jest.fn(), input: { path: 'art-r', dataType: 'raster' } as any },
+          { outputCallback: jest.fn(), input: { path: 'art-s', dataType: 'str' } as any },
           { setOutput },
         );
         await act(async () => {
           await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0' }] } }));
         });
         const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
-        expect(errCall![0].content).toContain('raster is not a valid input type for the Autark node.');
+        expect(errCall![0].content).toContain('str is not a valid input type for the Autark node.');
+        expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-s')).toHaveLength(0);
+      });
+
+      test('a raster is loaded into the grammar\'s own database with loadGeoTiff, at its own size, nearest, and drawn', async () => {
+        const { fetchRaster } = jest.requireMock('../../../services/api') as { fetchRaster: jest.Mock };
+        const bytes = new ArrayBuffer(16);
+        fetchRaster.mockResolvedValueOnce({
+          ok: true,
+          bytes,
+          meta: {
+            width: 40, height: 30, count: 1, crs: 'EPSG:32616', crsWkt: null,
+            transform: [30, 0, 447000, 0, -30, 4637000], nodata: -9999,
+          },
+        });
+        mockAutkDbLoadGeoTiff.mockClear();
+        // The grammar as autk-grammar builds it: its engine hands each data
+        // source to its data adapter, threading the database through.
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        let runSpec: any = null;
+        let mapLayer: any = null;
+        const resolved: any[] = [];
+        AutkGrammar.mockImplementationOnce(() => {
+          const grammar: any = { data: {} };
+          grammar.dataAdapter = { resolveSource: jest.fn(async (db: any) => db) };
+          grammar.run = jest.fn(async (spec: any) => {
+            runSpec = spec;
+            let db: any;
+            for (const source of spec.data) {
+              db = await grammar.dataAdapter.resolveSource(db, source);
+              resolved.push(db);
+            }
+            // Its map then asks the database for each layer it draws.
+            mapLayer = await db.getLayer(spec.map.layerRefs[0].dataRef);
+          });
+          return grammar;
+        });
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), input: { path: 'art-r', dataType: 'raster' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0', getFnv: 'band_1' }] } }));
+        });
+
+        expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeUndefined();
         expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-r')).toHaveLength(0);
+        expect(fetchRaster).toHaveBeenCalledWith('art-r', expect.objectContaining({ maxCells: 2048 * 2048 }));
+        expect(runSpec.data.map((s: any) => [s.type, s.outputTableName])).toEqual([['curio-raster', 'input_0']]);
+        expect(mockAutkDbLoadGeoTiff).toHaveBeenCalledWith({
+          geotiffArrayBuffer: bytes,
+          outputTableName: 'input_0',
+          coordinateFormat: 'EPSG:32616',
+          maxRasterCells: 1200,
+          resampleMethod: 'nearest',
+        });
+        // The database the raster went into is the one the grammar's map reads,
+        // and the map gets the raster at its own extent, outlined so autk-map
+        // can place a map that starts with it.
+        expect(resolved[0]?.loadGeoTiff).toBeDefined();
+        expect(mapLayer.bbox).toEqual([-9785700, 5106000, -9781700, 5110000]);
+        expect(mapLayer.features[0].geometry).toBeNull();
+        expect(mapLayer.features[1].geometry.type).toBe('Polygon');
+        expect(setOutput.mock.calls.map((c: any[]) => c[0]?.code)).toContain('success');
+      });
+
+      test('a raster too large to load is not drawn, and the node says to crop it', async () => {
+        const { fetchRaster } = jest.requireMock('../../../services/api') as { fetchRaster: jest.Mock };
+        fetchRaster.mockResolvedValueOnce({
+          ok: false, status: 413, message: 'the raster is 6000 by 6000 cells',
+          meta: { width: 6000, height: 6000, count: 1, crs: 'EPSG:32616', transform: [1, 0, 0, 0, -1, 0] },
+        });
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const constructed = AutkGrammar.mock.calls.length;
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), input: { path: 'art-big', dataType: 'raster' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0' }] } }));
+        });
+        const errCall = setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error');
+        expect(errCall![0].kind).toBe('empty-render:no-input-rows');
+        expect(errCall![0].content).toContain('input_0 is 6000 by 6000 cells');
+        expect(errCall![0].content).toContain('Crop it in the node that makes it');
+        expect(AutkGrammar.mock.calls.length).toBe(constructed);
       });
 
       test('an empty layer from an Autark data node reaches a compute step as an empty table', async () => {

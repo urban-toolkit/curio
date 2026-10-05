@@ -153,7 +153,7 @@ A node's "type" is the id of the template it was made from. A run that can place
 - JS Computation: Run JavaScript via Node.js. Input from the previous node is available as `arg`. Use `return` to pass output downstream.
 - Vega-Lite: The Vega box is responsible for visualizing 2D plots.
 - Simple View: Displays incoming data: a table for DataFrames and GeoDataFrames, or a card per row when the frame carries an image column, showing the image beside that row's values. Other values pass through.
-- Autark: Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering, and/or plot rendering in one declarative spec.
+- Autark: Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering of layers and rasters, and/or plot rendering in one declarative spec.
 - Spatial Join: Finds the polygon each point falls in. Connect the points to the blue circle at the top and the polygons to the green circle at the bottom, then pick the polygon column to copy onto the points, such as a neighborhood name. The output is either the points, each tagged with its polygon's value, or the polygons, each with a count of the points inside. Points outside every polygon get no value.
 - Parameter: One value any node can use. Give it a name, a type and a default. Its tag then shows under Shared in every node's Widgets tab and above every code editor; drag it into a node's code to use the value there. Changing the value makes the nodes that use it run again, and renaming it updates their code. It has no edges, and it lists the nodes that use it.
 - Compare Scenarios: Compares scenarios. Connect each scenario's outcome to its own input circle: each input is labelled by the scenario its node belongs to, and the node stacks the inputs into one table, with the scenario's id and name on every row. That table is its output. Its Chart tab draws the table in the scenarios' colors, as bars, grouped bars, lines, points, a pie, lollipops or a table. Its What differs tab lists what changed between the scenarios: widget values and code lines. It warns when the scenarios read different context.
@@ -275,7 +275,7 @@ Input supported:
 - JS Computation: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - Vega-Lite: DATAFRAME, GEODATAFRAME
 - Simple View: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
-- Autark: LIST, JSON, GEODATAFRAME, DATAFRAME
+- Autark: LIST, JSON, GEODATAFRAME, DATAFRAME, RASTER
 - Spatial Join: GEODATAFRAME
 - Parameter: no input supported
 - Compare Scenarios: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON
@@ -291,7 +291,7 @@ Output supported:
 - JS Computation: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - Vega-Lite: DATAFRAME, GEODATAFRAME
 - Simple View: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
-- Autark: LIST, JSON, GEODATAFRAME, DATAFRAME
+- Autark: LIST, JSON, GEODATAFRAME, DATAFRAME, RASTER
 - Spatial Join: GEODATAFRAME
 - Parameter: no output supported
 - Compare Scenarios: DATAFRAME, GEODATAFRAME

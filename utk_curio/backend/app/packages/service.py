@@ -45,6 +45,7 @@ from utk_curio.backend.app.packages.application.libraries import (
     user_library_import_failure,
 )
 from utk_curio.backend.app.packages.application.prune import prune_unreferenced_packages
+from utk_curio.backend.app.packages.application.python_modules import modules_for_node
 from utk_curio.backend.app.packages.application.seeding import (
     seed_dev_packages,
     ensure_user_packages_initialized,
@@ -158,6 +159,7 @@ __all__ = [
     "provision_declared_deps",
     "provision_python_deps",
     "prune_unreferenced_packages",
+    "modules_for_node",
     "ResolverError",
     "ensure_user_packages_initialized",
     "seed_spec_with_defaults",

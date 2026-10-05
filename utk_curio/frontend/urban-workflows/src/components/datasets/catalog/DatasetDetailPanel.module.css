@@ -148,6 +148,8 @@
 .format_gpkg { background: var(--curio-format-gpkg-bg); color: var(--curio-format-gpkg-on-tint); }
 .format_gtfs { background: var(--curio-format-gtfs-bg); color: var(--curio-format-gtfs-on-tint); }
 .format_collection { background: var(--curio-format-collection-bg); color: var(--curio-format-collection-on-tint); }
+.format_onnx { background: var(--curio-format-onnx-bg); color: var(--curio-format-onnx-on-tint); }
+.format_netcdf { background: var(--curio-format-netcdf-bg); color: var(--curio-format-netcdf-on-tint); }
 
 .installedBadge {
   background: #1e1f23;

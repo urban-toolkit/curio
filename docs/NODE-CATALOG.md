@@ -27,7 +27,7 @@ Every node Curio knows about belongs to a **package**, identified by a reverse-d
                                ai.utk.uhvi@1
 ```
 
-A package is a folder with a `manifest.json` (the contract), an optional `sources/` directory (one starter file per node kind), and a few small sibling files (`README.md`, `LICENSE`, `integrity.json`). The manifest declares the **kinds** the package provides, and each kind becomes a draggable node in the palette.
+A package is a folder with a `manifest.json` (the contract), an optional `sources/` directory (one starter file per node kind, and the Python modules those starters import), and a few small sibling files (`README.md`, `LICENSE`, `integrity.json`). The manifest declares the **kinds** the package provides, and each kind becomes a draggable node in the palette.
 
 ### What ships with Curio
 
@@ -159,7 +159,7 @@ Files sit at the **root of the zip**, not inside a `<packageId>@<major>/` folder
 
 The `/catalog/nodes` page has the same **Import package** button in its header.
 
-The manifest is validated before the package is installed, and an archive whose `<packageId>@<major>` you already have is refused.
+The manifest is validated before the package is installed. An archive whose `<packageId>@<major>` you already have is refused, and so is one that ships a Python module another installed package ships ([Modules beside your template](AUTHORING-NODES.md#modules-beside-your-template)).
 
 ### Publishing
 

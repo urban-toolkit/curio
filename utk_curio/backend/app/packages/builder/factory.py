@@ -75,6 +75,7 @@ from utk_curio.backend.app.packages.domain.package_id import TEMPLATE_ID_RE
 import tempfile
 from utk_curio.backend.app.packages.repositories.archive import is_non_content_filename
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+from utk_curio.backend.app.packages.domain.python_modules import module_names_in
 
 log = logging.getLogger(__name__)
 
@@ -314,14 +315,17 @@ def _validate_sources(
     return out
 
 
-def _detect_dependencies_from_sources(sources: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+def _detect_dependencies_from_sources(
+    sources: dict[str, dict[str, str]], own_modules: frozenset[str] = frozenset(),
+) -> dict[str, dict[str, str]]:
     """Scan every source body for top-level imports; return manifest-shaped deps.
 
     Replaces the manual Python/JS dependency entry that used to live in the
     Node Factory wizard. Each detected name is pinned to ``"*"`` — version
     pinning is a follow-up enhancement (no UI for it today since the wizard
     is gone). Inter-package (``packages``) deps are not source-derivable and
-    must come from the draft.
+    must come from the draft. *own_modules* are left out, as the Package
+    Builder leaves them out (#468).
     """
     py: set[str] = set()
     js: set[str] = set()
@@ -332,7 +336,7 @@ def _detect_dependencies_from_sources(sources: dict[str, dict[str, str]]) -> dic
         code = entry.get("code")
         if not isinstance(filename, str) or not isinstance(code, str):
             continue
-        py_hits, js_hits = scan_imports_for_filename(filename, code)
+        py_hits, js_hits = scan_imports_for_filename(filename, code, own_modules)
         py.update(py_hits)
         js.update(js_hits)
     return {
@@ -345,17 +349,19 @@ def _apply_detected_dependencies(
     manifest_raw: dict[str, Any],
     sources: dict[str, dict[str, str]],
     declared: dict[str, dict[str, str]] | None = None,
+    own_modules: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """Overwrite manifest ``dependencies.python`` / ``.js`` with source-derived deps.
 
     *declared* is what the package being saved into already declares: every
     name in it stays, with its range, because the scan sees only the draft's
     sources and not the files carried forward with it (``backend/``, sources
-    no template names). ``dependencies.packages`` (inter-package deps) is
-    preserved verbatim — it cannot be derived from source. The mutation
-    happens on a shallow copy.
+    no template names). *own_modules* are that package's own modules, which
+    its templates import and nobody installs. ``dependencies.packages``
+    (inter-package deps) is preserved verbatim: it cannot be derived from
+    source. The mutation happens on a shallow copy.
     """
-    detected = _detect_dependencies_from_sources(sources)
+    detected = _detect_dependencies_from_sources(sources, own_modules)
     for kind, ranges in (declared or {}).items():
         detected[kind] = dict(sorted({**detected[kind], **ranges}.items()))
     out = dict(manifest_raw)
@@ -442,6 +448,10 @@ def build_package_archive(draft: dict[str, Any], *, onto: Path | None = None) ->
     # not source-derivable and stays as the draft provided it.
     manifest_with_deps = _apply_detected_dependencies(
         dict(manifest_raw), sources, base.declared if base else None,
+        # The modules the package being saved into carries forward (#468).
+        module_names_in(base.files if base else (), [
+            t.get("source") for t in manifest_raw.get("templates") or [] if isinstance(t, dict)
+        ]),
     )
     manifest_authoring = _stamp_manifest_created_at_when_absent(manifest_with_deps)
     manifest = _validate_manifest_dict(manifest_authoring)

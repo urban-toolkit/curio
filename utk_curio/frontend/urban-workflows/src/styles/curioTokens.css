@@ -203,6 +203,18 @@
   --curio-format-collection-bg: #F9E1E8;
   --curio-format-collection-on-tint: #9E2F4F;
 
+  /* ONNX: a trained model stored as its file. A bronze, the one yellow hue
+     here, clear of Parquet's light amber and GeoPackage's terracotta. */
+  --curio-format-onnx-fg: #8A6A12;
+  --curio-format-onnx-bg: #F6EFD9;
+  --curio-format-onnx-on-tint: #6B5210;
+
+  /* NetCDF: gridded variables such as weather. An indigo, deeper than CSV's
+     blue and bluer than JSON's purple. */
+  --curio-format-netcdf-fg: #34449A;
+  --curio-format-netcdf-bg: #E3E7F7;
+  --curio-format-netcdf-on-tint: #34449A;
+
   /* ── Node category palette ─────────────────────────────────────────────
      One colour per node category. Promoted from the canvas, which is where
      this colour already meant something: `nodeTypeBorderColor` in

@@ -19,7 +19,9 @@
       "fiona": ">=1.10.1",
       "pillow": ">=12.2.0",
       "av": ">=15.0",
-      "rasterio": ">=1.4"
+      "rasterio": ">=1.4",
+      "xarray": ">=2026.1.0",
+      "netCDF4": ">=1.7"
     }
   },
   "description": "The default set of nodes that ships with Curio. Auto-installed for every user; provides Data Loading/Export/Transformation, Computation, Visualization, AUTK integrations, and flow control.",
@@ -344,7 +346,7 @@
       "badge": "AUTK",
       "bidirectional": true,
       "category": "vis_grammar",
-      "description": "Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering, and/or plot rendering in one declarative spec.",
+      "description": "Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering of layers and rasters, and/or plot rendering in one declarative spec.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "autk-grammar",
@@ -360,7 +362,8 @@
             "LIST",
             "JSON",
             "GEODATAFRAME",
-            "DATAFRAME"
+            "DATAFRAME",
+            "RASTER"
           ]
         }
       ],
@@ -373,7 +376,8 @@
             "LIST",
             "JSON",
             "GEODATAFRAME",
-            "DATAFRAME"
+            "DATAFRAME",
+            "RASTER"
           ]
         }
       ],

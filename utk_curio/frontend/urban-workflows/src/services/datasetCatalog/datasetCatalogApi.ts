@@ -22,6 +22,8 @@ const DATASET_FORMAT_EXTENSIONS: Record<string, string> = {
   parquet: ".parquet",
   geotiff: ".tif",
   shp: ".shp",
+  onnx: ".onnx",
+  netcdf: ".nc",
 };
 
 /** MIME type → extension, used as a last-resort fallback for the export name. */
@@ -31,6 +33,7 @@ const MIME_EXTENSIONS: Record<string, string> = {
   "application/geo+json": ".geojson",
   "application/vnd.apache.parquet": ".parquet",
   "image/tiff": ".tif",
+  "application/x-netcdf": ".nc",
 };
 
 /** Dispatched after a node auto-installs a computed dataset so open drawers reload. */

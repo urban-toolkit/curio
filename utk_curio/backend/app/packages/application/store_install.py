@@ -23,6 +23,7 @@ from utk_curio.backend.app.packages.domain.manifest import ManifestError
 from utk_curio.backend.app.packages.domain.package_id import BUILTIN_PACKAGE_ID, PACKAGE_DIR_RE, PackageIdError
 from utk_curio.backend.app.packages.repositories import (
     catalog_dir as packages_catalog_dir,
+    python_modules as packages_python_modules,
     seed_state,
 )
 from utk_curio.backend.app.packages.repositories.archive import (
@@ -146,6 +147,32 @@ def _purge_stale_staging(user_key: str, keep: "Path | None" = None) -> None:
                 log.warning("Failed to purge legacy staging dir %s", entry, exc_info=True)
 
 
+def refuse_a_module_name_in_use(user_key: str, package_root: Path, manifest) -> None:
+    """Raise :class:`InstallerError` when the package at *package_root* ships a
+    Python module another package in *user_key*'s store ships, naming both
+    packages and the module (#468).
+
+    The package's own other majors are not another package: a node runs with
+    its own package's modules only, so two majors of one package can keep the
+    same module names. Called by :func:`install_package_from_archive` under the
+    store lock, over the unlocked store walk (``store_reads._store_index``).
+    """
+    names = packages_python_modules.module_names(package_root, manifest)
+    if not names:
+        return
+    for dir_name, other in packages_store_reads._store_index(user_key).items():
+        if dir_name.rsplit("@", 1)[0] == manifest.package_id or isinstance(other, Exception):
+            continue
+        shared = sorted(names & packages_python_modules.module_names(package_dir(user_key, dir_name), other))
+        if shared:
+            raise InstallerError(
+                f"package {manifest.dir_name} ships the Python module {shared[0]!r}, which the "
+                f"installed package {dir_name} also ships. Two installed packages cannot ship "
+                f"a module of the same name: rename the module in one of them, or remove "
+                f"{dir_name} first."
+            )
+
+
 def install_package_from_archive(
     user_key: str,
     archive: bytes | IO[bytes],
@@ -261,6 +288,7 @@ def install_package_from_archive(
             # between the rmtree and the move, and a seeding pass cannot decide
             # to refresh the old copy and then swap it in over this one.
             with package_seed_lock(user_key):
+                refuse_a_module_name_in_use(user_key, staging_root, manifest)
                 replaced = False
                 if final_dest.exists():
                     if not replace:
