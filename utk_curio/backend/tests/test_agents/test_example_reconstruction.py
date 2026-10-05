@@ -160,7 +160,7 @@ class TestReachability:
             f for f in FIXTURES
             if any((n.get("metadata") or {}).get("widgets") for n in _example(f)["dataflow"]["nodes"])
         ]
-        assert {f.fixture_id for f in with_widgets} == {"Widget", "Scenarios"}
+        assert {f.fixture_id for f in with_widgets} == {"Widget", "Scenarios", "BuildingRasters"}
         for fixture in with_widgets:
             example = _example(fixture)
             origins = canonical_graph_from_spec(example, templates=TEMPLATES).origins

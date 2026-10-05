@@ -35,6 +35,7 @@ This file indexes the dataflows Curio ships, for the built-in agents. A run of a
 ## Not used
 
 - [AutkMap](../../docs/examples/dataflows/AutkMap.json): checks that a map draws a GeoDataFrame from its input, on three squares built in code.
+- [BuildingRasters](../../docs/examples/dataflows/BuildingRasters.json): checks SCOUT's building rasterizer package and a map of its height mosaic, on twelve buildings built in code.
 - [DataPool_AutkMap](../../docs/examples/dataflows/DataPool_AutkMap.json): the same check through a pool node, on squares built in code.
 - [DataPool_Dataframe](../../docs/examples/dataflows/DataPool_Dataframe.json): checks the pool grid on a hand-typed nine-row frame.
 - [DataPool_Geodataframe](../../docs/examples/dataflows/DataPool_Geodataframe.json): checks the pool grid on geometry, read from a repository file by path instead of a catalog dataset.
