@@ -301,7 +301,7 @@ class TestTheRasterRequest:
         path = tmp_path / "large.tif"
         with rasterio.open(
             path, "w", driver="GTiff", width=2049, height=2048, count=1, dtype="uint8",
-            crs="EPSG:32616", transform=Affine(1, 0, 0, 0, -1, 0), compress="DEFLATE",
+            crs="EPSG:32616", transform=Affine(10.0, 0.0, 447000.0, 0.0, -10.0, 4637000.0), compress="DEFLATE",
         ) as target:
             target.write(np.zeros((2048, 2049), dtype="uint8"), 1)
         large = rasterio.open(path)

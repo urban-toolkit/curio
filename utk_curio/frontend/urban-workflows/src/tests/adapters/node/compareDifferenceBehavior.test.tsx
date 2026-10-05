@@ -237,9 +237,10 @@ describe("its body in Difference", () => {
     expect(state.output).toEqual({ code: "", content: "" });
     await waitFor(() => expect(mockApply).toHaveBeenCalled());
     expect(JSON.parse(mockApply.mock.calls.at(-1)![0])).toEqual({
-      map: { layerRefs: [{ dataRef: "input_0", getFnv: "band_1", colorMapInterpolator: "interpolateRdBu" }] },
+      map: { layerRefs: [{ dataRef: "input_0", getFnv: "band_1", colorMapInterpolator: "interpolateViridis" }] },
     });
-    expect(screen.getByText(/the middle color is halfway between them, not zero/)).not.toBeNull();
+    const note = screen.getByText(/Dark purple is the lowest difference and yellow the highest\./);
+    expect(note.textContent).toContain("The closer a cell is to no difference, the fainter it is.");
     expect(screen.queryByRole("combobox", { name: "Key" })).toBeNull();
     // The map says it drew once the Autark code reports so, for this document.
     const map = () => document.querySelector("[data-compare-map-state]")!;
@@ -260,8 +261,10 @@ describe("its body in Difference", () => {
     await screen.findByTestId("autark-map");
     await waitFor(() => expect(mockApply).toHaveBeenCalled());
     expect(JSON.parse(mockApply.mock.calls.at(-1)![0]).map.layerRefs[0]).toEqual({
-      dataRef: "input_0", getFnv: "sunlight", getFnvType: "quantitative", colorMapInterpolator: "interpolateRdBu",
+      dataRef: "input_0", getFnv: "sunlight", getFnvType: "quantitative", colorMapInterpolator: "interpolateViridis",
     });
+    // A layer's squares are not faded by how small their difference is.
+    expect(screen.getByText(/Dark purple is the lowest difference and yellow the highest\./).textContent).not.toContain("fainter");
     fireEvent.change(screen.getByRole("combobox", { name: "Color by" }), { target: { value: "change" } });
     expect(mockUpdateDataNode).toHaveBeenCalledWith(
       COMPARE,

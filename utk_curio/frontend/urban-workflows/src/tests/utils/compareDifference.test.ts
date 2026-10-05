@@ -47,10 +47,10 @@ describe("what the map colors the difference by", () => {
 });
 
 describe("the Autark document that draws it", () => {
-  test("a raster, by a band, low red and high blue", () => {
+  test("a raster, by a band, from dark purple (lowest) to yellow (highest)", () => {
     const [band] = differenceValues("raster", { bands: ["band_1"] });
     expect(differenceMapDoc("raster", band)).toEqual({
-      map: { layerRefs: [{ dataRef: "input_0", getFnv: "band_1", colorMapInterpolator: "interpolateRdBu" }] },
+      map: { layerRefs: [{ dataRef: "input_0", getFnv: "band_1", colorMapInterpolator: "interpolateViridis" }] },
     });
   });
 
@@ -62,7 +62,7 @@ describe("the Autark document that draws it", () => {
           dataRef: "input_0",
           getFnv: "sunlight",
           getFnvType: "quantitative",
-          colorMapInterpolator: "interpolateRdBu",
+          colorMapInterpolator: "interpolateViridis",
         }],
       },
     });
