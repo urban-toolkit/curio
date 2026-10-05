@@ -39,7 +39,7 @@ data.utk.chicago-boundary@1/
 
 ### What ships with Curio
 
-Twenty datasets ship in the shared catalog at `<repo_root>/datasets/`: six under `data.utk.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), one under `data.projectsidewalk.*` (Chicago accessibility labels), and eight under `data.curio.storage-*`: the tables and collections the storage examples read, added from the Discovery Catalog's **Example storage** source.
+Twenty-seven datasets ship in the shared catalog at `<repo_root>/datasets/`: six under `data.utk.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), one under `data.projectsidewalk.*` (Chicago accessibility labels), the Mapillary sample example 10 reads (`data.curio.mapillary-sample`), eight under `data.curio.storage-*` (the tables and collections the storage examples read, added from the Discovery Catalog's **Example storage** source), and six under `data.scout.*` that the `scout.routing@1` package reads: SCOUT's WRF weather forecast over Chicago, a NetCDF group of five variables (`data.scout.wrf-*`), and SCOUT's weather graph network as an ONNX model (`data.scout.weather-gnn`). SCOUT (urban-toolkit/scout) publishes them, and they are used with the permission of SCOUT's authors.
 
 ### Origins
 

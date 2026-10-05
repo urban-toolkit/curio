@@ -1,0 +1,12 @@
+{
+  "sha256": {
+    "README.md": "c43402fe52b55a3c581eca4071cb15440ea49f150dd1c262b2a678ff1224c1be",
+    "manifest.json": "e6fd1d2720c118ed30ba517d052ff4b010960165ea23bd85a83c2858ceea10db",
+    "sources/scout_routing/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sources/scout_routing/calculate_isochrones.py": "378f50e3412f4823b06b457bf2322818a3eb4120a618ef3c54544be6f3e471f0",
+    "sources/scout_routing/road_graph.py": "8d116e606797f03c46783cf10084a1e80d3ad0061075e782b3fefc94fbe130bc",
+    "sources/scout_routing/weather_routing.py": "cd2dfade861a8258716c5d9d3790976e4e22947e739adca8c628aabb6ac2080a",
+    "sources/scout_routing/weight_calculation.py": "18ca757c36ba0554c0da6a688ef1c4149abd2e9fe435c4ab0029b7d8d1501b94",
+    "sources/weather-routing.py": "c24377c821d0af60acdb9276e3e067866a1c67c22a3dbb21f8e626d1f4acde31"
+  }
+}

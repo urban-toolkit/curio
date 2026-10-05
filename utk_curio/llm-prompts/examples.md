@@ -36,6 +36,8 @@ This file indexes the dataflows Curio ships, for the built-in agents. A run of a
 
 - [AutkMap](../../docs/examples/dataflows/AutkMap.json): checks that a map draws a GeoDataFrame from its input, on three squares built in code.
 - [BuildingRasters](../../docs/examples/dataflows/BuildingRasters.json): checks SCOUT's building rasterizer package and a map of its height mosaic, on twelve buildings built in code.
+- [WeatherRouting](../../docs/examples/dataflows/WeatherRouting.json): checks SCOUT's weather routing package in two scenarios with different rain and wind weights over the Loop's roads from an Autark node and a shared start time, with both scenarios' routes on an Autark map and four Compare Scenarios charts of duration, distance and rain and wind exposure.
+- [NetCDF](../../docs/examples/dataflows/NetCDF.json): checks a NetCDF group from the Data Catalog: one loader reads SCOUT's five WRF weather variables and averages each by hour, and a line chart draws the mean rain.
 - [DataPool_AutkMap](../../docs/examples/dataflows/DataPool_AutkMap.json): the same check through a pool node, on squares built in code.
 - [DataPool_Dataframe](../../docs/examples/dataflows/DataPool_Dataframe.json): checks the pool grid on a hand-typed nine-row frame.
 - [DataPool_Geodataframe](../../docs/examples/dataflows/DataPool_Geodataframe.json): checks the pool grid on geometry, read from a repository file by path instead of a catalog dataset.

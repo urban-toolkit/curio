@@ -1,0 +1,39 @@
+{
+  "id": "data.scout.weather-gnn",
+  "name": "SCOUT Weather GNN",
+  "version": "1.0.0",
+  "format": "onnx",
+  "description": "SCOUT's weather GNN as an ONNX model: a graph network (two GraphSAGE layers with mean aggregation and a linear head) that predicts five weather values at every node of a road graph from the WRF weather at the node. Inputs x (float32, nodes by 7: latitude, longitude, RAIN, T2, WSPD10, WDIR10, RH2) and edge_index (int64, 2 by edges: the source and target row of each edge); output prediction (float32, nodes by 5: RAIN, T2, RH2, WSPD10, WDIR10). The scout.routing package weights its routes with it. Exported once from SCOUT's backend/models/routing/gnn/rain_model.pth with scripts/scout/export_weather_gnn.py. From SCOUT, https://github.com/urban-toolkit/scout, used with the permission of SCOUT's authors.",
+  "publisher": "SCOUT (urban-toolkit/scout)",
+  "license": "",
+  "tags": [
+    "onnx",
+    "model",
+    "gnn",
+    "weather",
+    "routing",
+    "scout",
+    "chicago"
+  ],
+  "dataFile": "data/weather_gnn.onnx",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "SCOUT",
+  "rowCount": null,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-10-05T00:00:00Z",
+  "updatedAt": "2026-10-05T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "sourceEncoding": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null,
+  "discoverySource": null,
+  "collection": null
+}
