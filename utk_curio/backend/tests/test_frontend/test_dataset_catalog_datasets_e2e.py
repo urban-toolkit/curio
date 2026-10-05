@@ -159,7 +159,10 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
     """
     palette.get_by_role("button", name="Browse Data Catalog +").click(force=True)
     drawer = _drawer(page)
-    card = drawer.locator(f'{CARD}[data-dataset-id="{dataset.dataset_id}"]')
+    # The drawer shows a group (a NetCDF file's variables, a PBF's layers) as
+    # one card under the group's id, and adding it adds every member.
+    card_id = dataset.manifest.group_id or dataset.dataset_id
+    card = drawer.locator(f'{CARD}[data-dataset-id="{card_id}"]')
     # By id, never by count: test_dataset_palette.py can leave a computed.*
     # dataset dir behind under a recycled user id, which shows up here as an
     # extra card and would break any exact count.
@@ -179,7 +182,7 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
     # Re-resolve rather than reuse the handle: the install flips origin
     # hub -> imported, which changes the React key so the card is replaced.
     expect(
-        drawer.locator(f'{CARD}[data-dataset-id="{dataset.dataset_id}"]').get_by_role(
+        drawer.locator(f'{CARD}[data-dataset-id="{card_id}"]').get_by_role(
             "button", name="Remove from project", exact=True
         )
     ).to_be_visible(timeout=20000)

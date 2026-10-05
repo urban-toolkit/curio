@@ -170,6 +170,7 @@ def test_two_routing_scenarios_are_mapped_and_charted(
         _assert_stacked_table(page, compares[column])
 
     # 4. What differs: the two weights, and nothing else.
+    frame_nodes(page, [compares["duration"]])
     compare = node_locator(page, compares["duration"])
     compare.get_by_role("tab", name="What differs", exact=True).click()
     compare.locator('[data-compare-widget="rain"]').wait_for(state="visible", timeout=10000)
