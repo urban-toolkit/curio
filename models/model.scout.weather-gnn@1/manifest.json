@@ -1,0 +1,18 @@
+{
+  "id": "model.scout.weather-gnn",
+  "name": "SCOUT weather GNN (weather at road nodes)",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "Estimates the weather at each node of a road network from a coarse weather grid. Two GraphSAGE layers and a linear head: each node reads its latitude, longitude and the rain, temperature, wind speed, wind direction and humidity of its nearest grid cell, with its neighbours', and gives rain, temperature, humidity, wind speed and wind direction. The Weather-Aware Routes node of SCOUT Weather Routing runs it to weigh each road before routing.",
+  "publisher": "SCOUT (urban-toolkit/scout); ONNX export by Curio",
+  "homepage": "https://github.com/urban-toolkit/scout",
+  "license": "Unspecified: SCOUT's trained weights, license to be confirmed",
+  "runtime": "onnx",
+  "task": "node-regression",
+  "entry": "files/weather_gnn.onnx",
+  "labels": [],
+  "tags": ["weather", "routing", "gnn", "graphsage", "roads", "scout", "onnx"],
+  "sizeBytes": 48257,
+  "createdAt": "2026-10-05T00:00:00Z",
+  "updatedAt": "2026-10-05T00:00:00Z"
+}

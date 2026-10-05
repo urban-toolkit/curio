@@ -1,0 +1,39 @@
+{
+  "id": "data.scout.chicago-weather-2025-07-06",
+  "name": "Chicago Weather, 6 July 2025",
+  "version": "1.0.0",
+  "format": "bundle",
+  "description": "SCOUT's WRF-Chem weather run of 6 July 2025 over downtown Chicago, the weather its weather-aware routing reads: five files, 49 quarter-hour steps from 00:00 to 12:00 on a 1 km grid of 20 by 20 cells, each with the cells' XLAT and XLONG. RAIN.nc is rain, T2.nc the temperature at 2 m in kelvin, WSPD10.nc and WDIR10.nc the wind speed (m/s) and direction (degrees) at 10 m, and RH2.nc the relative humidity at 2 m (%). Read one with curio_load_data(\"data.scout.chicago-weather-2025-07-06\", part=\"RAIN.nc\").",
+  "publisher": "SCOUT (urban-toolkit/scout)",
+  "license": "Unspecified: SCOUT example data, source and license to be confirmed",
+  "tags": [
+    "chicago",
+    "weather",
+    "wrf",
+    "netcdf",
+    "routing",
+    "scout",
+    "2025-07-06"
+  ],
+  "dataFile": "data/bundle.json",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "SCOUT weather-aware routing use case; WRF-Chem V4.5.1",
+  "rowCount": null,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-10-05T00:00:00Z",
+  "updatedAt": "2026-10-05T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "sourceEncoding": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null,
+  "discoverySource": null,
+  "collection": null
+}

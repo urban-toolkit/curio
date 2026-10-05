@@ -1,0 +1,10 @@
+{
+  "sha256": {
+    "README.md": "a9199dfe071891e5583dabdedb7869e4e5a8d5a63406218a85319e8b4b1fff85",
+    "manifest.json": "2081cb108aee1bcd5d862ca0d568337388aeac4f3534c6da1ff22dc7290dc33b",
+    "sources/scout_weather_routing/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sources/scout_weather_routing/node_outputs.py": "a276e4da05fe929d5649d2bc830eb3683b7d663987573cd4bdbd0c28f5852a8a",
+    "sources/scout_weather_routing/weather_routing.py": "c352615dc1d5a35947eccdfa13b160ddfc190b226f041237efee98b865cdcbdf",
+    "sources/weather-aware-routes.py": "8ae919304eb4363541568b1c5c0cc5376dfb11ec650315eb0241aa73069feb90"
+  }
+}

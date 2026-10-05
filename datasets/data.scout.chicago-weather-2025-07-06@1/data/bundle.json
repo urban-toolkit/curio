@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "parts": [
+    {
+      "index": 0,
+      "label": "Rain",
+      "kind": "netcdf",
+      "format": "netcdf",
+      "file": "data/RAIN.nc"
+    },
+    {
+      "index": 1,
+      "label": "Temperature at 2 m (K)",
+      "kind": "netcdf",
+      "format": "netcdf",
+      "file": "data/T2.nc"
+    },
+    {
+      "index": 2,
+      "label": "Wind speed at 10 m (m/s)",
+      "kind": "netcdf",
+      "format": "netcdf",
+      "file": "data/WSPD10.nc"
+    },
+    {
+      "index": 3,
+      "label": "Wind direction at 10 m (degrees)",
+      "kind": "netcdf",
+      "format": "netcdf",
+      "file": "data/WDIR10.nc"
+    },
+    {
+      "index": 4,
+      "label": "Relative humidity at 2 m (%)",
+      "kind": "netcdf",
+      "format": "netcdf",
+      "file": "data/RH2.nc"
+    }
+  ]
+}

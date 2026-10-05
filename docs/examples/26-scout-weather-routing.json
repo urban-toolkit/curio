@@ -1,0 +1,289 @@
+{
+    "dataflow": {
+        "nodes": [
+            {
+                "id": "711f9a7c-b0bf-542b-b47b-4cb388a69da5",
+                "type": "curio.builtin/data-loading",
+                "x": 0,
+                "y": 215,
+                "out": "DEFAULT",
+                "in": "DEFAULT",
+                "goal": "Load Chicago's road network from the Data Catalog, and keep the roads of the area to route in.",
+                "metadata": {
+                    "keywords": [],
+                    "widgets": [
+                        {
+                            "name": "west",
+                            "type": "number",
+                            "label": "West (longitude)",
+                            "default": -87.662,
+                            "options": {
+                                "min": -180,
+                                "max": 180,
+                                "step": 0.001,
+                                "units": "\u00b0"
+                            }
+                        },
+                        {
+                            "name": "south",
+                            "type": "number",
+                            "label": "South (latitude)",
+                            "default": 41.859,
+                            "options": {
+                                "min": -90,
+                                "max": 90,
+                                "step": 0.001,
+                                "units": "\u00b0"
+                            }
+                        },
+                        {
+                            "name": "east",
+                            "type": "number",
+                            "label": "East (longitude)",
+                            "default": -87.613,
+                            "options": {
+                                "min": -180,
+                                "max": 180,
+                                "step": 0.001,
+                                "units": "\u00b0"
+                            }
+                        },
+                        {
+                            "name": "north",
+                            "type": "number",
+                            "label": "North (latitude)",
+                            "default": 41.898,
+                            "options": {
+                                "min": -90,
+                                "max": 90,
+                                "step": 0.001,
+                                "units": "\u00b0"
+                            }
+                        }
+                    ]
+                },
+                "content": "# Chicago's road network as SCOUT routes on it (downtown), with SCOUT's\n# graph keys; the routing node reads SCOUT's weather run itself.\nroads = curio_load_data(\"data.osm.chicago-roads\")\n\n# The area to route in, as SCOUT's data layer sets its roi: the roads that\n# reach into the box, in degrees of longitude and latitude. The Widgets tab\n# sets the box; its defaults are SCOUT's use case.\nwest, south, east, north = [!! west !!], [!! south !!], [!! east !!], [!! north !!]\nif not (west < east and south < north):\n    raise ValueError(\"The bounding box needs west less than east and south less than north.\")\narea = roads.cx[west:east, south:north]\nif area.empty:\n    raise ValueError(\"No road reaches into the bounding box; widen it in the Widgets tab.\")\nreturn area\n"
+            },
+            {
+                "id": "a6607bef-7b08-5c63-a57c-4f8df9a4e16f",
+                "type": "scout.weather-routing/weather-aware-routes",
+                "x": 645,
+                "y": 215,
+                "out": "DEFAULT",
+                "in": "DEFAULT",
+                "goal": "Plan the fastest and the weather-aware routes across the area with SCOUT's weather GNN, leaving at midnight on 6 July 2025.",
+                "metadata": {
+                    "keywords": [],
+                    "widgets": [
+                        {
+                            "name": "origin",
+                            "type": "location",
+                            "label": "Origin",
+                            "default": {
+                                "lat": 41.896438,
+                                "lon": -87.659758
+                            }
+                        },
+                        {
+                            "name": "destination",
+                            "type": "location",
+                            "label": "Destination",
+                            "default": {
+                                "lat": 41.861649,
+                                "lon": -87.614034
+                            }
+                        },
+                        {
+                            "name": "time",
+                            "type": "datetime",
+                            "label": "Start time",
+                            "default": "2025-07-06T00:00:00"
+                        },
+                        {
+                            "name": "mode",
+                            "type": "choice",
+                            "label": "Mode",
+                            "default": "Default weights",
+                            "options": {
+                                "choices": [
+                                    "Default weights",
+                                    "Custom weights",
+                                    "Single-factor weights"
+                                ],
+                                "display": "dropdown"
+                            }
+                        },
+                        {
+                            "name": "k",
+                            "type": "number",
+                            "label": "K (routes per condition)",
+                            "default": 1,
+                            "options": {
+                                "min": 1,
+                                "max": 3,
+                                "step": 1
+                            }
+                        },
+                        {
+                            "name": "conditions",
+                            "type": "checkbox-group",
+                            "label": "Weather conditions",
+                            "default": [
+                                "rain",
+                                "wind"
+                            ],
+                            "options": {
+                                "choices": [
+                                    "rain",
+                                    "heat",
+                                    "wind",
+                                    "humidity"
+                                ]
+                            }
+                        },
+                        {
+                            "name": "rain",
+                            "type": "slider",
+                            "label": "Rain weight",
+                            "default": 0.85834,
+                            "options": {
+                                "min": 0,
+                                "max": 1,
+                                "step": 1e-05
+                            }
+                        },
+                        {
+                            "name": "heat",
+                            "type": "slider",
+                            "label": "Heat weight",
+                            "default": 0.0285,
+                            "options": {
+                                "min": 0,
+                                "max": 1,
+                                "step": 1e-05
+                            }
+                        },
+                        {
+                            "name": "wind",
+                            "type": "slider",
+                            "label": "Wind weight",
+                            "default": 0.01657,
+                            "options": {
+                                "min": 0,
+                                "max": 1,
+                                "step": 1e-05
+                            }
+                        },
+                        {
+                            "name": "humidity",
+                            "type": "slider",
+                            "label": "Humidity weight",
+                            "default": 0.09648,
+                            "options": {
+                                "min": 0,
+                                "max": 1,
+                                "step": 1e-05
+                            }
+                        },
+                        {
+                            "name": "width",
+                            "type": "number",
+                            "label": "Route width on the map",
+                            "default": 40,
+                            "options": {
+                                "min": 1,
+                                "max": 500,
+                                "step": 1,
+                                "units": "m"
+                            }
+                        }
+                    ]
+                },
+                "content": "\"\"\"Weather-Aware Routes: SCOUT's weather-aware route planning.\n\nInput: the roads of the area to route in, SCOUT's data layer, cut from the\nData Catalog's data.osm.chicago-roads. The code reads the road network from\nit, and SCOUT's WRF weather run of 6 July 2025 from\ndata.scout.chicago-weather-2025-07-06, a file each.\nOutput: (routes, endpoints, ribbons, metrics).\n- routes: one LineString per route, with its route label, distance_km,\n  duration_min and the exposure to each weather condition chosen. An Autark\n  map draws it as input_0.\n- endpoints: the origin and destination, at the road nodes they snap to\n  (input_1), drawn as circles; ribbons: each route as a band as wide as the\n  Route width widget sets, for a map (input_2).\n- metrics: one row per route and measure (route, metric, value), for a\n  Vega-Lite chart that compares the routes (input_3).\nThe GNN, from the Model Catalog, estimates the weather at every road node;\neach street is weighed by it, and the routes are the lightest. The Widgets tab\nsets the origin, destination, start time, mode, K, the conditions and their\nweights. To use another model, drag it from the Model Catalog onto this node.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_weather_routing.node_outputs import weather_routes\n\nmodel = curio_load_model(\"model.scout.weather-gnn\")\n\n# SCOUT's road network, and its WRF weather run of 6 July 2025, a file each.\nroads = curio_load_data(\"data.osm.chicago-roads\")\nweather = {\n    \"RAIN\": curio_load_data(\"data.scout.chicago-weather-2025-07-06\", part=\"RAIN.nc\"),\n    \"T2\": curio_load_data(\"data.scout.chicago-weather-2025-07-06\", part=\"T2.nc\"),\n    \"WSPD10\": curio_load_data(\"data.scout.chicago-weather-2025-07-06\", part=\"WSPD10.nc\"),\n    \"WDIR10\": curio_load_data(\"data.scout.chicago-weather-2025-07-06\", part=\"WDIR10.nc\"),\n    \"RH2\": curio_load_data(\"data.scout.chicago-weather-2025-07-06\", part=\"RH2.nc\"),\n}\n\n# The conditions the routes weigh, each with its weight.\nweights = {\"rain\": [!! rain !!], \"heat\": [!! heat !!], \"wind\": [!! wind !!], \"humidity\": [!! humidity !!]}\nconditions = {name: weights[name] for name in [!! conditions !!]}\n\nreturn weather_routes(\n    arg,\n    roads,\n    weather,\n    model,\n    origin=[!! origin !!],\n    destination=[!! destination !!],\n    mode=[!! mode !!],\n    k=[!! k !!],\n    time=[!! time !!],\n    conditions=conditions,\n    width=[!! width !!],\n)\n"
+            },
+            {
+                "id": "98f8f423-dd7f-5ea6-9b9b-c4e716c69bbf",
+                "type": "curio.builtin/autk-grammar",
+                "x": 1290,
+                "y": 0,
+                "out": "DEFAULT",
+                "in": "DEFAULT",
+                "goal": "Draw the two routes on a map, one colour each, with circles at their origin and destination.",
+                "metadata": {
+                    "keywords": []
+                },
+                "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"input_2\",\n        \"getFnv\": \"route\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"legendTitle\": \"Route\"\n      },\n      {\n        \"dataRef\": \"input_1\",\n        \"getFnv\": \"kind\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeSet1\",\n        \"legendTitle\": \"Endpoint\"\n      }\n    ]\n  }\n}"
+            },
+            {
+                "id": "695f4609-31df-55a3-9083-8d0a65a9f1c7",
+                "type": "curio.builtin/vis-vega",
+                "x": 1290,
+                "y": 430,
+                "out": "DEFAULT",
+                "in": "DEFAULT",
+                "goal": "Compare the routes' travel time, distance and exposure to rain and wind.",
+                "metadata": {
+                    "keywords": []
+                },
+                "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": {\n    \"name\": \"input_3\"\n  },\n  \"facet\": {\n    \"column\": {\n      \"field\": \"metric\",\n      \"type\": \"nominal\",\n      \"title\": null\n    }\n  },\n  \"spec\": {\n    \"width\": 160,\n    \"height\": 200,\n    \"mark\": \"bar\",\n    \"encoding\": {\n      \"x\": {\n        \"field\": \"route\",\n        \"type\": \"nominal\",\n        \"title\": null,\n        \"axis\": {\n          \"labelAngle\": -30\n        }\n      },\n      \"y\": {\n        \"field\": \"value\",\n        \"type\": \"quantitative\",\n        \"title\": null\n      },\n      \"color\": {\n        \"field\": \"route\",\n        \"type\": \"nominal\",\n        \"legend\": null\n      },\n      \"tooltip\": [\n        {\n          \"field\": \"route\"\n        },\n        {\n          \"field\": \"metric\"\n        },\n        {\n          \"field\": \"value\",\n          \"format\": \".2f\"\n        }\n      ]\n    }\n  },\n  \"resolve\": {\n    \"scale\": {\n      \"y\": \"independent\"\n    }\n  }\n}"
+            }
+        ],
+        "edges": [
+            {
+                "id": "reactflow__edge-711f9a7c-b0bf-542b-b47b-4cb388a69da5out-a6607bef-7b08-5c63-a57c-4f8df9a4e16fin",
+                "source": "711f9a7c-b0bf-542b-b47b-4cb388a69da5",
+                "target": "a6607bef-7b08-5c63-a57c-4f8df9a4e16f",
+                "sourceHandle": "out",
+                "targetHandle": "in"
+            },
+            {
+                "id": "reactflow__edge-a6607bef-7b08-5c63-a57c-4f8df9a4e16fout-98f8f423-dd7f-5ea6-9b9b-c4e716c69bbfin",
+                "source": "a6607bef-7b08-5c63-a57c-4f8df9a4e16f",
+                "target": "98f8f423-dd7f-5ea6-9b9b-c4e716c69bbf",
+                "sourceHandle": "out",
+                "targetHandle": "in"
+            },
+            {
+                "id": "reactflow__edge-a6607bef-7b08-5c63-a57c-4f8df9a4e16fout-695f4609-31df-55a3-9083-8d0a65a9f1c7in",
+                "source": "a6607bef-7b08-5c63-a57c-4f8df9a4e16f",
+                "target": "695f4609-31df-55a3-9083-8d0a65a9f1c7",
+                "sourceHandle": "out",
+                "targetHandle": "in"
+            }
+        ],
+        "name": "SCOUT weather-aware routing",
+        "description": "SCOUT's weather-aware route planning use case: the fastest route across downtown Chicago and the route that weighs the rain and wind the trip will meet, from SCOUT's weather GNN, drawn on a map and compared by travel time, distance and weather exposure.",
+        "task": "",
+        "timestamp": 1791158400000,
+        "provenance_id": "DefaultWorkflow",
+        "categories": {
+            "city": [
+                "Chicago"
+            ],
+            "complexity": [
+                "Intermediate"
+            ]
+        },
+        "packages": [
+            "scout.weather-routing@1"
+        ],
+        "datasets": [
+            {
+                "datasetId": "data.osm.chicago-roads",
+                "dirName": "data.osm.chicago-roads@1",
+                "origin": "imported",
+                "producerNodeId": null,
+                "consumerNodeIds": [],
+                "installedAt": "2026-10-05T00:00:00Z"
+            },
+            {
+                "datasetId": "data.scout.chicago-weather-2025-07-06",
+                "dirName": "data.scout.chicago-weather-2025-07-06@1",
+                "origin": "imported",
+                "producerNodeId": null,
+                "consumerNodeIds": [],
+                "installedAt": "2026-10-05T00:00:00Z"
+            }
+        ]
+    }
+}

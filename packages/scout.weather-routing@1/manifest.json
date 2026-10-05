@@ -1,0 +1,185 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-10-05T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "networkx": ">=3.0",
+      "netCDF4": ">=1.6",
+      "onnxruntime": ">=1.17",
+      "scipy": ">=1.10",
+      "xarray": ">=2023.1"
+    }
+  },
+  "description": "SCOUT's weather-aware route planning, ported from SCOUT (urban-toolkit/scout): the Weather-Aware Routes node runs the weather GNN from the Model Catalog on a road network and a weather run, weighs each street by the rain, heat, wind and humidity it will see when the trip reaches it, and gives the fastest and the weather-aware routes, their endpoints and SCOUT's measures of them.",
+  "id": "scout.weather-routing",
+  "license": "MIT",
+  "name": "SCOUT Weather Routing",
+  "permissions": [],
+  "publisher": "Curio",
+  "readOnly": true,
+  "templates": [
+    {
+      "category": "computation",
+      "description": "SCOUT's weather-aware routing: splits the trip into quarter-hour zones, stitches each zone's weather at the time the trip reaches it, runs the weather GNN, a Model Catalog model, to estimate the weather at every road node, weighs each street by it, and routes. Input: the roads of the area to route in, cut from data.scout.chicago-weather-2025-07-06; the code reads the road network and SCOUT's WRF weather files from the same dataset. Output: (routes, endpoints, ribbons, metrics): the routes as LineStrings with their distance, duration and weather exposure; the origin and destination; each route as a band of the width the Route width widget sets, for a map; and one row per route and measure, for a chart comparing them.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": true,
+      "iconRef": "fa-solid:route",
+      "id": "weather-aware-routes",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "GEODATAFRAME",
+            "DATAFRAME"
+          ]
+        }
+      ],
+      "label": "Weather-Aware Routes",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": [
+            "GEODATAFRAME",
+            "DATAFRAME"
+          ]
+        }
+      ],
+      "source": "sources/weather-aware-routes.py",
+      "widgets": [
+        {
+          "name": "origin",
+          "type": "location",
+          "label": "Origin",
+          "default": {
+            "lat": 41.896438,
+            "lon": -87.659758
+          }
+        },
+        {
+          "name": "destination",
+          "type": "location",
+          "label": "Destination",
+          "default": {
+            "lat": 41.861649,
+            "lon": -87.614034
+          }
+        },
+        {
+          "name": "time",
+          "type": "datetime",
+          "label": "Start time",
+          "default": "2025-07-06T00:00:00"
+        },
+        {
+          "name": "mode",
+          "type": "choice",
+          "label": "Mode",
+          "default": "Default weights",
+          "options": {
+            "choices": [
+              "Default weights",
+              "Custom weights",
+              "Single-factor weights"
+            ],
+            "display": "dropdown"
+          }
+        },
+        {
+          "name": "k",
+          "type": "number",
+          "label": "K (routes per condition)",
+          "default": 1,
+          "options": {
+            "min": 1,
+            "max": 3,
+            "step": 1
+          }
+        },
+        {
+          "name": "conditions",
+          "type": "checkbox-group",
+          "label": "Weather conditions",
+          "default": [
+            "rain",
+            "wind"
+          ],
+          "options": {
+            "choices": [
+              "rain",
+              "heat",
+              "wind",
+              "humidity"
+            ]
+          }
+        },
+        {
+          "name": "rain",
+          "type": "slider",
+          "label": "Rain weight",
+          "default": 0.85834,
+          "options": {
+            "min": 0,
+            "max": 1,
+            "step": 1e-05
+          }
+        },
+        {
+          "name": "heat",
+          "type": "slider",
+          "label": "Heat weight",
+          "default": 0.0285,
+          "options": {
+            "min": 0,
+            "max": 1,
+            "step": 1e-05
+          }
+        },
+        {
+          "name": "wind",
+          "type": "slider",
+          "label": "Wind weight",
+          "default": 0.01657,
+          "options": {
+            "min": 0,
+            "max": 1,
+            "step": 1e-05
+          }
+        },
+        {
+          "name": "humidity",
+          "type": "slider",
+          "label": "Humidity weight",
+          "default": 0.09648,
+          "options": {
+            "min": 0,
+            "max": 1,
+            "step": 1e-05
+          }
+        },
+        {
+          "name": "width",
+          "type": "number",
+          "label": "Route width on the map",
+          "default": 40,
+          "options": {
+            "min": 1,
+            "max": 500,
+            "step": 1,
+            "units": "m"
+          }
+        }
+      ]
+    }
+  ],
+  "version": "1.0.0"
+}

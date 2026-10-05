@@ -1,0 +1,38 @@
+{
+  "id": "data.osm.chicago-roads",
+  "name": "Chicago Roads",
+  "version": "1.0.0",
+  "format": "parquet",
+  "description": "Chicago's road network as SCOUT routes on it, from its OpenStreetMap extract of Chicago, cut to downtown: the West Loop to the lake and the river to the Near South Side. One row per directed edge, 45,900 of them, with the nodes it joins (u, v, key), its length in metres, a speed in km/h and a travel time in seconds. A speed is OpenStreetMap's limit where a mapper set one, otherwise OSMnx's estimate for the road's class. The rows keep the order of SCOUT's graph.",
+  "publisher": "OpenStreetMap contributors",
+  "license": "ODbL-1.0",
+  "tags": [
+    "chicago",
+    "osm",
+    "roads",
+    "network",
+    "routing",
+    "parquet"
+  ],
+  "dataFile": "data/chicago-roads.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "OpenStreetMap contributors; SCOUT preprocessing",
+  "rowCount": 45900,
+  "featureCount": 45900,
+  "schema": null,
+  "createdAt": "2026-10-05T00:00:00Z",
+  "updatedAt": "2026-10-05T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "sourceEncoding": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null,
+  "discoverySource": null,
+  "collection": null
+}
