@@ -65,6 +65,7 @@ from .utils import (
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
     connect_nodes,
+    dismiss_toasts,
     drag_to_canvas,
     frame_nodes,
     load_artifact_as_dict,
@@ -537,10 +538,13 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
         box.dblclick()
         node_locator(page, scenario["nodes"][-1]).wait_for(state="visible", timeout=10000)
     _wait_for_circles(page, compare, ["in"])
+    # The drops' toasts sit bottom right, where a dropped node's handle can be.
     frame_nodes(page, [copies[B_ROADS], compare])
+    dismiss_toasts(page)
     connect_nodes(page, copies[B_ROADS], compare)
     _wait_for_circles(page, compare, ["in", "in_1"])
     frame_nodes(page, [copies[T_ROADS], compare])
+    dismiss_toasts(page)
     connect_nodes(page, copies[T_ROADS], compare, target_handle="in_1")
     deadline = time.time() + 15
     code = ""
