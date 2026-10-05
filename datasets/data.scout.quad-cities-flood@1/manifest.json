@@ -1,0 +1,38 @@
+{
+  "id": "data.scout.quad-cities-flood",
+  "name": "Quad Cities Flood Projections",
+  "version": "1.0.0",
+  "format": "bundle",
+  "description": "SCOUT's flooding use case over the Quad Cities: seven GeoTIFFs on one grid (EPSG:4326, about 11 m cells). NBS_others_5m.tif is the nature-based solution (NbS) class of each cell: 21 bioswales/infiltration trenches, 31 permeable pavements, 43 retention ponds, 52 infiltration trench, 71 and 81 bioswales, 90 and 95 constructed wetlands, 0 none. <period>_NbS.tif and <period>_noNbS.tif are the projected flood depth in metres for 2020_2040, 2050_2080 and 2080_2100, with NbS and without; NaN where a projection gives no depth. Read one with curio_load_data(\"data.scout.quad-cities-flood\", part=\"2020_2040_NbS.tif\").",
+  "publisher": "SCOUT (urban-toolkit/scout)",
+  "license": "Unspecified: SCOUT example data, source and license to be confirmed",
+  "tags": [
+    "quad-cities",
+    "flood",
+    "nbs",
+    "scout",
+    "raster",
+    "geotiff"
+  ],
+  "dataFile": "data/bundle.json",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "SCOUT flooding use case",
+  "rowCount": null,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-10-05T00:00:00Z",
+  "updatedAt": "2026-10-05T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "sourceEncoding": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null,
+  "discoverySource": null,
+  "collection": null
+}

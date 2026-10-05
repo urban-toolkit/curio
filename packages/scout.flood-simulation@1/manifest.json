@@ -1,0 +1,81 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-10-05T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "rasterio": ">=1.4"
+    }
+  },
+  "description": "SCOUT's flood simulation, ported from SCOUT (urban-toolkit/scout): the Simulate Flood node projects flood depth over the Quad Cities for a period, with nature-based solutions where a cell's class is one of those chosen and without them elsewhere, as a raster an Autark map draws.",
+  "id": "scout.flood-simulation",
+  "license": "MIT",
+  "name": "SCOUT Flood Simulation",
+  "permissions": [],
+  "publisher": "Curio",
+  "readOnly": true,
+  "templates": [
+    {
+      "category": "computation",
+      "description": "SCOUT's flood projection: for each cell, the flood depth with nature-based solutions (NbS) where its class is one of the solutions chosen, and without them elsewhere. Input: (classes, nbs, no_nbs), three rasters on one grid: the NbS classes and one period's flood depth with NbS and without, as data.scout.quad-cities-flood holds them. Output: one RASTER of flood depth in metres, NaN where the projection gives none, for an Autark map, Raster Statistics or Compare Scenarios.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": true,
+      "iconRef": "fa-solid:water",
+      "id": "simulate-flood",
+      "inputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": [
+            "RASTER",
+            "DATAFRAME"
+          ]
+        }
+      ],
+      "label": "Simulate Flood",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "RASTER"
+          ]
+        }
+      ],
+      "source": "sources/simulate-flood.py",
+      "widgets": [
+        {
+          "name": "nbs",
+          "type": "checkbox-group",
+          "label": "Nature-based solutions",
+          "default": [
+            "Bioswales/Infiltration trenches",
+            "Permeable pavements",
+            "Retention ponds",
+            "Infiltration trench",
+            "Bioswales",
+            "Constructed wetlands"
+          ],
+          "options": {
+            "choices": [
+              "Bioswales/Infiltration trenches",
+              "Permeable pavements",
+              "Retention ponds",
+              "Infiltration trench",
+              "Bioswales",
+              "Constructed wetlands"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "version": "1.0.0"
+}

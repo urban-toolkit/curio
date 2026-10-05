@@ -1,0 +1,37 @@
+{
+  "window": {
+    "col_off": 450,
+    "row_off": 1500,
+    "width": 200,
+    "height": 200
+  },
+  "topleft": "-90.64232956527924, 41.47220138426412",
+  "bottomright": "-90.62206168318113, 41.451933502166",
+  "bounds": [
+    -90.64232956527924,
+    41.451933502166,
+    -90.62206168318113,
+    41.47220138426412
+  ],
+  "cases": {
+    "2020_2040_all": {
+      "year": "2020 - 2040",
+      "nbs": [
+        "Bioswales/Infiltration trenches",
+        "Permeable pavements",
+        "Retention ponds",
+        "Infiltration trench",
+        "Bioswales",
+        "Constructed wetlands"
+      ]
+    },
+    "2020_2040_none": {
+      "year": "2020 - 2040",
+      "nbs": []
+    },
+    "2050_2080_none": {
+      "year": "2050 - 2080",
+      "nbs": []
+    }
+  }
+}
