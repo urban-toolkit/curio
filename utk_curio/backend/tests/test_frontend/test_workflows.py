@@ -486,13 +486,15 @@ class TestWorkflowCanvas:
         """The Autark nodes whose grammar draws a map or a plot.
 
         Read from the spec, not the page, so a node that never created its
-        canvas is still on the list.
+        canvas is still on the list. A spec is read as a run reads it, its
+        references resolved: one that places a widget as a value
+        (``"height_factor": [!! height_factor !!]``) is not JSON until then.
         """
         drawing = []
         for node in self.spec.nodes:
             if node.type != "AUTK_GRAMMAR" or node.id in self._expected_empty():
                 continue
-            grammar = json.loads(node.content or "{}")
+            grammar = json.loads(self.spec.node_code(node, "json") if node.content else "{}")
             if "map" in grammar or "plot" in grammar:
                 drawing.append(node)
         return drawing
