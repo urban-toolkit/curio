@@ -11,7 +11,9 @@ What an input may be:
 - a table: a DataFrame, a GeoDataFrame, a list of records, a dict of columns,
   or a dict of values, which is one row;
 - a value: a number, a text, a true or false, or a list of them, each one row
-  under ``value``.
+  under ``value``;
+- one layer of an Autark node's several (a compute step hands on every layer
+  of its workspace), the one the node's Layer menu names (``layer``).
 
 Inputs of one kind are stacked, and a column one input lacks is empty in its
 rows, which the run says. Anything else is refused with a message naming the
@@ -38,14 +40,62 @@ def _label(position: int, name: object) -> str:
     return f"input {position} ({name})" if name not in (None, "") else f"input {position}"
 
 
+def _named_layers(value):
+    """``[(name, envelope)]`` for the layers an Autark node hands on together
+    (its ``outputs`` envelope, each layer under its ``layerName``), else None."""
+    if not (isinstance(value, dict) and value.get("dataType") == "outputs" and isinstance(value.get("data"), list)):
+        return None
+    items = value["data"]
+    if not items or not all(isinstance(item, dict) and isinstance(item.get("layerName"), str) and item["layerName"] for item in items):
+        return None
+    return [(item["layerName"], item) for item in items]
+
+
+def _pick_layer(label: str, value, layer):
+    """The one layer of an Autark node's several that the node compares,
+    *layer*, named in its Layer menu."""
+    layers = _named_layers(value)
+    if layers is None:
+        return value
+    names = ", ".join(name for name, _ in layers)
+    if layer not in (None, ""):
+        for name, item in layers:
+            if name == layer:
+                return item
+        raise ValueError(f"Compare Scenarios: {label} has no layer {layer}. Its layers are {names}.")
+    if len(layers) == 1:
+        return layers[0][1]
+    raise ValueError(
+        f"Compare Scenarios: {label} carries {len(layers)} layers ({names}). "
+        "Pick the one to compare in the node's Layer menu."
+    )
+
+
+def _declared_crs(envelope):
+    """The CRS a layer's FeatureCollection names (``crs.properties.name``, as
+    Autark writes ``urn:ogc:def:crs:EPSG::3395``), or None."""
+    data = envelope.get("data")
+    crs = data.get("crs") if isinstance(data, dict) else None
+    properties = crs.get("properties") if isinstance(crs, dict) else None
+    name = properties.get("name") if isinstance(properties, dict) else None
+    return name if isinstance(name, str) and name else None
+
+
 def _unwrap(value):
     """A layer an Autark node handed on reaches Python as Curio's
-    ``{dataType, data}`` envelope: read it as the value it holds."""
+    ``{dataType, data}`` envelope: read it as the value it holds, in the
+    coordinate system its FeatureCollection names."""
     if isinstance(value, dict) and "dataType" in value and "data" in value:
         from utk_curio.sandbox.util.parsers import parseInput
 
         parsed = parseInput(value)
         if parsed is not None:
+            declared = _declared_crs(value)
+            if declared and _is_geo(parsed) and parsed.crs is None:
+                try:
+                    parsed = parsed.set_crs(declared)
+                except Exception:  # noqa: BLE001  (an unknown CRS name: the rows are read without one)
+                    pass
             return parsed
     return value
 
@@ -86,11 +136,12 @@ def _is_column(value) -> bool:
     return isinstance(value, (list, tuple, np.ndarray, pd.Series))
 
 
-def _rows_of(label: str, value):
-    """``(kind, frame)``: the rows *value* adds to the stacked table."""
+def _rows_of(label: str, value, layer=None):
+    """``(kind, frame)``: the rows *value* adds to the stacked table, from its
+    layer *layer* when it is an Autark node's several layers."""
     import pandas as pd
 
-    value = _unwrap(value)
+    value = _unwrap(_pick_layer(label, value, layer))
     if value is None:
         raise ValueError(
             f"Compare Scenarios: {label} has no value. Run the node that feeds it, "
@@ -151,12 +202,13 @@ def _crs_name(crs) -> str | None:
         return str(crs)
 
 
-def stack_scenarios(entries):
+def stack_scenarios(entries, layer=None):
     """One table of every input's rows, each under its scenario.
 
     *entries* lists ``(scenario_id, scenario_name, value)`` per input, in circle
     order. A ``scenario_id`` of ``None`` is an input whose node is in no
-    scenario, named by its node.
+    scenario, named by its node. *layer* names the layer to read from an input
+    that is an Autark node's several layers.
     """
     import pandas as pd
 
@@ -176,7 +228,7 @@ def stack_scenarios(entries):
         scenario, name, value = entry
         name = "" if name is None else str(name)
         label = _label(position, name)
-        kind, frame = _rows_of(label, value)
+        kind, frame = _rows_of(label, value, layer)
         for column in (SCENARIO_COLUMN, NAME_COLUMN):
             if column in frame.columns:
                 raise ValueError(

@@ -243,9 +243,9 @@ def _drag_card_with_the_mouse(page, project_id: str, scenario_id: str, at=(300.0
     drawer = page.locator('[data-curio-scenario-catalog-drawer="true"]')
     card = drawer.locator(f'[data-scenario-key="{project_id}/{scenario_id}"]')
     card.wait_for(state="visible", timeout=20000)
-    # The drawer lists every scenario in the account, the seeded test
-    # dataflows' too, so the card can sit below the window: scroll the drawer
-    # to it, as a person does, and press only where the card itself is hit.
+    # The drawer lists every scenario in the account, the seeded test and
+    # shipped dataflows' too, so the card can sit below the window: scroll the
+    # drawer to it, as a person does, and press only where the card itself is hit.
     card.scroll_into_view_if_needed()
     card_box = card.bounding_box()
     pane_box = page.locator(CANVAS_DROP_TARGET).bounding_box()
