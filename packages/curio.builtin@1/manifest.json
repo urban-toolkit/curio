@@ -434,6 +434,45 @@
       "behavior": "parameter",
       "outputPorts": [],
       "paletteOrder": 12
+    },
+    {
+      "category": "vis_grammar",
+      "containerStyle": {
+        "nodeHeight": 420,
+        "nodeWidth": 560
+      },
+      "description": "Compares scenarios. Connect each scenario's outcome to its own input circle: each input is labelled by the scenario its node belongs to, and the node stacks the inputs into one table, with the scenario's id and name on every row. That table is its output. Its Chart tab draws the table in the scenarios' colors, as bars, grouped bars, lines, points, a pie, lollipops or a table. Its What differs tab lists what changed between the scenarios: widget values and code lines. It warns when the scenarios read different context.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "iconRef": "fa-solid:code-compare",
+      "id": "compare-scenarios",
+      "inputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON"
+          ]
+        }
+      ],
+      "label": "Compare Scenarios",
+      "behavior": "compare-scenarios",
+      "outputPorts": [
+        {
+          "cardinality": "[1,n]",
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME"
+          ]
+        }
+      ],
+      "paletteOrder": 13
     }
   ],
   "version": "1.0.2"

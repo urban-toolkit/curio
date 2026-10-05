@@ -19,6 +19,7 @@ import { dataPoolFromSpec } from "../utils/dataPoolSpec";
 import { normalizeWidgets, type WidgetDef } from "../utils/widgets/widgetModel";
 import { runKeyWithShared, sharedWidgetsOfSpec } from "../utils/references/sharedParameters";
 import { lineageFromSpec } from "../utils/scenarios/duplicateSelection";
+import { normalizeCompareSettings, type CompareSettings } from "../utils/compare/compareSettings";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -82,6 +83,9 @@ type CreateCodeNodeOptions = {
     widgets?: WidgetDef[];
     // #662: the ids a copy descends from, oldest first (metadata.copiedFrom).
     copiedFrom?: string[];
+    // #662: a Compare Scenarios node's input labels and chart
+    // (metadata.compareScenarios).
+    compareScenarios?: CompareSettings;
     // #407: a node whose saved output a project load restored mounts as having
     // run: the output it shows, and the source that produced it.
     output?: { code: string; content: string };
@@ -250,6 +254,10 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && Array.isArray(node.metadata.copiedFrom))
                 nodeMeta.copiedFrom = lineageFromSpec(node.metadata.copiedFrom);
 
+            // #662: and a Compare Scenarios node's input labels and chart.
+            if(node.metadata != undefined && node.metadata.compareScenarios != undefined)
+                nodeMeta.compareScenarios = normalizeCompareSettings(node.metadata.compareScenarios);
+
             if(typeof node.title === "string" && node.title)
                 nodeMeta.title = node.title;
 
@@ -412,6 +420,7 @@ export function useCode(): IUseCode {
             dataPool = undefined,
             widgets = undefined,
             copiedFrom = undefined,
+            compareScenarios = undefined,
             output = undefined,
             executedCode = undefined,
         } = options;
@@ -462,6 +471,7 @@ export function useCode(): IUseCode {
                 dataPool,
                 widgets,
                 copiedFrom,
+                compareScenarios,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset
