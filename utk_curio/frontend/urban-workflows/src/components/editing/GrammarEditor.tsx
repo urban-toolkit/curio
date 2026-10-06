@@ -9,6 +9,8 @@ import { describeError } from "../../adapters/node/autkRunSettlement";
 import { ReferenceStrip } from "./widgets/WidgetTag";
 import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
+import { NOTEBOOK_SPEC_EDITOR_MAX, useNotebookEditorHeight } from "./useNotebookEditorHeight";
+import { nodeEditorLook } from "./nodeEditorLook";
 
 const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [], shared: [] };
 const NO_INPUTS: InputScope[] = [];
@@ -59,6 +61,8 @@ export default function GrammarEditor({
     useCodeReferences(widgetEditor?.editor, widgetEditor?.monaco, references, widgetLanguage, {
         hideJsonMarkers: true,
     });
+    // In a notebook cell the spec is as tall as its lines, over its output.
+    const editorHeight = useNotebookEditorHeight(NOTEBOOK_SPEC_EDITOR_MAX);
     const grammarRef = useRef(grammar);
     const setGrammar = (data: string) => {
         grammarRef.current = data;
@@ -106,7 +110,9 @@ export default function GrammarEditor({
 
     // onMount fires once, so the action reads the CURRENT play function through
     // a ref rather than capturing the first render's (#223).
-    const { playNodesUpTo } = useFlowContext();
+    const { playNodesUpTo, dashboardOn } = useFlowContext();
+    // The spec in a plain gray box, as in a notebook, except on a dashboard tile.
+    const look = nodeEditorLook(!!dashboardOn);
     const runNodeRef = useRef<() => void>(() => {});
     runNodeRef.current = () => playNodesUpTo(nodeId);
 
@@ -146,6 +152,7 @@ export default function GrammarEditor({
         }
         attachEditor(editor);
         setWidgetEditor({ editor, monaco });
+        editorHeight.attach(editor, monaco);
         editor.onDidBlurEditorText(proposeOnBlur);
         // Same chord as the code editor, so a grammar node runs the way a
         // Python one does (#223).
@@ -216,7 +223,7 @@ export default function GrammarEditor({
         <div
             id={"vega-editor_" + nodeId}
             className="my-editor nowheel nodrag"
-            style={{ height: "100%", display: "flex", flexDirection: "column" }}
+            style={{ height: editorHeight.inCell ? "auto" : "100%", display: "flex", flexDirection: "column" }}
         >
             {pendingProposal && (
                 <div
@@ -265,7 +272,7 @@ export default function GrammarEditor({
                 onLoadColumns={onLoadColumns}
                 layerChips
             />
-            <div style={{ flex: 1, minHeight: 0 }}>
+            <div className={look.wrapperClassName} style={{ flex: 1, minHeight: 0, ...editorHeight.wrapperStyle }}>
                 {/* Uncontrolled on purpose: a per-keystroke `value` round-trip
                     lets a render that lands with a stale string do a full-model
                     replace — resetting content and throwing the cursor to the
@@ -291,6 +298,8 @@ export default function GrammarEditor({
                         // on to the page, and `nowheel` on the wrapper keeps the
                         // canvas from zooming. Read only at creation.
                         scrollbar: { alwaysConsumeMouseWheel: false },
+                        // A plain input box, but on a dashboard tile.
+                        ...look.editorOptions,
                     }}
                 />
             </div>

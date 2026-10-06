@@ -99,6 +99,10 @@ WORKFLOW_FILES = [
 
     "docs/examples/dataflows/Regression.json",
 
+    # A NetCDF group from the Data Catalog, read whole by one loader; the
+    # isolated stack runs it too (ISOLATED_WORKFLOWS in docker-compose.yml).
+    "docs/examples/dataflows/NetCDF.json",
+
     # Curated examples shown in docs/README.md. These are the showcase
     # workflows — including the modular autk-grammar GPU/compute chains — so
     # they belong in the browser matrix, not just the structural checks in
@@ -129,6 +133,9 @@ WORKFLOW_FILES = [
     "docs/examples/21-storage-photos-and-videos.json",
     "docs/examples/22-storage-audio-recordings.json",
     "docs/examples/23-storage-folder-of-different-files.json",
+    # Package nodes: the stack installs scout.raster-conversion@1 and
+    # scout.shadow@1 because the dataflow declares them (--with-examples).
+    "docs/examples/24-scout-building-rasters.json",
 ]
 
 

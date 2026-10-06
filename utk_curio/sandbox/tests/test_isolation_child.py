@@ -19,6 +19,8 @@ import sys
 import tempfile
 import types
 import unittest
+import uuid
+import warnings
 from pathlib import Path
 from unittest import mock
 
@@ -359,6 +361,42 @@ class TestSessionImports(ChildTestCase):
             session_imports=["import definitely_not_a_real_module"],
         )
         self.assertTrue(result["ok"], result["stderr"])
+
+    def test_a_replayed_import_cannot_change_the_nodes_warning_filters(self):
+        """A library that turns every warning on when it is imported
+        (pythermalcomfort 3.9 calls ``warnings.simplefilter("always")`` in its
+        utilities) is replayed into every later node of the session. Its filter
+        must stay with the replay: the node keeps the filters it was forked
+        with, here the zygote's ``ignore`` (#749)."""
+        stub = "curio_stub_always_" + uuid.uuid4().hex
+        stubs = self.scratch / "stubs"
+        stubs.mkdir()
+        (stubs / f"{stub}.py").write_text(
+            "import warnings\nwarnings.simplefilter('always')\nREPLAYED = True\n", encoding="utf-8"
+        )
+        sys.path.insert(0, str(stubs))
+        self.addCleanup(sys.path.remove, str(stubs))
+        self.addCleanup(sys.modules.pop, stub, None)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            before = list(warnings.filters)
+            result = self.run_code(
+                "    import warnings\n"
+                "    with warnings.catch_warnings(record=True) as caught:\n"
+                "        warnings.warn('numpy.ndarray size changed, may indicate binary incompatibility',"
+                " RuntimeWarning)\n"
+                f"    return '%s %d' % ({stub}.REPLAYED, len(caught))\n",
+                session_imports=[f"import {stub}"],
+            )
+            after = list(warnings.filters)
+        self.assertTrue(result["ok"], result["stderr"])
+        # The stub was replayed (its module reached the node), and the warning
+        # it would have let through was not recorded.
+        self.assertEqual(result["output"]["value"], "True 0")
+        # Nor did its filter stay behind. (A library imported for the first
+        # time while the node ran, numpy for one, may add filters of its own.)
+        added = [f for f in after if f not in before]
+        self.assertNotIn(("always", None, Warning, None, 0), added)
 
     def test_reported_imports_satisfy_the_protocol_validator(self):
         """They are replayed as code, so the validator must accept them."""

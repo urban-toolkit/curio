@@ -18,6 +18,8 @@ export interface DrawerFooterProps {
   busyLabel?: React.ReactNode;
   /** Button content. Defaults to the Node Catalog's "Import package". */
   label?: React.ReactNode;
+  /** A drawer's own actions, shown before the import button. */
+  children?: React.ReactNode;
 }
 
 /**
@@ -30,11 +32,13 @@ export const DrawerFooter: React.FC<DrawerFooterProps> = ({
   accept = ".curio.zip,.zip,application/zip",
   label = "Import package",
   busyLabel = "Importing…",
+  children,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
     <footer className={styles.footer}>
+      {children}
       <input
         ref={fileInputRef}
         type="file"

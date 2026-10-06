@@ -538,3 +538,120 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
     assert grid == "3395 512 256", grid
     assert names == "16_16814_24356,16_16815_24356", names
     assert result["output"]["dataType"] == "outputs", result["output"]
+
+
+#: ``scout.routing@1``'s modules, the Data Catalog files its node reads and its
+#: weather GNN (a Model Catalog model), in the image. ``WeatherRouting.json``
+#: declares the package, so the stack's ``--with-examples`` boot installs its
+#: libraries.
+ROUTING_SOURCES = LAUNCH_DIR + "/packages/scout.routing@1/sources"
+ROUTING_DATASETS = {
+    "data.scout.wrf-" + name.lower(): "/datasets/data.scout.wrf-%s@1/data/%s.nc" % (name.lower(), name)
+    for name in ("RAIN", "T2", "WSPD10", "WDIR10", "RH2")
+}
+WEATHER_GNN = "model.scout.weather-gnn"
+
+
+def test_scouts_weather_routing_runs_as_the_exec_user():
+    """The Weather Routing node's code, as the execution user: osmnx builds the
+    road graph of a grid of Loop streets, netCDF4 reads the WRF group's staged
+    files, onnxruntime runs the Model Catalog's weather GNN, staged as a model
+    folder is, and networkx finds the routes."""
+    body = textwrap.indent(textwrap.dedent("""
+        import geopandas as gpd
+        from shapely.geometry import LineString
+        from scout_routing.weather_routing import calculate_weather_route
+
+        xs = [-87.636, -87.632, -87.628, -87.624]
+        ys = [41.876, 41.878, 41.880, 41.882]
+        lines = [LineString([(x, y) for x in xs]) for y in ys] + [LineString([(x, y) for y in ys]) for x in xs]
+        roads = gpd.GeoDataFrame({"highway": ["secondary"] * len(lines)}, geometry=lines, crs="EPSG:4326")
+        weather = {name: curio_data_path("data.scout.wrf-" + name.lower())
+                   for name in ("RAIN", "T2", "WSPD10", "WDIR10", "RH2")}
+        routes, metrics = calculate_weather_route(
+            roads, weather, curio_load_model("model.scout.weather-gnn"),
+            {"lat": 41.876, "lon": -87.636}, {"lat": 41.882, "lon": -87.624},
+            time_="2025-07-06T12:00:00", rain=0.85834, wind=0.01657)
+        print(",".join(metrics["route"]))
+        print(round(float(metrics["distance"].iloc[0]), 4), round(float(metrics["duration"].iloc[0]), 4))
+        return routes, metrics
+    """).strip("\n"), "    ")
+    result = assert_ran(_request("/exec", {
+        "code": body + "\n",
+        "file_path": "",
+        "nodeType": "scout.routing/weather-routing",
+        "dataType": "",
+        "user_key": USER_KEY,
+        "save_dataset": False,
+        "dataset_paths": {dataset_id: LAUNCH_DIR + path for dataset_id, path in ROUTING_DATASETS.items()},
+        "package_modules": {"root": ROUTING_SOURCES, "names": ["scout_routing"]},
+        "models": {WEATHER_GNN: LAUNCH_DIR + "/models/" + WEATHER_GNN + "@1"},
+    }), "routing over a grid of Loop streets")
+    names, numbers = printed(result).splitlines()[-2:]
+    assert names == "fastest-route,weighted-route", names
+    assert numbers == "1.6606 2.0637", numbers
+    assert result["output"]["dataType"] == "outputs", result["output"]
+
+
+#: ``scout.shadow@1``'s modules and SCOUT's Deep Umbra model (a Model Catalog
+#: model), in the image; a shipped test dataflow (``ScoutShadows.json``)
+#: declares the package.
+SHADOW_SOURCES = LAUNCH_DIR + "/packages/scout.shadow@1/sources"
+DEEP_UMBRA = "model.scout.deep-umbra"
+#: SCOUT's committed height tiles of its high-rise example's first scenario.
+SCOUT_A_RASTERS = LAUNCH_DIR + "/utk_curio/backend/tests/test_packages/fixtures/scout/A_rasters"
+
+
+def test_scouts_shadow_model_runs_as_the_exec_user():
+    """The Accumulated Shadow node's code, as the execution user, on the height
+    mosaic a Rasterize Buildings run hands on (here of SCOUT's committed tiles):
+    the Model Catalog model reaches the child staged as a model folder is,
+    onnxruntime opens it
+    and runs it there under the stack's limits, and the node returns its shadow
+    raster, whose mean over the ground is SCOUT's mean accumulated shadow for
+    these tiles, 128.6 minutes."""
+    heights = textwrap.indent(textwrap.dedent("""
+        import rasterio
+        from scout_raster_conversion.node_outputs import read_tiles, write_mosaic
+
+        return rasterio.open(write_mosaic(read_tiles(%r), 550, curio_output_file("scout-a-heights.tif")))
+    """ % SCOUT_A_RASTERS).strip("\n"), "    ")
+    produced = assert_ran(_request("/exec", {
+        "code": heights + "\n",
+        "file_path": "",
+        "nodeType": "scout.raster-conversion/rasterize-buildings",
+        "dataType": "",
+        "user_key": USER_KEY,
+        "save_dataset": False,
+        "package_modules": {"root": RASTER_CONVERSION_SOURCES, "names": ["scout_raster_conversion"]},
+    }), "writing SCOUT's tiles as one mosaic")
+    assert produced["output"]["dataType"] == "raster", produced["output"]
+    body = textwrap.indent(textwrap.dedent("""
+        from scout_shadow.node_outputs import accumulated_shadow, open_model
+
+        model = open_model(lambda: curio_load_model("model.scout.deep-umbra"))
+        shadow = accumulated_shadow(arg, "summer", model, curio_output_file)
+        # What the dataflow's Raster Statistics node computes: the shadow over
+        # the ground, the heights as the mask.
+        metrics = curio_raster_statistics((shadow, arg), where=lambda height: height < 1.08)
+        print(shadow.crs.to_epsg(), shadow.width, shadow.height)
+        print(round(float(metrics["mean"].iloc[0]), 2))
+        return shadow
+    """).strip("\n"), "    ")
+    result = assert_ran(_request("/exec", {
+        "code": body + "\n",
+        "file_path": produced["output"]["path"],
+        "nodeType": "scout.shadow/accumulated-shadow",
+        "dataType": produced["output"]["dataType"],
+        "user_key": USER_KEY,
+        "save_dataset": False,
+        "package_modules": {"root": SHADOW_SOURCES, "names": ["scout_shadow"]},
+        "models": {DEEP_UMBRA: LAUNCH_DIR + "/models/" + DEEP_UMBRA + "@1"},
+    }), "running Deep Umbra")
+    grid, mean = printed(result).splitlines()[-2:]
+    assert grid == "3395 512 512", grid
+    # SCOUT's A_shadows_metric.csv holds 128.63593; the tolerance is the
+    # proof's (test_scout_shadow.py): Deep Umbra's output moves with
+    # onnxruntime's thread count above 16.
+    assert abs(float(mean) - 128.63593) <= 0.1, mean
+    assert result["output"]["dataType"] == "raster", result["output"]

@@ -15,7 +15,8 @@ without pulling Playwright in. ``pyarrow`` and ``rasterio``/``numpy`` are
 imported lazily inside the parquet and geotiff expectations, so collection stays
 in the milliseconds - and both are declared dependencies of ``curio.builtin@1``
 and ``curio.weather@1``, which ``python curio.py setup`` installs before any
-suite runs.
+suite runs. The NetCDF expectations read the file through the sandbox's own
+reader (xarray and netCDF4, ``curio.builtin@1`` dependencies).
 
 WHY THE COMMITTED FILE IS THE ORACLE, NOT THE MANIFEST
 ------------------------------------------------------
@@ -139,6 +140,11 @@ class FormatPlan:
     vega_spec: str | None
     #: Marker name -> expected value, parsed from the committed data file.
     expectations: Callable[[Path], dict[str, str]]
+    #: Code the test appends to the generated loader, for a format whose value
+    #: stays in the loader's own code (``KEPT_IN_CODE`` in
+    #: ``datasetLoaderSnippets.ts``: a node's output cannot carry it). The
+    #: loader uses the value there and returns a table its consumer reads.
+    loader_suffix: str | None = None
 
 
 _CSV_TRANSFORM = '''df = arg
@@ -414,6 +420,53 @@ def _collection_expectations(data_file: Path) -> dict[str, str]:
     }
 
 
+# A NetCDF file's loader holds an xarray Dataset, which no node output can
+# carry, so the loader describes it: each data variable, its dimensions and
+# shape, and how many of its values are finite, proof that the values were read
+# and not only the header.
+_NETCDF_LOADER_SUFFIX = '''import numpy as np
+import pandas as pd
+
+names = list(ds.data_vars)
+return pd.DataFrame({
+    "variable": names,
+    "dims": ["x".join(ds[name].dims) for name in names],
+    "shape": ["x".join(str(n) for n in ds[name].shape) for name in names],
+    "finite": [int(np.isfinite(ds[name].values).sum()) for name in names],
+})
+'''
+
+_NETCDF_TRANSFORM = '''df = arg
+print("CURIO_E2E_VARIABLES=%s;" % ",".join(v + ":" + s for v, s in zip(df["variable"], df["shape"])))
+print("CURIO_E2E_DIMS=%s;" % ",".join(df["dims"]))
+print("CURIO_E2E_FINITE=%d;" % int(df["finite"].sum()))
+return df
+'''
+
+
+def _netcdf_expectations(data_file: Path) -> dict[str, str]:
+    """Read the committed file as ``curio_load_data`` reads it and describe it
+    the way the loader suffix does."""
+    import textwrap
+
+    from utk_curio.sandbox.util.catalog_helpers import read_dataset
+
+    namespace: dict = {}
+    exec("def describe(ds):\n" + textwrap.indent(_NETCDF_LOADER_SUFFIX, "    "), namespace)
+    ds = read_dataset(str(data_file), "netcdf")
+    try:
+        table = namespace["describe"](ds)
+    finally:
+        ds.close()
+    assert len(table), f"{data_file} holds no data variable"
+    assert int(table["finite"].sum()) > 0, f"{data_file} holds no finite value"
+    return {
+        "CURIO_E2E_VARIABLES": ",".join(v + ":" + s for v, s in zip(table["variable"], table["shape"])),
+        "CURIO_E2E_DIMS": ",".join(table["dims"]),
+        "CURIO_E2E_FINITE": str(int(table["finite"].sum())),
+    }
+
+
 FORMAT_PLANS: dict[str, FormatPlan] = {
     "csv": FormatPlan(
         loader_marker="df = curio_load_data(",
@@ -446,6 +499,13 @@ FORMAT_PLANS: dict[str, FormatPlan] = {
         transform_code=_COLLECTION_TRANSFORM,
         vega_spec=None,
         expectations=_collection_expectations,
+    ),
+    "netcdf": FormatPlan(
+        loader_marker="ds = curio_load_data(",
+        transform_code=_NETCDF_TRANSFORM,
+        vega_spec=None,
+        expectations=_netcdf_expectations,
+        loader_suffix=_NETCDF_LOADER_SUFFIX,
     ),
 }
 

@@ -3,10 +3,10 @@ import CSS from "csstype";
 import { Handle, Edge, Position, useEdges, useUpdateNodeInternals } from 'reactflow';
 import { useNotebookViewContext } from '../providers/flow/notebookViewContext';
 import {
-  NOTEBOOK_CELL_HEIGHT,
-  NOTEBOOK_CELL_WIDTH,
-  notebookHandleOffsets,
+  notebookCellMinHeight,
+  notebookHandlePlaces,
   notebookInputLabel,
+  notebookOutputBox,
 } from '../utils/notebookLayout';
 import { resolveNodeDisplayLabel } from '../utils/palettePackageFactoryDraft';
 import { withInputCircles } from '../adapters/node/handleHelpers';
@@ -119,11 +119,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const disablePlay = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
 
   const { signalNodeExecDone, dashboardOn, projectId, edges: flowEdges, isRunActive, serverRunActive, nodes: flowNodes } = useFlowContext();
-  // In the notebook view the node is a cell: a fixed size, its dots on the
-  // right edge where the bar draws its connections, no cardinality markers.
+  // In the notebook view the node is a cell: the page's width and as tall as
+  // its content, its dots on the right edge where the bar draws its
+  // connections, no cardinality markers.
   const notebook = useNotebookViewContext();
   const notebookOn = notebook.on && !dashboardOn;
-  const cellHeight = notebook.heights.get(data.nodeId) ?? NOTEBOOK_CELL_HEIGHT;
   const kindConfig = readCanvasTemplateConfig({ data });
   const editorTabs = resolveEditorTabFlags(descriptor, kindConfig);
   const collab = useCollab();
@@ -348,9 +348,8 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
 
   const allHandles = behavior.handlesOverride
     ?? [...baseHandles, ...(behavior.dynamicHandles ?? [])];
-  const notebookOffsets = notebookOn
-    ? notebookHandleOffsets(allHandles.map((h: HandleDef) => ({ id: h.id, type: h.type })), cellHeight)
-    : null;
+  const dots = notebookOn ? allHandles.map((h: HandleDef) => ({ id: h.id, type: h.type })) : [];
+  const notebookPlaces = notebookOn ? notebookHandlePlaces(dots) : null;
 
   /** What a dot in the notebook's bar says on hover: which input it is and what feeds it. */
   const notebookDotTitle = (h: HandleDef): string => {
@@ -409,8 +408,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             ? h.isConnectableOverride(data, isConnectable, edges)
             : isConnectable;
         const style = h.dynamicStyle ? h.dynamicStyle(data, edges) : h.style;
-        if (notebookOffsets) {
-          // Every dot on the right edge, inputs numbered as the chips count them.
+        if (notebookPlaces) {
+          // Every dot on the right edge, inputs numbered as the chips count
+          // them, each anchored to the top, the middle or the bottom so it
+          // follows the cell as it grows. React Flow measures the dots again
+          // whenever the cell resizes, and the arcs follow them.
           const label = h.type === 'target' && h.id !== 'in/out' ? notebookInputLabel(h.id) : '';
           return (
             <Handle
@@ -419,7 +421,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
               type={h.type}
               position={Position.Right}
               isConnectable={connectable}
-              style={{ ...(style ?? {}), top: notebookOffsets.get(h.id) }}
+              style={{ ...(style ?? {}), ...notebookPlaces.get(h.id) }}
               title={notebookDotTitle(h)}
               className="curio-notebook-dot"
             >
@@ -457,22 +459,21 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         // canvas, and at that size a tile reads as a stray node rather than as
         // the content of the page. The page fits every tile to the window, so
         // the larger default costs nothing when several are pinned.
-        // A notebook cell has the column's fixed size, and like a tile it never
-        // writes it back: the canvas size stays the node's own.
         nodeWidth={
           dashboardOn
             ? (data.dashboardWidth ?? DASHBOARD_TILE_DEFAULT_WIDTH)
-            : notebookOn
-              ? NOTEBOOK_CELL_WIDTH
-              : (data.nodeWidth ?? adapter.container.nodeWidth)
+            : (data.nodeWidth ?? adapter.container.nodeWidth)
         }
         nodeHeight={
           dashboardOn
             ? (data.dashboardHeight ?? DASHBOARD_TILE_DEFAULT_HEIGHT)
-            : notebookOn
-              ? cellHeight
-              : (data.nodeHeight ?? adapter.container.nodeHeight)
+            : (data.nodeHeight ?? adapter.container.nodeHeight)
         }
+        // A notebook cell has the page's width and its content's height, at
+        // least enough for its dots, passed on its own: the node's size props
+        // stay its canvas size, so the node keeps that size when the canvas
+        // comes back, and like a tile a cell never writes its size into the node.
+        cellBox={notebookOn ? { width: notebook.cellWidth, minHeight: notebookCellMinHeight(dots) } : undefined}
         styles={adapter.container.styles as CSS.Properties<0 | (string & {}), string & {}> | undefined}
         disablePlay={disablePlay}
         output={output}
@@ -536,7 +537,13 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           // ``contentComponent`` is otherwise only rendered inside NodeEditor's
           // output tab. ``noContent`` containers
           // legitimately return ``undefined`` here — they're icon-only.
-          behavior.contentComponent ?? null
+          // In a notebook cell the body takes the height its kind gets there
+          // (a table its own, up to a cap, scrolling inside past it).
+          notebookOn && behavior.contentComponent ? (
+            <div className="curio-notebook-body" style={notebookOutputBox(descriptor.id)}>
+              {behavior.contentComponent}
+            </div>
+          ) : (behavior.contentComponent ?? null)
         )}
         </ErrorBoundary>
 
@@ -550,6 +557,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             nodeId={data.nodeId}
             projectId={projectId}
             output={output}
+            inCell={notebookOn}
           />
         )}
 

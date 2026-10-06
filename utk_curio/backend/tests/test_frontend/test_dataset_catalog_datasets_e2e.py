@@ -159,7 +159,10 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
     """
     palette.get_by_role("button", name="Browse Data Catalog +").click(force=True)
     drawer = _drawer(page)
-    card = drawer.locator(f'{CARD}[data-dataset-id="{dataset.dataset_id}"]')
+    # The drawer shows a group (a NetCDF file's variables, a PBF's layers) as
+    # one card under the group's id, and adding it adds every member.
+    card_id = dataset.manifest.group_id or dataset.dataset_id
+    card = drawer.locator(f'{CARD}[data-dataset-id="{card_id}"]')
     # By id, never by count: test_dataset_palette.py can leave a computed.*
     # dataset dir behind under a recycled user id, which shows up here as an
     # extra card and would break any exact count.
@@ -179,7 +182,7 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
     # Re-resolve rather than reuse the handle: the install flips origin
     # hub -> imported, which changes the React key so the card is replaced.
     expect(
-        drawer.locator(f'{CARD}[data-dataset-id="{dataset.dataset_id}"]').get_by_role(
+        drawer.locator(f'{CARD}[data-dataset-id="{card_id}"]').get_by_role(
             "button", name="Remove from project", exact=True
         )
     ).to_be_visible(timeout=20000)
@@ -191,6 +194,16 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
     expect(page.locator(DRAWER_ROOT)).to_have_count(0, timeout=5000)
 
     row = page.locator(f'#datasets-palette [data-dataset-id="{dataset.dataset_id}"]')
+    if dataset.manifest.group_id:
+        # The palette folds the datasets of a group (a NetCDF file's variables,
+        # a PBF's layers) under one header, and shows a member's row once the
+        # group is open.
+        group = page.locator(f'#datasets-palette [data-osm-group-id="{dataset.manifest.group_id}"]')
+        expect(group).to_have_count(1, timeout=20000)
+        caret = group.locator("button[aria-expanded]")
+        if caret.get_attribute("aria-expanded") != "true":
+            caret.click()
+        expect(caret).to_have_attribute("aria-expanded", "true", timeout=5000)
     expect(row).to_have_count(1, timeout=20000)
     return row
 
@@ -263,10 +276,19 @@ def test_dataset_loads_and_feeds_a_consumer(
     # generated code carries no machine- or user-specific absolute path. A
     # collection is read through ``curio_load_collection``, which resolves the same
     # way and adds where each of its files is.
+    # A GeoTIFF's loader names its window as well, `bounds=None`.
+    from utk_curio.backend.app.datasets.domain.catalog_item import LOADER_OPTIONS
+
     call = "curio_load_collection" if dataset.manifest.format == "collection" else "curio_load_data"
-    assert f'{call}("{dataset.dataset_id}")' in loader_code, (
+    options = LOADER_OPTIONS.get(dataset.manifest.format, "")
+    assert f'{call}("{dataset.dataset_id}"{options})' in loader_code, (
         f"loader does not resolve the dataset by id:\n{loader_code}"
     )
+    if plan.loader_suffix:
+        # The format's value stays in the loader's own code (an xarray Dataset
+        # cannot cross an edge), so the loader uses it there and returns a
+        # table for its consumer.
+        set_node_code(page, loader_id, loader_code.rstrip("\n") + "\n" + plan.loader_suffix)
 
     # 3. A CONSUMER, wired to it. The edge id is derived, not random, so it
     #    doubles as an assertion that the handles the drag hit were the

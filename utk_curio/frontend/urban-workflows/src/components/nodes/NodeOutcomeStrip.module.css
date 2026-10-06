@@ -1,17 +1,17 @@
 /* dev/138: a node's last outcome, in the node. One line by default (a node
    body is a few hundred pixels wide), with the rest behind a disclosure.
 
-   It sits over the bottom of the node's content, just above the band that
-   holds the run button and the editor tabs (the last 30px of the body). In the
-   flow it landed on that band, which the node's hidden overflow then cut. The
-   offsets are from the `.resizable` node box, the nearest positioned ancestor;
-   the body inside it is 15px narrower on each side. */
+   It sits over the bottom of the node's content, which reaches the node's
+   bottom edge (the run button and the editor tabs are in the header). In the
+   flow it would land past the body, where the node's hidden overflow cuts it.
+   The offsets are from the `.resizable` node box, the nearest positioned
+   ancestor; the body inside it is 15px narrower on each side. */
 
 .strip {
   position: absolute;
   left: 17px;
   right: 17px;
-  bottom: 32px;
+  bottom: 8px;
   z-index: 11;
   display: flex;
   align-items: baseline;
@@ -29,9 +29,21 @@
 /* Opened, it grows upward over the content and scrolls before it reaches the
    header. */
 .expanded {
-  max-height: calc(100% - 70px);
+  max-height: calc(100% - 56px);
   overflow-y: auto;
   overflow-wrap: anywhere;
+}
+
+/* In a notebook cell, which is as tall as its content, the strip is part of
+   that content: under the output, never over it. Opened, it grows the cell up
+   to a cap and scrolls inside past it. */
+.inCell {
+  position: static;
+  margin: 6px 0 4px;
+}
+
+.inCell.expanded {
+  max-height: 240px;
 }
 
 .error {

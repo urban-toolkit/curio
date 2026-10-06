@@ -8,21 +8,26 @@ reference. Its code calls ``curio_difference_scenarios`` with one
 
 - Two layers (GeoDataFrames) or two tables are joined on a stable id: ``key``
   when the node names one, else ``osm_id`` or ``building_id``, the first both
-  have. A row on both sides holds, in each number column both have, the
+  have. Two layers with neither are matched by their shapes: equal geometries
+  are one row, and a shape that repeats is matched by its order, as two layers
+  read from one source repeat it. A row on both sides holds, in each number column both have, the
   comparison's value minus the reference's, and ``change`` says ``changed`` or
-  ``unchanged``. A row only in the reference is ``removed`` and one only in the
-  comparison ``added``; their numbers are empty. Every other column, and the
-  geometry, is the comparison's (the reference's for a removed row).
-- Two rasters are subtracted cell by cell by Curio's Autark adapter
-  (``utils/raster/rasterArithmetic.ts``), on the band arrays autk-db's
-  ``getRaster`` exports once its ``loadGeoTiff`` has loaded both, in the
-  sandbox's Node process, where Autark data sections run. Node code may run in
-  an isolated child that cannot start Node, so the step returns a request
-  instead (``RASTER_DIFFERENCE``: JSON only, each raster's GeoTIFF bytes and
-  its description), and the sandbox completes it once the code has returned
-  (:func:`complete_raster_difference`). The result is the envelope a raster
-  travels in between nodes (``utils/raster/rasterWire.ts``): an Autark map
-  draws it, and a Python node receives it as a rasterio dataset.
+  ``unchanged``. A column both have whose cells are dicts, such as the
+  ``compute`` an Autark compute step writes its outputs under, is read the same
+  way inside: each number both dicts hold is a difference too. A row only in
+  the reference is ``removed`` and one only in the comparison ``added``; their
+  numbers are empty, nested ones included. Every other column and value, and
+  the geometry, is the comparison's (the reference's for a removed row).
+- Two rasters are loaded as an Autark map loads them, by autk-db's
+  ``loadGeoTiff`` in the sandbox's Node process, where Autark data sections
+  run, and Curio's raster algebra (``raster_algebra.subtract_envelopes``)
+  subtracts the band arrays autk-db's ``getRaster`` exports, cell by cell.
+  Node code may run in an isolated child that cannot start Node, so the step
+  returns a request instead (``RASTER_DIFFERENCE``: JSON only, each raster's
+  GeoTIFF bytes and its description), and the sandbox completes it once the
+  code has returned (:func:`complete_raster_difference`). The result is the
+  envelope a raster travels in between nodes (``utils/raster/rasterWire.ts``):
+  an Autark map draws it, and a Python node receives it as a rasterio dataset.
 
 Anything else is refused with a sentence naming both inputs.
 """
@@ -40,6 +45,7 @@ from utk_curio.sandbox.util.scenario_stack import (
     _crs_name,
     _is_raster,
     _label,
+    _pick_layer,
     _rows_of,
     _unwrap,
 )
@@ -83,7 +89,7 @@ class RasterDifferenceFailed(Exception):
     """Two rasters the sandbox could not subtract, with the reason in words."""
 
 
-def _side(position: int, entry) -> dict:
+def _side(position: int, entry, layer=None) -> dict:
     if not isinstance(entry, (tuple, list)) or len(entry) != 3:
         raise TypeError(
             f"Compare Scenarios: entry {position} is not (scenario, name, input). "
@@ -93,19 +99,20 @@ def _side(position: int, entry) -> dict:
     name = "" if name is None else str(name)
     label = _label(position, name)
     side = {"scenario": scenario, "name": name, "label": label}
-    value = _unwrap(value)
+    value = _unwrap(_pick_layer(label, value, layer))
     if value is not None and _is_raster(value):
         return {**side, "kind": _RASTER, "value": value}
     kind, frame = _rows_of(label, value)
     return {**side, "kind": kind, "frame": frame}
 
 
-def difference_scenarios(entries, key=None):
+def difference_scenarios(entries, key=None, layer=None):
     """The second input minus the first: a difference layer or table, or, for
     two rasters, the request the sandbox completes.
 
     *entries* lists ``(scenario_id, scenario_name, value)`` per input, in
-    circle order. *key* names the column rows are joined on.
+    circle order. *key* names the column rows are joined on, and *layer* the
+    layer to read from an input that is an Autark node's several layers.
     """
     entries = list(entries or [])
     if len(entries) != 2:
@@ -113,7 +120,7 @@ def difference_scenarios(entries, key=None):
             "Compare Scenarios in Difference compares two inputs, a reference and a comparison, "
             f"and it has {len(entries)}. Connect two outcomes, or show them as a Chart."
         )
-    reference, comparison = (_side(position, entry) for position, entry in enumerate(entries))
+    reference, comparison = (_side(position, entry, layer) for position, entry in enumerate(entries))
     if reference["kind"] == _RASTER and comparison["kind"] == _RASTER:
         return _raster_request(reference, comparison)
     if reference["kind"] == comparison["kind"] and reference["kind"] in (_GEO, _TABLE):
@@ -149,13 +156,39 @@ def _join_key(reference: dict, comparison: dict, key, geometry) -> str:
     for candidate in STABLE_IDS:
         if candidate in ref_columns and candidate in cmp_columns:
             return candidate
+    if geometry is not None:
+        # Two layers with no id: rows are matched by their shapes.
+        return geometry
     raise ValueError(
         f"Compare Scenarios cannot match the rows of {reference['label']} and {comparison['label']}: "
         f"they do not both have {' or '.join(STABLE_IDS)}. {pick}"
     )
 
 
-def _ids(side: dict, key: str) -> list:
+def _shape_ids(side: dict, geometry: str) -> list:
+    """Each row's shape, as its WKB, and how many rows before it have the same
+    one: two layers read from one source match row for row, a shape that
+    repeats by its order."""
+    shapes = side["frame"][geometry]
+    missing = int((shapes.isna() | shapes.is_empty).sum())
+    if missing:
+        raise ValueError(
+            f"Compare Scenarios: {side['label']} has {missing} row{'s' if missing != 1 else ''} with no geometry, "
+            "and with no osm_id or building_id its rows are matched by their shapes. Give every row one in "
+            "the node that feeds it, or pick a key."
+        )
+    seen: dict = {}
+    ids = []
+    for shape in shapes.to_wkb():
+        count = seen.get(shape, 0)
+        seen[shape] = count + 1
+        ids.append((shape, count))
+    return ids
+
+
+def _ids(side: dict, key: str, geometry=None) -> list:
+    if key == geometry:
+        return _shape_ids(side, geometry)
     values = side["frame"][key]
     missing = int(values.isna().sum())
     if missing:
@@ -172,6 +205,76 @@ def _ids(side: dict, key: str) -> list:
             f"on each side. Pick another key, or keep one row per {key} in the node that feeds it."
         )
     return values.tolist()
+
+
+def _no_value(value) -> bool:
+    """Whether a cell holds nothing: None, or an empty number."""
+    import pandas as pd
+
+    if value is None:
+        return True
+    try:
+        return pd.api.types.is_scalar(value) and bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _is_nested(*columns) -> bool:
+    """Whether every cell of *columns* that holds something holds a dict."""
+    held = [value for column in columns for value in column if not _no_value(value)]
+    return bool(held) and all(isinstance(value, dict) for value in held)
+
+
+def _is_number_value(value) -> bool:
+    import numpy as np
+
+    return isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(value, (bool, np.bool_))
+
+
+def _without_numbers(value):
+    """*value* with each number in it, at any depth, made empty: what a row on
+    one side only holds in a nested column, as its number columns are empty."""
+    if isinstance(value, dict):
+        return {key: _without_numbers(inner) for key, inner in value.items()}
+    return None if _is_number_value(value) else value
+
+
+def _nested_difference(before, after):
+    """``(cell, changed)`` for one row of a nested column: *after* with each
+    number that *before* holds at the same place replaced by after minus
+    before, and whether any value differs. A value one side alone holds is kept
+    from that side, as a column one side alone has is."""
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        if _no_value(before) and _no_value(after):
+            return None, False
+        held = before if _no_value(after) else after
+        return _without_numbers(held), True
+    out = {}
+    changed = False
+    for key in [*after, *(key for key in before if key not in after)]:
+        if key not in before or key not in after:
+            out[key] = after[key] if key in after else before[key]
+            changed = True
+            continue
+        old, new = before[key], after[key]
+        if isinstance(old, dict) and isinstance(new, dict):
+            out[key], differs = _nested_difference(old, new)
+        elif _is_number_value(old) and _is_number_value(new):
+            old_empty, new_empty = _no_value(old), _no_value(new)
+            out[key] = None if old_empty or new_empty else float(new) - float(old)
+            differs = old_empty != new_empty or (not old_empty and not new_empty and float(new) != float(old))
+        else:
+            out[key] = new
+            differs = not (_no_value(old) and _no_value(new)) and bool(_differs_once(old, new))
+        changed = changed or differs
+    return out, changed
+
+
+def _differs_once(left, right) -> bool:
+    try:
+        return bool(left != right)
+    except (TypeError, ValueError):
+        return str(left) != str(right)
 
 
 def _differs(left, right):
@@ -225,13 +328,14 @@ def _join(reference: dict, comparison: dict, key):
             cmp = cmp.set_crs(crs)
 
     key = _join_key(reference, comparison, key, geometry)
-    ref_ids = _ids({**reference, "frame": ref}, key)
-    cmp_ids = _ids({**comparison, "frame": cmp}, key)
+    ref_ids = _ids({**reference, "frame": ref}, key, geometry)
+    cmp_ids = _ids({**comparison, "frame": cmp}, key, geometry)
 
     columns = [c for c in ref.columns if c != key] + [c for c in cmp.columns if c != key and c not in ref.columns]
     common = [c for c in columns if c in ref.columns and c in cmp.columns and c != geometry]
     numbers = [c for c in common if _is_number(ref[c]) and _is_number(cmp[c])]
-    others = [c for c in common if c not in numbers]
+    nested = [c for c in common if c not in numbers and _is_nested(ref[c], cmp[c])]
+    others = [c for c in common if c not in numbers and c not in nested]
     reference_only = [c for c in columns if c not in cmp.columns]
 
     cmp_at = {value: row for row, value in enumerate(cmp_ids)}
@@ -255,6 +359,10 @@ def _join(reference: dict, comparison: dict, key):
         on_both[column] = after - before
         before_empty, after_empty = np.isnan(before), np.isnan(after)
         changed |= (before_empty != after_empty) | (~before_empty & ~after_empty & (after != before))
+    for column in nested:
+        pairs = [_nested_difference(old, new) for old, new in zip(ref_both[column], on_both[column])]
+        on_both[column] = pd.Series([cell for cell, _ in pairs], index=on_both.index, dtype=object)
+        changed |= np.asarray([flag for _, flag in pairs], dtype=bool)
     for column in others:
         changed |= _differs(ref_both[column], on_both[column])
     on_both.insert(1, CHANGE_COLUMN, np.where(changed, CHANGED, UNCHANGED))
@@ -270,6 +378,8 @@ def _join(reference: dict, comparison: dict, key):
         part = rows_of(frame, rows)
         for column in numbers:
             part[column] = np.nan
+        for column in nested:
+            part[column] = pd.Series([_without_numbers(v) for v in part[column]], index=part.index, dtype=object)
         part.insert(1, CHANGE_COLUMN, change)
         parts.append(part)
         places.append(np.asarray(place, dtype="int64"))
@@ -336,9 +446,25 @@ def program_text() -> str:
 
 
 def subtract_in_autark(request: dict, *, cwd=None, node_type="curio.builtin/compare-scenarios") -> dict:
-    """Run the raster program on *request* in the sandbox's Node process, as a
-    JavaScript node runs: the envelope of comparison minus reference, or
+    """Load both rasters of *request* through Autark in the sandbox's Node
+    process, as a JavaScript node runs, and subtract what autk-db exports with
+    Curio's raster algebra: the envelope of comparison minus reference, or
     :class:`RasterDifferenceFailed` with what refused it."""
+    from utk_curio.sandbox.util.raster_algebra import RasterAlgebraError, subtract_envelopes
+
+    envelopes = _load_in_autark(request, cwd=cwd, node_type=node_type)
+    try:
+        return subtract_envelopes(
+            (request["reference"]["label"], envelopes["reference"]),
+            (request["comparison"]["label"], envelopes["comparison"]),
+        )
+    except RasterAlgebraError as refused:
+        raise RasterDifferenceFailed(f"Compare Scenarios: {refused}") from refused
+
+
+def _load_in_autark(request: dict, *, cwd, node_type) -> dict:
+    """Run the raster program on *request*: ``{"reference", "comparison"}``,
+    each the envelope autk-db's ``getRaster`` exports."""
     import json
     import subprocess
     import time

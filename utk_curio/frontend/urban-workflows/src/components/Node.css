@@ -65,10 +65,10 @@
   user-select: none;
 }
 
-/* Notebook view: a cell shows its input and its output together. The active
-   input tab takes the top of the cell; the output pane, which Bootstrap hides
-   (display) and fades out (opacity) while another tab is active, stays
-   visible below it. */
+/* Notebook view: a cell shows its input and its output together, the input
+   over the output, each at its own height. The output pane, which Bootstrap
+   hides (display) and fades out (opacity) while another tab is active, stays
+   visible below the active input tab. */
 .tab-content.curio-notebook-split {
   display: flex;
   flex-direction: column;
@@ -76,15 +76,82 @@
 }
 
 .tab-content.curio-notebook-split > .tab-pane.active {
-  flex: 0 0 42%;
-  min-height: 0;
+  flex: 0 0 auto;
 }
 
 .tab-content.curio-notebook-split > .tab-pane.curio-notebook-output {
   display: block !important;
   opacity: 1 !important;
-  flex: 1 1 0;
-  min-height: 0;
+  flex: 0 0 auto;
+}
+
+/* A node's tools (the editor's tabs, Save output, the gear, info, pin,
+   comments, delete and, on the canvas, minimize) show while the pointer is over
+   the node, or the node is selected or holds the focus, as a Jupyter cell's
+   toolbar does. Play, the title, the kind and the run status always show. The
+   same on the canvas and in a notebook cell. */
+.curio-node-card .curio-node-tools {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.curio-node-card:hover .curio-node-tools,
+.curio-node-card:focus-within .curio-node-tools,
+.curio-node-card.is-selected .curio-node-tools {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .curio-node-card .curio-node-tools {
+    transition: none;
+  }
+}
+
+/* The tabs among those tools: icons in a row, the active one darker, no pill
+   or bar. */
+.curio-node-tabs .nav.flex-column {
+  flex-direction: row !important;
+  flex-wrap: nowrap;
+}
+
+/* Widths `auto`: Bootstrap's `.row > *` sets `width: 100%`, which collapses in
+   a header that is as wide as its content and piles the icons up. */
+.curio-node-tabs .row {
+  --bs-gutter-x: 0;
+  width: auto;
+  margin: 0;
+  flex-wrap: nowrap;
+  font-size: 12px;
+}
+
+.curio-node-tabs .row > .col {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: none;
+  padding: 0;
+}
+
+/* `!important` against NodeEditor.css's own, which marks an active pill dark. */
+.curio-node-tabs .nav-pills .nav-link {
+  padding: 2px 6px;
+  background: none !important;
+  color: #a3a3a3 !important;
+}
+
+.curio-node-tabs .nav-pills .nav-link.active,
+.curio-node-tabs .nav-pills .nav-link:hover {
+  color: var(--curio-text-primary, #222) !important;
+}
+
+/* A node's code or spec sits in a light gray box, as a notebook's input does. */
+.curio-node-input {
+  background: #f6f7f8;
+  border-radius: 6px;
+}
+
+.curio-node-input .monaco-editor {
+  --vscode-editor-background: transparent;
+  --vscode-editorGutter-background: transparent;
 }
 
 .handle_top_left {

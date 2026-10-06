@@ -74,12 +74,13 @@ _URL_SCHEMES = ("http://", "https://")
 # the gate, execution and lineage find the same ids.
 from utk_curio.backend.app.datasets.domain.code_refs import DATASET_PATH_CALL_RE  # noqa: E402,F401
 
-#: The calls whose one string argument is a Data Catalog dataset id.
+#: The calls whose first argument, a string, is a Data Catalog dataset id.
 CATALOG_REF_CALLS = ("curio_load_data", "curio_data_path", "curio_load_collection")
 
-# The same calls with the call's name captured, for the regex fallback scan.
+# The same calls with the call's name captured, for the regex fallback scan;
+# options may follow the id, as DATASET_PATH_CALL_RE allows.
 _CATALOG_CALL_RE = re.compile(
-    r"""\b(curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\2\s*\)"""
+    r"""\b(curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\2\s*[,)]"""
 )
 # dev/116 (DEC-074): connection keys. The call shape is owned by
 # users/connection_keys (ONE regex); a credential-shaped literal is what the
@@ -271,6 +272,27 @@ def _parse_python(code: str) -> tuple[ast.AST, int] | None:
 #: value IS — not a list of schema hosts to trust.
 SCHEMA_DECLARATION_KEY = "$schema"
 _SCHEMA_KEY_RE = re.compile(r'"\$schema"\s*:\s*$')
+#: ``part="RAIN.nc"`` in a ``curio_load_data`` call names a file inside a
+#: catalog dataset (a bundle), not a path on disk; both scanners skip it.
+PART_CALL = "curio_load_data"
+_PART_KEYWORD_RE = re.compile(r"\bpart\s*=\s*[fFrRbBuU]{0,2}$")
+
+
+def _in_part_keyword(code: str, start: int, part_calls: list[int]) -> bool:
+    """Whether the literal at *start* is the ``part=`` of a ``curio_load_data``
+    call still open there, for the regex scan: an argument of that call, not
+    of a call inside it."""
+    if not _PART_KEYWORD_RE.search(code, 0, start):
+        return False
+    opened = [call for call in part_calls if call < start]
+    if not opened:
+        return False
+    depth = 0
+    for char in code[code.index("(", opened[-1]):start]:
+        depth += (char == "(") - (char == ")")
+        if depth == 0:
+            return False
+    return depth == 1
 
 
 def _scan_python(code: str) -> list[SourceRef] | None:
@@ -308,9 +330,17 @@ def _scan_python(code: str) -> list[SourceRef] | None:
                     "catalog-id", arg.value.strip(), max(1, getattr(node, "lineno", 1) - offset),
                     call=_call_name(node),
                 ))
+            # ``curio_load_data("<id>", part="RAIN.nc")`` names a file inside
+            # the catalog dataset, not a path the node reads from disk.
+            if _call_name(node) == PART_CALL:
+                for keyword in node.keywords:
+                    if keyword.arg == "part" and isinstance(keyword.value, (ast.Constant, ast.JoinedStr)):
+                        call_ids.add(id(keyword.value))
     for node in ast.walk(tree):
         line = max(1, getattr(node, "lineno", 1) - offset)
         if isinstance(node, ast.JoinedStr):
+            if id(node) in call_ids:
+                continue
             prefix, template, dynamic = _joined_str_parts(node)
             if not dynamic:
                 kind = classify_literal(template)
@@ -351,8 +381,11 @@ def _is_dataset_path_call(node: ast.Call) -> bool:
 def _scan_regex(code: str) -> list[SourceRef]:
     refs: list[SourceRef] = []
     call_spans: list[tuple[int, int]] = []
+    part_calls: list[int] = []
     for match in _CATALOG_CALL_RE.finditer(code):
         call_spans.append(match.span())
+        if match.group(1) == PART_CALL:
+            part_calls.append(match.start())
         refs.append(SourceRef(
             "catalog-id", match.group(3), code.count("\n", 0, match.start()) + 1, call=match.group(1),
         ))
@@ -362,6 +395,8 @@ def _scan_regex(code: str) -> list[SourceRef]:
         # Keyed on the KEY, not on the host: any document's own `$schema`, not
         # a list of schema sites to trust.
         if _SCHEMA_KEY_RE.search(code, 0, match.start()):
+            continue
+        if _in_part_keyword(code, match.start(), part_calls):
             continue
         body = match.group("body")
         kind = classify_literal(body)

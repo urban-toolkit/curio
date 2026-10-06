@@ -9,6 +9,7 @@
   - [Your configurations](#your-configurations)
   - [Keys for node code](#keys-for-node-code)
   - [Guest users](#guest-users)
+- [Inside a node](#inside-a-node)
 - [Running a dataflow](#running-a-dataflow)
 - [Widgets](#widgets)
 - [Scenarios](#scenarios)
@@ -16,6 +17,7 @@
 - [Node Catalog](#node-catalog)
 - [Vega-Lite node](#vega-lite-node)
 - [Autark node](#autark-node)
+- [Rasters](#rasters)
 - [Notebook view](#notebook-view)
 - [Dashboards](#dashboards)
 - [Data Catalog](#data-catalog)
@@ -363,9 +365,21 @@ GUEST_LLM_API_KEY=sk-ant-...
 GUEST_LLM_MODEL=claude-haiku-4-5
 ```
 
+## Inside a node
+
+A node's header shows **Play** at its left, the node's name and kind, and its run
+status. Its other buttons show while the pointer is over the node or the node is
+selected: the editor's tabs (code, widgets, spec, provenance, output), the **Save
+output dataset** toggle, settings, about, pin, comments, delete and **Minimize**.
+Code and specs sit in a gray box, and a code node's output is below its code.
+
+Drag a node's bottom-right corner to resize it. A minimized node is a small chip;
+click it to open the node again. Double-click a node where you would drag it, such
+as its header, to zoom the view onto it.
+
 ## Running a dataflow
 
-**Run All** runs every node. A node's **Run** button, or Ctrl+Enter (Cmd+Enter
+**Run All** runs every node. A node's **Play** button, or Ctrl+Enter (Cmd+Enter
 on a Mac), runs that node and the nodes above it whose output is out of date.
 
 On your own dataflow, a run saves the dataflow first and then runs on the
@@ -544,7 +558,8 @@ boundary splits the dataflow into three parts:
   outputs as given. A node two alternatives share sits outside both, as their
   common context.
 - **Levers:** the nodes in the scenario, which is what an alternative changes: its
-  data loaders, widget values, code and specs.
+  data loaders, widget values, code and specs, and the features it removes or
+  changes by hand (see [Editing features by hand](#editing-features-by-hand)).
 - **Outcomes:** the outputs of the scenario's last nodes, which is what gets
   compared.
 
@@ -590,6 +605,43 @@ chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios,
 their colors, descriptions, collapsed state and box positions are saved with the
 dataflow. Deleting a node removes it from its scenario.
 
+### Editing features by hand
+
+The **Edit Features** node removes features from a layer, or changes them, by hand:
+two towers taken out of a city's buildings, say.
+
+1. Drag **Edit Features** from the palette onto the canvas and connect a layer to it:
+   a Python node's GeoDataFrame, or the layers an Autark node or a Data Pool hands on.
+2. Pick the layer to edit in **Layer**, when the input carries several, and the column
+   that identifies a feature in **Id**: `osm_id` or `building_id` when the layer has
+   them, or another column whose values differ in every feature. A layer with no such
+   column is refused: a feature's place in a layer is not an id. While the node has
+   edits, the two menus stay as they are: delete the edits to pick another.
+3. Double-click features on the node's map to pick them. **Picked** lists their ids.
+4. Press **Remove**, **Restore**, or **Set value** with a column and a value. Each
+   press adds an edit to the node's list, under the map: Remove drops the picked
+   features, Set value writes the value into their column, and Restore puts them
+   back as the input has them. The × beside an edit deletes it.
+5. Run the node.
+
+The edits apply in order, to every feature whose id is one of the edit's ids. A
+building's parts share its `building_id`, so an edit by `building_id` applies to the
+whole building, every part. The output is the edited layer, with the input's other
+layers as they came; the input itself is never changed. An id no feature has is
+reported in the node's output, and the run goes on.
+
+The edit list is saved with the dataflow, and the node's code is written from it:
+
+```python
+return curio_edit_features(arg, [
+    {"op": "remove", "ids": [119, 136]},
+    {"op": "set", "ids": [42], "column": "height", "value": 30},
+], key="building_id", layer="table_osm_buildings")
+```
+
+A change of the list writes the code again, and the node then waits for a run. In a
+scenario, an Edit Features node is a lever, and **What differs** lists its edits.
+
 ### Comparing scenarios
 
 The **Compare Scenarios** node compares scenarios' outcomes on the canvas:
@@ -620,6 +672,10 @@ It stacks inputs of one kind:
 - values (a number, a text, true or false, or a list of them), one row each under a
   `value` column.
 
+An Autark node hands on every layer of its workspace. From such an input the node
+reads the layer picked in **Layer**, in Chart and in Difference alike; the menu lists
+the layers every such input has.
+
 A table beside a value, a GeoDataFrame beside a plain table, two coordinate systems,
 an input with no value, an input that holds several tables, or a raster stops the run
 with a message naming the input.
@@ -632,12 +688,16 @@ comparison, and every number it gives is the comparison's minus the reference's.
   origin, cell size and CRS; otherwise the run stops with a message naming both. Each
   is read as an Autark map reads a raster, at its own size, up to 2048 by 2048 cells.
 - Two layers, or two tables, are matched row by row on a stable id: `osm_id`, else
-  `building_id`, or the column picked in **Key**. A row on both sides holds, in each
+  `building_id`, or the column picked in **Key**. Two layers with neither id are
+  matched by their shapes: rows with the same geometry are one row, and a shape that
+  repeats is matched in order. A row on both sides holds, in each
   number column both have, the difference, and a `change` column says `changed` or
-  `unchanged`. A row only in the reference is `removed` and one only in the comparison
-  `added`; their numbers are empty. The other columns and the geometry are the
-  comparison's, or the reference's for a removed row. A key that is empty or repeated
-  on one side stops the run, as does a layer beside a table.
+  `unchanged`. A column of nested values, such as the `compute` values an Autark
+  compute step writes, holds the difference of each number in it. A row only in the
+  reference is `removed` and one only in the comparison `added`; their numbers are
+  empty. The other columns and the geometry are the comparison's, or the reference's
+  for a removed row. A key that is empty or repeated on one side stops the run, as
+  does a layer beside a table.
 
 A raster's difference is a raster, which an Autark map draws and a Python node reads
 as a `rasterio` dataset.
@@ -650,15 +710,17 @@ The node has two tabs:
   (**Combine**: mean, sum, median, minimum, maximum, or a count of rows).
 - **Difference**, in its place in Difference, maps a raster's or a layer's
   difference, colored by a band or a number column, or by `change` (**Color by**).
-  A layer's colors run from the lowest difference, dark purple, to the highest,
+  The legend is titled with what it shows: `sunlight change` for the column
+  `sunlight`, or `change`. A layer's colors run from the lowest difference, dark purple, to the highest,
   yellow. A raster's cells are redder the higher their difference, and fainter the
   closer they are to no difference. A table's difference is shown as a table, each
   row in the color of its change.
 - **What differs** lists the levers that differ between the scenarios: for each, the
-  widget values and the code lines that changed, read against the first scenario's.
-  A node and the copies made from it with **Duplicate selection** or **Duplicate as
-  scenario** are one lever. A node with no copy in another scenario is listed as only
-  in the scenarios that have it.
+  widget values and the code lines that changed, read against the first scenario's,
+  or, for an Edit Features node, each scenario's edits. A node and the copies made
+  from it with **Duplicate selection** or **Duplicate as scenario** are one lever. A
+  node with no copy in another scenario is listed as only in the scenarios that have
+  it, with its edits when it is an Edit Features node.
 
 Above both tabs it warns when the scenarios read different fixed context, naming the
 inputs and the context only one of them reads, when an input comes from a node in no
@@ -862,7 +924,8 @@ no `data` entry for its input; it names the tables the input provides.
   band, `{"dataRef": "input_0", "getFnv": "band_1"}`; its bands are `band_1`,
   `band_2`, and so on. It is drawn at its own size, cell for cell, up to 2048 by
   2048 cells and 8192 on a side. A larger one is not drawn and the node says so:
-  crop it in the node that makes it, for example with a rasterio window read.
+  crop it in the node that makes it, for example with a rasterio window read or
+  the `bounds` of `curio_load_data` (see the [Data Catalog](DATA-CATALOG.md)).
   It needs a CRS with an EPSG code and a north-up grid. A plot or a compute step
   does not read a raster.
 - A raster the node hands on reaches a Python node as a `rasterio` dataset on
@@ -885,6 +948,29 @@ a run is going, and a selection only highlights it (see
 press play or run the dataflow. Without WebGPU nothing is drawn on its own;
 pressing play says why.
 
+### Legend titles
+
+A map's legend is titled with the table of the layer it shows: `input_0` for
+the node's first input. A `layerRef`'s `legendTitle` titles it instead, on a
+vector or a raster layer; a layer without one keeps its table's name.
+`legendTitle` is Curio's own key, not the Autark grammar's.
+
+```json
+{
+  "map": {
+    "layerRefs": [
+      {
+        "dataRef": "input_0",
+        "getFnv": "height",
+        "getFnvType": "quantitative",
+        "colorMapInterpolator": "interpolateViridis",
+        "legendTitle": "Building height (m)"
+      }
+    ]
+  }
+}
+```
+
 ### The starter document
 
 A newly dropped `Autark` node opens **empty**, like a `Vega-Lite` node, and
@@ -903,23 +989,74 @@ The first matching rule wins:
 | one layer with geometry only | a plain map |
 | no geometry, or only rasters | the editor stays empty |
 
+## Rasters
+
+Two nodes in the palette's computation group work on rasters: a `rasterio`
+dataset from a Python node or the Data Catalog, or a raster an Autark node hands
+on. Each is a Python node whose code is written for it when it is dropped; edit
+the call to change what it does.
+
+**Raster Calculator** computes one operation over rasters on one grid, cell by
+cell. Connect the rasters to its input circles, in order:
+
+| operation | result |
+|---|---|
+| `curio_raster_calculate("add", arg)` | input 0 plus input 1 |
+| `curio_raster_calculate("subtract", arg)` | input 0 minus input 1 |
+| `curio_raster_calculate("multiply", arg)` | input 0 times input 1 |
+| `curio_raster_calculate("divide", arg)` | input 0 over input 1; a cell divided by 0 has no value |
+| `curio_raster_calculate("choose", arg, codes=[21, 31])` | input 1 where input 0's class is one of the codes, input 2 elsewhere |
+
+- A cell with no value (the raster's nodata, or a number that is not finite) in
+  an input the operation reads there has no value in the result. In `choose`, a
+  class with no value is no class, so its cell takes input 2.
+- The rasters must share their size, origin, cell size and CRS; otherwise the
+  node stops and describes both grids. Bands are computed one by one; a class
+  raster of one band applies to every band.
+- The result keeps the inputs' number type, at least float32, so a float64
+  raster keeps every digit. Its cells with no value are NaN.
+
+**Raster Statistics** gives a raster's `mean`, `median`, `min`, `max` and
+`count` over its cells with a value, as a table of one row, for example for
+**Compare Scenarios** to chart. `curio_raster_statistics(arg, band=2)` reads
+another band. A condition keeps only some cells:
+
+| call | counts |
+|---|---|
+| `curio_raster_statistics(arg, where=lambda value: value < 1.08)` | the cells whose value is under 1.08 |
+| `curio_raster_statistics(arg, where=lambda value: (value >= 2) & (value < 5))` | the cells from 2 up to 5 |
+| `curio_raster_statistics(arg, mask_values=[0])` | with a second raster on input 1, on the same grid: the cells where its value is 0 |
+| `curio_raster_statistics(arg, where=lambda height: height < 1.08)` | with a second raster on input 1: the cells where its value is under 1.08 |
+
+`where` receives the values as an array, with NaN for a cell with no value, and
+a cell with no value is never counted.
+
 ## Notebook view
 
 The **Canvas | Notebook** switch, at the right of the canvas bar beside **Monitor**, shows a dataflow two ways. **Notebook**
-lists the same nodes as a column of cells, one under the other, and the page scrolls.
+lists the same nodes as a column of cells across the page, one under the other, and the
+page scrolls.
 
 - **Order.** A cell comes after every cell it reads from, in the order **File → Export as
-  notebook** writes. The nodes that read from nothing come first.
-- **Cells.** Every cell has the same size and cannot be resized or minimized. A code
-  cell shows its code with its output below; a Vega-Lite or Autark cell shows its spec
-  above its chart or map.
+  notebook** writes: each cell is followed by the cells it feeds, the most recently
+  connected first, before the next cell that reads from nothing.
+- **Cells** grow with their code and output, and cannot be resized or minimized. A
+  cell's header and buttons are its node's (see [Inside a node](#inside-a-node)). A
+  code cell shows its code with its output below; a Vega-Lite or Autark cell shows
+  its spec above its chart or map. An editor is as tall
+  as its lines, from three lines up to 400 pixels for code and 240 for a spec, and
+  scrolls inside past that. A chart is 320 pixels tall and an Autark map or plot 400. A
+  code output takes its own height up to 320 pixels, a table or a summary up to 360,
+  and scrolls inside past it.
 - **Connections** run in the bar to the right of the cells. Each cell has its dots on its
   right edge: its inputs at the top, numbered as their chips are (dot 0 is
   `[!! input 0 !!]`), its interaction dot halfway down, and its output at the bottom.
-  Hover a dot to see what feeds it. Selecting a cell darkens its connections.
-- **Editing** works as on the canvas. Drag from an output dot to an input dot to connect
-  two cells, and select a connection and press Delete to remove it. A node dragged in
-  from the left rail becomes a new cell, and the page scrolls to it.
+  The dots follow their cell as it grows. Hover a dot to see what feeds it. Selecting
+  a cell rings it in its kind's color and darkens its connections.
+- **Editing.** Nodes are added and connected on the canvas: the notebook view has no
+  node rail, takes no drop, and its dots do not connect. In it, edit and run a cell's
+  code, delete a cell, or select a connection and press Delete to remove it. **Run
+  all** sits at the top right of the page.
 - **Nothing is saved** about the view: the dataflow keeps its canvas layout, and
   **Canvas** shows it as it was. The address carries the view (`?view=notebook`), so a
   reload, or the address copied from the browser, opens it the same way.
@@ -986,7 +1123,7 @@ Three surfaces manage datasets:
 - The **Data Catalog** dropdown in the Tools panel, listing the datasets added to the open dataflow and, under **Saved outputs**, the outputs its nodes saved. Drag one onto the canvas to create (or extend) a node with generated loader code.
 - The **`/catalog/data`** page, the library view for your whole account, reached from `/projects` and the **Data Catalog** tab. **Add to all projects** there adds a dataset to every dataflow you have.
 
-A node can also save its output as a **computed dataset** in your account (the database toggle next to its play button), so its result can be reused as an input elsewhere.
+A node can also save its output as a **computed dataset** in your account (the database toggle among the buttons in its header), so its result can be reused as an input elsewhere.
 
 Because the shared catalog root defaults to `<repo_root>/datasets/`, pip installs should set **`CURIO_CATALOG_ROOT`** (or `--catalog-root`) to a writable, persistent path.
 

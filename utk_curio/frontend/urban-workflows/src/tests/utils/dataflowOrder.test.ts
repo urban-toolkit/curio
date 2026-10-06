@@ -27,6 +27,32 @@ describe("dataflowOrder", () => {
     expect(ids(order)).toEqual(["load", "clean", "chart"]);
   });
 
+  test("each node is followed by the chain it feeds before the next unrelated node", () => {
+    const order = dataflowOrder(nodes("load", "extra", "clean", "chart"), [
+      edge("load", "clean"),
+      edge("clean", "chart"),
+    ]);
+    expect(ids(order)).toEqual(["load", "clean", "chart", "extra"]);
+  });
+
+  test("of the nodes one feeds, the newest connection comes first, right below it", () => {
+    // `added` was wired from `load` last, as a cell added under it is.
+    const order = dataflowOrder(nodes("load", "clean", "chart", "added"), [
+      edge("load", "clean"),
+      edge("clean", "chart"),
+      edge("load", "added"),
+    ]);
+    expect(ids(order)).toEqual(["load", "added", "clean", "chart"]);
+  });
+
+  test("a node fed by two others waits for both, then follows the second", () => {
+    const order = dataflowOrder(nodes("a", "b", "join", "after"), [
+      edge("a", "join"),
+      edge("b", "join"),
+    ]);
+    expect(ids(order)).toEqual(["a", "b", "join", "after"]);
+  });
+
   test("a node fed by two others comes after both", () => {
     const order = dataflowOrder(nodes("join", "a", "b"), [edge("a", "join"), edge("b", "join")]);
     expect(ids(order).indexOf("join")).toBe(2);

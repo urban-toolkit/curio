@@ -41,6 +41,7 @@ from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
 from .utils import (
     api_json,
     assert_autark_map_drawn,
+    assert_in_view,
     frame_nodes,
     node_locator,
     play_node,
@@ -52,6 +53,7 @@ from .utils import (
     save_dataflow,
     set_node_code,
     stub_login_and_enter_workflow,
+    wait_for_drawer_closed,
     wait_for_node_settled,
     wait_for_run_guard_released,
 )
@@ -228,6 +230,12 @@ _UNDER_THE_DRAWER_JS = """([x, y]) => {
     return !!hit && !!hit.closest('[data-curio-scenario-catalog-drawer="true"]');
 }"""
 
+_ON_THE_CARD_JS = """({point: [x, y], key}) => {
+    const hit = document.elementFromPoint(x, y);
+    const card = hit && hit.closest('[data-scenario-key]');
+    return !!card && card.getAttribute('data-scenario-key') === key;
+}"""
+
 
 def _drag_card_with_the_mouse(page, project_id: str, scenario_id: str, at=(300.0, 200.0)) -> None:
     """Drag the scenario's card with the mouse, as a person does. The open
@@ -236,13 +244,20 @@ def _drag_card_with_the_mouse(page, project_id: str, scenario_id: str, at=(300.0
     drawer = page.locator('[data-curio-scenario-catalog-drawer="true"]')
     card = drawer.locator(f'[data-scenario-key="{project_id}/{scenario_id}"]')
     card.wait_for(state="visible", timeout=20000)
+    # The drawer lists every scenario in the account, the seeded test and
+    # shipped dataflows' too, so the card can sit below the window: scroll the
+    # drawer to it, as a person does, and press only where the card itself is hit.
+    card.scroll_into_view_if_needed()
     card_box = card.bounding_box()
     pane_box = page.locator(CANVAS_DROP_TARGET).bounding_box()
     assert card_box and pane_box, "the card or the canvas has no layout box"
     target = (pane_box["x"] + at[0], pane_box["y"] + at[1])
     assert page.evaluate(_UNDER_THE_DRAWER_JS, list(target)), f"{target} is not under the drawer's scrim"
 
-    start = (card_box["x"] + 40, card_box["y"] + 20)
+    start = assert_in_view(page, card_box["x"] + 40, card_box["y"] + 20, f"the {scenario_id} card's press point")
+    assert page.evaluate(_ON_THE_CARD_JS, {"point": list(start), "key": f"{project_id}/{scenario_id}"}), (
+        f"{start} does not hit the {scenario_id} card"
+    )
     page.mouse.move(*start)
     page.mouse.down()
     page.mouse.move(start[0] - 40, start[1] + 10, steps=6)
@@ -475,9 +490,7 @@ def test_a_dropped_scenario_brings_the_packages_its_levers_need(
     # The dataflow saves on top of the package the drop added. The drawer
     # closes first: its scrim lies over the File menu.
     page.keyboard.press("Escape")
-    page.locator('[data-curio-scenario-catalog-drawer="true"][aria-hidden="true"]').wait_for(
-        state="attached", timeout=10000,
-    )
+    wait_for_drawer_closed(page, '[data-curio-scenario-catalog-drawer="true"]')
     save_dataflow(page)
     saved = _saved_spec(current_server, token, target)["dataflow"]
     [dropped] = saved["scenarios"]

@@ -1,7 +1,8 @@
 /**
  * The Compare Scenarios node's What differs tab (#662): each lever that
  * differs between the compared scenarios, with the widget values and the code
- * lines that changed, and the levers only some of them have.
+ * lines that changed, an Edit Features node's edits, and the levers only some
+ * of them have.
  */
 import React from "react";
 import type { WidgetValue } from "../../utils/widgets/widgetModel";
@@ -38,7 +39,7 @@ export function WhatDiffersList({
   return (
     <div data-compare-differs="true">
       {differs.differences.length === 0 ? (
-        <p className={styles.empty}>The scenarios&apos; levers are the same: no widget value or code line differs.</p>
+        <p className={styles.empty}>The scenarios&apos; levers are the same: no widget value, code line or edit differs.</p>
       ) : (
         <ul className={styles.levers}>
           {differs.differences.map((lever) => (
@@ -60,6 +61,27 @@ export function WhatDiffersList({
                           {nameOf(scenarioId)}: {shownValue(value)}
                         </span>
                       ))}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {lever.edits && lever.edits.length > 0 ? (
+                <ul className={styles.values}>
+                  {lever.edits.map((change) => (
+                    <li key={change.scenarioId} className={styles.value} data-compare-edits={change.scenarioId}>
+                      <span>
+                        {swatch(change.scenarioId)}
+                        {nameOf(change.scenarioId)}:
+                      </span>
+                      {change.edits.length === 0 ? (
+                        <span data-compare-edit="none">no edits</span>
+                      ) : (
+                        change.edits.map((line, i) => (
+                          <span key={i} data-compare-edit={line}>
+                            {line}
+                          </span>
+                        ))
+                      )}
                     </li>
                   ))}
                 </ul>

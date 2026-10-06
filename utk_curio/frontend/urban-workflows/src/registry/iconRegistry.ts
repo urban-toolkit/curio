@@ -10,15 +10,18 @@
 
 import {
   faBorderAll,
+  faCalculator,
   faCity,
   faCube,
   faChartColumn,
   faChartLine,
+  faChartSimple,
   faCodeCompare,
   faCodeMerge,
   faCubes,
   faDatabase,
   faDownload,
+  faEraser,
   faFilm,
   faMap,
   faMapLocationDot,
@@ -27,6 +30,7 @@ import {
   faServer,
   faSliders,
   faStreetView,
+  faSun,
   faTable,
   faUpload,
   faWandMagicSparkles,
@@ -76,11 +80,16 @@ registerIcon('fa-solid:code-merge', faCodeMerge);
 registerIcon('fa-solid:object-group', faObjectGroup);
 registerIcon('fa-solid:sliders', faSliders);
 registerIcon('fa-solid:code-compare', faCodeCompare);
+registerIcon('fa-solid:calculator', faCalculator);
+registerIcon('fa-solid:chart-simple', faChartSimple);
+registerIcon('fa-solid:eraser', faEraser);
 registerIcon('fa-solid:street-view', faStreetView);
 registerIcon('fa-solid:wand-magic-sparkles', faWandMagicSparkles);
 // curio.media@1.
 registerIcon('fa-solid:film', faFilm);
 registerIcon('fa-solid:wave-square', faWaveSquare);
 registerIcon('fa-solid:border-all', faBorderAll);
+// scout.shadow@1.
+registerIcon('fa-solid:sun', faSun);
 registerIcon('fa-brands:js', faJs);
 registerIcon('fa-brands:python', faPython);

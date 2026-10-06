@@ -984,7 +984,9 @@ jobs:
       # Not example 18: under isolation a node's raster output is stored under
       # its artifact id, so the browser's run and the harness's name different
       # files and cannot be compared, although the mosaic itself runs.
-      ISOLATED_WORKFLOWS: DataPool_Dataframe.json,DataPool_Geodataframe.json,MultiInput.json,Vega.json,21-storage-photos-and-videos.json,22-storage-audio-recordings.json
+      # NetCDF.json: a forked child reads the SCOUT WRF group, a NetCDF file a
+      # variable, from its staged copies (#662).
+      ISOLATED_WORKFLOWS: DataPool_Dataframe.json,DataPool_Geodataframe.json,MultiInput.json,Vega.json,NetCDF.json,21-storage-photos-and-videos.json,22-storage-audio-recordings.json
       CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/ci-report/failures
       CURIO_E2E_TRACE: "1"
     steps:

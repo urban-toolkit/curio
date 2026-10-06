@@ -1,0 +1,37 @@
+{
+  "id": "data.scout.wrf-rh2",
+  "name": "SCOUT WRF Relative Humidity at 2 m",
+  "version": "1.0.0",
+  "format": "netcdf",
+  "description": "The relative humidity at 2 m (RH2, in percent) over Chicago from SCOUT's WRF-Chem 4.5.1 forecast of 2025-07-06 00:00 UTC: 49 hourly steps, 2025-07-06 00:00 to 2025-07-08 00:00 UTC, on its 1 km Lambert conformal grid, cut to the 51 by 44 cells around SCOUT's Chicago road graph (latitude 41.59 to 42.07, longitude -88.02 to -87.46). One of the five variables of the SCOUT WRF group the scout.routing package reads; its global attribute timezone (America/Chicago) is the time zone the package reads a start time in. From SCOUT, https://github.com/urban-toolkit/scout, backend/models/routing/weather_data/RH2.nc, used with the permission of SCOUT's authors.",
+  "publisher": "SCOUT (urban-toolkit/scout)",
+  "license": "",
+  "tags": [
+    "netcdf",
+    "weather",
+    "wrf",
+    "scout",
+    "chicago"
+  ],
+  "dataFile": "data/RH2.nc",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "SCOUT",
+  "rowCount": null,
+  "featureCount": null,
+  "schema": null,
+  "createdAt": "2026-10-05T00:00:00Z",
+  "updatedAt": "2026-10-05T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "sourceEncoding": null,
+  "groupId": "netcdf.scout-wrf",
+  "layerName": "RH2",
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null,
+  "discoverySource": null,
+  "collection": null
+}

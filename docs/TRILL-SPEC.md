@@ -117,6 +117,16 @@ column Difference matches the rows of two layers or tables on (without it,
 `osm_id` or `building_id`), passed to `curio_difference_scenarios` as `key=`, and
 `value` the column or band its map colors the difference by.
 
+`metadata.editFeatures` holds a `curio.builtin/edit-features` node's edit list,
+written only when it has one of its fields. `key` is the column that identifies a
+feature (`osm_id`, `building_id`, or another column whose values differ in every
+feature), and `layer` the layer the edits apply to when the input names its
+layers. `edits` lists the edits in the order they were made, each `{op, ids}`:
+`remove` drops the features whose `key` is one of `ids`, `set` also names a
+`column` and a `value` and writes the value there, and `restore` puts those
+features back as the node's input has them. The node's `content` is written from
+the list, one call of `curio_edit_features` with the edits, `key=` and `layer=`.
+
 `metadata.comments` carries the node's discussion, written only when non-empty.
 Each entry is `{id, text, author, authorName, createdAt, resolved}`. The author's
 avatar is not stored, because `profile_image` may be a full data URL; `canDelete`

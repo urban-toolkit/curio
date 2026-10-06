@@ -270,6 +270,9 @@ def execute_workflow_programmatically(
 
     outputs: dict[str, dict] = {}   # node_id → {"path": artifact_id, "dataType": ...}
     expected: dict[str, dict] = {}  # node_id → eager-loaded artifact dict (see fix below)
+    # Nodes that give this runner no output: one only the browser runs (an
+    # Autark data or compute step) and every Python node below one.
+    browser_only: set[str] = set()
 
     for node in spec.topo_sorted_nodes():
         # Non-code nodes — and code nodes whose content is JavaScript
@@ -279,17 +282,32 @@ def execute_workflow_programmatically(
             propagated = propagate_node_input(spec, node.id, outputs)
             if propagated is not None:
                 outputs[node.id] = propagated
+            else:
+                browser_only.add(node.id)
             continue
 
-        # Resolve input (mirrors process_python_code in backend routes.py)
+        # A Python node reading such a node has no input here, so it has no
+        # ground truth either; the browser run is checked without one (#662:
+        # example 06's Compare Scenarios nodes read its Autark maps). Any other
+        # missing upstream is still the KeyError below.
+        unrun = [uid for uid in spec.upstream_nodes(node.id) if uid not in outputs]
+        if unrun and all(uid in browser_only for uid in unrun):
+            browser_only.add(node.id)
+            continue
+
+        # Resolve input as the backend does (node_exec.parse_input_ref): a fan-in
+        # is a list of refs, passed as a stringified list that worker.py eval()s
+        # back; one upstream whose node returned several values is its outputs
+        # artifact, read as a file and expanded by the worker.
+        from utk_curio.backend.app.execution.node_exec import parse_input_ref
+
         ref = resolve_node_input(spec, node.id, outputs)
-        if ref["dataType"] == "outputs":
-            # Pass as stringified list; worker.py eval()s it back
-            file_path = str(ref["path"])
-            data_type = "outputs"
+        if ref["dataType"] == "outputs" and isinstance(ref["path"], list):
+            parsed = parse_input_ref({"dataType": "outputs", "data": ref["path"]})
         else:
-            file_path = ref["path"]
-            data_type = ref["dataType"]
+            parsed = parse_input_ref({"path": ref["path"], "dataType": ref["dataType"]})
+        data_type = parsed["dataType"]
+        file_path = str(parsed["path"]) if data_type == "outputs" else parsed["path"]
 
         # Sandbox /exec expects code already indented as a function body
         resolved = spec.node_code(node, "python")

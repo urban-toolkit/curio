@@ -1,0 +1,92 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Beginner"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "3e5a9c1f-7b2d-4f68-8c4e-1a9d6b3f0e25",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 0,
+        "content": "from datetime import datetime, timedelta\n\nimport pandas as pd\n\n# The SCOUT WRF group from the Data Catalog: one NetCDF variable per\n# dataset, each loaded as an xarray Dataset.\nlayers = {}\nlayers[\"RAIN\"] = curio_load_data(\"data.scout.wrf-rain\")\nlayers[\"T2\"] = curio_load_data(\"data.scout.wrf-t2\")\nlayers[\"RH2\"] = curio_load_data(\"data.scout.wrf-rh2\")\nlayers[\"WSPD10\"] = curio_load_data(\"data.scout.wrf-wspd10\")\nlayers[\"WDIR10\"] = curio_load_data(\"data.scout.wrf-wdir10\")\n\n# Each variable's mean over the grid, one row per hour of the forecast, in UTC\n# from the files' START_DATE.\nstart = datetime.strptime(layers[\"RAIN\"].attrs[\"START_DATE\"], \"%Y-%m-%d_%H:%M:%S\")\nhours = range(layers[\"RAIN\"].sizes[\"Time\"])\ntable = pd.DataFrame({\"hour\": [(start + timedelta(hours=h)).strftime(\"%Y-%m-%dT%H:%M:%S\") for h in hours]})\nfor name, ds in layers.items():\n    table[name] = ds[name].mean(dim=(\"south_north\", \"west_east\")).values.astype(float)\nreturn table\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Read the five WRF variables and average each over the grid, hour by hour.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "d1f7b4e9-2c6a-4b83-9e5f-8a0c3d7b1f46",
+        "type": "curio.builtin/vis-vega",
+        "x": 700,
+        "y": 0,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"The mean hourly rain over the WRF grid.\",\n  \"mark\": \"line\",\n  \"encoding\": {\n    \"x\": {\"field\": \"hour\", \"type\": \"temporal\", \"title\": \"Hour (UTC)\"},\n    \"y\": {\"field\": \"RAIN\", \"type\": \"quantitative\", \"title\": \"Mean rain\"}\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart the mean hourly rain.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-3e5a9c1f-7b2d-4f68-8c4e-1a9d6b3f0e25out-d1f7b4e9-2c6a-4b83-9e5f-8a0c3d7b1f46in",
+        "source": "3e5a9c1f-7b2d-4f68-8c4e-1a9d6b3f0e25",
+        "target": "d1f7b4e9-2c6a-4b83-9e5f-8a0c3d7b1f46",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ],
+    "datasets": [
+      {
+        "datasetId": "data.scout.wrf-rain",
+        "dirName": "data.scout.wrf-rain@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.wrf-t2",
+        "dirName": "data.scout.wrf-t2@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.wrf-rh2",
+        "dirName": "data.scout.wrf-rh2@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.wrf-wspd10",
+        "dirName": "data.scout.wrf-wspd10@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.wrf-wdir10",
+        "dirName": "data.scout.wrf-wdir10@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      }
+    ],
+    "name": "NetCDF",
+    "task": "",
+    "timestamp": 1791158400000,
+    "provenance_id": "NetCDF"
+  }
+}

@@ -237,6 +237,14 @@
       "Geometries"
     ]
   },
+  "24-scout-building-rasters": {
+    "tags": [
+      "Autark"
+    ],
+    "data_type": [
+      "Geometries"
+    ]
+  },
   "dataflows/AutkMap": {
     "tags": [
       "Autark",
@@ -303,6 +311,12 @@
   "dataflows/DefaultWorkflow": {
     "tags": [],
     "data_type": []
+  },
+  "dataflows/FloodScenarios": {
+    "tags": [],
+    "data_type": [
+      "Rasters"
+    ]
   },
   "dataflows/Image": {
     "tags": [
@@ -389,6 +403,15 @@
       "Tables"
     ]
   },
+  "dataflows/NetCDF": {
+    "tags": [
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  },
   "dataflows/Regression": {
     "tags": [
       "Autark",
@@ -408,6 +431,12 @@
       "Tables"
     ]
   },
+  "dataflows/ScoutShadows": {
+    "tags": [],
+    "data_type": [
+      "Geometries"
+    ]
+  },
   "dataflows/SimpleView": {
     "tags": [
       "Pandas"
@@ -423,6 +452,16 @@
     ],
     "data_type": [
       "Tables"
+    ]
+  },
+  "dataflows/WeatherRouting": {
+    "tags": [
+      "Autark",
+      "GeoPandas"
+    ],
+    "data_type": [
+      "Geometries",
+      "OpenStreetMap"
     ]
   },
   "dataflows/Widget": {

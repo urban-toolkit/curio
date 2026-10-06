@@ -39,6 +39,11 @@ class TestTemplateContentKind:
         assert kinds["data-transformation"] == "code"
         # Its code is written for it from its inputs, and runs (#662).
         assert kinds["compare-scenarios"] == "code"
+        # They start with a call to Curio's raster algebra, edited as code.
+        assert kinds["raster-calculator"] == "code"
+        assert kinds["raster-statistics"] == "code"
+        # Its code is written for it from its edit list, and runs (#662).
+        assert kinds["edit-features"] == "code"
         # A document: authored, validated, never executed.
         assert kinds["vis-vega"] == "grammar"
         assert kinds["autk-grammar"] == "grammar"
@@ -58,7 +63,8 @@ class TestTemplateContentKind:
             "data-loading", "data-export", "data-transformation", "data-pool",
             "computation-analysis", "data-summary", "js-computation",
             "vis-vega", "vis-simple", "autk-grammar", "spatial-join", "parameter",
-            "compare-scenarios",
+            "compare-scenarios", "raster-calculator", "raster-statistics",
+            "edit-features",
         }
 
     def test_no_content_makes_a_presentation_without_input_author_nothing(self):

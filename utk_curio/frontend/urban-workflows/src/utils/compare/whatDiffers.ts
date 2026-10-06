@@ -6,8 +6,10 @@
  *   known by its own id and its `copiedFrom` list (`duplicateSelection`
  *   writes it); two levers are the same lever in two scenarios when these
  *   meet. A paired lever differs in its
- *   widget values and in its code lines; one with no partner is listed as only
- *   in the scenarios that have it.
+ *   widget values and in its code lines, an Edit Features lever in its edit
+ *   list (its code is written from it); one with no partner is listed as only
+ *   in the scenarios that have it, with its edits when it is an Edit Features
+ *   node.
  * - **Context:** a warning, naming the inputs, when the scenarios read
  *   different fixed context, so their outcomes may differ for reasons outside
  *   them.
@@ -22,6 +24,7 @@ import { effectiveValue, normalizeWidgets, type WidgetValue } from "../widgets/w
 import { nodeCode } from "../references/sharedParameters";
 import { nodeLabel } from "../../components/scenarios/scenarioLabels";
 import { listOf, type CompareInput } from "./compareInputs";
+import { describeEdit, isEditFeaturesNode, normalizeEditFeatures } from "../editFeatures/editFeatures";
 
 type FlowNodeLike = { id: string; type?: string | null; data?: any };
 type FlowEdgeLike = {
@@ -146,6 +149,12 @@ export interface CodeChange {
   added: string[];
 }
 
+export interface EditsChange {
+  scenarioId: string;
+  /** Its Edit Features node's edits, each in a line, in the order they apply. */
+  edits: string[];
+}
+
 export interface LeverDifference {
   /** A stable key: the lever's first node id. */
   key: string;
@@ -154,12 +163,21 @@ export interface LeverDifference {
   onlyIn?: string[];
   widgets: WidgetChange[];
   code: CodeChange[];
+  /** An Edit Features lever's edits, per scenario, when they differ or only some have it. */
+  edits?: EditsChange[];
 }
 
 export interface WhatDiffers {
   differences: LeverDifference[];
   /** Levers every compared scenario has, alike in their widgets and code. */
   same: number;
+}
+
+/** An Edit Features node's edits, a line each (none for another node). */
+function editLines(node: FlowNodeLike | undefined): string[] {
+  if (!node || !isEditFeaturesNode(node)) return [];
+  const settings = normalizeEditFeatures(node.data?.editFeatures);
+  return (settings?.edits ?? []).map((edit) => describeEdit(edit, settings?.key));
 }
 
 function widgetValues(node: FlowNodeLike): Map<string, WidgetValue> {
@@ -186,10 +204,26 @@ export function whatDiffers(
     const key = [...members.values()][0][0];
     const label = nodeLabel(byId.get(firstIds.find((id) => id !== undefined) ?? key), key);
     if (present.length < compared.length) {
-      differences.push({ key, label, onlyIn: present, widgets: [], code: [] });
+      const edits = compared.flatMap(({ scenario }, i) => {
+        const node = firstIds[i] !== undefined ? byId.get(firstIds[i]!) : undefined;
+        const lines = editLines(node);
+        return node && isEditFeaturesNode(node) && lines.length > 0 ? [{ scenarioId: scenario.id, edits: lines }] : [];
+      });
+      differences.push({ key, label, onlyIn: present, widgets: [], code: [], ...(edits.length > 0 ? { edits } : {}) });
       continue;
     }
     const levers = firstIds.map((id) => byId.get(id!)!);
+    if (levers.every((lever) => isEditFeaturesNode(lever))) {
+      // Its code is written from its edit list: the list is what differs.
+      const lists = levers.map((lever) => JSON.stringify(normalizeEditFeatures(lever.data?.editFeatures) ?? null));
+      if (lists.every((list) => list === lists[0])) {
+        same += 1;
+        continue;
+      }
+      const edits = compared.map(({ scenario }, i) => ({ scenarioId: scenario.id, edits: editLines(levers[i]) }));
+      differences.push({ key, label, widgets: [], code: [], edits });
+      continue;
+    }
     const values = levers.map(widgetValues);
     const names: string[] = [];
     for (const map of values) for (const name of map.keys()) if (!names.includes(name)) names.push(name);

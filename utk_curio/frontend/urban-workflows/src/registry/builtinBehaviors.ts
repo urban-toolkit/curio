@@ -21,6 +21,9 @@ import {
   useSpatialJoinBehavior,
   useParameterBehavior,
   useCompareScenariosBehavior,
+  useRasterCalculatorBehavior,
+  useRasterStatisticsBehavior,
+  useEditFeaturesBehavior,
 } from '../adapters/node';
 import { registerBehavior } from './behaviorRegistry';
 
@@ -40,6 +43,13 @@ registerBehavior('parameter', useParameterBehavior);
 // curio.builtin@1 compare-scenarios node: stacks scenarios' outcomes, charts
 // them in the scenarios' colors and lists what differs (#662).
 registerBehavior('compare-scenarios', useCompareScenariosBehavior);
+// curio.builtin@1 raster-calculator and raster-statistics nodes: Python nodes
+// that start with a call to Curio's raster algebra.
+registerBehavior('raster-calculator', useRasterCalculatorBehavior);
+registerBehavior('raster-statistics', useRasterStatisticsBehavior);
+// curio.builtin@1 edit-features node: features picked on its map, removed,
+// given a value or restored, as a list its code applies by id (#662).
+registerBehavior('edit-features', useEditFeaturesBehavior);
 //
 // A package's own behaviors are NOT registered here: they ship as a
 // pre-built `behaviors.js` bundle inside the package directory and

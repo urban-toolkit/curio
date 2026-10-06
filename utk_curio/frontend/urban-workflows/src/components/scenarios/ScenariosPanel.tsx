@@ -17,7 +17,7 @@ import styles from "./ScenariosPanel.module.css";
  * context on the canvas.
  */
 export function ScenariosPanel() {
-  const { scenarios } = useFlowContext();
+  const { scenarios, notebookOn } = useFlowContext();
   const { panelOpen, setPanelOpen, setHighlighted } = useScenarioUi();
   const actions = useScenarioActions();
 
@@ -45,7 +45,13 @@ export function ScenariosPanel() {
         <button type="button" className={styles.action} onClick={actions.saveSelectionAsScenario}>
           Save selection as scenario
         </button>
-        <button type="button" className={styles.action} onClick={() => actions.duplicate(true)}>
+        {/* Duplicating adds nodes, which happens on the canvas only. */}
+        <button
+          type="button"
+          className={styles.action}
+          onClick={() => actions.duplicate(true)}
+          disabled={notebookOn}
+        >
           Duplicate as scenario
         </button>
       </div>

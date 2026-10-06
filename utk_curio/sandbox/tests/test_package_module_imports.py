@@ -155,6 +155,87 @@ def test_a_module_folder_without_init_imports_too(run_in_process, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# A node of a package that depends on others gets their modules too (step 21)
+# ---------------------------------------------------------------------------
+
+# A package of its own beside the heights package it depends on.
+LABELS = {"height_labels.py": "def label(value):\n    return f'{value} m'\n"}
+DEPENDENT_CALLER = (
+    "    from building_height.convert_to_raster import convert_raster\n"
+    "    from height_labels import label\n"
+    "    return label(convert_raster(21))\n"
+)
+
+
+def _two_packages(tmp_path):
+    """``[own, dependency]``: the sources a dependent package's node is handed."""
+    own = _sources(tmp_path / "labels", LABELS)
+    heights = _sources(tmp_path / "heights", HEIGHTS)
+    return [_spec(own, "height_labels"), _spec(heights, "building_height")]
+
+
+def test_an_in_process_node_imports_the_modules_of_the_packages_its_package_depends_on(run_in_process, tmp_path):
+    result = run_in_process(DEPENDENT_CALLER, package_modules=_two_packages(tmp_path))
+    assert result["stderr"] == "", result["stderr"]
+    assert load_from_duckdb(result["output"]["path"]) == "42 m"
+    assert _loaded("building_height") == [] and _loaded("height_labels") == []
+
+
+def test_an_isolated_child_imports_them_too(tmp_path):
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    result = _run_child(scratch, DEPENDENT_CALLER, _two_packages(tmp_path))
+    assert result["ok"], result["stderr"]
+    assert result["output"] == {"kind": "str", "value": "42 m"}
+
+
+def test_the_exec_route_hands_several_packages_modules_to_the_run(workspace, tmp_path):
+    from utk_curio.sandbox.app import api, app
+
+    previous = api._isolation_state
+    api._isolation_state = False
+    try:
+        response = app.test_client().post("/exec", json={
+            "code": DEPENDENT_CALLER, "file_path": "", "nodeType": PACKAGE_NODE, "dataType": "",
+            "save_dataset": False, "package_modules": _two_packages(tmp_path),
+        })
+    finally:
+        api._isolation_state = previous
+    assert response.status_code == 200, response.data
+    body = response.get_json()
+    assert body["stderr"] == "", body["stderr"]
+    assert load_from_duckdb(body["output"]["path"]) == "42 m"
+
+
+def test_several_packages_stage_into_one_folder_and_the_first_keeps_a_shared_name(tmp_path):
+    own = _sources(tmp_path / "own", {"building_height.py": "WHO = 'own'\n", **LABELS})
+    heights = _sources(tmp_path / "heights", HEIGHTS)
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    staged = staging.stage_package_modules(
+        [_spec(own, "building_height", "height_labels"), _spec(heights, "building_height"),
+         {"root": str(tmp_path / "nope"), "names": ["x"]}],
+        scratch,
+    )
+    assert staged == {"root": "package_modules", "names": ["building_height", "height_labels"]}
+    target = scratch / "package_modules"
+    assert sorted(p.name for p in target.iterdir()) == ["building_height.py", "height_labels.py"]
+
+
+def test_the_route_keeps_each_well_formed_source_of_a_list():
+    from utk_curio.sandbox.util.package_modules import shape
+
+    assert shape([
+        {"root": "/a/sources", "names": ["b", "a"]},
+        {"root": "/b/sources", "names": ["../up"]},
+        "sources",
+        {"root": "/c/sources", "names": ["c"]},
+    ]) == [{"root": "/a/sources", "names": ["a", "b"]}, {"root": "/c/sources", "names": ["c"]}]
+    assert shape([]) is None
+    assert shape([{"names": ["a"]}]) is None
+
+
+# ---------------------------------------------------------------------------
 # The cache rule: nothing a run imported from its package outlives the run
 # ---------------------------------------------------------------------------
 

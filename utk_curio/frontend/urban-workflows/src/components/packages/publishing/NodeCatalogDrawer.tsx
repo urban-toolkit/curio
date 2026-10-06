@@ -26,6 +26,10 @@ import { PackageSearchRow } from "./PackageSearchRow";
 import { PackageCard } from "./PackageCard";
 import { EnvNote } from "./EnvNote";
 import { DrawerFooter } from "./DrawerFooter";
+import footerStyles from "./DrawerFooter.module.css";
+import { NodeFromFunctionModal } from "../editing/NodeFromFunctionModal";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faFileCode } from "@fortawesome/free-solid-svg-icons";
 import shell from "./CatalogDrawerShell.module.css";
 import styles from "./NodeCatalogDrawer.module.css";
 import { modalStackDepth } from "../../ModalShell";
@@ -71,6 +75,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const [search, setSearch] = useState(initialSearch);
   const [sort, setSort] = useState<SortMode>("new");
   const [pinned, setPinned] = useState(false);
+  const [functionOpen, setFunctionOpen] = useState(false);
   // One slot for whichever confirmation is open (#197). The two destructive
   // actions here are mutually exclusive from the user's point of view, and a
   // single slot keeps the "what am I confirming" state next to the copy.
@@ -427,9 +432,24 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           <DrawerFooter
             busy={anyBusy}
             onSideload={(file) => void onPickArchive(file)}
-          />
+          >
+            <button
+              type="button"
+              className={footerStyles.footerGhost}
+              disabled={anyBusy}
+              onClick={() => setFunctionOpen(true)}
+            >
+              <FontAwesomeIcon icon={faFileCode} aria-hidden /> New node from a Python function
+            </button>
+          </DrawerFooter>
         </aside>
       </div>
+
+      <NodeFromFunctionModal
+        show={functionOpen}
+        onClose={() => setFunctionOpen(false)}
+        onSaved={() => void reload()}
+      />
 
       {/* The card's "View details". The Node Catalog was the only one of the
           three with no detail view anywhere; `PackageDetailModal` is that view,

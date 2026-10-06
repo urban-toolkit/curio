@@ -34,22 +34,37 @@ function entryLine(input: CodeInput): string {
   return `    (${scenario}, ${name}, ${referenceText(inputReferenceInner(input.slot))}),`;
 }
 
-/** The stacking code for these inputs, in circle order. */
-export function stackCode(inputs: readonly CodeInput[]): string {
-  if (inputs.length === 0) return [...STACK_CODE_NOTE, `return ${STACK_HELPER}([])`, ""].join("\n");
-  return [...STACK_CODE_NOTE, `return ${STACK_HELPER}([`, ...inputs.map(entryLine), "])", ""].join("\n");
+/** `, layer="…"` for the layer read from an Autark node's several, or nothing. */
+function layerArgument(layer?: string): string {
+  return layer ? `, layer=${widgetLiteral(layer, "python")}` : "";
 }
 
-/** The difference code for these inputs, in circle order, joining rows on *key*. */
-export function differenceCode(inputs: readonly CodeInput[], key?: string): string {
-  const keyed = key ? `, key=${widgetLiteral(key, "python")}` : "";
-  if (inputs.length === 0) return [...DIFFERENCE_CODE_NOTE, `return ${DIFFERENCE_HELPER}([]${keyed})`, ""].join("\n");
-  return [...DIFFERENCE_CODE_NOTE, `return ${DIFFERENCE_HELPER}([`, ...inputs.map(entryLine), `]${keyed})`, ""].join("\n");
+/** The stacking code for these inputs, in circle order, reading *layer* from an Autark node's several. */
+export function stackCode(inputs: readonly CodeInput[], layer?: string): string {
+  const layered = layerArgument(layer);
+  if (inputs.length === 0) return [...STACK_CODE_NOTE, `return ${STACK_HELPER}([]${layered})`, ""].join("\n");
+  return [...STACK_CODE_NOTE, `return ${STACK_HELPER}([`, ...inputs.map(entryLine), `]${layered})`, ""].join("\n");
+}
+
+/**
+ * The difference code for these inputs, in circle order, joining rows on
+ * *key* and reading *layer* from an Autark node's several. The key comes last,
+ * as `keyOfCode` reads it.
+ */
+export function differenceCode(inputs: readonly CodeInput[], key?: string, layer?: string): string {
+  const args = `${layerArgument(layer)}${key ? `, key=${widgetLiteral(key, "python")}` : ""}`;
+  if (inputs.length === 0) return [...DIFFERENCE_CODE_NOTE, `return ${DIFFERENCE_HELPER}([]${args})`, ""].join("\n");
+  return [...DIFFERENCE_CODE_NOTE, `return ${DIFFERENCE_HELPER}([`, ...inputs.map(entryLine), `]${args})`, ""].join("\n");
 }
 
 /** The code for *mode*: the stacking code for Chart, the difference code for Difference. */
-export function compareCode(mode: CompareMode, inputs: readonly CodeInput[], difference?: CompareDifference): string {
-  return mode === "difference" ? differenceCode(inputs, difference?.key) : stackCode(inputs);
+export function compareCode(
+  mode: CompareMode,
+  inputs: readonly CodeInput[],
+  difference?: CompareDifference,
+  layer?: string,
+): string {
+  return mode === "difference" ? differenceCode(inputs, difference?.key, layer) : stackCode(inputs, layer);
 }
 
 /** The view *code* was written for, by the step it calls, or null for code that calls neither. */
@@ -61,13 +76,23 @@ export function modeOfCode(code: string): CompareMode | null {
 
 const KEY_RE = /\bkey=("(?:[^"\\]|\\.)*")\)/;
 
-/** The key the difference code joins rows on, or undefined when it names none. */
-export function keyOfCode(code: string): string | undefined {
-  const match = KEY_RE.exec(code);
+function literalOf(match: RegExpExecArray | null): string | undefined {
   if (!match) return undefined;
   try {
     return JSON.parse(match[1]);
   } catch {
     return undefined;
   }
+}
+
+/** The key the difference code joins rows on, or undefined when it names none. */
+export function keyOfCode(code: string): string | undefined {
+  return literalOf(KEY_RE.exec(code));
+}
+
+const LAYER_RE = /\blayer=("(?:[^"\\]|\\.)*")[,)]/;
+
+/** The layer the code reads from an Autark node's several, or undefined when it names none. */
+export function layerOfCode(code: string): string | undefined {
+  return literalOf(LAYER_RE.exec(code));
 }

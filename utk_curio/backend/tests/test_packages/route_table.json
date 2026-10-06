@@ -98,6 +98,20 @@
   "endpoint": "packages_api.factory_capabilities"
  },
  {
+  "rule": "/api/packages/factory/function-template",
+  "methods": [
+   "POST"
+  ],
+  "endpoint": "packages_api.factory_function_template"
+ },
+ {
+  "rule": "/api/packages/factory/functions",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "packages_api.factory_functions"
+ },
+ {
   "rule": "/api/packages/factory/install",
   "methods": [
    "POST"

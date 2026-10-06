@@ -33,11 +33,13 @@ A package is a folder with a `manifest.json` (the contract), an optional `source
 
 | Package | What it provides |
 |---|---|
-| `curio.builtin@1` | The 12 default node kinds (Data Loading, Python/JS Computation, Vega-Lite, Autark, and so on). Installed for every user, **read-only** (you can save edits as a new package but cannot overwrite the originals), and cannot be uninstalled. |
+| `curio.builtin@1` | The 16 default node kinds (Data Loading, Python/JS Computation, Vega-Lite, Autark, Raster Calculator, Edit Features, and so on). Installed for every user, **read-only** (you can save edits as a new package but cannot overwrite the originals), and cannot be uninstalled. |
 | `ai.utk.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end to end. Both are plain Python nodes. `curio.weather@1` is also installed for you when Curio starts with `--with-examples`; you can still uninstall it. |
 | `curio.example-ui@1` | A minimal node with its **own interface** rather than a code editor: no API keys and no Python dependencies. The one to read and fork for custom-UI nodes; see [AUTHORING-NODES.md](AUTHORING-NODES.md). |
 | `curio.streetvision@1` | One **Image Segmentation** code node: runs a Model Catalog model over a collection's images and reports each class's share of every image (DDRNet23-Slim ships with Curio; Hugging Face models are added from the Discovery Catalog). Read-only, depends only on `onnxruntime`, and installed with the example that declares it ([example 10](examples/10-street-vision-cv-analysis.md)). |
 | `scout.raster-conversion@1` | SCOUT's building rasterizer, ported from [SCOUT](https://github.com/urban-toolkit/scout): one **Rasterize Buildings** code node turns a buildings layer into the height tiles SCOUT's Deep Umbra shadow model reads, and a mosaic of them an Autark map draws. Read-only, depends on `datashader`, `spatialpandas`, `dask` and `rasterio`, and installed when Curio starts with `--with-examples`. See its [README](../packages/scout.raster-conversion@1/README.md). |
+| `scout.shadow@1` | SCOUT's shadow model, ported from [SCOUT](https://github.com/urban-toolkit/scout): one **Accumulated Shadow** code node runs Deep Umbra on the zoom-16 tiles of that height mosaic and returns the accumulated shadow in minutes, a raster on the same grid that an Autark map draws and a Raster Statistics node sums up over the ground. Its model is Deep Umbra in the [Model Catalog](MODEL-CATALOG.md), which the Curio repository holds and the pip package does not. Read-only, depends on `onnxruntime` and `rasterio`, and installed when Curio starts with `--with-examples`. See its [README](../packages/scout.shadow@1/README.md). |
+| `scout.routing@1` | SCOUT's weather-aware routing, ported from [SCOUT](https://github.com/urban-toolkit/scout): one **Weather Routing** code node finds routes between two points over a roads layer, weighing each road by the weather SCOUT's graph network predicts on it from the WRF forecast in the Data Catalog, and gives the routes for an Autark map and their duration, distance and rain and wind exposure for Compare Scenarios. Its graph network is SCOUT's weather GNN in the [Model Catalog](MODEL-CATALOG.md). Read-only, depends on `osmnx`, `networkx`, `netCDF4`, `scipy`, `scikit-learn` and `onnxruntime`, and installed when Curio starts with `--with-examples`. See its [README](../packages/scout.routing@1/README.md). |
 
 You can install any number of other packages, your own or archives shared by others.
 
@@ -71,6 +73,7 @@ There are two places you manage packages:
 | **Add to all projects** | `/catalog/nodes` | Your defaults and every project's lockfile, plus your package store | The package appears in every project's palette, and new projects start with it. |
 | **Update** (drawer), **Update all projects** (`/catalog/nodes`) | Shown when the shared catalog has a higher version than your copy | Your store copy, replaced by the catalog's version | Every project that uses the package gets the new version. A package with its own interface runs the new one after you reload the page. |
 | **Remove from project** | Drawer | This project's lockfile; also your store copy and defaults entry, when no other project uses the package | The package leaves this project's palette. |
+| **New node from a Python function** | Drawer | A new package, or one of yours, and this project's lockfile | A node that calls the function appears in this project's palette ([part 4](#new-node-from-a-python-function)). |
 | **Publish** | The Tools panel's **Node Catalog** dropdown, or the `/catalog/nodes` details drawer | The shared catalog | Every user on this install can browse the package. The button is hidden when the operator turns publishing off. |
 
 ### Workflows
@@ -95,7 +98,7 @@ A Python node that calls a key-gated API reads the key by name, never as a liter
 
 ## 4. Creating a package from a canvas node
 
-The flow is **Save as package node**: build the node on the canvas, then save it into a new or existing package. Package metadata is edited per package from the **Node Catalog** dropdown.
+The flow is **Save as package node**: build the node on the canvas, then save it into a new or existing package. **New node from a Python function** writes a node from a function in a package's module instead. Package metadata is edited per package from the **Node Catalog** dropdown.
 
 ### Save as package node
 
@@ -117,11 +120,34 @@ Saving into a package you added from the catalog makes that copy your own. Curio
 > the bundle: see [Authoring nodes](AUTHORING-NODES.md) and
 > [EXTENDING.md §6](EXTENDING.md).
 
+### New node from a Python function
+
+A package that ships Python modules in its `sources/` folder ([Modules beside your template](AUTHORING-NODES.md#modules-beside-your-template)) can give you a node for any of their functions without writing its code:
+
+1. Open the Node Catalog drawer and click **New node from a Python function** in its footer.
+2. Pick the function. The list holds every public function of every module your installed packages ship, as `module.function(parameters)`. A function that takes `*args` or `**kwargs`, or is `async`, is listed but cannot be picked, and says why; so is a module that does not parse.
+3. For each parameter, choose what it is given:
+   - **A widget**: a tag in the node's **Widgets** tab ([Widgets](USAGE.md#widgets)). Curio suggests its type from the parameter's annotation or default: `bool` is a checkbox, `int` and `float` a number, `str` a text, `Literal["a", "b"]` a choice, a list of texts or numbers a list, `datetime` a date and time. **Edit widget** changes its type, label, default and options.
+   - **A fixed value**, written as Python writes it: `2`, `'winter'`, `[1, 2]`.
+   - **An input**: the node gets one input per parameter given one, in parameter order.
+   - **Its default**, when the parameter has one: the call leaves it out.
+4. Name the node, choose the destination package as for **Save as package node**, and click **Create node**.
+
+The node joins this project's palette. Its code imports the function and returns its call, with the widgets and inputs as references:
+
+```python
+from scout_shadow.deep_umbra import season_factor
+
+return season_factor(season=[!! season !!])
+```
+
+The function's parameters are read from the module's source; the module is not imported or run until the node runs. A node saved into another package than the function's names the function's package in `dependencies.packages`, which lets its code import that package's modules.
+
 ### Dependencies are detected from the source
 
 `dependencies.python` and `dependencies.js` in the manifest are filled in from each kind's source file when you save. They are not entered by hand:
 
-- Each top-level `import` or `from … import` in a `.py` source is collected, leaving out the standard library and Curio's own modules. The common cases where the import name differs from the install name are mapped (`cv2` → `opencv-python`, `sklearn` → `scikit-learn`, `PIL` → `pillow`, `yaml` → `pyyaml`, `bs4` → `beautifulsoup4`, `skimage` → `scikit-image`); anything else passes through unchanged.
+- Each top-level `import` or `from … import` in a `.py` source is collected, leaving out the standard library, Curio's own modules, and the modules the package and the packages in its `dependencies.packages` ship. The common cases where the import name differs from the install name are mapped (`cv2` → `opencv-python`, `sklearn` → `scikit-learn`, `PIL` → `pillow`, `yaml` → `pyyaml`, `bs4` → `beautifulsoup4`, `skimage` → `scikit-image`); anything else passes through unchanged.
 - In `.js`, `.mjs` and `.cjs` sources, `import … from "X"`, dynamic `import("X")` and `require("X")` are collected. Relative paths are skipped, subpaths collapse to the package (`lodash/fp` → `lodash`), and scoped packages keep their scope (`@scope/pkg`).
 - Detected names are written with `*` as the version range. The UI does not offer version pins.
 - Saving into an existing package keeps every dependency it already declares, with its range, and adds newly detected names.

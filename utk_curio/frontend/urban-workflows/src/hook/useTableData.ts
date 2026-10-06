@@ -254,12 +254,20 @@ const useTableData = ({ data }: { data: INodeData }) => {
       let callbackOutput: any;
       let contentOutput: any;
 
+      // Layers read from one artifact name it (`filename`), as one layer's
+      // fetched envelope does: a code node is sent that artifact
+      // (utils/flowOutputRef `executionInputRef`), the one a run on the server
+      // hands it through the pool.
+      const sourceIds = wrappers.map((w) => sandboxArtifactId(w));
+      const inherited = data.input && typeof data.input === "object" && data.input.dataType === "outputs"
+        && typeof data.input.filename === "string" && data.input.filename ? data.input.filename : null;
+      const source = inherited ?? (sourceIds.length === 1 && sourceIds[0] ? sourceIds[0] : null);
       if (tabd.length === 1) {
         callbackOutput = tabd[0];           // plain fetched object, no path
         contentOutput  = tabd[0];           // object stored in output.content
       } else if (tabd.length > 1) {
-        callbackOutput = { data: tabd, dataType: "outputs" };
-        contentOutput  = { data: tabd, dataType: "outputs" };
+        callbackOutput = { data: tabd, dataType: "outputs", ...(source ? { filename: source } : {}) };
+        contentOutput  = { data: tabd, dataType: "outputs", ...(source ? { filename: source } : {}) };
       } else {
         callbackOutput = null;
         contentOutput  = '';

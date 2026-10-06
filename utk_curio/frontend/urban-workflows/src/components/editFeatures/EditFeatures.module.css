@@ -1,0 +1,135 @@
+/* The Edit Features node's body (#662): the layer and id menus, the map its
+   features are picked on, the actions on a pick, and the edit list. */
+
+.body {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font-family: var(--curio-font-family);
+  font-size: var(--curio-font-size-sm);
+  color: var(--curio-text-primary);
+  background: var(--curio-card-bg);
+}
+
+.bar,
+.actions,
+.setValue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-secondary);
+}
+
+.field select,
+.input {
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  max-width: 130px;
+  padding: 1px 4px;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-sm);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+}
+
+.input {
+  width: 72px;
+}
+
+.button {
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  line-height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-pill);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  cursor: pointer;
+}
+
+.button:disabled {
+  cursor: default;
+  color: var(--curio-text-secondary);
+}
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 120px;
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mapCanvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.picked {
+  flex: 1 1 100%;
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-secondary);
+  user-select: text;
+}
+
+.note {
+  margin: 0;
+  color: var(--curio-text-secondary);
+  font-size: var(--curio-font-size-xs);
+}
+
+.problem {
+  margin: 4px 0 0;
+  color: var(--curio-danger-text);
+  font-size: var(--curio-font-size-xs);
+}
+
+.edits {
+  margin: 0;
+  padding: 0 0 0 18px;
+  max-height: 84px;
+  overflow-y: auto;
+  font-size: var(--curio-font-size-xs);
+  user-select: text;
+}
+
+.edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.empty {
+  list-style: none;
+  margin-left: -18px;
+  color: var(--curio-text-secondary);
+}
+
+.delete {
+  font-family: inherit;
+  font-size: var(--curio-font-size-xs);
+  line-height: 16px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--curio-text-secondary);
+  cursor: pointer;
+}

@@ -349,6 +349,15 @@ test("mergeDatasetLoaderCode is stable on re-apply", () => {
   expect(again).toBe(first);
 });
 
+test("a raster's loader names its window, and a loader with one counts as applied", () => {
+  const raster = { ...jsonDataset, id: "data.scout.depth", format: "geotiff", title: "Depth" } as never;
+  const first = mergeDatasetLoaderCode("", raster);
+  expect(first).toContain('src = curio_load_data("data.scout.depth", bounds=None)');
+  // The user picks a window; dropping the same dataset again adds no second loader.
+  const windowed = first.replace("bounds=None", "bounds=(-90.48, 41.44, -90.46, 41.46)");
+  expect(mergeDatasetLoaderCode(windowed, raster)).toBe(windowed);
+});
+
 test("buildDatasetLoaderCode loads a bundle with one portable call", () => {
   // The sandbox reads the bundle manifest and returns the parts as a tuple, so
   // it re-detects the same `outputs` envelope the producing node emitted.

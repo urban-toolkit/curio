@@ -1,0 +1,241 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "2ac73083-5bbd-5f6b-930f-a536392f4f33",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 215,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load SCOUT's 123 Chicago Loop buildings and their heights from the Data Catalog.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "# SCOUT's Chicago Loop buildings, with their heights in metres.\ngdf = curio_load_data(\"data.scout.loop-buildings\")\n\n# Mark the frame as buildings, so an Autark map extrudes each footprint\n# to its height.\ngdf.metadata = {\"layerType\": \"buildings\"}\nreturn gdf\n"
+      },
+      {
+        "id": "e1b607c4-51b5-5b82-bf4a-0227284def51",
+        "type": "curio.builtin/autk-grammar",
+        "x": 645,
+        "y": 0,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the buildings in 3D, coloured by height.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"legendTitle\": \"Building height (m)\"\n      }\n    ]\n  }\n}"
+      },
+      {
+        "id": "333949c8-983a-5cdb-845b-04abe06c2dc7",
+        "type": "scout.raster-conversion/rasterize-buildings",
+        "x": 645,
+        "y": 430,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Rasterize the buildings' heights into SCOUT's zoom-16 tiles and their mosaic.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "attribute",
+              "type": "text",
+              "label": "Height column",
+              "default": "height"
+            },
+            {
+              "name": "zoom",
+              "type": "number",
+              "label": "Zoom level",
+              "default": 16,
+              "options": {
+                "min": 1,
+                "max": 20,
+                "step": 1
+              }
+            },
+            {
+              "name": "max_height",
+              "type": "number",
+              "label": "Maximum height",
+              "default": 550,
+              "options": {
+                "min": 1,
+                "step": 1,
+                "units": "m"
+              }
+            }
+          ]
+        },
+        "content": "\"\"\"Rasterize Buildings: SCOUT's building rasterizer, \"OSM vector to raster\".\n\nInput: a buildings layer, a GeoDataFrame of polygons with a CRS and a column\nof heights in metres.\nOutput: (mosaic, tiles).\n- mosaic: one raster in EPSG:3395, each cell a height in metres. An Autark map\n  draws it as input_0, band band_1.\n- tiles: one row per map tile, with zoom, x, y and png, the 8-bit grayscale\n  PNG (base64) SCOUT's Deep Umbra shadow model reads, where 255 is the\n  maximum height.\nThe Widgets tab sets the height column, the zoom level and the maximum height.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_raster_conversion.node_outputs import rasterize_buildings\n\nreturn rasterize_buildings(\n    arg,\n    attribute=[!! attribute !!],\n    zoom=int([!! zoom !!]),\n    max_height=float([!! max_height !!]),\n    output_file=curio_output_file,\n)\n"
+      },
+      {
+        "id": "ebac4811-abcc-50fe-a61a-cc9c9ac8c011",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1290,
+        "y": 215,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the mosaic of building heights on a map.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"isColorMap\": false\n      }\n    ]\n  }\n}"
+      },
+      {
+        "id": "b34c8c82-a802-53db-a1fd-c7758626fed4",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1290,
+        "y": 645,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the height mosaic.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "# Rasterize Buildings returns (mosaic, tiles): the height mosaic.\nreturn arg[0]"
+      },
+      {
+        "id": "45abcfa2-7705-50d4-adf2-db8f556a59c6",
+        "type": "scout.shadow/accumulated-shadow",
+        "x": 1935,
+        "y": 538,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Predict how many minutes of a summer day the ground around the buildings is in shadow, with SCOUT's Deep Umbra model.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "season",
+              "type": "choice",
+              "label": "Season",
+              "default": "summer",
+              "options": {
+                "choices": [
+                  "spring",
+                  "summer",
+                  "winter"
+                ],
+                "display": "radio"
+              }
+            }
+          ]
+        },
+        "content": "\"\"\"Accumulated Shadow: SCOUT's Deep Umbra shadow model.\n\nInput: the height mosaic of Rasterize Buildings (scout.raster-conversion), or\nits (mosaic, tiles) output: building heights in metres in EPSG:3395 on the\nzoom-16 tile grid.\nOutput: the accumulated shadow in minutes, a raster on the input's grid. An\nAutark map draws it as input_0, band band_1. A Raster Statistics node gives its\nmean and median over the ground: the heights on its input 1 as the mask, with\nwhere=lambda height: height < 1.08.\nThe Widgets tab sets the season. The model is the Model Catalog's Deep Umbra,\nmodel.scout.deep-umbra.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_shadow.node_outputs import accumulated_shadow, open_model\n\nmodel = open_model(lambda: curio_load_model(\"model.scout.deep-umbra\"))\nreturn accumulated_shadow(arg, season=[!! season !!], model=model, output_file=curio_output_file)\n"
+      },
+      {
+        "id": "8a914e39-4cb1-535d-9a8b-19b45f6be288",
+        "type": "curio.builtin/raster-statistics",
+        "x": 2580,
+        "y": 752,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the mean and median accumulated shadow over the ground.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "# Raster Statistics: the mean, median, minimum, maximum and count of a\n# raster's cells, nodata left out, as a table of one row.\n# Input 0 is the accumulated shadow in minutes, input 1 the heights it was\n# predicted from, as the mask: SCOUT's metrics count the ground, the cells\n# Deep Umbra reads as gray level 0, a height under 1.08 m.\nreturn curio_raster_statistics(arg, where=lambda height: height < 1.08)\n"
+      },
+      {
+        "id": "6cef8611-e3ec-52d4-9caf-aa5d6cff3d6a",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2580,
+        "y": 322,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the minutes of shadow on a map.",
+        "metadata": {
+          "keywords": []
+        },
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}"
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-2ac73083-5bbd-5f6b-930f-a536392f4f33out-e1b607c4-51b5-5b82-bf4a-0227284def51in",
+        "source": "2ac73083-5bbd-5f6b-930f-a536392f4f33",
+        "target": "e1b607c4-51b5-5b82-bf4a-0227284def51",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-2ac73083-5bbd-5f6b-930f-a536392f4f33out-333949c8-983a-5cdb-845b-04abe06c2dc7in",
+        "source": "2ac73083-5bbd-5f6b-930f-a536392f4f33",
+        "target": "333949c8-983a-5cdb-845b-04abe06c2dc7",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-333949c8-983a-5cdb-845b-04abe06c2dc7out-ebac4811-abcc-50fe-a61a-cc9c9ac8c011in",
+        "source": "333949c8-983a-5cdb-845b-04abe06c2dc7",
+        "target": "ebac4811-abcc-50fe-a61a-cc9c9ac8c011",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-333949c8-983a-5cdb-845b-04abe06c2dc7out-b34c8c82-a802-53db-a1fd-c7758626fed4in",
+        "source": "333949c8-983a-5cdb-845b-04abe06c2dc7",
+        "target": "b34c8c82-a802-53db-a1fd-c7758626fed4",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-b34c8c82-a802-53db-a1fd-c7758626fed4out-45abcfa2-7705-50d4-adf2-db8f556a59c6in",
+        "source": "b34c8c82-a802-53db-a1fd-c7758626fed4",
+        "target": "45abcfa2-7705-50d4-adf2-db8f556a59c6",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-45abcfa2-7705-50d4-adf2-db8f556a59c6out-8a914e39-4cb1-535d-9a8b-19b45f6be288in",
+        "source": "45abcfa2-7705-50d4-adf2-db8f556a59c6",
+        "target": "8a914e39-4cb1-535d-9a8b-19b45f6be288",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-b34c8c82-a802-53db-a1fd-c7758626fed4out-8a914e39-4cb1-535d-9a8b-19b45f6be288in_1",
+        "source": "b34c8c82-a802-53db-a1fd-c7758626fed4",
+        "target": "8a914e39-4cb1-535d-9a8b-19b45f6be288",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-45abcfa2-7705-50d4-adf2-db8f556a59c6out-6cef8611-e3ec-52d4-9caf-aa5d6cff3d6ain",
+        "source": "45abcfa2-7705-50d4-adf2-db8f556a59c6",
+        "target": "6cef8611-e3ec-52d4-9caf-aa5d6cff3d6a",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ],
+    "name": "SCOUT building rasters",
+    "description": "SCOUT's Chicago Loop buildings drawn in 3D, then turned by SCOUT's rasterizer into the zoom-16 height tiles its Deep Umbra shadow model reads: a map of the height mosaic, Deep Umbra's summer shadows drawn on a map, and their mean and median over the ground.",
+    "task": "",
+    "timestamp": 1791158400000,
+    "provenance_id": "DefaultWorkflow",
+    "categories": {
+      "city": [
+        "Chicago"
+      ],
+      "complexity": [
+        "Intermediate"
+      ]
+    },
+    "packages": [
+      "scout.raster-conversion@1",
+      "scout.shadow@1"
+    ],
+    "datasets": [
+      {
+        "datasetId": "data.scout.loop-buildings",
+        "dirName": "data.scout.loop-buildings@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      }
+    ]
+  }
+}

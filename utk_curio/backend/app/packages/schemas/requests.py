@@ -6,6 +6,7 @@ answered with before. Handlers parse, call and serialize; the texts live here.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping
 
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
@@ -29,6 +30,30 @@ def dir_name(body: Mapping[str, Any]) -> str:
     if not isinstance(value, str):
         raise PackageServiceError("body must include 'dirName'")
     return value
+
+
+_DOTTED_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
+
+
+def function_template(body: Mapping[str, Any]) -> tuple[str, str, str, str | None, dict]:
+    """``dirName``, ``module``, ``function``, ``label`` and ``bindings`` for New
+    node from a Python function."""
+    package = body.get("dirName")
+    if not isinstance(package, str) or not PACKAGE_DIR_RE.match(package):
+        raise PackageServiceError("body must include a valid 'dirName' (<packageId>@<major>)")
+    module = body.get("module")
+    if not isinstance(module, str) or not _DOTTED_RE.match(module):
+        raise PackageServiceError("body must include 'module', a dotted module name")
+    function = body.get("function")
+    if not isinstance(function, str) or not function.isidentifier():
+        raise PackageServiceError("body must include 'function', a function name")
+    label = body.get("label")
+    if label is not None and (not isinstance(label, str) or len(label) > 120):
+        raise PackageServiceError("'label' must be a text of at most 120 characters")
+    bindings = body.get("bindings")
+    if not isinstance(bindings, dict):
+        raise PackageServiceError("body must include 'bindings', an object of {parameter: {use}}")
+    return package, module, function, label, bindings
 
 
 def replace_flag(body: Mapping[str, Any]) -> bool:

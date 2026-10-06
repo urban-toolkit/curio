@@ -459,12 +459,18 @@ class TestMissingModuleReporting(unittest.TestCase):
             "output": {"path": path, "dataType": "dataframe"},
         }
         mock_session.post.return_value = mock_response
-        resp = self.client.post(
-            route,
-            json={"code": "    import sklearn", "nodeType": "COMPUTATION_ANALYSIS",
-                  "input": {}},
-            headers=self._auth_headers(),
-        )
+        # The premise, stated rather than assumed of the environment: nothing
+        # installed provides sklearn (scout.routing@1 installs scikit-learn).
+        with patch(
+            "utk_curio.backend.app.packages.infrastructure.pip_runner.distributions_for_module",
+            return_value=[],
+        ):
+            resp = self.client.post(
+                route,
+                json={"code": "    import sklearn", "nodeType": "COMPUTATION_ANALYSIS",
+                      "input": {}},
+                headers=self._auth_headers(),
+            )
         return resp.get_json()
 
     @patch("utk_curio.backend.app.execution.sandbox_client._sandbox_session")

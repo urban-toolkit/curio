@@ -19,13 +19,18 @@ import styles from "./CompareScenarios.module.css";
 /** What the map's last run came to, and the document it was asked to draw. */
 type Outcome = { code: string; content: string; doc: string };
 
-/** The column or band a document colors by, for the page to tell which map it shows. */
-function coloredBy(docText: string): string {
+/** A field of the document's one layer, or "" when it has none. */
+function layerField(docText: string, field: "getFnv" | "dataRef"): string {
   try {
-    return String(JSON.parse(docText)?.map?.layerRefs?.[0]?.getFnv ?? "");
+    return String(JSON.parse(docText)?.map?.layerRefs?.[0]?.[field] ?? "");
   } catch {
     return "";
   }
+}
+
+/** The column or band a document colors by, for the page to tell which map it shows. */
+function coloredBy(docText: string): string {
+  return layerField(docText, "getFnv");
 }
 
 export default function CompareMap({
@@ -43,11 +48,14 @@ export default function CompareMap({
   // The document the map was last asked to draw, which its outcome is for.
   const requested = useRef(docText);
   // Only what the Autark node's map reads: whose canvas it is, the input it
-  // draws and its document. No callbacks, so nothing is handed on.
-  const data = useMemo(
-    () => ({ nodeId, input: difference, code: docText, defaultCode: docText }) as unknown as NodeBehaviorData,
-    [nodeId, difference, docText],
-  );
+  // draws and its document. No callbacks, so nothing is handed on. The input
+  // is read as the table the document names (`differenceTableName`); the
+  // document's `legendTitle` titles the map's legend.
+  const data = useMemo(() => {
+    const table = layerField(docText, "dataRef");
+    const input = table ? { ...difference, layerName: table } : difference;
+    return { nodeId, input, code: docText, defaultCode: docText } as unknown as NodeBehaviorData;
+  }, [nodeId, difference, docText]);
   const state = useMemo(
     () => ({
       output: outcome ?? { code: "", content: "" },

@@ -222,19 +222,50 @@ moves nodes the way the dashboard page does:
   Leaving the view restores every position from the map and deletes every stamp; the
   canvas viewport saved on entry is restored after the canvas props are live.
 - **Order and geometry.** Cells follow `utils/dataflowOrder.ts`, the order Export as
-  notebook writes, over `directedEdgesOf`. `utils/notebookLayout.ts` places the column
-  below the bar and title chips, sets each node's dots on its right edge, gives every
-  edge a lane in the bar (shorter spans inside) and draws the bracket each edge follows;
+  notebook writes, over `directedEdgesOf`: chains stay together, each node followed by
+  the nodes it feeds (as soon as their last input is placed, newest connection first)
+  before the next node waiting, so a node added on the canvas and wired from another
+  lands right below it. `utils/notebookLayout.ts` places the cells below the bar and title
+  chips, spanning the page from its left margin to the bar on its right edge (at least
+  480px), sets each node's dots on its right edge, gives every edge a lane in the bar
+  (shorter spans inside) and draws the bracket each edge follows;
   `components/edges/useEdgePath.ts` picks that path over the canvas bezier.
+- **Measured heights.** A cell is as tall as its content. React Flow measures every
+  node and writes its `height` onto it (a `dimensions` change through `onNodesChange`),
+  again whenever the node resizes, so the layout key holds each node's height and
+  `layoutNotebook` stacks the cells by it, 24px apart; a cell not measured yet counts
+  as 240px. The lanes are keyed on the rows and the bar only, so a cell that grows
+  moves the cells below it without handing every node and edge a new context.
+- **Graph edits on the canvas only.** Nodes are added and connected on the canvas.
+  `graphEditGates` (in `notebookLayout.ts`) turns off React Flow's connecting
+  (`nodesConnectable`, `edgesUpdatable`, `onConnect`) and the page's drop handlers in
+  the notebook view, and the View menu's and the Scenarios panel's Duplicate items are
+  disabled there. The notebook view renders no `ToolsMenu`, only its `RunAllButton`
+  (`components/notebook/NotebookRunAll.tsx`, top right of the page). Deleting a cell
+  and removing a connection still work there.
+- **Dots.** `notebookHandlePlaces` anchors each dot to the cell's top (inputs, at fixed
+  offsets), its middle (the interaction dot) or its bottom (outputs, `top: auto` inline,
+  since React Flow's right-handle rule sets `top: 50%`), so they follow the cell as it
+  grows; `notebookCellMinHeight` keeps a cell tall enough for its dots. React Flow
+  measures the dots again on every resize, and each arc follows its two dots.
 - **Scrolling.** `MainCanvas` wraps React Flow in a scroller in both views, so switching
   never remounts it. In the notebook view React Flow is as tall as the column, at zoom 1
   with no pan or zoom gestures (`notebookFlowProps`), and leaves the wheel to the page. A
   call that moves its view anyway, such as a load's fit, is put back to the origin.
   `revealNodes` scrolls to a cell where the canvas would frame a node.
-- **Cells.** `NotebookViewContext` tells nodes and edges the view is on. `UniversalNode`
-  sizes the cell and moves its handles; `NodeEditor` keeps a grammar node's output pane
-  visible under its input tabs (`curio-notebook-split` in `Node.css`) without moving
-  either pane, so a chart or map never remounts.
+- **Cells.** `NotebookViewContext` tells nodes and edges the view is on, and the cells'
+  width. `UniversalNode` passes the cell's width and least height as `cellBox`, apart
+  from the node's canvas size, and moves its handles. `NodeContainer` draws the cell as
+  the node card (see [The node card](#the-node-card)) with no hairline or shadow, no
+  resize handle and no minimize. `NodeEditor` keeps a grammar node's output
+  pane visible under its input (`curio-notebook-split` in `Node.css`) without moving
+  either pane, so a chart or map never remounts. `notebookOutputBox` gives an
+  output the height its kind gets: a definite one for a chart (320px), an Autark map or
+  plot and a Compare Scenarios view (400px), which have none of their own; a table,
+  summary or control its own up to 360px; anything else 360px. `useNotebookEditorHeight`
+  (`components/editing/`) sets a code or spec editor's wrapper to Monaco's content
+  height (`onDidContentSizeChange`), at least three lines, at most 400px for code and
+  240px for a spec. The outcome strip sits in the cell's flow under the output.
 - **Switch.** `CanvasViewSwitch` closes `UpMenu`'s slot, pushed to its end beside
   Monitor; the canvas bar's buttons take `--curio-bar-button-padding-x: 7px` to make room
   for it.
@@ -295,17 +326,17 @@ node whose code it writes itself:
   `test_compare_difference_node.py`. The behavior writes the code again when the
   wanted view differs from the one the code calls, or the key from its `key=`, and
   never while an input's kind is unknown, as after a load.
-- Two layers or tables are joined in Python. Two rasters cannot be: the arithmetic
-  is Curio's Autark adapter's (`utils/raster/rasterArithmetic.ts`), on what autk-db's
-  `getRaster` exports, and an isolated child may not start Node. So the code returns
-  a JSON request (each raster's GeoTIFF bytes and `raster_meta`), and the sandbox's
-  `/exec` completes it after either path ran the code
-  (`complete_raster_difference`): `util/raster_difference.js` runs through
-  `worker.run_js_script`, the runner `execute_js_code` uses, loads both rasters with
-  `loadGeoTiff` by `rasterLoad.ts`'s `planForMeta`, subtracts them with
-  `subtractRasters` and returns the envelope (`rasterWire.ts`). Those three modules
-  have no imports at run time, so Node loads them from `src/` by type stripping. The
-  envelope is stored as the node's output, a JSON artifact.
+- Two layers or tables are joined in Python. Two rasters are loaded as an Autark map
+  loads them, and an isolated child may not start Node. So the code returns a JSON
+  request (each raster's GeoTIFF bytes and `raster_meta`), and the sandbox's `/exec`
+  completes it after either path ran the code (`complete_raster_difference`):
+  `util/raster_difference.js` runs through `worker.run_js_script`, the runner
+  `execute_js_code` uses, loads both rasters with `loadGeoTiff` by `rasterLoad.ts`'s
+  `planForMeta` and returns their envelopes (`rasterWire.ts`), whose float32 bands
+  `raster_algebra.subtract_envelopes` subtracts (see [Raster algebra](#raster-algebra)).
+  `rasterLoad.ts` and `rasterWire.ts` have no imports at run time, so Node loads them
+  from `src/` by type stripping. The envelope is stored as the node's output, a JSON
+  artifact.
 - `components/compare/CompareDifference.tsx` shows the difference:
   `CompareMap.tsx` draws a raster or a layer with `useAutkGrammarBehavior`, the
   Autark node's own map code, on the node's `autk-grammar-map-<nodeId>` canvas, with
@@ -313,10 +344,38 @@ node whose code it writes itself:
   `compareDifference.ts` writes; a table goes through `CompareChart`.
 - `whatDiffers.ts` reads each compared scenario's parts through `scenarioParts`,
   pairs levers whose ids and `copiedFrom` lists meet, and compares their widget
-  values and code lines; `contextWarnings` compares their fixed context.
+  values and code lines, or, for Edit Features nodes, their edit lists;
+  `contextWarnings` compares their fixed context.
 - A pinned Compare Scenarios node draws its own output, so it is its own dashboard
   source (`SELF_DRAWN_NODE_TYPES` in `dashboardLayout.ts`, `_SELF_DRAWN_KINDS` in
   `projects/dashboard_payload.py`), and its inputs are not walked.
+
+### Editing features
+
+The Edit Features node (`curio.builtin/edit-features`) is a Python code node whose
+code is written from its edit list (`metadata.editFeatures`: `key`, `layer`, `edits`):
+
+- `src/utils/editFeatures/editFeatures.ts` normalizes the list and writes the code,
+  one call of `curio_edit_features` (`utk_curio/sandbox/util/feature_edits.py`),
+  seeded in both namespaces as the Compare Scenarios steps are.
+  `adapters/node/editFeaturesBehavior.tsx` writes the list and the code together
+  when the body changes the list, and marks the node stale.
+- `components/editFeatures/EditFeaturesBody.tsx` reads the input as the Autark map
+  reads it (`readAutkInput`, `autkSourcesFrom`), offers the id columns a selection
+  tag offers (`idColumns` in `utils/references/selectionTags.ts`) and refuses a layer
+  with none. `EditFeaturesMap.tsx` draws the input with `useAutkGrammarBehavior`, the
+  layer to edit with `isPick`, and turns a pick's rows into ids with `selectedIds`.
+- `feature_edits.edit_features` matches features by `key`, never by position, and
+  edits GeoJSON as it is when the input is an Autark node's layers: the other
+  features, properties and layers pass through untouched, and the result is the
+  envelope `persistLayersToBackend` stores for an Autark node. A table gives a table.
+  Unknown ids are printed, and the run goes on.
+- A Data Pool's several layers read from one artifact name it (`filename`), and a
+  code node is sent that artifact (`executionInputRef`), as for one layer and as a
+  run on the server passes the pool through. In-process, the layers of a stored
+  Autark envelope reach Python as GeoDataFrames that keep `layerName` and
+  `layerType` in their `metadata` (`worker._keep_layer_identity`); the isolated
+  child gets the envelope itself. `edit_features` reads both.
 
 ---
 
@@ -477,6 +536,15 @@ interface INodeData {
 }
 ```
 
+#### The node card
+
+`NodeContainer` (`src/components/styles.tsx`) draws a node the same way on the canvas and as a notebook cell; only a dashboard tile differs.
+
+- **Surface.** `getNodeContainerStyles` decides the whole border: on the canvas a white card with a `var(--curio-border)` hairline, radius 8, a soft shadow (`--curio-shadow-browse-card-raised`) and the kind's 4px stripe; a notebook cell drops the hairline and the shadow. A selected node gets a 2px ring in its kind's color. A suggestion keeps its dashed border.
+- **Header** (`.curio-node-header`). Play first, then the title (`EditableNodeHeaderLabel`), the package and dataset pills, and the run status; `NodeRunControls` draws Play, the status and the Save output toggle, each in its place. The rest are the tools (`.curio-node-tools`): the editor's tabs, which `NodeEditor` renders through a portal into the slot `nodeHeaderSlot` provides, Save output, the gear, about, pin, comments, delete and, on the canvas, minimize. They show only while the node is hovered, selected or focused (`Node.css`). Nothing sits under the body, so the editor's panes fill the node.
+- **Editors.** `nodeEditorLook` gives a code or spec editor its gray input box (`.curio-node-input`) and Monaco options with no line numbers, gutter, folding, line highlight or overview ruler. A code node's output has no rule or fill. A dashboard tile keeps Monaco's own look.
+- **Canvas only.** The resize handle at the bottom-right corner, minimizing to a chip, the node's fixed size and the cardinality markers at its edges. A double-click where a press drags the node (`isNodeDragRegion`: nothing from the target up to the node is `nodrag`) frames it with `frameNodesInView`, the framing a focus uses; editors, outputs, charts, maps and handles keep their own double-click. A read-only canvas does not drag nodes, so it keeps React Flow's double-click zoom.
+
 ---
 
 ## Data Between Nodes
@@ -628,7 +696,20 @@ The names `input_<k>` are defined once, as `INPUT_TABLE_PREFIX` and `input_table
 - [`rasterLoad.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/rasterLoad.ts) sets the parameters: `maxRasterCells` the raster's own size (up to 2048 by 2048 cells, 8192 on a side), so autk-db never resamples it; `resampleMethod: 'nearest'`; and `coordinateFormat` its EPSG CRS, since autk-db reads a raster as EPSG:4326 otherwise. A larger, rotated or unplaceable raster is refused with a sentence that names it.
 - autk-grammar's data sources have no GeoTIFF, so `withRasterSources` wraps one grammar instance's data adapter to load the `curio-raster` sources and hands every other source on. It also wraps that database's `getLayer` for those tables: the map gets `getRaster`'s collection, at the raster's own extent (autk-db's `getLayer` gives a raster the workspace's extent once a layer with geometry has set one), plus an outline of that extent (`framedRaster`), because autk-map places a map by the geometry of the first collection it loads and a raster has none.
 
-Between nodes a raster travels as autk-db's `getRaster` collection in an envelope, `{dataType: "raster", data, layerName}` ([`rasterWire.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/rasterWire.ts)): each band base64 of little-endian float32, rows from south to north, and the `grid` (CRS, size, origin, cell size) it was read on, which the collection does not carry. A Python node receives one as a `rasterio` dataset that `rasters_for_python` rebuilds on a GeoTIFF of its own (beside the artifacts in process, in the scratch directory in an isolated child). Both sides run `rasterWire.cases.json`. Raster arithmetic for comparisons ([`rasterArithmetic.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/rasterArithmetic.ts)) subtracts two such collections on one grid and refuses two grids that differ, naming both.
+Between nodes a raster travels as autk-db's `getRaster` collection in an envelope, `{dataType: "raster", data, layerName}` ([`rasterWire.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/rasterWire.ts)): each band base64 of little-endian float32, rows from south to north, and the `grid` (CRS, size, origin, cell size) it was read on, which the collection does not carry. A Python node receives one as a `rasterio` dataset that `rasters_for_python` rebuilds on a GeoTIFF of its own (beside the artifacts in process, in the scratch directory in an isolated child). Both sides run `rasterWire.cases.json`.
+
+### Raster algebra
+
+[`sandbox/util/raster_algebra.py`](../utk_curio/sandbox/util/raster_algebra.py) is the one implementation of operations over rasters: the Raster Calculator's `curio_raster_calculate`, Raster Statistics' `curio_raster_statistics` and Compare Scenarios' raster Difference all call it. It runs in Python, where a node's rasters are: autk-db reads every band as float32 and loads at most 2048 by 2048 cells, which is what a map draws, not what a computation needs. Rasters are combined only on one grid (`grid_differences`: size, origin, resolution, rotation, CRS, to a relative 1e-9), and a refusal names both grids in words (`describe_grid`, numbers written as JavaScript writes them). A cell is nodata where its raster holds its nodata value or a number that is not finite.
+
+- On rasterio datasets (`calculate`, `statistics`) it computes at the inputs' own number type, at least float32, and writes a result as a GeoTIFF with NaN as nodata, named after its content, where `curio_output_file` writes (in process with no media folder, beside the artifacts). Statistics are numpy's `nanmean`, `nanmedian`, `nanmin` and `nanmax` on the band's own 2-D float64 array, nodata and masked-out cells as NaN.
+- On envelopes (`subtract_envelopes`) it subtracts float32 bands as autk-db exported them: Compare Scenarios' Difference is stored as the envelope its map, a reopen and a dashboard tile read.
+
+`curio_load_data("<id>", bounds=(west, south, east, north))` reads a GeoTIFF's window (`rasters.read_window`): the whole cells whose centres lie inside the bounds, on the raster's own grid, every band at its own type and nodata, written as a GeoTIFF of its own. Bounds that reach past the raster, or hold no cell centre, are refused. The dataset scanners (`DATASET_PATH_CALL_RE` and `COLLECTION_CALL_RE` in `code_refs.py`, the agents' `_CATALOG_CALL_RE`, the frontend's `datasetIdsInCode`) take the id as the call's first argument, so options may follow it, and both loader generators name `bounds=None` on a GeoTIFF's line (`LOADER_OPTIONS`).
+
+`curio_load_data("<id>", part="<file>")` reads one file of a bundle (`catalog_helpers.bundle_part`): the dataset's path comes from the same dataset-path map, and the part must be one `listed_bundle_parts` gives, the `bundle.json` entries that are regular files inside the dataset's folder. Staging stages the same list under isolation, so both modes and the headless runner read the same files; any other name is refused with the dataset's files. The agents' source scanner treats a `part=` value of a `curio_load_data` call, literal or f-string, as a file of the dataset, not a path on disk.
+
+`rasters.mosaic_rasters` lays rasters that lie on one grid side by side (`mosaic_grid`: the tiles' north-west corner, the first tile's cell size or a given one, each tile at the nearest cell): a GDAL VRT that points at their files, or a GeoTIFF of their cells. `curio.media@1`'s Mosaic Rasters calls it through `mosaic_collection` (a raster collection's rows); `mosaic_web_tiles` places web map tiles on their own grid (`tile_bounds`) for `scout.raster-conversion@1`. Package modules import them from `utk_curio.sandbox.util.rasters`.
 
 A `dataRef` that names an unavailable table, whether an empty layer, a layer that was never loaded, or one dropped by an upstream node, is dropped before the grammar executes: the behavior removes the `map.layerRefs` entry or `plot` block and logs a console warning, which for a missing table lists the non-empty table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. A map that keeps some of its layers renders them, and its success output notes the ones it lost, naming an empty table apart from one the dataflow does not produce. One left with nothing to draw is reported as an empty render (see [Render Outcomes](#render-outcomes)), and a reference to a table that exists but holds no rows is blamed on that table's source rather than on the reference.
 
@@ -688,7 +769,9 @@ When a user clicks the play button on a node, the following sequence occurs:
 
 **Backend side:** both routes only parse the request and call [`execution/node_exec.py`](../utk_curio/backend/app/execution/node_exec.py). Its `execute_python_node` and `execute_js_node` take the account and the session token as arguments, so a node runs the same way from a route or from a thread with no request: they resolve dataset paths, collections, connection keys and models, call the sandbox, auto-install the output, write the runtime journal and count the run on the monitor. The HTTP session to the sandbox is in [`execution/sandbox_client.py`](../utk_curio/backend/app/execution/sandbox_client.py): `sandbox_request` raises `SandboxTransportError` when the sandbox times out, cannot be reached or refuses the shared secret, and the routes answer it as JSON with a 504 or 502.
 
-**Package modules (#468).** For a node whose package ships Python modules in `sources/`, `node_exec.resolve_package_modules` adds `package_modules: {"root", "names"}` to the `/exec` body: the package's `sources/` folder in the account's store and its module names, the importable names there that no template names as its `source` ([`packages/domain/python_modules.py`](../utk_curio/backend/app/packages/domain/python_modules.py)). The headless runner and the ground-truth harness send the same. In both execution modes the sandbox links those modules into a folder of the run's own with `staging.stage_package_modules` (under fork isolation, the child's scratch directory), puts the folder first on `sys.path` for the run, and when the run ends removes it and every module imported from it ([`sandbox/util/package_modules.py`](../utk_curio/sandbox/util/package_modules.py)): the next run, after an update or of another package, imports its own copy. An import of a package's module is not shared with the session's later nodes. A module name that is already loaded from somewhere else fails the node with that name. The installer refuses a package that ships a module another installed package ships (`refuse_a_module_name_in_use`); two majors of one package may share names. Save into a package and the Package Builder hand the package's module names to the import scanner (`scan_imports_for_filename`), which leaves them out of the detected dependencies.
+**Package modules (#468).** For a node whose package ships Python modules in `sources/`, `node_exec.resolve_package_modules` adds `package_modules: {"root", "names"}` to the `/exec` body: the package's `sources/` folder in the account's store and its module names, the importable names there that no template names as its `source` ([`packages/domain/python_modules.py`](../utk_curio/backend/app/packages/domain/python_modules.py)). A package that names others in `dependencies.packages` also hands its nodes their modules, transitively: `package_modules` is then a list of `{"root", "names"}`, the node's own package first ([`packages/application/python_modules.py`](../utk_curio/backend/app/packages/application/python_modules.py)). The headless runner and the ground-truth harness send the same. In both execution modes the sandbox links those modules into a folder of the run's own, a name two packages ship from the first, with `staging.stage_package_modules` (under fork isolation, the child's scratch directory), puts the folder first on `sys.path` for the run, and when the run ends removes it and every module imported from it ([`sandbox/util/package_modules.py`](../utk_curio/sandbox/util/package_modules.py)): the next run, after an update or of another package, imports its own copy. An import of a package's module is not shared with the session's later nodes. A module name that is already loaded from somewhere else fails the node with that name. The installer refuses a package that ships a module another installed package ships (`refuse_a_module_name_in_use`); two majors of one package may share names. Save into a package and the Package Builder hand the package's module names, and those of the packages it depends on, to the import scanner (`scan_imports_for_filename`), which leaves them out of the detected dependencies.
+
+**New node from a Python function.** `GET /api/packages/factory/functions` lists the public functions of every module in the account's store, read with `ast` and never imported ([`packages/domain/function_nodes.py`](../utk_curio/backend/app/packages/domain/function_nodes.py)), with the widget and use each parameter suggests. `POST /api/packages/factory/function-template` reads the module again and writes the template: its code imports the function and returns its call, with `[!! name !!]` for a widget and `[!! input k !!]` for an input ([`packages/application/function_nodes.py`](../utk_curio/backend/app/packages/application/function_nodes.py)). The dialog (`NodeFromFunctionModal`) installs it the way Save as package node does: `PackageTargetPicker`, `buildTemplateInstallDraft` and `installDraftToProject`, through `/factory/install`. A template in another package than the function's names the function's package in `dependencies.packages`.
 
 **JavaScript execution detail:** `JS Computation` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed; the Node subprocess is per-request and fully isolated.
 
@@ -1566,11 +1649,12 @@ A candidate row's `acquirable` flag is set server-side only, by `services.py::_m
 The user-facing model is in [MODEL-CATALOG.md](MODEL-CATALOG.md) and the routes are in [Model Catalog Routes](#model-catalog-routes). The backend is `backend/app/model_catalog/`: `domain/manifest.py` (the manifest and its checks), `infrastructure/storage.py` (where models live), `service.py` (listing, details, install, delete, execution resolution) and `routes.py`.
 
 - **Storage.** `models_root()` is `<repo>/models`, or the directory `--models-root` names; `user_models_dir(user_key)` is `.curio/users/<key>/models/`. A model is a folder named `<id>@<major>` with a `manifest.json`. There is no index table: a listing reads the folders, the account's then the shipped ones, and an account holds few models.
-- **The manifest** (`parse_manifest`) takes `runtime` (`onnx` or `transformers`), `task` (`semantic-segmentation`), an `entry` inside the folder (a `.onnx` file for `onnx`), up to `MAX_LABELS` labels, and for `onnx` an `input` (size 8 to 8192, `uint8` or `float32`, `NCHW`, `scale`, three-number `mean` and `std`). A folder whose manifest fails is not listed, and the server's log names it and why.
+- **The manifest** (`parse_manifest`) takes `runtime` (`onnx` or `transformers`), `task` (`semantic-segmentation`, or `image-to-image` or `node-regression` for a graph its node feeds itself), an `entry` inside the folder (a `.onnx` file for `onnx`), up to `MAX_LABELS` labels (none for `image-to-image` or `node-regression`), and for an `onnx` image model an `input` (size 8 to 8192, `uint8` or `float32`, `NCHW`, or `NHWC` for `image-to-image`, `scale`, three-number `mean` and `std`). A folder whose manifest fails is not listed, and the server's log names it and why.
 - **Install.** `install_downloaded(folder, manifest)` mints `imported.x<hex>@1`, moves the folder to a `.part` folder beside its place in the account's store, writes the manifest, and renames it in with `os.replace`, so a half-written model is never listed. `install_dependencies(id)` installs a Transformers model's `python_deps` through `provision_declared_deps`, the path a package's `dependencies.python` takes: the shared interpreter, or the account's node libraries under isolation. `install_refusal()` is the package rule (`package_install_refusal`).
 - **Delete** removes the folder. A shipped model is refused with 403. Nodes that name it fail on their next run.
 - **In node code.** `code_refs` finds `curio_load_model("<id>")` calls; `resolve_exec_models` maps each id the code names to its folder, and `/processPythonCode` sends that map with the dataset paths. `curio_load_model` ([`sandbox/util/models.py`](../utk_curio/sandbox/util/models.py)) returns the folder, or raises a message saying to add the model. Under fork isolation, `stage_model_dirs` ([`sandbox/util/staging.py`](../utk_curio/sandbox/util/staging.py)) hardlinks each model's tree into the run's scratch as `model_<i>/`, keeping relative paths, so an ONNX graph finds its external `.data` and a checkpoint its configs; `models/` is in the hardening allowlists beside `datasets/`.
-- **`curio_segment`** ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) runs a model over a collection's rows: `_OnnxRunner` with onnxruntime on the CPU (the manifest's `input` says how to scale, normalize and resize), or `_TransformersRunner` with `AutoModelForSemanticSegmentation` (`local_files_only`, safetensors only). Shares are of all the pixels; the overlay goes through `curio_derived_file` with the `image` kind, so the media route serves it at `<file_id>@0`.
+- **`curio_segment`** ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) runs a model over a collection's rows: `_OnnxRunner` with onnxruntime on the CPU (the manifest's `input` says how to scale, normalize and resize), or `_TransformersRunner` with `AutoModelForSemanticSegmentation` (`local_files_only`, safetensors only). Shares are of all the pixels; the overlay goes through `curio_derived_file` with the `image` kind, so the media route serves it at `<file_id>@0`. It refuses an `image-to-image` model.
+- **`CurioModel.run(feeds)`** ([`sandbox/util/catalog_helpers.py`](../utk_curio/sandbox/util/catalog_helpers.py)) runs an ONNX model's graph on the arrays its node prepared, `{input name: array}`, with onnxruntime on the CPU, and returns the graph's outputs in order; the session is opened once per loaded model. The Accumulated Shadow node of `scout.shadow@1` runs Deep Umbra this way.
 - **Agents.** `models.search` (`agents/application/tools.py`), a read tool of the Node Builder and the Node Content Builder, lists the account's models through `list_catalog`: id, name, task, runtime, origin, description, up to 40 labels, and `loader_line(id)`, `model = curio_load_model("<id>")`. No tool proposes or downloads a model: the Discovery Catalog's model sources stay out of the agents' tools, as storage sources do.
 
 Models come from the Discovery Catalog's model family ([Models from the Discovery Catalog](#models-from-the-discovery-catalog)), or ship in `models/`.
@@ -1899,7 +1983,7 @@ on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 | `src/index.tsx` | App entry point and provider nesting order |
 | `src/providers/FlowProvider.tsx` | Canonical workflow state (nodes, edges, outputs, interactions) |
 | `src/providers/flow/` | FlowProvider's sections as hooks (Run All, connections, graph edits, outputs, interactions, collaboration sync, dashboard pins, auto-install, the notebook view) and its types |
-| `src/utils/notebookLayout.ts`, `src/utils/dataflowOrder.ts` | The notebook view's geometry (cells, dots, lanes, edge paths) and the cell order Export as notebook shares |
+| `src/utils/notebookLayout.ts`, `src/utils/dataflowOrder.ts` | The notebook view's geometry (cells, dots, lanes, edge paths), what each view lets a viewer change in the graph, and the cell order Export as notebook shares |
 | `src/providers/ProvenanceProvider.tsx` | In-memory per-node execution history (saved with the workflow JSON) |
 | `src/components/UniversalNode.tsx` | Single React component that renders all node types |
 | `src/registry/packagesClient.ts` | Fetch installed manifests → build `NodeDescriptor`s → register against `nodeRegistry` |

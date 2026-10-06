@@ -1,12 +1,10 @@
 import React, { Fragment, memo, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faForwardStep, faStop } from "@fortawesome/free-solid-svg-icons";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
 import { refreshPackageRegistry } from "../../../registry/packageRegistryBootstrap";
 import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
 import { BUILTIN_PACKAGE_ID } from "../../../registry/packagesClient";
 import { NodeCategory, NodeDescriptor, NodeTemplateId } from "../../../registry/types";
-import { useFlowContext } from "../../../providers/FlowProvider";
 import { useUserContext } from "../../../providers/UserProvider";
 import {
     OVERLAY_TRIGGER_DELAY_PROPS,
@@ -18,6 +16,7 @@ import {
 import { DatasetsPaletteDropdown } from "./datasetPalette";
 import { AgentsPaletteDropdown } from "./agentsPalette";
 import { ModelsPaletteDropdown } from "./modelsPalette";
+import { RunAllButton } from "./RunAllButton";
 import styles from "./ToolsMenu.module.css";
 
 /** The DOM id of a built-in palette tile: `curio.builtin/data-loading@1` is `tile-data-loading`. */
@@ -127,8 +126,6 @@ const ToolsMenu = memo(function ToolsMenu() {
     const packageTypes = paletteTypes.filter((d) => !isBuiltin(d));
     const coreGroups = groupPaletteTypes(coreTypes);
     const packageGroups = groupPalettePackages(packageTypes);
-    const { playAllNodes, isRunActive: browserRunActive, serverRunActive, cancelRun } = useFlowContext();
-    const isRunActive = browserRunActive || serverRunActive;
 
     // Every catalog trigger lives in the left rail and their panels open into
     // the same strip to the right of it, so only one may be open at a time. A
@@ -171,21 +168,7 @@ const ToolsMenu = memo(function ToolsMenu() {
                 <DatasetsPaletteDropdown open={activePalette === "datasets"} setOpen={setDatasetsOpen} />
                 <AgentsPaletteDropdown open={activePalette === "agents"} setOpen={setAgentsOpen} />
                 <ModelsPaletteDropdown open={activePalette === "models"} setOpen={setModelsOpen} />
-                <div className={styles.playAllRow}>
-                    {/* One button, two states: while a run is in flight it cancels
-                        it. The guard used to be invisible, so the only sign a run
-                        was stuck was that clicks did nothing (#271). */}
-                    <button
-                        type="button"
-                        className={styles.playAllButton}
-                        data-run-active={isRunActive ? "true" : undefined}
-                        onClick={isRunActive ? cancelRun : playAllNodes}
-                        title={isRunActive ? "Cancel the run in progress" : "Run all nodes"}
-                        aria-label={isRunActive ? "Cancel run" : "Run all nodes"}
-                    >
-                        <FontAwesomeIcon icon={isRunActive ? faStop : faForwardStep} />
-                    </button>
-                </div>
+                <RunAllButton />
             </div>
         </div>
     );

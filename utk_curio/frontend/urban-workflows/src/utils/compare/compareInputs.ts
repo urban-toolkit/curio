@@ -98,6 +98,21 @@ export function labelWarnings(inputs: readonly CompareInput[]): string[] {
   return warnings;
 }
 
+/**
+ * The layers the node can read from its inputs, given each input's layer
+ * names: the ones every input that holds several layers (an Autark node's
+ * workspace) has, in the first such input's order. Empty when no input holds
+ * several, since an input of one table needs no choice.
+ */
+export function layersToPick(perInput: readonly (readonly (string | null)[])[]): string[] {
+  const several = perInput
+    .map((names) => names.filter((name): name is string => typeof name === "string" && name.length > 0))
+    .filter((names, i) => perInput[i].length > 1);
+  if (several.length === 0) return [];
+  const [first, ...rest] = several;
+  return [...new Set(first)].filter((name) => rest.every((names) => names.includes(name)));
+}
+
 /** `a`, `a and b`, `a, b and c`. */
 export function listOf(items: readonly string[]): string {
   if (items.length <= 1) return items.join("");

@@ -9,6 +9,7 @@ import ReactFlow, {
     Edge,
     EdgeChange,
     FitViewOptions,
+    type Node as FlowNode,
     NodeChange,
     useReactFlow,
     useStore,
@@ -17,11 +18,11 @@ import ReactFlow, {
 import {
     CANVAS_TITLE_ATTR,
     fitViewWithMenuOffset,
-    paletteRailRight,
     topOverlayBottom,
 } from "../utils/fitViewWithMenuOffset";
 import { computeTranslateExtent } from "../utils/canvasExtent";
-import { notebookFlowProps } from "../utils/notebookLayout";
+import { graphEditGates, notebookFlowProps } from "../utils/notebookLayout";
+import { NotebookRunAll } from "./notebook/NotebookRunAll";
 import { usePosition } from "../hook/usePosition";
 
 import { useFlowContext } from "../providers/FlowProvider";
@@ -83,6 +84,8 @@ import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentAttachmentsProvider } from "../providers/agents";
 import { isDrawnHidden } from "../utils/hiddenNodes";
+import { isNodeDragRegion } from "../utils/nodeDragRegion";
+import { frameNodesInView } from "../utils/focusDatasetNodes";
 import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
 import { BOX_WIDTH, boxLayout } from "./scenarios/ScenarioLayers";
 import { CanvasScenarioLayers } from "./scenarios/CanvasScenarioLayers";
@@ -90,11 +93,13 @@ import { ScenariosPanel } from "./scenarios/ScenariosPanel";
 import { ScenarioUiContext, type ScenarioUi } from "./scenarios/scenarioUi";
 
 const FILL_STYLE: React.CSSProperties = { width: "100%", height: "100%" };
+// The notebook is a white page, as a Jupyter notebook is, under its cells.
 const NOTEBOOK_SCROLLER_STYLE: React.CSSProperties = {
     width: "100%",
     height: "100%",
     overflowX: "hidden",
     overflowY: "auto",
+    backgroundColor: "#ffffff",
 };
 
 export function MainCanvas() {
@@ -262,7 +267,9 @@ export function MainCanvas() {
     }, [notebookOn, flowStore, setViewport]);
 
     // The element the notebook scrolls in. Its size and the overlays fixed over
-    // it (top bar, title chips, palette rail) decide where the column goes.
+    // its top (top bar, title chips) decide where the cells go. The notebook
+    // view has no palette rail (its (+) opens the rail as a row), so the cells
+    // run from the left margin.
     const scrollerRef = useRef<HTMLDivElement | null>(null);
     useEffect(() => {
         const scroller = scrollerRef.current;
@@ -271,11 +278,10 @@ export function MainCanvas() {
         const measure = () => {
             const rect = scroller.getBoundingClientRect();
             const top = topOverlayBottom();
-            const rail = paletteRailRight();
             setNotebookPane({
                 width: scroller.clientWidth,
                 top: top === null ? 0 : Math.max(0, top - rect.top),
-                left: rail === null ? 0 : Math.max(0, rail - rect.left),
+                left: 0,
             });
         };
         measure();
@@ -335,6 +341,18 @@ export function MainCanvas() {
     // socket to the owner, who persists. Without this gate, peers see the
     // canvas as read-only and the lock/proposal flow does nothing.
     const isSharedView = viewerMode === "shared" && !collab.enabled;
+    // Nodes are added (dropped) and connected on the canvas only, by its owner.
+    const graphEdits = graphEditGates({ notebookOn, sharedView: isSharedView });
+
+    // A double-click where a press drags a node (its header, its card's edge)
+    // zooms the view onto it, framed as a focus frames its nodes. Inside an
+    // editor, an output, a chart or a map the double-click stays theirs. Where
+    // nodes do not drag (a read-only canvas, the notebook view) nothing changes.
+    const handleNodeDoubleClick = useCallback((event: React.MouseEvent, node: FlowNode) => {
+        if (notebookOn || isSharedView) return;
+        if (!isNodeDragRegion(event.target, event.currentTarget)) return;
+        frameNodesInView(reactFlow, [node.id]);
+    }, [notebookOn, isSharedView, reactFlow]);
 
     const [isComponentsSelected, setIsComponentsSelected] = useState<boolean>(false);
 
@@ -684,16 +702,18 @@ export function MainCanvas() {
                     onClose={() => {deleteFloatingPanel(key)}}
                 />
             ))}
-            <ToolsMenu />
+            {/* The notebook view adds no nodes, so it has no rail, only the
+                rail's Run all. */}
+            {!notebookOn ? <ToolsMenu /> : <NotebookRunAll />}
             <UpMenu />
             <CollaborationSidePanel />
             {!isSharedView ? <ScenariosPanel /> : null}
             <div
                 className="curio-canvas-drop-target"
                 style={{ width: "100%", height: "100%" }}
-                onDragOver={!isSharedView ? handleDragOver : undefined}
-                onDragLeave={!isSharedView ? handleDragLeave : undefined}
-                onDrop={!isSharedView ? handleDrop : undefined}
+                onDragOver={graphEdits.drop ? handleDragOver : undefined}
+                onDragLeave={graphEdits.drop ? handleDragLeave : undefined}
+                onDrop={graphEdits.drop ? handleDrop : undefined}
             >
             {/* Present in both views so switching never remounts React Flow:
                 on the canvas both fill the window and change nothing; in the
@@ -709,7 +729,7 @@ export function MainCanvas() {
             >
             <div
                 className="curio-flow-sizer"
-                style={notebookOn ? { width: "100%", height: notebookContentHeight, minHeight: "100%" } : FILL_STYLE}
+                style={notebookOn ? { position: "relative", width: "100%", height: notebookContentHeight, minHeight: "100%" } : FILL_STYLE}
             >
             <ReactFlow
                 nodes={scenarioView.nodes}
@@ -720,7 +740,8 @@ export function MainCanvas() {
                 selectionKeyCode={"Shift"}
                 panActivationKeyCode={null}
                 onSelectionChange={handleSelectionChange}
-                onConnect={!isSharedView ? handleConnect : undefined}
+                onNodeDoubleClick={handleNodeDoubleClick}
+                onConnect={graphEdits.connect ? handleConnect : undefined}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 isValidConnection={isValidConnection}
@@ -732,8 +753,8 @@ export function MainCanvas() {
                 onMoveEnd={viewportMotionHint.onMoveEnd}
                 nodesDraggable={!isSharedView}
                 elementsSelectable={true}
-                nodesConnectable={!isSharedView}
-                edgesUpdatable={!isSharedView}
+                nodesConnectable={graphEdits.connect}
+                edgesUpdatable={graphEdits.connect}
                 // React Flow defaults to "Backspace" alone, so Windows users pressing
                 // Delete got no response (#153). useKeyPress bails on isInputDOMNode,
                 // so neither key can fire while the caret is in Monaco or an input.

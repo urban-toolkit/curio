@@ -10,13 +10,14 @@ package that ships a module of the same name (``application/store_install.py``).
 
 from __future__ import annotations
 
+import keyword
 import os
 from pathlib import Path
 
 from utk_curio.backend.app.packages.domain.manifest import PackageManifest
 from utk_curio.backend.app.packages.domain.python_modules import SOURCES_DIR, module_names_in
 
-__all__ = ["SOURCES_DIR", "module_names"]
+__all__ = ["SOURCES_DIR", "module_files", "module_names"]
 
 
 def _source_files(package_root: Path) -> list[str]:
@@ -41,3 +42,24 @@ def module_names(package_root: Path, manifest: PackageManifest) -> frozenset[str
     return module_names_in(
         _source_files(package_root), [template.source for template in manifest.templates],
     )
+
+
+def module_files(package_root: Path, manifest: PackageManifest) -> list[tuple[str, Path]]:
+    """Each ``.py`` file of the package's modules as ``(dotted name, path)``,
+    sorted by name: ``sources/heights.py`` is ``heights``,
+    ``sources/heights/raster.py`` is ``heights.raster`` and its folder's
+    ``__init__.py`` is ``heights``. A file whose path is not a dotted name is
+    left out."""
+    package_root = Path(package_root)
+    names = module_names(package_root, manifest)
+    out: list[tuple[str, Path]] = []
+    for relative in _source_files(package_root):
+        parts = relative.split("/")[1:]
+        if parts[0].removesuffix(".py") not in names or not parts[-1].endswith(".py"):
+            continue
+        parts[-1] = parts[-1][: -len(".py")]
+        if parts[-1] == "__init__" and len(parts) > 1:
+            parts.pop()
+        if all(part.isidentifier() and not keyword.iskeyword(part) for part in parts):
+            out.append((".".join(parts), package_root / relative))
+    return sorted(out)

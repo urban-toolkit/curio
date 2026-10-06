@@ -45,6 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
 
+from utk_curio.backend.app.packages.application import python_modules as packages_python_modules
 from utk_curio.backend.app.packages.builder.models import PackageBuildRequest
 from utk_curio.backend.app.packages.domain.dependency_scanner import scan_imports_for_filename
 from utk_curio.backend.app.packages.domain.manifest import ManifestError
@@ -156,6 +157,7 @@ def policy_from_env() -> DependencyPolicy:
 def merge_declared_and_detected(
     request: PackageBuildRequest,
     base_paths: tuple[str, ...] = (),
+    imported_modules: frozenset[str] = frozenset(),
 ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], list[Finding]]:
     """Scan the draft's sources and merge with explicit declarations.
 
@@ -167,11 +169,13 @@ def merge_declared_and_detected(
 
     An import of one of the package's own modules is no dependency (#468):
     the modules among the draft's files and *base_paths*, the files an
-    extended package keeps, as Save into a package leaves them out.
+    extended package keeps, as Save into a package leaves them out. Nor is
+    an import of *imported_modules*, the modules of the packages it depends
+    on (``dependencies.packages``).
     """
     own_modules = module_names_in([*request.files, *base_paths], [
         t.get("source") for t in request.manifest.get("templates") or [] if isinstance(t, dict)
-    ])
+    ]) | frozenset(imported_modules)
     detected_py: set[str] = set()
     detected_js: set[str] = set()
     for path, body in request.files.items():
@@ -718,7 +722,10 @@ def resolve_dependencies(
     """The resolving phase: scan+merge, JS registry resolution into the
     verified cache, python/package review — one SBOM out (dev/89 §3.4)."""
     policy = policy or policy_from_env()
-    python_entries, js_entries, findings = merge_declared_and_detected(request, base_paths)
+    python_entries, js_entries, findings = merge_declared_and_detected(
+        request, base_paths,
+        packages_python_modules.dependency_module_names(user_key, request.dependencies.get("packages") or {}),
+    )
     if fetcher is None and js_entries and policy.js_registry_url:
         fetcher = HttpRegistryFetcher(policy.js_registry_url)
     js_direct, js_lock, js_findings = resolve_js_dependencies(

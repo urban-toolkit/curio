@@ -1,9 +1,11 @@
 """A package's own Python modules, importable while one of its nodes runs (#468).
 
 For a node whose package ships modules in ``sources/``, the backend sends
-``package_modules: {"root": <that sources folder>, "names": [...]}``. Both
-execution modes then do the same three things, through this module and
-``staging.stage_package_modules``:
+``package_modules: {"root": <that sources folder>, "names": [...]}``. A node
+whose package depends on other packages that ship modules
+(``dependencies.packages``) gets a list of such sources, its own package's
+first. Both execution modes then do the same three things, through this
+module and ``staging.stage_package_modules``:
 
 1. The named modules are linked into a folder of the run's own: a scratch
    directory in process, the child's scratch directory under isolation, where
@@ -17,9 +19,9 @@ execution modes then do the same three things, through this module and
    update or of another package with a module of the same name, imports its
    own copy instead of finding a stale one.
 
-A package's modules are its own nodes' alone: an import of one is never
-shared with the session's later nodes the way library imports are (#158), in
-either mode (:func:`without_package_imports`).
+A package's modules are its own nodes' alone, and its dependents': an import
+of one is never shared with the session's later nodes the way library imports
+are (#158), in either mode (:func:`without_package_imports`).
 """
 
 import ast
@@ -31,9 +33,11 @@ import sys
 #: At most this many top-level names per package reach a run.
 MAX_NAMES = 64
 
+#: At most this many packages' modules reach a run.
+MAX_SOURCES = 16
 
-def shape(raw):
-    """The request's ``package_modules``, or None when absent or malformed."""
+
+def _shape_source(raw):
     if not isinstance(raw, dict):
         return None
     root = raw.get("root")
@@ -45,6 +49,15 @@ def shape(raw):
         if isinstance(name, str) and name.isidentifier() and not keyword.iskeyword(name)
     })[:MAX_NAMES]
     return {"root": root, "names": names} if names else None
+
+
+def shape(raw):
+    """The request's ``package_modules``: one source, or a list of sources
+    (malformed ones dropped); None when absent or malformed."""
+    if isinstance(raw, list):
+        sources = [source for source in map(_shape_source, raw[:MAX_SOURCES]) if source]
+        return sources or None
+    return _shape_source(raw)
 
 
 def _top(dotted):
@@ -111,7 +124,7 @@ def importable(folder, names):
         if loaded is not None and not _loaded_from(loaded, folder):
             where = getattr(loaded, "__file__", None) or "Python itself"
             raise ImportError(
-                f"This node's package ships the module {name!r}, but a module named "
+                f"This node's package, or a package it depends on, ships the module {name!r}, but a module named "
                 f"{name!r} is already loaded from {where}, so the node would import "
                 f"that one instead. Rename the module in the package."
             )

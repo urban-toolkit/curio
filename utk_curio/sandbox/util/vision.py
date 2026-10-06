@@ -154,6 +154,11 @@ def make_curio_segment(curio_derived_file=None):
         import pandas as pd
         from PIL import Image
 
+        if (getattr(model, "manifest", None) or {}).get("task") == "image-to-image":
+            raise ValueError(
+                f"{getattr(model, 'id', 'This model')} makes images from images, so it does not label pixels: "
+                "run it with a node made for it, not curio_segment"
+            )
         runner = getattr(model, "runner", None)
         if runner is None:
             raise TypeError(

@@ -98,7 +98,8 @@ export function EditableNodeHeaderLabel({
       {showConfig ? (
         <button
           type="button"
-          className={`${styles.configBtn} ${keywordHighlighted ? styles.configBtnHighlighted : ""}`}
+          // The gear is one of the node's tools (Node.css).
+          className={`${styles.configBtn} ${keywordHighlighted ? styles.configBtnHighlighted : ""} curio-node-tools`}
           data-curio-pkg-palette-node-action="true"
           title="Node settings"
           aria-label={`Node settings for ${displayLabel}`}

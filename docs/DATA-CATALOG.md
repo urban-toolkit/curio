@@ -39,7 +39,7 @@ data.utk.chicago-boundary@1/
 
 ### What ships with Curio
 
-Twenty datasets ship in the shared catalog at `<repo_root>/datasets/`: six under `data.utk.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), one under `data.projectsidewalk.*` (Chicago accessibility labels), and eight under `data.curio.storage-*`: the tables and collections the storage examples read, added from the Discovery Catalog's **Example storage** source.
+Thirty-four datasets ship in the shared catalog at `<repo_root>/datasets/`: six under `data.utk.*` (the Chicago boundary and community areas, an ACS profile, and the three Milan heat-exposure inputs), five under `data.cityofchicago.*` (green roofs, neighborhoods, 2010 energy usage, and the speed-camera and red-light violation tables), one under `data.projectsidewalk.*` (Chicago accessibility labels), the Mapillary sample example 10 reads (`data.curio.mapillary-sample`), eight under `data.curio.storage-*` (the tables and collections the storage examples read, added from the Discovery Catalog's **Example storage** source), and thirteen under `data.scout.*`. Seven are `data.scout.flood-*`: crops of SCOUT's Quad Cities flood rasters, the nature-based solution classes and each period's flood depth with and without them, which the FloodScenarios test dataflow reads. One is SCOUT's Loop buildings (`data.scout.loop-buildings`), which the ScoutShadows test dataflow and example 24 read. Five are the weather the `scout.routing@1` package reads: SCOUT's WRF forecast over Chicago, a NetCDF group of five variables (`data.scout.wrf-*`); its weather graph network is a [Model Catalog](MODEL-CATALOG.md) model. SCOUT (urban-toolkit/scout) publishes them, and they are used with the permission of SCOUT's authors.
 
 ### Origins
 
@@ -114,7 +114,7 @@ There are three places you work with datasets, and they are **not** interchangea
 
 **I want a dataset in all my projects, present and future.** On `/catalog/data`, click the dataset's card and then **Add to all projects** in the drawer. It is added to every dataflow you have, and every project you create from then on starts with it. **Remove from all projects** undoes it and keeps the dataset.
 
-**I want to reuse a node's output somewhere else.** Turn on the node's save-output toggle (the database icon next to its play button) and run it: the output is saved as a computed dataset. It is listed under **Saved outputs** in the left Tools panel's **Data Catalog** dropdown, ready to drag. To add it to this dataflow or another one, open the drawer's **Computed** tab and click **Add to project** on it.
+**I want to reuse a node's output somewhere else.** Turn on the node's save-output toggle (the database icon among the buttons in its header) and run it: the output is saved as a computed dataset. It is listed under **Saved outputs** in the left Tools panel's **Data Catalog** dropdown, ready to drag. To add it to this dataflow or another one, open the drawer's **Computed** tab and click **Add to project** on it.
 
 **I want to remove a dataset from one dataflow but keep it.** Use **Remove from project** in the drawer. Only the dataflow's ref goes, with one exception: your own upload is deleted when no other dataflow uses it, and the confirmation says so before anything is deleted.
 
@@ -131,7 +131,7 @@ Adding a dataset to a dataflow creates nothing on the canvas. You use it by **dr
 - **Drop on empty canvas**: Curio creates a **Data Loading** node filled in with loader code for that dataset, and says *"Created a Data Loading node for `<title>`."*
 - **Drop onto an existing node**: the loader code is merged into that node's code under a `# Curio dataset loader: <title>` marker, and Curio says *"Applied `<title>` to this node."* If the node's code ends in a `return`, the loader goes before it and the return is rewritten.
 
-The generated Python is one line, `curio_load_data("<datasetId>")`, which reads the dataset the way its format is read:
+The generated Python is one line, `curio_load_data("<datasetId>")` (`curio_load_data("<datasetId>", bounds=None)` for a GeoTIFF), which reads the dataset the way its format is read:
 
 | Format | What `curio_load_data` returns |
 |---|---|
@@ -142,12 +142,28 @@ The generated Python is one line, `curio_load_data("<datasetId>")`, which reads 
 | `geotiff` | An open rasterio dataset → `src` |
 | `onnx` | An onnxruntime `InferenceSession` on the CPU → `session`. onnxruntime comes with the Street Vision package. |
 | `netcdf` | An xarray `Dataset`, read with netCDF4 → `ds` |
-| `bundle` | Every part, as a tuple → `bundle` |
+| `bundle` | Every part, as a tuple → `bundle`. `part="<file>"` reads one part. |
 | OSM group | A `layers` dict, one `curio_load_data` per layer |
 | NetCDF group | A `layers` dict, one `curio_load_data` per variable |
 | `collection` | `curio_load_collection("<datasetId>")`: the collection's index, one row per file with a readable `path` → `collection` |
 
 A node's output cannot be a model session or an xarray Dataset, so the loader for an `onnx` or `netcdf` dataset, or a NetCDF group, returns nothing: the node's own code uses `session` or `ds` and returns a table, a raster or a value.
+
+For a GeoTIFF, `bounds=(west, south, east, north)`, in the raster's CRS, reads only a window: the cells whose centres lie inside the bounds, at the raster's own cell size, with every band, its nodata and its number type. The window is a raster of its own, so a raster too large for an Autark map can be read a region at a time:
+
+```python
+src = curio_load_data("data.utk.elevation", bounds=(-87.64, 41.87, -87.62, 41.89))
+```
+
+Bounds that reach past the raster, or hold no cell's centre, stop the node with a message giving the area the raster covers.
+
+For a dataset of several files, a [bundle](#bundles), `part="<file>"` reads one of them: the file its `bundle.json` lists under that file name or label, read as the whole bundle's tuple holds it. With a GeoTIFF part, `bounds` then reads a window of it:
+
+```python
+depth = curio_load_data("<datasetId>", part="depth_2050.tif", bounds=(-90.687, 41.416, -90.488, 41.624))
+```
+
+A name the bundle does not list stops the node with a message naming the dataset and the files it has.
 
 To read the file another way, for example a CSV with another separator, use `curio_data_path("<datasetId>")`, which gives the file's path: `pd.read_csv(curio_data_path("<datasetId>"), sep=";")`, or `netCDF4.Dataset(curio_data_path("<datasetId>"))` for a NetCDF file.
 
@@ -184,7 +200,7 @@ A collection's details have a **Collection** section: its kind, **Indexed from**
 
 ### The save-output toggle
 
-A runnable node that produces a dataset has a small database-icon toggle to the right of its play button. It is **off by default**, so saving is chosen per node. When it is on, running the node saves its output into your store as `computed.<dataflowId>.<nodeId>@1`.
+A runnable node that produces a dataset has a small database-icon toggle among the buttons in its header, which show while the pointer is over the node. It is **off by default**, so saving is chosen per node. When it is on, running the node saves its output into your store as `computed.<dataflowId>.<nodeId>@1`.
 
 A `GeoDataFrame` output is stored as **GeoParquet** and reloads as a `GeoDataFrame`. Its CRS survives, and so does *every* geometry column, not only the active one: a frame with both a `geometry` and a `centroid` column comes back with both still typed as geometry. So a node's map output is a reusable input. (A `GeoDataFrame` with no active geometry column is stored as a plain table; GeoParquet cannot represent one.)
 
@@ -232,6 +248,8 @@ computed.<dataflowId>.<nodeId>@1/
 ```
 
 Scalar parts (numbers, strings, booleans) are stored as `{"value": ...}`. The generated loader reads `bundle.json`, rebuilds each part, and returns a tuple, so a downstream node sees exactly the shape the producing node returned. A table part keeps its `metadata`, the name and Autark layer type the producing node gave it (`gdf.metadata = {"name": "roads", "layerType": "roads"}`), and `bundle.json` lists them as each part's `layerName` and `layerType`. A single saved table keeps its `metadata` the same way.
+
+A dataset you ship can be a bundle too, when several files are one input: its files side by side in `data/`, under their own names, and `data/bundle.json` listing each as `{"index", "label", "kind", "format", "file"}` (`"file": "data/depth_2050.tif"`). A node reads one file of it with `curio_load_data("<datasetId>", part="<file>")`. Only a file inside the dataset's folder is a part.
 
 Previewing a bundle gives you a **tab per part**; a part with no rows is labelled *"Scalar or metadata part"*. A bundle **cannot be exported** as a single file, and its Export button is disabled.
 

@@ -8,10 +8,10 @@ comparison (input 1), and every number it gives is comparison minus reference.
   differences and ``changed`` or ``unchanged``; rows on one side only are
   ``removed`` or ``added``.
 - Two rasters come back from the node's code as a request, which the sandbox
-  completes in its own Node process: autk-db loads both, Curio's Autark
-  adapter (``utils/raster/rasterArithmetic.ts``) subtracts the band arrays
-  ``getRaster`` exports, and the result is a raster envelope. Grids that differ
-  are refused, naming both. The raster tests run that Node process for real.
+  completes: autk-db loads both in its own Node process, Curio's raster
+  algebra (``util/raster_algebra.py``) subtracts the band arrays ``getRaster``
+  exports, and the result is a raster envelope. Grids that differ are refused,
+  naming both. The raster tests run that Node process for real.
 
 Every test imports the module itself, so a checkout without it fails test by
 test rather than at collection.
@@ -204,6 +204,44 @@ class TestLayersJoinedOnAStableId:
         assert out["osm_id"].tolist() == [1, 2]
         assert _numbers(out["sunlight"]) == [-1.0, 0.0]
 
+    def test_numbers_nested_in_a_column_both_have_are_subtracted_too(self):
+        """An Autark compute step writes its outputs under ``compute``, a dict
+        on each row: each number in it is a difference too, at any depth, and
+        a row on one side only has none, as its number columns have none."""
+
+        def layer(ids, sunlight, hours):
+            frame = _roads(ids, sunlight)
+            frame["compute"] = [
+                {"sunlight": s, "shade": {"hours": h}, "label": "noon"} for s, h in zip(sunlight, hours)
+            ]
+            return frame
+
+        out = _diff(
+            layer([1, 2, 3], [600.0, 540.0, 780.0], [3, 4, 1]),
+            layer([2, 3, 4], [540.0, 660.0, 120.0], [4, 3, 11]),
+        )
+        assert out["change"].tolist() == ["removed", "unchanged", "changed", "added"]
+        assert out["compute"].tolist() == [
+            {"sunlight": None, "shade": {"hours": None}, "label": "noon"},
+            {"sunlight": 0.0, "shade": {"hours": 0.0}, "label": "noon"},
+            {"sunlight": -120.0, "shade": {"hours": 2.0}, "label": "noon"},
+            {"sunlight": None, "shade": {"hours": None}, "label": "noon"},
+        ]
+        # The column the step lifts its output into says the same.
+        assert _numbers(out["sunlight"]) == [None, 0.0, -120.0, None]
+
+    def test_a_nested_value_that_is_not_a_number_is_the_comparisons(self):
+        reference = _roads([1, 2], [5.0, 5.0])
+        reference["compute"] = [{"sunlight": 5.0, "label": "a"}, {"sunlight": 5.0}]
+        comparison = _roads([1, 2], [5.0, 5.0])
+        comparison["compute"] = [{"sunlight": 5.0, "label": "b"}, {"sunlight": 5.0, "lit": 1}]
+        out = _diff(reference, comparison)
+        # A text that differs, and a value only one side holds, change the row
+        # and are kept as that side holds them: a number one side alone holds
+        # has nothing to be subtracted from.
+        assert out["compute"].tolist() == [{"sunlight": 0.0, "label": "b"}, {"sunlight": 0.0, "lit": 1}]
+        assert out["change"].tolist() == ["changed", "changed"]
+
     def test_the_inputs_are_left_as_they_were(self):
         reference = _roads([1, 2], [5.0, 6.0])
         comparison = _roads([2, 3], [1.0, 2.0])
@@ -211,6 +249,73 @@ class TestLayersJoinedOnAStableId:
         _diff(reference, comparison)
         pd.testing.assert_frame_equal(reference, before[0])
         pd.testing.assert_frame_equal(comparison, before[1])
+
+
+class TestLayersWithNoIdJoinedOnTheirShapes:
+    """Two layers with neither ``osm_id`` nor ``building_id`` (an Autark data
+    load's roads) are matched by their shapes: equal geometries are one row,
+    and a shape that repeats is matched by its order."""
+
+    @staticmethod
+    def _lines(sunlight, shapes):
+        from shapely.geometry import LineString
+
+        return gpd.GeoDataFrame(
+            {"name": [f"road {points[0][0]}" for points in shapes], "sunlight": sunlight},
+            geometry=[LineString(points) for points in shapes],
+            crs="EPSG:3395",
+        )
+
+    def test_rows_with_equal_shapes_are_one_row(self):
+        a, b, c = [(0, 0), (1, 0)], [(3, 1), (4, 1)], [(5, 5), (6, 6)]
+        reference = self._lines([600.0, 540.0], [a, b])
+        comparison = self._lines([540.0, 300.0, 120.0], [b, a, c])
+        out = _diff(reference, comparison)
+        assert isinstance(out, gpd.GeoDataFrame)
+        # The reference's rows in its order, then the comparison's own.
+        assert out["name"].tolist() == ["road 0", "road 3", "road 5"]
+        assert out["change"].tolist() == ["changed", "unchanged", "added"]
+        assert _numbers(out["sunlight"]) == [-300.0, 0.0, None]
+        assert [list(shape.coords) for shape in out.geometry] == [
+            [(0.0, 0.0), (1.0, 0.0)], [(3.0, 1.0), (4.0, 1.0)], [(5.0, 5.0), (6.0, 6.0)],
+        ]
+
+    def test_a_shape_both_sides_repeat_is_matched_by_its_order(self):
+        a = [(0, 0), (1, 0)]
+        out = _diff(self._lines([10.0, 20.0], [a, a]), self._lines([7.0, 20.0], [a, a]))
+        assert _numbers(out["sunlight"]) == [-3.0, 0.0]
+        assert out["change"].tolist() == ["changed", "unchanged"]
+
+    def test_a_row_with_no_geometry_names_the_input(self):
+        reference = self._lines([1.0], [[(0, 0), (1, 0)]])
+        comparison = reference.copy()
+        comparison.loc[0, "geometry"] = None
+        with pytest.raises(ValueError, match=r"input 1 \(Twice as tall\) has 1 row with no geometry"):
+            _diff(reference, comparison)
+
+    def test_one_layer_of_an_autark_nodes_several(self):
+        """Example 06's roads: a compute step hands on its workspace's every
+        layer, and the roads carry no id."""
+        from .test_scenario_stack import autark_layers
+
+        out = difference().difference_scenarios(
+            [("s-base", "Baseline", autark_layers([5.0, 7.0])), ("s-tall", "Twice as tall", autark_layers([3.0, 7.0]))],
+            layer="table_osm_roads",
+        )
+        assert isinstance(out, gpd.GeoDataFrame)
+        assert out.crs.to_epsg() == 3395, "the layers' own coordinate system was lost"
+        assert out["name"].tolist() == ["road 0", "road 1"]
+        assert _numbers(out["sunlight"]) == [-2.0, 0.0]
+        assert out["change"].tolist() == ["changed", "unchanged"]
+        assert "height" not in out.columns
+
+    def test_an_id_both_layers_have_still_comes_first(self):
+        reference = _roads([1, 2], [5.0, 6.0])
+        comparison = _roads([2, 1], [6.0, 3.0])
+        comparison.geometry = [Point(9, 9), Point(8, 8)]  # moved: the id still matches them
+        out = _diff(reference, comparison)
+        assert out["osm_id"].tolist() == [1, 2]
+        assert _numbers(out["sunlight"]) == [-2.0, 0.0]
 
 
 class TestWhatTheJoinRefuses:

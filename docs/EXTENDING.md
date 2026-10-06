@@ -340,7 +340,7 @@ Spatial Join's route is a single handler at the end of [`api/routes.py`](../utk_
 
 The three packages are bundled in-repo under [`packages/`](../packages/). Seeding covers `curio.builtin@1` plus, when Curio starts with `--with-examples`, whatever the shipped example dataflows declare as dependencies (`example_dep_package_ids` in [`backend/app/packages/application/seeding.py`](../utk_curio/backend/app/packages/application/seeding.py)). Example 10 declares `curio.streetvision@1`, so Street Vision is installed with the examples. `curio.example-ui@1` is in neither set: users opt in by clicking **Add to project** in the catalog. Generally:
 
-- **Bundled-and-auto-installed** → `curio.builtin@1`, which every user must have, and, with `--with-examples`, the packages a shipped dataflow declares (`curio.streetvision@1`, `curio.weather@1`, `curio.media@1`, `scout.raster-conversion@1`).
+- **Bundled-and-auto-installed** → `curio.builtin@1`, which every user must have, and, with `--with-examples`, the packages a shipped dataflow declares (`curio.streetvision@1`, `curio.weather@1`, `curio.media@1`, `scout.raster-conversion@1`, `scout.shadow@1`, `scout.routing@1`).
 - **Bundled-and-installable** → optional first-party packages like `curio.example-ui@1`, `ai.utk.uhvi@1`. Visible in the catalog without a remote registry roundtrip.
 - **Remote** → publishing through Curio's catalog endpoint, for third-party packages. Same manifest schema.
 

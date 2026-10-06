@@ -38,6 +38,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     signup_e2e_user,
+    wait_for_drawer_closed,
     wait_for_projects_page,
 )
 
@@ -247,7 +248,7 @@ def _open_header_drawer(page, name: str, attr: str):
 
 def _close_header_drawer(page, drawer, name: str, attr: str) -> None:
     drawer.get_by_role("button", name=f"Close {name}", exact=True).click()
-    expect(page.locator(f'[{attr}="true"][aria-hidden="false"]')).to_have_count(0, timeout=10000)
+    wait_for_drawer_closed(page, f'[{attr}="true"]')
     # The marker set on the live canvas: a canvas rendered again after leaving
     # and coming back would not carry it.
     expect(page.locator('#tools-menu[data-e2e-kept="yes"]')).to_have_count(1)

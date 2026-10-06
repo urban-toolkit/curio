@@ -213,7 +213,7 @@ export function CompareDifference({
   };
 
   const keyOptions = [
-    { value: AUTOMATIC_KEY, text: "osm_id or building_id" },
+    { value: AUTOMATIC_KEY, text: "osm_id, building_id, or the shapes" },
     ...[...new Set([...(settings?.key ? [settings.key] : []), ...common])].map((name) => ({ value: name, text: name })),
   ];
 
