@@ -20,20 +20,6 @@
         }
       },
       {
-        "id": "0b6d3f8a-2e1c-4d97-8f5a-6c3e9b1d7a28",
-        "type": "curio.builtin/computation-analysis",
-        "x": 0,
-        "y": 450,
-        "content": "import geopandas as gpd\n\n# The Autark node hands on the layers it loads, each with its name, its type\n# and its features as GeoJSON, in EPSG:3395, the CRS Autark keeps them in.\n(layer,) = [layer for layer in arg if layer[\"name\"] == \"table_osm_roads\"]\nroads = gpd.GeoDataFrame.from_features(layer[\"geojson\"][\"features\"], crs=\"EPSG:3395\")\n# The road type, the one-way tag and the speed limit are what routing reads.\nreturn roads[[c for c in (\"highway\", \"oneway\", \"maxspeed\") if c in roads.columns] + [\"geometry\"]]\n",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "Take the roads layer as a table of road lines.",
-        "metadata": {
-          "keywords": [],
-          "packageTemplateLabel": "Roads"
-        }
-      },
-      {
         "id": "9a4e2c7b-1f5d-4e83-a6b0-3c8d5f2e7a19",
         "type": "curio.builtin/parameter",
         "x": 0,
@@ -59,7 +45,7 @@
         "type": "scout.routing/weather-routing",
         "x": 700,
         "y": 0,
-        "content": "\"\"\"Weather Routing: SCOUT's weather-aware routes over a roads layer.\n\nInput: a roads layer, a GeoDataFrame of OpenStreetMap road lines (with highway,\nand oneway and maxspeed where known), such as the roads an Autark node loads.\nThe routes run inside its bounds.\nOutput: (routes, metrics).\n- routes: one row per route, a line through its nodes, with the route\n  (weight_type), route_index, distance_m in metres, duration_minutes and the\n  route's rain, heat, wind and humidity exposure. An Autark map draws it.\n- metrics: the same routes as a table: route, route_index, distance in km,\n  duration in minutes and the four exposures, for Compare Scenarios.\nThe Widgets tab sets the origin and destination, the mode, K, the start time\n(local time where the weather is, Chicago) and the rain and wind weights.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_routing.weather_routing import calculate_weather_route\n\n# The Data Catalog's SCOUT WRF group, a NetCDF file per variable.\nweather = {\n    \"RAIN\": curio_data_path(\"data.scout.wrf-rain\"),\n    \"T2\": curio_data_path(\"data.scout.wrf-t2\"),\n    \"WSPD10\": curio_data_path(\"data.scout.wrf-wspd10\"),\n    \"WDIR10\": curio_data_path(\"data.scout.wrf-wdir10\"),\n    \"RH2\": curio_data_path(\"data.scout.wrf-rh2\"),\n}\n\nreturn calculate_weather_route(\n    arg,\n    weather,\n    # SCOUT's weather graph network, the Model Catalog's weather GNN.\n    curio_load_model(\"model.scout.weather-gnn\"),\n    [!! origin !!],\n    [!! destination !!],\n    mode=[!! mode !!],\n    K=int([!! K !!]),\n    time_=[!! @start !!],\n    rain=[!! rain !!],\n    wind=[!! wind !!],\n)\n",
+        "content": "\"\"\"Weather Routing: SCOUT's weather-aware routes over a roads layer.\n\nInput: the layers an Autark node loads from OpenStreetMap. The node reads their\nroads layer, table_osm_roads, as a GeoDataFrame of road lines (with highway,\nand oneway and maxspeed where known). The routes run inside its bounds.\nOutput: (routes, metrics).\n- routes: one row per route, a line through its nodes, with the route\n  (weight_type), route_index, distance_m in metres, duration_minutes and the\n  route's rain, heat, wind and humidity exposure. An Autark map draws it.\n- metrics: the same routes as a table: route, route_index, distance in km,\n  duration in minutes and the four exposures, for Compare Scenarios.\nThe Widgets tab sets the origin and destination, the mode, K, the start time\n(local time where the weather is, Chicago) and the rain and wind weights.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_routing.weather_routing import calculate_weather_route\n\n# The Data Catalog's SCOUT WRF group, a NetCDF file per variable.\nweather = {\n    \"RAIN\": curio_data_path(\"data.scout.wrf-rain\"),\n    \"T2\": curio_data_path(\"data.scout.wrf-t2\"),\n    \"WSPD10\": curio_data_path(\"data.scout.wrf-wspd10\"),\n    \"WDIR10\": curio_data_path(\"data.scout.wrf-wdir10\"),\n    \"RH2\": curio_data_path(\"data.scout.wrf-rh2\"),\n}\n\nreturn calculate_weather_route(\n    [!! input 0:table_osm_roads !!],\n    weather,\n    # SCOUT's weather graph network, the Model Catalog's weather GNN.\n    curio_load_model(\"model.scout.weather-gnn\"),\n    [!! origin !!],\n    [!! destination !!],\n    mode=[!! mode !!],\n    K=int([!! K !!]),\n    time_=[!! @start !!],\n    rain=[!! rain !!],\n    wind=[!! wind !!],\n)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Find the routes that weigh rain most, the ones that weigh wind most, and the fastest.",
@@ -176,7 +162,7 @@
         "type": "scout.routing/weather-routing",
         "x": 700,
         "y": 1100,
-        "content": "\"\"\"Weather Routing: SCOUT's weather-aware routes over a roads layer.\n\nInput: a roads layer, a GeoDataFrame of OpenStreetMap road lines (with highway,\nand oneway and maxspeed where known), such as the roads an Autark node loads.\nThe routes run inside its bounds.\nOutput: (routes, metrics).\n- routes: one row per route, a line through its nodes, with the route\n  (weight_type), route_index, distance_m in metres, duration_minutes and the\n  route's rain, heat, wind and humidity exposure. An Autark map draws it.\n- metrics: the same routes as a table: route, route_index, distance in km,\n  duration in minutes and the four exposures, for Compare Scenarios.\nThe Widgets tab sets the origin and destination, the mode, K, the start time\n(local time where the weather is, Chicago) and the rain and wind weights.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_routing.weather_routing import calculate_weather_route\n\n# The Data Catalog's SCOUT WRF group, a NetCDF file per variable.\nweather = {\n    \"RAIN\": curio_data_path(\"data.scout.wrf-rain\"),\n    \"T2\": curio_data_path(\"data.scout.wrf-t2\"),\n    \"WSPD10\": curio_data_path(\"data.scout.wrf-wspd10\"),\n    \"WDIR10\": curio_data_path(\"data.scout.wrf-wdir10\"),\n    \"RH2\": curio_data_path(\"data.scout.wrf-rh2\"),\n}\n\nreturn calculate_weather_route(\n    arg,\n    weather,\n    # SCOUT's weather graph network, the Model Catalog's weather GNN.\n    curio_load_model(\"model.scout.weather-gnn\"),\n    [!! origin !!],\n    [!! destination !!],\n    mode=[!! mode !!],\n    K=int([!! K !!]),\n    time_=[!! @start !!],\n    rain=[!! rain !!],\n    wind=[!! wind !!],\n)\n",
+        "content": "\"\"\"Weather Routing: SCOUT's weather-aware routes over a roads layer.\n\nInput: the layers an Autark node loads from OpenStreetMap. The node reads their\nroads layer, table_osm_roads, as a GeoDataFrame of road lines (with highway,\nand oneway and maxspeed where known). The routes run inside its bounds.\nOutput: (routes, metrics).\n- routes: one row per route, a line through its nodes, with the route\n  (weight_type), route_index, distance_m in metres, duration_minutes and the\n  route's rain, heat, wind and humidity exposure. An Autark map draws it.\n- metrics: the same routes as a table: route, route_index, distance in km,\n  duration in minutes and the four exposures, for Compare Scenarios.\nThe Widgets tab sets the origin and destination, the mode, K, the start time\n(local time where the weather is, Chicago) and the rain and wind weights.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_routing.weather_routing import calculate_weather_route\n\n# The Data Catalog's SCOUT WRF group, a NetCDF file per variable.\nweather = {\n    \"RAIN\": curio_data_path(\"data.scout.wrf-rain\"),\n    \"T2\": curio_data_path(\"data.scout.wrf-t2\"),\n    \"WSPD10\": curio_data_path(\"data.scout.wrf-wspd10\"),\n    \"WDIR10\": curio_data_path(\"data.scout.wrf-wdir10\"),\n    \"RH2\": curio_data_path(\"data.scout.wrf-rh2\"),\n}\n\nreturn calculate_weather_route(\n    [!! input 0:table_osm_roads !!],\n    weather,\n    # SCOUT's weather graph network, the Model Catalog's weather GNN.\n    curio_load_model(\"model.scout.weather-gnn\"),\n    [!! origin !!],\n    [!! destination !!],\n    mode=[!! mode !!],\n    K=int([!! K !!]),\n    time_=[!! @start !!],\n    rain=[!! rain !!],\n    wind=[!! wind !!],\n)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Find the routes with wind weighed most and rain least.",
@@ -450,22 +436,15 @@
     ],
     "edges": [
       {
-        "id": "reactflow__edge-5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57out-0b6d3f8a-2e1c-4d97-8f5a-6c3e9b1d7a28in",
+        "id": "reactflow__edge-5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57out-2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61in",
         "source": "5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57",
-        "target": "0b6d3f8a-2e1c-4d97-8f5a-6c3e9b1d7a28",
-        "sourceHandle": "out",
-        "targetHandle": "in"
-      },
-      {
-        "id": "reactflow__edge-0b6d3f8a-2e1c-4d97-8f5a-6c3e9b1d7a28out-2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61in",
-        "source": "0b6d3f8a-2e1c-4d97-8f5a-6c3e9b1d7a28",
         "target": "2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61",
         "sourceHandle": "out",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-0b6d3f8a-2e1c-4d97-8f5a-6c3e9b1d7a28out-8f1d5b3e-9a2c-4e67-b4d8-5c0a3e7f1d92in",
-        "source": "0b6d3f8a-2e1c-4d97-8f5a-6c3e9b1d7a28",
+        "id": "reactflow__edge-5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57out-8f1d5b3e-9a2c-4e67-b4d8-5c0a3e7f1d92in",
+        "source": "5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57",
         "target": "8f1d5b3e-9a2c-4e67-b4d8-5c0a3e7f1d92",
         "sourceHandle": "out",
         "targetHandle": "in"
