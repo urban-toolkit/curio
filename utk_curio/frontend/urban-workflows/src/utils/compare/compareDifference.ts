@@ -41,14 +41,9 @@ export function differenceLegendTitle(value: DifferenceValue): string {
 }
 
 /**
- * A layer's difference, from its lowest value (dark purple) to its highest
- * (yellow). Sequential, since autk-grammar takes no domain that would centre
- * a diverging scheme on zero.
- *
- * A raster takes no scheme: autk-map colors a raster's cells when it loads
- * it, in its own reds, and autk-grammar sets a layer's scheme after that, so
- * a scheme would change the legend and not the cells. The raster's layer asks
- * for its legend alone (`isColorMap`), which then shows the reds it is drawn in.
+ * A raster's or a layer's difference, from its lowest value (dark purple) to
+ * its highest (yellow). Sequential, since autk-grammar takes no domain that
+ * would centre a diverging scheme on zero.
  */
 export const DIFFERENCE_INTERPOLATOR = "interpolateViridis";
 
@@ -97,17 +92,14 @@ export function resolveValue(wanted: string | undefined, values: readonly Differ
 }
 
 /**
- * The Autark document that draws the difference, one layer colored by *value*,
- * read as the table `differenceTableName` names, its legend titled by
- * `differenceLegendTitle`.
+ * The Autark document that draws the difference, one raster or layer colored
+ * by *value*, read as the table `differenceTableName` names, its legend titled
+ * by `differenceLegendTitle`.
  */
-export function differenceMapDoc(kind: "raster" | "layer", value: DifferenceValue | undefined): Record<string, unknown> {
+export function differenceMapDoc(value: DifferenceValue | undefined): Record<string, unknown> {
   const table = differenceTableName(value);
   if (!value) return { map: { layerRefs: [{ dataRef: table }] } };
   const legendTitle = differenceLegendTitle(value);
-  if (kind === "raster") {
-    return { map: { layerRefs: [{ dataRef: table, getFnv: value.value, isColorMap: true, legendTitle }] } };
-  }
   if (value.categorical) {
     return {
       map: {
