@@ -180,10 +180,17 @@ COMPARE_SCENARIOS = "curio.builtin/compare-scenarios"
 #: Statistics node is played and must end Done like any other.
 RASTER_TOOLS = {"curio.builtin/raster-calculator", "curio.builtin/raster-statistics"}
 
+#: Edit Features (#662) runs the code its edit list writes behind its own play
+#: button too: example 06's is played and must end Done like any other.
+EDIT_FEATURES = "curio.builtin/edit-features"
+
 
 def _plays(node: NodeSpec) -> bool:
     """Whether the canvas gives *node* a play button that the run clicks."""
-    return node.has_play_button or node.type == COMPARE_SCENARIOS or node.type in RASTER_TOOLS
+    return (
+        node.has_play_button or node.type == COMPARE_SCENARIOS or node.type in RASTER_TOOLS
+        or node.type == EDIT_FEATURES
+    )
 
 
 #: A Compare Scenarios node's view and where its drawing stands: ``[mode,

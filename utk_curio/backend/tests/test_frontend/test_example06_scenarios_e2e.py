@@ -1,29 +1,35 @@
 """Playwright E2E: example 06 as a scenario study (#662).
 
-Example 06 runs example 07's per-road sunlight shader in two scenarios over one
-fixed context, the Back Bay loader and its data pool: "Baseline", every
-building at its OSM height, and "Twice as tall", a copy of it with every
-building doubled. The factor is a ``height_factor`` widget on each shadow step,
-read as an Autark uniform. Two Compare Scenarios nodes compare the roads layer
-each scenario's map hands on, picked in their Layer menu: a chart of mean road
-sunlight, and a map of each road's sunlight change, the roads matched by their
-shapes.
+Example 06 runs example 07's per-road sunlight shader in three scenarios over
+one fixed context, the Back Bay loader and its data pool: "Baseline", every
+building at its OSM height, "Twice as tall", a copy of it with every building
+doubled, and "Two towers removed", where an Edit Features node removes the two
+tallest towers by their ``building_id`` before copies of Baseline's nodes. The
+factor is a ``height_factor`` widget on each shadow step, read as an Autark
+uniform. Two Compare Scenarios nodes compare the roads layer each scenario's map
+hands on, picked in their Layer menu: a chart of the three scenarios' mean road
+sunlight, and a map of each road's sunlight change in Twice as tall, the roads
+matched by their shapes.
 
 The first test drives the example as it ships:
 
-1. Its two scenarios are listed over the shared pool. Each shadow step's
+1. Its three scenarios are listed over the shared pool. Each shadow step's
    ``height_factor`` tag sits in its Widgets tab, with its value, and as a chip
    in its spec.
-2. Both collapsed, Run All: the loader loads once for both, both scenarios run
-   hidden, and each box shows its outcomes done. A double-click expands one in
-   place, and its map is drawn.
-3. The chart: Twice as tall has the lower mean sunlight, What differs lists only
-   ``height_factor``, 1 against 2, and nothing is warned about.
+2. All collapsed, Run All: the loader loads once for all, the scenarios run
+   hidden, and each box shows its outcome done. The Edit Features node reads the
+   loader's layers through the pool and hands them on without every part of
+   both towers. A double-click expands one scenario in place, and its map is
+   drawn.
+3. The chart: Twice as tall has the lowest mean sunlight and Two towers removed
+   the highest. What differs lists ``height_factor``, 1, 2 and 1, and the Edit
+   Features node, only in Two towers removed, with its edit; nothing is warned
+   about.
 4. The difference: each road's sunlight change, below zero where the taller
    shadows reach it and zero elsewhere, in its ``sunlight`` and in its nested
    ``compute`` values, mapped.
-5. A save and a reopen: the scenarios, their colours, the collapsed one, the
-   widgets and their values, and the saved outputs come back.
+5. A save and a reopen: the scenarios, their colours, the collapsed ones, the
+   widgets and their values, the edit list, and the saved outputs come back.
 
 The second test drags both scenarios from the Scenario Catalog into an empty
 project, once the seeded example has run, and compares them there: they arrive
@@ -94,11 +100,18 @@ COMPARE = "curio.builtin/compare-scenarios"
 DATA = "whatif-data"
 B_COMPUTE, B_MAP = "whatif-baseline-compute", "whatif-baseline-map"
 T_COMPUTE, T_MAP = "whatif-modified-compute", "whatif-modified-map"
+E_EDIT, E_COMPUTE, E_MAP = "whatif-towers-edit", "whatif-towers-compute", "whatif-towers-map"
 CHART, DIFFERENCE = "whatif-compare-chart", "whatif-compare-difference"
-BASELINE, TWICE = "s-baseline", "s-twice"
-COLORS = {BASELINE: "#3567c7", TWICE: "#e86a3c"}
-MEMBERS = {BASELINE: [B_COMPUTE, B_MAP], TWICE: [T_COMPUTE, T_MAP]}
+BASELINE, TWICE, TOWERS = "s-baseline", "s-twice", "s-towers"
+NAMES = {BASELINE: "Baseline", TWICE: "Twice as tall", TOWERS: "Two towers removed"}
+COLORS = {BASELINE: "#3567c7", TWICE: "#e86a3c", TOWERS: "#2f8f4a"}
+MEMBERS = {BASELINE: [B_COMPUTE, B_MAP], TWICE: [T_COMPUTE, T_MAP], TOWERS: [E_EDIT, E_COMPUTE, E_MAP]}
 ROADS = "table_osm_roads"
+BUILDINGS = "table_osm_buildings"
+EDIT_TYPE = "curio.builtin/edit-features"
+#: The two towers Two towers removed takes out, by building_id, and how many
+#: parts each has in Back Bay's PBF: 200 Clarendon and Raffles.
+TOWER_PARTS = {119: 4, 136: 3}
 
 RUN_MS = 420000
 SETTLE_MS = 180000
@@ -207,8 +220,8 @@ def _assert_tag_and_chip(page, node_id: str, value: str) -> None:
 
 
 def _assert_chart_drew(page, node_id: str) -> None:
-    """The bar chart compiled with no problem, and its canvas holds both
-    scenarios' colours."""
+    """The bar chart compiled with no problem, and its canvas holds every
+    scenario's colour."""
     deadline = time.time() + 60
     state = None
     while time.time() < deadline:
@@ -219,7 +232,7 @@ def _assert_chart_drew(page, node_id: str) -> None:
     problem = node_locator(page, node_id).locator("[data-compare-chart-problem]").all_inner_texts()
     assert state == "drawn", f"the chart's compile ended {state!r}: {problem}"
     assert_vega_canvas_rendered(page, node_id, timeout=30000)
-    colors = [COLORS[BASELINE], COLORS[TWICE]]
+    colors = [COLORS[BASELINE], COLORS[TWICE], COLORS[TOWERS]]
     counts = None
     deadline = time.time() + 15
     while time.time() < deadline:
@@ -227,7 +240,7 @@ def _assert_chart_drew(page, node_id: str) -> None:
         if counts and all(count >= 30 for count in counts):
             return
         page.wait_for_timeout(250)
-    raise AssertionError(f"the chart does not draw both scenarios' colours {colors}: pixels {counts}")
+    raise AssertionError(f"the chart does not draw every scenario's colour {colors}: pixels {counts}")
 
 
 def _assert_only_height_factor_differs(page, node_id: str, lever: str) -> None:
@@ -255,6 +268,85 @@ def _assert_only_height_factor_differs(page, node_id: str, lever: str) -> None:
     ).all_inner_texts()
     # Back to the view the node is in, Chart or Difference.
     compare.get_by_role("tablist", name="Compare Scenarios views").get_by_role("tab").first.click()
+
+
+def _assert_factor_and_edit_differ(page, node_id: str) -> None:
+    """What differs, over the three scenarios, lists two levers: the shadow
+    step, whose ``height_factor`` is 1, 2 and 1, with no code line, and the Edit
+    Features node, only in Two towers removed, with its edit. The maps are
+    alike, and the node warns about nothing."""
+    compare = node_locator(page, node_id)
+    _open_tab(page, node_id, "output")
+    compare.get_by_role("tab", name="What differs", exact=True).click()
+    widget = compare.locator('[data-compare-widget="height_factor"]')
+    widget.wait_for(state="visible", timeout=15000)
+    shown = widget.inner_text()
+    assert "Baseline: 1" in shown and "Twice as tall: 2" in shown and "Two towers removed: 1" in shown, shown
+    levers = compare.locator("[data-compare-lever]").evaluate_all(
+        "els => els.map((el) => el.getAttribute('data-compare-lever'))"
+    )
+    assert levers == [B_COMPUTE, E_EDIT], f"What differs lists {levers}, not the shadow step and the Edit Features node"
+    assert compare.locator("[data-compare-widget]").count() == 1
+    assert compare.locator("[data-compare-code]").count() == 0, "What differs lists a code change"
+    edit = compare.locator(f'[data-compare-lever="{E_EDIT}"]')
+    assert edit.locator("[data-compare-only-in]").get_attribute("data-compare-only-in") == TOWERS
+    edits = edit.locator(f'[data-compare-edits="{TOWERS}"]').inner_text()
+    assert "Remove building_id 119, 136" in edits, edits
+    same = compare.locator("[data-compare-same]").get_attribute("data-compare-same")
+    assert same == "1", f"the maps should read as alike, not {same!r}"
+    assert compare.locator("[data-compare-warning]").count() == 0, compare.locator(
+        "[data-compare-warning]"
+    ).all_inner_texts()
+    compare.get_by_role("tablist", name="Compare Scenarios views").get_by_role("tab").first.click()
+
+
+_INPUT_ARTIFACT_JS = """(id) => {
+    const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
+    const input = node && node.data && node.data.input;
+    return input && typeof input.filename === "string" ? input.filename : null;
+}"""
+
+
+def _ids_of(fc: dict) -> list:
+    return [feature["properties"].get("building_id") for feature in fc["features"]]
+
+
+def _loaded_building_ids(read: dict) -> list:
+    """The ``building_id`` of each building part an Autark data node loaded:
+    its ``[{name, type, geojson}]`` records, as ``/get`` sends a list."""
+    for item in read["data"]:
+        if item["data"].get("name") == BUILDINGS:
+            return _ids_of(item["data"]["geojson"])
+    raise AssertionError(f"the loaded layers hold no {BUILDINGS}: {[i['data'].get('name') for i in read['data']]}")
+
+
+def _handed_building_ids(wrapper: dict) -> list:
+    """The same, in the layers Edit Features hands on, as an Autark node does."""
+    for item in wrapper["data"]:
+        if item.get("layerName") == BUILDINGS:
+            return _ids_of(item["data"])
+    raise AssertionError(f"the handed-on layers hold no {BUILDINGS}: {[i.get('layerName') for i in wrapper['data']]}")
+
+
+def _assert_towers_removed(page) -> None:
+    """The Edit Features node read the loader's layers, through the pool, and
+    handed them on without every part of both towers: every id it names is a
+    building of the input, so none is unknown."""
+    source = page.evaluate(_INPUT_ARTIFACT_JS, E_EDIT)
+    assert source, "the pool did not name the artifact it read, for the Edit Features node to read"
+    before = _loaded_building_ids(load_artifact_as_dict(source))
+    for tower, parts in TOWER_PARTS.items():
+        assert before.count(tower) == parts, f"the loaded buildings hold {before.count(tower)} parts of {tower}, not {parts}"
+    artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, E_EDIT)
+    assert artifact, f"{E_EDIT} shows no saved output"
+    stored = load_artifact_as_dict(artifact)
+    handed = stored["data"]
+    assert handed["dataType"] == "outputs", handed.get("dataType")
+    names = [item["layerName"] for item in handed["data"]]
+    assert sorted(names) == sorted(["table_osm_surface", "table_osm_parks", "table_osm_water", ROADS, BUILDINGS]), names
+    after = _handed_building_ids(handed)
+    assert not set(TOWER_PARTS) & set(after), f"a tower is still in the buildings: {sorted(set(TOWER_PARTS) & set(after))}"
+    assert len(after) == len(before) - sum(TOWER_PARTS.values()), (len(before), len(after))
 
 
 def _zoom_out(page, zoom: float = 0.2) -> None:
@@ -293,9 +385,9 @@ def _frame_color(page, scenario_id: str) -> str:
 
 
 def _assert_cards(page) -> None:
-    """The Scenarios panel lists both scenarios, by name and colour, each with
-    the data pool as the fixed context it reads."""
-    for scenario_id, name in ((BASELINE, "Baseline"), (TWICE, "Twice as tall")):
+    """The Scenarios panel lists the three scenarios, by name and colour, each
+    with the data pool as the fixed context it reads."""
+    for scenario_id, name in NAMES.items():
         card = page.get_by_test_id(f"scenario-card-{scenario_id}")
         card.wait_for(state="visible", timeout=15000)
         assert card.get_by_label("Scenario name").input_value() == name
@@ -304,7 +396,7 @@ def _assert_cards(page) -> None:
         assert "Data Pool" in context, f"{name} lists {context!r} as its fixed context"
 
 
-def test_example_06_compares_its_two_scenarios_in_the_canvas(
+def test_example_06_compares_its_three_scenarios_in_the_canvas(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     require_project_page()
@@ -326,34 +418,38 @@ def test_example_06_compares_its_two_scenarios_in_the_canvas(
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
     _require_webgpu(page)
 
-    # 1. Two scenarios over the shared pool, and each shadow step's tag.
+    # 1. Three scenarios over the shared pool, and each shadow step's tag.
     _scenario_menu(page, "Show scenarios")
     _assert_cards(page)
-    for scenario_id in (BASELINE, TWICE):
+    for scenario_id in NAMES:
         assert _frame_color(page, scenario_id) == _rgb(COLORS[scenario_id])
     _assert_tag_and_chip(page, B_COMPUTE, "1")
     _assert_tag_and_chip(page, T_COMPUTE, "2")
+    _assert_tag_and_chip(page, E_COMPUTE, "1")
 
-    # 2. Both collapsed, Run All: the loader loads once, and both scenarios run.
-    for scenario_id in (BASELINE, TWICE):
+    # 2. All collapsed, Run All: the loader loads once, and every scenario runs.
+    for scenario_id in NAMES:
         page.get_by_test_id(f"scenario-card-{scenario_id}").get_by_role("button", name="Collapse").click()
         _box(page, scenario_id).wait_for(state="attached", timeout=10000)
         for node_id in MEMBERS[scenario_id]:
             assert not node_locator(page, node_id).is_visible(), f"{node_id} shows inside a collapsed scenario"
     python, loads, stop = _record_runs(page, DATA)
     run_all_and_wait(page, timeout_ms=RUN_MS)
-    for node_id, node_type in ((B_MAP, AUTARK), (T_MAP, AUTARK), (CHART, COMPARE), (DIFFERENCE, COMPARE)):
+    for node_id, node_type in (
+        (B_MAP, AUTARK), (T_MAP, AUTARK), (E_EDIT, EDIT_TYPE), (E_MAP, AUTARK), (CHART, COMPARE), (DIFFERENCE, COMPARE),
+    ):
         _settled_done(page, node_id, node_type)
     stop()
-    assert loads.count(True) == 1, f"the loader the two scenarios share loaded {loads}, not once"
-    assert sorted(python) == sorted([CHART, DIFFERENCE]), (
-        f"Run All ran {python}: each Python node once, below the hidden scenarios"
+    assert loads.count(True) == 1, f"the loader the three scenarios share loaded {loads}, not once"
+    assert sorted(python) == sorted([CHART, DIFFERENCE, E_EDIT]), (
+        f"Run All ran {python}: each Python node once, in and below the hidden scenarios"
     )
-    for scenario_id in (BASELINE, TWICE):
+    _assert_towers_removed(page)
+    for scenario_id in NAMES:
         _frame_box(page, scenario_id, MEMBERS[scenario_id])
         assert _box_color(page, scenario_id) == _rgb(COLORS[scenario_id])
         # Its outcome: the map, which the comparisons read.
-        for outcome in MEMBERS[scenario_id][1:]:
+        for outcome in MEMBERS[scenario_id][-1:]:
             page.wait_for_function(
                 """([box, node]) => {
                     const row = document.querySelector(`[data-scenario-box="${box}"] [data-scenario-outcome="${node}"]`);
@@ -371,7 +467,8 @@ def test_example_06_compares_its_two_scenarios_in_the_canvas(
     frame_nodes(page, [B_MAP])
     assert_autark_map_drawn(page, B_MAP, timeout=60000, attach_as="Baseline's map, expanded after a collapsed run")
 
-    # 3. The chart: Twice as tall has less sunlight; only height_factor differs.
+    # 3. The chart: Twice as tall has the least sunlight and Two towers removed
+    # the most; height_factor and the edit differ.
     frame_nodes(page, [CHART])
     for node_id in (CHART, DIFFERENCE):
         layer = node_locator(page, node_id).get_by_label("Layer", exact=True)
@@ -379,12 +476,14 @@ def test_example_06_compares_its_two_scenarios_in_the_canvas(
     _assert_chart_drew(page, CHART)
     stacked = _rows(page, CHART)
     means = {}
-    for name in ("Baseline", "Twice as tall"):
+    for name in NAMES.values():
         values = [row["sunlight"] for row in stacked if row["scenario_name"] == name]
         assert values, f"the stacked table has no {name} rows"
         means[name] = sum(values) / len(values)
-    assert means["Twice as tall"] < means["Baseline"], f"mean road sunlight per scenario: {means}"
-    _assert_only_height_factor_differs(page, CHART, B_COMPUTE)
+    assert means["Twice as tall"] < means["Baseline"] < means["Two towers removed"], (
+        f"mean road sunlight per scenario: {means}"
+    )
+    _assert_factor_and_edit_differ(page, CHART)
 
     # 4. The difference: each road's change, below zero where shadows grew.
     baseline_roads = [row for row in stacked if row["scenario_name"] == "Baseline"]
@@ -411,16 +510,20 @@ def test_example_06_compares_its_two_scenarios_in_the_canvas(
     for node_id in (CHART, DIFFERENCE):
         assert by_id[node_id]["content"] == shipped[node_id]["content"], f"{node_id} rewrote its code"
         assert by_id[node_id]["metadata"]["compareScenarios"] == shipped[node_id]["metadata"]["compareScenarios"]
+    assert by_id[E_EDIT]["content"] == shipped[E_EDIT]["content"], f"{E_EDIT} rewrote its code"
+    assert by_id[E_EDIT]["metadata"]["editFeatures"] == shipped[E_EDIT]["metadata"]["editFeatures"]
     scenarios = {scenario["id"]: scenario for scenario in saved["scenarios"]}
     assert [(s["name"], s["color"]) for s in saved["scenarios"]] == [
-        ("Baseline", COLORS[BASELINE]), ("Twice as tall", COLORS[TWICE]),
+        (NAMES[s], COLORS[s]) for s in (BASELINE, TWICE, TOWERS)
     ], saved["scenarios"]
     assert scenarios[TWICE].get("collapsed") is True and not scenarios[BASELINE].get("collapsed")
-    widgets = {node_id: by_id[node_id]["metadata"]["widgets"][0] for node_id in (B_COMPUTE, T_COMPUTE)}
+    assert scenarios[TOWERS].get("collapsed") is True
+    widgets = {node_id: by_id[node_id]["metadata"]["widgets"][0] for node_id in (B_COMPUTE, T_COMPUTE, E_COMPUTE)}
     assert widgets[B_COMPUTE].get("value", widgets[B_COMPUTE]["default"]) == 1, widgets
     assert widgets[T_COMPUTE]["value"] == 2, widgets
+    assert widgets[E_COMPUTE].get("value", widgets[E_COMPUTE]["default"]) == 1, widgets
     recorded = {output["node_id"] for output in api_json(f"{current_server}/api/projects/{project_id}", token)["outputs"]}
-    assert {DATA, B_COMPUTE, T_COMPUTE} <= recorded, (
+    assert {DATA, B_COMPUTE, T_COMPUTE, E_COMPUTE} <= recorded, (
         f"the save recorded the outputs of {sorted(recorded)}, not every scenario context and outcome"
     )
 
@@ -428,13 +531,14 @@ def test_example_06_compares_its_two_scenarios_in_the_canvas(
     page.wait_for_load_state("domcontentloaded")
     page.goto(f"{app_frontend.base_url}/dataflow/{project_id}")
     node_locator(page, B_COMPUTE).wait_for(state="visible", timeout=45000)
-    _box(page, TWICE).wait_for(state="visible", timeout=30000)
-    for node_id in MEMBERS[TWICE]:
-        node_locator(page, node_id).wait_for(state="attached", timeout=30000)
-        assert not node_locator(page, node_id).is_visible(), f"{node_id} shows, though its scenario was saved collapsed"
-    assert _box_color(page, TWICE) == _rgb(COLORS[TWICE])
+    for scenario_id in (TWICE, TOWERS):
+        _box(page, scenario_id).wait_for(state="visible", timeout=30000)
+        for node_id in MEMBERS[scenario_id]:
+            node_locator(page, node_id).wait_for(state="attached", timeout=30000)
+            assert not node_locator(page, node_id).is_visible(), f"{node_id} shows, though its scenario was saved collapsed"
+        assert _box_color(page, scenario_id) == _rgb(COLORS[scenario_id])
     assert _frame_color(page, BASELINE) == _rgb(COLORS[BASELINE])
-    for node_id in (DATA, B_COMPUTE, T_COMPUTE):
+    for node_id in (DATA, B_COMPUTE, T_COMPUTE, E_COMPUTE):
         assert _status(page, node_id) == "done", f"{node_id} reads {_status(page, node_id)!r}: its saved output was not restored"
     _scenario_menu(page, "Show scenarios")
     _assert_cards(page)

@@ -111,12 +111,15 @@ export function normalizeFlowInput(raw: unknown): FlowNodeInput | Record<string,
  * an inline payload also names its artifact. The backend reads only
  * `filename` / `path` and `dataType` (node_exec.py `parse_input_ref`), so a Data
  * Pool's rows riding along would be shipped in every request for nothing.
- * Input bundles keep their `data`: for them it is the list of references.
+ * Input bundles keep their `data`: for them it is the list of references. A
+ * Data Pool's several layers read from one artifact name it, and are sent as
+ * that artifact, as one layer is: what a run on the server hands the node
+ * through the pool, and a reference an isolated sandbox can stage.
  */
 export function executionInputRef<T>(input: T): T | Record<string, unknown> {
   if (!input || typeof input !== "object" || Array.isArray(input)) return input;
   const r = input as Record<string, unknown>;
-  if (r.dataType === "outputs" || r.data === undefined) return input;
+  if (r.data === undefined) return input;
   const named = (v: unknown) => typeof v === "string" && v.trim() !== "";
   if (!named(r.filename) && !named(r.path)) return input;
   const ref: Record<string, unknown> = {};

@@ -350,10 +350,38 @@ node whose code it writes itself:
   `compareDifference.ts` writes; a table goes through `CompareChart`.
 - `whatDiffers.ts` reads each compared scenario's parts through `scenarioParts`,
   pairs levers whose ids and `copiedFrom` lists meet, and compares their widget
-  values and code lines; `contextWarnings` compares their fixed context.
+  values and code lines, or, for Edit Features nodes, their edit lists;
+  `contextWarnings` compares their fixed context.
 - A pinned Compare Scenarios node draws its own output, so it is its own dashboard
   source (`SELF_DRAWN_NODE_TYPES` in `dashboardLayout.ts`, `_SELF_DRAWN_KINDS` in
   `projects/dashboard_payload.py`), and its inputs are not walked.
+
+### Editing features
+
+The Edit Features node (`curio.builtin/edit-features`) is a Python code node whose
+code is written from its edit list (`metadata.editFeatures`: `key`, `layer`, `edits`):
+
+- `src/utils/editFeatures/editFeatures.ts` normalizes the list and writes the code,
+  one call of `curio_edit_features` (`utk_curio/sandbox/util/feature_edits.py`),
+  seeded in both namespaces as the Compare Scenarios steps are.
+  `adapters/node/editFeaturesBehavior.tsx` writes the list and the code together
+  when the body changes the list, and marks the node stale.
+- `components/editFeatures/EditFeaturesBody.tsx` reads the input as the Autark map
+  reads it (`readAutkInput`, `autkSourcesFrom`), offers the id columns a selection
+  tag offers (`idColumns` in `utils/references/selectionTags.ts`) and refuses a layer
+  with none. `EditFeaturesMap.tsx` draws the input with `useAutkGrammarBehavior`, the
+  layer to edit with `isPick`, and turns a pick's rows into ids with `selectedIds`.
+- `feature_edits.edit_features` matches features by `key`, never by position, and
+  edits GeoJSON as it is when the input is an Autark node's layers: the other
+  features, properties and layers pass through untouched, and the result is the
+  envelope `persistLayersToBackend` stores for an Autark node. A table gives a table.
+  Unknown ids are printed, and the run goes on.
+- A Data Pool's several layers read from one artifact name it (`filename`), and a
+  code node is sent that artifact (`executionInputRef`), as for one layer and as a
+  run on the server passes the pool through. In-process, the layers of a stored
+  Autark envelope reach Python as GeoDataFrames that keep `layerName` and
+  `layerType` in their `metadata` (`worker._keep_layer_identity`); the isolated
+  child gets the envelope itself. `edit_features` reads both.
 
 ---
 
