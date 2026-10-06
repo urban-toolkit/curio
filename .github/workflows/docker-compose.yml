@@ -116,11 +116,29 @@ on:
         type: choice
         options: [auto, arcade, utk]
         default: auto
+      # A flake hunt: unit, jest, e2e-desktop, test-gpu and test-isolated each
+      # run their suite this many times (scripts/ci_repeat.sh), and the CI
+      # report lists every test that passed in one run and failed in another.
+      # Each run after the first gets a recreated stack (CURIO_CI_FRESH_STACK),
+      # except on test-gpu, whose extra shard servers a step of their own
+      # starts. More than 1 also runs test-gpu-stress, whose three stages
+      # repeat the same way. A re-mint ignores it.
+      repeat:
+        description: 'Run the backend, sandbox, Jest, e2e and GPU stress tests this many times, to find flaky tests'
+        type: choice
+        options: ['1', '2', '3', '5', '10']
+        default: '1'
 
 # Least privilege: the job needs only to read the checked-out code. It must
 # NOT have access to deploy/Tailscale secrets (see deploy.yml).
 permissions:
   contents: read
+
+# How many times each test job runs its suite: the `repeat` input on a
+# dispatch, once otherwise and for a re-mint. Jobs that repeat get a longer
+# time limit when it is more than one (expressions cannot multiply).
+env:
+  CURIO_CI_REPEAT: ${{ (!inputs.remint && inputs.repeat) || '1' }}
 
 # Where the jobs run:
 #
@@ -246,7 +264,7 @@ jobs:
     # themselves (utk_curio/backend/tests/test_frontend/runner_split.py).
     needs: pick-runners
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['test-gpu'] }}
-    timeout-minutes: 90
+    timeout-minutes: ${{ inputs.repeat > 1 && 350 || 90 }}
     # One queue per ref and GPU pool (h100 is arcade's, curio is utk-gpu), so
     # a run on one pool never waits for, or evicts, a run on the other.
     concurrency:
@@ -593,8 +611,8 @@ jobs:
       - name: 🎭 Run the WebGPU e2e tests (hardware WebGPU)
         env:
           # JUnit for the CI report page. Absolute, since test.sh changes
-          # directory before it runs pytest.
-          PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e.xml
+          # directory before it runs pytest. ci_repeat.sh fills in {run}.
+          PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e{run}.xml
         shell: bash
         run: |
           set -euo pipefail
@@ -616,7 +634,7 @@ jobs:
             export PYTEST_ADDOPTS
             echo "Re-minting with PYTEST_ADDOPTS=$PYTEST_ADDOPTS"
           fi
-          bash scripts/test.sh --e2e-only --use-existing "${extra[@]}" \
+          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing "${extra[@]}" \
             --parallel "$CURIO_E2E_PARALLEL"
 
       # What a re-mint wrote into this checkout: the baselines whose screen
@@ -704,7 +722,7 @@ jobs:
     # The sandbox suite holds #408's re-run memory test, which measures a 4-core,
     # 16 GB laptop, so like test-desktop-stress it runs on ubuntu-latest.
     runs-on: ${{ matrix.suite == 'sandbox' && 'ubuntu-latest' || fromJSON(needs.pick-runners.outputs.runners)[format('unit-{0}', matrix.name)] }}
-    timeout-minutes: 40
+    timeout-minutes: ${{ inputs.repeat > 1 && 350 || 40 }}
     permissions:
       contents: read
       packages: read
@@ -716,6 +734,7 @@ jobs:
           - { name: backend-2, suite: backend, part: "2/2" }
           - { name: sandbox, suite: sandbox, part: "" }
     env:
+      CURIO_CI_FRESH_STACK: curio-ci
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
       CURIO_E2E_BACKEND_URL: "http://localhost:5022"
       CURIO_E2E_HOST: localhost
@@ -742,13 +761,13 @@ jobs:
       # JUnit is written inside the container, onto the .curio bind mount: the
       # directory is the container's (root-owned), so the host cannot create it.
       - name: 🧪 Run the ${{ matrix.name }} unit tests
-        # About 5 minutes a part. The limit is for a hang, so it fails here
-        # rather than holding the job until its own timeout.
-        timeout-minutes: 25
+        # About 5 minutes a part, a run. The limit is for a hang, so it fails
+        # here rather than holding the job until its own timeout.
+        timeout-minutes: ${{ inputs.repeat > 1 && 340 || 25 }}
         run: |
-          docker compose -p curio-ci exec -T \
+          bash scripts/ci_repeat.sh docker compose -p curio-ci exec -T \
             -e CURIO_UNIT_PART="${{ matrix.part }}" \
-            -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/${{ matrix.name }}.xml curio \
+            -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/${{ matrix.name }}{run}.xml curio \
             bash scripts/test.sh --${{ matrix.suite }}-only --use-existing
 
       - name: 📤 Upload the results for the CI report
@@ -756,7 +775,9 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: ci-inputs-unit-${{ matrix.name }}
-          path: .curio/ci-report/${{ matrix.name }}.xml
+          path: |
+            .curio/ci-report/${{ matrix.name }}.xml
+            .curio/ci-report/${{ matrix.name }}.run*.xml
           if-no-files-found: ignore
           retention-days: 7
 
@@ -771,7 +792,7 @@ jobs:
     needs: pick-runners
     if: ${{ needs.pick-runners.result == 'success' && !inputs.remint }}
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['jest'] }}
-    timeout-minutes: 30
+    timeout-minutes: ${{ inputs.repeat > 1 && 350 || 30 }}
     defaults:
       run:
         working-directory: utk_curio/frontend/urban-workflows
@@ -801,7 +822,8 @@ jobs:
         # of its server's cores (192 on arcade), so the workers are capped at 8.
         run: |
           workers=$(( $(nproc) - 1 )); [ "$workers" -gt 8 ] && workers=8; [ "$workers" -lt 1 ] && workers=1
-          npm test -- --maxWorkers="$workers" --json --outputFile="$GITHUB_WORKSPACE/ci-report/jest.json"
+          bash "$GITHUB_WORKSPACE/scripts/ci_repeat.sh" \
+            npm test -- --maxWorkers="$workers" --json --outputFile="$GITHUB_WORKSPACE/ci-report/jest{run}.json"
 
       - name: TypeScript typecheck
         # Jest transpiles through babel, which strips types without checking
@@ -838,7 +860,7 @@ jobs:
     needs: [pick-runners, build-image]
     if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.build-image.result == 'success' }}
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)[format('e2e-desktop-{0}', matrix.part)] }}
-    timeout-minutes: 45
+    timeout-minutes: ${{ inputs.repeat > 1 && 350 || 45 }}
     permissions:
       contents: read
       packages: read
@@ -847,6 +869,7 @@ jobs:
       matrix:
         part: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     env:
+      CURIO_CI_FRESH_STACK: curio-ci
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
       CURIO_E2E_RUNNER: desktop
       CURIO_E2E_PART: ${{ matrix.part }}/${{ strategy.job-total }}
@@ -903,7 +926,8 @@ jobs:
 
       - name: 🎭 Run this part of the e2e tests
         env:
-          PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e.xml
+          # ci_repeat.sh fills in {run}.
+          PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e{run}.xml
         shell: bash
         run: |
           set -euo pipefail
@@ -922,7 +946,7 @@ jobs:
             fi
             export PYTEST_ADDOPTS
           fi
-          bash scripts/test.sh --e2e-only --use-existing "${extra[@]}"
+          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing "${extra[@]}"
 
       - name: 📦 Collect the re-minted baselines
         if: always() && env.CURIO_REMINT == '1'
@@ -967,11 +991,12 @@ jobs:
     needs: [pick-runners, build-image]
     if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.build-image.result == 'success' && !inputs.remint }}
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['test-isolated'] }}
-    timeout-minutes: 45
+    timeout-minutes: ${{ inputs.repeat > 1 && 350 || 45 }}
     permissions:
       contents: read
       packages: read
     env:
+      CURIO_CI_FRESH_STACK: curio-ci-iso
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci-isolated.yml
       CURIO_E2E_BACKEND_URL: "http://localhost:5032"
       CURIO_E2E_HOST: localhost
@@ -1056,9 +1081,10 @@ jobs:
 
       - name: 🎭 Run the Python-node workflows against the isolated stack
         env:
-          PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e.xml
+          # ci_repeat.sh fills in {run}.
+          PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e{run}.xml
         run: |
-          bash scripts/test.sh --e2e-only --use-existing \
+          bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing \
             --workflows "$ISOLATED_WORKFLOWS"
 
       # `isolation` above is the mode the sandbox resolved at boot. A zygote
@@ -1442,20 +1468,21 @@ jobs:
   test-gpu-stress:
     needs: test-gpu
     # Not on every push: on the cron above, on a PR labelled `stress`, or on a
-    # manual dispatch that asks for it. `!cancelled()` rather than a plain
-    # condition because on those three triggers the jobs it needs are skipped,
-    # and a skipped dependency would otherwise skip this one too; it also keeps
-    # the job running when an earlier suite went red, same as the two above.
+    # manual dispatch that asks for it with `stress` or a `repeat` over 1.
+    # `!cancelled()` rather than a plain condition because on those triggers
+    # the jobs it needs are skipped, and a skipped dependency would otherwise
+    # skip this one too; it also keeps the job running when an earlier suite
+    # went red, same as the two above.
     if: >-
       !cancelled() &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name == 'schedule' ||
-       (github.event_name == 'workflow_dispatch' && inputs.stress && !inputs.remint) ||
+       (github.event_name == 'workflow_dispatch' && (inputs.stress || inputs.repeat > 1) && !inputs.remint) ||
        (github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'stress')))
     runs-on: [self-hosted, linux, gpu, curio]
-    timeout-minutes: 75
+    timeout-minutes: ${{ inputs.repeat > 1 && 350 || 75 }}
     concurrency:
       group: utk-ci-stress-${{ github.ref }}
       cancel-in-progress: false
@@ -1542,12 +1569,15 @@ jobs:
         with:
           node-version: "26"
 
+      # With `repeat`, each stage below runs that many times on this one stack,
+      # as the three stages already share it; every run signs up users of its
+      # own (a fresh --run-id) and writes its own report folder ({run}).
       - name: 🔥 Run the HTTP tiers (5, 10, 50, 100 users)
         run: |
-          python -m utk_curio.backend.tests.stress \
+          bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
             --backend "http://localhost:5072" \
             --tiers 5,10,50,100 \
-            --out "$GITHUB_WORKSPACE/stress" \
+            --out "$GITHUB_WORKSPACE/stress{run}" \
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
 
       # The same 100 users, behaving like people rather than a thundering
@@ -1558,10 +1588,10 @@ jobs:
       - name: 🚶 Run the session profile (100 users, realistic pacing)
         if: always()
         run: |
-          python -m utk_curio.backend.tests.stress \
+          bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
             --backend "http://localhost:5072" \
             --tiers 100 --profile session \
-            --out "$GITHUB_WORKSPACE/stress-session" \
+            --out "$GITHUB_WORKSPACE/stress-session{run}" \
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
 
       # Separate step so a red HTTP tier does not hide the state of the WebGPU
@@ -1582,7 +1612,7 @@ jobs:
         run: |
           mkdir -p "$CURIO_STATE_DIR"
           cd utk_curio/backend
-          PYTHONPATH="$GITHUB_WORKSPACE" python -m pytest \
+          PYTHONPATH="$GITHUB_WORKSPACE" bash "$GITHUB_WORKSPACE/scripts/ci_repeat.sh" python -m pytest \
             tests/test_frontend/test_stress_browser.py -v -ra
 
       - name: 📈 Stop the container stats sampler
@@ -1605,7 +1635,9 @@ jobs:
           name: stress-report
           path: |
             stress/
+            stress.run*/
             stress-session/
+            stress-session.run*/
             docker-stats.log
           if-no-files-found: warn
           retention-days: 7

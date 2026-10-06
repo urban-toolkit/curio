@@ -11,7 +11,11 @@ artifact list.
 Every input is optional, because a step that never ran leaves no file:
 
     --junit LABEL=PATH   pytest JUnit XML (repeatable)
-    --jest LABEL=PATH    Jest's --json output (repeatable)
+    --jest LABEL=PATH    Jest's --json output (repeatable). A suite the run
+                         repeated (the Full stack build's `repeat` input) has
+                         its later runs beside PATH as X.run2.xml, X.run3.xml,
+                         ...; they are read too, and the page lists every test
+                         that passed in one run and failed in another
     --tsc LABEL=PATH     tsc output, written with --pretty false (repeatable)
     --comparisons DIR    an e2e run's CURIO_E2E_COMPARE_DIR: one folder per
                          screenshot comparison (see
@@ -147,6 +151,8 @@ class Report:
     # Interaction frames in before/after pairs, see build_pairs.
     pairs: list = field(default_factory=list)
     problems: list = field(default_factory=list)
+    # Tests that passed in one run of a suite and failed in another, see find_flaky.
+    flaky: list = field(default_factory=list)
 
 
 # ---------------------------------------------------------------- inputs
@@ -434,6 +440,61 @@ def add_pair_changes(pairs):
                 row["change"] = change_image(*frames)
 
 
+#: A suite the Full stack build ran more than once (its `repeat` input): run k
+#: of e2e.xml is e2e.run<k>.xml beside it (scripts/ci_repeat.sh).
+RUN_FILE = re.compile(r"\.run(\d+)$")
+RUN_LABEL = re.compile(r", run (\d+)$")
+
+
+def runs_of(label, path):
+    """(label, path) for every run of one suite input, run 1 first.
+
+    A suite that ran once keeps its label. One that ran several times reads
+    as "label, run 1", "label, run 2", ..., which find_flaky lines up.
+    """
+    folder, name = os.path.split(path)
+    stem, ext = os.path.splitext(name)
+    extra = []
+    if os.path.isdir(folder or "."):
+        for entry in os.listdir(folder or "."):
+            entry_stem, entry_ext = os.path.splitext(entry)
+            match = RUN_FILE.search(entry_stem)
+            if match and entry_ext == ext and entry_stem[:match.start()] == stem:
+                extra.append((int(match[1]), os.path.join(folder, entry)))
+    if not extra:
+        return [(label, path)]
+    return [(f"{label}, run 1", path), *((f"{label}, run {k}", p) for k, p in sorted(extra))]
+
+
+def run_count(report):
+    """How many runs the most repeated suite had; 1 for an ordinary run."""
+    return max((int(m[1]) for s in report.suites if (m := RUN_LABEL.search(s.label))), default=1)
+
+
+def find_flaky(suites):
+    """Tests that passed in one run of a suite and failed in another.
+
+    Runs line up by the label without its ", run k", so a test is only ever
+    compared with itself on the same job: one that passes on the desktop
+    runner and fails in the isolated workflows is not flaky, it is broken.
+    """
+    seen = {}
+    for suite in suites:
+        match = RUN_LABEL.search(suite.label)
+        if not match:
+            continue
+        family, run = suite.label[:match.start()], int(match[1])
+        for case in suite.cases:
+            entry = seen.setdefault((family, case.name),
+                                    {"suite": family, "name": case.name, "passed": [], "failed": []})
+            if case.status == "passed":
+                entry["passed"].append(run)
+            elif case.status in ("failed", "error"):
+                entry["failed"].append(run)
+    flaky = [entry for entry in seen.values() if entry["passed"] and entry["failed"]]
+    return sorted(flaky, key=lambda entry: (entry["suite"], entry["name"]))
+
+
 def read_failures(root):
     if not root or not os.path.isdir(root):
         return {}
@@ -550,12 +611,14 @@ def build(args, environ=os.environ):
         report.all_jobs = guarded("jobs", lambda: read_jobs(args.jobs), None)
     for kind, reader, entries in (("pytest", read_junit, args.junit), ("jest", read_jest, args.jest),
                                   ("tsc", read_tsc, args.tsc)):
-        for label, path in entries or []:
-            try:
-                report.suites.append(reader(label, path))
-            except Exception:
-                report.suites.append(Suite(label, kind, path, found=True,
-                                           problem=traceback.format_exc()))
+        for given_label, given_path in entries or []:
+            for label, path in runs_of(given_label, given_path):
+                try:
+                    report.suites.append(reader(label, path))
+                except Exception:
+                    report.suites.append(Suite(label, kind, path, found=True,
+                                               problem=traceback.format_exc()))
+    report.flaky = guarded("flaky tests", lambda: find_flaky(report.suites), [])
     report.comparisons = guarded("comparisons", lambda: read_comparisons(args.comparisons), [])
     shots = guarded("failures", lambda: read_failures(args.failures), {})
 
@@ -655,6 +718,7 @@ def render(report):
         *([("Jobs" if report.all_jobs is not None else "Steps", "steps",
             render_jobs if report.all_jobs is not None else render_steps)]
           if report.jobs_given else []),
+        *([("Flaky across runs", "flaky", render_flaky)] if run_count(report) > 1 else []),
         ("Test suites", "suites", render_suites),
         *([("Interaction pairs", "interactions", render_pairs)] if report.pairs else []),
         ("Screenshot comparisons", "comparisons", render_comparisons),
@@ -714,6 +778,8 @@ def render_header(report, title):
     word = {"passed": "Passed", "failed": "Failed", "unclear": "No results"}[state]
     links = ([("Jobs" if report.all_jobs is not None else "Steps", "steps")]
              if report.jobs_given else [])
+    if run_count(report) > 1:
+        links.append((f"Flaky across runs ({len(report.flaky)})", "flaky"))
     links += [("Test suites", "suites")]
     if report.pairs:
         links.append((f"Interaction pairs ({len(report.pairs)})", "interactions"))
@@ -928,6 +994,25 @@ def _screenshot(report, path, caption):
     return (f'<figure class="failure-shot"><button type="button" class="shot" aria-label="Open at original size">'
             f'<img src="{uri}" alt="{esc(caption)}" loading="lazy" decoding="async" data-caption="{esc(caption)}">'
             f"</button><figcaption>{esc(caption)}</figcaption></figure>")
+
+
+def run_list(runs):
+    return ", ".join(str(run) for run in sorted(runs))
+
+
+def render_flaky(report):
+    runs = run_count(report)
+    if not report.flaky:
+        return (f'<section id="flaky"><h2>Flaky across runs</h2><p class="muted">No test both passed '
+                f"and failed over the {runs} runs.</p></section>")
+    rows = "".join(f'<tr class="failure"><td>{esc(f["suite"])}</td><td class="test-id">{esc(f["name"])}</td>'
+                   f'<td>{esc(run_list(f["passed"]))}</td><td>{esc(run_list(f["failed"]))}</td></tr>'
+                   for f in report.flaky)
+    return (f'<section id="flaky"><h2>Flaky across runs ({len(report.flaky)})</h2>'
+            f'<p class="muted">Tests that passed in some of the {runs} runs of their suite and failed in '
+            "others. Each failure is listed under its run in the test suites below.</p>"
+            '<div class="table-wrap"><table><thead><tr><th>Suite</th><th>Test</th><th>Passed in runs</th>'
+            f"<th>Failed in runs</th></tr></thead><tbody>{rows}</tbody></table></div></section>")
 
 
 def render_tsc(suite):
@@ -1191,12 +1276,23 @@ def render_footer(report):
 
 
 def render_summary(report):
-    """Markdown for $GITHUB_STEP_SUMMARY: the suite table and comparison counts."""
+    """Markdown for $GITHUB_STEP_SUMMARY: flaky tests when suites repeated, the
+    suite table, and comparison counts."""
     def cell(text):
         return str(text).replace("|", "\\|").replace("\n", " ")
 
-    lines = ["| Suite | Result | Passed | Failed | Errors | Skipped |",
-             "| --- | --- | ---: | ---: | ---: | ---: |"]
+    lines = []
+    runs = run_count(report)
+    if runs > 1 and report.flaky:
+        lines += [f"**Flaky across {runs} runs:** passed in some runs of their suite and failed in others.", "",
+                  "| Suite | Test | Passed in runs | Failed in runs |", "| --- | --- | --- | --- |"]
+        lines += [f"| {cell(f['suite'])} | {cell(f['name'])} | {run_list(f['passed'])} | {run_list(f['failed'])} |"
+                  for f in report.flaky]
+        lines.append("")
+    elif runs > 1:
+        lines += [f"**Flaky across {runs} runs:** none; no test both passed and failed.", ""]
+    lines += ["| Suite | Result | Passed | Failed | Errors | Skipped |",
+              "| --- | --- | ---: | ---: | ---: | ---: |"]
     for suite in report.suites:
         numbers = suite_numbers(suite)
         word = SUITE_WORD[suite.status]
