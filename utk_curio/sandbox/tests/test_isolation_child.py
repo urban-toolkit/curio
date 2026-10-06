@@ -393,7 +393,10 @@ class TestSessionImports(ChildTestCase):
         # The stub was replayed (its module reached the node), and the warning
         # it would have let through was not recorded.
         self.assertEqual(result["output"]["value"], "True 0")
-        self.assertEqual(after, before)
+        # Nor did its filter stay behind. (A library imported for the first
+        # time while the node ran, numpy for one, may add filters of its own.)
+        added = [f for f in after if f not in before]
+        self.assertNotIn(("always", None, Warning, None, 0), added)
 
     def test_reported_imports_satisfy_the_protocol_validator(self):
         """They are replayed as code, so the validator must accept them."""

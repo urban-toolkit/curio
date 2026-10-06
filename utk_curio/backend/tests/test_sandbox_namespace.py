@@ -273,4 +273,7 @@ def test_a_library_that_turns_warnings_on_at_import_does_not_reach_later_nodes(t
         after = list(warnings.filters)
     sys.modules.pop(stub, None)
     assert (same_session, other_session) == ("0", "0")
-    assert after == before
+    # Nor did its filter stay in the process. (A library imported for the
+    # first time during a run may add filters of its own.)
+    added = [f for f in after if f not in before]
+    assert ("always", None, Warning, None, 0) not in added
