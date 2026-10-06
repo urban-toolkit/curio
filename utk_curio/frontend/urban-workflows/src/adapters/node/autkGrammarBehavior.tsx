@@ -42,6 +42,7 @@ import {
     isCurioRasterSource, newAutkDb, resolveRasterInputs, withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
+import { titleLegends } from './autkLegendTitles';
 
 /**
  * The layer a document's selections come from when they name none: its map's
@@ -627,6 +628,7 @@ export const useAutkGrammarBehavior = (
                     await g.run(spec);
                     return g;
                 });
+                titleLegends(grammar, spec);
                 // autk-plot's SVG is inline, so it sits on a line of text whose
                 // descender space overflows a pane the plot exactly fills, and
                 // brings the scrollbars back. As a block it fits.

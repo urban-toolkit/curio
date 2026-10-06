@@ -49,8 +49,8 @@ export default function CompareMap({
   const requested = useRef(docText);
   // Only what the Autark node's map reads: whose canvas it is, the input it
   // draws and its document. No callbacks, so nothing is handed on. The input
-  // is read as the table the document names (`differenceTableName`), which
-  // the map's legend shows as its title.
+  // is read as the table the document names (`differenceTableName`); the
+  // document's `legendTitle` titles the map's legend.
   const data = useMemo(() => {
     const table = layerField(docText, "dataRef");
     const input = table ? { ...difference, layerName: table } : difference;
