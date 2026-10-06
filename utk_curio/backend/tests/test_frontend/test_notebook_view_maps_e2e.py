@@ -4,7 +4,9 @@ A notebook cell is as tall as its content, but a map has no height of its own:
 the cell gives an Autark map or plot a definite 400px to draw in. A map that
 came out blank at that height (a canvas sized 0, or never resized) would still
 leave a cell on the page, so this runs the gallery's five-map example in the
-notebook view and reads each map's canvas.
+notebook view and reads each map's canvas. One of the five is fed a frame with
+no geometry on purpose (``EXPECTED_EMPTY`` in ``test_workflows.py``): its cell
+must say why it drew nothing.
 
 Kept apart from ``test_notebook_view_e2e.py``: an Autark node needs WebGPU, so
 this module runs on the GPU runner, and that one stays on the desktop runner
@@ -26,6 +28,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from .test_scenarios_canvas_e2e import _require_webgpu
+from .test_workflows import EXPECTED_EMPTY
 from .utils import (
     REPO_ROOT,
     assert_autark_map_drawn,
@@ -65,8 +68,10 @@ def test_every_autark_map_draws_in_its_cell(
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
     spec = json.loads(EXAMPLE.read_text(encoding="utf-8"))
-    maps = _maps(spec)
-    assert len(maps) == 5, f"example 17 should draw five maps: {maps}"
+    refused = EXPECTED_EMPTY[EXAMPLE.name]
+    maps = [m for m in _maps(spec) if m not in refused]
+    blank = [m for m in _maps(spec) if m in refused]
+    assert len(maps) == 4 and len(blank) == 1, f"example 17 should have four maps that draw and one refused: {maps}, {blank}"
     stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
@@ -112,3 +117,11 @@ def test_every_autark_map_draws_in_its_cell(
             )
             raise AssertionError(f"map {map_id}'s canvas is {size}, not {MAP_HEIGHT}px tall in its cell") from None
         assert_autark_map_drawn(page, map_id, timeout=60000, attach_as=f"map {map_id} in its notebook cell")
+
+    # The map fed no geometry says so in its cell, in view.
+    for map_id in blank:
+        cell = node_locator(page, map_id)
+        cell.scroll_into_view_if_needed()
+        empty = cell.locator(f'[data-curio-node-empty="{refused[map_id]}"]')
+        expect(empty).to_be_visible(timeout=30000)
+        assert (empty.bounding_box() or {}).get("height", 0) > 0, f"map {map_id}'s empty state has no height"
