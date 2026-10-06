@@ -417,7 +417,10 @@ def _add_entry(zf: zipfile.ZipFile, name: str, body: bytes) -> None:
     zf.writestr(info, body)
 
 
-def build_package_archive(draft: dict[str, Any], *, onto: Path | None = None) -> BuildResult:
+def build_package_archive(
+    draft: dict[str, Any], *, onto: Path | None = None,
+    imported_modules: frozenset[str] = frozenset(),
+) -> BuildResult:
     """Build a deterministic ``.curio.zip`` zip from *draft*.
 
     Returns the manifest, the raw zip bytes, and a suggested filename
@@ -426,6 +429,10 @@ def build_package_archive(draft: dict[str, Any], *, onto: Path | None = None) ->
     *onto* is the installed directory of the package a Save As writes into:
     the draft is laid over it (:func:`_onto_installed_package`), so the
     archive is that package with the draft's changes, not the draft alone.
+
+    *imported_modules* are the modules of the packages the draft depends on
+    (``dependencies.packages``): its templates import them as they import the
+    package's own, so neither becomes a detected Python dependency.
 
     The function only reads *onto*; it never writes outside a temporary
     directory used by the manifest validator.
@@ -448,10 +455,11 @@ def build_package_archive(draft: dict[str, Any], *, onto: Path | None = None) ->
     # not source-derivable and stays as the draft provided it.
     manifest_with_deps = _apply_detected_dependencies(
         dict(manifest_raw), sources, base.declared if base else None,
-        # The modules the package being saved into carries forward (#468).
+        # The modules the package being saved into carries forward (#468),
+        # and those of the packages it depends on.
         module_names_in(base.files if base else (), [
             t.get("source") for t in manifest_raw.get("templates") or [] if isinstance(t, dict)
-        ]),
+        ]) | frozenset(imported_modules),
     )
     manifest_authoring = _stamp_manifest_created_at_when_absent(manifest_with_deps)
     manifest = _validate_manifest_dict(manifest_authoring)

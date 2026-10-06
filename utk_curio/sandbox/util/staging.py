@@ -363,39 +363,46 @@ def stage_package_modules(package_modules, run_dir):
     """Stage the modules a node's package ships, as models are staged (#468).
 
     *package_modules* is ``{"root": <the package's sources folder>, "names":
-    [...]}``. Each named module, the file ``<name>.py`` or the folder
-    ``<name>/``, is linked into ``<run_dir>/package_modules/`` at its own
-    relative path, and nothing else in the sources folder is. Returns
-    ``{"root": "package_modules", "names": [...]}``, relative to *run_dir*,
-    with the names that were staged, or None when none was. A module that
-    cannot be staged is left out, and the node's import of it fails naming it.
+    [...]}``, or a list of such sources for a node whose package depends on
+    other packages that ship modules. Each named module, the file
+    ``<name>.py`` or the folder ``<name>/``, is linked into
+    ``<run_dir>/package_modules/`` at its own relative path, and nothing else
+    in the sources folder is. A name two sources ship is staged from the first.
+    Returns ``{"root": "package_modules", "names": [...]}``, relative to
+    *run_dir*, with the names that were staged, or None when none was. A
+    module that cannot be staged is left out, and the node's import of it
+    fails naming it.
     """
     if not package_modules:
         return None
-    try:
-        root = Path(package_modules["root"]).resolve()
-    except (KeyError, TypeError, OSError):
-        return None
-    if not root.is_dir():
-        return None
+    sources = package_modules if isinstance(package_modules, list) else [package_modules]
     target = Path(run_dir) / PACKAGE_MODULES_DIR
     staged = []
-    for name in package_modules.get("names") or []:
+    for source in sources:
         try:
-            module_file = root / f"{name}.py"
-            folder = root / name
-            linked = False
-            if module_file.is_file() and not module_file.is_symlink():
-                target.mkdir(parents=True, exist_ok=True)
-                _link_or_copy(module_file, target / module_file.name)
-                linked = True
-            if folder.is_dir() and not folder.is_symlink():
-                _link_tree(folder.resolve(), target / name)
-                linked = True
-            if linked:
-                staged.append(name)
-        except OSError:
+            root = Path(source["root"]).resolve()
+        except (KeyError, TypeError, OSError):
             continue
+        if not root.is_dir():
+            continue
+        for name in source.get("names") or []:
+            if name in staged:
+                continue
+            try:
+                module_file = root / f"{name}.py"
+                folder = root / name
+                linked = False
+                if module_file.is_file() and not module_file.is_symlink():
+                    target.mkdir(parents=True, exist_ok=True)
+                    _link_or_copy(module_file, target / module_file.name)
+                    linked = True
+                if folder.is_dir() and not folder.is_symlink():
+                    _link_tree(folder.resolve(), target / name)
+                    linked = True
+                if linked:
+                    staged.append(name)
+            except OSError:
+                continue
     return {"root": PACKAGE_MODULES_DIR, "names": staged} if staged else None
 
 

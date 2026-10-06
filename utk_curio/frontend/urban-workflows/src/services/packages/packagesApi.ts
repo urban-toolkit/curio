@@ -14,6 +14,9 @@ import type {
   CatalogPublishResponse,
   DefaultsInstallResponse,
   FactoryCapabilities,
+  FunctionPackagePayload,
+  FunctionTemplatePayload,
+  FunctionTemplateRequest,
   InstallResponse,
   PackageMetadataUpdate,
   PackagePayload,
@@ -90,6 +93,19 @@ export const packagesApi = {
     return apiFetch("/api/packages/factory/install", {
       method: "POST",
       body: JSON.stringify(draft),
+    });
+  },
+
+  /** New node from a Python function: the functions installed packages' modules define. */
+  listFunctions(): Promise<{ packages: FunctionPackagePayload[] }> {
+    return apiFetch("/api/packages/factory/functions");
+  },
+
+  /** The template of a node that calls one of those functions; added to a package with ``factoryInstall``. */
+  functionTemplate(body: FunctionTemplateRequest): Promise<FunctionTemplatePayload> {
+    return apiFetch("/api/packages/factory/function-template", {
+      method: "POST",
+      body: JSON.stringify(body),
     });
   },
 

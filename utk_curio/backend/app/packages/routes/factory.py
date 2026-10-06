@@ -12,6 +12,7 @@ from flask import Response, jsonify, request
 from utk_curio.backend.app.users.dependencies import require_auth
 from utk_curio.backend.app.packages.application import (
     factory_install as packages_factory_install,
+    function_nodes as packages_function_nodes,
     publishing as packages_publishing,
 )
 from utk_curio.backend.app.packages.routes import common as routes_common
@@ -65,6 +66,24 @@ def factory_build():
     response.headers["X-Curio-Package-Dir"] = result.manifest.dir_name
     response.headers["X-Curio-Package-Version"] = result.manifest.version
     return response
+
+
+@packages_bp.route("/factory/functions", methods=["GET"])
+@require_auth
+@_map_package_errors
+def factory_functions():
+    """New node from a Python function: the functions installed packages' modules define."""
+    return jsonify({"packages": packages_function_nodes.package_functions(user_key())}), 200
+
+
+@packages_bp.route("/factory/function-template", methods=["POST"])
+@require_auth
+@_map_package_errors
+def factory_function_template():
+    """The template of a node that calls one of those functions, for the
+    dialog to add to a package through ``/factory/install``."""
+    args = requests.function_template(request.get_json(silent=True) or {})
+    return jsonify(packages_function_nodes.write_function_template(user_key(), *args)), 200
 
 
 @packages_bp.route("/factory/install", methods=["POST"])

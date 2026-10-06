@@ -60,7 +60,7 @@
         "packages": {
           "type": "object",
           "additionalProperties": { "type": "string" },
-          "description": "{ '<packageId>': '<version-range>' } — resolved via /api/packages/resolve."
+          "description": "{ '<packageId>' or '<packageId>@<major>': '<version-range>' }, resolved via /api/packages/resolve. A node of this package can import the Python modules these packages ship in sources/."
         },
         "python": {
           "type": "object",

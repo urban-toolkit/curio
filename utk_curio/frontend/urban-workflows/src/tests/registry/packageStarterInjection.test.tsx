@@ -34,6 +34,7 @@ import { registerPackageTemplates } from '../../registry/packagesClient';
 import { clearPackageNodes } from '../../registry/nodeRegistry';
 import { packageStarterCode } from '../../adapters/node/packageNodeBehavior';
 import { useStarterContext } from '../../providers/StarterProvider';
+import { behaviorDataView } from '../../utils/behaviorDataView';
 import type { NodeBehaviorData, UseNodeStateReturn } from '../../registry/types';
 
 const TEMPLATE = {
@@ -117,6 +118,36 @@ describe('package starter injection', () => {
   test('no source → nothing injected', () => {
     const pack = { ...FIXTURE_PACK, templates: [{ ...TEMPLATE, source: null }] };
     expect(runBehavior(pack, undefined)).not.toContain(STARTER_CODE);
+  });
+});
+
+describe('a template\'s widgets on a fresh drop (#662)', () => {
+  beforeEach(() => clearPackageNodes());
+
+  const WIDGETS = [{ name: 'season', type: 'text', label: 'Season', default: 'winter' }];
+
+  /** Runs the behavior the way UniversalNode does, through `behaviorDataView`,
+   *  and returns the node's own data afterwards. */
+  function dropThroughTheView(code?: string): Record<string, unknown> {
+    const pack = { ...FIXTURE_PACK, templates: [{ ...TEMPLATE, hasWidgets: true, widgets: WIDGETS }] };
+    const [desc] = registerPackageTemplates([pack]);
+    const data: Record<string, unknown> = { nodeType: desc.id, ...(code !== undefined ? { code } : {}) };
+    const nodeState = { code: code ?? '' } as unknown as UseNodeStateReturn;
+    renderHook(() => desc.adapter.useNodeBehavior(
+      behaviorDataView(data) as unknown as NodeBehaviorData, nodeState,
+    ));
+    return data;
+  }
+
+  test('are seeded on the node\'s data beside its starter', () => {
+    const data = dropThroughTheView();
+    expect(data.widgets).toEqual(WIDGETS);
+    // The view never writes its `content` alias to the node.
+    expect('content' in data).toBe(false);
+  });
+
+  test('a restored node keeps what it was saved with', () => {
+    expect(dropThroughTheView('user code').widgets).toBeUndefined();
   });
 });
 

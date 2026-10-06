@@ -115,10 +115,14 @@ def resolve_models(code: str, user) -> dict:
     return resolve_exec_models(code, user)
 
 
-def resolve_package_modules(node_type: str, user_key: str | None, dataflow_id: str | None = None) -> dict | None:
-    """The modules the node's package ships beside its templates, which the
-    sandbox makes importable for this run (#468): ``{"root", "names"}``, or
-    None for a node whose package ships none. Fail-open like dataset paths."""
+def resolve_package_modules(
+    node_type: str, user_key: str | None, dataflow_id: str | None = None,
+) -> dict | list | None:
+    """The modules the node's package ships beside its templates, and those of
+    the packages it depends on, which the sandbox makes importable for this
+    run (#468): ``{"root", "names"}``, a list of them, or None for a node
+    whose package ships none and depends on none. Fail-open like dataset
+    paths."""
     from utk_curio.backend.app.packages.service import modules_for_node
 
     return modules_for_node(user_key, node_type, dataflow_id)
