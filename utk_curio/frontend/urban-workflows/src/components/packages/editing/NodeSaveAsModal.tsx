@@ -1,14 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useReactFlow, useStore } from "reactflow";
 import ModalShell from "../../ModalShell";
-import { refreshPackageRegistry } from "../../../registry/packageRegistryBootstrap";
 import { packagesApi, triggerBlobDownload, dependencyFailureNotice, withRestartNotice } from "../../../services/packages";
-import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
-import { groupPalettePackages } from "../../menus/nodes/toolsMenuPackagePalette/model";
+import { getPaletteNodeTypes } from "../../../registry";
 import { useStarterContext } from "../../../providers/StarterProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { useFlowContext } from "../../../providers/FlowProvider";
-import { setCurrentProjectPackages } from "../../../registry/projectPackagesStore";
+import { installDraftToProject } from "../../../providers/packages/installDraftToProject";
+import { PackageTargetPicker, useWritablePackageOptions } from "./PackageTargetPicker";
 import {
   SAVE_AS_NEW_PACK,
   buildFactoryInstallEnvelope,
@@ -22,12 +21,6 @@ import { getFlowNodeCanonicalType } from "../../../utils/flowNodeCanonicalType";
 import { tryGetNodeDescriptor } from "../../../registry/nodeRegistry";
 import { NodeTemplateId } from "../../../registry/types";
 import styles from "./NodeSaveAsModal.module.css";
-
-const NOOP = () => () => {};
-
-function registryBootstrapKey(): string {
-  return String(getPaletteNodeTypes().length);
-}
 
 function packageLabelsForSectionKey(sectionKey: string): string[] {
   return getPaletteNodeTypes()
@@ -58,22 +51,7 @@ export function NodeSaveAsModal({
   const [busy, setBusy] = useState(false);
   const [busyKind, setBusyKind] = useState<"save" | "export" | null>(null);
 
-  const registryKey = useSyncExternalStore(
-    typeof window !== "undefined" ? subscribeToRegistry : NOOP,
-    registryBootstrapKey,
-    () => "ssr",
-  );
-  void registryKey;
-
-  const packageOptions = useMemo(() => {
-    const packageTypes = getPaletteNodeTypes().filter((d) => d.source === "package");
-    return groupPalettePackages(packageTypes)
-      .filter((g) => g.descriptors[0]?.package?.readOnly !== true)
-      .map((g) => ({
-        sectionKey: g.key,
-        displayName: g.descriptors[0]?.package?.name?.trim() || g.label,
-      }));
-  }, [registryKey]);
+  const { options: packageOptions, registryKey } = useWritablePackageOptions();
 
   // Subscribed, not sampled. The only way in here is the Node settings modal's
   // "Save as package node...", whose onSave (styles.tsx) calls updateDataNode
@@ -171,35 +149,12 @@ export function NodeSaveAsModal({
       if (!built) return;
       const { draft, replace, replacedExistingKind } = built;
 
-      const result = await packagesApi.factoryInstall(buildFactoryInstallEnvelope(draft, replace));
+      const result = await installDraftToProject(buildFactoryInstallEnvelope(draft, replace), ensureProjectId);
       // The build DERIVES dependencies.python from this node's source, so a
       // body containing `import rasterio` produces a rasterio declaration.
       // Until the install started honouring it, "Save and install" could
       // report success over a package whose very first run raises.
       const depNotice = dependencyFailureNotice(`Saved ${nodeLabel}`, result);
-      // The package is only in the USER STORE after factoryInstall.
-      // refreshPackageRegistry filters by the project lockfile, so without this
-      // the new descriptor is invisible - and worse, the backend listings that
-      // feed the node catalog scope by store-intersect-lockfile and do not even
-      // report a package they skip, so an agent is told the template does not
-      // exist.
-      //
-      // ``ensureProjectId`` rather than ``projectId`` (#346): on an unsaved
-      // dataflow this button is reachable with no project id, and the old guard
-      // silently skipped the scoping while still showing a success toast. The
-      // package landed in the user store belonging to no project at all. Same
-      // auto-save-first treatment the catalog drawer got for #220/#256; the
-      // shared helper de-dupes concurrent callers and toasts on failure itself.
-      //
-      // Not gated on SAVE_AS_NEW_PACK any more either: saving into an already
-      // INSTALLED package that this project's lockfile does not list leaves the
-      // node just as unresolvable.
-      const scopedProjectId = await ensureProjectId();
-      if (scopedProjectId) {
-        const projResult = await packagesApi.installToProject(scopedProjectId, result.package.dirName);
-        setCurrentProjectPackages(projResult.packages);
-      }
-      await refreshPackageRegistry();
       // Rebind the canvas node to the new/updated kind so re-opening Settings
       // resolves to the new descriptor (e.g. its readOnly flag), not the
       // source built-in. Match by label — Save-As preserves it. Also re-seed
@@ -289,52 +244,25 @@ export function NodeSaveAsModal({
           Save <strong>{nodeLabel}</strong> into an installed package or create a new one.
         </p>
 
-        <label className={styles.fieldLabel} htmlFor="save-as-package-target">
-          Destination package
-        </label>
-        <div className={styles.selectWrap}>
-          <select
-            id="save-as-package-target"
-            className={styles.select}
-            value={targetKey}
-            disabled={busy}
-            onChange={(e) => setTargetKey(e.target.value)}
-          >
-            <option value={SAVE_AS_NEW_PACK}>New package…</option>
-            {packageOptions.map((opt) => (
-              <option key={opt.sectionKey} value={opt.sectionKey}>
-                {opt.displayName}
-              </option>
-            ))}
-          </select>
-          <span className={styles.selectChevron} aria-hidden>
-            ▼
-          </span>
-        </div>
-
-        {targetKey === SAVE_AS_NEW_PACK ? (
-          <div className={styles.newPackageField}>
-            <label className={styles.fieldLabel} htmlFor="save-as-new-package-name">
-              New package name
-            </label>
-            <input
-              id="save-as-new-package-name"
-              className={styles.input}
-              value={newPackageName}
-              disabled={busy}
-              onChange={(e) => setNewPackageName(e.target.value)}
-              placeholder="My analytics package"
-            />
-          </div>
-        ) : willReplace ? (
-          <p className={styles.warning} role="alert">
-            <strong>Replace existing node.</strong> &quot;{nodeLabel}&quot; already exists in{" "}
-            {targetPackageName ?? "this package"}. Saving will replace that kind&apos;s template and
-            settings with this canvas node.
-          </p>
-        ) : (
-          <p className={styles.hint}>Adds this node as a new kind in the selected package.</p>
-        )}
+        <PackageTargetPicker
+          idPrefix="save-as"
+          options={packageOptions}
+          targetKey={targetKey}
+          onTargetKey={setTargetKey}
+          newPackageName={newPackageName}
+          onNewPackageName={setNewPackageName}
+          busy={busy}
+        >
+          {willReplace ? (
+            <p className={styles.warning} role="alert">
+              <strong>Replace existing node.</strong> &quot;{nodeLabel}&quot; already exists in{" "}
+              {targetPackageName ?? "this package"}. Saving will replace that kind&apos;s template and
+              settings with this canvas node.
+            </p>
+          ) : (
+            <p className={styles.hint}>Adds this node as a new kind in the selected package.</p>
+          )}
+        </PackageTargetPicker>
 
         <div className={styles.footer}>
           <button type="button" className={styles.ghostBtn} disabled={busy} onClick={onClose}>

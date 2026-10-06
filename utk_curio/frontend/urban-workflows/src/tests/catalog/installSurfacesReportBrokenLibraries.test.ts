@@ -30,6 +30,7 @@ const INSTALL_SURFACES: [label: string, file: string][] = [
    "providers/packages/useEnsureWorkflowDeps.ts"],
   ["archive sideload", "providers/packages/usePackageArchiveImport.ts"],
   ["Save As, save and install", "components/packages/editing/NodeSaveAsModal.tsx"],
+  ["New node from a Python function", "components/packages/editing/NodeFromFunctionModal.tsx"],
 ];
 
 describe("an install surface that can report a broken library does", () => {

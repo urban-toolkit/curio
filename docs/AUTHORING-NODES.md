@@ -165,8 +165,12 @@ return convert_raster(arg, zoom=[!! zoom !!])
   named like a Python identifier. The files your templates name as their
   `source` are not modules.
 - Modules import each other by name or relatively (`from .scale import FACTOR`).
-- They are importable while a node of your package runs, and by no other node.
-  A new version of the package takes effect on the next run.
+- They are importable while a node of your package runs, or a node of a
+  package that names yours in `manifest.dependencies.packages`, and by no
+  other node. A new version of the package takes effect on the next run.
+- **New node from a Python function** in the Node Catalog drawer writes a
+  template that calls one of their functions
+  ([Node Catalog](NODE-CATALOG.md#new-node-from-a-python-function)).
 - **One name, one package.** Two installed packages cannot ship a module of the
   same name: installing the second is refused, and the message names both
   packages and the module. Name a module after your package
