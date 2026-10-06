@@ -564,6 +564,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
     import time
     import contextlib
     import traceback
+    import warnings
 
     from utk_curio.sandbox.isolation.supervisor import cleanup_scratch
     from utk_curio.sandbox.util.package_modules import importable
@@ -587,7 +588,13 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
         modules_dir, modules = _stage_package_modules(package_modules)
 
         try:
-            with contextlib.redirect_stdout(captured_stdout), \
+            # catch_warnings: a node's run keeps the warning filters it changes
+            # to itself (#749). A library imported here stays imported in this
+            # process, and one that turns every warning on at import
+            # (pythermalcomfort) did so for every later node, in every session.
+            # _exec_lock serializes runs, so restoring the filters is safe.
+            with warnings.catch_warnings(), \
+                 contextlib.redirect_stdout(captured_stdout), \
                  contextlib.redirect_stderr(captured_stderr), \
                  importable(*modules):
 

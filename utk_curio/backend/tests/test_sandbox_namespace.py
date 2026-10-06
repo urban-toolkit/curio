@@ -34,7 +34,10 @@ Run::
 """
 from __future__ import annotations
 
+import sys
 import textwrap
+import uuid
+import warnings
 
 import pytest
 
@@ -235,3 +238,42 @@ def test_session_namespaces_are_capped():
     for i in range(cap + 8):
         run("import inspect as probe_mod\nreturn 1", session_id="bulk-" + str(i))
     assert len(worker._session_imports) <= cap
+
+
+#: A node that tells whether the warning numpy hides on purpose (Cython's
+#: "numpy.ndarray size changed" check) would reach its stderr.
+_WARNING_PROBE = """
+import warnings
+with warnings.catch_warnings(record=True) as caught:
+    warnings.warn("numpy.ndarray size changed, may indicate binary incompatibility", RuntimeWarning)
+print(len(caught))
+return 1
+"""
+
+
+def test_a_library_that_turns_warnings_on_at_import_does_not_reach_later_nodes(tmp_path, monkeypatch):
+    """pythermalcomfort 3.9 calls ``warnings.simplefilter("always")`` when it
+    is imported. The module stays imported in this long-lived process, so the
+    filter it set used to apply to every later node, in every session, and put
+    warnings the worker's ``ignore`` hides into their stderr (#749). A node's
+    run keeps the filters it changes to itself."""
+    stub = "curio_stub_always_" + uuid.uuid4().hex
+    (tmp_path / f"{stub}.py").write_text("import warnings\nwarnings.simplefilter('always')\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delitem(sys.modules, stub, raising=False)
+    with warnings.catch_warnings():
+        # The worker's own filter, as _worker_init sets it.
+        warnings.simplefilter("ignore")
+        before = list(warnings.filters)
+        first = run(f"import {stub}\nreturn 1", session_id="flow-w")
+        assert not first["stderr"], first["stderr"]
+        assert stub in sys.modules
+        same_session = stdout_of(run(_WARNING_PROBE, session_id="flow-w"))
+        other_session = stdout_of(run(_WARNING_PROBE, session_id="flow-x"))
+        after = list(warnings.filters)
+    sys.modules.pop(stub, None)
+    assert (same_session, other_session) == ("0", "0")
+    # Nor did its filter stay in the process. (A library imported for the
+    # first time during a run may add filters of its own.)
+    added = [f for f in after if f not in before]
+    assert ("always", None, Warning, None, 0) not in added
