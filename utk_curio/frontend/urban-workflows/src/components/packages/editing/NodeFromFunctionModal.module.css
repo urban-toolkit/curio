@@ -28,7 +28,7 @@
 }
 
 .parameterName {
-    font-family: var(--curio-font-family-mono, monospace);
+    font-family: var(--curio-font-mono);
     font-weight: 600;
     color: var(--curio-text-primary);
 }
