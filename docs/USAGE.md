@@ -975,19 +975,15 @@ page scrolls.
   scrolls inside past that. A chart is 320 pixels tall and an Autark map or plot 400. A
   code output takes its own height up to 320 pixels, a table or a summary up to 360,
   and scrolls inside past it.
-- **Adding a cell.** The notebook has no rail on its left. A **(+)** below each cell
-  opens it as one row: the built-in nodes, the Node, Data, Agent and Model catalogs,
-  and **Run all**. Click a node to add it as a cell right under the (+), reading the
-  output of the cell above (when the two can connect); the page scrolls to it. A node
-  dragged from the row onto the page becomes a cell too. Press Escape or click
-  elsewhere to close the row.
 - **Connections** run in the bar to the right of the cells. Each cell has its dots on its
   right edge: its inputs at the top, numbered as their chips are (dot 0 is
   `[!! input 0 !!]`), its interaction dot halfway down, and its output at the bottom.
   The dots follow their cell as it grows. Hover a dot to see what feeds it. Selecting
   a cell rings it in its kind's color and darkens its connections.
-- **Editing** works as on the canvas. Drag from an output dot to an input dot to connect
-  two cells, and select a connection and press Delete to remove it.
+- **Editing.** Nodes are added and connected on the canvas: the notebook view has no
+  node rail, takes no drop, and its dots do not connect. In it, edit and run a cell's
+  code, delete a cell, or select a connection and press Delete to remove it. **Run
+  all** sits at the top right of the page.
 - **Nothing is saved** about the view: the dataflow keeps its canvas layout, and
   **Canvas** shows it as it was. The address carries the view (`?view=notebook`), so a
   reload, or the address copied from the browser, opens it the same way.

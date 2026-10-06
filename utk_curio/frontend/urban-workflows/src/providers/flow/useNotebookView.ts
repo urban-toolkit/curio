@@ -312,8 +312,6 @@ export function useNotebookView({
         setCanvasView,
         notebookOn,
         notebookContentHeight: layout.contentHeight,
-        notebookColumn: { x: layout.columnX, width: layout.cellWidth },
-        notebookAddPoints: layout.addPoints,
         notebookViewValue,
         setNotebookPane,
         registerNotebookScroller,

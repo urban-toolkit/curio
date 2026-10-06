@@ -12,7 +12,7 @@ import { inputSlotOf } from "./inputSlots";
  * On a pane too narrow for that, a cell keeps this width and the page scrolls.
  */
 export const NOTEBOOK_MIN_CELL_WIDTH = 480;
-/** Room between two cells, which holds the (+) that adds a cell. */
+/** Room between two cells. */
 export const NOTEBOOK_CELL_GAP = 24;
 /** What a cell counts as until React Flow has measured it, a frame after it mounts. */
 export const NOTEBOOK_UNMEASURED_HEIGHT = 240;
@@ -58,13 +58,6 @@ export interface NotebookPane {
   left: number;
 }
 
-/** Where a (+) sits: in the gap below a cell, whose output a cell added there reads. */
-export interface NotebookAddPoint {
-  after: string;
-  /** The middle of the gap below the cell. */
-  y: number;
-}
-
 export interface NotebookLayout {
   positions: Map<string, XY>;
   rows: Map<string, number>;
@@ -72,8 +65,6 @@ export interface NotebookLayout {
   cellWidth: number;
   /** Left edge of the bar, which is the cells' right edge. */
   barX: number;
-  /** One (+) below every cell, the last one's included. */
-  addPoints: NotebookAddPoint[];
   contentHeight: number;
 }
 
@@ -87,13 +78,11 @@ export function layoutNotebook(cells: readonly NotebookCell[], pane: NotebookPan
   const barX = Math.max(columnX + NOTEBOOK_MIN_CELL_WIDTH, Math.round(pane.width) - NOTEBOOK_BAR_WIDTH);
   const positions = new Map<string, XY>();
   const rows = new Map<string, number>();
-  const addPoints: NotebookAddPoint[] = [];
   let y = Math.round(pane.top) + NOTEBOOK_MARGIN;
   cells.forEach((cell, row) => {
     const height = cell.height && cell.height > 0 ? cell.height : NOTEBOOK_UNMEASURED_HEIGHT;
     positions.set(cell.id, { x: columnX, y });
     rows.set(cell.id, row);
-    addPoints.push({ after: cell.id, y: y + height + NOTEBOOK_CELL_GAP / 2 });
     y += height + NOTEBOOK_CELL_GAP;
   });
   const bottom = cells.length > 0 ? y - NOTEBOOK_CELL_GAP : y;
@@ -103,9 +92,19 @@ export function layoutNotebook(cells: readonly NotebookCell[], pane: NotebookPan
     columnX,
     cellWidth: barX - columnX,
     barX,
-    addPoints,
     contentHeight: bottom + NOTEBOOK_BOTTOM_SPACE,
   };
+}
+
+/**
+ * What a viewer may change in the graph: nodes are added (dropped from the
+ * rail, a catalog or a scenario) and connected on the canvas only. The
+ * notebook view edits, runs and deletes cells and removes connections; a
+ * shared viewer changes nothing.
+ */
+export function graphEditGates({ notebookOn, sharedView }: { notebookOn: boolean; sharedView: boolean }) {
+  const canvasEditor = !notebookOn && !sharedView;
+  return { connect: canvasEditor, drop: canvasEditor };
 }
 
 export interface NotebookHandle {
