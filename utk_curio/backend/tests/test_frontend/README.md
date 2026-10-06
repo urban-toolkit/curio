@@ -243,12 +243,13 @@ canvas, which means a real click at the button's centre lands on the overlay.
 
 ### Browser-test conventions
 
-Three things are easy to get wrong against the catalog drawers:
+Four things are easy to get wrong against the catalog drawers:
 
 - **Disable motion before navigating.** `page.emulate_media(reduced_motion="reduce")` - both drawer providers read `prefers-reduced-motion` through `useSyncExternalStore`, so this makes presentation synchronous and collapses the 380 ms close timer to zero. Do it *before* `stub_login_and_enter_workflow`; a `page.reload()` afterwards races `ProjectLoader` into the shared-guest fallback.
 - **`to_be_visible()` is not a gate for a drawer.** All three slide in via `transform: translate3d(100%, 0, 0)`, which keeps a full bounding box off-screen. Gate on where the panel actually *is*: `stress.py::wait_for_drawer_presented` polls the dialog's bounding box until its left edge is inside the viewport. `canvasDrawerParity.test.ts` keeps the three drawers from diverging. Never `force=True` on drawer internals - `force` skips the very hit-target check that protects against clicking a mid-slide panel.
 
   **The agent chat panel slides too.** It is a fourth surface on the same 300 ms curve, presented through the same `useSlideDrawerPresentation` as the three drawers, so everything above applies to `[role="dialog"][aria-label^="Chat with"]` as well. Two differences worth knowing: it carries `aria-hidden="true"` for the length of its exit, so a `get_by_role("dialog")` locator stops matching as soon as it starts closing rather than when it unmounts; and it stays in the DOM through that exit showing the agent it last showed, so a detach is not instantly followed by an empty canvas.
+- **Wait for a close with `wait_for_drawer_closed(page, root)`.** A closed drawer is either still mounted with `aria-hidden="true"` or already unmounted, and under reduced motion the first form lasts 0 ms, so a wait for `[aria-hidden="true"]` alone can miss it. The helper accepts both forms and still fails if the drawer stays open.
 - **Settle the canvas before clicking anything on a node.** ReactFlow's initial `fitView` animates the viewport, and a visible-but-still-moving element makes `click()` time out with no useful message. Call `_wait_for_reactflow_ready(page)` first.
 
 ## Screenshot baselines
@@ -445,7 +446,7 @@ test_frontend/
     vega_svg.py               # Vega-Lite SVG helpers
     capture_waits.py          # viewport fit, dismiss_toasts, webfont and running-node waits
     images.py                 # captures, _compare_images
-    dialogs.py                # accept_confirm_dialog, leave_agent_badge
+    dialogs.py                # accept_confirm_dialog, wait_for_drawer_closed, leave_agent_badge
     screenshots.py            # save_workflow_test_screenshot, mint and re-mint, frame_nodes
     closeups.py               # save_node_closeup, close-up budgets, viewport hints
     interactions.py           # interaction frames, brush and mark probes

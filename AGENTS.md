@@ -83,7 +83,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `vega_svg.py`: Vega-Lite SVG helpers.
   - `capture_waits.py`: what a capture waits for: `_wait_for_reactflow_ready`, `dismiss_toasts`, `_wait_for_webfont`, running nodes. `images.py`: captures, `_compare_images`.
   - `screenshots.py`: `save_workflow_test_screenshot`, `MAX_DIFF_RATIO`, mint and re-mint, `frame_nodes`, `dump_browser_log`.
-  - `closeups.py`: `save_node_closeup`, the close-up budgets, viewport hints. `dialogs.py`: `accept_confirm_dialog`, `leave_agent_badge`.
+  - `closeups.py`: `save_node_closeup`, the close-up budgets, viewport hints. `dialogs.py`: `accept_confirm_dialog`, `wait_for_drawer_closed`, `leave_agent_badge`.
   - `interactions.py`: interaction frames, brush and mark probes.
   - `servers.py`: ports, `e2e_existing_servers`.
   - `auth.py`: UI signup, the projects page, `require_owner_view`.
