@@ -1,31 +1,20 @@
+/* A node's header, on the canvas and in a notebook cell: the title at the left,
+   after Play, and its pills right after it. */
 .labelWrap {
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 4px;
     font-family: var(--curio-font-family);
 }
 
-/* A notebook cell's header: the title at the left, after Play, and its pills
-   right after it. */
-.labelWrapStart {
+.labelText {
     flex: 0 1 auto;
-    justify-content: flex-start;
-}
-
-.labelWrapStart .labelText {
-    flex: 0 1 auto;
+    min-width: 0;
     text-align: left;
     font-size: var(--curio-font-size-sm, 13px);
-}
-
-.labelText {
-    flex: 1;
-    min-width: 0;
-    text-align: center;
-    font-size: var(--curio-font-size-xs);
     font-weight: 700;
     overflow: hidden;
     text-overflow: ellipsis;

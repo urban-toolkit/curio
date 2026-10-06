@@ -12,7 +12,6 @@ export function EditableNodeHeaderLabel({
   keywordHighlighted,
   onLabelCommit,
   onConfigure,
-  alignStart = false,
 }: {
   displayLabel: string;
   editable: boolean;
@@ -21,8 +20,6 @@ export function EditableNodeHeaderLabel({
   keywordHighlighted: boolean;
   onLabelCommit: (label: string) => void;
   onConfigure: () => void;
-  /** The title at the left, after Play, as a notebook cell's header has it. */
-  alignStart?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(displayLabel);
@@ -60,7 +57,7 @@ export function EditableNodeHeaderLabel({
   const configClick = useHeaderIconDragClick(onConfigure);
 
   return (
-    <div className={alignStart ? `${styles.labelWrap} ${styles.labelWrapStart}` : styles.labelWrap}>
+    <div className={styles.labelWrap}>
       {executed ? (
         <span className={styles.execMark} title="Executed">
           &#10003;
@@ -101,8 +98,8 @@ export function EditableNodeHeaderLabel({
       {showConfig ? (
         <button
           type="button"
-          // In a notebook cell the gear is one of the cell's tools (Node.css).
-          className={`${styles.configBtn} ${keywordHighlighted ? styles.configBtnHighlighted : ""}${alignStart ? " curio-cell-tools" : ""}`}
+          // The gear is one of the node's tools (Node.css).
+          className={`${styles.configBtn} ${keywordHighlighted ? styles.configBtnHighlighted : ""} curio-node-tools`}
           data-curio-pkg-palette-node-action="true"
           title="Node settings"
           aria-label={`Node settings for ${displayLabel}`}

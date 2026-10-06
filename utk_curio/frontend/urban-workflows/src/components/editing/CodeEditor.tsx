@@ -37,6 +37,7 @@ import { ReferenceStrip } from "./widgets/WidgetTag";
 import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
 import { NOTEBOOK_CODE_EDITOR_MAX, useNotebookEditorHeight } from "./useNotebookEditorHeight";
+import { nodeEditorLook } from "./nodeEditorLook";
 
 /** In a notebook cell the output takes its own height up to this, then scrolls. */
 const NOTEBOOK_OUTPUT_MAX = 320;
@@ -123,7 +124,11 @@ function CodeEditor({
         isDashboardSource,
         playNodesUpTo,
         nodes,
+        dashboardOn,
     } = useFlowContext();
+    // The code in a plain gray box over its output, as in a notebook, except
+    // on a dashboard tile.
+    const look = nodeEditorLook(!!dashboardOn);
     const { nodeExecProv } = useProvenanceContext();
     const collab = useCollab();
     // dev/91: non-null exactly when this template declares a backendHandler.
@@ -566,7 +571,7 @@ function CodeEditor({
                 onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
                 onLoadColumns={onLoadColumns}
             />
-            <div className={editorHeight.wrapperClassName} style={{ flex: 2, minHeight: 0, ...editorHeight.wrapperStyle }}>
+            <div className={look.wrapperClassName} style={{ flex: 2, minHeight: 0, ...editorHeight.wrapperStyle }}>
                 {/* Uncontrolled on purpose: a per-keystroke `value` round-trip
                     lets a render that lands with a stale string do a full-model
                     replace — dropping characters and throwing the cursor to the
@@ -594,8 +599,8 @@ function CodeEditor({
                         // zooming, as before. Monaco reads this option only when
                         // the editor is created, so it is not tied to the view.
                         scrollbar: { alwaysConsumeMouseWheel: false },
-                        // In a notebook cell, a plain input box.
-                        ...editorHeight.editorOptions,
+                        // A plain input box, but on a dashboard tile.
+                        ...look.editorOptions,
                     }}
                 />
             </div>
@@ -613,16 +618,17 @@ function CodeEditor({
                     flex: 1,
                     minHeight: 0,
                     overflowY: "auto",
-                    backgroundColor: "#f7f7f7",
-                    borderTop: "1px solid #e0e0e0",
+                    // The output is plain text under the input box, with no
+                    // rule above it; a dashboard tile keeps its gray box.
+                    backgroundColor: dashboardOn ? "#f7f7f7" : "#ffffff",
+                    borderTop: dashboardOn ? "1px solid #e0e0e0" : "none",
                     // A failed node's error line (NodeOutcomeStrip) sits over
                     // the bottom of this box: room below the last line lets it
                     // scroll clear of the strip. In a notebook cell the strip
                     // sits under the box instead.
                     padding: output.code === "error" && !inCell ? "4px 8px 32px" : "4px 8px",
-                    // In a notebook cell the output is plain text under the
-                    // input box, with no rule above it.
-                    ...(inCell ? { flex: "none", maxHeight: `${NOTEBOOK_OUTPUT_MAX}px`, backgroundColor: "#ffffff", borderTop: "none", padding: "6px 8px 0" } : {}),
+                    // In a notebook cell the output takes its own height.
+                    ...(inCell ? { flex: "none", maxHeight: `${NOTEBOOK_OUTPUT_MAX}px`, padding: "6px 8px 0" } : {}),
                     fontSize: "11px",
                     fontFamily: "'Source Code Pro', Consolas, 'Courier New', monospace",
                     whiteSpace: "pre-wrap",
