@@ -45,6 +45,7 @@ from .utils import (
     require_user_auth,
     run_node_and_wait,
     stub_login_and_enter_workflow,
+    wait_for_drawer_closed,
 )
 
 if TYPE_CHECKING:
@@ -183,9 +184,7 @@ def test_on_the_canvas_a_source_without_its_key_opens_api_settings_over_the_draw
 
     # One Escape closes API Settings alone; the Discovery drawer is still open.
     page.keyboard.press("Escape")
-    expect(page.locator('[data-curio-settings-drawer="true"][aria-hidden="false"]')).to_have_count(
-        0, timeout=10000
-    )
+    wait_for_drawer_closed(page, '[data-curio-settings-drawer="true"]')
     expect(discovery).to_have_attribute("aria-hidden", "false")
 
 

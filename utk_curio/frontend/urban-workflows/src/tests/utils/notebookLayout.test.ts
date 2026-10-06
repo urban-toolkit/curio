@@ -20,6 +20,7 @@ import {
   NOTEBOOK_MIN_CELL_WIDTH,
   NOTEBOOK_UNMEASURED_HEIGHT,
   notebookOutputBox,
+  graphEditGates,
   type NotebookDotPlace,
 } from "../../utils/notebookLayout";
 
@@ -77,18 +78,6 @@ describe("the column of cells", () => {
     const layout = layoutNotebook([{ id: "a", height: 300 }], { width: 500, top: 110, left: 0 });
     expect(layout.cellWidth).toBe(NOTEBOOK_MIN_CELL_WIDTH);
     expect(layout.barX).toBe(NOTEBOOK_MARGIN + NOTEBOOK_MIN_CELL_WIDTH);
-  });
-
-  test("a (+) sits in the middle of the gap below every cell, the last one's included", () => {
-    const layout = layoutNotebook([{ id: "a", height: 180 }, { id: "b", height: 95 }], pane);
-    const a = layout.positions.get("a")!.y;
-    const b = layout.positions.get("b")!.y;
-    expect(layout.addPoints).toEqual([
-      { after: "a", y: a + 180 + NOTEBOOK_CELL_GAP / 2 },
-      { after: "b", y: b + 95 + NOTEBOOK_CELL_GAP / 2 },
-    ]);
-    expect(layout.addPoints[0].y).toBe(b - NOTEBOOK_CELL_GAP / 2);
-    expect(layout.contentHeight).toBeGreaterThan(layout.addPoints[1].y + 20);
   });
 
   test("the content runs past the last cell, so it scrolls clear of the window's edge", () => {
@@ -278,6 +267,21 @@ describe("the path a connection draws in the bar", () => {
     const [path] = notebookArcPath(900, 1200, 900, 600, 960);
     expect(path.startsWith("M 900,1200")).toBe(true);
     expect(path.endsWith("L 900,600")).toBe(true);
+  });
+});
+
+describe("where the graph is changed", () => {
+  test("nodes are added and connected on the canvas", () => {
+    expect(graphEditGates({ notebookOn: false, sharedView: false })).toEqual({ connect: true, drop: true });
+  });
+
+  test("the notebook view adds and connects nothing", () => {
+    expect(graphEditGates({ notebookOn: true, sharedView: false })).toEqual({ connect: false, drop: false });
+  });
+
+  test("a shared viewer changes nothing in either view", () => {
+    expect(graphEditGates({ notebookOn: false, sharedView: true })).toEqual({ connect: false, drop: false });
+    expect(graphEditGates({ notebookOn: true, sharedView: true })).toEqual({ connect: false, drop: false });
   });
 });
 

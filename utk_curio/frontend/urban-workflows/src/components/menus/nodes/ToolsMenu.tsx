@@ -1,12 +1,10 @@
 import React, { Fragment, memo, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faForwardStep, faStop } from "@fortawesome/free-solid-svg-icons";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
 import { refreshPackageRegistry } from "../../../registry/packageRegistryBootstrap";
 import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
 import { BUILTIN_PACKAGE_ID } from "../../../registry/packagesClient";
 import { NodeCategory, NodeDescriptor, NodeTemplateId } from "../../../registry/types";
-import { useFlowContext } from "../../../providers/FlowProvider";
 import { useUserContext } from "../../../providers/UserProvider";
 import {
     OVERLAY_TRIGGER_DELAY_PROPS,
@@ -18,6 +16,7 @@ import {
 import { DatasetsPaletteDropdown } from "./datasetPalette";
 import { AgentsPaletteDropdown } from "./agentsPalette";
 import { ModelsPaletteDropdown } from "./modelsPalette";
+import { RunAllButton } from "./RunAllButton";
 import styles from "./ToolsMenu.module.css";
 
 /** The DOM id of a built-in palette tile: `curio.builtin/data-loading@1` is `tile-data-loading`. */
@@ -31,15 +30,12 @@ const DraggableTool = memo(function DraggableTool({
     tooltip,
     badge,
     tooltipPlacement = "right",
-    onPick,
 }: {
     nodeType: NodeTemplateId;
     icon: any;
     tooltip: string;
     badge?: string;
     tooltipPlacement?: ToolsMenuTooltipSide;
-    /** A click adds the node (the notebook view's (+) menu); else it is dragged. */
-    onPick?: (nodeType: NodeTemplateId) => void;
 }) {
     return (
         <OverlayTrigger
@@ -63,7 +59,6 @@ const DraggableTool = memo(function DraggableTool({
                     event.dataTransfer.setData("application/reactflow", nodeType);
                     event.dataTransfer.effectAllowed = "move";
                 }}
-                {...(onPick ? { role: "button", onClick: () => onPick(nodeType) } : {})}
             >
                 <FontAwesomeIcon icon={icon} className={styles.iconStyle} />
                 {badge && <span className={styles.iconBadge}>{badge}</span>}
@@ -86,12 +81,7 @@ function groupPaletteTypes(descriptors: NodeDescriptor[]): NodeDescriptor[][] {
     );
 }
 
-function renderGroup(
-    group: NodeDescriptor[],
-    key: string,
-    tooltipPlacement: ToolsMenuTooltipSide = "right",
-    onPick?: (nodeType: NodeTemplateId) => void,
-) {
+function renderGroup(group: NodeDescriptor[], key: string, tooltipPlacement: ToolsMenuTooltipSide = "right") {
     return (
         <div key={key} className={styles.containerStyle}>
             {group.map((desc) => (
@@ -102,7 +92,6 @@ function renderGroup(
                     tooltip={desc.label}
                     badge={desc.badge}
                     tooltipPlacement={tooltipPlacement}
-                    onPick={onPick}
                 />
             ))}
         </div>
@@ -111,21 +100,7 @@ function renderGroup(
 
 const NOOP = () => () => {};
 
-const ToolsMenu = memo(function ToolsMenu({
-    layout = "rail",
-    onPickTile,
-    style,
-}: {
-    /**
-     * The canvas's rail down the left edge, or one row: the notebook view's
-     * (+) menu, placed by `style`, whose catalog panels open below it.
-     */
-    layout?: "rail" | "row";
-    /** A click on a node tile adds that node. */
-    onPickTile?: (nodeType: NodeTemplateId) => void;
-    style?: React.CSSProperties;
-} = {}) {
-    const row = layout === "row";
+const ToolsMenu = memo(function ToolsMenu() {
     // Re-render whenever the registry mutates (e.g. when package descriptors
     // land asynchronously via packagesClient.ts).
     const paletteVersion = useSyncExternalStore(
@@ -151,8 +126,6 @@ const ToolsMenu = memo(function ToolsMenu({
     const packageTypes = paletteTypes.filter((d) => !isBuiltin(d));
     const coreGroups = groupPaletteTypes(coreTypes);
     const packageGroups = groupPalettePackages(packageTypes);
-    const { playAllNodes, isRunActive: browserRunActive, serverRunActive, cancelRun } = useFlowContext();
-    const isRunActive = browserRunActive || serverRunActive;
 
     // Every catalog trigger lives in the left rail and their panels open into
     // the same strip to the right of it, so only one may be open at a time. A
@@ -176,19 +149,14 @@ const ToolsMenu = memo(function ToolsMenu({
     }, []);
 
     return (
-        <div
-            id="tools-palette-dock"
-            className={row ? `${styles.paletteDock} ${styles.paletteDockRow}` : styles.paletteDock}
-            data-layout={row ? "row" : undefined}
-            style={style}
-        >
+        <div id="tools-palette-dock" className={styles.paletteDock}>
             <div id="tools-menu" className={styles.builtinStack}>
                 <div className={styles.menuStyle}>
                     <div className={styles.sectionHeader}>Built-in</div>
                     {coreGroups.map((group, i) => (
                         <Fragment key={`core-${i}`}>
                             {i > 0 && <div className={styles.divider} />}
-                            {renderGroup(group, `core-group-${i}`, "right", onPickTile)}
+                            {renderGroup(group, `core-group-${i}`)}
                         </Fragment>
                     ))}
                 </div>
@@ -200,21 +168,7 @@ const ToolsMenu = memo(function ToolsMenu({
                 <DatasetsPaletteDropdown open={activePalette === "datasets"} setOpen={setDatasetsOpen} />
                 <AgentsPaletteDropdown open={activePalette === "agents"} setOpen={setAgentsOpen} />
                 <ModelsPaletteDropdown open={activePalette === "models"} setOpen={setModelsOpen} />
-                <div className={styles.playAllRow}>
-                    {/* One button, two states: while a run is in flight it cancels
-                        it. The guard used to be invisible, so the only sign a run
-                        was stuck was that clicks did nothing (#271). */}
-                    <button
-                        type="button"
-                        className={styles.playAllButton}
-                        data-run-active={isRunActive ? "true" : undefined}
-                        onClick={isRunActive ? cancelRun : playAllNodes}
-                        title={isRunActive ? "Cancel the run in progress" : "Run all nodes"}
-                        aria-label={isRunActive ? "Cancel run" : "Run all nodes"}
-                    >
-                        <FontAwesomeIcon icon={isRunActive ? faStop : faForwardStep} />
-                    </button>
-                </div>
+                <RunAllButton />
             </div>
         </div>
     );

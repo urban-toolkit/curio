@@ -138,14 +138,6 @@
     overflow: hidden;
 }
 
-/* In the notebook view's (+) menu the rail is one row: the panel opens below it. */
-:global(#tools-palette-dock[data-layout="row"]) .packagePalettePanel {
-    top: 100%;
-    left: 0;
-    margin: 8px 0 0;
-    max-height: calc(100vh - 260px);
-}
-
 .packagePalettePanelTitle {
     flex-shrink: 0;
     font-size: 9px;
