@@ -10,6 +10,7 @@ from pathlib import Path
 
 from utk_curio.backend.app.packages.application import (
     provisioning as packages_provisioning,
+    python_modules as packages_python_modules,
     store_install as packages_store_install,
 )
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
@@ -45,6 +46,17 @@ def installed_dir_for_draft(user_key: str, manifest_raw) -> "Path | None":
     except PackageIdError:
         return None
     return candidate if candidate.is_dir() else None
+
+
+def imported_modules_for_draft(user_key: str, draft: dict) -> frozenset[str]:
+    """The modules the packages a draft depends on ship (``dependencies.packages``,
+    resolved in *user_key*'s store): its templates import them, nobody pip-installs them."""
+    manifest_raw = draft.get("manifest") if isinstance(draft, dict) else None
+    deps = manifest_raw.get("dependencies") if isinstance(manifest_raw, dict) else None
+    package_deps = deps.get("packages") if isinstance(deps, dict) else None
+    if not isinstance(package_deps, dict) or not package_deps:
+        return frozenset()
+    return packages_python_modules.dependency_module_names(user_key, package_deps)
 
 
 def refuse_read_only_draft(user_key: str, manifest_raw: object) -> None:
@@ -84,7 +96,9 @@ def build_draft(user_key: str, draft: dict) -> BuildResult:
     """
     existing_dir = installed_dir_for_draft(user_key, draft.get("manifest"))
     draft = preserve_unedited_sources(draft, existing_dir)
-    return build_package_archive(draft, onto=existing_dir)
+    return build_package_archive(
+        draft, onto=existing_dir, imported_modules=imported_modules_for_draft(user_key, draft),
+    )
 
 
 def install_draft(user_key: str, draft: dict, *, replace: bool) -> tuple[BuildResult, InstallResult]:
@@ -102,7 +116,9 @@ def install_draft(user_key: str, draft: dict, *, replace: bool) -> tuple[BuildRe
     refuse_read_only_draft(user_key, manifest_raw)
     existing_dir = installed_dir_for_draft(user_key, manifest_raw)
     draft = preserve_unedited_sources(draft, existing_dir)
-    built = build_package_archive(draft, onto=existing_dir)
+    built = build_package_archive(
+        draft, onto=existing_dir, imported_modules=imported_modules_for_draft(user_key, draft),
+    )
     result = packages_store_install.install_package_from_archive(
         user_key, built.archive, replace=replace,
     )

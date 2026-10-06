@@ -552,8 +552,9 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
     models:     {modelId: folder} for the code's curio_load_model("<id>") calls.
 
-    package_modules: {"root", "names"}: the modules the node's package ships
-                beside its templates, importable by name for this run only
+    package_modules: {"root", "names"}, or a list of them: the modules the
+                node's package ships beside its templates, and those of the
+                packages it depends on, importable by name for this run only
                 (#468, ``util/package_modules.py``).
 
     Returns {'stdout': [str, ...], 'stderr': str, 'output': {'path': str, 'dataType': str}}
