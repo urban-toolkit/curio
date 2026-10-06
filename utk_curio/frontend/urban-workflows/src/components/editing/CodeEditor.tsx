@@ -36,6 +36,10 @@ import { ICodeData } from "../../types";
 import { ReferenceStrip } from "./widgets/WidgetTag";
 import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
+import { NOTEBOOK_CODE_EDITOR_MAX, useNotebookEditorHeight } from "./useNotebookEditorHeight";
+
+/** In a notebook cell the output takes its own height up to this, then scrolls. */
+const NOTEBOOK_OUTPUT_MAX = 320;
 
 const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [], shared: [] };
 const NO_INPUTS: InputScope[] = [];
@@ -103,6 +107,10 @@ function CodeEditor({
     // #662: the mounted editor, for the reference tags and chips.
     const [widgetEditor, setWidgetEditor] = useState<{ editor: any; monaco: any } | null>(null);
     useCodeReferences(widgetEditor?.editor, widgetEditor?.monaco, references, widgetLanguage);
+    // In a notebook cell the editor is as tall as its lines and the output
+    // takes its own height below it.
+    const editorHeight = useNotebookEditorHeight(NOTEBOOK_CODE_EDITOR_MAX);
+    const inCell = editorHeight.inCell;
 
     const {
         workflowNameRef,
@@ -270,6 +278,7 @@ function CodeEditor({
         monacoRef.current = monaco;
         editorInstanceRef.current = editor;
         setWidgetEditor({ editor, monaco });
+        editorHeight.attach(editor, monaco);
         editor.onDidBlurEditorText(proposeOnBlur);
         // Ctrl/Cmd+Enter. Registered here rather than on the window because
         // Monaco owns the chord while the editor has focus — and already bound
@@ -502,7 +511,7 @@ function CodeEditor({
             : "No output yet";
 
     return (
-        <div className="nowheel nodrag" style={{ height: "100%", display: "flex", flexDirection: "column", backgroundColor: "#fff", userSelect: "none" }}>
+        <div className="nowheel nodrag" style={{ height: inCell ? "auto" : "100%", display: "flex", flexDirection: "column", backgroundColor: "#fff", userSelect: "none" }}>
             {showCredentialHint ? (
                 <CredentialHint
                     findings={credentialFindings}
@@ -557,7 +566,7 @@ function CodeEditor({
                 onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
                 onLoadColumns={onLoadColumns}
             />
-            <div style={{ flex: 2, minHeight: 0 }}>
+            <div style={{ flex: 2, minHeight: 0, ...editorHeight.wrapperStyle }}>
                 {/* Uncontrolled on purpose: a per-keystroke `value` round-trip
                     lets a render that lands with a stale string do a full-model
                     replace — dropping characters and throwing the cursor to the
@@ -606,8 +615,10 @@ function CodeEditor({
                     borderTop: "1px solid #e0e0e0",
                     // A failed node's error line (NodeOutcomeStrip) sits over
                     // the bottom of this box: room below the last line lets it
-                    // scroll clear of the strip.
-                    padding: output.code === "error" ? "4px 8px 32px" : "4px 8px",
+                    // scroll clear of the strip. In a notebook cell the strip
+                    // sits under the box instead.
+                    padding: output.code === "error" && !inCell ? "4px 8px 32px" : "4px 8px",
+                    ...(inCell ? { flex: "none", maxHeight: `${NOTEBOOK_OUTPUT_MAX}px`, backgroundColor: "#ffffff" } : {}),
                     fontSize: "11px",
                     fontFamily: "'Source Code Pro', Consolas, 'Courier New', monospace",
                     whiteSpace: "pre-wrap",

@@ -226,15 +226,36 @@ moves nodes the way the dashboard page does:
   below the bar and title chips, sets each node's dots on its right edge, gives every
   edge a lane in the bar (shorter spans inside) and draws the bracket each edge follows;
   `components/edges/useEdgePath.ts` picks that path over the canvas bezier.
+- **Measured heights.** A cell is as tall as its content. React Flow measures every
+  node and writes its `height` onto it (a `dimensions` change through `onNodesChange`),
+  again whenever the node resizes, so the layout key holds each node's height and
+  `layoutNotebook` stacks the cells by it, 16px apart; a cell not measured yet counts
+  as 240px. The lanes are keyed on the rows and the bar only, so a cell that grows
+  moves the cells below it without handing every node and edge a new context.
+- **Dots.** `notebookHandlePlaces` anchors each dot to the cell's top (inputs, at fixed
+  offsets), its middle (the interaction dot) or its bottom (outputs, `top: auto` inline,
+  since React Flow's right-handle rule sets `top: 50%`), so they follow the cell as it
+  grows; `notebookCellMinHeight` keeps a cell tall enough for its dots. React Flow
+  measures the dots again on every resize, and each arc follows its two dots.
 - **Scrolling.** `MainCanvas` wraps React Flow in a scroller in both views, so switching
   never remounts it. In the notebook view React Flow is as tall as the column, at zoom 1
   with no pan or zoom gestures (`notebookFlowProps`), and leaves the wheel to the page. A
   call that moves its view anyway, such as a load's fit, is put back to the origin.
   `revealNodes` scrolls to a cell where the canvas would frame a node.
 - **Cells.** `NotebookViewContext` tells nodes and edges the view is on. `UniversalNode`
-  sizes the cell and moves its handles; `NodeEditor` keeps a grammar node's output pane
-  visible under its input tabs (`curio-notebook-split` in `Node.css`) without moving
-  either pane, so a chart or map never remounts.
+  passes the cell's width and least height as `cellBox`, apart from the node's canvas
+  size, and moves its handles. `NodeContainer` draws the cell as a flat card (the
+  kind's stripe kept, a ring in its color when selected) with `NodeRunControls`, the
+  same Play, status and Save output toggle as the canvas's bottom row, in its header.
+  `NodeEditor` keeps a grammar node's output pane visible under its input tabs
+  (`curio-notebook-split` in `Node.css`) without moving either pane, so a chart or map
+  never remounts, and puts the tab pills above the input. `notebookOutputBox` gives an
+  output the height its kind gets: a definite one for a chart (320px), an Autark map or
+  plot and a Compare Scenarios view (400px), which have none of their own; a table,
+  summary or control its own up to 360px; anything else 360px. `useNotebookEditorHeight`
+  (`components/editing/`) sets a code or spec editor's wrapper to Monaco's content
+  height (`onDidContentSizeChange`), at least three lines, at most 400px for code and
+  240px for a spec. The outcome strip sits in the cell's flow under the output.
 - **Switch.** `CanvasViewSwitch` closes `UpMenu`'s slot, pushed to its end beside
   Monitor; the canvas bar's buttons take `--curio-bar-button-padding-x: 7px` to make room
   for it.

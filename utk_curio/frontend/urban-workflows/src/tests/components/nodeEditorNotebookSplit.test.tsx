@@ -44,7 +44,7 @@ import { NotebookViewContext } from "../../providers/flow/notebookViewContext";
 
 const OUTPUT_ID = "vega-n1";
 
-function props() {
+function props(): Record<string, any> {
   return {
     setSendCodeCallback: jest.fn(),
     setOutputCallback: jest.fn(),
@@ -62,10 +62,10 @@ function props() {
   };
 }
 
-function mount(on: boolean, p: Record<string, any> = props()) {
+function mount(on: boolean, p: ReturnType<typeof props> = props()) {
   const utils = render(
     <NotebookViewContext.Provider value={{ on, laneX: new Map(), reveal: () => on }}>
-      <NodeEditor {...p} />
+      <NodeEditor {...(p as React.ComponentProps<typeof NodeEditor>)} />
     </NotebookViewContext.Provider>,
   );
   return { ...utils, p };

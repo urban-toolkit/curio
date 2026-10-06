@@ -963,13 +963,19 @@ lists the same nodes as a column of cells, one under the other, and the page scr
 
 - **Order.** A cell comes after every cell it reads from, in the order **File → Export as
   notebook** writes. The nodes that read from nothing come first.
-- **Cells.** Every cell has the same size and cannot be resized or minimized. A code
-  cell shows its code with its output below; a Vega-Lite or Autark cell shows its spec
-  above its chart or map.
+- **Cells** grow with their code and output, and cannot be resized or minimized. A
+  cell's header has **Play** at its top left, then the node's name, and at its right
+  the run status and the Save output toggle before the node's buttons. A code cell
+  shows its code with its output below; a Vega-Lite or Autark cell shows its spec
+  above its chart or map. An editor is as tall as its lines, from three lines up to
+  400 pixels for code and 240 for a spec, and scrolls inside past that. A chart is
+  320 pixels tall and an Autark map or plot 400. A code output takes its own height up
+  to 320 pixels, a table or a summary up to 360, and scrolls inside past it.
 - **Connections** run in the bar to the right of the cells. Each cell has its dots on its
   right edge: its inputs at the top, numbered as their chips are (dot 0 is
   `[!! input 0 !!]`), its interaction dot halfway down, and its output at the bottom.
-  Hover a dot to see what feeds it. Selecting a cell darkens its connections.
+  The dots follow their cell as it grows. Hover a dot to see what feeds it. Selecting
+  a cell rings it in its kind's color and darkens its connections.
 - **Editing** works as on the canvas. Drag from an output dot to an input dot to connect
   two cells, and select a connection and press Delete to remove it. A node dragged in
   from the left rail becomes a new cell, and the page scrolls to it.

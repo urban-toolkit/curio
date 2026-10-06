@@ -1,6 +1,6 @@
 import React, { ReactNode, useState, useEffect, useMemo, useRef } from "react";
 import CSS from "csstype";
-import { Dropdown, Spinner } from "react-bootstrap";
+import { Dropdown } from "react-bootstrap";
 
 import { useFlowContext } from "../providers/FlowProvider";
 import { useNotebookViewContext } from "../providers/flow/notebookViewContext";
@@ -34,10 +34,8 @@ import {
     NodeTemplateConfigModal,
     PackageMetaHeader,
 } from "./packages/editing";
-import Col from "react-bootstrap/Col";
 import Row from "react-bootstrap/Row";
 import {
-    faCirclePlay,
     faCopy,
     faFloppyDisk,
     faSquareMinus,
@@ -92,10 +90,9 @@ import { useStarterContext } from "../providers/StarterProvider";
 import { useCode } from "../hook/useCode";
 import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
-import { SaveOutputToggle } from "./nodes/SaveOutputToggle";
+import { NodeRunControls } from "./nodes/NodeRunControls";
 import { resolveSaveOutputDataset, showsSaveOutputToggle } from "../utils/saveOutputDataset";
 import { nodeRunStatus, nodeRunError } from "../utils/nodeRunStatus";
-import { RUN_NODE_SHORTCUT_LABEL } from "./canvasKeyBindings";
 import { hasNodeDescription } from "../utils/nodeDescription";
 import { droppedDatasetSource, isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { DatasetMetaHeader } from "./datasets/DatasetMetaHeader";
@@ -140,10 +137,11 @@ export const NodeContainer = ({
     output?: ICodeData;
     nodeWidth?: number;
     nodeHeight?: number;
-    /** The notebook cell's size, only in the notebook view. Kept apart from
+    /** The notebook cell's width and least height, only in the notebook view;
+     *  the cell is otherwise as tall as its content. Kept apart from
      *  `nodeWidth`/`nodeHeight`, which feed the node's own size state: that
      *  state is the canvas size the node goes back to. */
-    cellBox?: { width: number; height: number };
+    cellBox?: { width: number; minHeight: number };
     noContent?: boolean;
     setTemplateConfig?: any;
     styles?: CSS.Properties;
@@ -173,9 +171,9 @@ export const NodeContainer = ({
         markDirty,
         defaultSaveOutputDataset,
     } = useFlowContext();
-    // A notebook cell has a fixed size and is never minimized or resized: the
-    // size comes from the column, and the node's own size stays its canvas size.
-    // An icon-only node keeps its chip, stretched to a slim row.
+    // A notebook cell is never minimized or resized: its width comes from the
+    // column and its height from its content, and the node's own size stays its
+    // canvas size. An icon-only node keeps its chip, stretched to the column.
     const notebook = useNotebookViewContext();
     const notebookCell = notebook.on && !dashboardOn && !noContent;
     const saveOutputDataset = resolveSaveOutputDataset(data, defaultSaveOutputDataset);
@@ -260,7 +258,10 @@ export const NodeContainer = ({
     const [chipHovered, setChipHovered] = useState(false);
     const shownMinimized = minimized && !notebookCell;
     const boxWidth = notebookCell && cellBox ? cellBox.width : currentNodeWidth;
-    const boxHeight = notebookCell && cellBox ? cellBox.height : currentNodeHeight;
+    // The cell's box: as tall as its content, never shorter than its dots need.
+    const cellBoxStyle: CSS.Properties = notebookCell
+        ? { height: "auto", minHeight: `${cellBox?.minHeight ?? 0}px` }
+        : { height: currentNodeHeight + "px" };
 
     useEffect(() => {
         if (nodeWidth !== undefined) {
@@ -493,7 +494,24 @@ export const NodeContainer = ({
     const hasPackageMetaHeader = packageDescriptor?.source === "package" && !!packageDescriptor.package;
     const showPackageNodeActions = hasPackageMetaHeader && !dashboardOn;
     const suggestionActive = data.suggestionType != "none" && data.suggestionType != undefined;
-    const nodeHeaderBandPx = 28;
+    // A notebook cell's header also holds Play, so it is a little taller.
+    const nodeHeaderBandPx = notebookCell ? 36 : 28;
+    // Play, the Save output toggle and the status: in the canvas's bottom row,
+    // or in a notebook cell's header. The same controls either way.
+    const runControls = {
+        nodeId,
+        disablePlay: !!disablePlay,
+        isLoading,
+        output,
+        showSaveToggle: showsSaveOutputToggle(data, !!disablePlay),
+        saveOutput: saveOutputDataset,
+        onSaveOutputChange: (next: boolean) => {
+            updateDataNode(nodeId, { ...data, saveOutputDataset: next });
+        },
+        onPlay: () => {
+            playNodesUpTo(data.nodeId);
+        },
+    };
     // A dashboard tile's title band: narrower than the canvas header, and the
     // only thing on the tile that can be dragged while the layout is unlocked.
     const dashboardTitleBandPx = 28;
@@ -714,10 +732,12 @@ export const NodeContainer = ({
                         suggested: data.suggestionType != "none" && data.suggestionType != undefined,
                         acceptable: data.suggestionAcceptable,
                         category: packageDescriptor?.category,
+                        notebookCell,
+                        selected: isNodeSelected,
                     }),
                     ...styles,
                     width: boxWidth + "px",
-                    height: boxHeight + "px",
+                    ...cellBoxStyle,
                     // `.resizable` draws the browser's own resize grip, which
                     // the canvas covers with its resize handle; a cell has none.
                     ...(notebookCell ? { resize: "none" } : {}),
@@ -770,7 +790,9 @@ export const NodeContainer = ({
                         flexShrink: 0,
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                         }}>
-                        {/* Minimize toggle (a notebook cell keeps its size) */}
+                        {/* Minimize toggle (a notebook cell keeps its size);
+                            in its place a cell starts with Play, as a
+                            notebook cell does. */}
                         {!notebookCell ? (
                             <HeaderIconButton
                                 icon={faMinus}
@@ -778,6 +800,8 @@ export const NodeContainer = ({
                                 title="Minimize"
                                 onActivate={() => setMinimized(true)}
                             />
+                        ) : sendCodeToWidgets != undefined ? (
+                            <NodeRunControls {...runControls} part="play" />
                         ) : null}
 
                         {/* Node title — editable on package nodes (same visibility as PACKAGE pills) */}
@@ -791,6 +815,7 @@ export const NodeContainer = ({
                                 updateDataNode(nodeId, { ...data, packageTemplateLabel: label });
                             }}
                             onConfigure={() => setConfigOpen(true)}
+                            alignStart={notebookCell}
                         />
 
                         {hasPackageMetaHeader && packageDescriptor?.package ? (
@@ -824,6 +849,17 @@ export const NodeContainer = ({
                                 selected={isNodeSelected}
                                 suggestionActive={suggestionActive}
                             />
+                        ) : null}
+
+                        {/* A notebook cell's run status and Save output toggle,
+                            at the right before its icons, which this pushes
+                            right. */}
+                        {notebookCell ? (
+                            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+                                {sendCodeToWidgets != undefined ? (
+                                    <NodeRunControls {...runControls} part="state" />
+                                ) : null}
+                            </span>
                         ) : null}
 
                         {/* Right-side action icons */}
@@ -878,11 +914,19 @@ export const NodeContainer = ({
                     </>
                 ) : null}
 
-                <div style={{height: `calc(100% - ${dashboardOn ? dashboardTitleBandPx : nodeHeaderBandPx}px)`, width: "calc(100% - 30px)", marginLeft: "auto", marginRight: "auto"}}>
+                <div style={{
+                    // A notebook cell's body is as tall as what it holds.
+                    height: notebookCell ? "auto" : `calc(100% - ${dashboardOn ? dashboardTitleBandPx : nodeHeaderBandPx}px)`,
+                    width: "calc(100% - 30px)",
+                    marginLeft: "auto",
+                    marginRight: "auto",
+                    ...(notebookCell ? { paddingBottom: "8px" } : {}),
+                }}>
                     {children}
                 </div>
 
-                {!dashboardOn && <Row
+                {/* A notebook cell has its run controls in its header. */}
+                {!dashboardOn && !notebookCell && <Row
                     style={{
                         ...{
                             width: "25%",
@@ -890,266 +934,11 @@ export const NodeContainer = ({
                             marginLeft: "10px",
                             marginTop: "-25px",
                         },
-                        ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})      
+                        ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                     }}
                 >
                     {sendCodeToWidgets != undefined ? (
-                        <Row style={{gap: "8px", paddingRight: 0}}>
-                            {!disablePlay ?
-                                <Col md={3} style={{padding: 0}}>
-                                    {isLoading ? (
-                                        <Spinner
-                                            animation="border"
-                                            size="sm"
-                                            style={{
-                                                color: "rgb(251, 170, 105)",
-                                                width: "24px",
-                                                height: "24px",
-                                                marginTop: "2px",
-                                            }}
-                                        />
-                                    ) : (
-                                        <FontAwesomeIcon
-                                            className={"nowheel nodrag"}
-                                            icon={faCirclePlay}
-                                            // The shortcut is only useful if it
-                                            // is discoverable, and the play
-                                            // button is where someone looks for
-                                            // "how do I run this" (#223).
-                                            title={`Run this node (${RUN_NODE_SHORTCUT_LABEL})`}
-                                            style={{
-                                                cursor: "pointer",
-                                                fontSize: "27px",
-                                                color: "rgb(251, 170, 105)",
-                                            }}
-                                            onClick={() => {
-                                                playNodesUpTo(data.nodeId);
-                                            }}
-                                        />
-                                    )}
-                                </Col> : null
-                            }
-                            {showsSaveOutputToggle(data, !!disablePlay) ? (
-                                <Col md="auto" style={{ padding: 0, display: "flex", alignItems: "center" }}>
-                                    <SaveOutputToggle
-                                        variant="node"
-                                        id={`save-output-${data.nodeId}`}
-                                        checked={saveOutputDataset}
-                                        disabled={isLoading}
-                                        onChange={(next) => {
-                                            updateDataNode(nodeId, { ...data, saveOutputDataset: next });
-                                        }}
-                                    />
-                                </Col>
-                            ) : null}
-                            {output != undefined ? (
-                                <Col
-                                    md={2}
-                                    className="d-flex align-items-center"
-                                    style={{padding: 0}}
-                                >
-                                    <p
-                                        style={{
-                                            fontSize: "10px",
-                                            textAlign: "center",
-                                            marginBottom: 0,
-                                        }}
-                                    >
-                                        {output.code == "success" ? (
-                                            <span style={{ color: "green" }}>
-                                                Done
-                                            </span>
-                                        ) : output.code == "exec" ? (
-                                            <>
-                                                <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
-                                                {' '}
-                                            </>
-                                        ) : output.code == "error" ? (
-                                            <span style={{ color: "red" }}>
-                                                Error
-                                            </span>
-                                        ) : (
-                                            ""
-                                        )}
-                                    </p>
-                                </Col>
-                            ) : null}
-                            {/* <Col md={3}> */}
-                            {/*{promptModal != undefined ? (*/}
-                            {/*    <Col md={5} style={{padding: 0}}>*/}
-                            {/*        <Dropdown>*/}
-                            {/*            <Dropdown.Toggle*/}
-                            {/*                variant="primary"*/}
-                            {/*                style={{ */}
-                            {/*                    fontSize: "8.5px",*/}
-                            {/*                    padding: "6px 2px",*/}
-                            {/*                    backgroundColor: "rgb(251, 170, 105)",*/}
-                            {/*                    border: "none",*/}
-                            {/*                    width: "100%"*/}
-                            {/*                 }}*/}
-                            {/*                 onMouseEnter={() => {fetchStarters()}}*/}
-                            {/*            >*/}
-                            {/*                Templates*/}
-                            {/*            </Dropdown.Toggle>*/}
-
-                            {/*            <Dropdown.Menu*/}
-                            {/*                style={{*/}
-                            {/*                    padding: "5px",*/}
-                            {/*                    fontSize: "9px",*/}
-                            {/*                    overflowY: "auto",*/}
-                            {/*                    maxHeight: "200px",*/}
-                            {/*                }}*/}
-                            {/*            >*/}
-                            {/*                <Dropdown.Item*/}
-                            {/*                    style={{ padding: 0 }}*/}
-                            {/*                    onClick={() => {*/}
-                            {/*                        promptModal(true);*/}
-                            {/*                    }}*/}
-                            {/*                >*/}
-                            {/*                    + New Template*/}
-                            {/*                </Dropdown.Item>*/}
-
-                            {/*                {getStarters(*/}
-                            {/*                    data.nodeType as NodeType,*/}
-                            {/*                    false*/}
-                            {/*                ).length > 0 ? (*/}
-                            {/*                    <>*/}
-                            {/*                        <Dropdown.Divider*/}
-                            {/*                            style={{ padding: 0 }}*/}
-                            {/*                        />*/}
-                            {/*                        <Dropdown.ItemText*/}
-                            {/*                            style={{*/}
-                            {/*                                padding: 0,*/}
-                            {/*                                fontWeight: "bold",*/}
-                            {/*                            }}*/}
-                            {/*                        >*/}
-                            {/*                            Default Templates*/}
-                            {/*                        </Dropdown.ItemText>*/}
-                            {/*                        {getStarters(*/}
-                            {/*                            data.nodeType as NodeType,*/}
-                            {/*                            false*/}
-                            {/*                        ).map(*/}
-                            {/*                            (*/}
-                            {/*                                template: Template,*/}
-                            {/*                                index: number*/}
-                            {/*                            ) => {*/}
-                            {/*                                return (*/}
-                            {/*                                    <Dropdown.Item*/}
-                            {/*                                        key={*/}
-                            {/*                                            "templates_modal_content_default_" +*/}
-                            {/*                                            data.nodeType +*/}
-                            {/*                                            index +*/}
-                            {/*                                            nodeId*/}
-                            {/*                                        }*/}
-                            {/*                                        style={*/}
-                            {/*                                            template.accessLevel ==*/}
-                            {/*                                            AccessLevelType.PROGRAMMER*/}
-                            {/*                                                ? buttonStyleProgrammer*/}
-                            {/*                                                : template.accessLevel ==*/}
-                            {/*                                                    AccessLevelType.EXPERT*/}
-                            {/*                                                    ? buttonStyleExpert*/}
-                            {/*                                                    : buttonStyleAny*/}
-                            {/*                                        }*/}
-                            {/*                                        onClick={() => {*/}
-                            {/*                                            setTemplateConfig(*/}
-                            {/*                                                template*/}
-                            {/*                                            );*/}
-                            {/*                                        }}*/}
-                            {/*                                    >*/}
-                            {/*                                        {*/}
-                            {/*                                            template.name*/}
-                            {/*                                        }*/}
-                            {/*                                    </Dropdown.Item>*/}
-                            {/*                                );*/}
-                            {/*                            }*/}
-                            {/*                        )}*/}
-                            {/*                    </>*/}
-                            {/*                ) : null}*/}
-
-                            {/*                {getStarters(*/}
-                            {/*                    data.nodeType as NodeType,*/}
-                            {/*                    true*/}
-                            {/*                ).length > 0 ? (*/}
-                            {/*                    <>*/}
-                            {/*                        <Dropdown.Divider*/}
-                            {/*                            style={{ padding: 0 }}*/}
-                            {/*                        />*/}
-                            {/*                        <Dropdown.ItemText*/}
-                            {/*                            style={{*/}
-                            {/*                                padding: 0,*/}
-                            {/*                                fontWeight: "bold",*/}
-                            {/*                            }}*/}
-                            {/*                        >*/}
-                            {/*                            Custom Templates*/}
-                            {/*                        </Dropdown.ItemText>*/}
-                            {/*                        {getStarters(*/}
-                            {/*                            data.nodeType as NodeType,*/}
-                            {/*                            true*/}
-                            {/*                        ).map(*/}
-                            {/*                            (*/}
-                            {/*                                template: Template,*/}
-                            {/*                                index: number*/}
-                            {/*                            ) => {*/}
-                            {/*                                return (*/}
-                            {/*                                    <Dropdown.Item*/}
-                            {/*                                        style={{*/}
-                            {/*                                            padding: 0,*/}
-                            {/*                                        }}*/}
-                            {/*                                        key={*/}
-                            {/*                                            "templates_modal_content_custom_" +*/}
-                            {/*                                            data.nodeType +*/}
-                            {/*                                            index +*/}
-                            {/*                                            nodeId*/}
-                            {/*                                        }*/}
-                            {/*                                        onClick={() => {*/}
-                            {/*                                            setTemplateConfig(*/}
-                            {/*                                                template*/}
-                            {/*                                            );*/}
-                            {/*                                        }}*/}
-                            {/*                                    >*/}
-                            {/*                                        <span*/}
-                            {/*                                            style={*/}
-                            {/*                                                template.accessLevel ==*/}
-                            {/*                                                AccessLevelType.PROGRAMMER*/}
-                            {/*                                                    ? buttonStyleProgrammer*/}
-                            {/*                                                    : template.accessLevel ==*/}
-                            {/*                                                        AccessLevelType.EXPERT*/}
-                            {/*                                                        ? buttonStyleExpert*/}
-                            {/*                                                        : buttonStyleAny*/}
-                            {/*                                            }*/}
-                            {/*                                        >*/}
-                            {/*                                            {*/}
-                            {/*                                                template.name*/}
-                            {/*                                            }*/}
-                            {/*                                        </span>*/}
-                            {/*                                        <FontAwesomeIcon*/}
-                            {/*                                            onClick={() => {*/}
-                            {/*                                                deleteStarter(*/}
-                            {/*                                                    template.id*/}
-                            {/*                                                );*/}
-                            {/*                                            }}*/}
-                            {/*                                            icon={*/}
-                            {/*                                                faSquareMinus*/}
-                            {/*                                            }*/}
-                            {/*                                            style={{*/}
-                            {/*                                                color: "#888787",*/}
-                            {/*                                                padding: 0,*/}
-                            {/*                                                marginLeft:*/}
-                            {/*                                                    "5px",*/}
-                            {/*                                            }}*/}
-                            {/*                                        />*/}
-                            {/*                                    </Dropdown.Item>*/}
-                            {/*                                );*/}
-                            {/*                            }*/}
-                            {/*                        )}*/}
-                            {/*                    </>*/}
-                            {/*                ) : null}*/}
-                            {/*            </Dropdown.Menu>*/}
-                            {/*        </Dropdown>*/}
-                            {/*    </Col>*/}
-                            {/*) : null}*/}
-                            {/* </Col> */}
-                        </Row>
+                        <NodeRunControls {...runControls} />
                     ) : null}
                 </Row>}
 
@@ -1171,9 +960,9 @@ export const NodeContainer = ({
                     style={{
                         ...{
                             // An icon-only node in the notebook view is a chip
-                            // stretched to its row.
+                            // stretched to the column, as tall as its dots need.
                             width: (cellBox?.width ?? currentNodeWidth) + "px",
-                            height: (cellBox?.height ?? currentNodeHeight) + "px",
+                            height: (cellBox ? Math.max(cellBox.minHeight, MINIMIZED_NODE_HEIGHT) : currentNodeHeight) + "px",
                             backgroundColor: "#ffffff",
                             borderRadius: "10px",
                             padding: "5px",
@@ -1314,6 +1103,10 @@ export const getNodeContainerStyles = (
         acceptable?: boolean;
         /** The resolved descriptor's category, the one the title-bar pill shows. */
         category?: NodeCategory | null;
+        /** The node is a notebook cell. */
+        notebookCell?: boolean;
+        /** The node is selected; a notebook cell shows it with a ring. */
+        selected?: boolean;
     } = {},
 ): CSS.Properties => {
     // Node border colour = node category, the same one the pill in the node's
@@ -1347,6 +1140,29 @@ export const getNodeContainerStyles = (
             boxShadow: "var(--curio-shadow-browse-card)",
             padding: "10px",
             resize: "none",
+        };
+    }
+
+    if (state.notebookCell) {
+        // A notebook cell is a flat card on a white page, as a Jupyter cell is:
+        // a light hairline, no shadow, and the kind's stripe on the left. A
+        // selected cell is ringed in its kind's color.
+        return {
+            ...base,
+            borderRadius: "8px",
+            boxShadow: state.selected ? `0 0 0 2px ${accent}` : "none",
+            borderTopStyle: "solid",
+            borderRightStyle: "solid",
+            borderBottomStyle: "solid",
+            borderLeftStyle: "solid",
+            borderTopWidth: "1px",
+            borderRightWidth: "1px",
+            borderBottomWidth: "1px",
+            borderLeftWidth: "4px",
+            borderTopColor: "var(--curio-border)",
+            borderRightColor: "var(--curio-border)",
+            borderBottomColor: "var(--curio-border)",
+            borderLeftColor: accent,
         };
     }
 

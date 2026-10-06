@@ -90,11 +90,13 @@ import { ScenariosPanel } from "./scenarios/ScenariosPanel";
 import { ScenarioUiContext, type ScenarioUi } from "./scenarios/scenarioUi";
 
 const FILL_STYLE: React.CSSProperties = { width: "100%", height: "100%" };
+// The notebook is a white page, as a Jupyter notebook is, under its cells.
 const NOTEBOOK_SCROLLER_STYLE: React.CSSProperties = {
     width: "100%",
     height: "100%",
     overflowX: "hidden",
     overflowY: "auto",
+    backgroundColor: "#ffffff",
 };
 
 export function MainCanvas() {

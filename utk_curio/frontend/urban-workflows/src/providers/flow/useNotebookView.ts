@@ -15,7 +15,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Edge, Node, ReactFlowInstance, Viewport } from "reactflow";
 import { useUpdateNodeInternals } from "reactflow";
-import { tryGetNodeDescriptor } from "../../registry/nodeRegistry";
 import { canvasPositionOf } from "../../utils/canvasPosition";
 import { dataflowOrder } from "../../utils/dataflowOrder";
 import { fitViewWithMenuOffset } from "../../utils/fitViewWithMenuOffset";
@@ -105,12 +104,6 @@ export function restoreCanvasNodes<N extends Node>(nodes: N[], canvas: ReadonlyM
     });
 }
 
-/** An icon-only node (its manifest says the container has no content) gets a short row. */
-function isSlimCell(node: Node): boolean {
-    const descriptor = node.data?.nodeType ? tryGetNodeDescriptor(node.data.nodeType) : undefined;
-    return Boolean(descriptor?.adapter?.container?.noContent);
-}
-
 const NO_PANE: NotebookPane = { width: 0, top: 0, left: 0 };
 const NO_LAYOUT: NotebookLayout = layoutNotebook([], NO_PANE);
 const NO_LANES: ReadonlyMap<string, number> = new Map();
@@ -144,12 +137,14 @@ export function useNotebookView({
     const updateNodeInternals = useUpdateNodeInternals();
 
     // What the layout depends on, as one string: recomputed only when a node
-    // comes or goes, a connection changes, or the pane does - not on every
-    // output, which also changes `nodes`.
+    // comes or goes or changes height, a connection changes, or the pane does -
+    // not on every output, which also changes `nodes`. A cell is as tall as its
+    // content: React Flow measures each node and writes its `height` onto it
+    // (a `dimensions` change), and measures again whenever it resizes.
     const directed = directedEdgesOf(edges);
     const layoutKey = notebookOn
         ? [
-            nodes.map((n) => (isSlimCell(n) ? `${n.id}*` : n.id)).join(","),
+            nodes.map((n) => `${n.id}:${n.height ?? ""}`).join(","),
             directed.map((e) => `${e.source}>${e.target}`).join(","),
             `${pane.width}|${pane.top}|${pane.left}`,
         ].join("#")
@@ -157,7 +152,7 @@ export function useNotebookView({
     const layoutFor = useCallback(
         (list: Node[], links: Edge[], at: NotebookPane): NotebookLayout => {
             const order = dataflowOrder(list, directedEdgesOf(links));
-            return layoutNotebook(order.map((n) => ({ id: n.id, slim: isSlimCell(n) })), at);
+            return layoutNotebook(order.map((n) => ({ id: n.id, height: n.height })), at);
         },
         [],
     );
@@ -169,6 +164,12 @@ export function useNotebookView({
     const layoutRef = useRef(layout);
     layoutRef.current = layout;
 
+    // The lanes follow the rows and the bar, not the heights: a cell that grows
+    // (a typed line, an output) moves the cells below it, but hands no node or
+    // edge a new context, which would re-render them all.
+    const rowsKey = notebookOn
+        ? `${layout.barX}#${Array.from(layout.rows, ([id, row]) => `${id}:${row}`).join(",")}`
+        : "";
     const lanesKey = notebookOn
         ? edges.map((e) => `${e.id}:${e.source}.${e.sourceHandle}>${e.target}.${e.targetHandle}`).join(",")
         : "";
@@ -179,7 +180,7 @@ export function useNotebookView({
         lanes.forEach((lane, id) => xs.set(id, notebookLaneX(layout.barX, lane, count)));
         return xs;
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [layout, lanesKey]);
+    }, [rowsKey, lanesKey]);
 
     // Every change of the node list: keep the map to the live nodes, repair
     // stamps, and move anything not in its slot (a new node, a load, a cell
@@ -302,8 +303,8 @@ export function useNotebookView({
     }, []);
 
     const notebookViewValue = useMemo<NotebookViewValue>(
-        () => ({ on: notebookOn, laneX, heights: layout.heights, reveal: revealNodes }),
-        [notebookOn, laneX, layout, revealNodes],
+        () => ({ on: notebookOn, laneX, reveal: revealNodes }),
+        [notebookOn, laneX, revealNodes],
     );
 
     return {

@@ -65,10 +65,10 @@
   user-select: none;
 }
 
-/* Notebook view: a cell shows its input and its output together. The active
-   input tab takes the top of the cell; the output pane, which Bootstrap hides
-   (display) and fades out (opacity) while another tab is active, stays
-   visible below it. */
+/* Notebook view: a cell shows its input and its output together, the input
+   over the output, each at its own height. The output pane, which Bootstrap
+   hides (display) and fades out (opacity) while another tab is active, stays
+   visible below the active input tab. */
 .tab-content.curio-notebook-split {
   display: flex;
   flex-direction: column;
@@ -76,15 +76,13 @@
 }
 
 .tab-content.curio-notebook-split > .tab-pane.active {
-  flex: 0 0 42%;
-  min-height: 0;
+  flex: 0 0 auto;
 }
 
 .tab-content.curio-notebook-split > .tab-pane.curio-notebook-output {
   display: block !important;
   opacity: 1 !important;
-  flex: 1 1 0;
-  min-height: 0;
+  flex: 0 0 auto;
 }
 
 .handle_top_left {
