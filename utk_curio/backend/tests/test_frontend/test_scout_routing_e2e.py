@@ -47,6 +47,7 @@ from .utils import (
     frame_nodes,
     load_artifact_as_dict,
     node_locator,
+    park_pointer,
     read_node_error_text,
     require_owner_view,
     require_project_page,
@@ -70,6 +71,30 @@ SCENARIOS = {"avoid-rain": ("Avoid rain", "#2a9d8f"), "avoid-wind": ("Avoid wind
 TEST_NAME = "test_two_routing_scenarios_are_mapped_and_charted"
 #: The stacked table's metric columns, and where each sits in an ``EXAMPLE`` row.
 COLUMNS = {"distance": 3, "duration": 4, "rain_exposure": 5, "wind_exposure": 6}
+#: The opacity of each of a node's header tools, which show under the pointer,
+#: while focus is inside the node, or while it is selected.
+_TOOLS_OPACITY_JS = """(id) => {
+    const card = document.getElementById(`${id}resizable`);
+    return card ? [...card.querySelectorAll('.curio-node-tools')].map((el) => Number(getComputedStyle(el).opacity)) : null;
+}"""
+
+
+def _release_nodes(page, node_id: str) -> None:
+    """Click the empty pane where the pointer parks, so no node keeps the
+    pointer, focus or the selection, and wait for *node_id*'s header tools to
+    hide: a close-up taken after a click inside a node (the What differs tabs)
+    would show them."""
+    park_pointer(page)
+    page.mouse.down()
+    page.mouse.up()
+    opacities = None
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        opacities = page.evaluate(_TOOLS_OPACITY_JS, node_id)
+        if opacities is not None and all(opacity == 0 for opacity in opacities):
+            return
+        page.wait_for_timeout(100)
+    raise AssertionError(f"{node_id}'s header tools still show before its close-up: opacities {opacities}")
 
 
 def _assert_chart_drew(page, node_id: str) -> None:
@@ -188,10 +213,12 @@ def test_two_routing_scenarios_are_mapped_and_charted(
 
     frame_nodes(page, [map_id])
     assert_autark_map_drawn(page, map_id, timeout=30000)
+    _release_nodes(page, map_id)
     save_node_closeup(page, "scout-routing-routes-map", map_id, test_name=TEST_NAME, sweep_toasts=True)
     for column in COLUMNS:
         frame_nodes(page, [compares[column]])
         _assert_chart_drew(page, compares[column])
+        _release_nodes(page, compares[column])
         save_node_closeup(
             page, f"scout-routing-{column.replace('_', '-')}", compares[column],
             test_name=TEST_NAME, sweep_toasts=True,
