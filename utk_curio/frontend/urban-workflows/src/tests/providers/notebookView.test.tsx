@@ -94,6 +94,7 @@ import { useNotebookViewContext } from '../../providers/flow/notebookViewContext
 import { usePosition } from '../../hook/usePosition';
 import { TrillGenerator } from '../../TrillGenerator';
 import { CURIO_UNIVERSAL_NODE_TYPE } from '../../constants';
+import { NOTEBOOK_CELL_GAP } from '../../utils/notebookLayout';
 
 type XY = { x: number; y: number };
 
@@ -144,12 +145,12 @@ const CANVAS: Record<string, XY> = {
   c: { x: 1400, y: 300 },
 };
 
-function remoteNode(id: string, position: XY) {
+function remoteNode(id: string, position: XY, extra: Record<string, unknown> = {}) {
   return {
     id,
     type: CURIO_UNIVERSAL_NODE_TYPE,
     position,
-    data: { nodeId: id, nodeType: 'curio.builtin/computation-analysis', input: '', inputTypes: [] },
+    data: { nodeId: id, nodeType: 'curio.builtin/computation-analysis', input: '', inputTypes: [], ...extra },
   };
 }
 
@@ -189,7 +190,25 @@ function saved(): Record<string, XY> {
   return Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, { x: n.x, y: n.y }]));
 }
 
+/** The width and height a save writes for each node. */
+function savedSizes(): Record<string, [number, number]> {
+  const spec: any = TrillGenerator.generateTrill(rf.getNodes(), rf.getEdges(), 'notebook view');
+  return Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, [n.width, n.height]]));
+}
+
 const node = (id: string) => api.nodes.find((n: any) => n.id === id) as any;
+
+/** Cells as React Flow reports them once measured: 880 wide, these heights. */
+async function measure(heights: Record<string, number>) {
+  await act(async () => {
+    api.onNodesChange(
+      Object.entries(heights).map(([id, height]) => ({
+        type: 'dimensions', id, dimensions: { width: 880, height },
+      })) as any,
+    );
+  });
+  await flush();
+}
 
 afterEach(() => {
   for (const key of Object.keys(mockHandlers)) delete mockHandlers[key];
@@ -313,6 +332,50 @@ describe('the notebook view shows the nodes as cells', () => {
     expect(node('b').position).toEqual(CANVAS.b);
     expect(node('c').position).toEqual(CANVAS.c);
     expect(node('d').position).toEqual({ x: 2100, y: 300 });
+  });
+
+  test('a cell that grows moves the cells below it by the same amount, and only those', async () => {
+    renderFlow();
+    await flush();
+    await seedChain();
+    await setPane();
+    await show('notebook');
+
+    // React Flow measures each cell and reports its size through onNodesChange.
+    await measure({ a: 180, b: 300, c: 240 });
+    const top = (id: string) => node(id).position.y;
+    expect(top('b') - top('a')).toBe(180 + NOTEBOOK_CELL_GAP);
+    expect(top('c') - top('b')).toBe(300 + NOTEBOOK_CELL_GAP);
+    const before = { a: top('a'), b: top('b'), c: top('c') };
+    const context = notebook;
+
+    // A run fills b's output: b grows by 155px.
+    await measure({ b: 455 });
+    expect(top('a')).toBe(before.a);
+    expect(top('b')).toBe(before.b);
+    expect(top('c') - before.c).toBe(155);
+    // The lanes depend on the rows, not on the heights: a cell that grows does
+    // not hand every node and edge a new context, which would re-render them all.
+    expect(notebook).toBe(context);
+    expect(saved()).toEqual(CANVAS);
+  });
+
+  test("the round trip leaves the canvas positions and sizes, whatever the cells' heights", async () => {
+    renderFlow();
+    await flush();
+    for (const [id, position] of Object.entries(CANVAS)) {
+      await fromPeer('node_added', { node: remoteNode(id, position, { nodeWidth: 525, nodeHeight: 350 }) });
+    }
+    await setPane();
+    await show('notebook');
+    await measure({ a: 612, b: 95, c: 404 });
+    await show('canvas');
+
+    for (const [id, spot] of Object.entries(CANVAS)) {
+      expect(node(id).position).toEqual(spot);
+      expect([node(id).data.nodeWidth, node(id).data.nodeHeight]).toEqual([525, 350]);
+    }
+    expect(savedSizes()).toEqual({ a: [525, 350], b: [525, 350], c: [525, 350] });
   });
 
   test('the next free spot for a new node comes from canvas spots, not cells', async () => {

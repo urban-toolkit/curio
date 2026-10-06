@@ -17,11 +17,11 @@ import ReactFlow, {
 import {
     CANVAS_TITLE_ATTR,
     fitViewWithMenuOffset,
-    paletteRailRight,
     topOverlayBottom,
 } from "../utils/fitViewWithMenuOffset";
 import { computeTranslateExtent } from "../utils/canvasExtent";
 import { notebookFlowProps } from "../utils/notebookLayout";
+import { NotebookAddCells } from "./notebook/NotebookAddCells";
 import { usePosition } from "../hook/usePosition";
 
 import { useFlowContext } from "../providers/FlowProvider";
@@ -90,11 +90,13 @@ import { ScenariosPanel } from "./scenarios/ScenariosPanel";
 import { ScenarioUiContext, type ScenarioUi } from "./scenarios/scenarioUi";
 
 const FILL_STYLE: React.CSSProperties = { width: "100%", height: "100%" };
+// The notebook is a white page, as a Jupyter notebook is, under its cells.
 const NOTEBOOK_SCROLLER_STYLE: React.CSSProperties = {
     width: "100%",
     height: "100%",
     overflowX: "hidden",
     overflowY: "auto",
+    backgroundColor: "#ffffff",
 };
 
 export function MainCanvas() {
@@ -116,6 +118,8 @@ export function MainCanvas() {
         saveCurrentProject,
         notebookOn,
         notebookContentHeight,
+        isRunActive,
+        serverRunActive,
         setNotebookPane,
         registerNotebookScroller,
         revealNodes,
@@ -262,7 +266,9 @@ export function MainCanvas() {
     }, [notebookOn, flowStore, setViewport]);
 
     // The element the notebook scrolls in. Its size and the overlays fixed over
-    // it (top bar, title chips, palette rail) decide where the column goes.
+    // its top (top bar, title chips) decide where the cells go. The notebook
+    // view has no palette rail (its (+) opens the rail as a row), so the cells
+    // run from the left margin.
     const scrollerRef = useRef<HTMLDivElement | null>(null);
     useEffect(() => {
         const scroller = scrollerRef.current;
@@ -271,11 +277,10 @@ export function MainCanvas() {
         const measure = () => {
             const rect = scroller.getBoundingClientRect();
             const top = topOverlayBottom();
-            const rail = paletteRailRight();
             setNotebookPane({
                 width: scroller.clientWidth,
                 top: top === null ? 0 : Math.max(0, top - rect.top),
-                left: rail === null ? 0 : Math.max(0, rail - rect.left),
+                left: 0,
             });
         };
         measure();
@@ -684,7 +689,8 @@ export function MainCanvas() {
                     onClose={() => {deleteFloatingPanel(key)}}
                 />
             ))}
-            <ToolsMenu />
+            {/* The notebook view has no rail: its (+) opens it as a row. */}
+            {!notebookOn ? <ToolsMenu /> : null}
             <UpMenu />
             <CollaborationSidePanel />
             {!isSharedView ? <ScenariosPanel /> : null}
@@ -705,11 +711,14 @@ export function MainCanvas() {
                 ref={scrollerRef}
                 className="curio-flow-scroller"
                 data-curio-notebook={notebookOn ? "true" : undefined}
+                // The run guard the rail's Run All button shows on the canvas,
+                // for the notebook view, which has no rail.
+                data-run-active={notebookOn && (isRunActive || serverRunActive) ? "true" : undefined}
                 style={notebookOn ? NOTEBOOK_SCROLLER_STYLE : FILL_STYLE}
             >
             <div
                 className="curio-flow-sizer"
-                style={notebookOn ? { width: "100%", height: notebookContentHeight, minHeight: "100%" } : FILL_STYLE}
+                style={notebookOn ? { position: "relative", width: "100%", height: notebookContentHeight, minHeight: "100%" } : FILL_STYLE}
             >
             <ReactFlow
                 nodes={scenarioView.nodes}
@@ -748,6 +757,8 @@ export function MainCanvas() {
                 {!notebookOn && <Controls />}
                 {!notebookOn && <CanvasScenarioLayers view={scenarioView} editable={!isSharedView} />}
             </ReactFlow>
+            {/* The (+) below every cell, scrolling with the page. */}
+            {notebookOn && !isSharedView ? <NotebookAddCells scrollerRef={scrollerRef} /> : null}
             </div>
             </div>
             {!isSharedView ? <AgentDockOverlay /> : null}

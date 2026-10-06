@@ -613,7 +613,12 @@ export default function UpMenu() {
             </GlobalPageHeader>
 
             {/* Editable Workflow Name */}
-            <div className={styles.workflowNameContainer} data-curio-canvas-title="true">
+            <div
+                className={canvasView === "notebook"
+                    ? `${styles.workflowNameContainer} ${styles.workflowNameContainerNotebook}`
+                    : styles.workflowNameContainer}
+                data-curio-canvas-title="true"
+            >
                 {isEditing && !isSharedView ? (
                     <input
                         type="text"

@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 /**
  * Every built-in palette tile must have an accessible name.
@@ -110,5 +110,39 @@ describe("built-in palette tiles are named", () => {
             expect(tile).not.toBeNull();
             expect(tile!.getAttribute("aria-label")).toBe(template.label);
         }
+    });
+});
+
+/**
+ * The notebook view has no rail: its (+) opens the same rail as one row, where
+ * a click on a tile adds that node. The catalogs and Run All come along.
+ */
+describe("the rail as the notebook view's (+) menu", () => {
+    test("is one row, placed where the (+) says, with every tile, the catalogs and Run All", () => {
+        const { container } = render(<ToolsMenu layout="row" onPickTile={jest.fn()} style={{ top: 300, left: 40 }} />);
+        const dock = container.querySelector("#tools-palette-dock") as HTMLElement;
+        expect(dock.getAttribute("data-layout")).toBe("row");
+        expect(dock.style.top).toBe("300px");
+        expect(dock.style.left).toBe("40px");
+        expect(container.querySelectorAll("div[draggable='true']")).toHaveLength(mockBuiltin.length);
+        for (const name of ["packages", "datasets", "agents", "models"]) {
+            expect(screen.getByTestId(`${name}-stub`)).toBeTruthy();
+        }
+        expect(screen.getByRole("button", { name: "Run all nodes" })).toBeTruthy();
+    });
+
+    test("adds the node whose tile is clicked", () => {
+        const pick = jest.fn();
+        render(<ToolsMenu layout="row" onPickTile={pick} />);
+        fireEvent.click(screen.getByRole("button", { name: "Data Transformation" }));
+        expect(pick).toHaveBeenCalledWith("curio.builtin/data-transformation@1");
+    });
+
+    test("leaves the canvas rail as it was: tiles to drag, not buttons", () => {
+        const { container } = render(<ToolsMenu />);
+        const dock = container.querySelector("#tools-palette-dock") as HTMLElement;
+        expect(dock.hasAttribute("data-layout")).toBe(false);
+        expect(dock.getAttribute("style")).toBeNull();
+        expect(container.querySelector("#tile-data-transformation")!.hasAttribute("role")).toBe(false);
     });
 });
