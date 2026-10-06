@@ -449,6 +449,36 @@
             "layer": { "type": "string", "minLength": 1 }
           }
         },
+        "editFeatures": {
+          "type": "object",
+          "description": "The edit list of an Edit Features node (#662). `key` is the column that identifies a feature (`osm_id`, `building_id`, or another column whose values differ in every feature), and `layer` the layer the edits apply to when the input names its layers. `edits` holds the edits in the order they were made: `remove` drops the features whose `key` is one of `ids`, `set` writes `value` into their `column`, and `restore` puts them back as the input has them. The node's code is written from this list and applies it by `key`. Emitted only when the node holds any of these.",
+          "additionalProperties": false,
+          "properties": {
+            "key": { "type": "string", "minLength": 1 },
+            "layer": { "type": "string", "minLength": 1 },
+            "edits": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["op", "ids"],
+                "additionalProperties": false,
+                "properties": {
+                  "op": { "type": "string", "enum": ["remove", "set", "restore"] },
+                  "ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": ["string", "number"] }
+                  },
+                  "column": { "type": "string", "minLength": 1 },
+                  "value": { "type": ["string", "number", "boolean", "null"] }
+                },
+                "if": { "properties": { "op": { "const": "set" } } },
+                "then": { "required": ["column", "value"] }
+              }
+            }
+          }
+        },
         "dataPool": {
           "type": "object",
           "description": "A Data Pool's conflict modes (#581): how the selections that reach it combine. `insideChart` resolves the selects of one chart, `betweenCharts` the latest selection of each chart linked to the pool. OVERWRITE keeps the newest, MERGE_AND the rows every active selection picked, MERGE_OR the rows any of them picked. An absent member means OVERWRITE, and only the other modes are written.",

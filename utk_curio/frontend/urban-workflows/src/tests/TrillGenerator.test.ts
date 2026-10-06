@@ -527,6 +527,49 @@ describe("TrillGenerator Compare Scenarios settings (#662)", () => {
   });
 });
 
+describe("TrillGenerator Edit Features edit list (#662)", () => {
+  beforeEach(() => {
+    TrillGenerator.reset();
+  });
+
+  test("persists the edit list at metadata.editFeatures, and only when set", () => {
+    const edit = (nodeId: string, editFeatures?: unknown) => ({
+      type: "CURIO_UNIVERSAL_NODE",
+      position: { x: 0, y: 0 },
+      data: { nodeId, nodeType: "curio.builtin/edit-features@1", ...(editFeatures ? { editFeatures } : {}) },
+    });
+    const spec = TrillGenerator.generateTrill(
+      [
+        edit("edited", {
+          key: "building_id",
+          layer: "table_osm_buildings",
+          edits: [
+            { op: "remove", ids: [119, 136, 119] },
+            { op: "set", ids: ["w7"], column: "height", value: 30 },
+          ],
+        }),
+        edit("fresh"),
+        // Nothing well formed left: nothing written.
+        edit("junk", { key: "", edits: [{ op: "delete", ids: [1] }, { op: "remove", ids: [] }] }),
+      ],
+      [],
+      "Imported Workflow"
+    );
+
+    const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
+    expect(byId["edited"].metadata.editFeatures).toEqual({
+      key: "building_id",
+      layer: "table_osm_buildings",
+      edits: [
+        { op: "remove", ids: [119, 136] },
+        { op: "set", ids: ["w7"], column: "height", value: 30 },
+      ],
+    });
+    expect(byId["fresh"].metadata).toBeUndefined();
+    expect(byId["junk"].metadata).toBeUndefined();
+  });
+});
+
 describe("TrillGenerator Data Pool conflict modes (#581)", () => {
   beforeEach(() => {
     TrillGenerator.reset();

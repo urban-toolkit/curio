@@ -34,9 +34,9 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/computation-analysis": 3, "curio.builtin/vis-vega": 2}, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, 22,
      {"curio.builtin/data-loading": 5, "curio.builtin/vis-vega": 2}, False),
-    ("06-autark-what-if-shadow-study.json", 8, 9,
-     {"curio.builtin/autk-grammar": 5, "curio.builtin/data-pool": 1,
-      "curio.builtin/compare-scenarios": 2}, False),
+    ("06-autark-what-if-shadow-study.json", 11, 13,
+     {"curio.builtin/autk-grammar": 7, "curio.builtin/data-pool": 1,
+      "curio.builtin/compare-scenarios": 2, "curio.builtin/edit-features": 1}, False),
     ("07-autark-gpu-shader.json", 5, 6,
      {"curio.builtin/autk-grammar": 4, "curio.builtin/data-pool": 1}, True),
     ("08-autark-spatial-join-regression.json", 7, 8,
@@ -246,22 +246,25 @@ def test_example_flows_meet_on_input_circles(basename, expected_fan_in):
         )
 
 
-def test_example_06_is_two_scenarios_that_differ_only_in_height_factor():
-    """Example 06 is a scenario study (#662). Baseline and Twice as tall share
-    the loader and the pool as fixed context; each node of Twice as tall is a
-    copy that names its Baseline twin and holds the same code; and the one value
-    that differs is the shadow step's ``height_factor`` widget, 1 against 2,
-    which its spec reads as a uniform."""
+def test_example_06_is_three_scenarios_over_one_context():
+    """Example 06 is a scenario study (#662). Baseline, Twice as tall and Two
+    towers removed share the loader and the pool as fixed context. Each node of
+    Twice as tall is a copy that names its Baseline twin and holds the same
+    code, and the one value that differs is the shadow step's ``height_factor``
+    widget, 1 against 2, which its spec reads as a uniform. Two towers removed
+    is an Edit Features node that removes two towers, 200 Clarendon and
+    Raffles, by their ``building_id``, before copies of Baseline's two nodes
+    with factor 1."""
     path = os.path.join(EXAMPLES_DIR, "06-autark-what-if-shadow-study.json")
     with open(path, "r", encoding="utf-8") as f:
         flow = json.load(f)["dataflow"]
     nodes = {n["id"]: n for n in flow["nodes"]}
-    baseline, twice = flow["scenarios"]
-    assert (baseline["name"], twice["name"]) == ("Baseline", "Twice as tall")
-    assert not baseline.get("collapsed") and not twice.get("collapsed"), (
+    baseline, twice, towers = flow["scenarios"]
+    assert (baseline["name"], twice["name"], towers["name"]) == ("Baseline", "Twice as tall", "Two towers removed")
+    assert not any(s.get("collapsed") for s in (baseline, twice, towers)), (
         "the shipped scenarios open expanded, so every node shows on the canvas"
     )
-    outside = set(nodes) - set(baseline["nodes"]) - set(twice["nodes"])
+    outside = set(nodes) - set(baseline["nodes"]) - set(twice["nodes"]) - set(towers["nodes"])
     assert outside == {"whatif-data", "whatif-pool", "whatif-compare-chart", "whatif-compare-difference"}
     assert len(baseline["nodes"]) == len(twice["nodes"]) == 2
     for original, copy in zip(baseline["nodes"], twice["nodes"]):
@@ -269,21 +272,55 @@ def test_example_06_is_two_scenarios_that_differ_only_in_height_factor():
         assert nodes[copy]["content"] == nodes[original]["content"], (
             f"{copy} holds other code than its twin {original}"
         )
+    # Two towers removed: its Edit Features node, then copies of Baseline's two.
+    edit, *copies = towers["nodes"]
+    assert copies == ["whatif-towers-compute", "whatif-towers-map"]
+    for original, copy in zip(baseline["nodes"], copies):
+        assert nodes[copy]["metadata"].get("copiedFrom") == [original], copy
+        assert nodes[copy]["content"] == nodes[original]["content"], (
+            f"{copy} holds other code than its twin {original}"
+        )
+    assert nodes[edit]["type"] == "curio.builtin/edit-features"
+    assert nodes[edit]["metadata"]["editFeatures"] == {
+        "key": "building_id",
+        "layer": "table_osm_buildings",
+        "edits": [{"op": "remove", "ids": [119, 136]}],
+    }
+    assert '{"op": "remove", "ids": [119, 136]},' in nodes[edit]["content"]
+    assert '], key="building_id", layer="table_osm_buildings")' in nodes[edit]["content"]
+    feeds = sorted((edge["source"], edge["target"]) for edge in flow["edges"] if edit in (edge["source"], edge["target"]))
+    assert feeds == [("whatif-pool", edit), (edit, "whatif-towers-compute")], (
+        "Two towers removed reads the pool, the context the others read, through its Edit Features node"
+    )
 
     def factor(node_id):
         [widget] = nodes[node_id]["metadata"]["widgets"]
         assert widget["name"] == "height_factor"
         return widget.get("value", widget["default"])
 
-    assert (factor("whatif-baseline-compute"), factor("whatif-modified-compute")) == (1, 2)
+    assert (
+        factor("whatif-baseline-compute"), factor("whatif-modified-compute"), factor("whatif-towers-compute"),
+    ) == (1, 2, 1)
     # Both comparisons read the roads layer of what each scenario's map draws,
-    # and Difference matches the roads by their shapes (they carry no id).
-    for compare in ("whatif-compare-chart", "whatif-compare-difference"):
+    # and Difference matches the roads by their shapes (they carry no id). The
+    # chart compares the three scenarios; Difference, Twice as tall's change.
+    expected_sources = {
+        "whatif-compare-chart": ["whatif-baseline-map", "whatif-modified-map", "whatif-towers-map"],
+        "whatif-compare-difference": ["whatif-baseline-map", "whatif-modified-map"],
+    }
+    for compare, expected in expected_sources.items():
         settings = nodes[compare]["metadata"]["compareScenarios"]
         assert settings["layer"] == "table_osm_roads", compare
         assert 'layer="table_osm_roads")' in nodes[compare]["content"], compare
         sources = sorted(edge["source"] for edge in flow["edges"] if edge["target"] == compare)
-        assert sources == ["whatif-baseline-map", "whatif-modified-map"], compare
+        assert sources == expected, compare
+    chart = nodes["whatif-compare-chart"]
+    assert [(label["scenario"], label["name"], label["color"]) for label in chart["metadata"]["compareScenarios"]["inputs"]] == [
+        (s["id"], s["name"], s["color"]) for s in (baseline, twice, towers)
+    ]
+    assert '("s-towers", "Two towers removed", [!! input 2 !!]),' in chart["content"]
+    third = [e for e in flow["edges"] if e["target"] == "whatif-compare-chart" and e["source"] == "whatif-towers-map"]
+    assert [e.get("targetHandle") for e in third] == ["in_2"]
     assert "key" not in nodes["whatif-compare-difference"]["metadata"]["compareScenarios"].get("difference", {})
     shader = nodes["whatif-baseline-compute"]["content"]
     assert '"height_factor": [!! height_factor !!]' in shader
