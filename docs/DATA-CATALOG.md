@@ -142,7 +142,7 @@ The generated Python is one line, `curio_load_data("<datasetId>")` (`curio_load_
 | `geotiff` | An open rasterio dataset → `src` |
 | `onnx` | An onnxruntime `InferenceSession` on the CPU → `session`. onnxruntime comes with the Street Vision package. |
 | `netcdf` | An xarray `Dataset`, read with netCDF4 → `ds` |
-| `bundle` | Every part, as a tuple → `bundle` |
+| `bundle` | Every part, as a tuple → `bundle`. `part="<file>"` reads one part. |
 | OSM group | A `layers` dict, one `curio_load_data` per layer |
 | NetCDF group | A `layers` dict, one `curio_load_data` per variable |
 | `collection` | `curio_load_collection("<datasetId>")`: the collection's index, one row per file with a readable `path` → `collection` |
@@ -156,6 +156,14 @@ src = curio_load_data("data.utk.elevation", bounds=(-87.64, 41.87, -87.62, 41.89
 ```
 
 Bounds that reach past the raster, or hold no cell's centre, stop the node with a message giving the area the raster covers.
+
+For a dataset of several files, a [bundle](#bundles), `part="<file>"` reads one of them: the file its `bundle.json` lists under that file name or label, read as the whole bundle's tuple holds it. With a GeoTIFF part, `bounds` then reads a window of it:
+
+```python
+depth = curio_load_data("<datasetId>", part="depth_2050.tif", bounds=(-90.687, 41.416, -90.488, 41.624))
+```
+
+A name the bundle does not list stops the node with a message naming the dataset and the files it has.
 
 To read the file another way, for example a CSV with another separator, use `curio_data_path("<datasetId>")`, which gives the file's path: `pd.read_csv(curio_data_path("<datasetId>"), sep=";")`, or `netCDF4.Dataset(curio_data_path("<datasetId>"))` for a NetCDF file.
 
@@ -240,6 +248,8 @@ computed.<dataflowId>.<nodeId>@1/
 ```
 
 Scalar parts (numbers, strings, booleans) are stored as `{"value": ...}`. The generated loader reads `bundle.json`, rebuilds each part, and returns a tuple, so a downstream node sees exactly the shape the producing node returned. A table part keeps its `metadata`, the name and Autark layer type the producing node gave it (`gdf.metadata = {"name": "roads", "layerType": "roads"}`), and `bundle.json` lists them as each part's `layerName` and `layerType`. A single saved table keeps its `metadata` the same way.
+
+A dataset you ship can be a bundle too, when several files are one input: its files side by side in `data/`, under their own names, and `data/bundle.json` listing each as `{"index", "label", "kind", "format", "file"}` (`"file": "data/depth_2050.tif"`). A node reads one file of it with `curio_load_data("<datasetId>", part="<file>")`. Only a file inside the dataset's folder is a part.
 
 Previewing a bundle gives you a **tab per part**; a part with no rows is labelled *"Scalar or metadata part"*. A bundle **cannot be exported** as a single file, and its Export button is disabled.
 

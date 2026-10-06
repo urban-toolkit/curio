@@ -39,6 +39,35 @@ def _helpers(paths, formats=None, *, collections=None, models=None, media_dir=No
     return namespace
 
 
+BUNDLE_FILES = "frame.csv, count.json, depth.tif"
+
+
+def _bundle_dataset(root):
+    """A dataset of several files, as a shipped one is laid out: its files side
+    by side in ``data/`` and ``data/bundle.json`` listing them. The GeoTIFF is
+    4 by 4 cells of 1 degree from (0, 0), valued 0 to 15."""
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+
+    data = root / "data"
+    data.mkdir(parents=True)
+    pd.DataFrame({"x": [1, 2]}).to_csv(data / "frame.csv", index=False)
+    (data / "count.json").write_text(json.dumps({"value": 7}), encoding="utf-8")
+    with rasterio.open(
+        data / "depth.tif", "w", driver="GTiff", width=4, height=4, count=1, dtype="float32",
+        crs="EPSG:4326", transform=from_origin(0, 4, 1, 1),
+    ) as raster:
+        raster.write(np.arange(16, dtype="float32").reshape(1, 4, 4))
+    (root / "manifest.json").write_text("{}", encoding="utf-8")
+    (data / "bundle.json").write_text(json.dumps({"parts": [
+        {"index": 0, "label": "Frame", "kind": "dataframe", "format": "csv", "file": "data/frame.csv"},
+        {"index": 1, "label": "Count", "kind": "int", "format": "json", "file": "data/count.json"},
+        {"index": 2, "label": "Depth", "kind": "raster", "format": "geotiff", "file": "data/depth.tif"},
+    ]}), encoding="utf-8")
+    return data / "bundle.json"
+
+
 class TestLoadData:
     def test_a_csv_is_a_table(self, tmp_path):
         path = tmp_path / "t.csv"
@@ -127,6 +156,61 @@ class TestLoadData:
         ]}), encoding="utf-8")
         frame, number = _helpers({"d": data / "bundle.json"}, {"d": {"format": "bundle"}})["curio_load_data"]("d")
         assert int(frame["x"].iloc[0]) == 1 and number == 7
+
+    def test_a_part_of_a_bundle_is_the_value_the_whole_read_gives_for_it(self, tmp_path):
+        """``part=`` names one file of a bundle by its file name or its label,
+        and reads it as the whole bundle's tuple holds it."""
+        load = _helpers({"d": _bundle_dataset(tmp_path)}, {"d": {"format": "bundle"}})["curio_load_data"]
+        frame, count, raster = load("d")
+        assert list(load("d", part="frame.csv")["x"]) == list(frame["x"]) == [1, 2]
+        assert list(load("d", part="Frame")["x"]) == [1, 2]
+        assert load("d", part="count.json") == load("d", part="Count") == count == 7
+        with load("d", part="Depth") as depth:
+            assert (depth.width, depth.height) == (raster.width, raster.height) == (4, 4)
+        raster.close()
+
+    def test_a_geotiff_part_reads_a_window(self, tmp_path):
+        load = _helpers(
+            {"d": _bundle_dataset(tmp_path)}, {"d": {"format": "bundle"}}, media_dir=str(tmp_path / "media"),
+        )["curio_load_data"]
+        with load("d", part="depth.tif", bounds=(0, 0, 2, 2)) as window:
+            assert (window.width, window.height) == (2, 2)
+            assert window.read(1).tolist() == [[8.0, 9.0], [12.0, 13.0]]
+
+    @pytest.mark.parametrize("part", ["missing.csv", "../manifest.json", "data/frame.csv", "/etc/hosts"])
+    def test_a_part_the_bundle_does_not_list_is_refused_with_its_files(self, tmp_path, part):
+        load = _helpers({"d": _bundle_dataset(tmp_path)}, {"d": {"format": "bundle"}})["curio_load_data"]
+        with pytest.raises(ValueError, match=f"d has no file .*; its files are {BUNDLE_FILES}\\."):
+            load("d", part=part)
+
+    def test_a_listed_file_outside_the_dataset_is_not_a_part(self, tmp_path):
+        """A ``bundle.json`` entry that leaves the dataset's folder, or is a
+        link, is not read: the same rule staging stages parts by."""
+        bundle = _bundle_dataset(tmp_path / "ds")
+        (tmp_path / "outside.csv").write_text("secret\n1\n", encoding="utf-8")
+        (bundle.parent / "link.csv").symlink_to(tmp_path / "outside.csv")
+        spec = json.loads(bundle.read_text(encoding="utf-8"))
+        spec["parts"] += [
+            {"index": 3, "label": "Out", "format": "csv", "file": "../outside.csv"},
+            {"index": 4, "label": "Link", "format": "csv", "file": "data/link.csv"},
+        ]
+        bundle.write_text(json.dumps(spec), encoding="utf-8")
+        load = _helpers({"d": bundle}, {"d": {"format": "bundle"}})["curio_load_data"]
+        for part in ("outside.csv", "Out", "link.csv", "Link"):
+            with pytest.raises(ValueError, match=f"its files are {BUNDLE_FILES}\\."):
+                load("d", part=part)
+
+    def test_part_is_refused_where_there_is_one_file_or_a_collection(self, tmp_path):
+        path = tmp_path / "t.csv"
+        path.write_text("a\n1\n", encoding="utf-8")
+        load = _helpers(
+            {"d": path, "c": tmp_path / "index.parquet"}, {"d": {"format": "csv"}, "c": {"format": "collection"}},
+            collections={"c": {"root": str(tmp_path)}},
+        )["curio_load_data"]
+        with pytest.raises(ValueError, match=r'd is one csv: load it without part, curio_load_data\("d"\)'):
+            load("d", part="t.csv")
+        with pytest.raises(ValueError, match="c is a collection"):
+            load("c", part="a.jpg")
 
     def test_a_collection_is_its_index(self, tmp_path):
         index = tmp_path / "index.parquet"
@@ -397,6 +481,62 @@ def test_an_isolated_node_loads_by_format(tmp_path):
     result = child.run_node(request, namespace)
     assert result["ok"], result["stderr"]
     assert result["output"]["value"] == 5
+
+
+PART_CODE = (
+    '    frame = curio_load_data("data.x.bundle", part="frame.csv")\n'
+    '    return int(frame["x"].sum()) + curio_load_data("data.x.bundle", part="Count")\n'
+)
+OUTSIDE_CODE = '    return curio_load_data("data.x.bundle", part="../manifest.json")\n'
+
+
+def test_an_in_process_node_reads_one_part_of_a_bundle(tmp_path):
+    """The part is found through the same dataset-path map as the dataset."""
+    from utk_curio.sandbox.app.worker import _worker_init, execute_code
+    from utk_curio.sandbox.util.db import init_db
+
+    _worker_init()
+    init_db()
+    bundle = _bundle_dataset(tmp_path / "data.x.bundle@1")
+
+    def run(code):
+        return execute_code(
+            code, "", "PYTHON_COMPUTATION", "", save_dataset=False,
+            dataset_paths={"data.x.bundle": str(bundle)}, dataset_formats={"data.x.bundle": {"format": "bundle"}},
+        )
+
+    result = run(PART_CODE)
+    assert result["stderr"] == "", result["stderr"]
+    assert result["output"]["dataType"] == "int"
+    refused = run(OUTSIDE_CODE)
+    assert f"data.x.bundle has no file '../manifest.json'; its files are {BUNDLE_FILES}." in refused["stderr"]
+
+
+def test_an_isolated_node_reads_one_part_of_a_staged_bundle(tmp_path):
+    """Under isolation the bundle and its parts are staged into the scratch
+    folder, and the part is read from there."""
+    from utk_curio.sandbox.isolation import child
+    from utk_curio.sandbox.util import staging
+
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    bundle = _bundle_dataset(tmp_path / "data.x.bundle@1")
+    staged = staging.stage_dataset_paths({"data.x.bundle": str(bundle)}, scratch)
+
+    def run(code):
+        return child.run_node({
+            "code": code, "node_type": "curio.builtin/computation-analysis", "data_type": "",
+            "scratch_dir": str(scratch), "input": {"kind": "none"},
+            "dataset_paths": staged, "dataset_formats": {"data.x.bundle": {"format": "bundle"}},
+            "session_imports": [], "limits": {},
+        }, lambda: {"pd": pd})
+
+    result = run(PART_CODE)
+    assert result["ok"], result["stderr"]
+    assert result["output"]["value"] == 10
+    refused = run(OUTSIDE_CODE)
+    assert not refused["ok"]
+    assert f"data.x.bundle has no file '../manifest.json'; its files are {BUNDLE_FILES}." in refused["stderr"]
 
 
 def test_an_isolated_node_reads_a_shipped_dataset_as_in_process(tmp_path):
