@@ -66,11 +66,12 @@ COMPARE = "ef-compare"
 EVERY, LESS = "s-every", "s-less"
 
 # Building 1 in two parts, side by side on the left; building 2, one part as
-# wide as both, on the right. Near Back Bay, in degrees.
+# wide as both, on the right. Near Back Bay, in degrees, about 4 km across, so
+# they fill much of the map an Autark node draws a city in.
 LOAD_CODE = (
     "import geopandas as gpd\n"
     "from shapely.geometry import box\n"
-    "x, y, w, h = -71.0790, 42.3490, 0.0010, 0.0012\n"
+    "x, y, w, h = -71.1000, 42.3400, 0.0120, 0.0250\n"
     "return gpd.GeoDataFrame(\n"
     '    {"building_id": [1, 1, 2], "height": [20.0, 35.0, 50.0]},\n'
     "    geometry=[box(x, y, x + w, y + h), box(x + w, y, x + 2 * w, y + h), box(x + 2 * w, y, x + 4 * w, y + h)],\n"
@@ -87,7 +88,7 @@ EMPTY_LIST = (
 )
 
 #: Where a double-click is tried on the map, as fractions of its drawing.
-PICK_SPOTS = ((0.25, 0.5), (0.75, 0.5), (0.4, 0.5), (0.6, 0.5), (0.5, 0.5), (0.15, 0.6), (0.85, 0.6))
+PICK_SPOTS = ((0.4, 0.5), (0.6, 0.5), (0.45, 0.55), (0.7, 0.5), (0.3, 0.5), (0.5, 0.5), (0.2, 0.6), (0.8, 0.6))
 
 
 def _spec() -> dict:
