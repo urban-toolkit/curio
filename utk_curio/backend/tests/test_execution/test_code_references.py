@@ -444,7 +444,8 @@ class TestLayerChips:
         report = runner.run_through_node(KEY, PID, spec, "t", exec_fn=rec)
         assert report["ok"] is True, report
         assert LAYER_HELPER == "curio_layer"
-        assert 'roads = curio_layer(arg, "table_osm_roads", 0)\nreturn roads["highway"]' in rec.calls[-1][1]["code"]
+        # The runner indents the node's code into its function body.
+        assert '    roads = curio_layer(arg, "table_osm_roads", 0)\n    return roads["highway"]' in rec.calls[-1][1]["code"]
 
     def test_a_javascript_node_gets_the_same_call(self, tmp_curio):
         rec = _RecordingExec()
