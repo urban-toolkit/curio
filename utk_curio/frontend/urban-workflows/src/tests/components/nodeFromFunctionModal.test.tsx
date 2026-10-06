@@ -168,7 +168,8 @@ describe("New node from a Python function", () => {
     expect(spread).toBeDisabled();
     expect(spread).toHaveAttribute("title", expect.stringContaining("takes *values"));
     expect(within(choice).getByRole("option", { name: /^fn_broken: fn_broken does not parse/ })).toBeDisabled();
-    expect(within(choice).getByRole("group", { name: "Function source" })).toBeInTheDocument();
+    // Grouped under the package that ships the module.
+    expect(scale.closest("optgroup")).toHaveAttribute("label", "Function source");
   });
 
   test("starts each parameter at its suggestion, and a read-only package's function in a new package", async () => {
