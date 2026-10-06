@@ -238,13 +238,17 @@ describe("its body in Difference", () => {
     expect(state.output).toEqual({ code: "", content: "" });
     await waitFor(() => expect(mockApply).toHaveBeenCalled());
     expect(JSON.parse(mockApply.mock.calls.at(-1)![0])).toEqual({
-      map: { layerRefs: [{ dataRef: "band_1_change", getFnv: "band_1", isColorMap: true, legendTitle: "band_1 change" }] },
+      map: {
+        layerRefs: [{
+          dataRef: "band_1_change",
+          legendTitle: "band_1 change",
+          getFnv: "band_1",
+          getFnvType: "quantitative",
+          colorMapInterpolator: "interpolateViridis",
+        }],
+      },
     });
-    expect(
-      screen.getByText(
-        "The higher a cell's difference, the darker its red, and the closer it is to no difference, the fainter it is.",
-      ),
-    ).not.toBeNull();
+    expect(screen.getByText("Dark purple is the lowest difference and yellow the highest.")).not.toBeNull();
     expect(screen.queryByRole("combobox", { name: "Key" })).toBeNull();
     // The map says it drew once the Autark code reports so, for this document.
     const map = () => document.querySelector("[data-compare-map-state]")!;

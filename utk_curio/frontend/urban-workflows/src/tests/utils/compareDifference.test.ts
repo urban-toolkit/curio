@@ -81,26 +81,34 @@ describe("the table the map reads it as", () => {
 });
 
 describe("the Autark document that draws it", () => {
-  test("a raster, by a band, with the legend of the reds autk-map draws it in", () => {
+  test("a raster, by a band, from dark purple (lowest) to yellow (highest), as a layer", () => {
     const [band] = differenceValues("raster", { bands: ["band_1"] });
-    expect(differenceMapDoc("raster", band)).toEqual({
-      map: { layerRefs: [{ dataRef: "band_1_change", getFnv: "band_1", isColorMap: true, legendTitle: "band_1 change" }] },
+    expect(differenceMapDoc(band)).toEqual({
+      map: {
+        layerRefs: [{
+          dataRef: "band_1_change",
+          legendTitle: "band_1 change",
+          getFnv: "band_1",
+          getFnvType: "quantitative",
+          colorMapInterpolator: "interpolateViridis",
+        }],
+      },
     });
   });
 
   test("its legend is titled with what it is colored by, as written, and change", () => {
     const value = (name: string) => ({ value: name, text: name, categorical: false });
     const title = (doc: any) => doc.map.layerRefs[0].legendTitle;
-    expect(title(differenceMapDoc("layer", value("Road sunlight (h)")))).toBe("Road sunlight (h) change");
-    expect(title(differenceMapDoc("raster", value("band_2")))).toBe("band_2 change");
+    expect(title(differenceMapDoc(value("Road sunlight (h)")))).toBe("Road sunlight (h) change");
+    expect(title(differenceMapDoc(value("band_2")))).toBe("band_2 change");
     const change = differenceValues("layer", LAYER).find((v) => v.value === "change");
-    expect(title(differenceMapDoc("layer", change))).toBe("change");
-    expect(title(differenceMapDoc("layer", undefined))).toBeUndefined();
+    expect(title(differenceMapDoc(change))).toBe("change");
+    expect(title(differenceMapDoc(undefined))).toBeUndefined();
   });
 
   test("a layer, by a number column, from dark purple (lowest) to yellow (highest)", () => {
     const [sunlight] = differenceValues("layer", LAYER);
-    expect(differenceMapDoc("layer", sunlight)).toEqual({
+    expect(differenceMapDoc(sunlight)).toEqual({
       map: {
         layerRefs: [{
           dataRef: "sunlight_change",
@@ -115,7 +123,7 @@ describe("the Autark document that draws it", () => {
 
   test("a layer, by its change, one color for each", () => {
     const change = differenceValues("layer", LAYER).find((v) => v.value === "change");
-    expect(differenceMapDoc("layer", change)).toEqual({
+    expect(differenceMapDoc(change)).toEqual({
       map: {
         layerRefs: [{
           dataRef: "change",
@@ -130,7 +138,7 @@ describe("the Autark document that draws it", () => {
   });
 
   test("a layer with nothing to color by, plain", () => {
-    expect(differenceMapDoc("layer", undefined)).toEqual({ map: { layerRefs: [{ dataRef: "difference" }] } });
+    expect(differenceMapDoc(undefined)).toEqual({ map: { layerRefs: [{ dataRef: "difference" }] } });
   });
 });
 

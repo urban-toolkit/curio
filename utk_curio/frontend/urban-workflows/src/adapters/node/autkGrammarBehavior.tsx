@@ -39,7 +39,7 @@ import {
 } from './autkRunDescriptions';
 import { loadSpecLayers, materializeBackendLayers, runDataInBackend, toPoolOutput } from './autkLayerMaterialize';
 import {
-    isCurioRasterSource, newAutkDb, resolveRasterInputs, withRasterSources, type CurioRasterSource,
+    isCurioRasterSource, newAutkDb, recolorRasters, resolveRasterInputs, withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { titleLegends } from './autkLegendTitles';
@@ -628,6 +628,7 @@ export const useAutkGrammarBehavior = (
                     await g.run(spec);
                     return g;
                 });
+                recolorRasters(grammar, spec);
                 titleLegends(grammar, spec);
                 // autk-plot's SVG is inline, so it sits on a line of text whose
                 // descender space overflows a pane the plot exactly fills, and

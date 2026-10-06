@@ -10,8 +10,10 @@
  * load: into the grammar's own database, with `loadGeoTiff`, before its map
  * runs. Every other source goes to the grammar unchanged. The map then reads
  * the raster by `getRaster`, at its own extent, outlined so autk-map can place
- * a map that starts with it (`framedRaster`). Nothing in Autark is changed;
- * the instance's data adapter, and that database's `getLayer`, are wrapped.
+ * a map that starts with it (`framedRaster`). Once the map is drawn,
+ * `recolorRasters` colors every raster layer again in its legend's scheme and
+ * domain. Nothing in Autark is changed; the instance's data adapter, and that
+ * database's `getLayer`, are wrapped.
  *
  * A raster comes as GeoTIFF bytes: a Python node's rasterio dataset is asked
  * of the sandbox by its artifact (`/raster`), and a collection an upstream
@@ -164,35 +166,51 @@ const SERVED_RASTERS = Symbol.for('curio.autk.servedRasters');
 
 /**
  * Answer the grammar's `getLayer` for a raster Curio loaded with the raster's
- * own collection, framed. autk-db's `getLayer` gives a raster the workspace's
- * extent once any layer with geometry has set one, which stretches the raster
- * over that layer's extent instead; `getRaster` gives its own. Every other
- * table is the database's to answer, as before.
+ * own collection, framed, as it was read right after loading. autk-db's
+ * `getLayer` gives a raster the workspace's extent once any layer with
+ * geometry has set one, which stretches the raster over that layer's extent
+ * instead; `getRaster` gives its own. Every other table is the database's to
+ * answer, as before.
  */
-function serveRaster(db: any, table: string): void {
-    let served: Set<string> | undefined = db[SERVED_RASTERS];
+function serveRaster(db: any, table: string, collection: any): void {
+    let served: Map<string, any> | undefined = db[SERVED_RASTERS];
     if (!served) {
-        served = new Set();
-        const names = served;
+        served = new Map();
+        const rasters = served;
         const getLayer = typeof db.getLayer === 'function' ? db.getLayer.bind(db) : null;
         db.getLayer = async (name: string, ...rest: any[]) => {
-            if (!names.has(name)) {
+            if (!rasters.has(name)) {
                 if (!getLayer) throw new Error(`Table ${name} not found.`);
                 return getLayer(name, ...rest);
             }
-            if (typeof db.getRaster !== 'function') throw new Error(RASTER_EXPORT_MISSING);
-            return framedRaster(await db.getRaster(name));
+            return rasters.get(name);
         };
         db[SERVED_RASTERS] = served;
     }
-    served.add(table);
+    served.set(table, framedRaster(collection));
+}
+
+/**
+ * autk-db keeps a raster's cells in one store for the whole page, keyed by
+ * workspace and table (`autk.input_0`), not by database. Every Autark node's
+ * database has the workspace `autk`, and a node's input is `input_0`, so two
+ * maps that load a raster at once each drew whichever loaded last. A raster
+ * is loaded and read back here one at a time, and its node keeps what it
+ * read.
+ */
+let rasterLoads: Promise<unknown> = Promise.resolve();
+
+function oneRasterAtATime<T>(load: () => Promise<T>): Promise<T> {
+    const next = rasterLoads.then(load, load);
+    rasterLoads = next.catch(() => undefined);
+    return next;
 }
 
 /**
  * Let one grammar instance load `curio-raster` sources: each goes into the
  * grammar's own database (made with `newDb` when it is the first source), by
- * `loadGeoTiff`, and the map reads it back by `getRaster`. Any other source
- * is the grammar's to load, as before.
+ * `loadGeoTiff`, and the map is handed what `getRaster` read back. Any other
+ * source is the grammar's to load, as before.
  */
 export function withRasterSources(grammar: any, newDb: () => Promise<any>): void {
     const adapter = grammar?.dataAdapter;
@@ -203,11 +221,90 @@ export function withRasterSources(grammar: any, newDb: () => Promise<any>): void
         async resolveSource(db: any, source: any) {
             if (!isCurioRasterSource(source)) return resolveSource(db, source);
             const target = db ?? await newDb();
-            await target.loadGeoTiff(loadGeoTiffParams(source));
-            serveRaster(target, source.outputTableName);
+            if (typeof target.getRaster !== 'function') throw new Error(RASTER_EXPORT_MISSING);
+            const collection = await oneRasterAtATime(async () => {
+                await target.loadGeoTiff(loadGeoTiffParams(source));
+                return target.getRaster(source.outputTableName);
+            });
+            serveRaster(target, source.outputTableName, collection);
             return target;
         },
     };
+}
+
+/**
+ * How every raster layer is drawn, as SCOUT draws its tiles: each cell with a
+ * value fully opaque, 0 included, and a cell with no data (NaN) clear.
+ * autk-map's own opacity grows with a cell's distance from 0 (`far-zero`), so
+ * a 7 m building beside a 527 m tower was drawn 1% opaque.
+ */
+export const RASTER_TRANSFER_FUNCTION = { opacityMin: 1, opacityMax: 1 };
+
+/**
+ * Give each clear cell of *rgba* (autk-map's colored cells, four 0..255
+ * values a cell, rows of *width*) the color of the nearest cell with a value,
+ * keeping it clear. autk-map samples a raster linearly and a clear cell is
+ * black, so every edge between a cell with no data and one with a value was
+ * drawn as a dark line. One pass outward from every colored cell.
+ */
+export function bleedIntoClearCells(rgba: Float32Array, width: number, height: number): void {
+    const cells = width * height;
+    const seen = new Uint8Array(cells);
+    const queue = new Int32Array(cells);
+    let head = 0, tail = 0;
+    for (let i = 0; i < cells; i++) {
+        if (rgba[i * 4 + 3] !== 0) { seen[i] = 1; queue[tail++] = i; }
+    }
+    if (tail === 0) return;
+    while (head < tail) {
+        const from = queue[head++];
+        const x = from % width;
+        const neighbors = [
+            x > 0 ? from - 1 : -1, x < width - 1 ? from + 1 : -1,
+            from >= width ? from - width : -1, from + width < cells ? from + width : -1,
+        ];
+        for (const to of neighbors) {
+            if (to < 0 || seen[to]) continue;
+            seen[to] = 1;
+            rgba[to * 4] = rgba[from * 4];
+            rgba[to * 4 + 1] = rgba[from * 4 + 1];
+            rgba[to * 4 + 2] = rgba[from * 4 + 2];
+            queue[tail++] = to;
+        }
+    }
+}
+
+/**
+ * Draw every raster layer the same way, in the colors its legend shows.
+ * autk-map colors a raster's cells when it loads it, in its default reds, and
+ * autk-grammar sets the layer's `colorMapInterpolator` after that, so the
+ * legend showed the scheme, with no range, and the cells stayed red.
+ * autk-map's `updateColorMap` colors the cells again from the layer's own
+ * config (the layerRef's scheme, else autk-map's reds), as
+ * `RASTER_TRANSFER_FUNCTION` says, and gives the legend its domain. A
+ * raster's cells are colored whatever its `isColorMap`, so on a raster
+ * `"isColorMap": false` hides the legend alone; the grammar turns it on for
+ * any layer with a scheme. The grammar keeps each map by the dataRefs it
+ * draws (`_mapRegistry`); a layer that is not a raster is left as drawn.
+ */
+export function recolorRasters(grammar: any, spec: any): void {
+    const registry: Map<string, any> | undefined = grammar?._mapRegistry;
+    if (!registry) return;
+    const maps = spec?.map ? (Array.isArray(spec.map) ? spec.map : [spec.map]) : [];
+    for (const mapSpec of maps) {
+        for (const ref of mapSpec?.layerRefs ?? []) {
+            const map = registry.get(ref?.dataRef);
+            const layer = map?.layerManager?.searchByLayerId?.(ref.dataRef);
+            if (layer?.layerInfo?.typeLayer !== 'raster' || typeof map.updateColorMap !== 'function') continue;
+            layer.setTransferFunction?.(RASTER_TRANSFER_FUNCTION);
+            map.updateColorMap(ref.dataRef, { colorMap: {} });
+            const rgba = layer.rasterData;
+            if (rgba instanceof Float32Array && layer.rasterResX > 0 && layer.rasterResY > 0) {
+                bleedIntoClearCells(rgba, layer.rasterResX, layer.rasterResY);
+            }
+            if (ref.isColorMap === false) map.updateRenderInfo(ref.dataRef, { isColorMap: false });
+        }
+    }
 }
 
 /** A fresh autk-db database, as autk-grammar makes its own. */
