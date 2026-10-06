@@ -121,9 +121,10 @@ on:
       # report lists every test that passed in one run and failed in another.
       # Each run after the first gets a recreated stack (CURIO_CI_FRESH_STACK),
       # except on test-gpu, whose extra shard servers a step of their own
-      # starts. A re-mint ignores it.
+      # starts. More than 1 also runs test-gpu-stress, whose three stages
+      # repeat the same way. A re-mint ignores it.
       repeat:
-        description: 'Run the backend, sandbox, Jest and e2e tests this many times, to find flaky tests'
+        description: 'Run the backend, sandbox, Jest, e2e and GPU stress tests this many times, to find flaky tests'
         type: choice
         options: ['1', '2', '3', '5', '10']
         default: '1'
@@ -1467,20 +1468,21 @@ jobs:
   test-gpu-stress:
     needs: test-gpu
     # Not on every push: on the cron above, on a PR labelled `stress`, or on a
-    # manual dispatch that asks for it. `!cancelled()` rather than a plain
-    # condition because on those three triggers the jobs it needs are skipped,
-    # and a skipped dependency would otherwise skip this one too; it also keeps
-    # the job running when an earlier suite went red, same as the two above.
+    # manual dispatch that asks for it with `stress` or a `repeat` over 1.
+    # `!cancelled()` rather than a plain condition because on those triggers
+    # the jobs it needs are skipped, and a skipped dependency would otherwise
+    # skip this one too; it also keeps the job running when an earlier suite
+    # went red, same as the two above.
     if: >-
       !cancelled() &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name == 'schedule' ||
-       (github.event_name == 'workflow_dispatch' && inputs.stress && !inputs.remint) ||
+       (github.event_name == 'workflow_dispatch' && (inputs.stress || inputs.repeat > 1) && !inputs.remint) ||
        (github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'stress')))
     runs-on: [self-hosted, linux, gpu, curio]
-    timeout-minutes: 75
+    timeout-minutes: ${{ inputs.repeat > 1 && 350 || 75 }}
     concurrency:
       group: utk-ci-stress-${{ github.ref }}
       cancel-in-progress: false
@@ -1567,12 +1569,15 @@ jobs:
         with:
           node-version: "26"
 
+      # With `repeat`, each stage below runs that many times on this one stack,
+      # as the three stages already share it; every run signs up users of its
+      # own (a fresh --run-id) and writes its own report folder ({run}).
       - name: 🔥 Run the HTTP tiers (5, 10, 50, 100 users)
         run: |
-          python -m utk_curio.backend.tests.stress \
+          bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
             --backend "http://localhost:5072" \
             --tiers 5,10,50,100 \
-            --out "$GITHUB_WORKSPACE/stress" \
+            --out "$GITHUB_WORKSPACE/stress{run}" \
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
 
       # The same 100 users, behaving like people rather than a thundering
@@ -1583,10 +1588,10 @@ jobs:
       - name: 🚶 Run the session profile (100 users, realistic pacing)
         if: always()
         run: |
-          python -m utk_curio.backend.tests.stress \
+          bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
             --backend "http://localhost:5072" \
             --tiers 100 --profile session \
-            --out "$GITHUB_WORKSPACE/stress-session" \
+            --out "$GITHUB_WORKSPACE/stress-session{run}" \
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log"
 
       # Separate step so a red HTTP tier does not hide the state of the WebGPU
@@ -1607,7 +1612,7 @@ jobs:
         run: |
           mkdir -p "$CURIO_STATE_DIR"
           cd utk_curio/backend
-          PYTHONPATH="$GITHUB_WORKSPACE" python -m pytest \
+          PYTHONPATH="$GITHUB_WORKSPACE" bash "$GITHUB_WORKSPACE/scripts/ci_repeat.sh" python -m pytest \
             tests/test_frontend/test_stress_browser.py -v -ra
 
       - name: 📈 Stop the container stats sampler
@@ -1630,7 +1635,9 @@ jobs:
           name: stress-report
           path: |
             stress/
+            stress.run*/
             stress-session/
+            stress-session.run*/
             docker-stats.log
           if-no-files-found: warn
           retention-days: 7

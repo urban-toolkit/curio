@@ -41,7 +41,7 @@ fresh_stack() {
 
 token='{run}'
 addopts="${PYTEST_ADDOPTS-}"
-failed=0
+failed=()
 for (( run = 1; run <= runs; run++ )); do
   suffix=""
   (( run == 1 )) || suffix=".run$run"
@@ -52,15 +52,18 @@ for (( run = 1; run <= runs; run++ )); do
   [[ -z "$addopts" ]] || export PYTEST_ADDOPTS="${addopts//"$token"/$suffix}"
   (( runs == 1 )) || echo "::group::Run $run of $runs"
   if (( run > 1 )) && [[ -n "${CURIO_CI_FRESH_STACK:-}" ]] && ! fresh_stack "$CURIO_CI_FRESH_STACK"; then
-    failed=$((failed + 1))
+    failed+=("$run")
     echo "Run $run of $runs did not start: the stack did not come back."
   else
-    "${args[@]}" || { failed=$((failed + 1)); echo "Run $run of $runs failed."; }
+    "${args[@]}" || { failed+=("$run"); echo "Run $run of $runs failed."; }
   fi
   (( runs == 1 )) || echo "::endgroup::"
 done
 
-if (( failed > 0 )); then
-  (( runs == 1 )) || echo "::error::$failed of $runs runs failed"
+# Which runs failed, for jobs whose results the CI report does not read
+# (test-gpu-stress): "2 of 10 runs failed (runs 2, 5)".
+if (( ${#failed[@]} > 0 )); then
+  printf -v which '%s, ' "${failed[@]}"
+  (( runs == 1 )) || echo "::error::${#failed[@]} of $runs runs failed (runs ${which%, })"
   exit 1
 fi

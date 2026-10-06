@@ -75,7 +75,7 @@ def test_a_failed_run_does_not_stop_the_others_and_fails_the_step(tmp_path):
     result = _repeat(tmp_path, 3, "sh", "-c", "echo run >> runs.txt; [ -f failed-once ] || { touch failed-once; exit 1; }")
     assert result.returncode == 1
     assert len((tmp_path / "runs.txt").read_text().splitlines()) == 3
-    assert "::error::1 of 3 runs failed" in result.stdout
+    assert "::error::1 of 3 runs failed (runs 1)" in result.stdout
 
 
 def test_every_run_after_the_first_gets_a_recreated_stack(tmp_path):
@@ -99,7 +99,7 @@ def test_a_stack_that_cannot_be_recreated_fails_that_run_without_running_it(tmp_
                      CURIO_CI_FRESH_STACK="curio-ci", FAKE_UP_EXIT="1", **fake)
     assert result.returncode == 1
     assert len((tmp_path / "runs.txt").read_text().splitlines()) == 1
-    assert "::error::2 of 3 runs failed" in result.stdout
+    assert "::error::2 of 3 runs failed (runs 2, 3)" in result.stdout
 
 
 def test_a_single_failed_run_fails_the_step(tmp_path):
