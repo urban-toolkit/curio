@@ -6,8 +6,8 @@ graph and the Data Catalog's SCOUT WRF group, gives what SCOUT's own
 ``scripts/scout/reference_routing.py`` in SCOUT's stack (``fixtures/scout_routing/``,
 see its ``ATTRIBUTION.md``). For each of SCOUT's eight recorded runs the weather
 GNN's input is the same bit for bit, the routes are the same node for node, and
-the metrics agree within 1e-3, with the GNN run as the ONNX dataset
-``data.scout.weather-gnn`` instead of torch. SCOUT's run starts at the weather
+the metrics agree within 1e-3, with the GNN run as the Model Catalog's ONNX
+model ``model.scout.weather-gnn`` instead of torch. SCOUT's run starts at the weather
 step SCOUT read (``time_index``), so the proof feeds that step.
 
 SCOUT's bugs the port fixes, each test pairing what SCOUT's run recorded with
@@ -17,7 +17,7 @@ the hourly weather steps were read as 15-minute steps; and the origin's
 longitude was checked against the northern edge.
 
 The node: its template, with the widgets its manifest declares resolved as a run
-resolves them, reads the WRF group and the GNN by id and runs in the sandbox
+resolves them, reads the WRF group and the GNN model by id and runs in the sandbox
 with its package's modules (#719), on the roads the shipped example's Roads
 node makes of its Autark node's roads layer
 (``fixtures/scout_routing/loop_roads.parquet``, written by
@@ -59,7 +59,8 @@ WEATHER_IDS = {
     "WDIR10": "data.scout.wrf-wdir10",
     "RH2": "data.scout.wrf-rh2",
 }
-GNN_ID = "data.scout.weather-gnn"
+GNN_ID = "model.scout.weather-gnn"
+GNN_DIR = REPO / "models" / f"{GNN_ID}@1"
 SCOUT_COMMIT = "b98369e50b2972c0fc22180f56da0ac99a98a545"
 #: SCOUT's recorded runs, each one process (``loader-time`` is two calls in one).
 CASES = ["default", "custom-k1", "custom-k2", "custom-k3", "single-factor", "default-later",
@@ -115,10 +116,17 @@ def _weather() -> dict:
     return {name: str(_data_file(dataset_id)) for name, dataset_id in WEATHER_IDS.items()}
 
 
-def _session():
-    import onnxruntime as ort
+def _gnn_file() -> Path:
+    manifest = json.loads((GNN_DIR / "manifest.json").read_text(encoding="utf-8"))
+    return GNN_DIR / manifest["entry"]
 
-    return ort.InferenceSession(str(_data_file(GNN_ID)), providers=["CPUExecutionProvider"])
+
+def _model():
+    """The weather GNN as the node gets it: what ``curio_load_model`` returns
+    for ``model.scout.weather-gnn``."""
+    from utk_curio.sandbox.util.catalog_helpers import CurioModel
+
+    return CurioModel(GNN_ID, str(GNN_DIR))
 
 
 def _scout_graph():
@@ -166,7 +174,7 @@ def _plan(routing, reference, case, graph=None):
     step SCOUT read."""
     call = case["call"]
     return routing.plan_weather_route(
-        graph if graph is not None else _scout_graph(), reference["routing_box"], _weather(), _session(),
+        graph if graph is not None else _scout_graph(), reference["routing_box"], _weather(), _model(),
         call["origin_"], call["destination_"], mode=call["mode"], K=call["K"],
         time_index=case["time_index"], minutes_into_step=0, rain=call["rain"], wind=call["wind"],
     )
@@ -504,23 +512,31 @@ def test_the_template_declares_the_widgets_its_source_reads():
 
 
 def test_the_template_reads_the_wrf_group_and_the_gnn_by_id():
-    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+    """The weather is the Data Catalog's WRF group, read by dataset id; the GNN
+    is a Model Catalog model, named by a literal ``curio_load_model`` call."""
+    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
+    from utk_curio.backend.app.model_catalog.domain.manifest import load_manifest
 
-    assert sorted(dataset_ids_in_code(_source())) == sorted([*WEATHER_IDS.values(), GNN_ID])
+    assert sorted(dataset_ids_in_code(_source())) == sorted(WEATHER_IDS.values())
+    assert model_ids_in_code(_source()) == [GNN_ID]
     for name, dataset_id in WEATHER_IDS.items():
         manifest = json.loads((REPO / "datasets" / f"{dataset_id}@1" / "manifest.json").read_text(encoding="utf-8"))
         assert (manifest["format"], manifest["groupId"], manifest["layerName"]) == ("netcdf", "netcdf.scout-wrf", name)
         assert (manifest["publisher"], manifest["license"]) == ("SCOUT (urban-toolkit/scout)", "")
         assert "used with the permission of SCOUT's authors" in manifest["description"]
-    gnn = json.loads((REPO / "datasets" / f"{GNN_ID}@1" / "manifest.json").read_text(encoding="utf-8"))
-    assert (gnn["format"], gnn["groupId"], gnn["publisher"], gnn["license"]) == (
-        "onnx", None, "SCOUT (urban-toolkit/scout)", "")
+    gnn = load_manifest(GNN_DIR)
+    assert (gnn.runtime, gnn.task, gnn.labels, gnn.input) == ("onnx", "node-regression", (), None)
+    assert gnn.publisher == "SCOUT (urban-toolkit/scout)"
+    assert "SCOUT's authors" in gnn.license
+    assert not (REPO / "datasets" / "data.scout.weather-gnn@1").exists()
 
 
 def test_the_gnn_takes_any_road_graph():
     """The ONNX model's node and edge counts are free: x is nodes by 7 float32,
     edge_index 2 by edges int64, prediction nodes by 5."""
-    session = _session()
+    import onnxruntime as ort
+
+    session = ort.InferenceSession(str(_gnn_file()), providers=["CPUExecutionProvider"])
     shapes = {i.name: (i.type, i.shape) for i in session.get_inputs()}
     assert [i.name for i in session.get_inputs()] == ["x", "edge_index"]
     assert shapes["x"][0] == "tensor(float)" and shapes["x"][1][1] == 7 and isinstance(shapes["x"][1][0], str)
@@ -528,7 +544,7 @@ def test_the_gnn_takes_any_road_graph():
     assert isinstance(shapes["edge_index"][1][1], str)
     (output,) = session.get_outputs()
     assert output.name == "prediction" and output.shape[1] == 5
-    assert _sha256(_data_file(GNN_ID)).startswith("602fe4a5")
+    assert _sha256(_gnn_file()).startswith("602fe4a5")
 
 
 def test_the_package_declares_the_libraries_it_imports():
@@ -561,7 +577,7 @@ def test_the_shipped_dataflow_runs_the_template_with_the_shared_start_time():
 
     spec = _dataflow()
     assert spec["packages"] == ["scout.routing@1"]
-    assert sorted(ref["datasetId"] for ref in spec["datasets"]) == sorted([*WEATHER_IDS.values(), GNN_ID])
+    assert sorted(ref["datasetId"] for ref in spec["datasets"]) == sorted(WEATHER_IDS.values())
     nodes = {n["id"]: n for n in spec["nodes"]}
     (parameter,) = [n for n in spec["nodes"] if n["type"] == "curio.builtin/parameter"]
     (start,) = parameter["metadata"]["widgets"]
@@ -713,9 +729,10 @@ def _loop_roads_artifact():
 
 def run_node(workspace, *, fails=False, **values):
     """Run the node's template, its widgets at *values*, on the Loop's roads in
-    the sandbox, in process, with the datasets its code names resolved:
-    ``(artifact id, (routes, metrics))``, or with *fails* the node's error text."""
-    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+    the sandbox, in process, with the datasets and the model its code names
+    resolved: ``(artifact id, (routes, metrics))``, or with *fails* the node's
+    error text."""
+    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
     from utk_curio.backend.app.execution.code_references import resolve_references
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
@@ -724,6 +741,7 @@ def run_node(workspace, *, fails=False, **values):
     result = _execute(
         code, _loop_roads_artifact(), NODE_TYPE, "geodataframe", workspace,
         dataset_paths={i: str(_data_file(i)) for i in dataset_ids_in_code(code)},
+        models={i: str(REPO / "models" / f"{i}@1") for i in model_ids_in_code(code)},
         package_modules={"root": str(SOURCES), "names": [MODULE]},
     )
     if fails:

@@ -4,14 +4,13 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/WeatherRouting.json",
-    "sha256": "3a843df3c9f33c355a888db1e8d2f5486feeb83a1122a8e66c5824ccbad065f6",
+    "sha256": "605872818d935c54b2943086439ac370f645648d1a852fff31913c4fd7862679",
     "walkthrough": null
   },
   "prompt": "Compare two weather-aware routes across the Chicago Loop at noon on 6 July 2025, using SCOUT's routing model and its forecast. Load the Loop's roads from the OpenStreetMap extract the examples ship, and set the start time once for both scenarios. In the first scenario rain counts most and wind least; the second is a copy of it with the two the other way round. Each scenario finds the rain-aware, the wind-aware and the fastest route between the same two points, then takes the routes and their metrics apart. Draw both scenarios' routes over the roads on one map, and chart each route's duration, distance, rain exposure and wind exposure in each scenario. The routing model is not part of the standard node set, so whatever provides it needs installing first.",
   "context": null,
   "required": {
     "datasets": [
-      "data.scout.weather-gnn",
       "data.scout.wrf-rain",
       "data.scout.wrf-rh2",
       "data.scout.wrf-t2",
@@ -226,7 +225,6 @@
     ],
     "sources": {
       "datasetIds": [
-        "data.scout.weather-gnn",
         "data.scout.wrf-rain",
         "data.scout.wrf-rh2",
         "data.scout.wrf-t2",
@@ -277,7 +275,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "claude-opus-5-5 from the example JSON, 2026-10-05",
+    "draftedBy": "the SCOUT routing step (#662), from the example JSON, 2026-10-05",
     "reviewedBy": null,
     "reviewedAt": null
   },
@@ -285,10 +283,6 @@
     "dataContent": "identifiers-only",
     "licence": "MIT (this repository)",
     "sourceLicences": [
-      {
-        "datasetId": "data.scout.weather-gnn",
-        "licence": ""
-      },
       {
         "datasetId": "data.scout.wrf-rain",
         "licence": ""
@@ -310,7 +304,7 @@
         "licence": ""
       }
     ],
-    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids. The datasets, and the weather GNN the routing nodes name from the Model Catalog, are SCOUT's (urban-toolkit/scout), used with the permission of its authors; the datasets carry no licence string."
   },
   "notes": "A package node with widgets in two scenarios over Autark's roads and a shared Parameter node: SCOUT's weather routing with rain or wind weighed most, mapped through Autark and compared on four charts."
 }

@@ -104,13 +104,14 @@ def _route(G, route, weight_type, route_index, weather_conditions):
     }
 
 
-def plan_weather_route(graph, bounds, weather, session, origin_, destination_, mode="Default weights", K=1,
+def plan_weather_route(graph, bounds, weather, model, origin_, destination_, mode="Default weights", K=1,
                        time_index=1, minutes_into_step=0, rain=None, heat=None, wind=None, humidity=None):
     """SCOUT's routing, from the graph's bounds to its routes.
 
     *graph* is the road graph and *bounds* its ``(xmin, ymin, xmax, ymax)``;
     *weather* maps RAIN, T2, WSPD10, WDIR10 and RH2 to their NetCDF files and
-    *session* is the weather GNN's onnxruntime session. The trip starts in step
+    *model* is the weather GNN (``curio_load_model("model.scout.weather-gnn")``,
+    or anything whose ``run(feeds)`` returns its outputs). The trip starts in step
     *time_index* of the weather, *minutes_into_step* minutes in.
 
     Returns everything the routes come from: the graph SCOUT routes on, the
@@ -202,7 +203,7 @@ def plan_weather_route(graph, bounds, weather, session, origin_, destination_, m
                                       heat_weight=heat_weight,
                                       wind_weight=wind_weight,
                                       humidity_weight=humidity_weight,
-                                      session=session,
+                                      model=model,
                                       minutes_into_step=minutes_into_step)
 
     routes_data = []
@@ -275,13 +276,13 @@ def route_tables(plan):
     return routes, pd.DataFrame(metrics, columns=["route", "route_index", *METRICS])
 
 
-def calculate_weather_route(roads, weather, session, origin_, destination_, mode="Default weights", K=1,
+def calculate_weather_route(roads, weather, model, origin_, destination_, mode="Default weights", K=1,
                             time_="2025-07-06T00:00:00", rain=None, heat=None, wind=None, humidity=None):
     """SCOUT's weather-aware routes over a roads layer: ``(routes, metrics)``.
 
     *roads* is a Curio roads layer (see road_graph.py); the routes run inside
     its bounds. *weather* maps RAIN, T2, WSPD10, WDIR10 and RH2 to their NetCDF
-    files, *session* is the weather GNN's onnxruntime session, and *time_* is
+    files, *model* is the weather GNN (as ``plan_weather_route`` takes it), and *time_* is
     the start time, local time in the weather's time zone (its ``timezone``
     attribute, else UTC).
     """
@@ -291,7 +292,7 @@ def calculate_weather_route(roads, weather, session, origin_, destination_, mode
         steps = len(ds.dimensions["Time"])
     time_index, minutes_into_step = weather_time_index(time_, start_date, time_zone, steps)
     G, bounds = road_graph(roads)
-    plan = plan_weather_route(G, bounds, weather, session, origin_, destination_, mode=mode,
+    plan = plan_weather_route(G, bounds, weather, model, origin_, destination_, mode=mode,
                               K=int(K), time_index=time_index, minutes_into_step=minutes_into_step,
                               rain=rain, heat=heat, wind=wind, humidity=humidity)
     return route_tables(plan)

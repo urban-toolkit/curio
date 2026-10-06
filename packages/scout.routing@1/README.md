@@ -58,8 +58,9 @@ WRF-Chem forecast over Chicago, an hour a step from 2025-07-06 00:00 UTC to
 2025-07-08 00:00 UTC. A start time is read in the time zone the files declare,
 Chicago's, so the forecast runs from 2025-07-05 19:00 to 2025-07-07 19:00 there;
 the trip reads the hour it starts in, and each 15 minutes of it the hour it is
-in by then. The weather at each road node comes from SCOUT's graph network,
-`data.scout.weather-gnn`, run with onnxruntime.
+in by then. The weather at each road node comes from SCOUT's graph network, the
+Model Catalog model `model.scout.weather-gnn`, which the node loads with
+`curio_load_model` and runs with onnxruntime.
 
 ## A dataflow
 

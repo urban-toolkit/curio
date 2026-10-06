@@ -4,11 +4,13 @@ SCOUT is https://github.com/urban-toolkit/scout. Each script checks that the
 checkout it is given holds the files it reads exactly as committed at
 SCOUT_COMMIT (``BLOBS``, git blob ids), so a rerun reads the same bytes.
 
-The scripts write SCOUT's weather and its weather GNN into the Data Catalog
+The scripts write SCOUT's weather into the Data Catalog
 (``<repo>/datasets/<id>@1/``, ``DATASETS``), each dataset with its manifest
-(``write_manifest``). SCOUT's data is published by SCOUT and used with the
-permission of SCOUT's authors, so a manifest names SCOUT as publisher and no
-license. SCOUT's road graph is not a Curio dataset: a Curio road graph comes
+(``write_manifest``), and its weather GNN into the Model Catalog
+(``<repo>/models/<id>@1/``, ``write_model_manifest``). SCOUT's data is
+published by SCOUT and used with the permission of SCOUT's authors, so a
+dataset manifest names SCOUT as publisher and no license, and the model's
+names that permission as its license. SCOUT's road graph is not a Curio dataset: a Curio road graph comes
 from a Curio roads layer. The cut of it that SCOUT's own routing runs on for
 the proof is a test fixture (``ROAD_NODES_FILE``, ``ROAD_EDGES_FILE``).
 """
@@ -53,18 +55,18 @@ BLOBS = {
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CATALOG = REPO_ROOT / "datasets"
+MODELS = REPO_ROOT / "models"
 #: The scout.routing proof's fixtures.
 FIXTURES = REPO_ROOT / "utk_curio" / "backend" / "tests" / "test_packages" / "fixtures" / "scout_routing"
 
 #: The WRF variables' NetCDF group, and each variable's dataset id.
 WEATHER_GROUP = "netcdf.scout-wrf"
 WEATHER_IDS = {name: f"data.scout.wrf-{name.lower()}" for name in WEATHER_VARIABLES}
-WEATHER_GNN = "data.scout.weather-gnn"
 #: Each dataset's data file, under ``<catalog>/<id>@1/``.
-DATASETS = {
-    **{dataset_id: f"data/{name}.nc" for name, dataset_id in WEATHER_IDS.items()},
-    WEATHER_GNN: "data/weather_gnn.onnx",
-}
+DATASETS = {dataset_id: f"data/{name}.nc" for name, dataset_id in WEATHER_IDS.items()}
+#: The weather GNN's Model Catalog id, and its ONNX file under ``<models>/<id>@1/``.
+WEATHER_GNN = "model.scout.weather-gnn"
+WEATHER_GNN_ENTRY = "files/weather_gnn.onnx"
 #: SCOUT's road graph cut, under ``<fixtures>/``: its nodes and its edges.
 ROAD_NODES_FILE = "roads_nodes.parquet"
 ROAD_EDGES_FILE = "roads_edges.parquet"
@@ -73,6 +75,8 @@ PUBLISHER = "SCOUT (urban-toolkit/scout)"
 SOURCE_LABEL = "SCOUT"
 STAMP = "2026-10-05T00:00:00Z"
 PERMISSION = "used with the permission of SCOUT's authors"
+#: A Model Catalog model names its license; SCOUT's is this permission.
+MODEL_LICENSE = "Used with the permission of SCOUT's authors"
 
 
 def git_blob_id(path):
@@ -123,5 +127,26 @@ def write_manifest(catalog, dataset_id, *, name, fmt, description, tags,
     }
     path = Path(catalog) / f"{dataset_id}@1" / "manifest.json"
     path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def model_file(models, model_id=WEATHER_GNN):
+    """Where the Model Catalog model *model_id*'s ONNX file lives under *models*."""
+    return Path(models) / f"{model_id}@1" / WEATHER_GNN_ENTRY
+
+
+def write_model_manifest(models, model_id, *, name, task, description, tags):
+    """*model_id*'s Model Catalog manifest (``parse_manifest`` in
+    ``utk_curio/backend/app/model_catalog/domain/manifest.py``), for the ONNX
+    file already at ``model_file``: no labels and no image input, its size the
+    file's."""
+    manifest = {
+        "id": model_id, "name": name, "version": "1.0.0", "compatibility": {"major": 1},
+        "description": description, "publisher": PUBLISHER, "homepage": SCOUT_URL, "license": MODEL_LICENSE,
+        "runtime": "onnx", "task": task, "entry": WEATHER_GNN_ENTRY, "labels": [], "tags": list(tags),
+        "sizeBytes": model_file(models, model_id).stat().st_size, "createdAt": STAMP, "updatedAt": STAMP,
+    }
+    path = Path(models) / f"{model_id}@1" / "manifest.json"
     path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return path

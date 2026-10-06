@@ -4,7 +4,7 @@ Ported from SCOUT (https://github.com/urban-toolkit/scout),
 backend/models/routing/scripts/weight_calculation.py. What changed:
 
 - The graph network runs as an ONNX model through onnxruntime (``gnn_predict``),
-  the Data Catalog's data.scout.weather-gnn, in place of SCOUT's torch
+  the Model Catalog's model.scout.weather-gnn, in place of SCOUT's torch
   ``NodeRegressor`` loaded from rain_model.pth. Its inputs are the arrays SCOUT
   hands torch, as numpy arrays.
 - The edge weights are stored as Python floats. SCOUT computes them in float32
@@ -35,10 +35,12 @@ from scipy.spatial import cKDTree
 ZONE_MINUTES = 15
 
 
-def gnn_predict(session, x, edge_index):
-    """The graph network's five weather values at each node: an onnxruntime
-    session of data.scout.weather-gnn on SCOUT's node features and edges."""
-    return session.run(["prediction"], {"x": x, "edge_index": edge_index})[0]
+def gnn_predict(model, x, edge_index):
+    """The graph network's five weather values at each node: the Model
+    Catalog's model.scout.weather-gnn, as ``curio_load_model`` returns it, run
+    on SCOUT's node features and edges. Its one output is ``prediction``."""
+    (prediction,) = model.run({"x": x, "edge_index": edge_index})
+    return prediction
 
 
 def build_grid_kdtree(lats_arr, lons_arr):
@@ -67,7 +69,7 @@ def GNN_weight_calculations(G,
                             wind_weight=0.09648,
                             humidity_weight=0.01668,
                             *,
-                            session,
+                            model,
                             minutes_into_step=0):
     """
     Use a GNN to predict rain in any given node and use that vector to apply weights to the graph edges as a matrix operation.
@@ -83,7 +85,7 @@ def GNN_weight_calculations(G,
     humidity_ds (NC): 3D array of humidity data (time, lat, lon).
     time (int): The weather's step the trip starts in.
     trip_time_seconds (list): List of trip times in seconds for which to stitch datasets.
-    session: The onnxruntime session of the weather GNN.
+    model: The weather GNN, model.scout.weather-gnn as ``curio_load_model`` returns it.
     minutes_into_step (int): How far into its step the trip starts.
 
     Default penalty lambda based calculated previously with entropy weights.
@@ -121,7 +123,7 @@ def GNN_weight_calculations(G,
     )
 
     # Model makes predictions
-    preds = gnn_predict(session, x, edge_index)
+    preds = gnn_predict(model, x, edge_index)
     prediction = preds
     preds = np.nan_to_num(preds, nan=0.0)
 

@@ -86,7 +86,7 @@
   "split": "train",
   "review": {
     "status": "pending-owner-review",
-    "draftedBy": "claude-opus-5-5 from the example JSON, 2026-10-05",
+    "draftedBy": "the SCOUT routing step (#662), from the example JSON, 2026-10-05",
     "reviewedBy": null,
     "reviewedAt": null
   },

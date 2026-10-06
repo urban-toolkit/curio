@@ -10,7 +10,7 @@ GraphSAGE layers (`SAGEConv`, mean aggregation, ReLU) and a linear head.
 names it, and the notebook's loading lines for it are commented out.
 
 Curio runs the network as an ONNX file through onnxruntime (package
-`scout.routing@1`, dataset `data.scout.weather-gnn@1`), so Curio's environment
+`scout.routing@1`, Model Catalog model `model.scout.weather-gnn@1`), so Curio's environment
 never takes torch. This script makes that file once, in a throwaway environment
 with SCOUT's torch stack (SCOUT's `backend/requirements.txt`):
 
@@ -22,9 +22,9 @@ with SCOUT's torch stack (SCOUT's `backend/requirements.txt`):
 
     python scripts/scout/export_weather_gnn.py --scout <SCOUT checkout>
 
-It writes the model into the Data Catalog as `data.scout.weather-gnn@1`, with its
-manifest (the repository's `datasets/`, or `--catalog <folder>`); `--out <file>`
-writes the ONNX file alone, elsewhere.
+It writes the model into the Model Catalog as `model.scout.weather-gnn@1`, with
+its manifest, a `node-regression` model (the repository's `models/`, or
+`--models <folder>`); `--out <file>` writes the ONNX file alone, elsewhere.
 
 What it does:
 
@@ -63,8 +63,8 @@ from pathlib import Path
 
 import numpy as np
 
-from scout_checkout import (BLOBS, CATALOG, PERMISSION, ROUTING, SCOUT_COMMIT, SCOUT_URL, WEATHER_GNN, blob_ids,
-                            check_scout_checkout, data_file, sha256, write_manifest)
+from scout_checkout import (BLOBS, MODELS, ROUTING, SCOUT_COMMIT, WEATHER_GNN, blob_ids, check_scout_checkout,
+                            model_file, sha256, write_model_manifest)
 
 WEIGHT_CALCULATION = f"{ROUTING}/scripts/weight_calculation.py"
 CHECKPOINT = f"{ROUTING}/gnn/rain_model.pth"
@@ -245,18 +245,20 @@ def real_input_checks(npz_path, session, torch=None, model=None):
     return result
 
 
-def write_dataset_manifest(catalog):
-    write_manifest(
-        catalog, WEATHER_GNN, name="SCOUT Weather GNN", fmt="onnx",
-        tags=["onnx", "model", "gnn", "weather", "routing", "scout", "chicago"],
+def write_gnn_manifest(models):
+    """The Model Catalog manifest of the exported file: a ``node-regression``
+    model, the task #740 (komar41) added for a graph in and values per node out."""
+    write_model_manifest(
+        models, WEATHER_GNN, name="SCOUT weather GNN (weather at road nodes)", task="node-regression",
+        tags=["weather", "routing", "gnn", "graphsage", "roads", "scout", "onnx"],
         description=(
-            "SCOUT's weather GNN as an ONNX model: a graph network (two GraphSAGE layers with mean aggregation "
-            "and a linear head) that predicts five weather values at every node of a road graph from the WRF "
-            "weather at the node. Inputs x (float32, nodes by 7: " + ", ".join(INPUT_FEATURES) + ") and "
-            "edge_index (int64, 2 by edges: the source and target row of each edge); output prediction "
-            "(float32, nodes by 5: " + ", ".join(OUTPUTS) + "). The scout.routing package weights its routes "
-            f"with it. Exported once from SCOUT's {CHECKPOINT} with scripts/scout/export_weather_gnn.py. "
-            f"From SCOUT, {SCOUT_URL}, {PERMISSION}."
+            "SCOUT's weather graph network: two GraphSAGE layers with mean aggregation and a linear head that "
+            "predict five weather values at every node of a road graph from the WRF weather at the node and its "
+            "neighbours. Inputs x (float32, nodes by 7: " + ", ".join(INPUT_FEATURES) + ") and edge_index "
+            "(int64, 2 by edges: the source and target row of each edge); output prediction (float32, nodes by "
+            "5: " + ", ".join(OUTPUTS) + "); node and edge counts are free. Exported once from SCOUT's "
+            f"{CHECKPOINT} by scripts/scout/export_weather_gnn.py. The Weather Routing node of scout.routing@1 "
+            "runs it to weigh each road before routing. Used with the permission of SCOUT's authors."
         ),
     )
 
@@ -264,18 +266,18 @@ def write_dataset_manifest(catalog):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--scout", help="a SCOUT checkout at SCOUT_COMMIT (not needed with --onnx-only)")
-    parser.add_argument("--catalog", default=str(CATALOG), help="the catalog folder to write into (datasets/)")
+    parser.add_argument("--models", default=str(MODELS), help="the Model Catalog folder to write into (models/)")
     parser.add_argument("--out", help="write the ONNX file here alone, or with --onnx-only check this file")
     parser.add_argument("--inputs", action="append", default=[],
                         help="npz of x, edge_index and prediction from SCOUT's run (repeatable)")
     parser.add_argument("--onnx-only", action="store_true", help="check the ONNX file with onnxruntime only")
     parser.add_argument("--report", help="write every number as JSON here")
     args = parser.parse_args()
-    if not args.out:
-        args.out = str(data_file(args.catalog, WEATHER_GNN))
+    into_models = not args.out
+    if into_models:
+        args.out = str(model_file(args.models))
         if not args.onnx_only:
             Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-            write_dataset_manifest(args.catalog)
     import onnxruntime
 
     report = {"python": platform.python_version(), "machine": platform.machine(),
@@ -302,6 +304,8 @@ def main():
                        "torch": torch.__version__, "torch_geometric": torch_geometric.__version__,
                        "model": dict(zip(("in_channels", "hidden_channels", "out_channels"), sizes))})
         first = export(torch, model, sizes[0], args.out)
+        if into_models:
+            write_gnn_manifest(args.models)
         again = export(torch, model, sizes[0], str(args.out) + ".again")
         Path(str(args.out) + ".again").unlink()
         report["export_repeats_bytes"] = first == again

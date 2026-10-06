@@ -27,7 +27,8 @@ weather = {
 return calculate_weather_route(
     arg,
     weather,
-    curio_load_data("data.scout.weather-gnn"),
+    # SCOUT's weather graph network, the Model Catalog's weather GNN.
+    curio_load_model("model.scout.weather-gnn"),
     [!! origin !!],
     [!! destination !!],
     mode=[!! mode !!],
