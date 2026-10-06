@@ -659,7 +659,7 @@ The node has two tabs:
   (**Combine**: mean, sum, median, minimum, maximum, or a count of rows).
 - **Difference**, in its place in Difference, maps a raster's or a layer's
   difference, colored by a band or a number column, or by `change` (**Color by**).
-  The legend is titled with what it shows: `sunlight_change` for the column
+  The legend is titled with what it shows: `sunlight change` for the column
   `sunlight`, or `change`. A layer's colors run from the lowest difference, dark purple, to the highest,
   yellow. A raster's cells are redder the higher their difference, and fainter the
   closer they are to no difference. A table's difference is shown as a table, each
@@ -895,6 +895,29 @@ a run is going, and a selection only highlights it (see
 [Linking charts](#linking-charts)). A data or compute step runs only when you
 press play or run the dataflow. Without WebGPU nothing is drawn on its own;
 pressing play says why.
+
+### Legend titles
+
+A map's legend is titled with the table of the layer it shows: `input_0` for
+the node's first input. A `layerRef`'s `legendTitle` titles it instead, on a
+vector or a raster layer; a layer without one keeps its table's name.
+`legendTitle` is Curio's own key, not the Autark grammar's.
+
+```json
+{
+  "map": {
+    "layerRefs": [
+      {
+        "dataRef": "input_0",
+        "getFnv": "height",
+        "getFnvType": "quantitative",
+        "colorMapInterpolator": "interpolateViridis",
+        "legendTitle": "Building height (m)"
+      }
+    ]
+  }
+}
+```
 
 ### The starter document
 
