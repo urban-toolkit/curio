@@ -22,15 +22,17 @@ from .db_stubs import _get_json, _post_json, api_json
 #: ``data-run-active``, never from which locator happens to resolve.
 RUN_ALL_BUTTON_NAME = re.compile(r"^(Run all nodes|Cancel run)$")
 
+#: Where the button is: the canvas's rail, or the notebook view's page, which
+#: has no rail.
+RUN_ALL_ROOT_SELECTOR = "#tools-menu, #notebook-run-all"
+
 #: The same element, for JS that has to reach it inside the page.
 RUN_ALL_BUTTON_SELECTOR = (
     '#tools-menu button[aria-label="Run all nodes"], '
-    '#tools-menu button[aria-label="Cancel run"]'
+    '#tools-menu button[aria-label="Cancel run"], '
+    '#notebook-run-all button[aria-label="Run all nodes"], '
+    '#notebook-run-all button[aria-label="Cancel run"]'
 )
-
-
-#: The notebook view's page, which mirrors the run guard as ``data-run-active``.
-NOTEBOOK_PAGE_SELECTOR = '.curio-flow-scroller[data-curio-notebook="true"]'
 
 
 def run_all_button(page):
@@ -50,10 +52,11 @@ def run_all_button(page):
 # the final state. The attribute is either absent or "true", so a record whose
 # oldValue was "true" is an end and any other record is a start.
 #
-# Observed on ``#tools-menu`` with subtree, so a re-created button is still
+# Observed on the button's root (the rail's ``#tools-menu``, or the notebook
+# view's ``#notebook-run-all``) with subtree, so a re-created button is still
 # watched.
-_WATCH_RUN_ALL_JS = """() => {
-    const root = document.querySelector('#tools-menu');
+_WATCH_RUN_ALL_JS = """(rootSelector) => {
+    const root = document.querySelector(rootSelector);
     if (!root) return false;
     if (window.__curioRunWatch) window.__curioRunWatch.observer.disconnect();
     const watch = { started: 0, ended: 0 };
@@ -82,8 +85,8 @@ _READ_RUN_WATCH_JS = """() => window.__curioRunWatch
 
 def watch_run_all(page) -> None:
     """Start recording run-guard transitions. Call BEFORE clicking Run All."""
-    assert page.evaluate(_WATCH_RUN_ALL_JS), (
-        "#tools-menu is not on the page; there is nothing to watch a run on"
+    assert page.evaluate(_WATCH_RUN_ALL_JS, RUN_ALL_ROOT_SELECTOR), (
+        "no Run all button (#tools-menu or #notebook-run-all) is on the page; there is nothing to watch a run on"
     )
 
 
@@ -140,13 +143,11 @@ def wait_for_run_guard_released(page, *, timeout_ms: int) -> None:
     button as ``data-run-active``). The played node can report Done before that
     run ends: an Autark map that already drew from its input stays Done while
     the ancestors it waits on re-run. Waiting on the guard waits for the whole
-    run the click started. The notebook view has no rail and no Run All button
-    in sight: its page carries the same attribute.
+    run the click started.
     """
     try:
         page.wait_for_function(
-            f"() => {{ const b = document.querySelector({RUN_ALL_BUTTON_SELECTOR!r})"
-            f" || document.querySelector({NOTEBOOK_PAGE_SELECTOR!r});"
+            f"() => {{ const b = document.querySelector({RUN_ALL_BUTTON_SELECTOR!r});"
             " return !b || b.getAttribute('data-run-active') !== 'true'; }",
             timeout=timeout_ms,
         )
