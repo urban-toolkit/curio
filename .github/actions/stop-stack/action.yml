@@ -10,6 +10,8 @@ inputs:
     description: The compose project, e.g. curio-ci
     required: true
 
+# Each step is one subcommand of scripts/ci_stack.sh, which the flake hunt's
+# lanes (scripts/ci_lanes.py) call too.
 runs:
   using: composite
   steps:
@@ -17,23 +19,9 @@ runs:
       shell: bash
       env:
         PROJECT: ${{ inputs.project }}
-      run: |
-        docker compose -p "$PROJECT" down -v --remove-orphans || true
-        docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" | xargs -r docker rm -f
+      run: bash "$GITHUB_WORKSPACE/scripts/ci_stack.sh" down "$PROJECT"
 
-    # The containers run as root and write into the bind-mounted checkout,
-    # which the runner user cannot clean otherwise. Every commit pulls a new
-    # image of several GB, and the daemon is this runner's own, so the images
-    # of other commits go; `docker image rm` without -f skips any still in use.
     - name: 🧹 Hand back root-owned files, remove old CI images (self-hosted)
       if: runner.environment == 'self-hosted'
       shell: bash
-      env:
-        PROJECT: ${{ inputs.project }}
-      run: |
-        docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
-        repo="ghcr.io/${GITHUB_REPOSITORY,,}-ci"
-        docker image ls "$repo" --format '{{.Repository}}:{{.Tag}}' \
-          | { grep -v ":${GITHUB_SHA}\$" || true; } \
-          | xargs -r docker image rm > /dev/null 2>&1 || true
-        docker image prune -f > /dev/null 2>&1 || true
+      run: bash "$GITHUB_WORKSPACE/scripts/ci_stack.sh" handback

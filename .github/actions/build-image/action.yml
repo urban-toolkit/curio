@@ -1,0 +1,60 @@
+name: Build the Curio CI image
+description: >-
+  Build the image every CPU job runs and push it to GHCR under the commit's
+  SHA. The layer cache lives in the Actions cache, so a commit that changes
+  only source rebuilds only the layers after the source copy (see the
+  Dockerfile's order).
+
+inputs:
+  token:
+    description: A token that can write packages (secrets.GITHUB_TOKEN)
+    required: true
+  reuse:
+    description: >-
+      "true" skips the build when GHCR already holds this commit's image, as
+      it does once the Full stack build ran on the commit (the flake hunt)
+    default: "false"
+
+outputs:
+  image:
+    description: The image's name, ghcr.io/<repo>-ci:<sha>
+    value: ${{ steps.name.outputs.image }}
+
+runs:
+  using: composite
+  steps:
+    - name: 🏷️ Name the image
+      id: name
+      shell: bash
+      run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-ci:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+    - uses: docker/login-action@v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.token }}
+
+    - name: 🔎 Look for this commit's image
+      id: existing
+      if: inputs.reuse == 'true'
+      shell: bash
+      env:
+        IMAGE: ${{ steps.name.outputs.image }}
+      run: |
+        if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+          echo "$IMAGE is already in GHCR; not building it again."
+          echo "found=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - uses: docker/setup-buildx-action@v4
+      if: steps.existing.outputs.found != 'true'
+
+    - name: 🔨 Build and push the image
+      if: steps.existing.outputs.found != 'true'
+      uses: docker/build-push-action@v7
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.name.outputs.image }}
+        cache-from: type=gha,scope=curio-image
+        cache-to: type=gha,scope=curio-image,mode=max

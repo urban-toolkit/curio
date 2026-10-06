@@ -18,7 +18,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `docs/`: user and developer guides; `docs/examples/` (curated dataflows, their walkthroughs, test dataflows); `docs/schemas/` (`trill.v1.json`).
 - `scripts/`: developer and CI scripts (see Scripts).
 - `vendor/duckdb-extensions/`: DuckDB extensions bundled with Curio.
-- `.github/workflows/`: CI and release workflows (see CI); `.github/actions/`: `start-stack`, `stop-stack`.
+- `.github/workflows/`: CI and release workflows (see CI); `.github/actions/`: `start-stack`, `stop-stack` (both run `scripts/ci_stack.sh`), `build-image`.
 - `docker-compose.yml` plus overlays: `docker-compose.ci.yml`, `docker-compose.ci-shards.yml`, `docker-compose.ci-isolated.yml`, `docker-compose.ci-exec-user.yml`, `docker-compose.ci-stress.yml`, `docker-compose.deploy.yml`.
 
 ## Entry points
@@ -119,7 +119,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 - `ci-report`: one HTML report for the run (`scripts/ci_report.py`); checks that every test ran.
 - Dispatch inputs: `stress`, and `remint` with `remint_filter` and `remint_force` (re-mints screenshot baselines into the `reminted-baselines` artifact).
 
-Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema), `bump-version.yml` (version bump on main), `deploy.yml` (deploys main), `publish-pip-to-pypi.yml` (PyPI on release); manual diagnostics `e2e-autark-repro.yml`, `rerun-memory-repro.yml`, `zygote-fork-crash-repro.yml`.
+Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema), `bump-version.yml` (version bump on main), `deploy.yml` (deploys main), `publish-pip-to-pypi.yml` (PyPI on release); manual diagnostics `e2e-autark-repro.yml`, `rerun-memory-repro.yml`, `zygote-fork-crash-repro.yml`; `flake-hunt.yml` (the same tests on 10 or more stacks at once, on dispatch or a `flake/**` push; `scripts/ci_lanes.py` runs the stacks, `scripts/ci_flakes.py` names the flaky tests).
 
 ## Scripts
 
@@ -129,7 +129,7 @@ Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema),
 - `scripts/generate_contracts.py`: writes `src/generated/` and every `utk_curio/llm-prompts/X.md` that has an `X.template.md`; `--check` lists stale outputs.
 - `scripts/sync_autk_schema.py`: vendors the Autark grammar schema; `--check` compares it with the release.
 - `scripts/validate_trill.py`: validates dataflow JSON against `docs/schemas/trill.v1.json`.
-- Example builders: `scripts/build_example_*.py`. Test fixtures: `scripts/record_discovery_fixtures.py` and the `generate_*_fixture.py` scripts. CI helpers: `scripts/ci_*.py` and the shard balancers `e2e_*.py`, `unit_durations.py`.
+- Example builders: `scripts/build_example_*.py`. Test fixtures: `scripts/record_discovery_fixtures.py` and the `generate_*_fixture.py` scripts. CI helpers: `scripts/ci_*.py`, `scripts/ci_stack.sh` (start, wait for and stop a compose stack) and the shard balancers `e2e_*.py`, `unit_durations.py`.
 
 ## Big files
 

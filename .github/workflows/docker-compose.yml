@@ -191,11 +191,9 @@ jobs:
             unit-backend-1 unit-backend-2 test-isolated test-exec-user ci-report
 
   # The image every CPU job below runs, built once per commit and pushed to
-  # GHCR under the commit's SHA. The layer cache lives in the Actions cache, so
-  # a commit that changes only source rebuilds only the layers after the source
-  # copy (see the Dockerfile's order). The GPU jobs keep building their own
-  # image from their runner's warm local cache, so the GPU path never waits on
-  # this one.
+  # GHCR under the commit's SHA (.github/actions/build-image, which the flake
+  # hunt uses too). The GPU jobs keep building their own image from their
+  # runner's warm local cache, so the GPU path never waits on this one.
   build-image:
     needs: pick-runners
     if: ${{ needs.pick-runners.result == 'success' }}
@@ -205,7 +203,7 @@ jobs:
       contents: read
       packages: write
     outputs:
-      image: ${{ steps.name.outputs.image }}
+      image: ${{ steps.build.outputs.image }}
     steps:
       - name: 🧹 Reclaim root-owned workspace files (self-hosted)
         if: runner.environment == 'self-hosted'
@@ -214,26 +212,10 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
-      - name: 🏷️ Name the image
-        id: name
-        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-ci:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-buildx-action@v4
-
-      - uses: docker/login-action@v4
+      - uses: ./.github/actions/build-image
+        id: build
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 🔨 Build and push the image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.name.outputs.image }}
-          cache-from: type=gha,scope=curio-image
-          cache-to: type=gha,scope=curio-image,mode=max
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   test-gpu:
     # Runs on a GPU runner: an arcade one while one is free, utk-gpu otherwise
