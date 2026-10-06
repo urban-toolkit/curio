@@ -614,7 +614,8 @@ two towers taken out of a city's buildings, say.
 2. Pick the layer to edit in **Layer**, when the input carries several, and the column
    that identifies a feature in **Id**: `osm_id` or `building_id` when the layer has
    them, or another column whose values differ in every feature. A layer with no such
-   column is refused: a feature's place in a layer is not an id.
+   column is refused: a feature's place in a layer is not an id. While the node has
+   edits, the two menus stay as they are: delete the edits to pick another.
 3. Double-click features on the node's map to pick them. **Picked** lists their ids.
 4. Press **Remove**, **Restore**, or **Set value** with a column and a value. Each
    press adds an edit to the node's list, under the map: Remove drops the picked

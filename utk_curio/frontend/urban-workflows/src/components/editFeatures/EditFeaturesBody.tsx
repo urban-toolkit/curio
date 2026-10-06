@@ -30,6 +30,10 @@ import {
 } from "../../utils/editFeatures/editFeatures";
 import styles from "./EditFeatures.module.css";
 
+/** Why the Layer and Id menus are held while the list has edits: the edits
+ * name features of that layer by that column. */
+const HELD = "The edits name features of this layer by this column: delete them to pick another.";
+
 /** The map's code loads with the first layer to draw. */
 const EditFeaturesMap = React.lazy(() => import("./EditFeaturesMap"));
 
@@ -98,6 +102,7 @@ function Select({
   disabled,
   onChange,
   testId,
+  title,
 }: {
   label: string;
   value: string | undefined;
@@ -105,6 +110,7 @@ function Select({
   disabled?: boolean;
   onChange: (value: string) => void;
   testId: string;
+  title?: string;
 }) {
   return (
     <label className={styles.field}>
@@ -113,6 +119,7 @@ function Select({
         className="nodrag nopan"
         aria-label={label}
         data-testid={testId}
+        title={title}
         value={value ?? ""}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
@@ -219,7 +226,8 @@ export function EditFeaturesBody({
               testId="edit-features-layer"
               value={layer.table}
               options={layers.map((l) => l.table)}
-              disabled={!writable}
+              disabled={!writable || edits.length > 0}
+              title={edits.length > 0 ? HELD : undefined}
               onChange={(table) => {
                 const next = layers.find((l) => l.table === table);
                 const nextKeys = next ? keyColumns(next.fc) : [];
@@ -234,7 +242,8 @@ export function EditFeaturesBody({
               testId="edit-features-key"
               value={key}
               options={keys}
-              disabled={!writable}
+              disabled={!writable || edits.length > 0}
+              title={edits.length > 0 ? HELD : undefined}
               onChange={(nextKey) => write({ ...(settings ?? {}), key: nextKey })}
             />
           ) : null}

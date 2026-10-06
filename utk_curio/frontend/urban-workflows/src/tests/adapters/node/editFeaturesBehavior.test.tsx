@@ -109,6 +109,9 @@ test("the map draws the input with the layer to edit pickable, on top", async ()
   expect(mockMapData.input).toBe(INPUT);
   expect(screen.getByRole("combobox", { name: "Id" })).toHaveValue("building_id");
   expect(screen.getByRole("combobox", { name: "Layer" })).toHaveValue("table_osm_buildings");
+  // With no edits yet, both can still change.
+  expect(screen.getByRole("combobox", { name: "Id" })).toBeEnabled();
+  expect(screen.getByRole("combobox", { name: "Layer" })).toBeEnabled();
   expect(document.querySelector("[data-edit-building-note]")?.textContent).toMatch(/applies to the whole building/);
 });
 
@@ -164,6 +167,12 @@ test("the edit list shows each edit, and the × deletes one", async () => {
   expect(list.getAttribute("data-edit-list")).toBe("2");
   expect(list.textContent).toContain("Remove building_id 119");
   expect(list.textContent).toContain("Restore building_id 119");
+  // The edits name features of this layer by this column: neither can change under them.
+  for (const name of ["Layer", "Id"]) {
+    const menu = screen.getByRole("combobox", { name });
+    expect(menu).toBeDisabled();
+    expect(menu.getAttribute("title")).toMatch(/delete them to pick another/);
+  }
   fireEvent.click(screen.getByLabelText("Delete edit 1"));
   expect(updateDataNode).toHaveBeenCalledWith(NODE, expect.objectContaining({
     editFeatures: { key: "building_id", layer: "table_osm_buildings", edits: [{ op: "restore", ids: [119] }] },
