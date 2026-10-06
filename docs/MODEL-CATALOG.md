@@ -30,7 +30,7 @@ model.curio.ddrnet23-slim@1/
   files/ddrnet23_slim.data
 ```
 
-The manifest says which runtime runs the model (**ONNX** or **Transformers**), its task (semantic segmentation: a class for every pixel; or image to image: images in, an image out), the **labels** of its classes, and how an image is prepared for it. A model is not a dataset and is never added to a dataflow: a node's code names the model it runs.
+The manifest says which runtime runs the model (**ONNX** or **Transformers**), its task (semantic segmentation: a class for every pixel; image to image: images in, an image out; or node regression: a graph in, its node features and edges, and values for each node out), the **labels** of its classes, and how an image is prepared for it. A model is not a dataset and is never added to a dataflow: a node's code names the model it runs.
 
 ### What ships with Curio
 
@@ -38,10 +38,13 @@ The manifest says which runtime runs the model (**ONNX** or **Transformers**), i
 |---|---|---|---|
 | DDRNet23-Slim (street scenes) | ONNX | The 19 Cityscapes classes: road, sidewalk, building, wall, fence, pole, traffic light, traffic sign, vegetation, terrain, sky, person, rider, car, truck, bus, train, motorcycle, bicycle | MIT; trained on Cityscapes |
 | Deep Umbra (accumulated shadows) | ONNX | None: image to image, building heights in, the share of a day in shadow out | Used with the permission of SCOUT's authors |
+| SCOUT weather GNN (weather at road nodes) | ONNX | None: node regression, a road graph's nodes and the weather at each in, five weather values at each node out | Used with the permission of SCOUT's authors |
 
 DDRNet23-Slim is about 23 MB and labels a street photo in a fraction of a second on a CPU. A new **Image Segmentation** node runs it.
 
 Deep Umbra, [SCOUT](https://github.com/urban-toolkit/scout)'s shadow model, is about 10.5 MB. The **Accumulated Shadow** node of the SCOUT Shadow package (`scout.shadow@1`) runs it on a raster of building heights ([example 24](examples/24-scout-building-rasters.md)). It ships in the repository and its Docker image, not in the pip package: see [Operator notes](#operator-notes).
+
+The weather GNN, SCOUT's weather graph network, is about 52 KB. The **Weather Routing** node of the SCOUT Routing package (`scout.routing@1`) runs it on the road graph it builds from a roads layer, to weigh each road by the weather before routing ([the WeatherRouting test dataflow](examples/dataflows/WeatherRouting.json)).
 
 ### Storage layers
 
@@ -68,7 +71,7 @@ A model's details show its **Identifier**, **Version**, **Runtime**, **Input**, 
 | **View details** | A card, the drawer, or the canvas drawer | Nothing | The model's details. |
 | **View license** | The details | Nothing | The model's license text. |
 | **Drag onto a node** | The **Model Catalog** dropdown or the canvas drawer | The node's code | The node's `curio_load_model(...)` line names the model. A node whose code calls no `curio_load_model` says *This node does not run a model*. |
-| **Drag onto the canvas** | The **Model Catalog** dropdown or the canvas drawer | The dataflow | A new node where you drop it, its `curio_load_model(...)` line naming the model: the node made for that model (**Accumulated Shadow** for Deep Umbra), else an **Image Segmentation** node. When no node in the dataflow runs a model, nothing is added and a message names the package to add from the Node Catalog. |
+| **Drag onto the canvas** | The **Model Catalog** dropdown or the canvas drawer | The dataflow | A new node where you drop it, its `curio_load_model(...)` line naming the model: the node made for that model (**Accumulated Shadow** for Deep Umbra, **Weather Routing** for the weather GNN), else an **Image Segmentation** node. When no node in the dataflow runs a model, nothing is added and a message names the package to add from the Node Catalog. |
 | **Delete** | A model you added: its card or the drawer | Your Model Catalog loses the model | A confirmation first; nodes that name it fail the next time they run. A shipped model offers no **Delete**. |
 | **Add to Model Catalog** | A **Hugging Face models** row, in the Discovery Catalog | Your Model Catalog gains a model | A progress bar, then *"Added `<name>` to your Model Catalog."* with **View model**. |
 
@@ -106,7 +109,7 @@ Every input column follows. A class the model does not label stops the node, wit
 
 Dragging a model onto a node rewrites the id in its first `curio_load_model(...)` call and nothing else, so `classes` stays as you set it. The dataflow saves the node's code, so it reopens with the same model.
 
-An image-to-image model is run by the node made for it, which prepares the model's inputs itself and calls `model.run({input name: array})`; it returns the graph's outputs in order. **Accumulated Shadow** runs Deep Umbra this way, one map tile at a time. `curio_segment` refuses an image-to-image model.
+An image-to-image or node-regression model is run by the node made for it, which prepares the model's inputs itself and calls `model.run({input name: array})`; it returns the graph's outputs in order. **Accumulated Shadow** runs Deep Umbra this way, one map tile at a time, and **Weather Routing** runs the weather GNN on its road graph's node features and edges. `curio_segment` refuses these models.
 
 ---
 
@@ -139,10 +142,10 @@ A dataflow names its models by id. Someone you share it with runs a shipped mode
 | `name`, `version` | Yes | What the card says, and the manifest's own version string. |
 | `compatibility.major` | | Defaults to 1. Together with `id` it forms the folder name. |
 | `runtime` | Yes | `onnx` or `transformers`. |
-| `task` | Yes | `semantic-segmentation` or `image-to-image`. |
+| `task` | Yes | `semantic-segmentation`, `image-to-image` or `node-regression`. |
 | `entry` | Yes | For `onnx`, the graph file; for `transformers`, the folder of the checkpoint. A path inside the model's folder. |
-| `labels` | | The classes, in the order the model numbers them. An `image-to-image` model has none. |
-| `input` | For `onnx` | How an image is prepared: `width` and `height` (8 to 8192 pixels), `dtype` (`uint8` or `float32`), `layout` (`NCHW`, or `NHWC` for an `image-to-image` model), `scale`, and an optional `mean` and `std` of three numbers each. |
+| `labels` | | The classes, in the order the model numbers them. An `image-to-image` or `node-regression` model has none. |
+| `input` | For an `onnx` image model | A `node-regression` model reads a graph of any size and has none. How an image is prepared: `width` and `height` (8 to 8192 pixels), `dtype` (`uint8` or `float32`), `layout` (`NCHW`, or `NHWC` for an `image-to-image` model), `scale`, and an optional `mean` and `std` of three numbers each. |
 | `license`, `licenseFile` | `license` | The license, and the file in the folder that holds its text. |
 | `description`, `publisher`, `homepage`, `tags`, `sizeBytes` | | Shown on the card and in the details. |
 

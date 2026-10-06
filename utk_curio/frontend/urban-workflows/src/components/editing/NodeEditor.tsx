@@ -35,7 +35,7 @@ import { useNotebookViewContext } from "../../providers/flow/notebookViewContext
 import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
 import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import { notebookOutputBox } from "../../utils/notebookLayout";
-import { useCellHeaderSlot } from "./cellHeaderSlot";
+import { useNodeHeaderSlot } from "./nodeHeaderSlot";
 import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
 import {
     describeEmptyInputs,
@@ -179,8 +179,8 @@ function NodeEditor({
     // switch to the Output tab, leaves the input tab in place.
     const notebook = useNotebookViewContext();
     // A notebook cell is as tall as its content: nothing here fills a fixed
-    // box, the tab pills sit above the input, and the output gets the height
-    // its kind gets in a cell (notebookOutputBox).
+    // box, and the output gets the height its kind gets in a cell
+    // (notebookOutputBox).
     const inCell = notebook.on && !dashboardOn;
     const split = inCell && hasOutputPane && Boolean(code || grammar);
     const effectiveTab = dashboardOn && hasOutputPane
@@ -288,13 +288,17 @@ function NodeEditor({
         setActiveTab(eventKey);
     };
 
+    // The panes sit on the node's white, as a notebook cell's do; a dashboard
+    // tile keeps its gray panel.
     const tabContentStyle: CSS.Properties = inCell
         ? { backgroundColor: "#ffffff" }
-        : {
-            height: "100%",
-            backgroundColor: "#f2f2f2",
-            borderRadius: "10px",
-        };
+        : dashboardOn
+            ? {
+                height: "100%",
+                backgroundColor: "#f2f2f2",
+                borderRadius: "10px",
+            }
+            : { height: "100%", backgroundColor: "#ffffff" };
     // A pane fills the node on the canvas; in a cell it takes its own height.
     // The provenance graph has none of its own, so it gets one.
     const paneStyle: CSS.Properties | undefined = inCell ? undefined : { height: "100%" };
@@ -335,12 +339,11 @@ function NodeEditor({
         justifyContent: "center",
     };
 
-    // The tab pills: under the panes on the canvas. In a notebook cell they are
-    // among the cell's tools in its header (cellHeaderSlot, styled by
-    // `.curio-cell-tabs` in Node.css), or above the input when the cell has no
-    // header to hold them.
-    const tabSlot = useCellHeaderSlot();
-    const pillsInHeader = inCell && tabSlot !== null;
+    // The tab pills: among the node's tools in its header, on the canvas and in
+    // a notebook cell alike (nodeHeaderSlot, styled by `.curio-node-tabs` in
+    // Node.css), or above the panes when the node has no header to hold them.
+    const tabSlot = useNodeHeaderSlot();
+    const pillsInHeader = tabSlot !== null;
     const pills = !dashboardOn ? (
         <Nav
             variant="pills"
@@ -348,11 +351,11 @@ function NodeEditor({
             style={pillsInHeader ? { background: "none", margin: 0 } : {
                 backgroundColor: "#f2f2f2",
                 borderRadius: "10px",
-                width: inCell ? "40%" : "75%",
+                width: "40%",
                 height: "25px",
                 marginLeft: "auto",
-                marginTop: inCell ? "4px" : "6px",
-                ...(inCell ? { marginBottom: "6px" } : {}),
+                marginTop: "4px",
+                marginBottom: "6px",
             }}
         >
             <Row
@@ -475,7 +478,7 @@ function NodeEditor({
             <div
                 style={{
                     ...{
-                        height: inCell ? "auto" : dashboardOn ? "100%" : "calc(100% - 30px)",
+                        height: inCell ? "auto" : "100%",
                         width: "100%",
                         marginLeft: "auto",
                         marginRight: "auto",
@@ -484,7 +487,7 @@ function NodeEditor({
                 }}
             >
                 <Tab.Container activeKey={effectiveTab} onSelect={handleTabSelect}>
-                    {inCell && !pillsInHeader && pills}
+                    {!pillsInHeader && pills}
                     {pillsInHeader && pills ? createPortal(pills, tabSlot!) : null}
                     {/* No gutter: its negative margins pulled every pane out of
                         the node body, under the port markers (#668). */}
@@ -648,7 +651,6 @@ function NodeEditor({
                             </Tab.Content>
                         </Col>
                     </Row>
-                    {!inCell && pills}
                 </Tab.Container>
             </div>
         </>

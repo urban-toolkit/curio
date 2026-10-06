@@ -1,0 +1,121 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "NetCDF",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/dataflows/NetCDF.json",
+    "sha256": "59175200747c308ef7943348046703a3af3694fd643990fa4f4ab9c5e8442333",
+    "walkthrough": null
+  },
+  "prompt": "Read the five variables of SCOUT's WRF weather forecast from the Data Catalog, average each one over the forecast's grid hour by hour into one table, and draw the mean rain over time as a line chart.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.scout.wrf-rain",
+      "data.scout.wrf-rh2",
+      "data.scout.wrf-t2",
+      "data.scout.wrf-wdir10",
+      "data.scout.wrf-wspd10"
+    ],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "visualization1",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.scout.wrf-rain",
+        "data.scout.wrf-rh2",
+        "data.scout.wrf-t2",
+        "data.scout.wrf-wdir10",
+        "data.scout.wrf-wspd10"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "loader1",
+      "mustMention": [
+        "rain"
+      ],
+      "outputKind": "dataframe"
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "the SCOUT routing step (#662), from the example JSON, 2026-10-05",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "sourceLicences": [
+      {
+        "datasetId": "data.scout.wrf-rain",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.scout.wrf-rh2",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.scout.wrf-t2",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.scout.wrf-wdir10",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.scout.wrf-wspd10",
+        "licence": ""
+      }
+    ],
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "A NetCDF group read whole by one loader: the case the isolated stack runs."
+}

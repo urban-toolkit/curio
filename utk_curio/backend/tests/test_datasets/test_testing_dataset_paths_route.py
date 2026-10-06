@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pytest
 
+from utk_curio.backend.app.datasets.domain.code_refs import MAX_DATASET_IDS
 from utk_curio.backend.app.testing import routes as testing_routes
 from utk_curio.backend.tests.dataset_catalog_coverage import catalog_datasets
 
@@ -52,18 +53,24 @@ class TestResolvesTheCommittedCatalog:
 
         Parametrizing would hide the interesting case: the harness sends ONE
         request per node, and a loader may name several datasets, so they have
-        to resolve together in a single pass.
+        to resolve together in a single pass. One node's code names at most
+        ``MAX_DATASET_IDS`` of them (the cap the execution path shares), and
+        the catalog holds more than that, so the catalog goes as loaders of
+        that many ids each, every one resolving whole in its single pass.
         """
         datasets = catalog_datasets()
         assert datasets, "no committed datasets; this test would be vacuous"
 
-        resp = _post(client, {"code": _loader_code(*(d.dataset_id for d in datasets))})
-        assert resp.status_code == 200
-        paths = resp.get_json()["paths"]
+        paths = {}
+        for start in range(0, len(datasets), MAX_DATASET_IDS):
+            batch = {d.dataset_id for d in datasets[start:start + MAX_DATASET_IDS]}
+            resp = _post(client, {"code": _loader_code(*sorted(batch))})
+            assert resp.status_code == 200
+            resolved = resp.get_json()["paths"]
+            assert set(resolved) == batch, f"unresolved: {sorted(batch - set(resolved))}"
+            paths.update(resolved)
 
-        assert set(paths) == {d.dataset_id for d in datasets}, (
-            f"unresolved: {sorted({d.dataset_id for d in datasets} - set(paths))}"
-        )
+        assert set(paths) == {d.dataset_id for d in datasets}
         for dataset in datasets:
             assert Path(paths[dataset.dataset_id]).samefile(dataset.data_file)
 

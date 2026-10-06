@@ -361,7 +361,7 @@ class TestTheShippedCorpus:
         curated = [p for p in paths if p.parent.name == "examples"]
         legacy = [p for p in paths if p.parent.name == "dataflows"]
         assert len(curated) == 24, [p.name for p in curated]
-        assert len(legacy) == 25, [p.name for p in legacy]
+        assert len(legacy) == 27, [p.name for p in legacy]
 
     @pytest.mark.parametrize("path", example_paths(), ids=lambda p: p.stem)
     def test_every_example_canonicalizes_with_known_templates(self, path):
@@ -411,10 +411,11 @@ class TestTheShippedCorpus:
     def test_these_are_the_examples_whose_templates_need_a_package(self):
         """Example 09 declares ``curio.weather@1`` for its python LIBRARIES
         while using only builtin templates -- a different resolution route
-        from examples 10, 18, 21, 22 and 24 and the BuildingRasters and
-        ScoutShadows test dataflows, whose templates themselves live in a
-        package (``curio.streetvision@1``, ``curio.media@1``,
-        ``scout.raster-conversion@1`` and ``scout.shadow@1``). The
+        from examples 10, 18, 21, 22 and 24 and the BuildingRasters,
+        ScoutShadows and WeatherRouting test dataflows, whose templates
+        themselves live in a package (``curio.streetvision@1``,
+        ``curio.media@1``, ``scout.raster-conversion@1``, ``scout.shadow@1``
+        and ``scout.routing@1``). The
         FloodScenarios test dataflow is made of built-in nodes only."""
         needs_package_templates = {}
         for path in example_paths():
@@ -433,6 +434,7 @@ class TestTheShippedCorpus:
             "24-scout-building-rasters",
             "BuildingRasters",
             "ScoutShadows",
+            "WeatherRouting",
         ]
         assert declared_dependencies(
             json.loads(

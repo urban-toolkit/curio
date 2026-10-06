@@ -4,6 +4,10 @@
  * it scrolls inside. `useNotebookEditorHeight` (components/editing) serves both
  * CodeEditor and GrammarEditor; on the canvas it leaves the editor filling its
  * node.
+ *
+ * The editor's look is not the notebook's alone: on the canvas too it is a gray
+ * input box with no line numbers, gutter or ruler (`nodeEditorLook`). Only a
+ * dashboard tile keeps Monaco's own look.
  */
 import React from "react";
 import { act, render } from "@testing-library/react";
@@ -14,6 +18,7 @@ import {
   NOTEBOOK_SPEC_EDITOR_MAX,
   useNotebookEditorHeight,
 } from "../../components/editing/useNotebookEditorHeight";
+import { nodeEditorLook } from "../../components/editing/nodeEditorLook";
 import { NotebookViewContext } from "../../providers/flow/notebookViewContext";
 
 describe("the height of an editor in a cell", () => {
@@ -55,15 +60,12 @@ function fakeEditor(contentHeight: number) {
 }
 const fakeMonaco = { editor: { EditorOption: { lineHeight: 67 } } };
 
-let lastOptions: Record<string, unknown> = {};
-
 function Probe({ max, editor }: { max: number; editor: ReturnType<typeof fakeEditor> }) {
-  const { attach, wrapperStyle, wrapperClassName, editorOptions } = useNotebookEditorHeight(max);
-  lastOptions = editorOptions;
+  const { attach, wrapperStyle } = useNotebookEditorHeight(max);
   React.useEffect(() => {
     attach(editor, fakeMonaco);
   }, []);
-  return <div data-testid="wrapper" className={wrapperClassName} style={wrapperStyle} />;
+  return <div data-testid="wrapper" style={wrapperStyle} />;
 }
 
 function mount(on: boolean, max: number, editor: ReturnType<typeof fakeEditor>) {
@@ -90,24 +92,31 @@ describe("useNotebookEditorHeight", () => {
     expect(editor.disposed).toBe(true);
   });
 
-  test("on the canvas, leaves the wrapper and the editor as they are, filling the node", () => {
+  test("on the canvas, leaves the wrapper's height alone, so the editor fills the node", () => {
     const editor = fakeEditor(95);
     const { getByTestId } = mount(false, NOTEBOOK_SPEC_EDITOR_MAX, editor);
     expect(getByTestId("wrapper").getAttribute("style")).toBeNull();
-    expect(getByTestId("wrapper").getAttribute("class")).toBeNull();
-    expect(lastOptions).toEqual({});
+    act(() => editor.grow(900));
+    expect(getByTestId("wrapper").getAttribute("style")).toBeNull();
   });
+});
 
-  test("in the notebook view, makes the editor a plain gray input box: no line numbers, gutter or ruler", () => {
-    const editor = fakeEditor(95);
-    const { getByTestId } = mount(true, NOTEBOOK_CODE_EDITOR_MAX, editor);
-    expect(getByTestId("wrapper")).toHaveClass("curio-notebook-input");
-    expect(lastOptions).toMatchObject({
+describe("nodeEditorLook", () => {
+  test("on the canvas and in the notebook view, makes the editor a plain gray input box: no line numbers, gutter or ruler", () => {
+    const look = nodeEditorLook(false);
+    expect(look.wrapperClassName).toBe("curio-node-input");
+    expect(look.editorOptions).toMatchObject({
       lineNumbers: "off",
       glyphMargin: false,
       folding: false,
       renderLineHighlight: "none",
       overviewRulerLanes: 0,
     });
+  });
+
+  test("on a dashboard tile, leaves the editor as Monaco draws it", () => {
+    const look = nodeEditorLook(true);
+    expect(look.wrapperClassName).toBeUndefined();
+    expect(look.editorOptions).toEqual({});
   });
 });

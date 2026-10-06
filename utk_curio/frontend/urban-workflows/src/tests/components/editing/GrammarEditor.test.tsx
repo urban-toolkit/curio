@@ -63,8 +63,9 @@ jest.mock("@monaco-editor/react", () => {
 // The editor reads playNodesUpTo for the Ctrl/Cmd+Enter binding (#223), and
 // FlowProvider pulls in the registry -> adapters -> vega chain, which does not
 // load under jsdom. Same stub pattern the other suites that touch it use.
+const mockFlow = { dashboardOn: false };
 jest.mock("../../../providers/FlowProvider", () => ({
-    useFlowContext: () => ({ playNodesUpTo: jest.fn() }),
+    useFlowContext: () => ({ playNodesUpTo: jest.fn(), dashboardOn: mockFlow.dashboardOn }),
 }));
 
 jest.mock("../../../providers/CollaborationProvider", () => ({
@@ -109,6 +110,31 @@ function renderGrammarEditor(defaultValue: string | undefined, floatCode = jest.
             view.rerender(<GrammarEditor {...props(dv)} />),
     };
 }
+
+describe("GrammarEditor's look", () => {
+    const wrapper = () => document.querySelector('[data-testid="mock-monaco"]')!.parentElement as HTMLElement;
+
+    afterEach(() => { mockFlow.dashboardOn = false; });
+
+    test("on the canvas, the spec sits in a plain gray box with no line numbers, gutter or ruler", () => {
+        renderGrammarEditor(DEFAULT_SPEC);
+        expect(wrapper()).toHaveClass("curio-node-input");
+        expect(lastEditor().props.options).toMatchObject({
+            lineNumbers: "off",
+            glyphMargin: false,
+            folding: false,
+            renderLineHighlight: "none",
+            overviewRulerLanes: 0,
+        });
+    });
+
+    test("on a dashboard tile, keeps Monaco's own look", () => {
+        mockFlow.dashboardOn = true;
+        renderGrammarEditor(DEFAULT_SPEC);
+        expect(wrapper()).not.toHaveClass("curio-node-input");
+        expect(lastEditor().props.options.lineNumbers).toBeUndefined();
+    });
+});
 
 describe("GrammarEditor JSON diagnostics (#494)", () => {
     test("checks JSON syntax but does not warn about the $schema it never fetches", () => {

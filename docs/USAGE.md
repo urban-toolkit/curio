@@ -9,6 +9,7 @@
   - [Your configurations](#your-configurations)
   - [Keys for node code](#keys-for-node-code)
   - [Guest users](#guest-users)
+- [Inside a node](#inside-a-node)
 - [Running a dataflow](#running-a-dataflow)
 - [Widgets](#widgets)
 - [Scenarios](#scenarios)
@@ -364,9 +365,21 @@ GUEST_LLM_API_KEY=sk-ant-...
 GUEST_LLM_MODEL=claude-haiku-4-5
 ```
 
+## Inside a node
+
+A node's header shows **Play** at its left, the node's name and kind, and its run
+status. Its other buttons show while the pointer is over the node or the node is
+selected: the editor's tabs (code, widgets, spec, provenance, output), the **Save
+output dataset** toggle, settings, about, pin, comments, delete and **Minimize**.
+Code and specs sit in a gray box, and a code node's output is below its code.
+
+Drag a node's bottom-right corner to resize it. A minimized node is a small chip;
+click it to open the node again. Double-click a node where you would drag it, such
+as its header, to zoom the view onto it.
+
 ## Running a dataflow
 
-**Run All** runs every node. A node's **Run** button, or Ctrl+Enter (Cmd+Enter
+**Run All** runs every node. A node's **Play** button, or Ctrl+Enter (Cmd+Enter
 on a Mac), runs that node and the nodes above it whose output is out of date.
 
 On your own dataflow, a run saves the dataflow first and then runs on the
@@ -995,11 +1008,9 @@ page scrolls.
   notebook** writes: each cell is followed by the cells it feeds, the most recently
   connected first, before the next cell that reads from nothing.
 - **Cells** grow with their code and output, and cannot be resized or minimized. A
-  cell's header shows **Play** at its top left, the node's name and kind, and its run
-  status. Its other buttons (the editor's tabs, Save output, settings, about, pin,
-  comments and delete) show while the pointer is over the cell or the cell is
-  selected. A code cell shows its code in a gray box with its output below; a
-  Vega-Lite or Autark cell shows its spec above its chart or map. An editor is as tall
+  cell's header and buttons are its node's (see [Inside a node](#inside-a-node)). A
+  code cell shows its code with its output below; a Vega-Lite or Autark cell shows
+  its spec above its chart or map. An editor is as tall
   as its lines, from three lines up to 400 pixels for code and 240 for a spec, and
   scrolls inside past that. A chart is 320 pixels tall and an Autark map or plot 400. A
   code output takes its own height up to 320 pixels, a table or a summary up to 360,
@@ -1079,7 +1090,7 @@ Three surfaces manage datasets:
 - The **Data Catalog** dropdown in the Tools panel, listing the datasets added to the open dataflow and, under **Saved outputs**, the outputs its nodes saved. Drag one onto the canvas to create (or extend) a node with generated loader code.
 - The **`/catalog/data`** page, the library view for your whole account, reached from `/projects` and the **Data Catalog** tab. **Add to all projects** there adds a dataset to every dataflow you have.
 
-A node can also save its output as a **computed dataset** in your account (the database toggle next to its play button), so its result can be reused as an input elsewhere.
+A node can also save its output as a **computed dataset** in your account (the database toggle among the buttons in its header), so its result can be reused as an input elsewhere.
 
 Because the shared catalog root defaults to `<repo_root>/datasets/`, pip installs should set **`CURIO_CATALOG_ROOT`** (or `--catalog-root`) to a writable, persistent path.
 
