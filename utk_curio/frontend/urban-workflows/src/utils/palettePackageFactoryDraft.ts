@@ -1,5 +1,5 @@
 import { Node as RFNode } from "reactflow";
-import type { PackageTemplatePayload, PackagePayload } from "../services/packages/types";
+import type { FunctionTemplatePayload, PackageTemplatePayload, PackagePayload } from "../services/packages/types";
 import { NodeDescriptor } from "../registry/types";
 import { NodeTemplateId } from "../registry/types";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
@@ -365,43 +365,38 @@ export function saveAsWouldReplaceByLabel(pkg: PackagePayload, nodeLabel: string
   return pkg.templates.some((k) => normalizeTemplateLabel(k.label) === norm);
 }
 
-/** Build a factory install draft when saving a single canvas node into a package (Save As). */
-export function buildSaveAsInstallDraft(opts: {
-  canvasNode: RFNode<any>;
-  target:
-    | { kind: "new"; packageDisplayName?: string }
-    | { kind: "installed"; package: PackagePayload };
+/** Where Save As, or New node from a Python function, writes its template. */
+export type TemplateSaveTarget =
+  | { kind: "new"; packageDisplayName?: string }
+  | { kind: "installed"; package: PackagePayload };
+
+/**
+ * The factory install draft that saves ONE template into *target*: a new
+ * package holding just it, or an installed package it joins. In an installed
+ * package a template of the same label is replaced, keeping its id; otherwise
+ * the template takes *slugBase*, forked away from an id already taken.
+ * *makeTemplate* builds the template for the id it ends up with. Shared by
+ * Save as package node and New node from a Python function.
+ */
+export function buildTemplateInstallDraft(opts: {
+  label: string;
+  slugBase: string;
+  makeTemplate: (templateId: string) => TemplateDraft;
+  target: TemplateSaveTarget;
   getStarters?: StartersLookup;
-}): Draft | null {
-  const nt = getFlowNodeCanonicalType(opts.canvasNode as RFNode);
-  if (!nt) return null;
-  const desc = tryGetNodeDescriptor(nt as NodeTemplateId);
-  if (!desc) return null;
-
-  const label = canvasTemplateLabelFromNode(opts.canvasNode, desc);
-  const body = runtimeCodeFromRfNode(opts.canvasNode);
-  const slugBase = canonicalTemplateSlugForDescriptor(desc);
-
+  /** A new package's description, and the package it forks, if any. */
+  newPackage: { description: string; lineage?: Draft["lineage"] };
+}): Draft {
+  const { label, slugBase, makeTemplate } = opts;
   if (opts.target.kind === "new") {
     const leaf = normalizePackageIdLeaf(factoryUiMakeId());
     const draft = makeDraft();
     draft.packageId = `curio.canvas.draft.${leaf}`;
     draft.name = opts.target.packageDisplayName?.trim() || `${label} package`;
     draft.publisher = "Local palette";
-    draft.description = "Created from canvas Save As.";
-    draft.templates = [templateDraftFromCanvasNode(opts.canvasNode, desc, body, slugBase)];
-    // A node of an installed package makes the new package a fork of it, so
-    // the Node Catalog groups the two. A built-in node forks nothing.
-    const src = desc.package;
-    if (src && src.packageId !== BUILTIN_PACKAGE_ID) {
-      const from = { packageId: src.packageId, major: src.major };
-      draft.lineage = {
-        forkedFrom: from,
-        root: src.lineage?.root
-          ? { packageId: src.lineage.root.packageId, major: src.lineage.root.major }
-          : from,
-      };
-    }
+    draft.description = opts.newPackage.description;
+    draft.templates = [makeTemplate(slugBase)];
+    draft.lineage = opts.newPackage.lineage ?? null;
     return draft;
   }
 
@@ -411,13 +406,111 @@ export function buildSaveAsInstallDraft(opts: {
     (k) => normalizeTemplateLabel(k.label) === normalizeTemplateLabel(label),
   );
   if (labelMatchIdx >= 0) {
-    const existingId = draft.templates[labelMatchIdx]!.id;
-    draft.templates[labelMatchIdx] = templateDraftFromCanvasNode(opts.canvasNode, desc, body, existingId);
+    draft.templates[labelMatchIdx] = makeTemplate(draft.templates[labelMatchIdx]!.id);
     return draft;
   }
 
   const kindsMap = new Map(draft.templates.map((k) => [k.id, k]));
   const templateId = kindsMap.has(slugBase) ? forkTemplateSlugAwayFrom(slugBase, kindsMap) : slugBase;
-  draft.templates.push(templateDraftFromCanvasNode(opts.canvasNode, desc, body, templateId));
+  draft.templates.push(makeTemplate(templateId));
+  return draft;
+}
+
+/** Build a factory install draft when saving a single canvas node into a package (Save As). */
+export function buildSaveAsInstallDraft(opts: {
+  canvasNode: RFNode<any>;
+  target: TemplateSaveTarget;
+  getStarters?: StartersLookup;
+}): Draft | null {
+  const nt = getFlowNodeCanonicalType(opts.canvasNode as RFNode);
+  if (!nt) return null;
+  const desc = tryGetNodeDescriptor(nt as NodeTemplateId);
+  if (!desc) return null;
+
+  const label = canvasTemplateLabelFromNode(opts.canvasNode, desc);
+  const body = runtimeCodeFromRfNode(opts.canvasNode);
+
+  // A node of an installed package makes a new package a fork of it, so the
+  // Node Catalog groups the two. A built-in node forks nothing.
+  let lineage: Draft["lineage"] = null;
+  const src = desc.package;
+  if (src && src.packageId !== BUILTIN_PACKAGE_ID) {
+    const from = { packageId: src.packageId, major: src.major };
+    lineage = {
+      forkedFrom: from,
+      root: src.lineage?.root
+        ? { packageId: src.lineage.root.packageId, major: src.lineage.root.major }
+        : from,
+    };
+  }
+  return buildTemplateInstallDraft({
+    label,
+    slugBase: canonicalTemplateSlugForDescriptor(desc),
+    makeTemplate: (templateId) => templateDraftFromCanvasNode(opts.canvasNode, desc, body, templateId),
+    target: opts.target,
+    getStarters: opts.getStarters,
+    newPackage: { description: "Created from canvas Save As.", lineage },
+  });
+}
+
+/**
+ * The template draft of a node that calls a Python function, from the
+ * template the backend wrote (`packagesApi.functionTemplate`), under the id
+ * {@link buildTemplateInstallDraft} gives it.
+ */
+export function functionTemplateDraft(written: FunctionTemplatePayload, templateId: string): TemplateDraft {
+  const t = written.template;
+  const ports = (list: { types: string[]; cardinality: string }[]) =>
+    list.map((p) => ({ id: factoryUiMakeId(), types: normalizePortTypes(p.types), cardinality: p.cardinality }));
+  const widgets = normalizeWidgets(t.widgets);
+  return {
+    id: templateId,
+    label: t.label,
+    category: categoryFromPackageTemplate(t.category),
+    engine: "python",
+    editor: "code",
+    description: t.description,
+    hasCode: t.hasCode,
+    hasWidgets: t.hasWidgets,
+    hasGrammar: t.hasGrammar,
+    inputPorts: ports(t.inputPorts),
+    outputPorts: ports(t.outputPorts),
+    behavior: t.behavior,
+    iconRef: t.iconRef,
+    sourceFilename: `${templateId}.py`,
+    sourceCode: written.source.code,
+    ...(widgets.length > 0 ? { widgets } : {}),
+  };
+}
+
+/**
+ * The factory install draft that adds the template of a node calling a Python
+ * function to *target*. A template outside the function's own package
+ * depends on that package, which hands its node the function's module.
+ */
+export function buildFunctionInstallDraft(opts: {
+  written: FunctionTemplatePayload;
+  target: TemplateSaveTarget;
+  getStarters?: StartersLookup;
+}): Draft {
+  const { written } = opts;
+  const draft = buildTemplateInstallDraft({
+    label: written.template.label,
+    slugBase: written.template.id,
+    makeTemplate: (templateId) => functionTemplateDraft(written, templateId),
+    target: opts.target,
+    getStarters: opts.getStarters,
+    newPackage: { description: "Nodes made from Python functions." },
+  });
+  const own =
+    opts.target.kind === "installed" &&
+    `${opts.target.package.packageId}@${opts.target.package.major}` === written.package.dirName;
+  if (!own) {
+    for (const [pkg, range] of Object.entries(written.dependency)) {
+      if (!draft.packageDeps.some((d) => d.pkg === pkg)) {
+        draft.packageDeps.push({ id: factoryUiMakeId(), pkg, range });
+      }
+    }
+  }
   return draft;
 }

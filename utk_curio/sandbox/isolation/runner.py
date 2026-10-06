@@ -196,8 +196,9 @@ def execute_isolated(
     child puts on ``sys.path``: a library one user installed is importable by
     their nodes and by nobody else's.
 
-    *package_modules* (``{"root", "names"}``, #468) are the modules the node's
-    package ships beside its templates. The package store is out of the
+    *package_modules* (``{"root", "names"}``, or a list of them, #468) are
+    the modules the node's package ships beside its templates, and those of
+    the packages it depends on. The package store is out of the
     child's reach, so they are staged into the scratch directory, as models
     are, and the child makes that folder importable for the run.
 

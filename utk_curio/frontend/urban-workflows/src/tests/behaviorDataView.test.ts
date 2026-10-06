@@ -33,6 +33,20 @@ describe("behaviorDataView (dev/90 A15)", () => {
         expect(data.content).toBeUndefined();
     });
 
+    it("is a view: a behavior's own writes reach the node data, and content is never written", () => {
+        const data: { code: string; content?: string; widgets?: unknown[] } = { code: "x" };
+        const view = behaviorDataView(data) as typeof data;
+        const widgets = [{ name: "season", type: "text", default: "winter" }];
+        view.widgets = widgets;
+        expect(data.widgets).toBe(widgets);
+        view.content = "other";
+        expect(data.content).toBeUndefined();
+        expect(view.content).toBe("x");
+        expect("content" in view).toBe(true);
+        // A spread (updateDataNode(id, { ...data, ... })) carries no alias.
+        expect({ ...view }).toEqual({ code: "x", widgets });
+    });
+
     it("passes null-ish and content-less data through without throwing", () => {
         expect(behaviorDataView(null as any)).toBeNull();
         const empty = behaviorDataView({} as any);

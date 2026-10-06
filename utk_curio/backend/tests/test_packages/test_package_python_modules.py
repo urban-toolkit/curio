@@ -263,6 +263,115 @@ class TestARunIsHandedItsPackagesModules:
 
 
 # ---------------------------------------------------------------------------
+# A package that depends on another hands its nodes that package's modules
+# (step 21: a node made from a function in a read-only package's module)
+# ---------------------------------------------------------------------------
+
+LABELS = {"height_labels.py": "def label(value):\n    return f'{value} m'\n"}
+
+
+def _dependent_archive(package_id: str, depends_on: dict, *, major: int = 1, modules=None) -> bytes:
+    """A package whose manifest names *depends_on* in ``dependencies.packages``."""
+    manifest = _manifest(package_id, major)
+    manifest["dependencies"]["packages"] = depends_on
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", json.dumps(manifest))
+        zf.writestr("sources/caller.py", "return 1\n")
+        for relative, text in (modules or {}).items():
+            zf.writestr(f"sources/{relative}", text)
+    return buf.getvalue()
+
+
+def _sources_of(dir_name: str, *names: str) -> dict:
+    return {"root": str(package_dir("guest", dir_name) / "sources"), "names": list(names)}
+
+
+class TestADependentPackagesNodeGetsTheModulesItDependsOn:
+    def test_a_package_without_modules_of_its_own_gets_its_dependencys(self, tmp_curio):
+        from utk_curio.backend.app.packages.service import modules_for_node
+
+        install_package_from_archive("guest", _archive("ai.test.heights", modules=HEIGHTS))
+        install_package_from_archive("guest", _dependent_archive("ai.test.nodes", {"ai.test.heights@1": "*"}))
+        assert modules_for_node("guest", "ai.test.nodes/caller") == _sources_of("ai.test.heights@1", "building_height")
+
+    def test_its_own_modules_come_first(self, tmp_curio):
+        from utk_curio.backend.app.packages.service import modules_for_node
+
+        install_package_from_archive("guest", _archive("ai.test.heights", modules=HEIGHTS))
+        install_package_from_archive("guest", _dependent_archive(
+            "ai.test.nodes", {"ai.test.heights": "^1.0.0"}, modules=LABELS,
+        ))
+        assert modules_for_node("guest", "ai.test.nodes/caller") == [
+            _sources_of("ai.test.nodes@1", "height_labels"),
+            _sources_of("ai.test.heights@1", "building_height"),
+        ]
+
+    def test_and_those_its_dependencies_depend_on(self, tmp_curio):
+        from utk_curio.backend.app.packages.service import modules_for_node
+
+        install_package_from_archive("guest", _archive("ai.test.heights", modules=HEIGHTS))
+        install_package_from_archive("guest", _dependent_archive(
+            "ai.test.labels", {"ai.test.heights@1": "*"}, modules=LABELS,
+        ))
+        install_package_from_archive("guest", _dependent_archive("ai.test.nodes", {"ai.test.labels@1": "*"}))
+        assert modules_for_node("guest", "ai.test.nodes/caller") == [
+            _sources_of("ai.test.labels@1", "height_labels"),
+            _sources_of("ai.test.heights@1", "building_height"),
+        ]
+
+    @pytest.mark.parametrize("depends_on", [
+        {"ai.test.absent@1": "*"},
+        {"ai.test.heights@3": "*"},
+        # Two majors installed: a bare id names neither, as the resolver refuses it.
+        {"ai.test.heights": "*"},
+    ])
+    def test_nothing_from_a_dependency_it_cannot_name(self, tmp_curio, depends_on):
+        from utk_curio.backend.app.packages.service import modules_for_node
+
+        for major in (1, 2):
+            install_package_from_archive("guest", _archive("ai.test.heights", major=major, modules=HEIGHTS))
+        install_package_from_archive("guest", _dependent_archive("ai.test.nodes", depends_on))
+        assert modules_for_node("guest", "ai.test.nodes/caller") is None
+
+    def test_a_node_of_the_package_it_depends_on_gets_only_its_own(self, tmp_curio):
+        from utk_curio.backend.app.packages.service import modules_for_node
+
+        install_package_from_archive("guest", _archive("ai.test.heights", modules=HEIGHTS))
+        install_package_from_archive("guest", _dependent_archive(
+            "ai.test.nodes", {"ai.test.heights@1": "*"}, modules=LABELS,
+        ))
+        assert modules_for_node("guest", "ai.test.heights/caller") == _sources_of("ai.test.heights@1", "building_height")
+
+    def test_saving_into_it_does_not_declare_the_dependencys_modules_as_libraries(self, tmp_curio):
+        from utk_curio.backend.app.packages.application.factory_install import install_draft
+
+        install_package_from_archive("guest", _archive("ai.test.heights", modules=HEIGHTS))
+        manifest = _manifest("ai.test.nodes")
+        manifest["dependencies"]["packages"] = {"ai.test.heights@1": "*"}
+        built, _ = install_draft("guest", {
+            "manifest": manifest,
+            "sources": {"caller": {"filename": "caller.py", "code": (
+                "import numpy\n"
+                "from building_height.convert_to_raster import convert_raster\n"
+                "return convert_raster(numpy.int64(21))\n"
+            )}},
+        }, replace=False)
+        assert "numpy" in built.manifest.python_deps
+        assert "building_height" not in built.manifest.python_deps
+        assert built.manifest.package_deps == {"ai.test.heights@1": "*"}
+
+    def test_the_package_builder_leaves_the_dependencys_modules_out_too(self):
+        from utk_curio.backend.app.packages.builder.deps import merge_declared_and_detected
+
+        request = TestThePackageBuilderLeavesTheOwnModulesOut._request({
+            "sources/caller.py": "import numpy\nfrom building_height.convert import convert\nreturn convert(arg)\n",
+        })
+        python, _js, _findings = merge_declared_and_detected(request, (), frozenset({"building_height"}))
+        assert sorted(python) == ["numpy"]
+
+
+# ---------------------------------------------------------------------------
 # Save into a package: its own modules are not PyPI dependencies
 # ---------------------------------------------------------------------------
 

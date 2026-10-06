@@ -64,6 +64,7 @@ describe("every install surface that can be handed restartRecommended reads it",
     ["Node Catalog page import", "pages/catalog/useNodeCatalogBrowse.ts"],
     ["Node Catalog drawer import", "components/packages/publishing/NodeCatalogDrawer.tsx"],
     ["Save As, save and install", "components/packages/editing/NodeSaveAsModal.tsx"],
+    ["New node from a Python function", "components/packages/editing/NodeFromFunctionModal.tsx"],
   ])("%s", (_label, file) => {
     expect(read(file)).toMatch(/withRestartNotice|restartRecommended/);
   });

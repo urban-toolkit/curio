@@ -255,13 +255,9 @@ moves nodes the way the dashboard page does:
   `revealNodes` scrolls to a cell where the canvas would frame a node.
 - **Cells.** `NotebookViewContext` tells nodes and edges the view is on, and the cells'
   width. `UniversalNode` passes the cell's width and least height as `cellBox`, apart
-  from the node's canvas size, and moves its handles. `NodeContainer` draws the cell
-  with no outline or shadow (the kind's stripe kept, a ring in its color when
-  selected) and `NodeRunControls`, the same Play, status and Save output toggle as the
-  canvas's bottom row, in its header. The header's tools (`.curio-cell-tools`: the
-  editor's tabs, which `NodeEditor` renders there through a portal into the slot
-  `cellHeaderSlot` provides, Save output and the icons) show only while the cell is
-  hovered, selected or focused (`Node.css`). `NodeEditor` keeps a grammar node's output
+  from the node's canvas size, and moves its handles. `NodeContainer` draws the cell as
+  the node card (see [The node card](#the-node-card)) with no hairline or shadow, no
+  resize handle and no minimize. `NodeEditor` keeps a grammar node's output
   pane visible under its input (`curio-notebook-split` in `Node.css`) without moving
   either pane, so a chart or map never remounts. `notebookOutputBox` gives an
   output the height its kind gets: a definite one for a chart (320px), an Autark map or
@@ -269,9 +265,7 @@ moves nodes the way the dashboard page does:
   summary or control its own up to 360px; anything else 360px. `useNotebookEditorHeight`
   (`components/editing/`) sets a code or spec editor's wrapper to Monaco's content
   height (`onDidContentSizeChange`), at least three lines, at most 400px for code and
-  240px for a spec, and makes it a gray input box (`curio-notebook-input`) with no line
-  numbers, gutter, folding, line highlight or overview ruler. The outcome strip sits
-  in the cell's flow under the output.
+  240px for a spec. The outcome strip sits in the cell's flow under the output.
 - **Switch.** `CanvasViewSwitch` closes `UpMenu`'s slot, pushed to its end beside
   Monitor; the canvas bar's buttons take `--curio-bar-button-padding-x: 7px` to make room
   for it.
@@ -514,6 +508,15 @@ interface INodeData {
 }
 ```
 
+#### The node card
+
+`NodeContainer` (`src/components/styles.tsx`) draws a node the same way on the canvas and as a notebook cell; only a dashboard tile differs.
+
+- **Surface.** `getNodeContainerStyles` decides the whole border: on the canvas a white card with a `var(--curio-border)` hairline, radius 8, a soft shadow (`--curio-shadow-browse-card-raised`) and the kind's 4px stripe; a notebook cell drops the hairline and the shadow. A selected node gets a 2px ring in its kind's color. A suggestion keeps its dashed border.
+- **Header** (`.curio-node-header`). Play first, then the title (`EditableNodeHeaderLabel`), the package and dataset pills, and the run status; `NodeRunControls` draws Play, the status and the Save output toggle, each in its place. The rest are the tools (`.curio-node-tools`): the editor's tabs, which `NodeEditor` renders through a portal into the slot `nodeHeaderSlot` provides, Save output, the gear, about, pin, comments, delete and, on the canvas, minimize. They show only while the node is hovered, selected or focused (`Node.css`). Nothing sits under the body, so the editor's panes fill the node.
+- **Editors.** `nodeEditorLook` gives a code or spec editor its gray input box (`.curio-node-input`) and Monaco options with no line numbers, gutter, folding, line highlight or overview ruler. A code node's output has no rule or fill. A dashboard tile keeps Monaco's own look.
+- **Canvas only.** The resize handle at the bottom-right corner, minimizing to a chip, the node's fixed size and the cardinality markers at its edges.
+
 ---
 
 ## Data Between Nodes
@@ -736,7 +739,9 @@ When a user clicks the play button on a node, the following sequence occurs:
 
 **Backend side:** both routes only parse the request and call [`execution/node_exec.py`](../utk_curio/backend/app/execution/node_exec.py). Its `execute_python_node` and `execute_js_node` take the account and the session token as arguments, so a node runs the same way from a route or from a thread with no request: they resolve dataset paths, collections, connection keys and models, call the sandbox, auto-install the output, write the runtime journal and count the run on the monitor. The HTTP session to the sandbox is in [`execution/sandbox_client.py`](../utk_curio/backend/app/execution/sandbox_client.py): `sandbox_request` raises `SandboxTransportError` when the sandbox times out, cannot be reached or refuses the shared secret, and the routes answer it as JSON with a 504 or 502.
 
-**Package modules (#468).** For a node whose package ships Python modules in `sources/`, `node_exec.resolve_package_modules` adds `package_modules: {"root", "names"}` to the `/exec` body: the package's `sources/` folder in the account's store and its module names, the importable names there that no template names as its `source` ([`packages/domain/python_modules.py`](../utk_curio/backend/app/packages/domain/python_modules.py)). The headless runner and the ground-truth harness send the same. In both execution modes the sandbox links those modules into a folder of the run's own with `staging.stage_package_modules` (under fork isolation, the child's scratch directory), puts the folder first on `sys.path` for the run, and when the run ends removes it and every module imported from it ([`sandbox/util/package_modules.py`](../utk_curio/sandbox/util/package_modules.py)): the next run, after an update or of another package, imports its own copy. An import of a package's module is not shared with the session's later nodes. A module name that is already loaded from somewhere else fails the node with that name. The installer refuses a package that ships a module another installed package ships (`refuse_a_module_name_in_use`); two majors of one package may share names. Save into a package and the Package Builder hand the package's module names to the import scanner (`scan_imports_for_filename`), which leaves them out of the detected dependencies.
+**Package modules (#468).** For a node whose package ships Python modules in `sources/`, `node_exec.resolve_package_modules` adds `package_modules: {"root", "names"}` to the `/exec` body: the package's `sources/` folder in the account's store and its module names, the importable names there that no template names as its `source` ([`packages/domain/python_modules.py`](../utk_curio/backend/app/packages/domain/python_modules.py)). A package that names others in `dependencies.packages` also hands its nodes their modules, transitively: `package_modules` is then a list of `{"root", "names"}`, the node's own package first ([`packages/application/python_modules.py`](../utk_curio/backend/app/packages/application/python_modules.py)). The headless runner and the ground-truth harness send the same. In both execution modes the sandbox links those modules into a folder of the run's own, a name two packages ship from the first, with `staging.stage_package_modules` (under fork isolation, the child's scratch directory), puts the folder first on `sys.path` for the run, and when the run ends removes it and every module imported from it ([`sandbox/util/package_modules.py`](../utk_curio/sandbox/util/package_modules.py)): the next run, after an update or of another package, imports its own copy. An import of a package's module is not shared with the session's later nodes. A module name that is already loaded from somewhere else fails the node with that name. The installer refuses a package that ships a module another installed package ships (`refuse_a_module_name_in_use`); two majors of one package may share names. Save into a package and the Package Builder hand the package's module names, and those of the packages it depends on, to the import scanner (`scan_imports_for_filename`), which leaves them out of the detected dependencies.
+
+**New node from a Python function.** `GET /api/packages/factory/functions` lists the public functions of every module in the account's store, read with `ast` and never imported ([`packages/domain/function_nodes.py`](../utk_curio/backend/app/packages/domain/function_nodes.py)), with the widget and use each parameter suggests. `POST /api/packages/factory/function-template` reads the module again and writes the template: its code imports the function and returns its call, with `[!! name !!]` for a widget and `[!! input k !!]` for an input ([`packages/application/function_nodes.py`](../utk_curio/backend/app/packages/application/function_nodes.py)). The dialog (`NodeFromFunctionModal`) installs it the way Save as package node does: `PackageTargetPicker`, `buildTemplateInstallDraft` and `installDraftToProject`, through `/factory/install`. A template in another package than the function's names the function's package in `dependencies.packages`.
 
 **JavaScript execution detail:** `JS Computation` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed; the Node subprocess is per-request and fully isolated.
 

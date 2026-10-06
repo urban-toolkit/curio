@@ -1,0 +1,72 @@
+/* The modal has a fixed height: the title and the buttons stay put, and what
+   is between them scrolls. */
+.dialog {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+.body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0 -28px 12px;
+    padding: 0 28px;
+}
+
+.parameters {
+    list-style: none;
+    margin: 0 0 16px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.parameter {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--curio-border-strong);
+    border-radius: var(--curio-radius-md);
+    background: var(--curio-card-bg);
+}
+
+.parameterHead,
+.parameterBody {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.parameterName {
+    font-family: var(--curio-font-mono);
+    font-weight: 600;
+    color: var(--curio-text-primary);
+}
+
+.parameterHint {
+    flex: 1;
+    margin: 0;
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-muted);
+    overflow-wrap: anywhere;
+}
+
+.useSelect {
+    margin-left: auto;
+    padding: 6px 10px;
+    border: 1px solid var(--curio-border-strong);
+    border-radius: var(--curio-radius-md);
+    background: var(--curio-card-bg);
+    color: var(--curio-text-primary);
+    font: inherit;
+    font-size: var(--curio-font-size-sm);
+}
+
+.labelInput {
+    margin-bottom: 16px;
+}

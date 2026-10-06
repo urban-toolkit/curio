@@ -34,7 +34,6 @@ import {
     NodeTemplateConfigModal,
     PackageMetaHeader,
 } from "./packages/editing";
-import Row from "react-bootstrap/Row";
 import {
     faCopy,
     faFloppyDisk,
@@ -91,7 +90,7 @@ import { useCode } from "../hook/useCode";
 import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
 import { NodeRunControls } from "./nodes/NodeRunControls";
-import { CellHeaderSlotContext } from "./editing/cellHeaderSlot";
+import { NodeHeaderSlotContext } from "./editing/nodeHeaderSlot";
 import { resolveSaveOutputDataset, showsSaveOutputToggle } from "../utils/saveOutputDataset";
 import { nodeRunStatus, nodeRunError } from "../utils/nodeRunStatus";
 import { hasNodeDescription } from "../utils/nodeDescription";
@@ -495,12 +494,13 @@ export const NodeContainer = ({
     const hasPackageMetaHeader = packageDescriptor?.source === "package" && !!packageDescriptor.package;
     const showPackageNodeActions = hasPackageMetaHeader && !dashboardOn;
     const suggestionActive = data.suggestionType != "none" && data.suggestionType != undefined;
-    // A notebook cell's header also holds Play, so it is a little taller.
-    const nodeHeaderBandPx = notebookCell ? 36 : 28;
-    // Where a cell's header holds the editor's tab switchers (cellHeaderSlot).
+    // The header holds Play, the title, the pills, the status and the tools,
+    // on the canvas and in a notebook cell alike.
+    const nodeHeaderBandPx = 36;
+    // Where the header holds the editor's tab switchers (nodeHeaderSlot).
     const [tabSlot, setTabSlot] = useState<HTMLElement | null>(null);
-    // Play, the Save output toggle and the status: in the canvas's bottom row,
-    // or in a notebook cell's header. The same controls either way.
+    // Play, the Save output toggle and the status, each in its place in the
+    // header.
     const runControls = {
         nodeId,
         disablePlay: !!disablePlay,
@@ -642,8 +642,8 @@ export const NodeContainer = ({
         event.stopPropagation();
     };
 
-    // The header's icons: inline on the canvas; among a notebook cell's tools,
-    // which show while the pointer is over the cell or it is selected.
+    // The header's icons, among the node's tools, which show while the pointer
+    // is over the node or it is selected.
     const headerIcons = (
         <>
         {/* Right-side action icons */}
@@ -779,8 +779,9 @@ export const NodeContainer = ({
             <div
                 ref={resizableRef}
                 id={nodeId + "resizable"}
-                // A notebook cell's tools show while it is hovered or selected (Node.css).
-                className={notebookCell ? `resizable curio-notebook-cell${isNodeSelected ? " is-selected" : ""}` : "resizable"}
+                // A node's tools show while it is hovered or selected (Node.css);
+                // a dashboard tile has none.
+                className={dashboardOn ? "resizable" : `resizable curio-node-card${isNodeSelected ? " is-selected" : ""}`}
                 data-curio-node-status={nodeRunStatus(output)}
                 data-curio-node-error={nodeRunError(output)}
                 onDragOver={onDatasetDragOver}
@@ -836,13 +837,11 @@ export const NodeContainer = ({
 
                 {!noContent && !dashboardOn ? (
                     <>
-                        <div className={notebookCell ? "curio-cell-header" : undefined} style={{
+                        <div className="curio-node-header" style={{
                         display: "flex",
                         alignItems: "center",
                         height: `${nodeHeaderBandPx}px`,
                         marginBottom: "1px",
-                        // A notebook cell's header has no rule under it.
-                        borderBottom: notebookCell ? "none" : "1px solid rgba(107, 107, 107, 0.3)",
                         gap: "4px",
                         padding: "0 4px",
                         boxSizing: "border-box",
@@ -850,17 +849,8 @@ export const NodeContainer = ({
                         flexShrink: 0,
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                         }}>
-                        {/* Minimize toggle (a notebook cell keeps its size);
-                            in its place a cell starts with Play, as a
-                            notebook cell does. */}
-                        {!notebookCell ? (
-                            <HeaderIconButton
-                                icon={faMinus}
-                                style={{ ...headerIconStyle, flexShrink: 0, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
-                                title="Minimize"
-                                onActivate={() => setMinimized(true)}
-                            />
-                        ) : sendCodeToWidgets != undefined ? (
+                        {/* Play first, as a notebook cell has it. */}
+                        {sendCodeToWidgets != undefined ? (
                             <NodeRunControls {...runControls} part="play" />
                         ) : null}
 
@@ -875,7 +865,6 @@ export const NodeContainer = ({
                                 updateDataNode(nodeId, { ...data, packageTemplateLabel: label });
                             }}
                             onConfigure={() => setConfigOpen(true)}
-                            alignStart={notebookCell}
                         />
 
                         {hasPackageMetaHeader && packageDescriptor?.package ? (
@@ -911,59 +900,48 @@ export const NodeContainer = ({
                             />
                         ) : null}
 
-                        {/* A notebook cell's run status, at the right, which
-                            pushes its tools (the editor's tabs, Save output and
-                            the icons) right after it. */}
-                        {notebookCell ? (
-                            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", flexShrink: 0 }}>
-                                {sendCodeToWidgets != undefined ? (
-                                    <NodeRunControls {...runControls} part="status" />
-                                ) : null}
-                            </span>
-                        ) : null}
+                        {/* The run status, at the right, which pushes the
+                            tools (the editor's tabs, Save output, the icons
+                            and, on the canvas, Minimize) right after it. */}
+                        <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", flexShrink: 0 }}>
+                            {sendCodeToWidgets != undefined ? (
+                                <NodeRunControls {...runControls} part="status" />
+                            ) : null}
+                        </span>
 
-                        {notebookCell ? (
-                            <span className="curio-cell-tools" style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
-                                <span ref={setTabSlot} className="curio-cell-tabs" style={{ display: "flex" }} />
-                                {sendCodeToWidgets != undefined ? (
-                                    <NodeRunControls {...runControls} part="save" />
-                                ) : null}
-                                {headerIcons}
-                            </span>
-                        ) : headerIcons}
+                        <span className="curio-node-tools" style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
+                            <span ref={setTabSlot} className="curio-node-tabs" style={{ display: "flex" }} />
+                            {sendCodeToWidgets != undefined ? (
+                                <NodeRunControls {...runControls} part="save" />
+                            ) : null}
+                            {headerIcons}
+                            {/* A notebook cell keeps its size. */}
+                            {!notebookCell ? (
+                                <HeaderIconButton
+                                    icon={faMinus}
+                                    style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
+                                    title="Minimize"
+                                    onActivate={() => setMinimized(true)}
+                                />
+                            ) : null}
+                        </span>
                     </div>
                     </>
                 ) : null}
 
                 <div style={{
-                    // A notebook cell's body is as tall as what it holds.
+                    // A notebook cell's body is as tall as what it holds; on
+                    // the canvas the body fills the node under its header.
                     height: notebookCell ? "auto" : `calc(100% - ${dashboardOn ? dashboardTitleBandPx : nodeHeaderBandPx}px)`,
                     width: "calc(100% - 30px)",
                     marginLeft: "auto",
                     marginRight: "auto",
                     ...(notebookCell ? { paddingBottom: "8px" } : {}),
                 }}>
-                    <CellHeaderSlotContext.Provider value={notebookCell ? tabSlot : null}>
+                    <NodeHeaderSlotContext.Provider value={dashboardOn ? null : tabSlot}>
                         {children}
-                    </CellHeaderSlotContext.Provider>
+                    </NodeHeaderSlotContext.Provider>
                 </div>
-
-                {/* A notebook cell has its run controls in its header. */}
-                {!dashboardOn && !notebookCell && <Row
-                    style={{
-                        ...{
-                            width: "25%",
-                            height: "25px",
-                            marginLeft: "10px",
-                            marginTop: "-25px",
-                        },
-                        ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
-                    }}
-                >
-                    {sendCodeToWidgets != undefined ? (
-                        <NodeRunControls {...runControls} />
-                    ) : null}
-                </Row>}
 
             </div>
 
@@ -986,14 +964,17 @@ export const NodeContainer = ({
                             // stretched to the column, as tall as its dots need.
                             width: (cellBox?.width ?? currentNodeWidth) + "px",
                             height: (cellBox ? Math.max(cellBox.minHeight, MINIMIZED_NODE_HEIGHT) : currentNodeHeight) + "px",
+                            // The node's card, folded: the same hairline,
+                            // radius and soft shadow.
                             backgroundColor: "#ffffff",
-                            borderRadius: "10px",
+                            border: "1px solid var(--curio-border)",
+                            borderRadius: "8px",
                             padding: "5px",
                             justifyContent: "center",
                             display: "flex",
                             alignItems: "center",
                             position: "relative",
-                            boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
+                            boxShadow: NODE_CARD_SHADOW,
                         },
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                     }}
@@ -1108,6 +1089,9 @@ const headerIconStyle: CSS.Properties = {
     flexShrink: 0,
 };
 
+/** A canvas node's soft shadow: the one a raised Curio card carries. */
+const NODE_CARD_SHADOW = "var(--curio-shadow-browse-card-raised)";
+
 /** The node container's border and surface, resolved in one place.
  *
  * Longhands only, never the `border` shorthand. The two used to be layered: this
@@ -1128,7 +1112,7 @@ export const getNodeContainerStyles = (
         category?: NodeCategory | null;
         /** The node is a notebook cell. */
         notebookCell?: boolean;
-        /** The node is selected; a notebook cell shows it with a ring. */
+        /** The node is selected, which a canvas node and a notebook cell show with a ring. */
         selected?: boolean;
     } = {},
 ): CSS.Properties => {
@@ -1166,15 +1150,18 @@ export const getNodeContainerStyles = (
         };
     }
 
+    // A selected node is ringed in its kind's color.
+    const ring = state.selected ? `0 0 0 2px ${accent}` : null;
+
     if (state.notebookCell) {
         // A notebook cell sits on a white page with no outline or shadow, as a
-        // Jupyter cell does: only the kind's stripe on the left. A selected cell
-        // is ringed in its kind's color. The other sides keep a transparent
-        // hairline, so `.resizable`'s own border never shows.
+        // Jupyter cell does: only the kind's stripe on the left. The other
+        // sides keep a transparent hairline, so `.resizable`'s own border
+        // never shows.
         return {
             ...base,
             borderRadius: "8px",
-            boxShadow: state.selected ? `0 0 0 2px ${accent}` : "none",
+            boxShadow: ring ?? "none",
             borderTopStyle: "solid",
             borderRightStyle: "solid",
             borderBottomStyle: "solid",
@@ -1190,20 +1177,28 @@ export const getNodeContainerStyles = (
         };
     }
 
+    // On the canvas the cell's card stands off the dotted background: a light
+    // hairline and a soft shadow, with the kind's stripe on the left. A
+    // suggestion keeps its dashed border.
     const suggested = state.suggested === true;
+    const sideStyle = suggested ? "dashed" : "solid";
+    const sideWidth = suggested ? "2px" : "1px";
+    const sideColor = state.acceptable ? "#1d3853" : suggested ? undefined : "var(--curio-border)";
     return {
         ...base,
-        borderTopStyle: suggested ? "dashed" : undefined,
-        borderRightStyle: suggested ? "dashed" : undefined,
-        borderBottomStyle: suggested ? "dashed" : undefined,
+        borderRadius: "8px",
+        boxShadow: ring ? `${ring}, ${NODE_CARD_SHADOW}` : NODE_CARD_SHADOW,
+        borderTopStyle: sideStyle,
+        borderRightStyle: sideStyle,
+        borderBottomStyle: sideStyle,
         borderLeftStyle: "solid",
-        borderTopWidth: suggested ? "2px" : undefined,
-        borderRightWidth: suggested ? "2px" : undefined,
-        borderBottomWidth: suggested ? "2px" : undefined,
+        borderTopWidth: sideWidth,
+        borderRightWidth: sideWidth,
+        borderBottomWidth: sideWidth,
         borderLeftWidth: "4px",
-        borderTopColor: state.acceptable ? "#1d3853" : undefined,
-        borderRightColor: state.acceptable ? "#1d3853" : undefined,
-        borderBottomColor: state.acceptable ? "#1d3853" : undefined,
+        borderTopColor: sideColor,
+        borderRightColor: sideColor,
+        borderBottomColor: sideColor,
         borderLeftColor: state.acceptable ? "#1d3853" : accent,
     };
 };

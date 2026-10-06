@@ -2,7 +2,7 @@
 // so short code leaves no empty box and long code does not push the output off
 // the page: at least three lines, at most a cap, past which it scrolls inside.
 // On the canvas the editor still fills its node. CodeEditor and GrammarEditor
-// both use this.
+// both use this; how the editor looks is nodeEditorLook's.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type CSS from "csstype";
 import { useNotebookViewContext } from "../../providers/flow/notebookViewContext";
@@ -10,25 +10,7 @@ import { useNotebookViewContext } from "../../providers/flow/notebookViewContext
 export const NOTEBOOK_CODE_EDITOR_MAX = 400;
 export const NOTEBOOK_SPEC_EDITOR_MAX = 240;
 
-/**
- * Monaco's options in a notebook cell: a plain input box, as a notebook's is,
- * with no line numbers, gutter, folding, line highlight or overview ruler.
- * Spread over an editor's own options; Monaco applies them as they change.
- */
-export const NOTEBOOK_EDITOR_OPTIONS = {
-    lineNumbers: "off" as const,
-    glyphMargin: false,
-    folding: false,
-    lineDecorationsWidth: 10,
-    lineNumbersMinChars: 0,
-    renderLineHighlight: "none" as const,
-    overviewRulerLanes: 0,
-    overviewRulerBorder: false,
-    hideCursorInOverviewRuler: true,
-    padding: { top: 6, bottom: 6 },
-};
 const MIN_LINES = 3;
-const NO_OPTIONS: Partial<typeof NOTEBOOK_EDITOR_OPTIONS> = {};
 /** Monaco's line height at the editors' 13px, until the editor says. */
 const DEFAULT_LINE_HEIGHT = 19;
 
@@ -53,10 +35,6 @@ export function useNotebookEditorHeight(max: number): {
     wrapperStyle: CSS.Properties | undefined;
     /** The editor is in a notebook cell. */
     inCell: boolean;
-    /** The wrapper's class in a cell: the gray input box (Node.css). */
-    wrapperClassName: string | undefined;
-    /** Monaco options to spread over the editor's own: the cell's, or none. */
-    editorOptions: Partial<typeof NOTEBOOK_EDITOR_OPTIONS>;
 } {
     const { on } = useNotebookViewContext();
     const [content, setContent] = useState<{ height: number; lineHeight: number }>({
@@ -91,11 +69,5 @@ export function useNotebookEditorHeight(max: number): {
     const wrapperStyle = on
         ? { height: `${clampNotebookEditorHeight(content.height, content.lineHeight, max)}px`, flex: "none" }
         : undefined;
-    return {
-        attach,
-        wrapperStyle,
-        inCell: on,
-        wrapperClassName: on ? "curio-notebook-input" : undefined,
-        editorOptions: on ? NOTEBOOK_EDITOR_OPTIONS : NO_OPTIONS,
-    };
+    return { attach, wrapperStyle, inCell: on };
 }

@@ -29,6 +29,7 @@ import { getNodeContainerStyles } from "../../components/styles";
 
 const STATES: Array<{ name: string; state: Parameters<typeof getNodeContainerStyles>[1] }> = [
   { name: "on the canvas", state: {} },
+  { name: "selected on the canvas", state: { selected: true } },
   { name: "in dashboard mode", state: { dashboardOn: true } },
   { name: "as a suggestion", state: { suggested: true } },
   { name: "as an acceptable suggestion", state: { suggested: true, acceptable: true } },
@@ -127,8 +128,55 @@ describe("getNodeContainerStyles", () => {
       category: "vis_grammar", notebookCell: true, selected: true,
     });
     expect(cell.boxShadow).toBe("0 0 0 2px var(--curio-category-vis-fg)");
-    // On the canvas selection changes nothing here, as before.
-    expect(getNodeContainerStyles("curio.builtin/vis-vega@1", { category: "vis_grammar", selected: true }))
-      .toEqual(getNodeContainerStyles("curio.builtin/vis-vega@1", { category: "vis_grammar" }));
+  });
+
+  // The notebook cell's card on the canvas: a light hairline and a soft shadow
+  // stand the node off the dotted background, with its kind's stripe.
+  test("draws a canvas node as a card: white, a hairline border, radius 8, a soft shadow and its kind's stripe", () => {
+    const node = getNodeContainerStyles("curio.builtin/vis-vega@1", { category: "vis_grammar" });
+    expect(node.backgroundColor).toBe("#ffffff");
+    expect(node.borderRadius).toBe("8px");
+    expect(node.boxShadow).toBe("var(--curio-shadow-browse-card-raised)");
+    for (const side of ["Top", "Right", "Bottom"] as const) {
+      expect(node[`border${side}Width`]).toBe("1px");
+      expect(node[`border${side}Style`]).toBe("solid");
+      expect(node[`border${side}Color`]).toBe("var(--curio-border)");
+    }
+    expect(node.borderLeftWidth).toBe("4px");
+    expect(node.borderLeftStyle).toBe("solid");
+    expect(node.borderLeftColor).toBe("var(--curio-category-vis-fg)");
+  });
+
+  test("rings a selected canvas node in its kind's color, over its soft shadow", () => {
+    const node = getNodeContainerStyles("curio.builtin/vis-vega@1", { category: "vis_grammar", selected: true });
+    expect(node.boxShadow).toBe(
+      "0 0 0 2px var(--curio-category-vis-fg), var(--curio-shadow-browse-card-raised)",
+    );
+    // Only the shadow changes: the border is the unselected node's.
+    const { boxShadow: _ring, ...rest } = node;
+    const { boxShadow: _shadow, ...unselected } = getNodeContainerStyles("curio.builtin/vis-vega@1", {
+      category: "vis_grammar",
+    });
+    expect(rest).toEqual(unselected);
+  });
+
+  test("keeps a suggestion's dashed border, and an acceptable one's dark edge", () => {
+    const suggested = getNodeContainerStyles("curio.builtin/vis-vega@1", { category: "vis_grammar", suggested: true });
+    const acceptable = getNodeContainerStyles("curio.builtin/vis-vega@1", {
+      category: "vis_grammar", suggested: true, acceptable: true,
+    });
+    for (const side of ["Top", "Right", "Bottom"] as const) {
+      expect(suggested[`border${side}Style`]).toBe("dashed");
+      expect(suggested[`border${side}Width`]).toBe("2px");
+      expect(acceptable[`border${side}Style`]).toBe("dashed");
+      expect(acceptable[`border${side}Color`]).toBe("#1d3853");
+    }
+    expect(suggested.borderLeftColor).toBe("var(--curio-category-vis-fg)");
+    expect(acceptable.borderLeftColor).toBe("#1d3853");
+  });
+
+  test("leaves a dashboard tile as it was, selected or not", () => {
+    expect(getNodeContainerStyles("curio.builtin/vis-vega@1", { dashboardOn: true, selected: true }))
+      .toEqual(getNodeContainerStyles("curio.builtin/vis-vega@1", { dashboardOn: true }));
   });
 });

@@ -1,11 +1,9 @@
-// A node's run controls: Play, the Save output toggle and the run status. The
-// canvas draws all three in the node's bottom row; a notebook cell draws Play
-// first in its header, the status at the header's right, and the toggle among
-// the cell's tools. One component for both, so both run the same code.
+// A node's run controls: Play, the Save output toggle and the run status, each
+// drawn alone in the node's header, on the canvas and in a notebook cell alike:
+// Play first, the status at the header's right, and the toggle among the node's
+// tools. One component for all three, so every place runs the same code.
 import React from "react";
 import { Spinner } from "react-bootstrap";
-import Col from "react-bootstrap/Col";
-import Row from "react-bootstrap/Row";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCirclePlay } from "@fortawesome/free-solid-svg-icons";
 import { ICodeData } from "../../types";
@@ -14,11 +12,8 @@ import { SaveOutputToggle } from "./SaveOutputToggle";
 
 export interface NodeRunControlsProps {
     nodeId: string;
-    /**
-     * Which controls: all three in the canvas's bottom row (the default), or
-     * one of them alone (a notebook cell's header).
-     */
-    part?: "row" | "play" | "status" | "save";
+    /** Which control. */
+    part: "play" | "status" | "save";
     disablePlay: boolean;
     isLoading: boolean;
     output?: ICodeData;
@@ -28,12 +23,12 @@ export interface NodeRunControlsProps {
     onPlay: () => void;
 }
 
-/** In a cell's header, which is shorter than the canvas's bottom row. */
+/** Play's size in the header. */
 const HEADER_PLAY_PX = 22;
 
 export function NodeRunControls({
     nodeId,
-    part = "row",
+    part,
     disablePlay,
     isLoading,
     output,
@@ -42,57 +37,58 @@ export function NodeRunControls({
     onSaveOutputChange,
     onPlay,
 }: NodeRunControlsProps) {
-    const inHeader = part !== "row";
-    const playSize = inHeader ? HEADER_PLAY_PX : 27;
+    if (part === "play") {
+        return disablePlay ? null : isLoading ? (
+            <Spinner
+                animation="border"
+                size="sm"
+                style={{
+                    color: "rgb(251, 170, 105)",
+                    width: `${HEADER_PLAY_PX - 4}px`,
+                    height: `${HEADER_PLAY_PX - 4}px`,
+                    marginTop: 0,
+                    flexShrink: 0,
+                }}
+            />
+        ) : (
+            <FontAwesomeIcon
+                className={"nowheel nodrag"}
+                icon={faCirclePlay}
+                // The shortcut is only useful if it
+                // is discoverable, and the play
+                // button is where someone looks for
+                // "how do I run this" (#223).
+                title={`Run this node (${RUN_NODE_SHORTCUT_LABEL})`}
+                style={{
+                    cursor: "pointer",
+                    fontSize: `${HEADER_PLAY_PX}px`,
+                    color: "rgb(251, 170, 105)",
+                    flexShrink: 0,
+                }}
+                onClick={onPlay}
+            />
+        );
+    }
 
-    const play = disablePlay ? null : isLoading ? (
-        <Spinner
-            animation="border"
-            size="sm"
-            style={{
-                color: "rgb(251, 170, 105)",
-                width: inHeader ? `${HEADER_PLAY_PX - 4}px` : "24px",
-                height: inHeader ? `${HEADER_PLAY_PX - 4}px` : "24px",
-                marginTop: inHeader ? 0 : "2px",
-                ...(inHeader ? { flexShrink: 0 } : {}),
-            }}
-        />
-    ) : (
-        <FontAwesomeIcon
-            className={"nowheel nodrag"}
-            icon={faCirclePlay}
-            // The shortcut is only useful if it
-            // is discoverable, and the play
-            // button is where someone looks for
-            // "how do I run this" (#223).
-            title={`Run this node (${RUN_NODE_SHORTCUT_LABEL})`}
-            style={{
-                cursor: "pointer",
-                fontSize: `${playSize}px`,
-                color: "rgb(251, 170, 105)",
-                ...(inHeader ? { flexShrink: 0 } : {}),
-            }}
-            onClick={onPlay}
-        />
-    );
+    if (part === "save") {
+        return showSaveToggle ? (
+            <SaveOutputToggle
+                variant="node"
+                id={`save-output-${nodeId}`}
+                checked={saveOutput}
+                disabled={isLoading}
+                onChange={onSaveOutputChange}
+            />
+        ) : null;
+    }
 
-    const toggle = showSaveToggle ? (
-        <SaveOutputToggle
-            variant="node"
-            id={`save-output-${nodeId}`}
-            checked={saveOutput}
-            disabled={isLoading}
-            onChange={onSaveOutputChange}
-        />
-    ) : null;
-
-    const status = output != undefined ? (
+    return output != undefined ? (
         <p
             style={{
                 fontSize: "10px",
                 textAlign: "center",
                 marginBottom: 0,
-                ...(inHeader ? { whiteSpace: "nowrap" } : {}),
+                whiteSpace: "nowrap",
             }}
         >
             {output.code == "success" ? (
@@ -113,31 +109,4 @@ export function NodeRunControls({
             )}
         </p>
     ) : null;
-
-    if (part === "play") return play;
-    if (part === "status") return status;
-    if (part === "save") return toggle;
-    return (
-        <Row style={{gap: "8px", paddingRight: 0}}>
-            {play ?
-                <Col md={3} style={{padding: 0}}>
-                    {play}
-                </Col> : null
-            }
-            {toggle ? (
-                <Col md="auto" style={{ padding: 0, display: "flex", alignItems: "center" }}>
-                    {toggle}
-                </Col>
-            ) : null}
-            {status ? (
-                <Col
-                    md={2}
-                    className="d-flex align-items-center"
-                    style={{padding: 0}}
-                >
-                    {status}
-                </Col>
-            ) : null}
-        </Row>
-    );
 }
