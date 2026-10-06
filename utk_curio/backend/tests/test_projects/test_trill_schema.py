@@ -390,6 +390,27 @@ REJECTED = {
     "compare chart the node does not draw": lambda d: _node(d)["metadata"].update(
         compareScenarios={"chart": {"preset": "radar"}}
     ),
+    # #662: an Edit Features node's edits each name what they do and to which
+    # features; a set names its column and its value.
+    "feature edit the node does not make": lambda d: _node(d)["metadata"].update(
+        editFeatures={"key": "osm_id", "edits": [{"op": "delete", "ids": [1]}]}
+    ),
+    "feature edit naming no features": lambda d: _node(d)["metadata"].update(
+        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "ids": []}]}
+    ),
+    "feature set without its column": lambda d: _node(d)["metadata"].update(
+        editFeatures={"key": "osm_id", "edits": [{"op": "set", "ids": [1], "value": 0}]}
+    ),
+    "feature set without its value": lambda d: _node(d)["metadata"].update(
+        editFeatures={"key": "osm_id", "edits": [{"op": "set", "ids": [1], "column": "height"}]}
+    ),
+    "feature edit naming a feature by an object": lambda d: _node(d)["metadata"].update(
+        editFeatures={"key": "osm_id", "edits": [{"op": "remove", "ids": [{"row": 3}]}]}
+    ),
+    "feature edits written empty": lambda d: _node(d)["metadata"].update(editFeatures={"edits": []}),
+    "feature edits with a field the format does not have": lambda d: _node(d)["metadata"].update(
+        editFeatures={"key": "osm_id", "rows": [3]}
+    ),
 }
 
 # Cases that look like they should be rejected but must not be. Each one is a
@@ -439,6 +460,19 @@ ACCEPTED = {
                 {"name": "Python Computation", "color": "#8a8f98"},
             ],
             "chart": {"preset": "lollipop", "y": "sunlight", "aggregate": "median"},
+        }
+    ),
+    # An Edit Features node (#662): a remove, a set to null and a restore, by
+    # ids that are numbers and texts, on one layer of several.
+    "feature edits of every kind": lambda d: _node(d)["metadata"].update(
+        editFeatures={
+            "key": "building_id",
+            "layer": "table_osm_buildings",
+            "edits": [
+                {"op": "remove", "ids": [119, 443]},
+                {"op": "set", "ids": ["w12"], "column": "height", "value": None},
+                {"op": "restore", "ids": [443]},
+            ],
         }
     ),
 }

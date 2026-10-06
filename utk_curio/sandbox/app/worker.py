@@ -396,6 +396,7 @@ def _worker_init():
         checkIOType,
         save_dataset_parquet,
     )
+    from utk_curio.sandbox.util.feature_edits import edit_features
     from utk_curio.sandbox.util.input_layers import curio_layer
     from utk_curio.sandbox.util.scenario_difference import difference_scenarios
     from utk_curio.sandbox.util.scenario_stack import stack_scenarios
@@ -431,6 +432,8 @@ def _worker_init():
         # or, in Difference, subtracts one from the other.
         'curio_stack_scenarios': stack_scenarios,
         'curio_difference_scenarios': difference_scenarios,
+        # The Edit Features node's code applies its edit list with it (#662).
+        'curio_edit_features': edit_features,
         # A layer chip, [!! input 0:roads !!], reads one layer of an input with it.
         'curio_layer': curio_layer,
     }
@@ -458,8 +461,32 @@ def _resolve_outputs_elem(elem, session_id=None):
         if 'path' in elem:
             return load_artifact(elem['path'], session_id=session_id)
         if 'dataType' in elem and 'data' in elem:
-            return parseInput(elem)
+            return _keep_layer_identity(parseInput(elem), elem)
     return elem
+
+
+def _keep_layer_identity(value, envelope):
+    """A layer an Autark node handed on keeps its name and its layer type.
+
+    Its envelope names them (``layerName``, ``layerType``); the frame keeps them
+    where Curio keeps a frame's own (``metadata``, which ``parseOutput`` hands
+    on), so a node can tell an Autark node's layers apart, as the Edit Features
+    node does to edit one of them (#662). A frame that already has a name keeps
+    it.
+    """
+    from utk_curio.sandbox.util.codec import is_geospatial_frame
+
+    name = envelope.get('layerName')
+    if not isinstance(name, str) or not name or not is_geospatial_frame(value):
+        return value
+    meta = getattr(value, 'metadata', None)
+    if isinstance(meta, dict) and meta.get('name'):
+        return value
+    kept = {'name': name}
+    if isinstance(envelope.get('layerType'), str) and envelope['layerType']:
+        kept['layerType'] = envelope['layerType']
+    value.__dict__['metadata'] = kept
+    return value
 
 
 def _expand_outputs_wrapper(input_data, session_id=None):

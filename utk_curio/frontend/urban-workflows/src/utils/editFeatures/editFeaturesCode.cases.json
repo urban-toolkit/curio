@@ -1,0 +1,36 @@
+{
+  "description": "The code an Edit Features node writes from its edit list (#662). Jest checks editFeaturesCode writes each `code` from its `settings`; utk_curio/sandbox/tests/test_feature_edits.py runs each `code` against `input` and checks the features left, by `key`.",
+  "cases": [
+    {
+      "name": "a new node: no edits, so the input is handed on as it came",
+      "settings": null,
+      "code": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(arg, [])\n",
+      "kept": [1, 1, 2, 3]
+    },
+    {
+      "name": "two buildings removed, by their building_id, from one layer of several",
+      "settings": {
+        "key": "building_id",
+        "layer": "table_osm_buildings",
+        "edits": [{ "op": "remove", "ids": [1, 3] }]
+      },
+      "code": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(arg, [\n    {\"op\": \"remove\", \"ids\": [1, 3]},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n",
+      "kept": [2]
+    },
+    {
+      "name": "a value set, a removal, then the removal put back",
+      "settings": {
+        "key": "building_id",
+        "layer": "table_osm_buildings",
+        "edits": [
+          { "op": "set", "ids": [2], "column": "name", "value": "Tower \"B\"" },
+          { "op": "remove", "ids": [3] },
+          { "op": "restore", "ids": [3] },
+          { "op": "set", "ids": [1], "column": "height", "value": null }
+        ]
+      },
+      "code": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(arg, [\n    {\"op\": \"set\", \"ids\": [2], \"column\": \"name\", \"value\": \"Tower \\\"B\\\"\"},\n    {\"op\": \"remove\", \"ids\": [3]},\n    {\"op\": \"restore\", \"ids\": [3]},\n    {\"op\": \"set\", \"ids\": [1], \"column\": \"height\", \"value\": None},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n",
+      "kept": [1, 1, 2, 3]
+    }
+  ]
+}

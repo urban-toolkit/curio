@@ -529,6 +529,36 @@
         }
       ],
       "paletteOrder": 15
+    },
+    {
+      "category": "data",
+      "containerStyle": {
+        "nodeHeight": 460,
+        "nodeWidth": 560
+      },
+      "description": "Removes features, or changes them, by hand. Connect a layer, or the layers an Autark node hands on, and pick the layer to edit and the column that identifies a feature: osm_id or building_id, or another column whose values differ in every feature. A layer with no such column is refused. Double-click features on its map to pick them, then Remove them, Set a column to a value on them, or Restore them as the input has them. Its edits are a list, applied in order by that column, never by a feature's place, and its output is the edited layer, with the other layers as they came. A building's parts share its building_id, so an edit by building_id applies to the whole building. Compare Scenarios lists the edits in its What differs tab.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "iconRef": "fa-solid:eraser",
+      "id": "edit-features",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["GEODATAFRAME", "DATAFRAME", "LIST", "JSON"]
+        }
+      ],
+      "label": "Edit Features",
+      "behavior": "edit-features",
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["GEODATAFRAME", "DATAFRAME", "JSON"]
+        }
+      ],
+      "paletteOrder": 16
     }
   ],
   "version": "1.0.2"

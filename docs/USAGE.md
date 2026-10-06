@@ -565,7 +565,8 @@ boundary splits the dataflow into three parts:
   outputs as given. A node two alternatives share sits outside both, as their
   common context.
 - **Levers:** the nodes in the scenario, which is what an alternative changes: its
-  data loaders, widget values, code and specs.
+  data loaders, widget values, code and specs, and the features it removes or
+  changes by hand (see [Editing features by hand](#editing-features-by-hand)).
 - **Outcomes:** the outputs of the scenario's last nodes, which is what gets
   compared.
 
@@ -610,6 +611,43 @@ Catalog, whatever their **Save output** setting, as pinning a dashboard tile doe
 chart or a Data Pool saves nothing itself: the node feeding it does. Scenarios,
 their colors, descriptions, collapsed state and box positions are saved with the
 dataflow. Deleting a node removes it from its scenario.
+
+### Editing features by hand
+
+The **Edit Features** node removes features from a layer, or changes them, by hand:
+two towers taken out of a city's buildings, say.
+
+1. Drag **Edit Features** from the palette onto the canvas and connect a layer to it:
+   a Python node's GeoDataFrame, or the layers an Autark node or a Data Pool hands on.
+2. Pick the layer to edit in **Layer**, when the input carries several, and the column
+   that identifies a feature in **Id**: `osm_id` or `building_id` when the layer has
+   them, or another column whose values differ in every feature. A layer with no such
+   column is refused: a feature's place in a layer is not an id. While the node has
+   edits, the two menus stay as they are: delete the edits to pick another.
+3. Double-click features on the node's map to pick them. **Picked** lists their ids.
+4. Press **Remove**, **Restore**, or **Set value** with a column and a value. Each
+   press adds an edit to the node's list, under the map: Remove drops the picked
+   features, Set value writes the value into their column, and Restore puts them
+   back as the input has them. The × beside an edit deletes it.
+5. Run the node.
+
+The edits apply in order, to every feature whose id is one of the edit's ids. A
+building's parts share its `building_id`, so an edit by `building_id` applies to the
+whole building, every part. The output is the edited layer, with the input's other
+layers as they came; the input itself is never changed. An id no feature has is
+reported in the node's output, and the run goes on.
+
+The edit list is saved with the dataflow, and the node's code is written from it:
+
+```python
+return curio_edit_features(arg, [
+    {"op": "remove", "ids": [119, 136]},
+    {"op": "set", "ids": [42], "column": "height", "value": 30},
+], key="building_id", layer="table_osm_buildings")
+```
+
+A change of the list writes the code again, and the node then waits for a run. In a
+scenario, an Edit Features node is a lever, and **What differs** lists its edits.
 
 ### Comparing scenarios
 
@@ -685,10 +723,11 @@ The node has two tabs:
   closer they are to no difference. A table's difference is shown as a table, each
   row in the color of its change.
 - **What differs** lists the levers that differ between the scenarios: for each, the
-  widget values and the code lines that changed, read against the first scenario's.
-  A node and the copies made from it with **Duplicate selection** or **Duplicate as
-  scenario** are one lever. A node with no copy in another scenario is listed as only
-  in the scenarios that have it.
+  widget values and the code lines that changed, read against the first scenario's,
+  or, for an Edit Features node, each scenario's edits. A node and the copies made
+  from it with **Duplicate selection** or **Duplicate as scenario** are one lever. A
+  node with no copy in another scenario is listed as only in the scenarios that have
+  it, with its edits when it is an Edit Features node.
 
 Above both tabs it warns when the scenarios read different fixed context, naming the
 inputs and the context only one of them reads, when an input comes from a node in no
