@@ -16,7 +16,11 @@ What each test pins:
 * the Code pill, now in the header, still switches the node's tabs;
 * the resize handle still resizes the node and saves its size, and Minimize
   (among the tools) still folds the node into its chip, which a click opens
-  again at the same size.
+  again at the same size;
+* a double-click where a press drags the node (its header) zooms the view onto
+  the node, centered in what the bar, the title and the rail leave visible;
+* a double-click inside the node's editor, which is not a drag region, leaves
+  the view where it was.
 
 The dataflow is built here: a Python node feeding a Vega-Lite node, no
 datasets, so a failure is about the node card.
@@ -267,6 +271,46 @@ def _box_size(page, node_id: str) -> list:
     )
 
 
+def _settled_viewport(page, *, timeout_ms: int = 10000) -> dict:
+    """React Flow's viewport once two reads 250 ms apart agree: a zoom is a
+    d3 transition that lands over a few hundred milliseconds."""
+    last = page.evaluate("() => window.__curio_reactFlow.getViewport()")
+    waited = 0
+    while waited < timeout_ms:
+        page.wait_for_timeout(250)
+        waited += 250
+        now = page.evaluate("() => window.__curio_reactFlow.getViewport()")
+        if now == last:
+            return now
+        last = now
+    raise AssertionError(f"the view kept moving: last read {last}")
+
+
+#: Where a node sits in the part of the pane nothing covers: below the bar and
+#: the dataflow's title and chips, right of the node rail. Offsets of the
+#: node's edges from that area's edges, and of its center from the area's.
+_FRAMED_JS = """(id) => {
+    const pane = document.querySelector('.react-flow').getBoundingClientRect();
+    const tops = [...document.querySelectorAll('[data-curio-menu-bar], [data-curio-canvas-title], [data-curio-canvas-title] [data-curio-category-chips]')]
+        .map((el) => el.getBoundingClientRect().bottom);
+    const dock = document.getElementById('tools-palette-dock');
+    const area = {
+        left: Math.max(pane.left, dock ? dock.getBoundingClientRect().right : pane.left),
+        top: Math.max(pane.top, ...tops),
+        right: pane.right,
+        bottom: pane.bottom,
+    };
+    const r = document.querySelector(`.react-flow__node[data-id="${id}"]`).getBoundingClientRect();
+    return {
+        inside: r.left >= area.left - 1 && r.top >= area.top - 1 && r.right <= area.right + 1 && r.bottom <= area.bottom + 1,
+        dx: Math.round((r.left + r.right) / 2 - (area.left + area.right) / 2),
+        dy: Math.round((r.top + r.bottom) / 2 - (area.top + area.bottom) / 2),
+        node: [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)],
+        area: [Math.round(area.left), Math.round(area.top), Math.round(area.right), Math.round(area.bottom)],
+    };
+}"""
+
+
 def _stored_size(page, node_id: str) -> list:
     return page.evaluate(
         "(id) => { const d = window.__curio_reactFlow.getNodes().find((n) => n.id === id).data;"
@@ -455,3 +499,54 @@ def test_the_node_still_resizes_and_minimizes(
         raise AssertionError(
             f"the node did not open at its size {after}: {_box_size(page, PRODUCER)}"
         ) from None
+
+
+def test_a_double_click_where_the_node_drags_zooms_onto_it(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, prefix="card_zoom")
+    _wait_for_header(page, PRODUCER)
+    before = _settled_viewport(page)
+
+    # The header's free stretch, where a press would drag the node.
+    spot = _header_spot(page, PRODUCER)
+    page.mouse.dblclick(spot["x"], spot["y"])
+    try:
+        page.wait_for_function(
+            "(zoom) => window.__curio_reactFlow.getViewport().zoom > zoom + 0.05",
+            arg=before["zoom"], timeout=5000,
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"a double-click on PRODUCER's header did not zoom in: {before} -> "
+            f"{page.evaluate('() => window.__curio_reactFlow.getViewport()')}"
+        ) from None
+    after = _settled_viewport(page)
+
+    # Framed as the DATASET chip frames a node: whole, and centered in what the
+    # bar, the title and the rail leave visible.
+    framed = page.evaluate(_FRAMED_JS, PRODUCER)
+    assert framed["inside"] and abs(framed["dx"]) <= 4 and abs(framed["dy"]) <= 4, (
+        f"PRODUCER is not framed in the visible area after the zoom {before} -> {after}: {framed}"
+    )
+
+
+def test_a_double_click_inside_the_editor_leaves_the_view(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, prefix="card_nozoom")
+    _wait_for_header(page, PRODUCER)
+    lines = node_locator(page, PRODUCER).locator(".monaco-editor .view-lines").first
+    expect(lines).to_be_visible(timeout=30000)
+    before = _settled_viewport(page)
+
+    # The editor is not a drag region: a double-click there selects a word.
+    box = lines.bounding_box()
+    page.mouse.dblclick(box["x"] + 30, box["y"] + 8)
+    page.wait_for_timeout(800)
+    after = _settled_viewport(page)
+    assert after == before, f"a double-click in PRODUCER's editor moved the view: {before} -> {after}"

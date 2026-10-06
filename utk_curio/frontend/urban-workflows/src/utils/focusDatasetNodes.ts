@@ -3,6 +3,16 @@ import { fitViewWithMenuOffset } from "./fitViewWithMenuOffset";
 
 export type LinkedNode = { id: string; data: any };
 
+/** Frame the nodes `ids` in view, animated and with room around them: how a
+ *  focus frames its nodes, and how a double-click on a node frames it. */
+export function frameNodesInView(reactFlow: ReactFlowInstance, ids: string[]): boolean {
+  return fitViewWithMenuOffset(reactFlow, {
+    nodes: ids.map((id) => ({ id })),
+    duration: 300,
+    padding: 0.3,
+  });
+}
+
 /**
  * Exclusively select every canvas node matching ``isLinked`` and frame them in
  * view. Shared by the dataset palette row and the node DATASET/OUTPUT chip so
@@ -26,10 +36,6 @@ export function focusLinkedNodes(
     })),
   );
   if (reveal?.(matches.map((n) => n.id))) return matches.length;
-  fitViewWithMenuOffset(reactFlow, {
-    nodes: matches.map((n) => ({ id: n.id })),
-    duration: 300,
-    padding: 0.3,
-  });
+  frameNodesInView(reactFlow, matches.map((n) => n.id));
   return matches.length;
 }
