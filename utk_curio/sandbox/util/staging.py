@@ -255,26 +255,12 @@ def _stage_with_companions(source: Path, folder: Path) -> None:
 def _bundle_parts(bundle: Path):
     """The part files a ``bundle.json`` names, with their paths relative to the
     folder the reader resolves them against, the dataset's (two levels up).
-    A part outside that folder, or not a regular file, is left out."""
+    A part outside that folder, or not a regular file, is left out
+    (``catalog_helpers.listed_bundle_parts``, the list a part read picks from)."""
+    from utk_curio.sandbox.util.catalog_helpers import listed_bundle_parts
+
     base = bundle.parent.parent.resolve()
-    try:
-        spec = json.loads(bundle.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    parts = spec.get("parts") if isinstance(spec, dict) else None
-    found = []
-    for part in parts if isinstance(parts, list) else []:
-        name = part.get("file") if isinstance(part, dict) else None
-        if not isinstance(name, str) or not name:
-            continue
-        path = base / name
-        if path.is_symlink() or not path.is_file():
-            continue
-        resolved = path.resolve()
-        if base not in resolved.parents:
-            continue
-        found.append((resolved, resolved.relative_to(base)))
-    return found
+    return [(resolved, resolved.relative_to(base)) for _part, resolved in listed_bundle_parts(bundle)]
 
 
 def stage_dataset_paths(dataset_paths, scratch_dir):

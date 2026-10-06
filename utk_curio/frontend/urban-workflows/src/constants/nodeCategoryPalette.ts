@@ -67,6 +67,7 @@ export const NODE_TYPE_CATEGORY: Record<string, NodeCategoryKey> = {
   "curio.builtin/data-transformation": "data",
   "curio.builtin/data-pool": "data",
   "curio.builtin/spatial-join": "data",
+  "curio.builtin/edit-features": "data",
   "curio.builtin/computation-analysis": "computation",
   "curio.builtin/data-summary": "computation",
   "curio.builtin/js-computation": "computation",

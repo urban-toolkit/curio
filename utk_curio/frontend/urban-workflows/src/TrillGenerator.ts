@@ -19,6 +19,7 @@ import { normalizeWidgets } from "./utils/widgets/widgetModel";
 import { normalizeSelections } from "./utils/references/selectionTags";
 import { normalizeScenarios, type Scenario } from "./utils/scenarios/scenarioModel";
 import { normalizeCompareSettings } from "./utils/compare/compareSettings";
+import { normalizeEditFeatures } from "./utils/editFeatures/editFeatures";
 
 export class TrillGenerator {
 
@@ -406,6 +407,17 @@ export class TrillGenerator {
                     trill_node.metadata = {};
 
                 trill_node.metadata.compareScenarios = compareScenarios;
+            }
+
+            // #662: an Edit Features node's edit list, with the column that
+            // identifies a feature and the layer it edits, persists at
+            // metadata.editFeatures, only when it holds any of them.
+            const editFeatures = normalizeEditFeatures(node.data.editFeatures);
+            if(editFeatures != undefined){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.editFeatures = editFeatures;
             }
 
             if(typeof node.data.title === "string" && node.data.title)

@@ -2453,7 +2453,7 @@ EXAMPLE_RUNS: tuple[tuple[str, int, bool], ...] = (
     ("04-vega-lite-multi-flow-dashboard.json", 21, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, False),
     ("09-heterogeneous-data-linked-views.json", 11, False),
-    ("06-autark-what-if-shadow-study.json", 8, True),
+    ("06-autark-what-if-shadow-study.json", 11, True),
     ("07-autark-gpu-shader.json", 5, True),
     ("08-autark-spatial-join-regression.json", 7, True),
     ("11-autark-pbf-loading.json", 2, True),

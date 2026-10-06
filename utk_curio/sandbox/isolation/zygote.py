@@ -111,6 +111,7 @@ def build_namespace_template():
 
     from utk_curio.sandbox.util.codec import detect_kind
     from utk_curio.sandbox.util.parsers import checkIOType
+    from utk_curio.sandbox.util.feature_edits import edit_features
     from utk_curio.sandbox.util.scenario_difference import difference_scenarios
     from utk_curio.sandbox.util.scenario_stack import stack_scenarios
 
@@ -143,6 +144,8 @@ def build_namespace_template():
         # Node runs (util/scenario_difference.complete_raster_difference).
         "curio_stack_scenarios": stack_scenarios,
         "curio_difference_scenarios": difference_scenarios,
+        # The Edit Features node's code applies its edit list with it (#662).
+        "curio_edit_features": edit_features,
         # The three store helpers the in-process path also seeds are replaced
         # by stubs. See _unavailable_under_isolation.
         "load_from_duckdb": _unavailable_under_isolation("load_from_duckdb"),

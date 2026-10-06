@@ -344,10 +344,38 @@ node whose code it writes itself:
   `compareDifference.ts` writes; a table goes through `CompareChart`.
 - `whatDiffers.ts` reads each compared scenario's parts through `scenarioParts`,
   pairs levers whose ids and `copiedFrom` lists meet, and compares their widget
-  values and code lines; `contextWarnings` compares their fixed context.
+  values and code lines, or, for Edit Features nodes, their edit lists;
+  `contextWarnings` compares their fixed context.
 - A pinned Compare Scenarios node draws its own output, so it is its own dashboard
   source (`SELF_DRAWN_NODE_TYPES` in `dashboardLayout.ts`, `_SELF_DRAWN_KINDS` in
   `projects/dashboard_payload.py`), and its inputs are not walked.
+
+### Editing features
+
+The Edit Features node (`curio.builtin/edit-features`) is a Python code node whose
+code is written from its edit list (`metadata.editFeatures`: `key`, `layer`, `edits`):
+
+- `src/utils/editFeatures/editFeatures.ts` normalizes the list and writes the code,
+  one call of `curio_edit_features` (`utk_curio/sandbox/util/feature_edits.py`),
+  seeded in both namespaces as the Compare Scenarios steps are.
+  `adapters/node/editFeaturesBehavior.tsx` writes the list and the code together
+  when the body changes the list, and marks the node stale.
+- `components/editFeatures/EditFeaturesBody.tsx` reads the input as the Autark map
+  reads it (`readAutkInput`, `autkSourcesFrom`), offers the id columns a selection
+  tag offers (`idColumns` in `utils/references/selectionTags.ts`) and refuses a layer
+  with none. `EditFeaturesMap.tsx` draws the input with `useAutkGrammarBehavior`, the
+  layer to edit with `isPick`, and turns a pick's rows into ids with `selectedIds`.
+- `feature_edits.edit_features` matches features by `key`, never by position, and
+  edits GeoJSON as it is when the input is an Autark node's layers: the other
+  features, properties and layers pass through untouched, and the result is the
+  envelope `persistLayersToBackend` stores for an Autark node. A table gives a table.
+  Unknown ids are printed, and the run goes on.
+- A Data Pool's several layers read from one artifact name it (`filename`), and a
+  code node is sent that artifact (`executionInputRef`), as for one layer and as a
+  run on the server passes the pool through. In-process, the layers of a stored
+  Autark envelope reach Python as GeoDataFrames that keep `layerName` and
+  `layerType` in their `metadata` (`worker._keep_layer_identity`); the isolated
+  child gets the envelope itself. `edit_features` reads both.
 
 ---
 
@@ -679,6 +707,8 @@ Between nodes a raster travels as autk-db's `getRaster` collection in an envelop
 - On envelopes (`subtract_envelopes`) it subtracts float32 bands as autk-db exported them: Compare Scenarios' Difference is stored as the envelope its map, a reopen and a dashboard tile read.
 
 `curio_load_data("<id>", bounds=(west, south, east, north))` reads a GeoTIFF's window (`rasters.read_window`): the whole cells whose centres lie inside the bounds, on the raster's own grid, every band at its own type and nodata, written as a GeoTIFF of its own. Bounds that reach past the raster, or hold no cell centre, are refused. The dataset scanners (`DATASET_PATH_CALL_RE` and `COLLECTION_CALL_RE` in `code_refs.py`, the agents' `_CATALOG_CALL_RE`, the frontend's `datasetIdsInCode`) take the id as the call's first argument, so options may follow it, and both loader generators name `bounds=None` on a GeoTIFF's line (`LOADER_OPTIONS`).
+
+`curio_load_data("<id>", part="<file>")` reads one file of a bundle (`catalog_helpers.bundle_part`): the dataset's path comes from the same dataset-path map, and the part must be one `listed_bundle_parts` gives, the `bundle.json` entries that are regular files inside the dataset's folder. Staging stages the same list under isolation, so both modes and the headless runner read the same files; any other name is refused with the dataset's files. The agents' source scanner treats a `part=` value of a `curio_load_data` call, literal or f-string, as a file of the dataset, not a path on disk.
 
 `rasters.mosaic_rasters` lays rasters that lie on one grid side by side (`mosaic_grid`: the tiles' north-west corner, the first tile's cell size or a given one, each tile at the nearest cell): a GDAL VRT that points at their files, or a GeoTIFF of their cells. `curio.media@1`'s Mosaic Rasters calls it through `mosaic_collection` (a raster collection's rows); `mosaic_web_tiles` places web map tiles on their own grid (`tile_bounds`) for `scout.raster-conversion@1`. Package modules import them from `utk_curio.sandbox.util.rasters`.
 
