@@ -396,6 +396,7 @@ def _worker_init():
         checkIOType,
         save_dataset_parquet,
     )
+    from utk_curio.sandbox.util.input_layers import curio_layer
     from utk_curio.sandbox.util.scenario_difference import difference_scenarios
     from utk_curio.sandbox.util.scenario_stack import stack_scenarios
 
@@ -430,6 +431,8 @@ def _worker_init():
         # or, in Difference, subtracts one from the other.
         'curio_stack_scenarios': stack_scenarios,
         'curio_difference_scenarios': difference_scenarios,
+        # A layer chip, [!! input 0:roads !!], reads one layer of an input with it.
+        'curio_layer': curio_layer,
     }
 
 
@@ -732,7 +735,13 @@ def _to_js_value(obj):
     if isinstance(obj, (int, float, str)):
         return obj
     if isinstance(obj, gpd.GeoDataFrame):
-        return json.loads(obj.to_json())
+        fc = json.loads(obj.to_json())
+        # A frame's layer name rides as the FeatureCollection's own `name`, so
+        # a layer chip finds it (curio_layer in util/js_wrapper.mjs).
+        meta = obj.__dict__.get('metadata')
+        if isinstance(meta, dict) and isinstance(meta.get('name'), str) and meta['name']:
+            fc['name'] = meta['name']
+        return fc
     if isinstance(obj, pd.DataFrame):
         return obj.to_dict(orient='records')
     if isinstance(obj, (list, tuple)):

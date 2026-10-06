@@ -202,7 +202,16 @@ def parseInput(parsed_json):
     elif data_type == 'dataframe':
         return parse_dataframe(data_value)
     elif data_type == 'geodataframe':
-        return parse_geodataframe(data_value)
+        gdf = parse_geodataframe(data_value)
+        # An Autark layer keeps its name and type, as a frame's metadata holds
+        # them, so a layer chip finds it (util/input_layers.py).
+        layer_name = parsed_json.get('layerName')
+        if isinstance(layer_name, str) and layer_name:
+            meta = {'name': layer_name}
+            if isinstance(parsed_json.get('layerType'), str) and parsed_json['layerType']:
+                meta['layerType'] = parsed_json['layerType']
+            gdf.__dict__['metadata'] = meta
+        return gdf
     elif data_type == 'raster':
         # A path is a Python node's raster. Anything else is the collection an
         # Autark node hands on, kept as its envelope: a Python node gets it as

@@ -185,21 +185,20 @@ function ColumnTags({
 }
 
 /**
- * One input's tag, and its columns when expanded (#662). In a Vega-Lite or
- * Autark spec (*layerChips*), an input carrying several layers opens to a tag
- * per layer instead, each followed by that layer's columns.
+ * One input's tag, and its columns when expanded (#662). An input carrying
+ * several layers (an Autark node's tables) opens to a tag per layer instead,
+ * each followed by that layer's columns, in code as in a Vega-Lite or Autark
+ * spec.
  */
 function InputTags({
   input,
   onInsert,
   onLoadColumns,
-  layerChips,
   disabled,
 }: {
   input: InputScope;
   onInsert: (inner: string) => void;
   onLoadColumns?: (slot: number) => void;
-  layerChips: boolean;
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -239,15 +238,10 @@ function InputTags({
           {columns === null ? (
             <span className={styles.stripHint}>Run the node that feeds this input to see its columns.</span>
           ) : null}
-          {layers && !layerChips ? (
-            <span className={styles.stripHint}>
-              This input carries the layers {layers.map((l) => l.name).join(", ")}.
-            </span>
-          ) : null}
           {!layers && Array.isArray(columns) && columns.length === 0 ? (
             <span className={styles.stripHint}>This input has no columns.</span>
           ) : null}
-          {count > COLUMN_FILTER_FROM && (layerChips || !layers) ? (
+          {count > COLUMN_FILTER_FROM ? (
             <input
               type="search"
               className={styles.columnFilter}
@@ -257,7 +251,7 @@ function InputTags({
               onChange={(event) => setFilter(event.target.value)}
             />
           ) : null}
-          {layers && layerChips
+          {layers
             ? layers.map((layer) => (
                 <React.Fragment key={layer.name}>
                   <ReferenceTag
@@ -300,8 +294,8 @@ function InputTags({
 
 /**
  * The tags above a code or grammar editor: the node's inputs, each opening to
- * its columns (or, with *layerChips*, its layers), then its widgets, then its
- * selection tags, then the dataflow's shared tags. Nothing when there are none.
+ * its columns (or its layers), then its widgets, then its selection tags, then
+ * the dataflow's shared tags. Nothing when there are none.
  */
 export function ReferenceStrip({
   widgets,
@@ -310,7 +304,6 @@ export function ReferenceStrip({
   selections = [],
   onInsert,
   onLoadColumns,
-  layerChips = false,
   disabled = false,
 }: {
   widgets: WidgetDef[];
@@ -319,7 +312,6 @@ export function ReferenceStrip({
   selections?: SelectionTagDef[];
   onInsert: (inner: string) => void;
   onLoadColumns?: (slot: number) => void;
-  layerChips?: boolean;
   disabled?: boolean;
 }) {
   const sharedNames = uniqueSharedNames(shared);
@@ -337,7 +329,6 @@ export function ReferenceStrip({
               input={input}
               onInsert={onInsert}
               onLoadColumns={onLoadColumns}
-              layerChips={layerChips}
               disabled={disabled}
             />
           ))}

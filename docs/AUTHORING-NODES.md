@@ -140,6 +140,17 @@ selection tag, `[!! selection name !!]` ([Selection tags](USAGE.md#selection-tag
 A template does not declare selection tags: each names a view of one dataflow,
 so it is added on the canvas, in the node's **Widgets** tab.
 
+The source can also read its input through input chips
+([Several inputs](USAGE.md#several-inputs)): `[!! input 0 !!]` is the input,
+`[!! input 0.height !!]` a column's name, and `[!! input 0:table_osm_roads !!]`
+one layer of the several an Autark node hands on, as a GeoDataFrame in Python
+and a FeatureCollection in JavaScript:
+
+```python
+roads = [!! input 0:table_osm_roads !!]
+return roads[roads["highway"] == "primary"]
+```
+
 ### Modules beside your template
 
 A template can import Python modules that ship in the package's `sources/`
