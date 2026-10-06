@@ -20,8 +20,8 @@ import {
     topOverlayBottom,
 } from "../utils/fitViewWithMenuOffset";
 import { computeTranslateExtent } from "../utils/canvasExtent";
-import { notebookFlowProps } from "../utils/notebookLayout";
-import { NotebookAddCells } from "./notebook/NotebookAddCells";
+import { graphEditGates, notebookFlowProps } from "../utils/notebookLayout";
+import { NotebookRunAll } from "./notebook/NotebookRunAll";
 import { usePosition } from "../hook/usePosition";
 
 import { useFlowContext } from "../providers/FlowProvider";
@@ -118,8 +118,6 @@ export function MainCanvas() {
         saveCurrentProject,
         notebookOn,
         notebookContentHeight,
-        isRunActive,
-        serverRunActive,
         setNotebookPane,
         registerNotebookScroller,
         revealNodes,
@@ -340,6 +338,8 @@ export function MainCanvas() {
     // socket to the owner, who persists. Without this gate, peers see the
     // canvas as read-only and the lock/proposal flow does nothing.
     const isSharedView = viewerMode === "shared" && !collab.enabled;
+    // Nodes are added (dropped) and connected on the canvas only, by its owner.
+    const graphEdits = graphEditGates({ notebookOn, sharedView: isSharedView });
 
     const [isComponentsSelected, setIsComponentsSelected] = useState<boolean>(false);
 
@@ -689,17 +689,18 @@ export function MainCanvas() {
                     onClose={() => {deleteFloatingPanel(key)}}
                 />
             ))}
-            {/* The notebook view has no rail: its (+) opens it as a row. */}
-            {!notebookOn ? <ToolsMenu /> : null}
+            {/* The notebook view adds no nodes, so it has no rail, only the
+                rail's Run all. */}
+            {!notebookOn ? <ToolsMenu /> : <NotebookRunAll />}
             <UpMenu />
             <CollaborationSidePanel />
             {!isSharedView ? <ScenariosPanel /> : null}
             <div
                 className="curio-canvas-drop-target"
                 style={{ width: "100%", height: "100%" }}
-                onDragOver={!isSharedView ? handleDragOver : undefined}
-                onDragLeave={!isSharedView ? handleDragLeave : undefined}
-                onDrop={!isSharedView ? handleDrop : undefined}
+                onDragOver={graphEdits.drop ? handleDragOver : undefined}
+                onDragLeave={graphEdits.drop ? handleDragLeave : undefined}
+                onDrop={graphEdits.drop ? handleDrop : undefined}
             >
             {/* Present in both views so switching never remounts React Flow:
                 on the canvas both fill the window and change nothing; in the
@@ -711,9 +712,6 @@ export function MainCanvas() {
                 ref={scrollerRef}
                 className="curio-flow-scroller"
                 data-curio-notebook={notebookOn ? "true" : undefined}
-                // The run guard the rail's Run All button shows on the canvas,
-                // for the notebook view, which has no rail.
-                data-run-active={notebookOn && (isRunActive || serverRunActive) ? "true" : undefined}
                 style={notebookOn ? NOTEBOOK_SCROLLER_STYLE : FILL_STYLE}
             >
             <div
@@ -729,7 +727,7 @@ export function MainCanvas() {
                 selectionKeyCode={"Shift"}
                 panActivationKeyCode={null}
                 onSelectionChange={handleSelectionChange}
-                onConnect={!isSharedView ? handleConnect : undefined}
+                onConnect={graphEdits.connect ? handleConnect : undefined}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 isValidConnection={isValidConnection}
@@ -741,8 +739,8 @@ export function MainCanvas() {
                 onMoveEnd={viewportMotionHint.onMoveEnd}
                 nodesDraggable={!isSharedView}
                 elementsSelectable={true}
-                nodesConnectable={!isSharedView}
-                edgesUpdatable={!isSharedView}
+                nodesConnectable={graphEdits.connect}
+                edgesUpdatable={graphEdits.connect}
                 // React Flow defaults to "Backspace" alone, so Windows users pressing
                 // Delete got no response (#153). useKeyPress bails on isInputDOMNode,
                 // so neither key can fire while the caret is in Monaco or an input.
@@ -757,8 +755,6 @@ export function MainCanvas() {
                 {!notebookOn && <Controls />}
                 {!notebookOn && <CanvasScenarioLayers view={scenarioView} editable={!isSharedView} />}
             </ReactFlow>
-            {/* The (+) below every cell, scrolling with the page. */}
-            {notebookOn && !isSharedView ? <NotebookAddCells scrollerRef={scrollerRef} /> : null}
             </div>
             </div>
             {!isSharedView ? <AgentDockOverlay /> : null}

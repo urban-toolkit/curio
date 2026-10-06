@@ -494,15 +494,19 @@ export default function UpMenu() {
                             >
                                 Save selection as scenario
                             </HeaderMenuItem>
+                            {/* Duplicating adds nodes, which happens on the
+                                canvas only. */}
                             <HeaderMenuItem
                                 icon={faClone}
                                 onClick={scenarioItem(() => scenarioActions.duplicate(false))}
+                                disabled={canvasView === "notebook"}
                             >
                                 Duplicate selection
                             </HeaderMenuItem>
                             <HeaderMenuItem
                                 icon={faCodeBranch}
                                 onClick={scenarioItem(() => scenarioActions.duplicate(true))}
+                                disabled={canvasView === "notebook"}
                             >
                                 Duplicate as scenario
                             </HeaderMenuItem>

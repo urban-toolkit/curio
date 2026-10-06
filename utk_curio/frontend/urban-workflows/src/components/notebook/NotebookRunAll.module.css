@@ -1,0 +1,9 @@
+/* At the top right of the notebook page, on the white band behind the title,
+   above the connections bar and clear of the scrollbar. */
+.dock {
+  position: fixed;
+  z-index: 90;
+  top: calc(var(--curio-top-bar-height) + 15px);
+  right: 32px;
+  width: 64px;
+}

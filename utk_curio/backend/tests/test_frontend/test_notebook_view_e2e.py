@@ -4,29 +4,27 @@ The canvas bar's Canvas | Notebook switch shows the same nodes one under the
 other, in dataflow order, like a Jupyter notebook: each cell across the page
 and as tall as its code and its output, Play at its top left, its other tools
 showing under the pointer. The connections run in a bar to the right of the
-cells, between dots on each cell's right edge. There is no rail on the left: a
-(+) below each cell opens it as one row. Everything the canvas allows works
-there, and nothing about the view is saved: the dataflow keeps its canvas
-layout, and the view lives in the address (``?view=notebook``).
+cells, between dots on each cell's right edge. Nodes are added and connected
+on the canvas only: the notebook view has no rail, accepts no drop, and its
+dots do not connect; a cell's code is edited and run there, a cell deleted and
+a connection removed. Nothing about the view is saved: the dataflow keeps its
+canvas layout, and the view lives in the address (``?view=notebook``).
 
 What each test pins:
 
 * the switch lays the cells out in one column, in dataflow order, every cell
   spanning the page to the bar and as tall as its content, GAP apart and none
-  overlapping, an editor as tall as its lines, a (+) below each cell, one arc
-  per connection in the bar, no rail, no resize handle on any cell, and the
-  tools hidden until the pointer is over the cell;
+  overlapping, an editor as tall as its lines, one arc per connection in the
+  bar, no rail and no (+), a Run all button, no resize handle on any cell, no
+  dot that connects, and the tools hidden until the pointer is over the cell;
 * a run shows a Python cell's code and output, and a Vega-Lite cell's spec and
   chart, together; the output grows its cell, the cells below move down by as
   much, and each arc still runs between its two dots;
 * the wheel scrolls the page over a cell's editor and over its output;
-* dragging between dots connects two cells, and select plus Delete removes the
-  connection;
-* a (+) opens the rail as one row, and a click on a tile adds a cell that reads
-  the cell above the (+) and lands right under it, placed on the canvas past
-  the others and scrolled into view;
-* a tile dragged from that menu and dropped on the notebook becomes a cell,
-  placed on the canvas past the others and scrolled into view;
+* dragging between dots in the notebook view connects nothing, select plus
+  Delete removes a connection there, and the canvas connects the two again;
+* the notebook view adds no node: a drop on its page adds nothing and
+  Duplicate selection is off, while the canvas's rail adds one;
 * back on the canvas every node is where it was and the size it was, a save
   writes the canvas layout, and a reload keeps the view the address names.
 
@@ -451,10 +449,12 @@ def test_the_switch_shows_the_dataflow_as_a_column_of_cells(
         expect(cell.locator(".react-flow__handle-top")).to_have_count(0)
         expect(page.locator(f'[id="{node_id}resizer"]')).to_have_count(0)
 
-    # A (+) in the gap below every cell, the last one's included.
-    adds = page.locator("[data-curio-add-after]")
-    expect(adds).to_have_count(len(ORDER))
-    assert sorted(adds.nth(k).get_attribute("data-curio-add-after") for k in range(len(ORDER))) == sorted(ORDER)
+    # Nodes are added and connected on the canvas: no (+) between the cells,
+    # and no dot that starts or takes a connection. Run all stays on the page.
+    expect(page.locator("[data-curio-add-after]")).to_have_count(0)
+    expect(page.locator(".react-flow__node .react-flow__handle")).not_to_have_count(0)
+    expect(page.locator(".react-flow__node .react-flow__handle.connectable")).to_have_count(0)
+    expect(page.locator("#notebook-run-all").get_by_role("button", name="Run all nodes")).to_be_visible()
 
     # One arc per connection, all of it in the bar right of the cells.
     cells_right = page.locator(f'[id="{PRODUCER}resizable"]').bounding_box()
@@ -582,35 +582,58 @@ def test_the_wheel_scrolls_the_page_over_editors_and_outputs(
     )
 
 
-def test_connections_are_made_and_removed_in_the_bar(
+def _dot(page, node_id: str, handle: str):
+    return page.locator(f'.react-flow__node[data-id="{node_id}"] .react-flow__handle[data-handleid="{handle}"]')
+
+
+#: A node tile dropped on the page as the rail's drag would drop it, straight
+#: on the drop target, so it needs no rail to drag from.
+_DROP_TILE_JS = """(nodeType) => {
+    const target = document.querySelector('.curio-canvas-drop-target');
+    if (!target) return false;
+    const r = target.getBoundingClientRect();
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData('application/reactflow', nodeType);
+    const at = {bubbles: true, cancelable: true, dataTransfer,
+                clientX: r.left + r.width / 2, clientY: r.top + r.height / 2};
+    target.dispatchEvent(new DragEvent('dragover', at));
+    target.dispatchEvent(new DragEvent('drop', at));
+    return true;
+}"""
+
+
+def test_connections_are_made_on_the_canvas_and_removed_in_the_bar(
     app_frontend: "FrontendPage", current_server, page,
 ):
     require_project_page()
     require_user_auth()
     _enter(page, app_frontend, current_server, prefix="nbv_connect")
     _show(page, "notebook")
+    _wait_for_column(page, ORDER)
 
-    # PRODUCER's output dot and the next cell's free input circle (TRANSFORM is
-    # wired on circle 0, from PRODUCER), both in view and clear of the bar fixed
-    # over the top of the page. A second connection between the same two cells
-    # leaves the order as it is, so neither cell moves while the test works on
-    # them.
-    out_dot = page.locator(f'.react-flow__node[data-id="{PRODUCER}"] .react-flow__handle[data-handleid="out"]')
-    box = out_dot.bounding_box()
+    # A drag from PRODUCER's output dot to TRANSFORM's free circle connects
+    # nothing: in the notebook view the dots do not connect.
+    box = _dot(page, PRODUCER, "out").bounding_box()
     assert box, "the cell has no output dot"
     _scroll_to(page, max(0, _scroll_top(page) + box["y"] - 300))
+    start = _dot(page, PRODUCER, "out").bounding_box()
+    end = _dot(page, TRANSFORM, "in_1").bounding_box()
+    assert start and end, f"the dots to drag between are not drawn: {start} {end}"
+    page.mouse.move(start["x"] + start["width"] / 2, start["y"] + start["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(end["x"] + end["width"] / 2, end["y"] + end["height"] / 2, steps=12)
+    page.mouse.up()
+    page.wait_for_timeout(1000)
+    expect(page.locator(".react-flow__edge")).to_have_count(2)
 
-    edge_id = connect_nodes(page, PRODUCER, TRANSFORM, target_handle="in_1")
-    arc = page.locator(f'.react-flow__edge[data-testid="rf__edge-{edge_id}"]')
-    expect(arc).to_have_count(1)
-    expect(page.locator(".react-flow__edge")).to_have_count(3)
-    placed = _positions(page)
-    assert [placed[n]["y"] for n in ORDER] == sorted(placed[n]["y"] for n in ORDER), (
-        f"connecting moved the cells out of {ORDER}: {placed}"
+    # A connection is still removed in the bar: select PRODUCER to TRANSFORM
+    # where it runs along its lane (halfway along the path, since the lane is
+    # most of a bracket's length), then Delete.
+    edge_id = page.evaluate(
+        "([s, t]) => window.__curio_reactFlow.getEdges().find((e) => e.source === s && e.target === t).id",
+        [PRODUCER, TRANSFORM],
     )
-
-    # Select the arc where it runs along its lane: halfway along the path is on
-    # the lane, since the lane is most of a bracket's length. Then delete it.
+    arc = page.locator(f'.react-flow__edge[data-testid="rf__edge-{edge_id}"]')
     point = page.evaluate(
         """(id) => {
             const path = document.querySelector(
@@ -622,7 +645,7 @@ def test_connections_are_made_and_removed_in_the_bar(
         }""",
         edge_id,
     )
-    assert point, "the new connection has no path"
+    assert point, "the connection has no path"
     bar_bottom = page.locator(BAR).bounding_box()["y"] + page.locator(BAR).bounding_box()["height"]
     viewport = page.viewport_size
     assert 0 <= point["x"] < viewport["width"] and bar_bottom < point["y"] < viewport["height"], (
@@ -631,133 +654,46 @@ def test_connections_are_made_and_removed_in_the_bar(
     page.mouse.click(point["x"], point["y"])
     page.keyboard.press("Delete")
     expect(arc).to_have_count(0, timeout=10000)
+    expect(page.locator(".react-flow__edge")).to_have_count(1)
+
+    # On the canvas the two cells' nodes connect again.
+    _show(page, "canvas")
+    connect_nodes(page, PRODUCER, TRANSFORM)
     expect(page.locator(".react-flow__edge")).to_have_count(2)
 
 
-def test_a_plus_below_a_cell_adds_a_cell_that_reads_it(
+def test_nodes_are_added_on_the_canvas_only(
     app_frontend: "FrontendPage", current_server, page,
 ):
     require_project_page()
     require_user_auth()
-    _enter(page, app_frontend, current_server, prefix="nbv_plus")
+    _enter(page, app_frontend, current_server, prefix="nbv_add")
     _show(page, "notebook")
     _wait_for_column(page, ORDER)
-    before = {n for n in _positions(page)}
+    count = len(_positions(page))
 
-    # The (+) below TRANSFORM opens the rail as one row: every node tile on one
-    # line, with the catalogs and Run All.
-    page.locator(f'[data-curio-add-after="{TRANSFORM}"]').click()
-    menu = page.locator('#tools-palette-dock[data-layout="row"]')
-    expect(menu).to_be_visible()
-    tops = page.evaluate(
-        """() => [...document.querySelectorAll('#tools-menu [draggable="true"]')]
-            .map((tile) => Math.round(tile.getBoundingClientRect().top))"""
-    )
-    assert len(tops) > 5 and max(tops) - min(tops) <= 2, f"the node tiles are not in one row: {tops}"
-    expect(menu.get_by_role("button", name="Run all nodes")).to_be_visible()
-    # The tiles, the four catalogs and Run All on one line: no part starts
-    # below where another ends.
-    parts = page.evaluate(
-        """() => [...document.querySelector('#tools-menu').children].map((el) => {
-            const r = el.getBoundingClientRect();
-            return [Math.round(r.top), Math.round(r.bottom), el.className];
-        })"""
-    )
-    assert len(parts) >= 6 and max(p[0] for p in parts) < min(p[1] for p in parts), (
-        f"the menu's tiles, catalogs and Run All are not on one line: {parts}"
-    )
-    save_workflow_test_screenshot(
-        page, SCREENSHOT_STEM, test_name="notebook_view__add_menu", fit_reactflow=False,
-    )
-
-    # A click on a tile, no drag: the node is added and the menu closes.
-    menu.locator("#tile-data-transformation").click()
+    # No rail and no (+) to add a node from.
     expect(page.locator("#tools-palette-dock")).to_have_count(0)
-    page.wait_for_function(
-        "(count) => window.__curio_reactFlow.getNodes().length === count",
-        arg=len(before) + 1,
-        timeout=10000,
-    )
-    new_id = next(n for n in _positions(page) if n not in before)
+    expect(page.locator("[data-curio-add-after]")).to_have_count(0)
 
-    # Its cell reads TRANSFORM's output, and it is a cell like the others,
-    # stamped with a canvas spot past every node: right under TRANSFORM, where
-    # the (+) was, with CHART (which TRANSFORM fed first) moved down below it.
-    page.wait_for_function(
-        """(id) => !!window.__curio_reactFlow.getNodes().find((node) => node.id === id)""",
-        arg=new_id,
-        timeout=10000,
-    )
-    order = [PRODUCER, TRANSFORM, new_id, CHART, EXTRA]
-    try:
-        page.wait_for_function(
-            "([id, above]) => window.__curio_reactFlow.getEdges().some((e) => e.source === above && e.target === id)",
-            arg=[new_id, TRANSFORM],
-            timeout=10000,
-        )
-    except PlaywrightTimeoutError:
-        raise AssertionError(f"the added cell {new_id} does not read TRANSFORM's output") from None
-    _wait_for_column(page, order)
-    assert _positions(page)[new_id]["canvas"], "the added cell has no canvas spot stamped"
-    placed = _positions(page)[new_id]
-    max_x = max(x for x, _ in CANVAS.values())
-    max_y = max(y for _, y in CANVAS.values())
-    assert placed["canvas"] == {"x": max_x + 800, "y": max_y}, placed
-    # Scrolled into view below the bar.
-    page.wait_for_function(
-        """(id) => {
-            const el = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-            const bar = document.querySelector('header[data-curio-menu-bar]');
-            if (!el || !bar) return false;
-            const top = el.getBoundingClientRect().top;
-            return top >= bar.getBoundingClientRect().bottom - 1 && top < window.innerHeight - 100;
-        }""",
-        arg=new_id,
-        timeout=10000,
-    )
+    # A node dropped on the page is not added.
+    assert page.evaluate(_DROP_TILE_JS, "curio.builtin/data-transformation@1"), "no drop target on the page"
+    page.wait_for_timeout(1500)
+    assert len(_positions(page)) == count, f"a drop on the notebook page added a node: {_positions(page)}"
 
+    # Duplicate selection and Duplicate as scenario, which add copies, are off.
+    page.get_by_role("button", name="View menu").click()
+    expect(page.get_by_role("button", name="Duplicate selection")).to_be_disabled()
+    expect(page.get_by_role("button", name="Duplicate as scenario")).to_be_disabled()
+    page.get_by_role("button", name="View menu").click()
 
-def test_a_tile_dropped_on_the_notebook_becomes_a_cell_in_view(
-    app_frontend: "FrontendPage", current_server, page,
-):
-    require_project_page()
-    require_user_auth()
-    _enter(page, app_frontend, current_server, prefix="nbv_drop")
-    _show(page, "notebook")
-
-    # The tiles are in the menu a (+) opens; one can still be dragged out.
-    page.locator(f'[data-curio-add-after="{EXTRA}"]').click()
-    expect(page.locator('#tools-palette-dock[data-layout="row"]')).to_be_visible()
+    # On the canvas the rail adds one.
+    _show(page, "canvas")
     new_id = drag_to_canvas(page, page.locator("#tile-data-transformation"))
-
-    # The node exists once the drop lands; it becomes a cell, stamped and
-    # moved into the column, on the next pass.
     page.wait_for_function(
-        """([id, column]) => {
-            const n = window.__curio_reactFlow.getNodes().find((node) => node.id === id);
-            const col = window.__curio_reactFlow.getNodes().find((node) => node.id === column);
-            return !!n && !!col && !!(n.data && n.data.workflowPosition) && n.position.x === col.position.x;
-        }""",
-        arg=[new_id, PRODUCER],
-        timeout=10000,
+        "(id) => !!window.__curio_reactFlow.getNodes().find((n) => n.id === id)", arg=new_id, timeout=10000,
     )
-    # Placed on the canvas past every other node, as a drop with no point would be.
-    placed = _positions(page)[new_id]
-    max_x = max(x for x, _ in CANVAS.values())
-    max_y = max(y for _, y in CANVAS.values())
-    assert placed["canvas"] == {"x": max_x + 800, "y": max_y}, placed
-    # Scrolled into view below the bar.
-    page.wait_for_function(
-        """(id) => {
-            const el = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-            const bar = document.querySelector('header[data-curio-menu-bar]');
-            if (!el || !bar) return false;
-            const top = el.getBoundingClientRect().top;
-            return top >= bar.getBoundingClientRect().bottom - 1 && top < window.innerHeight - 100;
-        }""",
-        arg=new_id,
-        timeout=10000,
-    )
+    assert len(_positions(page)) == count + 1
 
 
 def test_back_on_the_canvas_every_node_is_where_it_was(

@@ -4,7 +4,7 @@ import type React from "react";
 import type { Connection, Edge, EdgeChange, Node, NodeChange, NodeRemoveChange } from "reactflow";
 import type { InstallSyncOutcome, PendingInstall } from "../../services/datasetCatalog/datasetCatalogTypes";
 import type { DataflowCategories, HandCategories } from "../../utils/dataflowCategories";
-import type { NotebookAddPoint, NotebookPane } from "../../utils/notebookLayout";
+import type { NotebookPane } from "../../utils/notebookLayout";
 import type { Scenario } from "../../utils/scenarios/scenarioModel";
 import type { IInteraction, IOutput, IPropagation, NodeExecOutcome } from "./flowTypes";
 import type { CanvasView } from "./useNotebookView";
@@ -145,10 +145,6 @@ export interface FlowContextProps {
     notebookOn: boolean;
     /** How tall the notebook's column is, so the page can scroll all of it. */
     notebookContentHeight: number;
-    /** Where the notebook's cells sit across the page. */
-    notebookColumn: { x: number; width: number };
-    /** The (+) below each cell, which adds a cell reading that one's output. */
-    notebookAddPoints: NotebookAddPoint[];
     setNotebookPane: (pane: NotebookPane) => void;
     registerNotebookScroller: (element: HTMLElement | null) => void;
     /** In the notebook view, scroll the first of these nodes' cells into view

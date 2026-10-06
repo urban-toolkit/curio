@@ -106,14 +106,6 @@
   color: #fbfcf6;
 }
 
-/* In the notebook view's (+) menu the rail is one row: the panel opens below it. */
-:global(#tools-palette-dock[data-layout="row"]) .panel {
-  top: 100%;
-  left: 0;
-  margin: 8px 0 0;
-  max-height: calc(100vh - 260px);
-}
-
 .panelHeader {
   flex-shrink: 0;
   display: flex;
