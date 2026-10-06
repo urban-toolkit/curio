@@ -119,7 +119,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 - `ci-report`: one HTML report for the run (`scripts/ci_report.py`); checks that every test ran.
 - Dispatch inputs: `stress`, `remint` with `remint_filter` and `remint_force` (re-mints screenshot baselines into the `reminted-baselines` artifact), and `repeat` (unit, jest, e2e-desktop, test-gpu and test-isolated run their suite that many times through `scripts/ci_repeat.sh`, and test-gpu-stress runs with its stages repeated; the CI report lists the tests that passed in one run and failed in another).
 
-Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema), `bump-version.yml` (version bump on main), `deploy.yml` (deploys main), `publish-pip-to-pypi.yml` (PyPI on release); manual diagnostics `e2e-autark-repro.yml`, `rerun-memory-repro.yml`, `zygote-fork-crash-repro.yml`.
+Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema), `weekly-flake-hunt.yml` (Saturdays: the Full stack build on main with `repeat` 10), `bump-version.yml` (version bump on main), `deploy.yml` (deploys main), `publish-pip-to-pypi.yml` (PyPI on release); manual diagnostics `e2e-autark-repro.yml`, `rerun-memory-repro.yml`, `zygote-fork-crash-repro.yml`.
 
 ## Scripts
 

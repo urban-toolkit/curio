@@ -1,0 +1,29 @@
+name: Weekly flake hunt
+
+# Every Saturday, the Full stack build on main with every test suite run ten
+# times (its `repeat` input, scripts/ci_repeat.sh): its CI report lists every
+# test that passed in one run and failed in another. It dispatches that run
+# rather than adding a schedule inside docker-compose.yml, so the Saturday run
+# is exactly the one a person starts from the Actions tab with repeat 10. A
+# workflow_dispatch is the one event the repository's own token may start.
+#
+# 08:00 UTC is 3 AM in Chicago during CDT and 2 AM once CST starts, the quiet
+# hours the Full stack build's own schedule uses. Run this by hand from the
+# Actions tab to start the same run now.
+on:
+  schedule:
+    - cron: '0 8 * * 6'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: ▶️ Start the Full stack build on main with repeat 10
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run docker-compose.yml --repo "$GITHUB_REPOSITORY" --ref main -f repeat=10
