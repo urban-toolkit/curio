@@ -55,6 +55,15 @@ RESULT_FILENAME = "result.json"
 # SIGKILLed and reported as the memory limit.
 CPU_HARD_LIMIT_GRACE_SECONDS = 60
 
+# The stack, in MiB, of a thread a library starts in a memory-capped child
+# without asking for a size of its own: what glibc gives every thread on x86
+# when there is no stack limit (ARCH_STACK_DEFAULT_SIZE). See
+# _shrink_default_thread_stack.
+THREAD_STACK_MB = 2
+
+# Room for a pthread_attr_t, which is 56 bytes on x86_64 and 64 on aarch64.
+_PTHREAD_ATTR_BYTES = 128
+
 # Kept in step with protocol.MAX_* so a child never writes a manifest the
 # parent will reject wholesale for being oversized.
 _MAX_STDOUT_LINES = 5_000
@@ -173,6 +182,69 @@ def _address_space_baseline_bytes():
         return None
 
 
+def _shrink_default_thread_stack():
+    """Give the threads a node's libraries start a ``THREAD_STACK_MB`` stack.
+
+    RLIMIT_AS counts each thread's whole stack, reserved when the thread
+    starts, and glibc sizes a thread's stack from RLIMIT_STACK: 8 MiB in
+    Docker. onnxruntime starts an intra-op thread per physical core, DuckDB
+    and OpenBLAS one per CPU. On a 192-CPU host the onnxruntime threads alone
+    reserved 1.5 GiB of the 4096 MB budget, and the session failed to start
+    with "Resource temporarily unavailable" (#743). A stack is reserved, not
+    used: a worker thread touches a few pages of it.
+
+    What does not change:
+
+    - How many threads any library starts.
+    - The cap itself: still the baseline plus the budget.
+    - Node code, which runs on this process's main thread, whose stack is
+      the process stack that RLIMIT_STACK governs.
+    - Python's own threads (``threading``, ``concurrent.futures``), which keep
+      the stack they inherited, so deep recursion in them behaves as before.
+    - A library that asks for a stack size (libgomp with ``OMP_STACKSIZE``)
+      gets what it asks for.
+
+    Only ever lowers the default. Set with ``pthread_setattr_default_np``, in
+    this process only: glibc read RLIMIT_STACK once, when the zygote started,
+    and lowering RLIMIT_STACK would shrink the main thread's stack instead.
+    Returns the default now in force, in bytes, or None where the C library
+    has no way to change it, which leaves the stacks as they were.
+    """
+    import ctypes
+    import threading
+
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        get_default = libc.pthread_getattr_default_np
+        set_default = libc.pthread_setattr_default_np
+    except (OSError, AttributeError):
+        return None
+
+    attr = ctypes.create_string_buffer(_PTHREAD_ATTR_BYTES)
+    if get_default(attr) != 0:
+        return None
+    try:
+        size = ctypes.c_size_t()
+        if libc.pthread_attr_getstacksize(attr, ctypes.byref(size)) != 0:
+            return None
+        inherited = size.value
+        wanted = min(inherited, THREAD_STACK_MB * 1024 * 1024)
+        if wanted == inherited:
+            return inherited
+        try:
+            threading.stack_size(inherited)
+        except (ValueError, RuntimeError):
+            # Python's threads could not be pinned, so leave every stack as
+            # it was rather than shrink theirs.
+            return inherited
+        if (libc.pthread_attr_setstacksize(attr, ctypes.c_size_t(wanted)) != 0
+                or set_default(attr) != 0):
+            return inherited
+        return wanted
+    finally:
+        libc.pthread_attr_destroy(attr)
+
+
 def _apply_rlimits(limits):
     """Cap memory, CPU, processes, file size, fds, and core dumps.
 
@@ -216,6 +288,9 @@ def _apply_rlimits(limits):
              "RLIMIT_AS")
         # The malloc arenas this budget allows are capped in the zygote's
         # environment, which every child inherits: lifecycle.zygote_environment.
+        # The thread stacks it allows are sized here.
+        if baseline is not None:
+            _shrink_default_thread_stack()
 
     # The hard limit above the soft one, so the kernel's first signal is
     # SIGXCPU, which the node reports as its CPU allowance, and not SIGKILL.
