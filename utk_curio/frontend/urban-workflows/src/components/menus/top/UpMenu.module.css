@@ -98,13 +98,14 @@
 
 /* In the notebook view the cells scroll under the title: a white band behind
    it, from the window's left edge to its scrollbar and from the top bar to just
-   under the chips, keeps their text from showing through. */
+   under the chips (which hang below this box), keeps their text from showing
+   through. The first cell starts lower, so the band never covers it at rest. */
 .workflowNameContainerNotebook::before {
   content: "";
   position: absolute;
   z-index: -1;
   top: -15px;
-  bottom: -10px;
+  bottom: -24px;
   left: -50px;
   width: calc(100vw - 16px);
   background: #ffffff;
