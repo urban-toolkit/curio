@@ -32,6 +32,8 @@ export interface NodeOutcomeStripProps {
   projectId?: string | null;
   /** The node's live output, when it has one. */
   output?: { code?: string; content?: unknown } | null;
+  /** The node is a notebook cell: the strip sits in its flow, under the output. */
+  inCell?: boolean;
 }
 
 type Level = "error" | "notice";
@@ -108,6 +110,7 @@ export const NodeOutcomeStrip: React.FC<NodeOutcomeStripProps> = ({
   nodeId,
   projectId,
   output,
+  inCell = false,
 }) => {
   const [recorded, setRecorded] = useState<Outcome | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -172,7 +175,7 @@ export const NodeOutcomeStrip: React.FC<NodeOutcomeStripProps> = ({
       // canvas, which react-flow does inside a node that cannot be dragged,
       // as in a read-only dataflow. `nowheel` scrolls the opened strip.
       className={`${styles.strip} ${outcome.level === "error" ? styles.error : styles.notice}` +
-        (expanded ? ` ${styles.expanded}` : "") + " nodrag nopan nowheel"}
+        (expanded ? ` ${styles.expanded}` : "") + (inCell ? ` ${styles.inCell}` : "") + " nodrag nopan nowheel"}
       role="status"
       data-testid={`node-outcome-${nodeId}`}
     >

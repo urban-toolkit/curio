@@ -8,6 +8,19 @@
     font-family: var(--curio-font-family);
 }
 
+/* A notebook cell's header: the title at the left, after Play, and its pills
+   right after it. */
+.labelWrapStart {
+    flex: 0 1 auto;
+    justify-content: flex-start;
+}
+
+.labelWrapStart .labelText {
+    flex: 0 1 auto;
+    text-align: left;
+    font-size: var(--curio-font-size-sm, 13px);
+}
+
 .labelText {
     flex: 1;
     min-width: 0;

@@ -167,6 +167,50 @@
     transition: background-color 0.15s ease;
 }
 
+/* The notebook view's (+) menu: the same rail in one row, placed under the (+)
+   that opened it (its `top` and `left` come inline). The catalog panels open
+   below the row (their `:global` rules for `data-layout="row"`). */
+.paletteDockRow {
+    flex-direction: row;
+    max-width: calc(100vw - 32px);
+}
+
+.paletteDockRow .builtinStack {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: stretch;
+    max-height: none;
+}
+
+.paletteDockRow .menuStyle {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    overflow: visible;
+}
+
+.paletteDockRow .sectionHeader {
+    display: none;
+}
+
+.paletteDockRow .containerStyle {
+    display: flex;
+}
+
+.paletteDockRow .divider {
+    width: 1px;
+    height: 30px;
+    margin: 0 5px;
+}
+
+.paletteDockRow .playAllRow {
+    width: auto;
+}
+
+.paletteDockRow .playAllButton {
+    padding: 8px 14px;
+}
+
 /* A run is in flight: the same button now cancels it (#271). */
 .playAllButton[data-run-active="true"] {
   border-color: var(--curio-warning-text, #b7791f);
