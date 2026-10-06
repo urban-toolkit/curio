@@ -55,9 +55,9 @@ class TestCompleteness:
         fixtures = set(FIXTURE_IDS)
         assert not examples - fixtures, f"examples with no fixture: {sorted(examples - fixtures)}"
         assert not fixtures - examples, f"fixtures with no example: {sorted(fixtures - examples)}"
-        # #662: 49 with the Scenarios, BuildingRasters, FloodScenarios and
-        # ScoutShadows test dataflows and example 24.
-        assert len(fixtures) == 49
+        # #662: 51 with the Scenarios, BuildingRasters, FloodScenarios,
+        # ScoutShadows, WeatherRouting and NetCDF test dataflows and example 24.
+        assert len(fixtures) == 51
 
     def test_fixture_ids_are_unique(self):
         assert len(FIXTURE_IDS) == len(set(FIXTURE_IDS))
@@ -66,7 +66,7 @@ class TestCompleteness:
         curated = [f for f in FIXTURES if f.path.parent.name == "prompts"]
         legacy = [f for f in FIXTURES if f.path.parent.name == "dataflows"]
         assert len(curated) == 24
-        assert len(legacy) == 25
+        assert len(legacy) == 27
 
     def test_every_split_is_populated_and_heldout_is_a_minority(self):
         """Splits exist so an export has somewhere to draw from; a held-out set
@@ -303,7 +303,7 @@ class TestFixturesAreNotMistakenForDataflows:
         curated = list((REPO_ROOT / "docs" / "examples").glob("[0-9][0-9]-*.json"))
         legacy = list((REPO_ROOT / "docs" / "examples" / "dataflows").glob("*.json"))
         assert len(curated) == 24
-        assert len(legacy) == 25
+        assert len(legacy) == 27
         assert not any(".prompt.json" in p.name for p in curated + legacy)
 
 

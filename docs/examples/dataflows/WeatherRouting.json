@@ -1,0 +1,651 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Beginner"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57",
+        "type": "curio.builtin/autk-grammar",
+        "x": 0,
+        "y": 0,
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/chicago_loop.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Chicago\",\n        \"areas\": [\n          \"Loop\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"roads\"\n        ]\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the Chicago Loop's roads from OpenStreetMap.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "0b6d3f8a-2e1c-4d97-8f5a-6c3e9b1d7a28",
+        "type": "curio.builtin/computation-analysis",
+        "x": 0,
+        "y": 450,
+        "content": "import geopandas as gpd\n\n# The Autark node hands on the layers it loads, each with its name, its type\n# and its features as GeoJSON, in EPSG:3395, the CRS Autark keeps them in.\n(layer,) = [layer for layer in arg if layer[\"name\"] == \"table_osm_roads\"]\nroads = gpd.GeoDataFrame.from_features(layer[\"geojson\"][\"features\"], crs=\"EPSG:3395\")\n# The road type, the one-way tag and the speed limit are what routing reads.\nreturn roads[[c for c in (\"highway\", \"oneway\", \"maxspeed\") if c in roads.columns] + [\"geometry\"]]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the roads layer as a table of road lines.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Roads"
+        }
+      },
+      {
+        "id": "9a4e2c7b-1f5d-4e83-a6b0-3c8d5f2e7a19",
+        "type": "curio.builtin/parameter",
+        "x": 0,
+        "y": 1000,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Choose the start time both scenarios route at.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "start",
+              "type": "datetime",
+              "label": "Start time (Chicago)",
+              "default": "2025-07-06T12:00:00"
+            }
+          ]
+        }
+      },
+      {
+        "id": "2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61",
+        "type": "scout.routing/weather-routing",
+        "x": 700,
+        "y": 0,
+        "content": "\"\"\"Weather Routing: SCOUT's weather-aware routes over a roads layer.\n\nInput: a roads layer, a GeoDataFrame of OpenStreetMap road lines (with highway,\nand oneway and maxspeed where known), such as the roads an Autark node loads.\nThe routes run inside its bounds.\nOutput: (routes, metrics).\n- routes: one row per route, a line through its nodes, with the route\n  (weight_type), route_index, distance_m in metres, duration_minutes and the\n  route's rain, heat, wind and humidity exposure. An Autark map draws it.\n- metrics: the same routes as a table: route, route_index, distance in km,\n  duration in minutes and the four exposures, for Compare Scenarios.\nThe Widgets tab sets the origin and destination, the mode, K, the start time\n(local time where the weather is, Chicago) and the rain and wind weights.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_routing.weather_routing import calculate_weather_route\n\n# The Data Catalog's SCOUT WRF group, a NetCDF file per variable.\nweather = {\n    \"RAIN\": curio_data_path(\"data.scout.wrf-rain\"),\n    \"T2\": curio_data_path(\"data.scout.wrf-t2\"),\n    \"WSPD10\": curio_data_path(\"data.scout.wrf-wspd10\"),\n    \"WDIR10\": curio_data_path(\"data.scout.wrf-wdir10\"),\n    \"RH2\": curio_data_path(\"data.scout.wrf-rh2\"),\n}\n\nreturn calculate_weather_route(\n    arg,\n    weather,\n    # SCOUT's weather graph network, the Model Catalog's weather GNN.\n    curio_load_model(\"model.scout.weather-gnn\"),\n    [!! origin !!],\n    [!! destination !!],\n    mode=[!! mode !!],\n    K=int([!! K !!]),\n    time_=[!! @start !!],\n    rain=[!! rain !!],\n    wind=[!! wind !!],\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Find the routes that weigh rain most, the ones that weigh wind most, and the fastest.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "origin",
+              "type": "location",
+              "label": "Origin",
+              "default": {
+                "lat": 41.868,
+                "lon": -87.636
+              }
+            },
+            {
+              "name": "destination",
+              "type": "location",
+              "label": "Destination",
+              "default": {
+                "lat": 41.889,
+                "lon": -87.624
+              }
+            },
+            {
+              "name": "mode",
+              "type": "choice",
+              "label": "Mode",
+              "default": "Default weights",
+              "options": {
+                "choices": [
+                  "Default weights",
+                  "Custom weights",
+                  "Single-factor weights"
+                ],
+                "display": "dropdown"
+              },
+              "value": "Custom weights"
+            },
+            {
+              "name": "K",
+              "type": "number",
+              "label": "Routes per factor (K)",
+              "default": 1,
+              "options": {
+                "min": 1,
+                "max": 3,
+                "step": 1
+              }
+            },
+            {
+              "name": "time",
+              "type": "datetime",
+              "label": "Start time (Chicago)",
+              "default": "2025-07-06T12:00:00"
+            },
+            {
+              "name": "rain",
+              "type": "slider",
+              "label": "Rain weight",
+              "default": 0.85834,
+              "options": {
+                "min": 0,
+                "max": 1,
+                "step": 1e-05
+              },
+              "value": 0.85834
+            },
+            {
+              "name": "wind",
+              "type": "slider",
+              "label": "Wind weight",
+              "default": 0.01657,
+              "options": {
+                "min": 0,
+                "max": 1,
+                "step": 1e-05
+              },
+              "value": 0.01657
+            }
+          ]
+        }
+      },
+      {
+        "id": "7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1400,
+        "y": 0,
+        "content": "# Weather Routing returns (routes, metrics): these are the routes, a line\n# each, for the map.\nreturn arg[0]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the routes.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Routes"
+        }
+      },
+      {
+        "id": "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1400,
+        "y": 420,
+        "content": "# Weather Routing returns (routes, metrics): these are the routes' duration,\n# distance and rain and wind exposure, for Compare Scenarios.\nreturn arg[1]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the routes' metrics.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Route metrics"
+        }
+      },
+      {
+        "id": "8f1d5b3e-9a2c-4e67-b4d8-5c0a3e7f1d92",
+        "type": "scout.routing/weather-routing",
+        "x": 700,
+        "y": 1100,
+        "content": "\"\"\"Weather Routing: SCOUT's weather-aware routes over a roads layer.\n\nInput: a roads layer, a GeoDataFrame of OpenStreetMap road lines (with highway,\nand oneway and maxspeed where known), such as the roads an Autark node loads.\nThe routes run inside its bounds.\nOutput: (routes, metrics).\n- routes: one row per route, a line through its nodes, with the route\n  (weight_type), route_index, distance_m in metres, duration_minutes and the\n  route's rain, heat, wind and humidity exposure. An Autark map draws it.\n- metrics: the same routes as a table: route, route_index, distance in km,\n  duration in minutes and the four exposures, for Compare Scenarios.\nThe Widgets tab sets the origin and destination, the mode, K, the start time\n(local time where the weather is, Chicago) and the rain and wind weights.\nPorted from SCOUT, https://github.com/urban-toolkit/scout.\n\"\"\"\nfrom scout_routing.weather_routing import calculate_weather_route\n\n# The Data Catalog's SCOUT WRF group, a NetCDF file per variable.\nweather = {\n    \"RAIN\": curio_data_path(\"data.scout.wrf-rain\"),\n    \"T2\": curio_data_path(\"data.scout.wrf-t2\"),\n    \"WSPD10\": curio_data_path(\"data.scout.wrf-wspd10\"),\n    \"WDIR10\": curio_data_path(\"data.scout.wrf-wdir10\"),\n    \"RH2\": curio_data_path(\"data.scout.wrf-rh2\"),\n}\n\nreturn calculate_weather_route(\n    arg,\n    weather,\n    # SCOUT's weather graph network, the Model Catalog's weather GNN.\n    curio_load_model(\"model.scout.weather-gnn\"),\n    [!! origin !!],\n    [!! destination !!],\n    mode=[!! mode !!],\n    K=int([!! K !!]),\n    time_=[!! @start !!],\n    rain=[!! rain !!],\n    wind=[!! wind !!],\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Find the routes with wind weighed most and rain least.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "origin",
+              "type": "location",
+              "label": "Origin",
+              "default": {
+                "lat": 41.868,
+                "lon": -87.636
+              }
+            },
+            {
+              "name": "destination",
+              "type": "location",
+              "label": "Destination",
+              "default": {
+                "lat": 41.889,
+                "lon": -87.624
+              }
+            },
+            {
+              "name": "mode",
+              "type": "choice",
+              "label": "Mode",
+              "default": "Default weights",
+              "options": {
+                "choices": [
+                  "Default weights",
+                  "Custom weights",
+                  "Single-factor weights"
+                ],
+                "display": "dropdown"
+              },
+              "value": "Custom weights"
+            },
+            {
+              "name": "K",
+              "type": "number",
+              "label": "Routes per factor (K)",
+              "default": 1,
+              "options": {
+                "min": 1,
+                "max": 3,
+                "step": 1
+              }
+            },
+            {
+              "name": "time",
+              "type": "datetime",
+              "label": "Start time (Chicago)",
+              "default": "2025-07-06T12:00:00"
+            },
+            {
+              "name": "rain",
+              "type": "slider",
+              "label": "Rain weight",
+              "default": 0.85834,
+              "options": {
+                "min": 0,
+                "max": 1,
+                "step": 1e-05
+              },
+              "value": 0.01657
+            },
+            {
+              "name": "wind",
+              "type": "slider",
+              "label": "Wind weight",
+              "default": 0.01657,
+              "options": {
+                "min": 0,
+                "max": 1,
+                "step": 1e-05
+              },
+              "value": 0.85834
+            }
+          ],
+          "copiedFrom": [
+            "2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61"
+          ]
+        }
+      },
+      {
+        "id": "3a6c2e8f-7d1b-4f45-a9c3-6b8e0d2f5a74",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1400,
+        "y": 1100,
+        "content": "# Weather Routing returns (routes, metrics): these are the routes, a line\n# each, for the map.\nreturn arg[0]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the routes.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Routes",
+          "copiedFrom": [
+            "7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05"
+          ]
+        }
+      },
+      {
+        "id": "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1400,
+        "y": 1520,
+        "content": "# Weather Routing returns (routes, metrics): these are the routes' duration,\n# distance and rain and wind exposure, for Compare Scenarios.\nreturn arg[1]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the routes' metrics.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Route metrics",
+          "copiedFrom": [
+            "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36"
+          ]
+        }
+      },
+      {
+        "id": "6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2150,
+        "y": 0,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\"\n      },\n      {\n        \"dataRef\": \"[!! input 1 !!]\",\n        \"getFnv\": \"duration_minutes\",\n        \"colorMapInterpolator\": \"interpolateBuGn\",\n        \"legendTitle\": \"Avoid rain: route duration (min)\"\n      },\n      {\n        \"dataRef\": \"[!! input 2 !!]\",\n        \"getFnv\": \"duration_minutes\",\n        \"colorMapInterpolator\": \"interpolateOrRd\",\n        \"legendTitle\": \"Avoid wind: route duration (min)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw both scenarios' routes over the roads.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Routes map"
+        }
+      },
+      {
+        "id": "1f8b6d2c-4e9a-4b53-9c7f-2a5e8d0b3f16",
+        "type": "curio.builtin/compare-scenarios",
+        "x": 2150,
+        "y": 520,
+        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"avoid-rain\", \"Avoid rain\", [!! input 0 !!]),\n    (\"avoid-wind\", \"Avoid wind\", [!! input 1 !!]),\n])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart each route's duration, in minutes, in each scenario.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Duration",
+          "compareScenarios": {
+            "inputs": [
+              {
+                "scenario": "avoid-rain",
+                "name": "Avoid rain",
+                "color": "#2a9d8f"
+              },
+              {
+                "scenario": "avoid-wind",
+                "name": "Avoid wind",
+                "color": "#e76f51"
+              }
+            ],
+            "mode": "chart",
+            "chart": {
+              "preset": "grouped-bar",
+              "x": "route",
+              "y": "duration"
+            }
+          }
+        }
+      },
+      {
+        "id": "4d9a7f3e-8c2b-4e16-a5d0-7b3f1e9c6a82",
+        "type": "curio.builtin/compare-scenarios",
+        "x": 2150,
+        "y": 940,
+        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"avoid-rain\", \"Avoid rain\", [!! input 0 !!]),\n    (\"avoid-wind\", \"Avoid wind\", [!! input 1 !!]),\n])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart each route's distance, in kilometres, in each scenario.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Distance",
+          "compareScenarios": {
+            "inputs": [
+              {
+                "scenario": "avoid-rain",
+                "name": "Avoid rain",
+                "color": "#2a9d8f"
+              },
+              {
+                "scenario": "avoid-wind",
+                "name": "Avoid wind",
+                "color": "#e76f51"
+              }
+            ],
+            "mode": "chart",
+            "chart": {
+              "preset": "grouped-bar",
+              "x": "route",
+              "y": "distance"
+            }
+          }
+        }
+      },
+      {
+        "id": "a2e6c9f4-5b1d-4f38-8d7a-0c4e9b2f5d67",
+        "type": "curio.builtin/compare-scenarios",
+        "x": 2150,
+        "y": 1360,
+        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"avoid-rain\", \"Avoid rain\", [!! input 0 !!]),\n    (\"avoid-wind\", \"Avoid wind\", [!! input 1 !!]),\n])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart each route's rain exposure in each scenario.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Rain exposure",
+          "compareScenarios": {
+            "inputs": [
+              {
+                "scenario": "avoid-rain",
+                "name": "Avoid rain",
+                "color": "#2a9d8f"
+              },
+              {
+                "scenario": "avoid-wind",
+                "name": "Avoid wind",
+                "color": "#e76f51"
+              }
+            ],
+            "mode": "chart",
+            "chart": {
+              "preset": "grouped-bar",
+              "x": "route",
+              "y": "rain_exposure"
+            }
+          }
+        }
+      },
+      {
+        "id": "b7f3a1d8-6e4c-4a29-9b2e-5d8a0f3c7e14",
+        "type": "curio.builtin/compare-scenarios",
+        "x": 2150,
+        "y": 1780,
+        "content": "# Compare Scenarios writes this code from its inputs: each input, under the\n# id and the name of its scenario. It is written again when they change.\nreturn curio_stack_scenarios([\n    (\"avoid-rain\", \"Avoid rain\", [!! input 0 !!]),\n    (\"avoid-wind\", \"Avoid wind\", [!! input 1 !!]),\n])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart each route's wind exposure in each scenario.",
+        "metadata": {
+          "keywords": [],
+          "packageTemplateLabel": "Wind exposure",
+          "compareScenarios": {
+            "inputs": [
+              {
+                "scenario": "avoid-rain",
+                "name": "Avoid rain",
+                "color": "#2a9d8f"
+              },
+              {
+                "scenario": "avoid-wind",
+                "name": "Avoid wind",
+                "color": "#e76f51"
+              }
+            ],
+            "mode": "chart",
+            "chart": {
+              "preset": "grouped-bar",
+              "x": "route",
+              "y": "wind_exposure"
+            }
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57out-0b6d3f8a-2e1c-4d97-8f5a-6c3e9b1d7a28in",
+        "source": "5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57",
+        "target": "0b6d3f8a-2e1c-4d97-8f5a-6c3e9b1d7a28",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-0b6d3f8a-2e1c-4d97-8f5a-6c3e9b1d7a28out-2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61in",
+        "source": "0b6d3f8a-2e1c-4d97-8f5a-6c3e9b1d7a28",
+        "target": "2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-0b6d3f8a-2e1c-4d97-8f5a-6c3e9b1d7a28out-8f1d5b3e-9a2c-4e67-b4d8-5c0a3e7f1d92in",
+        "source": "0b6d3f8a-2e1c-4d97-8f5a-6c3e9b1d7a28",
+        "target": "8f1d5b3e-9a2c-4e67-b4d8-5c0a3e7f1d92",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57out-6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40in",
+        "source": "5d2b8e1a-4c7f-4a36-9b0e-2f6c8a1d3e57",
+        "target": "6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61out-7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05in",
+        "source": "2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61",
+        "target": "7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61out-c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36in",
+        "source": "2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61",
+        "target": "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-8f1d5b3e-9a2c-4e67-b4d8-5c0a3e7f1d92out-3a6c2e8f-7d1b-4f45-a9c3-6b8e0d2f5a74in",
+        "source": "8f1d5b3e-9a2c-4e67-b4d8-5c0a3e7f1d92",
+        "target": "3a6c2e8f-7d1b-4f45-a9c3-6b8e0d2f5a74",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-8f1d5b3e-9a2c-4e67-b4d8-5c0a3e7f1d92out-e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23in",
+        "source": "8f1d5b3e-9a2c-4e67-b4d8-5c0a3e7f1d92",
+        "target": "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05out-6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40in_1",
+        "source": "7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05",
+        "target": "6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-3a6c2e8f-7d1b-4f45-a9c3-6b8e0d2f5a74out-6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40in_2",
+        "source": "3a6c2e8f-7d1b-4f45-a9c3-6b8e0d2f5a74",
+        "target": "6c0e8a4d-3b9f-4d21-a7e5-9f2b6d1c8e40",
+        "sourceHandle": "out",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36out-1f8b6d2c-4e9a-4b53-9c7f-2a5e8d0b3f16in",
+        "source": "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36",
+        "target": "1f8b6d2c-4e9a-4b53-9c7f-2a5e8d0b3f16",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23out-1f8b6d2c-4e9a-4b53-9c7f-2a5e8d0b3f16in_1",
+        "source": "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23",
+        "target": "1f8b6d2c-4e9a-4b53-9c7f-2a5e8d0b3f16",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36out-4d9a7f3e-8c2b-4e16-a5d0-7b3f1e9c6a82in",
+        "source": "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36",
+        "target": "4d9a7f3e-8c2b-4e16-a5d0-7b3f1e9c6a82",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23out-4d9a7f3e-8c2b-4e16-a5d0-7b3f1e9c6a82in_1",
+        "source": "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23",
+        "target": "4d9a7f3e-8c2b-4e16-a5d0-7b3f1e9c6a82",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36out-a2e6c9f4-5b1d-4f38-8d7a-0c4e9b2f5d67in",
+        "source": "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36",
+        "target": "a2e6c9f4-5b1d-4f38-8d7a-0c4e9b2f5d67",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23out-a2e6c9f4-5b1d-4f38-8d7a-0c4e9b2f5d67in_1",
+        "source": "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23",
+        "target": "a2e6c9f4-5b1d-4f38-8d7a-0c4e9b2f5d67",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36out-b7f3a1d8-6e4c-4a29-9b2e-5d8a0f3c7e14in",
+        "source": "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36",
+        "target": "b7f3a1d8-6e4c-4a29-9b2e-5d8a0f3c7e14",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23out-b7f3a1d8-6e4c-4a29-9b2e-5d8a0f3c7e14in_1",
+        "source": "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23",
+        "target": "b7f3a1d8-6e4c-4a29-9b2e-5d8a0f3c7e14",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      }
+    ],
+    "scenarios": [
+      {
+        "id": "avoid-rain",
+        "name": "Avoid rain",
+        "color": "#2a9d8f",
+        "nodes": [
+          "2e7c4a9d-6b1f-4d58-8a3e-7f0b2c5d9e61",
+          "7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05",
+          "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36"
+        ]
+      },
+      {
+        "id": "avoid-wind",
+        "name": "Avoid wind",
+        "color": "#e76f51",
+        "nodes": [
+          "8f1d5b3e-9a2c-4e67-b4d8-5c0a3e7f1d92",
+          "3a6c2e8f-7d1b-4f45-a9c3-6b8e0d2f5a74",
+          "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23"
+        ]
+      }
+    ],
+    "packages": [
+      "scout.routing@1"
+    ],
+    "datasets": [
+      {
+        "datasetId": "data.scout.wrf-rain",
+        "dirName": "data.scout.wrf-rain@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.wrf-t2",
+        "dirName": "data.scout.wrf-t2@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.wrf-wspd10",
+        "dirName": "data.scout.wrf-wspd10@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.wrf-wdir10",
+        "dirName": "data.scout.wrf-wdir10@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      },
+      {
+        "datasetId": "data.scout.wrf-rh2",
+        "dirName": "data.scout.wrf-rh2@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-10-05T00:00:00Z"
+      }
+    ],
+    "name": "WeatherRouting",
+    "task": "",
+    "timestamp": 1791158400000,
+    "provenance_id": "WeatherRouting"
+  }
+}

@@ -374,7 +374,8 @@ output dataset** toggle, settings, about, pin, comments, delete and **Minimize**
 Code and specs sit in a gray box, and a code node's output is below its code.
 
 Drag a node's bottom-right corner to resize it. A minimized node is a small chip;
-click it to open the node again.
+click it to open the node again. Double-click a node where you would drag it, such
+as its header, to zoom the view onto it.
 
 ## Running a dataflow
 

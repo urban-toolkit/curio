@@ -9,6 +9,7 @@ import ReactFlow, {
     Edge,
     EdgeChange,
     FitViewOptions,
+    type Node as FlowNode,
     NodeChange,
     useReactFlow,
     useStore,
@@ -83,6 +84,8 @@ import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentAttachmentsProvider } from "../providers/agents";
 import { isDrawnHidden } from "../utils/hiddenNodes";
+import { isNodeDragRegion } from "../utils/nodeDragRegion";
+import { frameNodesInView } from "../utils/focusDatasetNodes";
 import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
 import { BOX_WIDTH, boxLayout } from "./scenarios/ScenarioLayers";
 import { CanvasScenarioLayers } from "./scenarios/CanvasScenarioLayers";
@@ -340,6 +343,16 @@ export function MainCanvas() {
     const isSharedView = viewerMode === "shared" && !collab.enabled;
     // Nodes are added (dropped) and connected on the canvas only, by its owner.
     const graphEdits = graphEditGates({ notebookOn, sharedView: isSharedView });
+
+    // A double-click where a press drags a node (its header, its card's edge)
+    // zooms the view onto it, framed as a focus frames its nodes. Inside an
+    // editor, an output, a chart or a map the double-click stays theirs. Where
+    // nodes do not drag (a read-only canvas, the notebook view) nothing changes.
+    const handleNodeDoubleClick = useCallback((event: React.MouseEvent, node: FlowNode) => {
+        if (notebookOn || isSharedView) return;
+        if (!isNodeDragRegion(event.target, event.currentTarget)) return;
+        frameNodesInView(reactFlow, [node.id]);
+    }, [notebookOn, isSharedView, reactFlow]);
 
     const [isComponentsSelected, setIsComponentsSelected] = useState<boolean>(false);
 
@@ -727,6 +740,7 @@ export function MainCanvas() {
                 selectionKeyCode={"Shift"}
                 panActivationKeyCode={null}
                 onSelectionChange={handleSelectionChange}
+                onNodeDoubleClick={handleNodeDoubleClick}
                 onConnect={graphEdits.connect ? handleConnect : undefined}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
