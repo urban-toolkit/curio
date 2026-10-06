@@ -73,6 +73,7 @@ jest.mock("@monaco-editor/react", () => {
 
 const mockMarkNodeStale = jest.fn();
 const mockPlayNodesUpTo = jest.fn();
+const mockFlow = { dashboardOn: false };
 jest.mock("../../../providers/FlowProvider", () => ({
     useFlowContext: () => ({
         workflowNameRef: { current: "wf" },
@@ -82,6 +83,7 @@ jest.mock("../../../providers/FlowProvider", () => ({
         signalNodeExecDone: jest.fn(),
         projectId: null,
         defaultSaveOutputDataset: false,
+        dashboardOn: mockFlow.dashboardOn,
     }),
 }));
 jest.mock("../../../providers/ProvenanceProvider", () => ({
@@ -323,5 +325,35 @@ describe("the run-node shortcut is bound to the editor (#223)", () => {
         const action = lastEditor().__actions.find((a: any) => a.id === "curio.runNode");
         act(() => { action.run(); });
         expect(mockPlayNodesUpTo).toHaveBeenCalledWith("n1");
+    });
+});
+
+describe("CodeEditor's look", () => {
+    const wrapper = () => document.querySelector("[data-testid=\"mock-monaco\"]")!.parentElement as HTMLElement;
+    const outputBox = () => document.querySelector("[data-curio-node-output]") as HTMLElement;
+
+    afterEach(() => { mockFlow.dashboardOn = false; });
+
+    test("on the canvas, the code sits in a plain gray box with no line numbers, gutter or ruler, over an output with no rule or fill", () => {
+        renderCodeEditor(SAVED_CODE);
+        expect(wrapper()).toHaveClass("curio-node-input");
+        expect(lastEditor().props.options).toMatchObject({
+            lineNumbers: "off",
+            glyphMargin: false,
+            folding: false,
+            renderLineHighlight: "none",
+            overviewRulerLanes: 0,
+        });
+        expect(outputBox().style.backgroundColor).toBe("rgb(255, 255, 255)");
+        expect(outputBox().style.borderTop).not.toContain("solid");
+    });
+
+    test("on a dashboard tile, keeps Monaco's own look and the output's gray box under a rule", () => {
+        mockFlow.dashboardOn = true;
+        renderCodeEditor(SAVED_CODE);
+        expect(wrapper()).not.toHaveClass("curio-node-input");
+        expect(lastEditor().props.options.lineNumbers).toBeUndefined();
+        expect(outputBox().style.backgroundColor).toBe("rgb(247, 247, 247)");
+        expect(outputBox().style.borderTop).toContain("solid");
     });
 });

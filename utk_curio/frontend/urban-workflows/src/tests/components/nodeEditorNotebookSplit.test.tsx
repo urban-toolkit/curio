@@ -41,7 +41,7 @@ jest.mock("../../components/editing/CodeEditor", () => ({ __esModule: true, defa
 
 import NodeEditor from "../../components/editing/NodeEditor";
 import { NotebookViewContext } from "../../providers/flow/notebookViewContext";
-import { CellHeaderSlotContext } from "../../components/editing/cellHeaderSlot";
+import { NodeHeaderSlotContext } from "../../components/editing/nodeHeaderSlot";
 
 const OUTPUT_ID = "vega-n1";
 
@@ -66,9 +66,9 @@ function props(): Record<string, any> {
 function mount(on: boolean, p: ReturnType<typeof props> = props(), headerSlot: HTMLElement | null = null) {
   const utils = render(
     <NotebookViewContext.Provider value={{ on, laneX: new Map(), cellWidth: 900, reveal: () => on }}>
-      <CellHeaderSlotContext.Provider value={headerSlot}>
+      <NodeHeaderSlotContext.Provider value={headerSlot}>
         <NodeEditor {...(p as React.ComponentProps<typeof NodeEditor>)} />
-      </CellHeaderSlotContext.Provider>
+      </NodeHeaderSlotContext.Provider>
     </NotebookViewContext.Provider>,
   );
   return { ...utils, p };
@@ -208,13 +208,42 @@ describe("the same node on the canvas", () => {
     expect(outputPane()).toHaveClass("active");
   });
 
-  test("keeps its pills below the panes, and every pane and mount filling the node", () => {
+  test("puts its tab pills in the node's header, where they still switch tabs, with no bar under the panes", async () => {
+    const slot = document.createElement("div");
+    document.body.appendChild(slot);
+    try {
+      const { container } = mount(false, { ...props(), widgets: true }, slot);
+      expect(container.querySelector(".nav")).toBeNull();
+      expect(slot.querySelector('[data-rr-ui-event-key="grammar"]')).not.toBeNull();
+      const outputLink = slot.querySelector('[data-rr-ui-event-key="output"]') as HTMLElement;
+      expect(outputLink).not.toBeNull();
+      await act(async () => {
+        fireEvent.click(outputLink);
+      });
+      expect(outputLink).toHaveClass("active");
+      expect(outputPane()).toHaveClass("active");
+    } finally {
+      slot.remove();
+    }
+  });
+
+  test("fills the node's body: the editor, every pane and the chart's mount, with no room kept for a pill bar", () => {
+    const slot = document.createElement("div");
+    document.body.appendChild(slot);
+    try {
+      const { container } = mount(false, props(), slot);
+      expect((container.firstElementChild as HTMLElement).style.height).toBe("100%");
+      expect(panes(container).style.height).toBe("100%");
+      expect(outputPane().style.height).toBe("100%");
+      expect(document.getElementById(OUTPUT_ID)!.style.height).toBe("100%");
+    } finally {
+      slot.remove();
+    }
+  });
+
+  test("shows its panes on white, as a notebook cell does", () => {
     const { container } = mount(false);
-    const nav = container.querySelector(".nav") as HTMLElement;
-    expect(nav.compareDocumentPosition(panes(container)) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
-    expect(panes(container).style.height).toBe("100%");
-    expect(outputPane().style.height).toBe("100%");
-    expect(document.getElementById(OUTPUT_ID)!.style.height).toBe("100%");
+    expect(panes(container).style.backgroundColor).toBe("rgb(255, 255, 255)");
   });
 
   test("lets a content node fill the node, as before", () => {
