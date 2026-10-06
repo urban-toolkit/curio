@@ -118,6 +118,23 @@ class TestTheManifest:
         assert manifest.publisher == "SCOUT (urban-toolkit/scout)" and manifest.license
         assert manifest.size_bytes == sum(p.stat().st_size for p in (folder / "files").iterdir())
 
+    def test_a_node_regression_model_reads_a_graph_of_any_size(self):
+        """It has no labels and no image input: the node feeds it a graph (#740)."""
+        manifest = parse_manifest(_onnx_manifest(task="node-regression", labels=[], input=None))
+        assert manifest.labels == () and manifest.input is None
+        assert parse_manifest(manifest_dict(manifest)) == manifest
+
+    def test_the_shipped_weather_gnn_reads_and_its_size_is_its_file(self):
+        """SCOUT's weather GNN, which the Weather Routing node of
+        ``scout.routing@1`` runs: a node-regression ONNX graph, with SCOUT as
+        its publisher."""
+        folder = SHIPPED / "model.scout.weather-gnn@1"
+        manifest = load_manifest(folder)
+        assert (manifest.runtime, manifest.task, manifest.labels, manifest.input) == (
+            "onnx", "node-regression", (), None)
+        assert manifest.publisher == "SCOUT (urban-toolkit/scout)" and manifest.license
+        assert manifest.size_bytes == sum(p.stat().st_size for p in (folder / "files").iterdir())
+
     def test_it_round_trips(self):
         parsed = parse_manifest(_onnx_manifest())
         assert parse_manifest(manifest_dict(parsed)) == parsed

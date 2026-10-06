@@ -1,0 +1,28 @@
+{
+  "id": "model.scout.weather-gnn",
+  "name": "SCOUT weather GNN (weather at road nodes)",
+  "version": "1.0.0",
+  "compatibility": {
+    "major": 1
+  },
+  "description": "SCOUT's weather graph network: two GraphSAGE layers with mean aggregation and a linear head that predict five weather values at every node of a road graph from the WRF weather at the node and its neighbours. Inputs x (float32, nodes by 7: latitude, longitude, RAIN, T2, WSPD10, WDIR10, RH2) and edge_index (int64, 2 by edges: the source and target row of each edge); output prediction (float32, nodes by 5: RAIN, T2, RH2, WSPD10, WDIR10); node and edge counts are free. Exported once from SCOUT's backend/models/routing/gnn/rain_model.pth by scripts/scout/export_weather_gnn.py. The Weather Routing node of scout.routing@1 runs it to weigh each road before routing. Used with the permission of SCOUT's authors.",
+  "publisher": "SCOUT (urban-toolkit/scout)",
+  "homepage": "https://github.com/urban-toolkit/scout",
+  "license": "Used with the permission of SCOUT's authors",
+  "runtime": "onnx",
+  "task": "node-regression",
+  "entry": "files/weather_gnn.onnx",
+  "labels": [],
+  "tags": [
+    "weather",
+    "routing",
+    "gnn",
+    "graphsage",
+    "roads",
+    "scout",
+    "onnx"
+  ],
+  "sizeBytes": 52437,
+  "createdAt": "2026-10-05T00:00:00Z",
+  "updatedAt": "2026-10-05T00:00:00Z"
+}
