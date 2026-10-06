@@ -287,7 +287,7 @@ def _wait_for_column(page, ids: list[str], *, timeout_ms: int = 20000) -> list[d
 #: delete) are: the computed opacity of the group holding its Delete button.
 _TOOLS_OPACITY_JS = """(id) => {
     const del = document.querySelector(`[id="${id}resizable"] [title="Delete node"]`);
-    const tools = del && del.closest('.curio-cell-tools');
+    const tools = del && del.closest('.curio-node-tools');
     return tools ? Number(getComputedStyle(tools).opacity) : null;
 }"""
 
@@ -476,7 +476,7 @@ def test_the_switch_shows_the_dataflow_as_a_column_of_cells(
     assert page.evaluate(_TOOLS_OPACITY_JS, EXTRA) == 0, "EXTRA's tools show while nothing points at it"
     # EXTRA is the last cell: bring it well into view, clear of the title.
     _scroll_to(page, max(0, _positions(page)[EXTRA]["y"] - 250))
-    header = page.locator(f'[id="{EXTRA}resizable"] .curio-cell-header')
+    header = page.locator(f'[id="{EXTRA}resizable"] .curio-node-header')
     box = header.bounding_box()
     assert box, "EXTRA's cell has no header"
     page.mouse.move(box["x"] + box["width"] / 3, box["y"] + box["height"] / 2)

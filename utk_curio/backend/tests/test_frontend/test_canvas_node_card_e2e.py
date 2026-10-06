@@ -37,6 +37,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from .utils import (
+    activate_header_icon,
     assert_vega_canvas_rendered,
     dismiss_toasts,
     frame_nodes,
@@ -191,8 +192,12 @@ _HEADER_GAP_JS = """(id) => {
         const gap = rects[k].left - rects[k - 1].right;
         if (!best || gap > best.gap) best = {gap, x: (rects[k].left + rects[k - 1].right) / 2};
     }
+    if (!best || best.gap <= 12) return null;
     const box = header.getBoundingClientRect();
-    return best && best.gap > 12 ? {x: best.x, y: box.top + box.height / 2} : null;
+    const y = box.top + box.height / 2;
+    // What the pointer would land on there: the header, not app chrome over it.
+    const hit = document.elementFromPoint(best.x, y);
+    return {x: best.x, y, onHeader: !!hit && header.contains(hit)};
 }"""
 
 
@@ -211,6 +216,21 @@ def _wait_for_header(page, node_id: str) -> dict:
             f"{node_id} has no card header starting with Play: {page.evaluate(_HEADER_JS, node_id)}"
         ) from None
     return page.evaluate(_HEADER_JS, node_id)
+
+
+def _header_spot(page, node_id: str) -> dict:
+    """A point on the node's header that holds no control and that nothing
+    covers: where the pointer can rest on the node, or click to select it."""
+    spot = page.evaluate(_HEADER_GAP_JS, node_id)
+    assert spot and spot["onHeader"], (
+        f"{node_id}'s header has no free spot under the pointer: {spot}, header {page.evaluate(_HEADER_JS, node_id)}"
+    )
+    return spot
+
+
+def _point_at(page, node_id: str) -> None:
+    spot = _header_spot(page, node_id)
+    page.mouse.move(spot["x"], spot["y"])
 
 
 def _pointer_off_the_nodes(page) -> None:
@@ -303,8 +323,7 @@ def test_play_the_title_and_the_status_are_in_the_header_with_no_bottom_row(
     # The chart's card under the pointer, its tools showing, beside the
     # producer's at rest.
     frame_nodes(page, NODES)
-    box = _header(page, CHART).bounding_box()
-    page.mouse.move(box["x"] + box["width"] / 3, box["y"] + box["height"] / 2)
+    _point_at(page, CHART)
     _wait_tools(page, CHART, 1, "under the pointer")
     _wait_tools(page, PRODUCER, 0, "while nothing points at it")
     save_workflow_test_screenshot(page, SCREENSHOT_STEM, test_name="canvas_node_card__hover")
@@ -327,8 +346,7 @@ def test_the_tools_show_only_under_the_pointer_or_on_a_selected_node(
     expect(_header(page, PRODUCER).locator("svg.fa-circle-play")).to_be_visible()
     expect(_header(page, PRODUCER)).to_contain_text(TITLES[PRODUCER])
 
-    box = _header(page, PRODUCER).bounding_box()
-    page.mouse.move(box["x"] + box["width"] / 3, box["y"] + box["height"] / 2)
+    _point_at(page, PRODUCER)
     _wait_tools(page, PRODUCER, 1, "under the pointer")
     _wait_tools(page, CHART, 0, "while the pointer is over the other node")
 
@@ -337,8 +355,7 @@ def test_the_tools_show_only_under_the_pointer_or_on_a_selected_node(
 
     # A click on the header's empty stretch selects the node, and its tools
     # stay after the pointer leaves.
-    spot = page.evaluate(_HEADER_GAP_JS, PRODUCER)
-    assert spot, f"PRODUCER's header has no empty stretch to click: {page.evaluate(_HEADER_JS, PRODUCER)}"
+    spot = _header_spot(page, PRODUCER)
     page.mouse.click(spot["x"], spot["y"])
     page.wait_for_function(
         "(id) => !!window.__curio_reactFlow.getNodes().find((n) => n.id === id)?.selected",
@@ -411,13 +428,13 @@ def test_the_node_still_resizes_and_minimizes(
             f"the node did not keep its new size {after}: stored {_stored_size(page, PRODUCER)}"
         ) from None
 
-    # Minimize, among the tools that show under the pointer.
-    box = _header(page, PRODUCER).bounding_box()
-    page.mouse.move(box["x"] + box["width"] / 3, box["y"] + box["height"] / 2)
+    # Minimize, among the tools that show under the pointer. Header icons act
+    # on the pointer pair, which activate_header_icon sends.
+    _point_at(page, PRODUCER)
     _wait_tools(page, PRODUCER, 1, "under the pointer")
     minimize = _header(page, PRODUCER).locator('.curio-node-tools [title="Minimize"]')
     expect(minimize).to_have_count(1)
-    minimize.click()
+    activate_header_icon(minimize)
     expect(page.locator(f'[id="{PRODUCER}resizable"]')).to_be_hidden()
     chip = node_locator(page, PRODUCER).bounding_box()
     card = node_locator(page, CHART).bounding_box()

@@ -114,7 +114,7 @@ There are three places you work with datasets, and they are **not** interchangea
 
 **I want a dataset in all my projects, present and future.** On `/catalog/data`, click the dataset's card and then **Add to all projects** in the drawer. It is added to every dataflow you have, and every project you create from then on starts with it. **Remove from all projects** undoes it and keeps the dataset.
 
-**I want to reuse a node's output somewhere else.** Turn on the node's save-output toggle (the database icon next to its play button) and run it: the output is saved as a computed dataset. It is listed under **Saved outputs** in the left Tools panel's **Data Catalog** dropdown, ready to drag. To add it to this dataflow or another one, open the drawer's **Computed** tab and click **Add to project** on it.
+**I want to reuse a node's output somewhere else.** Turn on the node's save-output toggle (the database icon among the buttons in its header) and run it: the output is saved as a computed dataset. It is listed under **Saved outputs** in the left Tools panel's **Data Catalog** dropdown, ready to drag. To add it to this dataflow or another one, open the drawer's **Computed** tab and click **Add to project** on it.
 
 **I want to remove a dataset from one dataflow but keep it.** Use **Remove from project** in the drawer. Only the dataflow's ref goes, with one exception: your own upload is deleted when no other dataflow uses it, and the confirmation says so before anything is deleted.
 
@@ -192,7 +192,7 @@ A collection's details have a **Collection** section: its kind, **Indexed from**
 
 ### The save-output toggle
 
-A runnable node that produces a dataset has a small database-icon toggle to the right of its play button. It is **off by default**, so saving is chosen per node. When it is on, running the node saves its output into your store as `computed.<dataflowId>.<nodeId>@1`.
+A runnable node that produces a dataset has a small database-icon toggle among the buttons in its header, which show while the pointer is over the node. It is **off by default**, so saving is chosen per node. When it is on, running the node saves its output into your store as `computed.<dataflowId>.<nodeId>@1`.
 
 A `GeoDataFrame` output is stored as **GeoParquet** and reloads as a `GeoDataFrame`. Its CRS survives, and so does *every* geometry column, not only the active one: a frame with both a `geometry` and a `centroid` column comes back with both still typed as geometry. So a node's map output is a reusable input. (A `GeoDataFrame` with no active geometry column is stored as a plain table; GeoParquet cannot represent one.)
 

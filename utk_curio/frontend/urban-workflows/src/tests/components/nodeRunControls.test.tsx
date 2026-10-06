@@ -10,7 +10,7 @@ import { fireEvent, render } from "@testing-library/react";
 
 import { NodeRunControls, type NodeRunControlsProps } from "../../components/nodes/NodeRunControls";
 
-function props(over: Partial<NodeRunControlsProps> = {}): NodeRunControlsProps {
+function props(over: Partial<NodeRunControlsProps> = {}): Omit<NodeRunControlsProps, "part"> {
   return {
     nodeId: "n1",
     disablePlay: false,

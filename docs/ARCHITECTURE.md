@@ -255,13 +255,9 @@ moves nodes the way the dashboard page does:
   `revealNodes` scrolls to a cell where the canvas would frame a node.
 - **Cells.** `NotebookViewContext` tells nodes and edges the view is on, and the cells'
   width. `UniversalNode` passes the cell's width and least height as `cellBox`, apart
-  from the node's canvas size, and moves its handles. `NodeContainer` draws the cell
-  with no outline or shadow (the kind's stripe kept, a ring in its color when
-  selected) and `NodeRunControls`, the same Play, status and Save output toggle as the
-  canvas's bottom row, in its header. The header's tools (`.curio-cell-tools`: the
-  editor's tabs, which `NodeEditor` renders there through a portal into the slot
-  `cellHeaderSlot` provides, Save output and the icons) show only while the cell is
-  hovered, selected or focused (`Node.css`). `NodeEditor` keeps a grammar node's output
+  from the node's canvas size, and moves its handles. `NodeContainer` draws the cell as
+  the node card (see [The node card](#the-node-card)) with no hairline or shadow, no
+  resize handle and no minimize. `NodeEditor` keeps a grammar node's output
   pane visible under its input (`curio-notebook-split` in `Node.css`) without moving
   either pane, so a chart or map never remounts. `notebookOutputBox` gives an
   output the height its kind gets: a definite one for a chart (320px), an Autark map or
@@ -269,9 +265,7 @@ moves nodes the way the dashboard page does:
   summary or control its own up to 360px; anything else 360px. `useNotebookEditorHeight`
   (`components/editing/`) sets a code or spec editor's wrapper to Monaco's content
   height (`onDidContentSizeChange`), at least three lines, at most 400px for code and
-  240px for a spec, and makes it a gray input box (`curio-notebook-input`) with no line
-  numbers, gutter, folding, line highlight or overview ruler. The outcome strip sits
-  in the cell's flow under the output.
+  240px for a spec. The outcome strip sits in the cell's flow under the output.
 - **Switch.** `CanvasViewSwitch` closes `UpMenu`'s slot, pushed to its end beside
   Monitor; the canvas bar's buttons take `--curio-bar-button-padding-x: 7px` to make room
   for it.
@@ -513,6 +507,15 @@ interface INodeData {
   propagation?: any;
 }
 ```
+
+#### The node card
+
+`NodeContainer` (`src/components/styles.tsx`) draws a node the same way on the canvas and as a notebook cell; only a dashboard tile differs.
+
+- **Surface.** `getNodeContainerStyles` decides the whole border: on the canvas a white card with a `var(--curio-border)` hairline, radius 8, a soft shadow (`--curio-shadow-browse-card-raised`) and the kind's 4px stripe; a notebook cell drops the hairline and the shadow. A selected node gets a 2px ring in its kind's color. A suggestion keeps its dashed border.
+- **Header** (`.curio-node-header`). Play first, then the title (`EditableNodeHeaderLabel`), the package and dataset pills, and the run status; `NodeRunControls` draws Play, the status and the Save output toggle, each in its place. The rest are the tools (`.curio-node-tools`): the editor's tabs, which `NodeEditor` renders through a portal into the slot `nodeHeaderSlot` provides, Save output, the gear, about, pin, comments, delete and, on the canvas, minimize. They show only while the node is hovered, selected or focused (`Node.css`). Nothing sits under the body, so the editor's panes fill the node.
+- **Editors.** `nodeEditorLook` gives a code or spec editor its gray input box (`.curio-node-input`) and Monaco options with no line numbers, gutter, folding, line highlight or overview ruler. A code node's output has no rule or fill. A dashboard tile keeps Monaco's own look.
+- **Canvas only.** The resize handle at the bottom-right corner, minimizing to a chip, the node's fixed size and the cardinality markers at its edges.
 
 ---
 
