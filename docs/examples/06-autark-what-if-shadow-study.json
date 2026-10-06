@@ -142,7 +142,7 @@
         "content": "# Edit Features writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features(arg, [\n    {\"op\": \"remove\", \"ids\": [119, 136]},\n], key=\"building_id\", layer=\"table_osm_buildings\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Remove Back Bay's two tallest towers, 200 Clarendon and Raffles, from the buildings the shadow step reads: every part of each, matched on its building_id.",
+        "goal": "Remove two towers, 200 Clarendon, Back Bay's tallest, and Raffles, from the buildings the shadow step reads: every part of each, matched on its building_id.",
         "metadata": {
           "keywords": [],
           "editFeatures": {
@@ -385,7 +385,7 @@
         "id": "s-towers",
         "name": "Two towers removed",
         "color": "#2f8f4a",
-        "description": "Every building at its real OpenStreetMap height, without 200 Clarendon and Raffles, the two tallest towers.",
+        "description": "Every building at its real OpenStreetMap height, without two towers: 200 Clarendon, the tallest, and Raffles.",
         "nodes": [
           "whatif-towers-edit",
           "whatif-towers-compute",
@@ -398,6 +398,6 @@
     "timestamp": 1748990000000,
     "provenance_id": "DefaultWorkflow",
     "packages": [],
-    "description": "A what-if shadow study for Boston's Back Bay as three scenarios over one fixed context, built on Example 7's per-road sunlight shader. A data node loads the PBF once and a data pool hands the layers to every scenario. In each, the shader adds up every road's minutes of June-solstice sunlight with the buildings' heights scaled by a height_factor widget: 1 in Baseline, 2 in Twice as tall, and 1 in Two towers removed, where an Edit Features node first removes the two tallest towers by their building_id. A map shows each scenario's roads by sunlight, and two Compare Scenarios nodes compare them: a chart of each scenario's mean road sunlight, and a map of the sunlight each road loses in Twice as tall."
+    "description": "A what-if shadow study for Boston's Back Bay as three scenarios over one fixed context, built on Example 7's per-road sunlight shader. A data node loads the PBF once and a data pool hands the layers to every scenario. In each, the shader adds up every road's minutes of June-solstice sunlight with the buildings' heights scaled by a height_factor widget: 1 in Baseline, 2 in Twice as tall, and 1 in Two towers removed, where an Edit Features node first removes two towers, 200 Clarendon and Raffles, by their building_id. A map shows each scenario's roads by sunlight, and two Compare Scenarios nodes compare them: a chart of each scenario's mean road sunlight, and a map of the sunlight each road loses in Twice as tall."
   }
 }

@@ -252,8 +252,9 @@ def test_example_06_is_three_scenarios_over_one_context():
     Twice as tall is a copy that names its Baseline twin and holds the same
     code, and the one value that differs is the shadow step's ``height_factor``
     widget, 1 against 2, which its spec reads as a uniform. Two towers removed
-    is an Edit Features node that removes the two tallest towers by their
-    ``building_id``, before copies of Baseline's two nodes with factor 1."""
+    is an Edit Features node that removes two towers, 200 Clarendon and
+    Raffles, by their ``building_id``, before copies of Baseline's two nodes
+    with factor 1."""
     path = os.path.join(EXAMPLES_DIR, "06-autark-what-if-shadow-study.json")
     with open(path, "r", encoding="utf-8") as f:
         flow = json.load(f)["dataflow"]

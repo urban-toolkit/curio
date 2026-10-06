@@ -3,8 +3,9 @@
 Example 06 runs example 07's per-road sunlight shader in three scenarios over
 one fixed context, the Back Bay loader and its data pool: "Baseline", every
 building at its OSM height, "Twice as tall", a copy of it with every building
-doubled, and "Two towers removed", where an Edit Features node removes the two
-tallest towers by their ``building_id`` before copies of Baseline's nodes. The
+doubled, and "Two towers removed", where an Edit Features node removes two
+towers, 200 Clarendon and Raffles, by their ``building_id`` before copies of
+Baseline's nodes. The
 factor is a ``height_factor`` widget on each shadow step, read as an Autark
 uniform. Two Compare Scenarios nodes compare the roads layer each scenario's map
 hands on, picked in their Layer menu: a chart of the three scenarios' mean road

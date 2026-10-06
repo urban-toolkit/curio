@@ -234,6 +234,32 @@ def _assert_compare_view_drew(page, node_id: str) -> None:
     else:
         assert_vega_canvas_rendered(page, node_id)
 
+
+#: Where an Edit Features node's map stands: "drawing", "drawn" or "problem".
+_EDIT_MAP_STATE_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    const map = node && node.querySelector("[data-edit-map-state]");
+    return map ? map.getAttribute("data-edit-map-state") : null;
+}"""
+
+
+def _assert_edit_map_drew(page, node_id: str) -> None:
+    """An Edit Features node that ran shows its input drawn on its map, by the
+    Autark node's map code, before any frame is taken of it."""
+    try:
+        page.wait_for_function(
+            "(id) => { const state = (" + _EDIT_MAP_STATE_JS + ")(id);"
+            " return !!state && state !== 'drawing'; }",
+            arg=node_id,
+            timeout=90000,
+        )
+    except PlaywrightTimeoutError:
+        pass
+    state = page.evaluate(_EDIT_MAP_STATE_JS, node_id)
+    problem = page.locator(f'.react-flow__node[data-id="{node_id}"] [data-edit-map-problem]').all_inner_texts()
+    assert state == "drawn", f"Edit Features node {node_id}: its map ended {state!r} {problem}"
+    assert_autark_map_drawn(page, node_id, timeout=60000, attach_as=f"{node_id}'s map")
+
 #: Interactions compared before and after, keyed by workflow, in the order
 #: they run. Each frames its two nodes together, so a hover held on one still
 #: shows while the other is captured. See ``test_node_interaction``.
@@ -1169,6 +1195,10 @@ class TestWorkflowCanvas:
         for node in self.spec.nodes:
             if node.type == COMPARE_SCENARIOS:
                 _assert_compare_view_drew(self.page, node.id)
+        # An Edit Features node shows its input drawn on its own map.
+        for node in self.spec.nodes:
+            if node.type == EDIT_FEATURES:
+                _assert_edit_map_drew(self.page, node.id)
 
         # Every code and grammar node shows an editor and at least one marker.
         assert_editor_panes_clear_of_markers(

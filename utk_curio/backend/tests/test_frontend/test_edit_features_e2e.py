@@ -203,6 +203,9 @@ def test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_dif
     edit = node_locator(page, EDIT_2)
     frame_nodes(page, [EDIT_2])
     _open_tab(page, EDIT_2, "output")
+    edit.locator('[data-edit-map-state]:not([data-edit-map-state="drawing"])').wait_for(state="attached", timeout=90000)
+    state = edit.locator("[data-edit-map-state]").get_attribute("data-edit-map-state")
+    assert state == "drawn", f"the Edit Features map ended {state!r}: {edit.locator('[data-edit-map-problem]').all_inner_texts()}"
     assert_autark_map_drawn(page, EDIT_2, timeout=60000, attach_as="the Edit Features node's map")
     assert edit.get_by_label("Id", exact=True).input_value() == "building_id"
     note = edit.locator("[data-edit-building-note]").inner_text()

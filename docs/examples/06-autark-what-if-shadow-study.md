@@ -2,9 +2,9 @@
 
 This example runs the per-road sunlight shader from [Example 7](07-autark-gpu-shader.md) in three
 scenarios over Boston's Back Bay: **Baseline**, with every building at its real OSM height,
-**Twice as tall**, with every building's height doubled, and **Two towers removed**, with the two
-tallest towers taken out. The height factor is a widget on the shadow step, and the towers are
-removed by an Edit Features node. Two Compare Scenarios nodes compare them: a chart of each
+**Twice as tall**, with every building's height doubled, and **Two towers removed**, with two
+towers taken out: 200 Clarendon, the tallest, and Raffles. The height factor is a widget on the
+shadow step, and the towers are removed by an Edit Features node. Two Compare Scenarios nodes compare them: a chart of each
 scenario's mean road sunlight on the June solstice, and a map of the sunlight each road loses when
 the buildings get twice as tall.
 
