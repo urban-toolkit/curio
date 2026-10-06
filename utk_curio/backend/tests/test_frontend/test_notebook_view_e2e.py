@@ -474,6 +474,8 @@ def test_the_switch_shows_the_dataflow_as_a_column_of_cells(
     # A cell's tools stay out of sight until the pointer is over the cell: Play,
     # the title and the status always show, the rest only then.
     assert page.evaluate(_TOOLS_OPACITY_JS, EXTRA) == 0, "EXTRA's tools show while nothing points at it"
+    # EXTRA is the last cell: bring it well into view, clear of the title.
+    _scroll_to(page, max(0, _positions(page)[EXTRA]["y"] - 250))
     header = page.locator(f'[id="{EXTRA}resizable"] .curio-cell-header')
     box = header.bounding_box()
     assert box, "EXTRA's cell has no header"

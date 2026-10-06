@@ -107,15 +107,20 @@
   flex-wrap: nowrap;
 }
 
+/* Widths `auto`: Bootstrap's `.row > *` sets `width: 100%`, which collapses in
+   a header that is as wide as its content and piles the icons up. */
 .curio-cell-tabs .row {
   --bs-gutter-x: 0;
+  width: auto;
   margin: 0;
   flex-wrap: nowrap;
   font-size: 12px;
 }
 
-.curio-cell-tabs .col {
+.curio-cell-tabs .row > .col {
   flex: 0 0 auto;
+  width: auto;
+  max-width: none;
   padding: 0;
 }
 

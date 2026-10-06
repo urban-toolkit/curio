@@ -96,6 +96,20 @@
   position: fixed;
 }
 
+/* In the notebook view the cells scroll under the title: a white band behind
+   it, from the window's left edge to its scrollbar and from the top bar to just
+   under the chips, keeps their text from showing through. */
+.workflowNameContainerNotebook::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -15px;
+  bottom: -10px;
+  left: -50px;
+  width: calc(100vw - 16px);
+  background: #ffffff;
+}
+
 /* The catalog pages' page title (CatalogBrowseLayout.module.css `.titleRow h1`). */
 .workflowNameStyle {
   font-size: 20px;
