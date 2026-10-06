@@ -118,6 +118,7 @@ export const NodeContainer = ({
     output,
     nodeWidth,
     nodeHeight,
+    cellBox,
     noContent,
     setTemplateConfig,
     handleType,
@@ -139,6 +140,10 @@ export const NodeContainer = ({
     output?: ICodeData;
     nodeWidth?: number;
     nodeHeight?: number;
+    /** The notebook cell's size, only in the notebook view. Kept apart from
+     *  `nodeWidth`/`nodeHeight`, which feed the node's own size state: that
+     *  state is the canvas size the node goes back to. */
+    cellBox?: { width: number; height: number };
     noContent?: boolean;
     setTemplateConfig?: any;
     styles?: CSS.Properties;
@@ -254,8 +259,8 @@ export const NodeContainer = ({
     // no header band to put it in).
     const [chipHovered, setChipHovered] = useState(false);
     const shownMinimized = minimized && !notebookCell;
-    const boxWidth = notebookCell ? nodeWidth : currentNodeWidth;
-    const boxHeight = notebookCell ? nodeHeight : currentNodeHeight;
+    const boxWidth = notebookCell && cellBox ? cellBox.width : currentNodeWidth;
+    const boxHeight = notebookCell && cellBox ? cellBox.height : currentNodeHeight;
 
     useEffect(() => {
         if (nodeWidth !== undefined) {
@@ -1165,8 +1170,10 @@ export const NodeContainer = ({
                     onMouseLeave={() => setChipHovered(false)}
                     style={{
                         ...{
-                            width: currentNodeWidth + "px",
-                            height: currentNodeHeight + "px",
+                            // An icon-only node in the notebook view is a chip
+                            // stretched to its row.
+                            width: (cellBox?.width ?? currentNodeWidth) + "px",
+                            height: (cellBox?.height ?? currentNodeHeight) + "px",
                             backgroundColor: "#ffffff",
                             borderRadius: "10px",
                             padding: "5px",

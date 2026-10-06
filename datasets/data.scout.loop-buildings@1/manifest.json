@@ -1,0 +1,33 @@
+{
+  "id": "data.scout.loop-buildings",
+  "name": "SCOUT Chicago Loop Buildings",
+  "version": "1.0.0",
+  "format": "geojson",
+  "description": "The 123 buildings of SCOUT's high-rise shadow example in the Chicago Loop, with their heights in metres: SCOUT's A_buildings.geojson, its coordinates and heights unchanged, with a building_id column added (the row number, 0 to 122). SCOUT's B_buildings is this layer without building_id 8, 10, 12, 13, 14, 18, 19, 31, 34, 51, 66, 77, 82, 106 and 122. Used with the permission of SCOUT's authors.",
+  "publisher": "SCOUT (urban-toolkit/scout)",
+  "license": "",
+  "tags": [
+    "buildings",
+    "chicago",
+    "scout",
+    "geojson"
+  ],
+  "dataFile": "data/loop-buildings.geojson",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "SCOUT (urban-toolkit/scout)",
+  "rowCount": null,
+  "featureCount": 123,
+  "schema": null,
+  "createdAt": "2026-10-05T00:00:00Z",
+  "updatedAt": "2026-10-05T00:00:00Z",
+  "sourceUpdatedAt": null,
+  "groupId": null,
+  "layerName": null,
+  "producerNodeId": null,
+  "producerNodeType": null,
+  "producerDataflowId": null,
+  "producerDataflowName": null,
+  "upstreamInputs": null
+}

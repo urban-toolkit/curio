@@ -175,10 +175,15 @@ EXAMPLE_08_MAP = "niteroi-map"
 #: False for it. The canvas tests play it and check it by its type.
 COMPARE_SCENARIOS = "curio.builtin/compare-scenarios"
 
+#: Raster Calculator and Raster Statistics (#738) run their code behind their
+#: own play button too, with no legacy category: example 24's Raster
+#: Statistics node is played and must end Done like any other.
+RASTER_TOOLS = {"curio.builtin/raster-calculator", "curio.builtin/raster-statistics"}
+
 
 def _plays(node: NodeSpec) -> bool:
     """Whether the canvas gives *node* a play button that the run clicks."""
-    return node.has_play_button or node.type == COMPARE_SCENARIOS
+    return node.has_play_button or node.type == COMPARE_SCENARIOS or node.type in RASTER_TOOLS
 
 
 #: A Compare Scenarios node's view and where its drawing stands: ``[mode,

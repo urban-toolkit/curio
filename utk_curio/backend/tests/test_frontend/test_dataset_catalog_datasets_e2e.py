@@ -285,9 +285,9 @@ def test_dataset_loads_and_feeds_a_consumer(
         f"loader does not resolve the dataset by id:\n{loader_code}"
     )
     if plan.loader_suffix:
-        # The format's value stays in the loader's own code (an onnxruntime
-        # session cannot cross an edge), so the loader uses it there and
-        # returns a table for its consumer.
+        # The format's value stays in the loader's own code (an xarray Dataset
+        # cannot cross an edge), so the loader uses it there and returns a
+        # table for its consumer.
         set_node_code(page, loader_id, loader_code.rstrip("\n") + "\n" + plan.loader_suffix)
 
     # 3. A CONSUMER, wired to it. The edge id is derived, not random, so it

@@ -15,11 +15,8 @@ without pulling Playwright in. ``pyarrow`` and ``rasterio``/``numpy`` are
 imported lazily inside the parquet and geotiff expectations, so collection stays
 in the milliseconds - and both are declared dependencies of ``curio.builtin@1``
 and ``curio.weather@1``, which ``python curio.py setup`` installs before any
-suite runs. The ONNX expectations need no model library: they read the
-model's declared inputs and outputs from its protobuf bytes, so they hold on a
-test host without onnxruntime, which only node packages bring. The NetCDF
-expectations read the file through the sandbox's own reader (xarray and
-netCDF4, ``curio.builtin@1`` dependencies).
+suite runs. The NetCDF expectations read the file through the sandbox's own
+reader (xarray and netCDF4, ``curio.builtin@1`` dependencies).
 
 WHY THE COMMITTED FILE IS THE ORACLE, NOT THE MANIFEST
 ------------------------------------------------------
@@ -423,121 +420,6 @@ def _collection_expectations(data_file: Path) -> dict[str, str]:
     }
 
 
-# An ONNX model's loader holds an onnxruntime session, which no node output can
-# carry, so the loader itself runs the model once, on zeros of each input's
-# shape, and returns each input's and output's name and shape: proof that the
-# file loaded and ran, not only that it was found.
-_ONNX_LOADER_SUFFIX = '''import numpy as np
-import pandas as pd
-
-dtypes = {
-    "tensor(float)": np.float32, "tensor(double)": np.float64, "tensor(float16)": np.float16,
-    "tensor(int64)": np.int64, "tensor(int32)": np.int32, "tensor(uint8)": np.uint8, "tensor(bool)": np.bool_,
-}
-inputs, outputs = session.get_inputs(), session.get_outputs()
-feed = {i.name: np.zeros([d if isinstance(d, int) else 1 for d in i.shape], dtype=dtypes[i.type]) for i in inputs}
-results = session.run(None, feed)
-return pd.DataFrame({
-    "port": ["input"] * len(inputs) + ["output"] * len(outputs),
-    "name": [i.name for i in inputs] + [o.name for o in outputs],
-    "shape": ["x".join(str(d) for d in i.shape) for i in inputs] + ["x".join(str(d) for d in r.shape) for r in results],
-})
-'''
-
-_ONNX_TRANSFORM = '''df = arg
-inputs = df[df["port"] == "input"]
-outputs = df[df["port"] == "output"]
-print("CURIO_E2E_INPUTS=%s;" % ",".join(n + ":" + s for n, s in zip(inputs["name"], inputs["shape"])))
-print("CURIO_E2E_OUTPUTS=%s;" % ",".join(n + ":" + s for n, s in zip(outputs["name"], outputs["shape"])))
-return df
-'''
-
-
-def _protobuf_fields(data: bytes):
-    """``(field number, wire type, value)`` for each field of one protobuf
-    message: an int for wire type 0, the payload's bytes for wire type 2."""
-    def varint(at: int) -> tuple[int, int]:
-        value = shift = 0
-        while True:
-            byte = data[at]
-            at += 1
-            value |= (byte & 0x7F) << shift
-            shift += 7
-            if not byte & 0x80:
-                return value, at
-
-    at = 0
-    while at < len(data):
-        tag, at = varint(at)
-        field, wire = tag >> 3, tag & 7
-        if wire == 0:
-            value, at = varint(at)
-        elif wire == 2:
-            length, at = varint(at)
-            value, at = data[at:at + length], at + length
-        elif wire in (1, 5):
-            width = 8 if wire == 1 else 4
-            value, at = data[at:at + width], at + width
-        else:
-            raise AssertionError(f"protobuf wire type {wire} is not one ONNX uses")
-        yield field, wire, value
-
-
-def _declared_ports(graph: bytes, field_number: int) -> list[tuple[str, list]]:
-    """``(name, dims)`` of a ``GraphProto``'s inputs (field 11) or outputs
-    (field 12), as onnx.proto declares them: ``ValueInfoProto.name`` (1) and
-    ``.type`` (2) > ``TypeProto.tensor_type`` (1) > ``.shape`` (2) >
-    ``TensorShapeProto.dim`` (1) > ``dim_value`` (1) or ``dim_param`` (2).
-    A dimension with neither is ``None``, as onnxruntime reports it."""
-    ports = []
-    for field, _wire, value_info in _protobuf_fields(graph):
-        if field != field_number:
-            continue
-        name, dims = "", []
-        for vfield, _w, vvalue in _protobuf_fields(value_info):
-            if vfield == 1:
-                name = vvalue.decode("utf-8")
-            elif vfield == 2:
-                for tfield, _w2, tensor in _protobuf_fields(vvalue):
-                    if tfield != 1:
-                        continue
-                    for sfield, _w3, shape in _protobuf_fields(tensor):
-                        if sfield != 2:
-                            continue
-                        for dfield, _w4, dim in _protobuf_fields(shape):
-                            if dfield != 1:
-                                continue
-                            size = None
-                            for kind, _w5, given in _protobuf_fields(dim):
-                                size = given if kind == 1 else given.decode("utf-8") if kind == 2 else size
-                            dims.append(size)
-        ports.append((name, dims))
-    return ports
-
-
-def _onnx_expectations(data_file: Path) -> dict[str, str]:
-    """The committed model's inputs and outputs as its file declares them,
-    read from the protobuf with no model library, in the form the loader
-    suffix prints them after running the model in the sandbox: an input's
-    declared shape, an output's computed one. The suffix feeds 1 for each
-    dynamic input dimension, so an output dimension named after one is 1; any
-    other dynamic output dimension has no size to expect, so it is refused."""
-    model = dict((field, value) for field, _wire, value in _protobuf_fields(data_file.read_bytes()) if field == 7)
-    assert 7 in model, f"{data_file} holds no graph"
-    inputs = _declared_ports(model[7], 11)
-    outputs = _declared_ports(model[7], 12)
-    assert inputs and outputs, f"{data_file} declares no inputs or outputs"
-    fed_as_one = {d for _name, dims in inputs for d in dims if isinstance(d, str)}
-    outputs = [(name, [1 if d in fed_as_one else d for d in dims]) for name, dims in outputs]
-    dynamic = [name for name, dims in outputs if not all(isinstance(d, int) for d in dims)]
-    assert not dynamic, f"{data_file}: outputs {dynamic} have dynamic dimensions; expect them by hand"
-
-    def ports(declared) -> str:
-        return ",".join(name + ":" + "x".join(str(d) for d in dims) for name, dims in declared)
-
-    return {"CURIO_E2E_INPUTS": ports(inputs), "CURIO_E2E_OUTPUTS": ports(outputs)}
-
-
 # A NetCDF file's loader holds an xarray Dataset, which no node output can
 # carry, so the loader describes it: each data variable, its dimensions and
 # shape, and how many of its values are finite, proof that the values were read
@@ -617,13 +499,6 @@ FORMAT_PLANS: dict[str, FormatPlan] = {
         transform_code=_COLLECTION_TRANSFORM,
         vega_spec=None,
         expectations=_collection_expectations,
-    ),
-    "onnx": FormatPlan(
-        loader_marker="session = curio_load_data(",
-        transform_code=_ONNX_TRANSFORM,
-        vega_spec=None,
-        expectations=_onnx_expectations,
-        loader_suffix=_ONNX_LOADER_SUFFIX,
     ),
     "netcdf": FormatPlan(
         loader_marker="ds = curio_load_data(",

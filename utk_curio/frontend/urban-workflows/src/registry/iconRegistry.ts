@@ -29,6 +29,7 @@ import {
   faServer,
   faSliders,
   faStreetView,
+  faSun,
   faTable,
   faUpload,
   faWandMagicSparkles,
@@ -86,5 +87,7 @@ registerIcon('fa-solid:wand-magic-sparkles', faWandMagicSparkles);
 registerIcon('fa-solid:film', faFilm);
 registerIcon('fa-solid:wave-square', faWaveSquare);
 registerIcon('fa-solid:border-all', faBorderAll);
+// scout.shadow@1.
+registerIcon('fa-solid:sun', faSun);
 registerIcon('fa-brands:js', faJs);
 registerIcon('fa-brands:python', faPython);

@@ -457,22 +457,21 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         // canvas, and at that size a tile reads as a stray node rather than as
         // the content of the page. The page fits every tile to the window, so
         // the larger default costs nothing when several are pinned.
-        // A notebook cell has the column's fixed size, and like a tile it never
-        // writes it back: the canvas size stays the node's own.
         nodeWidth={
           dashboardOn
             ? (data.dashboardWidth ?? DASHBOARD_TILE_DEFAULT_WIDTH)
-            : notebookOn
-              ? NOTEBOOK_CELL_WIDTH
-              : (data.nodeWidth ?? adapter.container.nodeWidth)
+            : (data.nodeWidth ?? adapter.container.nodeWidth)
         }
         nodeHeight={
           dashboardOn
             ? (data.dashboardHeight ?? DASHBOARD_TILE_DEFAULT_HEIGHT)
-            : notebookOn
-              ? cellHeight
-              : (data.nodeHeight ?? adapter.container.nodeHeight)
+            : (data.nodeHeight ?? adapter.container.nodeHeight)
         }
+        // A notebook cell has the column's fixed size, passed on its own: the
+        // node's size props stay its canvas size, so the node keeps that size
+        // when the canvas comes back, and like a tile a cell never writes its
+        // size into the node.
+        cellBox={notebookOn ? { width: NOTEBOOK_CELL_WIDTH, height: cellHeight } : undefined}
         styles={adapter.container.styles as CSS.Properties<0 | (string & {}), string & {}> | undefined}
         disablePlay={disablePlay}
         output={output}

@@ -2,8 +2,9 @@
 
 ``shipped_categories.json`` is the placement the owner approved for the 44
 shipped dataflows (2026-09-30), and the Scenarios, BuildingRasters,
-FloodScenarios, WeatherRouting and NetCDF test dataflows placed by the same
-rules (#662, 2026-10-05). The automatic sections must reproduce it from
+FloodScenarios, ScoutShadows, WeatherRouting and NetCDF test dataflows and
+example 24 placed by the same rules (#662, 2026-10-05). The automatic
+sections must reproduce it from
 the files alone, and the hand-set ones live in the files themselves.
 """
 from __future__ import annotations
@@ -51,7 +52,7 @@ def _spec(key: str) -> dict:
 
 def test_the_golden_file_covers_every_shipped_dataflow():
     assert set(GOLDEN) == set(SHIPPED)
-    assert len(SHIPPED) == 49
+    assert len(SHIPPED) == 51
 
 
 @pytest.mark.parametrize("key", sorted(SHIPPED))
@@ -77,8 +78,8 @@ def test_sources():
     for entry in SHIPPED.values():
         by_source.setdefault(entry.source, []).append(entry.key)
     assert sorted(by_source[SOURCE_USE_CASE]) == sorted(USE_CASES)
-    assert len(by_source[SOURCE_EXAMPLE]) == 22
-    assert len(by_source[SOURCE_TEST]) == 26
+    assert len(by_source[SOURCE_EXAMPLE]) == 23
+    assert len(by_source[SOURCE_TEST]) == 27
 
 
 def test_no_spec_stores_a_source():
