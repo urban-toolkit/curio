@@ -22,11 +22,14 @@
  * selection's ids are a list). Inside a string literal
  * it becomes the value's text, escaped for that string, so
  * `"Season: [!! season !!]"` reads `"Season: winter"`. Inside a comment it is
- * the plain text. A column or layer reference is written the same way as a text
- * value: its name. In Python and JavaScript an input reference becomes `arg`
- * when the node has one input and `arg[i]` when it has several, `i` being the
- * input's place in circle order. In a Vega-Lite or Autark spec it is the name
- * that input is read by, `input_<i>`, written like a text value too.
+ * the plain text. A column reference is written the same way as a text value:
+ * its name. In Python and JavaScript an input reference becomes `arg` when the
+ * node has one input and `arg[i]` when it has several, `i` being the input's
+ * place in circle order, and a layer reference the call that picks the layer
+ * out of it, `curio_layer(arg[i], "roads", 1)` (the sandbox's
+ * `util/input_layers.py`, and `js_wrapper.mjs`). In a Vega-Lite or Autark spec
+ * an input reference is the name that input is read by, `input_<i>`, and a
+ * layer reference the layer's name, written like a text value too.
  */
 
 import { WIDGET_NAME_RE, effectiveValue, type WidgetDef, type WidgetValue } from "../widgets/widgetModel";
@@ -55,6 +58,11 @@ export const SHARED_PREFIX = "@";
  * with `SELECTION_REFERENCE_RE` in `code_references.py`. */
 export const SELECTION_REFERENCE_PATTERN = String.raw`^selection\s+(.+)$`;
 const SELECTION_REFERENCE_RE = new RegExp(SELECTION_REFERENCE_PATTERN);
+
+/** What a layer reference in Python or JavaScript calls. Kept in sync with
+ * `LAYER_HELPER` in `code_references.py` and the sandbox's
+ * `util/input_layers.py`. */
+export const LAYER_HELPER = "curio_layer";
 
 export interface CodeReference {
   /** Offsets of the whole `[!! ... !!]` in the code. */
@@ -291,6 +299,15 @@ function escapeFor(text: string, context: ReferenceContext, language: CodeLangua
   return out.split("\n").join("\\n").split("\r").join("\\r");
 }
 
+/** Why *reference* fails: input *slot* has no layer *layer*. It names the
+ * layers the input has. The resolver says it when the layers are known, and
+ * the sandbox's `curio_layer` says the same of a layer reference when the node
+ * runs. Kept in sync with `missing_layer_message` in `code_references.py`. */
+export function missingLayerMessage(reference: string, slot: number, layer: string, names: string[]): string {
+  const has = names.length > 0 ? `Its layers are ${names.join(", ")}.` : "It carries no named layers.";
+  return `${reference}: input ${slot} has no layer ${layer}. ${has}`;
+}
+
 /** *text* as a reference standing in *context* writes it. */
 function writeText(text: string, context: ReferenceContext, language: CodeLanguage): string {
   return context.kind === "code" ? widgetLiteral(text, language) : escapeFor(text, context, language);
@@ -314,14 +331,19 @@ export function referenceProblem(
       return `${reference}: input ${parsed.slot} has no edge. Connect one to that circle, or drag one of this node's input chips here.`;
     }
     if (parsed.layer !== undefined) {
-      if (language !== "json") return `${reference}: a layer chip works in Vega-Lite and Autark specs.`;
       const layers = Array.isArray(input.layers) ? input.layers : null;
       const layer = layers?.find((l) => l.name === parsed.layer);
       if (layers !== null && layer === undefined) {
-        return `${reference}: input ${parsed.slot} has no layer ${parsed.layer}.`;
+        return missingLayerMessage(reference, parsed.slot, parsed.layer, layers.map((l) => l.name));
       }
-      if (parsed.column !== undefined && Array.isArray(layer?.columns) && !layer!.columns!.includes(parsed.column)) {
+      // An input of one frame (no list of layers) is that layer: its columns
+      // are the frame's.
+      const columns = layer ? layer.columns : layers === null ? input.columns : undefined;
+      if (parsed.column !== undefined && Array.isArray(columns) && !columns.includes(parsed.column)) {
         return `${reference}: layer ${parsed.layer} of input ${parsed.slot} has no column ${parsed.column}.`;
+      }
+      if (parsed.column === undefined && language !== "json" && context.kind !== "code") {
+        return `${reference} is an input, not text. Use it outside quotes and comments.`;
       }
       return null;
     }
@@ -384,11 +406,14 @@ function resolvedText(inner: string, scope: ReferenceScope, context: ReferenceCo
   const parsed = parseReference(inner);
   if (parsed.kind === "input") {
     if (parsed.column !== undefined) return writeText(parsed.column, context, language);
-    if (parsed.layer !== undefined) return writeText(parsed.layer, context, language);
+    if (parsed.layer !== undefined && language === "json") return writeText(parsed.layer, context, language);
     const position = scope.inputs.findIndex((i) => i.slot === parsed.slot);
     if (language === "json") return writeText(inputTableName(position), context, language);
-    if (scope.inputs.length === 1) return "arg";
-    return `arg[${position}]`;
+    const value = scope.inputs.length === 1 ? "arg" : `arg[${position}]`;
+    if (parsed.layer !== undefined) {
+      return `${LAYER_HELPER}(${value}, ${widgetLiteral(parsed.layer, language)}, ${parsed.slot})`;
+    }
+    return value;
   }
   const value =
     parsed.kind === "selection"

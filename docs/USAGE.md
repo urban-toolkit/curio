@@ -524,14 +524,22 @@ In code and in a Vega-Lite or Autark spec, each input is a chip:
 3. Click the arrow beside an input's tag to list its columns, once the node that
    feeds it has run. Drag a column's tag where a column name goes; it is written
    `[!! input 1.population !!]`.
-4. In an Autark spec, an input that carries several layers (an upstream Autark
-   node's tables) lists a tag for each layer, `[!! input 1:roads !!]`, followed
-   by that layer's columns, `[!! input 1:roads.lanes !!]`.
+4. An input that carries several layers (an upstream Autark node's tables)
+   lists a tag for each layer, `[!! input 1:table_osm_roads !!]`, followed by
+   that layer's columns, `[!! input 1:table_osm_roads.lanes !!]`. A layer is
+   named as the Autark node names its table.
 
 When the node runs:
 
 - In Python and JavaScript, an input chip becomes the input: `arg` when the node
   has one input, and `arg[1]` when it has several, counted in circle order.
+- In Python and JavaScript, a layer chip becomes that layer of the input:
+  `roads = [!! input 0:table_osm_roads !!]` runs as
+  `roads = curio_layer(arg, "table_osm_roads", 0)`, which gives a GeoDataFrame
+  in Python and a GeoJSON FeatureCollection in JavaScript. An input that is one
+  frame with no layer name, such as a GeoDataFrame a Python node returns, is
+  that layer. An input with several frames needs one of that name; if it has
+  none, the node fails with a message naming the input and the layers it has.
 - In a Vega-Lite or Autark spec, an input chip becomes the name the input is read
   by, `"input_1"`: a Vega-Lite dataset or an Autark table (see
   [Vega-Lite node](#vega-lite-node) and [Autark node](#autark-node)). A layer

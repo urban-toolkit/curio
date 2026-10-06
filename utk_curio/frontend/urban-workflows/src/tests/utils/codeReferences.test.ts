@@ -72,6 +72,40 @@ describe("the shared reference cases", () => {
       expect(codes).toMatch(/\[!! input \d/);
     }
   });
+
+  test("the table has layer references that resolve in every language, code as well as specs", () => {
+    for (const language of ["python", "javascript", "json"]) {
+      const resolved = (cases.cases as Case[]).filter(
+        (c) => c.language === language && /\[!! input \d+:[^.\s]+ !!\]/.test(c.code) && !c.problems,
+      );
+      expect([language, resolved.length > 0]).toEqual([language, true]);
+    }
+  });
+});
+
+describe("a layer chip in code", () => {
+  const layered: InputScope[] = [{ slot: 0, layers: [{ name: "table_osm_roads" }, { name: "table_osm_buildings" }] }];
+  const scope = (inputs: InputScope[]) => ({ widgets: [], inputs, shared: [] });
+
+  test("is the call that picks the layer, in Python and JavaScript alike", () => {
+    for (const language of ["python", "javascript"] as CodeLanguage[]) {
+      const result = resolveReferences("x = [!! input 0:table_osm_roads !!]", scope(layered), language);
+      expect(result).toEqual({ code: 'x = curio_layer(arg, "table_osm_roads", 0)', problems: [] });
+    }
+  });
+
+  test("a layer the input does not have names the ones it has", () => {
+    const result = resolveReferences("x = [!! input 0:table_osm_water !!]", scope(layered), "python");
+    expect(describeReferenceProblems(result.problems)).toBe(
+      "[!! input 0:table_osm_water !!]: input 0 has no layer table_osm_water. "
+        + "Its layers are table_osm_roads, table_osm_buildings.",
+    );
+  });
+
+  test("closing up circles renumbers a layer chip and keeps its layer", () => {
+    const code = "a = [!! input 1:table_osm_roads !!]";
+    expect(renumberInputReferences(code, 0)).toBe("a = [!! input 0:table_osm_roads !!]");
+  });
 });
 
 describe("references", () => {

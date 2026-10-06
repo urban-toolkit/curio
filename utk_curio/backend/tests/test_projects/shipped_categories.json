@@ -456,8 +456,7 @@
   },
   "dataflows/WeatherRouting": {
     "tags": [
-      "Autark",
-      "GeoPandas"
+      "Autark"
     ],
     "data_type": [
       "Geometries",

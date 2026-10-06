@@ -10,7 +10,7 @@ route's duration, distance and rain and wind exposure.
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `scout.routing/weather-routing` | Weather Routing | A roads GeoDataFrame: OpenStreetMap road lines, such as the roads an Autark node loads | `(routes, metrics)`: one GeoDataFrame and one table |
+| `scout.routing/weather-routing` | Weather Routing | The layers an Autark node loads from OpenStreetMap, whose roads layer, `table_osm_roads`, it reads; or a roads GeoDataFrame on its own | `(routes, metrics)`: one GeoDataFrame and one table |
 
 ## Settings
 
@@ -65,20 +65,25 @@ Model Catalog model `model.scout.weather-gnn`, which the node loads with
 ## A dataflow
 
 ```
-[ Autark: Loop roads ] ──► [ Roads ] ──► [ Weather Routing ] ──► [ Routes ] ──► [ Autark: map of the routes ]
-                                                            └─► [ Route metrics ] ──► [ Compare Scenarios ]
+[ Autark: Loop roads ] ──► [ Weather Routing ] ──► [ Routes ] ──► [ Autark: map of the routes ]
+                                              └─► [ Route metrics ] ──► [ Compare Scenarios ]
 ```
 
-An Autark node that only loads data hands on its layers as an array of
-`{name, type, geojson}`, in EPSG:3395; the Roads node, a Python node, takes the
-roads layer as a GeoDataFrame:
+An Autark node that only loads data hands on its layers, each under its table
+name, in EPSG:3395. The node's code reads the roads layer through a layer chip,
+which gives it as a GeoDataFrame:
 
 ```python
-import geopandas as gpd
-
-(layer,) = [layer for layer in arg if layer["name"] == "table_osm_roads"]
-return gpd.GeoDataFrame.from_features(layer["geojson"]["features"], crs="EPSG:3395")
+return calculate_weather_route(
+    [!! input 0:table_osm_roads !!],
+    ...
+)
 ```
+
+A roads GeoDataFrame on its own, from a Python node or Data Loading, works too:
+an input that is one frame with no layer name is the layer the chip reads. Fed
+several layers without a `table_osm_roads` one, the node fails with a message
+naming the layers its input has.
 
 The test dataflow [WeatherRouting](../../docs/examples/dataflows/WeatherRouting.json)
 is this dataflow in two scenarios, "Avoid rain" and "Avoid wind", over the
