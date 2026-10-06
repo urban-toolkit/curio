@@ -27,8 +27,7 @@
 # (2020/5022/8100), the isolated one (2030/5032/8110) and the exec-user one
 # (2040/5042/8120), so this takes 2070/5072/8150 and its own compose project
 # (-p curio-ci-stress). 2050 and 2060 belong to the two dispatch-only repro
-# workflows, and 2101-2106/5101-5106/8201-8206 to the flake hunt's stacks
-# (-p curio-lane-k, scripts/ci_lanes.py).
+# workflows.
 services:
   curio:
     # 100 users means up to 100 concurrent Node subprocesses for the Autark

@@ -40,8 +40,7 @@ jobs:
       CURIO_E2E_TRACE: ${{ inputs.trace }}
       # Its own stack and ports, so it can never collide with a CI run: prod is
       # 2000/5002/8080, curio-dev 2010/5012/8090, the CI stacks and the zygote
-      # repro 2020-2050 / 5022-5052 / 8100-8130, the flake hunt's stacks
-      # 2101-2106 / 5101-5106 / 8201-8206.
+      # repro 2020-2050 / 5022-5052 / 8100-8130.
       CURIO_E2E_SHARD1_BACKEND_PORT: "5063"
       CURIO_E2E_SHARD1_SANDBOX_PORT: "2061"
       CURIO_E2E_SHARD2_BACKEND_PORT: "5064"

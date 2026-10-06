@@ -245,6 +245,54 @@ def test_the_summary_table(tmp_path):
     assert "Screenshot comparisons: 4 recorded, 1 over budget, 1 without a baseline" in summary
 
 
+def _two_tests(x_status):
+    """JUnit with test_x in the given state and test_steady passing."""
+    failure = '<failure message="flaked">trace</failure>' if x_status == "failed" else ""
+    return ('<testsuites><testsuite name="pytest">'
+            f'<testcase classname="tests.test_a" name="test_x">{failure}</testcase>'
+            '<testcase classname="tests.test_a" name="test_steady"/></testsuite></testsuites>')
+
+
+def test_a_repeated_suite_reads_every_run_and_names_its_flaky_tests(tmp_path):
+    for name, status in (("e2e.xml", "passed"), ("e2e.run2.xml", "failed"), ("e2e.run3.xml", "passed"),
+                         ("e2e.run10.xml", "passed")):
+        (tmp_path / name).write_text(_two_tests(status), encoding="utf-8")
+    (tmp_path / "e2e.run2.json").write_text("{}", encoding="utf-8")  # another kind of file, not a run
+    out, summary = tmp_path / "report.html", tmp_path / "summary.md"
+    argv = ["--junit", f"End-to-end tests={tmp_path / 'e2e.xml'}", "--out", str(out)]
+    assert ci_report.main([*argv, "--summary", str(summary)]) == 0
+
+    report = ci_report.build(ci_report.parse_args(argv))
+    assert [s.label for s in report.suites] == [f"End-to-end tests, run {k}" for k in (1, 2, 3, 10)]
+    assert report.flaky == [{"suite": "End-to-end tests", "name": "tests.test_a::test_x",
+                             "passed": [1, 3, 10], "failed": [2]}]
+    text = summary.read_text(encoding="utf-8")
+    assert text.startswith("**Flaky across 10 runs:**")
+    assert "| End-to-end tests | tests.test_a::test_x | 1, 3, 10 | 2 |" in text
+    assert "| End-to-end tests, run 2 | failed | 1 | 1 | 0 | 0 |" in text
+    assert "Flaky across runs (1)" in out.read_text(encoding="utf-8")
+
+
+def test_a_test_that_fails_on_one_job_and_passes_on_another_is_not_flaky(tmp_path):
+    for job, status in (("desktop", "passed"), ("isolated", "failed")):
+        (tmp_path / job).mkdir()
+        for name in ("e2e.xml", "e2e.run2.xml"):
+            (tmp_path / job / name).write_text(_two_tests(status), encoding="utf-8")
+    out, summary = tmp_path / "report.html", tmp_path / "summary.md"
+    argv = ["--junit", f"Desktop={tmp_path / 'desktop' / 'e2e.xml'}",
+            "--junit", f"Isolated={tmp_path / 'isolated' / 'e2e.xml'}", "--out", str(out)]
+    assert ci_report.main([*argv, "--summary", str(summary)]) == 0
+    report = ci_report.build(ci_report.parse_args(argv))
+    assert (ci_report.run_count(report), report.flaky) == (2, [])
+    assert summary.read_text(encoding="utf-8").startswith("**Flaky across 2 runs:** none")
+
+
+def test_a_suite_run_once_keeps_its_label_and_has_no_flaky_section(tmp_path):
+    page, summary = _build(tmp_path)
+    assert "Flaky across" not in page and "Flaky across" not in summary
+    assert summary.startswith("| Suite | Result |")
+
+
 def _card(page, baseline):
     at = page.index(f"<h3>{baseline}</h3>")
     return page[page.rindex("<article", 0, at):page.index("</article>", at)]
