@@ -62,8 +62,9 @@ SUITES = ("e2e", "backend", "sandbox")
 #: Lane k's host ports are these bases plus k. The block is clear of every
 #: other stack a runner can hold (the table in docker-compose.ci-stress.yml).
 BACKEND_BASE, SANDBOX_BASE, FRONTEND_BASE = 5100, 2100, 8200
-#: A stack and its Chromium take about 3 GiB, and a CPU runner has 32.
-MAX_STACKS = 8
+#: A CPU runner has 32 GB. The first hunt measured five stacks' containers
+#: at 21.7 GiB together (4.3 GiB each), before their Chromiums on the host.
+MAX_STACKS = 6
 
 START_STAGGER_S = 10
 START_WAIT_S = 420  # as test-desktop-stress, whose stack also starts beside others
@@ -616,6 +617,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("command", choices=sorted(COMMANDS))
     args = parser.parse_args(argv)
+    # The step log shows each lane's iterations as they end, not at exit.
+    sys.stdout.reconfigure(line_buffering=True)
     COMMANDS[args.command](config_from_env(os.environ), dict(os.environ))
     return 0
 

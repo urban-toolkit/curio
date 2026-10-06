@@ -17,9 +17,9 @@ name: Flake hunt
 #
 #     git push origin HEAD:flake/<anything>
 #
-# CPU runners only: a stack and its Chromium take about 3 GiB, an arcade CPU
-# runner has 32 GB and a hosted one 16, and the GPU runners belong to
-# test-gpu. So the e2e tests here are e2e-desktop's half
+# CPU runners only: a stack's container takes about 4.3 GiB before its
+# Chromium, an arcade CPU runner has 32 GB and a hosted one 16, and the GPU
+# runners belong to test-gpu. So the e2e tests here are e2e-desktop's half
 # (CURIO_E2E_RUNNER=desktop); the WebGPU half needs a GPU runner per stack.
 # There is no schedule: the hunt loads arcade, and arcade's load is a known
 # cause of test-gpu failures in PR runs. There is no pull_request trigger
@@ -31,7 +31,7 @@ on:
         description: Arcade CPU runners
         default: "2"
       stacks_per_runner:
-        description: Stacks on each runner, 1 to 8 (runners x stacks must be 10 or more)
+        description: Stacks on each runner, 1 to 6 (runners x stacks must be 10 or more)
         default: "5"
       iterations:
         description: Runs of the tests on each stack
@@ -81,8 +81,8 @@ jobs:
           fail() { echo "::error::$1" >&2; exit 1; }
           [[ "$FLAKE_RUNNERS" =~ ^[0-9]+$ && "$FLAKE_STACKS" =~ ^[0-9]+$ && "$FLAKE_ITERATIONS" =~ ^[0-9]+$ ]] \
             || fail "runners, stacks_per_runner and iterations must be whole numbers"
-          # About 3 GiB a stack on a 32 GB runner.
-          (( FLAKE_STACKS >= 1 && FLAKE_STACKS <= 8 )) || fail "stacks_per_runner must be 1 to 8, not $FLAKE_STACKS"
+          # About 4.3 GiB a stack, plus its Chromium, on a 32 GB runner (MAX_STACKS in ci_lanes.py).
+          (( FLAKE_STACKS >= 1 && FLAKE_STACKS <= 6 )) || fail "stacks_per_runner must be 1 to 6, not $FLAKE_STACKS"
           (( FLAKE_RUNNERS * FLAKE_STACKS >= 10 )) \
             || fail "runners x stacks_per_runner must be 10 or more, not $(( FLAKE_RUNNERS * FLAKE_STACKS ))"
           # The arcade CPU pool (CPU_RUNNERS in scripts/ci_pick_runners.py).
