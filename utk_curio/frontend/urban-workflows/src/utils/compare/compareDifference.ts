@@ -23,16 +23,21 @@ export const CHANGE_COLORS = ["#2e8540", "#c0392b", "#b7791f", "#8a8f98"];
 
 /**
  * The table the map reads the difference as, the node's output, named after
- * what the map colors it by, since autk-map titles a layer's legend with its
- * table's name: `<band or column>_change`, `change` for the column of that
- * name, and `difference` when nothing colors it. A table's name is an SQL
- * identifier in the map's database, so any other character becomes `_`.
+ * what the map colors it by: `<band or column>_change`, `change` for the
+ * column of that name, and `difference` when nothing colors it. A table's name
+ * is an SQL identifier in the map's database, so any other character becomes
+ * `_`. The legend reads `differenceLegendTitle` instead.
  */
 export function differenceTableName(value: DifferenceValue | undefined): string {
   if (!value) return "difference";
   const named = value.value === CHANGE_FIELD ? CHANGE_FIELD : `${value.value}_change`;
   const name = named.replace(/[^A-Za-z0-9_]/g, "_");
   return /^[A-Za-z_]/.test(name) ? name : `_${name}`;
+}
+
+/** The map's legend title (a layerRef's `legendTitle`): `<band or column> change`, or `change`. */
+export function differenceLegendTitle(value: DifferenceValue): string {
+  return value.value === CHANGE_FIELD ? CHANGE_FIELD : `${value.value} change`;
 }
 
 /**
@@ -93,19 +98,22 @@ export function resolveValue(wanted: string | undefined, values: readonly Differ
 
 /**
  * The Autark document that draws the difference, one layer colored by *value*,
- * read as the table `differenceTableName` names.
+ * read as the table `differenceTableName` names, its legend titled by
+ * `differenceLegendTitle`.
  */
 export function differenceMapDoc(kind: "raster" | "layer", value: DifferenceValue | undefined): Record<string, unknown> {
   const table = differenceTableName(value);
   if (!value) return { map: { layerRefs: [{ dataRef: table }] } };
+  const legendTitle = differenceLegendTitle(value);
   if (kind === "raster") {
-    return { map: { layerRefs: [{ dataRef: table, getFnv: value.value, isColorMap: true }] } };
+    return { map: { layerRefs: [{ dataRef: table, getFnv: value.value, isColorMap: true, legendTitle }] } };
   }
   if (value.categorical) {
     return {
       map: {
         layerRefs: [{
           dataRef: table,
+          legendTitle,
           getFnv: value.value,
           getFnvType: "categorical",
           colorMapInterpolator: "schemeTableau10",
@@ -118,6 +126,7 @@ export function differenceMapDoc(kind: "raster" | "layer", value: DifferenceValu
     map: {
       layerRefs: [{
         dataRef: table,
+        legendTitle,
         getFnv: value.value,
         getFnvType: "quantitative",
         colorMapInterpolator: DIFFERENCE_INTERPOLATOR,

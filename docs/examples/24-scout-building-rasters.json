@@ -25,7 +25,7 @@
         "metadata": {
           "keywords": []
         },
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\"\n      }\n    ]\n  }\n}"
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"legendTitle\": \"Building height (m)\"\n      }\n    ]\n  }\n}"
       },
       {
         "id": "333949c8-983a-5cdb-845b-04abe06c2dc7",
@@ -149,7 +149,7 @@
         "metadata": {
           "keywords": []
         },
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\"\n      }\n    ]\n  }\n}"
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\",\n        \"getFnv\": \"band_1\",\n        \"colorMapInterpolator\": \"interpolateReds\",\n        \"legendTitle\": \"Accumulated shadow (minutes)\"\n      }\n    ]\n  }\n}"
       }
     ],
     "edges": [
