@@ -15,9 +15,9 @@ import {
   notebookLaneX,
   NOTEBOOK_BAR_WIDTH,
   NOTEBOOK_CELL_GAP,
-  NOTEBOOK_CELL_WIDTH,
   NOTEBOOK_DOT_SIZE,
   NOTEBOOK_MARGIN,
+  NOTEBOOK_MIN_CELL_WIDTH,
   NOTEBOOK_UNMEASURED_HEIGHT,
   notebookOutputBox,
   type NotebookDotPlace,
@@ -26,13 +26,13 @@ import {
 const pane = { width: 1600, top: 110, left: 56 };
 
 describe("the column of cells", () => {
-  test("cells stack in the order given, each as tall as it was measured, 16px apart", () => {
+  test("cells stack in the order given, each as tall as it was measured, 24px apart", () => {
     const layout = layoutNotebook(
       [{ id: "a", height: 180 }, { id: "b", height: 612 }, { id: "c", height: 95 }],
       pane,
     );
     const ys = ["a", "b", "c"].map((id) => layout.positions.get(id)!.y);
-    expect(NOTEBOOK_CELL_GAP).toBe(16);
+    expect(NOTEBOOK_CELL_GAP).toBe(24);
     expect(ys[0]).toBe(pane.top + NOTEBOOK_MARGIN);
     expect(ys[1] - ys[0]).toBe(180 + NOTEBOOK_CELL_GAP);
     expect(ys[2] - ys[1]).toBe(612 + NOTEBOOK_CELL_GAP);
@@ -58,17 +58,37 @@ describe("the column of cells", () => {
     expect(layout.positions.get("last")!.y - layout.positions.get("after")!.y).toBe(100 + NOTEBOOK_CELL_GAP);
   });
 
-  test("the column and its bar are centered in a wide pane", () => {
-    const layout = layoutNotebook([{ id: "a", height: 300 }], pane);
-    const span = NOTEBOOK_CELL_WIDTH + NOTEBOOK_BAR_WIDTH;
-    expect(NOTEBOOK_CELL_WIDTH).toBe(880);
-    expect(layout.columnX).toBe(Math.round((pane.width - span) / 2));
-    expect(layout.barX).toBe(layout.columnX + NOTEBOOK_CELL_WIDTH);
+  test("cells span the page from its left margin to the bar at its right edge", () => {
+    const wide = { width: 1600, top: 110, left: 0 };
+    const layout = layoutNotebook([{ id: "a", height: 300 }], wide);
+    expect(layout.columnX).toBe(NOTEBOOK_MARGIN);
+    expect(layout.barX).toBe(wide.width - NOTEBOOK_BAR_WIDTH);
+    expect(layout.cellWidth).toBe(layout.barX - layout.columnX);
+    expect(layout.positions.get("a")!.x).toBe(NOTEBOOK_MARGIN);
   });
 
-  test("a narrow pane keeps the column clear of the palette rail", () => {
+  test("anything fixed over the page's left edge is cleared", () => {
     const layout = layoutNotebook([{ id: "a", height: 300 }], { width: 900, top: 110, left: 56 });
     expect(layout.columnX).toBe(56 + NOTEBOOK_MARGIN);
+    expect(layout.barX).toBe(900 - NOTEBOOK_BAR_WIDTH);
+  });
+
+  test("on a narrow page a cell keeps its least width, and the bar moves out past it", () => {
+    const layout = layoutNotebook([{ id: "a", height: 300 }], { width: 500, top: 110, left: 0 });
+    expect(layout.cellWidth).toBe(NOTEBOOK_MIN_CELL_WIDTH);
+    expect(layout.barX).toBe(NOTEBOOK_MARGIN + NOTEBOOK_MIN_CELL_WIDTH);
+  });
+
+  test("a (+) sits in the middle of the gap below every cell, the last one's included", () => {
+    const layout = layoutNotebook([{ id: "a", height: 180 }, { id: "b", height: 95 }], pane);
+    const a = layout.positions.get("a")!.y;
+    const b = layout.positions.get("b")!.y;
+    expect(layout.addPoints).toEqual([
+      { after: "a", y: a + 180 + NOTEBOOK_CELL_GAP / 2 },
+      { after: "b", y: b + 95 + NOTEBOOK_CELL_GAP / 2 },
+    ]);
+    expect(layout.addPoints[0].y).toBe(b - NOTEBOOK_CELL_GAP / 2);
+    expect(layout.contentHeight).toBeGreaterThan(layout.addPoints[1].y + 20);
   });
 
   test("the content runs past the last cell, so it scrolls clear of the window's edge", () => {

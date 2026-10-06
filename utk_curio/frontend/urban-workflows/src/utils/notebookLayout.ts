@@ -7,12 +7,13 @@ import { unversionedNodeType } from "./flowNodeCanonicalType";
 import { inputSlotOf } from "./inputSlots";
 
 /**
- * Every cell is the width of a dashboard tile's default (`dashboardLayout.ts`):
- * the content of a page rather than a node among fifty. Its height is its
- * content's, as React Flow measures it.
+ * Cells span the page from its left margin to the bar on its right, as a
+ * notebook's do; a cell's height is its content's, as React Flow measures it.
+ * On a pane too narrow for that, a cell keeps this width and the page scrolls.
  */
-export const NOTEBOOK_CELL_WIDTH = 880;
-export const NOTEBOOK_CELL_GAP = 16;
+export const NOTEBOOK_MIN_CELL_WIDTH = 480;
+/** Room between two cells, which holds the (+) that adds a cell. */
+export const NOTEBOOK_CELL_GAP = 24;
 /** What a cell counts as until React Flow has measured it, a frame after it mounts. */
 export const NOTEBOOK_UNMEASURED_HEIGHT = 240;
 /** The strip right of the cells where the dots sit and the connections run. */
@@ -57,29 +58,42 @@ export interface NotebookPane {
   left: number;
 }
 
+/** Where a (+) sits: in the gap below a cell, whose output a cell added there reads. */
+export interface NotebookAddPoint {
+  after: string;
+  /** The middle of the gap below the cell. */
+  y: number;
+}
+
 export interface NotebookLayout {
   positions: Map<string, XY>;
   rows: Map<string, number>;
   columnX: number;
+  cellWidth: number;
   /** Left edge of the bar, which is the cells' right edge. */
   barX: number;
+  /** One (+) below every cell, the last one's included. */
+  addPoints: NotebookAddPoint[];
   contentHeight: number;
 }
 
 /**
  * One column of cells in the given order, each as tall as it was measured and
- * a gap below the one above, centered in the pane and clear of its overlays.
+ * a gap below the one above, spanning the pane from its left margin to the bar
+ * at its right edge, clear of its overlays.
  */
 export function layoutNotebook(cells: readonly NotebookCell[], pane: NotebookPane): NotebookLayout {
-  const centered = Math.round((pane.width - (NOTEBOOK_CELL_WIDTH + NOTEBOOK_BAR_WIDTH)) / 2);
-  const columnX = Math.max(Math.round(pane.left) + NOTEBOOK_MARGIN, centered);
+  const columnX = Math.round(pane.left) + NOTEBOOK_MARGIN;
+  const barX = Math.max(columnX + NOTEBOOK_MIN_CELL_WIDTH, Math.round(pane.width) - NOTEBOOK_BAR_WIDTH);
   const positions = new Map<string, XY>();
   const rows = new Map<string, number>();
+  const addPoints: NotebookAddPoint[] = [];
   let y = Math.round(pane.top) + NOTEBOOK_MARGIN;
   cells.forEach((cell, row) => {
     const height = cell.height && cell.height > 0 ? cell.height : NOTEBOOK_UNMEASURED_HEIGHT;
     positions.set(cell.id, { x: columnX, y });
     rows.set(cell.id, row);
+    addPoints.push({ after: cell.id, y: y + height + NOTEBOOK_CELL_GAP / 2 });
     y += height + NOTEBOOK_CELL_GAP;
   });
   const bottom = cells.length > 0 ? y - NOTEBOOK_CELL_GAP : y;
@@ -87,7 +101,9 @@ export function layoutNotebook(cells: readonly NotebookCell[], pane: NotebookPan
     positions,
     rows,
     columnX,
-    barX: columnX + NOTEBOOK_CELL_WIDTH,
+    cellWidth: barX - columnX,
+    barX,
+    addPoints,
     contentHeight: bottom + NOTEBOOK_BOTTOM_SPACE,
   };
 }

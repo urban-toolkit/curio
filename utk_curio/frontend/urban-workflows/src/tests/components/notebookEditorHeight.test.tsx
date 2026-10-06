@@ -55,17 +55,20 @@ function fakeEditor(contentHeight: number) {
 }
 const fakeMonaco = { editor: { EditorOption: { lineHeight: 67 } } };
 
+let lastOptions: Record<string, unknown> = {};
+
 function Probe({ max, editor }: { max: number; editor: ReturnType<typeof fakeEditor> }) {
-  const { attach, wrapperStyle } = useNotebookEditorHeight(max);
+  const { attach, wrapperStyle, wrapperClassName, editorOptions } = useNotebookEditorHeight(max);
+  lastOptions = editorOptions;
   React.useEffect(() => {
     attach(editor, fakeMonaco);
   }, []);
-  return <div data-testid="wrapper" style={wrapperStyle} />;
+  return <div data-testid="wrapper" className={wrapperClassName} style={wrapperStyle} />;
 }
 
 function mount(on: boolean, max: number, editor: ReturnType<typeof fakeEditor>) {
   return render(
-    <NotebookViewContext.Provider value={{ on, laneX: new Map(), reveal: () => on }}>
+    <NotebookViewContext.Provider value={{ on, laneX: new Map(), cellWidth: 900, reveal: () => on }}>
       <Probe max={max} editor={editor} />
     </NotebookViewContext.Provider>,
   );
@@ -87,9 +90,24 @@ describe("useNotebookEditorHeight", () => {
     expect(editor.disposed).toBe(true);
   });
 
-  test("on the canvas, leaves the wrapper as its editor sets it, filling the node", () => {
+  test("on the canvas, leaves the wrapper and the editor as they are, filling the node", () => {
     const editor = fakeEditor(95);
     const { getByTestId } = mount(false, NOTEBOOK_SPEC_EDITOR_MAX, editor);
     expect(getByTestId("wrapper").getAttribute("style")).toBeNull();
+    expect(getByTestId("wrapper").getAttribute("class")).toBeNull();
+    expect(lastOptions).toEqual({});
+  });
+
+  test("in the notebook view, makes the editor a plain gray input box: no line numbers, gutter or ruler", () => {
+    const editor = fakeEditor(95);
+    const { getByTestId } = mount(true, NOTEBOOK_CODE_EDITOR_MAX, editor);
+    expect(getByTestId("wrapper")).toHaveClass("curio-notebook-input");
+    expect(lastOptions).toMatchObject({
+      lineNumbers: "off",
+      glyphMargin: false,
+      folding: false,
+      renderLineHighlight: "none",
+      overviewRulerLanes: 0,
+    });
   });
 });

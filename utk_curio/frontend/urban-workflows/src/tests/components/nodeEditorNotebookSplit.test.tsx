@@ -10,7 +10,7 @@
  * nodeEditorOutputScroll.test.tsx checks `nowheel`. Same harness.
  */
 import React from "react";
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({ dashboardOn: false }),
@@ -41,6 +41,7 @@ jest.mock("../../components/editing/CodeEditor", () => ({ __esModule: true, defa
 
 import NodeEditor from "../../components/editing/NodeEditor";
 import { NotebookViewContext } from "../../providers/flow/notebookViewContext";
+import { CellHeaderSlotContext } from "../../components/editing/cellHeaderSlot";
 
 const OUTPUT_ID = "vega-n1";
 
@@ -62,10 +63,12 @@ function props(): Record<string, any> {
   };
 }
 
-function mount(on: boolean, p: ReturnType<typeof props> = props()) {
+function mount(on: boolean, p: ReturnType<typeof props> = props(), headerSlot: HTMLElement | null = null) {
   const utils = render(
-    <NotebookViewContext.Provider value={{ on, laneX: new Map(), reveal: () => on }}>
-      <NodeEditor {...(p as React.ComponentProps<typeof NodeEditor>)} />
+    <NotebookViewContext.Provider value={{ on, laneX: new Map(), cellWidth: 900, reveal: () => on }}>
+      <CellHeaderSlotContext.Provider value={headerSlot}>
+        <NodeEditor {...(p as React.ComponentProps<typeof NodeEditor>)} />
+      </CellHeaderSlotContext.Provider>
     </NotebookViewContext.Provider>,
   );
   return { ...utils, p };
@@ -105,7 +108,26 @@ describe("a grammar node shown as a notebook cell", () => {
     expect(outputPane()).toHaveClass("curio-notebook-output");
   });
 
-  test("puts its tab pills above the input, as a notebook puts a cell's toolbar", () => {
+  test("puts its tab pills among the cell's tools in its header, where they still switch tabs", async () => {
+    const slot = document.createElement("div");
+    document.body.appendChild(slot);
+    try {
+      const { container } = mount(true, { ...props(), widgets: true }, slot);
+      // No row of tabs in the cell's body.
+      expect(container.querySelector(".nav")).toBeNull();
+      expect(slot.querySelector('[data-rr-ui-event-key="grammar"]')).not.toBeNull();
+      const widgetsLink = slot.querySelector('[data-rr-ui-event-key="widgets"]') as HTMLElement;
+      expect(widgetsLink).not.toBeNull();
+      await act(async () => {
+        fireEvent.click(widgetsLink);
+      });
+      expect(widgetsLink).toHaveClass("active");
+    } finally {
+      slot.remove();
+    }
+  });
+
+  test("puts its tab pills above the input when the cell has no header to hold them", () => {
     const { container } = mount(true);
     const nav = container.querySelector(".nav") as HTMLElement;
     expect(nav).not.toBeNull();

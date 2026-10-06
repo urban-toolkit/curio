@@ -31,12 +31,15 @@ const DraggableTool = memo(function DraggableTool({
     tooltip,
     badge,
     tooltipPlacement = "right",
+    onPick,
 }: {
     nodeType: NodeTemplateId;
     icon: any;
     tooltip: string;
     badge?: string;
     tooltipPlacement?: ToolsMenuTooltipSide;
+    /** A click adds the node (the notebook view's (+) menu); else it is dragged. */
+    onPick?: (nodeType: NodeTemplateId) => void;
 }) {
     return (
         <OverlayTrigger
@@ -60,6 +63,7 @@ const DraggableTool = memo(function DraggableTool({
                     event.dataTransfer.setData("application/reactflow", nodeType);
                     event.dataTransfer.effectAllowed = "move";
                 }}
+                {...(onPick ? { role: "button", onClick: () => onPick(nodeType) } : {})}
             >
                 <FontAwesomeIcon icon={icon} className={styles.iconStyle} />
                 {badge && <span className={styles.iconBadge}>{badge}</span>}
@@ -82,7 +86,12 @@ function groupPaletteTypes(descriptors: NodeDescriptor[]): NodeDescriptor[][] {
     );
 }
 
-function renderGroup(group: NodeDescriptor[], key: string, tooltipPlacement: ToolsMenuTooltipSide = "right") {
+function renderGroup(
+    group: NodeDescriptor[],
+    key: string,
+    tooltipPlacement: ToolsMenuTooltipSide = "right",
+    onPick?: (nodeType: NodeTemplateId) => void,
+) {
     return (
         <div key={key} className={styles.containerStyle}>
             {group.map((desc) => (
@@ -93,6 +102,7 @@ function renderGroup(group: NodeDescriptor[], key: string, tooltipPlacement: Too
                     tooltip={desc.label}
                     badge={desc.badge}
                     tooltipPlacement={tooltipPlacement}
+                    onPick={onPick}
                 />
             ))}
         </div>
@@ -101,7 +111,21 @@ function renderGroup(group: NodeDescriptor[], key: string, tooltipPlacement: Too
 
 const NOOP = () => () => {};
 
-const ToolsMenu = memo(function ToolsMenu() {
+const ToolsMenu = memo(function ToolsMenu({
+    layout = "rail",
+    onPickTile,
+    style,
+}: {
+    /**
+     * The canvas's rail down the left edge, or one row: the notebook view's
+     * (+) menu, placed by `style`, whose catalog panels open below it.
+     */
+    layout?: "rail" | "row";
+    /** A click on a node tile adds that node. */
+    onPickTile?: (nodeType: NodeTemplateId) => void;
+    style?: React.CSSProperties;
+} = {}) {
+    const row = layout === "row";
     // Re-render whenever the registry mutates (e.g. when package descriptors
     // land asynchronously via packagesClient.ts).
     const paletteVersion = useSyncExternalStore(
@@ -152,14 +176,19 @@ const ToolsMenu = memo(function ToolsMenu() {
     }, []);
 
     return (
-        <div id="tools-palette-dock" className={styles.paletteDock}>
+        <div
+            id="tools-palette-dock"
+            className={row ? `${styles.paletteDock} ${styles.paletteDockRow}` : styles.paletteDock}
+            data-layout={row ? "row" : undefined}
+            style={style}
+        >
             <div id="tools-menu" className={styles.builtinStack}>
                 <div className={styles.menuStyle}>
                     <div className={styles.sectionHeader}>Built-in</div>
                     {coreGroups.map((group, i) => (
                         <Fragment key={`core-${i}`}>
                             {i > 0 && <div className={styles.divider} />}
-                            {renderGroup(group, `core-group-${i}`)}
+                            {renderGroup(group, `core-group-${i}`, "right", onPickTile)}
                         </Fragment>
                     ))}
                 </div>

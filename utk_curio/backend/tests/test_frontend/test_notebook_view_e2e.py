@@ -1,26 +1,32 @@
 """Playwright E2E: the notebook view shows a dataflow as a column of cells.
 
 The canvas bar's Canvas | Notebook switch shows the same nodes one under the
-other, in dataflow order, like a Jupyter notebook: each cell as tall as its
-code and its output, Play at its top left. The connections run in a bar to the
-right of the cells, between dots on each cell's right edge. Everything the
-canvas allows works there, and nothing about the view is saved: the dataflow
-keeps its canvas layout, and the view lives in the address (``?view=notebook``).
+other, in dataflow order, like a Jupyter notebook: each cell across the page
+and as tall as its code and its output, Play at its top left, its other tools
+showing under the pointer. The connections run in a bar to the right of the
+cells, between dots on each cell's right edge. There is no rail on the left: a
+(+) below each cell opens it as one row. Everything the canvas allows works
+there, and nothing about the view is saved: the dataflow keeps its canvas
+layout, and the view lives in the address (``?view=notebook``).
 
 What each test pins:
 
 * the switch lays the cells out in one column, in dataflow order, every cell
-  880 wide and as tall as its content, 16px apart and none overlapping, an
-  editor as tall as its lines, one arc per connection in the bar and no resize
-  handle on any cell;
+  spanning the page to the bar and as tall as its content, GAP apart and none
+  overlapping, an editor as tall as its lines, a (+) below each cell, one arc
+  per connection in the bar, no rail, no resize handle on any cell, and the
+  tools hidden until the pointer is over the cell;
 * a run shows a Python cell's code and output, and a Vega-Lite cell's spec and
   chart, together; the output grows its cell, the cells below move down by as
   much, and each arc still runs between its two dots;
 * the wheel scrolls the page over a cell's editor and over its output;
 * dragging between dots connects two cells, and select plus Delete removes the
   connection;
-* a tile dropped on the notebook becomes a cell, placed on the canvas past the
-  others and scrolled into view;
+* a (+) opens the rail as one row, and a click on a tile adds a cell that reads
+  the cell above the (+) and lands right under it, placed on the canvas past
+  the others and scrolled into view;
+* a tile dragged from that menu and dropped on the notebook becomes a cell,
+  placed on the canvas past the others and scrolled into view;
 * back on the canvas every node is where it was and the size it was, a save
   writes the canvas layout, and a reload keeps the view the address names.
 
@@ -70,20 +76,23 @@ EXTRA = "nbv-extra"
 TRANSFORM = "nbv-transform"
 CHART = "nbv-chart"
 
-#: Where each node sits on the canvas. EXTRA reads from nothing, so it is the
-#: second cell (after the other node nothing feeds) until a test connects it.
+#: Where each node sits on the canvas. EXTRA reads from nothing and feeds
+#: nothing, so it comes after PRODUCER's chain.
 CANVAS = {
     PRODUCER: (0, 0),
     TRANSFORM: (700, 0),
     CHART: (1400, 0),
     EXTRA: (700, 600),
 }
-#: Dataflow order: the nodes nothing feeds, in the spec's order, then the rest.
-ORDER = [PRODUCER, EXTRA, TRANSFORM, CHART]
+#: Dataflow order: each node nothing feeds, in the spec's order, followed by
+#: the chain it feeds.
+ORDER = [PRODUCER, TRANSFORM, CHART, EXTRA]
 
-CELL_WIDTH = 880
-#: Space between two cells, in pixels.
-GAP = 16
+#: Space between two cells, in pixels, which holds the (+) that adds a cell.
+GAP = 24
+#: The page's left margin and the bar on its right: the cells span between them.
+MARGIN = 24
+BAR_WIDTH = 176
 
 #: Six lines, against EXTRA's one: PRODUCER's cell is the taller.
 PRODUCER_CODE = (
@@ -232,37 +241,57 @@ def _show(page, view: str) -> None:
 
 
 #: Each cell as the page draws it: where it is on the screen, and its own box's
-#: width. Null for a cell not drawn yet.
-_CELLS_JS = """(ids) => ids.map((id) => {
-    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
-    const box = document.getElementById(`${id}resizable`);
-    if (!node || !box) return null;
-    const r = node.getBoundingClientRect();
-    return {id, x: r.x, top: r.top, bottom: r.bottom, height: r.height, width: box.offsetWidth};
-})"""
+#: width, with where the page's left edge is and how wide a cell spanning it to
+#: the bar is. Null for a cell not drawn yet.
+_CELLS_JS = """([ids, margin, bar]) => {
+    const page = document.querySelector('.curio-flow-scroller');
+    const left = page ? page.getBoundingClientRect().left : 0;
+    const span = page ? page.clientWidth - bar - margin : 0;
+    return ids.map((id) => {
+        const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+        const box = document.getElementById(`${id}resizable`);
+        if (!node || !box) return null;
+        const r = node.getBoundingClientRect();
+        return {id, x: r.x - left, top: r.top, bottom: r.bottom, height: r.height, width: box.offsetWidth, span};
+    });
+}"""
 
-#: The cells as one column in the order given: one x, every box the cell width,
-#: each GAP below the one above, so none overlaps another.
+#: The cells as one column in the order given, spanning the page from its left
+#: margin to the bar, each GAP below the one above, so none overlaps another.
 _COLUMN_HOLDS_JS = (
-    "([ids, width, gap]) => { const cells = (" + _CELLS_JS + ")(ids);"
+    "([ids, margin, bar, gap]) => { const cells = (" + _CELLS_JS + ")([ids, margin, bar]);"
     " return cells.every((c) => !!c) && cells.every((c, k) =>"
-    " c.width === width && c.height > 0 && Math.abs(c.x - cells[0].x) < 0.5"
+    " Math.abs(c.width - c.span) <= 1 && c.height > 0 && Math.abs(c.x - margin) <= 1"
     " && (k === 0 || Math.abs(c.top - cells[k - 1].bottom - gap) <= 1)); }"
 )
 
 
+def _cells(page, ids: list[str]) -> list[dict]:
+    return page.evaluate(_CELLS_JS, [ids, MARGIN, BAR_WIDTH])
+
+
 def _wait_for_column(page, ids: list[str], *, timeout_ms: int = 20000) -> list[dict]:
-    """The cells once they stand in one column, each GAP below the one above.
-    React Flow measures a cell a frame or more after it changes, and the column
-    follows the measurement, so the relation is waited for, not read once."""
+    """The cells once they stand in one column across the page, each GAP below
+    the one above. React Flow measures a cell a frame or more after it changes,
+    and the column follows the measurement, so the relation is waited for, not
+    read once."""
     try:
-        page.wait_for_function(_COLUMN_HOLDS_JS, arg=[ids, CELL_WIDTH, GAP], timeout=timeout_ms)
+        page.wait_for_function(_COLUMN_HOLDS_JS, arg=[ids, MARGIN, BAR_WIDTH, GAP], timeout=timeout_ms)
     except PlaywrightTimeoutError:
         raise AssertionError(
-            f"the cells never stood in one column of {CELL_WIDTH}-wide cells {GAP}px apart, "
-            f"in the order {ids}: {page.evaluate(_CELLS_JS, ids)}"
+            f"the cells never stood in one column from the page's {MARGIN}px margin to the "
+            f"{BAR_WIDTH}px bar, {GAP}px apart, in the order {ids}: {_cells(page, ids)}"
         ) from None
-    return page.evaluate(_CELLS_JS, ids)
+    return _cells(page, ids)
+
+
+#: How visible a cell's tools (its tabs, Save output, info, pin, comments,
+#: delete) are: the computed opacity of the group holding its Delete button.
+_TOOLS_OPACITY_JS = """(id) => {
+    const del = document.querySelector(`[id="${id}resizable"] [title="Delete node"]`);
+    const tools = del && del.closest('.curio-cell-tools');
+    return tools ? Number(getComputedStyle(tools).opacity) : null;
+}"""
 
 
 #: A code cell's Monaco editor: its lines, the ones it shows, and whether its
@@ -394,8 +423,10 @@ def test_the_switch_shows_the_dataflow_as_a_column_of_cells(
             f"{node_id} lost its canvas spot: {placed[node_id]}"
         )
 
-    # One column, in dataflow order, every cell 880 wide and as tall as its
-    # content, GAP apart, none over another.
+    # No rail down the left edge: the cells take the page's width.
+    expect(page.locator("#tools-palette-dock")).to_have_count(0)
+    # One column, in dataflow order, every cell spanning the page and as tall
+    # as its content, GAP apart, none over another.
     cells = {c["id"]: c for c in _wait_for_column(page, ORDER)}
     assert cells[EXTRA]["height"] < cells[PRODUCER]["height"], (
         f"EXTRA's one-line cell is not shorter than PRODUCER's six-line one: {cells}"
@@ -420,6 +451,11 @@ def test_the_switch_shows_the_dataflow_as_a_column_of_cells(
         expect(cell.locator(".react-flow__handle-top")).to_have_count(0)
         expect(page.locator(f'[id="{node_id}resizer"]')).to_have_count(0)
 
+    # A (+) in the gap below every cell, the last one's included.
+    adds = page.locator("[data-curio-add-after]")
+    expect(adds).to_have_count(len(ORDER))
+    assert sorted(adds.nth(k).get_attribute("data-curio-add-after") for k in range(len(ORDER))) == sorted(ORDER)
+
     # One arc per connection, all of it in the bar right of the cells.
     cells_right = page.locator(f'[id="{PRODUCER}resizable"]').bounding_box()
     edges = page.locator(".react-flow__edge")
@@ -434,6 +470,21 @@ def test_the_switch_shows_the_dataflow_as_a_column_of_cells(
     save_workflow_test_screenshot(
         page, SCREENSHOT_STEM, test_name="notebook_view__top", fit_reactflow=False,
     )
+
+    # A cell's tools stay out of sight until the pointer is over the cell: Play,
+    # the title and the status always show, the rest only then.
+    assert page.evaluate(_TOOLS_OPACITY_JS, EXTRA) == 0, "EXTRA's tools show while nothing points at it"
+    header = page.locator(f'[id="{EXTRA}resizable"] .curio-cell-header')
+    box = header.bounding_box()
+    assert box, "EXTRA's cell has no header"
+    page.mouse.move(box["x"] + box["width"] / 3, box["y"] + box["height"] / 2)
+    try:
+        page.wait_for_function(f"() => ({_TOOLS_OPACITY_JS})({EXTRA!r}) === 1", timeout=5000)
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"EXTRA's tools did not show under the pointer: opacity {page.evaluate(_TOOLS_OPACITY_JS, EXTRA)}"
+        ) from None
+    expect(page.locator(f'[id="{EXTRA}resizable"] svg.fa-circle-play')).to_be_visible()
 
 
 def test_a_run_shows_each_cells_input_and_output_together(
@@ -537,16 +588,17 @@ def test_connections_are_made_and_removed_in_the_bar(
     _enter(page, app_frontend, current_server, prefix="nbv_connect")
     _show(page, "notebook")
 
-    # EXTRA's output dot and the next cell's free input circle (TRANSFORM is
-    # wired on circle 0), both in view and clear of the bar fixed over the top
-    # of the page. Feeding TRANSFORM a second input leaves the order as it is,
-    # so neither cell moves while the test works on them.
-    out_dot = page.locator(f'.react-flow__node[data-id="{EXTRA}"] .react-flow__handle[data-handleid="out"]')
+    # PRODUCER's output dot and the next cell's free input circle (TRANSFORM is
+    # wired on circle 0, from PRODUCER), both in view and clear of the bar fixed
+    # over the top of the page. A second connection between the same two cells
+    # leaves the order as it is, so neither cell moves while the test works on
+    # them.
+    out_dot = page.locator(f'.react-flow__node[data-id="{PRODUCER}"] .react-flow__handle[data-handleid="out"]')
     box = out_dot.bounding_box()
     assert box, "the cell has no output dot"
     _scroll_to(page, max(0, _scroll_top(page) + box["y"] - 300))
 
-    edge_id = connect_nodes(page, EXTRA, TRANSFORM, target_handle="in_1")
+    edge_id = connect_nodes(page, PRODUCER, TRANSFORM, target_handle="in_1")
     arc = page.locator(f'.react-flow__edge[data-testid="rf__edge-{edge_id}"]')
     expect(arc).to_have_count(1)
     expect(page.locator(".react-flow__edge")).to_have_count(3)
@@ -580,6 +632,89 @@ def test_connections_are_made_and_removed_in_the_bar(
     expect(page.locator(".react-flow__edge")).to_have_count(2)
 
 
+def test_a_plus_below_a_cell_adds_a_cell_that_reads_it(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, prefix="nbv_plus")
+    _show(page, "notebook")
+    _wait_for_column(page, ORDER)
+    before = {n for n in _positions(page)}
+
+    # The (+) below TRANSFORM opens the rail as one row: every node tile on one
+    # line, with the catalogs and Run All.
+    page.locator(f'[data-curio-add-after="{TRANSFORM}"]').click()
+    menu = page.locator('#tools-palette-dock[data-layout="row"]')
+    expect(menu).to_be_visible()
+    tops = page.evaluate(
+        """() => [...document.querySelectorAll('#tools-menu [draggable="true"]')]
+            .map((tile) => Math.round(tile.getBoundingClientRect().top))"""
+    )
+    assert len(tops) > 5 and max(tops) - min(tops) <= 2, f"the node tiles are not in one row: {tops}"
+    expect(menu.get_by_role("button", name="Run all nodes")).to_be_visible()
+    # The tiles, the four catalogs and Run All on one line: no part starts
+    # below where another ends.
+    parts = page.evaluate(
+        """() => [...document.querySelector('#tools-menu').children].map((el) => {
+            const r = el.getBoundingClientRect();
+            return [Math.round(r.top), Math.round(r.bottom), el.className];
+        })"""
+    )
+    assert len(parts) >= 6 and max(p[0] for p in parts) < min(p[1] for p in parts), (
+        f"the menu's tiles, catalogs and Run All are not on one line: {parts}"
+    )
+    save_workflow_test_screenshot(
+        page, SCREENSHOT_STEM, test_name="notebook_view__add_menu", fit_reactflow=False,
+    )
+
+    # A click on a tile, no drag: the node is added and the menu closes.
+    menu.locator("#tile-data-transformation").click()
+    expect(page.locator("#tools-palette-dock")).to_have_count(0)
+    page.wait_for_function(
+        "(count) => window.__curio_reactFlow.getNodes().length === count",
+        arg=len(before) + 1,
+        timeout=10000,
+    )
+    new_id = next(n for n in _positions(page) if n not in before)
+
+    # Its cell reads TRANSFORM's output, and it is a cell like the others,
+    # stamped with a canvas spot past every node: right under TRANSFORM, where
+    # the (+) was, with CHART (which TRANSFORM fed first) moved down below it.
+    page.wait_for_function(
+        """(id) => !!window.__curio_reactFlow.getNodes().find((node) => node.id === id)""",
+        arg=new_id,
+        timeout=10000,
+    )
+    order = [PRODUCER, TRANSFORM, new_id, CHART, EXTRA]
+    try:
+        page.wait_for_function(
+            "([id, above]) => window.__curio_reactFlow.getEdges().some((e) => e.source === above && e.target === id)",
+            arg=[new_id, TRANSFORM],
+            timeout=10000,
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(f"the added cell {new_id} does not read TRANSFORM's output") from None
+    _wait_for_column(page, order)
+    assert _positions(page)[new_id]["canvas"], "the added cell has no canvas spot stamped"
+    placed = _positions(page)[new_id]
+    max_x = max(x for x, _ in CANVAS.values())
+    max_y = max(y for _, y in CANVAS.values())
+    assert placed["canvas"] == {"x": max_x + 800, "y": max_y}, placed
+    # Scrolled into view below the bar.
+    page.wait_for_function(
+        """(id) => {
+            const el = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+            const bar = document.querySelector('header[data-curio-menu-bar]');
+            if (!el || !bar) return false;
+            const top = el.getBoundingClientRect().top;
+            return top >= bar.getBoundingClientRect().bottom - 1 && top < window.innerHeight - 100;
+        }""",
+        arg=new_id,
+        timeout=10000,
+    )
+
+
 def test_a_tile_dropped_on_the_notebook_becomes_a_cell_in_view(
     app_frontend: "FrontendPage", current_server, page,
 ):
@@ -588,6 +723,9 @@ def test_a_tile_dropped_on_the_notebook_becomes_a_cell_in_view(
     _enter(page, app_frontend, current_server, prefix="nbv_drop")
     _show(page, "notebook")
 
+    # The tiles are in the menu a (+) opens; one can still be dragged out.
+    page.locator(f'[data-curio-add-after="{EXTRA}"]').click()
+    expect(page.locator('#tools-palette-dock[data-layout="row"]')).to_be_visible()
     new_id = drag_to_canvas(page, page.locator("#tile-data-transformation"))
 
     # The node exists once the drop lands; it becomes a cell, stamped and

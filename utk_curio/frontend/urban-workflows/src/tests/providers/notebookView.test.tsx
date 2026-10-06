@@ -94,6 +94,7 @@ import { useNotebookViewContext } from '../../providers/flow/notebookViewContext
 import { usePosition } from '../../hook/usePosition';
 import { TrillGenerator } from '../../TrillGenerator';
 import { CURIO_UNIVERSAL_NODE_TYPE } from '../../constants';
+import { NOTEBOOK_CELL_GAP } from '../../utils/notebookLayout';
 
 type XY = { x: number; y: number };
 
@@ -343,8 +344,8 @@ describe('the notebook view shows the nodes as cells', () => {
     // React Flow measures each cell and reports its size through onNodesChange.
     await measure({ a: 180, b: 300, c: 240 });
     const top = (id: string) => node(id).position.y;
-    expect(top('b') - top('a')).toBe(180 + 16);
-    expect(top('c') - top('b')).toBe(300 + 16);
+    expect(top('b') - top('a')).toBe(180 + NOTEBOOK_CELL_GAP);
+    expect(top('c') - top('b')).toBe(300 + NOTEBOOK_CELL_GAP);
     const before = { a: top('a'), b: top('b'), c: top('c') };
     const context = notebook;
 

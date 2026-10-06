@@ -566,7 +566,7 @@ function CodeEditor({
                 onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
                 onLoadColumns={onLoadColumns}
             />
-            <div style={{ flex: 2, minHeight: 0, ...editorHeight.wrapperStyle }}>
+            <div className={editorHeight.wrapperClassName} style={{ flex: 2, minHeight: 0, ...editorHeight.wrapperStyle }}>
                 {/* Uncontrolled on purpose: a per-keystroke `value` round-trip
                     lets a render that lands with a stale string do a full-model
                     replace — dropping characters and throwing the cursor to the
@@ -594,6 +594,8 @@ function CodeEditor({
                         // zooming, as before. Monaco reads this option only when
                         // the editor is created, so it is not tied to the view.
                         scrollbar: { alwaysConsumeMouseWheel: false },
+                        // In a notebook cell, a plain input box.
+                        ...editorHeight.editorOptions,
                     }}
                 />
             </div>
@@ -618,7 +620,9 @@ function CodeEditor({
                     // scroll clear of the strip. In a notebook cell the strip
                     // sits under the box instead.
                     padding: output.code === "error" && !inCell ? "4px 8px 32px" : "4px 8px",
-                    ...(inCell ? { flex: "none", maxHeight: `${NOTEBOOK_OUTPUT_MAX}px`, backgroundColor: "#ffffff" } : {}),
+                    // In a notebook cell the output is plain text under the
+                    // input box, with no rule above it.
+                    ...(inCell ? { flex: "none", maxHeight: `${NOTEBOOK_OUTPUT_MAX}px`, backgroundColor: "#ffffff", borderTop: "none", padding: "6px 8px 0" } : {}),
                     fontSize: "11px",
                     fontFamily: "'Source Code Pro', Consolas, 'Courier New', monospace",
                     whiteSpace: "pre-wrap",

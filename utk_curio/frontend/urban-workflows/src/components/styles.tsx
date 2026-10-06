@@ -91,6 +91,7 @@ import { useCode } from "../hook/useCode";
 import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
 import { NodeRunControls } from "./nodes/NodeRunControls";
+import { CellHeaderSlotContext } from "./editing/cellHeaderSlot";
 import { resolveSaveOutputDataset, showsSaveOutputToggle } from "../utils/saveOutputDataset";
 import { nodeRunStatus, nodeRunError } from "../utils/nodeRunStatus";
 import { hasNodeDescription } from "../utils/nodeDescription";
@@ -496,6 +497,8 @@ export const NodeContainer = ({
     const suggestionActive = data.suggestionType != "none" && data.suggestionType != undefined;
     // A notebook cell's header also holds Play, so it is a little taller.
     const nodeHeaderBandPx = notebookCell ? 36 : 28;
+    // Where a cell's header holds the editor's tab switchers (cellHeaderSlot).
+    const [tabSlot, setTabSlot] = useState<HTMLElement | null>(null);
     // Play, the Save output toggle and the status: in the canvas's bottom row,
     // or in a notebook cell's header. The same controls either way.
     const runControls = {
@@ -639,6 +642,61 @@ export const NodeContainer = ({
         event.stopPropagation();
     };
 
+    // The header's icons: inline on the canvas; among a notebook cell's tools,
+    // which show while the pointer is over the cell or it is selected.
+    const headerIcons = (
+        <>
+        {/* Right-side action icons */}
+        {/* The node's own documentation. ``DescriptionModal`` was
+            already implemented and already mounted for every node,
+            and ``promptDescription`` was already threaded down to
+            here -- destructured at the top of this component and
+            then never called. So every kind's manifest description
+            shipped unreachable (#225). This is the trigger.
+
+            Generic on purpose: Spatial Join is the kind the issue
+            names, but the fix is one button that any kind with a
+            description gets, rather than help bolted onto one node. */}
+        {hasNodeDescription(packageDescriptor) ? (
+            <HeaderIconButton
+                icon={faCircleInfo}
+                style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
+                title={`About ${headerKindLabel}`}
+                onActivate={promptDescription}
+            />
+        ) : null}
+        <HeaderIconButton
+            icon={pinnedToDashboard ? faCircleDot : faCircle}
+            style={{
+                ...headerIconStyle,
+                color: pinnedToDashboard ? "red" : (data.keywordHighlighted ? "rgb(251, 252, 246)" : "#888787"),
+            }}
+            title={pinnedToDashboard ? "Unpin from dashboard" : "Pin to dashboard"}
+            onActivate={() => updatePin(nodeId, pinnedToDashboard)}
+        />
+        <HeaderIconButton
+            icon={faComments}
+            style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
+            title="Comments"
+            onActivate={() => setShowComments(!showComments)}
+        />
+        <HeaderIconButton
+            icon={faXmark}
+            style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
+            title="Delete node"
+            onActivate={onDelete}
+        />
+        {updateTemplate != undefined && code != undefined && templateData.id != undefined && templateData.custom && code != templateData.code ? (
+            <HeaderIconButton
+                icon={faFloppyDisk}
+                style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
+                title="Save template"
+                onActivate={() => updateTemplate({ ...templateData, code: code })}
+            />
+        ) : null}
+        </>
+    );
+
     return (
         <>
 
@@ -721,7 +779,8 @@ export const NodeContainer = ({
             <div
                 ref={resizableRef}
                 id={nodeId + "resizable"}
-                className={"resizable"}
+                // A notebook cell's tools show while it is hovered or selected (Node.css).
+                className={notebookCell ? `resizable curio-notebook-cell${isNodeSelected ? " is-selected" : ""}` : "resizable"}
                 data-curio-node-status={nodeRunStatus(output)}
                 data-curio-node-error={nodeRunError(output)}
                 onDragOver={onDatasetDragOver}
@@ -777,12 +836,13 @@ export const NodeContainer = ({
 
                 {!noContent && !dashboardOn ? (
                     <>
-                        <div style={{
+                        <div className={notebookCell ? "curio-cell-header" : undefined} style={{
                         display: "flex",
                         alignItems: "center",
                         height: `${nodeHeaderBandPx}px`,
                         marginBottom: "1px",
-                        borderBottom: "1px solid rgba(107, 107, 107, 0.3)",
+                        // A notebook cell's header has no rule under it.
+                        borderBottom: notebookCell ? "none" : "1px solid rgba(107, 107, 107, 0.3)",
                         gap: "4px",
                         padding: "0 4px",
                         boxSizing: "border-box",
@@ -851,65 +911,26 @@ export const NodeContainer = ({
                             />
                         ) : null}
 
-                        {/* A notebook cell's run status and Save output toggle,
-                            at the right before its icons, which this pushes
-                            right. */}
+                        {/* A notebook cell's run status, at the right, which
+                            pushes its tools (the editor's tabs, Save output and
+                            the icons) right after it. */}
                         {notebookCell ? (
-                            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+                            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", flexShrink: 0 }}>
                                 {sendCodeToWidgets != undefined ? (
-                                    <NodeRunControls {...runControls} part="state" />
+                                    <NodeRunControls {...runControls} part="status" />
                                 ) : null}
                             </span>
                         ) : null}
 
-                        {/* Right-side action icons */}
-                        {/* The node's own documentation. ``DescriptionModal`` was
-                            already implemented and already mounted for every node,
-                            and ``promptDescription`` was already threaded down to
-                            here -- destructured at the top of this component and
-                            then never called. So every kind's manifest description
-                            shipped unreachable (#225). This is the trigger.
-
-                            Generic on purpose: Spatial Join is the kind the issue
-                            names, but the fix is one button that any kind with a
-                            description gets, rather than help bolted onto one node. */}
-                        {hasNodeDescription(packageDescriptor) ? (
-                            <HeaderIconButton
-                                icon={faCircleInfo}
-                                style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
-                                title={`About ${headerKindLabel}`}
-                                onActivate={promptDescription}
-                            />
-                        ) : null}
-                        <HeaderIconButton
-                            icon={pinnedToDashboard ? faCircleDot : faCircle}
-                            style={{
-                                ...headerIconStyle,
-                                color: pinnedToDashboard ? "red" : (data.keywordHighlighted ? "rgb(251, 252, 246)" : "#888787"),
-                            }}
-                            title={pinnedToDashboard ? "Unpin from dashboard" : "Pin to dashboard"}
-                            onActivate={() => updatePin(nodeId, pinnedToDashboard)}
-                        />
-                        <HeaderIconButton
-                            icon={faComments}
-                            style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
-                            title="Comments"
-                            onActivate={() => setShowComments(!showComments)}
-                        />
-                        <HeaderIconButton
-                            icon={faXmark}
-                            style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
-                            title="Delete node"
-                            onActivate={onDelete}
-                        />
-                        {updateTemplate != undefined && code != undefined && templateData.id != undefined && templateData.custom && code != templateData.code ? (
-                            <HeaderIconButton
-                                icon={faFloppyDisk}
-                                style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
-                                title="Save template"
-                                onActivate={() => updateTemplate({ ...templateData, code: code })}
-                            />
-                        ) : null}
+                        {notebookCell ? (
+                            <span className="curio-cell-tools" style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
+                                <span ref={setTabSlot} className="curio-cell-tabs" style={{ display: "flex" }} />
+                                {sendCodeToWidgets != undefined ? (
+                                    <NodeRunControls {...runControls} part="save" />
+                                ) : null}
+                                {headerIcons}
+                            </span>
+                        ) : headerIcons}
                     </div>
                     </>
                 ) : null}
@@ -922,7 +943,9 @@ export const NodeContainer = ({
                     marginRight: "auto",
                     ...(notebookCell ? { paddingBottom: "8px" } : {}),
                 }}>
-                    {children}
+                    <CellHeaderSlotContext.Provider value={notebookCell ? tabSlot : null}>
+                        {children}
+                    </CellHeaderSlotContext.Provider>
                 </div>
 
                 {/* A notebook cell has its run controls in its header. */}
@@ -1144,9 +1167,10 @@ export const getNodeContainerStyles = (
     }
 
     if (state.notebookCell) {
-        // A notebook cell is a flat card on a white page, as a Jupyter cell is:
-        // a light hairline, no shadow, and the kind's stripe on the left. A
-        // selected cell is ringed in its kind's color.
+        // A notebook cell sits on a white page with no outline or shadow, as a
+        // Jupyter cell does: only the kind's stripe on the left. A selected cell
+        // is ringed in its kind's color. The other sides keep a transparent
+        // hairline, so `.resizable`'s own border never shows.
         return {
             ...base,
             borderRadius: "8px",
@@ -1159,9 +1183,9 @@ export const getNodeContainerStyles = (
             borderRightWidth: "1px",
             borderBottomWidth: "1px",
             borderLeftWidth: "4px",
-            borderTopColor: "var(--curio-border)",
-            borderRightColor: "var(--curio-border)",
-            borderBottomColor: "var(--curio-border)",
+            borderTopColor: "transparent",
+            borderRightColor: "transparent",
+            borderBottomColor: "transparent",
             borderLeftColor: accent,
         };
     }

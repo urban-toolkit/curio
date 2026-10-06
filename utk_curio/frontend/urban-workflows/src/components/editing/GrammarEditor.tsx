@@ -269,7 +269,7 @@ export default function GrammarEditor({
                 onLoadColumns={onLoadColumns}
                 layerChips
             />
-            <div style={{ flex: 1, minHeight: 0, ...editorHeight.wrapperStyle }}>
+            <div className={editorHeight.wrapperClassName} style={{ flex: 1, minHeight: 0, ...editorHeight.wrapperStyle }}>
                 {/* Uncontrolled on purpose: a per-keystroke `value` round-trip
                     lets a render that lands with a stale string do a full-model
                     replace — resetting content and throwing the cursor to the
@@ -295,6 +295,8 @@ export default function GrammarEditor({
                         // on to the page, and `nowheel` on the wrapper keeps the
                         // canvas from zooming. Read only at creation.
                         scrollbar: { alwaysConsumeMouseWheel: false },
+                        // In a notebook cell, a plain input box.
+                        ...editorHeight.editorOptions,
                     }}
                 />
             </div>

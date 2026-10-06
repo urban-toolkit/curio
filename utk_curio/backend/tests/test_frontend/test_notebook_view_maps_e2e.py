@@ -97,7 +97,13 @@ def test_every_autark_map_draws_in_its_cell(
         timeout=20000,
     )
 
+    # The notebook view has no rail: Run All is in the menu a (+) opens, which
+    # stays open while the run goes.
+    page.locator("[data-curio-add-after]").last.click()
+    expect(page.locator('#tools-palette-dock[data-layout="row"]')).to_be_visible()
     run_all_and_wait(page, timeout_ms=RUN_MS)
+    page.keyboard.press("Escape")
+    expect(page.locator("#tools-palette-dock")).to_have_count(0)
 
     for map_id in maps:
         node_locator(page, map_id).scroll_into_view_if_needed()

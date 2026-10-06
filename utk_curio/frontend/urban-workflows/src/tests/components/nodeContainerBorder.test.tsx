@@ -106,16 +106,17 @@ describe("getNodeContainerStyles", () => {
     expect(versioned.borderLeftColor).toBe(plain.borderLeftColor);
   });
 
-  test("draws a notebook cell as a flat white card that keeps its kind's stripe", () => {
+  test("draws a notebook cell with no outline or shadow, keeping only its kind's stripe", () => {
     const canvas = getNodeContainerStyles("curio.builtin/vis-vega@1", { category: "vis_grammar" });
     const cell = getNodeContainerStyles("curio.builtin/vis-vega@1", { category: "vis_grammar", notebookCell: true });
     expect(cell.backgroundColor).toBe("#ffffff");
     expect(cell.borderRadius).toBe("8px");
     expect(cell.boxShadow).toBe("none");
     for (const side of ["Top", "Right", "Bottom"] as const) {
+      // A transparent hairline: `.resizable`'s own #ccc border must not show.
       expect(cell[`border${side}Width`]).toBe("1px");
       expect(cell[`border${side}Style`]).toBe("solid");
-      expect(cell[`border${side}Color`]).toBe("var(--curio-border)");
+      expect(cell[`border${side}Color`]).toBe("transparent");
     }
     expect(cell.borderLeftWidth).toBe("4px");
     expect(cell.borderLeftColor).toBe(canvas.borderLeftColor);

@@ -1,7 +1,7 @@
 // A node's run controls: Play, the Save output toggle and the run status. The
 // canvas draws all three in the node's bottom row; a notebook cell draws Play
-// first in its header and the toggle and the status at the header's right.
-// One component for both, so both run the same code.
+// first in its header, the status at the header's right, and the toggle among
+// the cell's tools. One component for both, so both run the same code.
 import React from "react";
 import { Spinner } from "react-bootstrap";
 import Col from "react-bootstrap/Col";
@@ -15,10 +15,10 @@ import { SaveOutputToggle } from "./SaveOutputToggle";
 export interface NodeRunControlsProps {
     nodeId: string;
     /**
-     * Which controls: all three in the canvas's bottom row (the default), Play
-     * alone, or the toggle and the status (a notebook cell's header).
+     * Which controls: all three in the canvas's bottom row (the default), or
+     * one of them alone (a notebook cell's header).
      */
-    part?: "row" | "play" | "state";
+    part?: "row" | "play" | "status" | "save";
     disablePlay: boolean;
     isLoading: boolean;
     output?: ICodeData;
@@ -115,14 +115,8 @@ export function NodeRunControls({
     ) : null;
 
     if (part === "play") return play;
-    if (part === "state") {
-        return (
-            <>
-                {status}
-                {toggle}
-            </>
-        );
-    }
+    if (part === "status") return status;
+    if (part === "save") return toggle;
     return (
         <Row style={{gap: "8px", paddingRight: 0}}>
             {play ?

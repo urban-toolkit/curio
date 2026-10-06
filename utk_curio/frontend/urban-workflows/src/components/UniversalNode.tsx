@@ -3,7 +3,6 @@ import CSS from "csstype";
 import { Handle, Edge, Position, useEdges, useUpdateNodeInternals } from 'reactflow';
 import { useNotebookViewContext } from '../providers/flow/notebookViewContext';
 import {
-  NOTEBOOK_CELL_WIDTH,
   notebookCellMinHeight,
   notebookHandlePlaces,
   notebookInputLabel,
@@ -120,7 +119,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const disablePlay = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
 
   const { signalNodeExecDone, dashboardOn, projectId, edges: flowEdges, isRunActive, serverRunActive, nodes: flowNodes } = useFlowContext();
-  // In the notebook view the node is a cell: the column's width and as tall as
+  // In the notebook view the node is a cell: the page's width and as tall as
   // its content, its dots on the right edge where the bar draws its
   // connections, no cardinality markers.
   const notebook = useNotebookViewContext();
@@ -470,11 +469,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             ? (data.dashboardHeight ?? DASHBOARD_TILE_DEFAULT_HEIGHT)
             : (data.nodeHeight ?? adapter.container.nodeHeight)
         }
-        // A notebook cell has the column's width and its content's height, at
+        // A notebook cell has the page's width and its content's height, at
         // least enough for its dots, passed on its own: the node's size props
         // stay its canvas size, so the node keeps that size when the canvas
         // comes back, and like a tile a cell never writes its size into the node.
-        cellBox={notebookOn ? { width: NOTEBOOK_CELL_WIDTH, minHeight: notebookCellMinHeight(dots) } : undefined}
+        cellBox={notebookOn ? { width: notebook.cellWidth, minHeight: notebookCellMinHeight(dots) } : undefined}
         styles={adapter.container.styles as CSS.Properties<0 | (string & {}), string & {}> | undefined}
         disablePlay={disablePlay}
         output={output}

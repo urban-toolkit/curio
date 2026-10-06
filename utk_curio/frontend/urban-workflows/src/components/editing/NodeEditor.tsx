@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import Tab from "react-bootstrap/Tab";
 import Tabs from "react-bootstrap/Tabs";
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -34,6 +35,7 @@ import { useNotebookViewContext } from "../../providers/flow/notebookViewContext
 import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
 import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
 import { notebookOutputBox } from "../../utils/notebookLayout";
+import { useCellHeaderSlot } from "./cellHeaderSlot";
 import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
 import {
     describeEmptyInputs,
@@ -333,13 +335,17 @@ function NodeEditor({
         justifyContent: "center",
     };
 
-    // The tab pills: under the panes on the canvas, above the input in a
-    // notebook cell, as a notebook puts a cell's toolbar.
+    // The tab pills: under the panes on the canvas. In a notebook cell they are
+    // among the cell's tools in its header (cellHeaderSlot, styled by
+    // `.curio-cell-tabs` in Node.css), or above the input when the cell has no
+    // header to hold them.
+    const tabSlot = useCellHeaderSlot();
+    const pillsInHeader = inCell && tabSlot !== null;
     const pills = !dashboardOn ? (
         <Nav
             variant="pills"
             className="flex-column"
-            style={{
+            style={pillsInHeader ? { background: "none", margin: 0 } : {
                 backgroundColor: "#f2f2f2",
                 borderRadius: "10px",
                 width: inCell ? "40%" : "75%",
@@ -478,7 +484,8 @@ function NodeEditor({
                 }}
             >
                 <Tab.Container activeKey={effectiveTab} onSelect={handleTabSelect}>
-                    {inCell && pills}
+                    {inCell && !pillsInHeader && pills}
+                    {pillsInHeader && pills ? createPortal(pills, tabSlot!) : null}
                     {/* No gutter: its negative margins pulled every pane out of
                         the node body, under the port markers (#668). */}
                     <Row className="g-0" style={inCell ? undefined : { height: "100%" }}>

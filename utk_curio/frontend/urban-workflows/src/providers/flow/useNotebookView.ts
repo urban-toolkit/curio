@@ -303,8 +303,8 @@ export function useNotebookView({
     }, []);
 
     const notebookViewValue = useMemo<NotebookViewValue>(
-        () => ({ on: notebookOn, laneX, reveal: revealNodes }),
-        [notebookOn, laneX, revealNodes],
+        () => ({ on: notebookOn, laneX, cellWidth: layout.cellWidth, reveal: revealNodes }),
+        [notebookOn, laneX, layout.cellWidth, revealNodes],
     );
 
     return {
@@ -312,6 +312,8 @@ export function useNotebookView({
         setCanvasView,
         notebookOn,
         notebookContentHeight: layout.contentHeight,
+        notebookColumn: { x: layout.columnX, width: layout.cellWidth },
+        notebookAddPoints: layout.addPoints,
         notebookViewValue,
         setNotebookPane,
         registerNotebookScroller,

@@ -1,7 +1,7 @@
 /**
  * A node shown as a notebook cell (UniversalNode under the notebook view).
  *
- * The cell is the column's width and as tall as its content, at least tall
+ * The cell is the page's cell width and as tall as its content, at least tall
  * enough for its dots, passed apart from the node's own size, which stays its
  * canvas size so the node keeps it when the canvas comes back. Its dots sit on
  * its right edge where the bar draws the connections: inputs at fixed offsets
@@ -135,7 +135,10 @@ jest.mock("../../providers/CollaborationProvider", () => ({
 
 import UniversalNode from "../../components/UniversalNode";
 import { NotebookViewContext } from "../../providers/flow/notebookViewContext";
-import { notebookCellMinHeight, NOTEBOOK_CELL_WIDTH } from "../../utils/notebookLayout";
+import { notebookCellMinHeight } from "../../utils/notebookLayout";
+
+/** The page's cell width the view hands its cells. */
+const CELL_WIDTH = 1065;
 
 const data = { nodeId: "n1", nodeType: "curio.builtin/vis-vega", input: "", code: "{}" };
 
@@ -144,7 +147,7 @@ async function mount(on: boolean) {
   mockStripProps.length = 0;
   await act(async () => {
     render(
-      <NotebookViewContext.Provider value={{ on, laneX: new Map(), reveal: () => on }}>
+      <NotebookViewContext.Provider value={{ on, laneX: new Map(), cellWidth: CELL_WIDTH, reveal: () => on }}>
         <UniversalNode data={data} isConnectable />
       </NotebookViewContext.Provider>,
     );
@@ -155,7 +158,7 @@ const lastContainer = () => mockContainerProps[mockContainerProps.length - 1];
 const lastStrip = () => mockStripProps[mockStripProps.length - 1];
 
 describe("a node shown as a notebook cell", () => {
-  test("is the column's width and at least tall enough for its dots; its own size stays its canvas size", async () => {
+  test("is the page's cell width and at least tall enough for its dots; its own size stays its canvas size", async () => {
     await mount(true);
     const handles = [
       { id: "in", type: "target" as const },
@@ -164,7 +167,7 @@ describe("a node shown as a notebook cell", () => {
       { id: "in/out", type: "source" as const },
     ];
     // No fixed height: the cell grows with its code and output.
-    expect(lastContainer().cellBox).toEqual({ width: NOTEBOOK_CELL_WIDTH, minHeight: notebookCellMinHeight(handles) });
+    expect(lastContainer().cellBox).toEqual({ width: CELL_WIDTH, minHeight: notebookCellMinHeight(handles) });
     // The size props feed the node's own size state, which is what the canvas
     // shows when it comes back: the cell's size must never reach them.
     expect(lastContainer().nodeWidth).toBe(525);
