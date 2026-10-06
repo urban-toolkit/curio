@@ -93,9 +93,9 @@ describe("an input carrying several layers", () => {
     ],
   }];
 
-  test("in a Vega-Lite or Autark spec it opens to a tag per layer, each with its columns", () => {
+  test("it opens to a tag per layer, each with its columns, in code as in a spec", () => {
     const onInsert = jest.fn();
-    const view = render(<ReferenceStrip widgets={[]} inputs={layered} onInsert={onInsert} layerChips />);
+    const view = render(<ReferenceStrip widgets={[]} inputs={layered} onInsert={onInsert} />);
     fireEvent.click(screen.getByLabelText("Show the columns of input 0"));
     const layers = view.container.querySelectorAll("[data-layer-tag]");
     expect(Array.from(layers).map((t) => t.textContent)).toEqual(["table_osm_roads", "table_osm_buildings"]);
@@ -112,12 +112,15 @@ describe("an input carrying several layers", () => {
       .toMatch(/^Column of layer table_osm_roads of input 0, str\. /);
   });
 
-  test("in code it names its layers, with no layer tags", () => {
-    const view = render(<ReferenceStrip widgets={[]} inputs={layered} onInsert={jest.fn()} />);
+  test("a click on a layer tag inserts the layer chip; the input's tag stays the whole input", () => {
+    const onInsert = jest.fn();
+    const view = render(<ReferenceStrip widgets={[]} inputs={layered} onInsert={onInsert} />);
     fireEvent.click(screen.getByLabelText("Show the columns of input 0"));
-    expect(screen.getByText("This input carries the layers table_osm_roads, table_osm_buildings.")).toBeTruthy();
-    expect(view.container.querySelector("[data-layer-tag]")).toBeNull();
-    expect(view.container.querySelector("[data-column-tag]")).toBeNull();
+    fireEvent.click(view.container.querySelector('[data-layer-tag="table_osm_buildings"]')!);
+    expect(onInsert).toHaveBeenLastCalledWith("input 0:table_osm_buildings");
+    fireEvent.click(view.container.querySelector('[data-input-tag="0"]')!);
+    expect(onInsert).toHaveBeenLastCalledWith("input 0");
+    expect(screen.queryByText(/This input carries the layers/)).toBeNull();
   });
 });
 

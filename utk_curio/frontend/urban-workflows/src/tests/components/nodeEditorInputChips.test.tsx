@@ -95,6 +95,21 @@ test("a node without a Widgets tab runs its input chips as arg indexed", () => {
   expect(screen.getByTestId("replaced").textContent).toBe("return arg[1].length;");
 });
 
+test("a JavaScript node runs a layer chip as the call that picks the layer out of its input", () => {
+  const { play, setOutputCallback } = renderJsNode([{ path: "a" }, { path: "b" }]);
+  play("return [!! input 1:table_osm_roads !!].features.length;");
+  expect(screen.getByTestId("replaced").textContent).toBe('return curio_layer(arg[1], "table_osm_roads", 1).features.length;');
+  expect(setOutputCallback).not.toHaveBeenCalledWith(expect.objectContaining({ code: "error" }));
+});
+
+test("a Python node runs a layer chip as the call that picks the layer out of its input", () => {
+  const { play, setOutputCallback } = renderPythonNode([{ path: "a" }, { path: "b" }]);
+  play("roads = [!! input 0:table_osm_roads !!]\nreturn roads[[!! input 0:table_osm_roads.highway !!]]");
+  expect(screen.getByTestId("replaced").textContent)
+    .toBe('roads = curio_layer(arg[0], "table_osm_roads", 0)\nreturn roads["highway"]');
+  expect(setOutputCallback).not.toHaveBeenCalledWith(expect.objectContaining({ code: "error" }));
+});
+
 test("the strip above JavaScript code offers the inputs, named after their nodes", () => {
   renderJsNode([{ path: "a" }, { path: "b" }]);
   expect(screen.getByTestId("strip-inputs").textContent).toBe("0:Roads,1:Parcels");

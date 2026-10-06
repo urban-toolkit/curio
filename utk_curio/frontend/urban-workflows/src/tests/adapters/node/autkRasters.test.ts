@@ -16,6 +16,9 @@ import {
   RASTER_EXPORT_MISSING,
   framedRaster,
   loadGeoTiffParams,
+  RASTER_TRANSFER_FUNCTION,
+  bleedIntoClearCells,
+  recolorRasters,
   resolveRasterInputs,
   withRasterSources,
   type CurioRasterSource,
@@ -208,16 +211,52 @@ describe("withRasterSources", () => {
     await grammar.dataAdapter.resolveSource(db, { ...source, outputTableName: "input_1" });
 
     expect(db.getLayer).toBe(wrapped);
-    await db.getLayer("input_1");
     expect(db.getRaster).toHaveBeenCalledWith("input_1");
+    expect(await db.getLayer("input_1")).toEqual(framedRaster(RASTER));
   });
 
-  test("a database with no getRaster is named when the map asks for the raster", async () => {
+  test("a database with no getRaster is named when the raster is loaded", async () => {
     const { grammar } = fakeGrammar();
     const { getRaster: _missing, ...db } = fakeDb() as any;
     withRasterSources(grammar, jest.fn());
+    await expect(grammar.dataAdapter.resolveSource(db, source)).rejects.toThrow(RASTER_EXPORT_MISSING);
+  });
+
+  test("two maps loading a raster of the same name at once each draw their own", async () => {
+    // autk-db keeps raster cells in one store for the page, keyed by
+    // workspace and table: both nodes' input_0 is "autk.input_0".
+    const store = new Map<string, any>();
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const pageDb = (cells: string) => ({
+      loadGeoTiff: jest.fn(async () => { await tick(); store.set("autk.input_0", cells); await tick(); }),
+      // getRaster queries its table first, then reads the store.
+      getRaster: jest.fn(async () => { await tick(); return { ...RASTER, cells: store.get("autk.input_0") }; }),
+      getLayer: jest.fn(),
+    });
+    const heights = pageDb("heights");
+    const shadows = pageDb("shadows");
+    const first = fakeGrammar().grammar;
+    const second = fakeGrammar().grammar;
+    withRasterSources(first, jest.fn());
+    withRasterSources(second, jest.fn());
+
+    await Promise.all([
+      first.dataAdapter.resolveSource(heights, source),
+      second.dataAdapter.resolveSource(shadows, source),
+    ]);
+
+    expect((await heights.getLayer("input_0")).cells).toBe("heights");
+    expect((await shadows.getLayer("input_0")).cells).toBe("shadows");
+  });
+
+  test("a raster that fails to load does not hold up the next one", async () => {
+    const { grammar } = fakeGrammar();
+    const broken = { ...fakeDb(), loadGeoTiff: jest.fn().mockRejectedValue(new Error("bad tiff")) };
+    withRasterSources(grammar, jest.fn());
+    await expect(grammar.dataAdapter.resolveSource(broken, source)).rejects.toThrow("bad tiff");
+    const db = fakeDb();
     await grammar.dataAdapter.resolveSource(db, source);
-    await expect(db.getLayer("input_0")).rejects.toThrow(RASTER_EXPORT_MISSING);
+    expect(await db.getLayer("input_0")).toEqual(framedRaster(RASTER));
   });
 });
 
@@ -237,5 +276,119 @@ describe("framedRaster", () => {
     });
     // The raster handed to it is not changed.
     expect(raster.features).toHaveLength(1);
+  });
+});
+
+describe("recolorRasters", () => {
+  // A map as the grammar keeps it: its layers by id, and autk-map's updateColorMap.
+  function fakeMap(types: Record<string, string>) {
+    const layers: Record<string, any> = {};
+    for (const [id, typeLayer] of Object.entries(types)) {
+      layers[id] = { layerInfo: { typeLayer }, setTransferFunction: jest.fn() };
+    }
+    return {
+      layers,
+      layerManager: { searchByLayerId: (id: string) => layers[id] ?? null },
+      updateColorMap: jest.fn(),
+      updateRenderInfo: jest.fn(),
+    };
+  }
+
+  test("colors a raster's cells again in the scheme its layerRef names", () => {
+    const map = fakeMap({ input_0: "raster" });
+    const grammar = { _mapRegistry: new Map([["input_0", map]]) };
+    recolorRasters(grammar, {
+      map: { layerRefs: [{ dataRef: "input_0", getFnv: "band_1", colorMapInterpolator: "interpolateViridis" }] },
+    });
+    // From the layer's own config, which holds the scheme; the legend gets its domain.
+    expect(map.updateColorMap).toHaveBeenCalledWith("input_0", { colorMap: {} });
+    // Its legend stays, as the grammar turned it on.
+    expect(map.updateRenderInfo).not.toHaveBeenCalled();
+  });
+
+  test("draws every cell with a value opaque, as SCOUT does, before the cells are colored again", () => {
+    const map = fakeMap({ input_0: "raster" });
+    recolorRasters({ _mapRegistry: new Map([["input_0", map]]) }, {
+      map: { layerRefs: [{ dataRef: "input_0", colorMapInterpolator: "interpolateReds" }] },
+    });
+    const setTransfer = map.layers.input_0.setTransferFunction;
+    expect(setTransfer).toHaveBeenCalledWith(RASTER_TRANSFER_FUNCTION);
+    expect(RASTER_TRANSFER_FUNCTION).toEqual({ opacityMin: 1, opacityMax: 1 });
+    expect(setTransfer.mock.invocationCallOrder[0]).toBeLessThan(map.updateColorMap.mock.invocationCallOrder[0]);
+  });
+
+  test("a raster that names no scheme is drawn the same way, in autk-map's own reds", () => {
+    const map = fakeMap({ input_0: "raster" });
+    recolorRasters({ _mapRegistry: new Map([["input_0", map]]) }, {
+      map: { layerRefs: [{ dataRef: "input_0", getFnv: "band_1" }] },
+    });
+    expect(map.layers.input_0.setTransferFunction).toHaveBeenCalledWith(RASTER_TRANSFER_FUNCTION);
+    expect(map.updateColorMap).toHaveBeenCalledWith("input_0", { colorMap: {} });
+  });
+
+  test("its clear cells take a neighbor's color once the cells are colored", () => {
+    const map = fakeMap({ input_0: "raster" });
+    const layer = map.layers.input_0;
+    // One row: a red cell with a value, then a cell with no data.
+    layer.rasterResX = 2;
+    layer.rasterResY = 1;
+    layer.rasterData = new Float32Array([200, 10, 10, 255, 0, 0, 0, 0]);
+    recolorRasters({ _mapRegistry: new Map([["input_0", map]]) }, {
+      map: { layerRefs: [{ dataRef: "input_0", colorMapInterpolator: "interpolateReds" }] },
+    });
+    expect(Array.from(layer.rasterData)).toEqual([200, 10, 10, 255, 200, 10, 10, 0]);
+  });
+
+  test("a raster with isColorMap false keeps its colors and hides its legend", () => {
+    const map = fakeMap({ input_0: "raster" });
+    recolorRasters({ _mapRegistry: new Map([["input_0", map]]) }, {
+      map: { layerRefs: [{ dataRef: "input_0", colorMapInterpolator: "interpolateViridis", isColorMap: false }] },
+    });
+    expect(map.updateColorMap).toHaveBeenCalledWith("input_0", { colorMap: {} });
+    expect(map.updateRenderInfo).toHaveBeenCalledWith("input_0", { isColorMap: false });
+  });
+
+  test("leaves layers with geometry as drawn", () => {
+    const map = fakeMap({ buildings: "buildings" });
+    const grammar = { _mapRegistry: new Map([["buildings", map]]) };
+    recolorRasters(grammar, {
+      map: [{ layerRefs: [{ dataRef: "buildings", getFnv: "height", colorMapInterpolator: "interpolateViridis" }] }],
+    });
+    expect(map.layers.buildings.setTransferFunction).not.toHaveBeenCalled();
+    expect(map.updateColorMap).not.toHaveBeenCalled();
+  });
+
+  test("does nothing for a grammar without a map registry or a document without a map", () => {
+    expect(() => recolorRasters({}, { map: { layerRefs: [{ dataRef: "a", colorMapInterpolator: "x" }] } })).not.toThrow();
+    expect(() => recolorRasters({ _mapRegistry: new Map() }, { plot: {} })).not.toThrow();
+  });
+});
+
+describe("bleedIntoClearCells", () => {
+  // Four values a cell: red, green, blue, alpha.
+  const cell = (rgba: Float32Array, i: number) => Array.from(rgba.slice(i * 4, i * 4 + 4));
+
+  test("a clear region takes the color of the nearest cell with a value, and stays clear", () => {
+    // 4 by 1: blue, clear, clear, red.
+    const rgba = new Float32Array([0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 255]);
+    bleedIntoClearCells(rgba, 4, 1);
+    expect(cell(rgba, 1)).toEqual([0, 0, 255, 0]);
+    expect(cell(rgba, 2)).toEqual([255, 0, 0, 0]);
+    expect(cell(rgba, 0)).toEqual([0, 0, 255, 255]);
+    expect(cell(rgba, 3)).toEqual([255, 0, 0, 255]);
+  });
+
+  test("it reaches across rows and through a whole clear region", () => {
+    // 3 by 3, one green cell in a corner.
+    const rgba = new Float32Array(9 * 4);
+    rgba.set([0, 255, 0, 255], 0);
+    bleedIntoClearCells(rgba, 3, 3);
+    for (let i = 1; i < 9; i++) expect(cell(rgba, i)).toEqual([0, 255, 0, 0]);
+  });
+
+  test("a raster with no value at all is left as it is", () => {
+    const rgba = new Float32Array(4 * 4);
+    bleedIntoClearCells(rgba, 2, 2);
+    expect(Array.from(rgba).every((v) => v === 0)).toBe(true);
   });
 });

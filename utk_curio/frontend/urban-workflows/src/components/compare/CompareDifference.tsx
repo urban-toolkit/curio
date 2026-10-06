@@ -235,7 +235,7 @@ export function CompareDifference({
   } else if (drawn.kind === "table") {
     stage = <CompareChart nodeData={nodeData} stacked={drawn.ref} specText={JSON.stringify(differenceTableSpec(drawn.names))} />;
   } else {
-    const docText = JSON.stringify(differenceMapDoc(drawn.kind as "raster" | "layer", value));
+    const docText = JSON.stringify(differenceMapDoc(value));
     stage = (
       <Suspense fallback={<NodeEmptyState reason="not-run" hint="Loading the map." />}>
         <CompareMap nodeId={nodeData.nodeId} difference={drawn.ref} docText={docText} />
@@ -270,9 +270,7 @@ export function CompareDifference({
       <div className={styles.mapCanvas}>{stage}</div>
       {drawn && drawn.kind !== "table" && value && !value.categorical ? (
         <p className={styles.note} data-compare-difference-note="true">
-          {drawn.kind === "raster"
-            ? "The higher a cell's difference, the darker its red, and the closer it is to no difference, the fainter it is."
-            : "Dark purple is the lowest difference and yellow the highest."}
+          Dark purple is the lowest difference and yellow the highest.
         </p>
       ) : null}
     </div>

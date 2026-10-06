@@ -81,8 +81,9 @@ class TestTheSharedCases:
             "has no widget named",
             "has no edge",
             "is an input, not text",
-            "a layer chip works in Vega-Lite and Autark specs",
             "has no layer",
+            "Its layers are",
+            "It carries no named layers",
             "carries several layers",
             "the edge for this input was deleted",
             "has no column",
@@ -100,6 +101,18 @@ class TestTheSharedCases:
         for language in ("python", "javascript", "json"):
             codes = " ".join(c["code"] for c in cases if c["language"] == language)
             assert "[!! input 0" in codes or "[!! input 1" in codes, language
+
+    def test_the_table_has_layer_references_in_every_language(self):
+        """A layer chip resolves in Python and JavaScript code too, not only in
+        a Vega-Lite or Autark spec."""
+        cases = _cases()
+        for language in ("python", "javascript", "json"):
+            resolved = [
+                c for c in cases
+                if c["language"] == language and re.search(r"\[!! input \d+:[^.\s]+ !!\]", c["code"])
+                and not c.get("problems")
+            ]
+            assert resolved, f"no layer reference resolves in a {language} case"
 
     def test_the_table_has_shared_references_in_every_language(self):
         cases = _cases()
@@ -410,6 +423,68 @@ class TestSeveralInputs:
         assert rec.calls == []
         assert report["ok"] is False and report["blocker"] == "t"
         assert "input 0 has no edge" in report["nodes"]["t"]["stderrTail"]
+
+
+class TestLayerChips:
+    """``[!! input k:layer !!]`` in Python and JavaScript code: the call that
+    picks the layer out of input k when the node runs, ``curio_layer`` in the
+    sandbox (``util/input_layers.py``, ``util/js_wrapper.mjs``)."""
+
+    def test_the_sandbox_gets_the_layer_chip_as_the_call_that_picks_it(self, tmp_curio):
+        from utk_curio.backend.app.execution.code_references import LAYER_HELPER
+
+        rec = _RecordingExec()
+        spec = _spec(
+            [
+                _node("osm", "{}", node_type="curio.builtin/data-loading"),
+                _node("t", "roads = [!! input 0:table_osm_roads !!]\nreturn roads[[!! input 0:table_osm_roads.highway !!]]"),
+            ],
+            [{"id": "e", "source": "osm", "target": "t", "sourceHandle": "out", "targetHandle": "in"}],
+        )
+        report = runner.run_through_node(KEY, PID, spec, "t", exec_fn=rec)
+        assert report["ok"] is True, report
+        assert LAYER_HELPER == "curio_layer"
+        # The runner indents the node's code into its function body.
+        assert '    roads = curio_layer(arg, "table_osm_roads", 0)\n    return roads["highway"]' in rec.calls[-1][1]["code"]
+
+    def test_a_javascript_node_gets_the_same_call(self, tmp_curio):
+        rec = _RecordingExec()
+        spec = _spec(
+            [
+                _node("a", "return 1", node_type="curio.builtin/data-loading"),
+                _node("b", "return 2", node_type="curio.builtin/data-loading"),
+                _node("j", "return [!! input 1:roads !!];", node_type="curio.builtin/js-computation"),
+            ],
+            [
+                {"id": "e-a", "source": "a", "target": "j", "sourceHandle": "out", "targetHandle": "in"},
+                {"id": "e-b", "source": "b", "target": "j", "sourceHandle": "out", "targetHandle": "in_1"},
+            ],
+        )
+        report = runner.run_through_node(KEY, PID, spec, "j", exec_fn=rec)
+        assert report["ok"] is True, report
+        endpoint, payload = rec.calls[-1]
+        assert endpoint == "/execJs"
+        assert 'return curio_layer(arg[1], "roads", 1);' in payload["code"]
+
+    def test_the_names_and_the_missing_layer_message_are_the_sandboxs(self):
+        """The resolver, the browser and both sandbox helpers name one call and
+        say one thing of a missing layer."""
+        from utk_curio.backend.app.execution.code_references import (
+            LAYER_HELPER,
+            input_reference_inner,
+            missing_layer_message,
+            reference_text,
+        )
+        from utk_curio.sandbox.util import input_layers
+
+        assert input_layers.LAYER_HELPER == LAYER_HELPER
+        for names in (["table_osm_roads", "table_osm_buildings"], []):
+            written = reference_text(input_reference_inner(2, layer="parks"))
+            assert input_layers.missing_layer_message(2, "parks", names) == missing_layer_message(written, 2, "parks", names)
+        ts = (REFERENCES_DIR / "codeReferences.ts").read_text(encoding="utf-8")
+        assert f'export const LAYER_HELPER = "{LAYER_HELPER}";' in ts
+        wrapper = (REPO_ROOT / "utk_curio/sandbox/util/js_wrapper.mjs").read_text(encoding="utf-8")
+        assert f"const {LAYER_HELPER} = (value, layer, slot = 0) =>" in wrapper
 
 
 def _parameter(node_id, widget):

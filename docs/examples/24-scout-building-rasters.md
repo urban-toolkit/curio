@@ -139,7 +139,10 @@ An Autark map reads the first part of the node's output, the raster, as
 ```
 
 A cell holds its building's height, rounded to SCOUT's steps of
-550/255 = 2.16 m. A cell of 0, the ground, is left clear.
+550/255 = 2.16 m, drawn opaque in viridis, from the lowest building (dark
+purple) to the tallest (yellow). The mosaic names no nodata, so a cell of 0,
+the ground, has no value and is left clear. `"isColorMap": false` leaves the
+map without a legend.
 
 ## Predict the shadows
 
@@ -225,8 +228,9 @@ A third Autark map reads the shadow raster as `input_0`:
 }
 ```
 
-The darkest cells are the street canyons between the towers the height
-mosaic shows.
+Every cell with a value is drawn opaque, from the palest red (the least
+shadow) to the darkest (the most), as the legend shows. The darkest cells are
+the street canyons between the towers the height mosaic shows.
 
 ## Good to know
 

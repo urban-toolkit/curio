@@ -15,11 +15,14 @@ Jest and by ``tests/test_execution/test_code_references.py``.
 A widget, shared or selection reference standing on its own becomes a literal
 of the language (a selection's ids are a list); inside a string literal it
 becomes the value's text, escaped for that string;
-inside a comment, the plain text. A column or layer reference is written like a
-text value: its name. In Python and JavaScript an input reference becomes
-``arg`` when the node has one input and ``arg[i]`` when it has several, ``i``
-being its place in circle order; in a Vega-Lite or Autark spec it is the name
-the input is read by, ``input_<i>``, written like a text value.
+inside a comment, the plain text. A column reference is written like a text
+value: its name. In Python and JavaScript an input reference becomes ``arg``
+when the node has one input and ``arg[i]`` when it has several, ``i`` being its
+place in circle order, and a layer reference the call that picks the layer out
+of it, ``curio_layer(arg[i], "roads", 1)`` (the sandbox's
+``util/input_layers.py``, and ``js_wrapper.mjs``); in a Vega-Lite or Autark spec
+an input reference is the name the input is read by, ``input_<i>``, and a layer
+reference the layer's name, written like a text value.
 Numbers are written the way JavaScript's ``String()`` writes them, so a value
 prints the same in both.
 """
@@ -52,6 +55,11 @@ SELECTION_ID_CAP = 10000
 #: What a Vega-Lite or Autark node calls its inputs. Kept in sync with
 #: ``INPUT_TABLE_PREFIX`` in ``agents/domain/contracts.py``.
 INPUT_TABLE_PREFIX = "input_"
+
+#: What a layer reference in Python or JavaScript calls. Kept in sync with
+#: ``LAYER_HELPER`` in ``codeReferences.ts`` and the sandbox's
+#: ``util/input_layers.py``.
+LAYER_HELPER = "curio_layer"
 
 #: A widget name. Kept in sync with ``WIDGET_NAME_PATTERN`` in ``widgetModel.ts``.
 WIDGET_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
@@ -196,6 +204,18 @@ def input_reference_inner(slot: int | None, column: str | None = None, layer: st
         + (f":{layer}" if layer is not None else "")
         + (f".{column}" if column is not None else "")
     )
+
+
+def missing_layer_message(reference: str, slot, layer: str, names) -> str:
+    """Why *reference* fails: input *slot* has no layer *layer*. It names the
+    layers the input has. The resolver says it when the layers are known, and
+    the sandbox's ``curio_layer`` says the same of a layer reference when the
+    node runs. Kept in sync with ``missingLayerMessage`` in
+    ``codeReferences.ts`` and with the sandbox's ``util/input_layers.py`` and
+    ``js_wrapper.mjs``."""
+    names = list(names)
+    has = f"Its layers are {', '.join(names)}." if names else "It carries no named layers."
+    return f"{reference}: input {slot} has no layer {layer}. {has}"
 
 
 def _text_of(value, language: str) -> str:
@@ -354,15 +374,17 @@ def reference_problem(
                 "or drag one of this node's input chips here."
             )
         if "layer" in parsed:
-            if language != "json":
-                return f"{reference}: a layer chip works in Vega-Lite and Autark specs."
             layers = found.get("layers") if isinstance(found.get("layers"), list) else None
             layer = next((l for l in layers or [] if l.get("name") == parsed["layer"]), None)
             if layers is not None and layer is None:
-                return f"{reference}: input {slot} has no layer {parsed['layer']}."
-            columns = layer.get("columns") if layer else None
+                return missing_layer_message(reference, slot, parsed["layer"], (str(l.get("name")) for l in layers))
+            # An input of one frame (no list of layers) is that layer: its
+            # columns are the frame's.
+            columns = layer.get("columns") if layer else found.get("columns") if layers is None else None
             if "column" in parsed and isinstance(columns, list) and parsed["column"] not in columns:
                 return f"{reference}: layer {parsed['layer']} of input {slot} has no column {parsed['column']}."
+            if "column" not in parsed and language != "json" and context[0] != "code":
+                return f"{reference} is an input, not text. Use it outside quotes and comments."
             return None
         if "column" not in parsed:
             if language == "json":
@@ -633,14 +655,15 @@ def _resolved_text(
     if parsed["kind"] == "input":
         if "column" in parsed:
             return _write_text(parsed["column"], context, language)
-        if "layer" in parsed:
+        if "layer" in parsed and language == "json":
             return _write_text(parsed["layer"], context, language)
         index = next(i for i, entry in enumerate(inputs) if entry.get("slot") == parsed["slot"])
         if language == "json":
             return _write_text(f"{INPUT_TABLE_PREFIX}{index}", context, language)
-        if len(inputs) == 1:
-            return "arg"
-        return f"arg[{index}]"
+        value = "arg" if len(inputs) == 1 else f"arg[{index}]"
+        if "layer" in parsed:
+            return f"{LAYER_HELPER}({value}, {widget_literal(parsed['layer'], language)}, {parsed['slot']})"
+        return value
     value = effective_value(by_name[inner])
     if context[0] == "code":
         return widget_literal(value, language)
@@ -657,8 +680,8 @@ def resolve_references(
 ) -> tuple[str, list]:
     """*code* with every reference replaced, and the problems found.
 
-    *inputs* are the node's wired inputs, ``{"slot": <circle>, "columns"?: [...]}``
-    each. *shared* are the widgets of the dataflow's Parameter nodes, one per
+    *inputs* are the node's wired inputs, ``{"slot": <circle>, "columns"?: [...],
+    "layers"?: [{"name", "columns"?}, ...]}`` each. *shared* are the widgets of the dataflow's Parameter nodes, one per
     node. *selections* are the node's selection tags (``metadata.selections``).
     A reference with a problem is left as written; each problem is
     ``{"reference": <as written>, "message": <why>}``.

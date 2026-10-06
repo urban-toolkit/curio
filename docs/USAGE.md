@@ -524,14 +524,22 @@ In code and in a Vega-Lite or Autark spec, each input is a chip:
 3. Click the arrow beside an input's tag to list its columns, once the node that
    feeds it has run. Drag a column's tag where a column name goes; it is written
    `[!! input 1.population !!]`.
-4. In an Autark spec, an input that carries several layers (an upstream Autark
-   node's tables) lists a tag for each layer, `[!! input 1:roads !!]`, followed
-   by that layer's columns, `[!! input 1:roads.lanes !!]`.
+4. An input that carries several layers (an upstream Autark node's tables)
+   lists a tag for each layer, `[!! input 1:table_osm_roads !!]`, followed by
+   that layer's columns, `[!! input 1:table_osm_roads.lanes !!]`. A layer is
+   named as the Autark node names its table.
 
 When the node runs:
 
 - In Python and JavaScript, an input chip becomes the input: `arg` when the node
   has one input, and `arg[1]` when it has several, counted in circle order.
+- In Python and JavaScript, a layer chip becomes that layer of the input:
+  `roads = [!! input 0:table_osm_roads !!]` runs as
+  `roads = curio_layer(arg, "table_osm_roads", 0)`, which gives a GeoDataFrame
+  in Python and a GeoJSON FeatureCollection in JavaScript. An input that is one
+  frame with no layer name, such as a GeoDataFrame a Python node returns, is
+  that layer. An input with several frames needs one of that name; if it has
+  none, the node fails with a message naming the input and the layers it has.
 - In a Vega-Lite or Autark spec, an input chip becomes the name the input is read
   by, `"input_1"`: a Vega-Lite dataset or an Autark table (see
   [Vega-Lite node](#vega-lite-node) and [Autark node](#autark-node)). A layer
@@ -711,9 +719,9 @@ The node has two tabs:
 - **Difference**, in its place in Difference, maps a raster's or a layer's
   difference, colored by a band or a number column, or by `change` (**Color by**).
   The legend is titled with what it shows: `sunlight change` for the column
-  `sunlight`, or `change`. A layer's colors run from the lowest difference, dark purple, to the highest,
-  yellow. A raster's cells are redder the higher their difference, and fainter the
-  closer they are to no difference. A table's difference is shown as a table, each
+  `sunlight`, or `change`. A raster's or a layer's colors run from the lowest
+  difference, dark purple, to the highest, yellow; a raster cell that is nodata in
+  either raster is clear. A table's difference is shown as a table, each
   row in the color of its change.
 - **What differs** lists the levers that differ between the scenarios: for each, the
   widget values and the code lines that changed, read against the first scenario's,
@@ -922,8 +930,14 @@ no `data` entry for its input; it names the tables the input provides.
 - A raster is a table too: a `rasterio` dataset from a Python node, or a raster
   another Autark node hands on. A map draws it as a raster layer coloured by one
   band, `{"dataRef": "input_0", "getFnv": "band_1"}`; its bands are `band_1`,
-  `band_2`, and so on. It is drawn at its own size, cell for cell, up to 2048 by
-  2048 cells and 8192 on a side. A larger one is not drawn and the node says so:
+  `band_2`, and so on. Every cell with a value is drawn opaque, 0 included, in
+  the layerRef's `colorMapInterpolator` (reds without one) from the band's lowest
+  value to its highest, and a cell with no value is clear: the raster's nodata,
+  or 0 when the GeoTIFF names no nodata. A raster with
+  a `colorMapInterpolator` shows its legend, with that scheme and range;
+  `"isColorMap": false` hides the legend and keeps the colours. It is drawn at
+  its own size, cell for cell, up to 2048 by 2048 cells and 8192 on a side. A
+  larger one is not drawn and the node says so:
   crop it in the node that makes it, for example with a rasterio window read or
   the `bounds` of `curio_load_data` (see the [Data Catalog](DATA-CATALOG.md)).
   It needs a CRS with an EPSG code and a north-up grid. A plot or a compute step
