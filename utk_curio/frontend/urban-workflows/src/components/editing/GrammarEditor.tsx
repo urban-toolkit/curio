@@ -10,6 +10,7 @@ import { ReferenceStrip } from "./widgets/WidgetTag";
 import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
 import { NOTEBOOK_SPEC_EDITOR_MAX, useNotebookEditorHeight } from "./useNotebookEditorHeight";
+import { nodeEditorLook } from "./nodeEditorLook";
 
 const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [], shared: [] };
 const NO_INPUTS: InputScope[] = [];
@@ -109,7 +110,9 @@ export default function GrammarEditor({
 
     // onMount fires once, so the action reads the CURRENT play function through
     // a ref rather than capturing the first render's (#223).
-    const { playNodesUpTo } = useFlowContext();
+    const { playNodesUpTo, dashboardOn } = useFlowContext();
+    // The spec in a plain gray box, as in a notebook, except on a dashboard tile.
+    const look = nodeEditorLook(!!dashboardOn);
     const runNodeRef = useRef<() => void>(() => {});
     runNodeRef.current = () => playNodesUpTo(nodeId);
 
@@ -269,7 +272,7 @@ export default function GrammarEditor({
                 onLoadColumns={onLoadColumns}
                 layerChips
             />
-            <div className={editorHeight.wrapperClassName} style={{ flex: 1, minHeight: 0, ...editorHeight.wrapperStyle }}>
+            <div className={look.wrapperClassName} style={{ flex: 1, minHeight: 0, ...editorHeight.wrapperStyle }}>
                 {/* Uncontrolled on purpose: a per-keystroke `value` round-trip
                     lets a render that lands with a stale string do a full-model
                     replace — resetting content and throwing the cursor to the
@@ -295,8 +298,8 @@ export default function GrammarEditor({
                         // on to the page, and `nowheel` on the wrapper keeps the
                         // canvas from zooming. Read only at creation.
                         scrollbar: { alwaysConsumeMouseWheel: false },
-                        // In a notebook cell, a plain input box.
-                        ...editorHeight.editorOptions,
+                        // A plain input box, but on a dashboard tile.
+                        ...look.editorOptions,
                     }}
                 />
             </div>
