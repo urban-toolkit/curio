@@ -1004,6 +1004,148 @@ def test_the_street_vision_model_runs_on_a_many_core_host(isolated_deployed):
     assert load_from_duckdb(result["output"]["path"]) == "1x19x128x256"
 
 
+#: Intra-op threads for the session below, set explicitly so the test does not
+#: depend on the runner's cores. At the 8 MiB stack glibc derives from
+#: RLIMIT_STACK, 512 stacks reserve 4 GiB, the whole default budget, before
+#: the model's own memory.
+MANY_THREADS = 512
+
+#: Example 10's model with *THREADS* intra-op threads, reporting what the child
+#: reserved instead of raising, so a failure carries the numbers. Spinning is
+#: off so that the threads wait rather than spin on a runner with a few CPUs;
+#: it does not change how many there are.
+_RUN_DDRNET_REPORTING = r'''
+    import ctypes, json, os, resource
+    import numpy as np
+    import onnxruntime as ort
+
+    def vm_mb():
+        with open("/proc/self/status", encoding="ascii") as fh:
+            for line in fh:
+                if line.startswith("VmSize:"):
+                    return int(line.split()[1]) // 1024
+        return -1
+
+    def kib(limit):
+        return -1 if limit == resource.RLIM_INFINITY else limit // 1024
+
+    libc = ctypes.CDLL(None)
+    attr = ctypes.create_string_buffer(128)
+    libc.pthread_getattr_default_np(attr)
+    stack = ctypes.c_size_t()
+    libc.pthread_attr_getstacksize(attr, ctypes.byref(stack))
+    libc.pthread_attr_destroy(attr)
+    seen = {
+        "as_limit_mb": kib(resource.getrlimit(resource.RLIMIT_AS)[0]) // 1024,
+        "rlimit_stack_kib": kib(resource.getrlimit(resource.RLIMIT_STACK)[0]),
+        "thread_stack_kib": stack.value // 1024,
+        "vm_before_mb": vm_mb(),
+        "error": "",
+        "shape": "",
+    }
+    folder = curio_load_model("model.curio.ddrnet23-slim").folder
+    with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as fh:
+        manifest = json.load(fh)
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = THREADS
+    options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+    session = None
+    try:
+        session = ort.InferenceSession(
+            os.path.join(folder, manifest["entry"]), sess_options=options,
+            providers=["CPUExecutionProvider"],
+        )
+        size = manifest["input"]
+        pixels = np.zeros((1, 3, int(size["height"]), int(size["width"])), dtype=np.uint8)
+        scores = session.run(None, {session.get_inputs()[0].name: pixels})[0]
+        seen["shape"] = "x".join(str(n) for n in scores.shape)
+    except Exception as exc:
+        seen["error"] = f"{type(exc).__name__}: {exc}"[:600]
+    seen["threads"] = len(os.listdir("/proc/self/task"))
+    seen["vm_after_mb"] = vm_mb()
+    return seen
+'''
+
+
+@pytest.mark.parametrize("isolated_deployed", ["many-core"], indirect=True)
+def test_an_onnx_session_starts_all_its_threads_inside_the_budget(isolated_deployed):
+    """#743: an ONNX session with a thread per core, on any host size.
+
+    onnxruntime starts an intra-op thread per physical core, and RLIMIT_AS
+    counts each thread's whole stack. On CI's 192-CPU runners the stacks
+    reserved about 1.5 GiB of the budget and the session failed to start with
+    ``Resource temporarily unavailable``. Every thread asked for must start,
+    at the default budget, with the model running to its output.
+    """
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    result = run_isolated(
+        isolated_deployed,
+        _RUN_DDRNET_REPORTING.replace("THREADS", str(MANY_THREADS)),
+        models={"model.curio.ddrnet23-slim": os.path.abspath(DDRNET)},
+    )
+    assert result["stderr"] == "", result["stderr"][-2000:]
+    seen = load_from_duckdb(result["output"]["path"])
+    numbers = (
+        f"budget={isolated_deployed.limits['memory_mb']}MB "
+        + " ".join(f"{key}={seen[key]}" for key in sorted(seen) if key != "error")
+    )
+    assert seen["error"] == "", f"{seen['error']} ({numbers})"
+    assert seen["shape"] == "1x19x128x256", numbers
+    # The main thread plus the pool's workers: no thread was given up.
+    assert seen["threads"] >= MANY_THREADS, numbers
+
+
+#: Measures the stack of a Python thread from inside it, with glibc's own
+#: report of the thread's stack.
+_PYTHON_THREAD_STACK = r'''
+import ctypes, threading
+
+def python_thread_stack_kib():
+    libc = ctypes.CDLL(None)
+    libc.pthread_self.restype = ctypes.c_ulong
+    seen = {}
+
+    def measure():
+        attr = ctypes.create_string_buffer(128)
+        libc.pthread_getattr_np(ctypes.c_ulong(libc.pthread_self()), attr)
+        base, size = ctypes.c_void_p(), ctypes.c_size_t()
+        libc.pthread_attr_getstack(attr, ctypes.byref(base), ctypes.byref(size))
+        libc.pthread_attr_destroy(attr)
+        seen["kib"] = size.value // 1024
+
+    thread = threading.Thread(target=measure)
+    thread.start()
+    thread.join()
+    return seen["kib"]
+'''
+
+
+def test_python_threads_keep_their_stack_in_a_capped_child(isolated_deployed):
+    """A capped child gives library threads a smaller default stack (#743),
+    and Python's own threads keep the one they have in process, so deep
+    recursion in a ``threading`` or ``concurrent.futures`` thread behaves as
+    it does without isolation."""
+    import textwrap
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    in_process = {}
+    exec(_PYTHON_THREAD_STACK, in_process)
+    want = in_process["python_thread_stack_kib"]()
+
+    result = run_isolated(
+        isolated_deployed,
+        textwrap.indent(_PYTHON_THREAD_STACK, "    ")
+        + "    return {'kib': python_thread_stack_kib()}\n",
+    )
+    assert result["stderr"] == "", result["stderr"][-2000:]
+    got = load_from_duckdb(result["output"]["path"])["kib"]
+    assert got >= want, (
+        f"a Python thread has a {got} KiB stack in a capped child and {want} KiB in process"
+    )
+
+
 def test_a_runaway_allocation_hits_the_memory_limit(isolated):
     """RLIMIT_AS turns this into a MemoryError instead of an OOM kill.
 
