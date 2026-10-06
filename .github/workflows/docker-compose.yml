@@ -117,9 +117,11 @@ on:
         options: [auto, arcade, utk]
         default: auto
       # A flake hunt: unit, jest, e2e-desktop, test-gpu and test-isolated each
-      # run their suite this many times on their stack (scripts/ci_repeat.sh),
-      # and the CI report lists every test that passed in one run and failed
-      # in another. A re-mint ignores it.
+      # run their suite this many times (scripts/ci_repeat.sh), and the CI
+      # report lists every test that passed in one run and failed in another.
+      # Each run after the first gets a recreated stack (CURIO_CI_FRESH_STACK),
+      # except on test-gpu, whose extra shard servers a step of their own
+      # starts. A re-mint ignores it.
       repeat:
         description: 'Run the backend, sandbox, Jest and e2e tests this many times, to find flaky tests'
         type: choice
@@ -731,6 +733,7 @@ jobs:
           - { name: backend-2, suite: backend, part: "2/2" }
           - { name: sandbox, suite: sandbox, part: "" }
     env:
+      CURIO_CI_FRESH_STACK: curio-ci
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
       CURIO_E2E_BACKEND_URL: "http://localhost:5022"
       CURIO_E2E_HOST: localhost
@@ -865,6 +868,7 @@ jobs:
       matrix:
         part: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     env:
+      CURIO_CI_FRESH_STACK: curio-ci
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
       CURIO_E2E_RUNNER: desktop
       CURIO_E2E_PART: ${{ matrix.part }}/${{ strategy.job-total }}
@@ -991,6 +995,7 @@ jobs:
       contents: read
       packages: read
     env:
+      CURIO_CI_FRESH_STACK: curio-ci-iso
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci-isolated.yml
       CURIO_E2E_BACKEND_URL: "http://localhost:5032"
       CURIO_E2E_HOST: localhost
