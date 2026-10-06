@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import Tab from "react-bootstrap/Tab";
 import Tabs from "react-bootstrap/Tabs";
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -33,6 +34,8 @@ import { useFlowContext } from "../../providers/FlowProvider";
 import { useNotebookViewContext } from "../../providers/flow/notebookViewContext";
 import { resolveInitialEditorTab } from "../../utils/canvasTemplateConfig";
 import { unversionedNodeType } from "../../utils/flowNodeCanonicalType";
+import { notebookOutputBox } from "../../utils/notebookLayout";
+import { useCellHeaderSlot } from "./cellHeaderSlot";
 import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
 import {
     describeEmptyInputs,
@@ -175,7 +178,11 @@ function NodeEditor({
     // stays visible under the input tabs (Node.css), so a run, which would
     // switch to the Output tab, leaves the input tab in place.
     const notebook = useNotebookViewContext();
-    const split = notebook.on && !dashboardOn && hasOutputPane && Boolean(code || grammar);
+    // A notebook cell is as tall as its content: nothing here fills a fixed
+    // box, the tab pills sit above the input, and the output gets the height
+    // its kind gets in a cell (notebookOutputBox).
+    const inCell = notebook.on && !dashboardOn;
+    const split = inCell && hasOutputPane && Boolean(code || grammar);
     const effectiveTab = dashboardOn && hasOutputPane
         ? "output"
         : split && activeTab === "output"
@@ -281,11 +288,20 @@ function NodeEditor({
         setActiveTab(eventKey);
     };
 
-    const tabContentStyle: CSS.Properties = {
-        height: "100%",
-        backgroundColor: "#f2f2f2",
-        borderRadius: "10px",
-    };
+    const tabContentStyle: CSS.Properties = inCell
+        ? { backgroundColor: "#ffffff" }
+        : {
+            height: "100%",
+            backgroundColor: "#f2f2f2",
+            borderRadius: "10px",
+        };
+    // A pane fills the node on the canvas; in a cell it takes its own height.
+    // The provenance graph has none of its own, so it gets one.
+    const paneStyle: CSS.Properties | undefined = inCell ? undefined : { height: "100%" };
+    const provenancePaneStyle: CSS.Properties = inCell ? { height: "320px" } : { height: "100%" };
+    const widgetsPaneStyle: CSS.Properties = inCell ? { maxHeight: "360px", overflowY: "auto" } : { height: "100%" };
+    const outputBox = notebookOutputBox(String(nodeType ?? ""));
+    const px = (n: number | undefined) => (n === undefined ? undefined : `${n}px`);
 
     const tabContentFullscreen: CSS.Properties = {
         height: "100%",
@@ -319,12 +335,147 @@ function NodeEditor({
         justifyContent: "center",
     };
 
+    // The tab pills: under the panes on the canvas. In a notebook cell they are
+    // among the cell's tools in its header (cellHeaderSlot, styled by
+    // `.curio-cell-tabs` in Node.css), or above the input when the cell has no
+    // header to hold them.
+    const tabSlot = useCellHeaderSlot();
+    const pillsInHeader = inCell && tabSlot !== null;
+    const pills = !dashboardOn ? (
+        <Nav
+            variant="pills"
+            className="flex-column"
+            style={pillsInHeader ? { background: "none", margin: 0 } : {
+                backgroundColor: "#f2f2f2",
+                borderRadius: "10px",
+                width: inCell ? "40%" : "75%",
+                height: "25px",
+                marginLeft: "auto",
+                marginTop: inCell ? "4px" : "6px",
+                ...(inCell ? { marginBottom: "6px" } : {}),
+            }}
+        >
+            <Row
+                style={{
+                    fontSize: "10px",
+                    paddingRight: 0,
+                    paddingLeft: 0,
+                }}
+            >
+                {code ? (
+                    <Col>
+                        <OverlayTrigger
+                            placement="right"
+                            delay={overlayTriggerProps}
+                            overlay={<Tooltip>Code</Tooltip>}
+                        >
+                            <Nav.Item style={navItemStyle}>
+                                <Nav.Link
+                                    eventKey="code"
+                                    style={navLinkStyle}
+                                >
+                                    <FontAwesomeIcon
+                                        icon={faCode}
+                                    />
+                                </Nav.Link>
+                            </Nav.Item>
+                        </OverlayTrigger>
+                    </Col>
+                ) : null}
+
+                {widgetsTab ? (
+                    <Col>
+                        <OverlayTrigger
+                            placement="right"
+                            delay={overlayTriggerProps}
+                            overlay={<Tooltip>Widgets</Tooltip>}
+                        >
+                            <Nav.Item style={navItemStyle}>
+                                <Nav.Link
+                                    eventKey="widgets"
+                                    style={navLinkStyle}
+                                >
+                                    <FontAwesomeIcon
+                                        icon={faToolbox}
+                                    />
+                                </Nav.Link>
+                            </Nav.Item>
+                        </OverlayTrigger>
+                    </Col>
+                ) : null}
+
+                {grammar ? (
+                    <Col>
+                        <OverlayTrigger
+                            placement="right"
+                            delay={overlayTriggerProps}
+                            overlay={<Tooltip>Grammar</Tooltip>}
+                        >
+                            <Nav.Item style={navItemStyle}>
+                                <Nav.Link
+                                    eventKey="grammar"
+                                    style={navLinkStyle}
+                                >
+                                    <FontAwesomeIcon
+                                        icon={faSpellCheck}
+                                    />
+                                </Nav.Link>
+                            </Nav.Item>
+                        </OverlayTrigger>
+                    </Col>
+                ) : null}
+
+                {provenance == undefined || provenance ? (
+                    <Col>
+                        <OverlayTrigger
+                            placement="right"
+                            delay={overlayTriggerProps}
+                            overlay={<Tooltip>Provenance</Tooltip>}
+                        >
+                            <Nav.Item style={navItemStyle}>
+                                <Nav.Link
+                                    eventKey="provenance"
+                                    style={navLinkStyle}
+                                >
+                                    <FontAwesomeIcon
+                                        icon={faRotateLeft}
+                                    />
+                                </Nav.Link>
+                            </Nav.Item>
+                        </OverlayTrigger>
+                    </Col>
+                ) : null}
+
+                {(outputId != undefined || contentComponent != undefined) && !split ? (
+                    <Col>
+                        <OverlayTrigger
+                            placement="right"
+                            delay={overlayTriggerProps}
+                            overlay={<Tooltip>Output</Tooltip>}
+                        >
+                            <Nav.Item style={navItemStyle}>
+                                <Nav.Link
+                                    eventKey="output"
+                                    style={navLinkStyle}
+                                >
+                                    <FontAwesomeIcon
+                                        icon={faRightFromBracket}
+                                    />
+                                </Nav.Link>
+                            </Nav.Item>
+                        </OverlayTrigger>
+                    </Col>
+                ) : null}
+            </Row>
+        </Nav>
+    ) : null;
+
     return (
         <>
             <div
                 style={{
                     ...{
-                        height: dashboardOn ? "100%" : "calc(100% - 30px)",
+                        height: inCell ? "auto" : dashboardOn ? "100%" : "calc(100% - 30px)",
                         width: "100%",
                         marginLeft: "auto",
                         marginRight: "auto",
@@ -333,10 +484,12 @@ function NodeEditor({
                 }}
             >
                 <Tab.Container activeKey={effectiveTab} onSelect={handleTabSelect}>
+                    {inCell && !pillsInHeader && pills}
+                    {pillsInHeader && pills ? createPortal(pills, tabSlot!) : null}
                     {/* No gutter: its negative margins pulled every pane out of
                         the node body, under the port markers (#668). */}
-                    <Row className="g-0" style={{ height: "100%" }}>
-                        <Col md={12} style={{ height: "100%", padding: 0 }}>
+                    <Row className="g-0" style={inCell ? undefined : { height: "100%" }}>
+                        <Col md={12} style={inCell ? { padding: 0 } : { height: "100%", padding: 0 }}>
                             <Tab.Content
                                 className={split ? "curio-notebook-split" : undefined}
                                 style={{ ...activeTabContentStyle, zIndex: 10 }}
@@ -344,7 +497,7 @@ function NodeEditor({
                                 {code ? (
                                     <Tab.Pane
                                         eventKey="code"
-                                        style={{ height: "100%" }}
+                                        style={paneStyle}
                                     >
                                         <CodeEditor
                                             floatCode={floatCode}
@@ -372,7 +525,7 @@ function NodeEditor({
                                 {widgetsTab ? (
                                     <Tab.Pane
                                         eventKey="widgets"
-                                        style={{ height: "100%" }}
+                                        style={widgetsPaneStyle}
                                     >
                                         <WidgetsEditor
                                             customWidgetsCallback={
@@ -402,7 +555,7 @@ function NodeEditor({
                                 {grammar ? (
                                     <Tab.Pane
                                         eventKey="grammar"
-                                        style={{ height: "100%" }}
+                                        style={paneStyle}
                                     >
                                         <GrammarEditor
                                             floatCode={floatCode}
@@ -430,7 +583,7 @@ function NodeEditor({
                                 {provenance == undefined || provenance ? (
                                     <Tab.Pane
                                         eventKey="provenance"
-                                        style={{ height: "100%" }}
+                                        style={provenancePaneStyle}
                                     >
                                         <NodeProvenance
                                             data={data}
@@ -445,7 +598,7 @@ function NodeEditor({
                                     <Tab.Pane
                                         eventKey="output"
                                         className={split ? "curio-notebook-output" : undefined}
-                                        style={{ height: "100%", overflow: "hidden" }}
+                                        style={inCell ? undefined : { height: "100%", overflow: "hidden" }}
                                     >
                                         {outputId != undefined ? (
                                             // Vega sizes its canvas in CSS px
@@ -463,22 +616,29 @@ function NodeEditor({
                                             // Flow's ZoomPane swallows the
                                             // wheel event and zooms the canvas
                                             // instead of scrolling the chart.
+                                            //
+                                            // In a cell the chart needs a
+                                            // definite height to fit to.
                                             <div
                                                 id={outputId}
                                                 className="nodrag nowheel curio-vega-mount"
                                                 style={{
                                                     textAlign: "center",
                                                     width: "100%",
-                                                    height: "100%",
+                                                    height: inCell ? px(outputBox.height) : "100%",
+                                                    ...(inCell && outputBox.maxHeight !== undefined ? { maxHeight: px(outputBox.maxHeight) } : {}),
                                                     overflow: "auto",
                                                 }}
                                             ></div>
                                         ) : (
                                             // Each content component lays out
-                                            // and scrolls its own body.
+                                            // and scrolls its own body. In a
+                                            // cell its box comes from its kind.
                                             <div
                                                 className="curio-content-mount"
-                                                style={{ height: "100%" }}
+                                                style={inCell
+                                                    ? { height: px(outputBox.height), maxHeight: px(outputBox.maxHeight), overflow: outputBox.overflow }
+                                                    : { height: "100%" }}
                                             >
                                                 {contentComponent}
                                             </div>
@@ -488,131 +648,7 @@ function NodeEditor({
                             </Tab.Content>
                         </Col>
                     </Row>
-                    {!dashboardOn && <Nav
-                        variant="pills"
-                        className="flex-column"
-                        style={{
-                            backgroundColor: "#f2f2f2",
-                            borderRadius: "10px",
-                            width: "75%",
-                            height: "25px",
-                            marginLeft: "auto",
-                            marginTop: "6px",
-                        }}
-                    >
-                        <Row
-                            style={{
-                                fontSize: "10px",
-                                paddingRight: 0,
-                                paddingLeft: 0,
-                            }}
-                        >
-                            {code ? (
-                                <Col>
-                                    <OverlayTrigger
-                                        placement="right"
-                                        delay={overlayTriggerProps}
-                                        overlay={<Tooltip>Code</Tooltip>}
-                                    >
-                                        <Nav.Item style={navItemStyle}>
-                                            <Nav.Link
-                                                eventKey="code"
-                                                style={navLinkStyle}
-                                            >
-                                                <FontAwesomeIcon
-                                                    icon={faCode}
-                                                />
-                                            </Nav.Link>
-                                        </Nav.Item>
-                                    </OverlayTrigger>
-                                </Col>
-                            ) : null}
-
-                            {widgetsTab ? (
-                                <Col>
-                                    <OverlayTrigger
-                                        placement="right"
-                                        delay={overlayTriggerProps}
-                                        overlay={<Tooltip>Widgets</Tooltip>}
-                                    >
-                                        <Nav.Item style={navItemStyle}>
-                                            <Nav.Link
-                                                eventKey="widgets"
-                                                style={navLinkStyle}
-                                            >
-                                                <FontAwesomeIcon
-                                                    icon={faToolbox}
-                                                />
-                                            </Nav.Link>
-                                        </Nav.Item>
-                                    </OverlayTrigger>
-                                </Col>
-                            ) : null}
-
-                            {grammar ? (
-                                <Col>
-                                    <OverlayTrigger
-                                        placement="right"
-                                        delay={overlayTriggerProps}
-                                        overlay={<Tooltip>Grammar</Tooltip>}
-                                    >
-                                        <Nav.Item style={navItemStyle}>
-                                            <Nav.Link
-                                                eventKey="grammar"
-                                                style={navLinkStyle}
-                                            >
-                                                <FontAwesomeIcon
-                                                    icon={faSpellCheck}
-                                                />
-                                            </Nav.Link>
-                                        </Nav.Item>
-                                    </OverlayTrigger>
-                                </Col>
-                            ) : null}
-
-                            {provenance == undefined || provenance ? (
-                                <Col>
-                                    <OverlayTrigger
-                                        placement="right"
-                                        delay={overlayTriggerProps}
-                                        overlay={<Tooltip>Provenance</Tooltip>}
-                                    >
-                                        <Nav.Item style={navItemStyle}>
-                                            <Nav.Link
-                                                eventKey="provenance"
-                                                style={navLinkStyle}
-                                            >
-                                                <FontAwesomeIcon
-                                                    icon={faRotateLeft}
-                                                />
-                                            </Nav.Link>
-                                        </Nav.Item>
-                                    </OverlayTrigger>
-                                </Col>
-                            ) : null}
-
-                            {(outputId != undefined || contentComponent != undefined) && !split ? (
-                                <Col>
-                                    <OverlayTrigger
-                                        placement="right"
-                                        delay={overlayTriggerProps}
-                                        overlay={<Tooltip>Output</Tooltip>}
-                                    >
-                                        <Nav.Item style={navItemStyle}>
-                                            <Nav.Link
-                                                eventKey="output"
-                                                style={navLinkStyle}
-                                            >
-                                                <FontAwesomeIcon
-                                                    icon={faRightFromBracket}
-                                                />
-                                            </Nav.Link>
-                                        </Nav.Item>
-                                    </OverlayTrigger>
-                                </Col>
-                            ) : null}
-                        </Row>
-                    </Nav>}
+                    {!inCell && pills}
                 </Tab.Container>
             </div>
         </>

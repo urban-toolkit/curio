@@ -10,7 +10,7 @@
  * nodeEditorOutputScroll.test.tsx checks `nowheel`. Same harness.
  */
 import React from "react";
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({ dashboardOn: false }),
@@ -37,13 +37,15 @@ jest.mock("../../providers/CollaborationProvider", () => ({
 
 jest.mock("../../components/editing/WidgetsEditor", () => ({ __esModule: true, default: () => null }));
 jest.mock("../../components/editing/NodeProvenance", () => ({ __esModule: true, default: () => null }));
+jest.mock("../../components/editing/CodeEditor", () => ({ __esModule: true, default: () => <div data-testid="code-editor" /> }));
 
 import NodeEditor from "../../components/editing/NodeEditor";
 import { NotebookViewContext } from "../../providers/flow/notebookViewContext";
+import { CellHeaderSlotContext } from "../../components/editing/cellHeaderSlot";
 
 const OUTPUT_ID = "vega-n1";
 
-function props() {
+function props(): Record<string, any> {
   return {
     setSendCodeCallback: jest.fn(),
     setOutputCallback: jest.fn(),
@@ -61,10 +63,12 @@ function props() {
   };
 }
 
-function mount(on: boolean, p = props()) {
+function mount(on: boolean, p: ReturnType<typeof props> = props(), headerSlot: HTMLElement | null = null) {
   const utils = render(
-    <NotebookViewContext.Provider value={{ on, laneX: new Map(), heights: new Map(), reveal: () => on }}>
-      <NodeEditor {...p} />
+    <NotebookViewContext.Provider value={{ on, laneX: new Map(), cellWidth: 900, reveal: () => on }}>
+      <CellHeaderSlotContext.Provider value={headerSlot}>
+        <NodeEditor {...(p as React.ComponentProps<typeof NodeEditor>)} />
+      </CellHeaderSlotContext.Provider>
     </NotebookViewContext.Provider>,
   );
   return { ...utils, p };
@@ -103,6 +107,91 @@ describe("a grammar node shown as a notebook cell", () => {
     expect(grammarPane(container)).toHaveClass("active");
     expect(outputPane()).toHaveClass("curio-notebook-output");
   });
+
+  test("puts its tab pills among the cell's tools in its header, where they still switch tabs", async () => {
+    const slot = document.createElement("div");
+    document.body.appendChild(slot);
+    try {
+      const { container } = mount(true, { ...props(), widgets: true }, slot);
+      // No row of tabs in the cell's body.
+      expect(container.querySelector(".nav")).toBeNull();
+      expect(slot.querySelector('[data-rr-ui-event-key="grammar"]')).not.toBeNull();
+      const widgetsLink = slot.querySelector('[data-rr-ui-event-key="widgets"]') as HTMLElement;
+      expect(widgetsLink).not.toBeNull();
+      await act(async () => {
+        fireEvent.click(widgetsLink);
+      });
+      expect(widgetsLink).toHaveClass("active");
+    } finally {
+      slot.remove();
+    }
+  });
+
+  test("puts its tab pills above the input when the cell has no header to hold them", () => {
+    const { container } = mount(true);
+    const nav = container.querySelector(".nav") as HTMLElement;
+    expect(nav).not.toBeNull();
+    expect(container.querySelector('[data-rr-ui-event-key="grammar"]')).not.toBeNull();
+    expect(nav.compareDocumentPosition(panes(container)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test("lets the grammar and the output panes take their own height", () => {
+    const { container } = mount(true);
+    expect(grammarPane(container).style.height).not.toBe("100%");
+    expect(outputPane().style.height).not.toBe("100%");
+    expect(panes(container).style.height).not.toBe("100%");
+  });
+
+  test("draws its chart 320px tall, which Vega needs as a definite height, scrolling inside past it", () => {
+    mount(true);
+    const mountEl = document.getElementById(OUTPUT_ID)!;
+    expect(mountEl.style.height).toBe("320px");
+    expect(mountEl.style.overflow).toBe("auto");
+  });
+});
+
+describe("other nodes shown as notebook cells", () => {
+  const contentProps = (nodeType: string) => ({
+    ...props(),
+    nodeType,
+    grammar: nodeType.includes("autk"),
+    outputId: undefined,
+    contentComponent: <div data-testid="content" />,
+  });
+  const contentMount = (container: HTMLElement) => container.querySelector(".curio-content-mount") as HTMLElement;
+
+  test("an Autark map or plot is 400px tall, a definite height to draw in", () => {
+    const { container } = mount(true, contentProps("curio.builtin/autk-grammar"));
+    expect(contentMount(container).style.height).toBe("400px");
+  });
+
+  test("a summary takes its own height up to 360px and scrolls inside past it", () => {
+    // Data Summary is the one such kind with an editor; the kinds with none
+    // (Data Pool, Simple View...) are capped in UniversalNode, by the same rule.
+    const { container } = mount(true, contentProps("curio.builtin/data-summary@1"));
+    const el = contentMount(container);
+    expect(el.style.maxHeight).toBe("360px");
+    expect(el.style.overflow).toBe("auto");
+    expect(el.style.height).not.toBe("100%");
+  });
+
+  test("a Compare Scenarios chart or map gets a definite 400px, as an Autark map does", () => {
+    const { container } = mount(true, contentProps("curio.builtin/compare-scenarios"));
+    expect(contentMount(container).style.height).toBe("400px");
+  });
+
+  test("a package's body, sized for a node, gets a definite height rather than collapsing", () => {
+    const { container } = mount(true, contentProps("acme.tools/heatmap@1"));
+    expect(contentMount(container).style.height).toBe("360px");
+    expect(contentMount(container).style.overflow).toBe("auto");
+  });
+
+  test("a code node keeps its Code pill in the page, which the e2e helpers click", () => {
+    const { container } = mount(true, {
+      ...props(), nodeType: "curio.builtin/computation-analysis", code: true, grammar: false, outputId: undefined,
+    });
+    expect(container.querySelector('.nav-link[data-rr-ui-event-key="code"]')).not.toBeNull();
+  });
 });
 
 describe("the same node on the canvas", () => {
@@ -117,5 +206,24 @@ describe("the same node on the canvas", () => {
     const { p } = mount(false);
     await run(p);
     expect(outputPane()).toHaveClass("active");
+  });
+
+  test("keeps its pills below the panes, and every pane and mount filling the node", () => {
+    const { container } = mount(false);
+    const nav = container.querySelector(".nav") as HTMLElement;
+    expect(nav.compareDocumentPosition(panes(container)) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(panes(container).style.height).toBe("100%");
+    expect(outputPane().style.height).toBe("100%");
+    expect(document.getElementById(OUTPUT_ID)!.style.height).toBe("100%");
+  });
+
+  test("lets a content node fill the node, as before", () => {
+    const { container } = mount(false, {
+      ...props(), nodeType: "curio.builtin/data-pool", grammar: false, outputId: undefined,
+      contentComponent: <div />,
+    });
+    const el = container.querySelector(".curio-content-mount") as HTMLElement;
+    expect(el.style.height).toBe("100%");
+    expect(el.style.maxHeight).toBe("");
   });
 });

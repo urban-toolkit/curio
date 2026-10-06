@@ -29,6 +29,10 @@ RUN_ALL_BUTTON_SELECTOR = (
 )
 
 
+#: The notebook view's page, which mirrors the run guard as ``data-run-active``.
+NOTEBOOK_PAGE_SELECTOR = '.curio-flow-scroller[data-curio-notebook="true"]'
+
+
 def run_all_button(page):
     """The Run All / Cancel button, in whichever state it currently is."""
     return page.get_by_role("button", name=RUN_ALL_BUTTON_NAME)
@@ -136,11 +140,13 @@ def wait_for_run_guard_released(page, *, timeout_ms: int) -> None:
     button as ``data-run-active``). The played node can report Done before that
     run ends: an Autark map that already drew from its input stays Done while
     the ancestors it waits on re-run. Waiting on the guard waits for the whole
-    run the click started.
+    run the click started. The notebook view has no rail and no Run All button
+    in sight: its page carries the same attribute.
     """
     try:
         page.wait_for_function(
-            f"() => {{ const b = document.querySelector({RUN_ALL_BUTTON_SELECTOR!r});"
+            f"() => {{ const b = document.querySelector({RUN_ALL_BUTTON_SELECTOR!r})"
+            f" || document.querySelector({NOTEBOOK_PAGE_SELECTOR!r});"
             " return !b || b.getAttribute('data-run-active') !== 'true'; }",
             timeout=timeout_ms,
         )

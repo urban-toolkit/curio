@@ -632,6 +632,7 @@ def run_node(request, namespace_factory):
     import contextlib
     import io
     import traceback
+    import warnings
 
     from utk_curio.sandbox.util.package_modules import importable
 
@@ -684,11 +685,17 @@ def run_node(request, namespace_factory):
             # behaviour (#158). A statement that no longer resolves is skipped:
             # it was recorded because it once worked, and failing the whole
             # node for it would be a surprising regression.
-            for statement in request.get("session_imports") or []:
-                try:
-                    exec(statement, namespace)
-                except Exception:
-                    continue
+            #
+            # Inside catch_warnings, so a replayed library's warning filters
+            # stay with the replay (#749): pythermalcomfort turns every warning
+            # on when it is imported, and that reached every later node of the
+            # session. This node starts with the filters it was forked with.
+            with warnings.catch_warnings():
+                for statement in request.get("session_imports") or []:
+                    try:
+                        exec(statement, namespace)
+                    except Exception:
+                        continue
 
             # This node's own top-level imports, recorded for later nodes only
             # if they actually work here.

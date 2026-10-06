@@ -1,0 +1,29 @@
+/* The (+) in the gap below a cell: quiet until the pointer is on it. */
+.add {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--curio-border, #d4d4d8);
+  border-radius: 50%;
+  background: #ffffff;
+  color: #9a9a9a;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.add:hover,
+.add:focus-visible,
+.addOpen {
+  color: var(--curio-text-primary, #222);
+  border-color: var(--curio-text-secondary, #52525b);
+}
+
+/* Holds the menu: the rail's own dock is `position: fixed`, placed inline. */
+.menu {
+  position: relative;
+  z-index: 1000;
+}

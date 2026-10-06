@@ -659,7 +659,7 @@ The node has two tabs:
   (**Combine**: mean, sum, median, minimum, maximum, or a count of rows).
 - **Difference**, in its place in Difference, maps a raster's or a layer's
   difference, colored by a band or a number column, or by `change` (**Color by**).
-  The legend is titled with what it shows: `sunlight_change` for the column
+  The legend is titled with what it shows: `sunlight change` for the column
   `sunlight`, or `change`. A layer's colors run from the lowest difference, dark purple, to the highest,
   yellow. A raster's cells are redder the higher their difference, and fainter the
   closer they are to no difference. A table's difference is shown as a table, each
@@ -896,6 +896,29 @@ a run is going, and a selection only highlights it (see
 press play or run the dataflow. Without WebGPU nothing is drawn on its own;
 pressing play says why.
 
+### Legend titles
+
+A map's legend is titled with the table of the layer it shows: `input_0` for
+the node's first input. A `layerRef`'s `legendTitle` titles it instead, on a
+vector or a raster layer; a layer without one keeps its table's name.
+`legendTitle` is Curio's own key, not the Autark grammar's.
+
+```json
+{
+  "map": {
+    "layerRefs": [
+      {
+        "dataRef": "input_0",
+        "getFnv": "height",
+        "getFnvType": "quantitative",
+        "colorMapInterpolator": "interpolateViridis",
+        "legendTitle": "Building height (m)"
+      }
+    ]
+  }
+}
+```
+
 ### The starter document
 
 A newly dropped `Autark` node opens **empty**, like a `Vega-Lite` node, and
@@ -959,20 +982,35 @@ a cell with no value is never counted.
 ## Notebook view
 
 The **Canvas | Notebook** switch, at the right of the canvas bar beside **Monitor**, shows a dataflow two ways. **Notebook**
-lists the same nodes as a column of cells, one under the other, and the page scrolls.
+lists the same nodes as a column of cells across the page, one under the other, and the
+page scrolls.
 
 - **Order.** A cell comes after every cell it reads from, in the order **File → Export as
-  notebook** writes. The nodes that read from nothing come first.
-- **Cells.** Every cell has the same size and cannot be resized or minimized. A code
-  cell shows its code with its output below; a Vega-Lite or Autark cell shows its spec
-  above its chart or map.
+  notebook** writes: each cell is followed by the cells it feeds, the most recently
+  connected first, before the next cell that reads from nothing.
+- **Cells** grow with their code and output, and cannot be resized or minimized. A
+  cell's header shows **Play** at its top left, the node's name and kind, and its run
+  status. Its other buttons (the editor's tabs, Save output, settings, about, pin,
+  comments and delete) show while the pointer is over the cell or the cell is
+  selected. A code cell shows its code in a gray box with its output below; a
+  Vega-Lite or Autark cell shows its spec above its chart or map. An editor is as tall
+  as its lines, from three lines up to 400 pixels for code and 240 for a spec, and
+  scrolls inside past that. A chart is 320 pixels tall and an Autark map or plot 400. A
+  code output takes its own height up to 320 pixels, a table or a summary up to 360,
+  and scrolls inside past it.
+- **Adding a cell.** The notebook has no rail on its left. A **(+)** below each cell
+  opens it as one row: the built-in nodes, the Node, Data, Agent and Model catalogs,
+  and **Run all**. Click a node to add it as a cell right under the (+), reading the
+  output of the cell above (when the two can connect); the page scrolls to it. A node
+  dragged from the row onto the page becomes a cell too. Press Escape or click
+  elsewhere to close the row.
 - **Connections** run in the bar to the right of the cells. Each cell has its dots on its
   right edge: its inputs at the top, numbered as their chips are (dot 0 is
   `[!! input 0 !!]`), its interaction dot halfway down, and its output at the bottom.
-  Hover a dot to see what feeds it. Selecting a cell darkens its connections.
+  The dots follow their cell as it grows. Hover a dot to see what feeds it. Selecting
+  a cell rings it in its kind's color and darkens its connections.
 - **Editing** works as on the canvas. Drag from an output dot to an input dot to connect
-  two cells, and select a connection and press Delete to remove it. A node dragged in
-  from the left rail becomes a new cell, and the page scrolls to it.
+  two cells, and select a connection and press Delete to remove it.
 - **Nothing is saved** about the view: the dataflow keeps its canvas layout, and
   **Canvas** shows it as it was. The address carries the view (`?view=notebook`), so a
   reload, or the address copied from the browser, opens it the same way.

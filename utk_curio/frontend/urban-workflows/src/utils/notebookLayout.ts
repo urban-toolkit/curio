@@ -1,32 +1,38 @@
 // The notebook view's geometry: where each cell sits, where its dots sit on
-// the cell's right edge, which lane each connection takes in the bar, and the
-// path it draws there. Pure, so the view and its tests share one set of numbers.
+// the cell's right edge, which lane each connection takes in the bar, the
+// path it draws there, and how tall a cell's output is. Pure, so the view and
+// its tests share one set of numbers.
+import { NodeType } from "../constants";
+import { unversionedNodeType } from "./flowNodeCanonicalType";
 import { inputSlotOf } from "./inputSlots";
 
 /**
- * Every cell is the size of a dashboard tile's default (`dashboardLayout.ts`):
- * the content of a page rather than a node among fifty.
+ * Cells span the page from its left margin to the bar on its right, as a
+ * notebook's do; a cell's height is its content's, as React Flow measures it.
+ * On a pane too narrow for that, a cell keeps this width and the page scrolls.
  */
-export const NOTEBOOK_CELL_WIDTH = 880;
-export const NOTEBOOK_CELL_HEIGHT = 560;
-/** An icon-only node (a package whose container is `noContent`) has no body, so it gets a short row, with room for five input circles. */
-export const NOTEBOOK_SLIM_HEIGHT = 120;
-export const NOTEBOOK_CELL_GAP = 32;
+export const NOTEBOOK_MIN_CELL_WIDTH = 480;
+/** Room between two cells, which holds the (+) that adds a cell. */
+export const NOTEBOOK_CELL_GAP = 24;
+/** What a cell counts as until React Flow has measured it, a frame after it mounts. */
+export const NOTEBOOK_UNMEASURED_HEIGHT = 240;
 /** The strip right of the cells where the dots sit and the connections run. */
 export const NOTEBOOK_BAR_WIDTH = 176;
 /** Clearance from the top bar, the title chips and the palette rail. */
 export const NOTEBOOK_MARGIN = 24;
 /** Room below the last cell, so it can be scrolled clear of the window's bottom edge. */
 export const NOTEBOOK_BOTTOM_SPACE = 160;
+/** A dot's size (`.react-flow__handle-right` in Node.css). */
+export const NOTEBOOK_DOT_SIZE = 20;
 
-// Dots on a cell's right edge: inputs from just under the title band down,
-// the interaction dot halfway, the output near the bottom.
+// Dots on a cell's right edge: inputs from just under the header down, the
+// interaction dot halfway, the output near the bottom. Centers, in pixels from
+// the cell's top or bottom edge.
 const FIRST_INPUT = 52;
-const FIRST_INPUT_SLIM = 16;
 const OUTPUT_INSET = 36;
-const OUTPUT_INSET_SLIM = 16;
 const DOT_PITCH = 22;
-const DOT_GAP = 16;
+/** Clearance between two stacks of dots, center to center, more than a dot. */
+const DOT_GAP = 22;
 
 // Lanes in the bar: the first clears the dots (20px, drawn just outside the
 // cell's edge), the rest step outward.
@@ -39,8 +45,8 @@ export type XY = { x: number; y: number };
 
 export interface NotebookCell {
   id: string;
-  /** An icon-only node, drawn as a short row. */
-  slim: boolean;
+  /** The cell's height as React Flow measured it; none until it has. */
+  height?: number | null;
 }
 
 /** The scrolling pane the cells live in, in its own pixels. */
@@ -52,38 +58,52 @@ export interface NotebookPane {
   left: number;
 }
 
+/** Where a (+) sits: in the gap below a cell, whose output a cell added there reads. */
+export interface NotebookAddPoint {
+  after: string;
+  /** The middle of the gap below the cell. */
+  y: number;
+}
+
 export interface NotebookLayout {
   positions: Map<string, XY>;
-  heights: Map<string, number>;
   rows: Map<string, number>;
   columnX: number;
+  cellWidth: number;
   /** Left edge of the bar, which is the cells' right edge. */
   barX: number;
+  /** One (+) below every cell, the last one's included. */
+  addPoints: NotebookAddPoint[];
   contentHeight: number;
 }
 
-/** One column of cells in the given order, centered in the pane and clear of its overlays. */
+/**
+ * One column of cells in the given order, each as tall as it was measured and
+ * a gap below the one above, spanning the pane from its left margin to the bar
+ * at its right edge, clear of its overlays.
+ */
 export function layoutNotebook(cells: readonly NotebookCell[], pane: NotebookPane): NotebookLayout {
-  const centered = Math.round((pane.width - (NOTEBOOK_CELL_WIDTH + NOTEBOOK_BAR_WIDTH)) / 2);
-  const columnX = Math.max(Math.round(pane.left) + NOTEBOOK_MARGIN, centered);
+  const columnX = Math.round(pane.left) + NOTEBOOK_MARGIN;
+  const barX = Math.max(columnX + NOTEBOOK_MIN_CELL_WIDTH, Math.round(pane.width) - NOTEBOOK_BAR_WIDTH);
   const positions = new Map<string, XY>();
-  const heights = new Map<string, number>();
   const rows = new Map<string, number>();
+  const addPoints: NotebookAddPoint[] = [];
   let y = Math.round(pane.top) + NOTEBOOK_MARGIN;
   cells.forEach((cell, row) => {
-    const height = cell.slim ? NOTEBOOK_SLIM_HEIGHT : NOTEBOOK_CELL_HEIGHT;
+    const height = cell.height && cell.height > 0 ? cell.height : NOTEBOOK_UNMEASURED_HEIGHT;
     positions.set(cell.id, { x: columnX, y });
-    heights.set(cell.id, height);
     rows.set(cell.id, row);
+    addPoints.push({ after: cell.id, y: y + height + NOTEBOOK_CELL_GAP / 2 });
     y += height + NOTEBOOK_CELL_GAP;
   });
   const bottom = cells.length > 0 ? y - NOTEBOOK_CELL_GAP : y;
   return {
     positions,
-    heights,
     rows,
     columnX,
-    barX: columnX + NOTEBOOK_CELL_WIDTH,
+    cellWidth: barX - columnX,
+    barX,
+    addPoints,
     contentHeight: bottom + NOTEBOOK_BOTTOM_SPACE,
   };
 }
@@ -94,26 +114,83 @@ export interface NotebookHandle {
 }
 
 /**
- * How far below a cell's top each of its dots sits. Inputs keep the order the
- * node lists them in (circle 0 first), closing up when there are more than
- * fit above the interaction dot or the output.
+ * A dot's place on a cell's right edge, as its style: a number of pixels from
+ * the top, halfway, or from the bottom. `top: "auto"` goes inline with
+ * `bottom`, because React Flow's right-handle rule sets `top: 50%`.
  */
-export function notebookHandleOffsets(handles: readonly NotebookHandle[], height: number): Map<string, number> {
-  const slim = height < NOTEBOOK_CELL_HEIGHT;
-  const inputs = handles.filter((h) => h.type === "target");
-  const outputs = handles.filter((h) => h.type === "source" && h.id !== "in/out");
-  const interaction = handles.some((h) => h.id === "in/out");
-  const first = slim ? FIRST_INPUT_SLIM : FIRST_INPUT;
-  const outputTop = height - (slim ? OUTPUT_INSET_SLIM : OUTPUT_INSET);
-  const middle = Math.round(height / 2);
-  const limit = (interaction ? middle : outputTop - Math.max(0, outputs.length - 1) * DOT_PITCH) - DOT_GAP;
-  const pitch = inputs.length > 1 ? Math.min(DOT_PITCH, (limit - first) / (inputs.length - 1)) : 0;
+export type NotebookDotPlace = { top: number } | { top: "50%" } | { top: "auto"; bottom: number };
 
-  const offsets = new Map<string, number>();
-  inputs.forEach((h, k) => offsets.set(h.id, Math.round(first + k * pitch)));
-  if (interaction) offsets.set("in/out", middle);
-  outputs.forEach((h, k) => offsets.set(h.id, outputTop - k * DOT_PITCH));
-  return offsets;
+function splitHandles(handles: readonly NotebookHandle[]) {
+  return {
+    inputs: handles.filter((h) => h.type === "target"),
+    outputs: handles.filter((h) => h.type === "source" && h.id !== "in/out"),
+    interaction: handles.some((h) => h.id === "in/out"),
+  };
+}
+
+/**
+ * Where each of a cell's dots sits, so it follows the cell as it grows. Inputs
+ * keep the order the node lists them in (circle 0 first) at fixed offsets from
+ * the top, the interaction dot is halfway down, and outputs go up from the
+ * bottom. React Flow centers a right-side dot on its `top`, so a dot anchored
+ * to the bottom sits one dot higher than its `bottom` says.
+ */
+export function notebookHandlePlaces(handles: readonly NotebookHandle[]): Map<string, NotebookDotPlace> {
+  const { inputs, outputs, interaction } = splitHandles(handles);
+  const places = new Map<string, NotebookDotPlace>();
+  inputs.forEach((h, k) => places.set(h.id, { top: FIRST_INPUT + k * DOT_PITCH }));
+  if (interaction) places.set("in/out", { top: "50%" });
+  outputs.forEach((h, k) =>
+    places.set(h.id, { top: "auto", bottom: OUTPUT_INSET + k * DOT_PITCH - NOTEBOOK_DOT_SIZE }));
+  return places;
+}
+
+/** The least a cell can be: tall enough for its dots, none over another. */
+export function notebookCellMinHeight(handles: readonly NotebookHandle[]): number {
+  const { inputs, outputs, interaction } = splitHandles(handles);
+  // From the top edge to just under the last input, and from the bottom edge
+  // to just over the highest output.
+  const above = inputs.length > 0 ? FIRST_INPUT + (inputs.length - 1) * DOT_PITCH + DOT_GAP : DOT_GAP;
+  const below = outputs.length > 0 ? OUTPUT_INSET + (outputs.length - 1) * DOT_PITCH + DOT_GAP : DOT_GAP;
+  // The interaction dot sits halfway, so each half holds one of the stacks.
+  return interaction ? 2 * Math.max(above, below) : above + below;
+}
+
+// How tall a cell's output is. A chart or a map has no height of its own, so
+// it gets a definite one to draw in; a table, a summary or a control takes its
+// own, up to a cap, and scrolls inside past it.
+const CHART_HEIGHT = 320;
+const MAP_HEIGHT = 400;
+const OUTPUT_CAP = 360;
+// Built-ins NodeType does not list are named here as the registry ids they are.
+const NATURAL_HEIGHT_KINDS: ReadonlySet<string> = new Set([
+  NodeType.DATA_POOL,
+  NodeType.VIS_SIMPLE,
+  NodeType.DATA_SUMMARY,
+  NodeType.DATA_EXPORT,
+  "curio.builtin/parameter",
+  "curio.builtin/spatial-join",
+]);
+const MAP_KINDS: ReadonlySet<string> = new Set([NodeType.AUTK_GRAMMAR, "curio.builtin/compare-scenarios"]);
+
+export interface NotebookOutputBox {
+  height?: number;
+  maxHeight?: number;
+  overflow?: "auto";
+}
+
+/**
+ * The box a cell's output goes in, by the node's kind: a Vega-Lite chart's
+ * mount is 320px, an Autark map or plot (and a Compare Scenarios chart or
+ * difference map) 400px. Kinds whose body has a height of its own take it, up
+ * to 360px. Anything else, a package's body made to fill a node, is 360px.
+ */
+export function notebookOutputBox(nodeType: string): NotebookOutputBox {
+  const kind = unversionedNodeType(nodeType);
+  if (kind === NodeType.VIS_VEGA) return { height: CHART_HEIGHT, overflow: "auto" };
+  if (MAP_KINDS.has(kind)) return { height: MAP_HEIGHT };
+  if (NATURAL_HEIGHT_KINDS.has(kind)) return { maxHeight: OUTPUT_CAP, overflow: "auto" };
+  return { height: OUTPUT_CAP, overflow: "auto" };
 }
 
 /** What an input dot is called: the number `[!! input k !!]` uses, or a named input's name. */

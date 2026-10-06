@@ -34,6 +34,18 @@
   overflow-wrap: anywhere;
 }
 
+/* In a notebook cell, which is as tall as its content, the strip is part of
+   that content: under the output, never over it. Opened, it grows the cell up
+   to a cap and scrolls inside past it. */
+.inCell {
+  position: static;
+  margin: 6px 0 4px;
+}
+
+.inCell.expanded {
+  max-height: 240px;
+}
+
 .error {
   background: var(--curio-danger-bg, #fdecec);
   color: var(--curio-danger-text, #8a1f1f);

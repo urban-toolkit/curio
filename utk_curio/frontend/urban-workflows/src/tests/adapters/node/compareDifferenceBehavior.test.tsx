@@ -228,7 +228,7 @@ describe("its body in Difference", () => {
     await screen.findByTestId("autark-map");
     const [data, state, options] = mockAutk.mock.calls.at(-1)!;
     // The node's own canvas, autk-grammar-map-<its id>, over its own output,
-    // read as the table the document names, which titles the map's legend.
+    // read as the table the document names; its legendTitle titles the legend.
     expect(data.nodeId).toBe(COMPARE);
     expect(data.input).toEqual({ path: "diff-1", layerName: "band_1_change" });
     expect(data.outputCallback).toBeUndefined();
@@ -238,7 +238,7 @@ describe("its body in Difference", () => {
     expect(state.output).toEqual({ code: "", content: "" });
     await waitFor(() => expect(mockApply).toHaveBeenCalled());
     expect(JSON.parse(mockApply.mock.calls.at(-1)![0])).toEqual({
-      map: { layerRefs: [{ dataRef: "band_1_change", getFnv: "band_1", isColorMap: true }] },
+      map: { layerRefs: [{ dataRef: "band_1_change", getFnv: "band_1", isColorMap: true, legendTitle: "band_1 change" }] },
     });
     expect(
       screen.getByText(
@@ -266,6 +266,7 @@ describe("its body in Difference", () => {
     await waitFor(() => expect(mockApply).toHaveBeenCalled());
     expect(JSON.parse(mockApply.mock.calls.at(-1)![0]).map.layerRefs[0]).toEqual({
       dataRef: "sunlight_change", getFnv: "sunlight", getFnvType: "quantitative", colorMapInterpolator: "interpolateViridis",
+      legendTitle: "sunlight change",
     });
     expect(mockAutk.mock.calls.at(-1)![0].input).toEqual({
       path: "diff-1", dataType: "geodataframe", layerName: "sunlight_change",
