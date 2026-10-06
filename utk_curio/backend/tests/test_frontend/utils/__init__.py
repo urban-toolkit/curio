@@ -51,7 +51,7 @@ from .capture_waits import (  # noqa: F401
     _wait_for_no_node_running,
 )
 from .images import _compare_images  # noqa: F401
-from .dialogs import accept_confirm_dialog, leave_agent_badge  # noqa: F401
+from .dialogs import accept_confirm_dialog, leave_agent_badge, wait_for_drawer_closed  # noqa: F401
 from .screenshots import (  # noqa: F401
     WORKFLOW_SCREENSHOT_EXPECTED_DIR,
     dump_browser_log,

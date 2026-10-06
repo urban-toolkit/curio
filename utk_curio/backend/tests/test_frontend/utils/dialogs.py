@@ -1,5 +1,5 @@
-"""In-app dialogs: accept a catalog's confirmation, and take focus off the agent
-badge once its chat closes.
+"""In-app dialogs: accept a catalog's confirmation, wait for a slide drawer to
+close, and take focus off the agent badge once its chat closes.
 """
 
 from playwright.sync_api import (
@@ -36,6 +36,25 @@ def accept_confirm_dialog(
     dialog.get_by_role("button", name=button, exact=True).click()
     expect(dialog).to_have_count(0, timeout=timeout)
     return dialog
+
+
+def wait_for_drawer_closed(page: Page, root: str, *, timeout: float = 10000) -> None:
+    """Wait for a slide drawer to close after Escape or a close click.
+
+    ``root`` is the attribute selector of the drawer's overlay root, such as
+    ``'[data-curio-scenario-catalog-drawer="true"]'``; the helper appends to it.
+
+    A drawer from ``useSlideDrawerPresentation`` closes in two forms: it stays
+    mounted with ``aria-hidden="true"`` for its exit slide, then unmounts. Under
+    reduced motion the exit timer is 0 ms, so the hidden form can be gone
+    before a wait for it starts. This waits until no copy of the root is open
+    (each one hidden, or none left), which either form satisfies, and then
+    until the root is no longer visible. A drawer that stays open fails both.
+    The second wait has to retry: the mounted root is a full-window box, so
+    Playwright reports it visible until it unmounts.
+    """
+    expect(page.locator(f'{root}:not([aria-hidden="true"])')).to_have_count(0, timeout=timeout)
+    expect(page.locator(root)).to_be_hidden(timeout=timeout)
 
 
 def leave_agent_badge(page: Page) -> None:
