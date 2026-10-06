@@ -63,6 +63,7 @@ import math
 import os
 import re
 import sys
+import time
 import traceback
 from dataclasses import dataclass, field
 from typing import Callable
@@ -72,10 +73,14 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
+from .test_scenario_drop_e2e import _toast
+from .test_scenarios_canvas_e2e import _box
+from .test_selection_tags_e2e import _drag_selection_tag_to_line_end, _open_tab, _panel
 from .tour import REPO_ROOT, VIDEO_SIZE, Tour, finalize_video, out_dir, speed
 from .utils import (
     _post_json,
     accept_confirm_dialog,
+    api_json,
     CANVAS_DROP_TARGET,
     _DRAG_TO_CANVAS_JS,
     canvas_nodes,
@@ -84,12 +89,16 @@ from .utils import (
     connect_nodes,
     dismiss_toasts,
     drag_to_canvas,
+    frame_node,
+    mark_point,
     node_locator,
     open_tools_palette,
     play_node,
     run_node_and_wait,
+    save_dataflow,
     set_node_code,
     stub_db_login,
+    wait_for_drawer_closed,
     wait_for_node_done,
     wait_for_projects_page,
 )
@@ -1780,10 +1789,14 @@ def _drag_node_by(page, node_id: str, dx: float, dy: float) -> None:
     page.wait_for_timeout(600)
 
 
-def _frame_nodes(page, node_ids: list[str], box: tuple[int, int, int, int]) -> None:
-    """Pan and zoom so these nodes fill *box* (left, top, right, bottom, in page pixels)."""
+def _frame_nodes(
+    page, node_ids: list[str], box: tuple[int, int, int, int], max_zoom: float | None = None,
+) -> None:
+    """Pan and zoom so these nodes fill *box* (left, top, right, bottom, in page
+    pixels), zoomed in no further than *max_zoom*: above 1 a map's canvas is
+    stretched."""
     page.evaluate(
-        """({ ids, box }) => {
+        """({ ids, box, maxZoom }) => {
             const rf = window.__curio_reactFlow;
             const nodes = rf.getNodes().filter((n) => ids.includes(n.id));
             const x0 = Math.min(...nodes.map((n) => n.position.x));
@@ -1791,7 +1804,9 @@ def _frame_nodes(page, node_ids: list[str], box: tuple[int, int, int, int]) -> N
             const x1 = Math.max(...nodes.map((n) => n.position.x + (n.width || 525)));
             const y1 = Math.max(...nodes.map((n) => n.position.y + (n.height || 350)));
             const [left, top, right, bottom] = box;
-            const zoom = Math.min((right - left) / (x1 - x0), (bottom - top) / (y1 - y0));
+            const zoom = Math.min(
+                (right - left) / (x1 - x0), (bottom - top) / (y1 - y0), maxZoom ?? Infinity,
+            );
             const pane = document.querySelector('.react-flow').getBoundingClientRect();
             rf.setViewport({
                 x: left - pane.left + ((right - left) - (x1 - x0) * zoom) / 2 - x0 * zoom,
@@ -1799,7 +1814,7 @@ def _frame_nodes(page, node_ids: list[str], box: tuple[int, int, int, int]) -> N
                 zoom,
             }, { duration: 600 });
         }""",
-        {"ids": node_ids, "box": list(box)},
+        {"ids": node_ids, "box": list(box), "maxZoom": max_zoom},
     )
     page.wait_for_timeout(1200)
 
@@ -1811,10 +1826,6 @@ def scene_heat(ctx: Ctx) -> None:
     viewport than the video's, which would show as a jump in the full tour.
     """
     page, tour = ctx.page, ctx.tour
-    wanted = os.environ.get("CURIO_TOUR_SCENES") or ""
-    if "heat" not in {name.strip() for name in wanted.split(",")}:
-        _log("[tour] heat runs only when CURIO_TOUR_SCENES names it; skipped")
-        return
     _new_dataflow_from_menu(ctx)
     _load_example(ctx, EXAMPLE_HEAT, expected_nodes=_example_node_count(EXAMPLE_HEAT))
     tour.hush()
@@ -1864,6 +1875,11 @@ def _geo_spec() -> dict:
         node["x"], node["y"] = GEO_LAYOUT[node["id"]]
         if node["id"] == GEO_CHART:
             node["content"] = GEO_CHART_SPEC
+        if node["id"] == GEO_MAP:
+            # Titled like the chart's axis; untitled, the legend reads input_0.
+            content = json.loads(node["content"])
+            content["map"]["layerRefs"][0]["legendTitle"] = "Area (km2)"
+            node["content"] = json.dumps(content, indent=2)
     flow["name"] = "Downtown Chicago ZIPs"
     flow["task"] = GEO_GOAL
     spec["name"] = flow["name"]
@@ -1909,18 +1925,12 @@ def scene_catalogs(ctx: Ctx) -> None:
     and the agents are attached over the API before the page opens it.
     """
     page, tour = ctx.page, ctx.tour
-    wanted = os.environ.get("CURIO_TOUR_SCENES") or ""
-    if "catalogs" not in {name.strip() for name in wanted.split(",")}:
-        _log("[tour] catalogs runs only when CURIO_TOUR_SCENES names it; skipped")
-        return
     spec = _geo_spec()
     project = _post_json(
         f"{ctx.backend}/api/testing/stub-project",
         {"username": USER_LOGIN, "name": spec["name"], "spec": spec},
     )
-    token = page.evaluate(
-        "() => (document.cookie.match(/(?:^|; )session_token=([^;]*)/) || [])[1] || ''"
-    )
+    token = _session_token(page)
     base = f"{ctx.backend}/api/agents/projects/{project['id']}"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     for coord in GEO_AGENTS:
@@ -1950,6 +1960,533 @@ def scene_catalogs(ctx: Ctx) -> None:
     tour.still("catalogs")
     page.set_viewport_size(VIDEO_SIZE)
     page.wait_for_timeout(1000)
+
+
+# ---------------------------------------------------------------------------
+# The guide's scenario, widget and SCOUT pages
+# ---------------------------------------------------------------------------
+#
+# Each of these scenes runs only when CURIO_TOUR_SCENES names it, and works on
+# the account's copies of shipped dataflows, so the stack must be started with
+# the examples (pytest --with-examples), which also installs the SCOUT packages.
+
+# Example 06: three scenarios over one loader and its Data Pool.
+WHATIF_NAME = "Autark what-if shadow study"
+WHATIF_DATA = "whatif-data"
+WHATIF_POOL = "whatif-pool"
+WHATIF_EDIT = "whatif-towers-edit"
+WHATIF_MAPS = ["whatif-baseline-map", "whatif-modified-map", "whatif-towers-map"]
+WHATIF_COMPARES = ["whatif-compare-chart", "whatif-compare-difference"]
+WHATIF_BASELINE = "s-baseline"
+WHATIF_BASELINE_NODES = ["whatif-baseline-compute", "whatif-baseline-map"]
+WHATIF_TWICE = "s-twice"
+DRAWER_SCENARIOS = '[data-curio-scenario-catalog-drawer="true"]'
+
+# Example 24: SCOUT's Chicago Loop buildings, their height mosaic and Deep
+# Umbra's summer shadow, each on an Autark map.
+SHADOW_NAME = "SCOUT building rasters"
+SHADOW_MAPS = {
+    "buildings": "e1b607c4-51b5-5b82-bf4a-0227284def51",
+    "mosaic": "ebac4811-abcc-50fe-a61a-cc9c9ac8c011",
+    "summer": "6cef8611-e3ec-52d4-9caf-aa5d6cff3d6a",
+}
+SHADOW_STATS = "8a914e39-4cb1-535d-9a8b-19b45f6be288"
+# A map fits a much larger area than the Loop's few blocks, so each is zoomed
+# in with the wheel: one notch of -100 brings the camera 20% closer to the
+# point under the pointer. The pointer sits a few pixels right of and below
+# the map's middle, which moves the buildings up and left, clear of the legend
+# in the bottom right corner. A still is taken at each notch count listed, and
+# the guide picks one.
+SHADOW_VIEWS = {
+    "buildings": ((6, 7), (7, 8)),
+    "mosaic": ((0, 0), (8, 9)),
+    "summer": ((11, 12), (6, 7)),
+}
+
+# FloodScenarios: three Parameter nodes, the period and the region's corners,
+# read by its Data Loading nodes.
+FLOOD_NAME = "FloodScenarios"
+FLOOD_PERIOD = "8f0c1e2a-5b3d-4c7e-9a61-2d4f6b8e0c13"
+FLOOD_TOPLEFT = "c1d2e3f4-0a1b-4c2d-8e3f-4a5b6c7d8e91"
+FLOOD_CLASSES = "e3f4a5b6-2c3d-4e4f-8a5b-6c7d8e9fa0b3"
+FLOOD_DEPTH = "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4"
+FLOOD_COMPARES = ["7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62", "9c5f1b3e-7d80-4a2c-8f6a-2b3d7c9e5f84"]
+
+# Example 17: downtown Chicago's ZIP codes from one loader, on an Autark map
+# whose ZIP codes a double-click picks. The selectiontag scene adds a Python
+# node that reads the picked ZIP code through a selection tag.
+ZIPS_LOADER = GEO_LOADER
+ZIPS_MAP = "eb39411d-d742-52c8-93aa-1424997ead25"
+ZIPS_BARS = "dfdcf935-96c9-5dcf-bb44-90376fbafad8"
+PICKED_CODE = (
+    "picked = \n"
+    'zips = arg[arg["zip"].isin(picked)]\n'
+    'print("Picked:", ", ".join(zips["zip"]))\n'
+    "return zips\n"
+)
+CODE_TYPE = "curio.builtin/computation-analysis"
+
+# The function the nodefromfunction scene makes a node of.
+FUNCTION_CHOICE = "scout.shadow@1|scout_shadow.deep_umbra|season_factor"
+
+
+def _session_token(page) -> str:
+    return page.evaluate(
+        "() => (document.cookie.match(/(?:^|; )session_token=([^;]*)/) || [])[1] || ''"
+    )
+
+
+def _account_project(ctx: Ctx, name: str) -> str:
+    """The id of the account's copy of a shipped dataflow. The first listing
+    seeds the copies, and a listing soon after can still lack some of them, so
+    it is asked again until the copy is there."""
+    deadline = time.monotonic() + 180
+    while True:
+        listed = api_json(f"{ctx.backend}/api/projects", _session_token(ctx.page), timeout=120)
+        found = [p["id"] for p in listed if p.get("name") == name]
+        if found or time.monotonic() > deadline:
+            break
+        ctx.page.wait_for_timeout(3000)
+    assert found, (
+        f"the account has no {name!r}; start the stack with the examples "
+        f"(pytest --with-examples): {sorted(p.get('name') or '' for p in listed)}"
+    )
+    return found[0]
+
+
+def _empty_project(ctx: Ctx, name: str) -> str:
+    """A new, empty project named *name*."""
+    spec = {
+        "name": name,
+        "dataflow": {
+            "name": name, "nodes": [], "edges": [], "task": "",
+            "timestamp": 0, "provenance_id": name,
+        },
+    }
+    return _post_json(
+        f"{ctx.backend}/api/testing/stub-project",
+        {"username": USER_LOGIN, "name": name, "spec": spec},
+    )["id"]
+
+
+def _open_project(ctx: Ctx, project_id: str, node_ids: list[str]) -> None:
+    page = ctx.page
+    page.goto(f"{ctx.frontend}/dataflow/{project_id}")
+    page.wait_for_load_state("domcontentloaded")
+    page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
+    page.wait_for_function("() => !!window.__curio_reactFlow", timeout=45000)
+    for node_id in node_ids:
+        node_locator(page, node_id).wait_for(state="attached", timeout=45000)
+    page.wait_for_timeout(1500)
+
+
+def _still_with_boxes(ctx: Ctx, name: str, selectors: dict[str, str]) -> None:
+    """``tour.still(name)``, with the page boxes of *selectors* written next to
+    it as ``<name>.json``, so the guide can crop the still to them."""
+    boxes = ctx.page.evaluate(
+        """(selectors) => Object.fromEntries(Object.entries(selectors).map(([key, sel]) => {
+            const el = document.querySelector(sel);
+            if (!el) return [key, null];
+            const b = el.getBoundingClientRect();
+            return [key, { x: b.x, y: b.y, w: b.width, h: b.height }];
+        }))""",
+        selectors,
+    )
+    stills = os.path.join(out_dir(), "stills")
+    os.makedirs(stills, exist_ok=True)
+    with open(os.path.join(stills, f"{name}.json"), "w", encoding="utf-8") as fh:
+        json.dump(boxes, fh, indent=2)
+    ctx.tour.still(name)
+
+
+def _node_box(node_id: str) -> str:
+    return f'.react-flow__node[data-id="{node_id}"]'
+
+
+def _frame_with_boxes(page, node_ids: list[str], box: tuple[int, int, int, int]) -> None:
+    """Pan and zoom, at most to 1, so the shown nodes among *node_ids* and every
+    collapsed scenario's box fill *box* (left, top, right, bottom, in page
+    pixels). A box is not a React Flow node, so it is read from the page."""
+    page.evaluate(
+        """({ ids, box }) => {
+            const rf = window.__curio_reactFlow;
+            const vp = rf.getViewport();
+            const pane = document.querySelector('.react-flow').getBoundingClientRect();
+            const rects = rf.getNodes()
+                .filter((n) => ids.includes(n.id) && !(n.style && n.style.display === 'none'))
+                .map((n) => [n.position.x, n.position.y,
+                             n.position.x + (n.width || 525), n.position.y + (n.height || 350)]);
+            for (const el of document.querySelectorAll('[data-scenario-box]')) {
+                const r = el.getBoundingClientRect();
+                const x = (r.left - pane.left - vp.x) / vp.zoom;
+                const y = (r.top - pane.top - vp.y) / vp.zoom;
+                rects.push([x, y, x + r.width / vp.zoom, y + r.height / vp.zoom]);
+            }
+            const x0 = Math.min(...rects.map((r) => r[0])), y0 = Math.min(...rects.map((r) => r[1]));
+            const x1 = Math.max(...rects.map((r) => r[2])), y1 = Math.max(...rects.map((r) => r[3]));
+            const [left, top, right, bottom] = box;
+            const zoom = Math.min((right - left) / (x1 - x0), (bottom - top) / (y1 - y0), 1);
+            rf.setViewport({
+                x: left - pane.left + ((right - left) - (x1 - x0) * zoom) / 2 - x0 * zoom,
+                y: top - pane.top + ((bottom - top) - (y1 - y0) * zoom) / 2 - y0 * zoom,
+                zoom,
+            }, { duration: 600 });
+        }""",
+        {"ids": node_ids, "box": list(box)},
+    )
+    page.wait_for_timeout(1200)
+
+
+def _drag_on_camera(ctx: Ctx, start, end, *, dragging: str) -> None:
+    """A mouse drag from *start* to *end*, with the tour's cursor following
+    it: ``page.mouse`` does not move the overlay's cursor. *dragging* is a
+    selector that is attached once the drag has begun."""
+    page, tour = ctx.page, ctx.tour
+    tour.point_at(*start, hold=600)
+    page.mouse.move(*start)
+    page.mouse.down()
+    x, y = start
+    for i in range(1, 7):
+        x, y = start[0] - 40 * i / 6, start[1] + 10 * i / 6
+        page.mouse.move(x, y)
+        tour.point_at(x, y, hold=40)
+    page.locator(dragging).wait_for(state="attached", timeout=5000)
+    begin = (x, y)
+    steps = 30
+    for i in range(1, steps + 1):
+        x = begin[0] + (end[0] - begin[0]) * i / steps
+        y = begin[1] + (end[1] - begin[1]) * i / steps
+        page.mouse.move(x, y)
+        tour.point_at(x, y, hold=40)
+    tour.beat(300)
+    page.mouse.up()
+
+
+def scene_scenarios(ctx: Ctx) -> None:
+    """Example 06 run and saved, its Scenarios panel, and one of its scenarios
+    collapsed into a box. The save is what the Scenario Catalog shows and what
+    a drop copies, so scenariocatalog and scenariodrop come after this one."""
+    page, tour = ctx.page, ctx.tour
+    project = _account_project(ctx, WHATIF_NAME)
+    ctx.state["whatif"] = project
+    _open_project(ctx, project, [WHATIF_DATA, *WHATIF_MAPS])
+    tour.hush()
+    _play_all(
+        ctx, timeout_ms=600000,
+        settle=[(m, "autk-grammar") for m in WHATIF_MAPS]
+        + [(WHATIF_EDIT, "edit-features")]
+        + [(c, "compare-scenarios") for c in WHATIF_COMPARES],
+    )
+    save_dataflow(page)
+    page.set_viewport_size(STILL_SIZE)
+    page.wait_for_timeout(1500)
+
+    tour.click(_menu(page, "View"), force=True)
+    tour.click(page.get_by_role("button", name="Show scenarios", exact=True))
+    card = page.get_by_test_id(f"scenario-card-{WHATIF_BASELINE}")
+    card.wait_for(state="visible", timeout=15000)
+    _fit_view(page, padding=0.06)
+    # Pointing at a scenario's card marks its fixed context on the canvas.
+    tour.focus(card.get_by_label("Scenario name"), hold=600)
+    box = card.get_by_label("Scenario name").bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    tour.beat(1500)
+    _still_with_boxes(ctx, "scenarios-panel", {"panel": '[data-testid="scenarios-panel"]'})
+
+    # Baseline, collapsed into one box that lists its context and outcomes. Its
+    # box is drawn where its first node stood, clear of the other scenarios.
+    tour.click(page.get_by_test_id(f"scenario-card-{WHATIF_BASELINE}").get_by_role("button", name="Collapse"))
+    collapsed = _box(page, WHATIF_BASELINE)
+    collapsed.wait_for(state="attached", timeout=10000)
+    tour.click(page.get_by_role("button", name="Close the Scenarios panel"))
+    _frame_with_boxes(page, [WHATIF_POOL], (230, 140, 1870, 1160))
+    collapsed.wait_for(state="visible", timeout=10000)
+    page.wait_for_function(
+        """(id) => {
+            const rows = document.querySelectorAll(`[data-scenario-box="${id}"] [data-scenario-outcome]`);
+            return rows.length > 0 && [...rows].every((row) => row.textContent.includes("Done"));
+        }""",
+        arg=WHATIF_BASELINE,
+        timeout=15000,
+    )
+    tour.beat(1500)
+    _still_with_boxes(ctx, "scenario-collapsed", {
+        "box": f'[data-scenario-box="{WHATIF_BASELINE}"]', "pool": _node_box(WHATIF_POOL),
+    })
+    # Expanded again in place by a double-click, and saved as it shipped.
+    collapsed.dblclick()
+    node_locator(page, WHATIF_BASELINE_NODES[-1]).wait_for(state="visible", timeout=10000)
+    save_dataflow(page)
+    page.set_viewport_size(VIDEO_SIZE)
+    page.wait_for_timeout(1000)
+
+
+def scene_scenario_catalog(ctx: Ctx) -> None:
+    """The Scenario Catalog page: every scenario of the account, one selected,
+    and its details."""
+    page, tour = ctx.page, ctx.tour
+    project = ctx.state.get("whatif") or _account_project(ctx, WHATIF_NAME)
+    page.goto(f"{ctx.frontend}/projects")
+    page.wait_for_load_state("domcontentloaded")
+    wait_for_projects_page(page, timeout=30000)
+    tour.beat(800)
+    tabs = page.get_by_role("navigation", name="Main sections")
+    tour.click(tabs.get_by_role("link", name="Scenario Catalog", exact=True))
+    card = page.locator(f'article[data-scenario-key="{project}/{WHATIF_BASELINE}"]')
+    card.wait_for(state="visible", timeout=30000)
+    tour.beat(2000)
+    tour.still("scenario-catalog")
+
+    tour.click(card.locator("h2"))
+    page.get_by_role("button", name="Open source project").wait_for(state="visible", timeout=15000)
+    tour.beat(2500)
+    tour.still("scenario-catalog-selected")
+
+    # Taller, so the details show all three lists.
+    page.set_viewport_size(STILL_SIZE)
+    tour.click(card.get_by_role("button", name="View details", exact=True))
+    details = page.locator(f'[role="dialog"] [data-scenario-key="{project}/{WHATIF_BASELINE}"]')
+    details.wait_for(state="visible", timeout=15000)
+    expect(details).to_contain_text("Outcomes", timeout=15000)
+    tour.beat(2500)
+    _still_with_boxes(ctx, "scenario-details", {"dialog": '[role="dialog"]:has([data-scenario-key])'})
+    page.keyboard.press("Escape")
+    page.set_viewport_size(VIDEO_SIZE)
+    tour.beat(800)
+
+
+def scene_scenario_drop(ctx: Ctx) -> None:
+    """Twice as tall, dragged from the canvas's Scenario Catalog drawer into a
+    new, empty dataflow, where it arrives collapsed with its results."""
+    page, tour = ctx.page, ctx.tour
+    source = ctx.state.get("whatif") or _account_project(ctx, WHATIF_NAME)
+    _open_project(ctx, _empty_project(ctx, "Shadow comparison"), [])
+    tour.beat(1000)
+    tour.click(page.get_by_role("button", name="Scenario Catalog", exact=True))
+    drawer = page.locator(DRAWER_SCENARIOS)
+    drawer.wait_for(state="visible", timeout=15000)
+    card = drawer.locator(f'[data-scenario-key="{source}/{WHATIF_TWICE}"]')
+    card.wait_for(state="visible", timeout=30000)
+    card.scroll_into_view_if_needed()
+    tour.beat(1800)
+    tour.still("scenario-drawer")
+
+    card_box = card.bounding_box()
+    pane = page.locator(CANVAS_DROP_TARGET).bounding_box()
+    _drag_on_camera(
+        ctx,
+        (card_box["x"] + 40, card_box["y"] + 20),
+        (pane["x"] + 320, pane["y"] + 240),
+        dragging=f'{DRAWER_SCENARIOS}[data-dragging="true"]',
+    )
+    _toast(page, f'Added "Twice as tall" from {WHATIF_NAME}.')
+    tour.beat(2000)
+    page.keyboard.press("Escape")
+    wait_for_drawer_closed(page, DRAWER_SCENARIOS)
+    box = page.locator("[data-scenario-box]").first
+    box.wait_for(state="visible", timeout=15000)
+    page.wait_for_function(
+        """() => {
+            const rows = document.querySelectorAll('[data-scenario-box] [data-scenario-outcome]');
+            return rows.length > 0 && [...rows].every((row) => row.textContent.includes("Done"));
+        }""",
+        timeout=15000,
+    )
+    # The drop re-fits the view to the nodes that show, the Data Loading node
+    # alone here, which leaves the box out of view; frame both.
+    _frame_with_boxes(page, [n["id"] for n in canvas_nodes(page)], (230, 160, 1250, 760))
+    tour.beat(2500)
+    _still_with_boxes(ctx, "scenario-dropped", {"box": "[data-scenario-box]"})
+
+
+def scene_shadows(ctx: Ctx) -> None:
+    """Example 24 run end to end, each map zoomed in onto the Loop."""
+    page, tour = ctx.page, ctx.tour
+    project = _account_project(ctx, SHADOW_NAME)
+    _open_project(ctx, project, list(SHADOW_MAPS.values()))
+    tour.hush()
+    _play_all(
+        ctx, timeout_ms=600000,
+        settle=[(m, "autk-grammar") for m in SHADOW_MAPS.values()] + [(SHADOW_STATS, "raster-statistics")],
+    )
+    page.set_viewport_size(STILL_SIZE)
+    page.wait_for_timeout(1500)
+    for name, node_id in SHADOW_MAPS.items():
+        _center_on(page, node_id, zoom=1.0)
+        canvas = page.locator(f"#autk-grammar-map-{node_id}").bounding_box()
+        assert canvas, f"the {name} map has no canvas"
+        (dx, dy), targets = SHADOW_VIEWS[name]
+        middle = (canvas["x"] + canvas["width"] / 2 + dx, canvas["y"] + canvas["height"] / 2 + dy)
+        notches = 0
+        for target in targets:
+            # Without a press, moving the pointer over a map does not pan it.
+            page.mouse.move(*middle)
+            tour.point_at(*middle, hold=200)
+            while notches < target:
+                page.mouse.wheel(0, -100)
+                page.wait_for_timeout(250)
+                notches += 1
+            page.mouse.move(20, STILL_SIZE["height"] - 20)
+            tour.beat(1500)
+            _still_with_boxes(ctx, f"shadows-{name}-{target}", {"node": _node_box(node_id)})
+    _fit_view(page, padding=0.04)
+    tour.beat(2000)
+    _still_with_boxes(ctx, "shadows-overview", {
+        name: _node_box(node_id) for name, node_id in {**SHADOW_MAPS, "stats": SHADOW_STATS}.items()
+    })
+    page.set_viewport_size(VIDEO_SIZE)
+    page.wait_for_timeout(1000)
+
+
+def scene_parameter(ctx: Ctx) -> None:
+    """FloodScenarios run, and its period and corner Parameter nodes beside
+    the Data Loading nodes whose code reads them."""
+    page, tour = ctx.page, ctx.tour
+    _open_project(ctx, _account_project(ctx, FLOOD_NAME), [FLOOD_PERIOD, FLOOD_DEPTH])
+    tour.hush()
+    _play_all(ctx, timeout_ms=600000, settle=[(c, "compare-scenarios") for c in FLOOD_COMPARES])
+    page.set_viewport_size(STILL_SIZE)
+    page.wait_for_timeout(1500)
+    block = [FLOOD_PERIOD, FLOOD_TOPLEFT, FLOOD_CLASSES, FLOOD_DEPTH]
+    _frame_nodes(page, block, (230, 140, 1870, 1160), max_zoom=1.0)
+    tour.beat(2000)
+    _still_with_boxes(ctx, "parameter-node", {
+        "period": _node_box(FLOOD_PERIOD), "topleft": _node_box(FLOOD_TOPLEFT),
+        "classes": _node_box(FLOOD_CLASSES), "depth": _node_box(FLOOD_DEPTH),
+    })
+    page.set_viewport_size(VIDEO_SIZE)
+    page.wait_for_timeout(1000)
+
+
+def scene_selection_tag(ctx: Ctx) -> None:
+    """Example 17 run, a Python node added that reads the ZIP code picked on
+    its first Autark map through a selection tag, a pick, and the node run."""
+    page, tour = ctx.page, ctx.tour
+    # Seeded rather than the account's copy, to title the map's legend like
+    # the bar chart's axis; untitled, it reads input_0.
+    with open(EXAMPLE_GEO, encoding="utf-8") as fh:
+        spec = json.load(fh)
+    for node in spec["dataflow"]["nodes"]:
+        if node["id"] == ZIPS_MAP:
+            content = json.loads(node["content"])
+            content["map"]["layerRefs"][0]["legendTitle"] = "Area (km2)"
+            node["content"] = json.dumps(content, indent=2)
+    project = _post_json(
+        f"{ctx.backend}/api/testing/stub-project",
+        {"username": USER_LOGIN, "name": spec["dataflow"]["name"], "spec": spec},
+    )["id"]
+    _open_project(ctx, project, [ZIPS_LOADER, ZIPS_MAP])
+    tour.hush()
+    _play_all(ctx, timeout_ms=300000, settle=[(ZIPS_MAP, "autk-grammar"), (ZIPS_BARS, "vis-vega")])
+
+    # The new node goes above and right of the map, where the canvas is empty,
+    # and reads the loader's ZIP codes.
+    at = _node_positions(page)[ZIPS_MAP]
+    page.evaluate(
+        "([x, y]) => window.__curio_reactFlow.setViewport({ x: 300 - x, y: 650 - y, zoom: 1 })",
+        [at[0], at[1]],
+    )
+    page.wait_for_timeout(800)
+    reader = drag_to_canvas(page, page.locator("#tile-computation-analysis"), at=(300 + 645, 650 - 415))
+    _fit_nodes(page, [ZIPS_LOADER, reader])
+    dismiss_toasts(page)
+    connect_nodes(page, ZIPS_LOADER, reader)
+    frame_node(page, reader, zoom=1.0)
+    set_node_code(page, reader, PICKED_CODE)
+
+    # A selection tag on the map, by ZIP code, dragged into the code.
+    _open_tab(page, reader, "widgets")
+    panel = _panel(page, reader)
+    tour.click(panel.get_by_role("button", name="Add selection", exact=True))
+    panel.get_by_label("Selection view").select_option(ZIPS_MAP)
+    column = panel.get_by_label("Selection id column")
+    column.wait_for(state="visible", timeout=15000)
+    column.select_option("zip")
+    tour.focus(panel.get_by_label("Selection tag name"), hold=400)
+    panel.get_by_label("Selection tag name").fill("zips")
+    tour.click(panel.get_by_role("button", name="Add selection tag"))
+    panel.locator('[data-selection-row="zips"]').wait_for(state="visible", timeout=10000)
+    _open_tab(page, reader, "code")
+    _drag_selection_tag_to_line_end(page, reader, "zips")
+    page.wait_for_function(
+        """(id) => {
+            const el = document.querySelector(`.react-flow__node[data-id="${id}"] .monaco-editor`);
+            const editors = (window.monaco && window.monaco.editor.getEditors()) || [];
+            const ed = editors.find((e) => el && el.contains(e.getDomNode()));
+            return !!ed && ed.getValue().includes("[!! selection zips !!]");
+        }""",
+        arg=reader,
+        timeout=10000,
+    )
+
+    # A ZIP code picked on the map with a double-click.
+    page.set_viewport_size(STILL_SIZE)
+    page.wait_for_timeout(1000)
+    _frame_nodes(page, [ZIPS_MAP, reader], (230, 140, 1870, 1160), max_zoom=1.0)
+    point = mark_point(page, f"#autk-grammar-map-{ZIPS_MAP}", at=(0.3, 0.7))
+    assert point, "the map drew nothing to pick"
+    tour.point_at(point["x"], point["y"], hold=500)
+    page.mouse.dblclick(point["x"], point["y"])
+    page.wait_for_function(
+        """(id) => {
+            const el = document.querySelector(`.react-flow__node[data-id="${id}"] [data-selection-state="zips"]`);
+            return !!el && /^[0-9,]+ selected$/.test(el.textContent);
+        }""",
+        arg=reader,
+        timeout=15000,
+    )
+    run_node_and_wait(page, reader, node_type=CODE_TYPE)
+    page.mouse.move(20, STILL_SIZE["height"] - 20)
+    tour.beat(1500)
+    boxes = {"map": _node_box(ZIPS_MAP), "reader": _node_box(reader)}
+    _still_with_boxes(ctx, "selection-tag", boxes)
+    _open_tab(page, reader, "widgets")
+    tour.beat(1200)
+    _still_with_boxes(ctx, "selection-tag-widgets", boxes)
+    page.set_viewport_size(VIDEO_SIZE)
+    page.wait_for_timeout(1000)
+
+
+def scene_node_from_function(ctx: Ctx) -> None:
+    """The Node Catalog drawer's "New node from a Python function" dialog, for
+    SCOUT Shadow's season_factor, its season given by a text widget."""
+    page, tour = ctx.page, ctx.tour
+    project = _empty_project(ctx, "Shadow functions")
+    _open_project(ctx, project, [])
+    # Tall enough for the whole dialog, down to its package fields.
+    page.set_viewport_size(STILL_SIZE)
+    with page.expect_response(
+        lambda r: f"/api/packages/projects/{project}" in r.url and r.request.method == "GET",
+        timeout=30000,
+    ):
+        tour.click(page.get_by_role("button", name="Node Catalog", exact=True))
+    drawer = page.get_by_role("dialog").filter(has=page.get_by_role("heading", name="Node Catalog", exact=True))
+    expect(drawer).to_be_visible(timeout=10000)
+    tour.beat(800)
+    tour.click(drawer.get_by_role("button", name="New node from a Python function"))
+    dialog = page.locator("[data-node-from-function]")
+    expect(dialog).to_be_visible(timeout=10000)
+    choice = dialog.locator("#node-from-function-choice")
+    expect(choice.locator(f'option[value="{FUNCTION_CHOICE}"]')).to_have_count(1, timeout=30000)
+    tour.focus(choice, hold=500)
+    choice.select_option(FUNCTION_CHOICE)
+    row = dialog.locator('[data-function-parameter="season"]')
+    use = row.get_by_label("What season is given")
+    tour.focus(use, hold=500)
+    use.select_option("widget")
+    tour.click(row.get_by_role("button", name="Edit widget"))
+    form = row.locator("[data-widget-form]")
+    form.get_by_label("Widget default").fill("winter")
+    tour.click(form.get_by_role("button", name="Save widget"))
+    expect(row).to_contain_text("Text, starting at winter")
+    tour.focus(dialog.locator("#node-from-function-new-package-name"), hold=400)
+    dialog.locator("#node-from-function-new-package-name").fill("Shadow functions")
+    dialog.locator("[data-node-from-function-body]").evaluate("(el) => el.scrollTo(0, 0)")
+    page.mouse.move(20, STILL_SIZE["height"] - 20)
+    tour.beat(1500)
+    _still_with_boxes(ctx, "node-from-function", {"dialog": "[data-node-from-function]"})
+    tour.click(dialog.get_by_role("button", name="Cancel"))
+    page.set_viewport_size(VIDEO_SIZE)
 
 
 def scene_catalog_pages(ctx: Ctx) -> None:
@@ -2368,9 +2905,18 @@ SCENES: list[tuple[str, Callable[[Ctx], None]]] = [
     ("provenance", scene_provenance),
     ("interaction", scene_interaction),
     ("autark", scene_autark),
-    # Only when CURIO_TOUR_SCENES names them; see scene_heat.
+    # Only when CURIO_TOUR_SCENES names them (NAMED_ONLY).
     ("heat", scene_heat),
     ("catalogs", scene_catalogs),
+    ("shadows", scene_shadows),
+    # In this order: scenarios runs and saves example 06, which the other two
+    # show and drag.
+    ("scenarios", scene_scenarios),
+    ("scenariocatalog", scene_scenario_catalog),
+    ("scenariodrop", scene_scenario_drop),
+    ("parameter", scene_parameter),
+    ("selectiontag", scene_selection_tag),
+    ("nodefromfunction", scene_node_from_function),
     # Late, because it opens a dataflow of its own and the scenes before it
     # build on the one they share.
     ("quickstart", scene_quickstart),
@@ -2396,10 +2942,20 @@ CANVAS_SCENES = {
 }
 
 
+#: Scenes the full tour leaves out, recorded only when CURIO_TOUR_SCENES names
+#: them: each takes stills for the guide. heat and catalogs take theirs at a
+#: larger viewport than the video's, which would show as a jump in the full
+#: tour, and the rest need the examples (pytest --with-examples).
+NAMED_ONLY = {
+    "heat", "catalogs", "shadows", "scenarios", "scenariocatalog", "scenariodrop",
+    "parameter", "selectiontag", "nodefromfunction",
+}
+
+
 def _selected_scenes() -> list[tuple[str, Callable[[Ctx], None]]]:
     wanted = os.environ.get("CURIO_TOUR_SCENES")
     if not wanted:
-        return SCENES
+        return [(name, fn) for name, fn in SCENES if name not in NAMED_ONLY]
     names = [n.strip() for n in wanted.split(",") if n.strip()]
     known = {name for name, _ in SCENES}
     unknown = [n for n in names if n not in known]
