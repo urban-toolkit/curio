@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/WeatherRouting.json",
-    "sha256": "6fb61ed3b42426ee9dbc66f93cb9836745ef1ef458461c113efe42c3f0cec95d",
+    "sha256": "12785ccba0190d131c3c8627003c1c05b04519c664765027a711bf4e0c036b56",
     "walkthrough": null
   },
   "prompt": "Compare two weather-aware routes across the Chicago Loop at noon on 6 July 2025, using SCOUT's routing model and its forecast. Load the Loop's roads from the OpenStreetMap extract the examples ship, and set the start time once for both scenarios. In the first scenario rain counts most and wind least; the second is a copy of it with the two the other way round. Each scenario finds the rain-aware, the wind-aware and the fastest route between the same two points, then takes the routes and their metrics apart. Draw both scenarios' routes over the roads on one map, and chart each route's duration, distance, rain exposure and wind exposure in each scenario. The routing model is not part of the standard node set, so whatever provides it needs installing first.",
@@ -97,13 +97,6 @@
         "hasContent": true
       },
       {
-        "ref": "analysis5",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "endpoint1",
         "type": "curio.builtin/parameter",
         "role": "endpoint",
@@ -111,14 +104,14 @@
         "hasContent": false
       },
       {
-        "ref": "analysis6",
+        "ref": "analysis5",
         "type": "scout.routing/weather-routing",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "analysis7",
+        "ref": "analysis6",
         "type": "scout.routing/weather-routing",
         "role": "analysis",
         "executable": true,
@@ -133,74 +126,79 @@
       },
       {
         "from": "visualization1",
-        "to": "analysis1",
+        "to": "analysis5",
         "kind": "data"
       },
       {
-        "from": "analysis1",
+        "from": "visualization1",
         "to": "analysis6",
         "kind": "data"
       },
       {
         "from": "analysis1",
-        "to": "analysis7",
-        "kind": "data"
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 1
       },
       {
         "from": "analysis2",
         "to": "visualization2",
         "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis3",
-        "to": "visualization2",
-        "kind": "data",
         "slot": 2
       },
       {
-        "from": "analysis4",
+        "from": "analysis3",
         "to": "visualization3",
         "kind": "data"
       },
       {
-        "from": "analysis4",
+        "from": "analysis3",
         "to": "visualization4",
         "kind": "data"
       },
       {
-        "from": "analysis4",
+        "from": "analysis3",
         "to": "visualization5",
         "kind": "data"
       },
       {
-        "from": "analysis4",
+        "from": "analysis3",
         "to": "visualization6",
         "kind": "data"
       },
       {
-        "from": "analysis5",
+        "from": "analysis4",
         "to": "visualization3",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "analysis5",
+        "from": "analysis4",
         "to": "visualization4",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "analysis5",
+        "from": "analysis4",
         "to": "visualization5",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "analysis5",
+        "from": "analysis4",
         "to": "visualization6",
         "kind": "data",
         "slot": 1
+      },
+      {
+        "from": "analysis5",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "analysis3",
+        "kind": "data"
       },
       {
         "from": "analysis6",
@@ -210,16 +208,6 @@
       {
         "from": "analysis6",
         "to": "analysis4",
-        "kind": "data"
-      },
-      {
-        "from": "analysis7",
-        "to": "analysis3",
-        "kind": "data"
-      },
-      {
-        "from": "analysis7",
-        "to": "analysis5",
         "kind": "data"
       }
     ],
@@ -239,13 +227,13 @@
   },
   "intents": [
     {
-      "ref": "analysis6",
+      "ref": "analysis5",
       "mustMention": [
         "route"
       ]
     },
     {
-      "ref": "analysis7",
+      "ref": "analysis6",
       "mustMention": [
         "route"
       ]

@@ -1,11 +1,12 @@
 """SCOUT's weather routing in two scenarios, mapped through Autark and charted (#662, step 20).
 
 The shipped test dataflow ``WeatherRouting.json``: an Autark node that loads the
-Chicago Loop's roads from the committed OpenStreetMap extract, a Roads node that
-takes its roads layer as a table of lines, a start-time Parameter node, and two
-scenarios, "Avoid rain" and "Avoid wind" (its copy),
+Chicago Loop's roads from the committed OpenStreetMap extract, a start-time
+Parameter node, and two scenarios, "Avoid rain" and "Avoid wind" (its copy),
 each holding the ``scout.routing@1`` package's Weather Routing node with its
-weights, then a node that takes its routes and one that takes their metrics. An
+weights, which reads the Autark node's roads layer through its layer chip
+``[!! input 0:table_osm_roads !!]``, then a node that takes its routes and one
+that takes their metrics. An
 Autark map draws both scenarios' routes over the roads; four Compare Scenarios
 nodes chart each route's duration, distance, rain exposure and wind exposure by
 scenario (#720). Run All drives the whole path:
@@ -65,7 +66,6 @@ DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "WeatherRouting
 PACKAGE_DIR = "scout.routing@1"
 ROUTING_TYPE = "scout.routing/weather-routing"
 AUTARK_TYPE = "curio.builtin/autk-grammar"
-PYTHON_TYPE = "curio.builtin/computation-analysis"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 SCENARIOS = {"avoid-rain": ("Avoid rain", "#2a9d8f"), "avoid-wind": ("Avoid wind", "#e76f51")}
 TEST_NAME = "test_two_routing_scenarios_are_mapped_and_charted"
@@ -168,15 +168,17 @@ def test_two_routing_scenarios_are_mapped_and_charted(
     for node in nodes:
         node_locator(page, node["id"]).wait_for(state="visible", timeout=45000)
     routings = [n["id"] for n in nodes if n["type"] == ROUTING_TYPE]
-    (roads_id,) = {e["source"] for e in spec["dataflow"]["edges"] if e["target"] in routings}
+    (loader_id,) = [n["id"] for n in nodes if n["type"] == AUTARK_TYPE and "data" in json.loads(n["content"])]
+    # Both routing nodes read the loader's roads layer through their layer chip.
+    assert {e["source"] for e in spec["dataflow"]["edges"] if e["target"] in routings} == {loader_id}
     (map_id,) = [n["id"] for n in nodes if n["type"] == AUTARK_TYPE and "map" in json.loads(n["content"])]
     compares = {n["metadata"]["compareScenarios"]["chart"]["y"]: n["id"] for n in nodes if n["type"] == COMPARE_TYPE}
     assert sorted(compares) == sorted(COLUMNS)
 
     # 1. Run All: both scenarios route over Autark's roads at the shared time.
     run_all_and_wait(page, timeout_ms=300000)
-    status = wait_for_node_settled(page, roads_id, node_type=PYTHON_TYPE, timeout_ms=120000)
-    assert status == "done", f"the Roads node did not run: {read_node_error_text(node_locator(page, roads_id))}"
+    status = wait_for_node_settled(page, loader_id, node_type=AUTARK_TYPE, timeout_ms=120000)
+    assert status == "done", f"the Autark node did not load the roads: {read_node_error_text(node_locator(page, loader_id))}"
     for routing in routings:
         status = wait_for_node_settled(page, routing, node_type=ROUTING_TYPE, timeout_ms=120000)
         assert status == "done", f"Weather Routing did not run: {read_node_error_text(node_locator(page, routing))}"

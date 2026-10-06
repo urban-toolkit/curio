@@ -18,9 +18,10 @@ longitude was checked against the northern edge.
 
 The node: its template, with the widgets its manifest declares resolved as a run
 resolves them, reads the WRF group and the GNN model by id and runs in the sandbox
-with its package's modules (#719), on the roads the shipped example's Roads
-node makes of its Autark node's roads layer
-(``fixtures/scout_routing/loop_roads.parquet``, written by
+with its package's modules (#719), on the layers the shipped example's Autark
+node hands on, whose roads layer its layer chip ``[!! input 0:table_osm_roads !!]``
+reads (the roads' lines and the tags routing reads are
+``fixtures/scout_routing/loop_roads.parquet``, written by
 ``scripts/scout/loop_roads_fixture.py``). It returns ``(routes, metrics)``.
 
 Package code is imported inside each test, through a run's staged copy of the
@@ -51,6 +52,9 @@ DATAFLOW = REPO / "docs" / "examples" / "dataflows" / "WeatherRouting.json"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scout_routing"
 REFERENCE = FIXTURES / "routing_reference.json"
 LOOP_ROADS = FIXTURES / "loop_roads.parquet"
+#: The coordinate system an Autark data node names on each layer it hands on
+#: (``autkDataCompile.ts``): World Mercator, the CRS Autark keeps its layers in.
+CRS_3395 = {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3395"}}
 
 WEATHER_IDS = {
     "RAIN": "data.scout.wrf-rain",
@@ -631,8 +635,9 @@ def test_the_shipped_dataflows_compare_nodes_chart_the_four_metrics():
 
 
 def test_the_shipped_dataflows_roads_and_map_are_autarks():
-    """Autark loads the roads and draws the routes; one Python node in between
-    takes the roads layer as a table of lines for both scenarios."""
+    """Autark loads the roads and draws the routes. Both scenarios' Weather
+    Routing nodes take the loader's layers straight on their one input, and
+    their layer chip reads the roads layer out of them: no node in between."""
     spec = _dataflow()
     nodes = {n["id"]: n for n in spec["nodes"]}
     autark = {n["id"]: json.loads(n["content"]) for n in spec["nodes"] if n["type"] == "curio.builtin/autk-grammar"}
@@ -641,11 +646,13 @@ def test_the_shipped_dataflows_roads_and_map_are_autarks():
     (source,) = autark[loader_id]["data"]
     assert (source["type"], source["pbfFileUrl"], source["autoLoadLayers"]) == (
         "osm", "docs/examples/data/chicago_loop.osm.pbf", {"layers": ["roads"]})
-    into = {e["target"] for e in spec["edges"] if e["source"] == loader_id}
-    (roads_id,) = into - {map_id}
-    assert nodes[roads_id]["type"] == PYTHON_TYPE
-    assert {e["target"] for e in spec["edges"] if e["source"] == roads_id} == {
-        n["id"] for n in spec["nodes"] if n["type"] == NODE_TYPE}
+    routings = {n["id"] for n in spec["nodes"] if n["type"] == NODE_TYPE}
+    assert len(routings) == 2
+    assert {e["target"] for e in spec["edges"] if e["source"] == loader_id} == routings | {map_id}
+    for routing in routings:
+        assert [(e["source"], e["targetHandle"]) for e in spec["edges"] if e["target"] == routing] == [
+            (loader_id, "in")]
+        assert "    [!! input 0:table_osm_roads !!],\n" in nodes[routing]["content"]
     layers = autark[map_id]["map"]["layerRefs"]
     assert [layer["dataRef"] for layer in layers] == ["[!! input 0 !!]", "[!! input 1 !!]", "[!! input 2 !!]"]
     assert [layer.get("getFnv") for layer in layers] == [None, "duration_minutes", "duration_minutes"]
@@ -655,31 +662,47 @@ def test_the_shipped_dataflows_roads_and_map_are_autarks():
         None, "Avoid rain: route duration (min)", "Avoid wind: route duration (min)"]
 
 
-def test_the_examples_roads_node_reads_autarks_layer_array():
+def test_the_templates_layer_chip_reads_autarks_layer_array():
     """An Autark node with only a data section hands on its layers as an array
-    of ``{name, type, geojson}`` in EPSG:3395; the example's Roads node keeps the
-    roads layer's lines and the tags routing reads."""
+    of ``{name, type, geojson}``, each FeatureCollection naming EPSG:3395
+    (``autkDataCompile.ts``). The template's layer chip runs as the call that
+    picks the roads layer out of it by its table name, as a GeoDataFrame in
+    that CRS with the tags routing reads; an input without that layer is
+    refused with the layers it has."""
     import geopandas as gpd
 
-    spec = _dataflow()
-    nodes = {n["id"]: n for n in spec["nodes"]}
-    (roads_id,) = {e["source"] for e in spec["edges"] if nodes[e["target"]]["type"] == NODE_TYPE}
+    from utk_curio.backend.app.execution.code_references import resolve_references
+    from utk_curio.sandbox.util.input_layers import curio_layer
+
+    loaded = [{"name": "table_osm_parks"}, {"name": "table_osm_roads", "columns": ["highway", "oneway"]}]
+    code, problems = resolve_references(_source(), _with_values(), "python", inputs=[{"slot": 0, "layers": loaded}])
+    assert problems == [], problems
+    assert '    curio_layer(arg, "table_osm_roads", 0),\n' in code
+    _code, problems = resolve_references(_source(), _with_values(), "python",
+                                         inputs=[{"slot": 0, "layers": [{"name": "table_osm_buildings"}]}])
+    assert problems == [{
+        "reference": "[!! input 0:table_osm_roads !!]",
+        "message": "[!! input 0:table_osm_roads !!]: input 0 has no layer table_osm_roads. "
+                   "Its layers are table_osm_buildings.",
+    }]
+
     feature = {
         "type": "Feature",
         "geometry": {"type": "LineString", "coordinates": [[-9754301.3, 5114043.4], [-9754316.7, 5114043.8]]},
         "properties": {"highway": "secondary", "oneway": "yes", "name": "W Adams St", "lanes": "3"},
     }
     layers = [
-        {"name": "table_osm_roads", "type": "roads", "geojson": {"type": "FeatureCollection", "features": [feature]}},
-        {"name": "table_osm_parks", "type": "parks", "geojson": {"type": "FeatureCollection", "features": []}},
+        {"name": "table_osm_roads", "type": "roads",
+         "geojson": {"type": "FeatureCollection", "features": [feature], "crs": CRS_3395}},
+        {"name": "table_osm_parks", "type": "parks",
+         "geojson": {"type": "FeatureCollection", "features": [], "crs": CRS_3395}},
     ]
-    namespace: dict = {}
-    exec("def roads_node(arg):\n" + textwrap.indent(nodes[roads_id]["content"], "    "), namespace)
-    roads = namespace["roads_node"](layers)
+    roads = curio_layer(layers, "table_osm_roads", 0)
     assert isinstance(roads, gpd.GeoDataFrame) and roads.crs.to_epsg() == 3395
-    assert list(roads.columns) == ["highway", "oneway", "geometry"]
+    assert list(roads.columns) == ["geometry", "highway", "oneway", "name", "lanes"]
     assert roads.iloc[0]["highway"] == "secondary" and roads.iloc[0]["oneway"] == "yes"
-    # The fixture the node tests route on is what this node makes of the Loop's roads.
+    # The fixture the node tests route on is the Loop's roads layer: its lines
+    # and the tags routing reads.
     fixture = gpd.read_parquet(LOOP_ROADS)
     assert fixture.crs.to_epsg() == 3395 and list(fixture.columns) == ["highway", "oneway", "maxspeed", "geometry"]
 
@@ -720,22 +743,31 @@ def _execute(code, input_path, node_type, data_type, workspace, **kwargs):
 
 
 def _loop_roads_artifact():
-    """The Loop's roads as the example's Roads node hands them on: road lines
-    in EPSG:3395 metres."""
+    """The Loop's roads as the example's Autark node hands them on: its layer
+    array, the roads layer's lines in EPSG:3395 metres under their table name,
+    beside another layer, so the node's layer chip has to pick the roads by
+    name."""
     import geopandas as gpd
 
     from utk_curio.sandbox.util.parsers import save_to_duckdb
 
     roads = gpd.read_parquet(LOOP_ROADS)
     assert roads.crs.to_epsg() == 3395 and list(roads.columns) == ["highway", "oneway", "maxspeed", "geometry"]
-    return save_to_duckdb(roads, node_id="roads")
+    lines = json.loads(roads.to_json())
+    lines["crs"] = CRS_3395
+    layers = [
+        {"name": "table_osm_parks", "type": "parks",
+         "geojson": {"type": "FeatureCollection", "features": [], "crs": CRS_3395}},
+        {"name": "table_osm_roads", "type": "roads", "geojson": lines},
+    ]
+    return save_to_duckdb(layers, node_id="osm")
 
 
 def run_node(workspace, *, fails=False, **values):
-    """Run the node's template, its widgets at *values*, on the Loop's roads in
-    the sandbox, in process, with the datasets and the model its code names
-    resolved: ``(artifact id, (routes, metrics))``, or with *fails* the node's
-    error text."""
+    """Run the node's template, its widgets at *values*, on the Autark layers
+    holding the Loop's roads in the sandbox, in process, with the datasets and
+    the model its code names resolved: ``(artifact id, (routes, metrics))``, or
+    with *fails* the node's error text."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
     from utk_curio.backend.app.execution.code_references import resolve_references
     from utk_curio.sandbox.util.parsers import load_from_duckdb
@@ -743,7 +775,7 @@ def run_node(workspace, *, fails=False, **values):
     code, problems = resolve_references(_source(), _with_values(**values), "python", inputs=[{"slot": 0}])
     assert problems == [], problems
     result = _execute(
-        code, _loop_roads_artifact(), NODE_TYPE, "geodataframe", workspace,
+        code, _loop_roads_artifact(), NODE_TYPE, "list", workspace,
         dataset_paths={i: str(_data_file(i)) for i in dataset_ids_in_code(code)},
         models={i: str(REPO / "models" / f"{i}@1") for i in model_ids_in_code(code)},
         package_modules={"root": str(SOURCES), "names": [MODULE]},
