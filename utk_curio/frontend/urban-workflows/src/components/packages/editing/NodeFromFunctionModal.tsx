@@ -238,173 +238,175 @@ export function NodeFromFunctionModal({
       onClose={busy ? () => {} : onClose}
       titleId="node-from-function-title"
     >
-      <div className={styles.content} data-node-from-function="true">
+      <div className={`${styles.content} ${own.dialog}`} data-node-from-function="true">
         <h2 id="node-from-function-title" className={styles.title}>New node from a Python function</h2>
         <p className={styles.subtitle}>
           Pick a function in a module of an installed package. Each parameter becomes a widget, a fixed
           value or an input, and the node&apos;s code calls the function with them.
         </p>
 
-        <label className={styles.fieldLabel} htmlFor="node-from-function-choice">
-          Function
-        </label>
-        <div className={styles.selectWrap}>
-          <select
-            id="node-from-function-choice"
-            className={styles.select}
-            value={choiceKey}
-            disabled={busy || packages === null || noFunctions}
-            onChange={(e) => pick(e.target.value)}
-          >
-            <option value="">
-              {packages === null ? (loadError ? "Could not list the functions" : "Reading the modules…") : "Choose a function"}
-            </option>
-            {(packages ?? []).map((pkg) => (
-              <optgroup key={pkg.dirName} label={pkg.name}>
-                {pkg.modules.flatMap((mod) =>
-                  mod.problem
-                    ? [
-                        <option key={mod.module} value="" disabled>
-                          {mod.module}: {mod.problem}
-                        </option>,
-                      ]
-                    : mod.functions.map((fn) => (
-                        <option
-                          key={`${mod.module}.${fn.name}`}
-                          value={`${pkg.dirName}|${mod.module}|${fn.name}`}
-                          disabled={!!fn.problem}
-                          title={fn.problem ?? fn.doc}
-                        >
-                          {mod.module}.{signatureText(fn)}
-                        </option>
-                      )),
-                )}
-              </optgroup>
-            ))}
-          </select>
-          <span className={styles.selectChevron} aria-hidden>
-            ▼
-          </span>
-        </div>
-        {loadError ? <p className={styles.warning} role="alert">{loadError}</p> : null}
-        {noFunctions ? (
-          <p className={styles.hint}>
-            No installed package ships a Python module. A module is a <code>.py</code> file, or a folder of them,
-            in a package&apos;s <code>sources/</code> folder.
-          </p>
-        ) : null}
-        {choice?.fn.problem ? <p className={styles.warning} role="alert">{choice.fn.problem}</p> : null}
-
-        {choice ? (
-          <>
-            {choice.fn.doc ? <p className={styles.hint}>{choice.fn.doc}</p> : null}
-            <div className={styles.fieldLabel}>Parameters</div>
-            {choice.fn.parameters.length === 0 ? (
-              <p className={styles.hint}>{choice.fn.name} takes no parameters.</p>
-            ) : (
-              <ul className={own.parameters}>
-                {choice.fn.parameters.map((p) => {
-                  const state = params[p.name];
-                  if (!state) return null;
-                  return (
-                    <li key={p.name} className={own.parameter} data-function-parameter={p.name}>
-                      <div className={own.parameterHead}>
-                        <span className={own.parameterName}>{p.name}</span>
-                        <span className={own.parameterHint}>
-                          {p.annotation ? `: ${p.annotation}` : ""}
-                          {p.hasDefault ? ` = ${p.defaultText}` : ""}
-                        </span>
-                        <select
-                          className={own.useSelect}
-                          aria-label={`What ${p.name} is given`}
-                          value={state.use}
-                          disabled={busy}
-                          onChange={(e) => {
-                            setEditing(null);
-                            setParam(p.name, { use: e.target.value as FunctionParameterUse });
-                          }}
-                        >
-                          {(["widget", "fixed", "input", "default"] as const)
-                            .filter((use) => use !== "default" || p.hasDefault)
-                            .map((use) => (
-                              <option key={use} value={use}>
-                                {use === "default" ? `${USE_LABELS[use]} (${p.defaultText})` : USE_LABELS[use]}
-                              </option>
-                            ))}
-                        </select>
-                      </div>
-                      {state.use === "widget" ? (
-                        <div className={own.parameterBody}>
-                          <WidgetTag name={p.name} disabled />
-                          <span className={own.parameterHint}>
-                            {WIDGET_KIND_LABELS[state.widget.type]}, starting at {valueText(state.widget.default)}
-                          </span>
-                          {editing !== p.name ? (
-                            <button
-                              type="button"
-                              className={styles.ghostBtn}
-                              disabled={busy}
-                              onClick={() => setEditing(p.name)}
-                            >
-                              Edit widget
-                            </button>
-                          ) : null}
-                        </div>
-                      ) : null}
-                      {state.use === "widget" && editing === p.name ? (
-                        <WidgetForm
-                          initial={state.widget}
-                          others={widgetsBut(p.name)}
-                          onSave={(widget) => {
-                            setParam(p.name, { widget });
-                            setEditing(null);
-                          }}
-                          onCancel={() => setEditing(null)}
-                        />
-                      ) : null}
-                      {state.use === "fixed" ? (
-                        <input
-                          className={styles.input}
-                          aria-label={`Value of ${p.name}`}
-                          value={state.value}
-                          disabled={busy}
-                          placeholder="2, 'winter', [1, 2]"
-                          onChange={(e) => setParam(p.name, { value: e.target.value })}
-                        />
-                      ) : null}
-                      {state.use === "input" ? (
-                        <p className={own.parameterHint}>The node&apos;s input {inputSlot(p.name)}.</p>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-
-            <label className={styles.fieldLabel} htmlFor="node-from-function-label">
-              Node name
-            </label>
-            <input
-              id="node-from-function-label"
-              className={`${styles.input} ${own.labelInput}`}
-              value={label}
-              disabled={busy}
-              onChange={(e) => setLabel(e.target.value)}
-            />
-
-            <PackageTargetPicker
-              idPrefix="node-from-function"
-              options={packageOptions}
-              targetKey={targetKey}
-              onTargetKey={setTargetKey}
-              newPackageName={newPackageName}
-              onNewPackageName={setNewPackageName}
-              busy={busy}
+        <div className={own.body} data-node-from-function-body="true">
+          <label className={styles.fieldLabel} htmlFor="node-from-function-choice">
+            Function
+          </label>
+          <div className={styles.selectWrap}>
+            <select
+              id="node-from-function-choice"
+              className={styles.select}
+              value={choiceKey}
+              disabled={busy || packages === null || noFunctions}
+              onChange={(e) => pick(e.target.value)}
             >
-              <p className={styles.hint}>Adds this node as a new kind in the selected package.</p>
-            </PackageTargetPicker>
-          </>
-        ) : null}
+              <option value="">
+                {packages === null ? (loadError ? "Could not list the functions" : "Reading the modules…") : "Choose a function"}
+              </option>
+              {(packages ?? []).map((pkg) => (
+                <optgroup key={pkg.dirName} label={pkg.name}>
+                  {pkg.modules.flatMap((mod) =>
+                    mod.problem
+                      ? [
+                          <option key={mod.module} value="" disabled>
+                            {mod.module}: {mod.problem}
+                          </option>,
+                        ]
+                      : mod.functions.map((fn) => (
+                          <option
+                            key={`${mod.module}.${fn.name}`}
+                            value={`${pkg.dirName}|${mod.module}|${fn.name}`}
+                            disabled={!!fn.problem}
+                            title={fn.problem ?? fn.doc}
+                          >
+                            {mod.module}.{signatureText(fn)}
+                          </option>
+                        )),
+                  )}
+                </optgroup>
+              ))}
+            </select>
+            <span className={styles.selectChevron} aria-hidden>
+              ▼
+            </span>
+          </div>
+          {loadError ? <p className={styles.warning} role="alert">{loadError}</p> : null}
+          {noFunctions ? (
+            <p className={styles.hint}>
+              No installed package ships a Python module. A module is a <code>.py</code> file, or a folder of them,
+              in a package&apos;s <code>sources/</code> folder.
+            </p>
+          ) : null}
+          {choice?.fn.problem ? <p className={styles.warning} role="alert">{choice.fn.problem}</p> : null}
+
+          {choice ? (
+            <>
+              {choice.fn.doc ? <p className={styles.hint}>{choice.fn.doc}</p> : null}
+              <div className={styles.fieldLabel}>Parameters</div>
+              {choice.fn.parameters.length === 0 ? (
+                <p className={styles.hint}>{choice.fn.name} takes no parameters.</p>
+              ) : (
+                <ul className={own.parameters}>
+                  {choice.fn.parameters.map((p) => {
+                    const state = params[p.name];
+                    if (!state) return null;
+                    return (
+                      <li key={p.name} className={own.parameter} data-function-parameter={p.name}>
+                        <div className={own.parameterHead}>
+                          <span className={own.parameterName}>{p.name}</span>
+                          <span className={own.parameterHint}>
+                            {p.annotation ? `: ${p.annotation}` : ""}
+                            {p.hasDefault ? ` = ${p.defaultText}` : ""}
+                          </span>
+                          <select
+                            className={own.useSelect}
+                            aria-label={`What ${p.name} is given`}
+                            value={state.use}
+                            disabled={busy}
+                            onChange={(e) => {
+                              setEditing(null);
+                              setParam(p.name, { use: e.target.value as FunctionParameterUse });
+                            }}
+                          >
+                            {(["widget", "fixed", "input", "default"] as const)
+                              .filter((use) => use !== "default" || p.hasDefault)
+                              .map((use) => (
+                                <option key={use} value={use}>
+                                  {use === "default" ? `${USE_LABELS[use]} (${p.defaultText})` : USE_LABELS[use]}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                        {state.use === "widget" ? (
+                          <div className={own.parameterBody}>
+                            <WidgetTag name={p.name} disabled />
+                            <span className={own.parameterHint}>
+                              {WIDGET_KIND_LABELS[state.widget.type]}, starting at {valueText(state.widget.default)}
+                            </span>
+                            {editing !== p.name ? (
+                              <button
+                                type="button"
+                                className={styles.ghostBtn}
+                                disabled={busy}
+                                onClick={() => setEditing(p.name)}
+                              >
+                                Edit widget
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        {state.use === "widget" && editing === p.name ? (
+                          <WidgetForm
+                            initial={state.widget}
+                            others={widgetsBut(p.name)}
+                            onSave={(widget) => {
+                              setParam(p.name, { widget });
+                              setEditing(null);
+                            }}
+                            onCancel={() => setEditing(null)}
+                          />
+                        ) : null}
+                        {state.use === "fixed" ? (
+                          <input
+                            className={styles.input}
+                            aria-label={`Value of ${p.name}`}
+                            value={state.value}
+                            disabled={busy}
+                            placeholder="2, 'winter', [1, 2]"
+                            onChange={(e) => setParam(p.name, { value: e.target.value })}
+                          />
+                        ) : null}
+                        {state.use === "input" ? (
+                          <p className={own.parameterHint}>The node&apos;s input {inputSlot(p.name)}.</p>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              <label className={styles.fieldLabel} htmlFor="node-from-function-label">
+                Node name
+              </label>
+              <input
+                id="node-from-function-label"
+                className={`${styles.input} ${own.labelInput}`}
+                value={label}
+                disabled={busy}
+                onChange={(e) => setLabel(e.target.value)}
+              />
+
+              <PackageTargetPicker
+                idPrefix="node-from-function"
+                options={packageOptions}
+                targetKey={targetKey}
+                onTargetKey={setTargetKey}
+                newPackageName={newPackageName}
+                onNewPackageName={setNewPackageName}
+                busy={busy}
+              >
+                <p className={styles.hint}>Adds this node as a new kind in the selected package.</p>
+              </PackageTargetPicker>
+            </>
+          ) : null}
+        </div>
 
         {problem ? (
           <p className={styles.warning} role="alert">

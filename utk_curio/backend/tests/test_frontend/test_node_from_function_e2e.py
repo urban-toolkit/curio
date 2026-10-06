@@ -200,6 +200,9 @@ def test_a_function_in_a_shipped_package_becomes_a_node_that_runs(
         expect(dialog.locator("#node-from-function-package-target")).to_have_value("__save_as_new__")
         expect(dialog.locator("#node-from-function-label")).to_have_value(LABEL)
         dialog.locator("#node-from-function-new-package-name").fill("Shadow functions")
+        # The fields scroll between the title and the buttons; the frame shows
+        # them from the top, the function and its parameter first.
+        dialog.locator("[data-node-from-function-body]").evaluate("(el) => el.scrollTo(0, 0)")
         save_workflow_test_screenshot(
             page, CLOSEUP_STEM, test_name="dialog", fit_reactflow=False, clip_selector=DIALOG,
         )
