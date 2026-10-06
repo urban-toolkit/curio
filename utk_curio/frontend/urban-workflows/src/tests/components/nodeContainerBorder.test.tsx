@@ -33,6 +33,8 @@ const STATES: Array<{ name: string; state: Parameters<typeof getNodeContainerSty
   { name: "as a suggestion", state: { suggested: true } },
   { name: "as an acceptable suggestion", state: { suggested: true, acceptable: true } },
   { name: "suggested inside dashboard mode", state: { dashboardOn: true, suggested: true } },
+  { name: "as a notebook cell", state: { notebookCell: true } },
+  { name: "as a selected notebook cell", state: { notebookCell: true, selected: true } },
 ];
 
 describe("getNodeContainerStyles", () => {
@@ -102,5 +104,30 @@ describe("getNodeContainerStyles", () => {
     const plain = getNodeContainerStyles("curio.builtin/data-loading", {});
     const versioned = getNodeContainerStyles("curio.builtin/data-loading@1", {});
     expect(versioned.borderLeftColor).toBe(plain.borderLeftColor);
+  });
+
+  test("draws a notebook cell as a flat white card that keeps its kind's stripe", () => {
+    const canvas = getNodeContainerStyles("curio.builtin/vis-vega@1", { category: "vis_grammar" });
+    const cell = getNodeContainerStyles("curio.builtin/vis-vega@1", { category: "vis_grammar", notebookCell: true });
+    expect(cell.backgroundColor).toBe("#ffffff");
+    expect(cell.borderRadius).toBe("8px");
+    expect(cell.boxShadow).toBe("none");
+    for (const side of ["Top", "Right", "Bottom"] as const) {
+      expect(cell[`border${side}Width`]).toBe("1px");
+      expect(cell[`border${side}Style`]).toBe("solid");
+      expect(cell[`border${side}Color`]).toBe("var(--curio-border)");
+    }
+    expect(cell.borderLeftWidth).toBe("4px");
+    expect(cell.borderLeftColor).toBe(canvas.borderLeftColor);
+  });
+
+  test("rings a selected notebook cell in its kind's color", () => {
+    const cell = getNodeContainerStyles("curio.builtin/vis-vega@1", {
+      category: "vis_grammar", notebookCell: true, selected: true,
+    });
+    expect(cell.boxShadow).toBe("0 0 0 2px var(--curio-category-vis-fg)");
+    // On the canvas selection changes nothing here, as before.
+    expect(getNodeContainerStyles("curio.builtin/vis-vega@1", { category: "vis_grammar", selected: true }))
+      .toEqual(getNodeContainerStyles("curio.builtin/vis-vega@1", { category: "vis_grammar" }));
   });
 });

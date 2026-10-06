@@ -1,18 +1,21 @@
 """Playwright E2E: the notebook view shows a dataflow as a column of cells.
 
 The canvas bar's Canvas | Notebook switch shows the same nodes one under the
-other, in dataflow order, each the same size, with its input (code or grammar)
-and its output together. The connections run in a bar to the right of the
-cells, between dots on each cell's right edge. Everything the canvas allows
-works there, and nothing about the view is saved: the dataflow keeps its canvas
-layout, and the view lives in the address (``?view=notebook``).
+other, in dataflow order, like a Jupyter notebook: each cell as tall as its
+code and its output, Play at its top left. The connections run in a bar to the
+right of the cells, between dots on each cell's right edge. Everything the
+canvas allows works there, and nothing about the view is saved: the dataflow
+keeps its canvas layout, and the view lives in the address (``?view=notebook``).
 
 What each test pins:
 
-* the switch lays the cells out in one column, in dataflow order, with one arc
-  per connection in the bar and no resize handle on any cell;
+* the switch lays the cells out in one column, in dataflow order, every cell
+  880 wide and as tall as its content, 16px apart and none overlapping, an
+  editor as tall as its lines, one arc per connection in the bar and no resize
+  handle on any cell;
 * a run shows a Python cell's code and output, and a Vega-Lite cell's spec and
-  chart, together;
+  chart, together; the output grows its cell, the cells below move down by as
+  much, and each arc still runs between its two dots;
 * the wheel scrolls the page over a cell's editor and over its output;
 * dragging between dots connects two cells, and select plus Delete removes the
   connection;
@@ -36,6 +39,7 @@ import re
 import uuid
 from typing import TYPE_CHECKING
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from .utils import (
@@ -78,13 +82,20 @@ CANVAS = {
 ORDER = [PRODUCER, EXTRA, TRANSFORM, CHART]
 
 CELL_WIDTH = 880
-CELL_HEIGHT = 560
+#: Space between two cells, in pixels.
+GAP = 16
 
+#: Six lines, against EXTRA's one: PRODUCER's cell is the taller.
 PRODUCER_CODE = (
-    "import pandas as pd\n\n"
-    "return pd.DataFrame({'category': ['a', 'b', 'c'], 'count': [3, 7, 5]})\n"
+    "import pandas as pd\n"
+    "\n"
+    "categories = ['a', 'b', 'c']\n"
+    "counts = [3, 7, 5]\n"
+    "\n"
+    "return pd.DataFrame({'category': categories, 'count': counts})\n"
 )
-TRANSFORM_CODE = "print(len(arg))\nreturn arg\n"
+#: Prints the frame, several lines, so a run grows the cell.
+TRANSFORM_CODE = "print(len(arg))\nprint(arg)\nreturn arg\n"
 EXTRA_CODE = "return 1\n"
 CHART_SPEC = json.dumps({
     "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -220,6 +231,93 @@ def _show(page, view: str) -> None:
         )
 
 
+#: Each cell as the page draws it: where it is on the screen, and its own box's
+#: width. Null for a cell not drawn yet.
+_CELLS_JS = """(ids) => ids.map((id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    const box = document.getElementById(`${id}resizable`);
+    if (!node || !box) return null;
+    const r = node.getBoundingClientRect();
+    return {id, x: r.x, top: r.top, bottom: r.bottom, height: r.height, width: box.offsetWidth};
+})"""
+
+#: The cells as one column in the order given: one x, every box the cell width,
+#: each GAP below the one above, so none overlaps another.
+_COLUMN_HOLDS_JS = (
+    "([ids, width, gap]) => { const cells = (" + _CELLS_JS + ")(ids);"
+    " return cells.every((c) => !!c) && cells.every((c, k) =>"
+    " c.width === width && c.height > 0 && Math.abs(c.x - cells[0].x) < 0.5"
+    " && (k === 0 || Math.abs(c.top - cells[k - 1].bottom - gap) <= 1)); }"
+)
+
+
+def _wait_for_column(page, ids: list[str], *, timeout_ms: int = 20000) -> list[dict]:
+    """The cells once they stand in one column, each GAP below the one above.
+    React Flow measures a cell a frame or more after it changes, and the column
+    follows the measurement, so the relation is waited for, not read once."""
+    try:
+        page.wait_for_function(_COLUMN_HOLDS_JS, arg=[ids, CELL_WIDTH, GAP], timeout=timeout_ms)
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"the cells never stood in one column of {CELL_WIDTH}-wide cells {GAP}px apart, "
+            f"in the order {ids}: {page.evaluate(_CELLS_JS, ids)}"
+        ) from None
+    return page.evaluate(_CELLS_JS, ids)
+
+
+#: A code cell's Monaco editor: its lines, the ones it shows, and whether its
+#: content is taller than the editor (an inner scroll).
+_EDITOR_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    const el = node && node.querySelector('.monaco-editor');
+    const editors = (window.monaco && window.monaco.editor.getEditors()) || [];
+    const editor = el && editors.find((e) => el.contains(e.getDomNode()));
+    if (!editor) return null;
+    const ranges = editor.getVisibleRanges();
+    return {
+        lines: editor.getModel().getLineCount(),
+        first: ranges.length ? ranges[0].startLineNumber : 0,
+        last: ranges.length ? ranges[ranges.length - 1].endLineNumber : 0,
+        scrollHeight: editor.getScrollHeight(),
+        height: editor.getLayoutInfo().height,
+    };
+}"""
+
+#: Each cell's top in the flow (React Flow's store) and its drawn height.
+_EXTENTS_JS = """(ids) => Object.fromEntries(ids.map((id) => {
+    const n = window.__curio_reactFlow.getNodes().find((node) => node.id === id);
+    const el = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    return [id, n && el ? {y: n.position.y, height: el.offsetHeight} : null];
+}))"""
+
+#: Where the arc from *source* to *target* starts and ends on the screen, and
+#: where the two dots it joins are: React Flow joins a right-side dot at the
+#: middle of its right edge.
+_ARC_ENDS_JS = """([source, target]) => {
+    const edge = window.__curio_reactFlow.getEdges().find((e) => e.source === source && e.target === target);
+    const path = edge && document.querySelector(
+        `.react-flow__edge[data-testid="rf__edge-${edge.id}"] path.react-flow__edge-path`);
+    const dot = (id, handle) => document.querySelector(
+        `.react-flow__node[data-id="${id}"] .react-flow__handle[data-handleid="${handle}"]`);
+    const out = dot(source, edge && edge.sourceHandle ? edge.sourceHandle : 'out');
+    const inp = dot(target, edge && edge.targetHandle ? edge.targetHandle : 'in');
+    if (!path || !out || !inp) return null;
+    const m = path.getScreenCTM();
+    const at = (len) => {
+        const p = path.getPointAtLength(len);
+        return [p.x * m.a + p.y * m.c + m.e, p.x * m.b + p.y * m.d + m.f];
+    };
+    const joint = (el) => { const r = el.getBoundingClientRect(); return [r.right, r.top + r.height / 2]; };
+    return {start: at(0), end: at(path.getTotalLength()), out: joint(out), in: joint(inp)};
+}"""
+
+_ARC_ON_ITS_DOTS_JS = (
+    "(args) => { const a = (" + _ARC_ENDS_JS + ")(args); if (!a) return false;"
+    " const near = (p, q) => Math.abs(p[0] - q[0]) <= 2 && Math.abs(p[1] - q[1]) <= 2;"
+    " return near(a.start, a.out) && near(a.end, a.in); }"
+)
+
+
 def _scroll_to(page, y: float) -> None:
     page.locator(SCROLLER).evaluate("(el, top) => { el.scrollTop = top; }", y)
     page.wait_for_function(
@@ -296,11 +394,27 @@ def test_the_switch_shows_the_dataflow_as_a_column_of_cells(
             f"{node_id} lost its canvas spot: {placed[node_id]}"
         )
 
-    for node_id in ORDER:
-        box = page.locator(f'[id="{node_id}resizable"]').bounding_box()
-        assert box and abs(box["width"] - CELL_WIDTH) < 1 and abs(box["height"] - CELL_HEIGHT) < 1, (
-            f"{node_id} is not a {CELL_WIDTH}x{CELL_HEIGHT} cell: {box}"
+    # One column, in dataflow order, every cell 880 wide and as tall as its
+    # content, GAP apart, none over another.
+    cells = {c["id"]: c for c in _wait_for_column(page, ORDER)}
+    assert cells[EXTRA]["height"] < cells[PRODUCER]["height"], (
+        f"EXTRA's one-line cell is not shorter than PRODUCER's six-line one: {cells}"
+    )
+    # PRODUCER's editor is as tall as its lines: it shows every one of them,
+    # with nothing left to scroll to inside it.
+    try:
+        page.wait_for_function(
+            "(id) => { const e = (" + _EDITOR_JS + ")(id);"
+            " return !!e && e.first === 1 && e.last >= e.lines && e.scrollHeight <= e.height + 1; }",
+            arg=PRODUCER,
+            timeout=15000,
         )
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"PRODUCER's editor does not show all its lines: {page.evaluate(_EDITOR_JS, PRODUCER)}"
+        ) from None
+
+    for node_id in ORDER:
         cell = node_locator(page, node_id)
         expect(cell.locator(".react-flow__handle-left")).to_have_count(0)
         expect(cell.locator(".react-flow__handle-top")).to_have_count(0)
@@ -329,11 +443,43 @@ def test_a_run_shows_each_cells_input_and_output_together(
     require_user_auth()
     _enter(page, app_frontend, current_server, prefix="nbv_run")
     _show(page, "notebook")
+    _wait_for_column(page, ORDER)
+    before = page.evaluate(_EXTENTS_JS, [TRANSFORM, CHART])
 
     node_locator(page, CHART).scroll_into_view_if_needed()
     play_node(page, CHART)
     wait_for_node_done(page, CHART, node_type="vis-vega", timeout_ms=180000)
     assert_vega_canvas_rendered(page, CHART, timeout=60000)
+
+    # TRANSFORM's output grows its cell, and CHART, below it, moves down by as
+    # much: it stays GAP under TRANSFORM.
+    try:
+        page.wait_for_function(
+            "([ids, was, gap]) => { const now = (" + _EXTENTS_JS + ")(ids);"
+            " const t = now[ids[0]], c = now[ids[1]];"
+            " return !!t && !!c && t.height > was && Math.abs(c.y - (t.y + t.height) - gap) <= 1; }",
+            arg=[[TRANSFORM, CHART], before[TRANSFORM]["height"], GAP],
+            timeout=30000,
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"the run did not grow TRANSFORM's cell with CHART {GAP}px under it: "
+            f"{before} -> {page.evaluate(_EXTENTS_JS, [TRANSFORM, CHART])}"
+        ) from None
+    after = page.evaluate(_EXTENTS_JS, [TRANSFORM, CHART])
+    grew = (after[TRANSFORM]["y"] + after[TRANSFORM]["height"]) - (before[TRANSFORM]["y"] + before[TRANSFORM]["height"])
+    moved = after[CHART]["y"] - before[CHART]["y"]
+    assert grew > 0 and abs(moved - grew) <= 1, (
+        f"TRANSFORM's bottom moved {grew}px but CHART moved {moved}px: {before} -> {after}"
+    )
+    # The arc between them still runs from TRANSFORM's output dot to CHART's
+    # input dot: the dots follow the cells, and the arc follows the dots.
+    try:
+        page.wait_for_function(_ARC_ON_ITS_DOTS_JS, arg=[TRANSFORM, CHART], timeout=15000)
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"the TRANSFORM to CHART arc is off its dots: {page.evaluate(_ARC_ENDS_JS, [TRANSFORM, CHART])}"
+        ) from None
 
     # The chart's spec and its chart, at once.
     chart = node_locator(page, CHART)

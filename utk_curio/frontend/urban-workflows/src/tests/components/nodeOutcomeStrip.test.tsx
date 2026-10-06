@@ -87,6 +87,20 @@ describe("NodeOutcomeStrip", () => {
     expect(strip.className).toContain("nowheel");
   });
 
+  it("sits in a notebook cell's flow, under the output, rather than over the node's bottom", () => {
+    (global as any).fetch = jest.fn().mockResolvedValue({ ok: false });
+    const { rerender } = render(
+      <NodeOutcomeStrip nodeId="vega-1" projectId="p-1"
+        output={{ code: "error", content: VEGA_ERROR }} inCell />,
+    );
+    expect(screen.getByTestId("node-outcome-vega-1").className).toContain("inCell");
+    rerender(
+      <NodeOutcomeStrip nodeId="vega-1" projectId="p-1"
+        output={{ code: "error", content: VEGA_ERROR }} />,
+    );
+    expect(screen.getByTestId("node-outcome-vega-1").className).not.toContain("inCell");
+  });
+
   it("hydrates from the journal when this tab has no live outcome (a reload)", async () => {
     (global as any).fetch = jest.fn().mockResolvedValue({
       ok: true,
