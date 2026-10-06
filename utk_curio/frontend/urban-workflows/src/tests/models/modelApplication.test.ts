@@ -162,6 +162,19 @@ describe("modelNodeForCanvas", () => {
     expect(node?.modelRefs).toEqual([{ id: segformer.id, name: segformer.name }]);
   });
 
+  test("a model with a node of its own becomes that node, wherever it is in the list", () => {
+    const deepUmbra = { id: "model.scout.deep-umbra", name: "Deep Umbra (accumulated shadows)" };
+    const shadows = {
+      nodeType: "scout.shadow/accumulated-shadow",
+      label: "Accumulated Shadow",
+      code: 'model = open_model(lambda: curio_load_model("model.scout.deep-umbra"))\nreturn accumulated_shadow(arg, season="summer", model=model, output_file=curio_output_file)',
+      packageName: "SCOUT Shadow",
+    };
+    expect(modelNodeForCanvas([segmentation, shadows], deepUmbra)?.nodeType).toBe(shadows.nodeType);
+    // Any other model still goes to the first template that runs one.
+    expect(modelNodeForCanvas([segmentation, shadows], segformer)?.nodeType).toBe(segmentation.nodeType);
+  });
+
   test("no template that runs a model makes nothing", () => {
     expect(modelNodeForCanvas([loader, transform], ddrnet)).toBeNull();
     expect(modelNodeForCanvas([], ddrnet)).toBeNull();

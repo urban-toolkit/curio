@@ -50,7 +50,7 @@ def _spec(key: str) -> dict:
 
 def test_the_golden_file_covers_every_shipped_dataflow():
     assert set(GOLDEN) == set(SHIPPED)
-    assert len(SHIPPED) == 47
+    assert len(SHIPPED) == 49
 
 
 @pytest.mark.parametrize("key", sorted(SHIPPED))
@@ -76,8 +76,8 @@ def test_sources():
     for entry in SHIPPED.values():
         by_source.setdefault(entry.source, []).append(entry.key)
     assert sorted(by_source[SOURCE_USE_CASE]) == sorted(USE_CASES)
-    assert len(by_source[SOURCE_EXAMPLE]) == 22
-    assert len(by_source[SOURCE_TEST]) == 24
+    assert len(by_source[SOURCE_EXAMPLE]) == 23
+    assert len(by_source[SOURCE_TEST]) == 25
 
 
 def test_no_spec_stores_a_source():

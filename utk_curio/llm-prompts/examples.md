@@ -27,6 +27,7 @@ This file indexes the dataflows Curio ships, for the built-in agents. A run of a
 - [Storage: photos and videos](../../docs/examples/21-storage-photos-and-videos.json): A street survey folder of geotagged photos and a video: every file as a card (the video plays in its card), a map of where each was taken, and frames sampled from the video every quarter second.
 - [Storage: audio recordings](../../docs/examples/22-storage-audio-recordings.json): Noise recordings per sensor, timed by their file names: a spectrogram card for each recording, then the recordings cut into 0.1 second windows and each window's level charted per sensor.
 - [Storage: a folder of different files](../../docs/examples/23-storage-folder-of-different-files.json): A roads shapefile and a parks GeoJSON file from one folder, each added as its own dataset, stacked into one GeoDataFrame and drawn on one map.
+- [SCOUT building rasters](../../docs/examples/24-scout-building-rasters.json): SCOUT's Chicago Loop buildings with heights drawn in 3D, then rasterized by SCOUT's building rasterizer package into zoom-16 height tiles: a map of the height mosaic, SCOUT's Deep Umbra shadow model (a Model Catalog model) run on the heights for a summer day with its minutes of shadow drawn on a map, and their mean and median over the ground from Raster Statistics.
 - [DataPool_Vega_2](../../docs/examples/dataflows/DataPool_Vega_2.json): Green roof permits joined to ZIP code polygons, the ten ZIP codes with the most vegetated roof area kept, and a bar chart with a point selection over them.
 - [Interaction_Autark](../../docs/examples/dataflows/Interaction_Autark.json): OpenStreetMap buildings loaded from a .pbf file, missing heights filled on the GPU, and a map coloured by height linked both ways to a brushable height histogram.
 - [Regression](../../docs/examples/dataflows/Regression.json): OpenStreetMap roads joined to nearby surface polygons, lane counts clamped on the GPU, and a map of roads coloured by lanes linked both ways to a brushable lane histogram.
@@ -51,6 +52,7 @@ This file indexes the dataflows Curio ships, for the built-in agents. A run of a
 - [JSComputation](../../docs/examples/dataflows/JSComputation.json): checks the JavaScript runner on a list of three numbers.
 - [MultiInput](../../docs/examples/dataflows/MultiInput.json): checks the input order of a node with two inputs, on two hand-typed frames.
 - [MultiInputDataPool](../../docs/examples/dataflows/MultiInputDataPool.json): checks a pool with five inputs, on hand-typed frames.
+- [ScoutShadows](../../docs/examples/dataflows/ScoutShadows.json): checks SCOUT's shadow model package on SCOUT's Chicago Loop buildings, two scenarios charted and mapped by Compare Scenarios.
 - [SimpleView](../../docs/examples/dataflows/SimpleView.json): checks the table view on a three-row hand-typed frame.
 - [Vega](../../docs/examples/dataflows/Vega.json): checks the chart renderer on a hand-typed bar chart.
 - [Widget](../../docs/examples/dataflows/Widget.json): checks the widget input syntax in node code.

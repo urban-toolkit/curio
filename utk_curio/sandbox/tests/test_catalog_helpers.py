@@ -248,6 +248,37 @@ class TestLoadModel:
         with pytest.raises(RuntimeError, match="not available"):
             _helpers({})["curio_load_model"]("gone")
 
+    def test_an_image_to_image_model_is_run_with_its_own_inputs(self, tmp_path):
+        """``model.run`` feeds the graph the arrays the node made, by input
+        name, and hands back its outputs in order (onnxruntime is imported,
+        not skipped, as ``test_vision.py`` imports it)."""
+        import numpy as np
+
+        folder = self._model(tmp_path, {
+            "runtime": "onnx", "task": "image-to-image", "labels": [], "entry": "files/m.onnx",
+        })
+        (folder / "files").mkdir()
+        (folder / "files" / "m.onnx").write_bytes(tiny_onnx_model())
+        model = _helpers({}, models={"m": str(folder)})["curio_load_model"]("m")
+        (out,) = model.run({"X": np.zeros((1, 3), dtype=np.float32)})
+        assert out.tolist() == [list(ADDEND)]
+        (again,) = model.run({"X": np.ones((1, 3), dtype=np.float32)})
+        assert again.tolist() == [[value + 1 for value in ADDEND]]
+        with pytest.raises(ValueError, match="needs the inputs X; missing X"):
+            model.run({"Y": np.zeros((1, 3), dtype=np.float32)})
+
+    def test_only_an_onnx_model_has_a_graph_to_run(self, tmp_path):
+        folder = self._model(tmp_path, {"runtime": "transformers", "entry": "files"})
+        model = _helpers({}, models={"m": str(folder)})["curio_load_model"]("m")
+        with pytest.raises(RuntimeError, match="not an ONNX model"):
+            model.run({})
+
+    def test_curio_segment_refuses_an_image_to_image_model(self, tmp_path):
+        folder = self._model(tmp_path, {"runtime": "onnx", "task": "image-to-image", "labels": []})
+        helpers = _helpers({}, models={"m": str(folder)})
+        with pytest.raises(ValueError, match="does not label pixels"):
+            helpers["curio_segment"](pd.DataFrame({"path": []}), helpers["curio_load_model"]("m"))
+
     def test_curio_segment_runs_a_loaded_model_not_a_folder(self, tmp_path):
         segment = _helpers({})["curio_segment"]
         with pytest.raises(TypeError, match="curio_load_model"):

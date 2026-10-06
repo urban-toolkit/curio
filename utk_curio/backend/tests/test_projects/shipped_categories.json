@@ -237,6 +237,14 @@
       "Geometries"
     ]
   },
+  "24-scout-building-rasters": {
+    "tags": [
+      "Autark"
+    ],
+    "data_type": [
+      "Geometries"
+    ]
+  },
   "dataflows/AutkMap": {
     "tags": [
       "Autark",
@@ -412,6 +420,12 @@
     ],
     "data_type": [
       "Tables"
+    ]
+  },
+  "dataflows/ScoutShadows": {
+    "tags": [],
+    "data_type": [
+      "Geometries"
     ]
   },
   "dataflows/SimpleView": {

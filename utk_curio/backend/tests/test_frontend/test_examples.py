@@ -89,6 +89,10 @@ EXAMPLE_INVARIANTS = [
     ("23-storage-folder-of-different-files.json", 4, 3,
      {"curio.builtin/data-loading": 2, "curio.builtin/computation-analysis": 1,
       "curio.builtin/vis-vega": 1}, False),
+    ("24-scout-building-rasters.json", 8, 8,
+     {"curio.builtin/data-loading": 1, "scout.raster-conversion/rasterize-buildings": 1,
+      "curio.builtin/computation-analysis": 1, "scout.shadow/accumulated-shadow": 1,
+      "curio.builtin/raster-statistics": 1, "curio.builtin/autk-grammar": 3}, False),
 ]
 
 
@@ -103,6 +107,7 @@ FAN_IN_NODES = {
     "09-heterogeneous-data-linked-views.json": 2,
     "20-storage-folder-of-csv-files.json": 1,
     "23-storage-folder-of-different-files.json": 1,
+    "24-scout-building-rasters.json": 1,
 }
 
 
@@ -433,6 +438,9 @@ def test_declared_dataset_refs_have_the_shape_the_backend_writes():
 #: carry their ``$schema`` URL, which the renderer never fetches.
 _EXTERNAL_URL_ALLOWLIST = (
     "https://vega.github.io/schema/",
+    # The credit in the SCOUT packages' template docstrings, which example 24's
+    # package nodes carry unchanged; nothing is fetched from it.
+    "https://github.com/urban-toolkit/scout",
 )
 
 _EXTERNAL_URL = re.compile(r"""https?://[^\s"'\)\]]+""")
