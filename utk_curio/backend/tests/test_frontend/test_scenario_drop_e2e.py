@@ -53,6 +53,7 @@ from .utils import (
     save_dataflow,
     set_node_code,
     stub_login_and_enter_workflow,
+    wait_for_drawer_closed,
     wait_for_node_settled,
     wait_for_run_guard_released,
 )
@@ -489,9 +490,7 @@ def test_a_dropped_scenario_brings_the_packages_its_levers_need(
     # The dataflow saves on top of the package the drop added. The drawer
     # closes first: its scrim lies over the File menu.
     page.keyboard.press("Escape")
-    page.locator('[data-curio-scenario-catalog-drawer="true"][aria-hidden="true"]').wait_for(
-        state="attached", timeout=10000,
-    )
+    wait_for_drawer_closed(page, '[data-curio-scenario-catalog-drawer="true"]')
     save_dataflow(page)
     saved = _saved_spec(current_server, token, target)["dataflow"]
     [dropped] = saved["scenarios"]

@@ -79,6 +79,7 @@ from .utils import (
     run_all_and_wait,
     save_dataflow,
     stub_login_and_enter_workflow,
+    wait_for_drawer_closed,
     wait_for_node_settled,
 )
 
@@ -499,9 +500,7 @@ def test_both_scenarios_dragged_into_an_empty_project_read_one_context(
         _drag_scenario_onto_canvas(page, source, scenario_id, at=at)
         _toast(page, f'Added "{name}" from {EXAMPLE_NAME}.')
     page.keyboard.press("Escape")
-    page.locator('[data-curio-scenario-catalog-drawer="true"][aria-hidden="true"]').wait_for(
-        state="attached", timeout=10000,
-    )
+    wait_for_drawer_closed(page, '[data-curio-scenario-catalog-drawer="true"]')
     # The pool passes on the loader's layers, so the Data Loading node that
     # stands for it is a copy of the loader's saved output.
     copies = _copies(page)
