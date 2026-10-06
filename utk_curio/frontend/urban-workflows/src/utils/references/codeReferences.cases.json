@@ -438,6 +438,32 @@
       ]
     },
     {
+      "name": "a layer chip on an input of one frame with no layer name is that frame, and its columns the frame's",
+      "language": "python",
+      "code": "roads = [!! input 0:table_osm_roads !!]\nreturn roads[[!! input 0:table_osm_roads.highway !!]]",
+      "widgets": [],
+      "inputs": [{"slot": 0, "columns": ["highway", "oneway"]}],
+      "expected": "roads = curio_layer(arg, \"table_osm_roads\", 0)\nreturn roads[\"highway\"]"
+    },
+    {
+      "name": "a layer's column the one frame of its input does not have",
+      "language": "javascript",
+      "code": "const w = [!! input 0:table_osm_roads.width !!];",
+      "widgets": [],
+      "inputs": [{"slot": 0, "columns": ["highway", "oneway"]}],
+      "expected": "const w = [!! input 0:table_osm_roads.width !!];",
+      "problems": ["[!! input 0:table_osm_roads.width !!]: layer table_osm_roads of input 0 has no column width."]
+    },
+    {
+      "name": "a layer chip on an input of several frames, none of them named so, names the ones it has",
+      "language": "javascript",
+      "code": "const roads = [!! input 0:table_osm_roads !!];",
+      "widgets": [],
+      "inputs": [{"slot": 0, "layers": [{"name": "table_osm_parks"}, {"name": "table_osm_water"}]}],
+      "expected": "const roads = [!! input 0:table_osm_roads !!];",
+      "problems": ["[!! input 0:table_osm_roads !!]: input 0 has no layer table_osm_roads. Its layers are table_osm_parks, table_osm_water."]
+    },
+    {
       "name": "the chip of a deleted input",
       "language": "python",
       "code": "x = [!! input ? !!]; y = [!! input ?.area !!]",

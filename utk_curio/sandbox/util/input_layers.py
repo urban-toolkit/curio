@@ -18,8 +18,11 @@ exactly (``table_osm_roads``, not ``roads``). What an input may carry:
 - frames that carry their name in ``metadata`` (``gdf.metadata = {"name":
   "roads"}``), on their own or in a list or tuple.
 
-The layer keeps its name and type in ``metadata``. A name the input does not
-have fails the node with a message naming the input and the layers it has.
+The layer keeps its name and type in ``metadata``. An input that carries
+exactly one frame with no layer name (a GeoDataFrame a Python node returns, or
+one Data Loading reads) is that layer, whatever name the chip gives. Otherwise
+a name the input does not have fails the node with a message naming the input
+and the layers it has.
 """
 from __future__ import annotations
 
@@ -106,10 +109,36 @@ def _read(item, name: str):
     return frame
 
 
+def _is_frame(item) -> bool:
+    """Whether *item* is one frame: a table, a layer record or envelope."""
+    import pandas as pd
+
+    if isinstance(item, pd.DataFrame):
+        return True
+    return isinstance(item, dict) and (
+        _is_record(item) or item.get("dataType") in ("geodataframe", "dataframe")
+    )
+
+
+def _read_unnamed(item):
+    """The frame *item* holds, which carries no layer name."""
+    if _is_record(item):
+        return _frame_of_record(item)
+    if isinstance(item, dict):
+        from utk_curio.sandbox.util.scenario_stack import _unwrap
+
+        return _unwrap(item)
+    return item
+
+
 def curio_layer(value, layer: str, slot=0):
-    """The layer named *layer* of *value*, input *slot*'s value."""
-    named = [(name, item) for item in _items(value) for name in [_name_of(item)] if name is not None]
+    """The layer named *layer* of *value*, input *slot*'s value; or the one
+    frame *value* carries, when that frame has no layer name."""
+    items = _items(value)
+    named = [(name, item) for item in items for name in [_name_of(item)] if name is not None]
     for name, item in named:
         if name == layer:
             return _read(item, name)
+    if len(items) == 1 and not named and _is_frame(items[0]):
+        return _read_unnamed(items[0])
     raise LookupError(missing_layer_message(slot, layer, [name for name, _ in named]))

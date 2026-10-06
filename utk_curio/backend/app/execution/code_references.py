@@ -378,7 +378,9 @@ def reference_problem(
             layer = next((l for l in layers or [] if l.get("name") == parsed["layer"]), None)
             if layers is not None and layer is None:
                 return missing_layer_message(reference, slot, parsed["layer"], (str(l.get("name")) for l in layers))
-            columns = layer.get("columns") if layer else None
+            # An input of one frame (no list of layers) is that layer: its
+            # columns are the frame's.
+            columns = layer.get("columns") if layer else found.get("columns") if layers is None else None
             if "column" in parsed and isinstance(columns, list) and parsed["column"] not in columns:
                 return f"{reference}: layer {parsed['layer']} of input {slot} has no column {parsed['column']}."
             if "column" not in parsed and language != "json" and context[0] != "code":

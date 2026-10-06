@@ -536,9 +536,10 @@ When the node runs:
 - In Python and JavaScript, a layer chip becomes that layer of the input:
   `roads = [!! input 0:table_osm_roads !!]` runs as
   `roads = curio_layer(arg, "table_osm_roads", 0)`, which gives a GeoDataFrame
-  in Python and a GeoJSON FeatureCollection in JavaScript. If the input has no
-  layer of that name, the node fails with a message naming the input and the
-  layers it has.
+  in Python and a GeoJSON FeatureCollection in JavaScript. An input that is one
+  frame with no layer name, such as a GeoDataFrame a Python node returns, is
+  that layer. An input with several frames needs one of that name; if it has
+  none, the node fails with a message naming the input and the layers it has.
 - In a Vega-Lite or Autark spec, an input chip becomes the name the input is read
   by, `"input_1"`: a Vega-Lite dataset or an Autark table (see
   [Vega-Lite node](#vega-lite-node) and [Autark node](#autark-node)). A layer

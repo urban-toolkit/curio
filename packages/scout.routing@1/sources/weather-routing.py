@@ -1,8 +1,9 @@
 """Weather Routing: SCOUT's weather-aware routes over a roads layer.
 
-Input: the layers an Autark node loads from OpenStreetMap. The node reads their
-roads layer, table_osm_roads, as a GeoDataFrame of road lines (with highway,
-and oneway and maxspeed where known). The routes run inside its bounds.
+Input: the layers an Autark node loads from OpenStreetMap, whose roads layer,
+table_osm_roads, the node reads as a GeoDataFrame of road lines (with highway,
+and oneway and maxspeed where known), or such a GeoDataFrame on its own. The
+routes run inside its bounds.
 Output: (routes, metrics).
 - routes: one row per route, a line through its nodes, with the route
   (weight_type), route_index, distance_m in metres, duration_minutes and the

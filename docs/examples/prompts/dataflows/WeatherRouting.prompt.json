@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/WeatherRouting.json",
-    "sha256": "12785ccba0190d131c3c8627003c1c05b04519c664765027a711bf4e0c036b56",
+    "sha256": "221d6e47318ca85a21b0f10cde304ae4055f489f2468bc4955bfdfb3ba7b2d50",
     "walkthrough": null
   },
   "prompt": "Compare two weather-aware routes across the Chicago Loop at noon on 6 July 2025, using SCOUT's routing model and its forecast. Load the Loop's roads from the OpenStreetMap extract the examples ship, and set the start time once for both scenarios. In the first scenario rain counts most and wind least; the second is a copy of it with the two the other way round. Each scenario finds the rain-aware, the wind-aware and the fastest route between the same two points, then takes the routes and their metrics apart. Draw both scenarios' routes over the roads on one map, and chart each route's duration, distance, rain exposure and wind exposure in each scenario. The routing model is not part of the standard node set, so whatever provides it needs installing first.",

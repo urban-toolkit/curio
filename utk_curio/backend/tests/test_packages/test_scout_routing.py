@@ -763,19 +763,33 @@ def _loop_roads_artifact():
     return save_to_duckdb(layers, node_id="osm")
 
 
-def run_node(workspace, *, fails=False, **values):
+def _loop_roads_frame_artifact():
+    """The Loop's roads as one GeoDataFrame on its own, with no layer name, as
+    a Python node or Data Loading hands roads on."""
+    import geopandas as gpd
+
+    from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+    roads = gpd.read_parquet(LOOP_ROADS)
+    assert "metadata" not in roads.__dict__
+    return save_to_duckdb(roads, node_id="roads")
+
+
+def run_node(workspace, *, fails=False, frame=False, **values):
     """Run the node's template, its widgets at *values*, on the Autark layers
-    holding the Loop's roads in the sandbox, in process, with the datasets and
-    the model its code names resolved: ``(artifact id, (routes, metrics))``, or
-    with *fails* the node's error text."""
+    holding the Loop's roads (with *frame*, on the roads as one GeoDataFrame)
+    in the sandbox, in process, with the datasets and the model its code names
+    resolved: ``(artifact id, (routes, metrics))``, or with *fails* the node's
+    error text."""
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, model_ids_in_code
     from utk_curio.backend.app.execution.code_references import resolve_references
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     code, problems = resolve_references(_source(), _with_values(**values), "python", inputs=[{"slot": 0}])
     assert problems == [], problems
+    artifact, data_type = (_loop_roads_frame_artifact(), "geodataframe") if frame else (_loop_roads_artifact(), "list")
     result = _execute(
-        code, _loop_roads_artifact(), NODE_TYPE, "list", workspace,
+        code, artifact, NODE_TYPE, data_type, workspace,
         dataset_paths={i: str(_data_file(i)) for i in dataset_ids_in_code(code)},
         models={i: str(REPO / "models" / f"{i}@1") for i in model_ids_in_code(code)},
         package_modules={"root": str(SOURCES), "names": [MODULE]},
@@ -817,6 +831,16 @@ def test_the_node_routes_over_autarks_roads_as_the_example_does(workspace, scena
         assert line.coords[-1] == routes.geometry.iloc[-1].coords[-1]
     xmin, ymin, xmax, ymax = routes.total_bounds
     assert -87.64 < xmin and xmax < -87.60 and 41.85 < ymin and ymax < 41.90
+
+
+def test_the_node_routes_over_a_roads_frame_on_its_own_as_before(workspace):
+    """A roads GeoDataFrame with no layer name, as a Python node or Data
+    Loading hands roads on, is the layer the template's chip reads: the node
+    routes over it as it did when its code read ``arg``, to the same routes."""
+    rain, wind = EXAMPLE_WEIGHTS["avoid-rain"]
+    _art_id, (routes, metrics) = run_node(workspace, frame=True, mode="Custom weights", rain=rain, wind=wind)
+    assert routes.crs.to_epsg() == 4326
+    _assert_rows(_rows(routes, metrics), EXAMPLE["avoid-rain"])
 
 
 def test_the_example_picks_each_part(workspace):

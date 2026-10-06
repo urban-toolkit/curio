@@ -336,7 +336,10 @@ export function referenceProblem(
       if (layers !== null && layer === undefined) {
         return missingLayerMessage(reference, parsed.slot, parsed.layer, layers.map((l) => l.name));
       }
-      if (parsed.column !== undefined && Array.isArray(layer?.columns) && !layer!.columns!.includes(parsed.column)) {
+      // An input of one frame (no list of layers) is that layer: its columns
+      // are the frame's.
+      const columns = layer ? layer.columns : layers === null ? input.columns : undefined;
+      if (parsed.column !== undefined && Array.isArray(columns) && !columns.includes(parsed.column)) {
         return `${reference}: layer ${parsed.layer} of input ${parsed.slot} has no column ${parsed.column}.`;
       }
       if (parsed.column === undefined && language !== "json" && context.kind !== "code") {

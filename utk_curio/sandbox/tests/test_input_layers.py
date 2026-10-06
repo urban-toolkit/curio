@@ -102,9 +102,60 @@ class TestTheLayerIsFoundByItsName:
     def test_a_column_named_metadata_is_not_a_name(self):
         import pandas as pd
 
-        frame = pd.DataFrame({"metadata": ["parks"]})
+        frames = [pd.DataFrame({"metadata": ["parks"]}), pd.DataFrame({"metadata": ["water"]})]
         with pytest.raises(LookupError, match="It carries no named layers"):
-            _layer([frame], "parks")
+            _layer(frames, "parks")
+
+
+class TestOneFrameWithNoName:
+    """An input that carries exactly one frame with no layer name is that
+    layer, whatever the chip calls it: a roads GeoDataFrame a Python node
+    returns or Data Loading reads reaches a template that reads
+    ``[!! input 0:table_osm_roads !!]`` as it reached one that read ``arg``."""
+
+    def test_a_frame_on_its_own(self):
+        import geopandas as gpd
+        import pandas as pd
+        from shapely.geometry import Point
+
+        roads = gpd.GeoDataFrame({"highway": ["primary"]}, geometry=[Point(0, 0)], crs="EPSG:3395")
+        assert _layer(roads, "table_osm_roads") is roads
+        assert _layer([roads], "table_osm_roads") is roads
+        assert _layer((roads,), "anything") is roads
+        table = pd.DataFrame({"a": [1]})
+        assert _layer(table, "roads") is table
+
+    def test_one_unnamed_layer_record_or_envelope(self):
+        import geopandas as gpd
+
+        record = {"type": "roads", "geojson": _fc([{"highway": "primary"}, {"highway": "service"}])}
+        roads = _layer([record], "table_osm_roads")
+        assert isinstance(roads, gpd.GeoDataFrame) and roads.crs.to_epsg() == 3395
+        assert roads["highway"].tolist() == ["primary", "service"]
+        envelope = {"dataType": "geodataframe", "data": _fc([{"height": 12.0}])}
+        assert _layer(envelope, "table_osm_buildings")["height"].tolist() == [12.0]
+
+    def test_several_frames_still_need_the_name(self):
+        import geopandas as gpd
+        from shapely.geometry import Point
+
+        a = gpd.GeoDataFrame({"v": [1]}, geometry=[Point(0, 0)], crs="EPSG:4326")
+        b = gpd.GeoDataFrame({"v": [2]}, geometry=[Point(1, 1)], crs="EPSG:4326")
+        with pytest.raises(LookupError) as raised:
+            _layer([a, b], "table_osm_roads", 2)
+        assert str(raised.value) == (
+            "[!! input 2:table_osm_roads !!]: input 2 has no layer table_osm_roads. It carries no named layers."
+        )
+
+    def test_one_frame_named_otherwise_is_not_it(self):
+        import geopandas as gpd
+        from shapely.geometry import Point
+
+        parks = gpd.GeoDataFrame({"v": [1]}, geometry=[Point(0, 0)], crs="EPSG:4326")
+        parks.__dict__["metadata"] = {"name": "table_osm_parks"}
+        with pytest.raises(LookupError) as raised:
+            _layer(parks, "table_osm_roads", 0)
+        assert str(raised.value).endswith("has no layer table_osm_roads. Its layers are table_osm_parks.")
 
     def test_the_envelope_an_input_circle_is_expanded_from_keeps_the_names(self):
         """A single input holding a compute step's envelope reaches node code
@@ -136,7 +187,7 @@ class TestAMissingLayer:
     def test_an_input_with_no_named_layers(self):
         import pandas as pd
 
-        for value in (None, pd.DataFrame({"a": [1]}), [1, 2], {"a": 1}):
+        for value in (None, [pd.DataFrame({"a": [1]}), pd.DataFrame({"a": [2]})], [1, 2], {"a": 1}):
             with pytest.raises(LookupError) as raised:
                 _layer(value, "roads", 1)
             assert str(raised.value) == "[!! input 1:roads !!]: input 1 has no layer roads. It carries no named layers."
@@ -240,6 +291,21 @@ class TestTheJavaScriptTwin:
         run = self._run("return curio_layer(arg, \"parks\", 0).features[0].properties.v;", [parks])
         assert run["success"], run.get("error")
         assert run["value"] == 7
+
+    def test_one_frame_with_no_name_is_the_layer_and_several_still_need_it(self):
+        import geopandas as gpd
+        from shapely.geometry import Point
+
+        from utk_curio.sandbox.util.input_layers import missing_layer_message
+
+        roads = gpd.GeoDataFrame({"v": [7]}, geometry=[Point(0, 0)], crs="EPSG:4326")
+        run = self._run("return curio_layer(arg, \"table_osm_roads\", 0).features[0].properties.v;", roads)
+        assert run["success"], run.get("error")
+        assert run["value"] == 7
+        other = gpd.GeoDataFrame({"v": [8]}, geometry=[Point(1, 1)], crs="EPSG:4326")
+        run = self._run("return curio_layer(arg, \"table_osm_roads\", 0);", [roads, other])
+        assert not run["success"]
+        assert run["error"].startswith(missing_layer_message(0, "table_osm_roads", []) + "\n"), run["error"]
 
     def test_a_missing_layer_says_what_python_says(self):
         from utk_curio.sandbox.util.input_layers import missing_layer_message

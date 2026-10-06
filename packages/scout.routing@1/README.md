@@ -10,7 +10,7 @@ route's duration, distance and rain and wind exposure.
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `scout.routing/weather-routing` | Weather Routing | The layers an Autark node loads from OpenStreetMap; it reads their roads layer, `table_osm_roads` | `(routes, metrics)`: one GeoDataFrame and one table |
+| `scout.routing/weather-routing` | Weather Routing | The layers an Autark node loads from OpenStreetMap, whose roads layer, `table_osm_roads`, it reads; or a roads GeoDataFrame on its own | `(routes, metrics)`: one GeoDataFrame and one table |
 
 ## Settings
 
@@ -80,7 +80,9 @@ return calculate_weather_route(
 )
 ```
 
-Fed anything without a `table_osm_roads` layer, the node fails with a message
+A roads GeoDataFrame on its own, from a Python node or Data Loading, works too:
+an input that is one frame with no layer name is the layer the chip reads. Fed
+several layers without a `table_osm_roads` one, the node fails with a message
 naming the layers its input has.
 
 The test dataflow [WeatherRouting](../../docs/examples/dataflows/WeatherRouting.json)

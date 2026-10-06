@@ -151,6 +151,9 @@ roads = [!! input 0:table_osm_roads !!]
 return roads[roads["highway"] == "primary"]
 ```
 
+This code also takes a single roads GeoDataFrame, from a Python node or Data
+Loading: an input that is one frame with no layer name is the layer.
+
 ### Modules beside your template
 
 A template can import Python modules that ship in the package's `sources/`

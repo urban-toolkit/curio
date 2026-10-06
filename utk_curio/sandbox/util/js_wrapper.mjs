@@ -33,14 +33,17 @@ console.log = (...args) => {
 // A layer chip (#662), `[!! input 0:table_osm_roads !!]`, is written as
 // `curio_layer(arg, "table_osm_roads", 0)`: the layer of that name among the
 // ones the input carries, as a FeatureCollection, found by its name exactly as
-// an Autark spec finds it. The input's circle names it when it is missing. The
-// Python twin, with what an input may carry, is util/input_layers.py.
+// an Autark spec finds it. An input that is exactly one FeatureCollection with
+// no layer name (a GeoDataFrame on its own) is that layer. The input's circle
+// names it when it is missing. The Python twin, with what an input may carry,
+// is util/input_layers.py.
 const curio_layer = (value, layer, slot = 0) => {
   const items = value && typeof value === 'object' && !Array.isArray(value)
     && value.dataType === 'outputs' && Array.isArray(value.data)
     ? value.data
     : Array.isArray(value) ? value : [value];
   const named = [];
+  const unnamed = [];
   for (const item of items) {
     if (!item || typeof item !== 'object') continue;
     let name = null;
@@ -54,12 +57,16 @@ const curio_layer = (value, layer, slot = 0) => {
     } else if (item.type === 'FeatureCollection') {
       name = item.name;
       found = item;
+    } else {
+      continue;
     }
     if (typeof name === 'string' && name) named.push([name, found]);
+    else unnamed.push(found);
   }
   for (const [name, found] of named) {
     if (name === layer) return found;
   }
+  if (items.length === 1 && named.length === 0 && unnamed.length === 1) return unnamed[0];
   const names = named.map(([name]) => name);
   const has = names.length > 0 ? `Its layers are ${names.join(', ')}.` : 'It carries no named layers.';
   throw new Error(`[!! input ${slot}:${layer} !!]: input ${slot} has no layer ${layer}. ${has}`);
