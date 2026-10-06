@@ -107,7 +107,8 @@ test("the map draws the input with the layer to edit pickable, on top", async ()
   const doc = JSON.parse(mockApply.mock.calls[mockApply.mock.calls.length - 1][0]);
   expect(doc.map.layerRefs).toEqual([{ dataRef: "table_osm_roads" }, { dataRef: "table_osm_buildings", isPick: true }]);
   expect(mockMapData.input).toBe(INPUT);
-  expect(screen.getByLabelText("Id")).toHaveValue("building_id");
+  expect(screen.getByRole("combobox", { name: "Id" })).toHaveValue("building_id");
+  expect(screen.getByRole("combobox", { name: "Layer" })).toHaveValue("table_osm_buildings");
   expect(document.querySelector("[data-edit-building-note]")?.textContent).toMatch(/applies to the whole building/);
 });
 

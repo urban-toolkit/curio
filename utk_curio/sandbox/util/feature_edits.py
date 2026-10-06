@@ -326,8 +326,11 @@ def _summary(layer: _Layer, key, counts) -> str:
     return f"{_NAME}: {layer.label}, features matched on {key}: {what}."
 
 
-def _envelope(layer: _Layer):
-    """A layer as the envelope an Autark node hands it on in."""
+def _envelope(layer: _Layer, edited: bool):
+    """A layer as the envelope an Autark node hands it on in: the one it came
+    in when it was not edited."""
+    if not edited and layer.envelope is not None:
+        return layer.envelope
     if layer.fc is not None:
         if layer.envelope is not None:
             return {**layer.envelope, "data": layer.fc}
@@ -370,7 +373,7 @@ def edit_features(value, edits, key=None, layer=None):
     print(_summary(target, key, counts))
     if single_table:
         return target.frame
-    envelopes = [_envelope(item) for item in layers]
+    envelopes = [_envelope(item, item is target) for item in layers]
     if len(envelopes) == 1:
         return envelopes[0]
     return {"dataType": "outputs", "data": envelopes}

@@ -36,7 +36,6 @@ from .test_scenario_drop_e2e import _saved_spec
 from .test_scenarios_canvas_e2e import _require_webgpu
 from .test_widget_tags_e2e import _open_tab
 from .utils import (
-    assert_autark_map_drawn,
     assert_in_view,
     dismiss_toasts,
     frame_nodes,
@@ -88,7 +87,7 @@ EMPTY_LIST = (
 )
 
 #: Where a double-click is tried on the map, as fractions of its drawing.
-PICK_SPOTS = ((0.2, 0.5), (0.8, 0.5), (0.4, 0.5), (0.6, 0.5), (0.5, 0.5))
+PICK_SPOTS = ((0.25, 0.5), (0.75, 0.5), (0.4, 0.5), (0.6, 0.5), (0.5, 0.5), (0.15, 0.6), (0.85, 0.6))
 
 
 def _spec() -> dict:
@@ -146,8 +145,15 @@ def _picked(page) -> str:
     return node_locator(page, EDIT_2).locator("[data-edit-picked]").get_attribute("data-edit-picked") or ""
 
 
+_SHOWN_JS = """([selector, x, y]) => document.elementFromPoint(x, y) === document.querySelector(selector)"""
+
+
 def _pick_a_building(page) -> int:
-    """Double-click the map where it draws a building, until the node lists one."""
+    """Double-click the map where it draws a building, until the node lists one.
+
+    The buildings fill the layer's extent, which the map fits, so a spot along
+    the map's middle lands on one: the marked pixel nearest the spot when the
+    buildings are drawn in a saturated colour, else the spot itself."""
     canvas = f"#autk-grammar-map-{EDIT_2}"
     tried = []
     for at in PICK_SPOTS:
@@ -155,9 +161,13 @@ def _pick_a_building(page) -> int:
         dismiss_toasts(page)
         point = mark_point(page, canvas, at)
         if not point:
-            tried.append((at, "no mark"))
-            continue
+            box = page.locator(canvas).bounding_box()
+            assert box, "the Edit Features map has no layout box"
+            point = {"x": box["x"] + at[0] * box["width"], "y": box["y"] + at[1] * box["height"]}
         x, y = assert_in_view(page, point["x"], point["y"], f"the building near {at} of the Edit Features map")
+        if not page.evaluate(_SHOWN_JS, [canvas, x, y]):
+            tried.append((at, "covered"))
+            continue
         page.mouse.dblclick(x, y)
         deadline = time.time() + 10
         while time.time() < deadline:
@@ -206,7 +216,10 @@ def test_a_building_picked_and_removed_drops_the_count_and_is_listed_as_what_dif
     edit.locator('[data-edit-map-state]:not([data-edit-map-state="drawing"])').wait_for(state="attached", timeout=90000)
     state = edit.locator("[data-edit-map-state]").get_attribute("data-edit-map-state")
     assert state == "drawn", f"the Edit Features map ended {state!r}: {edit.locator('[data-edit-map-problem]').all_inner_texts()}"
-    assert_autark_map_drawn(page, EDIT_2, timeout=60000, attach_as="the Edit Features node's map")
+    # Three flat boxes fill the map with a few colours, under the many a city
+    # map holds (assert_autark_map_drawn's test): the pick below is what proves
+    # the buildings are drawn, a double-click landing on one; the close-up is
+    # compared with its baseline.
     assert edit.get_by_label("Id", exact=True).input_value() == "building_id"
     note = edit.locator("[data-edit-building-note]").inner_text()
     assert "applies to the whole building" in note, note
