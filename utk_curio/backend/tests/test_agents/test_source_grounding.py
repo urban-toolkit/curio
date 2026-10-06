@@ -158,6 +158,37 @@ class TestCatalogIdForm:
             ("catalog-id", "data.curio.storage-noise")
         ]
 
+    def test_a_bundle_part_is_a_file_of_the_dataset_not_a_path(self):
+        """``curio_load_data("<id>", part="<file>")`` names a file inside the
+        catalog dataset, by name or as an f-string: only the id is a
+        reference, in both scanners, and the code is grounded by it."""
+        codes = (
+            'rain = curio_load_data("data.x.weather", part="RAIN.nc")\nreturn rain',
+            'rain = curio_load_data("data.x.weather", part=f"{var}.nc")\nreturn rain',
+            "rain = curio_load_data('data.x.weather', bounds=(0, 0, 1, 1), part='data/RAIN.nc')\nreturn rain",
+            'rain = curio_load_data("data.x.weather", part="RAIN.nc")\nreturn (rain',  # syntax error, regex
+            'rain = curio_load_data("data.x.weather", part=f"{var}.nc")\nreturn (rain',  # syntax error, regex
+        )
+        for code in codes:
+            refs = [(r.kind, r.literal) for r in sg.scan_sources(code, "python")]
+            assert refs == [("catalog-id", "data.x.weather")], code
+        ctx = _ctx(is_data_loading=True, catalog_ids={
+            "data.x.weather": sg.CatalogRef("data.x.weather", "Weather", "bundle", ""),
+        })
+        verdict = sg.check_grounding(codes[0], "python", ctx)
+        assert verdict.ok and verdict.source["kind"] == "catalog", verdict.violations
+
+    def test_a_part_keyword_outside_curio_load_data_is_still_a_path(self):
+        for code in (
+            'df = read_part(part="/data/x.csv")\nreturn df',
+            'df = read_part(part="/data/x.csv")\nreturn (df',  # syntax error, regex
+            'w = curio_load_data("data.x.weather", bounds=box(part="/data/x.csv"))\nreturn w',
+            'w = curio_load_data("data.x.weather")\ndf = read_part(part="/data/x.csv")\nreturn (df',
+            'w = curio_load_data("data.x.weather", bounds=box(part="/data/x.csv"))\nreturn (w',
+        ):
+            refs = [(r.kind, r.literal) for r in sg.scan_sources(code, "python")]
+            assert ("path", "/data/x.csv") in refs, code
+
 
 class TestUserTexts:
     def test_user_paths_from_free_text(self):

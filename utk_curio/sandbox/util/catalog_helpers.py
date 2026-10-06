@@ -7,6 +7,10 @@
     xarray Dataset for a NetCDF file. For a GeoTIFF,
     ``curio_load_data("<id>", bounds=(west, south, east, north))`` reads only
     the cells inside the bounds, in the raster's CRS, at its own cell size.
+    For a dataset of several files (a ``bundle``),
+    ``curio_load_data("<id>", part="<file>")`` reads the one its
+    ``bundle.json`` lists under that file name or label, and ``bounds`` then
+    windows it if it is a GeoTIFF.
 ``curio_raster_calculate(operation, rasters, codes=None)``,
 ``curio_raster_statistics(raster, band=1, mask=None, mask_values=None, where=None)``
     The Raster Calculator and Raster Statistics nodes' steps
@@ -35,6 +39,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any, Callable
 
 #: The extensions a dataset whose format did not travel with it is read by.
@@ -107,6 +112,18 @@ def _read_json(path: str):
     return json.loads(raw.decode("utf-8"))
 
 
+def _read_part(file_path: str, part: dict):
+    """One part of a bundle, the value it holds in the bundle's tuple."""
+    fmt, kind = _format_of(file_path, part.get("format")), part.get("kind")
+    if fmt in ("parquet", "csv", "geojson", "shp", "geotiff", "netcdf", "onnx"):
+        return read_dataset(file_path, fmt)
+    with open(file_path, encoding="utf-8") as part_file:
+        loaded = json.load(part_file)
+    if kind in ("int", "float", "bool", "str", "null") and isinstance(loaded, dict) and "value" in loaded:
+        return loaded["value"]
+    return loaded
+
+
 def _read_bundle(path: str):
     """A multi-output result: ``data/bundle.json`` and ``data/parts/*``, as a
     tuple, so the node's output is the same ``outputs`` envelope the producing
@@ -116,19 +133,49 @@ def _read_bundle(path: str):
         spec = json.load(handle)
     items = []
     for part in sorted(spec.get("parts", []), key=lambda p: p.get("index", 0)):
-        fmt, kind = part.get("format"), part.get("kind")
         file_path = os.path.join(base, part["file"]) if part.get("file") else None
-        if fmt in ("parquet", "csv", "geojson", "shp", "geotiff"):
-            value = read_dataset(file_path, fmt)
-        else:
-            with open(file_path, encoding="utf-8") as part_file:
-                loaded = json.load(part_file)
-            if kind in ("int", "float", "bool", "str", "null") and isinstance(loaded, dict) and "value" in loaded:
-                value = loaded["value"]
-            else:
-                value = loaded
-        items.append(value)
+        items.append(_read_part(file_path, part))
     return tuple(items)
+
+
+def listed_bundle_parts(path) -> list[tuple[dict, Path]]:
+    """The parts the ``bundle.json`` at *path* lists, each with its file,
+    resolved against the dataset's folder (two levels up). Only a regular
+    file inside that folder, not a link, is listed. Staging stages these, and
+    ``curio_load_data(..., part=...)`` reads one of them."""
+    bundle = Path(path)
+    base = bundle.parent.parent.resolve()
+    try:
+        spec = json.loads(bundle.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    parts = spec.get("parts") if isinstance(spec, dict) else None
+    found = []
+    for part in parts if isinstance(parts, list) else []:
+        name = part.get("file") if isinstance(part, dict) else None
+        if not isinstance(name, str) or not name:
+            continue
+        file = base / name
+        if file.is_symlink() or not file.is_file():
+            continue
+        resolved = file.resolve()
+        if base not in resolved.parents:
+            continue
+        found.append((part, resolved))
+    return found
+
+
+def bundle_part(path: str, part: str, dataset_id: str) -> tuple[str, dict]:
+    """``(file, entry)`` of the part of the bundle at *path* that *part* names:
+    by its file's name (``2020_2040_NbS.tif``) or by its label. A name the
+    bundle does not list, a path among them, is refused with the files it has."""
+    listed = listed_bundle_parts(path)
+    wanted = str(part)
+    for entry, file in listed:
+        if wanted == os.path.basename(entry["file"]) or wanted == entry.get("label"):
+            return str(file), entry
+    names = ", ".join(os.path.basename(entry["file"]) for entry, _file in listed) or "none"
+    raise ValueError(f"{dataset_id} has no file {wanted!r}; its files are {names}.")
 
 
 def _read_onnx(path: str):
@@ -300,7 +347,7 @@ def install_catalog_helpers(
 
         return str(python_raster_dir() / name)
 
-    def curio_load_data(dataset_id, bounds=None):
+    def curio_load_data(dataset_id, bounds=None, part=None):
         dataset_id = str(dataset_id)
         info = known_formats.get(dataset_id, {})
         # The backend resolves only the ids that are collections into
@@ -309,8 +356,22 @@ def install_catalog_helpers(
         if info.get("format") == "collection" or dataset_id in known_collections:
             if bounds is not None:
                 raise ValueError(f"bounds read a window of a raster, and {dataset_id} is a collection.")
+            if part is not None:
+                raise ValueError(f"part names one file of a dataset of several, and {dataset_id} is a collection.")
             return curio_load_collection(dataset_id)
         path = data_path(dataset_id)
+        if part is not None:
+            fmt = _format_of(path, info.get("format"))
+            if fmt != "bundle":
+                raise ValueError(
+                    f"part names one file of a dataset of several, and {dataset_id} is one "
+                    f'{fmt or "file"}: load it without part, curio_load_data("{dataset_id}").'
+                )
+            path, entry = bundle_part(path, part, dataset_id)
+            dataset_id = f"{dataset_id} ({part})"
+            if bounds is None:
+                return _read_part(path, entry)
+            info = {"format": _format_of(path, entry.get("format"))}
         if bounds is None:
             return read_dataset(path, info.get("format"), layer_type=info.get("layerType"))
         fmt = _format_of(path, info.get("format"))
