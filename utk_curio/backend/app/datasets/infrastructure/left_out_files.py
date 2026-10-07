@@ -29,6 +29,11 @@ parquet's sidecar beside the parquet.
 - One download per file at a time: a reader that finds another downloading
   the file waits for it (``common/file_locks.exclusive_lock``), then reads
   what it placed.
+- ``<state>/fetched`` is its owner's alone, as the sandbox's isolation leaves
+  the shipped models (``sandbox/isolation/hardening.py`` lists both): an
+  execution account reads a fetched file through the hardlink a run stages.
+- A download first removes the files fetched for other releases, so an
+  upgrade does not keep the old ones.
 - A checkout (a clone, the Docker image, CI) has every file and no record, so
   it never downloads.
 
@@ -225,14 +230,51 @@ def fetch(repo_path: str, shipped: Path) -> Path:
     target = root / repo_path
     if target.is_file():
         return target
+    _close_fetched_dir()
     locks = root / ".locks"
     locks.mkdir(parents=True, exist_ok=True)
     lock = locks / f"{hashlib.sha256(repo_path.encode('utf-8')).hexdigest()[:32]}.lock"
     with exclusive_lock(lock, namespace="left-out-files", key=f"{record.commit}/{repo_path}"):
         # Another reader may have placed it while this one waited.
         if not target.is_file():
+            _remove_other_releases(record.commit)
             _download(repo_path, entry, record.commit, Path(shipped), target)
     return target
+
+
+def _close_fetched_dir() -> None:
+    """Create :func:`fetched_dir` for its owner alone, as the sandbox's
+    isolation leaves the shipped ``models/`` (``.curio/fetched`` is in
+    ``hardening.SENSITIVE_PATHS`` and ``HARDLINK_SOURCES``): an execution
+    account reads a fetched file only through the hardlink a run stages, and
+    cannot rename or replace one. Done here as well because the first fetch
+    usually comes after the sandbox hardened what existed when it started."""
+    folder = fetched_dir()
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        os.chmod(folder, 0o700)
+    except OSError:
+        pass  # another account's folder: the sandbox's hardening answers for it
+
+
+def _remove_other_releases(commit: str) -> None:
+    """Remove the files fetched for any release other than *commit*: an
+    upgrade fetches its own files, and nothing reads the old ones again.
+
+    Only folders named by a commit, directly under :func:`fetched_dir`, are
+    removed; a symlink there is left alone, and nothing it points at is
+    followed. The folder of *commit* itself, which a concurrent fetch may be
+    filling, is never touched."""
+    try:
+        entries = list(os.scandir(fetched_dir()))
+    except OSError:
+        return
+    for entry in entries:
+        if entry.name == commit or not is_commit(entry.name):
+            continue
+        if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
+            continue
+        shutil.rmtree(entry.path, ignore_errors=True)
 
 
 def _download(repo_path: str, entry: RecordedFile, commit: str, shipped: Path, target: Path) -> None:

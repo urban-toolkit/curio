@@ -1071,8 +1071,14 @@ holds the two together). The small files of their folders still ship.
    against the record, makes it 0644, copies the small files of its catalog
    folder beside where it goes, and renames it to
    `<curio_root>/fetched/<commit>/<path>`. A reader resolves the file there
-   from then on.
-4. A failed download raises `LeftOutFileUnavailable` with the URL and the path
+   from then on. A download first removes the folders of other commits under
+   `fetched/` (never a symlink, never the current commit's).
+4. `<curio_root>/fetched` is created 0700 and is in the sandbox's
+   `SENSITIVE_PATHS` and `HARDLINK_SOURCES`, as `models/` is: an isolated
+   child reads a fetched file only through the hardlink its run stages
+   (`stage_dataset_paths`, `stage_model_dirs`), and cannot walk the folder or
+   rename a file in it.
+5. A failed download raises `LeftOutFileUnavailable` with the URL and the path
    to save the file to. The Data Catalog answers it as a 502;
    `node_exec._execute` collects it (`left_out_files.failures()`) and fails the
    run with it, without calling the sandbox.

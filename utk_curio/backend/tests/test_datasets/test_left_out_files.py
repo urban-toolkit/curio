@@ -14,7 +14,8 @@ directory.
 - The fetch: a missing listed file is fetched, verified and placed, then read
   where it was placed; a wrong sha256, a refused address, a dropped
   connection or a checkout without a record places nothing; a file the
-  package holds is never fetched; two readers fetch a file once.
+  package holds is never fetched; two readers fetch a file once; the fetched
+  folder is its owner's alone; a download removes other releases' files.
 - The readers: the Data Catalog's details, preview, download and install, and
   a node's ``curio_load_data``, on a catalog laid out as a pip install has it.
 
@@ -338,6 +339,60 @@ def test_two_readers_fetch_a_file_once(pip_tree, monkeypatch):
     target = m.fetched_root(COMMIT) / SIDEWALK
     assert results == [target, target]
     assert target.read_bytes() == PAYLOAD
+
+
+def test_the_fetched_folder_is_its_owners_alone(pip_tree, monkeypatch):
+    """As the sandbox's isolation leaves the shipped models: an execution
+    account reaches a fetched file only through the hardlink a run stages, and
+    cannot rename or replace one. The fetch closes the folder itself, since a
+    pip install's first fetch usually comes after the sandbox hardened what
+    existed when it started."""
+    m = pip_tree.module
+    FakeGitHub(contents={SIDEWALK: PAYLOAD}).serve(monkeypatch)
+    m.fetched_dir().mkdir(parents=True)
+    m.fetched_dir().chmod(0o777)
+
+    m.fetch(SIDEWALK, pip_tree.shipped)
+
+    assert m.fetched_dir().is_relative_to(pip_tree.state)
+    assert stat.S_IMODE(m.fetched_dir().stat().st_mode) == 0o700
+
+
+#: A release other than the one the record names.
+OTHER_COMMIT = "fedcba9876543210fedcba9876543210fedcba98"
+
+
+def test_a_download_removes_the_files_of_other_releases(pip_tree, monkeypatch, tmp_path):
+    """An upgrade fetches into its own release's folder, and its first download
+    removes the folders of other releases. Nothing else goes: not this
+    release's other files, not a folder whose name is no commit, and not a
+    symlink or what it points at."""
+    m = pip_tree.module
+    FakeGitHub(contents={SIDEWALK: PAYLOAD}).serve(monkeypatch)
+    fetched = m.fetched_dir()
+    older = fetched / OTHER_COMMIT / MRT
+    older.parent.mkdir(parents=True)
+    older.write_bytes(b"an older release's raster")
+    ours = fetched / COMMIT / "models" / "model.scout.deep-umbra@1" / "manifest.json"
+    ours.parent.mkdir(parents=True)
+    ours.write_text("{}", encoding="utf-8")
+    notes = fetched / "notes"
+    notes.mkdir()
+    (notes / "readme.txt").write_text("kept", encoding="utf-8")
+    outside = tmp_path / "outside"
+    (outside / "datasets").mkdir(parents=True)
+    (outside / "datasets" / "kept.txt").write_text("kept", encoding="utf-8")
+    link = fetched / ("a" * 40)
+    link.symlink_to(outside, target_is_directory=True)
+
+    m.fetch(SIDEWALK, pip_tree.shipped)
+
+    assert not (fetched / OTHER_COMMIT).exists()
+    assert (fetched / COMMIT / SIDEWALK).read_bytes() == PAYLOAD
+    assert ours.read_text(encoding="utf-8") == "{}"
+    assert (notes / "readme.txt").read_text(encoding="utf-8") == "kept"
+    assert link.is_symlink()
+    assert (outside / "datasets" / "kept.txt").read_text(encoding="utf-8") == "kept"
 
 
 # ---------------------------------------------------------------------------
