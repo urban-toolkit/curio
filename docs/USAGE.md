@@ -657,7 +657,7 @@ The edit list is saved with the dataflow, and the node's code is written from it
 
 ```python
 return curio_edit_features(arg, [
-    {"op": "remove", "ids": [119, 136]},
+    {"op": "remove", "ids": [29623484, 29628154]},
     {"op": "set", "ids": [42], "column": "height", "value": 30},
 ], key="building_id", layer="table_osm_buildings")
 ```
