@@ -15,13 +15,16 @@ import { AddKeyAction } from "../../components/connectionKeys/AddKeyAction";
 import { SolveFeedback } from "../../components/agents/attach/builderStrip/SolveFeedback";
 import { CredentialHint } from "../../components/editing/CredentialHint";
 import { subscribeApiSettingsRequests } from "../../components/apiSettings/apiSettingsRequest";
+import { HOSTED_GUEST_KEYS_NOTE } from "../../components/apiSettings/useHostedGuest";
 
 /**
  * A guest on a Curio with sign-in (a hosted guest, under --deploy) cannot save
  * a key for node code: the server refuses it and API Settings shows that guest
  * no form. So the two buttons that open that form, "Add key for <host>" and
  * the code editor's "Save as API key", are not offered to a hosted guest. The
- * local guest (sign-in off) and a signed-in user still get both.
+ * local guest (sign-in off) and a signed-in user still get both. The code
+ * editor's hint gives a hosted guest advice it can follow: the note API
+ * Settings shows it, and signing in with its own account.
  */
 
 type UserContextValue = React.ContextType<typeof UserContext>;
@@ -147,5 +150,34 @@ describe("the code editor's Save as API key", () => {
     } finally {
       off();
     }
+  });
+});
+
+describe("the advice in the code editor's key hint", () => {
+  const FINDINGS = [{ name: "api_key", line: 3 }];
+  const hint = () => screen.getByTestId("credential-hint");
+
+  it("tells a hosted guest what it can do, not to save the key in API Settings", () => {
+    renderAs(HOSTED_GUEST, <CredentialHint findings={FINDINGS} host="api.census.gov" onDismiss={jest.fn()} />);
+    // The server refuses that save for a hosted guest, and resolves no
+    // curio_secret name for it either.
+    expect(hint()).not.toHaveTextContent("Save it in API Settings and write");
+    expect(hint()).not.toHaveTextContent("curio_secret");
+    expect(hint()).toHaveTextContent(
+      "Line 3 looks like an API key. Keys in node code are saved with the dataflow and shared with it. " +
+        `${HOSTED_GUEST_KEYS_NOTE} Sign in with your own account to save it in API Settings.`,
+    );
+  });
+
+  it.each([
+    ["the local guest", LOCAL_GUEST],
+    ["a signed-in user", SIGNED_IN_USER],
+  ])("tells %s to save the key in API Settings and read it by name", (_who, value) => {
+    renderAs(value, <CredentialHint findings={FINDINGS} host="api.census.gov" onDismiss={jest.fn()} />);
+    expect(hint()).toHaveTextContent(
+      "Line 3 looks like an API key. Keys in node code are saved with the dataflow and shared with it. " +
+        'Save it in API Settings and write api_key = curio_secret("<name>") instead.',
+    );
+    expect(hint()).not.toHaveTextContent(HOSTED_GUEST_KEYS_NOTE);
   });
 });
