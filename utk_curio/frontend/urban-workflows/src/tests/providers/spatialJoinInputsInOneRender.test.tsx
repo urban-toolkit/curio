@@ -8,8 +8,8 @@
  * Transformation, which hands both joins their polygons, finished 46 to 57 ms
  * after the Image Segmentation above the failing join, whose Simple View
  * hands that join its points. Both inputs then reached the join in one render,
- * and the failing join never fetched the input it lost: the browser log shows
- * that artifact fetched once, by the twin join only.
+ * and the failing join never fetched the input it lost: where the run kept a
+ * browser log, that artifact was fetched once, by another node only.
  *
  * Drives the REAL FlowProvider (applyNewOutput -> propagateDownstreamInputs,
  * hydrateRestoredOutputs) and the real React Flow store, with the join's real
