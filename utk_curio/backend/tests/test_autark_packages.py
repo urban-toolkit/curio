@@ -1,12 +1,10 @@
 """Curio takes Autark from npm.
 
-autk-compute, autk-db, autk-map and autk-plot come from the registry at their
-4.x release, with autk-core, one copy of each, in the frontend's tree and in
-the repo root's, which the sandbox's Node and the Discovery Catalog's
-OpenStreetMap downloads load autk-db from. autk-grammar is the one Autark
-package Curio still installs from a tarball of its own
-(``utk_curio/frontend/urban-workflows/vendor/autark/``), and its Autark
-dependencies resolve to those same copies.
+autk-grammar, autk-compute, autk-db, autk-map and autk-plot come from the
+registry at their 4.x release, with autk-core, one copy of each, in the
+frontend's tree; the repo root's tree, which the sandbox's Node and the
+Discovery Catalog's OpenStreetMap downloads load autk-db from, takes autk-db
+and autk-core the same way. Curio vendors no Autark package.
 """
 from __future__ import annotations
 
@@ -18,13 +16,11 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FRONTEND = REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows"
-VENDOR = FRONTEND / "vendor" / "autark"
 REGISTRY = "https://registry.npmjs.org"
-FROM_NPM = ("autk-compute", "autk-db", "autk-map", "autk-plot")
 
 #: Each npm tree, and the Autark packages its package.json names.
 TREES = {
-    "frontend": (FRONTEND, FROM_NPM),
+    "frontend": (FRONTEND, ("autk-grammar", "autk-compute", "autk-db", "autk-map", "autk-plot")),
     "repo root": (REPO_ROOT, ("autk-db",)),
 }
 
@@ -61,6 +57,9 @@ def test_the_lockfile_takes_one_copy_of_each_from_the_registry(tree):
         assert str(entry.get("integrity", "")).startswith("sha512-"), f"{name} has no integrity in the {tree} lockfile"
 
 
-def test_only_the_grammar_is_vendored():
-    tarballs = sorted(path.name for path in VENDOR.glob("*.tgz")) if VENDOR.is_dir() else []
-    assert [name for name in tarballs if not name.startswith("urban-toolkit-autk-grammar-")] == []
+def test_no_autark_package_is_vendored():
+    assert not (FRONTEND / "vendor" / "autark").exists()
+    for tree, (root, _packages) in TREES.items():
+        specs = _read(root / "package.json")["dependencies"]
+        local = [name for name, spec in specs.items() if name.startswith("@urban-toolkit/") and spec.startswith("file:")]
+        assert local == [], f"the {tree} package.json installs {local} from files"
