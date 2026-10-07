@@ -20,8 +20,9 @@ The first test drives the example as it ships:
 2. All collapsed, Run All: the loader loads once for all, the scenarios run
    hidden, and each box shows its outcome done. The Edit Features node reads the
    loader's layers through the pool and hands them on without every part of
-   both towers. A double-click expands one scenario in place, and its map is
-   drawn.
+   both towers. Each shadow step's batched shader reads every building part it
+   is handed: autk-grammar says it left none out (#757). A double-click expands
+   one scenario in place, and its map is drawn.
 3. The chart: Twice as tall has the lowest mean sunlight and Two towers removed
    the highest. What differs lists ``height_factor``, 1, 2 and 1, and the Edit
    Features node, only in Two towers removed, with its edit; nothing is warned
@@ -164,6 +165,25 @@ def _record_runs(page, data_node: str):
         page.remove_listener("response", _response)
 
     return python, loads, stop
+
+
+#: How autk-grammar's console messages about a batched compute begin. It logs
+#: one only when it leaves features out: those past its cap, or those missing a
+#: ``required`` path.
+_BATCHED_COMPUTE = "[autk-grammar] batched compute"
+
+
+def _record_batched_left_out(page):
+    """Every console message from now on in which autk-grammar says a batched
+    compute left features out, and a function that stops the recording."""
+    seen: list[str] = []
+
+    def _console(message) -> None:
+        if _BATCHED_COMPUTE in message.text:
+            seen.append(message.text)
+
+    page.on("console", _console)
+    return seen, lambda: page.remove_listener("console", _console)
 
 
 def _settled_done(page, node_id: str, node_type: str) -> None:
@@ -435,17 +455,24 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
         for node_id in MEMBERS[scenario_id]:
             assert not node_locator(page, node_id).is_visible(), f"{node_id} shows inside a collapsed scenario"
     python, loads, stop = _record_runs(page, DATA)
+    left_out, stop_left_out = _record_batched_left_out(page)
     run_all_and_wait(page, timeout_ms=RUN_MS)
     for node_id, node_type in (
         (B_MAP, AUTARK), (T_MAP, AUTARK), (E_EDIT, EDIT_TYPE), (E_MAP, AUTARK), (CHART, COMPARE), (DIFFERENCE, COMPARE),
     ):
         _settled_done(page, node_id, node_type)
     stop()
+    stop_left_out()
     assert loads.count(True) == 1, f"the loader the three scenarios share loaded {loads}, not once"
     assert sorted(python) == sorted([CHART, DIFFERENCE, E_EDIT]), (
         f"Run All ran {python}: each Python node once, in and below the hidden scenarios"
     )
     _assert_towers_removed(page)
+    # Every building part reaches each shadow step's shader: Back Bay's 2108,
+    # and the 2101 Two towers removed hands on (#757).
+    assert not left_out, (
+        "a shadow step's shader did not read every building part it was handed: " + "; ".join(left_out)
+    )
     for scenario_id in NAMES:
         _frame_box(page, scenario_id, MEMBERS[scenario_id])
         assert _box_color(page, scenario_id) == _rgb(COLORS[scenario_id])
