@@ -183,6 +183,7 @@ from .node_drawings import (  # noqa: F401
     assert_vega_canvas_rendered,
     _AUTK_MAP_PIXELS_JS,
     assert_autark_map_drawn,
+    autark_map_framing,
     assert_autark_drawing_fits,
     assert_editor_panes_clear_of_markers,
     assert_vega_node_empty_state,

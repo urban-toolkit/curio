@@ -26,6 +26,7 @@ from .utils import (
     _wait_for_reactflow_ready,
     assert_autark_drawing_fits,
     assert_autark_map_drawn,
+    autark_map_framing,
     assert_editor_panes_clear_of_markers,
     assert_in_view,
     at_fraction,
@@ -1219,6 +1220,22 @@ class TestWorkflowCanvas:
                 test_name=f"{request.function.__name__}_closeup_{node.id}",
                 sweep_toasts=bool(self._expected_empty()),
             )
+
+        # Each map opens framed on the layers it draws (#773): not a speck in
+        # the middle of the map, nor a crop past its edges. That is every
+        # Autark map, and the maps Compare Scenarios and Edit Features draw
+        # with the Autark node's map code. Checked once every close-up is
+        # taken, and for every map before failing on one.
+        maps = [
+            node.id for node in self._drawing_autark_nodes()
+            if "map" in json.loads(self.spec.node_code(node, "json"))
+        ] + [
+            node.id for node in self.spec.nodes
+            if node.type in (COMPARE_SCENARIOS, EDIT_FEATURES)
+            and self.page.locator(f"#autk-grammar-map-{node.id}").count()
+        ]
+        unframed = [problem for problem in (autark_map_framing(self.page, m) for m in maps) if problem]
+        assert not unframed, "\n".join(unframed)
 
     # -- 5. Interactions ---------------------------------------------------
 
