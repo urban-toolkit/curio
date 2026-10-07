@@ -112,8 +112,9 @@ ROADS = "table_osm_roads"
 BUILDINGS = "table_osm_buildings"
 EDIT_TYPE = "curio.builtin/edit-features"
 #: The two towers Two towers removed takes out, by building_id, and how many
-#: parts each has in Back Bay's PBF: 200 Clarendon and Raffles.
-TOWER_PARTS = {119: 4, 136: 3}
+#: parts each has in Back Bay's PBF: 200 Clarendon and Raffles. autk-db names a
+#: building by the smallest OpenStreetMap id among its parts.
+TOWER_PARTS = {29623484: 4, 29628154: 3}
 
 RUN_MS = 420000
 SETTLE_MS = 180000
@@ -312,7 +313,7 @@ def _assert_factor_and_edit_differ(page, node_id: str) -> None:
     edit = compare.locator(f'[data-compare-lever="{E_EDIT}"]')
     assert edit.locator("[data-compare-only-in]").get_attribute("data-compare-only-in") == TOWERS
     edits = edit.locator(f'[data-compare-edits="{TOWERS}"]').inner_text()
-    assert "Remove building_id 119, 136" in edits, edits
+    assert "Remove building_id 29623484, 29628154" in edits, edits
     same = compare.locator("[data-compare-same]").get_attribute("data-compare-same")
     assert same == "1", f"the maps should read as alike, not {same!r}"
     assert compare.locator("[data-compare-warning]").count() == 0, compare.locator(
@@ -332,13 +333,30 @@ def _ids_of(fc: dict) -> list:
     return [feature["properties"].get("building_id") for feature in fc["features"]]
 
 
-def _loaded_building_ids(read: dict) -> list:
-    """The ``building_id`` of each building part an Autark data node loaded:
-    its ``[{name, type, geojson}]`` records, as ``/get`` sends a list."""
+def _loaded_buildings(read: dict) -> dict:
+    """The building parts an Autark data node loaded: its ``[{name, type,
+    geojson}]`` records, as ``/get`` sends a list."""
     for item in read["data"]:
         if item["data"].get("name") == BUILDINGS:
-            return _ids_of(item["data"]["geojson"])
+            return item["data"]["geojson"]
     raise AssertionError(f"the loaded layers hold no {BUILDINGS}: {[i['data'].get('name') for i in read['data']]}")
+
+
+def _assert_parts_pack_a_box(fc: dict) -> None:
+    """Every building part the data node hands on is a Polygon, and its outer
+    ring spans a box: the shadow step packs each part's
+    ``geometry.coordinates.0`` (``iterate: "batched"``), and a part handed on
+    as autk-db keeps a building, one GeometryCollection, would pack a box of
+    zero area."""
+    flat = []
+    for feature in fc["features"]:
+        geometry = feature.get("geometry") or {}
+        ring = (geometry.get("coordinates") or [None])[0] if geometry.get("type") == "Polygon" else None
+        xs = [point[0] for point in ring or []]
+        ys = [point[1] for point in ring or []]
+        if len(xs) < 4 or max(xs) <= min(xs) or max(ys) <= min(ys):
+            flat.append((feature["properties"].get("building_id"), geometry.get("type")))
+    assert not flat, f"{len(flat)} of {len(fc['features'])} building parts pack no box, e.g. {flat[:5]}"
 
 
 def _handed_building_ids(wrapper: dict) -> list:
@@ -355,7 +373,9 @@ def _assert_towers_removed(page) -> None:
     building of the input, so none is unknown."""
     source = page.evaluate(_INPUT_ARTIFACT_JS, E_EDIT)
     assert source, "the pool did not name the artifact it read, for the Edit Features node to read"
-    before = _loaded_building_ids(load_artifact_as_dict(source))
+    loaded = _loaded_buildings(load_artifact_as_dict(source))
+    _assert_parts_pack_a_box(loaded)
+    before = _ids_of(loaded)
     for tower, parts in TOWER_PARTS.items():
         assert before.count(tower) == parts, f"the loaded buildings hold {before.count(tower)} parts of {tower}, not {parts}"
     artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, E_EDIT)
