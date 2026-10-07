@@ -64,8 +64,10 @@ upstream `table_osm_buildings` layer via a `fromFeature` directive with `iterate
 packs each building's **AABB** (4 corners × 2 floats = 8 f32 per building) into a flat array exposed as
 `uniformArrays.ring`, packs the height array as `uniformArrays.bld_height`, and runs the shader **once**,
 not once per building. A `num_features` uniform tells the WGSL how many buildings are in the pack.
-`required: true` on `bld_height` tells the runtime to drop any OSM building that has no `properties.height`
-tag.
+`required: true` on `bld_height` tells the runtime to drop a building whose `properties.height` does not
+resolve to a finite value. Curio gives every building part a height, its OSM `height` or its
+`building:levels` at 3.4 m each, or 6 m above its base when neither puts its top above its base, so none is
+dropped here.
 
 ```json
 "compute": [{
@@ -109,15 +111,11 @@ Two iteration modes are supported on the same `fromFeature` shape:
 For the sunlight question, `"batched"` is the right mode, because the shader needs to answer "is *any* building
 shading this road right now" per hour, which is a union the runtime can't compute by post-summation.
 
-### AABB simplification & feature cap
+### AABB simplification
 
 Each batched matrix entry is reduced to a per-source AABB before being packed (4 corners × 2 floats = 8
 f32 per source feature), not the full polygon outline. AABBs project to a conservative shadow envelope
 (correct for axis-aligned buildings, a slight over-estimate for rotated/irregular ones).
-
-The runtime also caps the source feature count at **2000**. If the source layer has more, the excess is
-dropped (in source order) with a console warning. The `required: true` filter on `bld_height` runs first,
-so the cap counts only buildings with a tagged height.
 
 ### Shader sketch
 

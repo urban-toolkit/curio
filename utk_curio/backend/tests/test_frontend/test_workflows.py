@@ -616,6 +616,9 @@ class TestWorkflowCanvas:
         share the same class-scoped page)."""
         if getattr(self.__class__, '_executed_workflow', None) == self.spec.filepath:
             return
+        # Where this workflow's run starts in the page's console log, which
+        # the class's workflows share.
+        self.__class__._run_log_start = len(getattr(self.page, "_curio_browser_log", None) or [])
         # Fire WebGPU diagnostics once per session for any autk-grammar
         # workflow so the adapter/device dump is in the log whether or not a
         # node later errors. Diagnostic only — there is no tolerance; an autk
@@ -979,6 +982,19 @@ class TestWorkflowCanvas:
         # idle first, as the captures do; a node that never stops fails here,
         # named, and any node still running is noted in the report.
         _wait_for_no_node_running(self.page, report_as="running after the last Play")
+
+        # A batched Autark compute reads every feature of its layer.
+        # autk-grammar logs "[autk-grammar] batched compute ..." only when it
+        # leaves features out: those past its cap, or those missing a
+        # ``required`` path (#757).
+        log = getattr(self.page, "_curio_browser_log", None) or []
+        left_out = [
+            entry.get("text", "") for entry in log[getattr(self.__class__, "_run_log_start", 0):]
+            if "[autk-grammar] batched compute" in entry.get("text", "")
+        ]
+        assert not left_out, (
+            f"{os.path.basename(self.spec.filepath)}: a batched compute left features out: " + "; ".join(left_out)
+        )
 
         for node in self.spec.nodes:
             if not _plays(node):

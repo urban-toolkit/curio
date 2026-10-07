@@ -10,12 +10,21 @@ describe("readableBuildingProperties", () => {
       { height: 12 },
       { height: "12" },
       { height: "40 ft" },
-      { "building:levels": 3 },
-      { levels: 2, min_height: 1 },
       { height: 20, "building:min_level": 2 },
     ]) {
       expect(readableBuildingProperties(props)).toBe(props);
     }
+  });
+
+  test("a building with no height key gets the one autk-map draws, so a compute reads it too (#757)", () => {
+    const levels: Record<string, any> = readableBuildingProperties({ "building:levels": 3 });
+    expect(levels).toEqual({ "building:levels": 3, height: expect.any(Number) });
+    expect(levels.height).toBeCloseTo(3 * 3.4);
+    const based: Record<string, any> = readableBuildingProperties({ levels: 2, min_height: 1 });
+    expect(based).toEqual({ levels: 2, min_height: 1, height: expect.any(Number) });
+    expect(based.height).toBeCloseTo(2 * 3.4);
+    // As a table hands the same building on, with every key and no value.
+    expect(readableBuildingProperties({ height: null, "building:levels": 3 }).height).toBeCloseTo(levels.height);
   });
 
   test("a height key with no number in it no longer hides building:levels", () => {
