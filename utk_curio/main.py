@@ -22,7 +22,7 @@ from utk_curio.cli.dependencies import (
 from utk_curio.cli.environment import set_environment_variables
 from utk_curio.cli.frontend_build import _require_supported_node
 from utk_curio.cli.lifecycle import clean_shutdown, shutdown_flag, signal_handler
-from utk_curio.cli.logs import COLOR_FRONTEND, log_always, log_info, logger, setup_logging
+from utk_curio.cli.logs import COLOR_FRONTEND, log_always, log_info, print_output_queue, setup_logging
 from utk_curio.cli.services import start_backend, start_frontend, start_sandbox
 from utk_curio.cli.test_runner import run_tests
 
@@ -448,14 +448,14 @@ def main():
                 lifecycle.processes.append(start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path))
 
         # Monitor the threads
-        logging_thread = threading.Thread(target=logger, daemon=True)
+        logging_thread = threading.Thread(target=print_output_queue, daemon=True)
         logging_thread.start()
 
         try:
             while not shutdown_flag.is_set():
                 time.sleep(1)
         except KeyboardInterrupt:
-            clean_shutdown(lifecycle.processes)
+            clean_shutdown()
     else:
         parser.print_help()
 
