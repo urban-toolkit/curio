@@ -1,0 +1,21 @@
+/* The canvas's right-hand panels (CanvasSidePanels.tsx): one column under the
+   top bar, the collaboration panel above the Scenarios panel. */
+
+.dock {
+  position: absolute;
+  top: var(--curio-top-bar-height);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-height: calc(100vh - var(--curio-top-bar-height) - 16px);
+  pointer-events: none;
+}
+
+.dock > * {
+  pointer-events: auto;
+  min-height: 0;
+  overflow-y: auto;
+}

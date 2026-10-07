@@ -600,8 +600,9 @@ To make one:
 Then change the copy's levers: a widget value, a line of code. Each copy remembers
 the node it was copied from.
 
-**View → Show scenarios** opens the Scenarios panel. For each scenario it shows
-its fixed context, levers and outcomes, and lets you:
+**View → Show scenarios** opens the Scenarios panel on the right of the canvas,
+under the collaboration panel when collaboration is on and that panel is open.
+For each scenario it shows its fixed context, levers and outcomes, and lets you:
 
 - rename it, recolor it and describe it;
 - **Run scenario**: run its levers, and of its fixed context only the nodes that
