@@ -73,9 +73,10 @@ def test_save_titles_computed_output_by_node_name(client, user_and_token):
     assert _computed_title(client, token, project_id, dataset_id) == "Knowledge Graph"
 
 
-def test_save_falls_back_to_humanized_node_type_without_node_name(client, user_and_token):
-    """When no ``node_name`` is sent, the title is derived from the node type —
-    never the raw filename."""
+def test_save_falls_back_to_the_node_header_name_without_node_name(client, user_and_token):
+    """When no ``node_name`` is sent, the title is the name the node's canvas
+    header shows, from its type: the template's label, "Autark" for
+    ``curio.builtin/autk-grammar`` (#775), never the raw filename."""
     _, token = user_and_token
     project_id = create_project(client, token, name="Play All type fallback")
     shared = Path(os.environ["CURIO_SHARED_DATA"])
@@ -95,7 +96,7 @@ def test_save_falls_back_to_humanized_node_type_without_node_name(client, user_a
 
     dataset_id = computed_dataset_id(node_id, project_id)
     title = _computed_title(client, token, project_id, dataset_id)
-    assert title == "Autk Grammar"  # humanized "curio.builtin/autk-grammar"
+    assert title == "Autark"  # curio.builtin/autk-grammar's label in its manifest
     assert ".json" not in title.lower()
 
 
@@ -124,7 +125,12 @@ def test_computed_output_title_precedence():
     # 2. spec node's custom label
     assert _computed_output_title(OutputRef(node_id="n1", filename="x.json"), dataflow) == "My Step"
     assert _computed_output_title(OutputRef(node_id="n4", filename="x.json"), dataflow) == "Renamed"
-    # 3. humanized node type
+    # 3. the template's label, as the node's header shows it (#775)
+    labels = {"curio.builtin/autk-grammar": "Autark"}
+    assert _computed_output_title(OutputRef(node_id="n3", filename="x.json"), dataflow, labels) == "Autark"
+    #    a renamed header still wins over it
+    assert _computed_output_title(OutputRef(node_id="n4", filename="x.json"), dataflow, labels) == "Renamed"
+    # 4. no template known: humanized node type
     assert _computed_output_title(OutputRef(node_id="n3", filename="x.json"), dataflow) == "Autk Grammar"
-    # 4. unknown node → None (installer then derives a filename title; UI shows dirName)
+    # 5. unknown node → None (installer then derives a filename title; UI shows dirName)
     assert _computed_output_title(OutputRef(node_id="ghost", filename="x.json"), dataflow) is None

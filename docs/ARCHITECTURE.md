@@ -1755,6 +1755,8 @@ A dataflow's saved outputs are the `outputs` list of its `manifest.json`: one en
 
 [`execution/save_policy.py`](../utk_curio/backend/app/execution/save_policy.py) decides which outputs a run on the server installs and records, as `utils/saveOutputDataset.ts` decides it on the canvas. `utils/saveOutputDataset.cases.json` holds the cases both sides run.
 
+A computed dataset is titled with the name its node's header shows: the renamed header (`metadata.packageTemplateLabel`), else the template's label from its package manifest, else the type in words without its version. [`execution/node_names.py`](../utk_curio/backend/app/execution/node_names.py) is the twin of `utils/nodeDisplayLabel.ts`, which `resolveNodeDisplayLabel` calls for the header, and `utils/nodeDisplayLabel.cases.json` holds the cases both run. Every writer uses it: a canvas save and a node's play send the canvas's name (`node_name`, `nodeName`); a run on the server names each step with it (`run_engine.node_label`, with `node_names.template_labels` for the project's templates) and installs and records the output under that step label; a save whose output ref carries no name takes it from the spec (`_computed_output_title`).
+
 The run tables `dataflow_run` and `dataflow_run_step` ([`runs/models.py`](../utk_curio/backend/app/runs/models.py), alembic revision `f7a8b9c0d1e2`) hold one row per run and one per node the run touched. A run with no `target_node_id` ran the whole dataflow. `runs/repositories.py` keeps, per dataflow and per kind, the newest 50 runs and every run younger than 30 days, pruning when a run is created. A project's runs and their steps are deleted with it.
 
 #### Runs on the server

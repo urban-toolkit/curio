@@ -73,12 +73,13 @@ class Plan:
     target_node_id: Optional[str] = None
 
 
-def node_label(node: dict) -> str:
-    """What a run calls a node: its title, else its kind in words."""
-    from utk_curio.backend.app.projects.services import _humanize_node_type
+def node_label(node: dict, labels: Optional[dict] = None) -> str:
+    """What a run calls a node: the name its canvas header shows
+    (``node_names.saved_node_label``, with *labels* the project's template
+    labels), which also titles the output the run saves (#775)."""
+    from utk_curio.backend.app.execution.node_names import saved_node_label
 
-    title = node.get("title") if isinstance(node.get("title"), str) else ""
-    return title.strip() or _humanize_node_type(node.get("type")) or str(node.get("id") or "")
+    return saved_node_label(node, labels) or str(node.get("id") or "")
 
 
 def play_indent(code: str) -> str:
@@ -97,12 +98,15 @@ def plan_run(
     target_node_id: Optional[str] = None,
     reuse: Optional[dict] = None,
     templates: Optional[dict] = None,
+    labels: Optional[dict] = None,
 ) -> Plan:
     """What a run of *spec_dict* executes.
 
     Without *target_node_id*, every node. With it, the node and its ancestors,
     less the ancestors in *reuse* (``{nodeId: output}``): the outputs a canvas
     still holds for nodes it judged need no new run. The target always runs.
+    *labels* (``node_names.template_labels``) name each step as its node's
+    header does.
     """
     spec = parse_workflow_dict(spec_dict, templates=templates)
     saved = {
@@ -138,7 +142,7 @@ def plan_run(
         node = saved.get(node_id, {})
         steps[node_id] = Step(
             node_id=node_id,
-            label=node_label(node),
+            label=node_label(node, labels),
             node_type=parsed.raw_type,
             engine=parsed.engine,
             level=level,

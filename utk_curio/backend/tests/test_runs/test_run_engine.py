@@ -164,7 +164,9 @@ class TestPlayShapesEachNode:
 class TestFailuresStayOnTheirBranch:
     def test_a_failure_skips_what_it_feeds_and_the_other_branch_finishes(self):
         recorder, events, finished = run(spec(
-            [node("a"), node("bad", title="Clean rows"), node("after"), node("other")],
+            # The reason names the node as its header does: here, renamed (#775).
+            [node("a"), node("bad", metadata={"packageTemplateLabel": "Clean rows"}),
+             node("after"), node("other")],
             [edge("a", "bad"), edge("bad", "after"), edge("a", "other")],
         ), Recorder(fail={"bad"}))
         assert finished["bad"]["status"] == "error"
@@ -205,7 +207,8 @@ class TestNodesTheServerDoesNotRun:
 
     def test_data_only_the_browser_makes_leaves_the_run_needing_the_canvas(self):
         recorder, events, finished = run(spec(
-            [node("osm", "curio.builtin/autk-grammar", DATA_SPEC, title="Load OSM"),
+            [node("osm", "curio.builtin/autk-grammar", DATA_SPEC,
+                  metadata={"packageTemplateLabel": "Load OSM"}),
              node("count"), node("chart", "curio.builtin/vis-vega", "{}")],
             [edge("osm", "count"), edge("count", "chart")],
         ))
