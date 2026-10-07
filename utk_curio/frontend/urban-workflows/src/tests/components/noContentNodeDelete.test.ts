@@ -18,6 +18,10 @@
  * what needs pinning here is a small structural fact — that the minimized
  * branch carries a delete control gated on `noContent`, and that no built-in
  * template has quietly joined the set.
+ *
+ * The control is the header's own `NodeDeleteTool`, rendered and pressed in
+ * `nodeDeleteTool.test.tsx`: it is there wherever a node is deleted, on the
+ * canvas, and not in the notebook view or on a read-only canvas.
  */
 import fs from "fs";
 import path from "path";
@@ -49,8 +53,8 @@ describe("noContent nodes", () => {
     expect(start).toBeGreaterThan(-1);
     const minimizedBranch = source.slice(start);
     expect(minimizedBranch).toContain("noContent && !dashboardOn");
-    expect(minimizedBranch).toContain('title="Delete node"');
-    expect(minimizedBranch).toContain("onActivate={onDelete}");
+    expect(minimizedBranch).toContain("<NodeDeleteTool");
+    expect(minimizedBranch).toContain("onDelete={onDelete}");
   });
 
   it("keeps the header band gated off for them, so the chip is the only route", () => {

@@ -21,7 +21,8 @@ import {
     topOverlayBottom,
 } from "../utils/fitViewWithMenuOffset";
 import { computeTranslateExtent } from "../utils/canvasExtent";
-import { graphEditGates, notebookFlowProps } from "../utils/notebookLayout";
+import { notebookFlowProps } from "../utils/notebookLayout";
+import { useGraphEditGates } from "../hook/useGraphEditGates";
 import { NotebookRunAll } from "./notebook/NotebookRunAll";
 import { usePosition } from "../hook/usePosition";
 
@@ -339,8 +340,10 @@ export function MainCanvas() {
     // socket to the owner, who persists. Without this gate, peers see the
     // canvas as read-only and the lock/proposal flow does nothing.
     const isSharedView = useSharedView();
-    // Nodes are added (dropped) and connected on the canvas only, by its owner.
-    const graphEdits = graphEditGates({ notebookOn, sharedView: isSharedView });
+    // Nodes are added (dropped), connected and deleted, and connections
+    // removed, on the canvas only, by whoever edits it; the notebook view
+    // changes no graph. A node's Delete node tool reads the same rule.
+    const graphEdits = useGraphEditGates();
 
     // React Flow gives a node that drags the `nopan` class, which keeps its
     // pane's gestures off the node: a press there does not pan the view and a
@@ -762,12 +765,16 @@ export function MainCanvas() {
                 onMoveEnd={viewportMotionHint.onMoveEnd}
                 nodesDraggable={!isSharedView}
                 elementsSelectable={true}
+                // Set here, not left to React Flow's default: it keeps a value
+                // the notebook view's props set until another one replaces it.
+                edgesFocusable={true}
                 nodesConnectable={graphEdits.connect}
                 edgesUpdatable={graphEdits.connect}
                 // React Flow defaults to "Backspace" alone, so Windows users pressing
                 // Delete got no response (#153). useKeyPress bails on isInputDOMNode,
                 // so neither key can fire while the caret is in Monaco or an input.
-                deleteKeyCode={isSharedView ? null : DEFAULT_DELETE_KEY_CODES}
+                // No key deletes in the notebook view or on a read-only canvas.
+                deleteKeyCode={graphEdits.delete ? DEFAULT_DELETE_KEY_CODES : null}
                 {...(notebookProps ?? {})}
                 // The version badge owns the bottom-right corner, and the
                 // attribution drawn there sat under it (#509). The other three
