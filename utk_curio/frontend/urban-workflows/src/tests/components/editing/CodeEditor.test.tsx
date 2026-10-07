@@ -357,3 +357,65 @@ describe("CodeEditor's look", () => {
         expect(outputBox().style.borderTop).toContain("solid");
     });
 });
+
+/**
+ * #742: every code editor that mounted wrapped `window.ResizeObserver` again,
+ * so an observer made after N editors ran its callback N animation frames
+ * after the resize: a chart's refit or a map's resize, later with every code
+ * node in the session.
+ */
+describe("code editors defer ResizeObserver callbacks by one frame, however many mount (#742)", () => {
+    // jsdom has no ResizeObserver: this one records each callback it is given,
+    // so a test can deliver a resize the way the browser does.
+    class FakeResizeObserver {
+        static made: FakeResizeObserver[] = [];
+        constructor(public callback: ResizeObserverCallback) { FakeResizeObserver.made.push(this); }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    }
+    let frames: FrameRequestCallback[] = [];
+    const runOneFrame = () => act(() => {
+        const due = frames;
+        frames = [];
+        due.forEach((callback) => callback(0));
+    });
+    let savedObserver: any;
+    let savedFrame: any;
+
+    beforeEach(() => {
+        savedObserver = (window as any).ResizeObserver;
+        savedFrame = window.requestAnimationFrame;
+        (window as any).ResizeObserver = FakeResizeObserver;
+        FakeResizeObserver.made = [];
+        frames = [];
+        window.requestAnimationFrame = (callback: FrameRequestCallback) => frames.push(callback);
+    });
+    afterEach(() => {
+        (window as any).ResizeObserver = savedObserver;
+        window.requestAnimationFrame = savedFrame;
+    });
+
+    test("the first editor wraps it, and the ones after leave that wrapper in place", () => {
+        renderCodeEditor("a = 1");
+        const wrapped = window.ResizeObserver;
+        expect(wrapped).not.toBe(FakeResizeObserver);
+        renderCodeEditor("b = 2");
+        renderCodeEditor("c = 3");
+        expect(window.ResizeObserver).toBe(wrapped);
+    });
+
+    test("an observer made after three editors mounted runs one frame after a resize", () => {
+        renderCodeEditor("a = 1");
+        renderCodeEditor("b = 2");
+        renderCodeEditor("c = 3");
+        const seen = jest.fn();
+        new window.ResizeObserver(seen);
+        const browserSide = FakeResizeObserver.made[FakeResizeObserver.made.length - 1];
+
+        browserSide.callback([], browserSide as any);
+        expect(seen).not.toHaveBeenCalled();
+        runOneFrame();
+        expect(seen).toHaveBeenCalledTimes(1);
+    });
+});

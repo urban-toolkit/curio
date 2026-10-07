@@ -186,6 +186,40 @@ describe("autkSourcesFrom", () => {
       expect(autkSourcesFrom(read(on(0), on(1), on(1)), MAP_ON("input_1")).tables)
         .toEqual(["input_0", "input_1", "input_1_1"]);
     });
+
+    test("two inputs that bring a layer of one name are each still `input_<k>`, with their own rows (#744)", () => {
+      // Two scenarios' copies of one node, each handing on its layer `routes`.
+      const rain = fc([point(1, 1)]);
+      const wind = fc([point(2, 2), point(3, 3)]);
+      const prepared = autkSourcesFrom(
+        read(on(0), on(1, { name: "routes", payload: rain }), on(2, { name: "routes", payload: wind })),
+        MAP_ON("input_0", "input_1", "input_2"),
+      );
+      const drawn = (name: string) => prepared.sources.find((s) => s.outputTableName === name)?.geojsonObject;
+      expect(drawn("input_1")).toBe(rain);
+      expect(drawn("input_2")).toBe(wind);
+      // The name itself is still the first input's layer, and the problem says so.
+      expect(drawn("routes")).toBe(rain);
+      expect([...prepared.tables].sort()).toEqual(["input_0", "input_1", "input_2", "routes"]);
+      expect(prepared.rowsIn).toBe(4);
+      expect(prepared.inputProblem).toBe(
+        "Inputs 1 and 2 both bring a layer named routes; the one from input 2 is left out. Rename one of them.",
+      );
+    });
+
+    test("a layer of a taken name that cannot be drawn leaves the other input's own layer drawn (#744)", () => {
+      const roads = fc([point(2, 2)]);
+      const prepared = autkSourcesFrom(
+        read(
+          on(0, { name: "roads", dataType: "dataframe", geometryName: null, payload: { lanes: [2] } }),
+          on(1, { name: "roads", payload: roads }),
+        ),
+        MAP_ON("input_0", "input_1"),
+      );
+      expect(prepared.sources.map((s) => [s.outputTableName, s.geojsonObject])).toEqual([["input_1", roads]]);
+      expect(prepared.unusable).toEqual(["roads", "input_0"]);
+      expect(prepared.emptyReason).toBeUndefined();
+    });
   });
 
   test("a buildings table gets heights autk-map can read, one feature per row", () => {
@@ -339,4 +373,26 @@ test("prepareAutkInput reads the input through the shared reader", async () => {
   const prepared = await prepareAutkInput({ path: "art", dataType: "geodataframe" }, MAP_ON("input_0"));
   expect(mockFetchData).toHaveBeenCalledWith("art");
   expect(prepared.tables).toEqual(["input_0"]);
+});
+
+test("two upstream Autark nodes' layers of one name, as they arrive: each input draws its own (#744)", async () => {
+  // An Autark node hands on a single layer under its name
+  // (adapters/node/autkLayerMaterialize); here two copies of one node do.
+  const rain = fc([point(1, 1)]);
+  const wind = fc([point(2, 2), point(3, 3)]);
+  mockFetchData.mockImplementation(async (path: string) => ({
+    dataType: "geodataframe",
+    data: path === "art-rain" ? rain : wind,
+    layerName: "routes",
+  }));
+  const prepared = await prepareAutkInput(
+    {
+      dataType: "outputs",
+      data: [{ path: "art-rain", dataType: "geodataframe" }, { path: "art-wind", dataType: "geodataframe" }],
+    },
+    MAP_ON("input_0", "input_1"),
+  );
+  const drawn = (name: string) => prepared.sources.find((s) => s.outputTableName === name)?.geojsonObject;
+  expect(drawn("input_0")).toEqual(rain);
+  expect(drawn("input_1")).toEqual(wind);
 });
