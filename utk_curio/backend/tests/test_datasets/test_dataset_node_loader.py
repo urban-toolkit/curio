@@ -222,6 +222,36 @@ def test_bundle_loader_preserves_part_order(tmp_path):
     assert result == (100, 200)
 
 
+@pytest.mark.parametrize(
+    "container,expected",
+    [("list", [100, 200]), ("dict", {"roads": 100, "blocks": 200})],
+    ids=["list", "dict"],
+)
+def test_bundle_loader_rebuilds_the_container_bundle_json_records(tmp_path, container, expected):
+    """A list or a dict of frames is saved as a bundle too: the loader gives
+    back the list, or the dict keyed in index order, not a tuple."""
+    parts_dir = tmp_path / "computed.node_x@1" / "data" / "parts"
+    bundle_path = _write_bundle(
+        tmp_path,
+        parts=[
+            {"index": 1, "key": "blocks", "label": "blocks", "kind": "int", "format": "json",
+             "file": "data/parts/01_int.json"},
+            {"index": 0, "key": "roads", "label": "roads", "kind": "int", "format": "json",
+             "file": "data/parts/00_int.json"},
+        ],
+    )
+    spec = json.loads(bundle_path.read_text(encoding="utf-8"))
+    bundle_path.write_text(json.dumps({**spec, "container": container}), encoding="utf-8")
+    (parts_dir / "00_int.json").write_text(json.dumps({"value": 100}), encoding="utf-8")
+    (parts_dir / "01_int.json").write_text(json.dumps({"value": 200}), encoding="utf-8")
+
+    result = _run_loader(loader_snippet("bundle", str(bundle_path)))
+
+    assert type(result) is type(expected), f"read a {type(result).__name__}"
+    assert result == expected
+    assert list(result) == list(expected)
+
+
 # --------------------------------------------------------------------------- #
 # Portable id form: curio_load_data, curio_load_collection, curio_data_path
 # --------------------------------------------------------------------------- #

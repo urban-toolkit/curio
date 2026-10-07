@@ -318,6 +318,37 @@ def test_tuple_output_still_installs_as_a_bundle(app):
     assert len(spec["parts"]) == 2
 
 
+@pytest.mark.parametrize(
+    "container,data_type",
+    [(tuple, "outputs"), (list, "list"), (dict, "dict")],
+    ids=["tuple", "list", "dict"],
+)
+def test_an_installed_bundle_loads_as_the_container_the_node_returned(app, container, data_type):
+    """``curio_load_data`` on the installed bundle gives what the store gives:
+    the tuple, the list, or the dict with its keys in their order, which here
+    is not sorted order."""
+    from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
+
+    left, right = _frames()
+    value = {"roads": left, "blocks": right} if container is dict else container([left, right])
+    result = _install(store_sandbox_artifact(value), data_type=data_type)
+    assert result.manifest.format == "bundle"
+    namespace: dict = {}
+    install_catalog_helpers(
+        namespace, data_path=lambda _id: str(_data_path()), formats={"d": {"format": "bundle"}},
+        collections=None, media_dir=None, models=None,
+    )
+
+    loaded = namespace["curio_load_data"]("d")
+
+    assert type(loaded) is container, f"read a {type(loaded).__name__}"
+    if container is dict:
+        assert list(loaded) == ["roads", "blocks"]
+        loaded = list(loaded.values())
+    assert [list(frame.columns) for frame in loaded] == [["a"], ["b"]]
+    assert [frame.iloc[0, 0] for frame in loaded] == [1, 2]
+
+
 def test_id_container_with_pruned_children_returns_none(app, monkeypatch):
     left, right = _frames()
     art = store_sandbox_artifact([left, right])

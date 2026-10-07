@@ -395,7 +395,9 @@ def _hydrate_bundle(source: Path, bundle: Path) -> None:
     ``bundle.json`` lists (``catalog_helpers.listed_bundle_parts``) with the
     files read beside it, at its path under the dataset's folder, then the
     ``bundle.json``, last, so a reader that finds it finds its parts. Only
-    what is not there yet is copied, each file whole or not at all.
+    what is not there yet is copied, each file whole or not at all, and the
+    ``bundle.json`` again whenever it differs from the dataset's, which a
+    later save rewrites when it installs the output again.
 
     A file that cannot be copied leaves the bundle without its
     ``bundle.json``, and the output reads as missing, as one with no durable
@@ -413,10 +415,11 @@ def _hydrate_bundle(source: Path, bundle: Path) -> None:
             for file in (part, *files_read_beside(part))
         ]
         copies += [(file, bundle.parent / file.name) for file in files_read_beside(source)]
-        copies.append((source, bundle))
         for file, target in copies:
             if not target.is_file():
                 _place_copy(file, target)
+        if not bundle.is_file() or bundle.read_bytes() != source.read_bytes():
+            _place_copy(source, bundle)
     except (OSError, ValueError) as exc:
         logger.warning("Could not hydrate the parts of %s: %s", source, exc)
 
@@ -438,7 +441,8 @@ def hydrate_outputs(
     A durable source that is a bundle (``bundle.json``, such as a tuple's) is
     also hydrated with its parts, in a folder of its own
     (``catalog_helpers.hydrated_bundle``, see :func:`_hydrate_bundle`), which
-    the sandbox reads back as the tuple (``parsers.load_shared_output_file``).
+    the sandbox reads back as the tuple, list or dict the node returned
+    (``parsers.load_shared_output_file``).
     That folder is checked on every load, whether or not the output's own
     copy is already here.
     """

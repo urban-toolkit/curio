@@ -521,7 +521,9 @@ Python Computation, Data Transformation, JS Computation, Data Pool, Vega-Lite an
 Autark nodes take several input edges, and so does a package node whose input port
 allows more than one. Connect an edge to the node's input circle and a new empty
 circle appears below it; each new edge takes the next circle. Circles are numbered
-from 0, top to bottom. A Data Pool shows each input as a tab.
+from 0, top to bottom. A Data Pool shows each input as a tab, and each frame of
+an input that holds several, a Python tuple or a dict of frames, as a tab too: a
+dict's tab is named after its key.
 
 In code and in a Vega-Lite or Autark spec, each input is a chip:
 
@@ -923,8 +925,9 @@ no `data` entry for its input; it names the tables the input provides.
   `DataFrame` with a geometry column. An input chip, `[!! input 1 !!]`, writes
   the name for you. A frame that arrives under its own name (a Data Pool tab, a
   compute step's layer) keeps that name, and `input_<k>` also names it.
-- Several layers keep their own names: a Python tuple, a Data Pool with tabs, or
-  the tables of an upstream Autark node. A layer without a name is named after
+- Several layers keep their own names: a Python tuple, a Python dict of frames
+  (each frame named after its key), a Data Pool with tabs, or the tables of an
+  upstream Autark node. A layer without a name is named after
   its position, `input_0`, `input_1`, and so on. When two inputs bring a layer
   of one name, the name means the first input's layer. The second input's layer
   is still its `input_<k>` when it is the only layer that input brings, and is
