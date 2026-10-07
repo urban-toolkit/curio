@@ -6,9 +6,10 @@
  * things are Autark's own. A document reads tables by name, so each input is
  * the table `input_0`, `input_1`, ... in circle order, the names Vega-Lite's
  * datasets have too (#662), while the layers an input carries keep their own
- * names. And a table needs geometry to be drawn at all, so a DataFrame becomes
- * a FeatureCollection from its geometry column, or is refused the way Vega
- * refuses a geoshape over data with no geometry.
+ * names. A layer chip on an input of one frame names its `input_<k>` table
+ * (utils/references/codeReferences). And a table needs geometry to be drawn at
+ * all, so a DataFrame becomes a FeatureCollection from its geometry column, or
+ * is refused the way Vega refuses a geoshape over data with no geometry.
  *
  * A raster is a table too, under the same names, but it is not a geojson
  * source: it is listed in `rasters` with where it is, and the node loads it

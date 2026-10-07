@@ -10,6 +10,8 @@
  * its own dataset, named `input_0`, `input_1`, ... in circle order. A unit reads
  * the dataset its `"data": {"name": ...}` names, or the first input when it
  * names none, and each input's geometry handling touches only its own units.
+ * A layer chip on an input of one frame names that input's dataset
+ * (utils/references/codeReferences).
  *
  * **Geometry is gated on the spec, not on the dataType.** A spec that does not
  * draw geometry never enters the geo path and its rows stay exactly what they

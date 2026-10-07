@@ -1,7 +1,7 @@
 /**
  * What a node's input references can name (#662): its wired circles, each with
- * the name of the node that feeds it, its data type, and its columns once they
- * have been read.
+ * the name of the node that feeds it, its data type, the layer name its value
+ * gives, and its columns once they have been read.
  */
 import type { InputScope, LayerScope } from "./codeReferences";
 import { isReferenceableColumn, isReferenceableLayer } from "./codeReferences";
@@ -58,6 +58,10 @@ export function inputScopeFor(
         if (label) scope.label = label;
         const dataType = value && typeof value === "object" ? (value as any).dataType : undefined;
         if (typeof dataType === "string" && dataType) scope.dataType = dataType;
+        // A value can name the table it is read as (utils/grammarInput), as an
+        // envelope's layerName does: a layer chip then names that layer.
+        const layerName = value && typeof value === "object" ? (value as any).layerName : undefined;
+        if (typeof layerName === "string" && isReferenceableLayer(layerName)) scope.layerName = layerName;
         const read = columnsOf(value);
         if (read) {
             scope.columns = read.columns;
