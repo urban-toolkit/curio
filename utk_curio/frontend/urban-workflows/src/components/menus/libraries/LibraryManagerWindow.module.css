@@ -190,10 +190,12 @@
   border-collapse: collapse;
   font-size: 13px;
 }
+/* 6px a side leaves the Source column room for a package id such as
+   curio.builtin@1 on one line beside the Status and remove columns. */
 .libraryTable th,
 .libraryTable td {
   text-align: left;
-  padding: 6px 8px;
+  padding: 6px 6px;
   border-bottom: 1px solid #eee;
 }
 .libraryTable th {
