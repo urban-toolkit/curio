@@ -62,7 +62,8 @@ a brushable building-height histogram linked back to the buildings layer via `ma
   { "dataRef": "table_osm_surface" },
   { "dataRef": "table_osm_parks" },
   { "dataRef": "table_osm_water" },
-  { "dataRef": "table_osm_buildings", "isPick": true, "getFnv": "height", "getFnvType": "quantitative", "defaultFnv": 10 },
+  { "dataRef": "table_osm_buildings", "isPick": true, "getFnv": "height", "getFnvType": "quantitative", "defaultFnv": 10,
+    "legendTitle": "Building height (m)" },
   { "dataRef": "table_osm_roads" }
 ]},
 "plot": {
