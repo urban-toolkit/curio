@@ -1,7 +1,7 @@
 {
   "sha256": {
-    "README.md": "d2d0d4a3187f0aa378a6f64fe13da8161004135a68ba858f6f1d8dcee980d381",
-    "manifest.json": "549d6011f9edd06eb099168c653665de2fdab63bb80d9abf76737871e83b4108",
+    "README.md": "fa12579bc44173b5e48e5cbf97abdd12c30e73edb88fbaece71d132ab3274272",
+    "manifest.json": "345fd9a856aac999e529d322a6e5187a860749d46f37295d5c07c0f2de19bd52",
     "sources/scout_routing/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sources/scout_routing/calculate_isochrones.py": "378f50e3412f4823b06b457bf2322818a3eb4120a618ef3c54544be6f3e471f0",
     "sources/scout_routing/road_graph.py": "8d116e606797f03c46783cf10084a1e80d3ad0061075e782b3fefc94fbe130bc",
