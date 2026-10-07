@@ -1,7 +1,7 @@
 # Example: What-if shadow study with Autark
 
 This example runs the per-road sunlight shader from [Example 7](07-autark-gpu-shader.md) in three
-scenarios over Boston's Back Bay: **Baseline**, with every building at its real OSM height,
+scenarios over Boston's Back Bay: **Baseline**, with every building at its own height,
 **Twice as tall**, with every building's height doubled, and **Two towers removed**, with two
 towers taken out: 200 Clarendon, the tallest, and Raffles. The height factor is a widget on the
 shadow step, and the towers are removed by an Edit Features node. Two Compare Scenarios nodes compare them: a chart of each
