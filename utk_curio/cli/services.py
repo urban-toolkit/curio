@@ -13,8 +13,7 @@ from utk_curio.cli.environment import _is_testing
 from utk_curio.cli.frontend_build import (
     _frontend_dir,
     _frontend_is_built,
-    _frontend_needs_build,
-    _frontend_tree_is_stale,
+    _frontend_must_build,
     check_install_build,
 )
 from utk_curio.cli.lifecycle import clean_shutdown, shell_required, stream_output
@@ -34,17 +33,8 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
 
     _kill_port(int(port))
 
-    # Build from source when something needs it: --dev compiles through
-    # webpack-dev-server, --force-rebuild was asked for, and a checkout with no
-    # dist/ has nothing for the static server to serve. A pip install and the
-    # shipped container both arrive with dist/ already built, so neither runs npm.
     original_dir = os.getcwd()
-    if (
-        os.getenv("CURIO_DEV") == "1"
-        or force_rebuild
-        or _frontend_needs_build()
-        or _frontend_tree_is_stale()
-    ):
+    if _frontend_must_build(force_rebuild):
         check_install_build("frontend/urban-workflows/", force_rebuild=force_rebuild)
         os.chdir(original_dir)
 

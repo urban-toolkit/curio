@@ -48,7 +48,7 @@
         "y": -184.39304699391676,
         "width": 862,
         "height": 692,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_water\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\",\n        \"isPick\": true,\n        \"isColorMap\": true,\n        \"getFnv\": \"lanes_norm\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 1\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_water\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\",\n        \"isPick\": true,\n        \"isColorMap\": true,\n        \"getFnv\": \"lanes_norm\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 1,\n        \"legendTitle\": \"Lanes\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Render roads in 3D coloured by normalised lane count, with background surface, parks and water layers.",

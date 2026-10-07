@@ -113,6 +113,16 @@ class TestMerge:
         assert _codes(findings) == ["python-undeclared-import"]
         assert findings[0].severity == "warn"
 
+    def test_a_source_that_reads_its_input_through_a_chip_reports_its_imports(self):
+        """#707: ``[!! input 0 !!]`` is not Python, so the scan could not parse
+        a source holding one and reported no import at all."""
+        request = _request(
+            files={"sources/calc.py": {"text": "import numpy\nx = [!! input 0 !!]\nreturn x\n"}},
+        )
+        py, _, findings = merge_declared_and_detected(request)
+        assert py["numpy"] == {"constraint": "*", "source": "detected"}
+        assert _codes(findings) == ["python-undeclared-import"]
+
     def test_declared_unused_is_a_note(self):
         request = _request(dependencies={"python": {"numpy": ">=1.0"}})
         py, _, findings = merge_declared_and_detected(request)

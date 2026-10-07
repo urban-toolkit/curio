@@ -226,6 +226,13 @@ class TestPublicConfig:
         assert isinstance(data["default_save_node_output"], bool)
         assert "enable_user_auth" not in data
 
+    def test_public_config_names_the_collaboration_namespace(self, client, monkeypatch):
+        """The page opens its collaboration socket on the namespace the
+        backend serves, which --collab-namespace moves (#615)."""
+        monkeypatch.setattr(routes, "COLLAB_NAMESPACE", "/team")
+        data = _get(client, "/api/config/public").get_json()
+        assert data["collab_namespace"] == "/team"
+
 
 class TestGuestCleanupScheduler:
     def test_cleanup_scheduler_respects_flag(self, monkeypatch, app):

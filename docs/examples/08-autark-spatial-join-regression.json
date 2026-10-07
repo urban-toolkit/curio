@@ -74,7 +74,7 @@
         "y": 657,
         "width": 759,
         "height": 640,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_water\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\",\n        \"isPick\": true,\n        \"isColorMap\": true,\n        \"getFnv\": \"angle\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_water\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\",\n        \"isPick\": true,\n        \"isColorMap\": true,\n        \"getFnv\": \"angle\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0,\n        \"legendTitle\": \"Warming angle (°)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Render the Niterói layer stack in 3D with roads coloured by warming angle.",

@@ -658,11 +658,12 @@
 
 .referenceCode {
     flex: 1 1 100%;
-    /* A reference is one token and can be long; scroll it rather than wrap a
-       string the reader is about to copy. */
+    /* A reference is one token and can be long, and a layer group's is its
+       loader, a line per layer; keep the lines and scroll them rather than wrap
+       code the reader is about to copy. */
     min-width: 0;
     overflow-x: auto;
-    white-space: nowrap;
+    white-space: pre;
     padding: 6px 8px;
     border-radius: var(--curio-radius-sm);
     background: var(--curio-page-bg);

@@ -32,6 +32,7 @@ import {
 
 /** Minimal shape of a canvas node the resolver needs (subset of ReactFlow INode). */
 import { datasetIdsInCode } from "../datasetCatalog/datasetLoaderSnippets";
+import { nodeDisplayLabel } from "../../utils/nodeDisplayLabel";
 
 export interface LineageCanvasNode {
   /** ReactFlow node id (used for edge matching); usually equal to data.nodeId. */
@@ -40,6 +41,8 @@ export interface LineageCanvasNode {
     nodeId?: string;
     nodeType?: string;
     templateName?: string;
+    /** The node's renamed header, which names it. */
+    packageTemplateLabel?: string | null;
     datasetRefs?: string[];
     appliedDatasets?: Record<
       string,
@@ -65,6 +68,19 @@ export interface LineageCanvasEdge {
 export type NodeExecStatusMap = Record<string, "stale" | "executed" | "errored">;
 
 export type NodeLabelResolver = (nodeType: string | undefined) => string | undefined;
+
+/**
+ * What the canvas calls a node: ``nodeDisplayLabel``, the rule its header and
+ * its computed dataset's title follow (#775), with its template's label from
+ * *resolveNodeLabel*. "Node" when there is nothing to name it by.
+ */
+function lineageNodeName(
+  nodeType: string | undefined,
+  header: string | null | undefined,
+  resolveNodeLabel?: NodeLabelResolver,
+): string {
+  return nodeDisplayLabel(nodeType, header, resolveNodeLabel?.(nodeType)) || formatNodeTypeLabel(nodeType);
+}
 
 /**
  * Fallback prettifier for raw node type ids (e.g. "DATA_LOADING" → "Data
@@ -223,9 +239,7 @@ export function selectDatasetDownstreamUsage(
     return {
       nodeId: targetId,
       nodeName: node
-        ? resolveNodeLabel?.(nodeType) ||
-          node.data?.templateName ||
-          formatNodeTypeLabel(nodeType)
+        ? lineageNodeName(nodeType, node.data?.packageTemplateLabel, resolveNodeLabel)
         : undefined,
       nodeType,
       dataflowId,
@@ -251,10 +265,7 @@ export function selectDatasetDownstreamUsage(
       nodeExecStatus[nodeId] === "stale" ? "stale" : "active";
     consumingNodes.push({
       nodeId,
-      nodeName:
-        resolveNodeLabel?.(nodeType) ||
-        node.data?.templateName ||
-        formatNodeTypeLabel(nodeType),
+      nodeName: lineageNodeName(nodeType, node.data?.packageTemplateLabel, resolveNodeLabel),
       nodeType,
       dataflowId,
       dataflowName,
@@ -453,9 +464,7 @@ export function upstreamInputsFromDataset(
     inputNodes.push({
       nodeId,
       nodeName: nodeType
-        ? resolveNodeLabel?.(nodeType) ||
-          onCanvas?.data?.templateName ||
-          formatNodeTypeLabel(nodeType)
+        ? lineageNodeName(nodeType, onCanvas?.data?.packageTemplateLabel, resolveNodeLabel)
         : onCanvas?.data?.templateName,
       nodeType,
     });
@@ -483,11 +492,9 @@ export function selectDatasetUpstreamLineage(
     // instead of a meaningless sliced id.
     const nodeType = producer?.data?.nodeType ?? dataset.producerNodeType ?? undefined;
     const nodeName = producer
-      ? resolveNodeLabel?.(nodeType) ||
-        producer.data?.templateName ||
-        formatNodeTypeLabel(nodeType)
+      ? lineageNodeName(nodeType, producer.data?.packageTemplateLabel, resolveNodeLabel)
       : nodeType
-        ? resolveNodeLabel?.(nodeType) || formatNodeTypeLabel(nodeType)
+        ? lineageNodeName(nodeType, undefined, resolveNodeLabel)
         : undefined;
     generatingNode = {
       nodeId: producerNodeId,

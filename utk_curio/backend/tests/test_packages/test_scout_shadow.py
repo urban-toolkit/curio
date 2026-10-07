@@ -445,10 +445,13 @@ def test_the_model_is_the_export_of_scouts_generator():
 
 def test_the_model_stays_out_of_the_pip_package(monkeypatch):
     """``MANIFEST.in`` ships ``models/`` in the sdist, which the wheel is built
-    from (``publish-pip-to-pypi.yml``), and leaves Deep Umbra's folder out: it
-    stays in the repository only. The rules are applied the way setuptools
-    applies them, to the files under ``models/``; the Model Catalog's other
-    models still ship, and so does the Data Catalog's buildings dataset."""
+    from (``publish-pip-to-pypi.yml``), and leaves Deep Umbra's graph out: it
+    stays in the repository, and a pip install downloads it the first time the
+    node runs. Its manifest ships, so a pip install's Model Catalog lists the
+    model. The rules are applied the way setuptools applies them, every line
+    in order, to the files under ``models/`` and ``datasets/``: of the Model
+    Catalog's files only the graph stays out, and the Data Catalog's buildings
+    dataset still ships."""
     from setuptools._distutils.filelist import FileList
 
     monkeypatch.chdir(REPO)
@@ -459,17 +462,16 @@ def test_the_model_stays_out_of_the_pip_package(monkeypatch):
     ))
     for line in (REPO / "MANIFEST.in").read_text(encoding="utf-8").splitlines():
         line = line.strip()
-        if line.startswith(("include ", "recursive-include models", "prune models",
-                            "recursive-include datasets", "prune datasets", "exclude ")):
+        if line and not line.startswith("#"):
             files.process_template_line(line)
     shipped = set(files.files)
     model = MODEL.relative_to(REPO).as_posix()
     assert model in files.allfiles
-    assert not [path for path in shipped if path.startswith("models/model.scout.deep-umbra@1/")], sorted(shipped)
+    assert [path for path in files.allfiles if path.startswith("models/") and path not in shipped] == [model]
+    assert (MODEL_DIR / "manifest.json").relative_to(REPO).as_posix() in shipped
     # The rest still ships: DDRNet23-Slim's graph and the buildings dataset.
     assert "models/model.curio.ddrnet23-slim@1/files/ddrnet23_slim.onnx" in shipped
     assert BUILDINGS.relative_to(REPO).as_posix() in shipped
-    assert len(shipped) == len(files.allfiles) - len([p for p in MODEL_DIR.rglob("*") if p.is_file()])
 
 
 # ---------------------------------------------------------------------------
@@ -647,16 +649,19 @@ def test_rasters_deep_umbra_cannot_read_are_refused_in_a_sentence(workspace, tmp
 
 
 def test_a_curio_without_the_model_says_how_to_add_it(workspace, tmp_path):
-    """A pip install has no ``models/model.scout.deep-umbra@1``: the backend
-    resolves no folder for the model, and the node says what to copy where."""
+    """When the backend resolves no folder for the model (a pip install that
+    could not download it, say), the node names the model and where it comes
+    from: a pip install downloads it from GitHub the first time the node runs,
+    and a clone holds it. Copying folders by hand is not one of the ways."""
     error = run_node(_open(_mosaic(tmp_path, "A")), workspace, model=False, fails=True)
     for words in (
-        "the Model Catalog model model.scout.deep-umbra@1, and this Curio does not have it",
-        "not in the pip package",
-        "copy the repository's folder models/model.scout.deep-umbra@1",
-        "--models-root",
+        "the Model Catalog model model.scout.deep-umbra@1, and this Curio could not give it to the node",
+        "A pip install downloads it from GitHub the first time the node runs",
+        "raw.githubusercontent.com",
+        "a clone of https://github.com/urban-toolkit/curio holds it in models/model.scout.deep-umbra@1",
     ):
         assert words in error, error
+    assert "copy the repository's folder" not in error, error
 
 
 def test_another_failure_to_open_the_model_is_not_hidden(tmp_path):
@@ -669,7 +674,7 @@ def test_another_failure_to_open_the_model_is_not_hidden(tmp_path):
 
         with pytest.raises(RuntimeError, match="no readable manifest") as raised:
             outputs.open_model(unreadable)
-        assert "pip package" not in str(raised.value)
+        assert "downloads it from GitHub" not in str(raised.value)
 
         def another():
             raise RuntimeError("Model 'imported.x1f3a9c2b7d40' is not available in this environment - "
@@ -677,7 +682,7 @@ def test_another_failure_to_open_the_model_is_not_hidden(tmp_path):
 
         with pytest.raises(RuntimeError, match="imported.x1f3a9c2b7d40") as raised:
             outputs.open_model(another)
-        assert "pip package" not in str(raised.value)
+        assert "downloads it from GitHub" not in str(raised.value)
 
 
 # ---------------------------------------------------------------------------

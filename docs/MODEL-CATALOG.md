@@ -42,7 +42,7 @@ The manifest says which runtime runs the model (**ONNX** or **Transformers**), i
 
 DDRNet23-Slim is about 23 MB and labels a street photo in a fraction of a second on a CPU. A new **Image Segmentation** node runs it.
 
-Deep Umbra, [SCOUT](https://github.com/urban-toolkit/scout)'s shadow model, is about 10.5 MB. The **Accumulated Shadow** node of the SCOUT Shadow package (`scout.shadow@1`) runs it on a raster of building heights ([example 24](examples/24-scout-building-rasters.md)). It ships in the repository and its Docker image, not in the pip package: see [Operator notes](#operator-notes).
+Deep Umbra, [SCOUT](https://github.com/urban-toolkit/scout)'s shadow model, is about 10.5 MB. The **Accumulated Shadow** node of the SCOUT Shadow package (`scout.shadow@1`) runs it on a raster of building heights ([example 24](examples/24-scout-building-rasters.md)). A pip install downloads it from GitHub the first time a node runs it ([Installation from pip](USAGE.md#installation-from-pip)).
 
 The weather GNN, SCOUT's weather graph network, is about 52 KB. The **Weather Routing** node of the SCOUT Routing package (`scout.routing@1`) runs it on the road graph it builds from a roads layer, to weigh each road by the weather before routing ([the WeatherRouting test dataflow](examples/dataflows/WeatherRouting.json)).
 
@@ -159,8 +159,6 @@ A dataflow names its models by id. Someone you share it with runs a shipped mode
 | `CURIO_MODELS_ROOT` | `--models-root` | Reads the shipped models from this directory instead of `<repo_root>/models`. |
 
 **Shipping a model.** Add its folder to `models/` and restart. The Docker image bakes `models/` in, as it does `datasets/`. A model there must be one Curio may redistribute, with its license in the folder.
-
-**Deep Umbra on a pip install.** The pip package leaves out `models/model.scout.deep-umbra@1`, so Accumulated Shadow says the model is missing. Copy the repository's folder `models/model.scout.deep-umbra@1` into the shipped models folder (the one `--models-root` names, else the `models` folder beside the installed `utk_curio` package) and run the node again.
 
 ---
 

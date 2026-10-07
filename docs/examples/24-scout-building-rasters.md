@@ -234,6 +234,6 @@ the street canyons between the towers the height mosaic shows.
   tile from it and its eight neighbours, as in SCOUT.
 - **Deep Umbra is an estimate.** It is a generative model trained on simulated
   shadows, so read the map as where shadow gathers, not as a survey.
-- **Not in the pip package.** Deep Umbra ships in the Curio repository; on a
-  pip install, Accumulated Shadow says how to add it
-  ([Model Catalog](../MODEL-CATALOG.md#operator-notes)).
+- **Downloaded on a pip install.** A pip install downloads Deep Umbra from
+  GitHub the first time Accumulated Shadow runs
+  ([Installation from pip](../USAGE.md#installation-from-pip)).

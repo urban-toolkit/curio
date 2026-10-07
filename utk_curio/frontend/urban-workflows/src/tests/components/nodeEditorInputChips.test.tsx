@@ -5,7 +5,8 @@
  * reaches the sandbox as `arg[1]`. A node with several inputs waits until each
  * one holds a value.
  *
- * CodeEditor is stubbed to show the code it would run.
+ * CodeEditor and GrammarEditor are stubbed to show the code or spec they would
+ * run.
  */
 import React from "react";
 import { act, render, screen } from "@testing-library/react";
@@ -23,6 +24,12 @@ jest.mock("../../components/editing/CodeEditor", () => ({
       <span data-testid="strip-inputs">{(stripInputs ?? []).map((i: any) => `${i.slot}:${i.label}`).join(",")}</span>
     </div>
   ),
+}));
+
+// A Vega-Lite or Autark node's spec editor, stubbed the same way.
+jest.mock("../../components/editing/GrammarEditor", () => ({
+  __esModule: true,
+  default: ({ replacedCode }: any) => <pre data-testid="replaced">{replacedCode}</pre>,
 }));
 
 jest.mock("../../components/editing/NodeProvenance", () => ({
@@ -87,6 +94,29 @@ function renderPythonNode(inputSlots: unknown[], setOutputCallback = jest.fn()) 
   return { play: (code: string) => act(() => play!(code)), setOutputCallback };
 }
 
+/** An Autark node: a spec, resolved in its Widgets tab as the Python node's
+ *  code is. */
+function renderAutarkNode(inputSlots: unknown[], setOutputCallback = jest.fn()) {
+  let play: ((code: string) => void) | undefined;
+  render(
+    <NodeEditor
+      {...({
+        setSendCodeCallback: (cb: any) => { play = cb; },
+        setOutputCallback,
+        data: { nodeId: "t", inputSlots, outputCallback: jest.fn() },
+        output: { code: "", content: "" },
+        nodeType: "curio.builtin/autk-grammar",
+        readOnly: false,
+        code: false,
+        grammar: true,
+        widgets: true,
+        defaultValue: "",
+      } as any)}
+    />,
+  );
+  return { play: (code: string) => act(() => play!(code)), setOutputCallback };
+}
+
 beforeEach(() => setFlow());
 
 test("a node without a Widgets tab runs its input chips as arg indexed", () => {
@@ -107,6 +137,20 @@ test("a Python node runs a layer chip as the call that picks the layer out of it
   play("roads = [!! input 0:table_osm_roads !!]\nreturn roads[[!! input 0:table_osm_roads.highway !!]]");
   expect(screen.getByTestId("replaced").textContent)
     .toBe('roads = curio_layer(arg[0], "table_osm_roads", 0)\nreturn roads["highway"]');
+  expect(setOutputCallback).not.toHaveBeenCalledWith(expect.objectContaining({ code: "error" }));
+});
+
+test("an Autark node runs a layer chip on an input of one frame as the table that frame is read by", () => {
+  // Input 0 is a GeoDataFrame a Python node returned: one frame with no layer
+  // name, read as input_0 whatever the chip names. Input 1 carries layers,
+  // read by their own names.
+  const { play, setOutputCallback } = renderAutarkNode([
+    { path: "a", dataType: "geodataframe" },
+    { path: "b", dataType: "outputs" },
+  ]);
+  play('{"map": {"layerRefs": [{"dataRef": [!! input 0:roads !!]}, {"dataRef": [!! input 1:table_osm_parks !!]}]}}');
+  expect(screen.getByTestId("replaced").textContent)
+    .toBe('{"map": {"layerRefs": [{"dataRef": "input_0"}, {"dataRef": "table_osm_parks"}]}}');
   expect(setOutputCallback).not.toHaveBeenCalledWith(expect.objectContaining({ code: "error" }));
 });
 

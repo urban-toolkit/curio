@@ -90,7 +90,9 @@ def raster_meta(dataset) -> dict:
     }
 
 
-def _close_all(value) -> None:
+def close_datasets(value) -> None:
+    """Close the rasterio dataset *value* is, or each one it holds as a list
+    or tuple; anything else is left as it is."""
     for item in value if isinstance(value, (list, tuple)) else (value,):
         if is_dataset(item):
             item.close()
@@ -107,13 +109,13 @@ def raster_artifact(art_id, *, session_id=None, part=None):
     value = load_artifact(art_id, session_id=session_id)
     if part is not None:
         if not isinstance(value, (list, tuple)) or not 0 <= part < len(value):
-            _close_all(value)
+            close_datasets(value)
             raise RasterRefused(404, "not-found", f"artifact {art_id} has no part {part}")
         chosen = value[part]
-        _close_all([item for index, item in enumerate(value) if index != part])
+        close_datasets([item for index, item in enumerate(value) if index != part])
         value = chosen
     if not is_dataset(value):
-        _close_all(value)
+        close_datasets(value)
         raise RasterRefused(422, "not-a-raster", f"artifact {art_id} is not a raster")
     return value
 

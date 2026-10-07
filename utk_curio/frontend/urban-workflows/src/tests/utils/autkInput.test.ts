@@ -17,8 +17,11 @@ import {
   inputRow,
   prepareAutkInput,
   tablePositions,
+  type PreparedAutkInput,
 } from "../../utils/autkInput";
 import type { GrammarFrame, GrammarInput } from "../../utils/grammarInput";
+import { resolveReferences } from "../../utils/references/codeReferences";
+import { inputScopeFor } from "../../utils/references/inputScope";
 
 const point = (x: number, y: number) => ({ type: "Point", coordinates: [x, y] });
 const fc = (geoms: any[], crs?: string) => ({
@@ -178,13 +181,65 @@ describe("autkSourcesFrom", () => {
       expect(prepared.tables).toEqual(["roads"]);
       expect(prepared.rowsIn).toBe(1);
       expect(prepared.inputProblem).toBe(
-        "Inputs 0 and 1 both bring a layer named roads; the one from input 1 is left out. Rename one of them.",
+        "Inputs 0 and 1 both bring a layer named roads: roads means the one from input 0, "
+        + "and input_1 means the one from input 1.",
       );
+    });
+
+    test("the second layer of a taken name is left out when it is not its input's `input_<k>`, and the problem says so", () => {
+      // An input of several layers has no `input_<k>` for one of them, and a
+      // compute step passes layers on under their own names only.
+      const left = "Inputs 0 and 1 both bring a layer named roads: roads means the one from input 0, "
+        + "and the one from input 1 is left out. Rename one of them.";
+      const several = autkSourcesFrom(
+        read(on(0, { name: "roads" }), on(1, { name: "roads" }), on(1, { name: "parks" })),
+        MAP_ON("roads", "parks", "input_1"),
+      );
+      expect(several.tables).toEqual(["roads", "parks"]);
+      expect(several.inputProblem).toBe(left);
+      const computed = autkSourcesFrom(read(on(0, { name: "roads" }), on(1, { name: "roads" })), MAP_ON("input_1"), { alias: false });
+      expect(computed.tables).toEqual(["roads"]);
+      expect(computed.inputProblem).toBe(left);
     });
 
     test("several unnamed layers on one input are told apart by count", () => {
       expect(autkSourcesFrom(read(on(0), on(1), on(1)), MAP_ON("input_1")).tables)
         .toEqual(["input_0", "input_1", "input_1_1"]);
+    });
+
+    test("two inputs that bring a layer of one name are each still `input_<k>`, with their own rows (#744)", () => {
+      // Two scenarios' copies of one node, each handing on its layer `routes`.
+      const rain = fc([point(1, 1)]);
+      const wind = fc([point(2, 2), point(3, 3)]);
+      const prepared = autkSourcesFrom(
+        read(on(0), on(1, { name: "routes", payload: rain }), on(2, { name: "routes", payload: wind })),
+        MAP_ON("input_0", "input_1", "input_2"),
+      );
+      const drawn = (name: string) => prepared.sources.find((s) => s.outputTableName === name)?.geojsonObject;
+      expect(drawn("input_1")).toBe(rain);
+      expect(drawn("input_2")).toBe(wind);
+      // The name itself is still the first input's layer, and the problem says so.
+      expect(drawn("routes")).toBe(rain);
+      expect([...prepared.tables].sort()).toEqual(["input_0", "input_1", "input_2", "routes"]);
+      expect(prepared.rowsIn).toBe(4);
+      expect(prepared.inputProblem).toBe(
+        "Inputs 1 and 2 both bring a layer named routes: routes means the one from input 1, "
+        + "and input_2 means the one from input 2.",
+      );
+    });
+
+    test("a layer of a taken name that cannot be drawn leaves the other input's own layer drawn (#744)", () => {
+      const roads = fc([point(2, 2)]);
+      const prepared = autkSourcesFrom(
+        read(
+          on(0, { name: "roads", dataType: "dataframe", geometryName: null, payload: { lanes: [2] } }),
+          on(1, { name: "roads", payload: roads }),
+        ),
+        MAP_ON("input_0", "input_1"),
+      );
+      expect(prepared.sources.map((s) => [s.outputTableName, s.geojsonObject])).toEqual([["input_1", roads]]);
+      expect(prepared.unusable).toEqual(["roads", "input_0"]);
+      expect(prepared.emptyReason).toBeUndefined();
     });
   });
 
@@ -339,4 +394,109 @@ test("prepareAutkInput reads the input through the shared reader", async () => {
   const prepared = await prepareAutkInput({ path: "art", dataType: "geodataframe" }, MAP_ON("input_0"));
   expect(mockFetchData).toHaveBeenCalledWith("art");
   expect(prepared.tables).toEqual(["input_0"]);
+});
+
+test("two upstream Autark nodes' layers of one name, as they arrive: each input draws its own (#744)", async () => {
+  // An Autark node hands on a single layer under its name
+  // (adapters/node/autkLayerMaterialize); here two copies of one node do.
+  const rain = fc([point(1, 1)]);
+  const wind = fc([point(2, 2), point(3, 3)]);
+  mockFetchData.mockImplementation(async (path: string) => ({
+    dataType: "geodataframe",
+    data: path === "art-rain" ? rain : wind,
+    layerName: "routes",
+  }));
+  const prepared = await prepareAutkInput(
+    {
+      dataType: "outputs",
+      data: [{ path: "art-rain", dataType: "geodataframe" }, { path: "art-wind", dataType: "geodataframe" }],
+    },
+    MAP_ON("input_0", "input_1"),
+  );
+  const drawn = (name: string) => prepared.sources.find((s) => s.outputTableName === name)?.geojsonObject;
+  expect(drawn("input_0")).toEqual(rain);
+  expect(drawn("input_1")).toEqual(wind);
+});
+
+describe("a layer chip in the document reads the frame its input carries (#662)", () => {
+  // The chips resolve against the scope the node builds (hook/useInputScope):
+  // each wired circle with the value it holds, before any column is read.
+  const scopeOf = (values: unknown[]) => ({
+    widgets: [],
+    shared: [],
+    inputs: inputScopeFor(
+      "map",
+      values.map((_, slot) => ({
+        source: `up-${slot}`, target: "map", sourceHandle: "out", targetHandle: slot === 0 ? "in" : `in_${slot}`,
+      })),
+      [],
+      (slot) => values[slot],
+      () => null,
+      () => undefined,
+    ),
+  });
+  const resolvedSpec = (text: string, values: unknown[]) => {
+    const { code, problems } = resolveReferences(text, scopeOf(values), "json");
+    expect(problems).toEqual([]);
+    return JSON.parse(code);
+  };
+  const tables = (prepared: PreparedAutkInput) =>
+    Object.fromEntries(prepared.sources.map((s) => [s.outputTableName, s.geojsonObject]));
+
+  test("an input of one GeoDataFrame with no layer name is that layer, whatever the chip names", async () => {
+    const grid = fc([point(1, 1), point(2, 2)]);
+    mockFetchData.mockResolvedValue({ dataType: "geodataframe", data: grid });
+    const input = { path: "art-grid", dataType: "geodataframe" };
+    const spec = resolvedSpec('{"map": {"layerRefs": [{"dataRef": [!! input 0:anything !!]}]}}', [input]);
+    const loaded = tables(await prepareAutkInput(input, spec));
+    expect(Object.keys(loaded)).toContain(spec.map.layerRefs[0].dataRef);
+    expect(loaded[spec.map.layerRefs[0].dataRef]).toEqual(grid);
+  });
+
+  test("on a node with several inputs, each chip reads the frame of the input it names", async () => {
+    const parks = fc([point(1, 1)]);
+    const roads = fc([point(2, 2), point(3, 3)]);
+    mockFetchData.mockImplementation(async (path: string) => ({
+      dataType: "geodataframe",
+      data: path === "art-parks" ? parks : roads,
+    }));
+    const slots = [{ path: "art-parks", dataType: "geodataframe" }, { path: "art-roads", dataType: "geodataframe" }];
+    const spec = resolvedSpec(
+      '{"map": {"layerRefs": [{"dataRef": [!! input 1:roads !!]}, {"dataRef": [!! input 0:parks !!]}]}}',
+      slots,
+    );
+    const loaded = tables(await prepareAutkInput({ dataType: "outputs", data: slots }, spec));
+    const [first, second] = spec.map.layerRefs.map((ref: any) => ref.dataRef);
+    expect(Object.keys(loaded)).toEqual(expect.arrayContaining([first, second]));
+    expect(loaded[first]).toEqual(roads);
+    expect(loaded[second]).toEqual(parks);
+  });
+
+  test("one frame whose value names its layer is read through that name, and another name is refused as in code", async () => {
+    // What a Data Pool hands on after a selection: the layer it holds, inline.
+    const roads = fc([point(1, 1)]);
+    const input = { dataType: "geodataframe", data: roads, layerName: "table_osm_roads" };
+    const spec = resolvedSpec('{"map": {"layerRefs": [{"dataRef": [!! input 0:table_osm_roads !!]}]}}', [input]);
+    expect(tables(await prepareAutkInput(input, spec))[spec.map.layerRefs[0].dataRef]).toEqual(roads);
+
+    const other = resolveReferences('{"map": {"layerRefs": [{"dataRef": [!! input 0:parks !!]}]}}', scopeOf([input]), "json");
+    expect(other.problems.map((p) => p.message)).toEqual([
+      "[!! input 0:parks !!]: input 0 has no layer parks. Its layers are table_osm_roads.",
+    ]);
+  });
+
+  test("an input of several layers is still read by the layer's own name", async () => {
+    const roads = fc([point(1, 1)]);
+    mockFetchData.mockResolvedValue({
+      dataType: "outputs",
+      data: [
+        { dataType: "geodataframe", data: roads, layerName: "table_osm_roads" },
+        { dataType: "geodataframe", data: fc([point(5, 5)]), layerName: "table_osm_parks" },
+      ],
+    });
+    const input = { path: "art-osm", dataType: "outputs" };
+    const spec = resolvedSpec('{"map": {"layerRefs": [{"dataRef": [!! input 0:table_osm_roads !!]}]}}', [input]);
+    expect(spec.map.layerRefs[0].dataRef).toBe("table_osm_roads");
+    expect(tables(await prepareAutkInput(input, spec)).table_osm_roads).toEqual(roads);
+  });
 });

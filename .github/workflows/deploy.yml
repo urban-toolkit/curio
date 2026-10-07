@@ -155,6 +155,13 @@ jobs:
               command: ["--backend-url", "/api"]
           SITE
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.site.yml
+          # Build while the old stack still serves: the site is offline only
+          # from `down` until the new container boots, and a failed build
+          # leaves the old stack up. The image's COPY datasets/ therefore runs
+          # before the wipe below and carries the datasets accounts published;
+          # the ./datasets bind mount hides that copy, and the image stays here.
+          docker compose -p curio-dev build --no-cache
+          echo "=== stopping the old stack ==="
           docker compose -p curio-dev down --remove-orphans --timeout 30 2>/dev/null || true
           # A container from an earlier convention / manual run keeps itself alive
           # via restart:unless-stopped and can hold the published ports, so a
@@ -168,7 +175,6 @@ jobs:
           published="$(git ls-files --others --directory -- datasets)"
           docker run --rm -v "$PWD:/work" -w /work alpine rm -rf instance .curio $published
           mkdir -p instance .curio
-          docker compose -p curio-dev build --no-cache
           docker compose -p curio-dev up -d --force-recreate --remove-orphans
           # Wait for the container to report healthy, and FAIL if it does not.
           #
@@ -202,6 +208,11 @@ jobs:
             fi
             sleep 5
           done
+          # When each server started, against "stopping the old stack" above:
+          # the site shows nothing until the frontend server is up.
+          echo "=== boot timeline ==="
+          docker logs -t curio-dev 2>&1 \
+            | grep -E "Starting (all|backend|sandbox|frontend)|Frontend server started" || true
           # Isolation is fail-closed, so a healthy stack has already proved
           # it came up isolated. Assert it anyway: a stack booted WITHOUT
           # the deploy overlay would have neither auth nor isolation and
@@ -306,12 +317,16 @@ jobs:
           # v0.16.0 bakes its backend address into the bundle. Set after .env so
           # an older address there cannot win.
           export BACKEND_URL=https://flow.urbantk.org/api
+          # Build while the old stack still serves: the site is offline only
+          # from `down` until the new container boots, and a failed build
+          # leaves the old stack up.
+          docker compose -p curio build --no-cache
+          echo "=== stopping the old stack ==="
           docker compose -p curio down --remove-orphans --timeout 30 2>/dev/null || true
           # A container from an earlier convention / manual run keeps itself alive
           # via restart:unless-stopped and can hold the published ports, so a
           # freshly built image never actually serves. Force-remove it by name.
           docker rm -f "${CURIO_CONTAINER_NAME:-curio}" 2>/dev/null || true
-          docker compose -p curio build --no-cache
           docker compose -p curio up -d --force-recreate --remove-orphans
           # Wait for the container to report healthy, and FAIL if it does not.
           #
@@ -345,6 +360,11 @@ jobs:
             fi
             sleep 5
           done
+          # When each server started, against "stopping the old stack" above:
+          # the site shows nothing until the frontend server is up.
+          echo "=== boot timeline ==="
+          docker logs -t "${CURIO_CONTAINER_NAME:-curio}" 2>&1 \
+            | grep -E "Starting (all|backend|sandbox|frontend)|Frontend server started" || true
           # Isolation is fail-closed, so a healthy stack has already proved
           # it came up isolated. Assert it anyway: a stack booted WITHOUT
           # the deploy overlay would have neither auth nor isolation and

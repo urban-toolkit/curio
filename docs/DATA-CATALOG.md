@@ -143,7 +143,7 @@ The generated Python is one line, `curio_load_data("<datasetId>")` (`curio_load_
 | `onnx` | An onnxruntime `InferenceSession` on the CPU → `session`. onnxruntime comes with the Street Vision package. |
 | `netcdf` | An xarray `Dataset`, read with netCDF4 → `ds` |
 | `bundle` | Every part, as a tuple → `bundle`. `part="<file>"` reads one part. |
-| OSM group | A `layers` dict, one `curio_load_data` per layer |
+| OSM, GeoPackage or GTFS group | A `layers` dict, one `curio_load_data` per layer |
 | NetCDF group | A `layers` dict, one `curio_load_data` per variable |
 | `collection` | `curio_load_collection("<datasetId>")`: the collection's index, one row per file with a readable `path` → `collection` |
 
@@ -167,7 +167,7 @@ A name the bundle does not list stops the node with a message naming the dataset
 
 To read the file another way, for example a CSV with another separator, use `curio_data_path("<datasetId>")`, which gives the file's path: `pd.read_csv(curio_data_path("<datasetId>"), sep=";")`, or `netCDF4.Dataset(curio_data_path("<datasetId>"))` for a NetCDF file.
 
-These calls name the dataset by id instead of a file path, so the code keeps working when the dataflow is shared or moved. The details' **Use in a node** box shows the `curio_load_data` call, with a copy button.
+These calls name the dataset by id instead of a file path, so the code keeps working when the dataflow is shared or moved. The details' **Use in a node** box shows the `curio_load_data` call, or for a group the lines that load each of its layers, with a copy button.
 
 **Clicking** a palette row, rather than dragging it, highlights every node on the canvas that uses that dataset. If none does, a message says so.
 
@@ -200,7 +200,7 @@ A collection's details have a **Collection** section: its kind, **Indexed from**
 
 ### The save-output toggle
 
-A runnable node that produces a dataset has a small database-icon toggle among the buttons in its header, which show while the pointer is over the node. It is **off by default**, so saving is chosen per node. When it is on, running the node saves its output into your store as `computed.<dataflowId>.<nodeId>@1`.
+A runnable node that produces a dataset has a small database-icon toggle among the buttons in its header, which show while the pointer is over the node. It is **off by default**, so saving is chosen per node. When it is on, running the node saves its output into your store as `computed.<dataflowId>.<nodeId>@1`, titled with the name in the node's header: the name you gave the node, or else its kind, such as **Python Computation**.
 
 A `GeoDataFrame` output is stored as **GeoParquet** and reloads as a `GeoDataFrame`. Its CRS survives, and so does *every* geometry column, not only the active one: a frame with both a `geometry` and a `centroid` column comes back with both still typed as geometry. So a node's map output is a reusable input. (A `GeoDataFrame` with no active geometry column is stored as a plain table; GeoParquet cannot represent one.)
 
@@ -373,6 +373,7 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 |---|---|---|
 | `CURIO_CATALOG_ROOT` | `--catalog-root` | The shared catalog's location. Defaults to `<repo_root>/datasets/`. |
 | `CURIO_LAUNCH_CWD` | none | Where per-user stores live (`.curio/users/<key>/datasets/` under it). Defaults to the process's working directory. |
+| `CURIO_STATE_DIR` | `--state-dir` | Moves `.curio/`, and every per-user store in it, to this directory. |
 | `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish** of datasets, as it does for node packages. When forbidden, both are refused and their buttons are hidden on `/catalog/data`. |
 
 **Relocating the catalog.** The default root resolves relative to the installed package. That suits a checkout, but on a `pip` install it lands inside `site-packages`, where it is read-only and publishing fails. Set `CURIO_CATALOG_ROOT` (or `--catalog-root`) to a writable, persistent path there.

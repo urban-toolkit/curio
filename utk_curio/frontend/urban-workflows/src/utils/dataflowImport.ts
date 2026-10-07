@@ -50,10 +50,12 @@ export function loadFailedMessage(err: unknown): string {
 /**
  * Parse the text of a picked file into a dataflow spec.
  *
- * The shape check is deliberately the minimum `useCode.loadTrill` needs, an
- * array at `dataflow.nodes`, rather than a schema validation: `docs/schemas/
- * trill.v1.json` is enforced on the backend and running it here would refuse
- * older files the canvas still opens quite happily.
+ * The one shape check is the minimum `useCode.loadTrill` needs, an array at
+ * `dataflow.nodes`. Nothing checks a dataflow against `docs/schemas/
+ * trill.v1.json` when it is loaded or saved: the backend saves a spec without
+ * validating it (`projects/storage.py`). The schema is checked by
+ * `test_trill_schema.py`, on the committed dataflows, and by
+ * `scripts/validate_trill.py`, on the files it is given.
  */
 export function parseDataflowFile(text: string): DataflowParseResult {
     let parsed: unknown;

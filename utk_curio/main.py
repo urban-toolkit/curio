@@ -19,10 +19,10 @@ from utk_curio.cli.dependencies import (
     install_manifest_dependencies,
     seed_duckdb_extensions,
 )
-from utk_curio.cli.environment import set_environment_variables
-from utk_curio.cli.frontend_build import _require_supported_node
+from utk_curio.cli.environment import set_environment_variables, set_state_dir
+from utk_curio.cli.frontend_build import _frontend_must_build, _require_supported_node
 from utk_curio.cli.lifecycle import clean_shutdown, shutdown_flag, signal_handler
-from utk_curio.cli.logs import COLOR_FRONTEND, log_always, log_info, logger, setup_logging
+from utk_curio.cli.logs import COLOR_FRONTEND, log_always, log_info, print_output_queue, setup_logging
 from utk_curio.cli.services import start_backend, start_frontend, start_sandbox
 from utk_curio.cli.test_runner import run_tests
 
@@ -111,6 +111,14 @@ def main():
         "--verbose", type=int, default=1, help="Verbosity level (e.g., 0=silent, 1=normal, 2=debug)"
     )
     parser.add_argument(
+        "--log-to-stdout", action=argparse.BooleanOptionalAction, default=None,
+        help=(
+            "Whether the backend and sandbox write their logs to their output, "
+            "which the launcher keeps in its own log, rather than to "
+            "utk_curio/logs/ (sets LOG_TO_STDOUT). Default: on."
+        ),
+    )
+    parser.add_argument(
         "--no-project", action="store_true", default=False,
         help=(
             "Skip login and projects pages "
@@ -125,6 +133,20 @@ def main():
             "(sets CURIO_NO_AUTH=0, CURIO_NO_PROJECT=0). This is the only way "
             "to turn auth on, so use it locally too when you need the login "
             "page. Also isolates node execution where the host supports it."
+        ),
+    )
+    parser.add_argument(
+        "--shared-guest-name", default=None, metavar="NAME",
+        help=(
+            "Display name of the shared guest, the one account every guest "
+            "sign-in uses (sets CURIO_SHARED_GUEST_NAME, default 'Shared Guest')."
+        ),
+    )
+    parser.add_argument(
+        "--shared-guest-username", default=None, metavar="NAME",
+        help=(
+            "Username of the shared guest (sets CURIO_SHARED_GUEST_USERNAME, "
+            "default guest_shared). No registered account may use it."
         ),
     )
     parser.add_argument(
@@ -185,6 +207,67 @@ def main():
         ),
     )
     parser.add_argument(
+        "--js-parallelism", type=int, default=None, metavar="N",
+        help=(
+            "How many JavaScript nodes the sandbox runs at once (sets "
+            "CURIO_JS_PARALLELISM). Defaults to half the host's cores, from 2 "
+            "to 16."
+        ),
+    )
+    parser.add_argument(
+        "--package-workers", type=int, default=None, metavar="N",
+        help=(
+            "How many package backend handlers run at once (sets "
+            "CURIO_PACKAGE_WORKERS). Defaults to half the host's cores, from 2 "
+            "to 8."
+        ),
+    )
+    parser.add_argument(
+        "--js-registry-url", default=None, metavar="URL",
+        help=(
+            "The npm registry a package build fetches JavaScript dependencies "
+            "from (sets CURIO_JS_REGISTRY_URL). No default: without it, a "
+            "build that needs a JavaScript dependency is refused."
+        ),
+    )
+    parser.add_argument(
+        "--js-block-unpinned", action=argparse.BooleanOptionalAction, default=None,
+        help=(
+            "Whether a package build refuses a JavaScript dependency without a "
+            "pinned version, rather than warning (sets CURIO_JS_BLOCK_UNPINNED). "
+            "Default: off."
+        ),
+    )
+    parser.add_argument(
+        "--db-pool-size", type=int, default=None, metavar="N",
+        help=(
+            "Database connections the backend keeps open (sets "
+            "CURIO_DB_POOL_SIZE, default 64)."
+        ),
+    )
+    parser.add_argument(
+        "--db-pool-overflow", type=int, default=None, metavar="N",
+        help=(
+            "Connections the backend may open beyond --db-pool-size while all "
+            "of those are in use (sets CURIO_DB_POOL_OVERFLOW, default 128)."
+        ),
+    )
+    parser.add_argument(
+        "--db-pool-timeout", type=int, default=None, metavar="SECONDS",
+        help=(
+            "How long a request waits for a free database connection before it "
+            "fails (sets CURIO_DB_POOL_TIMEOUT, default 30)."
+        ),
+    )
+    parser.add_argument(
+        "--state-dir", default=None, metavar="PATH",
+        help=(
+            "Directory for the .curio state: every user's store, the caches "
+            "and the launcher's log (sets CURIO_STATE_DIR). Defaults to .curio/ "
+            "in the directory Curio is started from."
+        ),
+    )
+    parser.add_argument(
         "--catalog-root", default=None, metavar="PATH",
         help=(
             "Directory for the shared Data Catalog (hub read + publish "
@@ -210,11 +293,28 @@ def main():
         ),
     )
     parser.add_argument(
+        "--media-cache-max-gb", type=float, default=None, metavar="GB",
+        help=(
+            "How much each account may hold in cached bucket files and "
+            "downloaded street-level images, in gigabytes (sets "
+            "CURIO_MEDIA_CACHE_MAX_GB, default 20)."
+        ),
+    )
+    parser.add_argument(
         "--models-root", default=None, metavar="PATH",
         help=(
             "Directory the shipped Model Catalog models are read from (sets "
             "CURIO_MODELS_ROOT). Defaults to <repo_root>/models/. Models a "
             "user adds stay in that user's own store."
+        ),
+    )
+    parser.add_argument(
+        "--packages-root", default=None, metavar="PATH",
+        help=(
+            "Directory the shared Node Catalog is read from and published to "
+            "(sets CURIO_PACKAGES_ROOT). Defaults to <repo_root>/packages/. "
+            "Start it from a copy of that directory: the built-in nodes are "
+            "installed from it."
         ),
     )
     parser.add_argument(
@@ -260,8 +360,30 @@ def main():
             "(sets GUEST_LLM_API_KEY). It otherwise takes "
             "CURIO_DEFAULT_LLM_API_KEY, and with neither, guests get no AI. "
             "The guest configuration takes the deployment's provider, URL "
-            "and model unless GUEST_LLM_API_TYPE / _BASE_URL / _MODEL "
-            "(env only) say otherwise."
+            "and model unless --guest-llm-provider, --guest-llm-base-url and "
+            "--guest-llm-model say otherwise."
+        ),
+    )
+    parser.add_argument(
+        "--guest-llm-provider", default=None, choices=["openai_compatible", "anthropic", "gemini"],
+        help=(
+            "Provider kind of the guest configuration (sets GUEST_LLM_API_TYPE). "
+            "Defaults to the deployment's, --llm-provider."
+        ),
+    )
+    parser.add_argument(
+        "--guest-llm-base-url", default=None, metavar="URL",
+        help=(
+            "Endpoint of the guest configuration (sets GUEST_LLM_BASE_URL). "
+            "Defaults to the deployment's, --llm-base-url; an empty value is "
+            "the provider's own endpoint."
+        ),
+    )
+    parser.add_argument(
+        "--guest-llm-model", default=None, metavar="NAME",
+        help=(
+            "Model of the guest configuration (sets GUEST_LLM_MODEL). Defaults "
+            "to the deployment's, --llm-model; without one, guests get no AI."
         ),
     )
     parser.add_argument(
@@ -325,6 +447,21 @@ def main():
         ),
     )
     parser.add_argument(
+        "--collab-origins", default=None, metavar="ORIGINS",
+        help=(
+            "Comma-separated origins whose pages may open a --collab connection, "
+            "or * for any (sets COLLAB_CORS_ORIGINS, default *). Use * only on "
+            "a trusted network."
+        ),
+    )
+    parser.add_argument(
+        "--collab-namespace", default=None, metavar="NAMESPACE",
+        help=(
+            "Socket.IO namespace of --collab (sets COLLAB_NAMESPACE, default "
+            "/collab)."
+        ),
+    )
+    parser.add_argument(
         "--dev", action="store_true", default=False,
         help=(
             "Serve the frontend from the webpack dev server, with hot reload "
@@ -358,6 +495,8 @@ def main():
     if args.base_path and os.environ["CURIO_DEV"] == "1":
         parser.error("--base-path applies to the built frontend, not to the --dev server")
 
+    # Before setup_logging, which opens the launcher's log in this directory.
+    set_state_dir(args.state_dir)
     setup_logging(args.server)
     logs.verbosity = int(args.verbose)
 
@@ -385,6 +524,7 @@ def main():
         backend_url=args.backend_url,
         discovery_root=args.discovery_root,
         models_root=args.models_root,
+        packages_root=args.packages_root,
         save_node_outputs=args.save_node_outputs,
         solve_max_attempts=args.solve_max_attempts,
         solve_node_budget=args.solve_node_budget,
@@ -393,6 +533,22 @@ def main():
         validation_exec_timeout=args.validation_exec_timeout,
         validation_node_limit=args.validation_node_limit,
         discovery_max_download_mb=args.discovery_max_download_mb,
+        guest_llm_provider=args.guest_llm_provider,
+        guest_llm_base_url=args.guest_llm_base_url,
+        guest_llm_model=args.guest_llm_model,
+        media_cache_max_gb=args.media_cache_max_gb,
+        db_pool_size=args.db_pool_size,
+        db_pool_overflow=args.db_pool_overflow,
+        db_pool_timeout=args.db_pool_timeout,
+        package_workers=args.package_workers,
+        js_parallelism=args.js_parallelism,
+        js_registry_url=args.js_registry_url,
+        js_block_unpinned=args.js_block_unpinned,
+        shared_guest_name=args.shared_guest_name,
+        shared_guest_username=args.shared_guest_username,
+        collab_origins=args.collab_origins,
+        collab_namespace=args.collab_namespace,
+        log_to_stdout=args.log_to_stdout,
     )
 
     # Handle standalone rebuild or db init without starting servers. Neither
@@ -416,29 +572,47 @@ def main():
 
     if args.command == "start":
         _require_supported_node()
-        # Mirror the ``shutil.which("npm")`` check at the top of
-        # ``start_frontend``: catch drifted Python envs at launch instead
-        # of crashing the sandbox/backend on its first module-level import.
-        # Framework first (gives us Flask + manifest-parsing deps), then
-        # the manifest walk (covers builtin's data-ops libs + every other
-        # installed package's declared python deps).
-        if args.server in ("all", "backend", "sandbox") and not _skip_dep_install():
-            install_framework_requirements()
-            install_manifest_dependencies()
-
-        # Autark's data path runs autk-db in the sandbox's Node, which installs
-        # DuckDB's spatial extension. Seed it from the copy Curio ships so that
-        # never becomes a download (#318).
-        if args.server in ("all", "sandbox"):
-            seed_duckdb_extensions()
-
         if args.server == "all":
             log_always("Starting all servers (backend, sandbox, frontend)...")
-            lifecycle.processes = [
-                start_backend(args.backend_host, args.backend_port),
-                start_sandbox(args.sandbox_host, args.sandbox_port),
-                start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path)
-            ]
+        # A deployment's frontend with nothing to build needs none of the checks
+        # below, so it starts first: after a deploy the page is back within
+        # seconds of the container starting, and its banner explains the wait
+        # for the backend. A local start keeps the old order, so its page does
+        # not open on a backend that is still starting, and a build waits until
+        # the backend and sandbox are up, as it always has.
+        frontend_first = (
+            args.server == "all" and args.deploy and not _frontend_must_build(args.force_rebuild)
+        )
+        if frontend_first:
+            lifecycle.processes.append(start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path))
+        try:
+            # Mirror the ``shutil.which("npm")`` check at the top of
+            # ``start_frontend``: catch drifted Python envs at launch instead
+            # of crashing the sandbox/backend on its first module-level import.
+            # Framework first (gives us Flask + manifest-parsing deps), then
+            # the manifest walk (covers builtin's data-ops libs + every other
+            # installed package's declared python deps).
+            if args.server in ("all", "backend", "sandbox") and not _skip_dep_install():
+                install_framework_requirements()
+                install_manifest_dependencies()
+
+            # Autark's data path runs autk-db in the sandbox's Node, which installs
+            # DuckDB's spatial extension. Seed it from the copy Curio ships so that
+            # never becomes a download (#318).
+            if args.server in ("all", "sandbox"):
+                seed_duckdb_extensions()
+        except SystemExit:
+            # A failed check ends the start with its own exit code, and the
+            # frontend started above must not outlive it.
+            for process in lifecycle.processes:
+                process.terminate()
+            raise
+
+        if args.server == "all":
+            lifecycle.processes.append(start_backend(args.backend_host, args.backend_port))
+            lifecycle.processes.append(start_sandbox(args.sandbox_host, args.sandbox_port))
+            if not frontend_first:
+                lifecycle.processes.append(start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path))
         else:
             if args.server == "backend":
                 lifecycle.processes.append(start_backend(args.backend_host, args.backend_port))
@@ -448,14 +622,14 @@ def main():
                 lifecycle.processes.append(start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path))
 
         # Monitor the threads
-        logging_thread = threading.Thread(target=logger, daemon=True)
+        logging_thread = threading.Thread(target=print_output_queue, daemon=True)
         logging_thread.start()
 
         try:
             while not shutdown_flag.is_set():
                 time.sleep(1)
         except KeyboardInterrupt:
-            clean_shutdown(lifecycle.processes)
+            clean_shutdown()
     else:
         parser.print_help()
 

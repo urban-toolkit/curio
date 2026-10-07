@@ -113,6 +113,23 @@ describe("a raster an upstream Autark node handed on", () => {
     expect(read.frames.map((f) => [f.name, f.dataType])).toEqual([["roads", "geodataframe"], ["heat", "raster"]]);
     expect(read.skipped).toBeUndefined();
   });
+
+  test("two of one name, on two inputs: each input reads its own (#744)", async () => {
+    // Two scenarios' copies of one Autark node, each handing on its raster `heat`.
+    const [base, tall] = [cases.cases[0].envelope, cases.cases[1].envelope];
+    mockFetchData.mockImplementation(async (path: string) => ({ dataType: "dict", data: path === "art-base" ? base : tall }));
+    const read = await readAutkInput({
+      dataType: "outputs",
+      data: [{ path: "art-base", dataType: "dict" }, { path: "art-tall", dataType: "dict" }],
+    });
+    expect(read.frames.map((f) => [f.name, f.circle])).toEqual([["heat", 0], ["heat", 1]]);
+
+    const prepared = autkSourcesFrom(read, MAP_ON("input_0", "input_1"));
+    const raster = (name: string) => prepared.rasters.find((r) => r.outputTableName === name)?.payload;
+    expect(raster("input_0")).toEqual({ envelope: base });
+    expect(raster("input_1")).toEqual({ envelope: tall });
+    expect(raster("heat")).toEqual({ envelope: base });
+  });
 });
 
 test("a raster offers no starter document: the editor stays empty for one", async () => {

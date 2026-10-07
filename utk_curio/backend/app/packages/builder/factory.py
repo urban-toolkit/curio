@@ -64,6 +64,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from utk_curio.backend.app.execution.code_references import references_as_names
 from utk_curio.backend.app.packages.domain.dependency_scanner import (
     scan_imports_for_filename,
 )
@@ -325,7 +326,8 @@ def _detect_dependencies_from_sources(
     pinning is a follow-up enhancement (no UI for it today since the wizard
     is gone). Inter-package (``packages``) deps are not source-derivable and
     must come from the draft. *own_modules* are left out, as the Package
-    Builder leaves them out (#468).
+    Builder leaves them out (#468). Each ``[!! ... !!]`` reference is read as
+    a plain name, as the Package Builder reads it (#707).
     """
     py: set[str] = set()
     js: set[str] = set()
@@ -336,7 +338,7 @@ def _detect_dependencies_from_sources(
         code = entry.get("code")
         if not isinstance(filename, str) or not isinstance(code, str):
             continue
-        py_hits, js_hits = scan_imports_for_filename(filename, code, own_modules)
+        py_hits, js_hits = scan_imports_for_filename(filename, references_as_names(code), own_modules)
         py.update(py_hits)
         js.update(js_hits)
     return {

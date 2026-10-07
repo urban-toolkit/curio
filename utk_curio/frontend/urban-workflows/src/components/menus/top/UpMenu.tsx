@@ -7,8 +7,6 @@ import {
     useFlowContext,
     useNodeActionsContext,
 } from "../../../providers/FlowProvider";
-import { useCode } from "../../../hook/useCode";
-import { useEnsureWorkflowDeps } from "../../../providers/packages/useEnsureWorkflowDeps";
 import { useCollab } from "../../../providers/CollaborationProvider";
 import { TrillGenerator } from "../../../TrillGenerator";
 import { trillToNotebook, serializeNotebook } from "../../../NotebookConvertor";
@@ -45,11 +43,12 @@ import { getCurrentProjectPackagesList } from "../../../registry/projectPackages
 import {
     looksLikeJsonFile,
     parseDataflowFile,
-    loadFailedMessage,
     NOT_JSON_FILE_MESSAGE,
     UNREADABLE_FILE_MESSAGE,
 } from "../../../utils/dataflowImport";
+import { openDataflowFile } from "../../../utils/openedDataflowFile";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
+import { useSharedView } from "../../../hook/useSharedView";
 import ShareMenu from "./ShareMenu";
 import DataflowCategoryInput from "../../projects/DataflowCategoryInput";
 import { projectsApi, type ProjectSummary } from "../../../api/projectsApi";
@@ -74,7 +73,6 @@ export default function UpMenu() {
         projectDirty,
         projectSavedAt,
         cleanCanvas,
-        markDirty,
         renameDataflow,
         workflowCategories,
         serverCategories,
@@ -83,7 +81,6 @@ export default function UpMenu() {
         saveCurrentProject,
         saveAsNewProject,
         discardProject,
-        viewerMode,
         packages,
         nodes,
         edges,
@@ -97,11 +94,11 @@ export default function UpMenu() {
     const leaveWithGuard = (body: string, action: () => void) => guardLeave(action, body);
 
     const collab = useCollab();
-    // Mirror the ``isSharedView`` gate in MainCanvas: when collab is on,
-    // peers loaded via the shared endpoint are full editors (their edits
-    // sync over the socket to the owner), so the read-only banner /
-    // gating must stand down.
-    const isSharedView = viewerMode === "shared" && !collab.enabled;
+    // The ``isSharedView`` gate MainCanvas reads: when collab is on, peers
+    // loaded via the shared endpoint are full editors (their edits sync over
+    // the socket to the owner), so the read-only banner / gating must stand
+    // down.
+    const isSharedView = useSharedView();
     const {
         workflowName,
         setWorkflowName,
@@ -110,7 +107,6 @@ export default function UpMenu() {
         expandStatus,
         setExpandStatus,
     } = useNodeActionsContext();
-    const { loadTrill } = useCode();
     const { showToast } = useToastContext();
     // The id the Share links are built from. A shared viewer has no
     // ``projectId`` (the dataflow is not open for editing in their workspace),
@@ -118,7 +114,6 @@ export default function UpMenu() {
     // at either way.
     const { id: routeId } = useParams<{ id?: string }>();
     const shareId = projectId ?? (routeId && SHARE_UUID_RE.test(routeId) ? routeId : null);
-    const ensureWorkflowDeps = useEnsureWorkflowDeps();
 
     const toggleMenu = (menu: string) => {
         setActiveMenu((prev) => (prev === menu ? null : menu));
@@ -200,15 +195,26 @@ export default function UpMenu() {
         setActiveMenu(null);
     };
 
+    /**
+     * Leave the open dataflow for a new, unsaved one: File > New, and File >
+     * Load with the picked *file* as that new dataflow (#751). Nothing is
+     * saved, so the dataflow that was open keeps its nodes, its name, its
+     * packages and its datasets; the file's first save creates a project of
+     * its own. ProjectLoader puts the file on the canvas once `/dataflow/new`
+     * is set up.
+     */
+    const startNewDataflow = (file?: any) => {
+        discardProject();
+        cleanCanvas();
+        setActiveMenu(null);
+        if (file !== undefined) openDataflowFile(file);
+        navigate("/dataflow/new");
+    };
+
     const handleNewWorkflow = () => {
         leaveWithGuard(
             "Starting a new dataflow discards the changes you have not saved.",
-            () => {
-                discardProject();
-                cleanCanvas();
-                setActiveMenu(null);
-                navigate("/dataflow/new");
-            },
+            () => startNewDataflow(),
         );
     };
 
@@ -302,24 +308,14 @@ export default function UpMenu() {
                     showToast(parsed.message, "error");
                     return;
                 }
-                try {
-                    loadTrill(parsed.spec);
-                } catch (err) {
-                    // A spec can carry the right shape and still throw while it
-                    // is replayed, on a node type this build does not know.
-                    console.error("Failed to load dataflow:", err);
-                    showToast(loadFailedMessage(err), "error");
-                    return;
-                }
-                // Importing REPLACES the canvas, so it does diverge from what
-                // is on disk. The edge replay inside loadParsedTrill no longer
-                // says so on its own (#229) - and never did for an edgeless
-                // import - so say it here, where the intent is known.
-                markDirty();
-                // Importing a workflow file is a deliberate user action, so
-                // warn + auto-install its Python deps the same way opening
-                // your own project does.
-                ensureWorkflowDeps(parsed.spec);
+                // The file opens as a dataflow of its own (#751), asking first
+                // when the open one has unsaved changes. Only a file that
+                // parsed gets this far, so a refused one leaves the open
+                // dataflow exactly as it was.
+                leaveWithGuard(
+                    "Loading a dataflow file discards the changes you have not saved.",
+                    () => startNewDataflow(parsed.spec),
+                );
             } finally {
                 setActiveMenu(null);
             }

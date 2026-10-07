@@ -5,9 +5,6 @@ recursive-include packages *
 recursive-include datasets *
 recursive-include discovery *
 recursive-include models *
-# SCOUT's Deep Umbra model stays in the repository and out of the pip package;
-# a pip install's Accumulated Shadow node (scout.shadow@1) says how to add it.
-prune models/model.scout.deep-umbra@1
 recursive-include tests *
 
 recursive-include utk_curio/backend *
@@ -22,4 +19,15 @@ recursive-include utk_curio/llm-prompts *.md
 
 prune utk_curio/frontend/urban-workflows/node_modules
 
-exclude *.map
+# The built frontend's source maps.
+recursive-exclude utk_curio/frontend *.map
+
+# Files a pip install downloads from GitHub the first time Curio needs them,
+# so the sdist and the wheel stay under PyPI's 100 MiB limit for one file.
+# Exactly the files utk_curio/backend/app/datasets/infrastructure/left_out_files.json
+# lists (test_left_out_files.py checks it).
+exclude datasets/data.cityofchicago.red-light-violations@1/data/red-light-violations.parquet
+exclude datasets/data.cityofchicago.speed-camera-violations@1/data/speed-camera-violations.parquet
+exclude datasets/data.projectsidewalk.chicago-labels@1/data/chicago-labels.parquet
+exclude datasets/data.utk.milan-mrt@1/data/milan-mrt.tif
+exclude models/model.scout.deep-umbra@1/files/deep_umbra.onnx

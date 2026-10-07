@@ -147,7 +147,7 @@ The function's parameters are read from the module's source; the module is not i
 
 `dependencies.python` and `dependencies.js` in the manifest are filled in from each kind's source file when you save. They are not entered by hand:
 
-- Each top-level `import` or `from … import` in a `.py` source is collected, leaving out the standard library, Curio's own modules, and the modules the package and the packages in its `dependencies.packages` ship. The common cases where the import name differs from the install name are mapped (`cv2` → `opencv-python`, `sklearn` → `scikit-learn`, `PIL` → `pillow`, `yaml` → `pyyaml`, `bs4` → `beautifulsoup4`, `skimage` → `scikit-image`); anything else passes through unchanged.
+- Each top-level `import` or `from … import` in a `.py` source is collected, leaving out the standard library, Curio's own modules, and the modules the package and the packages in its `dependencies.packages` ship. A source that reads its inputs, widgets or tags through `[!! … !!]` references is read with each reference as a plain name. The common cases where the import name differs from the install name are mapped (`cv2` → `opencv-python`, `sklearn` → `scikit-learn`, `PIL` → `pillow`, `yaml` → `pyyaml`, `bs4` → `beautifulsoup4`, `skimage` → `scikit-image`); anything else passes through unchanged.
 - In `.js`, `.mjs` and `.cjs` sources, `import … from "X"`, dynamic `import("X")` and `require("X")` are collected. Relative paths are skipped, subpaths collapse to the package (`lodash/fp` → `lodash`), and scoped packages keep their scope (`@scope/pkg`).
 - Detected names are written with `*` as the version range. The UI does not offer version pins.
 - Saving into an existing package keeps every dependency it already declares, with its range, and adds newly detected names.
@@ -231,7 +231,7 @@ A package you save or import lands in your package store:
 | Variable | Flag | Effect |
 |---|---|---|
 | `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish**. When forbidden, both are refused and their buttons are hidden. |
-| `CURIO_PACKAGES_ROOT` | none | Reads and publishes the shared catalog in this directory instead of `<repo_root>/packages/`. |
+| `CURIO_PACKAGES_ROOT` | `--packages-root` | Reads and publishes the shared catalog in this directory instead of `<repo_root>/packages/`. Start it from a copy of `packages/`: the built-in nodes are installed from it. |
 
 **`curio.py start` sets the publish variable on every start**, so `--no-allow-publish` is the way to turn publishing off. A `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH=0` in `.env` has no effect when you start through `curio.py`. See [USAGE.md](USAGE.md) for the launcher reference.
 

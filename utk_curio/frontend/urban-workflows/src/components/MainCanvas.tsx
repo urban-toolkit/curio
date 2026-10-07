@@ -91,7 +91,8 @@ import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentAttachmentsProvider } from "../providers/agents";
 import { isDrawnHidden } from "../utils/hiddenNodes";
-import { isNodeDragRegion } from "../utils/nodeDragRegion";
+import { isNodeDragRegion, keepPaneOffNodes } from "../utils/nodeDragRegion";
+import { useSharedView } from "../hook/useSharedView";
 import { frameNodesInView } from "../utils/focusDatasetNodes";
 import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
 import { BOX_WIDTH, boxLayout } from "./scenarios/ScenarioLayers";
@@ -335,32 +336,40 @@ export function MainCanvas() {
         };
     }, [reactFlow]);
 
-    const {
-        viewerMode,
-    } = useFlowContext();
-
     // Ctrl/Cmd+Enter on a selected node (#223).
     useRunSelectedNodeShortcut();
 
+    // A read-only canvas: another user's dataflow, with collaboration off.
     // When real-time collaboration is on, a peer opening the owner's URL
     // lands in ``viewerMode === "shared"`` (loadSharedProject was the only
     // way to bypass the owner-only /api/projects/<id> 404). For collab to
     // be useful peers must be able to *edit*; their edits flow over the
     // socket to the owner, who persists. Without this gate, peers see the
     // canvas as read-only and the lock/proposal flow does nothing.
-    const isSharedView = viewerMode === "shared" && !collab.enabled;
+    const isSharedView = useSharedView();
     // Nodes are added (dropped) and connected on the canvas only, by its owner.
     const graphEdits = graphEditGates({ notebookOn, sharedView: isSharedView });
 
+    // React Flow gives a node that drags the `nopan` class, which keeps its
+    // pane's gestures off the node: a press there does not pan the view and a
+    // double-click does not zoom it 2x at the pointer. A read-only canvas's
+    // nodes do not drag, so they get the class here, and the double-click
+    // below reaches them as it reaches an editable canvas's nodes.
+    const drawnNodes = useMemo(
+        () => (isSharedView && !notebookOn ? keepPaneOffNodes(scenarioView.nodes) : scenarioView.nodes),
+        [isSharedView, notebookOn, scenarioView.nodes],
+    );
+
     // A double-click where a press drags a node (its header, its card's edge)
-    // zooms the view onto it, framed as a focus frames its nodes. Inside an
-    // editor, an output, a chart or a map the double-click stays theirs. Where
-    // nodes do not drag (a read-only canvas, the notebook view) nothing changes.
+    // zooms the view onto it, framed as a focus frames its nodes, on an
+    // editable canvas and on a read-only one, where a node would drag if it
+    // could. Inside an editor, an output, a chart or a map the double-click
+    // stays theirs. The notebook view keeps its zoom at 1.
     const handleNodeDoubleClick = useCallback((event: React.MouseEvent, node: FlowNode) => {
-        if (notebookOn || isSharedView) return;
+        if (notebookOn) return;
         if (!isNodeDragRegion(event.target, event.currentTarget)) return;
         frameNodesInView(reactFlow, [node.id]);
-    }, [notebookOn, isSharedView, reactFlow]);
+    }, [notebookOn, reactFlow]);
 
     const [isComponentsSelected, setIsComponentsSelected] = useState<boolean>(false);
 
@@ -790,7 +799,7 @@ export function MainCanvas() {
                 style={notebookOn ? { position: "relative", width: "100%", height: notebookContentHeight, minHeight: "100%" } : FILL_STYLE}
             >
             <ReactFlow
-                nodes={scenarioView.nodes}
+                nodes={drawnNodes}
                 edges={scenarioView.edges}
                 onNodesChange={handleNodesChange}
                 onEdgesChange={handleEdgesChange}

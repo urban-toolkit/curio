@@ -190,10 +190,12 @@
   border-collapse: collapse;
   font-size: 13px;
 }
+/* 6px a side leaves the Source column room for a package id such as
+   curio.builtin@1 on one line beside the Status and remove columns. */
 .libraryTable th,
 .libraryTable td {
   text-align: left;
-  padding: 6px 8px;
+  padding: 6px 6px;
   border-bottom: 1px solid #eee;
 }
 .libraryTable th {
@@ -205,7 +207,10 @@
 }
 .cellName { font-family: monospace; }
 .cellSpec { font-family: monospace; color: #64748b; }
-.cellSource { font-size: 12px; }
+/* The column that gives way: a long package id (curio.streetvision@1) wraps
+   at its dots, or anywhere when that is not enough, so the table never grows
+   wider than the dialog and the remove button stays in view. */
+.cellSource { font-size: 12px; overflow-wrap: anywhere; }
 .sourceStandalone {
   color: #475569;
   background: #f1f5f9;

@@ -6,6 +6,7 @@ from flask import Blueprint, g, jsonify, request
 
 from utk_curio.backend.config import (
     ALLOW_GUEST_LOGIN,
+    COLLAB_NAMESPACE,
     CURIO_NO_AUTH,
     CURIO_NO_PROJECT,
     CURIO_DEFAULT_SAVE_NODE_OUTPUT,
@@ -174,6 +175,7 @@ def public_config_route():
             "curio_env": CURIO_ENV,
             "shared_guest_username": CURIO_SHARED_GUEST_USERNAME,
             "enable_collab": ENABLE_COLLAB,
+            "collab_namespace": COLLAB_NAMESPACE,
             "default_save_node_output": CURIO_DEFAULT_SAVE_NODE_OUTPUT,
         }
     ), 200

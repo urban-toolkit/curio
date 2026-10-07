@@ -46,6 +46,16 @@ describe("inputScopeFor", () => {
     expect(inputScopeFor("lonely", edges, nodes, () => undefined, labelOf, () => undefined)).toEqual([]);
   });
 
+  test("a value that names the table it is read as brings that layer name, before anything is read", () => {
+    const fc = { type: "FeatureCollection", features: [] };
+    const values: Record<number, unknown> = {
+      0: { dataType: "geodataframe", data: fc, layerName: "table_osm_roads" },
+      1: { path: "b", dataType: "geodataframe" },
+    };
+    const scope = inputScopeFor("t", edges, nodes, (slot) => values[slot], labelOf, () => undefined);
+    expect(scope.map((input) => input.layerName)).toEqual(["table_osm_roads", undefined]);
+  });
+
   test("the layers an input carries ride along", () => {
     const read = { columns: [], dtypes: {}, layers: [{ name: "roads", columns: ["highway"], dtypes: {} }] };
     const scope = inputScopeFor("t", edges, nodes, () => ({ path: "a" }), labelOf, () => read);

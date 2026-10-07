@@ -94,6 +94,8 @@ import { useCode } from "../hook/useCode";
 import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
 import { NodeRunControls } from "./nodes/NodeRunControls";
+import { NodeResizeHandle } from "./nodes/NodeResizeHandle";
+import { useSharedView } from "../hook/useSharedView";
 import { NodeHeaderSlotContext } from "./editing/nodeHeaderSlot";
 import { resolveSaveOutputDataset, showsSaveOutputToggle } from "../utils/saveOutputDataset";
 import { nodeRunStatus, nodeRunError } from "../utils/nodeRunStatus";
@@ -180,6 +182,8 @@ export const NodeContainer = ({
     // canvas size. An icon-only node keeps its chip, stretched to the column.
     const notebook = useNotebookViewContext();
     const notebookCell = notebook.on && !dashboardOn && !noContent;
+    // A read-only canvas keeps every node at its size; only an owner resizes.
+    const sizeLocked = useSharedView();
     const saveOutputDataset = resolveSaveOutputDataset(data, defaultSaveOutputDataset);
     // Nodes created from the dataset palette load an installed listing and can't
     // regenerate a dataset — hide the save toggle and show the dataset chip instead.
@@ -360,83 +364,38 @@ export const NodeContainer = ({
         }
     }, []);
 
-    useEffect(() => {
-        if (noContent) return;
+    // The corner handle (NodeResizeHandle) sizes the box as it is dragged.
+    const resizeBox = (width: number, height: number) => {
+        setCurrentNodeWidth(width);
+        setCurrentNodeHeight(height);
+    };
 
-        const resizer = document.getElementById(
-            nodeId + "resizer"
-        ) as HTMLElement;
-        const resizable = document.getElementById(
-            nodeId + "resizable"
-        ) as HTMLElement;
-
-        if (!resizer || !resizable) return;
-
-        let startX = 0;
-        let startY = 0;
-        let startWidth = 0;
-        let startHeight = 0;
-
-        function resize(e: any) {
-            const newWidth = Math.max(MIN_NODE_WIDTH, startWidth + (e.clientX - startX));
-            const newHeight = Math.max(MIN_NODE_HEIGHT, startHeight + (e.clientY - startY));
-
-            resizable.style.width = newWidth + "px";
-            resizable.style.height = newHeight + "px";
-
-            setCurrentNodeWidth(newWidth);
-            setCurrentNodeHeight(newHeight);
-        }
-
-        function stopResize(e: any) {
-            window.removeEventListener("mousemove", resize, false);
-            window.removeEventListener("mouseup", stopResize, false);
-
-            const newWidth = resizable.offsetWidth;
-            const newHeight = resizable.offsetHeight;
-            // Read the live node data instead of the closure-captured `data`,
-            // which can be stale (e.g. captured before upstream `input` flowed
-            // in) and would overwrite live fields when spread back.
-            const liveData = getNodes().find((n) => n.id === nodeId)?.data ?? data;
-            if (dashboardOn) {
-                if (liveData.dashboardWidth !== newWidth || liveData.dashboardHeight !== newHeight) {
-                    updateDataNode(nodeId, {
-                        ...liveData,
-                        dashboardWidth: newWidth,
-                        dashboardHeight: newHeight,
-                    });
-                    // Tile geometry is saved state, so resizing one is an edit.
-                    markDirty();
-                }
-            } else {
-                if (liveData.nodeWidth !== newWidth || liveData.nodeHeight !== newHeight) {
-                    updateDataNode(nodeId, {
-                        ...liveData,
-                        nodeWidth: newWidth,
-                        nodeHeight: newHeight,
-                    });
-                }
+    // The size the drag ends at goes into the node's data.
+    const keepBoxSize = (newWidth: number, newHeight: number) => {
+        // Read the live node data instead of the closure-captured `data`,
+        // which can be stale (e.g. captured before upstream `input` flowed
+        // in) and would overwrite live fields when spread back.
+        const liveData = getNodes().find((n) => n.id === nodeId)?.data ?? data;
+        if (dashboardOn) {
+            if (liveData.dashboardWidth !== newWidth || liveData.dashboardHeight !== newHeight) {
+                updateDataNode(nodeId, {
+                    ...liveData,
+                    dashboardWidth: newWidth,
+                    dashboardHeight: newHeight,
+                });
+                // Tile geometry is saved state, so resizing one is an edit.
+                markDirty();
+            }
+        } else {
+            if (liveData.nodeWidth !== newWidth || liveData.nodeHeight !== newHeight) {
+                updateDataNode(nodeId, {
+                    ...liveData,
+                    nodeWidth: newWidth,
+                    nodeHeight: newHeight,
+                });
             }
         }
-
-        function initResize(e: any) {
-            startX = e.clientX;
-            startY = e.clientY;
-            startWidth = resizable.offsetWidth;
-            startHeight = resizable.offsetHeight;
-
-            window.addEventListener("mousemove", resize, false);
-            window.addEventListener("mouseup", stopResize, false);
-        }
-
-        resizer.addEventListener("mousedown", initResize, false);
-
-        return () => {
-            resizer.removeEventListener("mousedown", initResize, false);
-        };
-        // notebookCell: the handle unmounts in the notebook view, and the one
-        // mounted on the way back needs its listener.
-    }, [dashboardOn, dashboardLocked, notebookCell]);
+    };
 
     const deleteComment = (commentId: string) => {
         commitComments(comments.filter((comment) => comment.id !== commentId));
@@ -784,13 +743,15 @@ export const NodeContainer = ({
                 </div>
             ) : null}
 
-            {(!dashboardOn || !dashboardLocked) && !noContent && !notebookCell && <div
-                id={nodeId + "resizer"}
-                className={"resizer nowheel nodrag"}
-                style={{
-                    ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
-                }}
-            ></div>}
+            {(!dashboardOn || !dashboardLocked) && !noContent && !notebookCell && (
+                <NodeResizeHandle
+                    nodeId={nodeId}
+                    box={resizableRef}
+                    disabled={data.suggestionType != "none" && data.suggestionType != undefined}
+                    onResize={resizeBox}
+                    onResizeEnd={keepBoxSize}
+                />
+            )}
             <div
                 ref={resizableRef}
                 id={nodeId + "resizable"}
@@ -814,8 +775,10 @@ export const NodeContainer = ({
                     width: boxWidth + "px",
                     ...cellBoxStyle,
                     // `.resizable` draws the browser's own resize grip, which
-                    // the canvas covers with its resize handle; a cell has none.
-                    ...(notebookCell ? { resize: "none" } : {}),
+                    // the canvas covers with its resize handle; a cell has
+                    // none, and nor does a read-only canvas's node, which keeps
+                    // its size.
+                    ...(notebookCell || sizeLocked ? { resize: "none" } : {}),
                     ...(shownMinimized ? { display: "none" } : {}),
                     ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: 0.5, pointerEvents: "none"} : {}),
                     ...(data.keywordHighlighted ? {backgroundColor: "#1E1F23"} : {}),

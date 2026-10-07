@@ -24,7 +24,6 @@ reach it: ``stage_input`` refuses an artifact belonging to another session, the
 same rule ``load_from_duckdb`` enforces.
 """
 
-import glob
 import json
 import os
 import shutil
@@ -114,7 +113,14 @@ def stage_input(art_id, scratch_dir, *, session_id=None, slot="in"):
             value = load_shared_output_file(art_id)
         except KeyError:
             raise store_error
-        adopted = save_to_duckdb(value, node_id="hydrated", session_id=session_id)
+        from utk_curio.sandbox.util.rasters import close_datasets
+
+        try:
+            adopted = save_to_duckdb(value, node_id="hydrated", session_id=session_id)
+        finally:
+            # A raster, alone or in a tuple, is stored by its file's path, so
+            # the dataset opened to read it is done with.
+            close_datasets(value)
         return stage_input(adopted, scratch_dir, session_id=session_id, slot=slot)
 
     if kind == "null":
@@ -238,16 +244,14 @@ def read_outputs_wrapper(art_id, *, session_id=None):
 
 
 def _stage_with_companions(source: Path, folder: Path) -> None:
-    """Link *source* into *folder* with the files read beside it: those named
-    after it (``labels.parquet.decode.json``, a raster's ``.aux.xml``) or after
-    its stem (a shapefile's ``.shx``, ``.dbf`` and ``.prj``). Only regular
-    files are linked; a file already staged is left as it is."""
+    """Link *source* into *folder* with the files read beside it
+    (``catalog_helpers.files_read_beside``: a parquet's ``.decode.json``, a
+    shapefile's ``.shx``, ``.dbf`` and ``.prj``). A file already staged is
+    left as it is."""
+    from utk_curio.sandbox.util.catalog_helpers import files_read_beside
+
     folder.mkdir(parents=True, exist_ok=True)
-    companions = [
-        path for path in sorted(source.parent.glob(glob.escape(source.stem) + ".*"))
-        if path.name != source.name and path.is_file() and not path.is_symlink()
-    ]
-    for path in [source, *companions]:
+    for path in [source, *files_read_beside(source)]:
         if not (folder / path.name).exists():
             _link_or_copy(path, folder / path.name)
 

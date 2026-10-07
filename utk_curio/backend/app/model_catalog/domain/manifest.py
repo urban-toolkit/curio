@@ -302,8 +302,13 @@ def manifest_dict(manifest: ModelManifest) -> dict[str, Any]:
     return out
 
 
-def load_manifest(folder: Path) -> ModelManifest:
-    """The checked manifest of the model in *folder*, whose entry must exist."""
+def load_manifest(folder: Path, *, fetched_on_first_use=None) -> ModelManifest:
+    """The checked manifest of the model in *folder*, whose entry must exist.
+
+    *fetched_on_first_use*, given the entry's path in the folder, says whether
+    a missing entry is one the folder gets the first time a node runs the
+    model: an ONNX entry the pip package leaves out, which a pip install
+    downloads then. Such a model reads with its entry missing."""
     path = folder / "manifest.json"
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -311,7 +316,9 @@ def load_manifest(folder: Path) -> ModelManifest:
         raise ModelManifestError(f"{folder.name}: manifest.json could not be read ({exc})") from exc
     manifest = parse_manifest(raw, dir_name=folder.name)
     entry = folder / manifest.entry
-    if manifest.runtime == "onnx" and not entry.is_file():
+    if manifest.runtime == "onnx" and not entry.is_file() and not (
+        fetched_on_first_use is not None and fetched_on_first_use(manifest.entry)
+    ):
         raise ModelManifestError(f"{folder.name}: its entry {manifest.entry} is not a file")
     if manifest.runtime == "transformers" and not (entry / "config.json").is_file():
         raise ModelManifestError(f"{folder.name}: its entry {manifest.entry} holds no config.json")

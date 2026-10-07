@@ -154,7 +154,9 @@ return roads[roads["highway"] == "primary"]
 ```
 
 This code also takes a single roads GeoDataFrame, from a Python node or Data
-Loading: an input that is one frame with no layer name is the layer.
+Loading: an input that is one frame with no layer name is the layer. The same
+holds in a Vega-Lite or Autark spec, where the chip becomes the name the frame
+is read by, `"input_0"`.
 
 ### Modules beside your template
 

@@ -1,4 +1,5 @@
-import type { DatasetCatalogItem } from "./datasetCatalogTypes";
+import { isLayerGroupId, type DatasetCatalogItem } from "./datasetCatalogTypes";
+import { osmGroupLoaderSnippet } from "./datasetLoaderSnippets";
 
 /**
  * What a dataset's copy control hands over, decided in one place.
@@ -26,11 +27,15 @@ import type { DatasetCatalogItem } from "./datasetCatalogTypes";
 const SAFE_DATASET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$/;
 
 export interface DatasetReference {
-  /** The Python expression to paste into a node. */
+  /** The Python to paste into a node: one call, or a layer group's loader. */
   code: string;
   /** Where the bytes actually are, for display. Empty when unknown. */
   location: string;
 }
+
+/** What a reference is built from: a catalog item, or the fields it needs. */
+export type DatasetReferenceSource = Pick<DatasetCatalogItem, "id" | "path" | "uri"> &
+  Partial<Pick<DatasetCatalogItem, "format" | "groupLayers">>;
 
 /**
  * The reference and the location for *dataset*.
@@ -39,11 +44,16 @@ export interface DatasetReference {
  * the same fallback ``pathExpr`` makes when generating a loader, so what is
  * copied always matches what the palette would have written.
  */
-export function datasetReference(
-  dataset: Pick<DatasetCatalogItem, "id" | "path" | "uri"> & Partial<Pick<DatasetCatalogItem, "format">>,
-): DatasetReference {
+export function datasetReference(dataset: DatasetReferenceSource): DatasetReference {
   const location = String(dataset.path || dataset.uri || "");
   const id = String(dataset.id ?? "");
+  // A layer group's id names no file, so no one call reads it. What goes into
+  // a node is the group's loader, which reads each layer: the one a group card
+  // dropped on the canvas loads its layers with (`createLayerGroupDragPayload`).
+  if (isLayerGroupId(id) && dataset.groupLayers && dataset.groupLayers.length > 0) {
+    const snippet = osmGroupLoaderSnippet(dataset.groupLayers);
+    return { code: [...snippet.imports, snippet.code].join("\n"), location };
+  }
   // A collection is read with `curio_load_collection`, which adds a readable
   // path for each of its files; its data file alone is only the index.
   const call = dataset.format === "collection" ? "curio_load_collection" : "curio_load_data";
@@ -54,8 +64,6 @@ export function datasetReference(
 }
 
 /** Just the string a copy control puts on the clipboard. */
-export function datasetReferenceCode(
-  dataset: Pick<DatasetCatalogItem, "id" | "path" | "uri"> & Partial<Pick<DatasetCatalogItem, "format">>,
-): string {
+export function datasetReferenceCode(dataset: DatasetReferenceSource): string {
   return datasetReference(dataset).code;
 }

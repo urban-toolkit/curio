@@ -3,7 +3,7 @@ import React from "react";
 import { type DiscoveryAreaValue, type DiscoveryParameter } from "../../services/discoveryCatalog";
 import { datasetCatalogApi } from "../../services/datasetCatalog";
 import styles from "./DiscoveryAddDialog.module.css";
-import { PlaceAttribution, SearchBox, usePlaceSearch } from "./placeSearch";
+import { PlaceAttribution, SearchBox, noBoundaryCalled, useBoundaryLookup, usePlaceSearch } from "./placeSearch";
 
 /**
  * An area, with no map: a box from a place search, from four typed
@@ -13,8 +13,9 @@ import { PlaceAttribution, SearchBox, usePlaceSearch } from "./placeSearch";
  * The box is always shown back in numbers with its size, checked against the
  * source's limit, so what is sent is what is seen.
  *
- * A place is looked up only when asked for (Search, or Enter), never as it is
- * typed: Nominatim's usage policy forbids auto-complete on its API.
+ * A place is looked up only when asked for (Search, Enter, or Download for a
+ * named area's place), never as it is typed: Nominatim's usage policy forbids
+ * auto-complete on its API.
  */
 
 type Box = [number, number, number, number];
@@ -244,7 +245,15 @@ function DatasetBox({ onPick }: { onPick: (box: Box, label: string) => void }) {
   );
 }
 
-/** A place to search within, and the named OSM areas inside it. */
+/**
+ * A place to search within, and the named OSM areas inside it.
+ *
+ * The loader matches both by their OpenStreetMap names, which are in the
+ * local language. The place in **Within** is looked up on Enter, or by Search
+ * in **Find areas**, and shown as OpenStreetMap names it; **Find areas**
+ * searches inside that name. The answer keeps the place as typed, and a
+ * download sends it as OpenStreetMap names it (`withOsmPlaceNames`).
+ */
 function NamedAreas({
   value,
   onChange,
@@ -256,29 +265,50 @@ function NamedAreas({
   const [areas, setAreas] = React.useState<string[]>(value?.areas ?? []);
   const [text, setText] = React.useState("");
   const { places, error, loading, searched, search } = usePlaceSearch();
+  const within = useBoundaryLookup();
+  // What Within was found as, while it still says what was looked up.
+  const found = within.result && within.result.text === scope.trim() ? within.result : null;
   const boundaries = places.filter((p) => p.boundary);
   const emit = (nextScope: string, nextAreas: string[]) =>
     onChange(nextScope.trim() && nextAreas.length ? { geocodeArea: nextScope.trim(), areas: nextAreas } : null);
+  const findAreas = () => {
+    void within.lookUp(scope).then((place) => {
+      if (place) search(`${text.trim()}, ${place.name}`);
+    });
+  };
   return (
     <div className={styles.field}>
       <label className={styles.field}>
         <span className={styles.fieldLabel}>Within</span>
         <input
           className={styles.input}
-          placeholder="A city or region, as OpenStreetMap names it"
+          placeholder="A city or region"
           value={scope}
           onChange={(e) => {
             setScope(e.target.value);
             emit(e.target.value, areas);
           }}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            // The field sits inside the dialog: Enter looks the place up, it does not submit.
+            e.preventDefault();
+            void within.lookUp(scope);
+          }}
         />
       </label>
+      {within.looking ? <p className={styles.hint}>Looking up the place…</p> : null}
+      {found?.place ? (
+        <p className={styles.hint} aria-live="polite">
+          <strong>{found.place.name}</strong> · {found.place.label}
+        </p>
+      ) : null}
+      {found && !found.place ? <p className={styles.warning}>{found.error ?? noBoundaryCalled(found.text)}</p> : null}
       <div className={styles.field}>
         <span className={styles.fieldLabel}>Find areas</span>
         <SearchBox
           value={text}
           onChange={setText}
-          onSearch={() => search(`${text.trim()}, ${scope.trim()}`)}
+          onSearch={findAreas}
           placeholder="A neighbourhood or district"
           label="Find areas"
           disabled={!scope.trim()}

@@ -8,6 +8,8 @@
  * `spec.data.values` and re-ship it through `changeset()` on every brush.
  */
 import { injectInputs, prepareVegaInput, prepareVegaInputs, usesNamedDatasets } from "../../utils/vegaInput";
+import { resolveReferences } from "../../utils/references/codeReferences";
+import { inputScopeFor } from "../../utils/references/inputScope";
 
 jest.mock("../../services/api", () => ({
   fetchData: jest.fn(),
@@ -178,6 +180,56 @@ describe("several inputs (#662)", () => {
   test("prepareVegaInput hands back the first input's rows", async () => {
     const { values } = await prepareVegaInput(both, { mark: "bar" });
     expect(values.map((v: any) => v.zip)).toEqual(["60601", "60602"]);
+  });
+});
+
+describe("a layer chip in the spec reads the frame its input carries (#662)", () => {
+  // The chips resolve against the scope the node builds (hook/useInputScope):
+  // each wired circle with the value it holds, before any column is read.
+  const resolvedSpec = (text: string, values: unknown[]) => {
+    const inputs = inputScopeFor(
+      "chart",
+      values.map((_, slot) => ({
+        source: `up-${slot}`, target: "chart", sourceHandle: "out", targetHandle: slot === 0 ? "in" : `in_${slot}`,
+      })),
+      [],
+      (slot) => values[slot],
+      () => null,
+      () => undefined,
+    );
+    const { code, problems } = resolveReferences(text, { widgets: [], inputs, shared: [] }, "json");
+    expect(problems).toEqual([]);
+    return JSON.parse(code);
+  };
+
+  test("a view reads the rows of the one frame the input it names carries, whatever the chip names", async () => {
+    const slots = [
+      { dataType: "dataframe", data: framePayload },
+      { dataType: "geodataframe", data: geoPayload },
+    ];
+    const spec = resolvedSpec(
+      '{"layer": [{"mark": "bar"}, {"data": {"name": [!! input 1:zips !!]}, "mark": "geoshape"}]}',
+      slots,
+    );
+    const { datasets, emptyReason } = await prepareVegaInputs({ dataType: "outputs", data: slots }, spec);
+    expect(emptyReason).toBeUndefined();
+    injectInputs(spec, datasets);
+    const read = spec.layer[1].data.name;
+    expect(Object.keys(spec.datasets)).toContain(read);
+    expect(spec.datasets[read].map((row: any) => [row.zip, row.__input__])).toEqual([["60601", 1], ["60602", 1]]);
+  });
+
+  test("with one input, a view that names it through a layer chip reads its rows", async () => {
+    const input = { dataType: "dataframe", data: framePayload };
+    const spec = resolvedSpec(
+      '{"layer": [{"data": {"name": [!! input 0:zips !!]}, "mark": "bar", "encoding": {"x": {"field": "zip"}}}]}',
+      [input],
+    );
+    const { datasets } = await prepareVegaInputs(input, spec);
+    expect(injectInputs(spec, datasets)).toBe(true);
+    const read = spec.layer[0].data.name;
+    expect(Object.keys(spec.datasets)).toContain(read);
+    expect(spec.datasets[read].map((row: any) => row.zip)).toEqual(["60601", "60602"]);
   });
 });
 

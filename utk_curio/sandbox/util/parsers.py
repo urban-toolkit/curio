@@ -889,6 +889,13 @@ def load_tabular_preview_from_duckdb(art_id, max_rows, session_id=None):
             pass
 
 
+#: The first four bytes of a TIFF, little- and big-endian, then of a BigTIFF.
+_TIFF_SIGNATURES = (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+")
+
+#: How a GDAL virtual raster starts, such as the VRT Mosaic Rasters writes.
+_VRT_START = b"<VRTDataset"
+
+
 def load_shared_output_file(file_name):
     """Load a project output hydrated into the shared data directory.
 
@@ -907,12 +914,22 @@ def load_shared_output_file(file_name):
 
     The name alone does not say what the bytes are - a dataset parquet keeps
     its generated ``<ms>_<hex>_output.parquet`` name, while a computed dataset
-    installed from a JSON or parquet artifact lands under the bare artifact id
-    - so the content is sniffed.
+    installed from a JSON, parquet or raster artifact lands under the bare
+    artifact id - so the content is sniffed. A raster's copy is its own file, a
+    GeoTIFF or a VRT, and is opened as the store opens a raster artifact: a
+    rasterio dataset.
+
+    An output whose dataset is a bundle, such as a tuple, is hydrated with its
+    parts in a folder of its own (``catalog_helpers.hydrated_bundle``), which is
+    read first and comes back as the tuple (:func:`_load_hydrated_bundle`). The
+    bundle's ``bundle.json``, which the load also copies under the output's
+    name, describes the output and is never handed out as its value.
 
     Raises ``KeyError`` for an unsafe name, a missing file, or bytes this
     cannot decode, so callers can treat it exactly like a missing artifact.
     """
+    from utk_curio.sandbox.util.catalog_helpers import hydrated_bundle
+
     missing = KeyError(f"No artifact with id {file_name}")
 
     name = str(file_name or "").strip()
@@ -923,6 +940,9 @@ def load_shared_output_file(file_name):
         raise missing
 
     data_dir = _shared_data_dir()
+    bundle = hydrated_bundle(data_dir, name)
+    if bundle.is_file():
+        return _load_hydrated_bundle(bundle, data_dir, missing)
     try:
         path = (data_dir / name).resolve()
         path.relative_to(data_dir)
@@ -932,7 +952,7 @@ def load_shared_output_file(file_name):
         raise missing
 
     with open(path, "rb") as handle:
-        header = handle.read(4)
+        header = handle.read(64)
 
     # Parquet, by magic or by name. ``load_dataset_parquet`` reads GeoParquet as
     # a GeoDataFrame and restores the ``.decode.json`` sidecar, so object columns
@@ -940,6 +960,15 @@ def load_shared_output_file(file_name):
     if header[:4] == b"PAR1" or name.endswith(".parquet"):
         try:
             return load_dataset_parquet(path)
+        except Exception:
+            raise missing
+
+    # A raster, by its first bytes: what load_from_duckdb returns for one.
+    if header[:4] in _TIFF_SIGNATURES or header.lstrip().startswith(_VRT_START):
+        try:
+            import rasterio  # optional dep - see parse_raster
+
+            return rasterio.open(str(path))
         except Exception:
             raise missing
 
@@ -952,9 +981,72 @@ def load_shared_output_file(file_name):
         except Exception:
             pass
     try:
-        return json.loads(payload.decode("utf-8"))
+        value = json.loads(payload.decode("utf-8"))
     except Exception:
         raise missing
+    if _is_bundle_description(value, name):
+        # A bundle's bundle.json with no parts hydrated beside it.
+        raise missing
+    return value
+
+
+def _is_bundle_description(value, name) -> bool:
+    """Whether *value* is the ``bundle.json`` of the bundle installed for the
+    output *name* (``datasets/install/bundle.py`` names the output as its
+    ``parentArtifactId``) rather than a value the output holds."""
+    return (
+        isinstance(value, dict)
+        and value.get("parentArtifactId") == name
+        and isinstance(value.get("parts"), list)
+    )
+
+
+def _is_install_placeholder(value, part) -> bool:
+    """Whether *value* is what the bundle install writes for a part whose
+    value it could not find (its artifact id and kind) rather than the value."""
+    art_id = part.get("artifactId")
+    return (
+        bool(art_id)
+        and isinstance(value, dict)
+        and value.get("artifactId") == art_id
+        and set(value) <= {"artifactId", "kind", "note"}
+    )
+
+
+def _load_hydrated_bundle(bundle, data_dir, missing):
+    """The tuple a hydrated bundle holds, as the store gives a tuple.
+
+    Each part is read as ``curio_load_data`` reads one
+    (``catalog_helpers.read_bundle_part``): a frame with its ``.decode.json``,
+    a GeoTIFF with rasterio, a JSON value or a scalar as it was returned. Only
+    the files ``listed_bundle_parts`` gives are read, the regular files inside
+    the bundle's own folder: this read has no session check, so a part named
+    anywhere else is not followed. A part that is not there, cannot be read,
+    or is the install's placeholder for a value it could not find makes the
+    whole output missing, never a shorter tuple.
+    """
+    from utk_curio.sandbox.util.catalog_helpers import listed_bundle_parts, read_bundle_part
+    from utk_curio.sandbox.util.rasters import close_datasets
+
+    try:
+        bundle = bundle.resolve()
+        bundle.relative_to(data_dir)
+        named = json.loads(bundle.read_text(encoding="utf-8"))["parts"]
+    except (OSError, ValueError, KeyError, TypeError):
+        raise missing
+    listed = listed_bundle_parts(bundle)
+    if not isinstance(named, list) or not named or len(listed) != len(named):
+        raise missing
+    values = []
+    try:
+        for part, file in sorted(listed, key=lambda item: item[0].get("index", 0)):
+            values.append(read_bundle_part(str(file), part))
+            if _is_install_placeholder(values[-1], part):
+                raise missing
+    except Exception:
+        close_datasets(values)
+        raise missing
+    return tuple(values)
 
 
 def load_artifact(art_id, session_id=None):

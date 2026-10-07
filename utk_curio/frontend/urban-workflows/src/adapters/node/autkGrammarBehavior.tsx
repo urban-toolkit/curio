@@ -45,6 +45,7 @@ import { applyComputeBlocks } from './autkComputeBlocks';
 import type { Scenario } from '../../utils/scenarios/scenarioModel';
 import { titleLegends } from './autkLegendTitles';
 import { colorScenarioLayers } from './autkScenarioLayers';
+import { frameMaps } from './autkMapView';
 
 /**
  * The layer a document's selections come from when they name none: its map's
@@ -647,6 +648,7 @@ export const useAutkGrammarBehavior = (
                 recolorRasters(grammar, spec);
                 titleLegends(grammar, spec);
                 colorScenarioLayers(grammar, spec, scenariosRef.current);
+                frameMaps(grammar);
                 // autk-plot's SVG is inline, so it sits on a line of text whose
                 // descender space overflows a pane the plot exactly fills, and
                 // brings the scrollbars back. As a block it fits.

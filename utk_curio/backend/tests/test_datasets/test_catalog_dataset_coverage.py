@@ -250,7 +250,9 @@ def test_dataset_slugs_and_e2e_usernames_are_unique():
 
 
 def test_the_shipped_catalog_stays_within_its_size_budget():
-    """``MANIFEST.in`` ships all of ``datasets/`` to PyPI.
+    """``MANIFEST.in`` ships ``datasets/`` to PyPI, all but the data files
+    ``datasets/infrastructure/left_out_files.json`` names, which a pip install
+    downloads on first use.
 
     The example-data migration took this directory from 1.4 MB to tens of MB in
     one commit (while removing more than that from ``docs/examples/data``). This
@@ -260,6 +262,8 @@ def test_the_shipped_catalog_stays_within_its_size_budget():
     root = CATALOG[0].root.parent
     total = sum(path.stat().st_size for path in root.rglob("*") if path.is_file())
     assert total < 64 * 1024 * 1024, (
-        f"datasets/ is {total / 1e6:.1f} MB. Either shrink the new dataset or "
-        f"exclude it in MANIFEST.in - do not just raise this number."
+        f"datasets/ is {total / 1e6:.1f} MB. Either shrink the new dataset, or "
+        f"leave its data file out of the pip package: add it to "
+        f"utk_curio/backend/app/datasets/infrastructure/left_out_files.json and "
+        f"the matching exclude line to MANIFEST.in. Do not just raise this number."
     )

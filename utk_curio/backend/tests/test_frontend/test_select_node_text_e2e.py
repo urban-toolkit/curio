@@ -18,15 +18,12 @@ Run::
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from typing import TYPE_CHECKING
 
 from .utils import (
     node_locator,
     run_all_and_wait,
     stub_login_and_enter_workflow,
-    upload_workflow,
     wait_for_node_settled,
 )
 
@@ -160,6 +157,10 @@ def test_a_nodes_output_and_error_can_be_selected(
     page,
 ):
     page.emulate_media(reduced_motion="reduce")
+    # Opened as a saved dataflow, not loaded with File > Load: a loaded file
+    # opens as the browser user's own dataflow (#751), and on the isolated
+    # stack, which has no accounts, this one opens read-only for the shared
+    # guest, where a node's text is selected differently (#685).
     stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
@@ -167,14 +168,8 @@ def test_a_nodes_output_and_error_can_be_selected(
         name="Select Text",
         username="select_node_text",
         project_name="Select node text",
+        project_spec=_spec(),
     )
-    spec_file = tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w", encoding="utf-8")
-    json.dump(_spec(), spec_file)
-    spec_file.close()
-    try:
-        upload_workflow(page, app_frontend, spec_file.name, 2)
-    finally:
-        os.unlink(spec_file.name)
     for node_id in (OK_ID, ERR_ID):
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
 

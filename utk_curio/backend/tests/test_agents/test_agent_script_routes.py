@@ -137,6 +137,26 @@ class TestPush:
         assert testing_provider.run_scripted_completion(delegated) == "LOAD"
         assert testing_provider.run_scripted_completion([]) == "plan"
 
+    def test_node_ids_are_queued_until_the_next_reset(self, client):
+        node_id = "0b6c3c1e-5d1f-5a8e-9c3d-2f4b6a8c0e12"
+        assert client.post(SCRIPT_URL, json={"nodeIds": [node_id]}).status_code == 200
+        client.post(SCRIPT_URL, json={"replies": ["x"], "reset": False})
+        assert testing_provider.next_node_id() == node_id
+        client.post(SCRIPT_URL, json={"nodeIds": [node_id]})
+        client.post(SCRIPT_URL, json={})
+        assert testing_provider.next_node_id() is None
+
+    @pytest.mark.parametrize("node_ids", [
+        "0b6c3c1e-5d1f-5a8e-9c3d-2f4b6a8c0e12", ["n1"], [7],
+        ["0B6C3C1E-5D1F-5A8E-9C3D-2F4B6A8C0E12"],
+    ])
+    def test_node_ids_that_are_not_uuids_are_refused(self, client, node_ids):
+        client.post(SCRIPT_URL, json={"replies": ["keep me"]})
+        resp = client.post(SCRIPT_URL, json={"nodeIds": node_ids})
+        assert resp.status_code == 400
+        assert "nodeIds" in resp.get_json()["error"]
+        assert testing_provider.pending() == 1
+
     def test_a_malformed_by_intent_is_refused(self, client):
         resp = client.post(SCRIPT_URL, json={"replies": [], "byIntent": {"k": 7}})
         assert resp.status_code == 400
