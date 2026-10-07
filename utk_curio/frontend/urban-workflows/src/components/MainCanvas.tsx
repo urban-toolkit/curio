@@ -85,6 +85,7 @@ import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 import { AgentAttachmentsProvider } from "../providers/agents";
 import { isDrawnHidden } from "../utils/hiddenNodes";
 import { isNodeDragRegion, keepPaneOffNodes } from "../utils/nodeDragRegion";
+import { useSharedView } from "../hook/useSharedView";
 import { frameNodesInView } from "../utils/focusDatasetNodes";
 import { scenarioCanvasView } from "../utils/scenarios/scenarioCanvasView";
 import { BOX_WIDTH, boxLayout } from "./scenarios/ScenarioLayers";
@@ -327,20 +328,17 @@ export function MainCanvas() {
         };
     }, [reactFlow]);
 
-    const {
-        viewerMode,
-    } = useFlowContext();
-
     // Ctrl/Cmd+Enter on a selected node (#223).
     useRunSelectedNodeShortcut();
 
+    // A read-only canvas: another user's dataflow, with collaboration off.
     // When real-time collaboration is on, a peer opening the owner's URL
     // lands in ``viewerMode === "shared"`` (loadSharedProject was the only
     // way to bypass the owner-only /api/projects/<id> 404). For collab to
     // be useful peers must be able to *edit*; their edits flow over the
     // socket to the owner, who persists. Without this gate, peers see the
     // canvas as read-only and the lock/proposal flow does nothing.
-    const isSharedView = viewerMode === "shared" && !collab.enabled;
+    const isSharedView = useSharedView();
     // Nodes are added (dropped) and connected on the canvas only, by its owner.
     const graphEdits = graphEditGates({ notebookOn, sharedView: isSharedView });
 

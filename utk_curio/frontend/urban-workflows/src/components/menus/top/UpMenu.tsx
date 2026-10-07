@@ -48,6 +48,7 @@ import {
 } from "../../../utils/dataflowImport";
 import { openDataflowFile } from "../../../utils/openedDataflowFile";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
+import { useSharedView } from "../../../hook/useSharedView";
 import ShareMenu from "./ShareMenu";
 import DataflowCategoryInput from "../../projects/DataflowCategoryInput";
 import { projectsApi, type ProjectSummary } from "../../../api/projectsApi";
@@ -80,7 +81,6 @@ export default function UpMenu() {
         saveCurrentProject,
         saveAsNewProject,
         discardProject,
-        viewerMode,
         packages,
         nodes,
         edges,
@@ -94,11 +94,11 @@ export default function UpMenu() {
     const leaveWithGuard = (body: string, action: () => void) => guardLeave(action, body);
 
     const collab = useCollab();
-    // Mirror the ``isSharedView`` gate in MainCanvas: when collab is on,
-    // peers loaded via the shared endpoint are full editors (their edits
-    // sync over the socket to the owner), so the read-only banner /
-    // gating must stand down.
-    const isSharedView = viewerMode === "shared" && !collab.enabled;
+    // The ``isSharedView`` gate MainCanvas reads: when collab is on, peers
+    // loaded via the shared endpoint are full editors (their edits sync over
+    // the socket to the owner), so the read-only banner / gating must stand
+    // down.
+    const isSharedView = useSharedView();
     const {
         workflowName,
         setWorkflowName,

@@ -22,7 +22,8 @@ What each test pins:
 * a double-click inside the node's editor, which is not a drag region, leaves
   the view where it was;
 * on a read-only canvas (a visitor with no account on another user's dataflow),
-  where nodes do not drag, the same two double-clicks do the same.
+  where nodes do not drag, the same two double-clicks do the same, and a drag
+  from a node's corner leaves its size: only an owner resizes.
 
 The dataflow is built here: a Python node feeding a Vega-Lite node, no
 datasets, so a failure is about the node card.
@@ -611,3 +612,36 @@ def test_on_a_read_only_canvas_a_double_click_inside_the_editor_leaves_the_view(
     require_project_page()
     _enter_read_only(page, app_frontend, current_server, prefix="card_ro_nozoom")
     _double_click_the_editor_keeps_the_view(page, "a read-only canvas")
+
+
+def test_on_a_read_only_canvas_a_corner_drag_leaves_the_node_size(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    require_project_page()
+    _enter_read_only(page, app_frontend, current_server, prefix="card_ro_size")
+    _wait_for_header(page, PRODUCER)
+    before = _box_size(page, PRODUCER)
+    stored = _stored_size(page, PRODUCER)
+
+    # Drag from the node's bottom-right corner, where an owner's canvas draws
+    # the resize handle over the browser's own grip, 120x80 as the owner's test
+    # does; then the pointer moves on, which nothing left listening may follow.
+    box = page.locator(f'[id="{PRODUCER}resizable"]').bounding_box()
+    assert box, "PRODUCER's box is not drawn"
+    x, y = box["x"] + box["width"] - 4, box["y"] + box["height"] - 4
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x + 60, y + 40, steps=8)
+    page.mouse.move(x + 120, y + 80, steps=8)
+    page.mouse.up()
+    page.mouse.move(x - 150, y - 100, steps=8)
+    page.wait_for_timeout(300)
+
+    after = _box_size(page, PRODUCER)
+    assert after == before, f"a corner drag resized PRODUCER on a read-only canvas: {before} -> {after}"
+    assert _stored_size(page, PRODUCER) == stored, (
+        f"a corner drag changed PRODUCER's stored size on a read-only canvas: "
+        f"{stored} -> {_stored_size(page, PRODUCER)}"
+    )
+    # Only an owner resizes: no handle is drawn there.
+    expect(page.locator(f'[id="{PRODUCER}resizer"]')).to_have_count(0)
