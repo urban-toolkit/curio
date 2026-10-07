@@ -966,7 +966,10 @@ class TestVerifiedSolve:
         assert '"sourceGrounding"' in correction
         assert ctx["dataset_id"] in self._node_content(ctx, ctx["load"])
 
-    def test_exhaustion_fails_with_the_trail_and_writes_nothing(self, client, user_and_token, tmp_curio, monkeypatch):
+    @pytest.mark.parametrize("sandbox_run_s", [0, 0.6], ids=["idle", "loaded"])
+    def test_exhaustion_fails_with_the_trail_and_writes_nothing(
+        self, client, user_and_token, tmp_curio, monkeypatch, sandbox_run_s
+    ):
         user, token = user_and_token
         # A GROUNDED loader that fails at run time every round (an ungrounded
         # one would be refused by the gate before the sandbox — a different row).
@@ -975,9 +978,23 @@ class TestVerifiedSolve:
             dl_replies=[self.LOADER.replace("return df", f"always_bad({i})\nreturn df") for i in range(3)],
             exec_outcomes={"always_bad": "Traceback: NameError: always_bad"},
         )
+        if sandbox_run_s:
+            # Issue #729: a loaded runner, on which every sandbox run takes
+            # this long, so two runs outlast the suite's one-second session.
+            from utk_curio.backend.app.execution import runner as exec_runner
+
+            run = exec_runner._http_exec  # the fake sandbox _setup installed
+
+            def _slow_run(endpoint, payload):
+                time.sleep(sandbox_run_s)
+                return run(endpoint, payload)
+
+            monkeypatch.setattr(exec_runner, "_http_exec", _slow_run)
         body = self._solve(client, token, ctx, verify=True)
         load = body["results"][ctx["load"]]
-        assert load["status"] == "failed" and load["verdict"] == "fail" and load["rounds"] == 3
+        assert load["status"] == "failed" and load["verdict"] == "fail" and load["rounds"] == 3, (
+            f"stoppedBy {load.get('stoppedBy')!r}: {load.get('error')}"
+        )
         assert load["error"].startswith("not fixed after 3 attempts")
         assert "NameError" in load["error"]
         # dev/131 (owner correction): the session keeps attempting, so the
