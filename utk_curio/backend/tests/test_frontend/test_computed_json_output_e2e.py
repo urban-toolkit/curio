@@ -90,9 +90,12 @@ SCALAR_NODE = "json-output-a-scalar"
 DICT_NODE = "json-output-b-dict"
 
 # Nodes are 525x350 at zoom 1, so nodes closer than ~600px apart horizontally
-# overlap and the later body covers the earlier one.
-X_LEFT = 0
-X_RIGHT = 610
+# overlap and the later body covers the earlier one. 610 apart, as the palette
+# drops this test used to make placed them, and on the same phase of the
+# canvas's 20-unit dot grid, so the canvas frame shows what it always has.
+X_LEFT = 10
+X_RIGHT = 620
+Y_NODES = 10
 
 # Nested and multi-key on purpose: a computed JSON dataset must round-trip the
 # whole structure, not just survive as some flattened shape.
@@ -269,7 +272,7 @@ def _analysis_node(node_id: str, x: int) -> dict:
         "id": node_id,
         "type": ANALYSIS_TYPE + "@1",
         "x": x,
-        "y": 0,
+        "y": Y_NODES,
         "in": "DEFAULT",
         "out": "DEFAULT",
         "goal": "",
