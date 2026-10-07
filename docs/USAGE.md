@@ -551,7 +551,9 @@ When the node runs:
 - In a Vega-Lite or Autark spec, an input chip becomes the name the input is read
   by, `"input_1"`: a Vega-Lite dataset or an Autark table (see
   [Vega-Lite node](#vega-lite-node) and [Autark node](#autark-node)). A layer
-  chip becomes the layer's name.
+  chip becomes the layer's name. On an input that is one frame with no layer
+  name, such as a GeoDataFrame a Python node returns, it is that frame, as in
+  code: `"dataRef": [!! input 0:roads !!]` becomes `"dataRef": "input_0"`.
 - A column chip becomes the column's name: `df[[!! input 0.population !!]]` runs
   as `df["population"]`, `"field": [!! input 0.population !!]` as
   `"field": "population"`, and inside a quoted text it is the plain name.

@@ -677,6 +677,8 @@ The `autk-grammar` node consumes upstream data differently from Python nodes: it
 "map": { "layerRefs": [{ "dataRef": "[!! input 0 !!]", "getFnv": "mean", "getFnvType": "quantitative" }] }
 ```
 
+A layer chip on such an input writes the same name, whatever layer it names: one frame is that layer, as `curio_layer` reads it in code. The resolver (`isOneFrameInput` in `codeReferences.ts`, `_is_one_frame_input` in `code_references.py`) knows an input is one frame from its data type, a DataFrame or GeoDataFrame, with no layers listed, since a spec is written before the run, often before the input's columns are read. An input holding one named layer, such as the one layer an Autark node hands on, is then read through its `input_<k>` alias (case 2). A layer chip on any other input writes the layer's name. The same holds for a Vega-Lite spec, whose datasets are `input_<k>`.
+
 **2. Layer array, named layer references.** A multi-layer array (emitted by an upstream data-only `autk-grammar` node, e.g. one whose `data` block loads an OSM/PBF stack with `autoLoadLayers`) exposes each layer under its own table name, so the spec can target layers individually, with layer chips (`[!! input 0:table_osm_roads !!]`) or by name. An input holding one named layer also answers to `input_<k>`, always with its own layer. A name two inputs bring is the first input's layer; the second input's is still its `input_<k>` when it is that input's only layer, and is left out otherwise, as the node's message says:
 
 ```json

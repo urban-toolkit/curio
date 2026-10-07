@@ -22,7 +22,9 @@ place in circle order, and a layer reference the call that picks the layer out
 of it, ``curio_layer(arg[i], "roads", 1)`` (the sandbox's
 ``util/input_layers.py``, and ``js_wrapper.mjs``); in a Vega-Lite or Autark spec
 an input reference is the name the input is read by, ``input_<i>``, and a layer
-reference the layer's name, written like a text value.
+reference the layer's name, written like a text value. An input of one frame
+with no layer name is that layer, whatever the reference names, in a spec as in
+code: there its layer reference is ``input_<i>`` too.
 Numbers are written the way JavaScript's ``String()`` writes them, so a value
 prints the same in both.
 """
@@ -60,6 +62,10 @@ INPUT_TABLE_PREFIX = "input_"
 #: ``LAYER_HELPER`` in ``codeReferences.ts`` and the sandbox's
 #: ``util/input_layers.py``.
 LAYER_HELPER = "curio_layer"
+
+#: The data types of an input that is one frame: a table, as ``curio_layer``
+#: counts one. Kept in sync with ``ONE_FRAME_TYPES`` in ``codeReferences.ts``.
+ONE_FRAME_TYPES = ("dataframe", "geodataframe")
 
 #: A widget name. Kept in sync with ``WIDGET_NAME_PATTERN`` in ``widgetModel.ts``.
 WIDGET_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
@@ -317,6 +323,16 @@ def _contexts(code: str, refs: list, language: str) -> list:
 
 def _write_text(text: str, context: tuple, language: str) -> str:
     return widget_literal(text, language) if context[0] == "code" else _escape_for(text, context, language)
+
+
+def _is_one_frame_input(found: dict) -> bool:
+    """Whether the input *found* is one frame that lists no layers, which a
+    layer reference reads whatever it names (#761). In code ``curio_layer``
+    looks at the value when the node runs. A spec is written before the run,
+    so the input's data type decides, which the input carries before any of
+    its columns is read. Kept in sync with ``isOneFrameInput`` in
+    ``codeReferences.ts``."""
+    return not isinstance(found.get("layers"), list) and found.get("dataType") in ONE_FRAME_TYPES
 
 
 def _over_cap(tag: dict) -> bool:
@@ -663,11 +679,12 @@ def _resolved_text(
     if parsed["kind"] == "input":
         if "column" in parsed:
             return _write_text(parsed["column"], context, language)
-        if "layer" in parsed and language == "json":
-            return _write_text(parsed["layer"], context, language)
         index = next(i for i, entry in enumerate(inputs) if entry.get("slot") == parsed["slot"])
         if language == "json":
-            return _write_text(f"{INPUT_TABLE_PREFIX}{index}", context, language)
+            # A spec reads a layer by its name, and an input, or the one frame
+            # it carries, by the name the input is read by.
+            layer = None if _is_one_frame_input(inputs[index]) else parsed.get("layer")
+            return _write_text(layer if layer is not None else f"{INPUT_TABLE_PREFIX}{index}", context, language)
         value = "arg" if len(inputs) == 1 else f"arg[{index}]"
         if "layer" in parsed:
             return f"{LAYER_HELPER}({value}, {widget_literal(parsed['layer'], language)}, {parsed['slot']})"
@@ -688,9 +705,10 @@ def resolve_references(
 ) -> tuple[str, list]:
     """*code* with every reference replaced, and the problems found.
 
-    *inputs* are the node's wired inputs, ``{"slot": <circle>, "columns"?: [...],
-    "layers"?: [{"name", "columns"?}, ...]}`` each. *shared* are the widgets of the dataflow's Parameter nodes, one per
-    node. *selections* are the node's selection tags (``metadata.selections``).
+    *inputs* are the node's wired inputs, ``{"slot": <circle>, "dataType"?,
+    "columns"?: [...], "layers"?: [{"name", "columns"?}, ...]}`` each. *shared*
+    are the widgets of the dataflow's Parameter nodes, one per node.
+    *selections* are the node's selection tags (``metadata.selections``).
     A reference with a problem is left as written; each problem is
     ``{"reference": <as written>, "message": <why>}``.
     """

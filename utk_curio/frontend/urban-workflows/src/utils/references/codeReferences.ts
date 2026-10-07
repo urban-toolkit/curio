@@ -29,7 +29,9 @@
  * out of it, `curio_layer(arg[i], "roads", 1)` (the sandbox's
  * `util/input_layers.py`, and `js_wrapper.mjs`). In a Vega-Lite or Autark spec
  * an input reference is the name that input is read by, `input_<i>`, and a
- * layer reference the layer's name, written like a text value too.
+ * layer reference the layer's name, written like a text value too. An input
+ * of one frame with no layer name is that layer, whatever the reference names,
+ * in a spec as in code: there its layer reference is `input_<i>` too.
  */
 
 import { WIDGET_NAME_RE, effectiveValue, type WidgetDef, type WidgetValue } from "../widgets/widgetModel";
@@ -63,6 +65,10 @@ const SELECTION_REFERENCE_RE = new RegExp(SELECTION_REFERENCE_PATTERN);
  * `LAYER_HELPER` in `code_references.py` and the sandbox's
  * `util/input_layers.py`. */
 export const LAYER_HELPER = "curio_layer";
+
+/** The data types of an input that is one frame: a table, as `curio_layer`
+ * counts one. Kept in sync with `ONE_FRAME_TYPES` in `code_references.py`. */
+const ONE_FRAME_TYPES = new Set(["dataframe", "geodataframe"]);
 
 export interface CodeReference {
   /** Offsets of the whole `[!! ... !!]` in the code. */
@@ -313,6 +319,17 @@ function writeText(text: string, context: ReferenceContext, language: CodeLangua
   return context.kind === "code" ? widgetLiteral(text, language) : escapeFor(text, context, language);
 }
 
+/**
+ * Whether *input* is one frame that lists no layers, which a layer reference
+ * reads whatever it names (#761). In code `curio_layer` looks at the value when
+ * the node runs. A spec is written before the run, so the input's data type
+ * decides, which the input carries before any of its columns is read. Kept in
+ * sync with `_is_one_frame_input` in `code_references.py`.
+ */
+function isOneFrameInput(input: InputScope): boolean {
+  return !Array.isArray(input.layers) && ONE_FRAME_TYPES.has(input.dataType ?? "");
+}
+
 /** Why *reference* cannot be resolved in *scope*, standing in *context*, or null. */
 export function referenceProblem(
   reference: string,
@@ -406,9 +423,13 @@ function resolvedText(inner: string, scope: ReferenceScope, context: ReferenceCo
   const parsed = parseReference(inner);
   if (parsed.kind === "input") {
     if (parsed.column !== undefined) return writeText(parsed.column, context, language);
-    if (parsed.layer !== undefined && language === "json") return writeText(parsed.layer, context, language);
     const position = scope.inputs.findIndex((i) => i.slot === parsed.slot);
-    if (language === "json") return writeText(inputTableName(position), context, language);
+    if (language === "json") {
+      // A spec reads a layer by its name, and an input, or the one frame it
+      // carries, by the name the input is read by.
+      const layer = isOneFrameInput(scope.inputs[position]) ? undefined : parsed.layer;
+      return writeText(layer ?? inputTableName(position), context, language);
+    }
     const value = scope.inputs.length === 1 ? "arg" : `arg[${position}]`;
     if (parsed.layer !== undefined) {
       return `${LAYER_HELPER}(${value}, ${widgetLiteral(parsed.layer, language)}, ${parsed.slot})`;
