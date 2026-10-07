@@ -1301,10 +1301,12 @@ class SolveBatch:
                 extra_texts=(str((self.spec.get("dataflow") or {}).get("task") or ""),),
                 catalog_rows=self.catalog_rows,
             ),
-            # dev/131: this node may not outlive the session.
+            # dev/131: this node may not outlive the session, so its budget is
+            # what is left of the session's, and spending it is the session's stop.
             node_budget_s=max(
                 int(self.session_deadline_s - (time.monotonic() - self.started)), 1
             ),
+            budget_stop="session",
         )
         try:
             while True:

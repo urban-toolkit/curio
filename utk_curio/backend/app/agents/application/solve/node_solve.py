@@ -157,7 +157,9 @@ def _solve_node_events(
     attempts = outcome["attempts"]
     rounds = outcome["rounds"]
     done: dict = {"nodeId": node_id, "verdict": verdict, "rounds": rounds,
-                  "attempts": attempts, "evidence": outcome["evidence"]}
+                  "attempts": attempts, "evidence": outcome["evidence"],
+                  # dev/127: which bound ended the loop, for the row's notice.
+                  "stoppedBy": outcome.get("stoppedBy")}
     trail_lines = _trail_lines(attempts)
     text, card_kind, parts = _conclude(
         user_key, project_id, attachment_id, session_id, spec, node, label, had_content,

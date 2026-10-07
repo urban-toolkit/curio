@@ -83,6 +83,7 @@ class VerifiedRounds:
         clock=time.monotonic,
         recorded_failure=None,
         node_budget_s=None,
+        budget_stop="budget",
         carry_forward=None,
         result_summary_fn=None,
         acting_user=None,
@@ -163,6 +164,9 @@ class VerifiedRounds:
             max(int(node_budget_s), 1) if isinstance(node_budget_s, (int, float))
             else agents_budgets.solve_node_budget_s()
         )
+        # Whose time runs out when that budget is spent: the node's own, or
+        # ("session") the session's, when the budget is what was left of it.
+        self.budget_stop = budget_stop
         self.loop_started = None
 
     # ── setup ───────────────────────────────────────────────────────────────
@@ -263,10 +267,11 @@ class VerifiedRounds:
                 # dev/127: the budget is checked BEFORE a new round is dispatched,
                 # so a round in flight always finishes and is recorded. dev/129:
                 # this is now the NORMAL stop, which is why it is checked first.
-                self.stopped_by = "budget"
+                self.stopped_by = self.budget_stop
                 self.rounds_trace.append(
-                    f"stopped after round {self.rounds_used}: this node's "
-                    f"{self.node_budget_s}s repair budget is spent"
+                    f"stopped after round {self.rounds_used}: "
+                    f"{contracts.STOPPED_BY_PHRASES.get(self.stopped_by, self.stopped_by)} "
+                    f"({self.node_budget_s}s)"
                 )
                 break
             self.rounds_used = round_index + 1
@@ -778,9 +783,9 @@ class VerifiedRounds:
         attempt = self._round_attempt(round_evidence)
         self.attempts.append(attempt)
         if verdict_result["verdict"] != "fail":
-            self.stopped_by = "passed" if verdict_result["verdict"] == "pass" else (
-                "infrastructure" if verdict_result["verdict"] == "infrastructure" else None
-            )
+            # Any other verdict ends the loop and is why: it passed, the
+            # sandbox was unreachable, or the sandbox does not run this kind.
+            self.stopped_by = "passed" if verdict_result["verdict"] == "pass" else verdict_result["verdict"]
             return BREAK
         if round_evidence.get("kind") == "precondition" or round_evidence.get("upstreamEmpty"):
             # dev/118: the runner refused the SLICE (bound, cycle), or an
