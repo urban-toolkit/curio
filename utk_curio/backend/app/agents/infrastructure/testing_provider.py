@@ -83,6 +83,8 @@ _DEFAULT_CHAT_CAPABILITIES = {"tools": False, "structuredOutput": False}
 _chat_capabilities: dict = dict(_DEFAULT_CHAT_CAPABILITIES)
 #: Ids for scripted calls that name none, unique for the process.
 _call_ids = itertools.count(1)
+#: Ids the next nodes an apply creates are given (:func:`next_node_id`).
+_node_ids: deque = deque()
 
 
 class TestingProviderUnavailable(RuntimeError):
@@ -174,6 +176,32 @@ def reset() -> None:
         _by_intent.clear()
         _chat_capabilities.clear()
         _chat_capabilities.update(_DEFAULT_CHAT_CAPABILITIES)
+        _node_ids.clear()
+
+
+def push_node_ids(*node_ids: str) -> None:
+    """Queue the ids the next nodes an apply creates are given, in order.
+
+    A created node's id is otherwise a fresh uuid4, and the applied turn prints
+    it ("Applied: node created (<id>)."). How wide the id renders decides
+    whether that line wraps, so a screenshot of the chat would move by a line
+    from run to run. A test that captures it scripts the id like it scripts the
+    reply. Until :func:`reset`.
+    """
+    with _lock:
+        _node_ids.extend(str(node_id) for node_id in node_ids)
+
+
+def next_node_id() -> str | None:
+    """The next scripted node id, or None when none is queued.
+
+    Always None outside a test run, so a deployment mints its own ids whatever
+    was queued.
+    """
+    if not enabled():
+        return None
+    with _lock:
+        return _node_ids.popleft() if _node_ids else None
 
 
 def script_chat_capabilities(*, tools: bool = False, structured_output: bool = False) -> None:
