@@ -21,6 +21,7 @@ import os
 import pytest
 
 from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests.test_agents._solve_session import _on_a_loaded_runner
 from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_proposals
 from utk_curio.backend.tests.test_agents import test_routes_solve as routes_solve
 from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turns
@@ -187,10 +188,10 @@ class TestSolveBatchStream:
             ca_replies=["bad_stats(arg[0])\nreturn 1", "df = arg[0]\nreturn df.describe()"],
             exec_outcomes={"bad_stats": "Traceback: NameError: bad_stats"},
         )
-        # The stats node passes in its second round. A sandbox run of 1.2 s
-        # outlasts a one-second repair budget on its own. The stream is the
-        # same whatever the runner's speed.
-        h._on_a_loaded_runner(monkeypatch, sandbox_run_s)
+        # The stats node passes in its second round. One sandbox run of 1.2 s
+        # outlasts a one-second session, which is also the node's repair
+        # budget. The stream is the same whatever the runner's speed.
+        _on_a_loaded_runner(monkeypatch, sandbox_run_s)
         events = h._stream(client, token, ctx)
         done = events[-1][1]
         by_node = {k: v for k, v in done["results"].items()}

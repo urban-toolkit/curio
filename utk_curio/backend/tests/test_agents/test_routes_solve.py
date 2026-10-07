@@ -13,6 +13,7 @@ from utk_curio.backend.tests._support.agent_routes import (
     _block_closure_repair,
     _drop_from_lockfile,
 )
+from utk_curio.backend.tests.test_agents._solve_session import _on_a_loaded_runner
 
 # Imported for their helpers. conftest.py runs each class only in the
 # file that defines it, never again here.
@@ -223,13 +224,11 @@ class TestSolve:
     def test_child_failure_isolates_and_retry_resolves_subset(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch, sandbox_run_s
     ):
-        from utk_curio.backend.tests.test_agents.test_verified_rounds import TestVerifiedSolve
-
         user, token = user_and_token
         att_id, applied, calls = self._applied_plan(client, user, token, alice_project, monkeypatch)
-        # The retry is the session's second pass. A sandbox run of 1.2 s in the
-        # first pass outlasts a one-second session on its own.
-        TestVerifiedSolve._on_a_loaded_runner(monkeypatch, sandbox_run_s)
+        # The retry is the session's second pass. One sandbox run of 1.2 s in
+        # the first pass outlasts a one-second session.
+        _on_a_loaded_runner(monkeypatch, sandbox_run_s)
         # The next TWO child calls: first succeeds, second explodes.
         state = {"n": 0}
 
