@@ -328,6 +328,41 @@ describe("selectDatasetUpstreamLineage", () => {
     expect(upstream.originLabel).toBe("Computed");
   });
 
+  it("names a renamed producer and its inputs as their headers do (#775)", () => {
+    // The dataset is titled with the producer's header, so the lineage that
+    // names the producer beside it says the same.
+    const upstream = selectDatasetUpstreamLineage({
+      dataset: catalogItem({
+        origin: "computed",
+        producerNodeId: "producer-1",
+        upstreamInputs: [{ nodeId: "feeder-1" }],
+      }),
+      nodes: [
+        canvasNode({ nodeId: "producer-1", packageTemplateLabel: "Dict output" }),
+        canvasNode({
+          nodeId: "feeder-1",
+          nodeType: "curio.builtin/data-loading@1",
+          packageTemplateLabel: "Census tracts",
+        }),
+      ],
+      resolveNodeLabel: () => "Python Computation",
+    });
+    expect(upstream.generatingNode?.nodeName).toBe("Dict output");
+    expect(upstream.inputNodes[0].nodeName).toBe("Census tracts");
+  });
+
+  it("names a producer from its type without the version when nothing else names it", () => {
+    const upstream = selectDatasetUpstreamLineage({
+      dataset: catalogItem({
+        origin: "computed",
+        producerNodeId: "producer-1",
+        producerNodeType: "curio.builtin/data-loading@1",
+      }),
+      nodes: [],
+    });
+    expect(upstream.generatingNode?.nodeName).toBe("Data Loading");
+  });
+
   it("keeps the producer ref without a name when the node is not on canvas", () => {
     const upstream = selectDatasetUpstreamLineage({
       dataset: catalogItem({ origin: "computed", producerNodeId: "producer-1" }),
