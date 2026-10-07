@@ -26,6 +26,7 @@ from .utils import (
     _wait_for_reactflow_ready,
     assert_autark_drawing_fits,
     assert_autark_map_drawn,
+    AUTK_MAP_MIN_FRAMED_SPAN,
     autark_map_framing,
     assert_editor_panes_clear_of_markers,
     assert_in_view,
@@ -129,6 +130,17 @@ EXPECTED_EMPTY = {
         "08f7511f-03d0-5df3-b25e-1d7fbec33101": "geometry-unresolved",  # Autark
         "dbda2a2f-5ff1-5ce4-a88b-d4599ffa254f": "geometry-unresolved",  # Vega-Lite
     },
+}
+
+#: Maps whose drawing covers less of the area they are framed on than
+#: ``autark_map_framing`` takes by default, by node id, with the share their
+#: drawing still spans. Example 24's height mosaic is framed on its raster,
+#: SCOUT's four zoom-16 tiles, like the shadow map on the same grid, but its
+#: ground cells are 0 m and a raster draws 0 clear when its GeoTIFF names no
+#: nodata, so only the buildings show: about 54% of the map's height, 9%
+#: before the map opened framed (CI run 37559438022).
+FRAMED_DRAWING_SPAN = {
+    "ebac4811-abcc-50fe-a61a-cc9c9ac8c011": 0.5,
 }
 
 
@@ -1234,7 +1246,12 @@ class TestWorkflowCanvas:
             if node.type in (COMPARE_SCENARIOS, EDIT_FEATURES)
             and self.page.locator(f"#autk-grammar-map-{node.id}").count()
         ]
-        unframed = [problem for problem in (autark_map_framing(self.page, m) for m in maps) if problem]
+        unframed = [
+            problem for problem in (
+                autark_map_framing(self.page, m, min_span=FRAMED_DRAWING_SPAN.get(m, AUTK_MAP_MIN_FRAMED_SPAN))
+                for m in maps
+            ) if problem
+        ]
         assert not unframed, "\n".join(unframed)
 
     # -- 5. Interactions ---------------------------------------------------
