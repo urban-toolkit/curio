@@ -73,7 +73,9 @@ def to_wgs84(collection: dict[str, Any]) -> dict[str, Any]:
     Only positions change: each feature keeps its geometry type (a park cut at
     the area's edge may be a GeometryCollection) and its properties exactly.
     autk-db's own keys on the collection (``bbox`` in its CRS, ``__autk_layer``)
-    are dropped, as they describe the workspace rather than the data.
+    are dropped, as they describe the workspace rather than the data, and so is
+    each feature's ``id`` (``way/301``), which its ``osm_type`` and ``osm_id``
+    already give.
     """
     from pyproj import Transformer
 
@@ -102,7 +104,7 @@ def to_wgs84(collection: dict[str, Any]) -> dict[str, Any]:
 
     features = []
     for feature in collection.get("features") or []:
-        moved = {k: v for k, v in feature.items() if k != "bbox"}
+        moved = {k: v for k, v in feature.items() if k not in ("bbox", "id")}
         moved["geometry"] = geometry(feature.get("geometry"))
         features.append(moved)
     return {"type": "FeatureCollection", "features": features}

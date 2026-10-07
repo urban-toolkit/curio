@@ -19,8 +19,8 @@ The roads are OpenStreetMap data, as the extract is.
     python scripts/scout/loop_roads_fixture.py [--node-modules <folder>] [--out <file>]
 
 It needs the repository's Node packages (`npm install` at the repository root
-installs the autk-db build Curio pins), or `--node-modules` naming a folder
-that holds that build.
+installs the autk-db release Curio pins), or `--node-modules` naming a folder
+that holds that release.
 """
 
 import argparse
@@ -69,7 +69,7 @@ def code_for(source):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--node-modules", help="a node_modules folder holding Curio's autk-db build")
+    parser.add_argument("--node-modules", help="a node_modules folder holding the autk-db release Curio pins")
     parser.add_argument("--out", default=str(OUT))
     args = parser.parse_args()
     sys.path.insert(0, str(REPO_ROOT))

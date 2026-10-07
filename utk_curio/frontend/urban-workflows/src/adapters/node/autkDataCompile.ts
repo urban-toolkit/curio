@@ -195,7 +195,7 @@ const __buildingHeight = (props) => {
   // the part would be culled, return a height that clears the base by a visible
   // amount; otherwise return null to leave the real tags untouched.
   const base = num(p.min_height) || L * num(p.min_level) || L * num(p['building:min_level']);
-  let top = num(p.height) || L * num(p.levels) || L * num(p['building:levels']);
+  let top = num(p.height) || num(p['building:height']) || L * num(p.levels) || L * num(p['building:levels']);
   if (top === 0 && Array.isArray(p.parts)) {
     for (const q of p.parts) { const h = num(q && q.height) || L * num(q && q.levels); if (h > top) top = h; }
   }
@@ -206,18 +206,23 @@ for (const t of __tables) {
   const geojson = await db.getLayer(t.name);
   let type = t.type ?? 'polygons';
   if (type === 'buildings' && Array.isArray(geojson?.features)) {
-    // autk-db's 3D building model (per-part polygons keyed by building_id, each with
-    // its own height) is a loadOsm construct that loadGeojson cannot rebuild from a
-    // grouped GeometryCollection. Explode each building back into one footprint
-    // feature per part (carrying that part's height), so autk-map extrudes each part
-    // by its own height instead of collapsing the whole building into a single box.
-    // The downstream loadGeojson('buildings') numbers every row as its own building,
-    // so each part also carries, as a property, the building_id it came from.
+    // autk-db keeps a building as one GeometryCollection, each part's tags in
+    // properties.parts naming its geometry by geometryIndex. Explode each building
+    // into one footprint feature per part, carrying that part's tags and height, as
+    // explodeBuildingParts does in the browser (autkLayerMaterialize.ts). The
+    // downstream loadGeojson('buildings') makes every row a building of its own, so
+    // each part also carries, as a property, the building_id it came from. A part's
+    // id and geometryIndex are autk-db's bookkeeping and are left out.
     const __exploded = [];
     for (const f of geojson.features) {
       const geom = f && f.geometry;
       const props = (f && f.properties) || {};
-      const partMeta = Array.isArray(props.parts) ? props.parts : null;
+      const partMeta = new Map();
+      for (const part of Array.isArray(props.parts) ? props.parts : []) {
+        if (!part || typeof part !== 'object') continue;
+        const { id: _id, geometryIndex, ...tags } = part;
+        partMeta.set(geometryIndex, tags);
+      }
       const pushPart = (g, meta) => {
         if (!g) return;
         const gg = g.type === 'GeometryCollection' ? __flattenToMultiPolygon(g) : g;
@@ -228,7 +233,7 @@ for (const t of __tables) {
         __exploded.push({ type: 'Feature', geometry: gg, properties: p });
       };
       if (geom && geom.type === 'GeometryCollection' && Array.isArray(geom.geometries)) {
-        geom.geometries.forEach((g, i) => pushPart(g, partMeta && partMeta[i] ? partMeta[i] : props));
+        geom.geometries.forEach((g, i) => pushPart(g, partMeta.has(i) ? partMeta.get(i) : props));
       } else if (geom) {
         pushPart(geom, props);
       }

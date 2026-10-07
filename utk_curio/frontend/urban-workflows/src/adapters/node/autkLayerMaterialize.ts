@@ -130,21 +130,26 @@ function flattenToMultiPolygon(geom: any): any | null {
 }
 
 // Explode autk-db's grouped building features into one footprint feature per part.
-// autk-db's 3D building model — per-part polygons keyed by `building_id`, each with
-// its own height, which `getLayer` exports as a GeometryCollection with a parallel
-// `properties.parts` metadata array — is a `loadOsm` construct that `loadGeojson`
-// cannot rebuild from the grouped GeometryCollection. Splitting each building back
-// into its individual part footprints (each carrying that part's height) lets
-// autk-map extrude each part by its own height instead of collapsing the whole
-// building into one box. The downstream `loadGeojson('buildings')` numbers every
-// row as its own building, so each part also carries, as a property, the
-// `building_id` it came from.
+// autk-db keeps a building as one feature: a GeometryCollection of its parts, each
+// part's tags in `properties.parts` naming its geometry by `geometryIndex`. An
+// Autark node hands buildings on one row per part (#536), a Polygon (or
+// MultiPolygon) with that part's tags and height: a table lists every part, Edit
+// Features removes a building by `building_id`, and a batched compute packs each
+// part's `geometry.coordinates.0`, a Polygon's outer ring. The downstream
+// `loadGeojson('buildings')` makes every row a building of its own, so each part
+// also carries, as a property, the `building_id` it came from. A part's `id` and
+// `geometryIndex` are autk-db's bookkeeping, not tags, and are left out.
 function explodeBuildingParts(features: any[]): any[] {
     const out: any[] = [];
     for (const f of features ?? []) {
         const geom = f?.geometry;
         const props = f?.properties ?? {};
-        const partMeta: any[] | null = Array.isArray(props.parts) ? props.parts : null;
+        const partMeta = new Map<number, any>();
+        for (const part of Array.isArray(props.parts) ? props.parts : []) {
+            if (!part || typeof part !== 'object') continue;
+            const { id: _id, geometryIndex, ...tags } = part;
+            partMeta.set(geometryIndex, tags);
+        }
         const pushPart = (g: any, meta: any) => {
             if (!g) return;
             const gg = g.type === 'GeometryCollection' ? flattenToMultiPolygon(g) : g;
@@ -157,7 +162,7 @@ function explodeBuildingParts(features: any[]): any[] {
             out.push({ type: 'Feature', geometry: gg, properties: p });
         };
         if (geom?.type === 'GeometryCollection' && Array.isArray(geom.geometries)) {
-            geom.geometries.forEach((g: any, i: number) => pushPart(g, partMeta?.[i] ?? props));
+            geom.geometries.forEach((g: any, i: number) => pushPart(g, partMeta.get(i) ?? props));
         } else if (geom) {
             pushPart(geom, props);
         }
