@@ -139,7 +139,8 @@ The compute output flows into a **`data-pool`** node, which fans the augmented l
 ```json
 "map": { "layerRefs": [
   { "dataRef": "table_osm_surface" }, { "dataRef": "table_osm_parks" }, { "dataRef": "table_osm_water" },
-  { "dataRef": "table_osm_roads", "isPick": true, "isColorMap": true, "getFnv": "angle", "getFnvType": "quantitative", "defaultFnv": 0 }
+  { "dataRef": "table_osm_roads", "isPick": true, "isColorMap": true, "getFnv": "angle", "getFnvType": "quantitative", "defaultFnv": 0,
+    "legendTitle": "Warming angle (°)" }
 ]}
 
 "plot": { "dataRef": "table_osm_roads", "mark": "scatter", "axis": ["intercept", "angle"],

@@ -187,7 +187,8 @@ segments; `isColorMap` shows the colour ramp at load.
   { "dataRef": "table_osm_water" },
   { "dataRef": "table_osm_buildings" },
   { "dataRef": "table_osm_roads", "isPick": true, "isColorMap": true,
-    "getFnv": "sunlight", "getFnvType": "quantitative", "defaultFnv": 0 }
+    "getFnv": "sunlight", "getFnvType": "quantitative", "defaultFnv": 0,
+    "legendTitle": "Sunlight (minutes)" }
 ]}
 ```
 
