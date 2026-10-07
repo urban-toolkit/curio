@@ -284,9 +284,9 @@ def test_example_06_is_three_scenarios_over_one_context():
     assert nodes[edit]["metadata"]["editFeatures"] == {
         "key": "building_id",
         "layer": "table_osm_buildings",
-        "edits": [{"op": "remove", "ids": [119, 136]}],
+        "edits": [{"op": "remove", "ids": [29623484, 29628154]}],
     }
-    assert '{"op": "remove", "ids": [119, 136]},' in nodes[edit]["content"]
+    assert '{"op": "remove", "ids": [29623484, 29628154]},' in nodes[edit]["content"]
     assert '], key="building_id", layer="table_osm_buildings")' in nodes[edit]["content"]
     feeds = sorted((edge["source"], edge["target"]) for edge in flow["edges"] if edit in (edge["source"], edge["target"]))
     assert feeds == [("whatif-pool", edit), (edit, "whatif-towers-compute")], (
