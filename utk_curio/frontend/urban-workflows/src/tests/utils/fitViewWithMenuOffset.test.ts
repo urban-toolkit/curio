@@ -3,6 +3,7 @@ import path from 'path';
 import {
   CANVAS_TITLE_ATTR,
   fitViewWithMenuOffset,
+  fitViewWithMenuOffsetNow,
   MENU_BAR_ATTR,
 } from '../../utils/fitViewWithMenuOffset';
 import { getNodesBounds, getViewportForBounds } from 'reactflow';
@@ -22,6 +23,7 @@ type FakeNode = { id: string; width: number | null; height: number | null };
 function makeRf(nodes: FakeNode[]) {
   return {
     getNodes: () => nodes,
+    getViewport: jest.fn(() => ({ x: 1, y: 2, zoom: 3 })),
     setViewport: jest.fn(),
     fitView: jest.fn(() => true),
   } as any;
@@ -308,5 +310,78 @@ describe('fitViewWithMenuOffset', () => {
 
     expect(fitViewWithMenuOffset(rf)).toBe(true);
     expect(getViewportForBoundsMock.mock.calls.at(-1)![0]).toEqual({ x: 0, y: 0, width: 100, height: 100 });
+  });
+});
+
+// The fit the e2e helpers ask for (window.__curio_fitViewWithMenuOffset).
+// React Flow 11's setViewport moves even a fit without a duration through a d3
+// transition, which lands on a later animation frame, and a loaded runner can
+// go tens of seconds without one. This one is set at once, as React Flow's own
+// fitView sets a fit without a duration.
+describe('fitViewWithMenuOffsetNow', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const pane = () => {
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    container.getBoundingClientRect = () =>
+      ({ width: 1000, height: 600, left: 0, top: 0 }) as DOMRect;
+  };
+
+  // React Flow's store as the canvas hands it over: d3's zoom, and the pane it moves.
+  const makeStore = () => {
+    const d3Selection = { pane: true };
+    const d3Zoom = { transform: jest.fn() };
+    return { store: { getState: () => ({ d3Zoom, d3Selection }) } as any, d3Zoom, d3Selection };
+  };
+
+  test('sets the fit through d3 zoom at once and returns it', () => {
+    pane();
+    const dock = document.createElement('div');
+    dock.id = 'tools-palette-dock';
+    document.body.appendChild(dock);
+    dock.getBoundingClientRect = () => ({ right: 60, left: 0, top: 0, width: 60 }) as DOMRect;
+    getViewportForBoundsMock.mockReturnValueOnce({ x: 5, y: 6, zoom: 0.5 });
+    const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+    const { store, d3Zoom, d3Selection } = makeStore();
+
+    expect(fitViewWithMenuOffsetNow(rf, store)).toEqual({ x: 5 + 60, y: 6, zoom: 0.5 });
+    expect(rf.setViewport).not.toHaveBeenCalled();
+    expect(d3Zoom.transform).toHaveBeenCalledTimes(1);
+    const [selection, transform] = d3Zoom.transform.mock.calls[0];
+    expect(selection).toBe(d3Selection);
+    expect([transform.x, transform.y, transform.k]).toEqual([5 + 60, 6, 0.5]);
+  });
+
+  test('returns null while a node is unmeasured, and moves nothing', () => {
+    pane();
+    const rf = makeRf([{ id: 'a', width: 0, height: 0 }]);
+    const { store, d3Zoom } = makeStore();
+    expect(fitViewWithMenuOffsetNow(rf, store)).toBeNull();
+    expect(d3Zoom.transform).not.toHaveBeenCalled();
+    expect(rf.setViewport).not.toHaveBeenCalled();
+  });
+
+  test('with none of the nodes on the canvas, returns the view as it is', () => {
+    pane();
+    const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+    const { store, d3Zoom } = makeStore();
+    expect(fitViewWithMenuOffsetNow(rf, store, { nodes: [{ id: 'gone' }] })).toEqual({ x: 1, y: 2, zoom: 3 });
+    expect(d3Zoom.transform).not.toHaveBeenCalled();
+  });
+
+  test("with no measurable pane, falls back to React Flow's own fitView without a duration", () => {
+    // jsdom's zero-sized rect: the pane cannot be measured.
+    const container = document.createElement('div');
+    container.className = 'react-flow';
+    document.body.appendChild(container);
+    const rf = makeRf([{ id: 'a', width: 120, height: 80 }]);
+    const { store, d3Zoom } = makeStore();
+    expect(fitViewWithMenuOffsetNow(rf, store, { padding: 0.2 })).toEqual({ x: 1, y: 2, zoom: 3 });
+    expect(rf.fitView).toHaveBeenCalledWith({ padding: 0.2, duration: 0 });
+    expect(d3Zoom.transform).not.toHaveBeenCalled();
   });
 });

@@ -9,16 +9,60 @@ from playwright.sync_api import (
 )
 
 
+#: How often the viewport wait reads the viewport, in ms. On a timer, never per
+#: animation frame: a browser on a loaded GPU runner can go tens of seconds
+#: without drawing one.
+VIEWPORT_READ_MS = 100
+
+# One read of the viewport wait. It fits the canvas through the hook
+# MainCanvas.tsx (and the dashboard) expose, which sets the viewport at once and
+# returns it, or null while a node it frames is not measured yet. It fits again
+# whenever React Flow's viewport is no longer the one the fit set (the
+# canvas's own load fit lands later, say), and passes once that viewport, as
+# the page draws it, has held for *reads* reads in a row.
+_FIT_AND_HOLD_JS = """({ options, reads }) => {
+    const fit = window.__curio_fitViewWithMenuOffset;
+    const flow = window.__curio_reactFlow;
+    if (typeof fit !== 'function' || !flow) return false;
+    const wait = window.__curio_fitWait = window.__curio_fitWait || { target: null, shown: null, held: 0 };
+    const at = flow.getViewport();
+    const target = wait.target;
+    if (!target || at.x !== target.x || at.y !== target.y || at.zoom !== target.zoom) {
+        const set = fit(options);
+        wait.target = set ? { x: set.x, y: set.y, zoom: set.zoom } : null;
+        wait.shown = null;
+        wait.held = 0;
+        return false;
+    }
+    const viewport = document.querySelector('.react-flow__viewport');
+    const shown = viewport ? viewport.style.transform : '';
+    if (!shown || shown !== wait.shown) {
+        wait.shown = shown;
+        wait.held = 1;
+        return false;
+    }
+    wait.held += 1;
+    return wait.held >= reads;
+}"""
+
+_FIT_WAIT_STATE_JS = """() => ({
+    hook: typeof window.__curio_fitViewWithMenuOffset,
+    fitSet: (window.__curio_fitWait || {}).target || null,
+    viewport: window.__curio_reactFlow ? window.__curio_reactFlow.getViewport() : null,
+    drawn: [...document.querySelectorAll('.react-flow__viewport')].map((v) => v.style.transform),
+})"""
+
+
 def _wait_for_reactflow_ready(
     page: Page,
     *,
     padding: float = 0.2,
-    stable_frames: int = 3,
+    stable_reads: int = 3,
     timeout_ms: int = 10000,
     node_ids: list[str] | None = None,
     max_zoom: float | None = None,
 ) -> None:
-    """Force ReactFlow into a deterministic viewport before screenshotting.
+    """Fit the canvas, and wait until its viewport holds where the fit set it.
 
     With *node_ids* the fit frames only those nodes, at most *max_zoom*.
 
@@ -28,54 +72,41 @@ def _wait_for_reactflow_ready(
     fire before the transform has been applied, producing a pre-fit
     canvas where nodes overflow the viewport.
 
-    Strategy:
-
-    1. Wait until at least one ``.react-flow__node`` is on the page.
-    2. Call ``fitView({ padding, duration: 0 })`` on the instance
-       exposed at ``window.__curio_reactFlow`` (see ``MainCanvas.tsx``).
-       ``duration: 0`` skips the ReactFlow animation so the transform
-       is applied synchronously.
-    3. Poll the ``.react-flow__viewport`` ``transform`` attribute until
-       it has stayed identical for ``stable_frames`` consecutive reads
-       (guards against Monaco's layout settling and any late
-       node-size measurements from ReactFlow).
+    It needs no animation frame, which a browser on a loaded GPU runner can go
+    tens of seconds without. The fit goes through
+    ``window.__curio_fitViewWithMenuOffset`` (``MainCanvas.tsx``), which sets a
+    fit without a duration at once and returns the viewport it set; React
+    Flow's ``setViewport`` would land it a frame or two later, through a d3
+    transition. The viewport is then read every ``VIEWPORT_READ_MS``, not once
+    a frame, until React Flow's viewport is the one the fit set and the page
+    has drawn the same transform for *stable_reads* reads in a row
+    (``test_frame_nodes_e2e.py`` holds the frames back).
     """
     page.wait_for_function(
         "() => document.querySelectorAll('.react-flow__node').length > 0",
+        polling=VIEWPORT_READ_MS,
         timeout=timeout_ms,
     )
 
-    page.evaluate(
-        """({ padding, nodeIds, maxZoom }) => {
-            const fit = window.__curio_fitViewWithMenuOffset;
-            if (typeof fit === 'function') {
-                const options = { padding, duration: 0, includeHiddenNodes: true };
-                if (nodeIds) options.nodes = nodeIds.map((id) => ({ id }));
-                if (maxZoom !== null) options.maxZoom = maxZoom;
-                fit(options);
-            }
-        }""",
-        {"padding": padding, "nodeIds": node_ids, "maxZoom": max_zoom},
-    )
-
-    page.wait_for_function(
-        """(stable_frames) => {
-            const vp = document.querySelector('.react-flow__viewport');
-            if (!vp) return false;
-            const current = vp.style.transform || '';
-            if (!current) return false;
-            window.__curio_vp_samples = window.__curio_vp_samples || [];
-            const samples = window.__curio_vp_samples;
-            samples.push(current);
-            if (samples.length > stable_frames) samples.shift();
-            if (samples.length < stable_frames) return false;
-            return samples.every((s) => s === samples[0]);
-        }""",
-        arg=stable_frames,
-        timeout=timeout_ms,
-    )
-
-    page.evaluate("delete window.__curio_vp_samples")
+    options: dict = {"padding": padding, "duration": 0, "includeHiddenNodes": True}
+    if node_ids:
+        options["nodes"] = [{"id": node_id} for node_id in node_ids]
+    if max_zoom is not None:
+        options["maxZoom"] = max_zoom
+    page.evaluate("() => { delete window.__curio_fitWait; }")
+    try:
+        page.wait_for_function(
+            _FIT_AND_HOLD_JS,
+            arg={"options": options, "reads": stable_reads},
+            polling=VIEWPORT_READ_MS,
+            timeout=timeout_ms,
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"the canvas viewport did not hold where the fit set it within {timeout_ms} ms "
+            f"(fit {options}): {page.evaluate(_FIT_WAIT_STATE_JS)}"
+        ) from None
+    page.evaluate("() => { delete window.__curio_fitWait; }")
 
 
 def dismiss_toasts(
