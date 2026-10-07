@@ -13,7 +13,7 @@
 // drag lands in the map; leaving the view puts every node back on its spot
 // and deletes every stamp.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useHref, useLocation, useSearchParams } from "react-router-dom";
 import type { Edge, Node, ReactFlowInstance, Viewport } from "reactflow";
 import { useUpdateNodeInternals } from "reactflow";
 import { canvasPositionOf } from "../../utils/canvasPosition";
@@ -59,14 +59,22 @@ export function readCanvasViewParam(): CanvasView {
  */
 export function CanvasViewAddress({ view }: { view: CanvasView }): null {
     const [params, setParams] = useSearchParams();
+    const { pathname, search } = useLocation();
+    // The address the router has rendered, as the browser shows it.
+    const rendered = useHref({ pathname, search });
     const inAddress = canvasViewOf(params);
     useEffect(() => {
         if (inAddress === view) return;
+        // The router renders a navigation in a transition, so the browser can
+        // already show an address the router has not rendered (a save moving
+        // `/dataflow/new` to the dataflow's own). A write now would start from
+        // the address being left; the one rendered next runs this again.
+        if (window.location.pathname + window.location.search !== rendered) return;
         const next = new URLSearchParams(params);
         if (view === "notebook") next.set(VIEW_PARAM, "notebook");
         else next.delete(VIEW_PARAM);
         setParams(next, { replace: true });
-    }, [view, inAddress, params, setParams]);
+    }, [view, inAddress, params, setParams, rendered]);
     return null;
 }
 
