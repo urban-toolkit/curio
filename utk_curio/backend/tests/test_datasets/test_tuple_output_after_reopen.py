@@ -434,9 +434,7 @@ def test_load_artifact_gives_the_list_or_the_dict_after_a_reopen(client, user_an
 
 
 def test_get_serves_the_list_after_a_reopen(client, user_and_token):
-    """``/get`` answers what it answered before the reopen. Only the list: a
-    dict of frames is an error on ``/get`` for the session that wrote it too
-    (``parseOutput`` hands the dict on with its frames in it)."""
+    """``/get`` answers what it answered before the reopen."""
     art_id, _stored = _write_frames(list)
     before = _sandbox().get("/get", query_string={"fileName": art_id, "sessionId": EARLIER})
     assert before.status_code == 200, before.get_data(as_text=True)
@@ -448,6 +446,45 @@ def test_get_serves_the_list_after_a_reopen(client, user_and_token):
     body = after.get_json()
     assert body["dataType"] == "list", body["dataType"]
     assert body == before.get_json()
+
+
+def _answered_under_its_keys(stored: dict) -> dict:
+    """What ``/get`` answers for the dict of frames *stored*: a ``dict``
+    envelope holding, under each key, the envelope ``/get`` answers for that
+    frame alone, which is the one a tuple or a list of frames carries for it."""
+    from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+    envelopes = {}
+    for key, frame in stored.items():
+        alone = save_to_duckdb(frame, node_id=FRAMES_NODE, session_id=EARLIER)
+        response = _sandbox().get("/get", query_string={"fileName": alone, "sessionId": EARLIER})
+        assert response.status_code == 200, response.get_data(as_text=True)
+        envelope = response.get_json()
+        assert envelope.pop("filename") == alone
+        envelopes[key] = envelope
+    return {"dataType": "dict", "data": envelopes}
+
+
+@pytest.mark.parametrize("reopened", [False, True], ids=["in-the-session-that-wrote-it", "after-a-reopen"])
+def test_get_serves_a_dict_of_frames_under_its_keys(client, user_and_token, reopened):
+    """``/get`` answers a dict of frames as it answers a tuple or a list of
+    them, each frame as the envelope it has alone, under its key: JSON cannot
+    carry the frames themselves. The same in the session that wrote the dict
+    and after a reopen under a new sign-in."""
+    art_id, stored = _write_frames(dict)
+    expected = _answered_under_its_keys(stored)
+    session = EARLIER
+    if reopened:
+        _save_and_reopen(client, user_and_token[1], _output(FRAMES_NODE, art_id, "dict"))
+        session = LATER
+
+    response = _sandbox().get("/get", query_string={"fileName": art_id, "sessionId": session})
+
+    assert response.status_code == 200, response.get_data(as_text=True)[:300]
+    body = response.get_json()
+    assert body["dataType"] == "dict", body["dataType"]
+    assert body.pop("filename") == art_id
+    assert body == expected
 
 
 #: What a node downstream does with its input, and what it returns.
