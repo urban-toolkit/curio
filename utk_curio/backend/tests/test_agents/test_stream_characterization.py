@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 import os
 
+import pytest
+
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_proposals
 from utk_curio.backend.tests.test_agents import test_routes_solve as routes_solve
@@ -174,7 +176,10 @@ GOLDEN: dict[str, dict | None] = {'run_node_chain': {'doneKeys': ['blocker',
 
 
 class TestSolveBatchStream:
-    def test_two_waves_loader_passes_stats_fails_then_passes(self, client, user_and_token, tmp_curio, monkeypatch):
+    @pytest.mark.parametrize("sandbox_run_s", [0, 1.2], ids=["idle", "loaded"])
+    def test_two_waves_loader_passes_stats_fails_then_passes(
+        self, client, user_and_token, tmp_curio, monkeypatch, sandbox_run_s
+    ):
         user, token = user_and_token
         h = _tvr.TestVerifiedSolve()
         ctx = h._setup(
@@ -182,6 +187,10 @@ class TestSolveBatchStream:
             ca_replies=["bad_stats(arg[0])\nreturn 1", "df = arg[0]\nreturn df.describe()"],
             exec_outcomes={"bad_stats": "Traceback: NameError: bad_stats"},
         )
+        # The stats node passes in its second round. A sandbox run of 1.2 s
+        # outlasts a one-second repair budget on its own. The stream is the
+        # same whatever the runner's speed.
+        h._on_a_loaded_runner(monkeypatch, sandbox_run_s)
         events = h._stream(client, token, ctx)
         done = events[-1][1]
         by_node = {k: v for k, v in done["results"].items()}

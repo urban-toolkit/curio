@@ -974,7 +974,10 @@ class TestVerifiedSolve:
         assert "describe" in self._node_content(ctx, ctx["stats"])
         assert body["builderSession"]["phase"] == "ready"
 
-    def test_failure_is_corrected_with_the_traceback_and_fresh_url_evidence(self, client, user_and_token, tmp_curio, monkeypatch):
+    @pytest.mark.parametrize("sandbox_run_s", [0, 1.2], ids=["idle", "loaded"])
+    def test_failure_is_corrected_with_the_traceback_and_fresh_url_evidence(
+        self, client, user_and_token, tmp_curio, monkeypatch, sandbox_run_s
+    ):
         user, token = user_and_token
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.application.verify.verify_external_source',
@@ -985,9 +988,14 @@ class TestVerifiedSolve:
             client, user, token, monkeypatch, dl_replies=[bad, self.LOADER], with_stats=False,
             exec_outcomes={"raise_for_status": "requests.exceptions.HTTPError: 400 Client Error: Bad Request"},
         )
+        # The correction is the node's second round. A sandbox run of 1.2 s
+        # outlasts a one-second repair budget on its own.
+        self._on_a_loaded_runner(monkeypatch, sandbox_run_s)
         body = self._solve(client, token, ctx)
         load = body["results"][ctx["load"]]
-        assert load["status"] == "solved" and load["verdict"] == "pass" and load["rounds"] == 2
+        assert load["status"] == "solved" and load["verdict"] == "pass" and load["rounds"] == 2, (
+            f"stoppedBy {load.get('stoppedBy')!r}: {load.get('error')}"
+        )
         assert [a["verdict"] for a in load["attempts"]] == ["fail", "pass"]
         assert "400 Client Error" in load["attempts"][0]["stderrTail"]
         # The correction child saw the traceback, the previous attempt, and the probe.
