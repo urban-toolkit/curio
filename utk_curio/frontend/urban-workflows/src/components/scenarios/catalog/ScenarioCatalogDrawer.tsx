@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import { PackageSearchRow } from "../../packages/publishing/PackageSearchRow";
 import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
+import { useDrawerDragThrough } from "../../packages/publishing/useDrawerDragThrough";
 import { modalStackDepth } from "../../ModalShell";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import { useFlowContext } from "../../../providers/FlowProvider";
@@ -30,7 +31,7 @@ export interface ScenarioCatalogDrawerProps {
  * the way to its project, which asks first when this dataflow has unsaved
  * changes, and a drag onto the canvas, which brings a copy of the scenario
  * into this dataflow. While a card is dragged, the scrim lets the drag through
- * to the canvas beneath it.
+ * to the canvas beneath it, as in every drawer (useDrawerDragThrough).
  */
 export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
   presented,
@@ -52,13 +53,13 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
     setPinned,
     catalog,
     items,
-    dragging,
     handleScenarioDragStart,
     handleScenarioDragEnd,
     detailScenario,
     openScenarioDetails,
     closeScenarioDetails,
   } = useScenarioCatalogDrawer(presented);
+  const dragThrough = useDrawerDragThrough();
 
   // Escape dismisses this drawer, as it does its peers: a modal on top (a
   // scenario's details, the leave question) owns Escape while it is open, and
@@ -100,10 +101,10 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
       <div
         className={`${shell.overlayRoot} ${styles.overlayRoot} ${
           presented ? shell.overlayRootPresented : ""
-        } ${dragging ? styles.overlayRootDragging : ""}`}
+        }`}
         data-curio-scenario-catalog-drawer="true"
-        data-dragging={dragging ? "true" : undefined}
         aria-hidden={!presented}
+        {...dragThrough}
       >
         <button
           type="button"

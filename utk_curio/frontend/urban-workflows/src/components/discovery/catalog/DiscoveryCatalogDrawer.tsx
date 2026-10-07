@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import { PackageSearchRow } from "../../packages/publishing/PackageSearchRow";
 import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
+import { useDrawerDragThrough } from "../../packages/publishing/useDrawerDragThrough";
 import { modalStackDepth } from "../../ModalShell";
 import { useDatasetDetails } from "../../datasets/catalog/datasetDetailsContext";
 import { useModelCatalogDrawer } from "../../../providers/modelCatalog";
@@ -45,6 +46,7 @@ export const DiscoveryCatalogDrawer: React.FC<DiscoveryCatalogDrawerProps> = ({
   onExitComplete,
 }) => {
   const drawerRef = useRef<HTMLElement>(null);
+  const dragThrough = useDrawerDragThrough();
   const [pinned, setPinned] = useState(false);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<DiscoverySortMode>("name");
@@ -124,6 +126,7 @@ export const DiscoveryCatalogDrawer: React.FC<DiscoveryCatalogDrawerProps> = ({
         }`}
         data-curio-discovery-catalog-drawer="true"
         aria-hidden={!presented}
+        {...dragThrough}
       >
         <button
           type="button"

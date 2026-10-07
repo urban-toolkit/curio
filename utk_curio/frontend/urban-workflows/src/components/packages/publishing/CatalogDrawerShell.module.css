@@ -30,6 +30,17 @@
     pointer-events: auto;
 }
 
+/* While a card dragged out of the panel is in the air, the root and the scrim
+   let the drag through to the canvas beneath them; the panel keeps the
+   pointer. useDrawerDragThrough sets the attribute, for every drawer. */
+.overlayRoot[data-dragging="true"] {
+    pointer-events: none;
+}
+
+.overlayRoot[data-dragging="true"] > .drawer {
+    pointer-events: auto;
+}
+
 .scrim {
     position: absolute;
     inset: 0;
