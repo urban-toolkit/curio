@@ -167,7 +167,7 @@ A name the bundle does not list stops the node with a message naming the dataset
 
 To read the file another way, for example a CSV with another separator, use `curio_data_path("<datasetId>")`, which gives the file's path: `pd.read_csv(curio_data_path("<datasetId>"), sep=";")`, or `netCDF4.Dataset(curio_data_path("<datasetId>"))` for a NetCDF file.
 
-These calls name the dataset by id instead of a file path, so the code keeps working when the dataflow is shared or moved. The details' **Use in a node** box shows the `curio_load_data` call, with a copy button.
+These calls name the dataset by id instead of a file path, so the code keeps working when the dataflow is shared or moved. The details' **Use in a node** box shows the `curio_load_data` call, or for a group the lines that load each of its layers, with a copy button.
 
 **Clicking** a palette row, rather than dragging it, highlights every node on the canvas that uses that dataset. If none does, a message says so.
 
