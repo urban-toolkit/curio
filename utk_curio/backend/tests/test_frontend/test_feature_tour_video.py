@@ -1875,11 +1875,6 @@ def _geo_spec() -> dict:
         node["x"], node["y"] = GEO_LAYOUT[node["id"]]
         if node["id"] == GEO_CHART:
             node["content"] = GEO_CHART_SPEC
-        if node["id"] == GEO_MAP:
-            # Titled like the chart's axis; untitled, the legend reads input_0.
-            content = json.loads(node["content"])
-            content["map"]["layerRefs"][0]["legendTitle"] = "Area (km2)"
-            node["content"] = json.dumps(content, indent=2)
     flow["name"] = "Downtown Chicago ZIPs"
     flow["task"] = GEO_GOAL
     spec["name"] = flow["name"]
@@ -2004,6 +1999,7 @@ FLOOD_COMPARES = ["7a3d9f1c-5b68-4e0a-9d4e-0f1b5a7c3d62", "9c5f1b3e-7d80-4a2c-8f
 # Example 17: downtown Chicago's ZIP codes from one loader, on an Autark map
 # whose ZIP codes a double-click picks. The selectiontag scene adds a Python
 # node that reads the picked ZIP code through a selection tag.
+ZIPS_NAME = "Autark GeoDataFrame maps"
 ZIPS_LOADER = GEO_LOADER
 ZIPS_MAP = "eb39411d-d742-52c8-93aa-1424997ead25"
 ZIPS_BARS = "dfdcf935-96c9-5dcf-bb44-90376fbafad8"
@@ -2344,20 +2340,7 @@ def scene_selection_tag(ctx: Ctx) -> None:
     """Example 17 run, a Python node added that reads the ZIP code picked on
     its first Autark map through a selection tag, a pick, and the node run."""
     page, tour = ctx.page, ctx.tour
-    # Seeded rather than the account's copy, to title the map's legend like
-    # the bar chart's axis; untitled, it reads input_0.
-    with open(EXAMPLE_GEO, encoding="utf-8") as fh:
-        spec = json.load(fh)
-    for node in spec["dataflow"]["nodes"]:
-        if node["id"] == ZIPS_MAP:
-            content = json.loads(node["content"])
-            content["map"]["layerRefs"][0]["legendTitle"] = "Area (km2)"
-            node["content"] = json.dumps(content, indent=2)
-    project = _post_json(
-        f"{ctx.backend}/api/testing/stub-project",
-        {"username": USER_LOGIN, "name": spec["dataflow"]["name"], "spec": spec},
-    )["id"]
-    _open_project(ctx, project, [ZIPS_LOADER, ZIPS_MAP])
+    _open_project(ctx, _account_project(ctx, ZIPS_NAME), [ZIPS_LOADER, ZIPS_MAP])
     tour.hush()
     _play_all(ctx, timeout_ms=300000, settle=[(ZIPS_MAP, "autk-grammar"), (ZIPS_BARS, "vis-vega")])
 
