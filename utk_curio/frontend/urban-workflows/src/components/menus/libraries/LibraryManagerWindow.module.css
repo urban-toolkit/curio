@@ -205,7 +205,10 @@
 }
 .cellName { font-family: monospace; }
 .cellSpec { font-family: monospace; color: #64748b; }
-.cellSource { font-size: 12px; }
+/* The column that gives way: a long package id (curio.streetvision@1) wraps
+   at its dots, or anywhere when that is not enough, so the table never grows
+   wider than the dialog and the remove button stays in view. */
+.cellSource { font-size: 12px; overflow-wrap: anywhere; }
 .sourceStandalone {
   color: #475569;
   background: #f1f5f9;

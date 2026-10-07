@@ -67,6 +67,14 @@ function splitSpec(spec: string): { name: string; version: string } {
   return { name: m[1], version: v.startsWith("@") ? v.slice(1) : v };
 }
 
+/** A package id that may wrap after each of its dots ("curio." over
+ * "streetvision@1"), so the Source column gives way before the table does. */
+function wrappingId(id: string): React.ReactNode {
+  return id.split(".").map((part, i) => (
+    <React.Fragment key={i}>{i > 0 && <>.<wbr /></>}{part}</React.Fragment>
+  ));
+}
+
 export default function LibraryManagerWindow({
   open,
   closeModal,
@@ -408,7 +416,7 @@ export default function LibraryManagerWindow({
                         {r.source === "standalone" ? (
                           <span className={styles.sourceStandalone}>standalone</span>
                         ) : (
-                          <span className={styles.sourcePackage}>{r.source}</span>
+                          <span className={styles.sourcePackage}>{wrappingId(r.source)}</span>
                         )}
                         {r.installed === false && (
                           <span
