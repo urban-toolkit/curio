@@ -33,7 +33,8 @@ Loop, with a height in metres for each: SCOUT's own buildings file, used with
 the permission of SCOUT's authors.
 
 The packages' libraries (`datashader`, `spatialpandas`, `dask`, `rasterio`,
-and `onnxruntime` for Deep Umbra) are installed with them. Curio installs both
+`geopandas`, `numpy`, `pandas`, `pillow`, `pyarrow`, `pyproj`, `shapely`, and
+`onnxruntime` for Deep Umbra) are installed with them. Curio installs both
 packages for you when it starts with `--with-examples`, because this dataflow
 declares them. Deep Umbra itself, `model.scout.deep-umbra`, ships with Curio
 in the [Model Catalog](../MODEL-CATALOG.md).

@@ -10,13 +10,17 @@ here is a package that silently vanishes from every user's Browse tab.
 """
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path, PurePosixPath
 
 import pytest
 
+from utk_curio.backend.app.execution.code_references import references_as_names
+from utk_curio.backend.app.packages.domain.dependency_scanner import scan_python_imports
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+from utk_curio.backend.app.packages.repositories.python_modules import module_names
 from utk_curio.backend.app.packages.domain.versions import merge_python_deps
 from utk_curio.backend.app.packages.schemas.responses import package_payload
 
@@ -133,6 +137,53 @@ def test_the_whole_shipped_catalog_resolves_together():
     assert not conflicts, (
         "the shipped catalog cannot be fully installed: "
         + ", ".join(c.package for c in conflicts)
+    )
+
+
+# ---------------------------------------------------------------------------
+# The manifest declares what the sources import
+# ---------------------------------------------------------------------------
+#
+# The Package Builder and Save into a package scan a package's code for its
+# imports (``references_as_names``, then ``scan_python_imports``) and add each
+# library the manifest does not declare at ``*``. So a shipped package declares
+# every library its sources import, those ``curio.builtin@1`` also declares
+# included: ``curio.weather@1`` left ``geopandas`` and ``pandas`` to the
+# built-in package, and a Save into it added both unpinned.
+
+
+def _libraries_imported_by(source: str, own_modules: frozenset[str]) -> list[str]:
+    """The libraries *source* imports, named as the builder names them: its
+    module-level imports, scanned as the builder scans them, and the imports
+    at the top of each of its functions, through the same scanner."""
+    code = references_as_names(source)
+    tree = ast.parse(code)
+    found = set(scan_python_imports(code, own_modules))
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = ast.unparse(ast.Module(body=node.body, type_ignores=[]))
+            found.update(scan_python_imports(body, own_modules))
+    return sorted(found)
+
+
+@pytest.mark.parametrize("package_root", PACKAGE_DIRS, ids=IDS)
+def test_the_manifest_declares_every_library_the_sources_import(package_root: Path):
+    """Every library a ``.py`` file under ``sources/`` imports, at module level
+    or in a function, is in ``dependencies.python`` under the name the scanner
+    gives it, the name a Save merges by. The scanner leaves out the standard
+    library, Curio's own modules and the package's own modules. A source that
+    does not parse fails here, since the scanner would read nothing in it."""
+    own_modules = module_names(package_root, load_package_manifest(package_root))
+    declared = set(_raw_python_deps(package_root))
+    undeclared: dict[str, list[str]] = {}
+    for source in sorted((package_root / "sources").rglob("*.py")):
+        where = source.relative_to(package_root).as_posix()
+        for library in _libraries_imported_by(source.read_text(encoding="utf-8"), own_modules):
+            if library not in declared:
+                undeclared.setdefault(library, []).append(where)
+    assert not undeclared, (
+        f"{package_root.name} imports libraries its manifest does not declare: "
+        + "; ".join(f"{library} ({', '.join(files)})" for library, files in sorted(undeclared.items()))
     )
 
 
