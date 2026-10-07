@@ -11,7 +11,8 @@ import { useScenarioActions } from "./useScenarioActions";
 import styles from "./ScenariosPanel.module.css";
 
 /**
- * The Scenarios panel (#662), docked on the right of the canvas: each
+ * The Scenarios panel (#662), docked on the right of the canvas, under the
+ * collaboration panel while that one is open (CanvasSidePanels): each
  * scenario's name, color and description, its fixed context, levers and
  * outcomes, and what can be done to it. Pointing at a scenario marks its fixed
  * context on the canvas.

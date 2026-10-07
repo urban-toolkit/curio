@@ -495,7 +495,9 @@ def test_the_template_reads_the_season_and_loads_the_model_by_its_id():
     assert re.findall(r"\[!!\s*(@?\w+)\s*!!\]", source) == ["season"]
     assert model_ids_in_code(source) == [MODEL_ID]
     assert dataset_ids_in_code(source) == []
-    assert _manifest()["dependencies"]["python"] == {"onnxruntime": ">=1.17", "rasterio": ">=1.4"}
+    assert _manifest()["dependencies"]["python"] == {
+        "numpy": "", "onnxruntime": ">=1.17", "pyproj": ">=3.7.2", "rasterio": ">=1.4",
+    }
 
 
 def test_the_package_writes_its_raster_with_curios_mosaic_helper():

@@ -78,5 +78,6 @@ are, and with 15 of them removed.
 
 ## Setup
 
-Curio installs the package's Python libraries with it: `onnxruntime` and
-`rasterio`. It is installed for you when Curio starts with `--with-examples`.
+Curio installs the package's Python libraries with it: `onnxruntime`,
+`rasterio`, `numpy` and `pyproj`. It is installed for you when Curio starts
+with `--with-examples`.

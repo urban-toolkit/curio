@@ -243,6 +243,9 @@ def test_saving_into_curio_weather_scans_the_sources_that_read_their_inputs_thro
 
     deps = result.manifest.python_deps
     assert deps.get("scipy") == "*", deps
+    # The library the edit adds is the only one left unpinned: the package
+    # declares every other library its sources import.
+    assert sorted(name for name, rng in deps.items() if rng == "*") == ["scipy"], deps
     # What the package declares keeps its range.
     assert deps.get("numpy") == ">=1.26", deps
     assert deps["pythermalcomfort"] == "^3.9" and deps["rasterstats"] == "^0.20", deps
