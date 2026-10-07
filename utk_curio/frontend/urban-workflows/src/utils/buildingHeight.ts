@@ -61,8 +61,10 @@ function autkBase(p: Record<string, any>): number {
  * A building's properties with `height` and `min_height` written where
  * autk-map would read them wrong: a `height` (or `levels`) key with no number
  * in it hides `building:levels`, and a building with no height at all gets the
- * one {@link deriveBuildingHeight} gives it. The same object when autk-map
- * already reads it right.
+ * one {@link deriveBuildingHeight} gives it. A building with no `height` key
+ * gets the height autk-map draws, so a compute that reads `properties.height`
+ * reads it too, whether or not a table handed the building on. The same object
+ * when it already has a height autk-map reads right.
  */
 export function readableBuildingProperties<T extends Record<string, any> | null | undefined>(props: T): T {
     const p: Record<string, any> = props ?? {};
@@ -71,6 +73,6 @@ export function readableBuildingProperties<T extends Record<string, any> | null 
     const out: Record<string, any> = { ...p };
     let changed = false;
     if (autkBase(p) !== base) { out.min_height = base; changed = true; }
-    if (autkTop(p) !== top) { out.height = top; changed = true; }
+    if (autkTop(p) !== top || !("height" in p)) { out.height = top; changed = true; }
     return (changed ? out : props) as T;
 }
