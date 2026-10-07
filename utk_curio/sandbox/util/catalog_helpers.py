@@ -37,6 +37,7 @@ replacement, so a saved dataflow says what to change.
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 from pathlib import Path
@@ -112,7 +113,7 @@ def _read_json(path: str):
     return json.loads(raw.decode("utf-8"))
 
 
-def _read_part(file_path: str, part: dict):
+def read_bundle_part(file_path: str, part: dict):
     """One part of a bundle, the value it holds in the bundle's tuple."""
     fmt, kind = _format_of(file_path, part.get("format")), part.get("kind")
     if fmt in ("parquet", "csv", "geojson", "shp", "geotiff", "netcdf", "onnx"):
@@ -134,7 +135,7 @@ def _read_bundle(path: str):
     items = []
     for part in sorted(spec.get("parts", []), key=lambda p: p.get("index", 0)):
         file_path = os.path.join(base, part["file"]) if part.get("file") else None
-        items.append(_read_part(file_path, part))
+        items.append(read_bundle_part(file_path, part))
     return tuple(items)
 
 
@@ -176,6 +177,31 @@ def bundle_part(path: str, part: str, dataset_id: str) -> tuple[str, dict]:
             return str(file), entry
     names = ", ".join(os.path.basename(entry["file"]) for entry, _file in listed) or "none"
     raise ValueError(f"{dataset_id} has no file {wanted!r}; its files are {names}.")
+
+
+def files_read_beside(path) -> list[Path]:
+    """The files read beside the file at *path*: those named after it
+    (``labels.parquet.decode.json``, a raster's ``.aux.xml``) or after its
+    stem (a shapefile's ``.shx``, ``.dbf`` and ``.prj``). Only regular files,
+    not links. Staging stages them with the file, and a project load hydrates
+    them with each part of a bundle."""
+    path = Path(path)
+    return [
+        other for other in sorted(path.parent.glob(glob.escape(path.stem) + ".*"))
+        if other.name != path.name and other.is_file() and not other.is_symlink()
+    ]
+
+
+#: Where a project load hydrates a saved output whose dataset is a bundle,
+#: such as a tuple's, in the shared data directory: ``bundles/<output name>/``,
+#: laid out as staging lays out a bundle, ``data/bundle.json`` and each part
+#: it lists at its path under the dataset's folder.
+HYDRATED_BUNDLES = "bundles"
+
+
+def hydrated_bundle(data_dir, name: str) -> Path:
+    """The ``bundle.json`` a project load hydrated for the output *name*."""
+    return Path(data_dir) / HYDRATED_BUNDLES / name / "data" / "bundle.json"
 
 
 def _read_onnx(path: str):
@@ -370,7 +396,7 @@ def install_catalog_helpers(
             path, entry = bundle_part(path, part, dataset_id)
             dataset_id = f"{dataset_id} ({part})"
             if bounds is None:
-                return _read_part(path, entry)
+                return read_bundle_part(path, entry)
             info = {"format": _format_of(path, entry.get("format"))}
         if bounds is None:
             return read_dataset(path, info.get("format"), layer_type=info.get("layerType"))

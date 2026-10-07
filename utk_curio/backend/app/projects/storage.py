@@ -18,6 +18,7 @@ save-time gate would reject specs users can currently save. Enforcement lives in
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 from contextlib import contextmanager
@@ -26,6 +27,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from utk_curio.backend.app.common.file_locks import exclusive_lock
+
+logger = logging.getLogger(__name__)
 
 # The two-layer lock (in-process threading lock + cross-process flock) lives in
 # ``common.file_locks``; the package seeder needs the identical dance, and one
@@ -386,6 +389,38 @@ def _durable_source_for(
     return None
 
 
+def _hydrate_bundle(source: Path, bundle: Path) -> None:
+    """Copy the bundle whose ``bundle.json`` is *source* to *bundle*, laid out
+    as staging lays out a bundle for an isolated node: each part the
+    ``bundle.json`` lists (``catalog_helpers.listed_bundle_parts``) with the
+    files read beside it, at its path under the dataset's folder, then the
+    ``bundle.json``, last, so a reader that finds it finds its parts. Only
+    what is not there yet is copied, each file whole or not at all.
+
+    A file that cannot be copied leaves the bundle without its
+    ``bundle.json``, and the output reads as missing, as one with no durable
+    source does; the rest of the project load goes on.
+    """
+    from utk_curio.backend.app.datasets.install.installer import _place_copy
+    from utk_curio.sandbox.util.catalog_helpers import files_read_beside, listed_bundle_parts
+
+    folder = bundle.parent.parent
+    try:
+        base = source.parent.parent.resolve()
+        copies = [
+            (file, folder / file.relative_to(base))
+            for _entry, part in listed_bundle_parts(source)
+            for file in (part, *files_read_beside(part))
+        ]
+        copies += [(file, bundle.parent / file.name) for file in files_read_beside(source)]
+        copies.append((source, bundle))
+        for file, target in copies:
+            if not target.is_file():
+                _place_copy(file, target)
+    except (OSError, ValueError) as exc:
+        logger.warning("Could not hydrate the parts of %s: %s", source, exc)
+
+
 def hydrate_outputs(
     user_key: str,
     project_id: str,
@@ -399,18 +434,29 @@ def hydrate_outputs(
     1. Already present in shared data (current session).
     2. A durable source (legacy ``project/data/`` copy or installed dataset) —
        see :func:`_durable_source_for`.
+
+    A durable source that is a bundle (``bundle.json``, such as a tuple's) is
+    also hydrated with its parts, in a folder of its own
+    (``catalog_helpers.hydrated_bundle``, see :func:`_hydrate_bundle`), which
+    the sandbox reads back as the tuple (``parsers.load_shared_output_file``).
+    That folder is checked on every load, whether or not the output's own
+    copy is already here.
     """
+    from utk_curio.sandbox.util.catalog_helpers import hydrated_bundle
+
     shared = _shared_data_dir()
     shared.mkdir(parents=True, exist_ok=True)
     hydrated: List[OutputRef] = []
     for ref in refs:
         validate_component(ref.filename, field="output filename")
         dst = safe_join(shared, ref.filename, validate=False, field="output filename")
+        source = _durable_source_for(user_key, project_id, ref, spec=spec)
+        if source is not None and source.name == "bundle.json":
+            _hydrate_bundle(source, hydrated_bundle(shared, ref.filename))
         if dst.is_file():
             hydrated.append(ref)
             continue
 
-        source = _durable_source_for(user_key, project_id, ref, spec=spec)
         if source is not None:
             shutil.copy2(str(source), str(dst))
             hydrated.append(ref)
