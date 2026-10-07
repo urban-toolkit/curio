@@ -203,6 +203,26 @@ describe("readGrammarInput", () => {
     ]);
   });
 
+  test("a dict of frames is read as a tuple of them is, each frame named after its key", async () => {
+    // What /get answers for a node that returned {"roads": gdf, "blocks": df}:
+    // each frame's envelope under its key, in the order Flask writes keys.
+    mockFetchData.mockResolvedValue({
+      dataType: "dict",
+      data: {
+        blocks: { dataType: "dataframe", data: { block: ["Brera", "Duomo"], population: [120, 340] } },
+        roads: { dataType: "geodataframe", data: fc(2) },
+      },
+    });
+    const read = await readGrammarInput({ path: "art", dataType: "dict" }, AUTK);
+    expect(read.frames.map((f) => [f.name, f.dataType, f.index, f.fromBundle])).toEqual([
+      ["blocks", "dataframe", 0, true],
+      ["roads", "geodataframe", 1, true],
+    ]);
+    expect(read.skipped).toBeUndefined();
+    // Vega-Lite is still never given a dict.
+    expect((await readGrammarInput({ path: "art", dataType: "dict" }, VEGA)).emptyReason).toBe("input-type-rejected");
+  });
+
   test("a compute node's pool wrapper is peeled to its layers", async () => {
     mockFetchData.mockResolvedValue({
       dataType: "dict",
