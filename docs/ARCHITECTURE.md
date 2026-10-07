@@ -236,13 +236,17 @@ moves nodes the way the dashboard page does:
   `layoutNotebook` stacks the cells by it, 24px apart; a cell not measured yet counts
   as 240px. The lanes are keyed on the rows and the bar only, so a cell that grows
   moves the cells below it without handing every node and edge a new context.
-- **Graph edits on the canvas only.** Nodes are added and connected on the canvas.
-  `graphEditGates` (in `notebookLayout.ts`) turns off React Flow's connecting
-  (`nodesConnectable`, `edgesUpdatable`, `onConnect`) and the page's drop handlers in
-  the notebook view, and the View menu's and the Scenarios panel's Duplicate items are
+- **Graph edits on the canvas only.** Nodes are added, connected and deleted, and
+  connections removed, on the canvas. `graphEditGates` (in `notebookLayout.ts`, read
+  through `hook/useGraphEditGates.ts`) turns off React Flow's connecting
+  (`nodesConnectable`, `edgesUpdatable`, `onConnect`), its Delete key (`deleteKeyCode`)
+  and the page's drop handlers in the notebook view, and a cell's header has no Delete
+  node tool (`components/nodes/NodeDeleteTool.tsx` reads the same gate). The
+  connections take no focus (`edgesFocusable` in `notebookFlowProps`) and no click
+  (`pointer-events: none` under the scroller's `data-curio-notebook`, `MainCanvas.css`),
+  so none is selected. The View menu's and the Scenarios panel's Duplicate items are
   disabled there. The notebook view renders no `ToolsMenu`, only its `RunAllButton`
-  (`components/notebook/NotebookRunAll.tsx`, top right of the page). Deleting a cell
-  and removing a connection still work there.
+  (`components/notebook/NotebookRunAll.tsx`, top right of the page).
 - **Dots.** `notebookHandlePlaces` anchors each dot to the cell's top (inputs, at fixed
   offsets), its middle (the interaction dot) or its bottom (outputs, `top: auto` inline,
   since React Flow's right-handle rule sets `top: 50%`), so they follow the cell as it
@@ -541,7 +545,7 @@ interface INodeData {
 `NodeContainer` (`src/components/styles.tsx`) draws a node the same way on the canvas and as a notebook cell; only a dashboard tile differs.
 
 - **Surface.** `getNodeContainerStyles` decides the whole border: on the canvas a white card with a `var(--curio-border)` hairline, radius 8, a soft shadow (`--curio-shadow-browse-card-raised`) and the kind's 4px stripe; a notebook cell drops the hairline and the shadow. A selected node gets a 2px ring in its kind's color. A suggestion keeps its dashed border.
-- **Header** (`.curio-node-header`). Play first, then the title (`EditableNodeHeaderLabel`), the package and dataset pills, and the run status; `NodeRunControls` draws Play, the status and the Save output toggle, each in its place. The rest are the tools (`.curio-node-tools`): the editor's tabs, which `NodeEditor` renders through a portal into the slot `nodeHeaderSlot` provides, Save output, the gear, about, pin, comments, delete and, on the canvas, minimize. They show only while the node is hovered, selected or focused (`Node.css`). Nothing sits under the body, so the editor's panes fill the node.
+- **Header** (`.curio-node-header`). Play first, then the title (`EditableNodeHeaderLabel`), the package and dataset pills, and the run status; `NodeRunControls` draws Play, the status and the Save output toggle, each in its place. The rest are the tools (`.curio-node-tools`): the editor's tabs, which `NodeEditor` renders through a portal into the slot `nodeHeaderSlot` provides, Save output, the gear, about, pin, comments and, on the canvas, delete (`NodeDeleteTool`, only where `graphEditGates` lets the viewer delete, so not on a read-only canvas) and minimize. They show only while the node is hovered, selected or focused (`Node.css`). Nothing sits under the body, so the editor's panes fill the node.
 - **Editors.** `nodeEditorLook` gives a code or spec editor its gray input box (`.curio-node-input`) and Monaco options with no line numbers, gutter, folding, line highlight or overview ruler. A code node's output has no rule or fill. A dashboard tile keeps Monaco's own look.
 - **Canvas only.** The resize handle at the bottom-right corner (`NodeResizeHandle`), minimizing to a chip, the node's fixed size and the cardinality markers at its edges. A read-only canvas (`useSharedView`, the rule `MainCanvas` and the top bar read) keeps each node at its size: no handle, nothing listening for a drag, and no browser grip under it. A double-click where a press drags the node (`isNodeDragRegion`: nothing from the target up to the node is `nodrag`) frames it with `frameNodesInView`, the framing a focus uses; editors, outputs, charts, maps and handles keep their own double-click. A read-only canvas does not drag nodes, so React Flow leaves them without its `nopan` class (no pan on a press, no zoom on a double-click); `MainCanvas` gives it to them (`keepPaneOffNodes`), and the same double-click frames the node there.
 

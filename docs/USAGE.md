@@ -380,10 +380,10 @@ selected: the editor's tabs (code, widgets, spec, provenance, output), the **Sav
 output dataset** toggle, settings, about, pin, comments, delete and **Minimize**.
 Code and specs sit in a gray box, and a code node's output is below its code.
 
-Drag a node's bottom-right corner to resize it; for viewers of a shared dataflow,
-nodes keep their size. A minimized node is a small chip; click it to open the node
-again. Double-click a node where you would drag it, such as its header, to zoom the
-view onto it.
+Drag a node's bottom-right corner to resize it. For viewers of a shared dataflow,
+nodes keep their size and have no delete. A minimized node is a small chip; click it
+to open the node again. Double-click a node where you would drag it, such as its
+header, to zoom the view onto it.
 
 ## Running a dataflow
 
@@ -1069,10 +1069,10 @@ page scrolls.
 - **Order.** A cell comes after every cell it reads from, in the order **File → Export as
   notebook** writes: each cell is followed by the cells it feeds, the most recently
   connected first, before the next cell that reads from nothing.
-- **Cells** grow with their code and output, and cannot be resized or minimized. A
-  cell's header and buttons are its node's (see [Inside a node](#inside-a-node)). A
-  code cell shows its code with its output below; a Vega-Lite or Autark cell shows
-  its spec above its chart or map. An editor is as tall
+- **Cells** grow with their code and output, and cannot be resized, minimized or
+  deleted. A cell's header and its other buttons are its node's (see
+  [Inside a node](#inside-a-node)). A code cell shows its code with its output below;
+  a Vega-Lite or Autark cell shows its spec above its chart or map. An editor is as tall
   as its lines, from three lines up to 400 pixels for code and 240 for a spec, and
   scrolls inside past that. A chart is 320 pixels tall and an Autark map or plot 400. A
   code output takes its own height up to 320 pixels, a table or a summary up to 360,
@@ -1082,10 +1082,10 @@ page scrolls.
   `[!! input 0 !!]`), its interaction dot halfway down, and its output at the bottom.
   The dots follow their cell as it grows. Hover a dot to see what feeds it. Selecting
   a cell rings it in its kind's color and darkens its connections.
-- **Editing.** Nodes are added and connected on the canvas: the notebook view has no
-  node rail, takes no drop, and its dots do not connect. In it, edit and run a cell's
-  code, delete a cell, or select a connection and press Delete to remove it. **Run
-  all** sits at the top right of the page.
+- **Editing.** Nodes and connections are added and removed on the canvas: the notebook
+  view has no node rail, takes no drop, its dots do not connect, and Delete removes
+  neither a cell nor a connection there. In it, edit and run a cell's code. **Run all**
+  sits at the top right of the page.
 - **Nothing is saved** about the view: the dataflow keeps its canvas layout, and
   **Canvas** shows it as it was. The address carries the view (`?view=notebook`), so a
   reload, or the address copied from the browser, opens it the same way.
