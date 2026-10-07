@@ -82,8 +82,10 @@ DDRNET_NAME = "DDRNet23-Slim (street scenes)"
 #: top-left corner: left of the 520 px drawer, so under its scrim.
 UNDER_THE_SCRIM = (320.0, 220.0)
 #: Where a saved output is dropped: right of the open palette, which floats
-#: over the left of the canvas, and clear of the producer framed at the top left.
-RIGHT_OF_THE_PALETTE = (900.0, 420.0)
+#: over the left of the canvas, left of the toasts in the bottom right corner
+#: (up to 360 px wide, 20 px from the edge), and clear of the producer framed
+#: at the top left.
+RIGHT_OF_THE_PALETTE = (760.0, 300.0)
 
 PRODUCER = "producer"
 PRODUCER_CODE = (
@@ -93,9 +95,12 @@ PRODUCER_CODE = (
 
 _WHAT_IS_AT_JS = """([[x, y], drawer]) => {
     const hit = document.elementFromPoint(x, y);
+    const label = hit && hit.getAttribute("aria-label");
+    const cls = hit && typeof hit.className === "string" ? hit.className.split(" ")[0] : "";
     return {
         underDrawer: !!hit && !!drawer && !!hit.closest(drawer),
         onCanvas: !!hit && !!hit.closest(".curio-canvas-drop-target") && !hit.closest(".react-flow__node"),
+        hit: hit ? hit.tagName.toLowerCase() + (label ? `[aria-label="${label}"]` : cls ? `.${cls}` : "") : "nothing",
     };
 }"""
 
@@ -133,9 +138,8 @@ def _open_drawer(page, name: str, root: str):
     expect(drawer).to_have_attribute("aria-hidden", "false", timeout=15000)
     # The drop point lies under the scrim, so the drag has to cross it.
     point = _client_point(page, UNDER_THE_SCRIM)
-    assert page.evaluate(_WHAT_IS_AT_JS, [point, root])["underDrawer"], (
-        f"{point} is not under the {name} drawer's scrim"
-    )
+    at = page.evaluate(_WHAT_IS_AT_JS, [point, root])
+    assert at["underDrawer"], f"{point} is not under the {name} drawer's scrim but on {at['hit']}"
     return drawer
 
 
@@ -253,9 +257,8 @@ def test_a_saved_output_dragged_from_the_data_palette_becomes_a_data_loading_nod
     row = saved_outputs.locator(f'[data-dataset-id="{computed_dataset_id(PRODUCER, project_id)}"]')
     expect(row).to_have_count(1, timeout=30000)
     point = _client_point(page, RIGHT_OF_THE_PALETTE)
-    assert page.evaluate(_WHAT_IS_AT_JS, [point, None])["onCanvas"], (
-        f"{point} is not on empty canvas"
-    )
+    at = page.evaluate(_WHAT_IS_AT_JS, [point, None])
+    assert at["onCanvas"], f"{point} is not on empty canvas but on {at['hit']}"
 
     node = drag_to_canvas_with_the_mouse(
         page, row.locator('[draggable="true"]'), at=RIGHT_OF_THE_PALETTE
