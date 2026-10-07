@@ -685,6 +685,42 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(result.current.outputOverride).toMatchObject({ code: 'success', content: { dataType: 'outputs' } });
     });
 
+    test('a dict of frames is drawn as a tab per key and passed on as a tuple of them is', async () => {
+      const api = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+      // What /get answers for a node that returned {"roads": gdf, "blocks": df}:
+      // each frame's envelope under its key, in the order Flask writes keys.
+      api.fetchData.mockResolvedValueOnce({
+        dataType: 'dict',
+        data: {
+          blocks: { dataType: 'dataframe', data: { block: ['Brera', 'Duomo'], population: [120, 340] } },
+          roads: {
+            dataType: 'geodataframe',
+            data: {
+              type: 'FeatureCollection',
+              features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [9.186, 45.466] }, properties: { name: 'Via Dante' } }],
+            },
+          },
+        },
+      });
+      const outputCallback = jest.fn();
+      const result = await callBehavior(useDataPoolBehavior, {
+        nodeId: 'pool-1',
+        outputCallback,
+        input: { path: 'art-dict', dataType: 'dict' } as any,
+      });
+      await waitFor(() => expect(result.current.outputOverride).toMatchObject({ code: 'success' }));
+
+      const [, emitted] = outputCallback.mock.calls[outputCallback.mock.calls.length - 1];
+      expect(emitted?.dataType).toBe('outputs');
+      expect(emitted.data.map((part: any) => [part.layerName, part.dataType])).toEqual([
+        ['blocks', 'dataframe'],
+        ['roads', 'geodataframe'],
+      ]);
+      const { getByTestId } = render(<>{result.current.contentComponent}</>);
+      const tabs = Array.from(getByTestId('data-pool-tabs').querySelectorAll('.nav-link'));
+      expect(tabs.map((tab) => tab.textContent)).toEqual(['blocks', 'roads']);
+    });
+
     test('returns contentComponent and overrides, and no widgets callback', async () => {
       const result = await callBehavior(useDataPoolBehavior);
       assertValidBehaviorResult(result.current);
