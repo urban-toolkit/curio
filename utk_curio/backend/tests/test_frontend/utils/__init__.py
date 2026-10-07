@@ -147,6 +147,7 @@ from .canvas_authoring import (  # noqa: F401
     assert_header_shows_save,
     frame_node,
     drag_to_canvas,
+    drag_to_canvas_with_the_mouse,
     set_node_code,
     read_node_code,
     connect_nodes,
