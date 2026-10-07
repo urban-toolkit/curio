@@ -7,11 +7,14 @@
  * (providers/flow/useNotebookView). These tests drive the REAL FlowProvider
  * and React Flow and read what a save would write, `TrillGenerator.generateTrill`
  * over React Flow's store, which is also what a provenance version records
- * (`addNewVersionProvenance` calls it). Harness as in collabInteractions.test.tsx.
+ * (`addNewVersionProvenance` calls it). Harness as in collabInteractions.test.tsx,
+ * inside a BrowserRouter as the app renders it, so the address the view keeps is
+ * the router's.
  */
 import React from 'react';
 import { render, act } from '@testing-library/react';
 import { ReactFlow, ReactFlowProvider, useReactFlow } from 'reactflow';
+import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
 
 // jsdom polyfills ReactFlow needs.
 class ResizeObserverStub {
@@ -102,12 +105,17 @@ let api: ReturnType<typeof useFlowContext>;
 let rf: ReturnType<typeof useReactFlow>;
 let notebook: ReturnType<typeof useNotebookViewContext>;
 let nextFreeSpot: () => XY;
+let navigate: ReturnType<typeof useNavigate>;
+/** The address's query as the router holds it. */
+let routerSearch = '';
 
 const Bridge: React.FC = () => {
   api = useFlowContext();
   rf = useReactFlow();
   notebook = useNotebookViewContext();
   nextFreeSpot = usePosition().getPosition;
+  navigate = useNavigate();
+  routerSearch = useLocation().search;
   return (
     <div style={{ width: 800, height: 600 }}>
       <ReactFlow
@@ -122,11 +130,13 @@ const Bridge: React.FC = () => {
 
 function renderFlow(dashboardOn = false) {
   return render(
-    <ReactFlowProvider>
-      <FlowProvider dashboardOn={dashboardOn}>
-        <Bridge />
-      </FlowProvider>
-    </ReactFlowProvider>,
+    <BrowserRouter>
+      <ReactFlowProvider>
+        <FlowProvider dashboardOn={dashboardOn}>
+          <Bridge />
+        </FlowProvider>
+      </ReactFlowProvider>
+    </BrowserRouter>,
   );
 }
 
@@ -400,6 +410,30 @@ describe('the notebook view shows the nodes as cells', () => {
     expect(api.canvasView).toBe('notebook');
     expect(node('a').position.y).toBeLessThan(node('b').position.y);
     expect(saved()).toEqual(CANVAS);
+  });
+
+  test("the view is in the router's address, and a navigation that keeps the dataflow open keeps it there", async () => {
+    window.history.replaceState(null, '', '/dataflow/new');
+    renderFlow();
+    await flush();
+    await seedChain();
+    await setPane();
+    await show('notebook');
+
+    // The router holds the address the view wrote, as it holds every other.
+    expect(routerSearch).toContain('view=notebook');
+
+    // The first save of a new dataflow moves the page to the dataflow's own
+    // address (UpMenu's save, ProjectLoader), a navigation that names no view.
+    // The view stays on, and the new address says so.
+    await act(async () => {
+      navigate('/dataflow/abc', { replace: true });
+    });
+    await flush();
+    expect(window.location.pathname).toBe('/dataflow/abc');
+    expect(window.location.search).toContain('view=notebook');
+    expect(routerSearch).toContain('view=notebook');
+    expect(api.canvasView).toBe('notebook');
   });
 
   test('the dashboard page never shows the notebook view', async () => {
