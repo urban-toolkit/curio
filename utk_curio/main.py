@@ -20,7 +20,7 @@ from utk_curio.cli.dependencies import (
     seed_duckdb_extensions,
 )
 from utk_curio.cli.environment import set_environment_variables, set_state_dir
-from utk_curio.cli.frontend_build import _require_supported_node
+from utk_curio.cli.frontend_build import _frontend_must_build, _require_supported_node
 from utk_curio.cli.lifecycle import clean_shutdown, shutdown_flag, signal_handler
 from utk_curio.cli.logs import COLOR_FRONTEND, log_always, log_info, print_output_queue, setup_logging
 from utk_curio.cli.services import start_backend, start_frontend, start_sandbox
@@ -572,29 +572,47 @@ def main():
 
     if args.command == "start":
         _require_supported_node()
-        # Mirror the ``shutil.which("npm")`` check at the top of
-        # ``start_frontend``: catch drifted Python envs at launch instead
-        # of crashing the sandbox/backend on its first module-level import.
-        # Framework first (gives us Flask + manifest-parsing deps), then
-        # the manifest walk (covers builtin's data-ops libs + every other
-        # installed package's declared python deps).
-        if args.server in ("all", "backend", "sandbox") and not _skip_dep_install():
-            install_framework_requirements()
-            install_manifest_dependencies()
-
-        # Autark's data path runs autk-db in the sandbox's Node, which installs
-        # DuckDB's spatial extension. Seed it from the copy Curio ships so that
-        # never becomes a download (#318).
-        if args.server in ("all", "sandbox"):
-            seed_duckdb_extensions()
-
         if args.server == "all":
             log_always("Starting all servers (backend, sandbox, frontend)...")
-            lifecycle.processes = [
-                start_backend(args.backend_host, args.backend_port),
-                start_sandbox(args.sandbox_host, args.sandbox_port),
-                start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path)
-            ]
+        # A deployment's frontend with nothing to build needs none of the checks
+        # below, so it starts first: after a deploy the page is back within
+        # seconds of the container starting, and its banner explains the wait
+        # for the backend. A local start keeps the old order, so its page does
+        # not open on a backend that is still starting, and a build waits until
+        # the backend and sandbox are up, as it always has.
+        frontend_first = (
+            args.server == "all" and args.deploy and not _frontend_must_build(args.force_rebuild)
+        )
+        if frontend_first:
+            lifecycle.processes.append(start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path))
+        try:
+            # Mirror the ``shutil.which("npm")`` check at the top of
+            # ``start_frontend``: catch drifted Python envs at launch instead
+            # of crashing the sandbox/backend on its first module-level import.
+            # Framework first (gives us Flask + manifest-parsing deps), then
+            # the manifest walk (covers builtin's data-ops libs + every other
+            # installed package's declared python deps).
+            if args.server in ("all", "backend", "sandbox") and not _skip_dep_install():
+                install_framework_requirements()
+                install_manifest_dependencies()
+
+            # Autark's data path runs autk-db in the sandbox's Node, which installs
+            # DuckDB's spatial extension. Seed it from the copy Curio ships so that
+            # never becomes a download (#318).
+            if args.server in ("all", "sandbox"):
+                seed_duckdb_extensions()
+        except SystemExit:
+            # A failed check ends the start with its own exit code, and the
+            # frontend started above must not outlive it.
+            for process in lifecycle.processes:
+                process.terminate()
+            raise
+
+        if args.server == "all":
+            lifecycle.processes.append(start_backend(args.backend_host, args.backend_port))
+            lifecycle.processes.append(start_sandbox(args.sandbox_host, args.sandbox_port))
+            if not frontend_first:
+                lifecycle.processes.append(start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path))
         else:
             if args.server == "backend":
                 lifecycle.processes.append(start_backend(args.backend_host, args.backend_port))
