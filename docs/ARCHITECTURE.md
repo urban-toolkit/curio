@@ -677,7 +677,7 @@ The `autk-grammar` node consumes upstream data differently from Python nodes: it
 "map": { "layerRefs": [{ "dataRef": "[!! input 0 !!]", "getFnv": "mean", "getFnvType": "quantitative" }] }
 ```
 
-**2. Layer array, named layer references.** A multi-layer array (emitted by an upstream data-only `autk-grammar` node, e.g. one whose `data` block loads an OSM/PBF stack with `autoLoadLayers`) exposes each layer under its own table name, so the spec can target layers individually, with layer chips (`[!! input 0:table_osm_roads !!]`) or by name. An input holding one named layer also answers to `input_<k>`, and a name two inputs bring is refused:
+**2. Layer array, named layer references.** A multi-layer array (emitted by an upstream data-only `autk-grammar` node, e.g. one whose `data` block loads an OSM/PBF stack with `autoLoadLayers`) exposes each layer under its own table name, so the spec can target layers individually, with layer chips (`[!! input 0:table_osm_roads !!]`) or by name. An input holding one named layer also answers to `input_<k>`, always with its own layer. A name two inputs bring is the first input's layer, and the node names both:
 
 ```json
 "map": { "layerRefs": [{ "dataRef": "table_osm_buildings" }, { "dataRef": "table_osm_roads" }] }

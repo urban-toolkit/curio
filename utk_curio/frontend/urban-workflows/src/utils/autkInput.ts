@@ -241,6 +241,33 @@ export function tablePositions(rows: number[], order: number[] | null | undefine
   return rows.flatMap((row) => (at.has(row) ? [at.get(row)!] : []));
 }
 
+/** What a frame becomes under a name: a geojson source and its rows, a
+ * raster, or the reason it cannot be drawn. */
+type FrameTable =
+  | { source: AutkSource; rows: number }
+  | { raster: AutkRasterInput }
+  | { refusal: { reason: NodeEmptyReason; detail: string } };
+
+function frameTable(frame: GrammarFrame, name: string): FrameTable {
+  if (frame.dataType === "raster") return { raster: { outputTableName: name, payload: frame.payload } };
+  const result = featuresOf(frame, name);
+  if ("reason" in result) return { refusal: result };
+  // A layer an Autark data node stored empty comes back with no feature
+  // list: it has no rows, and the render leaves it out like any empty table.
+  const features = (result.fc as any).features;
+  const geojsonObject = frame.layerType === "buildings" ? withReadableHeights(result.fc) : result.fc;
+  return {
+    source: {
+      type: "geojson",
+      geojsonObject,
+      outputTableName: name,
+      coordinateFormat: detectCoordinateFormat(geojsonObject as any),
+      ...(frame.layerType ? { layerType: frame.layerType } : {}),
+    },
+    rows: Array.isArray(features) ? features.length : 0,
+  };
+}
+
 /** Read the Autark node's input: the fetch, done once per input object. */
 export function readAutkInput(input: any, opts: { preview?: boolean } = {}): Promise<GrammarInput> {
   return readGrammarInput(input, { label: AUTK_INPUT_LABEL, bundles: true, rasters: true, preview: opts.preview });
@@ -277,9 +304,13 @@ export function autkSourcesFrom(
   let rowsIn = 0;
   // Which input brought each table, so a name two inputs bring is caught.
   const broughtBy = new Map<string, number>();
+  // What each frame became, so an input's `input_<k>` reads the frame that
+  // input brought, also when an earlier input took its layer's name (#744).
+  const became = new Map<GrammarFrame, { table: FrameTable; taken: boolean }>();
 
   for (const frame of read.frames) {
     let name = autkTableName(frame);
+    let taken = false;
     const earlier = broughtBy.get(name);
     if (earlier !== undefined) {
       if (!frame.name) {
@@ -288,37 +319,28 @@ export function autkSourcesFrom(
         while (broughtBy.has(`${name}_${n}`)) n += 1;
         name = `${name}_${n}`;
       } else {
+        // The name stays the earlier input's layer.
         problems.push(
           `Inputs ${earlier} and ${frame.circle} both bring a layer named ${name}; `
           + `the one from input ${frame.circle} is left out. Rename one of them.`,
         );
-        continue;
+        taken = true;
       }
     }
-    broughtBy.set(name, frame.circle);
-    if (frame.dataType === "raster") {
-      rasters.push({ outputTableName: name, payload: frame.payload });
-      continue;
-    }
-    const result = featuresOf(frame, name);
-    if ("reason" in result) {
+    if (!taken) broughtBy.set(name, frame.circle);
+    const table = frameTable(frame, name);
+    became.set(frame, { table, taken });
+    if (taken) continue;
+    if ("raster" in table) {
+      rasters.push(table.raster);
+    } else if ("refusal" in table) {
       unusable.push(name);
-      problems.push(result.detail);
-      firstRefusal ??= result;
-      continue;
+      problems.push(table.refusal.detail);
+      firstRefusal ??= table.refusal;
+    } else {
+      rowsIn += table.rows;
+      sources.push(table.source);
     }
-    // A layer an Autark data node stored empty comes back with no feature
-    // list: it has no rows, and the render leaves it out like any empty table.
-    const features = (result.fc as any).features;
-    rowsIn += Array.isArray(features) ? features.length : 0;
-    const geojsonObject = frame.layerType === "buildings" ? withReadableHeights(result.fc) : result.fc;
-    sources.push({
-      type: "geojson",
-      geojsonObject,
-      outputTableName: name,
-      coordinateFormat: detectCoordinateFormat(geojsonObject as any),
-      ...(frame.layerType ? { layerType: frame.layerType } : {}),
-    });
   }
 
   if (read.skipped?.length) problems.push(`Left out: ${read.skipped.join(", ")}.`);
@@ -335,11 +357,19 @@ export function autkSourcesFrom(
       if (frames.length !== 1 || !frames[0].name || !refs.has(alias)) return;
       if (sources.some((s) => s.outputTableName === alias)) return;
       if (rasters.some((r) => r.outputTableName === alias)) return;
-      const own = sources.find((s) => s.outputTableName === frames[0].name);
-      const raster = rasters.find((r) => r.outputTableName === frames[0].name);
-      if (own) sources.unshift({ ...own, outputTableName: alias });
-      else if (raster) rasters.unshift({ ...raster, outputTableName: alias });
-      else if (unusable.includes(frames[0].name) && !unusable.includes(alias)) unusable.push(alias);
+      const { table, taken } = became.get(frames[0])!;
+      if ("source" in table) {
+        sources.unshift({ ...table.source, outputTableName: alias });
+        if (taken) rowsIn += table.rows;
+      } else if ("raster" in table) {
+        rasters.unshift({ ...table.raster, outputTableName: alias });
+      } else if (!unusable.includes(alias)) {
+        unusable.push(alias);
+        if (taken) {
+          problems.push(table.refusal.detail);
+          firstRefusal ??= table.refusal;
+        }
+      }
     });
   }
 
