@@ -29,7 +29,12 @@ What each test pins:
 * the notebook view adds no node: a drop on its page adds nothing and
   Duplicate selection is off, while the canvas's rail adds one;
 * back on the canvas every node is where it was and the size it was, a save
-  writes the canvas layout, and a reload keeps the view the address names.
+  writes the canvas layout, and a reload keeps the view the address names;
+* the first save of a new dataflow, which moves the page to the dataflow's
+  own address, keeps the view in it, so a reload opens the notebook view;
+* a node whose package is not installed is a cell like the others: as wide,
+  with its dots on its right edge where theirs are, and its connections in
+  the bar.
 
 The dataflow is built here rather than borrowed from ``docs/examples``: four
 Python and Vega-Lite nodes, no datasets, so a failure is about this feature.
@@ -61,7 +66,9 @@ from .utils import (
     require_owner_view,
     require_project_page,
     require_user_auth,
+    save_dataflow,
     save_workflow_test_screenshot,
+    stub_db_login,
     stub_login_and_enter_workflow,
     wait_for_node_done,
 )
@@ -89,6 +96,12 @@ CANVAS = {
 #: Dataflow order: each node nothing feeds, in the spec's order, followed by
 #: the chain it feeds.
 ORDER = [PRODUCER, TRANSFORM, CHART, EXTRA]
+
+#: A node whose package nothing provides, so it shows the "Missing node
+#: package" card. In its own dataflow PRODUCER feeds it and it feeds TRANSFORM.
+MISSING = "nbv-missing"
+MISSING_TYPE = "curio.nowhere/missing-node"
+MISSING_ORDER = [PRODUCER, MISSING, TRANSFORM]
 
 #: Space between two cells, in pixels, which holds the (+) that adds a cell.
 GAP = 24
@@ -118,8 +131,8 @@ CHART_SPEC = json.dumps({
 }, indent=2)
 
 
-def _node(node_id: str, node_type: str, content: str) -> dict:
-    x, y = CANVAS[node_id]
+def _node(node_id: str, node_type: str, content: str, at: tuple[int, int] | None = None) -> dict:
+    x, y = at if at is not None else CANVAS[node_id]
     return {
         "id": node_id,
         "type": node_type,
@@ -155,12 +168,36 @@ def _spec() -> dict:
     }
 
 
+def _missing_package_spec() -> dict:
+    """PRODUCER feeds MISSING, whose package is not installed anywhere, and
+    MISSING feeds TRANSFORM. The lockfile names no package."""
+    return {
+        "dataflow": {
+            "name": "Notebook view e2e",
+            "task": "",
+            "description": "",
+            "packages": [],
+            "datasets": [],
+            "nodes": [
+                _node(PRODUCER, "curio.builtin/data-loading", PRODUCER_CODE),
+                _node(MISSING, MISSING_TYPE, "", at=(700, 0)),
+                _node(TRANSFORM, "curio.builtin/computation-analysis", TRANSFORM_CODE, at=(1400, 0)),
+            ],
+            "edges": [
+                {"id": f"reactflow__edge-{PRODUCER}out-{MISSING}in", "source": PRODUCER, "target": MISSING},
+                {"id": f"reactflow__edge-{MISSING}out-{TRANSFORM}in", "source": MISSING, "target": TRANSFORM},
+            ],
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Steps shared by the scenarios
 # ---------------------------------------------------------------------------
 
-def _enter(page, app_frontend, current_server, *, prefix: str) -> dict:
-    """Sign in as a fresh owner, on the canvas of a fresh copy of the dataflow."""
+def _enter(page, app_frontend, current_server, *, prefix: str, spec: dict | None = None) -> dict:
+    """Sign in as a fresh owner, on the canvas of a fresh copy of the dataflow
+    (*spec*, by default the four-node one)."""
     session = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
@@ -168,7 +205,7 @@ def _enter(page, app_frontend, current_server, *, prefix: str) -> dict:
         name="Notebook Owner",
         username=f"{prefix}_{uuid.uuid4().hex[:8]}",
         project_name="Notebook view e2e",
-        project_spec=_spec(),
+        project_spec=spec if spec is not None else _spec(),
     )
     require_owner_view(page)
     page.wait_for_selector(".react-flow__node", timeout=45000)
@@ -220,8 +257,9 @@ def _settled_boxes(page, *, timeout_ms: int = 15000) -> dict:
     raise AssertionError(f"the nodes kept changing size or place: last read {last}")
 
 
-def _show(page, view: str) -> None:
-    """Pick a view on the bar's switch and wait until the nodes are laid out for it."""
+def _show(page, view: str, *, count: int = len(CANVAS)) -> None:
+    """Pick a view on the bar's switch and wait until the *count* nodes are laid
+    out for it."""
     radio = page.locator(BAR).get_by_role("radio", name=f"{view.capitalize()} view", exact=True)
     radio.click()
     expect(radio).to_have_attribute("aria-checked", "true")
@@ -232,7 +270,7 @@ def _show(page, view: str) -> None:
                 return nodes.length === count
                     && new Set(nodes.map((n) => n.position.x)).size === 1;
             }""",
-            arg=len(CANVAS),
+            arg=count,
             timeout=20000,
         )
     else:
@@ -904,3 +942,160 @@ def test_back_on_the_canvas_every_node_is_where_it_was(
     page.evaluate("() => window.__curio_fitViewWithMenuOffset({ padding: 0.2 })")
     held = _settled_viewport(page)
     assert (held["x"], held["y"], held["zoom"]) == (0, 0, 1), f"a fit moved the notebook view: {held}"
+
+
+#: Whether the address names the notebook view.
+_VIEW_IN_ADDRESS_JS = "() => new URLSearchParams(location.search).get('view') === 'notebook'"
+
+#: The address a first save gives a dataflow, with the notebook view in it.
+_SAVED_WITH_VIEW_JS = (
+    "() => /\\/dataflow\\/[0-9a-f-]{36}$/.test(location.pathname)"
+    " && new URLSearchParams(location.search).get('view') === 'notebook'"
+)
+
+
+def test_the_first_save_keeps_the_view_in_the_address(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    require_project_page()
+    require_user_auth()
+    stub_db_login(
+        page,
+        app_frontend.base_url,
+        current_server,
+        name="Notebook Owner",
+        username=f"nbv_first_save_{uuid.uuid4().hex[:8]}",
+    )
+    page.goto(f"{app_frontend.base_url}/dataflow/new", timeout=120000)
+    page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
+    require_owner_view(page)
+    dismiss_toasts(page)
+
+    # A dataflow nothing has saved yet, with a node added on the canvas, shown
+    # in the notebook view.
+    node_id = drag_to_canvas(page, page.locator("#tile-data-transformation"))
+    page.wait_for_function(
+        "(id) => !!window.__curio_reactFlow.getNodes().find((n) => n.id === id)", arg=node_id, timeout=10000,
+    )
+    _show(page, "notebook", count=1)
+    page.wait_for_function(_VIEW_IN_ADDRESS_JS, timeout=10000)
+    assert "/dataflow/new" in page.url, f"the dataflow is not the unsaved one: {page.url}"
+
+    # Its first save moves the page to the dataflow's own address, and the
+    # view goes with it.
+    save_dataflow(page)
+    try:
+        page.wait_for_function(_SAVED_WITH_VIEW_JS, timeout=15000)
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"the first save left the notebook view out of the dataflow's address: {page.url}"
+        ) from None
+    radio = page.locator(BAR).get_by_role("radio", name="Notebook view", exact=True)
+    expect(radio).to_have_attribute("aria-checked", "true")
+
+    # So a reload opens the dataflow in the notebook view again.
+    page.reload()
+    page.wait_for_selector(".react-flow__node", timeout=45000)
+    expect(radio).to_have_attribute("aria-checked", "true", timeout=20000)
+
+
+#: A cell as React Flow draws it, read from React Flow's node so it holds for
+#: a cell without a node card too: its left and right edges and its width on
+#: the screen, and each of its dots by handle id: the side React Flow gives
+#: it, its left edge, and its middle's distance from the cell's top and bottom.
+_CELL_DOTS_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    if (!node) return null;
+    const r = node.getBoundingClientRect();
+    const dots = {};
+    for (const h of node.querySelectorAll('.react-flow__handle')) {
+        const d = h.getBoundingClientRect();
+        const middle = d.top + d.height / 2;
+        dots[h.getAttribute('data-handleid')] = {
+            side: ['left', 'right', 'top', 'bottom'].find((s) => h.classList.contains(`react-flow__handle-${s}`)) || null,
+            x: d.left,
+            fromTop: middle - r.top,
+            fromBottom: r.bottom - middle,
+        };
+    }
+    return {x: r.left, right: r.right, width: r.width, dots};
+}"""
+
+#: The left edge on the screen of each connection to or from *id*, by its path.
+_ARC_LEFTS_JS = """(id) => window.__curio_reactFlow.getEdges()
+    .filter((e) => e.source === id || e.target === id)
+    .map((e) => {
+        const path = document.querySelector(
+            `.react-flow__edge[data-testid="rf__edge-${e.id}"] path.react-flow__edge-path`);
+        return path ? path.getBoundingClientRect().left : null;
+    })"""
+
+#: What MISSING's cell should have: the others' width, its dots only on its
+#: right edge where theirs are, and both its connections in the bar.
+_MISSING_CELL_EXPECTED = {
+    "drawn": True,
+    "as wide as PRODUCER's cell, from the same x": True,
+    "sides of its dots": ["right"],
+    "input dot where TRANSFORM's is": True,
+    "output dot where PRODUCER's is": True,
+    "connections in the bar": [True, True],
+}
+
+
+def _missing_cell_outcome(page) -> tuple[dict, dict]:
+    """MISSING's cell against the cells around it, as an outcome to compare
+    whole with ``_MISSING_CELL_EXPECTED``, and the readings it came from."""
+    cells = {node_id: page.evaluate(_CELL_DOTS_JS, node_id) for node_id in MISSING_ORDER}
+    producer, missing, transform = (cells[node_id] for node_id in MISSING_ORDER)
+    if not (producer and missing and transform):
+        return {"drawn": False}, cells
+
+    def near(a: float, b: float) -> bool:
+        return abs(a - b) <= 1
+
+    dots = missing["dots"]
+    mine_in, mine_out = dots.get("in"), dots.get("out")
+    their_in, their_out = transform["dots"].get("in"), producer["dots"].get("out")
+    lefts = page.evaluate(_ARC_LEFTS_JS, MISSING)
+    cells["connection lefts"] = lefts
+    outcome = {
+        "drawn": True,
+        "as wide as PRODUCER's cell, from the same x": (
+            near(missing["x"], producer["x"]) and near(missing["width"], producer["width"])
+        ),
+        "sides of its dots": sorted({str(d["side"]) for d in dots.values()}),
+        "input dot where TRANSFORM's is": bool(mine_in and their_in) and (
+            near(mine_in["x"], their_in["x"]) and near(mine_in["fromTop"], their_in["fromTop"])
+        ),
+        "output dot where PRODUCER's is": bool(mine_out and their_out) and (
+            near(mine_out["x"], their_out["x"]) and near(mine_out["fromBottom"], their_out["fromBottom"])
+        ),
+        "connections in the bar": [left is not None and left >= producer["right"] - 1 for left in lefts],
+    }
+    return outcome, cells
+
+
+def test_a_node_whose_package_is_missing_is_a_cell_like_the_others(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, prefix="nbv_missing", spec=_missing_package_spec())
+    card = node_locator(page, MISSING).get_by_test_id("unresolved-node")
+    card.wait_for(state="visible", timeout=45000)
+
+    _show(page, "notebook", count=len(MISSING_ORDER))
+    expect(card).to_contain_text("Missing node package")
+
+    # React Flow measures the cells and their dots a frame or more after the
+    # switch, so the outcome is read until it holds or the time is up.
+    outcome, cells = _missing_cell_outcome(page)
+    waited = 0
+    while outcome != _MISSING_CELL_EXPECTED and waited < 20000:
+        page.wait_for_timeout(300)
+        waited += 300
+        outcome, cells = _missing_cell_outcome(page)
+    assert outcome == _MISSING_CELL_EXPECTED, (
+        f"the cell of a node whose package is missing is not a cell like the others: {outcome}; "
+        f"read from {cells}"
+    )
