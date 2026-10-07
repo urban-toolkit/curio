@@ -70,6 +70,35 @@ def _is_installed(user_key: str, dir_name: str) -> bool:
     return (dataset_dir(user_key, dir_name) / "manifest.json").is_file()
 
 
+def _left_out_data_file(dir_name: str, manifest: DatasetManifest, src: Path) -> Path | None:
+    """The data file of a shipped dataset whose catalog folder *src* lacks it
+    because the pip package leaves it out: downloaded from GitHub on the first
+    install (``infrastructure/left_out_files.py``). ``None`` when *src* holds
+    the file, or lacks one the package does not leave out."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+    shipped = src / manifest.data_file
+    repo_path = f"datasets/{dir_name}/{manifest.data_file}"
+    if shipped.is_file() or not left_out_files.is_left_out(repo_path):
+        return None
+    try:
+        return left_out_files.fetch(repo_path, shipped)
+    except left_out_files.LeftOutFileUnavailable as exc:
+        raise InstallerError(str(exc)) from exc
+
+
+def _place_copy(source: Path, target: Path) -> None:
+    """Copy *source* to *target* whole or not at all: the install counts as
+    complete once its data file is there."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_name(f".{target.name}.{uuid.uuid4().hex}.part")
+    try:
+        shutil.copyfile(source, partial)
+        os.replace(partial, target)
+    finally:
+        partial.unlink(missing_ok=True)
+
+
 def install_dataset_from_catalog(
     user_key: str,
     dir_name: str,
@@ -87,7 +116,6 @@ def install_dataset_from_catalog(
         raise InstallerError(str(exc)) from exc
 
     dest = dataset_dir(user_key, dir_name)
-    replaced = False
     if dest.exists():
         # Check whether the existing install is complete (data file is present).
         # A previous failed copy can leave a partial directory behind, so we
@@ -98,6 +126,12 @@ def install_dataset_from_catalog(
             return _index(
                 user_key, InstallResult(manifest=manifest, dest=dest, replaced=False)
             )
+
+    # Before the destination is touched, so a failed download leaves it as it was.
+    fetched = _left_out_data_file(dir_name, manifest, src)
+
+    replaced = False
+    if dest.exists():
         # Either replace was requested or the previous install was incomplete –
         # remove the stale/partial directory and start fresh.
         shutil.rmtree(dest)
@@ -112,6 +146,12 @@ def install_dataset_from_catalog(
         if dest.exists():
             shutil.rmtree(dest, ignore_errors=True)
         raise InstallerError(f"Failed to copy dataset files: {exc}") from exc
+    if fetched is not None:
+        try:
+            _place_copy(fetched, dest / manifest.data_file)
+        except OSError as exc:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise InstallerError(f"Failed to copy dataset files: {exc}") from exc
 
     return _index(
         user_key,

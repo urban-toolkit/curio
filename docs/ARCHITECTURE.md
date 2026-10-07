@@ -1045,6 +1045,44 @@ The id must satisfy the same safe-id pattern on both sides before it is
 interpolated into generated Python; an id that fails it falls back to a literal
 quoted path. See [DATA-CATALOG.md](DATA-CATALOG.md) for the authoring view.
 
+### Files the pip package leaves out
+
+PyPI takes no file over 100 MiB, so the pip package (the sdist, and the wheel
+built from it) leaves out the biggest catalog files: the data files and model
+entries that
+[`left_out_files.json`](../utk_curio/backend/app/datasets/infrastructure/left_out_files.json)
+lists, which `MANIFEST.in` excludes one line each (`test_left_out_files.py`
+holds the two together). The small files of their folders still ship.
+
+1. The release workflow runs `scripts/record_left_out_files.py --commit
+   $GITHUB_SHA` before `python -m build`. It writes
+   `left_out_files.record.json` beside the list: the commit, and each listed
+   file's size and sha256. The package ships it; a checkout has none.
+2. A reader that finds a listed file missing calls
+   [`left_out_files.fetch`](../utk_curio/backend/app/datasets/infrastructure/left_out_files.py):
+   `PathResolver._resolve_item_path` (preview, download, extent and
+   execution paths), `install_dataset_from_catalog` (install and seeding) and
+   `ModelCatalogService.resolve_dir` (a node's `curio_load_model`). The
+   registry gives a listed file's recorded size before it is fetched.
+3. `fetch` downloads
+   `https://raw.githubusercontent.com/urban-toolkit/curio/<commit>/<path>`
+   through `agents/infrastructure/egress.download`, under one lock per file,
+   into `<curio_root>/fetched/<commit>/.partial/`, checks size and sha256
+   against the record, makes it 0644, copies the small files of its catalog
+   folder beside where it goes, and renames it to
+   `<curio_root>/fetched/<commit>/<path>`. A reader resolves the file there
+   from then on. A download first removes the folders of other commits under
+   `fetched/` (never a symlink, never the current commit's).
+4. `<curio_root>/fetched` is created 0700 and is in the sandbox's
+   `SENSITIVE_PATHS` and `HARDLINK_SOURCES`, as `models/` is: an isolated
+   child reads a fetched file only through the hardlink its run stages
+   (`stage_dataset_paths`, `stage_model_dirs`), and cannot walk the folder or
+   rename a file in it.
+5. A failed download raises `LeftOutFileUnavailable` with the URL and the path
+   to save the file to. The Data Catalog answers it as a 502;
+   `node_exec._execute` collects it (`left_out_files.failures()`) and fails the
+   run with it, without calling the sandbox.
+
 ---
 
 ## Interactions and Propagation
@@ -1649,7 +1687,7 @@ A candidate row's `acquirable` flag is set server-side only, by `services.py::_m
 
 The user-facing model is in [MODEL-CATALOG.md](MODEL-CATALOG.md) and the routes are in [Model Catalog Routes](#model-catalog-routes). The backend is `backend/app/model_catalog/`: `domain/manifest.py` (the manifest and its checks), `infrastructure/storage.py` (where models live), `service.py` (listing, details, install, delete, execution resolution) and `routes.py`.
 
-- **Storage.** `models_root()` is `<repo>/models`, or the directory `--models-root` names; `user_models_dir(user_key)` is `.curio/users/<key>/models/`. A model is a folder named `<id>@<major>` with a `manifest.json`. There is no index table: a listing reads the folders, the account's then the shipped ones, and an account holds few models.
+- **Storage.** `models_root()` is `<repo>/models`, or the directory `--models-root` names; `user_models_dir(user_key)` is `.curio/users/<key>/models/`. A model is a folder named `<id>@<major>` with a `manifest.json`. There is no index table: a listing reads the folders, the account's then the shipped ones, and an account holds few models. A shipped model whose entry the pip package leaves out is listed all the same, and `resolve_dir` fetches the entry the first time a node runs it ([Files the pip package leaves out](#files-the-pip-package-leaves-out)).
 - **The manifest** (`parse_manifest`) takes `runtime` (`onnx` or `transformers`), `task` (`semantic-segmentation`, or `image-to-image` or `node-regression` for a graph its node feeds itself), an `entry` inside the folder (a `.onnx` file for `onnx`), up to `MAX_LABELS` labels (none for `image-to-image` or `node-regression`), and for an `onnx` image model an `input` (size 8 to 8192, `uint8` or `float32`, `NCHW`, or `NHWC` for `image-to-image`, `scale`, three-number `mean` and `std`). A folder whose manifest fails is not listed, and the server's log names it and why.
 - **Install.** `install_downloaded(folder, manifest)` mints `imported.x<hex>@1`, moves the folder to a `.part` folder beside its place in the account's store, writes the manifest, and renames it in with `os.replace`, so a half-written model is never listed. `install_dependencies(id)` installs a Transformers model's `python_deps` through `provision_declared_deps`, the path a package's `dependencies.python` takes: the shared interpreter, or the account's node libraries under isolation. `install_refusal()` is the package rule (`package_install_refusal`).
 - **Delete** removes the folder. A shipped model is refused with 403. Nodes that name it fail on their next run.

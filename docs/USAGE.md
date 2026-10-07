@@ -165,6 +165,10 @@ Curio's frontend will be available at http://localhost:8080 by default.
 > [!NOTE]
 > The pip installation includes a pre-built frontend and does not support rebuilding it. If you need to modify or rebuild the frontend, please use the manual installation method described below.
 
+Five large files are not in the pip package: the data of four Data Catalog datasets (Milan Mean Radiant Temperature, Project Sidewalk Chicago Labels, Chicago Red-Light Violations and Chicago Speed Camera Violations) and the Model Catalog's Deep Umbra model. Curio downloads each one from GitHub the first time something reads it: a preview in the Data Catalog, adding the dataset to a dataflow, or a node that loads it. Downloaded files go to `.curio/fetched/` in the folder you start Curio from.
+
+Offline, reading one of those files fails with a message that gives its address on GitHub and the path to save it to. Download the file from that address on a machine that is online and copy it to that path, or install Curio from git, which holds every file.
+
 ## Installation from git
 
 

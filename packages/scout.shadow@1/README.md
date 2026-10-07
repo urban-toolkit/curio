@@ -56,11 +56,7 @@ checkpoint by
 The node loads it with `curio_load_model("model.scout.deep-umbra")` and runs it
 with onnxruntime, one tile at a time.
 
-The model ships in the Curio repository but not in the pip package. On a pip
-install the node says so: copy the repository's folder
-`models/model.scout.deep-umbra@1` into the shipped models folder (the one
-`--models-root` names, else the `models` folder beside the installed
-`utk_curio` package), then run the node again.
+A pip install downloads the model from GitHub the first time the node runs.
 
 ## A dataflow
 

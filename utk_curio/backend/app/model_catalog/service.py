@@ -34,6 +34,23 @@ class ModelCatalogError(Exception):
         self.status = status
 
 
+class ModelFileUnavailable(ModelCatalogError):
+    """A shipped model's entry that the pip package leaves out could not be
+    downloaded. The message says what failed and how to get the file."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, 502)
+
+
+def _left_out_entry(folder: Path):
+    """Whether an entry of the shipped model in *folder* is a file the pip
+    package leaves out, which a pip install downloads the first time a node
+    runs the model (``datasets/infrastructure/left_out_files.py``)."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+    return lambda entry: left_out_files.is_left_out(f"models/{folder.name}/{entry}")
+
+
 def _user_key(user) -> str | None:
     if user is None:
         return None
@@ -123,8 +140,11 @@ class ModelCatalogService:
             folders += [(folder, "downloaded") for folder in storage.list_user_models(self.user_key)]
         folders += [(folder, "shipped") for folder in storage.list_shipped_models()]
         for folder, origin in folders:
+            # A shipped model whose entry the pip package leaves out is listed
+            # all the same: resolve_dir fetches the entry when a node runs it.
+            fetched = _left_out_entry(folder) if origin == "shipped" else None
             try:
-                found.append((load_manifest(folder), origin, folder))
+                found.append((load_manifest(folder, fetched_on_first_use=fetched), origin, folder))
             except ModelManifestError as exc:
                 print(f"[model catalog] {folder.name} skipped: {exc}", flush=True)
         return found
@@ -169,13 +189,34 @@ class ModelCatalogService:
         return path.read_text(encoding="utf-8", errors="replace")
 
     def resolve_dir(self, model_id: str) -> Path:
-        """The folder a node reads *model_id* from. Server side only."""
-        return self._find(model_id)[2]
+        """The folder a node reads *model_id* from. Server side only.
+
+        For a shipped model whose entry the pip package leaves out, the folder
+        a pip install places it in, beside a copy of the model's manifest:
+        downloaded from GitHub the first time a node runs the model. Raises
+        :class:`ModelFileUnavailable` when the download fails."""
+        manifest, origin, folder = self._find(model_id)
+        entry = folder / manifest.entry
+        if origin != "shipped" or entry.exists():
+            return folder
+        from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+        repo_path = f"models/{folder.name}/{manifest.entry}"
+        if not left_out_files.is_left_out(repo_path):
+            return folder
+        try:
+            fetched = left_out_files.fetch(repo_path, entry)
+        except left_out_files.LeftOutFileUnavailable as exc:
+            raise ModelFileUnavailable(str(exc)) from exc
+        for _part in Path(manifest.entry).parts:
+            fetched = fetched.parent
+        return fetched
 
     def resolve_execution_dirs(self, model_ids: list[str]) -> dict[str, str]:
         """``{modelId: folder}`` for the ids a node's code names that this
         account can use; an unknown id is left out, and the node's
-        ``curio_load_model`` names it."""
+        ``curio_load_model`` names it, as is a model whose entry could not be
+        downloaded (``left_out_files.failures`` keeps why for the node)."""
         out: dict[str, str] = {}
         for model_id in model_ids:
             try:

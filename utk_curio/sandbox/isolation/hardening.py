@@ -44,6 +44,7 @@ SENSITIVE_PATHS = (
     (".curio/users", "every user's imported datasets, projects and packages"),
     ("datasets", "the shared Data Catalog's published files"),
     ("models", "the Model Catalog's shipped models, staged into a child that runs one"),
+    (".curio/fetched", "the catalog files a pip install downloaded, staged into a child that reads one"),
     (".env", "the deployment's secrets, including SECRET_KEY"),
     (".curio/discovery", "the operator's source manifests: each names a folder or host the server reads"),
 )
@@ -68,7 +69,7 @@ SENSITIVE_PATHS = (
 # The files keep whatever mode they had, which is exactly what the hardlink
 # needs. Copying instead of linking would allow per-copy permissions, at the
 # cost of duplicating a multi-gigabyte raster for every node run.
-HARDLINK_SOURCES = frozenset({".curio/data", ".curio/users", "datasets", "models"})
+HARDLINK_SOURCES = frozenset({".curio/data", ".curio/users", "datasets", "models", ".curio/fetched"})
 
 # What we want each of those to be. Owner-only: no read, no list, no traverse.
 DIRECTORY_MODE = 0o700
