@@ -71,10 +71,15 @@ def test_a_share_is_of_all_the_pixels(photos):
 
 
 def test_each_photo_gets_an_overlay_served_by_id(photos):
+    """The id names the photo and the model (#621): the first twelve hex digits
+    of the SHA-1 of the model's id."""
+    import hashlib
+
     frame, helpers = photos
     out = make_curio_segment(helpers["curio_derived_file"])(frame, _loaded(DDRNET), STREET)
+    model = hashlib.sha1(DDRNET.name.encode("utf-8")).hexdigest()[:12]
     for url, file_id in zip(out["overlay_url"], frame["file_id"]):
-        assert url == f"/api/datasets/{SAMPLE}/media/{file_id}@0?variant=original"
+        assert url == f"/api/datasets/{SAMPLE}/media/{file_id}@0-{model}?variant=original"
 
 
 def test_the_results_lead_the_row(photos):
