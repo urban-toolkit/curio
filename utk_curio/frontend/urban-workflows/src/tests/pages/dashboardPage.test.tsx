@@ -59,7 +59,10 @@ jest.mock("../../components/menus/top/ShareMenu", () => ({
 jest.mock("../../components/ProjectLoader", () => ({
   useProjectLoadState: () => mockLoadState,
 }));
-jest.mock("../../utils/fitViewWithMenuOffset", () => ({ fitViewWithMenuOffset: () => true }));
+jest.mock("../../utils/fitViewWithMenuOffset", () => ({
+  fitViewWithMenuOffset: () => true,
+  fitViewWithMenuOffsetNow: () => ({ x: 0, y: 0, zoom: 1 }),
+}));
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => mockFlow,
   useNodeActionsContext: () => ({ workflowName: "Chicago trips" }),
