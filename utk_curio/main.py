@@ -574,11 +574,15 @@ def main():
         _require_supported_node()
         if args.server == "all":
             log_always("Starting all servers (backend, sandbox, frontend)...")
-        # A frontend with nothing to build needs none of the checks below, so it
-        # starts first: after a deploy the page is back within seconds of the
-        # container starting, and its banner explains the wait for the backend.
-        # A build waits until the backend and sandbox are up, as it always has.
-        frontend_first = args.server == "all" and not _frontend_must_build(args.force_rebuild)
+        # A deployment's frontend with nothing to build needs none of the checks
+        # below, so it starts first: after a deploy the page is back within
+        # seconds of the container starting, and its banner explains the wait
+        # for the backend. A local start keeps the old order, so its page does
+        # not open on a backend that is still starting, and a build waits until
+        # the backend and sandbox are up, as it always has.
+        frontend_first = (
+            args.server == "all" and args.deploy and not _frontend_must_build(args.force_rebuild)
+        )
         if frontend_first:
             lifecycle.processes.append(start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path))
         try:

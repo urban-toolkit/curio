@@ -1,12 +1,13 @@
-"""``start all`` starts a frontend that has nothing to build before anything else.
+"""``start all --deploy`` starts a frontend that has nothing to build first.
 
 A deploy stops the old container and starts the new one, and until a server
 answers on the frontend's port the site is a blank page. The static server
 needs none of the start-up checks (two pip runs, the DuckDB extension seeding)
 nor the backend's database preparation, so when ``dist/`` is current it starts
-first and the page, with its offline banner, is back within seconds. A start
-that has to build the frontend keeps the old order, so a local build never
-delays the backend.
+first and the page, with its offline banner, is back within seconds. A local
+start keeps the old order, so its page does not open on a backend that is
+still starting, and a start that has to build the frontend keeps it too, so a
+build never delays the backend.
 """
 from __future__ import annotations
 
@@ -41,7 +42,7 @@ def _interrupted(seconds):
     raise KeyboardInterrupt
 
 
-def _start(monkeypatch, *, must_build, failing_check=None):
+def _start(monkeypatch, *, must_build, deploy=True, failing_check=None):
     """Run ``curio.py start`` with every step recorded instead of done.
 
     Returns the order of the steps, the servers, and how main() exited.
@@ -59,7 +60,7 @@ def _start(monkeypatch, *, must_build, failing_check=None):
         return run
 
     # What main() changes outside itself, each put back after the test.
-    monkeypatch.setattr("sys.argv", ["curio.py", "start"])
+    monkeypatch.setattr("sys.argv", ["curio.py", "start", *(["--deploy"] if deploy else [])])
     monkeypatch.setattr(logs, "verbosity", logs.verbosity)
     monkeypatch.setattr(lifecycle, "processes", [])
     monkeypatch.setattr(lifecycle, "shutdown_flag", flag)
@@ -96,10 +97,19 @@ def _start(monkeypatch, *, must_build, failing_check=None):
 CHECKS = ["framework requirements", "manifest dependencies", "duckdb extensions"]
 
 
-def test_a_built_frontend_starts_before_the_checks_and_the_backend(monkeypatch):
+def test_a_deployment_starts_its_built_frontend_before_the_checks_and_the_backend(monkeypatch):
     steps, servers, code = _start(monkeypatch, must_build=False)
 
     assert steps == ["frontend", *CHECKS, "backend", "sandbox"]
+    assert code == 0
+    for name, server in servers.items():
+        assert server.calls[:1] == ["terminate"], (name, server.calls)
+
+
+def test_a_local_start_keeps_its_built_frontend_last(monkeypatch):
+    steps, servers, code = _start(monkeypatch, must_build=False, deploy=False)
+
+    assert steps == [*CHECKS, "backend", "sandbox", "frontend"]
     assert code == 0
     for name, server in servers.items():
         assert server.calls[:1] == ["terminate"], (name, server.calls)
