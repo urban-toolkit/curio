@@ -16,10 +16,12 @@ import { compileDataSpecToAutkDbJs } from "../../../adapters/node/autkDataCompil
 import { loadSpecLayers } from "../../../adapters/node/autkLayerMaterialize";
 
 jest.mock("../../../services/api", () => ({ fetchData: jest.fn() }));
+// Virtual, as the other suites mock Autark: keyed by the package's name, so the
+// loader's import of it gets this whatever its `exports` resolve to under Jest.
 jest.mock("@urban-toolkit/autk-db", () => ({
   DEFAULT_WORKSPACE_COORDINATE_FORMAT: "EPSG:3395",
   AutkDb: jest.fn().mockImplementation(() => new mockAutkDb()),
-}));
+}), { virtual: true });
 
 const EXAMPLES_DIR = path.join(__dirname, "..", "..", "..", "..", "..", "..", "..", "docs", "examples");
 
