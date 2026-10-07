@@ -11,8 +11,10 @@ with the columns a node needs to reach each file:
 
 ``curio_derived_file(dataset_id, file_id, t_ms, ext)`` names a file a node
 writes from one of a collection's files: a video's frame, a recording's
-window. The backend serves it back under the same id. Both paths, in process
-and isolated, build these from one function, so they cannot disagree.
+window, a photo's overlay. A ``tag`` tells two derived files of one file and
+time apart: an overlay's names the model that drew it. The backend serves the
+file back under the same id (``DERIVED_ID_RE``). Both paths, in process and
+isolated, build these from one function, so they cannot disagree.
 """
 
 from __future__ import annotations
@@ -21,7 +23,14 @@ import os
 import re
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$")
-_FILE_ID_RE = re.compile(r"^[0-9a-f]{16}$")
+_FILE_ID = r"[0-9a-f]{16}"
+_TAG = r"[0-9a-z]{1,32}"
+_FILE_ID_RE = re.compile(rf"^{_FILE_ID}$")
+_TAG_RE = re.compile(rf"^{_TAG}$")
+
+#: A derived file's id, ``<fileId>@<t_ms>`` or ``<fileId>@<t_ms>-<tag>``: what
+#: ``curio_derived_file`` names and the media route looks up.
+DERIVED_ID_RE = re.compile(rf"^({_FILE_ID})@([0-9]{{1,12}})(?:-({_TAG}))?$")
 
 #: What a derived file of each source kind is, and where it goes.
 DERIVED = {
@@ -36,9 +45,14 @@ def media_url(dataset_id, file_id, variant="thumb"):
     return f"/api/datasets/{dataset_id}/media/{file_id}?variant={variant}"
 
 
-def derived_relpath(kind_folder, dataset_id, file_id, t_ms, ext):
-    """``<folder>/<datasetId>/<fileId>/<t_ms>.<ext>`` under the media directory."""
-    return os.path.join(kind_folder, dataset_id, file_id, f"{int(t_ms)}.{ext}")
+def derived_stem(t_ms, tag=None):
+    """``<t_ms>`` or ``<t_ms>-<tag>``: a derived file's name, and its id after the ``@``."""
+    return f"{int(t_ms)}-{tag}" if tag is not None else f"{int(t_ms)}"
+
+
+def derived_relpath(kind_folder, dataset_id, file_id, t_ms, ext, tag=None):
+    """``<folder>/<datasetId>/<fileId>/<stem>.<ext>`` under the media directory."""
+    return os.path.join(kind_folder, dataset_id, file_id, f"{derived_stem(t_ms, tag)}.{ext}")
 
 
 _OUTPUT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -114,24 +128,28 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
         last = [c for c in LOCATOR_COLUMNS if c in frame.columns]
         return frame[[c for c in frame.columns if c not in last] + last]
 
-    def curio_derived_file(dataset_id, file_id, t_ms, ext=None, *, kind="video"):
+    def curio_derived_file(dataset_id, file_id, t_ms, ext=None, *, kind="video", tag=None):
         """Where to write the frame (or clip, or overlay) at *t_ms* of one file, and its row.
 
+        *tag*, up to 32 lowercase letters and digits, tells two derived files
+        of one file and time apart, as the model that drew an overlay does.
         Returns ``{"file_id", "path", "thumbnail", "image_url"|"audio_url"}``.
         The directory exists when this returns; write the bytes to ``path``.
         """
         dataset_id, file_id = str(dataset_id), str(file_id)
         if not _ID_RE.match(dataset_id) or not _FILE_ID_RE.match(file_id):
             raise ValueError("not a collection file")
+        if tag is not None and not _TAG_RE.match(str(tag)):
+            raise ValueError("a derived file's tag is 1 to 32 lowercase letters and digits")
         if not media_dir:
             raise RuntimeError(
                 "This node cannot write derived files here - run it on a collection "
                 "loaded with curio_load_collection()."
             )
         folder, default_ext, _row_kind = DERIVED.get(kind, DERIVED["video"])
-        path = os.path.join(media_dir, derived_relpath(folder, dataset_id, file_id, t_ms, ext or default_ext))
+        path = os.path.join(media_dir, derived_relpath(folder, dataset_id, file_id, t_ms, ext or default_ext, tag))
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        derived_id = f"{file_id}@{int(t_ms)}"
+        derived_id = f"{file_id}@{derived_stem(t_ms, tag)}"
         row = {"file_id": derived_id, "path": path, "thumbnail": media_url(dataset_id, derived_id)}
         if kind == "audio":
             row["audio_url"] = media_url(dataset_id, derived_id, "original")

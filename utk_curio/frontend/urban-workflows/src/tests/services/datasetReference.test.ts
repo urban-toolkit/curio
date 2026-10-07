@@ -15,6 +15,11 @@ import {
   datasetReference,
   datasetReferenceCode,
 } from "../../services/datasetCatalog/datasetReference";
+import type { DatasetGroupLayerRef } from "../../services/datasetCatalog/datasetCatalogTypes";
+import {
+  datasetIdsInCode,
+  osmGroupLoaderSnippet,
+} from "../../services/datasetCatalog/datasetLoaderSnippets";
 
 const item = (over: Record<string, unknown> = {}) =>
   ({ id: "data.utk.acs@1", path: "C:/Users/fabio/.curio/data/acs.parquet", ...over }) as never;
@@ -68,5 +73,54 @@ describe("datasetReferenceCode", () => {
     expect(
       datasetReferenceCode({ id: "imported.xabc@1", path: "/x/index.parquet", uri: "", format: "collection" }),
     ).toBe('curio_load_collection("imported.xabc@1")');
+  });
+});
+
+describe("a layer group's reference (#724)", () => {
+  // A group card as the listing sends it (`build_layer_group_item`): the group
+  // id names no file, and the card lists its layers, each with its own id.
+  const layer = (id: string, layerName: string, format: "geojson" | "parquet"): DatasetGroupLayerRef => ({
+    id,
+    title: `Loop (${layerName})`,
+    uri: `curio://datasets/${id}@1`,
+    path: `/store/${id}@1/data/${layerName}.${format}`,
+    format,
+    layerName,
+  });
+  const groups: Array<[string, DatasetGroupLayerRef[]]> = [
+    // An OpenStreetMap tag set from the Discovery Catalog, split by geometry.
+    [
+      "osm.x1a2b3c4",
+      [
+        layer("imported.xpoints", "points", "geojson"),
+        layer("imported.xpolylines", "polylines", "geojson"),
+        layer("imported.xpolygons", "polygons", "geojson"),
+      ],
+    ],
+    ["gpkg.x1a2b3c4", [layer("imported.xparks", "parks", "parquet"), layer("imported.xtrails", "trails", "parquet")]],
+    ["gtfs.x1a2b3c4", [layer("imported.xstops", "stops", "parquet"), layer("imported.xroutes", "routes", "parquet")]],
+  ];
+
+  test.each(groups)("a %s group hands over the loader its dropped card's node runs", (groupId, layers) => {
+    const kind = groupId.split(".")[0];
+    const ref = datasetReference({
+      id: groupId,
+      path: null,
+      uri: `curio://${kind}/${groupId}`,
+      format: kind,
+      groupLayers: layers,
+    } as never);
+    // A group card's drop loads the layers with this loader (`osmGroupLoaderSnippet`).
+    expect(ref.code).toBe(osmGroupLoaderSnippet(layers).code);
+    expect(datasetIdsInCode(ref.code)).toEqual(layers.map((each) => each.id));
+    expect(ref.code).not.toContain(groupId);
+  });
+
+  test("one of a group's layers still hands over its one call", () => {
+    const stops = {
+      ...layer("imported.xstops", "stops", "parquet"),
+      groupId: "gtfs.x1a2b3c4",
+    };
+    expect(datasetReference(stops as never).code).toBe('curio_load_data("imported.xstops")');
   });
 });

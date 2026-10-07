@@ -6,6 +6,7 @@ import io
 import json
 import zipfile
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -219,6 +220,32 @@ def test_build_auto_detects_python_dependencies_from_source(tmp_curio):
     result = build_package_archive(draft)
     assert result.manifest.python_deps == {"numpy": "*", "scikit-learn": "*"}
     assert result.manifest.js_deps == {}
+
+
+def test_saving_into_curio_weather_scans_the_sources_that_read_their_inputs_through_chips(tmp_curio):
+    """#707: since #706, ``utci-compute`` and ``utci-zonal`` read their inputs
+    through chips. Saved into ``curio.weather@1``, the package is rebuilt from
+    every source it has, and the scan found nothing in those two: a library
+    added to one of them was never listed. What the package declares, numpy's
+    floor among it, keeps its range."""
+    weather = Path(__file__).resolve().parents[4] / "packages" / "curio.weather@1"
+    manifest = json.loads((weather / "manifest.json").read_text(encoding="utf-8"))
+    code = (weather / "sources" / "utci-compute.py").read_text(encoding="utf-8")
+    assert "[!! input 0 !!]" in code, "utci-compute no longer holds a chip; this test needs a source that does"
+    edited = code.replace("import numpy as np\n", "import numpy as np\nfrom scipy import ndimage\n", 1)
+    assert edited != code
+    draft = {
+        "manifest": manifest,
+        "sources": {"utci-compute": {"filename": "utci-compute.py", "code": edited}},
+    }
+
+    result = build_package_archive(draft, onto=weather)
+
+    deps = result.manifest.python_deps
+    assert deps.get("scipy") == "*", deps
+    # What the package declares keeps its range.
+    assert deps.get("numpy") == ">=1.26", deps
+    assert deps["pythermalcomfort"] == "^3.9" and deps["rasterstats"] == "^0.20", deps
 
 
 def test_publish_package_archive_to_catalog_dir(tmp_path):

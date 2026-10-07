@@ -18,9 +18,11 @@ import {
   groupDatasetsForPalette,
   nodeLinkedDatasetIds,
   isNodeLinkedToAnyDataset,
+  datasetIdsInCode,
   DATASET_DRAG_MIME,
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
+  type DatasetFormat,
   type DatasetPaletteGroup,
 } from "../../services/datasetCatalog";
 import { mergeDatasetLoaderCode } from "../../services/datasetCatalog/datasetLoaderSnippets";
@@ -575,6 +577,87 @@ test("dropping an OSM group onto a node applies all layer refs, not the group id
   expect(result.data.datasetRefs).toEqual(["existing", "loop.points", "loop.lines"]);
   expect(result.data.appliedDatasets["osm.x9"]).toBeUndefined();
   expect(result.data.appliedDatasets["loop.points"]).toBeTruthy();
+});
+
+describe("a layer group card dragged from the Data Catalog drawer (#724)", () => {
+  // The drawer lists a layer group as one card (`groupOsm`), shaped as the
+  // backend builds it (`build_layer_group_item`): the group's id, title and
+  // format, its layers' ids, and its layers.
+  function layersOf(groupId: string, format: DatasetFormat): DatasetCatalogItem[] {
+    return ["stops", "routes"].map((layer) =>
+      makeDataset({
+        id: `imported.x${layer}`,
+        title: `google_transit (${layer})`,
+        origin: "imported",
+        format,
+        uri: `curio://datasets/imported.x${layer}@1`,
+        path: `/store/imported.x${layer}@1/data/${layer}.${format === "netcdf" ? "nc" : "parquet"}`,
+        layerName: layer,
+        groupId,
+      }),
+    );
+  }
+
+  function drawerCard(groupId: string, members: DatasetCatalogItem[]): DatasetCatalogItem {
+    const kind = groupId.split(".")[0] as DatasetFormat;
+    return {
+      ...makeDataset({
+        id: groupId,
+        title: "google_transit",
+        origin: "imported",
+        format: kind,
+        uri: `curio://${kind}/${groupId}`,
+        path: null,
+        groupLayerIds: members.map((member) => member.id),
+      }),
+      groupLayers: members.map(({ id, title, uri, path, format, layerName }) => ({
+        id,
+        title,
+        uri,
+        path,
+        format,
+        layerName,
+      })),
+    } as DatasetCatalogItem;
+  }
+
+  afterEach(() => endDatasetDrag());
+
+  test.each([
+    ["osm.x1", "parquet"],
+    ["gpkg.x1", "parquet"],
+    ["gtfs.x1", "parquet"],
+    ["netcdf.x1", "netcdf"],
+  ] as Array<[string, DatasetFormat]>)("a %s card drops as the palette's group row does", (groupId, format) => {
+    const members = layersOf(groupId, format);
+    // The drawer's drag start (`handleDatasetDragStart`), then the canvas drop.
+    beginDatasetDrag(drawerCard(groupId, members));
+    const payload = readDatasetDragPayload({ getData: () => "", types: [] } as unknown as DataTransfer);
+    expect(payload).not.toBeNull();
+    const fromDrawer = buildDatasetLoaderNodeOptions(payload!, { x: 0, y: 0 });
+
+    const [group] = groupDatasetsForPalette(members) as [DatasetPaletteGroup];
+    const fromPalette = buildDatasetLoaderNodeOptions(createOsmGroupDragPayload(group), { x: 0, y: 0 });
+    expect(fromDrawer).toEqual(fromPalette);
+    // The node loads and references each layer, never the group id.
+    expect(datasetIdsInCode(fromDrawer.code)).toEqual(["imported.xstops", "imported.xroutes"]);
+    expect(fromDrawer.datasetRefs).toEqual(["imported.xstops", "imported.xroutes"]);
+    expect(fromDrawer.appliedDatasets[groupId]).toBeUndefined();
+  });
+
+  test("dropped onto a node, a card applies its layers, not the group id", () => {
+    const card = drawerCard("gtfs.x1", layersOf("gtfs.x1", "parquet"));
+    const result = applyDatasetToNodeData({ datasetRefs: ["existing"] }, "", createDatasetDragPayload(card));
+    expect(result.data.datasetRefs).toEqual(["existing", "imported.xstops", "imported.xroutes"]);
+    expect(result.data.appliedDatasets["gtfs.x1"]).toBeUndefined();
+    expect(datasetIdsInCode(result.code)).toEqual(["imported.xstops", "imported.xroutes"]);
+  });
+
+  test("a card's loader, when the listing sent none, reads each layer", () => {
+    const code = buildDatasetLoaderCode(drawerCard("gpkg.x1", layersOf("gpkg.x1", "parquet")));
+    expect(datasetIdsInCode(code)).toEqual(["imported.xstops", "imported.xroutes"]);
+    expect(code).toContain("return layers");
+  });
 });
 
 test("buildDatasetLoaderNodeOptions stamps the datasetSource linkage marker", () => {

@@ -36,7 +36,8 @@ import { backendUrl } from "../utils/backendUrl";
 import { collabSocketTarget } from "../utils/collabSocketTarget";
 
 const BACKEND_URL = backendUrl();
-const NAMESPACE = "/collab";
+// The backend's --collab-namespace, until /api/config/public reports it.
+const DEFAULT_NAMESPACE = "/collab";
 
 export interface CollabUser {
     user_id: number;
@@ -202,6 +203,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     const [panelOpen, setPanelOpen] = useState<boolean>(true);
 
     const socketRef = useRef<Socket | null>(null);
+    const namespaceRef = useRef<string>(DEFAULT_NAMESPACE);
     const projectIdRef = useRef<string | undefined>(getCurrentProjectId());
     const remoteHandlersRef = useRef<Map<string, Set<RemoteHandler>>>(new Map());
 
@@ -213,7 +215,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         authApi
             .getPublicConfig()
             .then((cfg) => {
-                if (!cancelled) setEnabled(Boolean(cfg.enable_collab));
+                if (cancelled) return;
+                namespaceRef.current = cfg.collab_namespace || DEFAULT_NAMESPACE;
+                setEnabled(Boolean(cfg.enable_collab));
             })
             .catch(() => {
                 if (!cancelled) setEnabled(false);
@@ -377,7 +381,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                 // No token → don't even try; backend would refuse the handshake.
                 return;
             }
-            const { url, path } = collabSocketTarget(BACKEND_URL, NAMESPACE);
+            const { url, path } = collabSocketTarget(BACKEND_URL, namespaceRef.current);
             const s = io(url, {
                 path,
                 auth: { token },

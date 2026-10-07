@@ -12,8 +12,10 @@ import styles from "./DiscoveryAddDialog.module.css";
 import {
   SourceParameterForm,
   answered,
+  hasNamedAreas,
   initialValues,
   parameterProblem,
+  withOsmPlaceNames,
   type ParameterValues,
 } from "./SourceParameterForm";
 
@@ -109,6 +111,9 @@ export function DiscoveryAddDialog({
   const parameters = React.useMemo(() => declared ?? resource.parameters ?? [], [declared, resource]);
   const [values, setValues] = React.useState<ParameterValues>(() => initialValues(parameters));
   const parameterIssue = parameterProblem(parameters, values);
+  // A named area's place, looked up when the add is asked for, and what was wrong with it.
+  const [lookingUp, setLookingUp] = React.useState(false);
+  const [placeIssue, setPlaceIssue] = React.useState<string | null>(null);
   const [choices, setChoices] = React.useState<Record<string, Choice>>(() =>
     Object.fromEntries(fields.map((field) => [field.name, initialChoice(field)])),
   );
@@ -162,7 +167,14 @@ export function DiscoveryAddDialog({
           onChange={(e) => setTitle(e.target.value)}
         />
       </label>
-      <SourceParameterForm parameters={parameters} values={values} onChange={setValues} />
+      <SourceParameterForm
+        parameters={parameters}
+        values={values}
+        onChange={(next) => {
+          setValues(next);
+          setPlaceIssue(null);
+        }}
+      />
       {fields.map((field) => {
         const choice = choices[field.name];
         return (
@@ -204,6 +216,7 @@ export function DiscoveryAddDialog({
       {empty ? <p className={styles.warning}>Keep at least one value of every field.</p> : null}
       {problem ? <p className={styles.warning}>{problem}</p> : null}
       {parameterIssue ? <p className={styles.warning}>{parameterIssue}</p> : null}
+      {placeIssue ? <p className={styles.warning}>{placeIssue}</p> : null}
     </div>
   );
 
@@ -212,17 +225,38 @@ export function DiscoveryAddDialog({
       title={verb === "download" ? `Download ${resource.name}` : `Add ${resource.name}`}
       body={body}
       confirmLabel={verb === "download" ? "Download" : "Add to Data Catalog"}
+      busy={lookingUp}
       onCancel={onCancel}
       onConfirm={() => {
         // A field with nothing kept, or a range that cannot hold a value,
         // selects no file; the warning says so.
-        if (empty || problem || parameterIssue) return;
+        if (empty || problem || parameterIssue || lookingUp) return;
         const named = title.trim() || (titleFromPlace ? "" : resource.name);
-        onAdd({
-          ...(named ? { title: named } : {}),
-          ...(narrowed ? { filters } : {}),
-          ...(asked ? { parameters: answers } : {}),
-        });
+        const add = (sent: ParameterValues) =>
+          onAdd({
+            ...(named ? { title: named } : {}),
+            ...(narrowed ? { filters } : {}),
+            ...(asked ? { parameters: sent } : {}),
+          });
+        if (!hasNamedAreas(parameters, answers)) {
+          add(answers);
+          return;
+        }
+        // The loader matches a named area's place by its OpenStreetMap name,
+        // so the place is looked up first, and one not found is not sent.
+        setLookingUp(true);
+        setPlaceIssue(null);
+        withOsmPlaceNames(parameters, answers).then(
+          (sent) => {
+            setLookingUp(false);
+            if (typeof sent === "string") setPlaceIssue(sent);
+            else add(sent);
+          },
+          (err: Error) => {
+            setLookingUp(false);
+            setPlaceIssue(err.message || "The place search did not answer.");
+          },
+        );
       }}
     />
   );

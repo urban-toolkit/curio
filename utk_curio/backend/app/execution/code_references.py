@@ -196,6 +196,14 @@ def reference_text(inner: str) -> str:
     return f"[!! {inner} !!]"
 
 
+def references_as_names(code: object) -> str:
+    """*code* with each reference written as the plain name ``arg``, so code
+    that reads its inputs, widgets or tags through references parses as
+    Python. For a reader of what the code imports or defines, not of what its
+    references hold: the package builder's import scan (#707)."""
+    return REFERENCE_RE.sub("arg", code if isinstance(code, str) else "")
+
+
 def input_reference_inner(slot: int | None, column: str | None = None, layer: str | None = None) -> str:
     """What stands inside a reference to input *slot*, to one of its layers, or
     to a column of either; ``inputReferenceInner`` in ``codeReferences.ts``."""

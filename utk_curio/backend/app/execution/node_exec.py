@@ -221,9 +221,18 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         "save_dataset": run.save_output_dataset,
     }
     if language == "python":
+        from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
         endpoint = '/exec'
         dataset_formats: dict = {}
-        dataset_paths = resolve_dataset_paths(run.code, run.dataflow_id, user, dataset_formats)
+        # On a pip install, a dataset or model file its package leaves out is
+        # downloaded as it resolves. A download that fails ends the run here,
+        # with its own error, where the sandbox would only say "not available".
+        with left_out_files.failures() as unavailable:
+            dataset_paths = resolve_dataset_paths(run.code, run.dataflow_id, user, dataset_formats)
+            exec_models = resolve_models(run.code, user)
+        if unavailable:
+            return _unavailable_reply(user, run, input_ref, unavailable, started=t0), 200
         # Under isolation the sandbox gives each user a persistent work directory,
         # so a node's relative reads and writes land somewhere that belongs to
         # them instead of the launch tree. The storage key, not a name, and only
@@ -232,7 +241,6 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         user_key = exec_user_key(user)
         collections, media_dir = resolve_exec_collections(run.code, user_key, user=user)
         exec_secrets = resolve_secrets(run.code, user)
-        exec_models = resolve_models(run.code, user)
         package_modules = resolve_package_modules(run.node_type, user_key, run.dataflow_id)
         body.update({
             "dataset_paths": dataset_paths,
@@ -358,6 +366,39 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     if language == "python":
         reply['missingModule'] = _missing_module(user, output, stderr)
     return reply, 200
+
+
+def _unavailable_reply(user, run: NodeRun, input_ref: dict, unavailable: dict, *, started: float) -> dict:
+    """The reply of a Python run whose code reads a file the pip package
+    leaves out that could not be downloaded (*unavailable*, ``{repo path:
+    message}``): a failed run whose error is the download's own, recorded as
+    a failed run is. The sandbox is not asked to run code that would fail at
+    that read."""
+    stderr = "\n\n".join(unavailable.values())
+    output = {'path': '', 'dataType': 'str'}
+    duration_ms = (time.perf_counter() - started) * 1000.0
+    record_runtime_outcome(
+        user, node_id=run.node_id, dataflow_id=run.dataflow_id, code=run.code,
+        stdout=[], stderr=stderr, output=output, duration_ms=duration_ms,
+    )
+    _monitor_counters.record_execution(
+        language="python", node_type=run.node_type, ok=False, duration_ms=duration_ms,
+    )
+    _monitor_errors.record(
+        "node",
+        summary="A file the pip package leaves out could not be downloaded",
+        detail=stderr,
+        context={"nodeType": run.node_type, "language": "python"},
+    )
+    return {
+        'stdout': [],
+        'stderr': stderr,
+        'input': input_ref,
+        'output': output,
+        'installedDataset': None,
+        'datasetDiagnostic': None,
+        'missingModule': None,
+    }
 
 
 def _missing_module(user, output, stderr):

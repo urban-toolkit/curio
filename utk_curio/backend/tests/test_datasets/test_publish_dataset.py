@@ -89,6 +89,65 @@ def test_publish_persists_producer_lineage_in_hub_manifest(tmp_path, monkeypatch
     assert manifest["upstreamInputs"] == [{"nodeId": "up1", "nodeType": "DATA_LOADING"}]
 
 
+def test_a_published_list_column_installs_as_lists(client, db, user_and_token, tmp_path, monkeypatch):
+    """#700: a node output's list column survives publishing. Parquet holds the
+    lists as JSON text, and the ``<file>.decode.json`` beside the file names the
+    columns to decode. Publish copies it with the file, so another account that
+    installs the published dataset loads the column as lists, not as strings."""
+    import pandas as pd
+
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
+    from utk_curio.backend.app.users.models import User, UserSession
+    from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
+        auth_headers,
+        create_project,
+        save_project_with_output,
+    )
+    from utk_curio.sandbox.util.catalog_helpers import read_dataset
+    from utk_curio.sandbox.util.parsers import save_dataset_parquet
+
+    monkeypatch.setenv("CURIO_CATALOG_ROOT", str(tmp_path / "catalog"))
+    _alice, token = user_and_token
+
+    # Saved as a node run saves it: the lists encoded, the sidecar beside them.
+    filename = save_dataset_parquet(
+        pd.DataFrame({"stop": ["Clark", "State"], "routes": [["22", "36"], ["2"]]}), "dataframe"
+    )
+    assert filename, "the sandbox writer saved no Parquet file"
+    project_id = create_project(client, token, name="Routes per stop")
+    save_project_with_output(client, token, project_id, filename, node_id="node-routes")
+
+    resp = client.post(
+        "/api/datasets/publish",
+        data=json.dumps({"datasetId": computed_dataset_id("node-routes", project_id), "dataflowId": project_id}),
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    catalog_id = resp.get_json()["id"]
+
+    # Another account installs the published dataset into one of its dataflows.
+    bob = User(username="bob", name="Bob", email="bob@test.com")
+    db.session.add(bob)
+    db.session.flush()
+    db.session.add(UserSession(user_id=bob.id, token="bob-token-700"))
+    db.session.commit()
+    bob_project = create_project(client, "bob-token-700", name="Transit")
+    resp = client.post(
+        f"/api/dataflows/{bob_project}/datasets/install",
+        data=json.dumps({"datasetId": catalog_id}),
+        headers=auth_headers("bob-token-700"),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    installed = resp.get_json()
+
+    # Read as ``curio_load_data`` reads it in a node.
+    frame = read_dataset(installed["path"], "parquet")
+    assert frame["routes"].tolist() == [["22", "36"], ["2"]], (
+        f"the installed copy of {catalog_id} at {installed['path']} reads its list "
+        f"column as {frame['routes'].tolist()!r}"
+    )
+
+
 def test_catalog_root_env_override(tmp_path, monkeypatch):
     """CURIO_CATALOG_ROOT relocates the hub/publish target for pip/Docker
     deployments where the package dir is read-only/ephemeral (review B10)."""

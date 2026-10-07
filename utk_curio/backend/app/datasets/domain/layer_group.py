@@ -7,7 +7,9 @@ a GTFS feed. In every case the layers are stored as independent datasets
 sharing a ``groupId``, and
 this module folds them into one synthetic catalog item whose id IS the group id,
 so the existing bundle card and tabbed preview UI render it and install/uninstall
-expand to the members.
+expand to the members. The id names no file, so the item's loader reads each
+member, and dragging the card loads every member, as the canvas palette's group
+row does.
 
 What the card *says* comes from the group id's prefix rather than being assumed:
 a GeoPackage labelled "OpenStreetMap import" with an ``osm`` format badge would
@@ -28,10 +30,8 @@ from typing import Any
 
 from utk_curio.backend.app.datasets.domain.catalog_item import (
     KEPT_IN_CODE,
-    LOADED_VARIABLES,
     base_item,
     is_safe_dataset_id,
-    loader_snippet,
 )
 from utk_curio.backend.app.datasets.domain.constants import OSM_LAYER_ORDER, layer_group_kind
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import iso_from_timestamp
@@ -179,21 +179,15 @@ def build_layer_group_item(group_id: str, members: list[dict[str, Any]]) -> dict
         # A GTFS feed is always a download, and its tables' Parquet says
         # nothing about it; the group says GTFS.
         labels["format"] = kind["format"]
-    # The group's loader is its kind's, whatever format it shows. A kind that
-    # is itself a format ``curio_load_data`` reads (NetCDF) reads each member by
-    # its own id instead, since the group id names no file.
-    loader = (
-        _members_loader_snippet(kind["format"], members)
-        if kind["format"] in LOADED_VARIABLES
-        else loader_snippet(kind["format"], None, dataset_id=group_id)
-    )
     return base_item(
         id=group_id,
         title=group_base_title(members, group_id),
         description=f"{kind['noun']} - {len(members)} {kind.get('parts', 'layer(s)')}.",
         origin="hub" if shipped else "imported",
         uri=f"curio://{kind['scheme']}/{group_id}",
-        loaderSnippet=loader,
+        # The group id names no file, whatever format the group shows: the
+        # loader reads each member by its own id.
+        loaderSnippet=_members_loader_snippet(kind["format"], members),
         sizeBytes=total_size,
         featureCount=total_features,
         updatedAt=updated,
@@ -204,6 +198,21 @@ def build_layer_group_item(group_id: str, members: list[dict[str, Any]]) -> dict
         # member (keeping its dataflow refs accurate) rather than the synthetic
         # group id.
         groupLayerIds=[m.get("id") for m in members if m.get("id")],
+        # The layers themselves, as the canvas palette's group drag carries
+        # them (``DatasetGroupLayerRef``), so a card dragged from the Data
+        # Catalog drawer makes the node that drag makes.
+        groupLayers=[
+            {
+                "id": m.get("id"),
+                "title": m.get("title"),
+                "uri": m.get("uri"),
+                "path": m.get("path"),
+                "format": m.get("format"),
+                "layerName": m.get("layerName"),
+            }
+            for m in members
+            if m.get("id")
+        ],
     )
 
 
