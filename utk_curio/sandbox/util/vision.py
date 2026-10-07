@@ -15,17 +15,25 @@ For every image the result has, for each class asked for, its share of all
 the image's pixels, in percent; ``dominant_class`` and ``dominant_pct``, the
 largest of those; and, for an image from a collection, an ``overlay_url``: the
 photo with each pixel tinted by its class, written beside the collection so
-Simple View shows it.
+Simple View shows it, under a name that holds the photo and the model.
 """
 
 from __future__ import annotations
 
 import colorsys
+import hashlib
 import json
 import os
 
 #: How strongly the class colours tint an overlay.
 OVERLAY_ALPHA = 0.5
+
+
+def model_tag(model) -> str:
+    """What an overlay's name holds of the model that drew it: the first twelve
+    hex digits of the SHA-1 of its id. Two models' overlays of one photo are
+    then two files, each served under its own URL (#621)."""
+    return hashlib.sha1(str(getattr(model, "id", "") or "").encode("utf-8")).hexdigest()[:12]
 
 
 class _OnnxRunner:
@@ -173,6 +181,7 @@ def make_curio_segment(curio_derived_file=None):
             )
         index = {name: labels.index(name) for name in wanted}
         colours = np.asarray(palette(labels), dtype=np.uint8)
+        tag = model_tag(model)
         if "path" not in getattr(images, "columns", ()):
             raise ValueError("curio_segment reads rows with a path, as curio_load_collection gives them")
 
@@ -213,7 +222,7 @@ def make_curio_segment(curio_derived_file=None):
             can_write = curio_derived_file is not None and row.get("dataset_id") and row.get("file_id")
             if overlays and can_write:
                 mask = Image.fromarray(colours[ids.astype(np.int64)]).resize(image.size, Image.NEAREST)
-                derived = curio_derived_file(row["dataset_id"], row["file_id"], 0, "png", kind="image")
+                derived = curio_derived_file(row["dataset_id"], row["file_id"], 0, "png", kind="image", tag=tag)
                 Image.blend(image, mask, OVERLAY_ALPHA).save(derived["path"])
                 url = derived.get("image_url")
             overlay_urls.append(url)
