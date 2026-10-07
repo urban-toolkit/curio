@@ -2,16 +2,17 @@ import React from "react";
 import styles from "./CredentialHint.module.css";
 import type { CredentialFinding } from "../../services/connectionKeys/credentialLiterals";
 import { requestConnectionKeys, suggestName } from "../apiSettings/apiSettingsRequest";
-import { useHostedGuest } from "../apiSettings/useHostedGuest";
+import { HOSTED_GUEST_KEYS_NOTE, useHostedGuest } from "../apiSettings/useHostedGuest";
 
 /**
  * dev/117: the quiet bar above a node's code editor when the code holds a
  * credential-shaped literal. A hint, never a block: Play, save and collab are
  * untouched, the code is never rewritten, and the value never leaves the tab
  * (the finding is a name and a line). Save as API key opens API Settings on
- * the node code key form through the dev/116 request bus; a hosted guest, who
- * cannot save a key, gets no such button. A read-only editor shows the text
- * alone.
+ * the node code key form through the dev/116 request bus. A hosted guest, who
+ * cannot save a key and so has none for `curio_secret` to read, gets no such
+ * button: its text says so, as API Settings does, and points it to an account
+ * of its own. A read-only editor shows the text alone.
  */
 export const CredentialHint: React.FC<{
   findings: CredentialFinding[];
@@ -31,7 +32,14 @@ export const CredentialHint: React.FC<{
     <div className={styles.bar} role="status" aria-live="polite" data-testid="credential-hint">
       <span className={styles.text}>
         <span className={styles.lead}>{lead}</span> Keys in node code are saved with the dataflow and shared with
-        it. Save it in API Settings and write <code>api_key = curio_secret("&lt;name&gt;")</code> instead.
+        it.{" "}
+        {hostedGuest ? (
+          <>{HOSTED_GUEST_KEYS_NOTE} Sign in with your own account to save it in API Settings.</>
+        ) : (
+          <>
+            Save it in API Settings and write <code>api_key = curio_secret("&lt;name&gt;")</code> instead.
+          </>
+        )}
       </span>
       {!readOnly ? (
         <>
