@@ -160,8 +160,9 @@ class TestASessionPassCarriesTheErrorForward:
     and a builder that keeps handing back the same code stops the spin instead
     of burning the whole budget on it."""
 
+    @pytest.mark.parametrize("sandbox_run_s", [0, 0.6], ids=["idle", "loaded"])
     def test_the_second_pass_is_handed_the_first_pass_error_and_the_trail_grows(
-        self, client, user_and_token, tmp_curio, monkeypatch
+        self, client, user_and_token, tmp_curio, monkeypatch, sandbox_run_s
     ):
         import utk_curio.backend.tests.test_agents.test_verified_rounds as vr
         from utk_curio.backend.app.agents.application.solve.batch import SolveBatch
@@ -189,6 +190,7 @@ class TestASessionPassCarriesTheErrorForward:
             ],
             exec_outcomes={"always_bad": "Traceback: NameError: always_bad"},
         )
+        helper._on_a_loaded_runner(monkeypatch, sandbox_run_s)
         body = helper._solve(client, token, ctx, verify=True)
         load = body["results"][ctx["load"]]
         assert body["passes"] > 1  # the session kept managing the dataflow
@@ -203,7 +205,9 @@ class TestASessionPassCarriesTheErrorForward:
         # And the spin is bounded: a builder repeating itself does not get the
         # whole budget (three repeat-only passes, then the session moves on).
         repeat_passes = sum(1 for k in kinds if k == "repeated-attempt")
-        assert repeat_passes <= 3 * budgets._MAX_WEAK_PASSES
+        assert repeat_passes <= 3 * budgets._MAX_WEAK_PASSES, (
+            f"(round, kind) per attempt: {[(a.get('round'), a.get('kind')) for a in load['attempts']]}"
+        )
         assert helper._node_content(ctx, ctx["load"]) == ""  # nothing failing was written
 
 

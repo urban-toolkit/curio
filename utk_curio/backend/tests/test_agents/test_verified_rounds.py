@@ -915,6 +915,24 @@ class TestVerifiedSolve:
         spec = projects_storage.read_spec(ctx["ukey"], ctx["pid"])
         return next(n for n in spec["dataflow"]["nodes"] if n["id"] == node_id)["content"]
 
+    @staticmethod
+    def _on_a_loaded_runner(monkeypatch, sandbox_run_s):
+        """Issue #729: a loaded runner, on which every sandbox run takes
+        *sandbox_run_s* seconds (nothing changes for 0). Two runs of 0.6 s
+        outlast the suite's one-second session (conftest). Call it after
+        ``_setup``, whose fake sandbox it slows down."""
+        if not sandbox_run_s:
+            return
+        from utk_curio.backend.app.execution import runner as exec_runner
+
+        run = exec_runner._http_exec
+
+        def _slow_run(endpoint, payload):
+            time.sleep(sandbox_run_s)
+            return run(endpoint, payload)
+
+        monkeypatch.setattr(exec_runner, "_http_exec", _slow_run)
+
     LOADER = 'import pandas as pd\ndataset_path = curio_data_path("{DATASET}")\ndf = pd.read_csv(dataset_path)\nreturn df'
 
     def test_pass_writes_only_after_the_code_ran(self, client, user_and_token, tmp_curio, monkeypatch):
