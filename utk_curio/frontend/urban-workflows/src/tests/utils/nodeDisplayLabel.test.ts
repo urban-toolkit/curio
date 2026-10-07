@@ -3,6 +3,29 @@ import {
   resolveComputedInstallTitle,
 } from "../../utils/palettePackageFactoryDraft";
 import { NodeType } from "../../constants";
+import { clearPackageNodes, registerNode } from "../../registry/nodeRegistry";
+import type { NodeDescriptor } from "../../registry/types";
+
+/** A package template as the registry holds one, with only what naming reads. */
+function descriptor(id: string, label: string): NodeDescriptor {
+  const [packageId] = id.split("/");
+  return {
+    id,
+    source: "package",
+    package: { packageId, major: 1, version: "1.0.0" },
+    category: "computation",
+    label,
+    icon: {} as never,
+    inputPorts: [],
+    outputPorts: [],
+    editor: "code",
+    inPalette: true,
+    description: "",
+    hasCode: true,
+    hasWidgets: false,
+    hasGrammar: false,
+  } as unknown as NodeDescriptor;
+}
 
 describe("resolveNodeDisplayLabel (node-type → display name)", () => {
   test("derives a non-empty label from the node type", () => {
@@ -34,6 +57,34 @@ describe("resolveNodeDisplayLabel (node-type → display name)", () => {
     expect(
       resolveNodeDisplayLabel({ nodeType: "1782498496720" as unknown as NodeType }),
     ).toBe("1782498496720");
+  });
+});
+
+describe("resolveNodeDisplayLabel names a node as a run on the server does (#775)", () => {
+  afterEach(() => clearPackageNodes());
+
+  test("a registered template's label names its node, versioned or not", () => {
+    registerNode(descriptor("ai.test.names/zonal-mean@1", "Zonal Mean"));
+    expect(resolveNodeDisplayLabel({ nodeType: "ai.test.names/zonal-mean@1" as any })).toBe("Zonal Mean");
+    expect(resolveNodeDisplayLabel({ nodeType: "ai.test.names/zonal-mean" as any })).toBe("Zonal Mean");
+  });
+
+  test("a renamed header wins over a registered template's label", () => {
+    registerNode(descriptor("ai.test.names/zonal-mean@1", "Zonal Mean"));
+    expect(
+      resolveNodeDisplayLabel({
+        nodeType: "ai.test.names/zonal-mean@1" as any,
+        packageTemplateLabel: "Mean by tract",
+      }),
+    ).toBe("Mean by tract");
+  });
+
+  test("with no template registered, the type in words, without its version", () => {
+    // Not the raw "ai.test.names/heat-index-stats@2": a save before the
+    // registry loads would title the computed dataset with it.
+    expect(
+      resolveNodeDisplayLabel({ nodeType: "ai.test.names/heat-index-stats@2" as any }),
+    ).toBe("Heat Index Stats");
   });
 });
 

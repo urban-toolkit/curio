@@ -1,0 +1,92 @@
+{
+  "description": "What a node is called: the name its canvas header shows, which also titles its computed dataset. Read by src/tests/utils/nodeDisplayLabelCases.test.ts (nodeDisplayLabel) and by backend/tests/test_execution/test_node_names.py (execution/node_names.py display_label). customLabel is the node's renamed header (packageTemplateLabel); templateLabel is its template's label from the package manifest, absent when no installed template matches the type.",
+  "cases": [
+    {
+      "name": "a built-in node takes its template's label",
+      "nodeType": "curio.builtin/computation-analysis@1",
+      "templateLabel": "Python Computation",
+      "label": "Python Computation"
+    },
+    {
+      "name": "an unversioned type takes the same label",
+      "nodeType": "curio.builtin/computation-analysis",
+      "templateLabel": "Python Computation",
+      "label": "Python Computation"
+    },
+    {
+      "name": "a renamed header wins over the template's label",
+      "nodeType": "curio.builtin/computation-analysis@1",
+      "customLabel": "Dict output",
+      "templateLabel": "Python Computation",
+      "label": "Dict output"
+    },
+    {
+      "name": "a renamed header is trimmed",
+      "nodeType": "curio.builtin/data-loading@1",
+      "customLabel": "  Census tracts  ",
+      "templateLabel": "Data Loading",
+      "label": "Census tracts"
+    },
+    {
+      "name": "a blank renamed header is ignored",
+      "nodeType": "curio.builtin/data-loading@1",
+      "customLabel": "   ",
+      "templateLabel": "Data Loading",
+      "label": "Data Loading"
+    },
+    {
+      "name": "a template label is trimmed",
+      "nodeType": "curio.builtin/data-loading@1",
+      "templateLabel": " Data Loading ",
+      "label": "Data Loading"
+    },
+    {
+      "name": "no template: the type in words, without its version",
+      "nodeType": "curio.builtin/data-loading@1",
+      "label": "Data Loading"
+    },
+    {
+      "name": "no template: a package type in words, without its version",
+      "nodeType": "ai.utk.uhvi/uhvi-zonal-stats@12",
+      "label": "Uhvi Zonal Stats"
+    },
+    {
+      "name": "no template: an unversioned type in words",
+      "nodeType": "curio.builtin/autk-grammar",
+      "label": "Autk Grammar"
+    },
+    {
+      "name": "no template: a legacy enum name in words",
+      "nodeType": "PYTHON_COMPUTATION",
+      "label": "Python Computation"
+    },
+    {
+      "name": "no template: a blank template label counts as none",
+      "nodeType": "curio.builtin/data-pool@1",
+      "templateLabel": "",
+      "label": "Data Pool"
+    },
+    {
+      "name": "a numeric type is a node id: the renamed header names it",
+      "nodeType": "1782498496720",
+      "customLabel": "Join Step",
+      "label": "Join Step"
+    },
+    {
+      "name": "a numeric type alone stays as it is",
+      "nodeType": "1782498496720",
+      "label": "1782498496720"
+    },
+    {
+      "name": "a numeric type takes no template label",
+      "nodeType": "1782498496720",
+      "templateLabel": "Python Computation",
+      "label": "1782498496720"
+    },
+    {
+      "name": "no type and no header: no name",
+      "nodeType": "",
+      "label": ""
+    }
+  ]
+}

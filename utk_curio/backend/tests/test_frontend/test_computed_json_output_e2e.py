@@ -59,7 +59,6 @@ from .utils import (
     api_json,
     canvas_node_type,
     dismiss_toasts,
-    drag_to_canvas,
     node_locator,
     require_project_page,
     require_user_auth,
@@ -73,15 +72,27 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-ANALYSIS_TILE = "#tile-computation-analysis"  # curio.builtin/computation-analysis's palette tile
 ANALYSIS_TYPE = "curio.builtin/computation-analysis"
+#: What the node's header shows, its template's label: the name both computed
+#: datasets carry, whether the canvas saved them or a run on the server did (#775).
+ANALYSIS_LABEL = "Python Computation"
 
 DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
 
-# Nodes are 525x350 at zoom 1 in a 1280x720 viewport, so drops closer than
-# ~600px apart horizontally overlap and the later body covers the earlier one.
-POS_LEFT = (150, 150)
-POS_RIGHT = (760, 150)
+# The two nodes, with ids fixed here rather than minted by a palette drop. Both
+# datasets carry the same name, so the Computed tab orders them by time, newest
+# first, and then by dataset id (``computed.<project>.<node>``) when both were
+# written in the same second (#764). The scalar's dataset is never the older
+# one: the save that starts its run re-installs the dict's output before the
+# run installs the scalar's. Its id sorting first keeps the scalar first in
+# both cases, so the frame shows one order on every run.
+SCALAR_NODE = "json-output-a-scalar"
+DICT_NODE = "json-output-b-dict"
+
+# Nodes are 525x350 at zoom 1, so nodes closer than ~600px apart horizontally
+# overlap and the later body covers the earlier one.
+X_LEFT = 0
+X_RIGHT = 610
 
 # Nested and multi-key on purpose: a computed JSON dataset must round-trip the
 # whole structure, not just survive as some flattened shape.
@@ -251,17 +262,47 @@ def delete_computed_datasets(current_server):
             print("[teardown] DELETE dataset {} failed: {}".format(dataset_id, exc))
 
 
-def _author_analysis_node(page, at, code: str) -> str:
-    """Drop a Python Computation node, set its code, and turn its save toggle on.
+def _analysis_node(node_id: str, x: int) -> dict:
+    """A Python Computation node as a palette drop saves one: its type
+    versioned, no code yet, the save toggle off."""
+    return {
+        "id": node_id,
+        "type": ANALYSIS_TYPE + "@1",
+        "x": x,
+        "y": 0,
+        "in": "DEFAULT",
+        "out": "DEFAULT",
+        "goal": "",
+        "metadata": {"keywords": []},
+        "content": "",
+    }
 
-    No upstream edge: ``#tile-computation-analysis`` runs standalone as long as the code does
-    not reference ``arg`` (see worker.py's "received no input" guard), which is
-    what ``test_global_imports_e2e.py`` relies on too.
+
+def _spec() -> dict:
+    return {
+        "dataflow": {
+            "name": "Computed JSON Output",
+            "task": "",
+            "description": "",
+            "packages": [],
+            "datasets": [],
+            "nodes": [_analysis_node(DICT_NODE, X_LEFT), _analysis_node(SCALAR_NODE, X_RIGHT)],
+            "edges": [],
+        },
+    }
+
+
+def _author_analysis_node(page, node_id: str, code: str) -> str:
+    """Set a Python Computation node's code and turn its save toggle on.
+
+    No upstream edge: a Python Computation runs standalone as long as the code
+    does not reference ``arg`` (see worker.py's "received no input" guard),
+    which is what ``test_global_imports_e2e.py`` relies on too.
     """
-    node_id = drag_to_canvas(page, page.locator(ANALYSIS_TILE), at=at)
+    node_locator(page, node_id).wait_for(state="visible", timeout=45000)
     actual = (canvas_node_type(page, node_id) or "").split("@", 1)[0]
     assert actual == ANALYSIS_TYPE, (
-        "#tile-computation-analysis did not drop a Python Computation node: {!r}".format(actual)
+        "{} is not a Python Computation node: {!r}".format(node_id, actual)
     )
     # Through Monaco's setValue: autoClosingBrackets + formatOnType mean typed
     # Python does not round-trip, and setValue fires the same onChange chain.
@@ -351,6 +392,7 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
         name="Json Output",
         username="json_output",
         project_name="Computed JSON Output",
+        project_spec=_spec(),
     )
     # A shared-guest session can never see the owner's computed datasets, so the
     # catalog half of this test would be meaningless there.
@@ -364,8 +406,11 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
 
     _record_toasts(page)
 
-    dict_node = _author_analysis_node(page, POS_LEFT, DICT_CODE)
-    scalar_node = _author_analysis_node(page, POS_RIGHT, SCALAR_CODE)
+    # The load's fit animates the viewport too: settle it before the first edit.
+    page.wait_for_selector(".react-flow__node", timeout=45000)
+    _wait_for_reactflow_ready(page)
+    dict_node = _author_analysis_node(page, DICT_NODE, DICT_CODE)
+    scalar_node = _author_analysis_node(page, SCALAR_NODE, SCALAR_CODE)
     # ReactFlow's initial fitView animates the viewport; a visible-but-moving
     # node makes every interaction on it time out with no useful message.
     _wait_for_reactflow_ready(page)
@@ -408,6 +453,14 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
             "SANDBOX_DATATYPE_TO_FORMAT".format(dataset_id, item["format"])
         )
         assert item["producerNodeId"] == node_id, item
+        # One node kind, one name: the node's header, whichever path wrote the
+        # dataset last. The dict's was last re-installed by the canvas's save,
+        # the scalar's by the run on the server (#775).
+        assert item["title"] == ANALYSIS_LABEL, (
+            "{} is titled {!r}; the node's header reads {!r}".format(
+                dataset_id, item["title"], ANALYSIS_LABEL
+            )
+        )
         # A computed output is an account-level asset: the save must NOT write a
         # project spec ref, because attaching one is an explicit user action.
         assert item.get("installed") is False, item
@@ -465,7 +518,10 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
         test_name="test_a_dict_and_a_scalar_output_install_without_a_warning",
     )
 
-    _open_computed_tab(page, computed_ids)
+    # The scalar's card first, then the dict's: see SCALAR_NODE.
+    _open_computed_tab(
+        page, [_computed_id(scalar_node, project_id), _computed_id(dict_node, project_id)],
+    )
     dismiss_toasts(page)
     save_workflow_test_screenshot(
         page,
@@ -500,3 +556,14 @@ def _open_computed_tab(page, dataset_ids) -> None:
             'article:not([role="status"])[data-dataset-id="{}"]'.format(dataset_id)
         )
         expect(card).to_have_count(1, timeout=20000)
+        # The card says what the node's header says (#775).
+        expect(card.locator("h3")).to_have_text(ANALYSIS_LABEL, timeout=10000)
+    # One order on every run, which the baseline below relies on: see SCALAR_NODE.
+    shown = root.locator('article:not([role="status"])[data-dataset-id]').evaluate_all(
+        "(cards) => cards.map((card) => card.getAttribute('data-dataset-id'))"
+    )
+    assert shown == list(dataset_ids), (
+        "the Computed tab lists {}, expected {} (newest first, then by id)".format(
+            shown, list(dataset_ids)
+        )
+    )
