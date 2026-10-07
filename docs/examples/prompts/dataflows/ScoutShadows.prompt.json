@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/ScoutShadows.json",
-    "sha256": "4456c551ebb4cb3daf681bdbcb4a57e54b8b586300a8eb13a2f9e138f44fac62",
+    "sha256": "239480e67aa17032c9e640f3c577bfe49ff36b2a8f68b5a262ec4cfbc58ba971",
     "walkthrough": null
   },
   "prompt": "Compare two scenarios of SCOUT's high-rise shadow case on the Chicago Loop. Load SCOUT's Loop buildings from the Data Catalog; in one scenario keep them as they are, in the other first take out the 15 buildings SCOUT's second scenario removes, by their building ids. In both, turn the buildings' heights into a zoom 16 height raster with SCOUT's building rasterizer, run SCOUT's Deep Umbra shadow model on it, with one season setting both scenarios share, set to summer, and take the accumulated shadow's mean and median over the ground, where the height raster is under 1.08 m. Then chart the two scenarios' mean accumulated shadow side by side, and map how the shadow changes when the buildings are removed. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
@@ -35,20 +35,6 @@
         "hasContent": true
       },
       {
-        "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis2",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
         "role": "loader",
@@ -70,42 +56,42 @@
         "hasContent": false
       },
       {
-        "ref": "analysis3",
+        "ref": "analysis1",
         "type": "curio.builtin/raster-statistics",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/raster-statistics",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "scout.raster-conversion/rasterize-buildings",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis4",
-        "type": "curio.builtin/raster-statistics",
+        "type": "scout.raster-conversion/rasterize-buildings",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis5",
-        "type": "scout.raster-conversion/rasterize-buildings",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis6",
-        "type": "scout.raster-conversion/rasterize-buildings",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis7",
         "type": "scout.shadow/accumulated-shadow",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "analysis8",
+        "ref": "analysis6",
         "type": "scout.shadow/accumulated-shadow",
         "role": "analysis",
         "executable": true,
@@ -114,52 +100,57 @@
     ],
     "edges": [
       {
-        "from": "analysis1",
-        "to": "analysis3",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis1",
-        "to": "analysis7",
-        "kind": "data"
-      },
-      {
-        "from": "analysis2",
-        "to": "analysis4",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis2",
-        "to": "analysis8",
-        "kind": "data"
-      },
-      {
         "from": "loader1",
         "to": "transform1",
         "kind": "data"
       },
       {
         "from": "loader1",
-        "to": "analysis5",
+        "to": "analysis3",
         "kind": "data"
       },
       {
         "from": "transform1",
-        "to": "analysis6",
+        "to": "analysis4",
         "kind": "data"
       },
       {
-        "from": "analysis3",
+        "from": "analysis1",
         "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis5",
         "kind": "data"
       },
       {
         "from": "analysis4",
-        "to": "visualization1",
+        "to": "analysis2",
         "kind": "data",
         "slot": 1
+      },
+      {
+        "from": "analysis4",
+        "to": "analysis6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization2",
+        "kind": "data"
       },
       {
         "from": "analysis5",
@@ -168,28 +159,13 @@
       },
       {
         "from": "analysis6",
-        "to": "analysis2",
-        "kind": "data"
-      },
-      {
-        "from": "analysis7",
-        "to": "visualization2",
-        "kind": "data"
-      },
-      {
-        "from": "analysis7",
-        "to": "analysis3",
-        "kind": "data"
-      },
-      {
-        "from": "analysis8",
         "to": "visualization2",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "analysis8",
-        "to": "analysis4",
+        "from": "analysis6",
+        "to": "analysis2",
         "kind": "data"
       }
     ],
@@ -219,39 +195,39 @@
     {
       "ref": "analysis1",
       "mustMention": [
-        "height"
+        "shadow"
       ],
-      "outputKind": "raster"
+      "outputKind": "dataframe"
     },
     {
       "ref": "analysis2",
       "mustMention": [
+        "shadow"
+      ],
+      "outputKind": "dataframe"
+    },
+    {
+      "ref": "analysis3",
+      "mustMention": [
         "height"
       ],
       "outputKind": "raster"
     },
     {
-      "ref": "analysis3",
-      "mustMention": [
-        "shadow"
-      ],
-      "outputKind": "dataframe"
-    },
-    {
       "ref": "analysis4",
       "mustMention": [
-        "shadow"
+        "height"
       ],
-      "outputKind": "dataframe"
+      "outputKind": "raster"
     },
     {
-      "ref": "analysis7",
+      "ref": "analysis5",
       "mustMention": [
         "shadow"
       ]
     },
     {
-      "ref": "analysis8",
+      "ref": "analysis6",
       "mustMention": [
         "shadow"
       ]

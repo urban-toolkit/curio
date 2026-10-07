@@ -10,7 +10,7 @@ the mean and median over the ground, are a Raster Statistics node's
 The proof starts from SCOUT's own files, copied unchanged into
 ``fixtures/scout/`` (see its ``ATTRIBUTION.md``): SCOUT's committed height tiles
 of both scenarios of its high-rise shadow example become one mosaic each,
-written by Rasterize Buildings' own ``write_mosaic``. Then:
+written by Rasterize Buildings' own ``mosaic``. Then:
 
 - the mosaic gives back SCOUT's tiles, gray level for gray level, and the
   generator's three inputs are the ones SCOUT's file-reading
@@ -186,13 +186,14 @@ def shadow_modules(tmp_path):
 
 def _mosaic(tmp_path, scenario: str = "A", *, zoom: int = 16, max_height: float = 550) -> Path:
     """SCOUT's committed height tiles of *scenario* as one mosaic, written by
-    Rasterize Buildings' own ``write_mosaic``, as its node hands them on. With
-    *zoom*, the tiles are named at that zoom level instead."""
+    Rasterize Buildings' own ``mosaic``, as its node hands them on. With
+    *zoom*, the tiles are placed at that zoom level instead."""
     folder = tmp_path / f"mosaic-{scenario}-{zoom}-{max_height:g}"
     folder.mkdir()
-    with staged(folder, RASTER_PACKAGE / "sources", RASTER_MODULE, "node_outputs") as (raster_outputs,):
-        tiles = raster_outputs.read_tiles(str(FIXTURES / f"{scenario}_rasters")).assign(zoom=zoom)
-        return Path(raster_outputs.write_mosaic(tiles, max_height, str(folder / "mosaic.tif")))
+    with staged(folder, RASTER_PACKAGE / "sources", RASTER_MODULE, "mosaic") as (raster_mosaic,):
+        tiles = str(FIXTURES / f"{scenario}_rasters")
+        with raster_mosaic.mosaic(tiles, zoom, max_height, lambda name: str(folder / name)) as mosaic:
+            return Path(mosaic.name)
 
 
 def _open(path):
@@ -586,16 +587,12 @@ def test_the_season_reaches_the_call(workspace, tmp_path):
     assert len(set(round(m, 3) for m in means)) == 3, results
 
 
-def test_the_rasterizers_tuple_is_read_and_its_height_scale_checked(tmp_path):
-    """Wired straight to Rasterize Buildings, the node gets its ``(mosaic,
-    tiles)`` and reads the mosaic; a mosaic drawn with a maximum height other
-    than the 550 m Deep Umbra needs is refused in a sentence."""
-    import pandas as pd
-
+def test_the_rasterizers_mosaic_is_read_and_its_height_scale_checked(tmp_path):
+    """Wired straight to Rasterize Buildings, the node reads its mosaic; a
+    mosaic drawn with a maximum height other than the 550 m Deep Umbra needs is
+    refused in a sentence."""
     with shadow_modules(tmp_path) as (_deep_umbra, outputs):
         with _open(_mosaic(tmp_path, "A")) as mosaic:
-            tiles = pd.DataFrame({"zoom": [16], "x": [16814], "y": [24355], "png": [""]})
-            assert outputs.height_raster([mosaic, tiles]) is mosaic
             assert outputs.height_raster(mosaic) is mosaic
             assert outputs.gray_levels(mosaic).max() > 0
         with _open(_mosaic(tmp_path, "A", max_height=275)) as mosaic:
@@ -732,10 +729,8 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
     for node in statistics:
         shadow, heights = nodes[into[(node["id"], "in")]], nodes[into[(node["id"], "in_1")]]
         assert shadow["type"] == NODE_TYPE
-        assert heights["type"] == "curio.builtin/computation-analysis"
+        assert heights["type"] == "scout.raster-conversion/rasterize-buildings"
         assert into[(shadow["id"], "in")] == heights["id"]
-        assert nodes[into[(heights["id"], "in")]]["type"] == "scout.raster-conversion/rasterize-buildings"
-        assert heights["content"].rstrip().endswith("return arg[0]")
     chart, difference = sorted(by_type["curio.builtin/compare-scenarios"],
                                key=lambda n: n["metadata"]["compareScenarios"]["mode"])
     assert chart["metadata"]["compareScenarios"]["mode"] == "chart"
@@ -770,9 +765,12 @@ def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):
 
     with staged(tmp_path, RASTER_PACKAGE / "sources", RASTER_MODULE, "convert_to_raster") as (convert,):
         for scenario, layer in layers.items():
+            vector = tmp_path / f"{scenario}_buildings.geojson"
+            layer.to_file(vector, driver="GeoJSON")
             out = tmp_path / f"{scenario}_rasters"
-            convert.convert_raster(vector_in=layer, attribute="height", zoom=16, raster_out=str(out))
+            convert.convert_raster(vector_in=str(vector), attribute="height", zoom=16, raster_out=str(out))
             assert sorted(p.name for p in out.iterdir()) == TILE_NAMES, scenario
-            worst = {name: _levels(_gray(out / name), _gray(FIXTURES / f"{scenario}_rasters" / name))[0]
-                     for name in TILE_NAMES}
-            assert all(levels <= 1 for levels in worst.values()), (scenario, worst)
+            for name in TILE_NAMES:
+                assert (out / name).read_bytes() == (FIXTURES / f"{scenario}_rasters" / name).read_bytes(), (
+                    scenario, name,
+                )

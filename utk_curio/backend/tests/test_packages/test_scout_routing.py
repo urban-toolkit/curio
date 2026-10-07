@@ -655,11 +655,12 @@ def test_the_shipped_dataflows_roads_and_map_are_autarks():
         assert "    [!! input 0:table_osm_roads !!],\n" in nodes[routing]["content"]
     layers = autark[map_id]["map"]["layerRefs"]
     assert [layer["dataRef"] for layer in layers] == ["[!! input 0 !!]", "[!! input 1 !!]", "[!! input 2 !!]"]
-    assert [layer.get("getFnv") for layer in layers] == [None, "duration_minutes", "duration_minutes"]
-    # Each scenario's routes are titled in the legend by what they show, not
-    # by their input table (#747's legendTitle).
-    assert [layer.get("legendTitle") for layer in layers] == [
-        None, "Avoid rain: route duration (min)", "Avoid wind: route duration (min)"]
+    # Each scenario's routes wear its color, the one Compare Scenarios' charts
+    # use, and the map's legend names them (Curio's `scenario` key), rather
+    # than a scale of each route's duration.
+    assert [layer.get("scenario") for layer in layers] == [None, "avoid-rain", "avoid-wind"]
+    assert {s["id"] for s in spec["scenarios"]} == {"avoid-rain", "avoid-wind"}
+    assert not any("getFnv" in layer or "colorMapInterpolator" in layer for layer in layers)
 
 
 def test_the_templates_layer_chip_reads_autarks_layer_array():

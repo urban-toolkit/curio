@@ -506,9 +506,13 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
     code where it can write, which for this user is not site-packages or the
     sandbox's home."""
     body = textwrap.indent(textwrap.dedent("""
+        import os
+        import tempfile
+
         import geopandas as gpd
         from shapely.geometry import box
-        from scout_raster_conversion.node_outputs import rasterize_buildings
+        from scout_raster_conversion.convert_to_raster import convert_raster
+        from scout_raster_conversion.mosaic import mosaic
 
         buildings = gpd.GeoDataFrame(
             {"height": [35.0, 110.0, 240.0, 420.0]},
@@ -520,10 +524,16 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
             ],
             crs="EPSG:4326",
         )
-        mosaic, tiles = rasterize_buildings(buildings, "height", 16, 550, curio_output_file)
-        print(mosaic.crs.to_epsg(), mosaic.width, mosaic.height)
-        print(",".join(f"{z}_{x}_{y}" for z, x, y in zip(tiles["zoom"], tiles["x"], tiles["y"])))
-        return mosaic, tiles
+        with tempfile.TemporaryDirectory() as work:
+            vector = os.path.join(work, "buildings")
+            buildings.to_file(vector, driver="GeoJSON")
+            rasters = os.path.join(work, "rasters")
+            convert_raster(vector, "height", 16, rasters, max_height=550.0)
+            names = sorted(name[:-4] for name in os.listdir(rasters))
+            heights = mosaic(rasters, 16, 550.0, curio_output_file)
+        print(heights.crs.to_epsg(), heights.width, heights.height)
+        print(",".join(names))
+        return heights
     """).strip("\n"), "    ")
     result = assert_ran(_request("/exec", {
         "code": body + "\n",
@@ -537,7 +547,7 @@ def test_scouts_rasterizer_runs_as_the_exec_user():
     grid, names = printed(result).splitlines()[-2:]
     assert grid == "3395 512 256", grid
     assert names == "16_16814_24356,16_16815_24356", names
-    assert result["output"]["dataType"] == "outputs", result["output"]
+    assert result["output"]["dataType"] == "raster", result["output"]
 
 
 #: ``scout.routing@1``'s modules, the Data Catalog files its node reads and its
@@ -611,10 +621,9 @@ def test_scouts_shadow_model_runs_as_the_exec_user():
     raster, whose mean over the ground is SCOUT's mean accumulated shadow for
     these tiles, 128.6 minutes."""
     heights = textwrap.indent(textwrap.dedent("""
-        import rasterio
-        from scout_raster_conversion.node_outputs import read_tiles, write_mosaic
+        from scout_raster_conversion.mosaic import mosaic
 
-        return rasterio.open(write_mosaic(read_tiles(%r), 550, curio_output_file("scout-a-heights.tif")))
+        return mosaic(%r, 16, 550.0, curio_output_file)
     """ % SCOUT_A_RASTERS).strip("\n"), "    ")
     produced = assert_ran(_request("/exec", {
         "code": heights + "\n",

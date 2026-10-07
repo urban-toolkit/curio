@@ -1,0 +1,239 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "25-several-inputs",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/25-several-inputs.json",
+    "sha256": "8306088ee789ac49ff5a564f9196de498b3efc1cfd2bff0ef1a373ef8dee4e2b",
+    "walkthrough": "docs/examples/25-several-inputs.md"
+  },
+  "prompt": "Load the Example air quality readings and Example air quality stations tables and Chicago's ZIP code boundaries from the Data Catalog, keeping only the ZIP codes of the Loop and around it, and make the stations points. In Python, summarize the readings into two tables returned together, each sensor's mean PM2.5 and its highest reading. Then join the stations to both summaries and to the ZIP code each stands in, in one Python step that reads the stations, the summaries and the ZIP codes. Name each reading after its station in a Data Transformation step that reads the readings and the joined stations. In JavaScript, count the stations in each ZIP code and average their PM2.5. Chart each station's PM2.5 over time in Vega-Lite with a dashed rule at its mean taken from the joined stations, map the ZIP codes with the stations coloured by mean PM2.5 in Autark, and put the joined stations and the named readings in a Data Pool.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.curio.storage-air-quality",
+      "data.curio.storage-stations",
+      "data.utk.chicago-boundary"
+    ],
+    "packages": [],
+    "paths": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader3",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/data-transformation",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/js-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis1",
+        "to": "pool1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "transform1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis3",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "loader1",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader3",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "loader3",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "pool1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "transform1",
+        "to": "visualization2",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.curio.storage-air-quality",
+        "data.curio.storage-stations",
+        "data.utk.chicago-boundary"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar",
+      "curio.builtin/data-pool",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T3",
+    "needs": [
+      "gpu"
+    ],
+    "skip": [
+      {
+        "when": "gpu",
+        "reason": "The Autark maps need hardware WebGPU; the plan and apply half of this fixture still runs offline.",
+        "scope": "execution"
+      }
+    ]
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON and its walkthrough, 2026-10-06",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.curio.storage-air-quality",
+        "licence": "CC0-1.0"
+      },
+      {
+        "datasetId": "data.curio.storage-stations",
+        "licence": "CC0-1.0"
+      },
+      {
+        "datasetId": "data.utk.chicago-boundary",
+        "licence": "Open Data"
+      }
+    ]
+  },
+  "notes": "Every kind of node that takes several inputs, one of them a tuple from another Python node."
+}

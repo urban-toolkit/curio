@@ -70,8 +70,8 @@ A model's details show its **Identifier**, **Version**, **Runtime**, **Input**, 
 |---|---|---|---|
 | **View details** | A card, the drawer, or the canvas drawer | Nothing | The model's details. |
 | **View license** | The details | Nothing | The model's license text. |
-| **Drag onto a node** | The **Model Catalog** dropdown or the canvas drawer | The node's code | The node's `curio_load_model(...)` line names the model. A node whose code calls no `curio_load_model` says *This node does not run a model*. |
-| **Drag onto the canvas** | The **Model Catalog** dropdown or the canvas drawer | The dataflow | A new node where you drop it, its `curio_load_model(...)` line naming the model: the node made for that model (**Accumulated Shadow** for Deep Umbra, **Weather Routing** for the weather GNN), else an **Image Segmentation** node. When no node in the dataflow runs a model, nothing is added and a message names the package to add from the Node Catalog. |
+| **Drag onto a node** | The **Model Catalog** dropdown or the canvas drawer | The node's code | The node's `curio_load_model(...)` line names the model. A node whose code calls no `curio_load_model` says *This node does not run a model*, and a node that runs another task's model (Weather Routing, for Deep Umbra) says which task it runs and changes nothing. |
+| **Drag onto the canvas** | The **Model Catalog** dropdown or the canvas drawer | The dataflow, and its packages | A new node where you drop it, its `curio_load_model(...)` line naming the model: the node made for that model (the manifest's `node`: **Accumulated Shadow** for Deep Umbra, **Weather Routing** for the weather GNN, **Image Segmentation** for DDRNet), else a node that runs a model of the same task (**Image Segmentation** for a downloaded segmentation model). A model never becomes a node built for another task. When the dataflow lacks that node's package, the package is added to the dataflow first, as the Node Catalog's **Add** does. |
 | **Delete** | A model you added: its card or the drawer | Your Model Catalog loses the model | A confirmation first; nodes that name it fail the next time they run. A shipped model offers no **Delete**. |
 | **Add to Model Catalog** | A **Hugging Face models** row, in the Discovery Catalog | Your Model Catalog gains a model | A progress bar, then *"Added `<name>` to your Model Catalog."* with **View model**. |
 
@@ -147,6 +147,7 @@ A dataflow names its models by id. Someone you share it with runs a shipped mode
 | `labels` | | The classes, in the order the model numbers them. An `image-to-image` or `node-regression` model has none. |
 | `input` | For an `onnx` image model | A `node-regression` model reads a graph of any size and has none. How an image is prepared: `width` and `height` (8 to 8192 pixels), `dtype` (`uint8` or `float32`), `layout` (`NCHW`, or `NHWC` for an `image-to-image` model), `scale`, and an optional `mean` and `std` of three numbers each. |
 | `license`, `licenseFile` | `license` | The license, and the file in the folder that holds its text. |
+| `node` | | The node that runs it, as a template id, `<packageId>/<templateId>@<major>` (`scout.shadow/accumulated-shadow@1`). A model dropped on the canvas becomes that node, and its package is added to the dataflow when it is not there. |
 | `description`, `publisher`, `homepage`, `tags`, `sizeBytes` | | Shown on the card and in the details. |
 
 ---

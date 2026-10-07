@@ -288,7 +288,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 2150,
         "y": 0,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\"\n      },\n      {\n        \"dataRef\": \"[!! input 1 !!]\",\n        \"getFnv\": \"duration_minutes\",\n        \"colorMapInterpolator\": \"interpolateBuGn\",\n        \"legendTitle\": \"Avoid rain: route duration (min)\"\n      },\n      {\n        \"dataRef\": \"[!! input 2 !!]\",\n        \"getFnv\": \"duration_minutes\",\n        \"colorMapInterpolator\": \"interpolateOrRd\",\n        \"legendTitle\": \"Avoid wind: route duration (min)\"\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input 0 !!]\"\n      },\n      {\n        \"dataRef\": \"[!! input 1 !!]\",\n        \"scenario\": \"avoid-rain\"\n      },\n      {\n        \"dataRef\": \"[!! input 2 !!]\",\n        \"scenario\": \"avoid-wind\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw both scenarios' routes over the roads.",

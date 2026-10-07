@@ -139,6 +139,29 @@ class TestTheManifest:
         parsed = parse_manifest(_onnx_manifest())
         assert parse_manifest(manifest_dict(parsed)) == parsed
 
+    def test_it_may_name_the_node_that_runs_it(self):
+        parsed = parse_manifest(_onnx_manifest(node="curio.streetvision/image-segmentation@1"))
+        assert parsed.node == "curio.streetvision/image-segmentation@1"
+        assert parse_manifest(manifest_dict(parsed)) == parsed
+        assert parse_manifest(_onnx_manifest()).node is None
+
+    @pytest.mark.parametrize("node", ["image-segmentation", "curio.streetvision/image-segmentation", "x/y@1", 3])
+    def test_a_node_is_a_template_id(self, node):
+        with pytest.raises(ModelManifestError, match="node must be a template id"):
+            parse_manifest(_onnx_manifest(node=node))
+
+    def test_each_shipped_model_names_a_shipped_node_whose_code_runs_it(self):
+        """A model dropped on the canvas becomes the node its manifest names,
+        and that node's package is added to the dataflow when it is missing."""
+        for folder in sorted(SHIPPED.iterdir()):
+            manifest = load_manifest(folder)
+            package_id, rest = manifest.node.split("/")
+            template_id, major = rest.split("@")
+            package = REPO / "packages" / f"{package_id}@{major}"
+            templates = json.loads((package / "manifest.json").read_text(encoding="utf-8"))["templates"]
+            (template,) = [t for t in templates if t["id"] == template_id]
+            assert manifest.id in model_ids_in_code((package / template["source"]).read_text(encoding="utf-8"))
+
 
 class TestTheCatalog:
     def test_it_lists_the_shipped_model_without_a_path(self, app, shipped, user_and_token):
@@ -146,6 +169,7 @@ class TestTheCatalog:
         items = ModelCatalogService(user).list_catalog()["items"]
         row = next(item for item in items if item["id"] == DDRNET)
         assert row["origin"] == "shipped" and row["runtime"] == "onnx" and row["labelCount"] == 19
+        assert row["node"] == "curio.streetvision/image-segmentation@1"
         assert str(SHIPPED) not in json.dumps(items)
 
     def test_a_shipped_model_is_used_where_it_is(self, app, shipped, user_and_token):

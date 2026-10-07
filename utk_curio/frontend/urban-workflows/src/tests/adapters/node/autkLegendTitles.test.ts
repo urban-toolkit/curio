@@ -52,6 +52,30 @@ describe("titleLegends", () => {
     expect(map.ui.updateLegendContent).not.toHaveBeenCalled();
   });
 
+  test("a layerRef with legend false hides its legend, and keeps it hidden when autk-map shows it again", () => {
+    const map = fakeMap("input_1");
+    titleLegends({ _mapRegistry: new Map([["input_1", map]]) }, {
+      map: { layerRefs: [{ dataRef: "input_1", getFnv: "duration_minutes", legend: false }] },
+    });
+    expect(map.legend.style.visibility).toBe("hidden");
+
+    // syncLegendVisibility: visible for a color-mapped layer, then the content.
+    map.legend.style.visibility = "visible";
+    map.ui.updateLegendContent();
+    expect(map.legend.style.visibility).toBe("hidden");
+  });
+
+  test("a hidden legend belongs to its own layer: another active layer shows its legend", () => {
+    const map = fakeMap("input_1");
+    titleLegends({ _mapRegistry: new Map([["input_1", map]]) }, {
+      map: { layerRefs: [{ dataRef: "input_1", legend: false }] },
+    });
+    map.ui._activeLayer = { layerInfo: { id: "input_0" } };
+    map.legend.style.visibility = "visible";
+    map.ui.updateLegendContent();
+    expect(map.legend.style.visibility).toBe("visible");
+  });
+
   test("a map registry or UI that is not there is no error", () => {
     const spec = { map: { layerRefs: [{ dataRef: "input_0", legendTitle: "Height" }] } };
     expect(() => titleLegends({}, spec)).not.toThrow();

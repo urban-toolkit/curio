@@ -1,16 +1,15 @@
 """``scout.raster-conversion@1``: SCOUT's building rasterizer in Curio (#662, step 17).
 
-The proof: the package's port of SCOUT's ``convert_raster``, called as SCOUT's
-high-rise shadow example calls it, turns the buildings SCOUT committed for that
-example into the four zoom-16 height tiles SCOUT committed for them, each
-within one gray level. Both are SCOUT's own files, copied unchanged into
+The proof: the package's ``convert_to_raster.py`` is SCOUT's, but for the lines
+marked ``# Curio:``, and SCOUT's call on the buildings SCOUT committed for its
+high-rise shadow example writes the four zoom-16 height tiles SCOUT committed
+for them, byte for byte. Both are SCOUT's own files, copied unchanged into
 ``fixtures/scout/`` (see its ``ATTRIBUTION.md``).
 
 The node: its template, with the widgets its manifest declares, resolved the
 way a run resolves a node's widgets, runs in the sandbox with its package's
-modules (#719). It returns ``(mosaic, tiles)``: the tiles are SCOUT's, the
-mosaic is one raster the Autark node's raster path (#718) loads, and each
-widget reaches the call.
+modules (#719). It returns one raster, the mosaic of SCOUT's tiles, which the
+Autark node's raster path (#718) loads, and each widget reaches the call.
 
 Package code is imported inside each test, through a run's staged copy of the
 package's modules, so a checkout without the package or its libraries fails
@@ -43,6 +42,11 @@ TILE_NAMES = [
     "16_16815_24355.png",
     "16_16815_24356.png",
 ]
+#: Where each of SCOUT's tiles lies in the mosaic, ``(row, column)`` of tiles.
+TILE_SLOTS = {
+    "16_16814_24355.png": (0, 0), "16_16815_24355.png": (0, 1),
+    "16_16814_24356.png": (1, 0), "16_16815_24356.png": (1, 1),
+}
 #: What #718's Autark raster path loads at its own size (utils/raster/rasterLoad.ts).
 AUTARK_MAX_CELLS = 2048 * 2048
 AUTARK_MAX_SIDE = 8192
@@ -54,32 +58,29 @@ def _template() -> dict:
     return template
 
 
-def _gray(path_or_png):
-    """A tile's gray levels as ints, from its file or its ``png`` value; the
-    format Deep Umbra decodes: one 8-bit channel, 256 by 256."""
-    import base64
-    import io
-
+def _gray(path):
+    """A tile's gray levels as ints: one 8-bit channel, 256 by 256, the format
+    Deep Umbra decodes."""
     import numpy as np
     from PIL import Image
 
-    source = path_or_png if isinstance(path_or_png, Path) else io.BytesIO(base64.b64decode(path_or_png))
-    with Image.open(source) as image:
+    with Image.open(path) as image:
         assert image.format == "PNG" and image.mode == "L" and image.size == (256, 256), (
             image.format, image.mode, image.size,
         )
         return np.asarray(image).astype(int)
 
 
-def _worst(ours, theirs) -> int:
+def _levels(heights, max_height=550.0):
+    """A mosaic's heights in metres back as gray levels."""
     import numpy as np
 
-    return int(np.abs(ours - theirs).max())
+    return np.clip(np.rint(heights * 255.0 / max_height), 0, 255).astype(int)
 
 
 @contextlib.contextmanager
 def scout_modules(tmp_path):
-    """``(convert_to_raster, node_outputs)``, importable the way a run of the
+    """``(convert_to_raster, mosaic)``, importable the way a run of the
     package's node imports them: staged into a folder of the run's own."""
     from utk_curio.sandbox.util.package_modules import importable
     from utk_curio.sandbox.util.staging import stage_package_modules
@@ -91,7 +92,7 @@ def scout_modules(tmp_path):
     with importable(str(run / staged["root"]), staged["names"]):
         yield (
             importlib.import_module(f"{MODULE}.convert_to_raster"),
-            importlib.import_module(f"{MODULE}.node_outputs"),
+            importlib.import_module(f"{MODULE}.mosaic"),
         )
 
 
@@ -126,7 +127,7 @@ def _with_values(**values) -> list:
 def run_node(buildings, workspace, *, fails=False, **values):
     """Run the node's template, its widgets at *values*, on *buildings* in the
     sandbox, in process: ``(artifact id, output)``, or with *fails* the
-    node's error text."""
+    node's ``(stdout, stderr)``."""
     from utk_curio.backend.app.execution.code_references import resolve_references
     from utk_curio.sandbox.app.worker import _worker_init, execute_code
     from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
@@ -144,9 +145,9 @@ def run_node(buildings, workspace, *, fails=False, **values):
     )
     if fails:
         assert result["stderr"], f"the node ran: {result['output']}"
-        return result["stderr"]
+        return result["stdout"], result["stderr"]
     assert result["stderr"] == "", result["stderr"]
-    assert result["output"]["dataType"] == "outputs", result["output"]
+    assert result["output"]["dataType"] == "raster", result["output"]
     return result["output"]["path"], load_from_duckdb(result["output"]["path"])
 
 
@@ -154,27 +155,69 @@ def run_node(buildings, workspace, *, fails=False, **values):
 # The proof
 # ---------------------------------------------------------------------------
 
+def test_scouts_file_changes_only_the_marked_lines():
+    """The lines Curio changes in SCOUT's file are the 7 it marks: pygeos's
+    import and three calls, ``.array.data``, and the maximum height."""
+    text = (SOURCES / MODULE / "convert_to_raster.py").read_text(encoding="utf-8")
+    marked = [line.split("# Curio:")[0].strip() for line in text.splitlines() if "# Curio:" in line]
+    assert marked == [
+        "import shapely",
+        "arr_flat, part_indices = shapely.get_parts(arr, return_index=True)",
+        "arr_flat2, ring_indices = shapely.get_rings(arr_flat, return_index=True)",
+        "coords, indices = shapely.get_coordinates(arr_flat2, return_index=True)",
+        "geometries = spatialpandas_from_pygeos(np.asarray(source.geometry.array))",
+        "def convert_raster(vector_in: str, attribute: str, zoom: int, raster_out: str, max_height: float = 550):",
+        "ddelayed = compute_tile(gdf, i, j, zoom, max_height, raster_out)",
+    ]
+    assert "pygeos." not in text.replace("# Curio: pygeos.", "")
+    # SCOUT's own lines Curio keeps.
+    for line in ("import cv2", "success_ = cv2.imwrite(filename_, values)", "ds.Canvas.polygons = polygons",
+                 "gdf = gpd.read_file(vector_in)", "print(f\"Feature '{attribute}' not supported for layer\")"):
+        assert line in text, line
+
+
 def test_scouts_buildings_become_scouts_committed_tiles(tmp_path):
     """SCOUT's call, on SCOUT's committed buildings, writes SCOUT's committed
-    tiles: the same four files, each within one gray level."""
-    with scout_modules(tmp_path) as (convert, _outputs):
+    tiles: the same four files, byte for byte."""
+    with scout_modules(tmp_path) as (convert, _mosaic):
         out = tmp_path / "A_rasters"
         convert.convert_raster(vector_in=str(BUILDINGS), attribute="height", zoom=16, raster_out=str(out))
     assert sorted(p.name for p in out.iterdir()) == TILE_NAMES
-    worst = {name: _worst(_gray(out / name), _gray(SCOUT_TILES / name)) for name in TILE_NAMES}
-    assert all(levels <= 1 for levels in worst.values()), worst
+    for name in TILE_NAMES:
+        assert (out / name).read_bytes() == (SCOUT_TILES / name).read_bytes(), name
     # Not two blank images agreeing: each of SCOUT's tiles holds buildings.
     assert all(_gray(SCOUT_TILES / name).max() > 0 for name in TILE_NAMES)
 
 
-def test_the_eight_bit_conversion_is_opencvs(tmp_path):
-    """``create_image`` writes with Pillow what ``cv2.imwrite`` wrote: a float
-    image rounded half to even, saturated to 0..255, NaN and infinities 0."""
+# ---------------------------------------------------------------------------
+# The mosaic
+# ---------------------------------------------------------------------------
+
+def test_tiles_lie_side_by_side_on_their_own_grid(tmp_path):
+    """Two diagonal tiles make a 2 by 2 mosaic: each in its slot, the tile
+    missing between them 0, the corner SCOUT's own."""
+    import cv2
     import numpy as np
 
-    with scout_modules(tmp_path) as (convert, _outputs):
-        values = np.array([[0.4, 0.5, 1.5, 2.5, 254.5, 255.5, 300.0, -3.0, np.nan, np.inf, -np.inf]])
-        assert convert.to_uint8(values).tolist() == [[0, 0, 2, 2, 254, 255, 255, 0, 0, 0, 0]]
+    folder = tmp_path / "tiles"
+    folder.mkdir()
+    cv2.imwrite(str(folder / "5_10_20.png"), np.full((256, 256), 51, dtype=np.uint8))
+    cv2.imwrite(str(folder / "5_11_21.png"), np.full((256, 256), 102, dtype=np.uint8))
+    with scout_modules(tmp_path) as (_convert, mosaic):
+        raster = mosaic.mosaic(str(folder), 5, 255, lambda name: str(tmp_path / name))
+        west, north = mosaic.corner(10, 20, 5)
+        east, _ = mosaic.corner(11, 20, 5)
+    with raster:
+        cells = raster.read(1)
+        assert cells.shape == (512, 512) and raster.dtypes[0] == "float32"
+        assert (cells[:256, :256] == 51).all() and (cells[256:, 256:] == 102).all()
+        assert (cells[:256, 256:] == 0).all() and (cells[256:, :256] == 0).all()
+        assert raster.transform.c == west and raster.transform.f == north
+        assert raster.transform.a == (east - west) / 256
+        assert raster.descriptions == ("height (m)",)
+        assert {k: raster.tags()[k] for k in ("zoom", "tile_x", "tile_y", "tile_size", "max_height")} == {
+            "zoom": "5", "tile_x": "10", "tile_y": "20", "tile_size": "256", "max_height": "255.0",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -187,8 +230,9 @@ def test_the_template_declares_the_widgets_its_source_reads():
     assert {w["name"]: w["default"] for w in template["widgets"]} == {
         "attribute": "height", "zoom": 16, "max_height": 550,
     }
+    assert template["outputPorts"] == [{"cardinality": "1", "types": ["RASTER"]}]
     source = (PACKAGE / template["source"]).read_text(encoding="utf-8")
-    assert re.findall(r"\[!!\s*(\w+)\s*!!\]", source) == ["attribute", "zoom", "max_height"]
+    assert re.findall(r"\[!!\s*(\w+)\s*!!\]", source) == ["attribute", "zoom", "max_height", "zoom", "max_height"]
 
 
 def test_the_shipped_dataflow_runs_the_template_as_the_palette_drops_it():
@@ -207,35 +251,22 @@ def test_the_shipped_dataflow_runs_the_template_as_the_palette_drops_it():
 # The node, in the sandbox
 # ---------------------------------------------------------------------------
 
-def test_the_node_returns_scouts_tiles_and_their_mosaic(workspace):
-    import numpy as np
+def test_the_node_returns_the_mosaic_of_scouts_tiles(workspace):
     import rasterio
 
     from utk_curio.sandbox.util.rasters import epsg_name
 
-    _art_id, (mosaic, tiles) = run_node(_buildings(), workspace)
-    try:
-        assert list(tiles.columns) == ["zoom", "x", "y", "png"]
-        names = [f"{r.zoom}_{r.x}_{r.y}.png" for r in tiles.itertuples(index=False)]
-        assert names == TILE_NAMES
-        grays = {f"{r.zoom}_{r.x}_{r.y}.png": _gray(r.png) for r in tiles.itertuples(index=False)}
-        worst = {name: _worst(grays[name], _gray(SCOUT_TILES / name)) for name in TILE_NAMES}
-        assert all(levels <= 1 for levels in worst.values()), worst
-
+    _art_id, mosaic = run_node(_buildings(), workspace)
+    with mosaic:
         assert isinstance(mosaic, rasterio.io.DatasetReader)
         assert epsg_name(mosaic.crs) == "EPSG:3395"
         assert (mosaic.width, mosaic.height, mosaic.count) == (512, 512, 1)
         assert mosaic.dtypes[0] == "float32"
-        cells = mosaic.read(1)
+        levels = _levels(mosaic.read(1))
         # Columns of tiles run west to east with x, rows north to south with y.
-        for name, (row, col) in {
-            "16_16814_24355.png": (0, 0), "16_16815_24355.png": (0, 1),
-            "16_16814_24356.png": (1, 0), "16_16815_24356.png": (1, 1),
-        }.items():
-            block = cells[256 * row:256 * (row + 1), 256 * col:256 * (col + 1)]
-            assert np.allclose(block, grays[name] * (550.0 / 255.0), atol=1e-3), name
-    finally:
-        mosaic.close()
+        for name, (row, col) in TILE_SLOTS.items():
+            block = levels[256 * row:256 * (row + 1), 256 * col:256 * (col + 1)]
+            assert (block == _gray(SCOUT_TILES / name)).all(), name
 
 
 def test_the_mosaic_lies_on_the_tiles_corners(workspace):
@@ -243,8 +274,8 @@ def test_the_mosaic_lies_on_the_tiles_corners(workspace):
     of its corner tiles in EPSG:3395, where ``compute_tile`` draws them."""
     from pyproj import Transformer
 
-    _art_id, (mosaic, _tiles) = run_node(_buildings(), workspace)
-    try:
+    _art_id, mosaic = run_node(_buildings(), workspace)
+    with mosaic:
         to_3395 = Transformer.from_crs(4326, 3395, always_xy=True)
         west, north = to_3395.transform(*_tile_corner(16814, 24355, 16))
         east, south = to_3395.transform(*_tile_corner(16816, 24357, 16))
@@ -254,8 +285,6 @@ def test_the_mosaic_lies_on_the_tiles_corners(workspace):
         assert c + 512 * a == pytest.approx(east, abs=1e-6)
         # Rows of tiles differ in height by millionths of a cell.
         assert f + 512 * e == pytest.approx(south, abs=0.01 * abs(e))
-    finally:
-        mosaic.close()
 
 
 def _tile_corner(x, y, zoom):
@@ -268,16 +297,16 @@ def _tile_corner(x, y, zoom):
 
 
 def test_the_mosaic_is_a_raster_the_autark_node_loads(workspace):
-    """What #718's raster route serves for the tuple's first part, and what
-    the Autark node then requires of it: an EPSG CRS, a north-up grid, at
-    most 2048 by 2048 cells and 8192 on a side."""
+    """What #718's raster route serves for the node's output, and what the
+    Autark node then requires of it: an EPSG CRS, a north-up grid, at most
+    2048 by 2048 cells and 8192 on a side."""
     from rasterio.io import MemoryFile
 
     from utk_curio.sandbox.util.rasters import serve_raster
 
-    art_id, (mosaic, _tiles) = run_node(_buildings(), workspace)
-    try:
-        payload, meta = serve_raster(art_id, part=0, max_cells=AUTARK_MAX_CELLS, max_side=AUTARK_MAX_SIDE)
+    art_id, mosaic = run_node(_buildings(), workspace)
+    with mosaic:
+        payload, meta = serve_raster(art_id, max_cells=AUTARK_MAX_CELLS, max_side=AUTARK_MAX_SIDE)
         assert meta["crs"] == "EPSG:3395"
         a, b, c, d, e, f = meta["transform"]
         assert b == 0 and d == 0 and a > 0 and e < 0
@@ -285,55 +314,33 @@ def test_the_mosaic_is_a_raster_the_autark_node_loads(workspace):
         with MemoryFile(payload) as memory, memory.open() as served:
             assert served.crs == mosaic.crs and served.transform == mosaic.transform
             assert (served.read(1) == mosaic.read(1)).all()
-    finally:
-        mosaic.close()
 
 
 def test_each_widget_reaches_the_call(workspace):
     """A value set in each widget changes what the node returns."""
     import numpy as np
 
-    default = run_node(_buildings(), workspace)[1]
-    try:
-        tiles = default[1]
+    _art_id, default = run_node(_buildings(), workspace)
+    with default:
+        levels = _levels(default.read(1))
 
-        zoomed = run_node(_buildings(), workspace, zoom=15)[1]
-        zoomed[0].close()
-        assert {int(z) for z in zoomed[1]["zoom"]} == {15}
-        assert sorted(zip(zoomed[1]["x"], zoomed[1]["y"])) == [(8407, 12177), (8407, 12178)]
+    _art_id, zoomed = run_node(_buildings(), workspace, zoom=15)
+    with zoomed:
+        assert (zoomed.tags()["zoom"], zoomed.tags()["tile_x"], zoomed.tags()["tile_y"]) == ("15", "8407", "12177")
+        assert (zoomed.width, zoomed.height) == (256, 512)
 
-        # Half the maximum height: every gray level doubles.
-        lower = run_node(_buildings(), workspace, max_height=275)[1]
-        lower[0].close()
-        assert len(lower[1]) == len(tiles)
-        for ours, half in zip(lower[1]["png"], tiles["png"]):
-            assert _worst(_gray(ours), np.clip(2 * _gray(half), 0, 255)) <= 1
-        assert max(_gray(png).max() for png in lower[1]["png"]) > max(_gray(png).max() for png in tiles["png"])
-
-        renamed = _buildings().rename(columns={"height": "roof_m"})
-        by_column = run_node(renamed, workspace, attribute="roof_m")[1]
-        by_column[0].close()
-        assert list(by_column[1]["png"]) == list(tiles["png"])
-    finally:
-        default[0].close()
+    # Half the maximum height: every gray level doubles.
+    _art_id, lower = run_node(_buildings(), workspace, max_height=275)
+    with lower:
+        assert lower.tags()["max_height"] == "275.0"
+        doubled = _levels(lower.read(1), 275.0)
+    assert int(np.abs(doubled - np.clip(2 * levels, 0, 255)).max()) <= 1
+    assert doubled.max() > levels.max()
 
 
-@pytest.mark.parametrize(
-    "change, sentence",
-    [
-        ("no crs", "The buildings layer has no CRS"),
-        ("no such column", "The buildings layer has no column 'floors'"),
-        ("no rows", "The buildings layer has no geometries to rasterize"),
-    ],
-)
-def test_a_layer_the_node_cannot_read_says_why(workspace, change, sentence):
-    buildings = _buildings()
-    values = {}
-    if change == "no crs":
-        buildings = buildings.set_crs(None, allow_override=True)
-    elif change == "no such column":
-        values = {"attribute": "floors"}
-    else:
-        buildings = buildings.iloc[0:0]
-    error = run_node(buildings, workspace, fails=True, **values)
-    assert sentence in error, error
+def test_a_column_other_than_height_is_scouts_unsupported_feature(workspace):
+    """SCOUT rasterizes ``height`` only: for another column it prints so and
+    writes no tile, and the node has no mosaic to make."""
+    renamed = _buildings().rename(columns={"height": "roof_m"})
+    stdout, _stderr = run_node(renamed, workspace, fails=True, attribute="roof_m")
+    assert "Feature 'roof_m' not supported for layer" in stdout

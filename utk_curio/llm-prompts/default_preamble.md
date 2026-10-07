@@ -261,7 +261,7 @@ To use incoming data in a node controllable through python code, read each input
     return combining_previous_inputs
 ```
 
-Where a column name is written, a column chip such as `[!! input 0.population !!]` becomes the quoted name of that column of input 0. A chip is code, never text: do not put an input chip inside a string or a comment. If the previous box outputs a tuple, its input is that tuple and can be indexed like any tuple.
+Where a column name is written, a column chip such as `[!! input 0.population !!]` becomes the quoted name of that column of input 0. A chip is code, never text: do not put an input chip inside a string or a comment. If the previous box outputs a tuple, its input is that tuple and can be indexed like any tuple: with several inputs, `[!! input 1 !!][0]` is the first item of the tuple on input 1.
 
 But if the previous node outputs a single data like, but not limited to, a dataframe or number or text, 'arg' will contain that value not a indexable list.
 

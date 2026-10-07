@@ -18,10 +18,9 @@ flowchart LR
   L[`Data Loading`<br/>Loop buildings] --> F[`Autark`<br/>buildings in 3D]
   L --> R[`Rasterize Buildings`<br/>SCOUT's rasterizer]
   R --> M[`Autark`<br/>map of the mosaic]
-  R --> H[`Computation`<br/>height mosaic]
-  H --> D[`Accumulated Shadow`<br/>Deep Umbra]
+  R --> D[`Accumulated Shadow`<br/>Deep Umbra]
   D --> S[`Raster Statistics`<br/>shadow over the ground]
-  H -- mask --> S
+  R -- mask --> S
   D --> A[`Autark`<br/>map of the shadows]
 ```
 
@@ -33,10 +32,11 @@ Loop, with a height in metres for each: SCOUT's own buildings file, used with
 the permission of SCOUT's authors.
 
 The packages' libraries (`datashader`, `spatialpandas`, `dask`, `rasterio`,
-and `onnxruntime` for Deep Umbra) are installed with them. Curio installs both
-packages for you when it starts with `--with-examples`, because this dataflow
-declares them. Deep Umbra itself, `model.scout.deep-umbra`, ships with Curio
-in the [Model Catalog](../MODEL-CATALOG.md).
+`matplotlib`, `opencv-python-headless`, and `onnxruntime` for Deep Umbra) are
+installed with them. Curio installs both packages for you when it starts with
+`--with-examples`, because this dataflow declares them. Deep Umbra itself,
+`model.scout.deep-umbra`, ships with Curio in the
+[Model Catalog](../MODEL-CATALOG.md).
 
 ## Load the buildings
 
@@ -74,32 +74,34 @@ which would otherwise read `input_0`, the table the input became.
 
 ## Rasterize them
 
-Rasterize Buildings is a package node: its code calls the converter module the
-package ships beside it, and its **Widgets** tab holds the three settings.
+Rasterize Buildings is a package node. Its code writes the buildings to a
+GeoJSON file and calls SCOUT's own `convert_raster` on it, which writes SCOUT's
+tiles, `<zoom>_<x>_<y>.png`, to a folder; then it joins the tiles into one
+raster. Its **Widgets** tab holds the three settings.
 
 ```python
 """Rasterize Buildings: SCOUT's building rasterizer, "OSM vector to raster".
 
 Input: a buildings layer, a GeoDataFrame of polygons with a CRS and a column
 of heights in metres.
-Output: (mosaic, tiles).
-- mosaic: one raster in EPSG:3395, each cell a height in metres. An Autark map
-  draws it as input_0, band band_1.
-- tiles: one row per map tile, with zoom, x, y and png, the 8-bit grayscale
-  PNG (base64) SCOUT's Deep Umbra shadow model reads, where 255 is the
-  maximum height.
+Output: one raster in EPSG:3395, each cell a height in metres: the 256 by 256
+tiles SCOUT writes, side by side. An Autark map draws it as input_0, band
+band_1; SCOUT's Deep Umbra shadow model (Accumulated Shadow) reads it.
 The Widgets tab sets the height column, the zoom level and the maximum height.
 Ported from SCOUT, https://github.com/urban-toolkit/scout.
 """
-from scout_raster_conversion.node_outputs import rasterize_buildings
+import os
+import tempfile
 
-return rasterize_buildings(
-    arg,
-    attribute=[!! attribute !!],
-    zoom=int([!! zoom !!]),
-    max_height=float([!! max_height !!]),
-    output_file=curio_output_file,
-)
+from scout_raster_conversion.convert_to_raster import convert_raster
+from scout_raster_conversion.mosaic import mosaic
+
+with tempfile.TemporaryDirectory() as work:
+    buildings = os.path.join(work, "buildings")
+    arg.to_file(buildings, driver="GeoJSON")
+    rasters = os.path.join(work, "rasters")
+    convert_raster(buildings, [!! attribute !!], int([!! zoom !!]), rasters, max_height=float([!! max_height !!]))
+    return mosaic(rasters, int([!! zoom !!]), float([!! max_height !!]), curio_output_file)
 ```
 
 | Widget | Default | What it sets |
@@ -108,20 +110,17 @@ return rasterize_buildings(
 | Zoom level | `16` | The zoom level of the tiles; Deep Umbra reads zoom 16 |
 | Maximum height | `550` m | The height drawn as gray level 255; Deep Umbra expects 550 |
 
-The node returns two things, `(mosaic, tiles)`:
-
-- **mosaic**, a raster: every tile placed side by side in EPSG:3395, one band
-  of heights in metres. Here that is 4 tiles, 2 by 2, in 512 by 512 cells.
-- **tiles**, a table: one row per 256 by 256 tile, with its `zoom`, `x`, `y`
-  and its PNG in base64, the file SCOUT names `<zoom>_<x>_<y>.png`.
-
-These are the 4 height tiles SCOUT's example holds, each within one gray level
-of SCOUT's own.
+The node returns one raster, the mosaic: every tile placed side by side in
+EPSG:3395, one band of heights in metres (a tile's gray level times the maximum
+height over 255). Here that is 4 tiles, 2 by 2, in 512 by 512 cells. SCOUT's
+`convert_to_raster.py` runs as SCOUT wrote it, but for 7 marked lines: pygeos
+calls become shapely 2's, and the maximum height is a parameter. Its tiles are
+byte for byte the ones SCOUT's own environment writes.
 
 ## Draw the mosaic
 
-An Autark map reads the first part of the node's output, the raster, as
-`input_0`, and colours each cell by its band:
+An Autark map reads the node's raster as `input_0`, and colours each cell by
+its band:
 
 ```json
 {
@@ -146,23 +145,14 @@ map without a legend.
 
 ## Predict the shadows
 
-A Python node keeps the mosaic of Rasterize Buildings' `(mosaic, tiles)`,
-since Raster Statistics reads rasters only:
-
-```python
-# Rasterize Buildings returns (mosaic, tiles): the height mosaic.
-return arg[0]
-```
-
-Accumulated Shadow runs Deep Umbra on every tile of that height raster. Its
+Accumulated Shadow runs Deep Umbra on every tile of the height mosaic. Its
 code names the model, which the Model Catalog holds:
 
 ```python
 """Accumulated Shadow: SCOUT's Deep Umbra shadow model.
 
-Input: the height mosaic of Rasterize Buildings (scout.raster-conversion), or
-its (mosaic, tiles) output: building heights in metres in EPSG:3395 on the
-zoom-16 tile grid.
+Input: the height mosaic of Rasterize Buildings (scout.raster-conversion):
+building heights in metres in EPSG:3395 on the zoom-16 tile grid.
 Output: the accumulated shadow in minutes, a raster on the input's grid. An
 Autark map draws it as input_0, band band_1. A Raster Statistics node gives its
 mean and median over the ground: the heights on its input 1 as the mask, with
@@ -193,7 +183,8 @@ is in shadow.
 
 Raster Statistics reads the shadow on its input 0 and the heights on its
 input 1, as the mask: SCOUT's metrics count the ground, the cells Deep Umbra
-reads as gray level 0, a height under 1.08 m.
+reads as gray level 0, a height under 1.08 m. With two inputs, `arg` is the
+list of both, and `curio_raster_statistics` takes that whole list.
 
 ```python
 # Raster Statistics: the mean, median, minimum, maximum and count of a

@@ -56,6 +56,9 @@ export interface ModelRow {
   discoverySource?: ModelDiscoverySource;
   /** The libraries its runtime needs, by name, installed when it was added. */
   dependencies?: string[];
+  /** The node that runs it, `<packageId>/<templateId>@<major>`, when its
+   *  manifest names one. */
+  node?: string;
 }
 
 export interface ModelCatalogResponse {

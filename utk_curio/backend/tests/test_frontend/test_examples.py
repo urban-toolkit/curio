@@ -89,10 +89,15 @@ EXAMPLE_INVARIANTS = [
     ("23-storage-folder-of-different-files.json", 4, 3,
      {"curio.builtin/data-loading": 2, "curio.builtin/computation-analysis": 1,
       "curio.builtin/vis-vega": 1}, False),
-    ("24-scout-building-rasters.json", 8, 8,
+    ("24-scout-building-rasters.json", 7, 7,
      {"curio.builtin/data-loading": 1, "scout.raster-conversion/rasterize-buildings": 1,
-      "curio.builtin/computation-analysis": 1, "scout.shadow/accumulated-shadow": 1,
-      "curio.builtin/raster-statistics": 1, "curio.builtin/autk-grammar": 3}, False),
+      "scout.shadow/accumulated-shadow": 1, "curio.builtin/raster-statistics": 1,
+      "curio.builtin/autk-grammar": 3}, False),
+    ("25-several-inputs.json", 10, 14,
+     {"curio.builtin/data-loading": 3, "curio.builtin/computation-analysis": 2,
+      "curio.builtin/data-transformation": 1, "curio.builtin/js-computation": 1,
+      "curio.builtin/vis-vega": 1, "curio.builtin/autk-grammar": 1,
+      "curio.builtin/data-pool": 1}, False),
 ]
 
 
@@ -108,6 +113,9 @@ FAN_IN_NODES = {
     "20-storage-folder-of-csv-files.json": 1,
     "23-storage-folder-of-different-files.json": 1,
     "24-scout-building-rasters.json": 1,
+    # Every kind of node that takes several inputs: Python (three), Data
+    # Transformation, JS Computation, Vega-Lite, Autark and Data Pool.
+    "25-several-inputs.json": 6,
 }
 
 

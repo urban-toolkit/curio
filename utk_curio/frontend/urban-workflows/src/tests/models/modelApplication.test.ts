@@ -12,16 +12,38 @@ import {
   canApplyModelToNode,
   endModelDrag,
   hasModelDrag,
+  modelNodeElsewhere,
   modelNodeForCanvas,
+  modelTaskConflict,
   nodeLinkedModelIds,
+  packageDirOfNodeType,
   readModelDragPayload,
   writeModelDragData,
 } from "../../services/modelCatalog";
 import { TrillGenerator } from "../../TrillGenerator";
 import { downloadedModel, shippedModel } from "../_support/modelRows";
 
-const ddrnet = { id: "model.curio.ddrnet23-slim", name: "DDRNet23-Slim (street scenes)" };
-const segformer = { id: "imported.xabc123def456", name: "SegFormer B0 (ADE20K)" };
+const ddrnet = {
+  id: "model.curio.ddrnet23-slim",
+  name: "DDRNet23-Slim (street scenes)",
+  task: "semantic-segmentation" as const,
+  node: "curio.streetvision/image-segmentation@1",
+};
+const segformer = { id: "imported.xabc123def456", name: "SegFormer B0 (ADE20K)", task: "semantic-segmentation" as const };
+const deepUmbra = {
+  id: "model.scout.deep-umbra",
+  name: "Deep Umbra (accumulated shadows)",
+  task: "image-to-image" as const,
+  node: "scout.shadow/accumulated-shadow@1",
+};
+const weatherGnn = {
+  id: "model.scout.weather-gnn",
+  name: "Weather GNN",
+  task: "node-regression" as const,
+  node: "scout.routing/weather-routing@1",
+};
+const catalog = [ddrnet, segformer, deepUmbra, weatherGnn];
+const taskOf = (id: string) => catalog.find((row) => row.id === id)?.task;
 
 /** A minimal DataTransfer: jsdom has none. */
 function fakeDataTransfer() {
@@ -137,11 +159,23 @@ describe("modelNodeForCanvas", () => {
     code: 'model = curio_load_model("model.curio.ddrnet23-slim")\nreturn curio_segment(arg, model)',
     packageName: "Street Vision",
   };
+  const shadows = {
+    nodeType: "scout.shadow/accumulated-shadow@1",
+    label: "Accumulated Shadow",
+    code: 'model = open_model(lambda: curio_load_model("model.scout.deep-umbra"))\nreturn accumulated_shadow(arg, season="summer", model=model, output_file=curio_output_file)',
+    packageName: "SCOUT Shadow",
+  };
+  const routing = {
+    nodeType: "scout.routing/weather-routing@1",
+    label: "Weather Routing",
+    code: 'return calculate_weather_route(arg, weather, curio_load_model("model.scout.weather-gnn"))',
+    packageName: "SCOUT Routing",
+  };
   const loader = { nodeType: "curio.builtin/data-loading", label: "Data Loading", code: undefined };
   const transform = { nodeType: "x.pkg/transform@1", label: "Transform", code: "return arg" };
 
-  test("a model dropped on the canvas becomes the first template that runs one", () => {
-    const node = modelNodeForCanvas([loader, transform, segmentation], segformer);
+  test("a model with no node of its own becomes a node that runs one of the same task", () => {
+    const node = modelNodeForCanvas([loader, transform, routing, segmentation], segformer, taskOf);
     expect(node).toEqual({
       ...segmentation,
       code: 'model = curio_load_model("imported.xabc123def456")\nreturn curio_segment(arg, model)',
@@ -150,38 +184,79 @@ describe("modelNodeForCanvas", () => {
   });
 
   test("its code is what a drop on that node would write", () => {
-    const node = modelNodeForCanvas([segmentation], ddrnet);
+    const node = modelNodeForCanvas([segmentation], ddrnet, taskOf);
     expect(node?.code).toBe(applyModelToNodeData({ code: segmentation.code }, ddrnet).code);
   });
 
   test("takes a drag payload as well as a row", () => {
     const node = modelNodeForCanvas(
       [segmentation],
-      { modelId: segformer.id, name: segformer.name, runtime: "transformers" },
+      { modelId: segformer.id, name: segformer.name, runtime: "transformers", task: "semantic-segmentation" },
+      taskOf,
     );
     expect(node?.modelRefs).toEqual([{ id: segformer.id, name: segformer.name }]);
   });
 
   test("a model with a node of its own becomes that node, wherever it is in the list", () => {
-    const deepUmbra = { id: "model.scout.deep-umbra", name: "Deep Umbra (accumulated shadows)" };
-    const shadows = {
-      nodeType: "scout.shadow/accumulated-shadow",
-      label: "Accumulated Shadow",
-      code: 'model = open_model(lambda: curio_load_model("model.scout.deep-umbra"))\nreturn accumulated_shadow(arg, season="summer", model=model, output_file=curio_output_file)',
-      packageName: "SCOUT Shadow",
-    };
-    expect(modelNodeForCanvas([segmentation, shadows], deepUmbra)?.nodeType).toBe(shadows.nodeType);
-    // Any other model still goes to the first template that runs one.
-    expect(modelNodeForCanvas([segmentation, shadows], segformer)?.nodeType).toBe(segmentation.nodeType);
+    expect(modelNodeForCanvas([routing, segmentation, shadows], deepUmbra, taskOf)?.nodeType).toBe(shadows.nodeType);
+    expect(modelNodeForCanvas([routing, shadows, segmentation], ddrnet, taskOf)?.nodeType).toBe(segmentation.nodeType);
+  });
+
+  test("never a node built for another kind of model: Deep Umbra is not a Weather Routing node", () => {
+    expect(modelNodeForCanvas([routing], deepUmbra, taskOf)).toBeNull();
+    expect(modelNodeForCanvas([routing, shadows], ddrnet, taskOf)).toBeNull();
+    // A task nobody knows is no match either.
+    expect(modelNodeForCanvas([routing], { id: "imported.xunknown00001", name: "?" }, taskOf)).toBeNull();
+  });
+
+  test("its own node with no code loaded yet still fits: the template fills the code", () => {
+    const unloaded = { ...shadows, code: undefined };
+    expect(modelNodeForCanvas([routing, unloaded], deepUmbra, taskOf)).toEqual({
+      ...unloaded,
+      code: undefined,
+      modelRefs: [{ id: deepUmbra.id, name: deepUmbra.name }],
+    });
   });
 
   test("no template that runs a model makes nothing", () => {
-    expect(modelNodeForCanvas([loader, transform], ddrnet)).toBeNull();
-    expect(modelNodeForCanvas([], ddrnet)).toBeNull();
+    expect(modelNodeForCanvas([loader, transform], ddrnet, taskOf)).toBeNull();
+    expect(modelNodeForCanvas([], ddrnet, taskOf)).toBeNull();
   });
 
   test("an id that is not safe to write into source makes nothing", () => {
-    expect(modelNodeForCanvas([segmentation], { id: 'bad")\nimport os', name: "bad" })).toBeNull();
+    expect(modelNodeForCanvas([segmentation], { id: 'bad")\nimport os', name: "bad", task: "semantic-segmentation" }, taskOf)).toBeNull();
+  });
+});
+
+describe("modelNodeElsewhere", () => {
+  test("the node a model's manifest names, whatever is installed", () => {
+    expect(modelNodeElsewhere([], deepUmbra, catalog)).toBe("scout.shadow/accumulated-shadow@1");
+  });
+
+  test("else an installed node of the same task, else the node of a catalog model of that task", () => {
+    const segmentation = {
+      nodeType: "a.local/segment@1",
+      label: "Segment",
+      code: 'm = curio_load_model("model.curio.ddrnet23-slim")',
+    };
+    expect(modelNodeElsewhere([segmentation], segformer, catalog)).toBe("a.local/segment@1");
+    expect(modelNodeElsewhere([], segformer, catalog)).toBe("curio.streetvision/image-segmentation@1");
+    expect(modelNodeElsewhere([], { id: "imported.xother0000001", name: "?" }, catalog)).toBeNull();
+  });
+
+  test("its package is the template id's package and major", () => {
+    expect(packageDirOfNodeType("scout.shadow/accumulated-shadow@1")).toBe("scout.shadow@1");
+    expect(packageDirOfNodeType("scout.shadow/accumulated-shadow")).toBeNull();
+  });
+});
+
+describe("modelTaskConflict", () => {
+  test("a node running a model of another task names that task; the same task or an unknown one does not", () => {
+    const routingNode = { code: 'curio_load_model("model.scout.weather-gnn")' };
+    expect(modelTaskConflict(routingNode, deepUmbra, taskOf)).toBe("node-regression");
+    expect(modelTaskConflict({ code: 'curio_load_model("model.curio.ddrnet23-slim")' }, segformer, taskOf)).toBeNull();
+    expect(modelTaskConflict({ code: 'curio_load_model("imported.xunknown00001")' }, deepUmbra, taskOf)).toBeNull();
+    expect(modelTaskConflict(routingNode, { id: "x.y", name: "no task" }, taskOf)).toBeNull();
   });
 });
 
@@ -195,6 +270,8 @@ describe("the model drag", () => {
       modelId: "model.curio.ddrnet23-slim",
       name: "DDRNet23-Slim (street scenes)",
       runtime: "onnx",
+      task: shippedModel().task,
+      ...(shippedModel().node ? { node: shippedModel().node } : {}),
     });
     // A new page (no in-memory payload) still reads it, from either form.
     endModelDrag();

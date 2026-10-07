@@ -11,11 +11,13 @@
     "python": {
       "dask": ">=2026.8.0",
       "datashader": ">=0.19.1",
+      "matplotlib": ">=3.8",
+      "opencv-python-headless": ">=4.7",
       "rasterio": ">=1.4",
       "spatialpandas": ">=0.5.0"
     }
   },
-  "description": "SCOUT's building rasterizer, ported from SCOUT (urban-toolkit/scout): the Rasterize Buildings node turns a buildings layer into the zoom-16 height tiles SCOUT's Deep Umbra shadow model reads, and a mosaic of them in metres that an Autark map draws.",
+  "description": "SCOUT's building rasterizer, ported from SCOUT (urban-toolkit/scout): the Rasterize Buildings node runs SCOUT's convert_raster on a buildings layer and joins the zoom-16 height tiles it writes, the input of SCOUT's Deep Umbra shadow model, into one raster in metres that an Autark map draws.",
   "id": "scout.raster-conversion",
   "license": "MIT",
   "name": "SCOUT Raster Conversion",
@@ -25,7 +27,7 @@
   "templates": [
     {
       "category": "computation",
-      "description": "SCOUT's OSM vector to raster: draws each building's height into 256 by 256 map tiles at a zoom level, 8-bit gray where 255 is the maximum height, in EPSG:3395. Input: a buildings GeoDataFrame with a column of heights in metres. Output: (mosaic, tiles): one RASTER of the tiles side by side, heights in metres, for an Autark map; and a table with one row per tile (zoom, x, y and its PNG in base64), the tiles SCOUT's Deep Umbra shadow model reads.",
+      "description": "SCOUT's OSM vector to raster: SCOUT's convert_raster draws each building's height into 256 by 256 map tiles at a zoom level, 8-bit gray where 255 is the maximum height, in EPSG:3395. Input: a buildings GeoDataFrame with a column of heights in metres. Output: one RASTER, the tiles side by side, heights in metres, for an Autark map and for Accumulated Shadow (scout.shadow).",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -43,8 +45,8 @@
       "behavior": "code",
       "outputPorts": [
         {
-          "cardinality": "[1,n]",
-          "types": ["RASTER", "DATAFRAME"]
+          "cardinality": "1",
+          "types": ["RASTER"]
         }
       ],
       "source": "sources/rasterize-buildings.py",

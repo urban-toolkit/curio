@@ -10,7 +10,7 @@ height mosaic of [SCOUT Raster Conversion](../scout.raster-conversion@1/README.m
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `scout.shadow/accumulated-shadow` | Accumulated Shadow | The height mosaic of Rasterize Buildings, or its `(mosaic, tiles)` output | One RASTER: the accumulated shadow in minutes |
+| `scout.shadow/accumulated-shadow` | Accumulated Shadow | The height mosaic of Rasterize Buildings | One RASTER: the accumulated shadow in minutes |
 
 ## Settings
 
@@ -65,14 +65,13 @@ install the node says so: copy the repository's folder
 ## A dataflow
 
 ```
-[ Buildings ] ──► [ Rasterize Buildings ] ──► [ Height mosaic ] ──► [ Accumulated Shadow ] ──► [ Autark: map of the shadow ]
-                                                    │                        │
-                                                    └──── mask ──► [ Raster Statistics ] ◄──┘
+[ Buildings ] ──► [ Rasterize Buildings ] ──► [ Accumulated Shadow ] ──► [ Autark: map of the shadow ]
+                            │                          │
+                            └──── mask ──► [ Raster Statistics ] ◄──┘
 ```
 
-The Height mosaic node is a Python node that keeps the mosaic of Rasterize
-Buildings' `(mosaic, tiles)` (`return arg[0]`), since Raster Statistics reads
-rasters only.
+Rasterize Buildings returns the height mosaic, a raster, which both
+Accumulated Shadow and Raster Statistics read.
 
 [Example 24](../../docs/examples/24-scout-building-rasters.md) maps the shadow
 of SCOUT's Chicago Loop buildings. The test dataflow

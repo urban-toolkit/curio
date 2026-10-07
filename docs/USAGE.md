@@ -455,7 +455,8 @@ for, or a marker in the older `[!! name$TYPE$default !!]` form, stops the run
 with a message naming it; the **Widgets** tab lists them too.
 
 Widgets are not connections: a value you set is not data from another node. Data
-from the node's inputs reaches its code as `arg`, or through input chips (see
+from the node's inputs reaches its code as `arg`, the input itself or a list of
+the inputs when there are several, or through input chips (see
 [Several inputs](#several-inputs)).
 
 ### Shared values: the Parameter node
@@ -554,6 +555,31 @@ code are renumbered. A chip for the deleted input becomes `[!! input ? !!]` and
 stops the run until you replace it. A chip for a circle with no edge, or for a
 column its input does not have, is drawn in red and stops the run with a message
 naming it.
+
+### What `arg` holds
+
+In Python and JavaScript, `arg` changes with the number of inputs:
+
+| Inputs | `arg` | The chip of input k runs as |
+|---|---|---|
+| One | the input itself | `arg` (k is 0) |
+| Several | a list, one item per circle, in circle order | `arg[k]` |
+
+A tuple a Python node returns leaves by its one output circle, so it is one
+input. With one input, `arg` is the tuple and `arg[0]` its first item; with
+several, `arg[1]` is the tuple on input 1 and `arg[1][0]` its first item. So
+`arg[0]` is a tuple's first item on a node with one input and input 0 on a node
+with several. In Vega-Lite and Autark, a tuple on the node's only input is a
+dataset or table per item, `input_0`, `input_1`, and so on; a Vega-Lite node
+refuses a tuple next to other inputs.
+
+Code that reads `arg` as one value, such as `arg.crs` or `arg["pm25"]`, stops
+working when a second edge is connected, because `arg` becomes a list. Input
+chips follow the edges: connecting a second edge turns `[!! input 0 !!]` from
+`arg` into `arg[0]`, so code that reads its inputs through chips keeps working.
+
+[Example 25](examples/25-several-inputs.md) wires several inputs into each of
+these node kinds, with a tuple on one of them.
 
 ## Scenarios
 
@@ -980,6 +1006,29 @@ vector or a raster layer; a layer without one keeps its table's name.
         "colorMapInterpolator": "interpolateViridis",
         "legendTitle": "Building height (m)"
       }
+    ]
+  }
+}
+```
+
+A layer colored by a value always gets a legend, and the grammar has no fixed
+color, so a layer colored only to tell it apart from the others (one route of
+several) would show a scale nobody reads. `"legend": false` on its `layerRef`
+keeps its colors and hides its legend. It is Curio's own key too.
+
+A `layerRef`'s `scenario`, a scenario's id, draws the layer in that
+scenario's color, the one its frame and Compare Scenarios' charts use, and
+gives the map one discrete legend naming each scenario it draws. The color
+follows the scenario: recolor or rename it and the map changes too. Another
+of Curio's own keys; leave out `getFnv` on such a layer.
+
+```json
+{
+  "map": {
+    "layerRefs": [
+      { "dataRef": "[!! input 0 !!]" },
+      { "dataRef": "[!! input 1 !!]", "scenario": "avoid-rain" },
+      { "dataRef": "[!! input 2 !!]", "scenario": "avoid-wind" }
     ]
   }
 }

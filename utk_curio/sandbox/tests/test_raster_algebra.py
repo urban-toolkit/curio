@@ -562,25 +562,6 @@ class TestTileMosaic:
         assert (east, south) == to_3395.transform(lon_e, lat_s)
         assert rasters().tile_bounds(16814, 24355, 16, "EPSG:4326") == pytest.approx((lon_w, lat_s, lon_e, lat_n))
 
-    def test_web_tiles_lie_side_by_side_on_their_own_grid(self, tmp_path):
-        import rasterio
-
-        tiles = {(10, 20): np.full((4, 4), 1.0, dtype="float32"), (11, 21): np.full((4, 4), 2.0, dtype="float32")}
-        path = rasters().mosaic_web_tiles(tiles, 5, str(tmp_path / "m.tif"), crs="EPSG:3395", tile_size=4,
-                                          band_descriptions=["height (m)"], tags={"zoom": 5})
-        with rasterio.open(path) as mosaic:
-            cells = mosaic.read(1)
-            assert cells.shape == (8, 8)
-            assert cells[:4, :4].tolist() == [[1.0] * 4] * 4
-            assert cells[4:, 4:].tolist() == [[2.0] * 4] * 4
-            # A tile missing inside the span is 0.
-            assert cells[:4, 4:].tolist() == [[0.0] * 4] * 4
-            west, _, east, north = rasters().tile_bounds(10, 20, 5)
-            assert mosaic.transform.c == west and mosaic.transform.f == north
-            assert mosaic.transform.a == (east - west) / 4
-            assert mosaic.descriptions == ("height (m)",)
-            assert mosaic.tags()["zoom"] == "5"
-
     def test_files_are_laid_side_by_side_in_a_vrt_that_points_at_them(self, tmp_path):
         import rasterio
         from affine import Affine

@@ -11,6 +11,7 @@
   "license": "Used with the permission of SCOUT's authors",
   "runtime": "onnx",
   "task": "node-regression",
+  "node": "scout.routing/weather-routing@1",
   "entry": "files/weather_gnn.onnx",
   "labels": [],
   "tags": [

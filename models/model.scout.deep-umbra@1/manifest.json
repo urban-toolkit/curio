@@ -9,6 +9,7 @@
   "license": "Used with the permission of SCOUT's authors",
   "runtime": "onnx",
   "task": "image-to-image",
+  "node": "scout.shadow/accumulated-shadow@1",
   "entry": "files/deep_umbra.onnx",
   "input": { "width": 512, "height": 512, "dtype": "float32", "layout": "NHWC", "scale": 1.0 },
   "labels": [],
