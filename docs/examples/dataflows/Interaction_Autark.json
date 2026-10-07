@@ -48,7 +48,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 1691.569060210493,
         "y": -14.597613805295744,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"isPick\": true,\n        \"isColorMap\": true,\n        \"getFnv\": \"height_m\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 10\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"isPick\": true,\n        \"isColorMap\": true,\n        \"getFnv\": \"height_m\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 10,\n        \"legendTitle\": \"Building height (m)\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Render buildings in 3D coloured by normalised height.",

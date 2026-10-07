@@ -968,10 +968,11 @@ pressing play says why.
 
 ### Legend titles
 
-A map's legend is titled with the table of the layer it shows: `input_0` for
-the node's first input. A `layerRef`'s `legendTitle` titles it instead, on a
-vector or a raster layer; a layer without one keeps its table's name.
-`legendTitle` is Curio's own key, not the Autark grammar's.
+A `layerRef`'s `legendTitle` titles the legend of its layer, on a vector or a
+raster layer. Without one, a layer of the node's input (`input_0`) is titled
+with the column it is coloured by (`getFnv`), and a table the document loads
+itself keeps the table's name (`table_osm_roads`). `legendTitle` is Curio's own
+key, not the Autark grammar's.
 
 ```json
 {
