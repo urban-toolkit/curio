@@ -319,6 +319,31 @@ def _frame_schema(frame):
     return frame.dtypes.astype(str).to_dict()
 
 
+def _is_frame_or_raster(value):
+    """Whether *value* is a DataFrame, a GeoDataFrame or a rasterio dataset:
+    what JSON cannot carry, and ``parseOutput`` sends as an envelope."""
+    return isinstance(value, pd.DataFrame) or (
+        'rasterio' in sys.modules and isinstance(value, sys.modules['rasterio'].io.DatasetReader)
+    )
+
+
+def _holds_frames(mapping):
+    """Whether the dict *mapping* holds a frame or a raster: as one of its
+    values, as an item of a list or tuple value, or in a dict value that holds
+    one by this same test. That is a dict of frames, which the store keeps as
+    ``dict_of_ids``. Lists are looked into one level only, so a large JSON
+    dict, such as a FeatureCollection, costs a pass over its own values and
+    its lists' items, never a walk of every coordinate."""
+    for value in mapping.values():
+        if _is_frame_or_raster(value):
+            return True
+        if isinstance(value, dict) and _holds_frames(value):
+            return True
+        if isinstance(value, (list, tuple)) and any(_is_frame_or_raster(item) for item in value):
+            return True
+    return False
+
+
 # Output Functions
 def parseOutput(output):
     import math
@@ -335,7 +360,13 @@ def parseOutput(output):
         json_output['data'] = [parseOutput(elem) for elem in output]
         json_output['dataType'] = type(output).__name__
     elif isinstance(output, dict):
-        json_output['data'] = output
+        # A dict of frames is answered as a list or a tuple of them is: each
+        # value as parseOutput answers it, under its key. Any other dict is
+        # the JSON it already is.
+        json_output['data'] = (
+            {key: parseOutput(value) for key, value in output.items()}
+            if _holds_frames(output) else output
+        )
         json_output['dataType'] = type(output).__name__
     elif isinstance(output, pd.DataFrame) and not is_geospatial_frame(output):
         clean_df = normalize_dataframe_for_json(output)

@@ -2,7 +2,8 @@
  * The sandbox wraps every value it returns as `{data, dataType}` (`parseOutput`
  * in sandbox/util/parsers.py), and a list or a tuple of outputs wraps each of
  * its elements too, so `[2, 4, 6]` arrives as three `{data: 2, dataType:
- * "int"}` objects. A dict's values are left as they are.
+ * "int"}` objects. A dict's values are left as they are, unless the dict holds
+ * frames: then each value is wrapped as well, under its key.
  */
 
 /** The dataType names of the envelopes around plain values. */
