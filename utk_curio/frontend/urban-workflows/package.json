@@ -39,6 +39,7 @@
     "@urban-toolkit/autk-plot": "4.0.0",
     "apache-arrow": "^21.1.0",
     "bootstrap": "^5.3.8",
+    "d3-zoom": "^3.0.0",
     "dagre": "^0.8.5",
     "html2canvas": "^1.4.1",
     "js-cookie": "^3.0.5",
@@ -119,7 +120,7 @@
       ]
     },
     "transformIgnorePatterns": [
-      "node_modules/(?!(react-markdown|remark-[^/]+|mdast-[^/]+|micromark[^/]*|unist-[^/]+|unified|bail|is-plain-obj|trough|vfile[^/]*|decode-named-character-reference|character-entities[^/]*|character-reference-invalid|is-alphanumerical|is-alphabetical|is-decimal|is-hexadecimal|property-information|hast-[^/]+|space-separated-tokens|comma-separated-tokens|trim-lines|devlop|html-url-attributes|ccount|escape-string-regexp|markdown-table|zwitch|longest-streak|estree-util-[^/]+|style-to-object|inline-style-parser)/)"
+      "node_modules/(?!(react-markdown|remark-[^/]+|mdast-[^/]+|micromark[^/]*|unist-[^/]+|unified|bail|is-plain-obj|trough|vfile[^/]*|decode-named-character-reference|character-entities[^/]*|character-reference-invalid|is-alphanumerical|is-alphabetical|is-decimal|is-hexadecimal|property-information|hast-[^/]+|space-separated-tokens|comma-separated-tokens|trim-lines|devlop|html-url-attributes|ccount|escape-string-regexp|markdown-table|zwitch|longest-streak|estree-util-[^/]+|style-to-object|inline-style-parser|d3-[^/]+)/)"
     ],
     "testPathIgnorePatterns": [
       "/node_modules/",

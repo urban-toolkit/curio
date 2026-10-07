@@ -9,9 +9,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from utk_curio.backend.app.common.record_clock import utc_now
 from utk_curio.backend.app.datasets.install.installer import (
     InstallerError,
+    _computed_dates,
+    _held_manifest,
+    _names_one_output,
     computed_dataset_id,
     install_computed_file_for_node,
 )  # install_computed_file_for_node used in install_node_output
@@ -316,6 +318,16 @@ def _bundle_container(parent_art_id: str) -> str:
     return BUNDLE_CONTAINERS.get(parent[0] if parent else None, "tuple")
 
 
+def _bundle_parent(dest: Path) -> str | None:
+    """The artifact the bundle in *dest* was written from, or ``None``."""
+    try:
+        spec = json.loads((dest / "data" / "bundle.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    parent = spec.get("parentArtifactId") if isinstance(spec, dict) else None
+    return parent if isinstance(parent, str) and parent else None
+
+
 def install_computed_bundle_for_node(
     user_key: str,
     parts: list[BundlePart],
@@ -332,7 +344,9 @@ def install_computed_bundle_for_node(
     """Materialize a multi-part output as ``format: bundle`` in the user dataset store.
 
     ``bundle.json`` records *container*, the one the output holds its parts in
-    (``BUNDLE_CONTAINERS``), and a dict part's ``key``.
+    (``BUNDLE_CONTAINERS``), and a dict part's ``key``. Writing again the output
+    the folder already holds (the same *parent_artifact_id*) keeps the
+    dataset's dates.
 
     A *dataflow_id* is required — see ``install_computed_file_for_node`` (#166).
     """
@@ -349,6 +363,10 @@ def install_computed_bundle_for_node(
     dataset_id = computed_dataset_id(node_id, dataflow_id)
     dir_name = f"{dataset_id}@1"
     dest = dataset_dir(user_key, dir_name)
+    held = _held_manifest(dest)
+    same_output = (
+        _names_one_output(parent_artifact_id) and _bundle_parent(dest) == parent_artifact_id
+    )
 
     if dest.exists():
         shutil.rmtree(dest, ignore_errors=True)
@@ -411,7 +429,7 @@ def install_computed_bundle_for_node(
     bundle_path = dest / "data" / "bundle.json"
     bundle_path.write_text(json.dumps(bundle_spec, indent=2), encoding="utf-8")
 
-    now = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
+    created_at, updated_at = _computed_dates(held, same_output=same_output)
     part_count = len(bundle_spec["parts"])
     display_title = title or f"Node output ({part_count} parts)"
     manifest_obj = DatasetManifest(
@@ -426,8 +444,8 @@ def install_computed_bundle_for_node(
         data_file="data/bundle.json",
         major=1,
         source_label="Computed",
-        created_at=now,
-        updated_at=now,
+        created_at=created_at,
+        updated_at=updated_at,
         row_count=None,
         feature_count=None,
         schema={

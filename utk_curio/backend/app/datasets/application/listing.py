@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +73,23 @@ def _legacy_installed_alias(
     return legacy_id if legacy_id in installed_ids else None
 
 
+_OLDEST = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _updated(item: dict[str, Any]) -> datetime:
+    """An item's ``updatedAt`` as a time, so a date written to the second and
+    one written to the millisecond compare by when they are. A missing date,
+    or one that does not read as a date, is the oldest."""
+    stamp = item.get("updatedAt")
+    if not isinstance(stamp, str) or not stamp.strip():
+        return _OLDEST
+    try:
+        moment = datetime.fromisoformat(stamp.strip())
+    except ValueError:
+        return _OLDEST
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
+
+
 def _sort_catalog_items(items: list[dict[str, Any]], sort: str) -> None:
     """Order a listing for the catalog's sort menu, the same way every time.
 
@@ -84,7 +102,7 @@ def _sort_catalog_items(items: list[dict[str, Any]], sort: str) -> None:
     # Two stable passes: the tie-break ascending, then the time descending.
     items.sort(key=lambda item: ((item.get("title") or "").casefold(), item.get("id") or ""))
     if sort != "name":
-        items.sort(key=lambda item: item.get("updatedAt") or "", reverse=True)
+        items.sort(key=_updated, reverse=True)
 
 
 class CatalogListing:

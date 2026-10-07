@@ -223,7 +223,7 @@ These nodes have no toggle, and nothing is saved for them:
 - **Visualization sinks** (`curio.builtin/vis-vega`, `curio.builtin/vis-simple`), which pass their input straight through.
 - **Dataset-palette nodes**, the loader nodes created by dragging a dataset in.
 
-A node's output appears in the drawer's **Computed** tab as soon as the node runs. Running it again rewrites the same dataset.
+A node's output appears in the drawer's **Computed** tab as soon as the node runs, and with **Sort: Recent activity** the output computed last comes first. Running the node again rewrites the same dataset and brings it to the top.
 
 ### Lineage
 
