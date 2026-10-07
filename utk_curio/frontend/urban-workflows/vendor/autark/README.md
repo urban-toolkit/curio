@@ -1,65 +1,31 @@
-# Vendored Autark packages
+# Vendored autk-grammar
 
-Curio installs these five Autark packages from the tarballs in this folder instead of from npm, until the fixes below are released. Tracking issue: #474.
+Curio installs `@urban-toolkit/autk-grammar` from the tarball in this folder instead of from npm, until a release carries the change below. Tracking issue: #474. The other Autark packages, autk-compute, autk-db, autk-map, autk-plot and autk-core, come from npm at 4.0.0.
 
 | Package | Version | Integrity |
 |---|---|---|
-| `@urban-toolkit/autk-db` | `3.0.2-curio.6` | `sha512-zog7fNYYgvENDt649QsylZWM7lIELPDtZLU1tOd+Z5Hy4vdz9NSpv1R/m1RV7AwxctwmLcGmor8cxVmavsYWTQ==` |
-| `@urban-toolkit/autk-compute` | `3.0.1-curio.1` | `sha512-+8OLfGZgFqd7Mr3TevACdecWyThJScc+tNjarmvqjBLKMcBEHtlmKqqWJ6nEo2pS8xZ7JLRdlYHKzwoHRzfxBQ==` |
-| `@urban-toolkit/autk-map` | `3.0.1-curio.1` | `sha512-KPX2vUufmpN6k3p3yAZaAm31zchtEUhK4eYcQZxqOlGv+eyxzhjyxqecB9AXvVyG8557kP11YC3hOG0Wh1e33g==` |
-| `@urban-toolkit/autk-plot` | `3.0.1-curio.1` | `sha512-9dq1WqP4CAi7XlPggFdSFd4Rgq4WY32Ffg6mXp8E7deU3WOAUXKpIw5ypS+DT5YJ0N7TwQdyFRXpPS2+wKqH1g==` |
 | `@urban-toolkit/autk-grammar` | `0.3.0-curio.1` | `sha512-R/HbwU0kNh/EnA1fu2eFfJPCVz7OOKcrdQn+4v96xNSg1R3th+AcjgKyz6xA9qRIY+VXvFBM4El2oicpX0DPRQ==` |
-
-`@urban-toolkit/autk-core` is not vendored: it stays the published `3.0.1`, which autk-db, autk-compute, autk-map and autk-plot pin exactly.
 
 ## Source
 
-Autark `main` at `77c8b32108c90d4f949519771540d152dfda83a6`, with these pull requests merged into it:
+urban-toolkit/autk-grammar pull request #7, `feat/batched-compute-storage-buffers`, at `7da56411a72691cc8adf6e4b55cc2aa00d50cf7f` (`main` at `0.3.0` plus one commit): a batched compute packs as many features as its largest array fits in one storage buffer binding, instead of 2000. autk-compute 4.0.0 reads these arrays from storage buffers.
 
-| Autark PR | Head | Packages | What it fixes |
-|---|---|---|---|
-| #101 `fix/agg-geometry-type` | `f494891a8b1545c3de5d81cbe28288edcc1ac51d` | autk-db | A building layer's `agg_geometry` is a GEOMETRY column, and a part whose building footprint union fails keeps its own geometry. |
-| #102 `fix/published-type-paths` | `2a551f37e160cd76477882ae35548bb84d601195` | autk-db, autk-compute, autk-map, autk-plot | The published `.d.ts` files import `autk-core` instead of `../../autk-core/src`, so their types resolve. |
-| #103 `fix/spatial-join-count` | `c053f976d7eb4b4754ba918ff5461bdc97345133` | autk-db | A spatial join's `count('*')` counts only matched rows, so an unmatched row counts 0. |
-| #105 `fix/compute-global-arrays` | `fdddab989ad74220afb4e3f304ad9001e2a856ed` | autk-compute | A compute shader reads its array and matrix inputs in place from storage buffers, instead of copying them into function-local arrays, which some GPU drivers refuse to compile. |
-| #107 `feat/osm-bbox-query-area` | `c647f64f0229acbe4119e919f4192efda2f1d0a1` | autk-db | `loadOsm` takes a WGS84 bounding box as well as named areas: no boundaries request, the box is the boundary, and every layer query is constrained to it. |
-| #108 `feat/get-layer-osm-elements` | `1c4e0f293fbbadc8f2238155341e39f3231fd6b2` | autk-db | `getLayer(name, { osmElements: true })` exports an OSM layer one feature per way or relation, with `osm_type` and `osm_id`, and buildings unmerged, each with its `building_id`. Without the option, `getLayer` is unchanged. |
-| #110 `fix/osm-named-area-scope` | `6a8ab46311f0392abd458d5cb746f1e3d0fb9198` | autk-db | A named area's layer queries use the boundary relation found by name inside the geocode area, so they no longer match every area of that name. |
-| #111 `feat/osm-tag-sets` | `367b0c818604939099a2eeac45cbe989778832a9` | autk-db | `loadOsm` takes `tagSets`: nodes, ways and multipolygon relations matching any of a set's tags load as points, polylines and polygons layers, whole elements with `osm_type`; nodes keep their tags. |
-
-autk-grammar comes from urban-toolkit/autk-grammar pull request #7, `feat/batched-compute-storage-buffers`, at `7da56411a72691cc8adf6e4b55cc2aa00d50cf7f` (`main` at `0.3.0` plus one commit): a batched compute packs as many features as its largest array fits in one storage buffer binding, instead of 2000. autk-compute reads these arrays from storage buffers since #105.
-
-## How the tarballs were built
-
-In a clone of Autark at the commits above:
-
-1. `npm install` (Autark keeps no lockfile), then `make build`, `make typecheck`, `make package-validate` and the vitest suite.
-2. `npm version --no-git-tag-version 3.0.2-curio.6` in `autk-db` (from #101, #102, #103, #107, #108, #110 and #111), and `3.0.1-curio.1` in `autk-compute`, `autk-map` and `autk-plot`. The distinct versions keep webpack's cache from serving a published build under the same version.
-3. `npm pack` in each of the four packages.
+## How the tarball was built
 
 In a clone of autk-grammar at the commit above: `npm ci`, `npm version --no-git-tag-version 0.3.0-curio.1` in `adapters/autk`, `make build`, then `npm pack` in `adapters/autk`.
 
-## How Curio uses them
+## How Curio uses it
 
-- `utk_curio/frontend/urban-workflows/package.json` lists the five as `file:vendor/autark/<tarball>` dependencies, and its `overrides` point autk-compute, autk-db, autk-map and autk-plot at that dependency (`"$@urban-toolkit/<package>"`), so `@urban-toolkit/autk-grammar` resolves to the same copies. Nothing depends on autk-grammar, so it needs no override.
-- The repository root `package.json` installs the same autk-db tarball for the sandbox's Node process, so the reference runner and the browser run the same autk-db.
-- The `Dockerfile`'s `runtime_base` stage copies this folder before `npm ci`.
+- `utk_curio/frontend/urban-workflows/package.json` lists it as a `file:vendor/autark/<tarball>` dependency. autk-grammar 0.3.0 asks for the 3.x Autark packages; the `overrides` there give it the 4.0.0 ones the frontend uses: autk-compute, autk-db, autk-map and autk-plot through their direct dependencies (`"$@urban-toolkit/<package>"`), and autk-core by version.
+- The `Dockerfile`'s `frontend_builder` stage copies this folder before `npm install`.
 
-`npm ls @urban-toolkit/autk-db @urban-toolkit/autk-compute @urban-toolkit/autk-map @urban-toolkit/autk-plot @urban-toolkit/autk-grammar @urban-toolkit/autk-core` shows one copy of each, in both the frontend and the root trees.
+`npm ls @urban-toolkit/autk-db @urban-toolkit/autk-compute @urban-toolkit/autk-map @urban-toolkit/autk-plot @urban-toolkit/autk-grammar @urban-toolkit/autk-core` shows one copy of each.
 
-## Switching back to published releases
+## Switching to a published release
 
-Each package can go back on its own, once the pull requests it carries are released:
+Once an autk-grammar release carries #7 on Autark 4:
 
-- autk-compute: after Autark #102 and 4b895b0, the commit on Autark `main` that carries #105.
-- autk-db: after Autark #101, #103, #107, #108, #110, #111 and #102.
-- autk-map and autk-plot: after Autark #102.
-- autk-grammar: after autk-grammar #7, released on an autk-compute with 4b895b0.
-
-For each released package:
-
-1. Delete its tarball and its `overrides` entry, and set its published range in the frontend `package.json`. Drop the direct autk-map and autk-plot entries once they are no longer vendored, since only autk-grammar needs them.
-2. For autk-db, also set the root `package.json` back to the published range.
-3. When this folder is empty, remove it and the `Dockerfile` `COPY` line.
-4. Regenerate both lockfiles with Node 26, and clear `node_modules/.cache/webpack`.
-5. Check `npm ls` in both trees: one copy of each package. A release that bumps autk-core would otherwise bring in a second one.
+1. Delete this folder, the `Dockerfile` line that copies it, and the grammar's `file:` entry; set the release's version in the frontend `package.json`.
+2. Drop the Autark `overrides` the release no longer needs.
+3. Regenerate the lockfile with Node 26, and clear `node_modules/.cache/webpack`.
+4. Check `npm ls`: one copy of each Autark package.
