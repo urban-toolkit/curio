@@ -293,13 +293,16 @@ INTERACTIONS = {
     # picks across the map, most changed fewer pixels than a gesture has to
     # (CI run 36809892522). This one, near the map's left edge, lights a tract
     # with gt_65 232, right of the band, where its point is alone (50 pixels).
-    # The spot moves when the map's size does: once the map kept clear of the
-    # port markers (#631), the old spot lit nothing, and a new sweep of 85
-    # picks found the same tract here (CI run 37154691120).
+    # The spot moves when the map's size or framing does: once the map kept
+    # clear of the port markers (#631), the old spot lit nothing, and a new
+    # sweep of 85 picks found the same tract there (CI run 37154691120). Once
+    # the map opened framed on all its tracts (#773), a sweep of 97 picks
+    # found 15 spots that light a point; this one, upper right, lights 50
+    # pixels, as do its two neighbours in the sweep (CI run 37560369552).
     "09-heterogeneous-data-linked-views.json": (
         Interaction("scatter-brush", source=EXAMPLE_09_SCATTER, target=EXAMPLE_09_MAP, gesture="brush"),
         Interaction("map-pick", source=EXAMPLE_09_MAP, target=EXAMPLE_09_SCATTER, gesture="pick",
-                    at=(0.03, 0.6)),
+                    at=(0.76, 0.22)),
     ),
     # Autark to Autark: a histogram brush and a building map, through a pool.
     # No pick the other way: at the pair's 86% zoom a building is a few
