@@ -31,9 +31,9 @@ import { backendUrl } from '../../utils/backendUrl';
 const DEFAULT_NAME_PROPERTY = 'name';
 const API_BASE = `${backendUrl()}/spatial_join`;
 
-// Heuristic for the single-handle fallback (when the framework hands us a
-// scalar instead of a slot-indexed array): polygons have Polygon /
-// MultiPolygon geometries; points have Point geometries.
+// Which slot an input fills, by its geometry rather than the port it came in
+// on: polygons have Polygon / MultiPolygon geometries; points have Point
+// geometries.
 function classifyFC(fc: any): 'points' | 'polygons' | 'unknown' {
   if (!fc || typeof fc !== 'object') return 'unknown';
   const features = Array.isArray(fc?.features) ? fc.features : null;
@@ -153,20 +153,16 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
     [edges, data.nodeId],
   );
 
-  // Two paths for inbound input:
-  //   - framework hands us an array indexed by handle (when dynamicHandles
-  //     are declared), OR
-  //   - framework hands us a single scalar; classify by geometry type.
-  // The two inputs arrive as successive `data.input` values, one per upstream
-  // run, and each has to land in its own slot. So a later arrival must NOT
-  // cancel an earlier one that is still resolving: with the polygons loader
-  // first and the points loader right behind it (example 15's order, and the
-  // generic canvas test's), the points reference arrived while the polygon
-  // artifact was still downloading, a cleanup-style cancel dropped it, and the
-  // join waited forever for polygons it had already been handed. Instead, each
-  // resolution carries a sequence number and only a newer resolution of the
-  // SAME slot may overwrite an older one; unmount is the only thing that stops
-  // a result from landing.
+  // Each input reaches its port's entry in `data.portInputs`, where it stays
+  // (FlowProvider keeps one per handle), and lands in its slot by its
+  // geometry. A later arrival must NOT cancel an earlier one that is still
+  // resolving: with the polygons loader first and the points loader right
+  // behind it (example 15's order, and the generic canvas test's), the points
+  // reference arrived while the polygon artifact was still downloading, a
+  // cleanup-style cancel dropped it, and the join waited forever for polygons
+  // it had already been handed. Instead, each resolution carries a sequence
+  // number and only a newer resolution of the SAME slot may overwrite an
+  // older one; unmount is the only thing that stops a result from landing.
   const aliveRef = useRef(true);
   const resolveSeqRef = useRef(0);
   const appliedSeqRef = useRef<[number, number]>([0, 0]);
@@ -274,26 +270,41 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
     setSlot(idx, v);
   }, [setSlot]);
 
+  // What each port holds, read port by port. Not `data.input`: that names only
+  // the latest arrival, and when both inputs landed in one render (a Run All
+  // of example 10 handed a join the Data Transformation's polygons and a
+  // Simple View's points 50 ms apart) this effect saw only the second, and the
+  // join said "has no polygons to join" when the run asked it. A port's value
+  // is resolved once, when it changes.
+  const portInputs = data.portInputs;
+  const seenPortsRef = useRef<Record<string, unknown>>({});
   useEffect(() => {
-    if (data.input === undefined || data.input === '' || data.input === null) return;
-    const seq = ++resolveSeqRef.current;
+    const ports = portInputs ?? {};
+    const seen = seenPortsRef.current;
+    for (const handle of Object.keys(seen)) {
+      if (!(handle in ports)) delete seen[handle];
+    }
     const onError = (e: any) => {
       if (!aliveRef.current) return;
       outcomeRef.current = { code: 'error', content: e?.message || String(e) };
       nodeState.setOutput({ ...outcomeRef.current });
     };
-    const resolving: Promise<unknown> = (Array.isArray(data.input)
-      ? Promise.all(data.input.slice(0, 2).map(resolveInput)).then(values => { values.forEach(v => placeResolved(v, seq)); })
-      : resolveInput(data.input).then(v => placeResolved(v, seq))
-    )
-      .catch(onError)
-      .finally(() => { pendingInputsRef.current.delete(resolving); });
-    pendingInputsRef.current.add(resolving);
+    for (const [handle, value] of Object.entries(ports)) {
+      if (seen[handle] === value) continue;
+      seen[handle] = value;
+      if (value === undefined || value === '' || value === null) continue;
+      const seq = ++resolveSeqRef.current;
+      const resolving: Promise<unknown> = resolveInput(value)
+        .then(v => placeResolved(v, seq))
+        .catch(onError)
+        .finally(() => { pendingInputsRef.current.delete(resolving); });
+      pendingInputsRef.current.add(resolving);
+    }
     // nodeState is stable for the node's lifetime; only a new input re-resolves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.input, placeResolved]);
+  }, [portInputs, placeResolved]);
 
-  // No `setOutputCallbackOverride`. Both inputs arrive through `data.input`,
+  // No `setOutputCallbackOverride`. Both inputs arrive through `data.portInputs`,
   // above; UniversalNode calls that override with the node's OWN status (the
   // "exec" a run marks it with, the reason a run skipped it). As a slot setter
   // it put `{ code: "exec" }` in the points slot the moment a run asked, and
