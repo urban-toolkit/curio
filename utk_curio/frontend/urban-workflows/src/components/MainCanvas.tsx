@@ -54,6 +54,7 @@ import html2canvas from "html2canvas";
 
 import FloatingPanel from "./FloatingPanel";
 import { CollaborationSidePanel } from "./collab/CollaborationSidePanel";
+import { CanvasSidePanels } from "./layout/CanvasSidePanels";
 import {
     buildDatasetLoaderNodeOptions,
     hasDatasetDrag,
@@ -715,8 +716,10 @@ export function MainCanvas() {
                 rail's Run all. */}
             {!notebookOn ? <ToolsMenu /> : <NotebookRunAll />}
             <UpMenu />
-            <CollaborationSidePanel />
-            {!isSharedView ? <ScenariosPanel /> : null}
+            <CanvasSidePanels>
+                <CollaborationSidePanel />
+                {!isSharedView ? <ScenariosPanel /> : null}
+            </CanvasSidePanels>
             <div
                 className="curio-canvas-drop-target"
                 style={{ width: "100%", height: "100%" }}
