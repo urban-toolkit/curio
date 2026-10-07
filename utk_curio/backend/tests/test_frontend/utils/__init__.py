@@ -127,6 +127,11 @@ from .db_stubs import (  # noqa: F401
     stub_db_login,
     stub_login_and_enter_workflow,
 )
+from .catalog_clock import (  # noqa: F401
+    CATALOG_CALENDAR,
+    start_catalog_calendar,
+    stop_catalog_calendar,
+)
 from .palettes import (  # noqa: F401
     open_tools_palette,
     click_package_summary_action,

@@ -40,10 +40,15 @@ def _walkthrough_params():
 
     A scene that declares ``needs_examples`` gets the ``examples`` marker, so an
     ordinary run deselects it rather than driving it against an empty gallery and
-    reporting the seed as broken.
+    reporting the seed as broken. One that declares ``catalog_calendar`` gets
+    that marker, and runs on the fixed catalog date.
     """
     return [
-        pytest.param(w, marks=[pytest.mark.examples] if w.needs_examples else [])
+        pytest.param(
+            w,
+            marks=([pytest.mark.examples] if w.needs_examples else [])
+            + ([pytest.mark.catalog_calendar] if w.catalog_calendar else []),
+        )
         for w in WALKTHROUGHS
     ]
 

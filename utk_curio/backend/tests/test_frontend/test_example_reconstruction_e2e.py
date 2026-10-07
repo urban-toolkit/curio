@@ -233,6 +233,7 @@ def _saved_spec(session, project_id: str) -> dict:
     )["spec"]
 
 
+@pytest.mark.catalog_calendar  # the palette row says how old the dataset is
 class TestPaletteShowsWhatWasProvisioned:
     """Mode 1 of the brief, in the UI: a dependency installed through the
     existing services must be visible where a person would reach for it."""

@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import dataclasses
 import shutil
-from datetime import datetime, timezone
 
+from utk_curio.backend.app.common.record_clock import utc_now
 from utk_curio.backend.app.datasets.domain.manifest import (
     ManifestError,
     load_dataset_manifest,
@@ -57,7 +57,7 @@ def copy_computed_dataset(
         shutil.rmtree(dest, ignore_errors=True)
     shutil.copytree(source, dest)
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     write_manifest(
         dataclasses.replace(
             manifest,

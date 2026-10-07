@@ -30,6 +30,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+import pytest
 from playwright.sync_api import expect
 
 from .utils import (
@@ -48,6 +49,9 @@ from .utils import (
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
+
+# The catalog pages' cards and details say how long ago each item was made.
+pytestmark = pytest.mark.catalog_calendar
 
 DATA_DRAWER = '[data-curio-dataset-catalog-drawer="true"]'
 NODE_DRAWER = '[data-curio-node-catalog-drawer="true"]'

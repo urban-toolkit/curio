@@ -5,12 +5,9 @@ validator; stamp a missing ``createdAt``. (Memo dev/143, B2: the file read left 
 from __future__ import annotations
 
 import json
-from datetime import (
-    datetime,
-    timezone,
-)
 from pathlib import Path
 
+from utk_curio.backend.app.common.record_clock import utc_now
 from utk_curio.backend.app.packages.domain.manifest import (
     ManifestError,
     package_manifest_from_dict,
@@ -59,7 +56,7 @@ def merge_missing_manifest_created_at(package_root: Path) -> bool:
     )
     if existing_ms > 0:
         return False
-    raw["createdAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    raw["createdAt"] = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     manifest_path.write_text(
         json.dumps(raw, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
         encoding="utf-8",
