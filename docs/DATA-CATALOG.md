@@ -143,7 +143,7 @@ The generated Python is one line, `curio_load_data("<datasetId>")` (`curio_load_
 | `onnx` | An onnxruntime `InferenceSession` on the CPU → `session`. onnxruntime comes with the Street Vision package. |
 | `netcdf` | An xarray `Dataset`, read with netCDF4 → `ds` |
 | `bundle` | Every part, as a tuple → `bundle`. `part="<file>"` reads one part. |
-| OSM group | A `layers` dict, one `curio_load_data` per layer |
+| OSM, GeoPackage or GTFS group | A `layers` dict, one `curio_load_data` per layer |
 | NetCDF group | A `layers` dict, one `curio_load_data` per variable |
 | `collection` | `curio_load_collection("<datasetId>")`: the collection's index, one row per file with a readable `path` → `collection` |
 
