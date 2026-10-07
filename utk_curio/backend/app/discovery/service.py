@@ -761,8 +761,7 @@ class DiscoveryService:
                 finally:
                     ratelimit.download_slots.release(user_key)
 
-        _start(job, _run, user_key)
-        return job.to_row()
+        return _start(job, _run, user_key)
 
     # ── collections ────────────────────────────────────────────────────────
 
@@ -872,8 +871,7 @@ class DiscoveryService:
                 finally:
                     ratelimit.download_slots.release(user_key)
 
-        _start(job, _run, user_key)
-        return job.to_row()
+        return _start(job, _run, user_key)
 
     def get_job(self, job_id: str) -> dict[str, Any]:
         job = job_store.jobs.get(self.user_key, job_id)
@@ -887,14 +885,22 @@ class DiscoveryService:
 
 
 
-def _start(job, run, user_key: str) -> None:
-    """Start *job*'s worker, or end the job and give its slot back."""
+def _start(job, run, user_key: str) -> dict[str, Any]:
+    """Start *job*'s worker, or end the job and give its slot back.
+
+    Returns the job's row as it is before the worker runs, which is what the
+    request that started it answers. Read after the start, it would be
+    whatever the worker had reached by then: a fast one finishes first, and an
+    unchanged refresh would answer as a dataset already held, with a 200.
+    """
+    row = job.to_row()
     try:
         job_store.run_in_background(run)
     except Exception as exc:  # noqa: BLE001 - no thread, so nothing else will
         ratelimit.download_slots.release(user_key)
         job_store.jobs.finish(job, "failed", error=f"{exc}"[:300], stage_message="Failed")
         raise
+    return row
 
 
 def _storage_matches(resource, text: str) -> bool:
