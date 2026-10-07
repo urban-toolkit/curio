@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import re
 import time
+import uuid
 
 import pytest
 from playwright.sync_api import expect
@@ -142,13 +143,18 @@ def _goto_when_served(page, url: str, *, timeout: float = 90.0) -> None:
     )
 
 
-def _open_dataflow_with_agent(session, spec, *, project_name, replies, native_tools=False):
+def _open_dataflow_with_agent(
+    session, spec, *, project_name, replies, native_tools=False, node_ids=(),
+):
     """A fresh project carrying exactly this one agent, open on the canvas.
 
     Install and attach go over HTTP - they are covered assertion-by-assertion in
     the headless module, and doing them through the drawer here would make every
     parameter pay for the drawer's own coverage. The browser's job starts at the
     rendered attachment.
+
+    *node_ids* are the ids the nodes an Apply creates are given (see
+    :func:`_created_node_id`).
     """
     page, backend, token = session["page"], session["backend"], session["token"]
     # stub-project is keyed on the USERNAME, not the token, so the session has
@@ -174,13 +180,25 @@ def _open_dataflow_with_agent(session, spec, *, project_name, replies, native_to
 
     # Scripted before the page can send anything, so no turn can race ahead of
     # its reply and pick up the provider's fallback instead.
-    script_agent_replies(backend, *replies, native_tools=native_tools)
+    script_agent_replies(backend, *replies, native_tools=native_tools, node_ids=node_ids)
 
     _goto_when_served(page, f"{session['frontend']}/dataflow/{project_id}")
     page.wait_for_url(f"**/dataflow/{project_id}", timeout=20000)
     require_owner_view(page)
     _wait_for_reactflow_ready(page)
     return project_id, attachment["attachmentId"], base
+
+
+def _created_node_id(spec: builtin.BuiltinAgentSpec) -> str:
+    """The id the node this agent's Apply creates is given, the same every run.
+
+    The applied turn prints it ("Applied: node created (<id>)."), and that line
+    sits near the width of the chat. A fresh uuid4 wraps it or not by how wide
+    its letters render, one line more or less, and the transcript, pinned to the
+    bottom, then moves everything above that line by a line height, so the
+    ``_chat`` frame changed from run to run with nothing else changed.
+    """
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"curio-e2e/agent-chat/{spec.agent_id}"))
 
 
 def _saved_nodes(backend, token, project_id) -> list:
@@ -284,9 +302,11 @@ class TestAgentChatGallery:
         backend, token = agent_chat_session["backend"], agent_chat_session["token"]
 
         leg, tool, replies = _scripted_replies(spec)
+        created_id = _created_node_id(spec) if tool == "node.create" else None
         project_id, _attachment_id, _base = _open_dataflow_with_agent(
             agent_chat_session, spec,
             project_name=f"Chat {spec.name}", replies=replies,
+            node_ids=(created_id,) if created_id else (),
         )
         before = _saved_nodes(backend, token, project_id)
 
@@ -348,10 +368,21 @@ class TestAgentChatGallery:
                 assert expected_content in (added[0].get("content") or ""), (
                     f"the new node carries {added[0].get('content')!r}"
                 )
+            if created_id is not None:
+                # Else the frame below is back to wrapping by chance.
+                assert added[0]["id"] == created_id, (
+                    f"the new node is {added[0]['id']}, not the scripted id "
+                    f"{created_id}"
+                )
             # The canvas really renders it, not just the saved spec.
             expect(page.locator(f'[data-id="{added[0]["id"]}"]')).to_be_visible(
                 timeout=20000
             )
+            if created_id is not None:
+                # And the chat names it: the result turn is in the capture.
+                expect(panel.get_by_text(
+                    f"Applied: node created ({created_id})."
+                )).to_be_visible(timeout=20000)
 
         dismiss_toasts(page)
         # Two captures, because there are two things worth seeing. First the

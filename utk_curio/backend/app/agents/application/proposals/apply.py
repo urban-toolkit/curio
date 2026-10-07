@@ -24,6 +24,7 @@ from utk_curio.backend.app.agents.application.proposals import mint as agents_mi
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.app.projects import storage as projects_storage
 
 
@@ -671,8 +672,9 @@ def _insert_node(
     widgets: list | None = None,
 ) -> dict:
     """Append one server-minted node to the spec's dataflow (dev/48): fresh
-    uuid id (collision-impossible, never from any param), placed right of the
-    current node extent. The caller writes the spec.
+    uuid id (collision-impossible, never from any param; a test run may
+    script it), placed right of the current node extent. The caller writes
+    the spec.
 
     ``appearance`` (dev/89, additive) is already normalized by the shared
     node-appearance utility and persists at the canonical
@@ -690,7 +692,12 @@ def _insert_node(
         y = float(at_y) if isinstance(at_y, (int, float)) else _NODE_PLACEMENT_DEFAULT[1]
     else:
         x, y = _NODE_PLACEMENT_DEFAULT
-    created = {"id": str(uuid.uuid4()), "type": node_type, "content": node_content, "x": x, "y": y}
+    # A test run may script the id (testing_provider.push_node_ids); one already
+    # on the canvas is never reused.
+    node_id = testing_provider.next_node_id()
+    if not node_id or any(isinstance(n, dict) and n.get("id") == node_id for n in nodes):
+        node_id = str(uuid.uuid4())
+    created = {"id": node_id, "type": node_type, "content": node_content, "x": x, "y": y}
     if goal:
         created["goal"] = goal
     if title:

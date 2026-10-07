@@ -43,7 +43,7 @@ def use_scripted_llm(backend_url: str, token: str) -> dict:
 def script_agent_replies(
     backend_url: str, *replies: str | dict, reset: bool = True,
     by_intent: dict | None = None, native_tools: bool = False,
-    structured_output: bool = False,
+    structured_output: bool = False, node_ids: tuple = (),
 ) -> int:
     """Queue *replies* for the next agent turns, one per provider call.
 
@@ -62,13 +62,19 @@ def script_agent_replies(
     *by_intent* maps a substring of a delegated call's ``intent`` to its reply,
     for calls whose order the test cannot know (Solve's per-node content).
 
+    *node_ids* are the uuids the next nodes an apply creates are given, in
+    order, for a capture that shows the id: the applied turn prints it, and a
+    random one wraps that line or not by its width.
+
     Resets by default. A reply left over from a previous test would be consumed
     by this one, and the failure would point anywhere but at the cause.
     """
     payload = {"replies": list(replies), "reset": reset, "byIntent": dict(by_intent or {})}
     if native_tools or structured_output:
         payload["chatCapabilities"] = {"tools": native_tools, "structuredOutput": structured_output}
-    body = _post_json(f"{backend_url}/api/testing/agent-script", payload)
+    if node_ids:
+        payload["nodeIds"] = list(node_ids)
+    body =_post_json(f"{backend_url}/api/testing/agent-script", payload)
     return body["pending"]
 
 
