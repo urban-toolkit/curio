@@ -89,7 +89,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `auth.py`: UI signup, the projects page, `require_owner_view`.
   - `db_stubs.py`: `stub_db_user`, `stub_db_login`, `stub_login_and_enter_workflow`, `api_json`.
   - `palettes.py`: tool palettes. `upload.py`: `upload_workflow`. `page.py`: `FrontendPage`.
-  - `canvas_authoring.py`: `drag_to_canvas`, `connect_nodes`, `set_node_code`, `play_node`, `run_node_and_wait`.
+  - `canvas_authoring.py`: `drag_to_canvas`, `drag_to_canvas_with_the_mouse`, `connect_nodes`, `set_node_code`, `play_node`, `run_node_and_wait`.
   - `run_all.py`: Run All state, holding a run open.
   - `node_drawings.py`: `assert_vega_canvas_rendered`, `assert_autark_map_drawn` and the other drawing checks.
   - `scripted_llm.py`: scripted agent turns.

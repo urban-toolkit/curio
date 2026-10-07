@@ -205,6 +205,7 @@ palette drag and the edge drag.
 | Helper | What it does |
 |---|---|
 | `drag_to_canvas(page, source, *, at=None)` | One synthetic HTML5 drag from any draggable palette source onto `.curio-canvas-drop-target`; returns the new node's id, diffed from the canvas because ids are `uuid4`. |
+| `drag_to_canvas_with_the_mouse(page, grip, *, at)` | The same drag with `page.mouse`: press on *grip* (a card's title, a palette row's grip), move in steps, release over the canvas. The browser routes every event, so it is the only one that meets what lies over the canvas, such as an open drawer's scrim. Fails with the element that took the drop, or none. |
 | `connect_nodes(page, source_id, target_id, *, source_handle="out", target_handle="in")` | Draws an edge with real pointer moves between two `.react-flow__handle`s and returns the derived edge id. |
 | `set_node_code(page, node_id, code)` / `read_node_code(page, node_id)` | Writes / reads a code node's source through that node's own Monaco instance. |
 | `canvas_nodes(page)` / `canvas_node_type(page, node_id)` | `{id, nodeType}` for the canvas, read from `window.__curio_reactFlow`. Projected, because `node.data` holds a `PythonInterpreter` and callbacks that Playwright cannot serialize. |
