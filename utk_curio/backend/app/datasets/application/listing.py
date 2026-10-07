@@ -72,6 +72,21 @@ def _legacy_installed_alias(
     return legacy_id if legacy_id in installed_ids else None
 
 
+def _sort_catalog_items(items: list[dict[str, Any]], sort: str) -> None:
+    """Order a listing for the catalog's sort menu, the same way every time.
+
+    "name": title (case-insensitive), then id. Anything else ("recent"):
+    ``updatedAt`` newest first, then title, then id. Equal keys never fall back
+    to the order the sources listed the items in: the user store lists its
+    folders by name, and a computed dataset's folder name holds the project and
+    node ids, which are new on every run (#764).
+    """
+    # Two stable passes: the tie-break ascending, then the time descending.
+    items.sort(key=lambda item: ((item.get("title") or "").casefold(), item.get("id") or ""))
+    if sort != "name":
+        items.sort(key=lambda item: item.get("updatedAt") or "", reverse=True)
+
+
 class CatalogListing:
     """Read-side catalog operations: list, get, preview, download, usage.
 
@@ -374,10 +389,7 @@ class CatalogListing:
         for item in items:
             item["consumerNodeCount"] = counts.get(item.get("id"), 0)
 
-        if sort == "name":
-            items.sort(key=lambda item: (item.get("title") or "").casefold())
-        else:
-            items.sort(key=lambda item: item.get("updatedAt") or "", reverse=True)
+        _sort_catalog_items(items, sort)
 
         return {"items": items, "facets": facets}
 
