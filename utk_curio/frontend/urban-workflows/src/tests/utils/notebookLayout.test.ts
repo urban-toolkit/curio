@@ -271,17 +271,17 @@ describe("the path a connection draws in the bar", () => {
 });
 
 describe("where the graph is changed", () => {
-  test("nodes are added and connected on the canvas", () => {
-    expect(graphEditGates({ notebookOn: false, sharedView: false })).toEqual({ connect: true, drop: true });
+  test("nodes are added, connected and deleted on the canvas", () => {
+    expect(graphEditGates({ notebookOn: false, sharedView: false })).toEqual({ connect: true, drop: true, delete: true });
   });
 
-  test("the notebook view adds and connects nothing", () => {
-    expect(graphEditGates({ notebookOn: true, sharedView: false })).toEqual({ connect: false, drop: false });
+  test("the notebook view adds, connects and deletes nothing", () => {
+    expect(graphEditGates({ notebookOn: true, sharedView: false })).toEqual({ connect: false, drop: false, delete: false });
   });
 
   test("a shared viewer changes nothing in either view", () => {
-    expect(graphEditGates({ notebookOn: false, sharedView: true })).toEqual({ connect: false, drop: false });
-    expect(graphEditGates({ notebookOn: true, sharedView: true })).toEqual({ connect: false, drop: false });
+    expect(graphEditGates({ notebookOn: false, sharedView: true })).toEqual({ connect: false, drop: false, delete: false });
+    expect(graphEditGates({ notebookOn: true, sharedView: true })).toEqual({ connect: false, drop: false, delete: false });
   });
 });
 
@@ -299,6 +299,12 @@ describe("the React Flow settings of the notebook view", () => {
     expect(props.panOnScroll).toBe(false);
     expect(props.panOnDrag).toBe(false);
     expect(props.nodesDraggable).toBe(false);
+  });
+
+  test("draw the connections for reading only: none takes the keyboard's focus", () => {
+    // Nor a click: MainCanvas.css lets a click on one through to the page. A
+    // connection is selected only to be deleted, which happens on the canvas.
+    expect(props.edgesFocusable).toBe(false);
   });
 
   test("leave the shared view's gates to the canvas", () => {

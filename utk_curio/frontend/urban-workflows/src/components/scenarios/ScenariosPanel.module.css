@@ -1,12 +1,9 @@
-/* The Scenarios panel (#662): docked on the right, under the top bar. */
+/* The Scenarios panel (#662): docked on the right, under the top bar, or under
+   the collaboration panel while that one is open. CanvasSidePanels places it
+   and sets its height. */
 
 .panel {
-  position: absolute;
-  top: var(--curio-top-bar-height);
-  right: 0;
-  z-index: 20;
   width: 300px;
-  max-height: calc(100vh - var(--curio-top-bar-height) - 16px);
   overflow-y: auto;
   box-sizing: border-box;
   padding: 10px;

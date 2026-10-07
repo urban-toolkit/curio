@@ -22,6 +22,14 @@ path.react-flow__edge-path:hover {
     stroke-width: 9;
 }
 
+/* In the notebook view the connections are there to be read: a click on one
+   goes through to the page under it, as on React Flow's own inactive edges, so
+   none is selected or thickened. One is selected only to be deleted, which
+   happens on the canvas (graphEditGates). */
+.curio-flow-scroller[data-curio-notebook] .react-flow__edge {
+    pointer-events: none;
+}
+
 .react-flow__handle {
     background: #888787;
 }
