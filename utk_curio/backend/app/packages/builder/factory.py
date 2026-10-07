@@ -60,10 +60,10 @@ import logging
 import re
 import zipfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from utk_curio.backend.app.common.record_clock import utc_now
 from utk_curio.backend.app.execution.code_references import references_as_names
 from utk_curio.backend.app.packages.domain.dependency_scanner import (
     scan_imports_for_filename,
@@ -382,7 +382,7 @@ def _stamp_manifest_created_at_when_absent(raw: dict[str, Any]) -> dict[str, Any
     cv = merged.get("createdAt")
     if isinstance(cv, str) and cv.strip():
         return merged
-    merged["createdAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    merged["createdAt"] = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     return merged
 
 

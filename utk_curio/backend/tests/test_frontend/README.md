@@ -571,6 +571,18 @@ Other things that surprise people here:
   by design. Rename the manifest `id` to fork it instead.
 - Card roots carry `data-pkg-dir` / `data-dataset-id` / `data-agent-coord`.
   Prefer them over display copy.
+- **Catalog ages run on a fixed date.** Cards, details panels and palette rows
+  say how long ago each item was made ("2d ago", "Updated 141d ago"), measured
+  against the browser's clock, and shipped items carry fixed dates. A test
+  whose captures show one carries the `catalog_calendar` marker (a walkthrough
+  scene: `catalog_calendar=True`). Its browser then runs on `CATALOG_CALENDAR`
+  (`utils/catalog_clock.py`) through Playwright's clock, and the backend stamps
+  the datasets, packages and models the test makes on the same date
+  (`/api/testing/clock`), so they read "1m ago" beside the shipped ones. Both
+  clocks run on from that date at the real pace.
+  `test_catalog_calendar_e2e.py` fails when a shipped item is dated less than
+  two days before the calendar: move the date past it, then re-mint the frames
+  of the marked tests.
 - **Every catalog confirms an add and a remove, with an in-app dialog** (#196,
   #197). No drawer calls `window.confirm`, so `page.on("dialog", ...)` never
   fires for them - a test written that way clicks the card

@@ -8,7 +8,6 @@ import os
 import shutil
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 
 from utk_curio.backend.app.datasets.domain.manifest import (
@@ -17,6 +16,7 @@ from utk_curio.backend.app.datasets.domain.manifest import (
     load_dataset_manifest,
     write_manifest,
 )
+from utk_curio.backend.app.common.record_clock import utc_now
 from utk_curio.backend.app.common.safe_paths import PathTraversalError, validate_component
 from utk_curio.backend.app.datasets.domain.constants import NETCDF_SIGNATURES, TIFF_SIGNATURES
 from utk_curio.backend.app.datasets.domain.onnx_model import is_onnx_model
@@ -353,7 +353,7 @@ def install_computed_file_for_node(
     else:
         raise InstallerError("install_computed_file_for_node requires file_bytes or source_path")
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     display_title = title or title_from_filename(safe_filename)
     manifest_obj = DatasetManifest(
         id=dataset_id,
@@ -440,7 +440,7 @@ def install_computed_file(
     data_path = dest / "data" / safe_filename
     data_path.write_bytes(file_bytes)
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     display_title = title or title_from_filename(safe_filename)
     manifest_obj = DatasetManifest(
         id=dataset_id,
@@ -623,7 +623,7 @@ def _install_imported(
         shutil.rmtree(dest, ignore_errors=True)
         raise
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     display_title = title or title_from_filename(safe_filename)
     manifest_obj = DatasetManifest(
         id=dataset_id,
