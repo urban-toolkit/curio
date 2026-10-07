@@ -4,12 +4,12 @@
 title alone. Two datasets with the same key then kept the order the sources
 listed them in, which for the user store is its folder names, and a computed
 dataset's folder name holds the project and node ids (new on every run). Two
-computed outputs saved in the same second (their manifests are stamped to the
-second) so swapped places from one run to the next.
+computed outputs dated alike so swapped places from one run to the next.
 
 Each test writes its datasets so the store lists them in the REVERSE of the
 expected order, checks that it does, and then asks the catalog route for the
-sort. A listing that falls back to store order on a tie fails here.
+sort. A listing that falls back to store order on a tie fails here, and so
+does one that compares dates as text rather than as times.
 """
 from __future__ import annotations
 
@@ -106,6 +106,19 @@ def test_recent_breaks_a_tie_of_time_and_title_by_id(app, client, user_and_token
     assert _store_order(user_key, ids) == [second, first]
 
     assert _listed(client, token, "recent", ids) == [first, second]
+
+
+def test_recent_compares_dates_written_to_different_precision(app, client, user_and_token):
+    user, token = user_and_token
+    user_key = _user_key(app, user)
+    # Half a second into the same second, written to the millisecond: the newer
+    # one, though as text "...:00Z" sorts after "...:00.500Z".
+    whole = _write_computed(user_key, "a-node", "Same title", SAME_SECOND)
+    later = _write_computed(user_key, "b-node", "Same title", "2026-10-06T12:00:00.500Z")
+    ids = [whole, later]
+    assert _store_order(user_key, ids) == [whole, later]
+
+    assert _listed(client, token, "recent", ids) == [later, whole]
 
 
 def test_name_breaks_a_title_tie_by_id(app, client, user_and_token):

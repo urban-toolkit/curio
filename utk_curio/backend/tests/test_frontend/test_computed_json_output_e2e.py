@@ -48,6 +48,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import pytest
@@ -80,12 +81,11 @@ ANALYSIS_LABEL = "Python Computation"
 DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
 
 # The two nodes, with ids fixed here rather than minted by a palette drop. Both
-# datasets carry the same name, so the Computed tab orders them by time, newest
-# first, and then by dataset id (``computed.<project>.<node>``) when both were
-# written in the same second (#764). The scalar's dataset is never the older
-# one: the save that starts its run re-installs the dict's output before the
-# run installs the scalar's. Its id sorting first keeps the scalar first in
-# both cases, so the frame shows one order on every run.
+# datasets carry the same name, and the Computed tab lists them newest first,
+# by when each output was computed: the scalar, which runs second, then the
+# dict. The saves around the scalar's run send the dict's output again,
+# unchanged, and do not date its dataset anew, so the frame shows one order on
+# every run (``test_datasets/test_computed_recent_order.py``).
 SCALAR_NODE = "json-output-a-scalar"
 DICT_NODE = "json-output-b-dict"
 
@@ -524,6 +524,10 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
     )
 
     # The scalar's card first, then the dict's: see SCALAR_NODE.
+    _assert_the_scalar_is_the_newer_dataset(
+        current_server, token, project_id,
+        _computed_id(scalar_node, project_id), _computed_id(dict_node, project_id),
+    )
     _open_computed_tab(
         page, [_computed_id(scalar_node, project_id), _computed_id(dict_node, project_id)],
     )
@@ -532,6 +536,32 @@ def test_a_dict_and_a_scalar_output_install_without_a_warning(
         page,
         "computed-json-output",
         test_name="test_a_dict_and_a_scalar_output_install_without_a_warning_computed_tab",
+    )
+
+
+def _assert_the_scalar_is_the_newer_dataset(
+    server: str, token: str, project_id: str, scalar_id: str, dict_id: str,
+) -> None:
+    """The scalar ran after the dict, so its dataset is dated after the dict's.
+
+    Read once the canvas frame is taken, seconds after the save that follows
+    the scalar's run: that save sends the dict's output again, unchanged, and
+    must not date the dict's dataset anew. The Computed tab's order rests on
+    these dates, and a tie of dates would leave it to the ids.
+    """
+    catalog = api_json(
+        "{}/api/datasets/catalog?includeHub=false&dataflowId={}".format(server, project_id),
+        token,
+    )
+    dated = {item["id"]: item.get("updatedAt") for item in catalog["items"]}
+    for dataset_id in (scalar_id, dict_id):
+        assert dated.get(dataset_id), "{} has no updatedAt: {}".format(dataset_id, dated)
+    assert datetime.fromisoformat(dated[scalar_id]) > datetime.fromisoformat(dated[dict_id]), (
+        "the scalar's dataset is dated {} and the dict's {}; the scalar ran after "
+        "the dict, so its dataset is the newer one. A save that sends the dict's "
+        "output again, unchanged, must not date it anew.".format(
+            dated[scalar_id], dated[dict_id]
+        )
     )
 
 
