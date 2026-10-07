@@ -387,6 +387,14 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setDataflowDatasets(incomingDatasets || []);
             console.log("loadParsedTrill reseting nodes");
             setNodes(() => []);
+            // The previous dataflow's outputs go now, not in the setNodes
+            // updater below: React runs that updater at its next render, after
+            // what the caller queues once this returns, and ProjectLoader puts
+            // the saved outputs it restores in `outputs` right then (#407).
+            // Cleared in the updater, they were gone: a play on the server
+            // handed none of them over as `reuse`, so the server ran those
+            // nodes again, and the next save took them out of the manifest.
+            setOutputs([]);
         }
 
         // Pins come off the spec, so they are known before anything is added.
@@ -512,7 +520,6 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             }
 
             if (!merge) {
-                setOutputs([]);
                 setInteractions([]);
                 setDashboardPins(pins);
             }
