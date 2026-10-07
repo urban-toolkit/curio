@@ -990,6 +990,20 @@ class TestVerifiedSolve:
                 return run(endpoint, payload)
 
             monkeypatch.setattr(exec_runner, "_http_exec", _slow_run)
+        # Issue #729: the session is bounded by passes here, not by the suite's
+        # one-second clock (conftest). That second was also the node's repair
+        # budget, since the batch gives a node what is left of the session (at
+        # least one second), so on a loaded runner the loop was refused its
+        # third round. With a session no runner spends, every pass runs all its
+        # rounds; the bound lets pass 1 exhaust them and the weak passes the
+        # session allows follow it, so the trail below spans passes.
+        from utk_curio.backend.app.agents.application.solve.batch import SolveBatch
+
+        monkeypatch.setenv("CURIO_SOLVE_SESSION_DEADLINE", "900")
+        monkeypatch.setattr(
+            SolveBatch, "_session_deadline_passed",
+            lambda self: self.pass_no > 1 + budgets._MAX_WEAK_PASSES,
+        )
         body = self._solve(client, token, ctx, verify=True)
         load = body["results"][ctx["load"]]
         assert load["status"] == "failed" and load["verdict"] == "fail" and load["rounds"] == 3, (

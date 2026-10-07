@@ -104,7 +104,12 @@ def _pinned_repair_budget(monkeypatch):
     # one second here. The clock starts when the batch is built, so how many
     # passes fit in that second depends on the machine: a test that needs a
     # later pass bounds its session by pass count instead, by patching
-    # ``SolveBatch._session_deadline_passed`` (issue #583).
+    # ``SolveBatch._session_deadline_passed`` (issue #583). That second is also
+    # each node's repair budget, since the batch gives a node what is left of
+    # the session (at least one second), so how many rounds a pass gets depends
+    # on the machine too: a test that needs all of a pass's rounds also raises
+    # CURIO_SOLVE_SESSION_DEADLINE, since that patch alone leaves the node's
+    # budget at one second (issue #729).
     monkeypatch.setenv("CURIO_SOLVE_SESSION_DEADLINE", "1")
     monkeypatch.setenv("CURIO_SOLVE_SESSION_WAIT", "1")
 
