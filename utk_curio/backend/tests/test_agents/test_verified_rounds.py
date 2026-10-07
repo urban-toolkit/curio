@@ -22,6 +22,7 @@ from utk_curio.backend.app.agents.application.turns import titles
 from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests.test_agents._solve_session import _bound_session_by_passes, _on_a_loaded_runner
 from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_proposals
 from utk_curio.backend.tests.test_agents import test_routes_solve as routes_solve
 from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turns
@@ -915,37 +916,6 @@ class TestVerifiedSolve:
         spec = projects_storage.read_spec(ctx["ukey"], ctx["pid"])
         return next(n for n in spec["dataflow"]["nodes"] if n["id"] == node_id)["content"]
 
-    @staticmethod
-    def _on_a_loaded_runner(monkeypatch, sandbox_run_s):
-        """Issue #729: a loaded runner, on which every sandbox run takes
-        *sandbox_run_s* seconds (nothing changes for 0). Two runs of 0.6 s
-        outlast the suite's one-second session (conftest). Call it after
-        ``_setup``, whose fake sandbox it slows down."""
-        if not sandbox_run_s:
-            return
-        from utk_curio.backend.app.execution import runner as exec_runner
-
-        run = exec_runner._http_exec
-
-        def _slow_run(endpoint, payload):
-            time.sleep(sandbox_run_s)
-            return run(endpoint, payload)
-
-        monkeypatch.setattr(exec_runner, "_http_exec", _slow_run)
-
-    @staticmethod
-    def _bound_session_by_passes(monkeypatch, passes):
-        """Issue #729: end the Solve session after *passes* turns of its loop,
-        not on the suite's one-second clock (conftest). That second is also
-        each node's repair budget: the batch gives a node what is left of the
-        session, at least one second, so on a loaded runner a pass lost rounds.
-        A session budget no runner spends gives every pass all its rounds, and
-        the turn count ends the session instead of the clock."""
-        from utk_curio.backend.app.agents.application.solve.batch import SolveBatch
-
-        monkeypatch.setenv("CURIO_SOLVE_SESSION_DEADLINE", "900")
-        monkeypatch.setattr(SolveBatch, "_session_deadline_passed", lambda self: self.pass_no > passes)
-
     LOADER = 'import pandas as pd\ndataset_path = curio_data_path("{DATASET}")\ndf = pd.read_csv(dataset_path)\nreturn df'
 
     def test_pass_writes_only_after_the_code_ran(self, client, user_and_token, tmp_curio, monkeypatch):
@@ -974,7 +944,10 @@ class TestVerifiedSolve:
         assert "describe" in self._node_content(ctx, ctx["stats"])
         assert body["builderSession"]["phase"] == "ready"
 
-    def test_failure_is_corrected_with_the_traceback_and_fresh_url_evidence(self, client, user_and_token, tmp_curio, monkeypatch):
+    @pytest.mark.parametrize("sandbox_run_s", [0, 1.2], ids=["idle", "loaded"])
+    def test_failure_is_corrected_with_the_traceback_and_fresh_url_evidence(
+        self, client, user_and_token, tmp_curio, monkeypatch, sandbox_run_s
+    ):
         user, token = user_and_token
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.application.verify.verify_external_source',
@@ -985,9 +958,14 @@ class TestVerifiedSolve:
             client, user, token, monkeypatch, dl_replies=[bad, self.LOADER], with_stats=False,
             exec_outcomes={"raise_for_status": "requests.exceptions.HTTPError: 400 Client Error: Bad Request"},
         )
+        # The correction is the node's second round. One sandbox run of 1.2 s
+        # outlasts a one-second session, which is also the node's repair budget.
+        _on_a_loaded_runner(monkeypatch, sandbox_run_s)
         body = self._solve(client, token, ctx)
         load = body["results"][ctx["load"]]
-        assert load["status"] == "solved" and load["verdict"] == "pass" and load["rounds"] == 2
+        assert load["status"] == "solved" and load["verdict"] == "pass" and load["rounds"] == 2, (
+            f"stoppedBy {load.get('stoppedBy')!r}: {load.get('error')}"
+        )
         assert [a["verdict"] for a in load["attempts"]] == ["fail", "pass"]
         assert "400 Client Error" in load["attempts"][0]["stderrTail"]
         # The correction child saw the traceback, the previous attempt, and the probe.
@@ -1009,13 +987,13 @@ class TestVerifiedSolve:
             dl_replies=[self.LOADER.replace("return df", f"always_bad({i})\nreturn df") for i in range(3)],
             exec_outcomes={"always_bad": "Traceback: NameError: always_bad"},
         )
-        self._on_a_loaded_runner(monkeypatch, sandbox_run_s)
-        # Issue #729: on a loaded runner the one-second session (conftest), which
-        # is also the node's repair budget, refused the loop its third round.
-        # The session is bounded by passes instead: pass 1 exhausts its rounds
-        # and the weak passes the session allows follow it, so the trail below
-        # spans passes.
-        self._bound_session_by_passes(monkeypatch, 1 + budgets._MAX_WEAK_PASSES)
+        _on_a_loaded_runner(monkeypatch, sandbox_run_s)
+        # Issue #729: on a loaded runner a one-second session, which is also the
+        # node's repair budget, refused the loop its third round. The session is
+        # bounded by turns instead (conftest.py), here at one for pass 1, which
+        # exhausts its rounds, and one for each weak pass the session allows
+        # after it, so the trail below spans passes.
+        _bound_session_by_passes(monkeypatch, 1 + budgets._MAX_WEAK_PASSES)
         body = self._solve(client, token, ctx, verify=True)
         load = body["results"][ctx["load"]]
         assert load["status"] == "failed" and load["verdict"] == "fail" and load["rounds"] == 3, (
@@ -1879,3 +1857,25 @@ class TestRepairBudget:
             app, node, replies=[f"bad{i}()" for i in range(1, 60)], exec_fn=exec_fn,
         )
         assert outcome["rounds"] == budgets.MAX_SOLVE_ATTEMPTS
+
+    def test_a_node_never_outlives_its_session(self, client, user_and_token, tmp_curio, monkeypatch):
+        # dev/131: Solve gives a node what is left of its session as its repair
+        # budget, never the node's own fifteen minutes, so one node cannot
+        # spend a session it shares. The suite's sessions have a budget no
+        # runner spends (conftest.py); this one has thirty seconds.
+        monkeypatch.delenv("CURIO_SOLVE_NODE_BUDGET", raising=False)
+        monkeypatch.setenv("CURIO_SOLVE_SESSION_DEADLINE", "30")
+        helper = TestVerifiedSolve()
+        user, token = user_and_token
+        ctx = helper._setup(client, user, token, monkeypatch, dl_replies=[helper.LOADER], with_stats=False)
+        handed: list = []
+        loop = rounds._verified_content_rounds
+
+        def _recording(*args, **kwargs):
+            handed.append(kwargs.get("node_budget_s"))
+            return loop(*args, **kwargs)
+
+        monkeypatch.setattr(rounds, "_verified_content_rounds", _recording)
+        body = helper._solve(client, token, ctx)
+        assert body["results"][ctx["load"]]["status"] == "solved"
+        assert handed and all(isinstance(s, int) and 1 <= s <= 30 for s in handed), handed

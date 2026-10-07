@@ -9,12 +9,16 @@
     "js": {},
     "packages": {},
     "python": {
+      "geopandas": ">=1.1.3",
       "netCDF4": ">=1.7",
       "networkx": ">=3.2",
+      "numpy": "",
       "onnxruntime": ">=1.17",
       "osmnx": ">=2.0",
+      "pandas": ">=3.0.2",
       "scikit-learn": ">=1.6",
-      "scipy": ">=1.13"
+      "scipy": ">=1.13",
+      "shapely": ">=2.0"
     }
   },
   "description": "SCOUT's weather-aware routing, ported from SCOUT (urban-toolkit/scout): the Weather Routing node finds routes between two points over a roads layer, weighing each road by the weather SCOUT's graph network predicts on it from a WRF forecast, and gives each route's duration, distance and rain and wind exposure.",

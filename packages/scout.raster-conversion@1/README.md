@@ -54,5 +54,6 @@ is this dataflow, on twelve buildings built in code.
 ## Setup
 
 Curio installs the package's Python libraries with it: `datashader`,
-`spatialpandas`, `dask` and `rasterio`. It is installed for you when Curio
-starts with `--with-examples`.
+`spatialpandas`, `dask`, `rasterio`, `geopandas`, `numpy`, `pandas`, `pillow`,
+`pyarrow`, `pyproj` and `shapely`. It is installed for you when Curio starts
+with `--with-examples`.
