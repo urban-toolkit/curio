@@ -258,6 +258,57 @@ class TestDerivedFiles:
         # One never written is not found either.
         assert media(client, auth, dataset["id"], f"{photo}@500").status_code == 404
 
+    def test_two_models_on_one_photo_keep_an_overlay_each(self, client, auth, app, shipped_root, user_and_token):
+        """#621: example 10 segments one sample with two models. An overlay was
+        named by its photo alone, so the second model's overlay replaced the
+        first's and both rows pointed at one file. Each model's overlay is a
+        file of its own, served back as the one that model drew."""
+        from types import SimpleNamespace
+
+        import numpy as np
+
+        from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.backend.app.discovery.infrastructure.storage import storage_root
+        from utk_curio.backend.tests.test_discovery.conftest import SHIPPED_ROOT
+        from utk_curio.sandbox.util.collections import make_collection_helpers
+        from utk_curio.sandbox.util.vision import make_curio_segment
+
+        user, _token = user_and_token
+        dataset, _index = collection(client, auth, "survey")
+        root = storage_root(load_source_manifest(SHIPPED_ROOT / EXAMPLE))
+        helpers = make_collection_helpers(
+            lambda _id: dataset["path"],
+            {dataset["id"]: {"kind": "images", "root": str(root)}},
+            str(media_dirs.media_work_root(str(user.id))),
+        )
+        rows = helpers["curio_load_collection"](dataset["id"])
+        photo = rows[rows["name"] == "IMG_0001.jpg"].head(1)
+        segment = make_curio_segment(helpers["curio_derived_file"])
+
+        def a_model(model_id, label):
+            """A model that labels every pixel *label*, as curio_load_model gives one."""
+            class Runner:
+                labels = ["road", "sky"]
+
+                def __call__(self, image):
+                    return np.full((image.height, image.width), self.labels.index(label))
+
+            return SimpleNamespace(id=model_id, manifest={}, runner=Runner())
+
+        def served(url):
+            res = client.get(url, headers=auth)
+            assert res.status_code == 200 and res.mimetype == "image/png", res.get_data()[:300]
+            return res.data
+
+        road_url = segment(photo, a_model("model.test.road@1", "road"))["overlay_url"].iloc[0]
+        by_road = served(road_url)
+        sky_url = segment(photo, a_model("model.test.sky@1", "sky"))["overlay_url"].iloc[0]
+        by_sky = served(sky_url)
+        assert road_url != sky_url, f"both models' overlays are {road_url}"
+        assert by_road != by_sky
+        assert served(road_url) == by_road, "the second model's overlay replaced the first's"
+
     def test_a_raster_has_no_derived_files(self, client, auth, app, shipped_root):
         dataset, index = collection(client, auth, "orthos")
         assert media(client, auth, dataset["id"], f"{index['file_id'].iloc[0]}@0").status_code == 404
