@@ -46,15 +46,25 @@ jobs:
     - name: 🧹 Clean previous builds
       run: rm -rf dist/ *.egg-info
 
+    # The package leaves out the big catalog files that
+    # utk_curio/backend/app/datasets/infrastructure/left_out_files.json lists;
+    # a pip install downloads each from GitHub, at this commit, the first time
+    # it needs it, and checks it against this record, which the package ships.
+    - name: Record the files the package leaves out
+      run: python scripts/record_left_out_files.py --commit "$GITHUB_SHA"
+
     - name: 🛠 Build sdist and wheel
       run: python -m build --no-isolation
-    
+
     - name: Check wheel metadata
       run: |
           twine check dist/*
 
     - name: 📦 Debug Wheel Contents
       run: unzip -l dist/*.whl
+
+    - name: Check every file fits PyPI's 100 MiB limit
+      run: python scripts/check_dist_sizes.py dist
 
     - name: 🚀 Publish to PyPI
       uses: pypa/gh-action-pypi-publish@v1.14.0

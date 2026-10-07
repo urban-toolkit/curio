@@ -1,0 +1,10 @@
+{
+  "about": "Repository files the pip package leaves out; a pip install downloads each from GitHub the first time Curio needs it (left_out_files.py). MANIFEST.in excludes exactly these.",
+  "files": [
+    "datasets/data.cityofchicago.red-light-violations@1/data/red-light-violations.parquet",
+    "datasets/data.cityofchicago.speed-camera-violations@1/data/speed-camera-violations.parquet",
+    "datasets/data.projectsidewalk.chicago-labels@1/data/chicago-labels.parquet",
+    "datasets/data.utk.milan-mrt@1/data/milan-mrt.tif",
+    "models/model.scout.deep-umbra@1/files/deep_umbra.onnx"
+  ]
+}

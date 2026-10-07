@@ -629,6 +629,36 @@ def test_factory_build_returns_zip(client, user_and_token, tmp_curio):
     assert "integrity.json" not in names
 
 
+def test_save_as_package_from_a_node_whose_code_holds_chips_lists_its_libraries(
+    client, user_and_token, tmp_curio,
+):
+    """#707: a node reads its inputs, their columns and layers, its widgets,
+    shared tags and selections through ``[!! ... !!]`` references. They are not
+    Python, so the import scan could not parse the node's code and the package
+    it was saved as listed none of its libraries."""
+    _, token = user_and_token
+    draft = _draft()
+    draft["sources"]["demo"]["code"] = (
+        "import numpy as np\n"
+        "from shapely.geometry import box\n"
+        "frame = [!! input 0 !!]\n"
+        "roads = [!! input 1:roads !!]\n"
+        "area = frame[[!! input 0.area !!]]\n"
+        "scale = [!! factor !!] * [!! @season !!]\n"
+        "picked = [!! selection picked !!]\n"
+        "return np.asarray(area) * scale\n"
+    )
+    resp = client.post(
+        "/api/packages/factory/build",
+        data=json.dumps(draft),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200, resp.get_data()[:300]
+    with zipfile.ZipFile(io.BytesIO(resp.data), "r") as zf:
+        manifest = json.loads(zf.read("manifest.json"))
+    assert manifest["dependencies"]["python"] == {"numpy": "*", "shapely": "*"}
+
+
 def _two_template_draft():
     """A draft for a package with two code templates, each with distinct source."""
     draft = _draft()

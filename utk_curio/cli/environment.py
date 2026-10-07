@@ -75,7 +75,18 @@ def _refuse_unisolated_deploy(exec_user, blockers):
         "and run it as the single-user tool it then is."
     )
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, backend_url=None, discovery_root=None, models_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None, discovery_max_download_mb=None):
+def set_state_dir(state_dir=None):
+    """``--state-dir`` to CURIO_STATE_DIR, where the ``.curio`` state lives.
+
+    Apart from set_environment_variables because the launcher writes its own
+    log there, and main() opens that log before it sets the rest. Resolved
+    like ``--catalog-root``, since the servers run from another directory.
+    """
+    if state_dir:
+        os.environ["CURIO_STATE_DIR"] = str(Path(state_dir).expanduser().resolve())
+
+
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, collab=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, backend_url=None, discovery_root=None, models_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None, discovery_max_download_mb=None, guest_llm_provider=None, guest_llm_base_url=None, guest_llm_model=None, media_cache_max_gb=None, db_pool_size=None, db_pool_overflow=None, db_pool_timeout=None, package_workers=None, js_parallelism=None, js_registry_url=None, js_block_unpinned=None, shared_guest_name=None, shared_guest_username=None, collab_origins=None, collab_namespace=None, log_to_stdout=None, packages_root=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -120,6 +131,8 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         os.environ["CURIO_DISCOVERY_ROOT"] = str(Path(discovery_root).expanduser().resolve())
     if models_root:
         os.environ["CURIO_MODELS_ROOT"] = str(Path(models_root).expanduser().resolve())
+    if packages_root:
+        os.environ["CURIO_PACKAGES_ROOT"] = str(Path(packages_root).expanduser().resolve())
     # Respect an already-set CURIO_LAUNCH_CWD / CURIO_SHARED_DATA so the test
     # harness can point the backend at a dedicated workspace (see
     # utk_curio/backend/tests/conftest.py). Only fall back to cwd otherwise.
@@ -261,6 +274,36 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     if agent_search_url:
         os.environ["CURIO_SEARCH_URL"] = str(agent_search_url)
 
+    # Operator settings the servers read (backend/config.py, the package
+    # builder and runtime, the sandbox worker, the media cache). Each is written
+    # only when its flag is passed; 0 and an empty value are values an operator
+    # can mean (no pool overflow, the provider's own endpoint).
+    for env_name, value in (
+        ("GUEST_LLM_API_TYPE", guest_llm_provider),
+        ("GUEST_LLM_BASE_URL", guest_llm_base_url),
+        ("GUEST_LLM_MODEL", guest_llm_model),
+        ("CURIO_DB_POOL_SIZE", db_pool_size),
+        ("CURIO_DB_POOL_OVERFLOW", db_pool_overflow),
+        ("CURIO_DB_POOL_TIMEOUT", db_pool_timeout),
+        ("CURIO_PACKAGE_WORKERS", package_workers),
+        ("CURIO_JS_PARALLELISM", js_parallelism),
+        ("CURIO_JS_REGISTRY_URL", js_registry_url),
+        ("CURIO_SHARED_GUEST_NAME", shared_guest_name),
+        ("CURIO_SHARED_GUEST_USERNAME", shared_guest_username),
+        ("COLLAB_CORS_ORIGINS", collab_origins),
+        ("COLLAB_NAMESPACE", collab_namespace),
+    ):
+        if value is not None:
+            os.environ[env_name] = str(value)
+    if media_cache_max_gb is not None:
+        os.environ["CURIO_MEDIA_CACHE_MAX_GB"] = f"{media_cache_max_gb:g}"
+    if js_block_unpinned is not None:
+        os.environ["CURIO_JS_BLOCK_UNPINNED"] = "1" if js_block_unpinned else "0"
+    if log_to_stdout is not None:
+        # Both servers take any non-empty value as on, and their .flaskenv
+        # turns an unset one on, so off is the empty value.
+        os.environ["LOG_TO_STDOUT"] = "1" if log_to_stdout else ""
+
     os.environ["ENABLE_COLLAB"] = "1" if collab else "0"
 
     log_always(f"Environment Variables Set:")
@@ -279,12 +322,16 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     log_always(f"CURIO_ISOLATION={os.environ['CURIO_ISOLATION']}")
     # The token itself is deliberately not logged.
     log_always("CURIO_SANDBOX_TOKEN=<set>")
+    if os.environ.get("CURIO_STATE_DIR"):
+        log_always(f"CURIO_STATE_DIR={os.environ['CURIO_STATE_DIR']}")
     if catalog_root:
         log_always(f"CURIO_CATALOG_ROOT={os.environ['CURIO_CATALOG_ROOT']}")
     if discovery_root:
         log_always(f"CURIO_DISCOVERY_ROOT={os.environ['CURIO_DISCOVERY_ROOT']}")
     if models_root:
         log_always(f"CURIO_MODELS_ROOT={os.environ['CURIO_MODELS_ROOT']}")
+    if packages_root:
+        log_always(f"CURIO_PACKAGES_ROOT={os.environ['CURIO_PACKAGES_ROOT']}")
     log_always(f"ENABLE_COLLAB={os.environ['ENABLE_COLLAB']}")
 
 

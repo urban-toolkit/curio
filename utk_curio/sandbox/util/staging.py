@@ -114,7 +114,15 @@ def stage_input(art_id, scratch_dir, *, session_id=None, slot="in"):
             value = load_shared_output_file(art_id)
         except KeyError:
             raise store_error
-        adopted = save_to_duckdb(value, node_id="hydrated", session_id=session_id)
+        from utk_curio.sandbox.util.rasters import is_dataset
+
+        try:
+            adopted = save_to_duckdb(value, node_id="hydrated", session_id=session_id)
+        finally:
+            # A raster is stored by its file's path, so the dataset opened to
+            # read it is done with.
+            if is_dataset(value):
+                value.close()
         return stage_input(adopted, scratch_dir, session_id=session_id, slot=slot)
 
     if kind == "null":

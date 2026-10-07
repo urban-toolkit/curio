@@ -3,9 +3,18 @@
  *
  * On mount, if the URL has a project UUID (not "new"), it fetches the project
  * from the API, applies the spec via loadParsedTrill, and pre-populates
- * FlowContext.outputs so every node renders in an executed state.
+ * FlowContext.outputs so every node renders in an executed state. On
+ * `/dataflow/new` it sets up an unsaved dataflow, empty or holding the file
+ * File > Load picked.
  */
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useFlowContext, IOutput } from "../providers/FlowProvider";
 import { useCode } from "../hook/useCode";
@@ -22,6 +31,12 @@ import {
 import { packagesApi } from "../services/packages";
 import { useToastContext } from "../providers/ToastProvider";
 import { loadFailedMessage } from "../utils/dataflowImport";
+import {
+  hasOpenedDataflowFile,
+  openedDataflowFileRevision,
+  subscribeOpenedDataflowFile,
+  takeOpenedDataflowFile,
+} from "../utils/openedDataflowFile";
 import { restoredByNode, restoredOutputs, withOutputs } from "../utils/restoredOutputs";
 
 import { SHARE_UUID_RE as UUID_RE } from "../utils/shareLinks";
@@ -81,6 +96,7 @@ export const ProjectLoader: React.FC<{
     loadParsedTrill,
     projectId,
     attachLatestRun,
+    markDirty,
   } = useFlowContext();
   // Read when the load answers, not when it started: whether this canvas runs
   // on the server depends on the signed-in user, which can arrive in between.
@@ -92,6 +108,12 @@ export const ProjectLoader: React.FC<{
   // package names come from node source the loader can't vet and installing
   // an sdist runs setup.py server-side (see the hook's doc comment).
   const ensureWorkflowDeps = useEnsureWorkflowDeps();
+  // Bumped each time File > Load hands over a file, which on an unsaved
+  // dataflow arrives without a route change.
+  const openedFileRevision = useSyncExternalStore(
+    subscribeOpenedDataflowFile,
+    openedDataflowFileRevision,
+  );
 
   // Canonicalize the URL when a brand-new dataflow gets persisted out-of-band —
   // e.g. installing a dataset or a producing node's auto-install creates+saves
@@ -122,6 +144,9 @@ export const ProjectLoader: React.FC<{
       // merges into the lockfile on first save. The palette therefore shows the
       // same set before and after that save.
       setUnsavedDataflow([]);
+      // A file File > Load picked brings its own lockfile, which the effect
+      // below applies; the defaults would land on top of it.
+      if (hasOpenedDataflowFile()) return;
       let cancelled = false;
       packagesApi
         .getDefaults()
@@ -300,6 +325,31 @@ export const ProjectLoader: React.FC<{
       // caught a moment earlier, which would be a wipe rather than a fork.
     })().finally(() => settleProjectLoad(id));
   }, [id]);
+
+  // File > Load (#751): the menu left the open dataflow the way File > New
+  // does and handed the picked file over, and it becomes the unsaved dataflow
+  // here, after the effect above set that up. Its first save creates a project
+  // named after it, which leaves the dataflow that was open as it was.
+  useEffect(() => {
+    if (id && id !== "new") return;
+    const spec = takeOpenedDataflowFile();
+    if (!spec) return;
+    try {
+      loadTrill(spec);
+    } catch (err) {
+      // A spec can carry the right shape and still throw while it is replayed,
+      // on a node type this build does not know.
+      console.error("Failed to load dataflow:", err);
+      showToast(loadFailedMessage(err), "error");
+      return;
+    }
+    // Nothing of it is on disk yet. The edge replay inside loadParsedTrill
+    // does not say so on its own (#229), and never did for an edgeless file.
+    markDirty();
+    // Loading a file is a deliberate user action, so warn + auto-install its
+    // Python deps the same way opening your own project does.
+    ensureWorkflowDeps(spec);
+  }, [id, openedFileRevision]);
 
   return (
     <ProjectLoadStateContext.Provider value={loadState}>
