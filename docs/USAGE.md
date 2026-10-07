@@ -1121,6 +1121,9 @@ combine, and **All dataflows** clears them.
 | **Data type** | Tables, Geometries, Imagery, OpenStreetMap, Rasters, Video, Audio |
 | **City**, **Topic**, **Complexity** | what you or Curio set for the dataflow |
 
+A dataflow file opened with **File → Load dataflow** is a new dataflow: saving it adds it to
+your dataflows under its own name, and the dataflow that was open stays as it was.
+
 Tags and data types come from the dataflow itself: its nodes, the libraries its code
 imports and the formats of its datasets. They change when you save, and cannot be
 removed by hand. Add a tag, a city, a topic or a complexity with **+ Category** under

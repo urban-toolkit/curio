@@ -213,7 +213,7 @@ def test_loading_over_unsaved_changes_asks_before_leaving_them(
     # An unsaved change: a rename on the canvas.
     renamed = f"{OPEN_NAME}, renamed"
     page.locator(TITLE).click()
-    box = page.locator("[data-curio-canvas-title] input[type='text']")
+    box = page.locator("[data-curio-canvas-title] input[type='text']").first
     box.wait_for(state="visible", timeout=10000)
     box.fill(renamed)
     box.press("Enter")
