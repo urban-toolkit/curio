@@ -292,3 +292,20 @@ def _frontend_needs_build() -> bool:
     if not os.path.isfile(os.path.join(_frontend_dir(), "package.json")):
         return False
     return _build_stamp_reason() is not None
+
+
+def _frontend_must_build(force_rebuild=False) -> bool:
+    """A start has to build the frontend before it can serve it.
+
+    --dev compiles through webpack-dev-server, --force-rebuild was asked for,
+    and a checkout with no current dist/ or a node_modules from another Node
+    major has nothing right for the static server to serve. A pip install and
+    the shipped container both arrive with dist/ already built, so neither
+    runs npm.
+    """
+    return (
+        os.getenv("CURIO_DEV") == "1"
+        or force_rebuild
+        or _frontend_needs_build()
+        or _frontend_tree_is_stale()
+    )
