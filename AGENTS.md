@@ -59,7 +59,7 @@ Under `utk_curio/backend/app/`:
 - `notebooks/`: Jupyter notebook import (`analyzer.py`).
 - `api/routes.py`: sandbox proxies, starters, file serving.
 - `testing/`: test-only routes for Playwright, registered only in dev mode.
-- `common/`: shared helpers (safe paths, file locks, owner-only files, user storage, egress policy, the background job registry).
+- `common/`: shared helpers (safe paths, file locks, owner-only files, user storage, egress policy, the background job registry, `record_clock.py`: the clock catalog records are dated by).
 
 ## Frontend core
 
@@ -88,6 +88,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `servers.py`: ports, `e2e_existing_servers`.
   - `auth.py`: UI signup, the projects page, `require_owner_view`.
   - `db_stubs.py`: `stub_db_user`, `stub_db_login`, `stub_login_and_enter_workflow`, `api_json`.
+  - `catalog_clock.py`: `CATALOG_CALENDAR`, the fixed date that tests marked `catalog_calendar` run on (conftest.py).
   - `palettes.py`: tool palettes. `upload.py`: `upload_workflow`. `page.py`: `FrontendPage`.
   - `canvas_authoring.py`: `drag_to_canvas`, `drag_to_canvas_with_the_mouse`, `connect_nodes`, `set_node_code`, `play_node`, `run_node_and_wait`.
   - `run_all.py`: Run All state, holding a run open.

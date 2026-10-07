@@ -204,6 +204,10 @@ class Walkthrough:
     #: the ``examples`` marker, so an ordinary run skips it honestly instead of
     #: asserting against an empty gallery and blaming the seed.
     needs_examples: bool = False
+    #: Shows how long ago catalog items were made ("2d ago"). The scene then
+    #: carries the ``catalog_calendar`` marker and runs on the fixed catalog
+    #: date (utils/catalog_clock.py), so its frames read the same every day.
+    catalog_calendar: bool = False
 
     @property
     def stem(self) -> str:

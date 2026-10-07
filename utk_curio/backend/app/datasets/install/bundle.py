@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import shutil
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from utk_curio.backend.app.common.record_clock import utc_now
 from utk_curio.backend.app.datasets.install.installer import (
     InstallerError,
     computed_dataset_id,
@@ -389,7 +389,7 @@ def install_computed_bundle_for_node(
     bundle_path = dest / "data" / "bundle.json"
     bundle_path.write_text(json.dumps(bundle_spec, indent=2), encoding="utf-8")
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
     part_count = len(bundle_spec["parts"])
     display_title = title or f"Node output ({part_count} parts)"
     manifest_obj = DatasetManifest(

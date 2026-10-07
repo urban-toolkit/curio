@@ -29,9 +29,11 @@ from __future__ import annotations
 import logging
 import re
 import shutil
+from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
+from utk_curio.backend.app.common import record_clock
 from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend import config
 from utk_curio.backend.config import _is_dev, _is_testing
@@ -337,8 +339,10 @@ def reset_db():
     stores_cleared = []
     if body.get("stores", True):
         stores_cleared = _clear_test_user_stores()
-    # A hold a failed test left standing would stop the next test's runs.
+    # A hold a failed test left standing would stop the next test's runs, and a
+    # clock it left set would date the next test's records.
     run_jobs.set_hold(False)
+    record_clock.set_now(None)
     return jsonify({"truncated": truncated, "stores_cleared": stores_cleared}), 200
 
 
@@ -360,6 +364,39 @@ def run_hold():
         waiting = run_jobs.set_hold(body["hold"])
         return jsonify({"held": body["hold"], "waiting": waiting}), 200
     return jsonify(run_jobs.hold_state()), 200
+
+
+def _iso(moment: datetime) -> str:
+    return moment.isoformat().replace("+00:00", "Z")
+
+
+@testing_bp.route("/clock", methods=["POST", "DELETE"])
+def clock():
+    """Set the clock catalog records are stamped with (``common/record_clock.py``).
+
+    The server-side twin of Playwright's page clock: an e2e test that
+    photographs catalog ages runs its browser on a fixed date, and this puts
+    the records it makes on the same date, so they read "1m ago" beside the
+    shipped items' fixed dates.
+
+    Body (POST): ``{"now": "<ISO 8601 time with a zone>"}``. The clock reads
+    that time now and runs on from it. ``DELETE`` puts it back on the system
+    clock, as ``reset-db`` does.
+    Response: ``{"now": "<the record clock's time>"}``.
+    """
+    if request.method == "DELETE":
+        record_clock.set_now(None)
+        return jsonify({"now": _iso(record_clock.utc_now())}), 200
+    body = request.get_json(silent=True) or {}
+    raw = body.get("now")
+    try:
+        moment = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        moment = None
+    if moment is None or moment.tzinfo is None:
+        return jsonify({"error": "now must be an ISO 8601 time with a zone"}), 400
+    record_clock.set_now(moment.astimezone(timezone.utc))
+    return jsonify({"now": _iso(record_clock.utc_now())}), 200
 
 
 @testing_bp.route("/stub-project", methods=["POST"])

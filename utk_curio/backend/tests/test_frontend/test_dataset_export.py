@@ -64,6 +64,9 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
+# The detail panel says how long ago the dataset was updated.
+pytestmark = pytest.mark.catalog_calendar
+
 DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
 # The "Adding…" placeholder is an <article role="status"> carrying the same title
 # as the real card, so every card locator has to exclude it.
