@@ -1574,7 +1574,7 @@ The model family (`huggingface-models`) is searched like a portal and added like
 
 ### Place search
 
-[`application/places.py`](../utk_curio/backend/app/discovery/application/places.py) answers the area field's place search, `GET /api/discovery/places?q=`, from Nominatim through the catalog's transport: one request a second for the whole process (`MIN_INTERVAL_S`), an in-memory cache of a day (`CACHE_TTL_S`), and a User-Agent naming Curio. Each place has its OpenStreetMap name (from `namedetails`, since Nominatim's `name` follows the request's language), its English label, its box, and whether it is an administrative boundary, which the named-areas field offers.
+[`application/places.py`](../utk_curio/backend/app/discovery/application/places.py) answers the area field's place search, `GET /api/discovery/places?q=`, from Nominatim through the catalog's transport: one request a second for the whole process (`MIN_INTERVAL_S`), an in-memory cache of a day (`CACHE_TTL_S`), and a User-Agent naming Curio. Each place has its OpenStreetMap name (from `namedetails`, since Nominatim's `name` follows the request's language), its English label, its box, and whether it is an administrative boundary, which the named-areas field offers. The field's **Within** is the first boundary this search finds for the typed place (`findBoundary` in `pages/discovery/placeSearch.tsx`), looked up on Enter or by **Find areas**, which then searches `"<area>, <OpenStreetMap name>"`. **Download** looks the typed place up again (`withOsmPlaceNames`, answered from this cache) and sends its OpenStreetMap name as `geocodeArea`, so `named_areas_box` asks what the field already asked.
 
 ### Collection media
 

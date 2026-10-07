@@ -14,6 +14,8 @@ from urllib.parse import quote, urlsplit
 
 import pytest
 
+from utk_curio.backend.tests.test_discovery.conftest import workers_finish_first
+
 
 @pytest.fixture()
 def auth(user_and_token):
@@ -191,6 +193,24 @@ class TestIdempotency:
         # Same bytes, so no second row: the download was paid for, a duplicate
         # dataset would not be.
         assert job["unchanged"] is True
+        assert job["dataset"]["id"] == first["dataset"]["id"]
+
+    def test_a_refresh_answers_202_with_its_job_however_fast_the_job_ends(self, client, auth, live, monkeypatch):
+        """A refresh starts a job, so it answers 202 with that job as it
+        began, even when the worker has already found the bytes unchanged by
+        the time the request reads the job."""
+        first = wait_for(
+            client, auth,
+            acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv").get_json()["jobId"],
+        )
+        workers_finish_first(monkeypatch)
+        res = acquire(client, auth, CHICAGO, "ijzp-q8t2", format="csv", refresh=True)
+        started = res.get_json()
+        assert res.status_code == 202, started
+        assert (started["status"], started["alreadyPresent"]) == ("queued", False), started
+        job = wait_for(client, auth, started["jobId"])
+        assert job["status"] == "completed", job
+        assert job["alreadyPresent"] is True and job["unchanged"] is True
         assert job["dataset"]["id"] == first["dataset"]["id"]
 
 
