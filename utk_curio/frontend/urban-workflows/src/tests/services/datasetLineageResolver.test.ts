@@ -348,7 +348,7 @@ describe("selectDatasetUpstreamLineage", () => {
       resolveNodeLabel: () => "Python Computation",
     });
     expect(upstream.generatingNode?.nodeName).toBe("Dict output");
-    expect(upstream.inputNodes[0].nodeName).toBe("Census tracts");
+    expect(upstream.inputNodes?.[0]?.nodeName).toBe("Census tracts");
   });
 
   it("names a producer from its type without the version when nothing else names it", () => {
