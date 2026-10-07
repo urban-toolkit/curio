@@ -29,30 +29,15 @@ log = logging.getLogger(__name__)
 
 #: dev/127: why the repair loop stopped. Every failure sentence names one, so
 #: "not fixed after N attempts" can never again read as a verdict on the code
-#: when it was a verdict on the round cap.
-STOPPED_BY_PHRASES = {
-    "rounds": "the attempt ceiling",
-    "budget": "this node's time budget",
-    "repeat": "a repeated attempt",
-    "decline": "the builder's decline",
-    "blocker": "an upstream blocker",
-    "generation": "a generation error",
-    "infrastructure": "a sandbox outage",
-    "passed": "success",
-    # dev/126's lane: the source is with the user, so the loop stopped ON PURPOSE.
-    "source": "a source the user must confirm",
-    # dev/131: the session's own endings.
-    "complete": "nothing left to do",
-    "stopped": "you stopped it",
-    "budget": "this session's time budget",
-    "blocked": "a specialist that must be installed first",
-}
+#: when it was a verdict on the round cap. The phrases are the contract's, which
+#: the attempts card and the per-node Solve row read too.
+STOPPED_BY_PHRASES = contracts.STOPPED_BY_PHRASES
 
 
 def _stopped_by_clause(stopped_by: object) -> str:
-    """`" (stopped by this node's time budget)"`, or `""` when unrecorded."""
+    """`" (this node's time budget was spent)"`, or `""` when unrecorded."""
     phrase = STOPPED_BY_PHRASES.get(str(stopped_by or ""))
-    return f" (stopped by {phrase})" if phrase and stopped_by != "passed" else ""
+    return f" ({phrase})" if phrase and stopped_by != "passed" else ""
 
 
 def _attempt_code_field(candidate: object, *, prose: bool = False) -> dict:
@@ -529,6 +514,7 @@ def _verified_content_rounds(
     clock=time.monotonic,
     recorded_failure=None,
     node_budget_s=None,
+    budget_stop="budget",
     carry_forward=None,
     result_summary_fn=None,
     acting_user=None,
@@ -554,7 +540,8 @@ def _verified_content_rounds(
       the owner's instruction): at most ``solve_max_attempts()`` of them — ten
       by default — and only while ``solve_node_budget_s()`` seconds have not
       been spent — fifteen minutes by default; the outcome's ``stoppedBy``
-      names whichever bound ended it.
+      names whichever bound ended it. A caller that hands the loop what is
+      left of a larger budget names that budget as ``budget_stop``.
 
     A generator: yields ``("generation_round", …)``, ``("node_executed", …)``
     and ``("round_verdict", …)`` exactly as the validate-node stream always
@@ -574,6 +561,7 @@ def _verified_content_rounds(
         exec_user_key=exec_user_key, secrets_fn=secrets_fn,
         prior_outputs_fn=prior_outputs_fn, resolve_source=resolve_source, clock=clock,
         recorded_failure=recorded_failure, node_budget_s=node_budget_s,
+        budget_stop=budget_stop,
         carry_forward=carry_forward, result_summary_fn=result_summary_fn,
         acting_user=acting_user,
     )

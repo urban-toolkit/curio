@@ -405,16 +405,16 @@ def main():
     parser.add_argument(
         "--solve-node-budget", type=int, default=None, metavar="SECONDS",
         help=(
-            "Wall-clock budget of Solve's repair of one node, in seconds (sets "
-            "CURIO_SOLVE_NODE_BUDGET, default 900)."
+            "Wall-clock budget of Solve's repair of a node solved on its own, in "
+            "seconds (sets CURIO_SOLVE_NODE_BUDGET, default 900)."
         ),
     )
     parser.add_argument(
         "--solve-session-deadline", type=int, default=None, metavar="SECONDS",
         help=(
             "How long one Solve session keeps managing the dataflow, in "
-            "seconds; it also caps each node's budget (sets "
-            "CURIO_SOLVE_SESSION_DEADLINE, default 900)."
+            "seconds; a node in the session gets what is left of it as its "
+            "budget (sets CURIO_SOLVE_SESSION_DEADLINE, default 900)."
         ),
     )
     parser.add_argument(

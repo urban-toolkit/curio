@@ -1831,7 +1831,7 @@ class TestRepairBudget:
         assert outcome["rounds"] == 3
         assert outcome["stoppedBy"] == "budget"
         assert len(outcome["attempts"]) == 3, "a round in flight is always recorded"
-        assert any("100s repair budget is spent" in line for line in outcome["roundsTrace"])
+        assert any("this node's time budget was spent (100s)" in line for line in outcome["roundsTrace"])
 
     def test_a_round_in_flight_is_never_cut_off(self, app, tmp_curio, monkeypatch):
         # The budget is checked at round BOUNDARIES: the clock jumping past it
