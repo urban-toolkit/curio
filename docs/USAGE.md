@@ -961,6 +961,10 @@ failed, or what this input lacks. A node whose document loads everything it
 draws only says it has not run yet. A run that ends on an input the node
 cannot draw names the reason in the node body and in its error.
 
+A map opens framed on what its layers draw: it looks straight down on their
+middle, with all of them in view and a little room around them. Pressing R on
+the map frames it again.
+
 A map or a plot redraws on its own when new data reaches it, as a `Vega-Lite`
 chart does: when a project opens with its input restored, and when the node
 feeding it runs again. It does not redraw while it is being wired up or while

@@ -1991,17 +1991,6 @@ SHADOW_MAPS = {
     "summer": "6cef8611-e3ec-52d4-9caf-aa5d6cff3d6a",
 }
 SHADOW_STATS = "8a914e39-4cb1-535d-9a8b-19b45f6be288"
-# A map fits a much larger area than the Loop's few blocks, so each is zoomed
-# in with the wheel: one notch of -100 brings the camera 20% closer to the
-# point under the pointer. The pointer sits a few pixels right of and below
-# the map's middle, which moves the buildings up and left, clear of the legend
-# in the bottom right corner. A still is taken at each notch count listed, and
-# the guide picks one.
-SHADOW_VIEWS = {
-    "buildings": ((6, 7), (7, 8)),
-    "mosaic": ((0, 0), (8, 9)),
-    "summer": ((11, 12), (6, 7)),
-}
 
 # FloodScenarios: three Parameter nodes, the period and the region's corners,
 # read by its Data Loading nodes.
@@ -2300,7 +2289,7 @@ def scene_scenario_drop(ctx: Ctx) -> None:
 
 
 def scene_shadows(ctx: Ctx) -> None:
-    """Example 24 run end to end, each map zoomed in onto the Loop."""
+    """Example 24 run end to end, each map as it opens, framed on the Loop."""
     page, tour = ctx.page, ctx.tour
     project = _account_project(ctx, SHADOW_NAME)
     _open_project(ctx, project, list(SHADOW_MAPS.values()))
@@ -2315,20 +2304,13 @@ def scene_shadows(ctx: Ctx) -> None:
         _center_on(page, node_id, zoom=1.0)
         canvas = page.locator(f"#autk-grammar-map-{node_id}").bounding_box()
         assert canvas, f"the {name} map has no canvas"
-        (dx, dy), targets = SHADOW_VIEWS[name]
-        middle = (canvas["x"] + canvas["width"] / 2 + dx, canvas["y"] + canvas["height"] / 2 + dy)
-        notches = 0
-        for target in targets:
-            # Without a press, moving the pointer over a map does not pan it.
-            page.mouse.move(*middle)
-            tour.point_at(*middle, hold=200)
-            while notches < target:
-                page.mouse.wheel(0, -100)
-                page.wait_for_timeout(250)
-                notches += 1
-            page.mouse.move(20, STILL_SIZE["height"] - 20)
-            tour.beat(1500)
-            _still_with_boxes(ctx, f"shadows-{name}-{target}", {"node": _node_box(node_id)})
+        middle = (canvas["x"] + canvas["width"] / 2, canvas["y"] + canvas["height"] / 2)
+        # Without a press, moving the pointer over a map does not pan it.
+        page.mouse.move(*middle)
+        tour.point_at(*middle, hold=200)
+        page.mouse.move(20, STILL_SIZE["height"] - 20)
+        tour.beat(1500)
+        _still_with_boxes(ctx, f"shadows-{name}", {"node": _node_box(node_id)})
     _fit_view(page, padding=0.04)
     tour.beat(2000)
     _still_with_boxes(ctx, "shadows-overview", {

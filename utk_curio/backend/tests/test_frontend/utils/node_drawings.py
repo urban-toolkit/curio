@@ -188,6 +188,65 @@ def assert_autark_map_drawn(
     )
 
 
+#: A framed map's drawing spans at least this share of its canvas along one
+#: axis. The camera fits the layers' extent with 8% to spare, about 93% of the
+#: canvas along the side that limits it; autk-map's own view, 10,000 world
+#: units up, left example 24's Loop at 5% to 9% of it.
+AUTK_MAP_MIN_FRAMED_SPAN = 0.75
+
+
+def autark_map_framing(page, node_id: str, *, min_span: float = AUTK_MAP_MIN_FRAMED_SPAN,
+                       timeout: float = 5000) -> str | None:
+    """Why an Autark map is not framed on what it draws, or None when it is (#773).
+
+    The drawing is the box of the canvas pixels that differ from its top-left
+    corner, which a framed map leaves to the map's background. A framed map's
+    drawing spans at least *min_span* of the canvas along one axis and leaves
+    the background showing at both ends of that axis: neither a speck in the
+    middle nor a crop that runs past the canvas's edges. Read in the page, as
+    ``assert_autark_map_drawn`` reads the map.
+    """
+    import base64
+
+    from PIL import Image, ImageChops
+
+    deadline = time.monotonic() + timeout / 1000
+    while True:
+        problem = None
+        url = page.evaluate(_AUTK_MAP_PIXELS_JS, node_id)
+        if not url:
+            problem = f"Autark node {node_id} has no map canvas"
+        else:
+            image = Image.open(BytesIO(base64.b64decode(url.split(",", 1)[1]))).convert("RGB")
+            width, height = image.size
+            # A pixel is drawn when one of its channels is more than 8 off the corner's.
+            channels = ImageChops.difference(image, Image.new("RGB", image.size, image.getpixel((0, 0)))).split()
+            moved = ImageChops.lighter(ImageChops.lighter(channels[0], channels[1]), channels[2])
+            box = moved.point(lambda v: 255 if v > 8 else 0).getbbox()
+            if not box:
+                problem = (f"Autark node {node_id}: its {width}x{height} map canvas is one colour, "
+                           f"so it drew nothing to frame")
+            else:
+                left, top, right, bottom = box
+                axes = {
+                    "across": ((right - left) / width, left > 0 and right < width),
+                    "down": ((bottom - top) / height, top > 0 and bottom < height),
+                }
+                if not any(span >= min_span and clear for span, clear in axes.values()):
+                    spans = max(span for span, _ in axes.values())
+                    why = (f"a speck under {min_span:.0%} of it" if spans < min_span
+                           else "cut by the canvas's edges on every side it fills")
+                    problem = (
+                        f"Autark node {node_id}: its map's drawing spans "
+                        f"{axes['across'][0]:.0%} of the canvas across and {axes['down'][0]:.0%} down "
+                        f"(box {box} in {width}x{height}), {why}, so the map did not open "
+                        f"framed on its layers"
+                    )
+        if problem is None or time.monotonic() >= deadline:
+            return problem
+        page.wait_for_timeout(500)
+
+
 # An Autark node's drawing (its map canvas or plot div) and the content mount it
 # is shown in, in layout pixels, which the canvas zoom does not scale; then the
 # drawing's and the port markers' horizontal extents on screen.
