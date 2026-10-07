@@ -1,5 +1,5 @@
 {
-  "about": "Code reference cases: widget, input, column, shared and selection references. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their columns when known; its selections are the node's selection tags, with the ids each holds.",
+  "about": "Code reference cases: widget, input, column, shared and selection references. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their data type, columns and layers when known; its selections are the node's selection tags, with the ids each holds.",
   "cases": [
     {
       "name": "a number on its own",
@@ -462,6 +462,50 @@
       "inputs": [{"slot": 0, "layers": [{"name": "table_osm_parks"}, {"name": "table_osm_water"}]}],
       "expected": "const roads = [!! input 0:table_osm_roads !!];",
       "problems": ["[!! input 0:table_osm_roads !!]: input 0 has no layer table_osm_roads. Its layers are table_osm_parks, table_osm_water."]
+    },
+    {
+      "name": "a layer chip in a spec on an input of one frame with no layer name is that frame: the name the input is read by, and its column the frame's",
+      "language": "json",
+      "code": "{\"map\": {\"layerRefs\": [{\"dataRef\": [!! input 0:roads !!], \"getFnv\": [!! input 0:roads.lanes !!], \"getFnvType\": \"quantitative\"}]}}",
+      "widgets": [],
+      "inputs": [{"slot": 0, "dataType": "geodataframe", "columns": ["highway", "lanes"]}],
+      "expected": "{\"map\": {\"layerRefs\": [{\"dataRef\": \"input_0\", \"getFnv\": \"lanes\", \"getFnvType\": \"quantitative\"}]}}"
+    },
+    {
+      "name": "a layer chip in a spec counts a one-frame input in circle order, beside an input of several layers read by their names",
+      "language": "json",
+      "code": "{\"map\": {\"layerRefs\": [{\"dataRef\": [!! input 2:table_osm_parks !!]}, {\"dataRef\": [!! input 1:anything !!]}]}}",
+      "widgets": [],
+      "inputs": [
+        {"slot": 1, "dataType": "geodataframe"},
+        {"slot": 2, "dataType": "outputs", "layers": [{"name": "table_osm_roads"}, {"name": "table_osm_parks"}]}
+      ],
+      "expected": "{\"map\": {\"layerRefs\": [{\"dataRef\": \"table_osm_parks\"}, {\"dataRef\": \"input_0\"}]}}"
+    },
+    {
+      "name": "a layer chip in a Vega-Lite spec names a one-frame input's dataset, on its own and inside a title",
+      "language": "json",
+      "code": "{\"layer\": [{\"mark\": \"bar\"}, {\"data\": {\"name\": [!! input 1:zips !!]}, \"mark\": \"geoshape\", \"title\": \"Zips of [!! input 1:zips !!]\"}]}",
+      "widgets": [],
+      "inputs": [{"slot": 0, "dataType": "dataframe"}, {"slot": 1, "dataType": "geodataframe"}],
+      "expected": "{\"layer\": [{\"mark\": \"bar\"}, {\"data\": {\"name\": \"input_1\"}, \"mark\": \"geoshape\", \"title\": \"Zips of input_1\"}]}"
+    },
+    {
+      "name": "a layer's column the one frame of its input does not have, in a spec",
+      "language": "json",
+      "code": "{\"field\": [!! input 0:roads.width !!]}",
+      "widgets": [],
+      "inputs": [{"slot": 0, "dataType": "geodataframe", "columns": ["highway", "oneway"]}],
+      "expected": "{\"field\": [!! input 0:roads.width !!]}",
+      "problems": ["[!! input 0:roads.width !!]: layer roads of input 0 has no column width."]
+    },
+    {
+      "name": "a layer chip in a spec on an input not known to be one frame is the layer's name: layers not read yet, or a value with no data type",
+      "language": "json",
+      "code": "{\"a\": [!! input 0:table_osm_roads !!], \"b\": [!! input 1:table_osm_water !!], \"c\": [!! input 2:roads !!]}",
+      "widgets": [],
+      "inputs": [{"slot": 0, "dataType": "outputs"}, {"slot": 1, "dataType": "list"}, {"slot": 2}],
+      "expected": "{\"a\": \"table_osm_roads\", \"b\": \"table_osm_water\", \"c\": \"roads\"}"
     },
     {
       "name": "the chip of a deleted input",

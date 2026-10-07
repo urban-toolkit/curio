@@ -5,11 +5,12 @@ run, and when the loader runs it fills with a starter document chosen from the
 input (``utils/autkDefaultSpec.ts``). An input it cannot draw is refused with the
 reason, in the node body and in its error, instead of an empty map under a green
 Done. A DataFrame with a geometry column is drawn. A node with several inputs
-draws a layer from each (#662).
+draws a layer from each (#662), and a layer chip on an input of one frame with
+no layer name draws that frame, whatever the chip names.
 
 The first test needs no WebGPU. The others run the Autark node, which does: they
 skip without an adapter unless ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's GPU job),
-except the several-inputs test, which fails without one.
+except the several-inputs and layer chip tests, which fail without one.
 
 Run::
 
@@ -29,6 +30,7 @@ import pytest
 
 from .utils import (
     _AUTK_MAP_PIXELS_JS,
+    assert_autark_map_drawn,
     changed_pixels,
     node_locator,
     play_node,
@@ -98,6 +100,21 @@ _FOOTPRINTS = (
 # The line a Discovery OpenStreetMap Buildings download's loader ends with.
 TYPED_BUILDINGS = _FOOTPRINTS + 'gdf.metadata = {"layerType": "buildings"}\nreturn gdf\n'
 UNTYPED_BUILDINGS = _FOOTPRINTS + "return gdf\n"
+
+# A 10 x 10 grid of cells, each with its own value, so the map draws many
+# colours (``assert_autark_map_drawn`` wants more than 8).
+GRID_LOADER = (
+    "import geopandas as gpd\n"
+    "from shapely.geometry import box\n"
+    "\n"
+    "cells, pop = [], []\n"
+    "for i in range(10):\n"
+    "    for j in range(10):\n"
+    "        x, y = -87.70 + 0.006 * i, 41.86 + 0.006 * j\n"
+    "        cells.append(box(x, y, x + 0.005, y + 0.005))\n"
+    "        pop.append(i * 10 + j)\n"
+    'return gpd.GeoDataFrame({"pop": pop}, geometry=cells, crs="EPSG:4326")\n'
+)
 
 _GRAMMAR_EDITOR_JS = """(nodeId) => {
     const editors = (window.monaco && window.monaco.editor.getEditors()) || [];
@@ -369,3 +386,30 @@ def test_a_map_draws_a_layer_from_each_of_its_inputs(
     assert share > 0.01, (
         f"the map of two inputs drew what the map of the first input draws: {share:.2%} of its pixels differ"
     )
+
+
+def test_a_layer_chip_draws_the_one_frame_its_input_carries(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """#662: a layer chip in an Autark document works as it does in code. An
+    input that carries one frame with no layer name, here the GeoDataFrame a
+    Python node returns, is that layer whatever the chip names, so
+    ``[!! input 0:anything !!]`` names the table the frame is read by and the
+    map draws the grid."""
+    chip_map = json.dumps({"map": {"layerRefs": [{
+        "dataRef": "[!! input 0:anything !!]",
+        "getFnv": "pop",
+        "getFnvType": "quantitative",
+        "colorMapInterpolator": "interpolateViridis",
+    }]}}, indent=2)
+    _open(page, app_frontend, current_server, username="autark_input_layer_chip",
+          spec=_spec(GRID_LOADER, chip_map))
+    assert page.evaluate("async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"), (
+        "drawing an Autark map needs a WebGPU adapter, which CI's GPU job has"
+    )
+
+    run_all_and_wait(page, timeout_ms=180000)
+    status = wait_for_node_settled(page, AUTK_ID, node_type="autk-grammar", timeout_ms=120000)
+    detail = read_node_error_text(node_locator(page, AUTK_ID)) if status == "error" else ""
+    assert status == "done", f"the map did not draw its input through the layer chip: {detail}"
+    assert_autark_map_drawn(page, AUTK_ID, timeout=60000, attach_as="a GeoDataFrame through a layer chip")

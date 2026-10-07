@@ -17,8 +17,11 @@ import {
   inputRow,
   prepareAutkInput,
   tablePositions,
+  type PreparedAutkInput,
 } from "../../utils/autkInput";
 import type { GrammarFrame, GrammarInput } from "../../utils/grammarInput";
+import { resolveReferences } from "../../utils/references/codeReferences";
+import { inputScopeFor } from "../../utils/references/inputScope";
 
 const point = (x: number, y: number) => ({ type: "Point", coordinates: [x, y] });
 const fc = (geoms: any[], crs?: string) => ({
@@ -413,4 +416,74 @@ test("two upstream Autark nodes' layers of one name, as they arrive: each input 
   const drawn = (name: string) => prepared.sources.find((s) => s.outputTableName === name)?.geojsonObject;
   expect(drawn("input_0")).toEqual(rain);
   expect(drawn("input_1")).toEqual(wind);
+});
+
+describe("a layer chip in the document reads the frame its input carries (#662)", () => {
+  // The chips resolve against the scope the node builds (hook/useInputScope):
+  // each wired circle with the value it holds, before any column is read.
+  const scopeOf = (values: unknown[]) => ({
+    widgets: [],
+    shared: [],
+    inputs: inputScopeFor(
+      "map",
+      values.map((_, slot) => ({
+        source: `up-${slot}`, target: "map", sourceHandle: "out", targetHandle: slot === 0 ? "in" : `in_${slot}`,
+      })),
+      [],
+      (slot) => values[slot],
+      () => null,
+      () => undefined,
+    ),
+  });
+  const resolvedSpec = (text: string, values: unknown[]) => {
+    const { code, problems } = resolveReferences(text, scopeOf(values), "json");
+    expect(problems).toEqual([]);
+    return JSON.parse(code);
+  };
+  const tables = (prepared: PreparedAutkInput) =>
+    Object.fromEntries(prepared.sources.map((s) => [s.outputTableName, s.geojsonObject]));
+
+  test("an input of one GeoDataFrame with no layer name is that layer, whatever the chip names", async () => {
+    const grid = fc([point(1, 1), point(2, 2)]);
+    mockFetchData.mockResolvedValue({ dataType: "geodataframe", data: grid });
+    const input = { path: "art-grid", dataType: "geodataframe" };
+    const spec = resolvedSpec('{"map": {"layerRefs": [{"dataRef": [!! input 0:anything !!]}]}}', [input]);
+    const loaded = tables(await prepareAutkInput(input, spec));
+    expect(Object.keys(loaded)).toContain(spec.map.layerRefs[0].dataRef);
+    expect(loaded[spec.map.layerRefs[0].dataRef]).toEqual(grid);
+  });
+
+  test("on a node with several inputs, each chip reads the frame of the input it names", async () => {
+    const parks = fc([point(1, 1)]);
+    const roads = fc([point(2, 2), point(3, 3)]);
+    mockFetchData.mockImplementation(async (path: string) => ({
+      dataType: "geodataframe",
+      data: path === "art-parks" ? parks : roads,
+    }));
+    const slots = [{ path: "art-parks", dataType: "geodataframe" }, { path: "art-roads", dataType: "geodataframe" }];
+    const spec = resolvedSpec(
+      '{"map": {"layerRefs": [{"dataRef": [!! input 1:roads !!]}, {"dataRef": [!! input 0:parks !!]}]}}',
+      slots,
+    );
+    const loaded = tables(await prepareAutkInput({ dataType: "outputs", data: slots }, spec));
+    const [first, second] = spec.map.layerRefs.map((ref: any) => ref.dataRef);
+    expect(Object.keys(loaded)).toEqual(expect.arrayContaining([first, second]));
+    expect(loaded[first]).toEqual(roads);
+    expect(loaded[second]).toEqual(parks);
+  });
+
+  test("an input of several layers is still read by the layer's own name", async () => {
+    const roads = fc([point(1, 1)]);
+    mockFetchData.mockResolvedValue({
+      dataType: "outputs",
+      data: [
+        { dataType: "geodataframe", data: roads, layerName: "table_osm_roads" },
+        { dataType: "geodataframe", data: fc([point(5, 5)]), layerName: "table_osm_parks" },
+      ],
+    });
+    const input = { path: "art-osm", dataType: "outputs" };
+    const spec = resolvedSpec('{"map": {"layerRefs": [{"dataRef": [!! input 0:table_osm_roads !!]}]}}', [input]);
+    expect(spec.map.layerRefs[0].dataRef).toBe("table_osm_roads");
+    expect(tables(await prepareAutkInput(input, spec)).table_osm_roads).toEqual(roads);
+  });
 });
