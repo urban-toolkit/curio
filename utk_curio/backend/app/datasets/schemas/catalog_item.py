@@ -58,7 +58,10 @@ class CatalogItem(TypedDict, total=False):
 
     # Grouping for multi-part imports (OSM PBF layers): sibling layer datasets
     # share ``groupId``; ``layerName`` is this dataset's layer. The synthetic
-    # group item carries ``groupLayerIds`` (member dataset ids) instead.
+    # group item carries ``groupLayerIds`` (member dataset ids) instead, and
+    # ``groupLayers``, each member's ``id``, ``title``, ``uri``, ``path``,
+    # ``format`` and ``layerName``.
     groupId: str | None
     layerName: str | None
     groupLayerIds: list[str]
+    groupLayers: list[dict[str, Any]]

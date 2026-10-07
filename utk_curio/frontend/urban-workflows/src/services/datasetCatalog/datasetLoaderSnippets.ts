@@ -382,6 +382,8 @@ function snippetForFormat(
 
 export function getDatasetLoaderSnippet(dataset: DatasetLike): DatasetLoaderSnippet {
   if (dataset.loaderSnippet) return dataset.loaderSnippet;
+  // A layer group's id names no file: its loader reads each layer.
+  if (dataset.groupLayers && dataset.groupLayers.length > 0) return osmGroupLoaderSnippet(dataset.groupLayers);
   return snippetForFormat(dataset.format, datasetPath(dataset), idOf(dataset), autarkLayerType(dataset));
 }
 
