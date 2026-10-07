@@ -307,6 +307,9 @@ export function autkSourcesFrom(
   // What each frame became, so an input's `input_<k>` reads the frame that
   // input brought, also when an earlier input took its layer's name (#744).
   const became = new Map<GrammarFrame, { table: FrameTable; taken: boolean }>();
+  // Names two inputs bring, and where their message goes among the problems:
+  // it says where the second layer is, which is known once every frame is in.
+  const clashes: Array<{ at: number; earlier: number; frame: GrammarFrame; name: string }> = [];
 
   for (const frame of read.frames) {
     let name = autkTableName(frame);
@@ -320,10 +323,8 @@ export function autkSourcesFrom(
         name = `${name}_${n}`;
       } else {
         // The name stays the earlier input's layer.
-        problems.push(
-          `Inputs ${earlier} and ${frame.circle} both bring a layer named ${name}; `
-          + `the one from input ${frame.circle} is left out. Rename one of them.`,
-        );
+        clashes.push({ at: problems.length, earlier, frame, name });
+        problems.push("");
         taken = true;
       }
     }
@@ -345,33 +346,48 @@ export function autkSourcesFrom(
 
   if (read.skipped?.length) problems.push(`Left out: ${read.skipped.join(", ")}.`);
 
-  // `input_<k>` also names an input that holds one named layer. It is added
-  // only when the document reads it, as the Vega-Lite node attaches geometry
-  // only when the spec draws it. An input of several layers keeps their names.
-  const refs = new Set(documentTableRefs(spec));
-  if (opts.alias !== false) {
-    const byCircle = new Map<number, GrammarFrame[]>();
-    for (const frame of read.frames) byCircle.set(frame.circle, [...(byCircle.get(frame.circle) ?? []), frame]);
-    byCircle.forEach((frames, circle) => {
-      const alias = inputTableName(circle);
-      if (frames.length !== 1 || !frames[0].name || !refs.has(alias)) return;
-      if (sources.some((s) => s.outputTableName === alias)) return;
-      if (rasters.some((r) => r.outputTableName === alias)) return;
-      const { table, taken } = became.get(frames[0])!;
-      if ("source" in table) {
-        sources.unshift({ ...table.source, outputTableName: alias });
-        if (taken) rowsIn += table.rows;
-      } else if ("raster" in table) {
-        rasters.unshift({ ...table.raster, outputTableName: alias });
-      } else if (!unusable.includes(alias)) {
-        unusable.push(alias);
-        if (taken) {
-          problems.push(table.refusal.detail);
-          firstRefusal ??= table.refusal;
-        }
-      }
-    });
+  // `input_<k>` also names an input that holds one named layer, unless one of
+  // the input's tables already has that name. An input of several layers keeps
+  // their names, and `alias: false` passes layers on under their own names.
+  const byCircle = new Map<number, GrammarFrame[]>();
+  for (const frame of read.frames) byCircle.set(frame.circle, [...(byCircle.get(frame.circle) ?? []), frame]);
+  const aliasOf = (circle: number): string | null => {
+    const frames = byCircle.get(circle) ?? [];
+    if (opts.alias === false || frames.length !== 1 || !frames[0].name) return null;
+    const alias = inputTableName(circle);
+    const named = sources.some((s) => s.outputTableName === alias) || rasters.some((r) => r.outputTableName === alias);
+    return named ? null : alias;
+  };
+
+  for (const { at, earlier, frame, name } of clashes) {
+    const alias = aliasOf(frame.circle);
+    problems[at] = `Inputs ${earlier} and ${frame.circle} both bring a layer named ${name}: `
+      + `${name} means the one from input ${earlier}, and `
+      + (alias
+        ? `${alias} means the one from input ${frame.circle}.`
+        : `the one from input ${frame.circle} is left out. Rename one of them.`);
   }
+
+  // The alias is added only when the document reads it, as the Vega-Lite node
+  // attaches geometry only when the spec draws it.
+  const refs = new Set(documentTableRefs(spec));
+  byCircle.forEach((frames, circle) => {
+    const alias = aliasOf(circle);
+    if (!alias || !refs.has(alias)) return;
+    const { table, taken } = became.get(frames[0])!;
+    if ("source" in table) {
+      sources.unshift({ ...table.source, outputTableName: alias });
+      if (taken) rowsIn += table.rows;
+    } else if ("raster" in table) {
+      rasters.unshift({ ...table.raster, outputTableName: alias });
+    } else if (!unusable.includes(alias)) {
+      unusable.push(alias);
+      if (taken) {
+        problems.push(table.refusal.detail);
+        firstRefusal ??= table.refusal;
+      }
+    }
+  });
 
   const prepared: PreparedAutkInput = {
     sources,

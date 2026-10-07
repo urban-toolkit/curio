@@ -178,8 +178,25 @@ describe("autkSourcesFrom", () => {
       expect(prepared.tables).toEqual(["roads"]);
       expect(prepared.rowsIn).toBe(1);
       expect(prepared.inputProblem).toBe(
-        "Inputs 0 and 1 both bring a layer named roads; the one from input 1 is left out. Rename one of them.",
+        "Inputs 0 and 1 both bring a layer named roads: roads means the one from input 0, "
+        + "and input_1 means the one from input 1.",
       );
+    });
+
+    test("the second layer of a taken name is left out when it is not its input's `input_<k>`, and the problem says so", () => {
+      // An input of several layers has no `input_<k>` for one of them, and a
+      // compute step passes layers on under their own names only.
+      const left = "Inputs 0 and 1 both bring a layer named roads: roads means the one from input 0, "
+        + "and the one from input 1 is left out. Rename one of them.";
+      const several = autkSourcesFrom(
+        read(on(0, { name: "roads" }), on(1, { name: "roads" }), on(1, { name: "parks" })),
+        MAP_ON("roads", "parks", "input_1"),
+      );
+      expect(several.tables).toEqual(["roads", "parks"]);
+      expect(several.inputProblem).toBe(left);
+      const computed = autkSourcesFrom(read(on(0, { name: "roads" }), on(1, { name: "roads" })), MAP_ON("input_1"), { alias: false });
+      expect(computed.tables).toEqual(["roads"]);
+      expect(computed.inputProblem).toBe(left);
     });
 
     test("several unnamed layers on one input are told apart by count", () => {
@@ -203,7 +220,8 @@ describe("autkSourcesFrom", () => {
       expect([...prepared.tables].sort()).toEqual(["input_0", "input_1", "input_2", "routes"]);
       expect(prepared.rowsIn).toBe(4);
       expect(prepared.inputProblem).toBe(
-        "Inputs 1 and 2 both bring a layer named routes; the one from input 2 is left out. Rename one of them.",
+        "Inputs 1 and 2 both bring a layer named routes: routes means the one from input 1, "
+        + "and input_2 means the one from input 2.",
       );
     });
 
