@@ -915,6 +915,37 @@ class TestVerifiedSolve:
         spec = projects_storage.read_spec(ctx["ukey"], ctx["pid"])
         return next(n for n in spec["dataflow"]["nodes"] if n["id"] == node_id)["content"]
 
+    @staticmethod
+    def _on_a_loaded_runner(monkeypatch, sandbox_run_s):
+        """Issue #729: a loaded runner, on which every sandbox run takes
+        *sandbox_run_s* seconds (nothing changes for 0). Two runs of 0.6 s
+        outlast the suite's one-second session (conftest). Call it after
+        ``_setup``, whose fake sandbox it slows down."""
+        if not sandbox_run_s:
+            return
+        from utk_curio.backend.app.execution import runner as exec_runner
+
+        run = exec_runner._http_exec
+
+        def _slow_run(endpoint, payload):
+            time.sleep(sandbox_run_s)
+            return run(endpoint, payload)
+
+        monkeypatch.setattr(exec_runner, "_http_exec", _slow_run)
+
+    @staticmethod
+    def _bound_session_by_passes(monkeypatch, passes):
+        """Issue #729: end the Solve session after *passes* turns of its loop,
+        not on the suite's one-second clock (conftest). That second is also
+        each node's repair budget: the batch gives a node what is left of the
+        session, at least one second, so on a loaded runner a pass lost rounds.
+        A session budget no runner spends gives every pass all its rounds, and
+        the turn count ends the session instead of the clock."""
+        from utk_curio.backend.app.agents.application.solve.batch import SolveBatch
+
+        monkeypatch.setenv("CURIO_SOLVE_SESSION_DEADLINE", "900")
+        monkeypatch.setattr(SolveBatch, "_session_deadline_passed", lambda self: self.pass_no > passes)
+
     LOADER = 'import pandas as pd\ndataset_path = curio_data_path("{DATASET}")\ndf = pd.read_csv(dataset_path)\nreturn df'
 
     def test_pass_writes_only_after_the_code_ran(self, client, user_and_token, tmp_curio, monkeypatch):
@@ -966,7 +997,10 @@ class TestVerifiedSolve:
         assert '"sourceGrounding"' in correction
         assert ctx["dataset_id"] in self._node_content(ctx, ctx["load"])
 
-    def test_exhaustion_fails_with_the_trail_and_writes_nothing(self, client, user_and_token, tmp_curio, monkeypatch):
+    @pytest.mark.parametrize("sandbox_run_s", [0, 0.6], ids=["idle", "loaded"])
+    def test_exhaustion_fails_with_the_trail_and_writes_nothing(
+        self, client, user_and_token, tmp_curio, monkeypatch, sandbox_run_s
+    ):
         user, token = user_and_token
         # A GROUNDED loader that fails at run time every round (an ungrounded
         # one would be refused by the gate before the sandbox — a different row).
@@ -975,9 +1009,18 @@ class TestVerifiedSolve:
             dl_replies=[self.LOADER.replace("return df", f"always_bad({i})\nreturn df") for i in range(3)],
             exec_outcomes={"always_bad": "Traceback: NameError: always_bad"},
         )
+        self._on_a_loaded_runner(monkeypatch, sandbox_run_s)
+        # Issue #729: on a loaded runner the one-second session (conftest), which
+        # is also the node's repair budget, refused the loop its third round.
+        # The session is bounded by passes instead: pass 1 exhausts its rounds
+        # and the weak passes the session allows follow it, so the trail below
+        # spans passes.
+        self._bound_session_by_passes(monkeypatch, 1 + budgets._MAX_WEAK_PASSES)
         body = self._solve(client, token, ctx, verify=True)
         load = body["results"][ctx["load"]]
-        assert load["status"] == "failed" and load["verdict"] == "fail" and load["rounds"] == 3
+        assert load["status"] == "failed" and load["verdict"] == "fail" and load["rounds"] == 3, (
+            f"stoppedBy {load.get('stoppedBy')!r}: {load.get('error')}"
+        )
         assert load["error"].startswith("not fixed after 3 attempts")
         assert "NameError" in load["error"]
         # dev/131 (owner correction): the session keeps attempting, so the
