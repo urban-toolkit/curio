@@ -373,6 +373,7 @@ There is no JSON Schema for dataset manifests, so this table is the reference. T
 |---|---|---|
 | `CURIO_CATALOG_ROOT` | `--catalog-root` | The shared catalog's location. Defaults to `<repo_root>/datasets/`. |
 | `CURIO_LAUNCH_CWD` | none | Where per-user stores live (`.curio/users/<key>/datasets/` under it). Defaults to the process's working directory. |
+| `CURIO_STATE_DIR` | `--state-dir` | Moves `.curio/`, and every per-user store in it, to this directory. |
 | `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish** of datasets, as it does for node packages. When forbidden, both are refused and their buttons are hidden on `/catalog/data`. |
 
 **Relocating the catalog.** The default root resolves relative to the installed package. That suits a checkout, but on a `pip` install it lands inside `site-packages`, where it is read-only and publishing fails. Set `CURIO_CATALOG_ROOT` (or `--catalog-root`) to a writable, persistent path there.

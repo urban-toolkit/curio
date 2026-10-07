@@ -107,16 +107,16 @@ loops, not a guarantee you can make to a third party.
 ### LLM configurations
 
 Curio ships no LLM endpoint. Users add their own LLM configurations in API
-Settings; the deployment can offer its own on top, through environment
-variables the backend reads at start:
+Settings; the deployment can offer its own on top, through these settings the
+backend reads at start:
 
-| Variable | What it sets |
-|---|---|
-| `CURIO_DEFAULT_LLM_API_TYPE` | The provider kind of the deployment's endpoint: `openai_compatible` (the default), `anthropic` or `gemini`. |
-| `CURIO_DEFAULT_LLM_BASE_URL` | The deployment's endpoint. |
-| `CURIO_DEFAULT_LLM_API_KEY` | Its key. |
-| `CURIO_DEFAULT_LLM_MODEL` | The model of the **Deployment default**. |
-| `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_API_KEY`, `GUEST_LLM_MODEL` | The **guest configuration**, which every guest answers with. Each one that is unset takes the matching `CURIO_DEFAULT_LLM_*` value, and the configuration needs a key and a model. |
+| Variable | Flag | What it sets |
+|---|---|---|
+| `CURIO_DEFAULT_LLM_API_TYPE` | `--llm-provider` | The provider kind of the deployment's endpoint: `openai_compatible` (the default), `anthropic` or `gemini`. |
+| `CURIO_DEFAULT_LLM_BASE_URL` | `--llm-base-url` | The deployment's endpoint. |
+| `CURIO_DEFAULT_LLM_API_KEY` | none | Its key. |
+| `CURIO_DEFAULT_LLM_MODEL` | `--llm-model` | The model of the **Deployment default**. |
+| `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_API_KEY`, `GUEST_LLM_MODEL` | `--guest-llm-provider`, `--guest-llm-base-url`, `--guest-llm-api-key`, `--guest-llm-model` | The **guest configuration**, which every guest answers with. Each one that is unset takes the matching `CURIO_DEFAULT_LLM_*` value, and the configuration needs a key and a model. |
 
 With a model and an endpoint or a key set, the Deployment default is a
 read-only row on the **API keys** tab of every user's API Settings, and it answers for any user who has not chosen a default of their
@@ -124,8 +124,9 @@ own. With an endpoint or a key set, users are also offered **This Curio
 install**: a configuration of their own that runs on the deployment's endpoint
 with its key and a model they choose. The key never reaches a browser.
 
-Put the variables in `utk_curio/backend/.env`, which is copied into the image
-(rebuild after changing it), or in the container's `environment:` in
+Pass the flags in the `command:` of `docker-compose.site.yml`. Put the keys in
+`utk_curio/backend/.env`, which is copied into the image (rebuild after
+changing it), or in the container's `environment:` in
 `docker-compose.site.yml`.
 
 Each user's configurations, keys included, are kept in
@@ -172,7 +173,7 @@ repository in the Discovery Catalog. The manifest format is in
   apply to them.
 - **Disk.** A bucket collection's files are cached per account on request,
   under `.curio/exec-scratch/users/<key>/media/objects/` with isolation on and
-  `.curio/users/<key>/media/objects/` without. `CURIO_MEDIA_CACHE_MAX_GB`
+  `.curio/users/<key>/media/objects/` without. `--media-cache-max-gb`
   (default 20) caps each account. Thumbnails, posters and spectrograms are
   cached under `.curio/users/<key>/media-cache/`, and a storage row's sample
   thumbnails under `.curio/discovery-cache/`. Deleting a collection removes
