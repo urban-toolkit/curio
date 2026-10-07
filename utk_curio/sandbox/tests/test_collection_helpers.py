@@ -93,6 +93,21 @@ class TestTheHelpers(unittest.TestCase):
         self.assertTrue(clip["path"].endswith(os.path.join("clips", "c1", "c" * 16, "5000.wav")))
         self.assertIn("audio_url", clip)
 
+    def test_a_tag_tells_two_derived_files_of_one_file_and_time_apart(self):
+        """An overlay names the model that drew it (#621), so two models'
+        overlays of one photo are two files."""
+        media = self.tmp / "media"
+        derive = self.helpers({}, str(media))["curio_derived_file"]
+        row = derive("c1", "b" * 16, 0, "png", kind="image", tag="0a1b2c3d4e5f")
+        self.assertEqual(row["file_id"], f"{'b' * 16}@0-0a1b2c3d4e5f")
+        self.assertEqual(Path(row["path"]), media / "overlays" / "c1" / ("b" * 16) / "0-0a1b2c3d4e5f.png")
+        self.assertTrue(row["image_url"].endswith(f"/media/{'b' * 16}@0-0a1b2c3d4e5f?variant=original"))
+        other = derive("c1", "b" * 16, 0, "png", kind="image", tag="ffff")
+        self.assertNotEqual(other["path"], row["path"])
+        for bad in ("../x", "a/b", "A", "x" * 33, ""):
+            with self.subTest(tag=bad), self.assertRaises(ValueError):
+                derive("c1", "b" * 16, 0, "png", kind="image", tag=bad)
+
     def test_a_derived_file_refuses_ids_that_are_not_ids(self):
         derive = self.helpers({}, str(self.tmp))["curio_derived_file"]
         with self.assertRaises(ValueError):

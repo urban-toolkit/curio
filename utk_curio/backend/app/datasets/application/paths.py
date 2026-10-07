@@ -78,10 +78,13 @@ class PathResolver:
         the single chokepoint that closes that arbitrary-file-read.
         """
         from utk_curio.backend.app.datasets.repositories.local import data_root_dirs
+        from utk_curio.backend.app.datasets.infrastructure.left_out_files import fetched_dir
         from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root, user_datasets_dir
         from utk_curio.backend.app.projects.storage import _shared_data_dir
 
-        roots = [_shared_data_dir(), catalog_root(), *data_root_dirs()]
+        # fetched_dir(): where a pip install places the shipped data files its
+        # package leaves out, once it has downloaded them.
+        roots = [_shared_data_dir(), catalog_root(), fetched_dir(), *data_root_dirs()]
         if self.user is not None:
             # Installed/published datasets live in the *current* user's store.
             roots.append(user_datasets_dir(self._user_key()))
@@ -177,7 +180,25 @@ class PathResolver:
                     return candidate.as_posix()
             except ManifestError:
                 return None
+            return self._left_out_data_file(dir_name, manifest.data_file, candidate)
         return None
+
+    @staticmethod
+    def _left_out_data_file(dir_name: str, data_file: str, shipped: Path) -> str | None:
+        """A shipped dataset's data file that the pip package leaves out, read
+        where a pip install places it: downloaded from GitHub on the first read
+        (``infrastructure/left_out_files.py``). ``None`` for any other file the
+        catalog lacks."""
+        from utk_curio.backend.app.datasets.domain.errors import DatasetFileUnavailable
+        from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+        repo_path = f"datasets/{dir_name}/{data_file}"
+        if not left_out_files.is_left_out(repo_path):
+            return None
+        try:
+            return left_out_files.fetch(repo_path, shipped).as_posix()
+        except left_out_files.LeftOutFileUnavailable as exc:
+            raise DatasetFileUnavailable(str(exc)) from exc
 
     def _project_manifest(self, dataflow_id: str | None) -> dict[str, Any]:
         if not dataflow_id:

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/BuildingRasters.json",
-    "sha256": "297a8ed9bdb867167489c9ba6058db6c71df1b69d7952b04f4a49d1889f68159",
+    "sha256": "72f662f625c3ea59904d10b40a153c017b9f408115edec9087ca524c63051394",
     "walkthrough": null
   },
   "prompt": "Make me twelve rectangular buildings in two rows in the Chicago Loop in a loading step, each with a different height in metres. Turn their heights into zoom 16 map tiles and a height mosaic with SCOUT's building rasterizer, and draw the mosaic on an Autark map. The rasterizer is not part of the standard node set, so whatever provides it needs installing first.",

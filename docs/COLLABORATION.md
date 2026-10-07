@@ -31,23 +31,21 @@ When two or more users open the same project (`/dataflow/<UUID>`) on a host that
 # Backend + frontend, opt-in to collaboration:
 python curio.py start --deploy --collab
 
-# CORS for non-default frontend origins:
-COLLAB_CORS_ORIGINS=http://192.168.1.5:8080 python curio.py start --deploy --collab
+# Only these frontend origins may connect:
+python curio.py start --deploy --collab --collab-origins http://192.168.1.5:8080
 ```
 
 Open the project URL (`http://<host>:8080/dataflow/<UUID>`) on each collaborator's browser. The `--collab` flag is read at runtime by the frontend via `/api/config/public`, so **no frontend rebuild is required** to flip the flag.
 
-Useful environment variables:
-
-| Var | Default | Purpose |
-|-----|---------|---------|
-| `ENABLE_COLLAB` | `0` (set by `--collab`) | Master switch. When unset, the SocketIO server is never instantiated and `flask-socketio` is never imported. |
-| `COLLAB_CORS_ORIGINS` | `*` | Comma-separated allowed origins for the Socket.IO handshake. Use `*` only on a trusted network. |
-| `COLLAB_NAMESPACE` | `/collab` | Socket.IO namespace. Change only if you need to coexist with another SocketIO server on the same backend. |
+| Flag | Variable | Default | Purpose |
+|------|----------|---------|---------|
+| `--collab` | `ENABLE_COLLAB` | off | Master switch. When off, the SocketIO server is never instantiated and `flask-socketio` is never imported. |
+| `--collab-origins ORIGINS` | `COLLAB_CORS_ORIGINS` | `*` | Comma-separated allowed origins for the Socket.IO handshake. Use `*` only on a trusted network. |
+| `--collab-namespace NAMESPACE` | `COLLAB_NAMESPACE` | `/collab` | Socket.IO namespace. Change only if you need to coexist with another SocketIO server on the same backend. |
 
 ## Architecture
 
-- **Namespace:** `/collab` (overridable via `COLLAB_NAMESPACE`).
+- **Namespace:** `/collab`, or the one `--collab-namespace` sets; the page reads it from `/api/config/public`.
 - **Transport:** Socket.IO over WebSocket (with polling fallback).
 - **Async mode:** `threading`, which preserves the existing Flask dev-reloader and avoids the eventlet/gevent monkey-patching trap. Acceptable for small teams (<~20 concurrent sockets); production with many concurrent rooms should switch to `eventlet` or `gevent`.
 - **Room key:** `project:<uuid>`. The UUID is the canonical project identifier from the URL (`/dataflow/:id`) and the source of truth in `projectPackagesStore.getCurrentProjectId()`.

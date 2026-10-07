@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/11-autark-pbf-loading.json",
-    "sha256": "27477225527b1a4768a401f7d48fed1fbe9ee4f589045e7cc14336c8770ae9ce",
+    "sha256": "5fcee515bf68d4eef68f3f255b09ed4b1ba355e38657a8caa0367dd22c928567",
     "walkthrough": "docs/examples/11-autark-pbf-loading.md"
   },
   "prompt": "Show me the OSM layer stack for Lower Manhattan straight from a local extract, parsed in the browser. The file is in this checkout at docs/examples/data/lower_mnt.osm.pbf. Load buildings, roads, water, parks and the surface from it with Autark, then render a thematic map with a brushable histogram beside it.",

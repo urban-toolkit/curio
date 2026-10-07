@@ -15,31 +15,35 @@ import path from "path";
  * Source-read for the same reason `saveStatusIndicator.test.ts` is: neither
  * component can be mounted without the whole provider stack. `dirtyOnLoad.test.ts`
  * covers the suppression itself against the live hook.
+ *
+ * File -> Load puts its file on the canvas in `ProjectLoader`, as the new
+ * dataflow it opens (#751); `projectLoaderOpensDataflowFile.test.tsx` mounts
+ * that and checks the mark against the live effect.
  */
 
 const SRC = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
 describe("load paths that DO diverge from disk still mark dirty", () => {
-  const UP_MENU = read("components/menus/top/UpMenu.tsx");
+  const PROJECT_LOADER = read("components/ProjectLoader.tsx");
   const USE_CODE = read("hook/useCode.ts");
 
   it("File -> Load marks the dataflow dirty after importing", () => {
     // Also strictly more correct than before the fix: an EDGELESS import never
     // marked dirty at all, because the replay was the only thing doing it.
-    const upload = UP_MENU.slice(
-      UP_MENU.indexOf("const handleFileUpload"),
-      UP_MENU.indexOf("const loadTrillFile"),
+    const upload = PROJECT_LOADER.slice(
+      PROJECT_LOADER.indexOf("takeOpenedDataflowFile();"),
+      PROJECT_LOADER.indexOf("[id, openedFileRevision]"),
     );
-    expect(upload).toContain("loadTrill(parsed.spec)");
+    expect(upload).toContain("loadTrill(spec)");
     expect(upload).toContain("markDirty()");
-    expect(upload.indexOf("loadTrill(parsed.spec)")).toBeLessThan(
+    expect(upload.indexOf("loadTrill(spec)")).toBeLessThan(
       upload.indexOf("markDirty()"),
     );
   });
 
-  it("UpMenu takes markDirty off the flow context", () => {
-    expect(UP_MENU).toMatch(/^\s*markDirty,$/m);
+  it("ProjectLoader takes markDirty off the flow context", () => {
+    expect(PROJECT_LOADER).toMatch(/^\s*markDirty,$/m);
   });
 
   it("reverting to a previous version marks the dataflow dirty", () => {

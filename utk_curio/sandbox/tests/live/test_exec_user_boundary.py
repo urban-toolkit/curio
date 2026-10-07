@@ -31,6 +31,7 @@ actually executes through, because a boundary that holds under inspection but
 not under ``/exec`` is not a boundary.
 """
 
+import hashlib
 import json
 import math
 import os
@@ -259,6 +260,7 @@ DENIED = (
     (".curio/users", "every user's imported datasets, projects and packages"),
     ("datasets", "the shared Data Catalog's published files"),
     (".curio/discovery", "the operator's source manifests: each names a folder or host the server reads"),
+    (".curio/fetched", "the catalog files a pip install downloaded, which a node reads only as staged links"),
 )
 
 
@@ -601,15 +603,65 @@ DEEP_UMBRA = "model.scout.deep-umbra"
 #: SCOUT's committed height tiles of its high-rise example's first scenario.
 SCOUT_A_RASTERS = LAUNCH_DIR + "/utk_curio/backend/tests/test_packages/fixtures/scout/A_rasters"
 
+#: The files a pip install downloaded for one release, where it keeps them
+#: (``datasets/infrastructure/left_out_files.py``): Deep Umbra's folder and the
+#: Milan raster's, each file copied from the checkout by the job's seed step
+#: before the stack boots, so the boot's hardening closes ``.curio/fetched``
+#: as it closes ``models/``.
+FETCHED_RELEASE = LAUNCH_DIR + "/.curio/fetched/0123456789abcdef0123456789abcdef01234567"
+FETCHED_RASTER = FETCHED_RELEASE + "/datasets/data.utk.milan-mrt@1/data/milan-mrt.tif"
+#: The checkout this module runs from, on the runner: the bytes the release holds.
+CHECKOUT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 
-def test_scouts_shadow_model_runs_as_the_exec_user():
+
+def test_a_fetched_dataset_reaches_the_child_only_as_a_staged_link():
+    """A Data Catalog file a pip install downloaded, read by an unprivileged
+    child: whole, through the hardlink the run stages, while the file itself,
+    in the hardened ``.curio/fetched``, cannot be opened by its own path."""
+    with open(os.path.join(CHECKOUT, "datasets", "data.utk.milan-mrt@1", "data", "milan-mrt.tif"), "rb") as handle:
+        expected = hashlib.sha256(handle.read()).hexdigest()
+    body = textwrap.indent(textwrap.dedent("""
+        import hashlib
+
+        path = curio_data_path("data.utk.milan-mrt")
+        with open(path, "rb") as handle:
+            print(hashlib.sha256(handle.read()).hexdigest())
+        print(".curio/fetched" in path)
+        try:
+            open(%r, "rb").close()
+        except PermissionError:
+            print("denied")
+        else:
+            print("OPENED")
+    """ % FETCHED_RASTER).strip("\n"), "    ")
+    result = assert_ran(_request("/exec", {
+        "code": body + "\n",
+        "file_path": "",
+        "nodeType": NODE_TYPE,
+        "dataType": "",
+        "user_key": USER_KEY,
+        "save_dataset": False,
+        "dataset_paths": {"data.utk.milan-mrt": FETCHED_RASTER},
+    }), "reading a fetched dataset")
+    digest, given_the_source, direct = printed(result).splitlines()[-3:]
+    assert digest == expected, "the child did not read the fetched file whole"
+    assert given_the_source == "False", "the child was handed the fetched file's own path, not a staged link"
+    assert direct == "denied", "the child opened a fetched file by its path: %s" % direct
+
+
+@pytest.mark.parametrize("model_folder", [
+    LAUNCH_DIR + "/models/" + DEEP_UMBRA + "@1",
+    FETCHED_RELEASE + "/models/" + DEEP_UMBRA + "@1",
+], ids=["shipped", "fetched"])
+def test_scouts_shadow_model_runs_as_the_exec_user(model_folder):
     """The Accumulated Shadow node's code, as the execution user, on the height
     mosaic a Rasterize Buildings run hands on (here of SCOUT's committed tiles):
     the Model Catalog model reaches the child staged as a model folder is,
     onnxruntime opens it
     and runs it there under the stack's limits, and the node returns its shadow
     raster, whose mean over the ground is SCOUT's mean accumulated shadow for
-    these tiles, 128.6 minutes."""
+    these tiles, 128.6 minutes. The model's folder is the shipped one, or the
+    one a pip install downloads Deep Umbra's graph into."""
     heights = textwrap.indent(textwrap.dedent("""
         import rasterio
         from scout_raster_conversion.node_outputs import read_tiles, write_mosaic
@@ -646,7 +698,7 @@ def test_scouts_shadow_model_runs_as_the_exec_user():
         "user_key": USER_KEY,
         "save_dataset": False,
         "package_modules": {"root": SHADOW_SOURCES, "names": ["scout_shadow"]},
-        "models": {DEEP_UMBRA: LAUNCH_DIR + "/models/" + DEEP_UMBRA + "@1"},
+        "models": {DEEP_UMBRA: model_folder},
     }), "running Deep Umbra")
     grid, mean = printed(result).splitlines()[-2:]
     assert grid == "3395 512 512", grid

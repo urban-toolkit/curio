@@ -45,6 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
 
+from utk_curio.backend.app.execution.code_references import references_as_names
 from utk_curio.backend.app.packages.application import python_modules as packages_python_modules
 from utk_curio.backend.app.packages.builder.models import PackageBuildRequest
 from utk_curio.backend.app.packages.domain.dependency_scanner import scan_imports_for_filename
@@ -184,7 +185,9 @@ def merge_declared_and_detected(
             text = body.decode("utf-8")
         except UnicodeDecodeError:
             continue  # binary asset — nothing to scan
-        py_hits, js_hits = scan_imports_for_filename(filename, text, own_modules)
+        # A node reads its inputs, widgets and tags through [!! ... !!]
+        # references, which are not Python (#707).
+        py_hits, js_hits = scan_imports_for_filename(filename, references_as_names(text), own_modules)
         detected_py.update(py_hits)
         detected_js.update(js_hits)
 

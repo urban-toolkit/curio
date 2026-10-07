@@ -2,6 +2,7 @@ import React from "react";
 
 import type { DiscoveryAreaValue, DiscoveryParameter } from "../../services/discoveryCatalog";
 import { AreaField, boxProblem } from "./AreaField";
+import { findBoundary, noBoundaryCalled } from "./placeSearch";
 import { MAX_TAGS, TAG_ENTRY_RE, TagsField } from "./TagsField";
 import styles from "./DiscoveryAddDialog.module.css";
 
@@ -73,6 +74,35 @@ export function parameterProblem(parameters: DiscoveryParameter[], values: Param
     }
   }
   return null;
+}
+
+/** Whether an answer is named areas, whose place a download looks up first. */
+export function hasNamedAreas(parameters: DiscoveryParameter[], values: ParameterValues): boolean {
+  return parameters.some((p) => {
+    const v = values[p.id];
+    return p.type === "area" && typeof v === "object" && v !== null && "names" in v;
+  });
+}
+
+/**
+ * The answers as a download sends them: each named area's place as
+ * OpenStreetMap names it, looked up as **Within** looks it up. The server
+ * keeps what the place search answered, so a place the field already found
+ * is not asked for again. Resolves to the answers, or to what is wrong.
+ */
+export async function withOsmPlaceNames(
+  parameters: DiscoveryParameter[],
+  values: ParameterValues,
+): Promise<ParameterValues | string> {
+  const out: ParameterValues = { ...values };
+  for (const p of parameters) {
+    const area = values[p.id] as DiscoveryAreaValue | undefined;
+    if (p.type !== "area" || !area || !("names" in area)) continue;
+    const place = await findBoundary(area.names.geocodeArea);
+    if (!place) return `${p.label}: ${noBoundaryCalled(area.names.geocodeArea)}`;
+    out[p.id] = { names: { ...area.names, geocodeArea: place.name } };
+  }
+  return out;
 }
 
 export interface SourceParameterFormProps {

@@ -1184,6 +1184,15 @@ jobs:
             echo "another user's private dataset" > .curio/users/some-other-user/canary.txt
             echo "SECRET_KEY=ci-planted-not-a-secret" > ci-planted.env
             docker run --rm -v "$PWD:/w" alpine sh -c 'chown 0:0 /w/ci-planted.env && chmod 0644 /w/ci-planted.env'
+            # What a pip install keeps after downloading the files its package
+            # leaves out (left_out_files.py): one release's folder under
+            # .curio/fetched, which the boot's hardening closes as it closes
+            # models/. The boundary suite reads both files through staging.
+            release=.curio/fetched/0123456789abcdef0123456789abcdef01234567
+            for folder in "datasets/data.utk.milan-mrt@1" "models/model.scout.deep-umbra@1"; do
+              mkdir -p "$release/$folder"
+              cp -R "$folder/." "$release/$folder/"
+            done
 
       - name: 🐍 Set up Python
         uses: actions/setup-python@v6

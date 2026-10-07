@@ -76,7 +76,10 @@ def scan_python_imports(source: str, own_modules: frozenset[str] = frozenset()) 
     *own_modules*, the modules the package itself ships beside its templates
     (#468, ``python_modules.module_names_in``): its code imports them and
     nobody installs them. Recognised importable names are mapped to their PyPI
-    install names via :data:`_PY_NAME_ALIAS`. Unparseable source returns ``[]``.
+    install names via :data:`_PY_NAME_ALIAS`. Unparseable source returns ``[]``,
+    and a node's ``[!! ... !!]`` references are not Python: the builder writes
+    each as a plain name before it scans a node's code
+    (``execution/code_references.references_as_names``).
     """
     try:
         tree = ast.parse(source)
