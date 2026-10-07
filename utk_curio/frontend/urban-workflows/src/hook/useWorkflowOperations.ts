@@ -20,6 +20,7 @@ import {
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { useToastContext } from "../providers/ToastProvider";
 import { useUserContext } from "../providers/UserProvider";
+import { isHostedGuest } from "../components/apiSettings/useHostedGuest";
 import { DEFAULT_WORKFLOW_NAME } from "../constants";
 import { updateNodeData, updateNodesByMap, updateEdgesByMap, extractNodeFieldMap, extractKeywordMaps } from "../utils/flowNodeUtils";
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
@@ -107,7 +108,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const { getAllNodeProvenance } = useProvenanceContext();
     const { showToast } = useToastContext();
     const { user, enableUserAuth } = useUserContext();
-    const blockGuestSaves = enableUserAuth && !!user?.is_guest;
+    const blockGuestSaves = isHostedGuest(user, enableUserAuth);
 
     // fitViewOnLoad is internal to workflow loading
     const [fitViewOnLoad, setFitViewOnLoad] = useState(false);

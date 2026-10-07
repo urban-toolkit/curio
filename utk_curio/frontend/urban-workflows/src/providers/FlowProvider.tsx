@@ -37,6 +37,7 @@ import { useToastContext } from "./ToastProvider";
 import { useCollab } from "./CollaborationProvider";
 import { useProvenanceContext } from "./ProvenanceProvider";
 import { useUserContext } from "./UserProvider";
+import { isHostedGuest } from "../components/apiSettings/useHostedGuest";
 import { DEFAULT_SAVE_OUTPUT_DATASET } from "../utils/saveOutputDataset";
 import { authApi } from "../utils/authApi";
 
@@ -392,7 +393,7 @@ const FlowProvider = ({
         !isStandaloneDashboard() &&
         !skipProjectPage &&
         user != null &&
-        !(enableUserAuth && user.is_guest) &&
+        !isHostedGuest(user, enableUserAuth) &&
         workflowOps.viewerMode === "owner";
     const serverRun = useServerRun({
         reactFlow, setNodes, showToast,

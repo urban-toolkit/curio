@@ -9,6 +9,7 @@ import { GlobalPageHeader } from "../../components/layout/GlobalPageHeader";
 import { useFlowContext, useNodeActionsContext } from "../../providers/FlowProvider";
 import { useToastContext } from "../../providers/ToastProvider";
 import { useUserContext } from "../../providers/UserProvider";
+import { isHostedGuest } from "../../components/apiSettings/useHostedGuest";
 import { arrangedTilePositions } from "../../utils/dashboardLayout";
 import { scenarioDashboard } from "../../utils/scenarios/scenarioDashboard";
 import { dataflowPath } from "../../utils/shareLinks";
@@ -18,10 +19,10 @@ import styles from "./DashboardTopBar.module.css";
 /**
  * May this viewer move the tiles?
  *
- * The owner of a saved dataflow, and not a guest account under auth. A visitor
- * on a share link is ``viewerMode === "shared"`` and saving would throw; a guest
- * is refused by the rule the canvas already applies (``blockGuestSaves``), so
- * offering the control would only produce an error toast.
+ * The owner of a saved dataflow, and not a hosted guest (``isHostedGuest``). A
+ * visitor on a share link is ``viewerMode === "shared"`` and saving would throw;
+ * a hosted guest is refused by the same rule on the canvas (``blockGuestSaves``),
+ * so offering the control would only produce an error toast.
  *
  * Exported because the page reads it too: whoever cannot edit is told the
  * dashboard is read-only.
@@ -32,7 +33,7 @@ export function useCanEditLayout(): boolean {
   return (
     viewerMode === "owner"
     && !!projectId
-    && !(enableUserAuth && user?.is_guest)
+    && !isHostedGuest(user, enableUserAuth)
   );
 }
 
