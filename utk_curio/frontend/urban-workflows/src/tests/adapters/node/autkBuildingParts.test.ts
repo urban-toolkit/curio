@@ -100,7 +100,9 @@ const SOURCES = [{
 async function sandboxParts(): Promise<any[]> {
   const code = compileDataSpecToAutkDbJs(SOURCES);
   const body = code.replace(/^import [^\n]*\n/, "");
-  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  // The engine's own AsyncFunction: babel compiles an `async function` written
+  // in this file to a generator, whose constructor is plain Function.
+  const AsyncFunction = new Function("return (async () => {}).constructor")();
   const run = new AsyncFunction("AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", body);
   const layers = await run(mockAutkDb, "EPSG:3395");
   return layers.find((layer: any) => layer.name === "table_osm_buildings").geojson.features;
