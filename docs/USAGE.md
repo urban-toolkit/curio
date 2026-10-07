@@ -921,7 +921,9 @@ no `data` entry for its input; it names the tables the input provides.
 - Several layers keep their own names: a Python tuple, a Data Pool with tabs, or
   the tables of an upstream Autark node. A layer without a name is named after
   its position, `input_0`, `input_1`, and so on. When two inputs bring a layer
-  of one name, the second input's is left out and the node names both.
+  of one name, the name means the first input's layer. The second input's layer
+  is still its `input_<k>` when it is the only layer that input brings, and is
+  left out otherwise; the node's message says which.
 - A map draws only tables with geometry. A `DataFrame` is read through the one
   column that holds geometries; with none, or with several, the node draws
   nothing and says which. Return a `GeoDataFrame` with its active geometry set.

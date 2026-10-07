@@ -87,6 +87,30 @@ function setCredentialMarkers(monaco: any, editor: any, findings: CredentialFind
     })));
 }
 
+/** Marks the ResizeObserver this module put on `window`. */
+const DEFERS_TO_NEXT_FRAME = Symbol.for("curio.resizeObserverDefersToNextFrame");
+
+/**
+ * Once a code editor has mounted, every ResizeObserver runs its callback in the
+ * animation frame after the resize, which keeps Monaco's automatic layout from
+ * raising "ResizeObserver loop completed with undelivered notifications". The
+ * wrapper goes on once: an editor that mounts later finds it there and leaves
+ * it, so a callback runs one frame late however many editors the page holds
+ * (#742).
+ */
+function deferResizeObserverCallbacks(): void {
+    const Original: any = window.ResizeObserver;
+    if (typeof Original !== "function" || Original[DEFERS_TO_NEXT_FRAME]) return;
+    const Deferred: any = function (callback: ResizeObserverCallback) {
+        return new Original((entries: ResizeObserverEntry[], observer: ResizeObserver) => {
+            window.requestAnimationFrame(() => callback(entries, observer));
+        });
+    };
+    Object.assign(Deferred, Original);
+    Deferred[DEFERS_TO_NEXT_FRAME] = true;
+    window.ResizeObserver = Deferred;
+}
+
 function CodeEditor({
     setOutputCallback,
     data,
@@ -477,36 +501,7 @@ function CodeEditor({
         };
     }, []);
 
-    useEffect(() => {
-        // Save a reference to the original ResizeObserver
-        const OriginalResizeObserver = window.ResizeObserver;
-
-        // @ts-ignore
-        window.ResizeObserver = function (callback) {
-            const wrappedCallback = (entries: any, observer: any) => {
-                window.requestAnimationFrame(() => {
-                    callback(entries, observer);
-                });
-            };
-
-            // Create an instance of the original ResizeObserver
-            // with the wrapped callback
-            return new OriginalResizeObserver(wrappedCallback);
-        };
-
-        // Copy over static methods, if any
-        for (let staticMethod in OriginalResizeObserver) {
-            if (
-                Object.prototype.hasOwnProperty.call(
-                    OriginalResizeObserver,
-                    staticMethod
-                )
-            ) {
-                // @ts-ignore
-                window.ResizeObserver[staticMethod] = OriginalResizeObserver[staticMethod];
-            }
-        }
-    }, []);
+    useEffect(deferResizeObserverCallbacks, []);
 
     const execLabel = output.code === "exec" ? "[*]:" : execCount > 0 ? `[${execCount}]:` : "[ ]:";
     const outputText = output.code === "exec"

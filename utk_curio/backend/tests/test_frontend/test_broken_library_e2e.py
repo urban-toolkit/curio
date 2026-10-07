@@ -237,6 +237,37 @@ def _add_library(page, dialog, spec: str):
     return posted.value
 
 
+_TABLE_FIT_JS = """(table) => {
+    const list = table.parentElement;
+    const left = list.getBoundingClientRect().left + list.clientLeft;
+    const remove = table.querySelector('button[aria-label="Remove"]');
+    const button = remove ? remove.getBoundingClientRect() : null;
+    return {
+        scrollWidth: list.scrollWidth,
+        clientWidth: list.clientWidth,
+        left,
+        right: left + list.clientWidth,
+        button: button ? {left: button.left, right: button.right} : null,
+    };
+}"""
+
+
+def _assert_the_table_fits(dialog) -> None:
+    """The libraries table fits the dialog: it does not scroll sideways, and a
+    row's remove button is in view without scrolling."""
+    expect(dialog.get_by_role("button", name="Remove", exact=True)).to_be_visible(timeout=15000)
+    fit = dialog.locator("table").evaluate(_TABLE_FIT_JS)
+    assert fit["scrollWidth"] <= fit["clientWidth"], (
+        f"the libraries table scrolls sideways: {fit['scrollWidth']}px of it in a "
+        f"{fit['clientWidth']}px list"
+    )
+    button = fit["button"]
+    assert fit["left"] <= button["left"] and button["right"] <= fit["right"], (
+        f"the remove button, from {button['left']:.0f} to {button['right']:.0f}px, is out of "
+        f"the list's view, from {fit['left']:.0f} to {fit['right']:.0f}px"
+    )
+
+
 def _open_node_catalog(page):
     page.get_by_role("button", name="Node Catalog", exact=True).click()
     drawer = page.get_by_role("dialog").filter(
@@ -281,6 +312,9 @@ def test_the_libraries_dialog_names_the_library_and_the_reason(
     # And it is not simultaneously reported as fine.
     expect(dialog.get_by_text("✓ Already installed")).to_have_count(0)
     expect(dialog.get_by_text("✓ Installed")).to_have_count(0)
+
+    # The row's remove button is in view: the table does not scroll sideways.
+    _assert_the_table_fits(dialog)
 
     # What the dialog SAYS is asserted above, in the DOM; this capture is here
     # for the layout around it.
