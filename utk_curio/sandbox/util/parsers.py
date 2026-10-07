@@ -919,11 +919,12 @@ def load_shared_output_file(file_name):
     GeoTIFF or a VRT, and is opened as the store opens a raster artifact: a
     rasterio dataset.
 
-    An output whose dataset is a bundle, such as a tuple, is hydrated with its
-    parts in a folder of its own (``catalog_helpers.hydrated_bundle``), which is
-    read first and comes back as the tuple (:func:`_load_hydrated_bundle`). The
-    bundle's ``bundle.json``, which the load also copies under the output's
-    name, describes the output and is never handed out as its value.
+    An output whose dataset is a bundle, a tuple or a list or dict of frames,
+    is hydrated with its parts in a folder of its own
+    (``catalog_helpers.hydrated_bundle``), which is read first and comes back
+    as that tuple, list or dict (:func:`_load_hydrated_bundle`). The bundle's
+    ``bundle.json``, which the load also copies under the output's name,
+    describes the output and is never handed out as its value.
 
     Raises ``KeyError`` for an unsafe name, a missing file, or bytes this
     cannot decode, so callers can treat it exactly like a missing artifact.
@@ -1014,7 +1015,10 @@ def _is_install_placeholder(value, part) -> bool:
 
 
 def _load_hydrated_bundle(bundle, data_dir, missing):
-    """The tuple a hydrated bundle holds, as the store gives a tuple.
+    """The value a hydrated bundle holds, as the store gives it: its parts in
+    the container its ``bundle.json`` records (``catalog_helpers.bundle_container``),
+    a tuple, a list, or a dict with its keys in their order, and a tuple when
+    it records none.
 
     Each part is read as ``curio_load_data`` reads one
     (``catalog_helpers.read_bundle_part``): a frame with its ``.decode.json``,
@@ -1023,15 +1027,21 @@ def _load_hydrated_bundle(bundle, data_dir, missing):
     the bundle's own folder: this read has no session check, so a part named
     anywhere else is not followed. A part that is not there, cannot be read,
     or is the install's placeholder for a value it could not find makes the
-    whole output missing, never a shorter tuple.
+    whole output missing, never a shorter one, and so does a container that a
+    bundle cannot be.
     """
-    from utk_curio.sandbox.util.catalog_helpers import listed_bundle_parts, read_bundle_part
+    from utk_curio.sandbox.util.catalog_helpers import (
+        bundle_container,
+        listed_bundle_parts,
+        read_bundle_part,
+    )
     from utk_curio.sandbox.util.rasters import close_datasets
 
     try:
         bundle = bundle.resolve()
         bundle.relative_to(data_dir)
-        named = json.loads(bundle.read_text(encoding="utf-8"))["parts"]
+        spec = json.loads(bundle.read_text(encoding="utf-8"))
+        named = spec["parts"]
     except (OSError, ValueError, KeyError, TypeError):
         raise missing
     listed = listed_bundle_parts(bundle)
@@ -1039,14 +1049,16 @@ def _load_hydrated_bundle(bundle, data_dir, missing):
         raise missing
     values = []
     try:
-        for part, file in sorted(listed, key=lambda item: item[0].get("index", 0)):
+        listed.sort(key=lambda item: item[0].get("index", 0))
+        rebuild = bundle_container(spec, [part for part, _file in listed])
+        for part, file in listed:
             values.append(read_bundle_part(str(file), part))
             if _is_install_placeholder(values[-1], part):
                 raise missing
+        return rebuild(values)
     except Exception:
         close_datasets(values)
         raise missing
-    return tuple(values)
 
 
 def load_artifact(art_id, session_id=None):

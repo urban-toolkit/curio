@@ -118,8 +118,8 @@ def stage_input(art_id, scratch_dir, *, session_id=None, slot="in"):
         try:
             adopted = save_to_duckdb(value, node_id="hydrated", session_id=session_id)
         finally:
-            # A raster, alone or in a tuple, is stored by its file's path, so
-            # the dataset opened to read it is done with.
+            # A raster, alone or in a tuple, a list or a dict, is stored by its
+            # file's path, so the dataset opened to read it is done with.
             close_datasets(value)
         return stage_input(adopted, scratch_dir, session_id=session_id, slot=slot)
 
