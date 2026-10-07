@@ -20,7 +20,9 @@ What each test pins:
 * a double-click where a press drags the node (its header) zooms the view onto
   the node, centered in what the bar, the title and the rail leave visible;
 * a double-click inside the node's editor, which is not a drag region, leaves
-  the view where it was.
+  the view where it was;
+* on a read-only canvas (a visitor with no account on another user's dataflow),
+  where nodes do not drag, the same two double-clicks do the same.
 
 The dataflow is built here: a Python node feeding a Vega-Lite node, no
 datasets, so a failure is about the node card.
@@ -37,12 +39,15 @@ import re
 import uuid
 from typing import TYPE_CHECKING
 
+import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from .utils import (
     activate_header_icon,
+    allow_guest_login_env,
     assert_vega_canvas_rendered,
+    auth_enabled_env,
     dismiss_toasts,
     frame_nodes,
     node_locator,
@@ -51,6 +56,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_workflow_test_screenshot,
+    stub_db_user,
     stub_login_and_enter_workflow,
     wait_for_node_done,
 )
@@ -501,12 +507,32 @@ def test_the_node_still_resizes_and_minimizes(
         ) from None
 
 
-def test_a_double_click_where_the_node_drags_zooms_onto_it(
-    app_frontend: "FrontendPage", current_server, page,
-):
-    require_project_page()
-    require_user_auth()
-    _enter(page, app_frontend, current_server, prefix="card_zoom")
+def _enter_read_only(page, app_frontend, current_server, *, prefix: str) -> None:
+    """Open another user's copy of the dataflow as a visitor with no account:
+    the shared guest's read-only canvas, where nodes do not drag, both nodes
+    framed."""
+    if auth_enabled_env() and not allow_guest_login_env():
+        pytest.skip("A visitor with no account needs guest sign-in (ALLOW_GUEST_LOGIN)")
+    owner = stub_db_user(
+        current_server,
+        name="Card Owner",
+        username=f"{prefix}_{uuid.uuid4().hex[:8]}",
+        project_name="Canvas node card e2e",
+        project_spec=_spec(),
+    )
+    page.goto(f"{app_frontend.base_url}/dataflow/{owner['project']['id']}", timeout=120000)
+    page.wait_for_load_state("domcontentloaded")
+    banner = page.get_by_test_id("shared-view-banner")
+    banner.wait_for(state="visible", timeout=30000)
+    assert "read-only" in (banner.inner_text() or "").lower(), banner.inner_text()
+    page.wait_for_selector(".react-flow__node", timeout=45000)
+    dismiss_toasts(page)
+    frame_nodes(page, NODES)
+
+
+def _double_click_the_header_frames_the_node(page, canvas: str) -> None:
+    """Double-click PRODUCER's header where a press drags the node (or would,
+    on a read-only canvas), and expect the view zoomed onto PRODUCER."""
     _wait_for_header(page, PRODUCER)
     before = _settled_viewport(page)
 
@@ -520,25 +546,24 @@ def test_a_double_click_where_the_node_drags_zooms_onto_it(
         )
     except PlaywrightTimeoutError:
         raise AssertionError(
-            f"a double-click on PRODUCER's header did not zoom in: {before} -> "
+            f"a double-click on PRODUCER's header on {canvas} did not zoom in: {before} -> "
             f"{page.evaluate('() => window.__curio_reactFlow.getViewport()')}"
         ) from None
     after = _settled_viewport(page)
 
     # Framed as the DATASET chip frames a node: whole, and centered in what the
-    # bar, the title and the rail leave visible.
+    # bar, the title and the rail leave visible. React Flow's own double-click
+    # zoom doubles the zoom at the pointer instead, leaving the node off center.
     framed = page.evaluate(_FRAMED_JS, PRODUCER)
     assert framed["inside"] and abs(framed["dx"]) <= 4 and abs(framed["dy"]) <= 4, (
-        f"PRODUCER is not framed in the visible area after the zoom {before} -> {after}: {framed}"
+        f"PRODUCER is not framed in the visible area on {canvas} after the zoom {before} -> {after} "
+        f"(x{after['zoom'] / before['zoom']:.2f}): {framed}"
     )
 
 
-def test_a_double_click_inside_the_editor_leaves_the_view(
-    app_frontend: "FrontendPage", current_server, page,
-):
-    require_project_page()
-    require_user_auth()
-    _enter(page, app_frontend, current_server, prefix="card_nozoom")
+def _double_click_the_editor_keeps_the_view(page, canvas: str) -> None:
+    """Double-click inside PRODUCER's code editor, which is not a drag region,
+    and expect the view exactly where it was."""
     _wait_for_header(page, PRODUCER)
     lines = node_locator(page, PRODUCER).locator(".monaco-editor .view-lines").first
     expect(lines).to_be_visible(timeout=30000)
@@ -549,4 +574,40 @@ def test_a_double_click_inside_the_editor_leaves_the_view(
     page.mouse.dblclick(box["x"] + 30, box["y"] + 8)
     page.wait_for_timeout(800)
     after = _settled_viewport(page)
-    assert after == before, f"a double-click in PRODUCER's editor moved the view: {before} -> {after}"
+    assert after == before, (
+        f"a double-click in PRODUCER's editor moved the view on {canvas}: {before} -> {after}"
+    )
+
+
+def test_a_double_click_where_the_node_drags_zooms_onto_it(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, prefix="card_zoom")
+    _double_click_the_header_frames_the_node(page, "the owner's canvas")
+
+
+def test_a_double_click_inside_the_editor_leaves_the_view(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    require_project_page()
+    require_user_auth()
+    _enter(page, app_frontend, current_server, prefix="card_nozoom")
+    _double_click_the_editor_keeps_the_view(page, "the owner's canvas")
+
+
+def test_on_a_read_only_canvas_a_double_click_where_the_node_would_drag_zooms_onto_it(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    require_project_page()
+    _enter_read_only(page, app_frontend, current_server, prefix="card_ro_zoom")
+    _double_click_the_header_frames_the_node(page, "a read-only canvas")
+
+
+def test_on_a_read_only_canvas_a_double_click_inside_the_editor_leaves_the_view(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    require_project_page()
+    _enter_read_only(page, app_frontend, current_server, prefix="card_ro_nozoom")
+    _double_click_the_editor_keeps_the_view(page, "a read-only canvas")
