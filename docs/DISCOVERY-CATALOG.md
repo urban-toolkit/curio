@@ -461,7 +461,7 @@ Curio reads public S3 buckets, and Hugging Face dataset repositories, with your 
 | `CURIO_DISCOVERY_ROOT` | `--discovery-root` | Reads the shipped sources from this directory instead of `<repo_root>/discovery`. |
 | `CURIO_DISCOVERY_MAX_DOWNLOAD_MB` | `--discovery-max-download-mb` | The largest file a download or a bucket add takes, in megabytes. Default 1024. A source's manifest may set a lower limit for itself. |
 | `CURIO_DEFAULT_SOCRATA_APP_TOKEN` | none | A Socrata app token every account inherits until it saves its own. |
-| `CURIO_MEDIA_CACHE_MAX_GB` | none | How much each account may hold in cached bucket files and downloaded street-level images. Default 20. |
+| `CURIO_MEDIA_CACHE_MAX_GB` | `--media-cache-max-gb` | How much each account may hold in cached bucket files and downloaded street-level images, in gigabytes. Default 20. |
 
 **Sources ship with the deployment.** To change or remove a shipped one, edit the sources directory and restart. The Docker image bakes `discovery/` in; see [DEPLOYMENT.md § Configure the stack](DEPLOYMENT.md#1-configure-the-stack).
 

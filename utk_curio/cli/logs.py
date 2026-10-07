@@ -77,7 +77,7 @@ def log_error(message):
     print(f"\033[91m[ERROR]\033[0m {message}", file=sys.stderr)
 
 
-def logger():
+def print_output_queue():
     """
     Continuously reads from the queue and prints to the terminal.
     """

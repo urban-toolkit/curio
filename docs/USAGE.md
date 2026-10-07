@@ -63,7 +63,7 @@ curio setup                  # install deps and exit
 | *(none)* | Auto sign-in as shared guest, projects page shown |
 | `--no-project` | Skip both login and projects; open the canvas directly |
 | `--deploy` | Auth **and** projects on, and isolated node execution, which it requires. The only way to turn auth on, so use it locally too when you need the login page |
-| `--collab` | Real-time collaborative editing. Experimental, LAN-only |
+| `--collab` | Real-time collaborative editing. Experimental, LAN-only. `--collab-origins` and `--collab-namespace` set the origins it accepts and its Socket.IO namespace; see [COLLABORATION.md](COLLABORATION.md) |
 
 **Frontend**
 
@@ -86,7 +86,9 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--catalog-root PATH` | `<repo_root>/datasets/` | Where the shared Data Catalog is read from and published to |
 | `--discovery-root PATH` | `<repo_root>/discovery/` | Where the shipped Discovery Catalog sources are read from. Your own sources stay in `.curio/discovery/` |
 | `--discovery-max-download-mb MB` | `1024` | The largest file the Discovery Catalog downloads, or adds from a bucket. A source's manifest may set a lower limit for itself |
+| `--media-cache-max-gb GB` | `20` | How much each account may hold in cached bucket files and downloaded street-level images |
 | `--models-root PATH` | `<repo_root>/models/` | Where the shipped Model Catalog models are read from |
+| `--packages-root PATH` | `<repo_root>/packages/` | Where the shared Node Catalog is read from and published to. Start it from a copy of `packages/`: the built-in nodes are installed from it |
 | `--save-node-outputs` / `--no-save-node-outputs` | off | Whether a new node's **Save output dataset** toggle starts on. Users can still flip it on each node |
 | `--allow-publish` / `--no-allow-publish` | on | Whether the node and data catalogs allow Publish/Unpublish |
 | `--testing` | off | Run against the dedicated test database under `.curio/test/` and mount the test-only `/api/testing/*` routes. Also the one exemption to `--deploy` requiring isolated execution. Never for a real instance: those routes reset the database and sign in as any user without a password |
@@ -95,6 +97,19 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` | 4096 / 300 / half the host's cores, from 2 to 8 | Limits for isolated execution. `exec-memory-mb` is what a node may allocate on top of the interpreter its child starts with, with a floor of 64. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
 
 `--deploy` turns on node-execution isolation, and refuses to start on a host that cannot provide it: isolation needs Linux and an unprivileged execution account, which the Docker image creates as `curio-exec`. Two environment variables override that, for test stacks and for an operator who wants it off: `CURIO_ISOLATION=off|fork` and `CURIO_EXEC_USER=<account>` (empty means none). `CURIO_ISOLATION=fork` is fail-closed: a host that cannot provide isolation refuses to start. See [ARCHITECTURE.md](ARCHITECTURE.md#isolated-node-execution-opt-in-linux-only).
+
+**Server**
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--state-dir PATH` | `.curio/` in the directory Curio starts from | Where Curio keeps its state: every user's store, the caches and the launcher's log |
+| `--js-parallelism N` | half the host's cores, from 2 to 16 | How many JavaScript nodes the sandbox runs at once |
+| `--package-workers N` | half the host's cores, from 2 to 8 | How many package backend handlers run at once |
+| `--js-registry-url URL` | none | The npm registry a package build fetches JavaScript dependencies from. Without one, a build that needs a JavaScript dependency is refused |
+| `--js-block-unpinned` / `--no-js-block-unpinned` | off | Whether a package build refuses a JavaScript dependency without a pinned version, rather than warning |
+| `--db-pool-size N` / `--db-pool-overflow N` / `--db-pool-timeout SECONDS` | 64 / 128 / 30 | The backend's database connections: how many it keeps open, how many more it may open while those are all in use, and how long a request waits for one |
+| `--shared-guest-name NAME` / `--shared-guest-username NAME` | `Shared Guest` / `guest_shared` | The shared guest, the one account every guest sign-in uses. A new username gives guests a new, empty account |
+| `--log-to-stdout` / `--no-log-to-stdout` | on | Whether the backend and sandbox write their logs to their output, which the launcher keeps in its own log, or to `utk_curio/logs/` |
 
 **Hosts, ports, and diagnostics**
 
@@ -106,7 +121,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 > [!NOTE]
 > `--force-rebuild` deletes `node_modules/`, `dist/` and `build/` and rebuilds from source, so it needs the frontend sources and a working npm; the Docker image ships only the built `dist/` and cannot rebuild in place.
 
-Because these flags are set as environment variables on every start, putting the corresponding `CURIO_*` var in a `.env` has no effect when you launch through `curio.py`. Use the flag.
+Some flags set their variable on every start, passed or not: the backend and sandbox host and port flags, `--backend-url`, `--dev`, `--with-examples`, `--reseed`, `--allow-publish`, `--save-node-outputs`, `--deploy`, `--no-project` and `--collab`. For those, the matching variable in a `.env` has no effect when you launch through `curio.py`; use the flag. Every other flag sets its variable only when it is passed.
 
 `CURIO_BACKEND_DEBUG=1` turns on Flask's debug mode for the backend, which is off by default. It has no flag of its own, so, unlike the variables above, setting it in a `.env` does work when you launch through `curio.py`. Auto-reload is a separate switch (`FLASK_USE_RELOADER`) and is unaffected.
 
@@ -331,38 +346,26 @@ leaves your browser. Dismiss it if the value is not a key.
 
 On a Curio started with `--deploy`, guests cannot add LLM configurations: every guest answers with the **guest configuration** the operator sets. They cannot save data source or node code keys either, and **Add key for** and **Save as API key** do not appear for them. Without `--deploy`, Curio signs you in as the shared guest, which adds configurations and saves its tokens in API Settings like any account; they are shared by everyone using that Curio, and the guest configuration is its Deployment default.
 
-The guest configuration is set through environment variables in **`utk_curio/backend/.env`**. A `.env` at the repo root is read only by Docker Compose, for values like `BACKEND_URL` in `docker-compose.yml`; the backend does not read it.
+The guest configuration's provider, endpoint and model are `curio.py` flags: `--guest-llm-provider` (`openai_compatible`, `anthropic` or `gemini`), `--guest-llm-base-url` (empty for the provider's own endpoint) and `--guest-llm-model`. Its key is `GUEST_LLM_API_KEY` in **`utk_curio/backend/.env`**.
 
+Each one that is not set takes the deployment's value (see the [deployment guide](DEPLOYMENT.md#llm-configurations)). A guest configuration needs both a key and a model; without either, agents refuse guest runs and say so.
+
+**Examples**, each with its key in `utk_curio/backend/.env`:
+
+OpenAI (`GUEST_LLM_API_KEY=sk-proj-abc123...`):
 ```bash
-GUEST_LLM_API_KEY=sk-...
-GUEST_LLM_MODEL=gpt-4o-mini
-GUEST_LLM_API_TYPE=openai_compatible   # openai_compatible | anthropic | gemini
-GUEST_LLM_BASE_URL=                    # blank: the provider's own endpoint
+python curio.py start --deploy --guest-llm-model gpt-4o-mini
 ```
 
-Each one that is unset takes the matching `CURIO_DEFAULT_LLM_*` value (see the [deployment guide](DEPLOYMENT.md#llm-configurations)). A guest configuration needs both a key and a model; without either, agents refuse guest runs and say so.
-
-**Examples:**
-
-OpenAI:
+Local Ollama server (it takes any key, so give it a placeholder: `GUEST_LLM_API_KEY=ollama`):
 ```bash
-GUEST_LLM_API_KEY=sk-proj-abc123...
-GUEST_LLM_MODEL=gpt-4o-mini
+python curio.py start --deploy --guest-llm-provider openai_compatible \
+  --guest-llm-base-url http://localhost:11434/v1 --guest-llm-model llama3.2
 ```
 
-Local Ollama server (it takes any key, so give it a placeholder):
+Anthropic Claude (`GUEST_LLM_API_KEY=sk-ant-...`):
 ```bash
-GUEST_LLM_API_TYPE=openai_compatible
-GUEST_LLM_BASE_URL=http://localhost:11434/v1
-GUEST_LLM_API_KEY=ollama
-GUEST_LLM_MODEL=llama3.2
-```
-
-Anthropic Claude:
-```bash
-GUEST_LLM_API_TYPE=anthropic
-GUEST_LLM_API_KEY=sk-ant-...
-GUEST_LLM_MODEL=claude-haiku-4-5
+python curio.py start --deploy --guest-llm-provider anthropic --guest-llm-model claude-haiku-4-5
 ```
 
 ## Inside a node
@@ -1147,7 +1150,7 @@ Because the shared catalog root defaults to `<repo_root>/datasets/`, pip install
 
 > [!NOTE]
 > `CURIO_CATALOG_ROOT` relocates the **dataset** catalog only. The shared *node
-> package* catalog is `<install_root>/packages/`, relocated with `CURIO_PACKAGES_ROOT`.
+> package* catalog is `<install_root>/packages/`, relocated with `--packages-root`.
 > On a pip install that path is inside `site-packages`, so author node packages
 > from a git checkout (see [Authoring nodes](AUTHORING-NODES.md)).
 
