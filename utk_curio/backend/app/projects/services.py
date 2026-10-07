@@ -204,29 +204,31 @@ def _assert_guest_can_save(user) -> None:
 
 
 def _humanize_node_type(node_type: Optional[str]) -> Optional[str]:
-    """Friendly fallback title from a node type slug, e.g.
-    ``curio.builtin/autk-grammar`` → ``Autk Grammar``. Returns ``None`` when no
-    type is available."""
-    if not node_type:
-        return None
-    base = str(node_type).rsplit("/", 1)[-1]
-    cleaned = re.sub(r"[-_]+", " ", base).strip()
-    return cleaned.title() if cleaned else None
+    """Friendly fallback title from a node type slug, without its version, e.g.
+    ``curio.builtin/autk-grammar@1`` → ``Autk Grammar``. Returns ``None`` when
+    no type is available."""
+    from utk_curio.backend.app.execution.node_names import humanize_node_type
+
+    return humanize_node_type(node_type) or None
 
 
 def _computed_output_title(
-    ref: OutputRef, dataflow: Optional[dict]
+    ref: OutputRef, dataflow: Optional[dict], labels: Optional[dict] = None,
 ) -> Optional[str]:
     """Resolve the friendly title for a save-time computed output, never the raw
     generated filename:
 
       1. the producing node's client-resolved display label (``ref.node_name``);
-      2. the node's custom label in the spec (``metadata.packageTemplateLabel``,
-         or the older ``data.packageTemplateLabel``);
-      3. a friendly name derived from the node type;
-      4. ``None`` — the installer then derives a filename-based title, which the
-         frontend renders as ``dirName`` via ``datasetDisplayTitle``.
+      2. else the name the node's canvas header shows, by the canvas's own rule
+         (``execution/node_names.py``): its renamed header, else its template's
+         label from *labels* (``node_names.template_labels``), else its type in
+         words without the version (#775);
+      3. ``None`` for a node the spec does not hold: the installer then derives
+         a filename-based title, which the frontend renders as ``dirName`` via
+         ``datasetDisplayTitle``.
     """
+    from utk_curio.backend.app.execution.node_names import saved_node_label
+
     explicit = (getattr(ref, "node_name", None) or "").strip()
     if explicit:
         return explicit
@@ -235,15 +237,19 @@ def _computed_output_title(
     for node in nodes or []:
         if not isinstance(node, dict) or node.get("id") != ref.node_id:
             continue
-        data = node.get("data") if isinstance(node.get("data"), dict) else {}
-        metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
-        label = (
-            metadata.get("packageTemplateLabel") or data.get("packageTemplateLabel") or ""
-        ).strip()
-        if label:
-            return label
-        return _humanize_node_type(node.get("type") or data.get("nodeType"))
+        return saved_node_label(node, labels) or None
     return None
+
+
+def _labels_for_unnamed(user_key: str, project_id: str, refs) -> Optional[dict]:
+    """The project's template labels when an output ref arrives without a
+    ``node_name`` (anything but the canvas sends one), else ``None``. Read
+    before the spec lock: the package store has a lock of its own."""
+    from utk_curio.backend.app.execution.node_names import template_labels
+
+    if all((getattr(ref, "node_name", None) or "").strip() for ref in refs or []):
+        return None
+    return template_labels(user_key, project_id)
 
 
 def _computed_node_type(ref: OutputRef, dataflow: Optional[dict]) -> Optional[str]:
@@ -268,9 +274,12 @@ def _auto_install_computed_outputs(
     *,
     dataflow_id: Optional[str] = None,
     dataflow_name: Optional[str] = None,
+    labels: Optional[dict] = None,
 ) -> Optional[dict]:
     """Save each newly computed output to the account-level user store as
-    ``computed.<dataflowId>.<nodeId>@1/`` with its producer/upstream lineage.
+    ``computed.<dataflowId>.<nodeId>@1/`` with its producer/upstream lineage,
+    titled by :func:`_computed_output_title` (*labels* are the project's
+    template labels, :func:`_labels_for_unnamed`).
 
     Computed outputs are account-level assets by default: this NO LONGER
     installs them into the project (no ``dataflow.datasets`` ref is written).
@@ -338,7 +347,7 @@ def _auto_install_computed_outputs(
                 node_id=node_id,
                 path_ref=filename,
                 data_type=data_type,
-                node_name=_computed_output_title(ref, dataflow),
+                node_name=_computed_output_title(ref, dataflow, labels),
                 dataflow_id=dataflow_id,
                 node_type=_computed_node_type(ref, dataflow),
                 dataflow_name=dataflow_name,
@@ -721,6 +730,7 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     effective_spec = _auto_install_computed_outputs(
         ukey, output_refs, data.spec, install_warnings,
         dataflow_id=project_id, dataflow_name=data.name,
+        labels=_labels_for_unnamed(ukey, project_id, output_refs),
     ) or data.spec
     # Drop dataset refs keyed on visualization/sink nodes (passthrough duplicates).
     effective_spec = _prune_sink_node_dataset_refs(effective_spec)
@@ -784,6 +794,7 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     # refs. Re-read existing_spec INSIDE the lock so we merge/preserve against
     # the latest on-disk spec, not the snapshot read before the lock.
     install_warnings: list = []
+    labels = _labels_for_unnamed(ukey, project_id, data.outputs) if data.outputs is not None else None
     with storage.spec_write_lock(ukey, project_id):
         existing_spec = storage.read_spec(ukey, project_id)
         effective_spec = data.spec if data.spec is not None else existing_spec
@@ -860,6 +871,7 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
             updated_spec = _auto_install_computed_outputs(
                 ukey, refs_to_install, effective_spec, install_warnings,
                 dataflow_id=project_id, dataflow_name=(data.name or project.name),
+                labels=labels,
             )
             if updated_spec is not None and updated_spec is not effective_spec:
                 effective_spec = updated_spec
@@ -948,6 +960,7 @@ def record_node_outputs(
     project = repo.get_for_user(project_id, user.id)
     ukey = _user_dir_key(user)
     install_warnings: list = warnings if warnings is not None else []
+    labels = _labels_for_unnamed(ukey, project_id, outputs)
     with storage.spec_write_lock(ukey, project_id):
         spec = storage.read_spec(ukey, project_id)
         manifest = storage.read_manifest(ukey, project_id)
@@ -956,7 +969,7 @@ def record_node_outputs(
         )
         _auto_install_computed_outputs(
             ukey, refs_to_install, spec, install_warnings,
-            dataflow_id=project_id, dataflow_name=project.name,
+            dataflow_id=project_id, dataflow_name=project.name, labels=labels,
         )
         persisted_refs = _persisted_output_refs(ukey, project_id, output_refs, spec)
         storage.write_manifest(ukey, project_id, project.spec_revision, persisted_refs,

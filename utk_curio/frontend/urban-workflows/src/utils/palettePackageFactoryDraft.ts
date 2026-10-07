@@ -5,6 +5,7 @@ import { NodeTemplateId } from "../registry/types";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
 import { BUILTIN_PACKAGE_ID } from "../registry/packageKeys";
 import { getFlowNodeCanonicalType } from "./flowNodeCanonicalType";
+import { nodeDisplayLabel } from "./nodeDisplayLabel";
 import { normalizePortTypes } from "../constants/supportedPortTypes";
 import { normalizeWidgets } from "./widgets/widgetModel";
 import {
@@ -202,22 +203,17 @@ export function canvasTemplateLabelFromNode(node: { data: object }, desc: NodeDe
  * header. Single source of truth so the node header and the computed-dataset
  * title it produces never drift apart.
  *
- * The label is derived from the node *type* (its registry descriptor / template
- * label). A purely numeric ``nodeType`` is a generated node id rather than a
- * real registry type, so it can't resolve to a meaningful type label — in that
- * case we use the node's own title (``packageTemplateLabel``). Falls back to the
- * raw node type when nothing better is available.
+ * The node's renamed header (``packageTemplateLabel``), else its registered
+ * template's label, else its type in words without the version; a purely
+ * numeric ``nodeType`` is a node id, named by its header or itself. The rule is
+ * ``nodeDisplayLabel``, which the backend twins, so a run on the server and a
+ * save name a node's computed dataset the same way (#775).
  */
 export function resolveNodeDisplayLabel(
   data: { nodeType: NodeTemplateId; packageTemplateLabel?: string | null },
 ): string {
-  const nodeTitle =
-    typeof data.packageTemplateLabel === "string" ? data.packageTemplateLabel.trim() : "";
-  if (/^\d+$/.test(String(data.nodeType).trim())) {
-    return nodeTitle || String(data.nodeType);
-  }
   const desc = tryGetNodeDescriptor(data.nodeType);
-  return desc ? canvasTemplateLabelFromNode({ data }, desc) : nodeTitle || String(data.nodeType);
+  return nodeDisplayLabel(data.nodeType, data.packageTemplateLabel, desc?.label);
 }
 
 /**

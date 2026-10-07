@@ -234,6 +234,7 @@ def start_run(
     saved one, while the dataflow already runs, and past the account's cap."""
     from flask import current_app
 
+    from utk_curio.backend.app.execution.node_names import template_labels
     from utk_curio.backend.app.execution.run_engine import PlanError, plan_run
     from utk_curio.backend.app.packages.service import roster_templates
     from utk_curio.backend.app.projects import repositories as projects_repo
@@ -262,6 +263,7 @@ def start_run(
         plan = plan_run(
             spec, target_node_id=target_node_id, reuse=reuse,
             templates=roster_templates(ukey, project_id),
+            labels=template_labels(ukey, project_id),
         )
     except PlanError as exc:
         raise RunError(str(exc), 422) from exc
@@ -377,6 +379,8 @@ def _run_thread(app, run_id, user_id, token, project_id, plan, spec) -> Iterator
                             node_id=step.node_id,
                             filename=output.get("dataset") or output.get("path"),
                             data_type=output.get("dataType"),
+                            # The name its play installed the output under.
+                            node_name=step.label,
                         )], warnings=warnings)
                     except Exception:  # noqa: BLE001 - the run goes on; the output is just not recorded
                         log.exception("run %s could not record the output of %s", run_id, step.node_id)
