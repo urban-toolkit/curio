@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import csv
 import json
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -266,4 +268,120 @@ def test_the_shipped_catalog_stays_within_its_size_budget():
         f"leave its data file out of the pip package: add it to "
         f"utk_curio/backend/app/datasets/infrastructure/left_out_files.json and "
         f"the matching exclude line to MANIFEST.in. Do not just raise this number."
+    )
+
+
+REPO = Path(__file__).resolve().parents[4]
+
+#: A shipped data file over this size is stored compactly: it is in every git
+#: checkout, and a pip install downloads it when it is a left-out file.
+COMPACT_FLOOR_BYTES = 1024 * 1024
+
+#: How much larger a big shipped parquet may be than pyarrow's zstd level-9
+#: rewrite of the same table. Two writers at one codec differ by a few percent
+#: (DuckDB's zstd file of the speed-camera table is 2% larger than pyarrow's),
+#: while snappy, or zstd at pyarrow's default level 1, costs 7% to 14% on the
+#: catalog's tables.
+PARQUET_REWRITE_SLACK = 1.05
+
+
+def _big_shipped_files(*suffixes: str) -> list[Path]:
+    """The data files under ``datasets/`` and ``packages/`` over the floor.
+
+    Tracked files only, as ``catalog_datasets`` reads the catalog: a dataset a
+    running Curio published into ``datasets/`` is not one this repo ships.
+    """
+    try:
+        listed = subprocess.run(
+            ["git", "ls-files", "-z", "--", "datasets", "packages"],
+            cwd=REPO, capture_output=True, check=True, timeout=30,
+        ).stdout.decode("utf-8").split("\0")
+        paths = [REPO / rel for rel in listed if rel]
+    except (OSError, subprocess.SubprocessError):
+        paths = [path for folder in ("datasets", "packages") for path in (REPO / folder).rglob("*")]
+    return sorted(
+        path for path in paths
+        if path.suffix.lower() in suffixes and path.is_file() and path.stat().st_size > COMPACT_FLOOR_BYTES
+    )
+
+
+def _shipped_name(path: Path) -> str:
+    return f"{path.relative_to(REPO).as_posix()} ({path.stat().st_size / 2**20:.1f} MiB)"
+
+
+def test_big_shipped_parquet_files_use_zstd():
+    """Every column chunk of a shipped parquet over the floor is zstd."""
+    import pyarrow.parquet as pq
+
+    files = _big_shipped_files(".parquet")
+    assert files, f"no shipped parquet over {COMPACT_FLOOR_BYTES:,} bytes; this check would pass on nothing"
+    wrong = {}
+    for path in files:
+        metadata = pq.ParquetFile(path).metadata
+        codecs = {
+            metadata.row_group(group).column(column).compression
+            for group in range(metadata.num_row_groups)
+            for column in range(metadata.num_columns)
+        }
+        if codecs != {"ZSTD"}:
+            wrong[_shipped_name(path)] = sorted(codecs)
+    assert not wrong, (
+        f"shipped parquet files with column chunks that are not zstd: {wrong}. Rewrite each one "
+        f"losslessly with zstd at level 22, as scripts/build_example_datasets.py writes the catalog's "
+        f"tables, and compare the old and new files' schema, metadata and rows."
+    )
+
+
+def test_big_shipped_parquet_files_are_as_small_as_a_zstd_rewrite():
+    """A shipped parquet over the floor is no larger than pyarrow's zstd level-9
+    rewrite of the same table, give or take ``PARQUET_REWRITE_SLACK``: a weak
+    codec or level fails here even where the codec is zstd."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    files = _big_shipped_files(".parquet")
+    assert files, f"no shipped parquet over {COMPACT_FLOOR_BYTES:,} bytes; this check would pass on nothing"
+    larger = {}
+    for path in files:
+        sink = pa.BufferOutputStream()
+        pq.write_table(pq.read_table(path), sink, compression="zstd", compression_level=9)
+        reference = sink.getvalue().size
+        size = path.stat().st_size
+        if size > reference * PARQUET_REWRITE_SLACK:
+            larger[_shipped_name(path)] = (
+                f"{size:,} bytes, {size / reference - 1:.1%} over the {reference:,} bytes of the rewrite"
+            )
+    assert not larger, (
+        f"shipped parquet files larger than pyarrow's zstd level-9 rewrite of themselves: {larger}. "
+        f"Rewrite each one losslessly with zstd at level 22, as scripts/build_example_datasets.py "
+        f"writes the catalog's tables; do not raise PARQUET_REWRITE_SLACK."
+    )
+
+
+def test_big_shipped_geotiffs_are_compressed_with_the_predictor_of_their_type():
+    """A shipped GeoTIFF over the floor is compressed, and a DEFLATE, ZSTD or
+    LZW one with the predictor that suits its cells: 3 (floating point) for
+    floats, 2 (horizontal) for integers."""
+    import numpy as np
+    import rasterio
+
+    files = _big_shipped_files(".tif", ".tiff")
+    assert files, f"no shipped GeoTIFF over {COMPACT_FLOOR_BYTES:,} bytes; this check would pass on nothing"
+    wrong = {}
+    for path in files:
+        with rasterio.open(path) as raster:
+            structure = raster.tags(ns="IMAGE_STRUCTURE")
+            kinds = {np.dtype(dtype).kind for dtype in raster.dtypes}
+        compression = structure.get("COMPRESSION", "NONE").upper()
+        predictor = structure.get("PREDICTOR", "1")
+        wanted = "3" if kinds == {"f"} else "2"
+        if compression in {"NONE", "PACKBITS"}:
+            wrong[_shipped_name(path)] = f"compression {compression}"
+        elif compression in {"DEFLATE", "ZSTD", "LZW"} and predictor != wanted:
+            wrong[_shipped_name(path)] = f"{compression} with predictor {predictor}, not {wanted}"
+    assert not wrong, (
+        f"shipped GeoTIFFs stored without compression or with the wrong predictor: {wrong}. Rewrite "
+        f"each one losslessly with DEFLATE and PREDICTOR 3 for floats or 2 for integers, as "
+        f"scripts/build_scout_flood_datasets.py writes its rasters, and compare every cell, the "
+        f"nodata, CRS, transform and tags."
     )
