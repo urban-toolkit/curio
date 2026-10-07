@@ -13,11 +13,18 @@ when launching through ``curio.py``.
 """
 from __future__ import annotations
 
+import json
 import os
+import re
+import signal
+import subprocess
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+import utk_curio
 from utk_curio.cli.environment import set_environment_variables
 
 
@@ -504,8 +511,6 @@ NO_FLAG_KEYS = (
     "CURIO_BUILD_ESBUILD",
     "CURIO_BUILD_PREVIEW_RUNNER",
     "CURIO_BUILD_PREVIEW_POLICY",
-    "CURIO_JS_REGISTRY_URL",
-    "CURIO_JS_BLOCK_UNPINNED",
     "CURIO_BACKEND_SANDBOX_PYTHON",
 )
 
@@ -558,7 +563,7 @@ class TestAgentAndBuildFlags:
         for key in AGENT_AND_BUILD_KEYS:
             assert key not in os.environ, key
 
-    def test_the_flag_set_is_exactly_these_five(self):
+    def test_the_flag_set_is_exactly_these(self):
         """A guard on the guard: a new flag must be a decision, not a drift.
 
         The launcher grew thirteen of these at once, eight of which were
@@ -583,6 +588,14 @@ class TestAgentAndBuildFlags:
             "--llm-model",
             "--guest-llm-api-key",
             "--agent-search-url",
+            # #615: the guest configuration, package builds and node workers.
+            "--guest-llm-provider",
+            "--guest-llm-base-url",
+            "--guest-llm-model",
+            "--js-registry-url",
+            "--js-block-unpinned",
+            "--js-parallelism",
+            "--package-workers",
         }, sorted(flags)
 
 
@@ -822,3 +835,283 @@ def test_a_preset_testing_env_var_still_counts(monkeypatch):
     set_environment_variables(**BASE, deploy=True)
 
     assert os.environ["CURIO_NO_AUTH"] == "0"
+
+
+# ── Operator settings that were environment-only (#615) ─────────────────────
+#
+# Each is a curio.py argument now, written the way #614's are: only when the
+# flag is passed, so a value already in the environment is still read.
+
+#: Every variable a #615 flag writes.
+OPERATOR_KEYS = (
+    "GUEST_LLM_API_TYPE",
+    "GUEST_LLM_BASE_URL",
+    "GUEST_LLM_MODEL",
+    "CURIO_MEDIA_CACHE_MAX_GB",
+    "CURIO_DB_POOL_SIZE",
+    "CURIO_DB_POOL_OVERFLOW",
+    "CURIO_DB_POOL_TIMEOUT",
+    "CURIO_PACKAGE_WORKERS",
+    "CURIO_JS_PARALLELISM",
+    "CURIO_JS_REGISTRY_URL",
+    "CURIO_JS_BLOCK_UNPINNED",
+    "CURIO_STATE_DIR",
+    "CURIO_SHARED_GUEST_NAME",
+    "CURIO_SHARED_GUEST_USERNAME",
+    "COLLAB_CORS_ORIGINS",
+    "COLLAB_NAMESPACE",
+    "LOG_TO_STDOUT",
+)
+
+#: The flags that write them.
+OPERATOR_FLAG_NAMES = (
+    "--guest-llm-provider",
+    "--guest-llm-base-url",
+    "--guest-llm-model",
+    "--media-cache-max-gb",
+    "--db-pool-size",
+    "--db-pool-overflow",
+    "--db-pool-timeout",
+    "--package-workers",
+    "--js-parallelism",
+    "--js-registry-url",
+    "--js-block-unpinned",
+    "--state-dir",
+    "--shared-guest-name",
+    "--shared-guest-username",
+    "--collab-origins",
+    "--collab-namespace",
+    "--log-to-stdout",
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_operator_env():
+    """Clear these before AND after, for the reason _isolate_agent_env gives."""
+    saved = {k: os.environ.pop(k, None) for k in OPERATOR_KEYS}
+    try:
+        yield
+    finally:
+        for key, value in saved.items():
+            os.environ.pop(key, None)
+            if value is not None:
+                os.environ[key] = value
+
+
+def _fresh(module, expression):
+    """*expression* as a server process started now reads it.
+
+    The backend's and the sandbox's configs read these settings once, at
+    import, so the reader is a new interpreter that inherits this environment,
+    as the launcher's children do.
+    """
+    code = f"import json, {module} as m; print(json.dumps({expression}))"
+    done = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(utk_curio.__file__).resolve().parent.parent,
+        env=dict(os.environ),
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout.strip().splitlines()[-1])
+
+
+def _backend(expression):
+    return lambda: _fresh("utk_curio.backend.config", expression)
+
+
+def _sandbox(expression):
+    return lambda: _fresh("utk_curio.sandbox.config", expression)
+
+
+def _media_cache_bytes():
+    from utk_curio.backend.app.discovery.application import cache_collection
+
+    return cache_collection.cap_bytes()
+
+
+def _package_workers():
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+
+    return backend_runtime._default_worker_slots()
+
+
+def _js_parallelism():
+    from utk_curio.sandbox.app import worker
+
+    return worker._default_js_parallelism()
+
+
+def _js_policy(field):
+    def read():
+        from utk_curio.backend.app.packages.builder import deps
+
+        return getattr(deps.policy_from_env(), field)
+
+    return read
+
+
+_POOL = "m.Config.SQLALCHEMY_ENGINE_OPTIONS"
+
+#: (keyword, value passed, variable, value written, reader, what the reader returns)
+OPERATOR_FLAGS = [
+    pytest.param("guest_llm_provider", "anthropic", "GUEST_LLM_API_TYPE", "anthropic",
+                 _backend("m.GUEST_LLM_API_TYPE"), "anthropic", id="guest-llm-provider"),
+    pytest.param("guest_llm_base_url", "https://guest.example.test/v1", "GUEST_LLM_BASE_URL",
+                 "https://guest.example.test/v1", _backend("m.GUEST_LLM_BASE_URL"),
+                 "https://guest.example.test/v1", id="guest-llm-base-url"),
+    pytest.param("guest_llm_model", "small-model", "GUEST_LLM_MODEL", "small-model",
+                 _backend("m.GUEST_LLM_MODEL"), "small-model", id="guest-llm-model"),
+    pytest.param("media_cache_max_gb", 2.5, "CURIO_MEDIA_CACHE_MAX_GB", "2.5",
+                 _media_cache_bytes, int(2.5 * 1024**3), id="media-cache-max-gb"),
+    pytest.param("db_pool_size", 16, "CURIO_DB_POOL_SIZE", "16",
+                 _backend(f"{_POOL}['pool_size']"), 16, id="db-pool-size"),
+    pytest.param("db_pool_overflow", 0, "CURIO_DB_POOL_OVERFLOW", "0",
+                 _backend(f"{_POOL}['max_overflow']"), 0, id="db-pool-overflow"),
+    pytest.param("db_pool_timeout", 5, "CURIO_DB_POOL_TIMEOUT", "5",
+                 _backend(f"{_POOL}['pool_timeout']"), 5, id="db-pool-timeout"),
+    pytest.param("package_workers", 3, "CURIO_PACKAGE_WORKERS", "3",
+                 _package_workers, 3, id="package-workers"),
+    pytest.param("js_parallelism", 5, "CURIO_JS_PARALLELISM", "5",
+                 _js_parallelism, 5, id="js-parallelism"),
+    pytest.param("js_registry_url", "https://registry.example.test/", "CURIO_JS_REGISTRY_URL",
+                 "https://registry.example.test/", _js_policy("js_registry_url"),
+                 "https://registry.example.test/", id="js-registry-url"),
+    pytest.param("js_block_unpinned", True, "CURIO_JS_BLOCK_UNPINNED", "1",
+                 _js_policy("block_unpinned_js"), True, id="js-block-unpinned"),
+    pytest.param("js_block_unpinned", False, "CURIO_JS_BLOCK_UNPINNED", "0",
+                 _js_policy("block_unpinned_js"), False, id="no-js-block-unpinned"),
+    pytest.param("shared_guest_name", "Lab Guest", "CURIO_SHARED_GUEST_NAME", "Lab Guest",
+                 _backend("m.CURIO_SHARED_GUEST_NAME"), "Lab Guest", id="shared-guest-name"),
+    pytest.param("shared_guest_username", "lab_guest", "CURIO_SHARED_GUEST_USERNAME", "lab_guest",
+                 _backend("m.CURIO_SHARED_GUEST_USERNAME"), "lab_guest", id="shared-guest-username"),
+    pytest.param("collab_origins", "http://192.168.1.5:8080,http://192.168.1.6:8080",
+                 "COLLAB_CORS_ORIGINS", "http://192.168.1.5:8080,http://192.168.1.6:8080",
+                 _backend("m.COLLAB_CORS_ORIGINS"),
+                 "http://192.168.1.5:8080,http://192.168.1.6:8080", id="collab-origins"),
+    pytest.param("collab_namespace", "/team", "COLLAB_NAMESPACE", "/team",
+                 _backend("m.COLLAB_NAMESPACE"), "/team", id="collab-namespace"),
+    pytest.param("log_to_stdout", True, "LOG_TO_STDOUT", "1",
+                 _backend("bool(m.Config.LOG_TO_STDOUT)"), True, id="log-to-stdout"),
+    # Off is what the flag is for: .flaskenv turns an unset variable on.
+    pytest.param("log_to_stdout", False, "LOG_TO_STDOUT", "",
+                 _backend("bool(m.Config.LOG_TO_STDOUT)"), False, id="no-log-to-stdout-backend"),
+    pytest.param("log_to_stdout", False, "LOG_TO_STDOUT", "",
+                 _sandbox("bool(m.Config.LOG_TO_STDOUT)"), False, id="no-log-to-stdout-sandbox"),
+]
+
+
+@pytest.mark.parametrize("keyword, value, env_name, written, reader, read", OPERATOR_FLAGS)
+def test_an_operator_flag_reaches_the_setting_its_server_reads(
+    keyword, value, env_name, written, reader, read,
+):
+    set_environment_variables(**BASE, **{keyword: value})
+
+    assert os.environ[env_name] == written
+    assert reader() == read
+
+
+# The tests below write os.environ directly: the isolation fixtures put each of
+# these variables back, and a monkeypatch undo after them would delete it.
+
+
+def test_an_empty_guest_base_url_sends_guests_to_the_providers_own_endpoint():
+    """Unset, the guest configuration takes the deployment's endpoint; empty
+    is how an operator gives guests the provider's own one instead."""
+    os.environ["CURIO_DEFAULT_LLM_BASE_URL"] = "http://localhost:11434/v1"
+
+    set_environment_variables(**BASE, guest_llm_base_url="")
+
+    assert os.environ["GUEST_LLM_BASE_URL"] == ""
+    assert _fresh("utk_curio.backend.config", "m.GUEST_LLM_BASE_URL") == ""
+
+
+def test_omitted_operator_flags_leave_the_environment_alone():
+    set_environment_variables(**BASE)
+    for key in OPERATOR_KEYS:
+        assert key not in os.environ, key
+
+    for key in OPERATOR_KEYS:
+        os.environ[key] = "from-the-environment"
+    set_environment_variables(**BASE)
+    for key in OPERATOR_KEYS:
+        assert os.environ[key] == "from-the-environment", key
+
+
+def test_the_state_dir_flag_is_resolved_and_read_by_the_backend(tmp_path):
+    from utk_curio.backend.app.common import user_storage
+    from utk_curio.backend.config import _is_testing
+    from utk_curio.cli.environment import set_state_dir
+
+    set_state_dir(str(tmp_path / "a" / ".." / "state"))
+
+    state = (tmp_path / "state").resolve()
+    assert Path(os.environ["CURIO_STATE_DIR"]) == state
+    assert user_storage.curio_root() == (state / "test" if _is_testing() else state)
+
+
+def test_without_the_state_dir_flag_the_variable_is_left_alone():
+    from utk_curio.cli.environment import set_state_dir
+
+    set_state_dir(None)
+    assert "CURIO_STATE_DIR" not in os.environ
+
+    os.environ["CURIO_STATE_DIR"] = "/srv/curio-state"
+    set_state_dir(None)
+    assert os.environ["CURIO_STATE_DIR"] == "/srv/curio-state"
+
+
+def test_the_state_dir_is_set_before_the_launcher_opens_its_log(monkeypatch, tmp_path):
+    """The launcher writes its own log into the state directory, so main() has
+    to put the flag in the environment before setup_logging runs."""
+    import utk_curio.main as launcher
+
+    class _LogOpened(Exception):
+        pass
+
+    def setup_logging(server):
+        raise _LogOpened(os.environ.get("CURIO_STATE_DIR"))
+
+    monkeypatch.setenv("CURIO_DEV", "0")
+    monkeypatch.setattr("sys.argv", ["curio.py", "start", "--state-dir", str(tmp_path / "state")])
+    monkeypatch.setattr(launcher, "signal", SimpleNamespace(
+        SIGINT=signal.SIGINT, SIGTERM=signal.SIGTERM, signal=lambda *args: None,
+    ))
+    monkeypatch.setattr(launcher, "setup_logging", setup_logging)
+
+    with pytest.raises(_LogOpened) as opened:
+        launcher.main()
+
+    assert opened.value.args[0] == str((tmp_path / "state").resolve())
+
+
+def _parser_flags():
+    """Every flag main()'s parser declares, as its source spells them."""
+    import utk_curio.main as launcher
+
+    source = Path(launcher.__file__).read_text(encoding="utf-8")
+    return set(re.findall(r'add_argument\(\s*"(--[a-z0-9-]+)"', source))
+
+
+def _guides():
+    docs = Path(utk_curio.__file__).resolve().parent.parent / "docs"
+    return {p.name: p.read_text(encoding="utf-8") for p in sorted(docs.glob("*.md"))}
+
+
+def _named_in(guides, flag):
+    pattern = re.compile(re.escape(flag) + r"(?![a-z0-9-])")
+    return [name for name, text in guides.items() if pattern.search(text)]
+
+
+@pytest.mark.parametrize("flag", OPERATOR_FLAG_NAMES)
+def test_each_operator_flag_is_an_argument_a_guide_names(flag):
+    assert flag in _parser_flags()
+    assert _named_in(_guides(), flag), f"no guide in docs/ names {flag}"
+
+
+def test_every_curio_py_flag_is_named_in_a_guide():
+    """A flag ships with the guide that tells an operator about it."""
+    guides = _guides()
+    missing = sorted(flag for flag in _parser_flags() if not _named_in(guides, flag))
+    assert not missing, missing
