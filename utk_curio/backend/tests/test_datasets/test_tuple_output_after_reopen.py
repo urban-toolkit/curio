@@ -17,6 +17,10 @@ where the tuple had been. Here an output is written in one session, saved and
 loaded through the project routes the canvas calls, and read with another
 session's id: what comes back must be what the store gives the session that
 wrote it.
+
+A list or a dict of frames is saved as a bundle too (``list_of_ids``,
+``dict_of_ids``), so it comes back as that list, or that dict with its keys in
+their order, and not as a tuple of its parts.
 """
 from __future__ import annotations
 
@@ -36,6 +40,8 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
 #: The sign-in that ran the nodes, and the one that reopens the dataflow.
 EARLIER, LATER = "earlier-sign-in", "new-sign-in"
 UTCI_NODE, ZONES_NODE, PARTS_NODE = "utci-compute", "census-zones", "every-kind"
+#: A node that returns its roads and blocks as a list or as a dict.
+FRAMES_NODE = "roads-and-blocks"
 #: The GeoTIFF the sandbox's raster tests read: 40 x 30 cells in EPSG:32616.
 RASTER = Path(__file__).resolve().parents[1] / "test_frontend" / "data" / "autark_raster_utm16n.tif"
 #: Where the raster part sits in :func:`_every_kind_of_part`'s tuple.
@@ -359,3 +365,192 @@ def test_the_raster_route_serves_a_raster_part_after_a_reopen(client, user_and_t
     assert (meta["width"], meta["height"], meta["crs"]) == (40, 30, "EPSG:32616")
     with MemoryFile(response.get_data()) as memory, memory.open() as served:
         _assert_same_raster(served, expected[RASTER_PART])
+
+
+# -- a list or a dict of frames ----------------------------------------------
+
+def _write_frames(container):
+    """A node's roads and blocks, written in the earlier sign-in as a list, or
+    as a dict whose keys are not in sorted order. The two frames differ in
+    kind, columns and rows, so a reader that swaps them is caught. Returns the
+    output's id and what the store gives that sign-in."""
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import LineString
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
+
+    roads = gpd.GeoDataFrame(
+        {"name": ["Via Dante", "Corso Como"]},
+        geometry=[LineString([(9.186, 45.466), (9.183, 45.469)]), LineString([(9.188, 45.482), (9.190, 45.484)])],
+        crs="EPSG:4326",
+    )
+    roads.__dict__["metadata"] = {"name": "roads", "layerType": "roads"}
+    blocks = pd.DataFrame({"block": ["Brera", "Duomo", "Isola"], "population": [120, 340, 90]})
+    value = [roads, blocks] if container is list else {"roads": roads, "blocks": blocks}
+    art_id = save_to_duckdb(value, node_id=FRAMES_NODE, session_id=EARLIER)
+    stored = load_from_duckdb(art_id, session_id=EARLIER)
+    assert type(stored) is container
+    return art_id, stored
+
+
+def _assert_same_frames(value, stored) -> None:
+    """*value* holds the frames *stored* holds, in the same places: for a dict,
+    under the same keys in the same order."""
+    import pandas as pd
+    from geopandas.testing import assert_geodataframe_equal
+
+    if isinstance(stored, dict):
+        assert list(value) == list(stored) == ["roads", "blocks"]
+        value, stored = list(value.values()), list(stored.values())
+    assert len(value) == len(stored) == 2
+    assert_geodataframe_equal(value[0], stored[0])
+    assert getattr(value[0], "metadata", None) == {"name": "roads", "layerType": "roads"}
+    pd.testing.assert_frame_equal(value[1], stored[1])
+
+
+def _strip_the_container(bundle: Path) -> None:
+    """What a ``bundle.json`` written before bundles recorded their container
+    says: the same, with no ``container``."""
+    spec = json.loads(bundle.read_text(encoding="utf-8"))
+    spec.pop("container", None)
+    bundle.write_text(json.dumps(spec), encoding="utf-8")
+
+
+CONTAINERS = pytest.mark.parametrize("container", [list, dict], ids=["list", "dict"])
+
+
+@CONTAINERS
+def test_load_artifact_gives_the_list_or_the_dict_after_a_reopen(client, user_and_token, container):
+    from utk_curio.sandbox.util.parsers import load_artifact
+
+    art_id, stored = _write_frames(container)
+    _save_and_reopen(client, user_and_token[1], _output(FRAMES_NODE, art_id, container.__name__))
+
+    value = load_artifact(art_id, session_id=LATER)
+
+    assert type(value) is container, f"read a {type(value).__name__}"
+    _assert_same_frames(value, stored)
+
+
+def test_get_serves_the_list_after_a_reopen(client, user_and_token):
+    """``/get`` answers what it answered before the reopen. Only the list: a
+    dict of frames is an error on ``/get`` for the session that wrote it too
+    (``parseOutput`` hands the dict on with its frames in it)."""
+    art_id, _stored = _write_frames(list)
+    before = _sandbox().get("/get", query_string={"fileName": art_id, "sessionId": EARLIER})
+    assert before.status_code == 200, before.get_data(as_text=True)
+    _save_and_reopen(client, user_and_token[1], _output(FRAMES_NODE, art_id, "list"))
+
+    after = _sandbox().get("/get", query_string={"fileName": art_id, "sessionId": LATER})
+
+    assert after.status_code == 200, after.get_data(as_text=True)
+    body = after.get_json()
+    assert body["dataType"] == "list", body["dataType"]
+    assert body == before.get_json()
+
+
+#: What a node downstream does with its input, and what it returns.
+USED_AS = {
+    list: (
+        "frames = arg\n"
+        "frames.append(frames[1].head(1))\n"
+        "return [len(frame) for frame in frames]\n",
+        [2, 3, 1],
+    ),
+    dict: (
+        'return [list(arg), len(arg["roads"]), len(arg["blocks"])]\n',
+        [["roads", "blocks"], 2, 3],
+    ),
+}
+
+
+@CONTAINERS
+def test_a_python_node_downstream_uses_the_list_or_the_dict(client, user_and_token, container):
+    """The node reading the output after the reopen appends to the list, or
+    reads the dict by its keys (in process, as ``/exec`` runs it without
+    isolation)."""
+    from utk_curio.sandbox.app.worker import _worker_init, execute_code
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    _worker_init()
+    art_id, _stored = _write_frames(container)
+    _save_and_reopen(client, user_and_token[1], _output(FRAMES_NODE, art_id, container.__name__))
+    code, returned = USED_AS[container]
+
+    result = execute_code(
+        textwrap.indent(code, "    "), art_id, "curio.builtin/computation-analysis", container.__name__,
+        session_id=LATER, save_dataset=False,
+    )
+
+    assert result["stderr"] == "", result["stderr"]
+    assert load_from_duckdb(result["output"]["path"]) == returned
+
+
+@CONTAINERS
+def test_an_isolated_node_gets_the_list_or_the_dict(client, user_and_token, tmp_path, container):
+    """Staged for an isolated node and rebuilt as its child rebuilds an input."""
+    from utk_curio.sandbox.isolation.child import rebuild_input
+    from utk_curio.sandbox.util import staging
+
+    art_id, stored = _write_frames(container)
+    _save_and_reopen(client, user_and_token[1], _output(FRAMES_NODE, art_id, container.__name__))
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+
+    spec = staging.stage_input(art_id, scratch, session_id=LATER)
+    value = rebuild_input(spec, str(scratch))
+
+    assert type(value) is container, f"staged as {spec.get('kind')} {spec.get('container', '')}"
+    _assert_same_frames(value, stored)
+
+
+def test_a_bundle_hydrated_before_it_recorded_its_container_is_refreshed_by_the_next_load(
+    client, user_and_token,
+):
+    """A server that hydrated the output before bundles recorded their
+    container holds a ``bundle.json`` with none, which reads as a tuple. The
+    next load copies the dataset's ``bundle.json`` over it, and the list comes
+    back."""
+    from utk_curio.sandbox.util.parsers import load_artifact
+
+    token = user_and_token[1]
+    art_id, stored = _write_frames(list)
+    output = _output(FRAMES_NODE, art_id, "list")
+    project_id = _save_and_reopen(client, token, output)
+    copies = sorted(_shared().rglob("bundle.json"))
+    assert copies, "the project load hydrated no bundle for the list"
+    for copy in copies:
+        _strip_the_container(copy)
+    assert type(load_artifact(art_id, session_id=LATER)) is tuple
+    _reopen(client, token, project_id, output)
+
+    value = load_artifact(art_id, session_id=LATER)
+
+    assert type(value) is list, f"read a {type(value).__name__}"
+    _assert_same_frames(value, stored)
+
+
+@pytest.mark.parametrize("damage", ["container", "key"], ids=["no-such-container", "a-part-without-its-key"])
+def test_a_hydrated_bundle_that_names_no_container_it_can_be_is_a_missing_artifact(
+    client, user_and_token, damage,
+):
+    """The copy is read with no session check, so a ``bundle.json`` that
+    records a container a bundle cannot be, or a dict part without its key,
+    reads as missing, as for an output that is nowhere, never as a tuple."""
+    from utk_curio.sandbox.util.parsers import load_artifact
+
+    art_id, _stored = _write_frames(dict)
+    _save_and_reopen(client, user_and_token[1], _output(FRAMES_NODE, art_id, "dict"))
+    copies = sorted(_shared().rglob("bundle.json"))
+    assert copies, "the project load hydrated no bundle for the dict"
+    for copy in copies:
+        spec = json.loads(copy.read_text(encoding="utf-8"))
+        if damage == "container":
+            spec["container"] = "set"
+        else:
+            spec["parts"][0].pop("key", None)
+        copy.write_text(json.dumps(spec), encoding="utf-8")
+
+    with pytest.raises(KeyError, match="No artifact with id"):
+        load_artifact(art_id, session_id=LATER)

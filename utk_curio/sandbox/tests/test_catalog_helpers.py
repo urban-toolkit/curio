@@ -157,6 +157,45 @@ class TestLoadData:
         frame, number = _helpers({"d": data / "bundle.json"}, {"d": {"format": "bundle"}})["curio_load_data"]("d")
         assert int(frame["x"].iloc[0]) == 1 and number == 7
 
+    @staticmethod
+    def _keyed_bundle(root, container, keys):
+        """A bundle of a table and a number whose ``bundle.json`` records
+        *container* and gives the parts *keys*, listed out of index order."""
+        data = root / "data"
+        (data / "parts").mkdir(parents=True)
+        pd.DataFrame({"x": [1]}).to_csv(data / "parts" / "0.csv", index=False)
+        (data / "parts" / "1.json").write_text(json.dumps({"value": 7}), encoding="utf-8")
+        table = {"index": 0, "format": "csv", "kind": "dataframe", "file": "data/parts/0.csv"}
+        count = {"index": 1, "format": "json", "kind": "int", "file": "data/parts/1.json"}
+        for part, key in zip((table, count), keys):
+            if key is not None:
+                part["key"] = key
+        (data / "bundle.json").write_text(
+            json.dumps({"container": container, "parts": [count, table]}), encoding="utf-8",
+        )
+        return _helpers({"d": data / "bundle.json"}, {"d": {"format": "bundle"}})["curio_load_data"]
+
+    def test_a_bundle_is_the_list_its_bundle_json_records(self, tmp_path):
+        loaded = self._keyed_bundle(tmp_path, "list", (None, None))("d")
+        assert type(loaded) is list, f"read a {type(loaded).__name__}"
+        assert int(loaded[0]["x"].iloc[0]) == 1 and loaded[1] == 7
+
+    def test_a_bundle_is_the_dict_its_bundle_json_records_keyed_in_index_order(self, tmp_path):
+        loaded = self._keyed_bundle(tmp_path, "dict", ("table", "count"))("d")
+        assert type(loaded) is dict, f"read a {type(loaded).__name__}"
+        assert list(loaded) == ["table", "count"]
+        assert int(loaded["table"]["x"].iloc[0]) == 1 and loaded["count"] == 7
+
+    @pytest.mark.parametrize(
+        "container,keys",
+        [("set", ("table", "count")), ("dict", ("table", None)), ("dict", ("table", "table"))],
+        ids=["no-such-container", "a-part-without-its-key", "one-key-twice"],
+    )
+    def test_a_bundle_that_records_no_container_it_can_be_is_refused(self, tmp_path, container, keys):
+        load = self._keyed_bundle(tmp_path, container, keys)
+        with pytest.raises(ValueError, match="a bundle is a tuple, a list, or a dict"):
+            load("d")
+
     def test_a_part_of_a_bundle_is_the_value_the_whole_read_gives_for_it(self, tmp_path):
         """``part=`` names one file of a bundle by its file name or its label,
         and reads it as the whole bundle's tuple holds it."""
