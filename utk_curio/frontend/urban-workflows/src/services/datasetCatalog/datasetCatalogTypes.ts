@@ -351,6 +351,9 @@ export interface DatasetCatalogItem {
   /** On a synthetic layer group entry (id = group id, see `isLayerGroupId`): the
    * real per-layer dataset ids, so the client installs/uninstalls each member. */
   groupLayerIds?: string[];
+  /** On a synthetic layer group entry: its layers, so a drag of the entry
+   * loads and references each of them (`createLayerGroupDragPayload`). */
+  groupLayers?: DatasetGroupLayerRef[];
 }
 
 export interface DatasetCatalogFacets {
@@ -434,9 +437,10 @@ export interface DatasetDragPayload {
   format: DatasetFormat;
   origin?: DatasetOrigin;
   loaderSnippet?: DatasetLoaderSnippet | null;
-  /** Present only when dragging a multilayer OSM PBF group parent: the real
-   * per-layer datasets the created node loads. The node references these (not
-   * the synthetic group id) so the saved spec never carries a phantom ref. */
+  /** Present only when dragging a layer group (a palette group row or a Data
+   * Catalog drawer group card): the real per-layer datasets the created node
+   * loads. The node references these (not the synthetic group id) so the saved
+   * spec never carries a phantom ref. */
   groupLayers?: DatasetGroupLayerRef[];
 }
 

@@ -3,6 +3,7 @@ import type {
   DatasetDragPayload,
   DatasetFormat,
   DatasetGroupLayerRef,
+  DatasetOrigin,
 } from "./datasetCatalogTypes";
 import { layerGroupKind } from "./datasetCatalogTypes";
 import { osmGroupLoaderSnippet } from "./datasetLoaderSnippets";
@@ -163,29 +164,45 @@ export function layerGroupFormat(group: DatasetPaletteGroup): DatasetFormat {
 }
 
 /**
- * Drag payload for a multilayer group parent (an OSM PBF or a GeoPackage
- * import, or the layers of one Discovery download). Dropping it creates a
- * single node representing the *whole* group: the loader reads every layer, and
- * the node references the real per-layer dataset ids (via ``groupLayers``) so
- * the saved spec never carries the synthetic group id. The group id is kept only
- * as the drag's identity/linkage marker, and its prefix gives the ``curio://``
- * scheme.
+ * Drag payload for a layer group (an OSM PBF or a GeoPackage import, the layers
+ * of one Discovery download, a GTFS feed, NetCDF variables), from the canvas
+ * palette's group row or the Data Catalog drawer's group card. Dropping it
+ * creates a single node representing the *whole* group: the loader reads every
+ * layer, and the node references the real per-layer dataset ids (via
+ * ``groupLayers``) so the saved spec never carries the synthetic group id. The
+ * group id is kept only as the drag's identity/linkage marker, and its prefix
+ * gives the ``curio://`` scheme.
  */
-export function createOsmGroupDragPayload(
-  group: DatasetPaletteGroup,
-): DatasetDragPayload {
-  const layers = osmGroupLayerRefs(group);
+export function createLayerGroupDragPayload(group: {
+  groupId: string;
+  title: string;
+  format: DatasetFormat;
+  origin?: DatasetOrigin;
+  layers: DatasetGroupLayerRef[];
+}): DatasetDragPayload {
   const kind = layerGroupKind(group.groupId);
   return {
     datasetId: group.groupId,
     title: group.title,
     uri: `curio://${kind}/${group.groupId}`,
     path: null,
-    format: layerGroupFormat(group),
-    origin: "imported",
-    loaderSnippet: osmGroupLoaderSnippet(layers),
-    groupLayers: layers,
+    format: group.format,
+    origin: group.origin ?? "imported",
+    loaderSnippet: osmGroupLoaderSnippet(group.layers),
+    groupLayers: group.layers,
   };
+}
+
+/** Drag payload for a palette group row (see {@link createLayerGroupDragPayload}). */
+export function createOsmGroupDragPayload(
+  group: DatasetPaletteGroup,
+): DatasetDragPayload {
+  return createLayerGroupDragPayload({
+    groupId: group.groupId,
+    title: group.title,
+    format: layerGroupFormat(group),
+    layers: osmGroupLayerRefs(group),
+  });
 }
 
 /** Which persisted timestamp the palette sorts entries by. */

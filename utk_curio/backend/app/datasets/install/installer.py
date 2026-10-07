@@ -70,6 +70,35 @@ def _is_installed(user_key: str, dir_name: str) -> bool:
     return (dataset_dir(user_key, dir_name) / "manifest.json").is_file()
 
 
+def _left_out_data_file(dir_name: str, manifest: DatasetManifest, src: Path) -> Path | None:
+    """The data file of a shipped dataset whose catalog folder *src* lacks it
+    because the pip package leaves it out: downloaded from GitHub on the first
+    install (``infrastructure/left_out_files.py``). ``None`` when *src* holds
+    the file, or lacks one the package does not leave out."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+    shipped = src / manifest.data_file
+    repo_path = f"datasets/{dir_name}/{manifest.data_file}"
+    if shipped.is_file() or not left_out_files.is_left_out(repo_path):
+        return None
+    try:
+        return left_out_files.fetch(repo_path, shipped)
+    except left_out_files.LeftOutFileUnavailable as exc:
+        raise InstallerError(str(exc)) from exc
+
+
+def _place_copy(source: Path, target: Path) -> None:
+    """Copy *source* to *target* whole or not at all: the install counts as
+    complete once its data file is there."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_name(f".{target.name}.{uuid.uuid4().hex}.part")
+    try:
+        shutil.copyfile(source, partial)
+        os.replace(partial, target)
+    finally:
+        partial.unlink(missing_ok=True)
+
+
 def install_dataset_from_catalog(
     user_key: str,
     dir_name: str,
@@ -87,7 +116,6 @@ def install_dataset_from_catalog(
         raise InstallerError(str(exc)) from exc
 
     dest = dataset_dir(user_key, dir_name)
-    replaced = False
     if dest.exists():
         # Check whether the existing install is complete (data file is present).
         # A previous failed copy can leave a partial directory behind, so we
@@ -98,6 +126,12 @@ def install_dataset_from_catalog(
             return _index(
                 user_key, InstallResult(manifest=manifest, dest=dest, replaced=False)
             )
+
+    # Before the destination is touched, so a failed download leaves it as it was.
+    fetched = _left_out_data_file(dir_name, manifest, src)
+
+    replaced = False
+    if dest.exists():
         # Either replace was requested or the previous install was incomplete –
         # remove the stale/partial directory and start fresh.
         shutil.rmtree(dest)
@@ -112,6 +146,12 @@ def install_dataset_from_catalog(
         if dest.exists():
             shutil.rmtree(dest, ignore_errors=True)
         raise InstallerError(f"Failed to copy dataset files: {exc}") from exc
+    if fetched is not None:
+        try:
+            _place_copy(fetched, dest / manifest.data_file)
+        except OSError as exc:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise InstallerError(f"Failed to copy dataset files: {exc}") from exc
 
     return _index(
         user_key,
@@ -236,6 +276,22 @@ def _link_or_copy(src: Path, dest: Path) -> None:
         shutil.copy2(src, dest)
 
 
+def copy_decode_sidecar(source: Path, dest: Path, *, copy=shutil.copy2) -> None:
+    """Put *source*'s parquet decode sidecar, if it has one, beside *dest*.
+
+    ``<file>.decode.json`` (written by ``parsers.save_dataset_parquet``) names
+    the JSON-encoded object columns of a parquet file, so a copy of the file
+    without it loads its list and dict columns as JSON strings. Every path that
+    copies a dataset's data file to a new place copies it with this. Distinct
+    from file_meta's ``.meta.json`` counts sidecar.
+    """
+    from utk_curio.sandbox.util.codec import PARQUET_DECODE_SIDECAR_SUFFIX
+
+    sidecar = source.with_name(source.name + PARQUET_DECODE_SIDECAR_SUFFIX)
+    if sidecar.is_file():
+        copy(sidecar, dest.with_name(dest.name + PARQUET_DECODE_SIDECAR_SUFFIX))
+
+
 def install_computed_file_for_node(
     user_key: str,
     file_bytes: bytes | None,
@@ -291,16 +347,7 @@ def install_computed_file_for_node(
     data_path = dest / "data" / safe_filename
     if source_path is not None:
         _link_or_copy(source_path, data_path)
-        # Carry the parquet object-column decode sidecar (if any) alongside the
-        # data file so the installed dataset round-trips object columns. Distinct
-        # suffix from file_meta's ``.meta.json`` counts sidecar (see parsers).
-        from utk_curio.sandbox.util.parsers import PARQUET_DECODE_SIDECAR_SUFFIX
-        src_sidecar = source_path.with_name(source_path.name + PARQUET_DECODE_SIDECAR_SUFFIX)
-        if src_sidecar.is_file():
-            _link_or_copy(
-                src_sidecar,
-                data_path.with_name(data_path.name + PARQUET_DECODE_SIDECAR_SUFFIX),
-            )
+        copy_decode_sidecar(source_path, data_path, copy=_link_or_copy)
     elif file_bytes is not None:
         data_path.write_bytes(file_bytes)
     else:

@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 import pytest
 
-from utk_curio.backend.tests.test_discovery.conftest import FIXTURES, write_source
+from utk_curio.backend.tests.test_discovery.conftest import FIXTURES, workers_finish_first, write_source
 
 REPO = Path(__file__).resolve().parents[4]
 SENTINEL = "source.aws.sentinel-2-chicago@1"
@@ -208,6 +208,18 @@ class TestABucket:
         for row in index.itertuples():
             path = cache_collection.cached_file(user_key, dataset["id"], row.file_id, row.ext)
             assert path is not None and path.stat().st_size == row.bytes
+
+    def test_a_cache_answers_with_its_job_as_it_began_however_fast_it_ends(
+        self, client, auth, app, bucket_corpus, monkeypatch
+    ):
+        job = add(client, auth, "source.example.bucket@1", "pics")
+        workers_finish_first(monkeypatch)
+        res = client.post(f"/api/discovery/collections/{job['dataset']['id']}/cache", headers=auth)
+        started = res.get_json()
+        assert res.status_code == 202, started
+        assert (started["status"], started["itemsDone"]) == ("queued", 0), started
+        cached = wait_for(client, auth, started["jobId"])
+        assert (cached["status"], cached["itemsDone"]) == ("completed", 2), cached
 
     def test_the_cache_cap_refuses_before_downloading(self, client, auth, app, bucket_corpus, monkeypatch):
         job = add(client, auth, "source.example.bucket@1", "pics")

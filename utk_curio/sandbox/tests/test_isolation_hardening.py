@@ -307,7 +307,7 @@ class TestTheChildCanReachItsScratchDirectory(unittest.TestCase):
 
     def test_the_hardlink_sources_keep_their_file_modes(self):
         """Tightening them would tighten the staged copy the child reads."""
-        for relative in (".curio/data", ".curio/users", "datasets"):
+        for relative in (".curio/data", ".curio/users", "datasets", "models", ".curio/fetched"):
             with self.subTest(relative=relative):
                 self.assertIn(relative, hardening.HARDLINK_SOURCES)
         # instance/ is not staged from, so its files are still tightened.
@@ -342,6 +342,40 @@ class TestTheChildCanReachItsScratchDirectory(unittest.TestCase):
                 mode & stat.S_IROTH,
                 f"the staged copy lost its read bit (0o{mode:03o}); the child "
                 "could not read its own input",
+            )
+
+    @posix_only
+    def test_a_staged_fetched_file_stays_readable_after_hardening(self):
+        """A catalog file a pip install downloaded reaches a child as a hardlink
+        too (``staging.stage_dataset_paths``, ``stage_model_dirs``): hardening
+        closes ``.curio/fetched`` and leaves the file's mode, so the staged copy
+        stays readable while the folder cannot be walked."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fetched = os.path.join(tmp, ".curio", "fetched")
+            files = os.path.join(fetched, "0" * 40, "models", "model.scout.deep-umbra@1", "files")
+            os.makedirs(files)
+            os.chmod(fetched, 0o755)
+            source = os.path.join(files, "deep_umbra.onnx")
+            with open(source, "wb") as handle:
+                handle.write(b"graph")
+            os.chmod(source, 0o644)
+
+            scratch = os.path.join(tmp, "scratch")
+            os.makedirs(scratch)
+            staged = os.path.join(scratch, "deep_umbra.onnx")
+            os.link(source, staged)
+
+            result = hardening.harden_paths(tmp)
+
+            self.assertIn(".curio/fetched", result["changed"])
+            self.assertEqual(stat.S_IMODE(os.stat(fetched).st_mode), hardening.DIRECTORY_MODE)
+            mode = stat.S_IMODE(os.stat(staged).st_mode)
+            self.assertTrue(
+                mode & stat.S_IROTH,
+                f"the staged copy lost its read bit (0o{mode:03o}); the child "
+                "could not read the fetched file",
             )
 
     @posix_only

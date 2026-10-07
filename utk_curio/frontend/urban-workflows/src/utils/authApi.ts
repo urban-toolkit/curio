@@ -95,6 +95,7 @@ export interface PublicConfig {
   curio_env: string;
   shared_guest_username: string;
   enable_collab: boolean;
+  collab_namespace: string;
   default_save_node_output: boolean;
 }
 

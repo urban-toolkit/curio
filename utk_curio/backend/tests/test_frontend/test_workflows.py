@@ -26,6 +26,8 @@ from .utils import (
     _wait_for_reactflow_ready,
     assert_autark_drawing_fits,
     assert_autark_map_drawn,
+    AUTK_MAP_MIN_FRAMED_SPAN,
+    autark_map_framing,
     assert_editor_panes_clear_of_markers,
     assert_in_view,
     at_fraction,
@@ -128,6 +130,17 @@ EXPECTED_EMPTY = {
         "08f7511f-03d0-5df3-b25e-1d7fbec33101": "geometry-unresolved",  # Autark
         "dbda2a2f-5ff1-5ce4-a88b-d4599ffa254f": "geometry-unresolved",  # Vega-Lite
     },
+}
+
+#: Maps whose drawing covers less of the area they are framed on than
+#: ``autark_map_framing`` takes by default, by node id, with the share their
+#: drawing still spans. Example 24's height mosaic is framed on its raster,
+#: SCOUT's four zoom-16 tiles, like the shadow map on the same grid, but its
+#: ground cells are 0 m and a raster draws 0 clear when its GeoTIFF names no
+#: nodata, so only the buildings show: about 54% of the map's height, 9%
+#: before the map opened framed (CI run 37559438022).
+FRAMED_DRAWING_SPAN = {
+    "ebac4811-abcc-50fe-a61a-cc9c9ac8c011": 0.5,
 }
 
 
@@ -280,13 +293,16 @@ INTERACTIONS = {
     # picks across the map, most changed fewer pixels than a gesture has to
     # (CI run 36809892522). This one, near the map's left edge, lights a tract
     # with gt_65 232, right of the band, where its point is alone (50 pixels).
-    # The spot moves when the map's size does: once the map kept clear of the
-    # port markers (#631), the old spot lit nothing, and a new sweep of 85
-    # picks found the same tract here (CI run 37154691120).
+    # The spot moves when the map's size or framing does: once the map kept
+    # clear of the port markers (#631), the old spot lit nothing, and a new
+    # sweep of 85 picks found the same tract there (CI run 37154691120). Once
+    # the map opened framed on all its tracts (#773), a sweep of 97 picks
+    # found 15 spots that light a point; this one, upper right, lights 50
+    # pixels, as do its two neighbours in the sweep (CI run 37560369552).
     "09-heterogeneous-data-linked-views.json": (
         Interaction("scatter-brush", source=EXAMPLE_09_SCATTER, target=EXAMPLE_09_MAP, gesture="brush"),
         Interaction("map-pick", source=EXAMPLE_09_MAP, target=EXAMPLE_09_SCATTER, gesture="pick",
-                    at=(0.03, 0.6)),
+                    at=(0.76, 0.22)),
     ),
     # Autark to Autark: a histogram brush and a building map, through a pool.
     # No pick the other way: at the pair's 86% zoom a building is a few
@@ -1219,6 +1235,27 @@ class TestWorkflowCanvas:
                 test_name=f"{request.function.__name__}_closeup_{node.id}",
                 sweep_toasts=bool(self._expected_empty()),
             )
+
+        # Each map opens framed on the layers it draws (#773): not a speck in
+        # the middle of the map, nor a crop past its edges. That is every
+        # Autark map, and the maps Compare Scenarios and Edit Features draw
+        # with the Autark node's map code. Checked once every close-up is
+        # taken, and for every map before failing on one.
+        maps = [
+            node.id for node in self._drawing_autark_nodes()
+            if "map" in json.loads(self.spec.node_code(node, "json"))
+        ] + [
+            node.id for node in self.spec.nodes
+            if node.type in (COMPARE_SCENARIOS, EDIT_FEATURES)
+            and self.page.locator(f"#autk-grammar-map-{node.id}").count()
+        ]
+        unframed = [
+            problem for problem in (
+                autark_map_framing(self.page, m, min_span=FRAMED_DRAWING_SPAN.get(m, AUTK_MAP_MIN_FRAMED_SPAN))
+                for m in maps
+            ) if problem
+        ]
+        assert not unframed, "\n".join(unframed)
 
     # -- 5. Interactions ---------------------------------------------------
 

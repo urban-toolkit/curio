@@ -43,7 +43,28 @@ import type { DiscoveryParameter, DiscoveryResource } from '../../services/disco
 const AREA: DiscoveryParameter = {
   id: 'area', type: 'area', label: 'Area', description: '', required: true, accepts: ['box'], maxAreaKm2: 4,
 };
+const NAMED: DiscoveryParameter = { ...AREA, accepts: ['names'], maxAreaKm2: undefined };
 const LOOP: [number, number, number, number] = [-87.64, 41.875, -87.62, 41.89];
+
+// Places as the server's place search answers them: OpenStreetMap's own name
+// and Nominatim's English label (Köln as test_places.py's Nominatim answer gives it).
+const CHICAGO = {
+  name: 'Chicago', label: 'Chicago, Cook County, Illinois, United States',
+  box: [-87.940101, 41.643919, -87.523984, 42.023022], kind: 'boundary/administrative', boundary: true,
+};
+const KOELN = {
+  name: 'Köln', label: 'Cologne, North Rhine-Westphalia, Germany',
+  box: [6.77253, 50.83044, 7.162028, 51.084974], kind: 'boundary/administrative', boundary: true,
+};
+const INNENSTADT = {
+  name: 'Innenstadt', label: 'Innenstadt, Cologne, North Rhine-Westphalia, Germany',
+  box: [6.929, 50.917, 6.99, 50.955], kind: 'boundary/administrative', boundary: true,
+};
+
+/** The place search answers each query with its own places, and none for any other. */
+function answerPlaces(answers: Record<string, unknown[]>) {
+  mockSearchPlaces.mockImplementation(async (query: string) => ({ places: answers[query] ?? [] }));
+}
 
 beforeEach(() => {
   jest.useFakeTimers();
@@ -168,8 +189,9 @@ describe('the area field', () => {
   });
 
   test('named areas, where the source takes them, are a place and OSM boundaries inside it', async () => {
-    mockSearchPlaces.mockResolvedValue({
-      places: [
+    answerPlaces({
+      Chicago: [CHICAGO],
+      'Loop, Chicago': [
         { name: 'Loop', label: 'Loop, Chicago', box: LOOP, kind: 'boundary/administrative', boundary: true },
         { name: 'Loop Street', label: 'Loop Street, Chicago', box: LOOP, kind: 'highway/residential', boundary: false },
       ],
@@ -193,6 +215,63 @@ describe('the area field', () => {
     expect(screen.queryByText('Loop Street')).toBeNull();
     fireEvent.click(await screen.findByRole('button', { name: /^Loop/ }));
     expect(onChange).toHaveBeenLastCalledWith({ names: { geocodeArea: 'Chicago', areas: ['Loop'] } });
+  });
+
+  test('the place in Within is looked up on Enter, never as it is typed, and shown as OpenStreetMap names it', async () => {
+    answerPlaces({ Cologne: [KOELN] });
+    render(<AreaField parameter={NAMED} value={null} onChange={jest.fn()} />);
+    const place = screen.getByPlaceholderText(/A city or region/);
+    for (const typed of ['C', 'Col', 'Cologne']) {
+      fireEvent.change(place, { target: { value: typed } });
+    }
+    await act(async () => {
+      jest.advanceTimersByTime(5000);
+    });
+    expect(mockSearchPlaces).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.keyDown(place, { key: 'Enter' });
+    });
+    expect(mockSearchPlaces).toHaveBeenCalledTimes(1);
+    expect(mockSearchPlaces).toHaveBeenCalledWith('Cologne', expect.anything());
+    expect(await screen.findByText('Köln')).toBeInTheDocument();
+    expect(screen.getByText(/Cologne, North Rhine-Westphalia, Germany/)).toBeInTheDocument();
+  });
+
+  test('Find areas looks up Within first and searches inside the place as OpenStreetMap names it', async () => {
+    answerPlaces({
+      Cologne: [KOELN],
+      'Innenstadt, Köln': [INNENSTADT],
+      // Nominatim finds a place by its English name too; the loader does not.
+      'Innenstadt, Cologne': [INNENSTADT],
+    });
+    const onChange = jest.fn();
+    render(<AreaField parameter={NAMED} value={null} onChange={onChange} />);
+    fireEvent.change(screen.getByPlaceholderText(/A city or region/), { target: { value: 'Cologne' } });
+    fireEvent.change(screen.getByPlaceholderText(/A neighbourhood or district/), { target: { value: 'Innenstadt' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    });
+    const found = await screen.findByRole('button', { name: /^Innenstadt/ });
+    expect(mockSearchPlaces.mock.calls.map(([query]) => query)).toEqual(['Cologne', 'Innenstadt, Köln']);
+    expect(screen.getByText('Köln')).toBeInTheDocument();
+    fireEvent.click(found);
+    expect(onChange).toHaveBeenLastCalledWith({ names: { geocodeArea: 'Cologne', areas: ['Innenstadt'] } });
+  });
+
+  test('a place Within cannot find as a city or region says so, and no area is searched inside it', async () => {
+    answerPlaces({
+      // A place of that name that is not a boundary has no area to search in.
+      Atlantis: [{ name: 'Atlantis', label: 'Atlantis, Paradise Island, Bahamas', box: LOOP, kind: 'tourism/hotel', boundary: false }],
+    });
+    render(<AreaField parameter={NAMED} value={null} onChange={jest.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText(/A city or region/), { target: { value: 'Atlantis' } });
+    fireEvent.change(screen.getByPlaceholderText(/A neighbourhood or district/), { target: { value: 'Old Town' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    });
+    expect(await screen.findByText('No city or region called "Atlantis" in OpenStreetMap.')).toBeInTheDocument();
+    expect(mockSearchPlaces.mock.calls.map(([query]) => query)).toEqual(['Atlantis']);
   });
 });
 

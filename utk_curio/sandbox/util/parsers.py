@@ -889,6 +889,13 @@ def load_tabular_preview_from_duckdb(art_id, max_rows, session_id=None):
             pass
 
 
+#: The first four bytes of a TIFF, little- and big-endian, then of a BigTIFF.
+_TIFF_SIGNATURES = (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+")
+
+#: How a GDAL virtual raster starts, such as the VRT Mosaic Rasters writes.
+_VRT_START = b"<VRTDataset"
+
+
 def load_shared_output_file(file_name):
     """Load a project output hydrated into the shared data directory.
 
@@ -907,8 +914,10 @@ def load_shared_output_file(file_name):
 
     The name alone does not say what the bytes are - a dataset parquet keeps
     its generated ``<ms>_<hex>_output.parquet`` name, while a computed dataset
-    installed from a JSON or parquet artifact lands under the bare artifact id
-    - so the content is sniffed.
+    installed from a JSON, parquet or raster artifact lands under the bare
+    artifact id - so the content is sniffed. A raster's copy is its own file, a
+    GeoTIFF or a VRT, and is opened as the store opens a raster artifact: a
+    rasterio dataset.
 
     Raises ``KeyError`` for an unsafe name, a missing file, or bytes this
     cannot decode, so callers can treat it exactly like a missing artifact.
@@ -932,7 +941,7 @@ def load_shared_output_file(file_name):
         raise missing
 
     with open(path, "rb") as handle:
-        header = handle.read(4)
+        header = handle.read(64)
 
     # Parquet, by magic or by name. ``load_dataset_parquet`` reads GeoParquet as
     # a GeoDataFrame and restores the ``.decode.json`` sidecar, so object columns
@@ -940,6 +949,15 @@ def load_shared_output_file(file_name):
     if header[:4] == b"PAR1" or name.endswith(".parquet"):
         try:
             return load_dataset_parquet(path)
+        except Exception:
+            raise missing
+
+    # A raster, by its first bytes: what load_from_duckdb returns for one.
+    if header[:4] in _TIFF_SIGNATURES or header.lstrip().startswith(_VRT_START):
+        try:
+            import rasterio  # optional dep - see parse_raster
+
+            return rasterio.open(str(path))
         except Exception:
             raise missing
 

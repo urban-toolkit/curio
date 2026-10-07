@@ -7,6 +7,16 @@ from typing import Any, Iterator
 
 from utk_curio.backend.app.datasets.domain.catalog_item import item_from_manifest
 
+
+def _left_out_size(dir_name: str, data_file: str) -> int | None:
+    """The size of a shipped data file the pip package leaves out, as its
+    release recorded it, so the catalog gives it before the file is
+    downloaded (``infrastructure/left_out_files.py``)."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+    return left_out_files.recorded_size(f"datasets/{dir_name}/{data_file}")
+
+
 class DatasetRegistryRepository:
     """Manifest-backed Data Catalog at ``<repo_root>/datasets/``.
 
@@ -34,7 +44,10 @@ class DatasetRegistryRepository:
         items: list[dict[str, Any]] = []
         index: dict[str, Path] = {}
         for manifest, dataset_root in self._iter_manifests():
-            items.append(item_from_manifest(manifest, dataset_root))
+            item = item_from_manifest(manifest, dataset_root)
+            if item.get("sizeBytes") is None:
+                item["sizeBytes"] = _left_out_size(dataset_root.name, manifest.data_file)
+            items.append(item)
             index[manifest.id] = dataset_root
         # Reuse this scan for subsequent get_catalog_dir lookups in the request.
         self._dir_index = index

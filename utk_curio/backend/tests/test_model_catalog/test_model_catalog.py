@@ -291,3 +291,15 @@ class TestItShips:
 
         assert "models" in {relative for relative, _ in hardening.SENSITIVE_PATHS}
         assert "models" in hardening.HARDLINK_SOURCES
+
+    def test_an_isolated_child_reaches_fetched_files_only_as_staged_links(self):
+        """What a pip install downloads (Deep Umbra's graph among it) is kept as
+        the shipped models are: the folder is closed to an execution account,
+        and its files keep their modes, so the hardlink a run stages stays
+        readable."""
+        from utk_curio.backend.app.datasets.infrastructure import left_out_files
+        from utk_curio.sandbox.isolation import hardening
+
+        fetched = f".curio/{left_out_files.FETCHED}"
+        assert fetched in {relative for relative, _ in hardening.SENSITIVE_PATHS}
+        assert fetched in hardening.HARDLINK_SOURCES

@@ -348,7 +348,7 @@ Curio ships with **no default LLM endpoint**. Until an operator sets a Deploymen
 | `CURIO_DEFAULT_LLM_MODEL` | `--llm-model` | The Deployment default's model. Without one there is no Deployment default. |
 | `CURIO_DEFAULT_LLM_API_KEY` | none | The deployment's API key. Set it in the environment. |
 | `GUEST_LLM_API_KEY` | `--guest-llm-api-key` | The key of the guest configuration, which every guest on a `--deploy` instance answers with. Unset, it takes `CURIO_DEFAULT_LLM_API_KEY`; with neither, guests get no AI. |
-| `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | none | The guest configuration's provider, endpoint and model. Unset, it takes the deployment's. A guest configuration needs a key and a model. |
+| `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | `--guest-llm-provider`, `--guest-llm-base-url`, `--guest-llm-model` | The guest configuration's provider, endpoint and model. Unset, it takes the deployment's; an empty endpoint is the provider's own. A guest configuration needs a key and a model. |
 | `CURIO_SEARCH_URL` | `--agent-search-url` | Where the web-search tool looks, as a URL template with `{q}`. Defaults to DuckDuckGo's keyless Instant Answer API; point it at a local SearXNG, SerpAPI, or Google Programmable Search for ranked results. |
 | `CURIO_SOLVE_MAX_ATTEMPTS` | `--solve-max-attempts` | How many times Solve may try one node, counting the first generation. Default 40. |
 | `CURIO_SOLVE_NODE_BUDGET` | `--solve-node-budget` | Wall-clock seconds Solve may spend repairing one node. Default 900. |

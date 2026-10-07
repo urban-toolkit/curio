@@ -1121,6 +1121,28 @@ class TestSchemaMatchesConstants:
                 f"{sorted(declared[member]['enum'])} vs {sorted(modes)}"
             )
 
+    def test_the_dataset_source_formats_mirror_the_frontend_type(self):
+        """node.datasetSource.format is exactly DatasetFormat (#725): the canvas
+        copies a dropped dataset's format there, a GTFS feed's and a
+        collection's included."""
+        source = os.path.join(
+            REPO_ROOT, "utk_curio", "frontend", "urban-workflows", "src",
+            "services", "datasetCatalog", "datasetCatalogTypes.ts",
+        )
+        with open(source, encoding="utf-8") as fh:
+            text = fh.read()
+        block = re.search(r"export type DatasetFormat\s*=(.*?);", text, re.S)
+        assert block, "could not find the DatasetFormat type in datasetCatalogTypes.ts"
+        formats = set(re.findall(r'"([a-z0-9_]+)"', block.group(1)))
+        assert formats, "parsed no members out of DatasetFormat"
+
+        declared = set(DEFS["datasetSource"]["properties"]["format"]["enum"])
+        assert declared == formats, (
+            f"datasetSource.format must list DatasetFormat. "
+            f"schema-only: {sorted(declared - formats)}, "
+            f"missing from schema: {sorted(formats - declared)}"
+        )
+
     def test_the_port_types_extend_the_manifest_schema_by_exactly_default(self):
         """The manifest's port enum declares capability; this one records state.
 

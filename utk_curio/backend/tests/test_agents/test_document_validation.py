@@ -8,6 +8,7 @@ condition) and the AUTK grammar written beside it, unread.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -241,6 +242,16 @@ def _shipped_autk_documents() -> list:
     return found
 
 
+def _draws_a_legend(ref: dict) -> bool:
+    """Whether a map layer shows a legend: autk-grammar turns the legend on for a
+    layer that colours by a column (``getFnv``) or names a scheme
+    (``colorMapInterpolator``), and ``"isColorMap": false`` hides it
+    (``recolorRasters`` keeps it hidden on a raster)."""
+    if ref.get("isColorMap") is False:
+        return False
+    return bool(ref.get("getFnv") or ref.get("colorMapInterpolator") or ref.get("isColorMap"))
+
+
 class TestShippedAutarkDocuments:
     def test_every_shipped_document_is_valid(self):
         documents = _shipped_autk_documents()
@@ -248,6 +259,25 @@ class TestShippedAutarkDocuments:
         refused = {where: verdict for where, content in documents
                    if (verdict := dv.validate(AUTK, content))["status"] != dv.STATUS_VALID}
         assert refused == {}
+
+    def test_every_shipped_legend_names_what_it_shows(self):
+        """#771: autk-map titles a legend with its layer's table, so a map of a
+        node's input read ``input_0`` and an OpenStreetMap layer its table
+        (``table_osm_roads``). Every shipped layer that shows a legend names
+        it with ``legendTitle`` (#747)."""
+        untitled, legends = [], 0
+        for where, content in _shipped_autk_documents():
+            maps = json.loads(content).get("map") or []
+            for map_spec in maps if isinstance(maps, list) else [maps]:
+                for ref in map_spec.get("layerRefs") or []:
+                    if not _draws_a_legend(ref):
+                        continue
+                    legends += 1
+                    title = ref.get("legendTitle")
+                    if not isinstance(title, str) or not title.strip() or re.fullmatch(r"input_\d+", title.strip()):
+                        untitled.append(f"{where} {ref.get('dataRef')} (colours by {ref.get('getFnv')!r})")
+        assert legends >= 23
+        assert untitled == [], "map layers whose legend has no title:\n  " + "\n  ".join(untitled)
 
 
 class TestRouting:

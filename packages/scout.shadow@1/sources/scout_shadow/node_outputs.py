@@ -54,12 +54,10 @@ GRID_SLACK = 0.01
 
 MISSING_MODEL = (
     f"Accumulated Shadow runs SCOUT's Deep Umbra model, the Model Catalog model "
-    f"{MODEL_ID}@1, and this Curio does not have it. The model is in the Curio "
-    "repository (https://github.com/urban-toolkit/curio) but not in the pip package: "
-    f"copy the repository's folder models/{MODEL_ID}@1 into this Curio's shipped "
-    "models folder (the one --models-root names, else the models folder beside the "
-    "installed utk_curio package), or start Curio from a clone of the repository, "
-    "then run this node again."
+    f"{MODEL_ID}@1, and this Curio could not give it to the node. A pip install "
+    "downloads it from GitHub the first time the node runs, which needs this machine "
+    "to reach raw.githubusercontent.com; a clone of https://github.com/urban-toolkit/curio "
+    f"holds it in models/{MODEL_ID}@1. Then run this node again."
 )
 
 NOT_A_HEIGHT_RASTER = (
@@ -72,8 +70,8 @@ _TO_4326 = Transformer.from_crs(3395, 4326, always_xy=True)
 
 
 def open_model(load):
-    """The Deep Umbra model *load* returns, or :data:`MISSING_MODEL` when
-    this Curio's Model Catalog has no such model. *load* is the node's
+    """The Deep Umbra model *load* returns, or :data:`MISSING_MODEL` when the
+    backend gave the node no folder for it. *load* is the node's
     ``lambda: curio_load_model("model.scout.deep-umbra")``."""
     try:
         return load()

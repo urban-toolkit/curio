@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 
 import pytest
@@ -95,6 +96,26 @@ def _reset_discovery_process_state():
     ratelimit.limiter.reset()
     ratelimit.download_slots.reset()
     wfs.WfsProvider.clear_cache()
+
+
+def workers_finish_first(monkeypatch) -> None:
+    """From here on, a request that starts a download job goes on only once
+    the job's worker has ended.
+
+    A fast worker can end before the request that started it reads the job;
+    this makes that order certain, so a test can pin what such a request
+    answers. The worker still runs on its own thread, as it does in the app.
+    """
+    from utk_curio.backend.app.discovery.application import jobs
+
+    def _to_the_end(target):
+        worker = threading.Thread(target=target, daemon=True)
+        worker.start()
+        worker.join(timeout=60)
+        assert not worker.is_alive(), "a download job's worker did not end within a minute"
+        return worker
+
+    monkeypatch.setattr(jobs, "run_in_background", _to_the_end)
 
 
 @pytest.fixture()

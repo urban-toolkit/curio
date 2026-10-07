@@ -4,12 +4,14 @@ import {
   DatasetDragPayload,
   DatasetGroupLayerRef,
   DatasetNodeSource,
+  isLayerGroupId,
 } from "./datasetCatalogTypes";
 import {
   buildDatasetLoaderCode,
   datasetIdsInCode,
   mergeDatasetLoaderCode,
 } from "./datasetLoaderSnippets";
+import { createLayerGroupDragPayload } from "./datasetPaletteGrouping";
 
 type AppliedDataset = { id: string; title: string; uri: string; path?: string | null; format: string };
 
@@ -177,6 +179,17 @@ type DatasetLike = DatasetCatalogItem | DatasetDragPayload;
 let activeDatasetDrag: DatasetDragPayload | null = null;
 
 export function createDatasetDragPayload(dataset: DatasetCatalogItem): DatasetDragPayload {
+  // The Data Catalog drawer lists a layer group as one card: it drags as the
+  // palette's group row does, loading and referencing each layer.
+  if (isLayerGroupId(dataset.id) && dataset.groupLayers && dataset.groupLayers.length > 0) {
+    return createLayerGroupDragPayload({
+      groupId: dataset.id,
+      title: dataset.title,
+      format: dataset.format,
+      origin: dataset.origin,
+      layers: dataset.groupLayers,
+    });
+  }
   return {
     datasetId: dataset.id,
     title: dataset.title,

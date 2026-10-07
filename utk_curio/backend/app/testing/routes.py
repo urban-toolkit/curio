@@ -434,6 +434,10 @@ def _scripted_guard():
     return None
 
 
+#: A scripted node id has the shape of the uuid4 the server would mint.
+_UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
 def _reply_entry_error(entry: object) -> str | None:
     """Why *entry* is not a scripted reply, or None when it is one: a string,
     ``{text, toolCalls}`` or ``{error, status}``."""
@@ -483,6 +487,8 @@ def agent_script_push():
       * ``chatCapabilities`` - optional ``{tools, structuredOutput}``: what the
         scripted endpoint can do beyond text. ``{"tools": true}`` puts runs on
         native tools; without it they use the fenced protocol.
+      * ``nodeIds`` - optional list of uuids: the ids the next nodes an apply
+        creates are given, in order (``testing_provider.push_node_ids``).
       * ``reset`` - drop anything queued and captured first. Defaults to true,
         which is what a test almost always wants: a leftover reply from a
         previous test would be consumed by this one and the failure would point
@@ -515,9 +521,15 @@ def agent_script_push():
         and all(isinstance(v, bool) for v in capabilities.values())
     ):
         return jsonify({"error": "'chatCapabilities' is {'tools': <bool>, 'structuredOutput': <bool>}"}), 400
+    node_ids = body.get("nodeIds") or []
+    if not isinstance(node_ids, list) or not all(
+        isinstance(n, str) and _UUID_RE.fullmatch(n) for n in node_ids
+    ):
+        return jsonify({"error": "'nodeIds' must be a list of uuids"}), 400
     if body.get("reset", True):
         testing_provider.reset()
     testing_provider.push_replies(*replies)
+    testing_provider.push_node_ids(*node_ids)
     if by_intent:
         testing_provider.route_by_intent(by_intent)
     if capabilities is not None:

@@ -375,5 +375,136 @@ class TheRasterRouteTest(StoreTestCase):
         self.assertIn(rasters().RASTER_META_HEADER.lower(), exposed)
 
 
+class ARasterOutputAfterAReopenTest(StoreTestCase):
+    """A saved raster output, read again after a reopen under a new sign-in.
+
+    The store's row carries the session that wrote it, so the next sign-in's
+    reads are refused there and fall back to the copy a project load hydrated
+    into the shared data directory under the artifact's id
+    (``projects/storage.hydrate_outputs``). For a raster that copy is the
+    raster's own file, a GeoTIFF or the VRT Mosaic Rasters writes, with no
+    extension. The fallback read parquet and JSON only, so ``/raster`` answered
+    404 and a Python node downstream failed with "No artifact with id".
+    """
+
+    def setUp(self):
+        super().setUp()
+        from utk_curio.sandbox.app import app
+
+        self.client = app.test_client()
+        self.data_dir = self.root / ".curio" / "data"
+
+    def hydrated(self, raster_bytes, suffix=".tif"):
+        """A raster an earlier sign-in returned, and the copy a project load
+        hydrated for it. The file the store's row names is gone, as the scratch
+        copy of an output is, so the hydrated copy is the only one."""
+        import rasterio
+
+        from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+        written = self.root / f"returned{suffix}"
+        written.write_bytes(raster_bytes)
+        with rasterio.open(written) as dataset:
+            art_id = save_to_duckdb(dataset, "python-node", session_id="earlier-sign-in")
+        (self.data_dir / art_id).write_bytes(raster_bytes)
+        written.unlink()
+        return art_id
+
+    def assert_the_fixture(self, dataset):
+        import rasterio
+
+        with rasterio.open(FIXTURE) as source:
+            self.assertEqual((dataset.width, dataset.height), (source.width, source.height))
+            self.assertEqual(dataset.crs.to_epsg(), 32616)
+            self.assertEqual(tuple(dataset.transform), tuple(source.transform))
+            self.assertEqual(dataset.read(1).tolist(), source.read(1).tolist())
+
+    def test_load_artifact_opens_the_hydrated_geotiff(self):
+        import rasterio
+
+        from utk_curio.sandbox.util.parsers import load_artifact
+
+        art_id = self.hydrated(FIXTURE.read_bytes())
+        dataset = load_artifact(art_id, session_id="new-sign-in")
+        self.addCleanup(getattr(dataset, "close", lambda: None))
+        self.assertIsInstance(dataset, rasterio.io.DatasetReader)
+        self.assert_the_fixture(dataset)
+
+    def test_the_raster_route_serves_the_hydrated_geotiff(self):
+        from rasterio.io import MemoryFile
+
+        art_id = self.hydrated(FIXTURE.read_bytes())
+        response = self.client.get("/raster", query_string={"fileName": art_id, "sessionId": "new-sign-in"})
+        self.assertEqual(response.status_code, 200, why(response))
+        meta = json.loads(response.headers["X-Curio-Raster"])
+        self.assertEqual((meta["width"], meta["height"], meta["crs"]), (40, 30, "EPSG:32616"))
+        with MemoryFile(response.get_data()) as memory, memory.open() as served:
+            self.assert_the_fixture(served)
+
+    def test_the_raster_route_serves_a_hydrated_virtual_raster(self):
+        """Mosaic Rasters returns a VRT; its hydrated copy is the VRT's XML."""
+        from rasterio.io import MemoryFile
+
+        vrt = (
+            '<VRTDataset rasterXSize="40" rasterYSize="30">\n'
+            "  <SRS>EPSG:32616</SRS>\n"
+            "  <GeoTransform>447000, 100, 0, 4637000, 0, -100</GeoTransform>\n"
+            '  <VRTRasterBand dataType="Float32" band="1">\n'
+            "    <NoDataValue>-9999</NoDataValue>\n"
+            "    <SimpleSource>\n"
+            f'      <SourceFilename relativeToVRT="0">{FIXTURE}</SourceFilename>\n'
+            "      <SourceBand>1</SourceBand>\n"
+            "    </SimpleSource>\n"
+            "  </VRTRasterBand>\n"
+            "</VRTDataset>\n"
+        )
+        art_id = self.hydrated(vrt.encode("utf-8"), suffix=".vrt")
+        response = self.client.get("/raster", query_string={"fileName": art_id, "sessionId": "new-sign-in"})
+        self.assertEqual(response.status_code, 200, why(response))
+        with MemoryFile(response.get_data()) as memory, memory.open() as served:
+            self.assertEqual(served.driver, "GTiff")
+            self.assert_the_fixture(served)
+
+    def test_a_python_node_in_process_reads_it(self):
+        import rasterio
+
+        from utk_curio.sandbox.app.worker import _worker_init, execute_code
+        from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+        _worker_init()
+        art_id = self.hydrated(FIXTURE.read_bytes())
+        result = execute_code(
+            APythonNodeReceivesTheRasterTest.CHECK, art_id, "curio.builtin/computation-analysis", "raster",
+            session_id="new-sign-in", save_dataset=False,
+        )
+        self.assertEqual(result["stderr"], "")
+        with rasterio.open(FIXTURE) as source:
+            expected = (
+                f"{source.crs.to_epsg()}|{source.width}x{source.height}|"
+                f"{tuple(source.transform)[:6]}|{float(source.read(1)[2, 0])}"
+            )
+        self.assertEqual(load_from_duckdb(result["output"]["path"]), expected)
+
+    def test_an_isolated_python_node_has_it_staged(self):
+        import rasterio
+
+        from utk_curio.sandbox.util import staging
+
+        art_id = self.hydrated(FIXTURE.read_bytes())
+        scratch = self.root / "scratch"
+        scratch.mkdir()
+        spec = staging.stage_input(art_id, scratch, session_id="new-sign-in")
+        self.assertEqual(spec["kind"], "raster")
+        with rasterio.open(scratch / spec["file"]) as staged:
+            self.assert_the_fixture(staged)
+
+    def test_bytes_that_only_start_like_a_tiff_are_still_missing(self):
+        """A file GDAL cannot read is no raster: a 404, as any missing one."""
+        art_id = "1700000000006_beef0006"
+        (self.data_dir / art_id).write_bytes(b"II*\x00" + b"\x00" * 60)
+        response = self.client.get("/raster", query_string={"fileName": art_id, "sessionId": "new-sign-in"})
+        self.assertEqual(response.status_code, 404, why(response))
+
+
 if __name__ == "__main__":
     unittest.main()
