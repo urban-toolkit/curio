@@ -1,7 +1,11 @@
 import React, { useMemo } from "react";
-import { Handle, Position, useEdges } from "reactflow";
+import { Position, useEdges, useNodes, type Edge } from "reactflow";
 
+import { useNotebookViewContext } from "../providers/flow/notebookViewContext";
 import { useNodeCatalogDrawer } from "../providers/packages/NodeCatalogDrawerProvider";
+import type { HandleDef } from "../registry/types";
+import { notebookCellBox } from "../utils/notebookLayout";
+import { NodeHandles } from "./nodes/NodeHandles";
 
 /**
  * What a node renders when the registry has no descriptor for its type.
@@ -22,7 +26,9 @@ import { useNodeCatalogDrawer } from "../providers/packages/NodeCatalogDrawerPro
  * `error008` and returns `null` for every edge touching it. The edges existed
  * in state the whole time - they just had nowhere to attach. Handles are
  * derived from the edges themselves, so this works for any unresolved type,
- * not only the ones we know about.
+ * not only the ones we know about. They are drawn as every node's are
+ * (`nodes/NodeHandles`), so in the notebook view the card is a cell with its
+ * dots on its right edge, as wide as the other cells.
  */
 
 /** The package coordinate inside a canonical node type. */
@@ -53,47 +59,33 @@ const SHELL: React.CSSProperties = {
   fontFamily: '"Roboto","Helvetica","Arial",sans-serif',
 };
 
-function useDerivedHandles(nodeId: string) {
-  const edges = useEdges();
-  return useMemo(() => {
-    // Always offer the default pair, so an unconnected placeholder still shows
-    // where its ports would be and can be wired up by hand.
-    const targets = new Set<string>(["in"]);
-    const sources = new Set<string>(["out"]);
-    for (const edge of edges) {
-      if (edge.target === nodeId) targets.add(edge.targetHandle || "in");
-      if (edge.source === nodeId) sources.add(edge.sourceHandle || "out");
-    }
-    return { targets: [...targets], sources: [...sources] };
-  }, [edges, nodeId]);
+/** Each id as a handle on one side of the card, spread evenly down it. */
+function handleColumn(ids: string[], type: "source" | "target", position: Position): HandleDef[] {
+  // The exact geometry does not matter - what matters is that each handle
+  // EXISTS in the DOM, so React Flow can measure a port for it and draw the
+  // edge.
+  return ids.map((id, index) => ({
+    id,
+    type,
+    position,
+    style: { top: `${((index + 1) / (ids.length + 1)) * 100}%` },
+  }));
 }
 
-function HandleColumn({
-  ids,
-  type,
-  position,
-}: {
-  ids: string[];
-  type: "source" | "target";
-  position: Position;
-}) {
-  return (
-    <>
-      {ids.map((id, index) => (
-        <Handle
-          key={id}
-          id={id}
-          type={type}
-          position={position}
-          // Spread evenly down the side. The exact geometry does not matter -
-          // what matters is that each handle EXISTS in the DOM, so React Flow
-          // can measure a port for it and draw the edge.
-          style={{ top: `${((index + 1) / (ids.length + 1)) * 100}%` }}
-          isConnectable={false}
-        />
-      ))}
-    </>
-  );
+/** A handle for each port the node's edges name: inputs left, outputs right. */
+function derivedHandles(nodeId: string, edges: readonly Edge[]): HandleDef[] {
+  // Always offer the default pair, so an unconnected placeholder still shows
+  // where its ports would be and can be wired up by hand.
+  const targets = new Set<string>(["in"]);
+  const sources = new Set<string>(["out"]);
+  for (const edge of edges) {
+    if (edge.target === nodeId) targets.add(edge.targetHandle || "in");
+    if (edge.source === nodeId) sources.add(edge.sourceHandle || "out");
+  }
+  return [
+    ...handleColumn([...targets], "target", Position.Left),
+    ...handleColumn([...sources], "source", Position.Right),
+  ];
 }
 
 export function UnresolvedNode({
@@ -105,23 +97,35 @@ export function UnresolvedNode({
   nodeType: string;
   registryReady: boolean;
 }) {
-  const { targets, sources } = useDerivedHandles(nodeId);
+  const edges = useEdges();
+  const nodes = useNodes();
+  const derived = useMemo(() => derivedHandles(nodeId, edges), [edges, nodeId]);
+  const notebook = useNotebookViewContext();
   const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
   const packageId = packageIdFromNodeType(nodeType);
 
   const handles = (
-    <>
-      <HandleColumn ids={targets} type="target" position={Position.Left} />
-      <HandleColumn ids={sources} type="source" position={Position.Right} />
-    </>
+    <NodeHandles
+      nodeId={nodeId}
+      data={undefined}
+      handles={derived}
+      isConnectable={false}
+      notebookOn={notebook.on}
+      edges={edges}
+      nodes={nodes}
+    />
   );
+  // In the notebook view the card is a cell's box, its padding inside that width.
+  const shell: React.CSSProperties = notebook.on
+    ? { ...SHELL, ...notebookCellBox(derived, notebook.cellWidth), boxSizing: "border-box" }
+    : SHELL;
 
   if (!registryReady) {
     // Still genuinely loading: the registry may yet name a package to blame.
     return (
       <div
         style={{
-          ...SHELL,
+          ...shell,
           border: "1px dashed #b8b8b8",
           background: "#fafafa",
           color: "#64748b",
@@ -153,7 +157,7 @@ export function UnresolvedNode({
     return (
       <div
         style={{
-          ...SHELL,
+          ...shell,
           border: "1px dashed #94a3b8",
           background: "#f8fafc",
           color: "#475569",
@@ -180,7 +184,7 @@ export function UnresolvedNode({
   return (
     <div
       style={{
-        ...SHELL,
+        ...shell,
         border: "1px dashed #d0a215",
         background: "#fffbeb",
         color: "#7a5c00",

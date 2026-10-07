@@ -201,7 +201,7 @@ focus in the URL (`settingsPath`, read back by `focusFromSearch`).
 | `interactions` | `IInteraction[]` | Active user selections from visualization nodes |
 | `dashboardPins` | `{[nodeId]: boolean}` | Which nodes are pinned to the dataflow's dashboard page |
 | `dashboardOn` | `boolean` | A PROP, not state: true when this tree is the dashboard page rather than the canvas |
-| `canvasView` | `"canvas" \| "notebook"` | How the canvas shows the dataflow, kept in the address as `?view=notebook`; always `"canvas"` on the dashboard |
+| `canvasView` | `"canvas" \| "notebook"` | How the canvas shows the dataflow, kept in the address as `?view=notebook` through the router (`CanvasViewAddress`), also across a navigation that keeps the dataflow open; always `"canvas"` on the dashboard |
 | `scenarios` | `Scenario[]` | The dataflow's scenarios (`dataflow.scenarios`), saved with it |
 
 When a node produces output, it calls `outputCallback(nodeId, output)`, which updates `outputs`. React re-renders cause downstream nodes (those connected by an edge from the node that just executed) to detect the new input and request the data from the backend.
@@ -258,18 +258,21 @@ moves nodes the way the dashboard page does:
   call that moves its view anyway, such as a load's fit, is put back to the origin.
   `revealNodes` scrolls to a cell where the canvas would frame a node.
 - **Cells.** `NotebookViewContext` tells nodes and edges the view is on, and the cells'
-  width. `UniversalNode` passes the cell's width and least height as `cellBox`, apart
-  from the node's canvas size, and moves its handles. `NodeContainer` draws the cell as
-  the node card (see [The node card](#the-node-card)) with no hairline or shadow, no
-  resize handle and no minimize. `NodeEditor` keeps a grammar node's output
-  pane visible under its input (`curio-notebook-split` in `Node.css`) without moving
-  either pane, so a chart or map never remounts. `notebookOutputBox` gives an
-  output the height its kind gets: a definite one for a chart (320px), an Autark map or
-  plot and a Compare Scenarios view (400px), which have none of their own; a table,
-  summary or control its own up to 360px; anything else 360px. `useNotebookEditorHeight`
-  (`components/editing/`) sets a code or spec editor's wrapper to Monaco's content
-  height (`onDidContentSizeChange`), at least three lines, at most 400px for code and
-  240px for a spec. The outcome strip sits in the cell's flow under the output.
+  width. `UniversalNode` passes the cell's width and least height (`notebookCellBox`) as
+  `cellBox`, apart from the node's canvas size. Every node's handles, the
+  `UnresolvedNode` placeholder's too, are drawn by `components/nodes/NodeHandles.tsx`,
+  which makes them the cell's dots; the placeholder's card takes the same box.
+  `NodeContainer` draws the cell as the node card (see [The node card](#the-node-card))
+  with no hairline or shadow, no resize handle and no minimize. `NodeEditor` keeps a
+  grammar node's output pane visible under its input (`curio-notebook-split` in
+  `Node.css`) without moving either pane, so a chart or map never remounts.
+  `notebookOutputBox` gives an output the height its kind gets: a definite one for a
+  chart (320px), an Autark map or plot and a Compare Scenarios view (400px), which have
+  none of their own; a table, summary or control its own up to 360px; anything else
+  360px. `useNotebookEditorHeight` (`components/editing/`) sets a code or spec editor's
+  wrapper to Monaco's content height (`onDidContentSizeChange`), at least three lines,
+  at most 400px for code and 240px for a spec. The outcome strip sits in the cell's flow
+  under the output.
 - **Switch.** `CanvasViewSwitch` closes `UpMenu`'s slot, pushed to its end beside
   Monitor; the canvas bar's buttons take `--curio-bar-button-padding-x: 7px` to make room
   for it.

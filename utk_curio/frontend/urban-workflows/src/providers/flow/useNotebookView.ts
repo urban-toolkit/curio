@@ -13,6 +13,7 @@
 // drag lands in the map; leaving the view puts every node back on its spot
 // and deletes every stamp.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { Edge, Node, ReactFlowInstance, Viewport } from "reactflow";
 import { useUpdateNodeInternals } from "reactflow";
 import { canvasPositionOf } from "../../utils/canvasPosition";
@@ -34,32 +35,39 @@ export type CanvasView = "canvas" | "notebook";
 
 const VIEW_PARAM = "view";
 
-/** The view the address asks for: `?view=notebook`, or the canvas. */
+/** The view a query names: `?view=notebook`, or the canvas. */
+function canvasViewOf(params: URLSearchParams): CanvasView {
+    return params.get(VIEW_PARAM) === "notebook" ? "notebook" : "canvas";
+}
+
+/** The view the address asks for when the page opens. */
 export function readCanvasViewParam(): CanvasView {
     try {
-        return new URLSearchParams(window.location.search).get(VIEW_PARAM) === "notebook" ? "notebook" : "canvas";
+        return canvasViewOf(new URLSearchParams(window.location.search));
     } catch {
         return "canvas";
     }
 }
 
 /**
- * Keep the view in the address, so a reload or a copied link opens it again.
- * Written straight to `history` rather than through the router: FlowProvider
- * also renders without one (its tests, the standalone dashboard), and only
- * this one parameter changes.
+ * Keeps the view in the address, so a reload or a copied link opens it again,
+ * through the router as the app's other address state is. A navigation that
+ * keeps the dataflow open, such as the first save moving `/dataflow/new` to
+ * the dataflow's own address, names no view, and the view stays: the address
+ * is set again from the router's new location. FlowProvider renders this
+ * inside a router only, and never on the dashboard.
  */
-export function writeCanvasViewParam(view: CanvasView): void {
-    try {
-        const url = new URL(window.location.href);
-        if (view === "notebook") url.searchParams.set(VIEW_PARAM, "notebook");
-        else url.searchParams.delete(VIEW_PARAM);
-        if (url.href !== window.location.href) {
-            window.history.replaceState(window.history.state, "", url.href);
-        }
-    } catch {
-        /* no address to keep it in */
-    }
+export function CanvasViewAddress({ view }: { view: CanvasView }): null {
+    const [params, setParams] = useSearchParams();
+    const inAddress = canvasViewOf(params);
+    useEffect(() => {
+        if (inAddress === view) return;
+        const next = new URLSearchParams(params);
+        if (view === "notebook") next.set(VIEW_PARAM, "notebook");
+        else next.delete(VIEW_PARAM);
+        setParams(next, { replace: true });
+    }, [view, inAddress, params, setParams]);
+    return null;
 }
 
 function samePoint(a: XY | undefined | null, b: XY | undefined | null): boolean {
@@ -215,7 +223,6 @@ export function useNotebookView({
             else fitViewWithMenuOffset(reactFlow, { padding: 0.2 });
         }
         firstRunRef.current = false;
-        if (!dashboardOn) writeCanvasViewParam(canvasView);
         return () => window.cancelAnimationFrame(frame);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [notebookOn]);
