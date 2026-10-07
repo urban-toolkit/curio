@@ -99,7 +99,7 @@ pip install utk-curio
 curio start
 ```
 
-This installs the CLI and a pre-built version of the frontend. You won’t be able to modify or rebuild the UI from this setup.
+This installs the CLI and a pre-built version of the frontend. You won’t be able to modify or rebuild the UI from this setup. Five large catalog files are not in the package: Curio downloads each from GitHub the first time it reads it ([Installation from pip](USAGE.md#installation-from-pip)).
 
 ### From GitHub (for development)
 
