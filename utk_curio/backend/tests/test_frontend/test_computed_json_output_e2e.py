@@ -279,9 +279,11 @@ def _analysis_node(node_id: str, x: int) -> dict:
 
 
 def _spec() -> dict:
+    # Named as the empty stub project is (``testing/routes.py::_empty_spec``),
+    # which is the heading this test's canvas has always shown.
     return {
         "dataflow": {
-            "name": "Computed JSON Output",
+            "name": "StubbedWorkflow",
             "task": "",
             "description": "",
             "packages": [],
@@ -559,7 +561,7 @@ def _open_computed_tab(page, dataset_ids) -> None:
         # The card says what the node's header says (#775).
         expect(card.locator("h3")).to_have_text(ANALYSIS_LABEL, timeout=10000)
     # One order on every run, which the baseline below relies on: see SCALAR_NODE.
-    shown = root.locator('article:not([role="status"])[data-dataset-id]').evaluate_all(
+    shown = root.locator('article:not([role="status"])[data-dataset-id^="computed."]').evaluate_all(
         "(cards) => cards.map((card) => card.getAttribute('data-dataset-id'))"
     )
     assert shown == list(dataset_ids), (
