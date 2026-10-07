@@ -1039,6 +1039,42 @@ def run_node_and_wait(page, node_id: str, *, node_type: str = "",
     return read_node_output_text(page, node_id)
 
 
+#: How often ``set_canvas_zoom`` reads the viewport back, in ms: on a timer,
+#: never per animation frame.
+_ZOOM_READ_MS = 100
+
+# One read of set_canvas_zoom's wait. True once React Flow's viewport is the
+# one asked for and the canvas draws it, for *reads* reads in a row. A view
+# that got there and was then moved off is set again.
+_ZOOM_HELD_JS = """({ zoom, reads }) => {
+    const flow = window.__curio_reactFlow;
+    const viewport = document.querySelector(".curio-canvas-drop-target .react-flow__viewport");
+    if (!flow || !viewport) return false;
+    const wait = window.__curio_zoomWait = window.__curio_zoomWait || { held: 0 };
+    const at = flow.getViewport();
+    const drawn = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
+    const near = (a, b) => Math.abs(a - b) < 1e-4;
+    const there = near(at.x, 0) && near(at.y, 0) && near(at.zoom, zoom)
+        && near(drawn.e, 0) && near(drawn.f, 0) && near(drawn.a, zoom) && near(drawn.d, zoom);
+    if (there) {
+        wait.held += 1;
+        return wait.held >= reads;
+    }
+    if (wait.held > 0) flow.setViewport({ x: 0, y: 0, zoom });
+    wait.held = 0;
+    return false;
+}"""
+
+_ZOOM_STATE_JS = """() => {
+    const flow = window.__curio_reactFlow;
+    const viewport = document.querySelector(".curio-canvas-drop-target .react-flow__viewport");
+    return {
+        viewport: flow ? flow.getViewport() : null,
+        drawn: viewport ? getComputedStyle(viewport).transform : null,
+    };
+}"""
+
+
 def set_canvas_zoom(page, zoom: float, *, timeout: float = 15000) -> None:
     """Pin the ReactFlow viewport so several nodes fit before dropping them.
 
@@ -1048,14 +1084,36 @@ def set_canvas_zoom(page, zoom: float, *, timeout: float = 15000) -> None:
     viewport-relative, but each node paints ``525 * zoom`` px wide, so the
     spacing needed to keep facing handles exposed shrinks with it.
 
+    Returns once the canvas shows *zoom* at the origin. React Flow 11's
+    ``setViewport`` moves through a d3 transition even with no duration, and a
+    transition only advances on animation frames, so the view changes a frame
+    or two after the call, or later on a runner short of frames, and a point
+    read before then is read on the old view (``test_set_canvas_zoom_e2e.py``).
+    So the viewport is read back every ``_ZOOM_READ_MS``, on a timer, until
+    React Flow reports it and the page draws it for 3 reads in a row.
+
     Purely a camera change - node positions in flow space are unaffected, and
     ``save_workflow_test_screenshot`` re-pins its own fitView before capturing,
     so this does not influence a baseline.
     """
     page.wait_for_function(
-        "() => !!window.__curio_reactFlow", timeout=timeout
+        "() => !!window.__curio_reactFlow", polling=_ZOOM_READ_MS, timeout=timeout
     )
+    page.evaluate("() => { delete window.__curio_zoomWait; }")
     page.evaluate(
         "(zoom) => window.__curio_reactFlow.setViewport({ x: 0, y: 0, zoom })",
         zoom,
     )
+    try:
+        page.wait_for_function(
+            _ZOOM_HELD_JS,
+            arg={"zoom": zoom, "reads": 3},
+            polling=_ZOOM_READ_MS,
+            timeout=timeout,
+        )
+    except PlaywrightTimeoutError:
+        raise AssertionError(
+            f"the canvas did not show zoom {zoom} at the origin within {timeout:.0f} ms: "
+            f"{page.evaluate(_ZOOM_STATE_JS)}"
+        ) from None
+    page.evaluate("() => { delete window.__curio_zoomWait; }")
