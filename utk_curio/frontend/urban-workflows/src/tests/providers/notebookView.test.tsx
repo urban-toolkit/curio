@@ -436,6 +436,26 @@ describe('the notebook view shows the nodes as cells', () => {
     expect(api.canvasView).toBe('notebook');
   });
 
+  test('a switch made while the router has yet to render a navigation keeps the new address', async () => {
+    window.history.replaceState(null, '', '/dataflow/new');
+    renderFlow();
+    await flush();
+    await seedChain();
+    await setPane();
+    await show('notebook');
+
+    // The router renders a navigation in a transition, so a switch made in
+    // between renders first, while the router still holds the old address.
+    await act(async () => {
+      navigate('/dataflow/abc', { replace: true });
+      api.setCanvasView('canvas');
+    });
+    await flush();
+    expect(window.location.pathname).toBe('/dataflow/abc');
+    expect(window.location.search).not.toContain('view=');
+    expect(api.canvasView).toBe('canvas');
+  });
+
   test('the dashboard page never shows the notebook view', async () => {
     window.history.replaceState(null, '', '/dashboard/x?view=notebook');
     renderFlow(true);
