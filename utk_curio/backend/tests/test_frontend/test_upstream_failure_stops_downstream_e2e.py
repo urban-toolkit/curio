@@ -24,9 +24,6 @@ Run::
 """
 from __future__ import annotations
 
-import json
-import os
-import tempfile
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
@@ -37,7 +34,6 @@ from .utils import (
     read_node_error_text,
     run_all_and_wait,
     stub_login_and_enter_workflow,
-    upload_workflow,
     wait_for_node_settled,
 )
 
@@ -81,9 +77,12 @@ def test_a_failed_node_stops_the_node_it_feeds(
     page,
 ):
     page.emulate_media(reduced_motion="reduce")
-    # Loaded through the File menu, the way the workflow suite loads its
-    # dataflows, so the test runs the same on a stack with user accounts and on
-    # the isolated stack, which has none.
+    # Opened as the stub user's saved dataflow, so the test covers both ways a
+    # run goes: on a stack with user accounts its owner runs it on the server,
+    # in this project, and on the isolated stack, which has none, the shared
+    # guest opens it read-only and the run stays in the page. A file loaded
+    # with File > Load opens as the browser user's own new dataflow (#751), so
+    # it would run on the server on both, in a project this test does not read.
     session = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
@@ -91,16 +90,8 @@ def test_a_failed_node_stops_the_node_it_feeds(
         name="Upstream Failure",
         username="upstream_failure_603",
         project_name="Upstream failure",
+        project_spec=_spec(),
     )
-    spec_file = tempfile.NamedTemporaryFile(
-        suffix=".json", delete=False, mode="w", encoding="utf-8",
-    )
-    json.dump(_spec(), spec_file)
-    spec_file.close()
-    try:
-        upload_workflow(page, app_frontend, spec_file.name, 2)
-    finally:
-        os.unlink(spec_file.name)
     for node_id in (LOADER_ID, COMPUTE_ID):
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
 
