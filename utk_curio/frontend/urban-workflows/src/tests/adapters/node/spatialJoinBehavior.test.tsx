@@ -86,21 +86,23 @@ function makeNodeState(): UseNodeStateReturn {
   } as unknown as UseNodeStateReturn;
 }
 
-/** The node as the canvas holds it: the same data, with `data.input` set by a prop. */
+type Ports = Record<string, unknown>;
+
+/** The node as the canvas holds it: the same data, with what each port holds (`data.portInputs`) set by a prop. */
 function renderJoin(overrides: Record<string, unknown> = {}, nodeState: UseNodeStateReturn = makeNodeState()) {
   const data = makeData(overrides);
   const hook = renderHook(
-    ({ input }: { input: unknown }) =>
-      useSpatialJoinBehavior({ ...data, input } as unknown as NodeBehaviorData, nodeState),
-    { initialProps: { input: (data as any).input as unknown } },
+    ({ ports }: { ports: Ports }) =>
+      useSpatialJoinBehavior({ ...data, portInputs: ports } as unknown as NodeBehaviorData, nodeState),
+    { initialProps: { ports: ((data as any).portInputs ?? {}) as Ports } },
   );
   return { ...hook, data, nodeState };
 }
 
-/** Both inputs, one after the other, through `data.input`, as the canvas delivers them. */
-async function feedBoth(rerender: (props: { input: unknown }) => void) {
-  await act(async () => { rerender({ input: POINTS }); });
-  await act(async () => { rerender({ input: POLYGONS }); });
+/** Both inputs, one after the other, as the canvas delivers them: each stays on its port. */
+async function feedBoth(rerender: (props: { ports: Ports }) => void) {
+  await act(async () => { rerender({ ports: { in_points: POINTS } }); });
+  await act(async () => { rerender({ ports: { in_points: POINTS, in_polygons: POLYGONS } }); });
   await act(async () => { await Promise.resolve(); });
 }
 
@@ -289,13 +291,14 @@ describe('useSpatialJoinBehavior', () => {
       .mockResolvedValueOnce({ dataType: 'geodataframe', data: POLYGONS, schema: {} });
     const fetchMock = mockFetch(joined([]));
     const nodeState = makeNodeState();
+    const points = { path: 'points-artifact', dataType: 'geodataframe' };
 
     const { rerender } = renderHook(
-      ({ input }: { input: unknown }) => useSpatialJoinBehavior(makeData({ input }), nodeState),
-      { initialProps: { input: { path: 'points-artifact', dataType: 'geodataframe' } } },
+      ({ ports }: { ports: Ports }) => useSpatialJoinBehavior(makeData({ portInputs: ports }), nodeState),
+      { initialProps: { ports: { in_points: points } as Ports } },
     );
     await waitFor(() => expect(fetchData).toHaveBeenCalledWith('points-artifact'));
-    rerender({ input: { path: 'polygons-artifact', dataType: 'geodataframe' } });
+    rerender({ ports: { in_points: points, in_polygons: { path: 'polygons-artifact', dataType: 'geodataframe' } } });
     await waitFor(() => expect(fetchData).toHaveBeenCalledWith('polygons-artifact'));
 
     // Both slots resolved and classified: the join fires with the rows, not the references.
@@ -318,14 +321,15 @@ describe('useSpatialJoinBehavior', () => {
       .mockResolvedValueOnce({ dataType: 'geodataframe', data: POINTS, schema: {} });
     const fetchMock = mockFetch(joined([]));
     const nodeState = makeNodeState();
+    const polygons = { path: 'polygons-artifact', dataType: 'geodataframe' };
 
     const { rerender } = renderHook(
-      ({ input }: { input: unknown }) => useSpatialJoinBehavior(makeData({ input }), nodeState),
-      { initialProps: { input: { path: 'polygons-artifact', dataType: 'geodataframe' } } },
+      ({ ports }: { ports: Ports }) => useSpatialJoinBehavior(makeData({ portInputs: ports }), nodeState),
+      { initialProps: { ports: { in_polygons: polygons } as Ports } },
     );
     await waitFor(() => expect(fetchData).toHaveBeenCalledWith('polygons-artifact'));
     // The points reference arrives before the polygon download has finished.
-    rerender({ input: { path: 'points-artifact', dataType: 'geodataframe' } });
+    rerender({ ports: { in_polygons: polygons, in_points: { path: 'points-artifact', dataType: 'geodataframe' } } });
     await waitFor(() => expect(fetchData).toHaveBeenCalledWith('points-artifact'));
     await act(async () => { releasePolygons({ dataType: 'geodataframe', data: POLYGONS, schema: {} }); });
 
@@ -367,15 +371,16 @@ describe('useSpatialJoinBehavior', () => {
     let answer: (v: unknown) => void = () => {};
     const fetchMock = jest.fn(() => new Promise(resolve => { answer = resolve; }));
     (global as any).fetch = fetchMock;
+    const points = { path: 'points-artifact', dataType: 'geodataframe' };
     const { result, rerender, data, nodeState } = renderJoin({
-      input: { path: 'points-artifact', dataType: 'geodataframe' },
+      portInputs: { in_points: points },
     });
     const order: string[] = [];
     (data.outputCallback as jest.Mock).mockImplementation(() => order.push('rows downstream'));
     (nodeState.setOutput as jest.Mock).mockImplementation((o: any) => order.push(`outcome ${o.code}`));
 
     await waitFor(() => expect(fetchData).toHaveBeenCalledWith('points-artifact'));
-    rerender({ input: { path: 'polygons-artifact', dataType: 'geodataframe' } });
+    rerender({ ports: { in_points: points, in_polygons: { path: 'polygons-artifact', dataType: 'geodataframe' } } });
     await waitFor(() => expect(fetchData).toHaveBeenCalledWith('polygons-artifact'));
 
     // The run asks while the polygons are still downloading.
@@ -409,7 +414,7 @@ describe('useSpatialJoinBehavior', () => {
   test('a run with an input missing is told which one', async () => {
     mockFetch(joined([]));
     const { result, rerender, nodeState } = renderJoin();
-    await act(async () => { rerender({ input: POINTS }); });
+    await act(async () => { rerender({ ports: { in_points: POINTS } }); });
 
     await act(async () => { await (result.current.sendCodeOverride as () => Promise<void>)(); });
     const last = (nodeState.setOutput as jest.Mock).mock.calls.at(-1)[0];
@@ -423,7 +428,7 @@ describe('useSpatialJoinBehavior', () => {
     // skip reason when a run passes it by. The join's override filled its
     // points slot with that, and posted it as the points: "Tagged 0 of 0
     // points" on example 10, and 0 rows for every chart after it. Its inputs
-    // come through `data.input`, so it has no such override.
+    // come through `data.portInputs`, so it has no such override.
     const fetchMock = mockFetch(joined([]));
     const { result, rerender } = renderJoin();
     expect(result.current.setOutputCallbackOverride).toBeUndefined();

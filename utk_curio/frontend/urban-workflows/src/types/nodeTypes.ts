@@ -69,6 +69,8 @@ export interface INodeData {
   propagation?: any;
   description?: string;
   source?: string;
+  /** A node with several input ports (the Spatial Join): what each port holds, by handle (FlowProvider). */
+  portInputs?: Record<string, unknown>;
   templateId?: string;
   templateName?: string;
   accessLevel?: AccessLevelType;

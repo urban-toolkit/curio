@@ -8,6 +8,9 @@
  * `in`, circle k is `in_k`. Deleting an edge closes the gap: the circles below
  * move up one.
  *
+ * A template with several input ports (the Spatial Join's `in_points` and
+ * `in_polygons`) keeps what each port holds the same way, by handle.
+ *
  * Duck-typed edges, so this module needs no `reactflow` import.
  */
 
@@ -97,6 +100,37 @@ export function slotsFedBy(
         if (i >= 0) slots.add(i);
     }
     return Array.from(slots).sort((a, b) => a - b);
+}
+
+/**
+ * The ports of *nodeId* that *sourceNodeId* feeds, by target handle: for a
+ * node with several input ports.
+ */
+export function portsFedBy(edges: SlotEdge[], nodeId: string, sourceNodeId: string): string[] {
+    const handles = new Set<string>();
+    for (const edge of edges) {
+        if (edge.target !== nodeId || edge.source !== sourceNodeId || !isDataEdge(edge)) continue;
+        handles.add(edge.targetHandle ?? "in");
+    }
+    return Array.from(handles);
+}
+
+/**
+ * What a node with several input ports holds, by handle (`data.portInputs`),
+ * with *value* on each of *handles*; an empty value leaves them empty. Each
+ * port keeps its own value, so two inputs that land in one render do not
+ * overwrite each other as they do in `data.input`, which names the latest.
+ */
+export function withPortValues(portInputs: unknown, handles: string[], value: unknown): Record<string, unknown> {
+    const next: Record<string, unknown> =
+        portInputs && typeof portInputs === "object" && !Array.isArray(portInputs)
+            ? { ...(portInputs as Record<string, unknown>) }
+            : {};
+    for (const handle of handles) {
+        if (isFilledSlot(value)) next[handle] = value;
+        else delete next[handle];
+    }
+    return next;
 }
 
 /**

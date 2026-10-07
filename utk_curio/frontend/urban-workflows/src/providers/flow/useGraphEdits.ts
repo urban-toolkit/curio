@@ -9,6 +9,8 @@ import {
     inputSlotOf,
     setSlot,
     slotsFedBy,
+    portsFedBy,
+    withPortValues,
     wiredInputSlots,
     nodeInputFromSlots,
     compactedHandles,
@@ -19,7 +21,7 @@ import type { useCollab } from "../CollaborationProvider";
 import { normalizeFlowInput } from "../../utils/flowOutputRef";
 import { markSelectionEcho, SelectionEchoOptions } from "../../utils/selectionEcho";
 import type { IOutput } from "./flowTypes";
-import { nodeGrowsInputs } from "./growingInputs";
+import { nodeGrowsInputs, nodeHasSeveralPorts } from "./growingInputs";
 
 /** A growing node's data with *value* from *sourceId* in each of *slots*. */
 function withSlotValues(node: Node, slots: number[], value: unknown, sourceId: string, edges: any[]): Node {
@@ -142,10 +144,16 @@ export function useGraphEdits({
                     return withSlotValues(node, slots, inputPayload, sourceId, currentEdges);
                 }
 
-                if (inputPayload === "") {
-                    return { ...node, data: { ...node.data, input: "", source: "" } };
+                const data = inputPayload === ""
+                    ? { ...node.data, input: "", source: "" }
+                    : { ...node.data, input: inputPayload, source: sourceId };
+                // `input` names only the latest arrival: two that land in one
+                // render leave it the second. A node with several ports reads
+                // what each of them holds.
+                if (nodeHasSeveralPorts(node)) {
+                    data.portInputs = withPortValues(node.data.portInputs, portsFedBy(currentEdges, node.id, sourceId), inputPayload);
                 }
-                return { ...node, data: { ...node.data, input: inputPayload, source: sourceId } };
+                return { ...node, data };
             })
         );
     };
@@ -182,7 +190,11 @@ export function useGraphEdits({
                     return slot >= 0 ? withSlotValues(node, [slot], normalized, outId, reactFlow.getEdges()) : node;
                 }
 
-                return { ...node, data: { ...node.data, input: normalized, source: outId } };
+                const data = { ...node.data, input: normalized, source: outId };
+                if (nodeHasSeveralPorts(node)) {
+                    data.portInputs = withPortValues(node.data.portInputs, [targetHandle ?? "in"], normalized);
+                }
+                return { ...node, data };
             })
         );
     };
@@ -288,9 +300,14 @@ export function useGraphEdits({
                         continue;
                     }
                     setNodes((nds: any) =>
-                        nds.map((node: any) =>
-                            node.id !== resetInput ? node : { ...node, data: { ...node.data, input: "", source: "" } },
-                        )
+                        nds.map((node: any) => {
+                            if (node.id !== resetInput) return node;
+                            const data = { ...node.data, input: "", source: "" };
+                            if (nodeHasSeveralPorts(node)) {
+                                data.portInputs = withPortValues(node.data.portInputs, [connection.targetHandle ?? "in"], "");
+                            }
+                            return { ...node, data };
+                        })
                     );
                 }
             }
