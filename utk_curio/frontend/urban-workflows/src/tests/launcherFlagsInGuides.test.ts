@@ -31,6 +31,7 @@ const OPERATOR_FLAGS = [
     "--collab-origins",
     "--collab-namespace",
     "--log-to-stdout",
+    "--packages-root",
 ];
 
 function parserFlags(): string[] {

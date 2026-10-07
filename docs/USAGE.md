@@ -88,6 +88,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--discovery-max-download-mb MB` | `1024` | The largest file the Discovery Catalog downloads, or adds from a bucket. A source's manifest may set a lower limit for itself |
 | `--media-cache-max-gb GB` | `20` | How much each account may hold in cached bucket files and downloaded street-level images |
 | `--models-root PATH` | `<repo_root>/models/` | Where the shipped Model Catalog models are read from |
+| `--packages-root PATH` | `<repo_root>/packages/` | Where the shared Node Catalog is read from and published to. Start it from a copy of `packages/`: the built-in nodes are installed from it |
 | `--save-node-outputs` / `--no-save-node-outputs` | off | Whether a new node's **Save output dataset** toggle starts on. Users can still flip it on each node |
 | `--allow-publish` / `--no-allow-publish` | on | Whether the node and data catalogs allow Publish/Unpublish |
 | `--testing` | off | Run against the dedicated test database under `.curio/test/` and mount the test-only `/api/testing/*` routes. Also the one exemption to `--deploy` requiring isolated execution. Never for a real instance: those routes reset the database and sign in as any user without a password |
@@ -1145,7 +1146,7 @@ Because the shared catalog root defaults to `<repo_root>/datasets/`, pip install
 
 > [!NOTE]
 > `CURIO_CATALOG_ROOT` relocates the **dataset** catalog only. The shared *node
-> package* catalog is `<install_root>/packages/`, relocated with `CURIO_PACKAGES_ROOT`.
+> package* catalog is `<install_root>/packages/`, relocated with `--packages-root`.
 > On a pip install that path is inside `site-packages`, so author node packages
 > from a git checkout (see [Authoring nodes](AUTHORING-NODES.md)).
 

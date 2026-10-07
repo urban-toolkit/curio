@@ -365,9 +365,16 @@ def _shipped_models_root():
     return storage.models_root()
 
 
+def _shared_packages_root():
+    from utk_curio.backend.app.packages.repositories import catalog_dir
+
+    return catalog_dir.catalog_root()
+
+
 @pytest.mark.parametrize("arg, env_name, reader", [
     ("discovery_root", "CURIO_DISCOVERY_ROOT", _shipped_discovery_root),
     ("models_root", "CURIO_MODELS_ROOT", _shipped_models_root),
+    ("packages_root", "CURIO_PACKAGES_ROOT", _shared_packages_root),
 ])
 def test_a_shipped_root_flag_is_resolved_and_read_by_the_backend(tmp_path, arg, env_name, reader):
     nested = tmp_path / "a" / ".." / "shipped"
@@ -376,7 +383,7 @@ def test_a_shipped_root_flag_is_resolved_and_read_by_the_backend(tmp_path, arg, 
     assert Path(reader()).resolve() == (tmp_path / "shipped").resolve()
 
 
-@pytest.mark.parametrize("env_name", ["CURIO_DISCOVERY_ROOT", "CURIO_MODELS_ROOT"])
+@pytest.mark.parametrize("env_name", ["CURIO_DISCOVERY_ROOT", "CURIO_MODELS_ROOT", "CURIO_PACKAGES_ROOT"])
 def test_no_shipped_root_flag_leaves_its_var_unset(env_name):
     set_environment_variables(**BASE)
     assert env_name not in os.environ
@@ -842,7 +849,7 @@ def test_a_preset_testing_env_var_still_counts(monkeypatch):
 # Each is a curio.py argument now, written the way #614's are: only when the
 # flag is passed, so a value already in the environment is still read.
 
-#: Every variable a #615 flag writes.
+#: Every variable these flags write: #615's table, and CURIO_PACKAGES_ROOT.
 OPERATOR_KEYS = (
     "GUEST_LLM_API_TYPE",
     "GUEST_LLM_BASE_URL",
@@ -861,6 +868,7 @@ OPERATOR_KEYS = (
     "COLLAB_CORS_ORIGINS",
     "COLLAB_NAMESPACE",
     "LOG_TO_STDOUT",
+    "CURIO_PACKAGES_ROOT",
 )
 
 #: The flags that write them.
@@ -882,6 +890,7 @@ OPERATOR_FLAG_NAMES = (
     "--collab-origins",
     "--collab-namespace",
     "--log-to-stdout",
+    "--packages-root",
 )
 
 

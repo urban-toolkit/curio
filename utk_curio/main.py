@@ -309,6 +309,15 @@ def main():
         ),
     )
     parser.add_argument(
+        "--packages-root", default=None, metavar="PATH",
+        help=(
+            "Directory the shared Node Catalog is read from and published to "
+            "(sets CURIO_PACKAGES_ROOT). Defaults to <repo_root>/packages/. "
+            "Start it from a copy of that directory: the built-in nodes are "
+            "installed from it."
+        ),
+    )
+    parser.add_argument(
         "--save-node-outputs", action=argparse.BooleanOptionalAction, default=None,
         help=(
             "Whether a new node's 'Save output dataset' toggle starts on (sets "
@@ -515,6 +524,7 @@ def main():
         backend_url=args.backend_url,
         discovery_root=args.discovery_root,
         models_root=args.models_root,
+        packages_root=args.packages_root,
         save_node_outputs=args.save_node_outputs,
         solve_max_attempts=args.solve_max_attempts,
         solve_node_budget=args.solve_node_budget,
