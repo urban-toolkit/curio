@@ -19,13 +19,17 @@ than shipping a dataset whose own loader snippet cannot read it.
 
 HOW
 ---
-Parquet is written through the same helpers the sandbox uses
+Frames are prepared for Parquet by the same helpers the sandbox uses
 (``utk_curio/sandbox/util/codec.py``, via ``parsers.save_dataset_parquet``)
 rather than a hand-rolled ``to_parquet``, because those helpers define the format
 the catalog's loader snippet reads back: object columns holding dicts/lists are
 JSON-encoded and the column list is recorded in a ``<file>.decode.json``
 sidecar, which ``loader_snippet("parquet")`` looks for. Rolling our own write
 would produce a file the generated loader silently mis-reads.
+
+Every Parquet file is written with zstd at its highest level (see
+``TABLE_COPY_OPTIONS`` and ``GEOPARQUET_OPTIONS``); a test holds the shipped
+catalog to it (``test_catalog_dataset_coverage.py``).
 
 Manifest ``rowCount``/``featureCount`` are taken from the frame actually
 written, never hand-typed: the pre-existing catalog manifests all drifted from
@@ -70,11 +74,24 @@ from utk_curio.sandbox.util.codec import (  # noqa: E402
     PARQUET_DECODE_SIDECAR_SUFFIX,
     _prepare_frame_for_parquet,
     _serialize_parquet_meta,
-    _write_dataframe_parquet,
 )
 
 SRC_DIR = REPO_ROOT / "docs" / "examples" / "data"
 CATALOG_DIR = REPO_ROOT / "datasets"
+
+#: How DuckDB writes a table: as the sandbox does, but in DuckDB's default row
+#: groups, since the sandbox's small ones (``PARQUET_ROW_GROUP_ROWS``, sized for
+#: streaming an artifact) make the violation tables 14% to 16% larger.
+TABLE_COPY_OPTIONS = "FORMAT PARQUET, COMPRESSION zstd, COMPRESSION_LEVEL 22"
+
+#: How pyarrow writes a GeoParquet file: without dictionary pages, which zstd
+#: beats on the sidewalk labels' long strings (8.9 MiB against 9.9 MiB).
+GEOPARQUET_OPTIONS = {
+    "compression": "zstd",
+    "compression_level": 22,
+    "use_dictionary": False,
+    "data_page_size": 8 * 1024 * 1024,
+}
 
 #: Migration date, stamped as the Curio *record's* createdAt/updatedAt. Not
 #: ``sourceUpdatedAt``: that field means "last-modified date of the original
@@ -367,6 +384,18 @@ def _build_recsv(dataset: Dataset, src: Path):
     return len(frame), None
 
 
+def _write_table(frame, path: Path) -> None:
+    import duckdb
+
+    writer = duckdb.connect(database=":memory:", config={"threads": 1})
+    try:
+        writer.register("catalog_frame", frame)
+        escaped_path = str(path).replace("'", "''")
+        writer.execute(f"COPY catalog_frame TO '{escaped_path}' ({TABLE_COPY_OPTIONS})")
+    finally:
+        writer.close()
+
+
 def _build_parquet_table(dataset: Dataset, src: Path):
     import pandas as pd
 
@@ -377,7 +406,7 @@ def _build_parquet_table(dataset: Dataset, src: Path):
     frame = pd.read_csv(src)
     _report(frame)
     prepared, encoded = _prepare_frame_for_parquet(frame)
-    _write_dataframe_parquet(prepared, dataset.dest)
+    _write_table(prepared, dataset.dest)
     _write_sidecar(dataset, _serialize_parquet_meta(encoded_object_columns=encoded))
     return len(frame), None
 
@@ -394,7 +423,7 @@ def _build_parquet_geo(dataset: Dataset, src: Path):
     prepared, encoded = _prepare_frame_for_parquet(
         frame, geometry_col=frame.geometry.name
     )
-    prepared.to_parquet(dataset.dest, compression="zstd")
+    prepared.to_parquet(dataset.dest, **GEOPARQUET_OPTIONS)
     _write_sidecar(dataset, _serialize_parquet_meta(encoded_object_columns=encoded))
     if encoded:
         print(f"    JSON-encoded object columns: {encoded}")
