@@ -24,7 +24,8 @@ of it, ``curio_layer(arg[i], "roads", 1)`` (the sandbox's
 an input reference is the name the input is read by, ``input_<i>``, and a layer
 reference the layer's name, written like a text value. An input of one frame
 with no layer name is that layer, whatever the reference names, in a spec as in
-code: there its layer reference is ``input_<i>`` too.
+code: there its layer reference is ``input_<i>`` too. One frame whose value
+names its layer is found by that name.
 Numbers are written the way JavaScript's ``String()`` writes them, so a value
 prints the same in both.
 """
@@ -335,6 +336,20 @@ def _is_one_frame_input(found: dict) -> bool:
     return not isinstance(found.get("layers"), list) and found.get("dataType") in ONE_FRAME_TYPES
 
 
+def _known_layers(found: dict):
+    """The layers the input *found* is known to carry, by name: the ones it
+    lists, or the one frame its value names (``layerName``), with the input's
+    columns; None when it names none. A layer reference must name one of them,
+    as ``curio_layer`` requires. Kept in sync with ``knownLayers`` in
+    ``codeReferences.ts``."""
+    if isinstance(found.get("layers"), list):
+        return found["layers"]
+    name = found.get("layerName")
+    if isinstance(name, str) and name:
+        return [{"name": name, "columns": found.get("columns")}]
+    return None
+
+
 def _over_cap(tag: dict) -> bool:
     ids = tag.get("ids")
     return not isinstance(ids, list) or len(ids) > SELECTION_ID_CAP
@@ -398,7 +413,7 @@ def reference_problem(
                 "or drag one of this node's input chips here."
             )
         if "layer" in parsed:
-            layers = found.get("layers") if isinstance(found.get("layers"), list) else None
+            layers = _known_layers(found)
             layer = next((l for l in layers or [] if l.get("name") == parsed["layer"]), None)
             if layers is not None and layer is None:
                 return missing_layer_message(reference, slot, parsed["layer"], (str(l.get("name")) for l in layers))
@@ -706,9 +721,9 @@ def resolve_references(
     """*code* with every reference replaced, and the problems found.
 
     *inputs* are the node's wired inputs, ``{"slot": <circle>, "dataType"?,
-    "columns"?: [...], "layers"?: [{"name", "columns"?}, ...]}`` each. *shared*
-    are the widgets of the dataflow's Parameter nodes, one per node.
-    *selections* are the node's selection tags (``metadata.selections``).
+    "layerName"?, "columns"?: [...], "layers"?: [{"name", "columns"?}, ...]}``
+    each. *shared* are the widgets of the dataflow's Parameter nodes, one per
+    node. *selections* are the node's selection tags (``metadata.selections``).
     A reference with a problem is left as written; each problem is
     ``{"reference": <as written>, "message": <why>}``.
     """

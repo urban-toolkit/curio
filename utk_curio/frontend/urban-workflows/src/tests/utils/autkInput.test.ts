@@ -472,6 +472,19 @@ describe("a layer chip in the document reads the frame its input carries (#662)"
     expect(loaded[second]).toEqual(parks);
   });
 
+  test("one frame whose value names its layer is read through that name, and another name is refused as in code", async () => {
+    // What a Data Pool hands on after a selection: the layer it holds, inline.
+    const roads = fc([point(1, 1)]);
+    const input = { dataType: "geodataframe", data: roads, layerName: "table_osm_roads" };
+    const spec = resolvedSpec('{"map": {"layerRefs": [{"dataRef": [!! input 0:table_osm_roads !!]}]}}', [input]);
+    expect(tables(await prepareAutkInput(input, spec))[spec.map.layerRefs[0].dataRef]).toEqual(roads);
+
+    const other = resolveReferences('{"map": {"layerRefs": [{"dataRef": [!! input 0:parks !!]}]}}', scopeOf([input]), "json");
+    expect(other.problems.map((p) => p.message)).toEqual([
+      "[!! input 0:parks !!]: input 0 has no layer parks. Its layers are table_osm_roads.",
+    ]);
+  });
+
   test("an input of several layers is still read by the layer's own name", async () => {
     const roads = fc([point(1, 1)]);
     mockFetchData.mockResolvedValue({
