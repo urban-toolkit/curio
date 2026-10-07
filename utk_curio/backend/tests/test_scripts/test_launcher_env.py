@@ -1094,24 +1094,9 @@ def _parser_flags():
     return set(re.findall(r'add_argument\(\s*"(--[a-z0-9-]+)"', source))
 
 
-def _guides():
-    docs = Path(utk_curio.__file__).resolve().parent.parent / "docs"
-    return {p.name: p.read_text(encoding="utf-8") for p in sorted(docs.glob("*.md"))}
-
-
-def _named_in(guides, flag):
-    pattern = re.compile(re.escape(flag) + r"(?![a-z0-9-])")
-    return [name for name, text in guides.items() if pattern.search(text)]
-
-
+# That the guides in docs/ name these flags, and every other curio.py flag, is
+# src/tests/launcherFlagsInGuides.test.ts in the frontend suite: it runs on the
+# checkout, and the image this suite runs in ships no guides.
 @pytest.mark.parametrize("flag", OPERATOR_FLAG_NAMES)
-def test_each_operator_flag_is_an_argument_a_guide_names(flag):
+def test_each_operator_flag_is_a_curio_py_argument(flag):
     assert flag in _parser_flags()
-    assert _named_in(_guides(), flag), f"no guide in docs/ names {flag}"
-
-
-def test_every_curio_py_flag_is_named_in_a_guide():
-    """A flag ships with the guide that tells an operator about it."""
-    guides = _guides()
-    missing = sorted(flag for flag in _parser_flags() if not _named_in(guides, flag))
-    assert not missing, missing
