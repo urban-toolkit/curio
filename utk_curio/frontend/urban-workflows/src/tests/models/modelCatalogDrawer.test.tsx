@@ -122,6 +122,21 @@ describe("the canvas Model Catalog drawer", () => {
     ]);
   });
 
+  test("while a card is dragged, the drawer lets the drag through to the canvas", async () => {
+    renderDrawer();
+    await screen.findByText("DDRNet23-Slim (street scenes)");
+    const root = document.querySelector('[data-curio-model-catalog-drawer="true"]') as HTMLElement;
+    expect(root).not.toHaveAttribute("data-dragging");
+    // Text dragged out of the search box is not a card: the scrim stays.
+    fireEvent.dragStart(screen.getByPlaceholderText("Search models, publishers, tags…"));
+    expect(root).not.toHaveAttribute("data-dragging");
+
+    fireEvent.dragStart(card("model.curio.ddrnet23-slim"), { dataTransfer: fakeDataTransfer() });
+    expect(root).toHaveAttribute("data-dragging", "true");
+    fireEvent.dragEnd(card("model.curio.ddrnet23-slim"));
+    expect(root).not.toHaveAttribute("data-dragging");
+  });
+
   test("a node that does not run a model is refused", async () => {
     renderDrawer();
     await screen.findByText("DDRNet23-Slim (street scenes)");

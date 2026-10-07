@@ -31,6 +31,7 @@ import { NodeFromFunctionModal } from "../editing/NodeFromFunctionModal";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFileCode } from "@fortawesome/free-solid-svg-icons";
 import shell from "./CatalogDrawerShell.module.css";
+import { useDrawerDragThrough } from "./useDrawerDragThrough";
 import styles from "./NodeCatalogDrawer.module.css";
 import { modalStackDepth } from "../../ModalShell";
 import ConfirmDialog from "../../ConfirmDialog";
@@ -64,6 +65,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   initialSearch = "",
 }) => {
   const drawerRef = useRef<HTMLElement>(null);
+  const dragThrough = useDrawerDragThrough();
 
   // The drawer is *per-project*: Install/Uninstall write to the current
   // project's lockfile (see docs/NODE-CATALOG.md).
@@ -276,6 +278,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         // (DatasetCatalogDrawer, AgentCatalogDrawer) have always had it.
         aria-hidden={!presented}
         data-curio-node-catalog-drawer="true"
+        {...dragThrough}
       >
         <button
           type="button"

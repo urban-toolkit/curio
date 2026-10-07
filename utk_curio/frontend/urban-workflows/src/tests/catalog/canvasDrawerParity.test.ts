@@ -103,6 +103,27 @@ describe("canvas catalog drawer parity", () => {
     }
   });
 
+  // An open drawer's scrim covers the whole window, canvas included, so it
+  // took the drop of a card dragged out of the drawer (#715 found it for the
+  // Scenario drawer). One rule lets such a drag through in every drawer: the
+  // shell's stylesheet takes the pointer off the root and the scrim while the
+  // root carries data-dragging, and useDrawerDragThrough sets that for as long
+  // as a card's drag lasts. No drawer sets it, or styles it, on its own.
+  test.each(CANVAS_DRAWERS)("%s lets a dragged card through its scrim by the shared rule", (drawer) => {
+    const source = read(drawer);
+    expect(source).toContain("useDrawerDragThrough()");
+    expect(source).toContain("{...dragThrough}");
+    expect(source).not.toContain("data-dragging");
+  });
+
+  test("the shell's stylesheet holds the rule that lets the drag through", () => {
+    const css = read("components/packages/publishing/CatalogDrawerShell.module.css");
+    expect(css).toMatch(/\.overlayRoot\[data-dragging="true"\]\s*\{\s*pointer-events:\s*none;\s*\}/);
+    expect(css).toMatch(
+      /\.overlayRoot\[data-dragging="true"\]\s*>\s*\.drawer\s*\{\s*pointer-events:\s*auto;\s*\}/,
+    );
+  });
+
   test.each(PROVIDERS)(
     "%s unmounts the drawer rather than leaving it in the DOM",
     (provider) => {

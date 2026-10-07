@@ -13,6 +13,7 @@ import {
     useEdgesState,
     useReactFlow,
 } from "reactflow";
+import { useInRouterContext } from "react-router-dom";
 import { useConnect } from "./flow/useConnect";
 import { useGraphEdits } from "./flow/useGraphEdits";
 import { useDashboardPins, useDashboardPinSave } from "./flow/useDashboardPins";
@@ -24,7 +25,7 @@ import { useSelectionTags } from "./flow/useSelectionTags";
 import { useCollaborationSync } from "./flow/useCollaborationSync";
 import { useInstallSave } from "./flow/useInstallSave";
 import { useServerRun } from "./flow/useServerRun";
-import { useNotebookView } from "./flow/useNotebookView";
+import { CanvasViewAddress, useNotebookView } from "./flow/useNotebookView";
 import { NotebookViewContext } from "./flow/notebookViewContext";
 import type { IOutput, IInteraction } from "./flow/flowTypes";
 import type { FlowContextProps, NodeActionsContextProps } from "./flow/flowContextTypes";
@@ -273,6 +274,9 @@ const FlowProvider = ({
     const [loading, setLoading] = useState<boolean>(false);
 
     const notebook = useNotebookView({ nodes, edges, setNodes, reactFlow, dashboardOn });
+    // The app always renders the dataflow inside its router, which keeps the
+    // view in the address; some tests render this provider without one.
+    const inRouter = useInRouterContext();
 
     const [workflowName, _setWorkflowName] = useState<string>(DEFAULT_WORKFLOW_NAME);
     const workflowNameRef = React.useRef(workflowName);
@@ -518,6 +522,7 @@ const FlowProvider = ({
             }}
         >
             <NotebookViewContext.Provider value={notebook.notebookViewValue}>
+                {inRouter && !dashboardOn && <CanvasViewAddress view={notebook.canvasView} />}
                 {children}
             </NotebookViewContext.Provider>
         </FlowContext.Provider>

@@ -6,6 +6,10 @@
  * "connections involving these nodes also fail to render". Both are covered
  * here, because the placeholder is the cause of each - it said the wrong thing,
  * and it rendered no handles for React Flow to attach edges to.
+ *
+ * In the notebook view the placeholder is a cell like any other: the page's
+ * cell width, and its dots on its right edge where every cell has them, so its
+ * connections run in the bar.
  */
 import React from "react";
 import { render, screen } from "@testing-library/react";
@@ -21,14 +25,27 @@ jest.mock("../../providers/packages/NodeCatalogDrawerProvider", () => ({
 }));
 
 let mockEdges: any[] = [];
+let mockNodes: any[] = [];
 jest.mock("reactflow", () => ({
   __esModule: true,
   useEdges: () => mockEdges,
-  Position: { Left: "left", Right: "right" },
+  useNodes: () => mockNodes,
+  Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
   // Render a stand-in carrying the same data attributes the real Handle puts
-  // in the DOM, which is all React Flow measures ports from.
-  Handle: ({ id, type }: { id: string; type: string }) => (
-    <div className="react-flow__handle" data-handleid={id} data-handletype={type} />
+  // in the DOM, which is all React Flow measures ports from, with the side and
+  // the place it is given.
+  Handle: ({ id, type, position, style, title, children }: any) => (
+    <div
+      className="react-flow__handle"
+      data-handleid={id}
+      data-handletype={type}
+      data-position={position}
+      data-top={style?.top === undefined ? "" : String(style.top)}
+      data-bottom={style?.bottom === undefined ? "" : String(style.bottom)}
+      title={title}
+    >
+      {children}
+    </div>
   ),
 }));
 
@@ -37,11 +54,14 @@ import {
   packageDisplayName,
   packageIdFromNodeType,
 } from "../../components/UnresolvedNode";
+import { NotebookViewContext } from "../../providers/flow/notebookViewContext";
+import { notebookCellMinHeight, notebookHandlePlaces } from "../../utils/notebookLayout";
 
 const STREETVISION = "curio.streetvision/image-segmentation";
 
 beforeEach(() => {
   mockEdges = [];
+  mockNodes = [];
   mockOpenDrawer.mockClear();
 });
 
@@ -208,5 +228,79 @@ describe("UnresolvedNode", () => {
       <UnresolvedNode nodeId="n1" nodeType={STREETVISION} registryReady />,
     );
     expect(handleIds(container, "target")).toEqual(["in"]);
+  });
+
+  it("keeps its inputs on its left edge and its outputs on its right on the canvas", () => {
+    mockEdges = [
+      { id: "e1", source: "up", target: "n1", targetHandle: "in" },
+      { id: "e2", source: "n1", target: "join", sourceHandle: "out" },
+    ];
+    const { container } = render(
+      <UnresolvedNode nodeId="n1" nodeType={STREETVISION} registryReady />,
+    );
+    expect(container.querySelector('[data-handleid="in"]')).toHaveAttribute("data-position", "left");
+    expect(container.querySelector('[data-handleid="out"]')).toHaveAttribute("data-position", "right");
+    expect((container.firstElementChild as HTMLElement).style.width).toBe("");
+  });
+});
+
+/** The page's cell width the view hands its cells. */
+const CELL_WIDTH = 1065;
+
+function renderInNotebook(ui: React.ReactElement) {
+  return render(
+    <NotebookViewContext.Provider value={{ on: true, laneX: new Map(), cellWidth: CELL_WIDTH, reveal: () => true }}>
+      {ui}
+    </NotebookViewContext.Provider>,
+  );
+}
+
+describe("UnresolvedNode in the notebook view", () => {
+  // Fed by a package node, feeding another node: one input dot, one output dot.
+  const handles = [
+    { id: "in", type: "target" as const },
+    { id: "out", type: "source" as const },
+  ];
+
+  beforeEach(() => {
+    mockEdges = [
+      { id: "e1", source: "load", target: "n1", targetHandle: "in" },
+      { id: "e2", source: "n1", target: "join", sourceHandle: "out" },
+    ];
+    // A package node's own label: how resolveNodeDisplayLabel names a node
+    // without consulting the registry (a numeric type id).
+    mockNodes = [{ id: "load", data: { nodeId: "load", nodeType: "1024", packageTemplateLabel: "Load roads" } }];
+  });
+
+  it.each([
+    ["missing its package", STREETVISION, true],
+    ["of an unrecognized type", "DATA_LOADING", true],
+    ["still loading", STREETVISION, false],
+  ])("is a cell like any other when %s: the page's width, its dots on its right edge where every cell's are", (
+    _label, nodeType, registryReady,
+  ) => {
+    const { container } = renderInNotebook(
+      <UnresolvedNode nodeId="n1" nodeType={nodeType as string} registryReady={registryReady as boolean} />,
+    );
+    const places = notebookHandlePlaces(handles);
+    for (const { id } of handles) {
+      const dot = container.querySelector(`[data-handleid="${id}"]`);
+      const place = places.get(id) as { top: number | string; bottom?: number };
+      expect(dot).toHaveAttribute("data-position", "right");
+      expect(dot).toHaveAttribute("data-top", String(place.top));
+      expect(dot).toHaveAttribute("data-bottom", place.bottom === undefined ? "" : String(place.bottom));
+    }
+    const card = container.firstElementChild as HTMLElement;
+    expect(card.style.width).toBe(`${CELL_WIDTH}px`);
+    expect(card.style.minHeight).toBe(`${notebookCellMinHeight(handles)}px`);
+  });
+
+  it("numbers its input dot and names what feeds it, as every cell's dots do", () => {
+    const { container } = renderInNotebook(
+      <UnresolvedNode nodeId="n1" nodeType={STREETVISION} registryReady />,
+    );
+    expect(container.querySelector('[data-handleid="in"]')).toHaveTextContent("0");
+    expect(container.querySelector('[data-handleid="in"]')).toHaveAttribute("title", "input 0 · Load roads");
+    expect(container.querySelector('[data-handleid="out"]')).toHaveAttribute("title", "output");
   });
 });

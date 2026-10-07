@@ -155,6 +155,14 @@ export function notebookCellMinHeight(handles: readonly NotebookHandle[]): numbe
   return interaction ? 2 * Math.max(above, below) : above + below;
 }
 
+/** A cell's box: the page's cell width, and at least tall enough for its dots. */
+export function notebookCellBox(
+  handles: readonly NotebookHandle[],
+  cellWidth: number,
+): { width: number; minHeight: number } {
+  return { width: cellWidth, minHeight: notebookCellMinHeight(handles) };
+}
+
 // How tall a cell's output is. A chart or a map has no height of its own, so
 // it gets a definite one to draw in; a table, a summary or a control takes its
 // own, up to a cap, and scrolls inside past it.

@@ -13,17 +13,6 @@
   --curio-drawer-z: var(--curio-z-dataset-drawer);
 }
 
-/* While a card is dragged, the scrim and the root let the drag through to the
-   canvas beneath them; the panel itself still holds the pointer. Two classes,
-   to win over the shell's presented rule whatever order the sheets load in. */
-.overlayRoot.overlayRootDragging {
-  pointer-events: none;
-}
-
-.overlayRoot.overlayRootDragging > aside {
-  pointer-events: auto;
-}
-
 /* The avatar square holds the project graph instead of a glyph. */
 .avatarThumb {
   overflow: hidden;

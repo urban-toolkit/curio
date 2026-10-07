@@ -16,24 +16,20 @@ import {
  *
  * Smaller still: a scenario is read-only here, so there is nothing to add,
  * remove or delete. What is left is the search, the sort, the details being
- * viewed, and the drag of a card onto the canvas, during which `dragging`
- * holds.
+ * viewed, and the drag of a card onto the canvas.
  */
 export function useScenarioCatalogDrawer(presented: boolean) {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sort, setSort] = useState<ScenarioSortMode>("recent");
   const [pinned, setPinned] = useState(false);
-  const [dragging, setDragging] = useState(false);
 
   const handleScenarioDragStart = useCallback((scenario: ScenarioRow, event: DragEvent<HTMLElement>) => {
     writeScenarioDragData(event.dataTransfer, beginScenarioDrag(scenario));
-    setDragging(true);
   }, []);
 
   const handleScenarioDragEnd = useCallback(() => {
     endScenarioDrag();
-    setDragging(false);
   }, []);
   // Its own state, not shared with anything that selects: a card's
   // "View details" opens the modal and nothing else.
@@ -58,7 +54,6 @@ export function useScenarioCatalogDrawer(presented: boolean) {
     setPinned,
     catalog,
     items,
-    dragging,
     handleScenarioDragStart,
     handleScenarioDragEnd,
     detailScenario,

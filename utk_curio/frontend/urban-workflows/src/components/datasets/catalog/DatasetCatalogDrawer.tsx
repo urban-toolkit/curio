@@ -14,6 +14,7 @@ import { DatasetInstallingCard } from "./DatasetInstallingCard";
 import { useDatasetCatalogDrawer } from "./useDatasetCatalogDrawer";
 import { PackageSearchRow } from "components/packages/publishing/PackageSearchRow";
 import shell from "components/packages/publishing/CatalogDrawerShell.module.css";
+import { useDrawerDragThrough } from "components/packages/publishing/useDrawerDragThrough";
 import styles from "./DatasetCatalogDrawer.module.css";
 import ConfirmDialog from "../../ConfirmDialog";
 import { modalStackDepth } from "../../ModalShell";
@@ -60,6 +61,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     confirmAction,
     dismissConfirm,
   } = useDatasetCatalogDrawer(presented);
+  const dragThrough = useDrawerDragThrough();
 
   // Escape dismisses this drawer, as it does the Node and Agent ones. It was
   // the only one of the three without a handler, so a user who had learned the
@@ -100,6 +102,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
         }`}
         data-curio-dataset-catalog-drawer="true"
         aria-hidden={!presented}
+        {...dragThrough}
       >
         <button
           type="button"
