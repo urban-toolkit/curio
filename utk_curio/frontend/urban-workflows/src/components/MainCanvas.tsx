@@ -319,8 +319,8 @@ export function MainCanvas() {
     // (see useWorkflowOperations.ts) before taking screenshots. A fit without
     // a duration is set at once and returns the viewport it set (null while a
     // node is not measured yet), so a helper can wait for that viewport
-    // without an animation frame. Kept unconditional — read-only from the
-    // outside and cheap — so e2e tests don't need a separate build flag.
+    // without an animation frame. Kept unconditional (read-only from the
+    // outside and cheap), so e2e tests don't need a separate build flag.
     useEffect(() => {
         (window as any).__curio_reactFlow = reactFlow;
         (window as any).__curio_fitViewWithMenuOffset = (options?: FitViewOptions) =>
