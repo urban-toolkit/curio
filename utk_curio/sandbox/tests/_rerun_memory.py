@@ -221,7 +221,7 @@ class Report:
 
     # Thresholds the unit test holds the sandbox to (see test_rerun_memory.py).
     GROWTH_SHARE = 0.25
-    REST_UNITS = 1.5
+    REST_UNITS = 1.0
 
     @property
     def working_set(self) -> int:

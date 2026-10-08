@@ -16,10 +16,10 @@
  * database's `getLayer`, are wrapped.
  *
  * A raster comes as GeoTIFF bytes: a Python node's rasterio dataset is asked
- * of the sandbox by its artifact (`/raster`), and a collection an upstream
- * Autark node handed on is written back to GeoTIFF bytes here. Either way it
- * is loaded at its own size, with `nearest` resampling and its CRS
- * (utils/raster/rasterLoad).
+ * of the sandbox by its artifact (`/raster`; a standalone dashboard carries
+ * that answer, see `fetchRaster`), and a collection an upstream Autark node
+ * handed on is written back to GeoTIFF bytes here. Either way it is loaded at
+ * its own size, with `nearest` resampling and its CRS (utils/raster/rasterLoad).
  */
 import { fetchRaster } from '../../services/api';
 import type { AutkRasterInput } from '../../utils/autkInput';
@@ -310,7 +310,9 @@ export function centeredDomain(ref: any, values: ArrayLike<number> | undefined):
  * raster's cells are colored whatever its `isColorMap`, so on a raster
  * `"isColorMap": false` hides the legend alone; the grammar turns it on for
  * any layer with a scheme. A raster's layerRef that names a
- * `colorMapCenter` is colored over the domain `centeredDomain` gives it. The
+ * `colorMapCenter` is colored over the domain `centeredDomain` gives it. A map
+ * whose raster was colored again is asked for a frame (`requestRender`), since
+ * it draws on demand (`autkMapDrawing`). The
  * grammar keeps each map by the dataRefs it draws (`_mapRegistry`); a layer
  * that is not a raster is left as drawn.
  */
@@ -331,6 +333,9 @@ export function recolorRasters(grammar: any, spec: any): void {
                 bleedIntoClearCells(rgba, layer.rasterResX, layer.rasterResY);
             }
             if (ref.isColorMap === false) map.updateRenderInfo(ref.dataRef, { isColorMap: false });
+            // The cells were written in place, which autk-map cannot see: a map
+            // that draws on demand is asked for a frame.
+            map.requestRender?.();
         }
     }
 }

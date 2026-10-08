@@ -1,0 +1,1 @@
+`urban-toolkit-autk-map-4.0.0-curio.1.tgz` is `@urban-toolkit/autk-map` packed from urban-toolkit/autark#115 (on-demand rendering) at `9bba938c1f04bb97c1eff000dcfdd3b501568a7d`; Curio installs it in place of autk-map 4.0.0 from npm until Autark releases that change.

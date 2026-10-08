@@ -80,7 +80,7 @@ export interface WorkflowOperationsDeps {
     onEdgesDelete: (connections: Edge[]) => void;
     onNodesDelete: (changes: NodeChange[]) => void;
     onNodesChange: (changes: NodeChange[]) => void;
-    onConnect: (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean) => void;
+    onConnect: (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean, sourceAddedByLoad?: boolean) => void;
     addNode: (node: Node, customWorkflowName?: string, provenance?: boolean) => void;
     // Workflow-wide default for the per-node "Save output dataset" toggle,
     // sourced from the backend (CURIO_DEFAULT_SAVE_NODE_OUTPUT) via FlowProvider.
@@ -485,6 +485,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             }
         };
 
+        // A replayed edge from a node this load added hands over none of the
+        // outputs the caller restores: the caller passes those down itself,
+        // once (`hydrateRestoredOutputs`). An edge from a node the canvas
+        // already had (Duplicate selection wiring a copy to what fed the
+        // original) hands over that node's output, as any new edge does.
+        const addedIds = new Set(addedNodes.map((n: Node) => n.id));
+
         console.log("loadParsedTrill second");
         setNodes((prevNodes: any) => {
             // Replaying persisted edges must not dirty the project: ``onConnect``
@@ -502,7 +509,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 if (merge) {
                     for (const edge of loaded_edges) {
                         if (!currentEdgeIds.has(edge.id)) {
-                            onConnect(edge, prevNodes, undefined, workflowName, false, true);
+                            onConnect(edge, prevNodes, undefined, workflowName, false, true, addedIds.has(edge.source));
                         }
                     }
                 } else {
@@ -511,7 +518,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                     // of this load (in_N occupancy) instead of an empty list.
                     const connectedSoFar: any[] = [];
                     for (const edge of loaded_edges) {
-                        onConnect(edge, prevNodes, connectedSoFar, workflowName, false, true);
+                        onConnect(edge, prevNodes, connectedSoFar, workflowName, false, true, addedIds.has(edge.source));
                         connectedSoFar.push(edge);
                     }
                 }

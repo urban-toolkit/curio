@@ -45,6 +45,14 @@
   color: #1E1F23;
 }
 
+/* Why the server would not build the page: its paragraphs, and the indented
+   rows that name the heaviest nodes, as the server wrote them. */
+.stateReason {
+  max-width: 640px;
+  white-space: pre-wrap;
+  text-align: left;
+}
+
 /* A quiet secondary action rather than a default browser link: this is the
    only thing on an otherwise empty page, and a blue underline was the one
    piece of unstyled chrome left on it. */

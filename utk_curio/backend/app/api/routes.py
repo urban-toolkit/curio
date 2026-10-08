@@ -176,16 +176,29 @@ def serve_launch_cwd_file(filename: str):
     per-user stores under ``.curio/``, the dataset hub, and ``.env``. None of
     that is data a node reads by relative path, so :func:`_is_private_path`
     refuses it with the same 404 a missing file gets.
+
+    ``vendor/duckdb-extensions/`` is Curio's own copy of DuckDB's extensions,
+    which the browser's duckdb worker asks for: it is served from where Curio
+    keeps it (``node_runtime.duckdb_extensions_dir``), whatever folder Curio
+    was started from.
     """
     from flask import send_from_directory
     from utk_curio.backend.app.common.safe_paths import PathTraversalError, safe_join
+    from utk_curio.sandbox.util import node_runtime
+
+    parts = [p for p in filename.split('/') if p]
+    extensions = node_runtime.DUCKDB_EXTENSIONS.parts
+    if tuple(parts[:len(extensions)]) == extensions:
+        rest = parts[len(extensions):]
+        if any(part.startswith('.') for part in rest):
+            abort(404)
+        return send_from_directory(node_runtime.duckdb_extensions_dir(), '/'.join(rest))
 
     launch_cwd = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
     # ``filename`` is a multi-segment relative path (e.g. docs/examples/data/x.pbf).
     # Use validate=False (like /get) so the containment guard alone runs: real data
     # filenames routinely contain spaces or leading '_'/'-' that the per-segment
     # charset would reject, and is_within already prevents escaping CURIO_LAUNCH_CWD.
-    parts = [p for p in filename.split('/') if p]
     try:
         resolved = safe_join(launch_cwd, *parts, validate=False)
     except PathTraversalError:

@@ -9,9 +9,16 @@ What the replay found on Linux (ubuntu-latest, 16 GB, the reporter's build and
 main, 200k and 800k polygons per loader, with and without gc, malloc_trim and
 MALLOC_ARENA_MAX=2):
 
-* The sandbox does **not** keep memory across re-runs. After every cycle its
-  RSS falls back to within a few hundred MB of idle, and no cleanup changed
-  that. The two retention tests below hold that line.
+* The sandbox does **not** keep data across re-runs: the memory its
+  allocations hold live, its Python objects, threads and modules stay the same
+  from one re-run to the next. What it kept was free memory: glibc's malloc
+  arenas, one per request thread that allocated at the same time as another,
+  and pyarrow's pool kept the pages a run had freed, which left the sandbox
+  1.1 to 1.5 times the largest single request above idle at 200k polygons.
+  The sandbox returns that memory whenever it goes idle
+  (``util/memory_release.py``), and settles at 0.55 to 0.85 of one request.
+  The two retention tests below hold that line: re-runs do not grow it, and
+  at rest it is at most one request.
 * A re-run's peak comes from **serving** its outputs, not computing them. The
   canvas fetches every output at once, and each full fetch held the artifact
   three times over (the Arrow table, the IPC stream, a ``bytes`` copy of it):

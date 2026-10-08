@@ -209,7 +209,7 @@ class TestAnEvaluationNeverSeesItsExample:
 
 class TestWithoutTheExamplesFolder:
     def test_there_is_no_block_and_one_warning(self, monkeypatch, tmp_path, caplog):
-        # A pip install ships no docs/examples.
+        # An install whose shipped dataflows are missing.
         from utk_curio.backend.app.projects import shipped
 
         monkeypatch.setattr(shipped, "examples_dir", lambda: tmp_path / "missing")

@@ -5,6 +5,9 @@ on:
     branches:
       - main
       - karla
+    # utk_curio/frontend/urban-workflows/src/tests/fullStackBuildPaths.test.ts
+    # checks that both lists are the same and cover what the image copies and
+    # what the jobs read from the checkout.
     paths:
       - 'utk_curio/**'
       - 'Dockerfile'
@@ -15,23 +18,36 @@ on:
       - 'docker-compose.ci-exec-user.yml'
       - 'docker-compose.ci-stress.yml'
       - 'docker-compose.ci-shards.yml'
+      # test-gpu asserts the production deploy configuration.
+      - 'docker-compose.deploy.yml'
       - '.github/workflows/docker-compose.yml'
       - '.github/actions/**'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
       - 'scripts/**'
+      # The Node.js major the jobs set up and scripts/check_node_pins.py checks.
+      - '.nvmrc'
+      - '.node-version'
       # Baked into the image (see Dockerfile runtime_base COPYs):
       - 'requirements.txt'
+      - 'curio.py'
       - 'pyproject.toml'
       - 'MANIFEST.in'
+      - 'setup.py'
       - 'package.json'
       - 'package-lock.json'
       - 'packages/**'
       - 'datasets/**'
+      - 'discovery/**'
+      - 'models/**'
       - 'docs/examples/**'
+      - 'vendor/**'
       # The schemas the test suite validates those examples against:
       # a schema edit can break the corpus without touching the corpus.
       - 'docs/schemas/**'
+      # The guides the tests read: the examples table, the launcher's flags,
+      # the Solve loop's stop reasons.
+      - 'docs/*.md'
   pull_request:
     branches: [ main ]
     # `labeled` is here so that putting the `stress` label on an open PR starts
@@ -40,6 +56,7 @@ on:
     # job alone: every other job below skips on `action == 'labeled'`, since
     # they already ran on the push that produced this ref.
     types: [opened, synchronize, reopened, labeled]
+    # The same list as push's.
     paths:
       - 'utk_curio/**'
       - 'Dockerfile'
@@ -50,23 +67,36 @@ on:
       - 'docker-compose.ci-exec-user.yml'
       - 'docker-compose.ci-stress.yml'
       - 'docker-compose.ci-shards.yml'
+      # test-gpu asserts the production deploy configuration.
+      - 'docker-compose.deploy.yml'
       - '.github/workflows/docker-compose.yml'
       - '.github/actions/**'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
       - 'scripts/**'
+      # The Node.js major the jobs set up and scripts/check_node_pins.py checks.
+      - '.nvmrc'
+      - '.node-version'
       # Baked into the image (see Dockerfile runtime_base COPYs):
       - 'requirements.txt'
+      - 'curio.py'
       - 'pyproject.toml'
       - 'MANIFEST.in'
+      - 'setup.py'
       - 'package.json'
       - 'package-lock.json'
       - 'packages/**'
       - 'datasets/**'
+      - 'discovery/**'
+      - 'models/**'
       - 'docs/examples/**'
+      - 'vendor/**'
       # The schemas the test suite validates those examples against:
       # a schema edit can break the corpus without touching the corpus.
       - 'docs/schemas/**'
+      # The guides the tests read: the examples table, the launcher's flags,
+      # the Solve loop's stop reasons.
+      - 'docs/*.md'
   # test-gpu-stress runs on this schedule instead of on every push. It holds
   # the single GPU runner for ~30 minutes, which roughly doubles a run, and
   # what it measures -- does the stack hold up under 5/10/50/100 users -- moves

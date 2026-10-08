@@ -6,7 +6,7 @@ every ``manifest.json``. It is a **derived cache**: :func:`reconcile` refreshes 
 from disk, and every caller falls back to reading the manifest when a store dir
 has no row, so a stale or missing row can never hide a dataset.
 
-Two rules hold everywhere in this module:
+Three rules hold everywhere in this module:
 
 * **Never raise into a caller.** Indexing is an accelerator; a DB failure must
   degrade to "no row" and let the filesystem path serve the request. Callers use
@@ -15,6 +15,11 @@ Two rules hold everywhere in this module:
 * **A dir whose manifest fails validation gets no row** — identical to the
   listing's own behaviour (``ManifestError``/``OSError``/``ValueError`` → skip),
   so the index can't resurrect a dataset the catalog considers unreadable.
+* **A dir gets one row, whoever adds it.** A write reads the rows and then adds
+  the ones its dirs lack, and another writer can add the same row in between:
+  two listings that reconcile at once, or an install that lands during a
+  listing. :func:`_add_row` then keeps the row already there instead of
+  failing with an IntegrityError.
 """
 
 from __future__ import annotations
@@ -23,6 +28,8 @@ import json
 import logging
 from pathlib import Path
 from typing import Any, Optional
+
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.datasets.domain.manifest import (
@@ -216,8 +223,9 @@ def upsert_from_dir(user_key: str, dataset_root: Path) -> Optional[DatasetIndexE
 
     Returns the row, or ``None`` when the dir isn't indexable (not an
     ``imported.``/``computed.`` store dir, or its manifest is missing/invalid —
-    the same dirs the listing skips). Commits, so a caller's dataset write is
-    already durable by the time the row lands.
+    the same dirs the listing skips) or another dir holds its dataset id.
+    Commits, so a caller's dataset write is already durable by the time the row
+    lands.
     """
     dir_name = dataset_root.name
     origin = origin_for_dir(dir_name)
@@ -237,13 +245,47 @@ def upsert_from_dir(user_key: str, dataset_root: Path) -> Optional[DatasetIndexE
     # calls forget() for the old dir itself).
     row = get_by_dir(user_key, dir_name)
     if row is None:
-        row = DatasetIndexEntry(user_key=user_key)
-        db.session.add(row)
-    _apply_manifest(
-        row, manifest, dir_name=dir_name, origin=origin, mtime_ns=mtime_ns, size=size
-    )
+        row = _add_row(
+            user_key, manifest, dir_name=dir_name, origin=origin, mtime_ns=mtime_ns, size=size
+        )
+    if row is not None:
+        _apply_manifest(
+            row, manifest, dir_name=dir_name, origin=origin, mtime_ns=mtime_ns, size=size
+        )
     db.session.commit()
     return row
+
+
+def _add_row(
+    user_key: str,
+    manifest: DatasetManifest,
+    *,
+    dir_name: str,
+    origin: str,
+    mtime_ns: Optional[int],
+    size: Optional[int],
+) -> Optional[DatasetIndexEntry]:
+    """Insert the row for a dir that had none, and return the dir's row.
+
+    Another writer may have added it since the caller looked: the insert has no
+    conflict target, so a row already there for the dir is kept rather than
+    failing with an IntegrityError. ``None`` when another dir holds the
+    manifest's dataset id; that dir is then read from its manifest, as any dir
+    without a row is.
+    """
+    staged = DatasetIndexEntry(user_key=user_key)
+    _apply_manifest(
+        staged, manifest, dir_name=dir_name, origin=origin, mtime_ns=mtime_ns, size=size
+    )
+    values = {
+        column.key: getattr(staged, column.key)
+        for column in DatasetIndexEntry.__table__.columns
+        if getattr(staged, column.key) is not None
+    }
+    db.session.execute(
+        sqlite_insert(DatasetIndexEntry).values(**values).on_conflict_do_nothing()
+    )
+    return get_by_dir(user_key, dir_name)
 
 
 def forget(user_key: str, dir_name: str) -> bool:
@@ -309,6 +351,7 @@ def _reconcile_into(
     """
     stats = {"added": 0, "updated": 0, "removed": 0}
     seen: set[str] = set()
+    missing: list[tuple[str, DatasetManifest, Optional[int], Optional[int]]] = []
     changed = False
 
     for dataset_root in list_user_datasets(user_key):
@@ -343,12 +386,11 @@ def _reconcile_into(
                 changed = True
             continue
         if row is None:
-            row = DatasetIndexEntry(user_key=user_key)
-            db.session.add(row)
-            rows[dir_name] = row
-            stats["added"] += 1
-        else:
-            stats["updated"] += 1
+            # Added after the removals below, so the row of a dir renamed
+            # under the same dataset id is gone before the new one goes in.
+            missing.append((dir_name, manifest, mtime_ns, size))
+            continue
+        stats["updated"] += 1
         _apply_manifest(
             row,
             manifest,
@@ -364,6 +406,20 @@ def _reconcile_into(
             db.session.delete(rows.pop(dir_name))
             stats["removed"] += 1
             changed = True
+
+    for dir_name, manifest, mtime_ns, size in missing:
+        row = _add_row(
+            user_key,
+            manifest,
+            dir_name=dir_name,
+            origin=origin_for_dir(dir_name),
+            mtime_ns=mtime_ns,
+            size=size,
+        )
+        if row is not None:
+            rows[dir_name] = row
+            stats["added"] += 1
+        changed = True
 
     if changed:
         db.session.commit()

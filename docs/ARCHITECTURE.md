@@ -206,6 +206,8 @@ focus in the URL (`settingsPath`, read back by `focusFromSearch`).
 
 When a node produces output, it calls `outputCallback(nodeId, output)`, which updates `outputs`. React re-renders cause downstream nodes (those connected by an edge from the node that just executed) to detect the new input and request the data from the backend.
 
+Opening a dataflow (`ProjectLoader`) and dropping a scenario restore saved outputs: they go into `outputs`, and `hydrateRestoredOutputs` (`providers/flow/useApplyOutput.ts`) hands each one to the nodes below its producer, once, along the edges the load built. The load's replay of its saved edges through `onConnect` hands over no output of a node the load added; an edge from a node already on the canvas (Duplicate selection wiring a copy) hands over that node's output, as a new connection does.
+
 ### The notebook view
 
 The notebook view shows the canvas's own nodes and edges as a column of cells, with
@@ -700,9 +702,11 @@ The names `input_<k>` are defined once, as `INPUT_TABLE_PREFIX` and `input_table
 
 **Framing.** autk-map's flat camera starts 10,000 world units above the map's origin whatever its layers hold, and the grammar's document has no camera. Once the grammar has run, `frameMaps` ([`autkMapView.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkMapView.ts)) frames each map of `_mapRegistry` on the extent of the geometry its layers drew (autk-map keeps it relative to the map's origin) with the arithmetic of autk-map's terrain mode (`fitCameraToTerrainBounds`: the limiting side fills the view with 8% to spare), through the camera's own `resetCamera` and `resize`. The camera is raised by the tallest building and stays under half of its far plane. A map drawn while hidden is framed when it is first shown, and the map's R key frames it again.
 
+**Drawing.** Maps draw on demand. autk-grammar starts each map it makes drawing on every animation frame; once the grammar has run, `drawMapsOnDemand` ([`autkMapDrawing.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkMapDrawing.ts)) switches each map to autk-map's on-demand rendering (`draw({ onDemand: true })`): it draws one frame, then only when its picture changes. autk-map asks for that frame itself after every change it can observe: its camera (navigation, a resize, a window resize), its layers (loads, updates, highlights), its style and a pick. Where Curio changes a map in a way autk-map cannot observe, it calls the map's `requestRender()`: `frameMaps` after it moves the camera, and `recolorRasters` after it writes a raster's cells in place. A map that nothing changes draws nothing, whether it shows, sits out of view or is hidden in a collapsed scenario. A map nobody will see again is destroyed with autk-map's `destroy()`, which frees its GPU textures, its window listeners and its controls: the node destroys its maps when its next run replaces their canvas and when it leaves the page (a deleted node, a closed dataflow), including maps a run made after it left. Code that reads a map's pixels reads them in the animation frame that renders the map: `renderMapsForReading` asks every on-demand map for a frame and resolves inside that frame, and the e2e captures call it too (`window.__curio_renderMapsForReading`). On-demand rendering comes from urban-toolkit/autark#115, so Curio installs autk-map from `vendor/autark/` until Autark releases it.
+
 **Rasters.** A raster on the input is a table under the same names, read through the same path; the Vega-Lite node still refuses it. Its frame says where the raster is and is not fetched as rows: a Python node's `rasterio` dataset by its artifact (`part` for its place in a tuple), or the envelope another node handed on. [`autkRasters.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkRasters.ts) turns each into GeoTIFF bytes and loads it with autk-db's `loadGeoTiff` into the grammar's own database:
 
-- The bytes of an artifact come from `GET /raster` (backend, proxied to the sandbox's `/raster`, [`sandbox/util/rasters.py`](../utk_curio/sandbox/util/rasters.py)): a GeoTIFF GDAL writes, whatever the source format (a VRT from Mosaic Rasters included), described in the `X-Curio-Raster` header (size, bands, CRS, transform, nodata). A raster over `maxCells` or `maxSide` is a 413 with its size, before anything is written. The artifact is read as `/get` reads one (`parsers.load_artifact`): a saved raster output the session-tagged store cannot serve, after a reopen under a new sign-in, comes from the copy a project load hydrated, the raster's own GeoTIFF or VRT, which `load_shared_output_file` knows by its first bytes and opens with rasterio, as the store does. A Python node reads it the same way, in process and through staging.
+- The bytes of an artifact come from `GET /raster` (backend, proxied to the sandbox's `/raster`, [`sandbox/util/rasters.py`](../utk_curio/sandbox/util/rasters.py)): a GeoTIFF GDAL writes, whatever the source format (a VRT from Mosaic Rasters included), described in the `X-Curio-Raster` header (size, bands, CRS, transform, nodata). A raster over `maxCells` or `maxSide` is a 413 with its size, before anything is written. The artifact is read as `/get` reads one (`parsers.load_artifact`): a saved raster output the session-tagged store cannot serve, after a reopen under a new sign-in, comes from the copy a project load hydrated, the raster's own GeoTIFF or VRT, which `load_shared_output_file` knows by its first bytes and opens with rasterio, as the store does. A Python node reads it the same way, in process and through staging. A standalone dashboard carries these answers in its page: when the page is built, `projects/dashboard_payload.py` asks the sandbox's `/raster` for each raster an Autark map on it reads (`raster_places`, the rules of `readGrammarInput`), with the same limits, and the payload's `rasters` holds each answer by filename and `part`: the GeoTIFF in base64 with its description, or the refusal. `fetchRaster` answers from it as `fetchData` answers from `outputs`, and the GeoTIFFs count toward the page's 25 MB.
 - An envelope's collection is written back to GeoTIFF bytes by [`geotiffWriter.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/geotiffWriter.ts).
 - [`rasterLoad.ts`](../utk_curio/frontend/urban-workflows/src/utils/raster/rasterLoad.ts) sets the parameters: `maxRasterCells` the raster's own size (up to 2048 by 2048 cells, 8192 on a side), so autk-db never resamples it; `resampleMethod: 'nearest'`; and `coordinateFormat` its EPSG CRS, since autk-db reads a raster as EPSG:4326 otherwise. A larger, rotated or unplaceable raster is refused with a sentence that names it.
 - autk-grammar's data sources have no GeoTIFF, so `withRasterSources` wraps one grammar instance's data adapter to load the `curio-raster` sources and hands every other source on. It also wraps that database's `getLayer` for those tables: the map gets `getRaster`'s collection, read right after `loadGeoTiff`, at the raster's own extent (autk-db's `getLayer` gives a raster the workspace's extent once a layer with geometry has set one), plus an outline of that extent (`framedRaster`), because autk-map places a map by the geometry of the first collection it loads and a raster has none. autk-db keeps raster cells in one store for the page, keyed `autk.<table>`, so every node's `input_0` shares a key: rasters are loaded and read back one at a time across nodes (`oneRasterAtATime`).
@@ -825,6 +829,10 @@ The sandbox runs as a separate Flask process. It:
   the backend in `execution/sandbox_client.py`, and checked in `sandbox/app/auth.py`. An
   instance started with `--deploy` refuses to boot without one.
 - Sends no CORS headers, because no browser calls it directly.
+- Returns the memory its allocators keep free to the system whenever no
+  request is in flight (`sandbox/util/memory_release.py`): every request runs
+  on a thread of its own, and glibc's malloc arenas and pyarrow's pool would
+  otherwise keep the pages each run freed.
 - Caches repeated executions of identical code + input combinations (`sandbox/app/utils/cache.py`).
 
 > [!WARNING]
@@ -997,6 +1005,15 @@ per-user work directory it is **not** owned by the execution account: it is an
 import path, so node code writing there could shadow a later import. The
 startup audit reports it if it ever becomes writable.
 
+### Where the shipped folders are
+
+The repository keeps the folders Curio ships beside its code next to `utk_curio/`: `datasets/`, `discovery/`, `models/`, `packages/`, `scripts/` and `vendor/`, and `docs/`, of which Curio reads the dataflows it ships (`docs/examples/*.json` and `docs/examples/dataflows/*.json`), the Example storage source's folder (`docs/examples/data/storage/`), the prompt fixtures (`docs/examples/prompts/`) and two schemas (`docs/schemas/trill.v1.json` and `example-prompt-fixture.v1.json`). [`utk_curio/shipped.py`](../utk_curio/shipped.py) `path` says where one is on this machine, and every reader asks it: the four catalogs' roots, a shipped folder source's root, the launcher's manifest walk and DuckDB seeding, the `/file/vendor/duckdb-extensions/` route, `workflow_spec`'s scan of the shipped code nodes, `curio test`, the agents' prompt fields, the shipped dataflows (`projects/shipped.py`) with the worked examples' index, and the agent evaluation's fixtures.
+
+- A clone, the Docker image and CI: next to `utk_curio/`.
+- A pip install: `utk_curio/_shipped/<folder>/`. `setup.py` maps each folder into the wheel there, so the wheel installs nothing in site-packages but `utk_curio/` and its dist-info, where a `datasets/` of Curio's would mix with Hugging Face's `datasets` package. The sdist keeps the repository's layout, and `MANIFEST.in` says which files ship: of `docs/`, only the files above and the credits of the Example storage's Mapillary photos.
+
+The layout is decided once, by whether `utk_curio/_shipped/` exists, never folder by folder. The `CURIO_CATALOG_ROOT`, `CURIO_DISCOVERY_ROOT`, `CURIO_MODELS_ROOT` and `CURIO_PACKAGES_ROOT` overrides come first.
+
 ### The sandbox's Node.js packages
 
 autk-db runs in Node.js for the sandbox's JS nodes and for OpenStreetMap downloads. [`sandbox/util/node_runtime.py`](../utk_curio/sandbox/util/node_runtime.py) `nodejs_dir` names the folder whose `node_modules` they read and the launcher installs:
@@ -1022,9 +1039,12 @@ runtimes read that copy:
   instead. DuckDB's own setting for this (`custom_extension_repository`) is not
   reachable: autk-db installs the extension inside `init()`, before Curio holds
   a connection, and the worker has its own global scope.
-- **Sandbox.** `cli/dependencies.py::seed_duckdb_extensions` copies them into
-  `~/.duckdb/extensions/extensions.duckdb.org/`, which is where duckdb-wasm
-  looks before downloading. Nothing is intercepted there.
+- **Node.** autk-db runs in the sandbox's Node (Autark's data path) and in the
+  backend's (the Discovery Catalog's OpenStreetMap downloads). Each `curio.py
+  start` that runs either one (`all`, `backend` or `sandbox`) calls
+  `cli/dependencies.py::seed_duckdb_extensions`, which copies them into
+  `~/.duckdb/extensions/extensions.duckdb.org/`, where duckdb-wasm looks before
+  downloading. Nothing is intercepted there.
 
 Both fall back to the CDN for a file this checkout does not carry, so a newer
 `@duckdb/duckdb-wasm` keeps working before its extensions are vendored; see
@@ -1391,7 +1411,7 @@ Resolving such a node goes to that Dataset Finder:
 | The user's Data Catalog holds datasets | The first attempt is generated against those rows, and the grounding gate enforces them. |
 | Nothing could ground it, or the attempt was refused for its source anyway | The runtime asks that node's Dataset Finder. The candidates appear in its chat, and the node's Solve result is pending, awaiting a dataset selection, with an **Open Dataset Finder** button. Nothing is generated, run or written. |
 
-**Confirm source for this node** records the selection against the node. The record is what the next Solve reads, so the loader is built from exactly the confirmed source. A catalog row that is not installed yet keeps the node waiting for its reviewed install, and the applied install says how many nodes it unblocked. A row the runtime cannot reach at confirmation time is recorded with that verdict and does not resolve the node.
+**Confirm source for this node** records the selection against the node. Every later Solve reads the record, so the loader is built from exactly the confirmed source; a round whose code misses it is corrected against that source, and discovery does not run again. A catalog row that is not installed yet keeps the node waiting for its reviewed install, and the applied install says how many nodes it unblocked. A row the runtime cannot reach at confirmation time is recorded with that verdict and does not resolve the node.
 
 Every external row also says what the user can do with it, read from the same probe and never from the model's prose:
 
@@ -1735,7 +1755,7 @@ A candidate row's `acquirable` flag is set server-side only, by `services.py::_m
 
 The user-facing model is in [MODEL-CATALOG.md](MODEL-CATALOG.md) and the routes are in [Model Catalog Routes](#model-catalog-routes). The backend is `backend/app/model_catalog/`: `domain/manifest.py` (the manifest and its checks), `infrastructure/storage.py` (where models live), `service.py` (listing, details, install, delete, execution resolution) and `routes.py`.
 
-- **Storage.** `models_root()` is `<repo>/models`, or the directory `--models-root` names; `user_models_dir(user_key)` is `.curio/users/<key>/models/`. A model is a folder named `<id>@<major>` with a `manifest.json`. There is no index table: a listing reads the folders, the account's then the shipped ones, and an account holds few models. A shipped model whose entry the pip package leaves out is listed all the same, and `resolve_dir` fetches the entry the first time a node runs it ([Files the pip package leaves out](#files-the-pip-package-leaves-out)).
+- **Storage.** `models_root()` is the shipped `models/` ([Where the shipped folders are](#where-the-shipped-folders-are)), or the directory `--models-root` names; `user_models_dir(user_key)` is `.curio/users/<key>/models/`. A model is a folder named `<id>@<major>` with a `manifest.json`. There is no index table: a listing reads the folders, the account's then the shipped ones, and an account holds few models. A shipped model whose entry the pip package leaves out is listed all the same, and `resolve_dir` fetches the entry the first time a node runs it ([Files the pip package leaves out](#files-the-pip-package-leaves-out)).
 - **The manifest** (`parse_manifest`) takes `runtime` (`onnx` or `transformers`), `task` (`semantic-segmentation`, or `image-to-image` or `node-regression` for a graph its node feeds itself), an `entry` inside the folder (a `.onnx` file for `onnx`), up to `MAX_LABELS` labels (none for `image-to-image` or `node-regression`), and for an `onnx` image model an `input` (size 8 to 8192, `uint8` or `float32`, `NCHW`, or `NHWC` for `image-to-image`, `scale`, three-number `mean` and `std`). A folder whose manifest fails is not listed, and the server's log names it and why.
 - **Install.** `install_downloaded(folder, manifest)` mints `imported.x<hex>@1`, moves the folder to a `.part` folder beside its place in the account's store, writes the manifest, and renames it in with `os.replace`, so a half-written model is never listed. `install_dependencies(id)` installs a Transformers model's `python_deps` through `provision_declared_deps`, the path a package's `dependencies.python` takes: the shared interpreter, or the account's node libraries under isolation. `install_refusal()` is the package rule (`package_install_refusal`).
 - **Delete** removes the folder. A shipped model is refused with 403. Nodes that name it fail on their next run.
@@ -1781,7 +1801,7 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it). A name the session-tagged store cannot serve falls back to the shared data directory, where a project load hydrates that project's saved outputs, so they are readable by anyone who can load the project |
 | `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
 | `/raster` | GET | A raster artifact (or one `part` of a tuple) as GeoTIFF bytes for an Autark node, described in the `X-Curio-Raster` header; 413 with its size over `maxCells` or `maxSide`. A raster output the session-tagged store cannot serve falls back to its hydrated copy, as `/get` does |
-| `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use. Unauthenticated, so it refuses hidden paths and Curio's own state: the instance folder, the `.curio` state root, the shared data directory, the dataset hub and the SQLite database |
+| `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use. Unauthenticated, so it refuses hidden paths and Curio's own state: the instance folder, the `.curio` state root, the shared data directory, the dataset hub and the SQLite database. `vendor/duckdb-extensions/` comes from Curio's own copy instead ([Where the shipped folders are](#where-the-shipped-folders-are)) |
 | `/starters` | GET | Per-template starter source bodies from every installed package |
 | `/spatial_join` | POST | Spatial join of two GeoJSON inputs (see `common/spatial.py`) |
 
@@ -1823,7 +1843,10 @@ source of truth:
 Rows are keyed on `user_key`, deliberately **not** a foreign key to `user.id`:
 the literal `"guest"` is a valid key. Writes go through on every install path
 (`install/installer.py`, `install/bundle.py`) and rows are dropped on delete.
-Reads hydrate in `repositories/user_store.py` and `repositories/installed.py`.
+A row is added with `INSERT ... ON CONFLICT DO NOTHING`, so when two listings
+reconcile at once, or an install lands during a listing, the writer that comes
+second keeps the row the first one added. Reads hydrate in
+`repositories/user_store.py` and `repositories/installed.py`.
 
 `application/listing.py::resolve_execution_paths` uses the index as a fast path
 for turning dataset ids into filesystem paths at execution time, falling back to

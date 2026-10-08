@@ -35,7 +35,7 @@
     "@urban-toolkit/autk-compute": "4.0.0",
     "@urban-toolkit/autk-db": "4.0.0",
     "@urban-toolkit/autk-grammar": "4.0.0",
-    "@urban-toolkit/autk-map": "4.0.0",
+    "@urban-toolkit/autk-map": "file:vendor/autark/urban-toolkit-autk-map-4.0.0-curio.1.tgz",
     "@urban-toolkit/autk-plot": "4.0.0",
     "apache-arrow": "^21.1.0",
     "bootstrap": "^5.3.8",
@@ -61,7 +61,8 @@
     "dompurify": "^3.4.13",
     "babel-plugin-istanbul": "^8.0.0",
     "test-exclude": "^8.0.0",
-    "glob": "^13.0.0"
+    "glob": "^13.0.0",
+    "@urban-toolkit/autk-map": "$@urban-toolkit/autk-map"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

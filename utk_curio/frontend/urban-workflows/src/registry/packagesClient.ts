@@ -474,10 +474,11 @@ export async function loadInstalledPackages(): Promise<NodeDescriptor[]> {
     // ordinary path: the same scoping, the same descriptor build, the same
     // registry replace. Curio bundles node implementations but not node
     // descriptors, so without these a page with every row it needs still shows
-    // "Loading node..." on every tile.
+    // "Loading node..." on every tile. A page that carries none, such as one
+    // the server refused to build, has none: it never asks the server.
     const embedded = getEmbeddedDashboard();
-    const { packages } = embedded?.registry?.packages
-      ? { packages: embedded.registry.packages }
+    const { packages } = embedded
+      ? { packages: embedded.registry?.packages ?? [] }
       : await packagesApi.listInstalled();
     const filtered = packages ?? [];
     const scope = getCurrentProjectPackages();

@@ -2,14 +2,17 @@
 
 Two folders ship: ``docs/examples/*.json`` (the numbered examples, one of them
 a use case) and ``docs/examples/dataflows/*.json`` (the e2e fixtures, seeded as
-tests so the deploy shows them too). Kept free of app imports because the
-launcher's package walk (``packages/seed.py``) reads it before any app exists.
+tests so the deploy shows them too), found through ``utk_curio/shipped.py``.
+Kept free of app imports because the launcher's package walk
+(``packages/seed.py``) reads it before any app exists.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+from utk_curio import shipped
 
 #: The numbered examples the guide's use-case section shows. Every other
 #: numbered file is an example.
@@ -34,8 +37,7 @@ class ShippedDataflow:
 
 
 def examples_dir() -> Path:
-    # utk_curio/backend/app/projects/shipped.py -> repo root is 4 parents up
-    return Path(__file__).resolve().parents[4] / "docs" / "examples"
+    return shipped.path("docs/examples")
 
 
 def shipped_dataflows(root: Optional[Path] = None) -> list[ShippedDataflow]:

@@ -292,6 +292,7 @@ describe("recolorRasters", () => {
       layerManager: { searchByLayerId: (id: string) => layers[id] ?? null },
       updateColorMap: jest.fn(),
       updateRenderInfo: jest.fn(),
+      requestRender: jest.fn(),
     };
   }
 
@@ -368,6 +369,22 @@ describe("recolorRasters", () => {
     expect(map.updateRenderInfo).toHaveBeenCalledWith("input_0", { isColorMap: false });
   });
 
+  test("a map whose raster cells were written again is asked for a frame, after they were", () => {
+    const map = fakeMap({ input_0: "raster" });
+    const layer = map.layers.input_0;
+    layer.rasterResX = 2;
+    layer.rasterResY = 1;
+    layer.rasterData = new Float32Array([200, 10, 10, 255, 0, 0, 0, 0]);
+    let cellsWhenAsked: number[] = [];
+    map.requestRender.mockImplementation(() => { cellsWhenAsked = Array.from(layer.rasterData); });
+    recolorRasters({ _mapRegistry: new Map([["input_0", map]]) }, {
+      map: { layerRefs: [{ dataRef: "input_0", colorMapInterpolator: "interpolateReds" }] },
+    });
+    // It draws on demand, and autk-map cannot see cells written in place.
+    expect(map.requestRender).toHaveBeenCalled();
+    expect(cellsWhenAsked).toEqual([200, 10, 10, 255, 200, 10, 10, 0]);
+  });
+
   test("leaves layers with geometry as drawn", () => {
     const map = fakeMap({ buildings: "buildings" });
     const grammar = { _mapRegistry: new Map([["buildings", map]]) };
@@ -376,6 +393,7 @@ describe("recolorRasters", () => {
     });
     expect(map.layers.buildings.setTransferFunction).not.toHaveBeenCalled();
     expect(map.updateColorMap).not.toHaveBeenCalled();
+    expect(map.requestRender).not.toHaveBeenCalled();
   });
 
   test("does nothing for a grammar without a map registry or a document without a map", () => {

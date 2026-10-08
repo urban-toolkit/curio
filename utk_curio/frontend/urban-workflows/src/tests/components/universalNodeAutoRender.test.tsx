@@ -31,8 +31,11 @@ let mockFlowEdges: any[] = [];
 let mockIsRunActive = false;
 let mockServerRunActive = false;
 let mockWebGpuSupported = true;
+// A probe a test holds open, as a GPU that is slow to answer does. Every node
+// asks the same memoised probe, so they all wait on this one answer.
+let mockWebGpuAnswer: Promise<{ supported: boolean }> | null = null;
 jest.mock("../../utils/webgpuSupport", () => ({
-  detectWebGpuSupport: () => Promise.resolve({ supported: mockWebGpuSupported }),
+  detectWebGpuSupport: () => mockWebGpuAnswer ?? Promise.resolve({ supported: mockWebGpuSupported }),
 }));
 
 jest.mock("reactflow", () => ({
@@ -160,6 +163,7 @@ beforeEach(() => {
   mockIsRunActive = false;
   mockServerRunActive = false;
   mockWebGpuSupported = true;
+  mockWebGpuAnswer = null;
 });
 
 // The redraw rule, one table: every case runs for a Vega chart and for an
@@ -408,6 +412,26 @@ describe("only an Autark node", () => {
     await settle();
 
     expect(mockSendCode).not.toHaveBeenCalled();
+  });
+
+  test("two inputs that land before WebGPU answers draw once", async () => {
+    // A Data Pool hands its rows on with every fetch that lands, so a map can
+    // get a second input while it waits. On a GPU that is slow to answer,
+    // both arrive while the probe is still out. Each queued a draw on that one
+    // answer, both ran in one tick, and two `sendCode` calls in one tick
+    // cancel each other in the widgets pass: the map never ran, and sat at
+    // "exec" with "Not drawn yet" (the dashboard tile on the arcade runners).
+    let answer!: (support: { supported: boolean }) => void;
+    mockWebGpuAnswer = new Promise((resolve) => { answer = resolve; });
+    const utils = await mount(data(AUTARK, { code: MAP_SPEC, input: INPUT_A }));
+    await rerenderWith(utils, data(AUTARK, { code: MAP_SPEC, input: INPUT_B }));
+    expect(mockSendCode).not.toHaveBeenCalled();
+
+    await act(async () => { answer({ supported: true }); });
+
+    expect(mockSetOutput).toHaveBeenCalledTimes(1);
+    expect(mockSendCode).toHaveBeenCalledTimes(1);
+    expect(mockSendCode).toHaveBeenCalledWith(MAP_SPEC);
   });
 
   test("a data or compute step is never run by an input or a page", async () => {

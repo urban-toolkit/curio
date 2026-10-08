@@ -274,8 +274,16 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     // one error per map: the node keeps its "not drawn yet" body, and a Play
     // shows the in-node explanation. The probe is async, so the run state is
     // read again once it answers.
+    //
+    // Only the newest input draws. A Data Pool hands its rows on with every
+    // fetch that lands, so a second input can arrive while the probe is out,
+    // and every node waits on the same probe. Drawing both would put two
+    // `sendCode` calls in one tick, which cancel each other (above): the map
+    // would never run, and would sit at "exec".
+    const input = data.input;
     void detectWebGpuSupport().then((support) => {
       if (!support.supported) return;
+      if (lastRenderedInputRef.current !== input) return;
       if (runInFlightRef.current || outputCodeRef.current === "exec") return;
       setOutputCallback({ code: "exec", content: "" });
       sendCode(code);

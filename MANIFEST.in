@@ -5,11 +5,33 @@ include LICENSE
 # The sandbox's Node.js package list, which setup.py copies into the wheel.
 include package.json
 include package-lock.json
+
+# The folders Curio ships beside its code, at their repository paths here;
+# setup.py puts them, and the files of docs/ below, in the wheel at
+# utk_curio/_shipped/<folder>/.
 recursive-include packages *
 recursive-include datasets *
 recursive-include discovery *
 recursive-include models *
 recursive-include tests *
+
+# DuckDB's extensions, which the launcher seeds and the backend serves
+# (DUCKDB_EXTENSIONS in utk_curio/sandbox/util/node_runtime.py).
+recursive-include vendor/duckdb-extensions *.wasm
+
+# What Curio reads of docs/, which setup.py puts in the wheel at
+# utk_curio/_shipped/docs/: the dataflows it ships (projects/shipped.py), the
+# agent evaluation's prompt fixtures and their schema, the Trill schema the
+# agents' prompt fields project, and the Example storage source's folder with
+# the credits of its Mapillary photos. No guide, image, walkthrough or
+# screenshot baseline.
+include docs/examples/*.json
+include docs/examples/dataflows/*.json
+recursive-include docs/examples/prompts *.prompt.json
+include docs/schemas/example-prompt-fixture.v1.json
+include docs/schemas/trill.v1.json
+recursive-include docs/examples/data/storage *
+include docs/examples/data/mapillary-ATTRIBUTION.md
 
 recursive-include utk_curio/backend *
 recursive-include utk_curio/sandbox *

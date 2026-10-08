@@ -79,6 +79,7 @@ from .interactions import (  # noqa: F401
     INTERACTION_MIN_CHANGED_PIXELS,
     INTERACTION_VIEWPORT,
     INTERACTION_RESTORED_RATIO,
+    INTERACTION_SHOWN_TIMEOUT_MS,
     drawing_selector,
     keep_drawing,
     drawing_kept,
@@ -107,6 +108,7 @@ from .servers import (  # noqa: F401
     wait_for_port,
     e2e_existing_servers,
     base_url,
+    serve_built_frontend,
 )
 from .auth import (  # noqa: F401
     DEFAULT_TEST_PASSWORD,

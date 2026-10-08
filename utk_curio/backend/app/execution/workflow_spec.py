@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass, field
 from collections import deque
 
+from utk_curio import shipped
 from utk_curio.backend.app.execution.code_references import (
     CodeReferenceError,
     normalize_selections,
@@ -119,10 +120,6 @@ NAMESPACED_TO_LEGACY: dict[str, str] = {
 }
 
 
-# workflow_spec.py -> execution/ -> app/ -> backend/ -> utk_curio/ -> repo_root/packages/
-_PACKAGES_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "packages"
-)
 _package_code_types: dict[str, str] | None = None
 
 
@@ -137,9 +134,10 @@ def package_code_types() -> dict[str, str]:
     """
     global _package_code_types
     if _package_code_types is None:
+        packages_dir = shipped.path("packages")
         found: dict[str, str] = {}
-        for entry in sorted(os.listdir(_PACKAGES_DIR)) if os.path.isdir(_PACKAGES_DIR) else []:
-            path = os.path.join(_PACKAGES_DIR, entry, "manifest.json")
+        for entry in sorted(os.listdir(packages_dir)) if os.path.isdir(packages_dir) else []:
+            path = os.path.join(packages_dir, entry, "manifest.json")
             if entry.startswith("curio.builtin@") or not os.path.isfile(path):
                 continue
             with open(path, encoding="utf-8") as handle:

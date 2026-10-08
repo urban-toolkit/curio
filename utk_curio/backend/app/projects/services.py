@@ -40,7 +40,7 @@ class ProjectError(Exception):
 def shipped_dataflow_paths() -> Dict[str, Path]:
     """Every dataflow Curio ships, by its key (``shipped.shipped_dataflows``),
     for a feature that reads the files themselves. Empty when this install
-    ships no ``docs/examples`` (a pip install)."""
+    has no shipped dataflows."""
     return {s.key: s.path for s in shipped_dataflows()}
 
 
@@ -1236,6 +1236,58 @@ def _dashboard_envelope_reader():
     return read
 
 
+def _dashboard_raster_reader():
+    """Ask the sandbox for one raster the way the editor's Autark map asks
+    ``GET /raster``: by name, ``part`` for its place in a tuple, for no more
+    than a map loads (``RASTER_MAX_CELLS``, ``RASTER_MAX_SIDE``), so a larger
+    raster is the 413 with its size the editor gets and is never written out.
+
+    No session id, as in :func:`_dashboard_envelope_reader`. Returns what the
+    sandbox answered: ``{"status": 200, "meta", "geotiff"}`` with the
+    ``X-Curio-Raster`` description, or ``{"status", "meta", "message"}`` for a
+    refusal. A sandbox that cannot be asked raises ``KeyError``.
+    """
+    import json
+
+    from utk_curio.backend.app.api.routes import SANDBOX_RASTER_TIMEOUT, _sandbox_call
+    from utk_curio.backend.app.projects.dashboard_payload import RASTER_MAX_CELLS, RASTER_MAX_SIDE
+    from utk_curio.sandbox.util.rasters import RASTER_META_HEADER
+
+    def read(filename: str, part: Optional[int]) -> dict:
+        params = {"fileName": filename, "maxCells": RASTER_MAX_CELLS, "maxSide": RASTER_MAX_SIDE}
+        if part is not None:
+            params["part"] = part
+        resp = _sandbox_call(
+            "get", "/raster",
+            label="/raster (dashboard)", timeout=SANDBOX_RASTER_TIMEOUT,
+            params=params,
+        )
+        if isinstance(resp, tuple):  # transport failure, already a Flask tuple
+            raise KeyError(filename)
+        try:
+            if resp.status_code == 200:
+                header = resp.headers.get(RASTER_META_HEADER)
+                return {
+                    "status": 200,
+                    "meta": json.loads(header) if header else None,
+                    "geotiff": resp.content,
+                }
+            try:
+                body = resp.json()
+            except ValueError:
+                body = None
+            body = body if isinstance(body, dict) else {}
+            return {
+                "status": resp.status_code,
+                "meta": body.get("meta"),
+                "message": body.get("message") or f"HTTP {resp.status_code}",
+            }
+        finally:
+            resp.close()
+
+    return read
+
+
 def _dashboard_registry(project_id: str) -> dict:
     """The node descriptors and starter bodies a tile needs to render at all.
 
@@ -1299,14 +1351,16 @@ def build_standalone_dashboard(
     *,
     limit_bytes: Optional[int] = None,
     fetch_envelope=None,
+    fetch_raster=None,
     registry=None,
 ) -> dict:
     """Everything the page at ``/dashboard/<id>`` needs, with nothing left to fetch.
 
     Built on the shared-project load rather than the owner's, because a
     dashboard is opened by whoever holds the link and the two must see the same
-    thing. Raises :class:`DashboardTooLargeError` when the rows would not fit in
-    a page; the caller turns that into a message naming the heavy tiles.
+    thing. Raises :class:`DashboardTooLargeError` when the rows, and the
+    GeoTIFFs of the rasters an Autark map reads, would not fit in a page; the
+    caller turns that into a message naming the heavy tiles.
     """
     from utk_curio.backend.app.projects.dashboard_payload import (
         DEFAULT_PAYLOAD_LIMIT_BYTES,
@@ -1319,6 +1373,7 @@ def build_standalone_dashboard(
         spec=loaded["spec"],
         output_refs=loaded["outputs"],
         fetch_envelope=fetch_envelope or _dashboard_envelope_reader(),
+        fetch_raster=fetch_raster or _dashboard_raster_reader(),
         meta={
             "projectId": project_id,
             "name": getattr(detail, "name", None),

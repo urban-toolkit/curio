@@ -165,6 +165,8 @@ Curio's frontend will be available at http://localhost:8080 by default.
 > [!NOTE]
 > The pip installation includes a pre-built frontend and does not support rebuilding it. If you need to modify or rebuild the frontend, please use the manual installation method described below.
 
+A pip install keeps the datasets, Discovery sources, models and node packages that Curio's catalogs ship, its scripts, DuckDB's extensions, and the example dataflows and the Example storage folder from `docs/` in `utk_curio/_shipped/` in site-packages. It puts nothing in site-packages but `utk_curio/` and its metadata.
+
 Autark data nodes and OpenStreetMap downloads need Node.js 26 and npm (`conda install -c conda-forge nodejs=26`). On every start, `curio start` installs their Node.js packages with `npm install` into `.curio/nodejs/` in the folder you start Curio from.
 
 Five large files are not in the pip package: the data of four Data Catalog datasets (Milan Mean Radiant Temperature, Project Sidewalk Chicago Labels, Chicago Red-Light Violations and Chicago Speed Camera Violations) and the Model Catalog's Deep Umbra model. Curio downloads each one from GitHub the first time something reads it: a preview in the Data Catalog, adding the dataset to a dataflow, or a node that loads it. Downloaded files go to `.curio/fetched/` in the folder you start Curio from.
@@ -1215,13 +1217,14 @@ running anything.
   The page is served with its data inside it, so a viewer needs no account and the
   dashboard keeps working if the server is unreachable.
 
-Two dashboards cannot be served this way, and both say so when you open them: one whose
-data is too large to travel with the page, and one with a pinned Autark tile that loads
-its own data. For the second, move the tile's `data` section into its own node upstream
-so its output is saved.
+Two dashboards cannot be served this way: one whose data is too large to travel with the
+page (25 MB), and one with a pinned Autark tile that loads its own data. Opening either
+shows why, naming the nodes to change, and draws nothing. For the second, move the tile's
+`data` section into its own node upstream so its output is saved.
 
-An Autark map tile draws in the viewer's browser, so it needs WebGPU there. A code node's
-console output is not restored: no saved dataset carries it.
+An Autark map tile draws in the viewer's browser, so it needs WebGPU there. A map over a
+raster draws too: the raster travels with the page, and its size counts toward the 25 MB.
+A code node's console output is not restored: no saved dataset carries it.
 
 ## Finding a dataflow
 
@@ -1276,12 +1279,12 @@ tiles = curio_computed_path("tiles")
 
 What a node saves becomes a computed dataset of the dataflow, `computed.<dataflowId>.files.<name>`, listed in the drawer's **Computed** tab once the node has run; nodes of other dataflows cannot read it, and deleting the dataflow deletes it. A node reading a name runs after the node saving it in **Run All**, though no edge joins them. The dataflow must have been saved once. See [Files a node saves from its code](DATA-CATALOG.md#files-a-node-saves-from-its-code) for the formats, the name rules and the rest; [example 24](examples/24-scout-building-rasters.md) passes SCOUT's map tiles from Rasterize Buildings to Mosaic Tiles this way.
 
-Because the shared catalog root defaults to `<repo_root>/datasets/`, pip installs should set **`CURIO_CATALOG_ROOT`** (or `--catalog-root`) to a writable, persistent path.
+The shared catalog root defaults to the `datasets/` folder Curio ships, which a pip install keeps inside `site-packages`, so pip installs should set **`CURIO_CATALOG_ROOT`** (or `--catalog-root`) to a writable, persistent path.
 
 > [!NOTE]
 > `CURIO_CATALOG_ROOT` relocates the **dataset** catalog only. The shared *node
-> package* catalog is `<install_root>/packages/`, relocated with `--packages-root`.
-> On a pip install that path is inside `site-packages`, so author node packages
+> package* catalog is the `packages/` folder Curio ships, relocated with `--packages-root`.
+> On a pip install that folder is inside `site-packages`, so author node packages
 > from a git checkout (see [Authoring nodes](AUTHORING-NODES.md)).
 
 For the full guide, covering the storage layers, the action matrix, computed datasets and lineage, previews, OSM PBF and GeoPackage imports, and publishing, see [docs/DATA-CATALOG.md](DATA-CATALOG.md).

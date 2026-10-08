@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import sys
 
-from pathlib import Path
+from utk_curio import shipped
 
 
 TEST_SUITES = ["all", "unit", "backend", "sandbox", "jest", "e2e"]
@@ -91,7 +91,7 @@ def run_tests(argv, command_prefix="curio") -> None:
     """
     args = _parse_test_args(argv, command_prefix)
 
-    script = Path(__file__).resolve().parent.parent.parent / "scripts" / "test.sh"
+    script = shipped.path("scripts/test.sh")
     if not script.is_file():
         # Only shipped in a source checkout, not in the pip wheel.
         print(

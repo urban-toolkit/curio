@@ -180,12 +180,19 @@ def mark_candidates_pending(spec: dict, attachment_id: str, *, count: int) -> di
 
 def mark_skipped(spec: dict, attachment_id: str, *, literal: str) -> dict | None:
     """Record that discovery was skipped because the source is already
-    grounded — the audit trail behind "always initiated"."""
+    grounded: the audit trail behind "always initiated".
+
+    A confirmed selection is never replaced: it is what grounds the node, and
+    ``node_source_state`` ranks it above every literal. Writing the note over
+    it would erase the user's pick, so the next round that missed it would
+    start discovery again and later Solves would hand the builder nothing."""
 
     record = attachments.get_attachment(spec, attachment_id)
     if record is None:
         return None
     current = record.get(RECORD_KEY)
+    if isinstance(current, dict) and current.get("status") == STATE_RESOLVED:
+        return None
     written = {
         "status": STATE_NOT_NEEDED,
         "skippedBecause": literal[:200],

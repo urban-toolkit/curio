@@ -672,21 +672,37 @@ AUTARK_EXAMPLE = "07-autark-gpu-shader.json"
 AUTARK_MAP = "sh-map"
 
 
+#: How long WebGPU takes to answer the first time the dashboard asks, in the
+#: test below: the tile's rows land in that time. Well under the probe's own
+#: limit (``WEBGPU_PROBE_TIMEOUT_MS``, 8 s), past which the map rightly says
+#: WebGPU did not answer.
+WEBGPU_ANSWER_MS = 4000
+
+# Before the page's own scripts. The first ``requestAdapter`` answers after
+# WEBGPU_ANSWER_MS, and so does every call made while it is out; later calls,
+# autk-map's own among them, answer at once. The page notes that it held one.
+_WEBGPU_ANSWERS_LATE_JS = """(() => {
+    if (typeof GPU === "undefined" || !navigator.gpu) return;
+    const request = GPU.prototype.requestAdapter;
+    let answered = null;
+    GPU.prototype.requestAdapter = function (...args) {
+        if (!answered) {
+            window.__curioTestWebGpuHeld = true;
+            answered = new Promise((resolve) => setTimeout(resolve, %d));
+        }
+        return answered.then(() => request.apply(this, args));
+    };
+})();""" % WEBGPU_ANSWER_MS
+
+
 def _webgpu_adapter(page) -> bool:
     return bool(page.evaluate(
         "async () => !!(navigator.gpu && await navigator.gpu.requestAdapter())"
     ))
 
 
-def test_an_autark_map_tile_draws_from_saved_layers_without_rerunning(
-    app_frontend: "FrontendPage", current_server, page,
-):
-    """The map is the only thing that runs on the page, and only in the browser.
-
-    Its data and compute nodes are upstream, and their layers come back from the
-    Data Catalog. So opening the dashboard must not send a single JavaScript
-    execution to the sandbox: that is where the data load would go.
-    """
+def _autark_tile_pinned_and_saved(page, app_frontend: "FrontendPage", current_server) -> str:
+    """Example 07 run once on the canvas, its map pinned and saved; its project id."""
     require_project_page()
     require_user_auth()
     from .walkthroughs import load_example_spec
@@ -712,7 +728,11 @@ def test_an_autark_map_tile_draws_from_saved_layers_without_rerunning(
     run_all_and_wait(page, timeout_ms=300000)
     _pin(page, AUTARK_MAP)
     _save(page)
+    return project_id
 
+
+def _the_tile_draws_without_a_run(page, base: str, project_id: str) -> None:
+    """Open the dashboard: the map draws, and no node code goes to the sandbox."""
     executions: list[str] = []
     page.on(
         "request",
@@ -720,11 +740,47 @@ def test_an_autark_map_tile_draws_from_saved_layers_without_rerunning(
         if "/processJavaScriptCode" in request.url or "/processPythonCode" in request.url
         else None,
     )
-    _open_dashboard(page, app_frontend.base_url, project_id)
+    _open_dashboard(page, base, project_id)
     canvas = page.locator(f"#autk-grammar-map-{AUTARK_MAP}")
     canvas.wait_for(state="visible", timeout=120000)
     assert canvas.evaluate("c => c.width > 0 && c.height > 0"), "the map tile has no drawing surface"
     assert executions == [], (
         f"opening the dashboard executed node code in the sandbox: {executions!r}; "
         f"the map's layers should have come from the Data Catalog"
+    )
+
+
+def test_an_autark_map_tile_draws_from_saved_layers_without_rerunning(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    """The map is the only thing that runs on the page, and only in the browser.
+
+    Its data and compute nodes are upstream, and their layers come back from the
+    Data Catalog. So opening the dashboard must not send a single JavaScript
+    execution to the sandbox: that is where the data load would go.
+    """
+    project_id = _autark_tile_pinned_and_saved(page, app_frontend, current_server)
+    _the_tile_draws_without_a_run(page, app_frontend.base_url, project_id)
+
+
+def test_an_autark_map_tile_draws_when_webgpu_answers_after_its_rows(
+    app_frontend: "FrontendPage", current_server, page,
+):
+    """The tile draws when its rows land before WebGPU answers.
+
+    A map asks for WebGPU when its input lands and draws once the answer is
+    yes. The Data Pool feeding this map hands its rows on with every fetch
+    that lands, so the map can get a second input while it waits. On a GPU
+    that is slow to answer (the arcade runners, which share one GPU; a GPU
+    process still starting) both inputs could land before the answer, both
+    draws then ran in one tick, and two ``sendCode``
+    calls in one tick cancel each other: the map sat at "running" under "Not
+    drawn yet" until the wait below ran out. Here WebGPU takes
+    ``WEBGPU_ANSWER_MS`` to answer on every runner.
+    """
+    project_id = _autark_tile_pinned_and_saved(page, app_frontend, current_server)
+    page.add_init_script(_WEBGPU_ANSWERS_LATE_JS)
+    _the_tile_draws_without_a_run(page, app_frontend.base_url, project_id)
+    assert page.evaluate("() => window.__curioTestWebGpuHeld === true"), (
+        "the dashboard never asked for WebGPU, so no answer came late"
     )
