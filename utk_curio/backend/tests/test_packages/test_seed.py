@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import shutil
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -420,15 +421,117 @@ def _read_builtin_templates(user_key: str = "guest") -> int | None:
         raise
 
 
+_STRESS_SEEDERS = 8
+_STRESS_PASSES = 4
+_STRESS_READERS = 8
+_STRESS_DEADLINE_S = 60.0
+
+
+@dataclass
+class _StressReport:
+    failures: list[str]
+    #: Every read, by outcome: ``complete`` or ``absent``.
+    outcomes: dict[str, int]
+    #: Per reader: complete reads that overlapped a seed pass.
+    complete_while_seeding: list[int]
+    #: Threads still running after the joins.
+    alive: list[str]
+
+    def readers_that_missed_the_seeding(self) -> list[int]:
+        return [i for i, n in enumerate(self.complete_while_seeding) if n == 0]
+
+
+def _seed_under_readers(read, *, readers_start_late: bool) -> _StressReport:
+    """Force seed passes from several threads while others call ``read()``.
+
+    ``read()`` returns ``"complete"`` or ``"absent"``; any other string is a
+    failure. A read overlapped a seed pass when a pass started before the read
+    ended and had not finished when it began.
+
+    ``readers_start_late`` starts the readers only once one seeder has made
+    all its passes: the order a loaded runner can give the threads, since the
+    seeders are started first.
+    """
+    lock = threading.Lock()
+    passes = {"started": 0, "finished": 0}
+    failures: list[str] = []
+    outcomes = {"complete": 0, "absent": 0}
+    complete_while_seeding = [0] * _STRESS_READERS
+    a_seeder_made_its_passes = threading.Event()
+
+    def one_pass():
+        with lock:
+            passes["started"] += 1
+        try:
+            seed_dev_packages(user_key="guest")
+        finally:
+            with lock:
+                passes["finished"] += 1
+
+    def read_once(index):
+        with lock:
+            finished_before = passes["finished"]
+        try:
+            outcome = read()
+        except Exception as exc:  # noqa: BLE001 - recorded, not raised, in a thread
+            outcome = f"reader raised {exc!r}"
+        with lock:
+            if outcome not in outcomes:
+                failures.append(outcome)
+                return
+            outcomes[outcome] += 1
+            if outcome == "complete" and passes["started"] > finished_before:
+                complete_while_seeding[index] += 1
+
+    def seeder():
+        try:
+            for _ in range(_STRESS_PASSES):
+                one_pass()
+        except Exception as exc:  # noqa: BLE001 - recorded, not raised, in a thread
+            failures.append(f"seeder raised {exc!r}")
+        finally:
+            a_seeder_made_its_passes.set()
+
+    def reader(index):
+        # The readers stop once one seeder has made its passes.
+        while not a_seeder_made_its_passes.is_set():
+            read_once(index)
+
+    seeders = [
+        threading.Thread(target=seeder, name=f"seeder-{i}") for i in range(_STRESS_SEEDERS)
+    ]
+    readers = [
+        threading.Thread(target=reader, args=(i,), name=f"reader-{i}")
+        for i in range(_STRESS_READERS)
+    ]
+    for t in seeders:
+        t.start()
+    if readers_start_late:
+        a_seeder_made_its_passes.wait(timeout=_STRESS_DEADLINE_S)
+    for t in readers:
+        t.start()
+    for t in seeders:
+        t.join(timeout=_STRESS_DEADLINE_S + 60)
+    for t in readers:
+        t.join(timeout=60)
+    return _StressReport(
+        failures=list(failures),
+        outcomes=dict(outcomes),
+        complete_while_seeding=list(complete_while_seeding),
+        alive=[t.name for t in seeders + readers if t.is_alive()],
+    )
+
+
+@pytest.mark.parametrize("readers_start_late", [False, True], ids=["idle", "loaded"])
 def test_concurrent_passes_never_expose_a_broken_store(
-    tmp_curio, real_fixtures_root, monkeypatch
+    tmp_curio, real_fixtures_root, monkeypatch, readers_start_late
 ):
     """The test that would have caught the reported outage.
 
     Eight threads seed the same user while eight more read the built-in
     manifest the way ``available_templates`` does. The invariant: a reader
     never sees the package *present but unreadable or short of templates*.
-    Under the old ``rmtree``-then-``copytree`` that failed immediately — the
+    Under the old ``rmtree``-then-``copytree`` that failed immediately: the
     live tree was deleted and rebuilt file by file, so readers walked a
     half-populated package, and a copy that lost the race left one behind
     permanently.
@@ -436,7 +539,8 @@ def test_concurrent_passes_never_expose_a_broken_store(
     A reader may still find the directory briefly absent while the swap does
     its two renames; that state is transient by construction (the new tree is
     complete before either rename) and self-corrects within microseconds,
-    where a truncated tree did not.
+    where a truncated tree did not. Every reader must make a complete read
+    that overlaps a seed pass, also when the readers start late.
 
     ``CURIO_RESEED_PACKAGES`` keeps every pass doing real work, so the swap
     machinery runs under genuine contention instead of short-circuiting on
@@ -449,42 +553,26 @@ def test_concurrent_passes_never_expose_a_broken_store(
     assert expected > 0
     monkeypatch.setattr(packages_seed, "CURIO_RESEED_PACKAGES", True)
 
-    failures: list[str] = []
-    reads = {"complete": 0, "absent": 0}
-    stop = threading.Event()
-
-    def seeder():
+    def read():
         try:
-            for _ in range(4):
-                seed_dev_packages(user_key="guest")
-        except Exception as exc:  # noqa: BLE001 — recorded, not raised, in a thread
-            failures.append(f"seeder raised {exc!r}")
-        finally:
-            stop.set()
+            count = _read_builtin_templates()
+        except Exception as exc:  # noqa: BLE001
+            return f"reader saw a present-but-broken package: {exc!r}"
+        if count is None:
+            return "absent"
+        if count != expected:
+            return f"reader saw {count} templates, expected {expected}"
+        return "complete"
 
-    def reader():
-        while not stop.is_set():
-            try:
-                count = _read_builtin_templates()
-            except Exception as exc:  # noqa: BLE001
-                failures.append(f"reader saw a present-but-broken package: {exc!r}")
-                continue
-            if count is None:
-                reads["absent"] += 1
-            elif count != expected:
-                failures.append(f"reader saw {count} templates, expected {expected}")
-            else:
-                reads["complete"] += 1
+    seen = _seed_under_readers(read, readers_start_late=readers_start_late)
 
-    threads = [threading.Thread(target=seeder) for _ in range(8)]
-    threads += [threading.Thread(target=reader) for _ in range(8)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=60)
-
-    assert not failures, failures[:5]
-    assert reads["complete"] > 0, "the readers never observed a usable store"
+    assert not seen.alive, f"threads still running: {seen.alive}"
+    assert not seen.failures, seen.failures[:5]
+    missed = seen.readers_that_missed_the_seeding()
+    assert not missed, (
+        f"readers {missed} never observed a usable store while it was being seeded "
+        f"(reads: {seen.outcomes})"
+    )
     assert _read_builtin_templates() == expected
 
 
@@ -633,53 +721,40 @@ def _builtin_dir_name() -> str:
     return next(p.name for p in base.iterdir() if p.name.startswith("curio.builtin@"))
 
 
+@pytest.mark.parametrize("readers_start_late", [False, True], ids=["idle", "loaded"])
 def test_production_readers_never_see_an_absent_package_under_stress(
-    tmp_curio, real_fixtures_root, monkeypatch
+    tmp_curio, real_fixtures_root, monkeypatch, readers_start_late
 ):
     """dev/99 §7.3: the same 8-seeder/8-reader forced-reseed stress as the
-    dev/93 test, but through a PRODUCTION reader — and now requiring zero
+    dev/93 test, but through a PRODUCTION reader, and now requiring zero
     absent reads, not merely zero broken ones. The dev/93 test deliberately
     tolerated absence because nothing shared the lock; that tolerance is what
-    this change removes."""
+    this change removes. Every reader must read while the store is being
+    seeded, also when the readers start late."""
     from utk_curio.backend.app.packages.application import seeding as packages_seed
 
     seed_dev_packages(user_key="guest")
     expected = _production_template_ids("guest")
     monkeypatch.setattr(packages_seed, "CURIO_RESEED_PACKAGES", True)
 
-    failures: list[str] = []
-    reads = {"n": 0}
-    stop = threading.Event()
-
-    def seeder():
+    def read():
         try:
-            for _ in range(4):
-                seed_dev_packages(user_key="guest")
-        except Exception as exc:  # noqa: BLE001 — recorded, not raised, in a thread
-            failures.append(f"seeder raised {exc!r}")
-        finally:
-            stop.set()
+            ids = _production_template_ids("guest")
+        except Exception as exc:  # noqa: BLE001
+            return f"reader raised {exc!r}"
+        if ids != expected:
+            return f"reader saw {len(ids)} templates, expected {len(expected)}"
+        return "complete"
 
-    def reader():
-        while not stop.is_set():
-            try:
-                ids = _production_template_ids("guest")
-            except Exception as exc:  # noqa: BLE001
-                failures.append(f"reader raised {exc!r}")
-                continue
-            reads["n"] += 1
-            if ids != expected:
-                failures.append(f"reader saw {len(ids)} templates, expected {len(expected)}")
+    seen = _seed_under_readers(read, readers_start_late=readers_start_late)
 
-    threads = [threading.Thread(target=seeder) for _ in range(8)]
-    threads += [threading.Thread(target=reader) for _ in range(8)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=60)
-
-    assert not failures, failures[:5]
-    assert reads["n"] > 0
+    assert not seen.alive, f"threads still running: {seen.alive}"
+    assert not seen.failures, seen.failures[:5]
+    missed = seen.readers_that_missed_the_seeding()
+    assert not missed, (
+        f"readers {missed} never read the store while it was being seeded "
+        f"(reads: {seen.outcomes})"
+    )
     assert _production_template_ids("guest") == expected
 
 
