@@ -116,7 +116,7 @@ _AUTK_MAP_PIXELS_JS = """async (id) => {
 # An Autark map's canvas read in the frame that renders it, as the captures read
 # it (``images.py``): through the page's own function for that,
 # renderMapsForReading in adapters/node/autkMapDrawing.ts. A page without it has
-# no map drawing on demand.
+# no Autark map.
 _AUTK_MAP_PIXELS_IN_FRAME_JS = """async (id) => {
     const canvas = document.getElementById('autk-grammar-map-' + id);
     if (!canvas) return null;
